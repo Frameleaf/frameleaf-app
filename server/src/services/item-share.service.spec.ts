@@ -10,7 +10,6 @@ import {
   ItemShareService,
   SHARED_WITH_YOU_PATH,
 } from 'src/services/item-share.service.js';
-import { linkLivePhotoAssets } from 'src/utils/asset.util.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
@@ -229,20 +228,12 @@ describe(ItemShareService.name, () => {
     expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('send unavailable'));
   });
 
-  it('does not fail a completed Live Photo relink when recipient lookup fails', async () => {
+  it('does not reject a post-relink hide notification when recipient lookup fails', async () => {
     const motionAssetId = newUuid();
     mocks.itemShare.getRecipients.mockRejectedValueOnce(new Error('lookup unavailable'));
-    const emit = vi.fn((_: string, event: { assetId: string; userId: string }) => sut.onAssetHide(event));
-
-    await expect(
-      linkLivePhotoAssets({ asset: mocks.asset, album: mocks.album, event: { emit } } as never, {
-        photoAssetId: newUuid(),
-        motionAssetId,
-        motionOwnerId: owner.id,
-      }),
-    ).resolves.toBeUndefined();
-
-    expect(emit).toHaveBeenCalledWith('AssetHide', { assetId: motionAssetId, userId: owner.id });
+    await expect(sut.onAssetHide({ assetId: motionAssetId, userId: owner.id })).resolves.toBeUndefined();
+    expect(mocks.itemShare.getRecipients).toHaveBeenCalledWith([motionAssetId]);
+    expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
     expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('lookup unavailable'));
   });
 

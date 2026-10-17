@@ -1,4 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
   MediaOperationDestination,
@@ -9,8 +12,10 @@ import {
 } from 'src/enum.js';
 import { TranscriptionUnavailableError } from 'src/repositories/machine-learning.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StudioTranscriptionService } from 'src/services/studio-transcription.service.js';
 import { selectMlDestination } from 'src/utils/ml-destination.js';
+import { OperationDeadlineError, withOperationExecution } from 'src/utils/operation-execution.js';
 import { rational } from 'src/utils/rational-time.js';
 import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -235,6 +240,76 @@ describe(StudioTranscriptionService.name, () => {
   });
 
   describe('run', () => {
+    it('stops an unresponsive media probe before shutdown can clean up the attempt', async () => {
+      const { sut, operation, media, audio, operations, storage } = setup();
+      const repository = new MediaRepository({ setContext: () => {} } as never);
+      const folder = await mkdtemp(join(tmpdir(), 'frameleaf-transcription-probe-'));
+      const marker = join(folder, 'child.pid');
+      const executable = join(folder, 'ffprobe');
+      let pid: number | undefined;
+      let running: Promise<void> | undefined;
+      let settled = false;
+      try {
+        await writeFile(
+          executable,
+          `#!${process.execPath}
+const fs = require('node:fs');
+if (process.argv.at(-1) === 'ordinary') {
+  process.stdout.write(JSON.stringify({format:{duration:'2.5'},streams:[{codec_type:'audio',index:0}]}));
+} else {
+  process.on('SIGTERM', () => {});
+  fs.writeFileSync(${JSON.stringify(marker)}, String(process.pid));
+  setInterval(() => {}, 1000);
+}
+`,
+        );
+        await chmod(executable, 0o700);
+        vi.stubEnv('PATH', `${folder}:${process.env.PATH}`);
+        await expect(repository.probe('ordinary')).resolves.toMatchObject({
+          format: { duration: 2.5 },
+          audioStreams: [{ index: 0 }],
+          videoStreams: [],
+        });
+        media.probe.mockImplementation(repository.probe.bind(repository));
+        running = sut.run({ operation, claimToken }).finally(() => {
+          settled = true;
+        });
+        await vi.waitFor(async () => {
+          pid = Number(await readFile(marker, 'utf8'));
+          expect(pid).toBeGreaterThan(0);
+        });
+        expect(storage.unlinkDir).not.toHaveBeenCalled();
+        await sut.onShutdown();
+        await vi.waitFor(() => expect(settled).toBe(true), { timeout: 12_000 });
+        await running;
+        expect(() => process.kill(pid!, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }));
+        expect(audio.extractAudio).not.toHaveBeenCalled();
+        expect(operations.publishValidated).not.toHaveBeenCalled();
+        expect(storage.unlinkDir).toHaveBeenCalledOnce();
+      } finally {
+        if (pid) {
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch {
+            // the worker may already have exited
+          }
+        }
+        await running;
+        vi.unstubAllEnvs();
+        await rm(folder, { recursive: true, force: true });
+      }
+    }, 20_000);
+
+    it('keeps inherited operation cancellation for media probes without explicit options', async () => {
+      const repository = new MediaRepository({ setContext: () => {} } as never);
+      await expect(
+        withOperationExecution({ renew: () => Promise.resolve(true), deadlineMs: 1 }, async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          return repository.probe('must-not-start');
+        }),
+      ).rejects.toBeInstanceOf(OperationDeadlineError);
+    });
+
     it('extracts the window, transcribes on the destination, records the cues and deletes the audio', async () => {
       const { sut, operation, operations, audio, machineLearning, storage, query } = setup();
       await sut.run({ operation, claimToken });

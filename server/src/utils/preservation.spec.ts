@@ -250,6 +250,26 @@ describe(orderPreservationAlbums.name, () => {
     expect(() => orderPreservationAlbums([album(child), album(child)])).toThrow(PreservationPackageError);
   });
 
+  it.each(['valid', 'cycle', 'missing'] as const)(
+    'handles a deep %s parent chain without recursive stack growth',
+    (kind) => {
+      const count = 20_000;
+      const id = (index: number) => `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`;
+      const chain = Array.from({ length: count }, (_, index) =>
+        album(id(index), { parentId: index + 1 < count ? id(index + 1) : null }),
+      );
+      if (kind !== 'valid') chain[count - 1].parentId = kind === 'cycle' ? id(0) : id(count);
+      if (kind === 'valid') {
+        expect(orderPreservationAlbums(chain).map((item) => item.id)).toEqual(
+          chain.map((item) => item.id).toReversed(),
+        );
+      } else {
+        expect(() => orderPreservationAlbums(chain)).toThrow(PreservationPackageError);
+        expect(() => orderPreservationAlbums(chain)).toThrow(kind === 'cycle' ? 'cycle' : 'does not list');
+      }
+    },
+  );
+
   it('nests an album only in a top-level collection, one level deep', () => {
     const top = album(collection, { kind: 'collection' });
     const byId = new Map([[collection, top]]);

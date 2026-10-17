@@ -1,5 +1,5 @@
-import { canonicalJson } from 'src/immich-import/adapters.js';
-import { ImportDatabase, ImportRefused } from 'src/immich-import/types.js';
+import { CONTENT_TABLES, canonicalJson } from 'src/immich-import/adapters.js';
+import { FrozenSource, ImportDatabase, ImportRefused } from 'src/immich-import/types.js';
 
 export type ColumnStructure = {
   type: string;
@@ -52,6 +52,11 @@ export const normalizeSchemaSql = (sql: string): string => {
   }
   return output.join(' ');
 };
+// CLIP dimensions are an upstream configuration setting; admission inspects the actual typmod.
+const columnType = (table: string, column: string, type: string): string =>
+  table === 'smart_search' && column === 'embedding' && /^(?:(?:public|vectors)\.)?vector\([1-9]\d*\)$/u.test(type)
+    ? 'vector(configurable)'
+    : type.replace(/^(?:public|vectors)\./u, '');
 const normalizeDefault = (value: string | null): string | null =>
   value === null || /^NULL(?:\s*::.*)?$/u.test(value) ? null : normalizeSchemaSql(value);
 const canonicalStructure = (structure: SourceStructure): string =>
@@ -66,13 +71,7 @@ const canonicalStructure = (structure: SourceStructure): string =>
               column,
               {
                 ...shape,
-                // CLIP dimensions are an upstream configuration setting; admission inspects the actual typmod.
-                type:
-                  table === 'smart_search' &&
-                  column === 'embedding' &&
-                  /^(?:(?:public|vectors)\.)?vector\([1-9]\d*\)$/u.test(shape.type)
-                    ? 'vector(configurable)'
-                    : shape.type.replace(/^(?:public|vectors)\./u, ''),
+                type: columnType(table, column, shape.type),
                 default: normalizeDefault(shape.default),
               },
             ]),
@@ -133,5 +132,24 @@ export const readSourceStructure = async (db: ImportDatabase): Promise<SourceStr
 export const verifySourceStructure = (actual: SourceStructure, expected: SourceStructure): void => {
   if (canonicalStructure(actual) !== canonicalStructure(expected)) {
     throw new ImportRefused('UNKNOWN_SOURCE_SCHEMA');
+  }
+};
+
+/**
+ * Replayed 2.x shapes and releases newer than the frozen set: every frozen column of each table the importer
+ * reads must still exist with its frozen type. Added tables, columns, constraints and indexes are not read;
+ * the canonical destination enforces its own.
+ */
+export const verifyReadableStructure = (actual: SourceStructure, expected: FrozenSource): void => {
+  for (const table of CONTENT_TABLES) {
+    if (!expected.tables[table]) {
+      continue;
+    }
+    for (const [column, frozen] of Object.entries(expected.structure.tables[table] ?? {})) {
+      const found = actual.tables[table]?.[column];
+      if (!found || columnType(table, column, found.type) !== columnType(table, column, frozen.type)) {
+        throw new ImportRefused('UNKNOWN_SOURCE_SCHEMA');
+      }
+    }
   }
 };

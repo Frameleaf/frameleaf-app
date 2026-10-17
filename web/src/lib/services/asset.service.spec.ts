@@ -3,6 +3,7 @@ import { toastManager } from '@frameleaf/ui';
 import { mdiTune } from '@mdi/js';
 import { get } from 'svelte/store';
 import { vitest } from 'vitest';
+import { resetPlaybackRevisions, setDevelopPlaybackRevision } from '$lib/frameleaf/playback-revision.svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { getAssetActions, handleDownloadAsset } from '$lib/services/asset.service';
@@ -10,6 +11,7 @@ import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import * as utils from '$lib/utils';
 import { setSharedLink } from '$lib/utils';
 import { downloadAssetFile } from '$lib/utils/asset-utils';
+import { deferredPromise } from '@test-data/deferred';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { sharedLinkFactory } from '@test-data/factories/shared-link-factory';
@@ -194,20 +196,35 @@ describe('AssetService', () => {
       expect(assetActions.Edit.$if?.()).toStrictEqual(false);
     });
 
-    it('allows editing the still of a Live Photo', () => {
+    it.each(['jpg', 'heic'])('allows editing the %s still of a Live Photo', (extension) => {
       setOwnerUser();
       // Fixed path and state: a random factory path ending in .gif or .svg, or a trashed asset, is correctly not editable.
       const asset = assetFactory.build({
         type: AssetTypeEnum.Image,
         livePhotoVideoId: 'motion',
         ownerId,
-        originalPath: '/upload/still.heic',
-        originalFileName: 'still.heic',
+        originalPath: `/upload/photo.${extension}`,
+        originalFileName: `photo.${extension}`,
+        originalMimeType: extension === 'jpg' ? 'image/jpeg' : 'image/heic',
         isTrashed: false,
         exifInfo: undefined,
       });
       expect(getAssetActions(() => '', asset).Edit.$if?.()).toBe(true);
     });
+
+    it.each(['gif', 'svg', 'insp'])(
+      'does not allow editing an unsupported %s still with a motion pair',
+      (extension) => {
+        setOwnerUser();
+        const asset = assetFactory.build({
+          type: AssetTypeEnum.Image,
+          livePhotoVideoId: 'motion',
+          ownerId,
+          originalPath: `/upload/photo.${extension}`,
+        });
+        expect(getAssetActions(() => '', asset).Edit.$if?.()).toBe(false);
+      },
+    );
 
     it('should not allow editing live-photo companion videos', () => {
       setOwnerUser();
@@ -256,6 +273,64 @@ describe('AssetService', () => {
       }
     });
 
+    describe('the version on screen (owner, 2026-10-16)', () => {
+      // The formatter returns the key itself, so a title is checked by its key.
+      const keyOnly = String as never;
+      const showVersion = () => {
+        authManager.reset();
+        const owner = userAdminFactory.build();
+        authManager.setUser(owner);
+        authManager.setPreferences(preferencesFactory.build());
+        const asset = assetFactory.build({ ownerId: owner.id, livePhotoVideoId: 'motion', isEdited: false });
+        setDevelopPlaybackRevision(asset.id, 'revision-2');
+        return asset;
+      };
+      afterEach(() => {
+        resetPlaybackRevisions();
+        authManager.reset();
+      });
+
+      it("downloads the owner's develop version on screen by name, without the original's motion", async () => {
+        const asset = showVersion();
+
+        await handleDownloadAsset(asset, { edited: true });
+
+        expect(downloadAssetFile).toHaveBeenCalledTimes(1);
+        expect(downloadAssetFile).toHaveBeenCalledWith(
+          expect.objectContaining({ id: asset.id, edited: true, revisionId: 'revision-2' }),
+        );
+        expect(getAssetInfo).not.toHaveBeenCalled();
+        // The original stays one choice away, and the still is named as the edit it is.
+        const actions = getAssetActions(keyOnly, asset);
+        expect(actions.DownloadOriginal.$if?.()).toBe(true);
+        expect(actions.Download.title).toBe('frameleaf_download_edited_still');
+      });
+
+      it('downloads the original, with its motion, when the original is asked for', async () => {
+        vitest.mocked(getAssetInfo).mockResolvedValue(assetFactory.build({ originalPath: '/library/motion.mov' }));
+        const asset = showVersion();
+
+        await handleDownloadAsset(asset, { edited: false });
+
+        expect(downloadAssetFile).toHaveBeenCalledTimes(2);
+        expect(downloadAssetFile).toHaveBeenNthCalledWith(
+          1,
+          expect.not.objectContaining({ revisionId: expect.anything() }),
+        );
+      });
+
+      it('offers no "Download original" for an item shown as its original', () => {
+        authManager.reset();
+        const owner = userAdminFactory.build();
+        authManager.setUser(owner);
+        authManager.setPreferences(preferencesFactory.build());
+        const asset = assetFactory.build({ ownerId: owner.id, isEdited: false });
+        setDevelopPlaybackRevision(asset.id, null);
+
+        expect(getAssetActions(keyOnly, asset).DownloadOriginal.$if?.()).toBe(false);
+      });
+    });
+
     it('adds the motion part as its own row with a -motion name', async () => {
       const motionAsset = assetFactory.build({ originalFileName: 'asset.mov' });
       vitest.mocked(getAssetInfo).mockResolvedValue(motionAsset);
@@ -271,4 +346,49 @@ describe('AssetService', () => {
       );
     });
   });
+});
+
+it('does not add a download after the session changes during motion lookup', async () => {
+  vi.clearAllMocks();
+  const motion = assetFactory.build();
+  const response = deferredPromise<typeof motion>();
+  vi.mocked(getAssetInfo).mockReturnValueOnce(response.promise);
+  const pending = handleDownloadAsset(assetFactory.build({ livePhotoVideoId: motion.id }), { edited: false });
+  authManager.reset();
+  response.resolve(motion);
+  await pending;
+  expect(downloadAssetFile).not.toHaveBeenCalled();
+});
+
+it.each([
+  ['/library/encoded-video-holiday/clip.mov', 2],
+  ['/data/encoded-video/owner/motion.mp4', 1],
+] as const)('only omits motion files from the generated storage folder (%s)', async (originalPath, count) => {
+  vi.clearAllMocks();
+  authManager.reset();
+  authManager.setUser(userAdminFactory.build());
+  authManager.setPreferences(preferencesFactory.build({ download: { includeEmbeddedVideos: false } }));
+  vi.mocked(getAssetInfo).mockResolvedValueOnce(assetFactory.build({ originalPath }));
+  await handleDownloadAsset(assetFactory.build({ livePhotoVideoId: 'motion' }), { edited: false });
+  expect(downloadAssetFile).toHaveBeenCalledTimes(count);
+});
+
+it('does not start the next public download after a session change during the Safari delay', async () => {
+  vi.clearAllMocks();
+  const download = vi.spyOn(utils, 'downloadUrl').mockImplementation(() => {});
+  const shared = vi.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
+  const delay = deferredPromise<void>();
+  vi.mocked(utils.sleep).mockReturnValueOnce(delay.promise);
+  vi.mocked(getAssetInfo).mockResolvedValueOnce(assetFactory.build({ originalPath: '/library/motion.mov' }));
+  try {
+    const pending = handleDownloadAsset(assetFactory.build({ livePhotoVideoId: 'motion' }), { edited: false });
+    await vi.waitFor(() => expect(utils.sleep).toHaveBeenCalledOnce());
+    authManager.reset();
+    delay.resolve();
+    await pending;
+    expect(download).toHaveBeenCalledOnce();
+  } finally {
+    shared.mockRestore();
+    download.mockRestore();
+  }
 });

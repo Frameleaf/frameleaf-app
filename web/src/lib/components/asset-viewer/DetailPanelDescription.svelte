@@ -20,11 +20,13 @@
   import ViewerInlineEditError from '$lib/components/frameleaf/ViewerInlineEditError.svelte';
   import type { DescriptionReview } from '$lib/frameleaf/info-panel';
   import { classifyInlineEditError, inlineEditRecovery, type InlineEditFailure } from '$lib/frameleaf/inline-edit';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { getAssetInfo, updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
-  import { Icon, Text, Textarea, toastManager } from '@frameleaf/ui';
+  import { Icon, Textarea, toastManager } from '@frameleaf/ui';
   import { mdiPencilOutline, mdiShimmer } from '@mdi/js';
+  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import { fromAction } from 'svelte/attachments';
 
@@ -56,17 +58,49 @@
   let failure = $state<InlineEditFailure | null>(null);
   let isSaving = $state(false);
 
+  let alive = true;
+  let generation = 0;
+  let previousAssetId: string | undefined;
+  onDestroy(() => {
+    alive = false;
+  });
+  $effect.pre(() => {
+    if (asset.id === previousAssetId) {
+      return;
+    }
+    previousAssetId = asset.id;
+    generation++;
+    failure = null;
+    isSaving = false;
+  });
+  const captureView = () => {
+    const owner = generation;
+    const isCurrentSession = authManager.captureSession();
+    return () => alive && owner === generation && isCurrentSession();
+  };
+
   const save = async (value: string) => {
+    const isCurrent = captureView();
     isSaving = true;
     try {
       await updateAsset({ id: asset.id, updateAssetDto: { description: value } });
+      if (!isCurrent()) {
+        return;
+      }
       failure = null;
       toastManager.primary($t('asset_description_updated'));
+      // The viewer holds the saved text at once, as rating and tags do, not only once the socket echo lands.
+      onAssetRefresh?.({ ...asset, exifInfo: { ...asset.exifInfo, description: value } });
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       failure = classifyInlineEditError(error);
       handleError(error, $t('cannot_update_the_description'));
     } finally {
-      isSaving = false;
+      if (isCurrent()) {
+        isSaving = false;
+      }
     }
   };
 
@@ -80,20 +114,26 @@
 
   /** A stale asset is reloaded, never rewritten: the panel takes whatever is stored now. */
   const reload = async () => {
+    const isCurrent = captureView();
     try {
       const updated = await getAssetInfo({ id: asset.id });
+      if (!isCurrent()) {
+        return;
+      }
       failure = null;
       onAssetRefresh?.(updated);
     } catch (error) {
-      handleError(error, $t('frameleaf_info_error_reload_failed'));
+      if (isCurrent()) {
+        handleError(error, $t('frameleaf_info_error_reload_failed'));
+      }
     }
   };
 </script>
 
 {#if isOwner}
-  <section class="mt-2 px-4" data-testid="frameleaf-info-description">
-    <div class="flex h-8 w-full items-center justify-between text-sm">
-      <Text color="muted">{$t('frameleaf_info_description')}</Text>
+  <section data-testid="frameleaf-info-description">
+    <div class="fl-info-heading-row">
+      <h3 class="fl-info-heading">{$t('frameleaf_info_description')}</h3>
       {#if source === 'generated'}
         <span class="fl-provenance fl-provenance-ai" title={aiDetail} data-testid="frameleaf-description-provenance">
           <Icon icon={mdiShimmer} size="12" aria-hidden />
@@ -142,7 +182,10 @@
     {/if}
   </section>
 {:else}
-  <section class="mt-2 px-4">
+  <section>
+    <div class="fl-info-heading-row">
+      <h3 class="fl-info-heading">{$t('frameleaf_info_description')}</h3>
+    </div>
     <p class="w-full text-base wrap-break-word whitespace-pre-line text-black dark:text-white">
       {description || $t('frameleaf_viewer_no_description')}
     </p>

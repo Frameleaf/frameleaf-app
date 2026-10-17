@@ -85,6 +85,9 @@ export const handleUploadDatabaseBackup = async () => {
 
   try {
     const [file] = await openFilePicker({ multiple: false });
+    if (!file) {
+      return;
+    }
     const formData = new FormData();
     formData.append('file', file);
 

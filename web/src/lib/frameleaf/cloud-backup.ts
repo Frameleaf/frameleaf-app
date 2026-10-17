@@ -81,20 +81,20 @@ export const backupKeyFile = (options: {
 export const keyFileName = (fingerprint: string) => `frameleaf-backup-key-${fingerprint}.json`;
 
 /**
- * The key in a key file, checked against the bucket's fingerprint when one is known. Answers the key or
- * the i18n key of what is wrong; the key itself is never shown.
+ * Check the legacy key and fingerprint locally, retaining the complete file for server validation.
+ * Client roots and signed recovery history must reach unlock together with the legacy key.
  */
 export const readBackupKeyFile = (
   text: string,
   expectedFingerprint?: string | null,
 ): { key: string } | { error: Translations } => {
-  let parsed: { format?: unknown; key?: unknown };
+  let parsed: { format?: unknown; key?: unknown } | null;
   try {
     parsed = JSON.parse(text) as { format?: unknown; key?: unknown };
   } catch {
     return { error: 'frameleaf_cloud_backup_key_file_invalid' };
   }
-  if (parsed.format !== KEY_FILE_FORMAT || typeof parsed.key !== 'string') {
+  if (!parsed || parsed.format !== KEY_FILE_FORMAT || typeof parsed.key !== 'string') {
     return { error: 'frameleaf_cloud_backup_key_file_invalid' };
   }
   let bytes: Uint8Array;
@@ -109,7 +109,7 @@ export const readBackupKeyFile = (
   if (expectedFingerprint && keyFingerprint(bytes) !== expectedFingerprint) {
     return { error: 'frameleaf_cloud_backup_key_file_other_bucket' };
   }
-  return { key: parsed.key };
+  return { key: text };
 };
 
 export type BucketSettings = { endpoint: string; bucket: string; accessKeyId: string; secretAccessKey: string };

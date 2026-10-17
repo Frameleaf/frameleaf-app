@@ -45,7 +45,7 @@ import {
   isValidDatabaseRoutineBackupName,
 } from 'src/utils/database-backups.js';
 import { advanceExecutionProgress, executionSignal } from 'src/utils/execution-signal.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 
 /** FL-71 (CC-9): how often a backup should be proved to restore before the Overview asks again. */
 export const RESTORE_VERIFICATION_INTERVAL_DAYS = 90;
@@ -153,8 +153,8 @@ export class DatabaseBackupService {
         // remove known bad parameters
         parsedUrl.searchParams.delete('uselibpqcompat');
 
-        databaseUsername = parsedUrl.username || parsedUrl.searchParams.get('user');
-        databasePassword = parsedUrl.password;
+        databaseUsername = decodeURIComponent(parsedUrl.username) || parsedUrl.searchParams.get('user');
+        databasePassword = decodeURIComponent(parsedUrl.password);
 
         url = parsedUrl.href;
       }
@@ -448,7 +448,7 @@ export class DatabaseBackupService {
     await this.storageRepository.createOrOverwriteFile(filePath, file.buffer);
   }
 
-  downloadBackup(fileName: string): ImmichFileResponse {
+  downloadBackup(fileName: string): FileDownloadResponse {
     if (!isValidDatabaseBackupName(fileName)) {
       throw new BadRequestException('Invalid backup name!');
     }
@@ -583,14 +583,18 @@ export class DatabaseBackupService {
 
     const backupsFolder = StorageCore.getBaseFolder(StorageFolder.Backups);
     const files = await this.storageRepository.readdir(backupsFolder);
-    const backups = files
-      .filter((filename) => isValidDatabaseRoutineBackupName(filename))
-      .toSorted()
-      .toReversed();
-    const failedBackups = files.filter((filename) => isFailedDatabaseBackupName(filename));
-
-    const toDelete = backups.slice(config.keepLastAmount);
-    toDelete.push(...failedBackups);
+    const backups: string[] = [];
+    const failedBackups: string[] = [];
+    for (const filename of files) {
+      if (isValidDatabaseRoutineBackupName(filename)) {
+        backups.push(filename);
+      }
+      if (isFailedDatabaseBackupName(filename)) {
+        failedBackups.push(filename);
+      }
+    }
+    backups.sort().reverse();
+    const toDelete = [...backups.slice(config.keepLastAmount), ...failedBackups];
 
     for (const file of toDelete) {
       await this.storageRepository.unlink(path.join(backupsFolder, file));
@@ -742,7 +746,7 @@ const SQL_RESET_SCHEMA = (username: string) => `
   CREATE SCHEMA public;
 
   -- restore access to schema
-  GRANT ALL ON SCHEMA public TO "${username}";
+  GRANT ALL ON SCHEMA public TO "${username.replaceAll('"', '""')}";
   GRANT ALL ON SCHEMA public TO public;
 `;
 
@@ -776,11 +780,11 @@ async function* sqlRollback(inputStream: Readable, databaseUsername: string, fen
   }
 }
 
-function createSqlProgressStreams(cb: (progress: number) => void) {
-  const STDIN_START_MARKER = new TextEncoder().encode('FROM stdin');
-  const STDIN_END_MARKER = new TextEncoder().encode(String.raw`\.`);
+export function createSqlProgressStreams(cb: (progress: number) => void): [PassThrough, Writable] {
+  const STDIN_START_MARKER = Buffer.from('FROM stdin');
+  const STDIN_END_MARKER = Buffer.from(String.raw`\.`);
 
-  let isReadingStdin = false;
+  let sequence = STDIN_START_MARKER;
   let sequenceIdx = 0;
 
   let linesSent = 0;
@@ -805,39 +809,33 @@ function createSqlProgressStreams(cb: (progress: number) => void) {
   const source = new PassThrough({
     transform(chunk, _encoding, callback) {
       for (const byte of chunk) {
-        if (!isReadingStdin && byte === 10 && lastByte !== 10) {
+        if (sequence === STDIN_START_MARKER && byte === 10 && lastByte !== 10) {
           linesSent += 1;
         }
 
         lastByte = byte;
 
-        const sequence = isReadingStdin ? STDIN_END_MARKER : STDIN_START_MARKER;
-        if (sequence[sequenceIdx] === byte) {
-          sequenceIdx += 1;
-
-          if (sequence.length === sequenceIdx) {
-            sequenceIdx = 0;
-            isReadingStdin = !isReadingStdin;
-          }
-        } else {
+        if (sequence[sequenceIdx] !== byte) {
           sequenceIdx = 0;
+          continue;
+        }
+        sequenceIdx += 1;
+        if (sequenceIdx === sequence.length) {
+          sequenceIdx = 0;
+          sequence = sequence === STDIN_START_MARKER ? STDIN_END_MARKER : STDIN_START_MARKER;
         }
       }
 
       cbDebounced();
-      // eslint-disable-next-line unicorn/no-this-outside-of-class
-      this.push(chunk);
-      callback();
+      callback(null, chunk);
     },
   });
 
   const sink = new Writable({
     write(chunk, _encoding, callback) {
       advanceJobProgress(chunk.byteLength);
-      for (const byte of chunk) {
-        if (byte === 10) {
-          linesProcessed++;
-        }
+      for (let newline = chunk.indexOf(10); newline !== -1; newline = chunk.indexOf(10, newline + 1)) {
+        linesProcessed++;
       }
 
       cbDebounced();
@@ -848,69 +846,68 @@ function createSqlProgressStreams(cb: (progress: number) => void) {
   return [source, sink];
 }
 
-function createSqlOwnerTransformStream(databaseUsername: string) {
-  const OWNER_MARKER_START = new TextEncoder().encode('OWNER TO ');
-  const DATA_MARKER_START = new TextEncoder().encode('FROM stdin');
-  const LINE_END = new TextEncoder().encode(';');
-
-  const owner = new TextEncoder().encode(`"${databaseUsername}"`);
-
-  let ownerSequenceIndex = 0;
-
-  let replacingOwnerIndex = 0;
-  let replacingOwner = false;
-
-  let readingDataIndex = 0;
-
+export function createSqlOwnerTransformStream(databaseUsername: string) {
+  const ownerMarker = Buffer.from('OWNER TO ');
+  const dataMarker = Buffer.from('FROM stdin');
+  const owner = Buffer.from(`"${databaseUsername.replaceAll('"', '""')}"`);
+  const carryLength = Math.max(ownerMarker.length, dataMarker.length) - 1;
+  let pending = Buffer.alloc(0);
+  let replacing = false;
+  let quoted = false;
   let dataPart = false;
 
   return new PassThrough({
-    transform(chunk, _encoding, callback) {
-      let result = chunk;
-      if (!dataPart) {
-        for (let index = 0; index < result.length; index++) {
-          if (replacingOwner) {
-            if (result[index] === LINE_END[0]) {
-              result = Buffer.concat([result.slice(0, index), owner.slice(replacingOwnerIndex), result.slice(index)]);
-              replacingOwnerIndex = owner.length;
-            } else {
-              result[index] = owner[replacingOwnerIndex];
-              replacingOwnerIndex++;
+    transform(chunk: Buffer, _encoding, callback) {
+      if (dataPart) {
+        callback(null, chunk);
+        return;
+      }
+      const input = pending.length > 0 ? Buffer.concat([pending, chunk]) : chunk;
+      pending = Buffer.alloc(0);
+      const parts: Buffer[] = [];
+      let offset = 0;
+      while (offset < input.length) {
+        if (replacing) {
+          for (; offset < input.length; offset++) {
+            if (input[offset] === 34) {
+              quoted = !quoted;
+            }
+            if (input[offset] === 59 && !quoted) {
+              replacing = false;
+              break;
             }
           }
-
-          if (replacingOwnerIndex === owner.length) {
-            replacingOwner = false;
-          }
-
-          if (result[index] === OWNER_MARKER_START[ownerSequenceIndex]) {
-            ownerSequenceIndex++;
-          } else {
-            ownerSequenceIndex = 0;
-          }
-
-          if (ownerSequenceIndex === OWNER_MARKER_START.length) {
-            ownerSequenceIndex = 0;
-            replacingOwner = true;
-            replacingOwnerIndex = 0;
-          }
-
-          if (result[index] === DATA_MARKER_START[readingDataIndex]) {
-            readingDataIndex++;
-          } else {
-            readingDataIndex = 0;
-          }
-
-          if (readingDataIndex === DATA_MARKER_START.length) {
-            dataPart = true;
+          if (replacing) {
             break;
           }
         }
+        const ownerAt = input.indexOf(ownerMarker, offset);
+        const dataAt = input.indexOf(dataMarker, offset);
+        if (dataAt !== -1 && (ownerAt === -1 || dataAt < ownerAt)) {
+          // COPY payloads and the rest of the dump must pass through byte-for-byte.
+          parts.push(input.subarray(offset));
+          dataPart = true;
+          break;
+        }
+        if (ownerAt === -1) {
+          const end = Math.max(offset, input.length - carryLength);
+          parts.push(input.subarray(offset, end));
+          pending = Buffer.from(input.subarray(end));
+          break;
+        }
+        parts.push(input.subarray(offset, ownerAt + ownerMarker.length), owner);
+        offset = ownerAt + ownerMarker.length;
+        replacing = true;
+        quoted = false;
       }
-
-      // eslint-disable-next-line unicorn/no-this-outside-of-class
-      this.push(result);
-      callback();
+      callback(null, Buffer.concat(parts));
+    },
+    flush(callback) {
+      if (replacing) {
+        callback(new Error('Unterminated database owner statement'));
+        return;
+      }
+      callback(null, pending);
     },
   });
 }

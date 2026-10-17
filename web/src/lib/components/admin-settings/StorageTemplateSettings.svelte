@@ -14,7 +14,7 @@
   import { Route } from '$lib/route';
   import { handleSystemConfigSave } from '$lib/services/system-config.service';
   import { getStorageTemplateOptions, type SystemConfigTemplateStorageOptionDto } from '@frameleaf/sdk';
-  import { Heading, Link, LoadingSpinner, Text } from '@frameleaf/ui';
+  import { Heading, Link, Text } from '@frameleaf/ui';
   import handlebar from 'handlebars';
   import * as luxon from 'luxon';
   import { onDestroy } from 'svelte';
@@ -41,21 +41,16 @@
   let templateOptions: SystemConfigTemplateStorageOptionDto | undefined = $state();
   let selectedPreset = $state('');
 
-  const getTemplateOptions = async () => {
-    templateOptions = await getStorageTemplateOptions();
+  const templateOptionsPromise = getStorageTemplateOptions().then((options) => {
+    templateOptions = options;
     selectedPreset = config.storageTemplate.template;
-  };
+    return options;
+  });
 
-  const getSupportDateTimeFormat = () => getStorageTemplateOptions();
-
-  const renderTemplate = (templateString: string) => {
+  const templateSubstitutions = $derived.by(() => {
     if (!templateOptions) {
-      return '';
+      return;
     }
-
-    const template = handlebar.compile(templateString, {
-      knownHelpers: undefined,
-    });
 
     const substitutions: Record<string, string> = {
       filename: 'IMAGE_56437',
@@ -90,14 +85,21 @@
       substitutions['album-endDate-' + token] = albumEndTime.toFormat(token);
     }
 
-    return template(substitutions);
+    return substitutions;
+  });
+
+  const renderTemplate = (templateString: string) => {
+    if (!templateSubstitutions) {
+      return '';
+    }
+    return handlebar.compile(templateString, { knownHelpers: undefined })(templateSubstitutions);
   };
 
   const handlePresetSelection = () => {
     configToEdit.storageTemplate.template = selectedPreset;
   };
 
-  let parsedTemplate = $derived(() => {
+  const parsedTemplate = $derived.by(() => {
     try {
       return renderTemplate(configToEdit.storageTemplate.template);
     } catch {
@@ -135,7 +137,7 @@
       </p>
     </div>
   {/if}
-  {#await getTemplateOptions() then}
+  {#await templateOptionsPromise then options}
     <div id="directory-path-builder" class="flex flex-col gap-4">
       <SettingToggle
         title={$t('admin.storage_template_enable_description')}
@@ -178,13 +180,9 @@
         </Heading>
 
         <section class="support-date">
-          {#await getSupportDateTimeFormat()}
-            <LoadingSpinner />
-          {:then options}
-            <div transition:motionFade={{ duration: 200 }}>
-              <SupportedDatetimePanel {options} />
-            </div>
-          {/await}
+          <div transition:motionFade={{ duration: 200 }}>
+            <SupportedDatetimePanel {options} />
+          </div>
         </section>
 
         <section class="support-date">
@@ -205,7 +203,7 @@
             <FormatMessage
               key="admin.storage_template_path_length"
               values={{
-                length: parsedTemplate().length + authManager.user.id.length + 'UPLOAD_LOCATION'.length,
+                length: parsedTemplate.length + authManager.user.id.length + 'UPLOAD_LOCATION'.length,
                 limit: 260,
               }}
             >
@@ -229,7 +227,7 @@
           <p class="mt-2 rounded-lg bg-gray-200 p-4 py-2 text-xs dark:bg-gray-700 dark:text-immich-dark-fg">
             <span class="text-immich-fg/25 dark:text-immich-dark-fg/50"
               >UPLOAD_LOCATION/library/{authManager.user.storageLabel || authManager.user.id}</span
-            >/{parsedTemplate()}.jpg
+            >/{parsedTemplate}.jpg
           </p>
 
           <form autocomplete="off" class="flex flex-col" onsubmit={preventDefault(bubble('submit'))}>

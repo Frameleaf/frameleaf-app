@@ -404,14 +404,58 @@ where
 order by
   "album"."updateId" asc
 
--- SyncRepository.album.getAlbumUsers
-select
-  "userId",
-  "role"
+-- SyncRepository.album.getUpserts (v1)
+select distinct
+  on ("album"."id", "album"."updateId") "album"."id",
+  "album"."albumName" as "name",
+  "album"."description",
+  "album"."createdAt",
+  "album"."updatedAt",
+  case
+    when exists (
+      select
+        1
+      from
+        asset as hidden_content_asset
+      where
+        hidden_content_asset.id = "album"."albumThumbnailAssetId"
+        and (
+          exists (
+            select
+              1
+            from
+              public.asset as nsfw_asset
+            where
+              nsfw_asset.id = "hidden_content_asset"."id"
+              and nsfw_asset.is_nsfw = true
+          )
+        )
+    ) then null
+    else album."albumThumbnailAssetId"
+  end as "thumbnailAssetId",
+  "album"."isActivityEnabled",
+  "album"."order",
+  "album"."updateId",
+  (
+    select
+      "album_owner"."userId"
+    from
+      "album_user" as "album_owner"
+    where
+      "album_owner"."albumId" = "album"."id"
+      and "album_owner"."role" = $1
+    limit
+      $2
+  ) as "ownerId"
 from
-  "album_user"
+  "album" as "album"
+  left join "album_user" as "album_users" on "album"."id" = "album_users"."albumId"
 where
-  "albumId" = $1
+  "album"."updateId" < $3
+  and "album"."updateId" > $4
+  and "album_users"."userId" = $5
+order by
+  "album"."updateId" asc
 
 -- SyncRepository.albumAsset.getBackfill
 select
@@ -1660,6 +1704,17 @@ where
   "asset_ocr_audit"."id" < $1
   and "asset_ocr_audit"."id" > $2
   and "asset"."ownerId" = $3
+  and not (
+    exists (
+      select
+        1
+      from
+        public.asset as nsfw_asset
+      where
+        nsfw_asset.id = "asset"."id"
+        and nsfw_asset.is_nsfw = true
+    )
+  )
 order by
   "asset_ocr_audit"."id" asc
 
@@ -1687,6 +1742,17 @@ where
   "asset_ocr"."updateId" < $1
   and "asset_ocr"."updateId" > $2
   and "asset"."ownerId" = $3
+  and not (
+    exists (
+      select
+        1
+      from
+        public.asset as nsfw_asset
+      where
+        nsfw_asset.id = "asset"."id"
+        and nsfw_asset.is_nsfw = true
+    )
+  )
 order by
   "asset_ocr"."updateId" asc
 

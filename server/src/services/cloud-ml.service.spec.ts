@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaults } from 'src/config.js';
 import {
-  ImmichWorker,
+  FrameleafWorker,
   MediaOperationKind,
   MediaOperationStatus,
   MlAdmissionRefusal,
@@ -926,7 +926,7 @@ describe(CloudMlService.name, () => {
 
   describe('bootstrap', () => {
     it('registers the cloud check and tells every administrator once about removed destinations', async () => {
-      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Api);
+      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(FrameleafWorker.Api);
       metadata.set(SystemMetadataKey.FrameleafCloudMigrationNotice, {
         removedDestinations: [{ name: 'Cloud GPU', workloads: ['enrichment'] }],
         cancelledOperations: 2,
@@ -959,14 +959,14 @@ describe(CloudMlService.name, () => {
     });
 
     it('sends nothing when there is no notice or on another worker', async () => {
-      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
+      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(FrameleafWorker.Microservices);
       metadata.set(SystemMetadataKey.FrameleafCloudMigrationNotice, {
         removedDestinations: [],
         cancelledOperations: 1,
         createdAt: '2026-09-25T00:00:00.000Z',
       });
       await sut.onBootstrap();
-      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Api);
+      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(FrameleafWorker.Api);
       metadata.delete(SystemMetadataKey.FrameleafCloudMigrationNotice);
       await sut.onBootstrap();
 

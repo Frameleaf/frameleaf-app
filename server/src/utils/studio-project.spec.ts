@@ -146,6 +146,22 @@ describe('normalizeCommandSummary', () => {
     expect(normalizeCommandSummary(null)).toEqual({ counts: {}, total: 0 });
   });
 
+  it('keeps prototype-named commands as ordinary counts', () => {
+    const counts = JSON.parse('{"__proto__":2,"constructor":3,"toString":4}');
+    const summary = normalizeCommandSummary({ counts });
+    expect(Object.keys(summary.counts).sort()).toEqual(['__proto__', 'constructor', 'toString']);
+    expect(JSON.stringify(summary)).toBe('{"counts":{"__proto__":2,"constructor":3,"toString":4},"total":9}');
+  });
+
+  it('merges prototype-named commands numerically', () => {
+    const raw = { counts: JSON.parse('{"__proto__":2,"constructor":3,"toString":4}') };
+    const summary = mergeCommandSummaries([raw, raw]);
+    expect(JSON.parse(JSON.stringify(summary))).toEqual({
+      counts: JSON.parse('{"__proto__":4,"constructor":6,"toString":8}'),
+      total: 18,
+    });
+  });
+
   it('merges a run of summaries for a multi-revision diff', () => {
     expect(
       mergeCommandSummaries([{ counts: { 'clip.move': 1 } }, { counts: { 'clip.move': 2, 'title.add': 1 } }, null]),

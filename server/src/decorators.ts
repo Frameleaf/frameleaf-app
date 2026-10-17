@@ -2,10 +2,9 @@ import { BeforeUpdateTrigger, Column, ColumnOptions } from '@frameleaf/sql-tools
 import { SetMetadata, applyDecorators } from '@nestjs/common';
 import { ApiOperation, ApiOperationOptions, ApiTags } from '@nestjs/swagger';
 import { chunk, flatten } from 'lodash-es';
-import { ApiCustomExtension, ApiTag, ImmichWorker, JobName, MetadataKey, QueueName } from 'src/enum.js';
+import { ApiCustomExtension, ApiTag, FrameleafWorker, JobName, MetadataKey, QueueName } from 'src/enum.js';
 import { EmitEvent } from 'src/repositories/event.repository.js';
 import { immich_uuid_v7, updated_at } from 'src/schema/functions.js';
-import { setUnion } from 'src/utils/set.js';
 
 const GeneratedUuidV7Column = (options: Omit<ColumnOptions, 'type' | 'default' | 'nullable'> = {}) =>
   Column({ ...options, type: 'uuid', nullable: false, default: () => `${immich_uuid_v7.name}()` });
@@ -40,30 +39,27 @@ export const DATABASE_PARAMETER_CHUNK_SIZE = 65_500;
 function chunks<T>(collection: Array<T>, size: number): Array<Array<T>>;
 function chunks<T>(collection: Set<T>, size: number): Array<Set<T>>;
 function chunks<T>(collection: Array<T> | Set<T>, size: number): Array<Array<T>> | Array<Set<T>> {
-  if (collection instanceof Set) {
-    const result = [];
-    let chunk = new Set<T>();
-    for (const element of collection) {
-      chunk.add(element);
-      if (chunk.size === size) {
-        result.push(chunk);
-        chunk = new Set<T>();
-      }
-    }
-    if (chunk.size > 0) {
-      result.push(chunk);
-    }
-    return result;
+  if (!(collection instanceof Set)) {
+    return chunk(collection, size);
   }
-  return chunk(collection, size);
+  const groups: Set<T>[] = [];
+  let current: Set<T> | undefined;
+  for (const value of collection) {
+    if (!current || current.size === size) {
+      current = new Set<T>();
+      groups.push(current);
+    }
+    current.add(value);
+  }
+  return groups;
 }
 
 /**
- * Wraps a method that takes a collection of parameters and sequentially calls it with chunks of the collection,
+ * Wraps a method that takes a collection of parameters and calls it in parallel with chunks of the collection,
  * to overcome the maximum number of parameters allowed by the database driver.
  *
  * @param options.paramIndex The index of the function parameter to chunk. Defaults to 0.
- * @param options.flatten Whether to flatten the results. Defaults to false.
+ * @param options.mergeFn Optional merger for results in chunk order.
  */
 export function Chunked(
   options: { paramIndex?: number; chunkSize?: number; mergeFn?: (results: any) => any } = {},
@@ -85,16 +81,20 @@ export function Chunked(
         return originalMethod.apply(this, arguments_);
       }
 
-      return Promise.all(
-        chunks(argument, chunkSize).map((chunk) => {
+      const prefix = arguments_.slice(0, parameterIndex);
+      const suffix = arguments_.slice(parameterIndex + 1);
+      const results: unknown[] = [];
+      try {
+        for (const chunk of chunks(argument, chunkSize)) {
           // eslint-disable-next-line unicorn/no-this-outside-of-class
-          return Reflect.apply(originalMethod, this, [
-            ...arguments_.slice(0, parameterIndex),
-            chunk,
-            ...arguments_.slice(parameterIndex + 1),
-          ]);
-        }),
-      ).then((results) => (mergeFn ? mergeFn(results) : results));
+          results.push(Reflect.apply(originalMethod, this, [...prefix, chunk, ...suffix]));
+        }
+      } catch (error) {
+        // A synchronous throw must not orphan promises returned by earlier chunks.
+        void Promise.allSettled(results);
+        throw error;
+      }
+      return Promise.all(results).then((values) => (mergeFn ? mergeFn(values) : values));
     };
   };
 }
@@ -104,7 +104,19 @@ export function ChunkedArray(options?: { paramIndex?: number; chunkSize?: number
 }
 
 export function ChunkedSet(options?: { paramIndex?: number; chunkSize?: number }): MethodDecorator {
-  return Chunked({ ...options, mergeFn: (args: Set<any>[]) => setUnion(...args) });
+  return Chunked({
+    ...options,
+    mergeFn: (sets: Set<any>[]) => {
+      // Repeated native unions copy the growing result for every chunk; merge once instead.
+      const result = new Set(sets[0]);
+      for (let index = 1; index < sets.length; index++) {
+        for (const value of sets[index]) {
+          result.add(value);
+        }
+      }
+      return result;
+    },
+  });
 }
 
 const UUID = '00000000-0000-4000-a000-000000000000';
@@ -143,7 +155,7 @@ export type EventConfig = {
   /** lower value has higher priority, defaults to 0 */
   priority?: number;
   /** register events for these workers, defaults to all workers */
-  workers?: ImmichWorker[];
+  workers?: FrameleafWorker[];
 };
 export const OnEvent = (config: EventConfig) => SetMetadata(MetadataKey.EventConfig, config);
 
@@ -245,13 +257,11 @@ export class HistoryBuilder {
       extensions[ApiCustomExtension.History] = this.items;
     }
 
-    for (const item of this.items.toReversed()) {
-      if (item.state === 'Added' || item.state === 'Updated') {
-        continue;
-      }
-
+    const item = this.items.findLast(
+      (entry): entry is HistoryEntry & { state: ApiState } => entry.state !== 'Added' && entry.state !== 'Updated',
+    );
+    if (item) {
       extensions[ApiCustomExtension.State] = item.state;
-      break;
     }
 
     return extensions;

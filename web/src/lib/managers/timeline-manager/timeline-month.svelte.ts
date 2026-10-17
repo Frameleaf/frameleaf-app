@@ -11,13 +11,11 @@ import { CancellableTask } from '$lib/utils/cancellable-task';
 import { handleError } from '$lib/utils/handle-error';
 import {
   formatGroupTitle,
+  formatTimelineMonthHeading,
   formatTimelineMonthTitle,
   fromTimelinePlainDate,
-  fromTimelinePlainDateTime,
   fromTimelinePlainYearMonth,
   getTimes,
-  setDifference,
-  type TimelineDateTime,
   type TimelineYearMonth,
   getOrderingDate,
 } from '$lib/utils/timeline-util';
@@ -49,7 +47,10 @@ export class TimelineMonth {
   loader: CancellableTask | undefined;
   isHeightActual: boolean = $state(false);
 
+  /** The short form ("Oct 2026"), for the scrubber. */
   readonly title: string;
+  /** The long form ("October 2026"), for the loading placeholder's heading. */
+  readonly heading: string;
   readonly yearMonth: TimelineYearMonth;
 
   /*
@@ -93,6 +94,7 @@ export class TimelineMonth {
 
     this.yearMonth = { year: yearMonth.year, month: yearMonth.month };
     this.title = title ?? formatTimelineMonthTitle(fromTimelinePlainYearMonth(yearMonth));
+    this.heading = title ?? formatTimelineMonthHeading(fromTimelinePlainYearMonth(yearMonth));
 
     this.loader = new CancellableTask(
       () => {
@@ -139,11 +141,7 @@ export class TimelineMonth {
   }
 
   getAssets() {
-    // eslint-disable-next-line unicorn/no-array-reduce
-    return this.timelineDays.reduce(
-      (accumulator: TimelineAsset[], g: TimelineDay) => accumulator.concat(g.getAssets()),
-      [],
-    );
+    return this.timelineDays.flatMap((day) => day.getAssets());
   }
 
   sortTimelineDays() {
@@ -165,13 +163,13 @@ export class TimelineMonth {
     }
     const { timelineDays } = this;
     let combinedChangedGeometry = false;
-    let idsToProcess = new SvelteSet(ids);
+    const idsToProcess = new SvelteSet(ids);
     const idsProcessed = new SvelteSet<string>();
     const combinedMoveAssets: MoveAsset[][] = [];
     let index = timelineDays.length;
     while (index--) {
       if (idsToProcess.size === 0) {
-        continue;
+        break;
       }
 
       const group = timelineDays[index];
@@ -179,8 +177,8 @@ export class TimelineMonth {
       if (moveAssets.length > 0) {
         combinedMoveAssets.push(moveAssets);
       }
-      idsToProcess = setDifference(idsToProcess, processedIds);
       for (const id of processedIds) {
+        idsToProcess.delete(id);
         idsProcessed.add(id);
       }
       combinedChangedGeometry ||= changedGeometry;
@@ -421,21 +419,6 @@ export class TimelineMonth {
     }
   }
 
-  findClosest(target: TimelineDateTime) {
-    const targetDate = fromTimelinePlainDateTime(target);
-    let closest = undefined;
-    let smallestDiff = Infinity;
-    for (const current of this.assetsIterator()) {
-      const currentAssetDate = fromTimelinePlainDateTime(getOrderingDate(current, this.#dateType));
-      const diff = Math.abs(targetDate.diff(currentAssetDate).as('milliseconds'));
-      if (diff < smallestDiff) {
-        smallestDiff = diff;
-        closest = current;
-      }
-    }
-    return closest;
-  }
-
   cancel() {
     this.loader?.cancel();
   }
@@ -478,9 +461,11 @@ export function* bucketTimelineAssets(bucketAssets: TimeBucketAssetResponseDto):
       originalFileName: bucketAssets.originalFileName?.[i] ?? null,
     };
 
-    if (bucketAssets.latitude?.at(i) && bucketAssets.longitude?.at(i)) {
-      timelineAsset.latitude = bucketAssets.latitude?.[i];
-      timelineAsset.longitude = bucketAssets.longitude?.[i];
+    const latitude = bucketAssets.latitude?.[i];
+    const longitude = bucketAssets.longitude?.[i];
+    if (latitude !== undefined && latitude !== null && longitude !== undefined && longitude !== null) {
+      timelineAsset.latitude = latitude;
+      timelineAsset.longitude = longitude;
     }
     // The list view's columns (S-15), where the source sends them.
     if (bucketAssets.width) {

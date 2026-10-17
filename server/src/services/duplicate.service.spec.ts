@@ -831,7 +831,7 @@ describe(DuplicateService.name, () => {
       const asset1 = AssetFactory.create();
       const asset2 = AssetFactory.create();
       mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['group-1']));
-      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-2']));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset2.id]));
       mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-1', 'tag-2']));
       mocks.duplicateRepository.get.mockResolvedValue({
         duplicateId: 'group-1',
@@ -879,6 +879,54 @@ describe(DuplicateService.name, () => {
 
       // Verify SidecarWrite was queued (to write tags to sidecar)
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: asset1.id } }]);
+    });
+
+    it.each([
+      { latitudes: [-0, 0, NaN, Infinity], expected: 0 },
+      { latitudes: [12, 12, NaN, -Infinity], expected: 12 },
+      { latitudes: [12, 13, 12], expected: null },
+      { latitudes: [NaN, Infinity], expected: null },
+    ])('merges only unanimous finite coordinates: $latitudes', async ({ latitudes, expected }) => {
+      const assets = latitudes.map((latitude) => AssetFactory.from().exif({ latitude, longitude: 21 }).build());
+      const [keeper, ...removed] = assets;
+      mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['group-1']));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(removed.map(({ id }) => id)));
+      mocks.duplicateRepository.get.mockResolvedValue({
+        duplicateId: 'group-1',
+        assets: assets as unknown as MapAsset[],
+      });
+      await expect(
+        sut.resolve(authStub.admin, {
+          groups: [{ duplicateId: 'group-1', keepAssetIds: [keeper.id], trashAssetIds: removed.map(({ id }) => id) }],
+        }),
+      ).resolves.toEqual([{ id: 'group-1', success: true }]);
+      const updates = mocks.asset.updateAllExif.mock.calls.map(([, update]) => update);
+      if (expected === null) {
+        expect(updates.every((update) => !('latitude' in update) && !('longitude' in update))).toBe(true);
+      } else {
+        expect(updates).toContainEqual(expect.objectContaining({ latitude: expected, longitude: 21 }));
+        expect(updates.find((update) => 'latitude' in update)?.latitude).toBe(expected);
+      }
+    });
+
+    it('merges trimmed description lines in first-seen order without duplicates', async () => {
+      const keeper = AssetFactory.from().exif({ description: ' first \r\nsecond\n\n' }).build();
+      const removed = AssetFactory.from().exif({ description: '\tsecond\n third \nfirst\n' }).build();
+      mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['group-1']));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([removed.id]));
+      mocks.duplicateRepository.get.mockResolvedValue({
+        duplicateId: 'group-1',
+        assets: [keeper as unknown as MapAsset, removed as unknown as MapAsset],
+      });
+      await expect(
+        sut.resolve(authStub.admin, {
+          groups: [{ duplicateId: 'group-1', keepAssetIds: [keeper.id], trashAssetIds: [removed.id] }],
+        }),
+      ).resolves.toEqual([{ id: 'group-1', success: true }]);
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(
+        [keeper.id],
+        expect.objectContaining({ description: 'first\nsecond\nthird' }),
+      );
     });
 
     it('should not merge metadata when multiple assets are kept', async () => {
@@ -1040,6 +1088,43 @@ describe(DuplicateService.name, () => {
       expect(mocks.asset.upsertJobStatus).toHaveBeenCalledWith(
         ...expectedAssetIds.map((assetId) => ({ assetId, duplicatesDetectedAt: expect.any(Date) })),
       );
+    });
+
+    it('does not merge the existing target group back into itself', async () => {
+      const asset = { ...hasEmbedding, duplicateId: 'existing-group' };
+      mocks.assetJob.getForSearchDuplicatesJob.mockResolvedValue(asset);
+      mocks.duplicateRepository.search.mockResolvedValue([
+        { assetId: 'same-group', distance: 0.01, duplicateId: 'existing-group' },
+        { assetId: 'other-group-a', distance: 0.01, duplicateId: 'other-group' },
+        { assetId: 'ungrouped', distance: 0.01, duplicateId: null },
+        { assetId: 'other-group-b', distance: 0.01, duplicateId: 'other-group' },
+      ]);
+      mocks.duplicateRepository.merge.mockResolvedValue();
+      await expect(sut.handleSearchDuplicates({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(mocks.duplicateRepository.merge).toHaveBeenCalledWith({
+        targetId: 'existing-group',
+        sourceIds: ['other-group'],
+        assetIds: ['other-group-a', 'ungrouped', 'other-group-b', asset.id],
+      });
+    });
+
+    it('keeps existing members out of source groups when every match already belongs to the target', async () => {
+      const asset = { ...hasEmbedding, duplicateId: 'existing-group' };
+      mocks.assetJob.getForSearchDuplicatesJob.mockResolvedValue(asset);
+      mocks.duplicateRepository.search.mockResolvedValue([
+        { assetId: 'same-group', distance: 0.01, duplicateId: 'existing-group' },
+      ]);
+      mocks.duplicateRepository.merge.mockResolvedValue();
+      await expect(sut.handleSearchDuplicates({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(mocks.duplicateRepository.merge).toHaveBeenCalledWith({
+        targetId: 'existing-group',
+        sourceIds: [],
+        assetIds: [asset.id],
+      });
+      expect(mocks.asset.upsertJobStatus).toHaveBeenCalledWith({
+        assetId: asset.id,
+        duplicatesDetectedAt: expect.any(Date),
+      });
     });
 
     it('should queue enhanced frames and defer grouping when frames are missing', async () => {

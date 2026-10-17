@@ -39,7 +39,6 @@
   } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
-  import { MediaQuery } from 'svelte/reactivity';
 
   /**
    * The person page hero (FL-37, PD-1/PD-2/PD-7/PD-8), ported from `PersonHeader` in
@@ -55,10 +54,10 @@
    * "Correction history" is not in the prototype (PD-9). Owner decision 2026-09-29: it lives in a
    * "…" menu after the toolbar, so the toolbar itself is exactly the prototype's.
    *
-   * On a phone the seven buttons do not fit one row. Favorite, Merge and Fix incorrect match stay
-   * visible and the rest join the "…" menu, so nothing sits in a row that has to be scrolled
-   * sideways to be found. What an action did is said in a toast (with Undo for hide and favorite),
-   * which is also what a screen reader hears.
+   * The buttons are one row (DISCOVERY-P6): the hero spans the page, edge to edge as the prototype's
+   * does, so they fit on a desktop; on a phone the row scrolls sideways (people.css:1081-1087) rather
+   * than tucking buttons into the "…" menu. What an action did is said in a toast (with Undo for hide
+   * and favorite), which is also what a screen reader hears.
    */
   interface Props {
     person: PersonResponseDto;
@@ -83,10 +82,6 @@
     onOpenAsset,
     onOpenRecognitionGroups,
   }: Props = $props();
-
-  /** Phones (apple-style.css `max-width: 700px`): the secondary actions live in the "…" menu. */
-  const phone = new MediaQuery('max-width: 700px');
-  const compact = $derived(phone.current);
 
   let editing = $state(false);
   let featuredOpen = $state(false);
@@ -278,17 +273,16 @@
       </div>
     </div>
     <div class="pd-actions" role="toolbar" aria-label={$t('frameleaf_people_person_actions', { values: { name } })}>
-      {#if !compact}
+      <!-- The buttons that scroll sideways on a phone; the "…" menu stays put at the end, so it is never clipped. -->
+      <div class="pd-actions-scroll">
         <Button disabled={assetCount === 0} onclick={() => (featuredOpen = true)}>
           <Icon icon={mdiImageOutline} size={ICON_SIZE.lg} aria-hidden="true" />
           {$t('frameleaf_people_featured_photo')}
         </Button>
-      {/if}
-      <Button onclick={openMerge}>
-        <Icon icon={mdiCallMerge} size={ICON_SIZE.lg} aria-hidden="true" />
-        {$t('merge_people')}
-      </Button>
-      {#if !compact}
+        <Button onclick={openMerge}>
+          <Icon icon={mdiCallMerge} size={ICON_SIZE.lg} aria-hidden="true" />
+          {$t('merge_people')}
+        </Button>
         <Button onclick={() => (birthdayOpen = true)}>
           <Icon icon={mdiCakeVariantOutline} size={ICON_SIZE.lg} aria-hidden="true" />
           {person.birthDate ? $t('date_of_birth') : $t('set_date_of_birth')}
@@ -297,45 +291,25 @@
           <Icon icon={person.isHidden ? mdiEyeOutline : mdiEyeOffOutline} size={ICON_SIZE.lg} aria-hidden="true" />
           {person.isHidden ? $t('frameleaf_people_unhide') : $t('frameleaf_people_hide')}
         </Button>
-      {/if}
-      <Button onclick={() => void toggleFavorite()}>
-        <span class="pd-favorite" class:is-on={person.isFavorite}>
-          <Icon icon={person.isFavorite ? mdiHeart : mdiHeartOutline} size={ICON_SIZE.lg} aria-hidden="true" />
-        </span>
-        {person.isFavorite ? $t('unfavorite') : $t('favorite')}
-      </Button>
-      <Button disabled={assetCount === 0} pressed={fixOpen} onclick={() => (fixOpen = true)}>
-        <Icon icon={mdiFaceRecognition} size={ICON_SIZE.lg} aria-hidden="true" />
-        {$t('fix_incorrect_match')}
-      </Button>
-      {#if !compact}
+        <Button onclick={() => void toggleFavorite()}>
+          <span class="pd-favorite" class:is-on={person.isFavorite}>
+            <Icon icon={person.isFavorite ? mdiHeart : mdiHeartOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+          </span>
+          {person.isFavorite ? $t('unfavorite') : $t('favorite')}
+        </Button>
+        <Button disabled={assetCount === 0} pressed={fixOpen} onclick={() => (fixOpen = true)}>
+          <Icon icon={mdiFaceRecognition} size={ICON_SIZE.lg} aria-hidden="true" />
+          {$t('fix_incorrect_match')}
+        </Button>
         <Button onclick={onOpenRecognitionGroups}>
           <Icon icon={mdiAccountGroupOutline} size={ICON_SIZE.lg} aria-hidden="true" />
           {$t('frameleaf_people_recognition_groups')}
         </Button>
-      {/if}
+      </div>
       <Menu label={$t('frameleaf_people_more_actions_for', { values: { name } })} align="end">
         {#snippet trigger()}
           <Icon icon={mdiDotsHorizontal} size={ICON_SIZE.lg} aria-hidden="true" />
         {/snippet}
-        {#if compact}
-          <MenuItem disabled={assetCount === 0} onSelect={() => (featuredOpen = true)}>
-            <Icon icon={mdiImageOutline} size={ICON_SIZE.lg} aria-hidden="true" />
-            {$t('frameleaf_people_featured_photo')}
-          </MenuItem>
-          <MenuItem onSelect={() => (birthdayOpen = true)}>
-            <Icon icon={mdiCakeVariantOutline} size={ICON_SIZE.lg} aria-hidden="true" />
-            {person.birthDate ? $t('date_of_birth') : $t('set_date_of_birth')}
-          </MenuItem>
-          <MenuItem onSelect={() => void toggleHidden()}>
-            <Icon icon={person.isHidden ? mdiEyeOutline : mdiEyeOffOutline} size={ICON_SIZE.lg} aria-hidden="true" />
-            {person.isHidden ? $t('frameleaf_people_unhide') : $t('frameleaf_people_hide')}
-          </MenuItem>
-          <MenuItem onSelect={onOpenRecognitionGroups}>
-            <Icon icon={mdiAccountGroupOutline} size={ICON_SIZE.lg} aria-hidden="true" />
-            {$t('frameleaf_people_recognition_groups')}
-          </MenuItem>
-        {/if}
         <MenuItem onSelect={() => (historyOpen = true)}>
           <Icon icon={mdiHistory} size={ICON_SIZE.lg} aria-hidden="true" />
           {$t('frameleaf_people_correction_history')}
@@ -379,7 +353,8 @@
   .pd-hero {
     position: relative;
     isolation: isolate;
-    overflow: hidden;
+    /* Edge to edge, as the prototype's hero in `.media-scroll`: out through the library's page gutter. */
+    margin-inline: calc(-1 * var(--fl-library-gutter-start, 0px)) calc(-1 * var(--fl-library-gutter-end, 0px));
     margin-bottom: 1rem;
     background: var(--fl-panel);
     border-bottom: 1px solid var(--fl-border);
@@ -393,6 +368,11 @@
     filter: blur(28px) saturate(0.9);
     opacity: 0.35;
     pointer-events: none;
+    /*
+     * Cut back to the hero's own box (it reaches 40px past each edge so the blur has no soft rim).
+     * The hero itself does not clip, so the "…" menu can open below it.
+     */
+    clip-path: inset(40px);
   }
   .pd-hero::after {
     content: '';
@@ -562,6 +542,17 @@
     grid-area: actions;
     gap: var(--fl-space-3) var(--fl-space-2);
   }
+  /* On a wider screen the scroller is no box at all: its buttons sit in the row beside the menu. */
+  .pd-actions-scroll {
+    display: contents;
+  }
+  /* Phones: the library header also insets its content by 8px (LibraryView `.fl-library-header`); out through that too. */
+  @media (max-width: 767px) {
+    .pd-hero {
+      margin-inline: calc(-1 * (var(--fl-library-gutter-start, 0px) + var(--fl-space-2)))
+        calc(-1 * (var(--fl-library-gutter-end, 0px) + var(--fl-space-2)));
+    }
+  }
   @media (max-width: 1000px) {
     .pd-hero-content {
       padding: 20px 22px 18px;
@@ -584,6 +575,30 @@
     .pd-name h1 {
       font-size: 20px;
       white-space: normal;
+    }
+    /*
+     * people.css:1081-1087: one row whose buttons scroll sideways from the screen's edge; the "…"
+     * menu stays at the end of the row.
+     */
+    .pd-actions {
+      flex-wrap: nowrap;
+      align-items: center;
+    }
+    .pd-actions-scroll {
+      display: flex;
+      flex: 1 1 auto;
+      gap: var(--fl-space-2);
+      min-width: 0;
+      margin-inline-start: calc(-1 * var(--fl-space-4));
+      padding: 2px 0 2px var(--fl-space-4);
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .pd-actions-scroll::-webkit-scrollbar {
+      display: none;
+    }
+    .pd-actions-scroll > :global(*) {
+      flex-shrink: 0;
     }
   }
 </style>

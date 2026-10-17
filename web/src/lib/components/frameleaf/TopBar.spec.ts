@@ -12,8 +12,8 @@ import { requestSessionLock } from '$lib/frameleaf/session-lock';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import AssetDeleteConfirmModal from '$lib/modals/AssetDeleteConfirmModal.svelte';
-import EmailTemplatePreviewModal from '$lib/modals/EmailTemplatePreviewModal.svelte';
 import { userAdminFactory } from '@test-data/factories/user-factory';
+import PrivatePreviewModal from '@test-data/frameleaf/PrivatePreviewModal.svelte';
 import en from '../../../../../i18n/en.json';
 import TopBarTestHarness from './TopBarTestHarness.svelte';
 
@@ -26,9 +26,6 @@ const app = vi.hoisted(() => ({
 vi.mock('$app/navigation', () => ({ goto: app.goto, invalidateAll: app.invalidateAll }));
 vi.mock('$lib/utils/session-privacy', () => ({ clearSessionMedia: vi.fn(), revokeSessionView: vi.fn() }));
 vi.mock('$app/state', () => ({ page: app.page }));
-vi.mock('$lib/frameleaf/running-jobs-session.svelte', () => ({
-  runningJobsSession: { activeCount: 0, watch: () => () => {}, setPanelOpen: vi.fn() },
-}));
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: { value: { search: false } } }));
 vi.mock('$lib/stores/notification-manager.svelte', () => ({
   notificationManager: { notifications: [], refresh: vi.fn().mockResolvedValue(undefined) },
@@ -226,7 +223,7 @@ describe('TopBar session privacy', () => {
     await waitFor(() => expect(app.invalidateAll).toHaveBeenCalledOnce());
     expect(sessionAccess.lockPending).toBe(true);
     expect(document.body).not.toHaveTextContent('Permanently delete asset');
-    const late = modalManager.open(EmailTemplatePreviewModal, { html: '<p>late private preview</p>' });
+    const late = modalManager.open(PrivatePreviewModal, { html: '<p>late private preview</p>' });
     await late.onClose;
     expect(document.querySelector('iframe[srcdoc*="private preview"]')).not.toBeInTheDocument();
     expect(sessionAccess.lockPending).toBe(true);
@@ -241,7 +238,7 @@ describe('TopBar session privacy', () => {
     sdkMock.lockAuthSession.mockResolvedValue(undefined as never);
     const view = render(TopBarTestHarness);
     await screen.findByRole('button', { name: en.frameleaf_locked_hide_content });
-    const preview = modalManager.open(EmailTemplatePreviewModal, { html: '<p>private preview</p>' });
+    const preview = modalManager.open(PrivatePreviewModal, { html: '<p>private preview</p>' });
     await waitFor(() => expect(document.querySelector('iframe[srcdoc*="private preview"]')).toBeInTheDocument());
 
     void sessionAccess.retryLock?.();
@@ -271,6 +268,15 @@ describe('TopBar chrome (September 24)', () => {
     expect(within(banner).getByRole('navigation', { name: 'Primary' })).toBeInTheDocument();
     expect(screen.getAllByRole('navigation')).toHaveLength(1);
     await waitFor(() => expect(sdkMock.getAuthStatus).toHaveBeenCalled());
+    view.unmount();
+  });
+
+  it('keeps Locked icon-only with no "Open Locked" chevron, even when revealed (SHELL-P6)', async () => {
+    sdkMock.getAuthStatus.mockResolvedValue(authStatus(true) as never);
+    const view = render(TopBarTestHarness);
+
+    await screen.findByRole('button', { name: en.frameleaf_locked_hide_content });
+    expect(within(screen.getByRole('banner')).queryByRole('link', { name: en.frameleaf_open_locked })).toBeNull();
     view.unmount();
   });
 

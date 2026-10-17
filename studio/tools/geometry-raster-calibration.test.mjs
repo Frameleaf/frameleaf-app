@@ -513,6 +513,7 @@ for (const source of [
   '2c892d4445da5b1e390a9505a82d34ac402cbef5e6bd2f1f88d532aa61e0d6f7',
   'fbff0121cec558d07244fa17d2959b148a5ac2c840ae3b7185c7f5ca9809c578',
   '1acc086ce7d5ae97e50f010b7de4c8f540af195c506fb73573e66aacbad9ae80',
+  '3aed97c3a3e98844f1d742d1d53acc6094a6b92e478c4db1bd27ac972c7a66ce',
   'de67658c3f4c3eb30aaa5afdcea62c79993d8375c1923931a9dd36316b550db6',
   'e2821a958f1da55ac5f03b641b9e2f18fe82d0e283ef63e5149cb1b31045215b',
   '11c977ef51aaf616ae0a0e7be1ff1ecf33ba0ebac8e155d3fc2e2454223a5a0d',
@@ -538,4 +539,22 @@ for (const source of [
     )
   }
   assert.equal(JSON.stringify(envelope), original)
+})
+
+test('current prepared source uses its exact Chromium tuple without extending historical browser bindings', () => {
+  const source = JSON.parse(readFileSync(new URL('../engine-build.json', import.meta.url))).sourceSha256
+  for (const fixed of envelope.envelopes) {
+    const current = { ...binding(fixed.backend, source), browser: '156.0.8078.4' }
+    assert.doesNotThrow(() => validateBaseRaster(fixture(fixed), envelope, current))
+    for (const update of [
+      { browser: '148.0.7778.96' },
+      { browser: '156.0.8078.5' },
+      { sourceSha256: source.slice(0, -1) + '0' },
+      { sourceSha256: source99 },
+    ])
+      assert.throws(
+        () => validateBaseRaster(fixture(fixed), envelope, { ...current, ...update }),
+        /RASTER_SOURCE_BROWSER/,
+      )
+  }
 })

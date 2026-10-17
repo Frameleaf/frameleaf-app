@@ -1,6 +1,6 @@
 # Fresh Frameleaf installations use one PostgreSQL 19 database. The base digest
 # is a multi-platform index containing both amd64 and arm64 images.
-ARG POSTGRES_IMAGE=docker.io/library/postgres:19beta4-bookworm@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
+ARG POSTGRES_IMAGE=docker.io/library/postgres:19beta4-bookworm@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06
 FROM ${POSTGRES_IMAGE} AS vector-build
 
 ARG PGVECTOR_VERSION=0.8.7

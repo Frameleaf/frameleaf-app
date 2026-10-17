@@ -52,7 +52,7 @@ packages. Historical direct-stack packaging was moved with its original license;
 the original native DSM application is a separate commercial product. See
 [AGENTS.md](../../AGENTS.md) for the standing ownership rule.
 
-Copy the rendered `truenas/ix-dev/community/frameleaf` directory into the TrueNAS apps catalog and use its matching pinned `base_v2_3_4` library. The app maintains independent media and PostgreSQL datasets, an internal network and optional ML. The renderer checks the library's committed hash before import, rejects symlinks and disables bytecode writes. `requirements-render.lock` pins the hosted Linux CPython 3.11.15 renderer dependencies with hashes. Run the real library render in hosted CI in both ML modes.
+Copy the rendered `truenas/ix-dev/community/frameleaf` directory into the TrueNAS apps catalog and use its matching pinned `base_v2_3_4` library. The app maintains independent media and PostgreSQL datasets, an internal network and optional ML. The renderer checks the library's committed hash before import, rejects symlinks and disables bytecode writes. `requirements-render.lock` pins the hosted Linux CPython 3.11.17 renderer dependencies with hashes. Run the real library render in hosted CI in both ML modes.
 
 Unraid templates use an external PostgreSQL container with the digest in `nas-manifest.json`; configure it on the same network as the server. Configure media storage, database credentials and optional ML according to the templates. Database backups and media originals must be retained before upgrades.
 

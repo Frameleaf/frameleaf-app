@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import https from 'node:https';
 import { chromium } from 'playwright';
-import { navigate } from './navigation.mjs';
+import { gotoWithNetworkChangeRetry } from './navigation.mjs';
 const directory = await mkdtemp(join(tmpdir(), 'frameleaf-manager-ci-'));
 const name = `frameleaf-manager-test-${process.pid}`;
 const origin = 'https://127.0.0.1:19443';
@@ -176,7 +176,7 @@ try {
     const page = await browser.newPage({ ignoreHTTPSErrors: true });
     const failures = [];
     page.on('pageerror', (error) => failures.push(error.message));
-    await navigate(page, origin);
+    await gotoWithNetworkChangeRetry(page, origin);
     await page.getByLabel(/^Password/).fill('a new disposable password');
     await page.locator('main').getByRole('button', { name: 'Sign in', exact: true }).click();
     await page.getByRole('button', { name: 'Local administrator menu' }).waitFor();

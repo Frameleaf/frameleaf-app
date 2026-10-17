@@ -2,8 +2,8 @@
   /**
    * The Frameleaf brand mark (FL-135), and the one place its usage rules live.
    *
-   * Sourced only from the authorized `design/frameleaf/brand-kit` originals; nothing here is
-   * redrawn, recolored or re-exported.
+   * Sourced from the authorized `design/frameleaf/brand-kit` originals, plus the one light-surface
+   * derivative described below; nothing here is redrawn, recolored or re-exported.
    *
    * Which artwork is drawn follows from three props:
    *
@@ -12,12 +12,14 @@
    *   branding. The transparent gradient symbol (`frameleaf-symbol.svg`) is safe on any surface.
    * - `lockup` (or `inline`): the symbol with the wordmark.
    *
-   * `surface` (or the earlier name `theme`): what the mark sits on, not the app theme.
-   * - `dark`: the authorized `frameleaf-logo-dark.svg`, whose near-white lettering is only ever
-   *   placed on a dark surface, as supplied.
-   * - `light`: the kit ships no dark-ink wordmark, so the lockup is the symbol next to a
-   *   plain-text "Frameleaf" in the caller's `--fl-text`. A white wordmark never goes on a
-   *   light surface.
+   * `surface` (or the earlier name `theme`): what the mark sits on, not the app theme. The light and
+   * dark versions of the logo, never in a box or plate (owner, 2026-10-16):
+   * - `dark`: `frameleaf-logo-dark.svg`, the brand kit's logo for dark backgrounds, unmodified
+   *   (white "Frame", green "leaf").
+   * - `light`: `frameleaf-logo-on-light.svg`, the light version
+   *   (design/frameleaf/derivatives/frameleaf-logo-light.svg, FL-135): the kit's dark logo with
+   *   "Frame" in dark ink, because the kit ships no light-background wordmark. A white wordmark
+   *   never goes on a light surface.
    * - `auto`: follows the app theme, for a mark that sits on the canvas or a panel.
    *
    * `mono`: the single-colour white artwork (`frameleaf-symbol-white.svg`,
@@ -37,6 +39,7 @@
   import { LOGO_CLEAR_SPACE, LOGO_MIN_HEIGHT } from '$lib/frameleaf/tokens';
   import { Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import logoDarkUrl from '../../assets/frameleaf/frameleaf-logo-dark.svg?url';
+  import logoOnLightUrl from '../../assets/frameleaf/frameleaf-logo-on-light.svg?url';
   import logoWhiteUrl from '../../assets/frameleaf/frameleaf-logo-white.svg?url';
   import symbolWhiteUrl from '../../assets/frameleaf/frameleaf-symbol-white.svg?url';
   import symbolUrl from '../../assets/frameleaf/frameleaf-symbol.svg?url';
@@ -105,9 +108,9 @@
     style:min-height="{LOGO_MIN_HEIGHT.symbol}px"
     style:padding
   />
-{:else if onDark}
+{:else}
   <img
-    src={white ? logoWhiteUrl : logoDarkUrl}
+    src={onDark ? (white ? logoWhiteUrl : logoDarkUrl) : logoOnLightUrl}
     alt={decorative ? '' : name}
     aria-hidden={decorative || undefined}
     class="fl-logo-lockup {sizedClass}"
@@ -116,17 +119,6 @@
     style:min-height="{LOGO_MIN_HEIGHT.lockup}px"
     style:padding
   />
-{:else}
-  <span
-    class="fl-logo-inline {sizedClass}"
-    class:fl-logo-clear={clearSpace}
-    class:fl-logo-arrive={arrive}
-    style:min-height="{LOGO_MIN_HEIGHT.lockup}px"
-    style:padding
-  >
-    <img src={symbolUrl} alt="" aria-hidden="true" class="fl-logo-inline-symbol" />
-    <span aria-hidden={decorative || undefined}>{name}</span>
-  </span>
 {/if}
 
 <style>
@@ -138,21 +130,6 @@
   /* Clear space is padding outside the drawn height (a quarter of it, set inline). */
   .fl-logo-clear {
     box-sizing: content-box;
-  }
-  .fl-logo-inline {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: var(--fl-text);
-    /* The name beside the symbol, set as the wordmark is drawn: semibold and tight. */
-    font-weight: 600;
-    font-size: 1.0625rem;
-    letter-spacing: var(--fl-tracking-title);
-    white-space: nowrap;
-  }
-  .fl-logo-inline-symbol {
-    height: 100%;
-    width: auto;
   }
   /* The mark fades in once (base.css keyframes); important so it outranks the global clamp. */
   .fl-logo-arrive {

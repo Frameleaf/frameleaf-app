@@ -140,6 +140,16 @@ const proofProblem = (proof: string, method: string, expectedHtu: string, seen: 
   } catch {
     return { problem: 'unreadable' };
   }
+  if (
+    !header ||
+    typeof header !== 'object' ||
+    Array.isArray(header) ||
+    !claims ||
+    typeof claims !== 'object' ||
+    Array.isArray(claims)
+  ) {
+    return { problem: 'unreadable' };
+  }
   const jwk = header.jwk;
   if (header.typ !== 'dpop+jwt' || header.alg !== 'EdDSA' || header.kid !== undefined) {
     return { problem: 'header' };
@@ -147,13 +157,18 @@ const proofProblem = (proof: string, method: string, expectedHtu: string, seen: 
   if (!jwk || jwk.kty !== 'OKP' || jwk.crv !== 'Ed25519' || typeof jwk.x !== 'string' || 'd' in jwk) {
     return { problem: 'jwk' };
   }
-  const valid = verify(
-    null,
-    Buffer.from(`${parts[0]}.${parts[1]}`),
-    createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: jwk.x }, format: 'jwk' }),
-    Buffer.from(parts[2], 'base64url'),
-  );
-  if (!valid) {
+  try {
+    if (
+      !verify(
+        null,
+        Buffer.from(`${parts[0]}.${parts[1]}`),
+        createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: jwk.x }, format: 'jwk' }),
+        Buffer.from(parts[2], 'base64url'),
+      )
+    ) {
+      return { problem: 'signature' };
+    }
+  } catch {
     return { problem: 'signature' };
   }
   if (claims.htm !== method || claims.htu !== expectedHtu) {

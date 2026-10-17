@@ -22,7 +22,7 @@
   import Promises from '$lib/components/frameleaf/settings/kit/Promises.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
-  import { askInstalledVersion, updateState } from '$lib/components/frameleaf/settings/server/update-status';
+  import { askInstalledVersion, updateState } from '$lib/components/frameleaf/settings/server-settings/update-status';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import { installedReleaseChannel } from '$lib/frameleaf/release-channel';
   import { backupPageUrl, commandCenterUrl } from '$lib/frameleaf/settings-areas';

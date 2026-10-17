@@ -34,6 +34,9 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     getByLibraryIdAndOriginalPath: vitest.fn(),
     deleteAll: vitest.fn(),
     update: vitest.fn(),
+    withLivePhotoUpdate: vitest.fn() as Mocked<RepositoryInterface<AssetRepository>>['withLivePhotoUpdate'],
+    withMetadataUpdate: vitest.fn() as Mocked<RepositoryInterface<AssetRepository>>['withMetadataUpdate'],
+    createLivePhotoUpload: vitest.fn(),
     remove: vitest.fn(),
     // FL-179: the move runs its filesystem side in the repository's transaction, as the repository does
     moveFile: vitest.fn(
@@ -70,7 +73,6 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     upsertFiles: vitest.fn(),
     deleteFile: vitest.fn(),
     deleteFiles: vitest.fn(),
-    detectOfflineExternalAssets: vitest.fn(),
     getExcludedExternalAssetIds: vitest.fn().mockResolvedValue([]),
     filterNewExternalAssetPaths: vitest.fn(),
     updateByLibraryId: vitest.fn(),
@@ -86,6 +88,7 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     getForOriginals: vitest.fn(),
     getForThumbnail: vitest.fn(),
     getCurrentDevelop: vitest.fn(),
+    getCurrentDevelops: vitest.fn().mockResolvedValue([]),
     getForVideo: vitest.fn(),
     getCurrentStudioHdrIntermediates: vitest.fn().mockResolvedValue(new Map()),
     getStudioHdrIntermediateStates: vitest.fn().mockResolvedValue([]),

@@ -1,16 +1,19 @@
 <script lang="ts">
   import { afterNavigate } from '$app/navigation';
   import { page } from '$app/state';
+  import AppCard from '$lib/components/frameleaf/AppCard.svelte';
   import UploadCover from '$lib/components/frameleaf/DragDropUploadOverlay.svelte';
   import { arrivedFromSetup, offerNextSteps } from '$lib/components/timeline/next-steps.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { createDropUploadContext } from '$lib/stores/drag-and-drop-files.store';
   import type { Snippet } from 'svelte';
   interface Props {
     children?: Snippet;
   }
 
   let { children }: Props = $props();
+  createDropUploadContext();
 
   // First-run setup hands off into the app: the administrator who arrives that way is offered the
   // library's one-time "Next steps" card (LibraryNextSteps), wherever setup sent them first.
@@ -47,6 +50,8 @@
   {@render children?.()}
 </div>
 <UploadCover />
+<!-- The phone "Get the app" sheet: it opens only on the Photos library (rules in app-card.ts). -->
+<AppCard />
 
 <style>
   :root {

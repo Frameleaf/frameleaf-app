@@ -155,10 +155,17 @@ export class SmartAlbumRepository {
     matchReason: 'tag' | 'clip' | 'both',
   ): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
-      const smartAlbum = await this.getRule(smartAlbumId, trx, false);
+      const smartAlbum = await this.getRule(smartAlbumId, trx, assetId);
       if (!smartAlbum) {
         return;
       }
+      const excluded = await trx
+        .selectFrom('smart_album_exclusion')
+        .select('smartAlbumId')
+        .where('smartAlbumId', '=', smartAlbumId)
+        .where('assetId', '=', assetId)
+        .executeTakeFirst();
+      if (excluded) return;
       {
         await trx
           .insertInto('smart_album_asset')
@@ -185,7 +192,7 @@ export class SmartAlbumRepository {
    */
   async removeAssetFromSmartAlbum(smartAlbumId: string, assetId: string): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
-      const smartAlbum = await this.getRule(smartAlbumId, trx, false);
+      const smartAlbum = await this.getRule(smartAlbumId, trx, assetId);
       if (smartAlbum) {
         await trx
           .deleteFrom('album_asset')
@@ -221,7 +228,7 @@ export class SmartAlbumRepository {
    */
   async excludeAsset(smartAlbumId: string, assetId: string): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
-      const smartAlbum = await this.getRule(smartAlbumId, trx, false);
+      const smartAlbum = await this.getRule(smartAlbumId, trx, assetId);
       if (!smartAlbum) {
         return;
       }
@@ -278,7 +285,9 @@ export class SmartAlbumRepository {
     await kysely.deleteFrom('smart_album').where('ownerId', '=', ownerId).execute();
   }
 
-  private async getRule(id: string, kysely: Kysely<DB>, _sidecar?: boolean): Promise<{ albumId: string } | undefined> {
+  private async getRule(id: string, kysely: Kysely<DB>, assetId: string): Promise<{ albumId: string } | undefined> {
+    // Matching, removal and owner exclusion share this lock before changing either membership mirror.
+    await kysely.selectFrom('asset').select('id').where('id', '=', assetId).forUpdate().execute();
     return kysely.selectFrom('smart_album').select('albumId').where('id', '=', id).executeTakeFirst();
   }
 }

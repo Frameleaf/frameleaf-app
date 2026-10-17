@@ -42,7 +42,7 @@ import {
 import { AssetOrder, AssetType, AssetVisibility, CacheControl, MlWorkload, Permission } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted, requireElevatedPermission } from 'src/utils/access.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
@@ -430,12 +430,12 @@ export class SearchService extends BaseService {
   }
 
   /** A landmark's brand icon. The pack is the same for everyone, so any signed-in caller may read it. */
-  getLandmarkIcon(id: string): ImmichFileResponse {
+  getLandmarkIcon(id: string): FileDownloadResponse {
     const path = this.mapRepository.getLandmarkIconPath(id);
     if (!path) {
       throw new NotFoundException();
     }
-    return new ImmichFileResponse({ path, contentType: 'image/png', cacheControl: CacheControl.PrivateWithCache });
+    return new FileDownloadResponse({ path, contentType: 'image/png', cacheControl: CacheControl.PrivateWithCache });
   }
 
   async getSearchSuggestions(auth: AuthDto, dto: SearchSuggestionRequestDto) {

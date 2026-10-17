@@ -79,26 +79,20 @@ export const wrapper = <T extends Record<string, any>>(methods: {
 
         const eventConfigBefore = JSON.stringify(event.config);
 
-        console.debug(
-          `Inputs: trigger=${event.trigger}, event=${String(event.type)}, config=${eventConfigBefore}`,
-        );
-
         const response = methods[name](event) ?? {};
 
         // if config changed, notify host
-        const eventConfigAfter = JSON.stringify(event.config);
-        if (!response.config && eventConfigBefore !== eventConfigAfter) {
+        if (
+          !response.config &&
+          eventConfigBefore !== JSON.stringify(event.config)
+        ) {
           response.config = event.config as WorkflowStepConfig;
         }
 
-        console.debug(
-          `Outputs: workflow=${JSON.stringify(response.workflow)}, changes=${JSON.stringify(response.changes)}, data=${JSON.stringify(response.data)}, config=${JSON.stringify(response.config)}`,
-        );
-
         const output = JSON.stringify(response);
         Host.outputString(output);
-      } catch (error: Error | any) {
-        console.error(`Unhandled plugin exception: ${error.message || error}`);
+      } catch (error) {
+        console.error('Plugin execution failed');
         throw error;
       }
     };

@@ -1,6 +1,8 @@
 #include <fstream>
+#include <map>
+#include <memory>
 #include <mutex>
-#include <atomic>
+#include <vector>
 
 #include "armnn/IRuntime.hpp"
 #include "armnn/INetwork.hpp"
@@ -13,27 +15,6 @@ struct IOInfos
 {
     std::vector<BindingPointInfo> inputInfos;
     std::vector<BindingPointInfo> outputInfos;
-};
-
-// from https://rigtorp.se/spinlock/
-struct SpinLock
-{
-    std::atomic<bool> lock_ = {false};
-
-    void lock()
-    {
-        for (;;)
-        {
-            if (!lock_.exchange(true, std::memory_order_acquire))
-            {
-                break;
-            }
-            while (lock_.load(std::memory_order_relaxed))
-                ;
-        }
-    }
-
-    void unlock() { lock_.store(false, std::memory_order_release); }
 };
 
 class Ann
@@ -53,7 +34,7 @@ public:
             {
                 netId = loadInternal(modelPath, fastMath, fp16, saveCachedNetwork, cachedNetworkPath);
             }
-            catch (InvalidArgumentException e)
+            catch (const InvalidArgumentException &)
             {
                 // fp16 models do not support the forced fp16-turbo (runtime fp32->fp16 conversion)
                 if (fp16)
@@ -67,10 +48,13 @@ public:
 
     void execute(NetworkId netId, const void **inputData, void **outputData)
     {
-        spinLock.lock();
-        const IOInfos *infos = &ioInfos[netId];
-        auto m = mutexes[netId].get();
-        spinLock.unlock();
+        const IOInfos *infos;
+        std::mutex *m;
+        {
+            std::lock_guard<std::mutex> guard(metadataMutex);
+            infos = &ioInfos[netId];
+            m = mutexes[netId].get();
+        }
         InputTensors inputTensors;
         inputTensors.reserve(infos->inputInfos.size());
         size_t i = 0;
@@ -81,31 +65,27 @@ public:
         i = 0;
         for (const BindingPointInfo &info : infos->outputInfos)
             outputTensors.emplace_back(info.first, Tensor(info.second, outputData[i++]));
-        m->lock();
+        std::lock_guard<std::mutex> guard(*m);
         runtime->EnqueueWorkload(netId, inputTensors, outputTensors);
-        m->unlock();
     }
 
     void unload(NetworkId netId)
     {
-        mutex.lock();
+        std::lock_guard<std::mutex> guard(mutex);
         runtime->UnloadNetwork(netId);
-        mutex.unlock();
     }
 
     int tensors(NetworkId netId, bool isInput = false)
     {
-        spinLock.lock();
+        std::lock_guard<std::mutex> guard(metadataMutex);
         const IOInfos *infos = &ioInfos[netId];
-        spinLock.unlock();
         return (int)(isInput ? infos->inputInfos.size() : infos->outputInfos.size());
     }
 
     unsigned long shape(NetworkId netId, bool isInput = false, int index = 0)
     {
-        spinLock.lock();
+        std::lock_guard<std::mutex> guard(metadataMutex);
         const IOInfos *infos = &ioInfos[netId];
-        spinLock.unlock();
         const TensorShape shape = (isInput ? infos->inputInfos : infos->outputInfos)[index].second.GetShape();
         unsigned long s = 0;
         for (unsigned int d = 0; d < shape.GetNumDimensions(); d++)
@@ -126,11 +106,11 @@ public:
         if (tuningFile)
             backendOptions.AddOption({"TuningFile", tuningFile});
         runtimeOptions.m_BackendOptions.emplace_back(backendOptions);
-        runtime = IRuntime::CreateRaw(runtimeOptions);
+        runtime = IRuntime::Create(runtimeOptions);
     };
     ~Ann()
     {
-        IRuntime::Destroy(runtime);
+        runtime.reset();
     };
 
 private:
@@ -144,17 +124,18 @@ private:
         INetworkPtr network = loadModel(modelPath);
         IOptimizedNetworkPtr optNet = OptimizeNetwork(network.get(), fastMath, fp16, saveCachedNetwork, cachedNetworkPath);
         const IOInfos infos = getIOInfos(optNet.get());
-        mutex.lock();
-        Status status = runtime->LoadNetwork(netId, std::move(optNet));
-        mutex.unlock();
+        Status status;
+        {
+            std::lock_guard<std::mutex> guard(mutex);
+            status = runtime->LoadNetwork(netId, std::move(optNet));
+        }
         if (status != Status::Success)
         {
             return -1;
         }
-        spinLock.lock();
+        std::lock_guard<std::mutex> guard(metadataMutex);
         ioInfos[netId] = infos;
         mutexes.emplace(netId, std::make_unique<std::mutex>());
-        spinLock.unlock();
         return netId;
     }
 
@@ -162,7 +143,7 @@ private:
     {
         const auto path = std::string(modelPath);
         std::ifstream ifs(path, std::ifstream::in | std::ifstream::binary);
-        auto parser = armnnDeserializer::IDeserializer::CreateRaw();
+        auto parser = armnnDeserializer::IDeserializer::Create();
         return parser->CreateNetworkFromBinary(ifs);
     }
 
@@ -243,11 +224,11 @@ private:
         return infoStrategy.ioInfos;
     }
 
-    IRuntime *runtime;
+    IRuntimePtr runtime{nullptr, IRuntime::Destroy};
     std::map<NetworkId, IOInfos> ioInfos;
     std::map<NetworkId, std::unique_ptr<std::mutex>> mutexes; // mutex per network to not execute the same the same network concurrently
     std::mutex mutex;                                         // global mutex for load/unload calls to the runtime
-    SpinLock spinLock;                                        // fast spin lock to guard access to the ioInfos and mutexes maps
+    std::mutex metadataMutex;                                // protects binding metadata and per-network mutex lookup
 };
 
 extern "C" void *init(int logLevel, int tuningLevel, const char *tuningFile)

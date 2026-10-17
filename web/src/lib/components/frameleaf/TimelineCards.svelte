@@ -17,6 +17,7 @@
     type TimelineCard,
     type TimelineCardTarget,
   } from '$lib/frameleaf/timeline-cards';
+  import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import type { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { websocketEvents, type AssetLocalEffectsV1 } from '$lib/stores/websocket';
@@ -85,6 +86,17 @@
       AssetsArchive: refresh,
       AssetsUnarchive: refresh,
       AssetsMarkNsfw: refresh,
+    }),
+    // The cards were answered for the earlier access: a key photo, count or place from Locked items
+    // must not stay on screen after a lock or an account change. They are asked for again under the new access.
+    onLibraryAccessChange((change) => {
+      if (change === 'expanded') {
+        return;
+      }
+      request++;
+      cards = [];
+      status = 'loading';
+      revision++;
     }),
   ];
   onDestroy(() => {

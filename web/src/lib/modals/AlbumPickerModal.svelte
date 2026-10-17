@@ -5,12 +5,13 @@
     AlbumModalRowType,
     isSelectableRowType,
   } from '$lib/components/shared-components/album-selection/album-selection-utils';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { albumViewSettings } from '$lib/stores/preferences.store';
   import { createAlbum, getAllAlbums, type AlbumResponseDto } from '@frameleaf/sdk';
   import { Button, Icon, Modal, ModalBody, ModalFooter, Text } from '@frameleaf/ui';
   import { mdiKeyboardReturn } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import AlbumListItem from '../components/asset-viewer/AlbumListItem.svelte';
   import NewAlbumListItem from '../components/shared-components/album-selection/NewAlbumListItem.svelte';
@@ -43,8 +44,17 @@
   );
   const selectableRowCount = $derived(albumModalRows.filter((row) => isSelectableRowType(row.type)).length);
 
+  let alive = true;
+  onDestroy(() => {
+    alive = false;
+  });
+
   const onNewAlbum = async (name: string) => {
+    const isCurrentSession = authManager.captureSession();
     const album = await createAlbum({ createAlbumDto: { albumName: name } });
+    if (!alive || !isCurrentSession()) {
+      return;
+    }
     eventManager.emit('AlbumCreate', album);
     onClose([album]);
   };

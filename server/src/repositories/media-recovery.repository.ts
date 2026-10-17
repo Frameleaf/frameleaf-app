@@ -911,14 +911,21 @@ export class MediaRecoveryRepository {
     externalAssetId: string,
   ): Promise<AssetLockReason | undefined> {
     const hidden = await this.hiddenFilter(trx, ownerId);
+    const source = await trx
+      .selectFrom('asset')
+      .select('id')
+      .where('id', '=', externalAssetId)
+      .where('ownerId', '=', ownerId)
+      .forShare()
+      .executeTakeFirst();
+    if (!source) return;
+    // Read protection in a fresh statement after any asset-row lock wait.
     const { rows } = await sql<{
       lockReason: AssetLockReason | null;
       hidden: boolean;
     }>`
       SELECT (SELECT l.reason FROM public.asset_lock l WHERE l."assetId" = a.id) AS "lockReason", ${hidden} AS hidden
-      FROM public.asset a WHERE a.id = ${externalAssetId}::uuid AND a."ownerId" = ${ownerId}::uuid FOR SHARE OF a`.execute(
-      trx,
-    );
+      FROM public.asset a WHERE a.id = ${externalAssetId}::uuid AND a."ownerId" = ${ownerId}::uuid`.execute(trx);
     const row = rows[0];
     return row?.lockReason ?? (row?.hidden ? AssetLockReason.Marked : undefined);
   }

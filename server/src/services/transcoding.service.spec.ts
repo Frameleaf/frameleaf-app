@@ -71,6 +71,22 @@ describe(TranscodingService.name, () => {
   });
 
   describe('onSessionEnd', () => {
+    it.each(['end', 'shutdown'] as const)('does not spawn an awaiting start after %s', async (reason) => {
+      await sut.onSessionRequest({ sessionId, assetId, ownerId });
+      const pending = Promise.withResolvers<typeof eiffelTower>();
+      mocks.videoStream.getForTranscoding.mockReturnValueOnce(pending.promise);
+      mocks.process.spawn.mockReturnValue(mockSpawn(0, '', ''));
+      const start = sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 0 });
+      await vi.waitFor(() => expect(mocks.videoStream.getForTranscoding).toHaveBeenCalledOnce());
+      await (reason === 'shutdown' ? sut.onShutdown() : sut.onSessionEnd({ sessionId }));
+      pending.resolve(eiffelTower);
+      await start;
+      expect(mocks.process.spawn).not.toHaveBeenCalled();
+      expect(mocks.storage.mkdirSync).not.toHaveBeenCalled();
+      expect(mocks.storage.watchDir).not.toHaveBeenCalled();
+      expect(mocks.videoStream.deleteSession).toHaveBeenCalledWith(sessionId);
+    });
+
     it('removes the session, kills the transcode, and deletes the dir + DB row', async () => {
       await sut.onSessionRequest({ sessionId, assetId, ownerId });
       const process = mockSpawn(0, '', '');
@@ -93,6 +109,61 @@ describe(TranscodingService.name, () => {
   });
 
   describe('onHeartbeat', () => {
+    it('retries a failed lease write on the next heartbeat instead of treating it as renewed', async () => {
+      vi.useFakeTimers();
+      try {
+        await sut.onSessionRequest({ sessionId, assetId, ownerId });
+        vi.setSystemTime(Date.now() + HLS_LEASE_DURATION_MS / 2 + 1);
+        mocks.videoStream.extendSession.mockRejectedValueOnce(new Error('database unavailable'));
+        mocks.videoStream.extendSession.mockResolvedValueOnce(undefined);
+
+        await expect(sut.onHeartbeat({ sessionId })).rejects.toThrow('database unavailable');
+        await sut.onHeartbeat({ sessionId });
+        await sut.onHeartbeat({ sessionId });
+
+        expect(mocks.videoStream.extendSession).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('shares a pending lease write and reports its failure to every waiting heartbeat', async () => {
+      vi.useFakeTimers();
+      try {
+        await sut.onSessionRequest({ sessionId, assetId, ownerId });
+        vi.setSystemTime(Date.now() + HLS_LEASE_DURATION_MS / 2 + 1);
+        const { promise, reject } = Promise.withResolvers<void>();
+        mocks.videoStream.extendSession.mockReturnValueOnce(promise);
+        const first = sut.onHeartbeat({ sessionId });
+        const second = sut.onHeartbeat({ sessionId, segmentIndex: 0 });
+        const outcomes = Promise.allSettled([first, second]);
+        const failure = new Error('database unavailable');
+        reject(failure);
+
+        expect(await outcomes).toEqual([
+          { status: 'rejected', reason: failure },
+          { status: 'rejected', reason: failure },
+        ]);
+        expect(mocks.videoStream.extendSession).toHaveBeenCalledTimes(1);
+        await sut.onHeartbeat({ sessionId });
+        expect(mocks.videoStream.extendSession).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('keeps the lease unchanged at the exact half-duration boundary', async () => {
+      vi.useFakeTimers();
+      try {
+        await sut.onSessionRequest({ sessionId, assetId, ownerId });
+        vi.setSystemTime(Date.now() + HLS_LEASE_DURATION_MS / 2);
+        await sut.onHeartbeat({ sessionId });
+        expect(mocks.videoStream.extendSession).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('extends the DB lease when remaining time falls below half', async () => {
       vi.useFakeTimers();
       try {
@@ -135,6 +206,29 @@ describe(TranscodingService.name, () => {
 
       expect(mocks.process.spawn).toHaveBeenCalledTimes(1);
       expect(mocks.process.spawn).toHaveBeenCalledWith('ffmpeg', expect.any(Array), expect.any(Object));
+    });
+
+    it('retains only the diagnostic tail of long-running transcodes', async () => {
+      const process = mockSpawn(0, '', '');
+      mocks.process.spawn.mockReturnValue(process);
+      await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 0 });
+      process.stderr.emit('data', Buffer.from('old startup output\n' + 'x'.repeat(131_072)));
+      process.stderr.emit('data', Buffer.from('\nterminal failure'));
+      const exit = vi.mocked(process.on).mock.calls.find(([event]) => event === 'exit')?.[1];
+      exit?.(1);
+      const message = vi
+        .mocked(mocks.logger.error)
+        .mock.calls.find(
+          ([message]) => typeof message === 'string' && message.startsWith('FFmpeg exited with code 1'),
+        )?.[0];
+      expect(message).toBeTypeOf('string');
+      expect(String(message)).not.toContain('old startup output');
+      expect(String(message)).toMatch(/terminal failure$/);
+      expect(String(message).split('\n').slice(1).join('\n')).toHaveLength(65_536);
+      expect(mocks.websocket.serverSend).toHaveBeenCalledWith('HlsSessionResult', {
+        sessionId,
+        error: 'Transcoding process exited unexpectedly with code 1',
+      });
     });
 
     it('kills and respawns when the variant changes', async () => {
@@ -434,26 +528,25 @@ describe(TranscodingService.name, () => {
   });
 
   describe('FFmpeg full command', () => {
-    const baseCommand = [
-      '-nostdin',
-      '-nostats',
-      '-i',
-      'eiffel-tower.mp4',
+    const baseCommand = ['-nostdin', '-nostats', '-i', 'eiffel-tower.mp4'];
+    const streamOptions = [
       '-map',
       '0:0',
       '-map_metadata',
       '-1',
       '-map',
       '0:1',
+      '-ac',
+      '2',
       '-g',
       '50',
       '-keyint_min',
       '50',
-      '-ac',
-      '2',
+    ];
+    const hlsOptions = [
       '-copyts',
       '-r',
-      '50130000/2012441',
+      '50130000/2012606',
       '-avoid_negative_ts',
       'disabled',
       '-f',
@@ -470,8 +563,6 @@ describe(TranscodingService.name, () => {
       'movflags=+frag_discont',
       '-hls_flags',
       'temp_file',
-      '-start_number',
-      '0',
     ];
 
     it.each([
@@ -483,25 +574,30 @@ describe(TranscodingService.name, () => {
           'libsvtav1',
           '-c:a',
           'aac',
+          ...streamOptions,
           '-preset',
           '12',
           '-crf',
           '35',
           '-svtav1-params',
           'hierarchical-levels=3:lookahead=0:enable-tf=0:mbr=4000k',
+          ...hlsOptions,
           '-hls_segment_filename',
           '/data/encoded-video/user-1/se/ss/session-1/6/seg_%d.m4s',
+          '-start_number',
+          '0',
           '/data/encoded-video/user-1/se/ss/session-1/6/playlist.m3u8',
-        ].sort(),
+        ],
       },
       {
         variantIndex: 4,
         expected: [
           ...baseCommand,
           '-c:v',
-          'hevc',
+          'libx265',
           '-c:a',
           'aac',
+          ...streamOptions,
           '-tag:v',
           'hvc1',
           '-preset',
@@ -514,21 +610,25 @@ describe(TranscodingService.name, () => {
           '5000k',
           '-x265-params',
           'no-scenecut=1:no-open-gop=1',
-          '-vf',
-          'scale=720:-2',
+          ...hlsOptions,
           '-hls_segment_filename',
           '/data/encoded-video/user-1/se/ss/session-1/4/seg_%d.m4s',
+          '-start_number',
+          '0',
+          '-vf',
+          'scale=720:-2',
           '/data/encoded-video/user-1/se/ss/session-1/4/playlist.m3u8',
-        ].sort(),
+        ],
       },
       {
         variantIndex: 2,
         expected: [
           ...baseCommand,
           '-c:v',
-          'h264',
+          'libx264',
           '-c:a',
           'aac',
+          ...streamOptions,
           '-preset',
           'ultrafast',
           '-crf',
@@ -539,34 +639,37 @@ describe(TranscodingService.name, () => {
           '5000k',
           '-sc_threshold:v',
           '0',
-          '-vf',
-          'scale=480:-2',
+          ...hlsOptions,
           '-hls_segment_filename',
           '/data/encoded-video/user-1/se/ss/session-1/2/seg_%d.m4s',
+          '-start_number',
+          '0',
+          '-vf',
+          'scale=480:-2',
           '/data/encoded-video/user-1/se/ss/session-1/2/playlist.m3u8',
-        ].sort(),
+        ],
       },
-    ])('builds the expected FFmpeg command for $codec (variant $variantIndex)', async ({ variantIndex, expected }) => {
+    ])('builds the expected ordered FFmpeg command for variant $variantIndex', async ({ variantIndex, expected }) => {
       mocks.process.spawn.mockReturnValue(mockSpawn(0, '', ''));
 
       await sut.onSessionRequest({ sessionId, assetId, ownerId });
       await sut.onSegmentRequest({ sessionId, assetId, variantIndex, segmentIndex: 0 });
 
-      expect(mocks.process.spawn.mock.calls[0][1].toSorted()).toEqual(expected);
+      expect(mocks.process.spawn.mock.calls[0][1]).toEqual(expected);
     });
   });
 
   describe('FFmpeg seek per segment', () => {
     const eiffelSeeks = [
-      0, 1.98715, 3.994372222222222, 6.001594444444444, 8.008816666666666, 10.016038888888888, 12.023261111111111,
-      14.030483333333333, 16.037705555555554, 18.044927777777776, 20.052149999999997, 22.059372222222223,
+      0, 1.9873129263913825, 3.994699720726112, 6.002086515060841, 8.009473309395572, 10.016860103730302,
+      12.02424689806503, 14.03163369239976, 16.03902048673449, 18.04640728106922, 20.05379407540395, 22.061180869738678,
     ];
     const waterfallSeeks = [
       0, 1.994642826321467, 4.006047357065803, 6.0174518878101395, 8.028856418554476, 10.040260949298812,
     ];
     const trainSeeks = [
-      0, 1.9916666666666667, 3.9916666666666667, 5.991666666666666, 7.991666666666666, 9.991666666666667,
-      11.991666666666667, 13.991666666666667, 15.991666666666667, 17.991666666666667, 19.991666666666667,
+      0, 2.007567805804177, 4.023979522647139, 6.0403912394901, 8.056802956333062, 10.073214673176023,
+      12.089626390018987, 14.106038106861948, 16.12244982370491, 18.13886154054787, 20.15527325739083,
     ];
     const cases = [
       ...eiffelSeeks.map((expected, segmentIndex) => ({

@@ -31,6 +31,7 @@ import { reportedQueueJobs } from 'src/queue/run-query.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import {
+  JobDependencyReason,
   QUEUE_BATCH,
   QUEUE_TIMING,
   QueueClaim,
@@ -46,7 +47,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ANALYTICS_AUTO_RETRY_DELAY_MS } from 'src/utils/analytics.js';
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { DATABASE_ACQUIRE_TIMEOUT_MS, DATABASE_POOL_SIZE } from 'src/utils/execution-database.js';
-import { ImmichStartupError, getKeyByValue, getMethodNames } from 'src/utils/misc.js';
+import { FrameleafStartupError, getKeyByValue } from 'src/utils/misc.js';
 
 export type QueueJobRow = Omit<QueueJobResponseDto, 'name' | 'account' | 'worker'> & {
   name: JobName;
@@ -108,6 +109,8 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.SmartAlbumReevaluate,
   JobName.LandmarkMatchAll,
 ]);
+// A dependency that stays down defers every job behind it; say so once per queue and reason, not per job.
+const DEFERRAL_WARNING_INTERVAL_MS = 10 * 60_000;
 
 @Injectable()
 export class JobRepository {
@@ -116,6 +119,7 @@ export class JobRepository {
   private stopping?: Promise<void>;
   private active = new Map<string, { abort: AbortController; finished: Promise<void> }>();
   private rollingAvgBuffers: Partial<Record<JobName, number[]>> = {};
+  private deferralWarnedAt = new Map<string, number>();
   private store: SqlQueueStore;
 
   constructor(
@@ -134,8 +138,16 @@ export class JobRepository {
     // discovery
     for (const Service of services) {
       const instance = this.moduleRef.get<any>(Service);
-      for (const methodName of getMethodNames(instance)) {
+      const prototype = Object.getPrototypeOf(instance);
+      for (const methodName of Object.getOwnPropertyNames(prototype)) {
+        const descriptor = Object.getOwnPropertyDescriptor(prototype, methodName);
+        if (!descriptor || descriptor.get || descriptor.set) {
+          continue;
+        }
         const handler = instance[methodName];
+        if (typeof handler !== 'function') {
+          continue;
+        }
         const config = reflector.get<JobConfig>(MetadataKey.JobConfig, handler);
         if (!config) {
           continue;
@@ -151,7 +163,7 @@ export class JobRepository {
           this.logger.error(
             `${errorMessage}. JobName.${jobKey} is already handled by ${this.handlers[jobName]!.label}.`,
           );
-          throw new ImmichStartupError(errorMessage);
+          throw new FrameleafStartupError(errorMessage);
         }
 
         this.handlers[jobName] = {
@@ -173,7 +185,7 @@ export class JobRepository {
         this.logger.error(
           `${errorMessage}. Make sure to add the @OnJob({ name: JobName.${jobKey}, queue: QueueName.XYZ }) decorator for the new job.`,
         );
-        throw new ImmichStartupError(errorMessage);
+        throw new FrameleafStartupError(errorMessage);
       }
     }
   }
@@ -233,6 +245,7 @@ export class JobRepository {
     };
     try {
       try {
+        if (this.stopping) abort.abort(new Error('Worker stopped'));
         releaseExecution = await admission.execution.acquire(abort.signal);
         abort.signal.throwIfAborted();
         started = true;
@@ -252,6 +265,7 @@ export class JobRepository {
       }
       abort.signal.throwIfAborted();
       if (context.dependencyReason) {
+        this.warnDeferral(claim, context.dependencyReason);
         settled = await admission.publication.run(abort.signal, () =>
           this.store.defer(claim, context.dependencyReason!),
         );
@@ -288,26 +302,11 @@ export class JobRepository {
         }
       }
     } catch (error) {
-      try {
-        const code =
-          error && typeof error === 'object' ? Object.getOwnPropertyDescriptor(error, 'code')?.value : undefined;
-        const message =
-          error && typeof error === 'object' ? Object.getOwnPropertyDescriptor(error, 'message')?.value : undefined;
-        const sqlState = typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? code : null;
-        this.logger.error('Queue execution failed', {
-          jobName: Object.values(JobName).includes(claim.name as JobName) ? claim.name : 'unknown',
-          queue: Object.values(QueueName).includes(claim.queue as QueueName) ? claim.queue : 'unknown',
-          attempt: Number.isSafeInteger(claim.attempt) && claim.attempt >= 0 ? claim.attempt : null,
-          jobId: /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(claim.id) ? claim.id : null,
-          phase: context.buffering ? 'deferred_publication' : 'handler',
-          category: sqlState ? 'database' : error instanceof Error ? 'error' : 'unknown',
-          reasonCode:
-            typeof message === 'string' ? (PUBLICATION_FAILURE_REASONS.get(message) ?? 'other_error') : 'other_error',
-          sqlState,
-          aborted: abort.signal.aborted,
-        });
-      } catch {
-        // A diagnostic failure must not replace the original durable job outcome.
+      if (context.dependencyReason) {
+        // A dependency refusal is a wait, not a failure, and repeats for every job behind it.
+        this.warnDeferral(claim, context.dependencyReason);
+      } else {
+        this.logExecutionFailure(claim, context, abort, error);
       }
       try {
         if (!started || context.dependencyReason) {
@@ -354,6 +353,45 @@ export class JobRepository {
         }
       }
       releaseExecution?.();
+    }
+  }
+
+  private logExecutionFailure(claim: QueueClaim, context: QueueExecution, abort: AbortController, error: unknown) {
+    try {
+      const code =
+        error && typeof error === 'object' ? Object.getOwnPropertyDescriptor(error, 'code')?.value : undefined;
+      const message =
+        error && typeof error === 'object' ? Object.getOwnPropertyDescriptor(error, 'message')?.value : undefined;
+      const sqlState = typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? code : null;
+      this.logger.error('Queue execution failed', {
+        jobName: Object.values(JobName).includes(claim.name as JobName) ? claim.name : 'unknown',
+        queue: Object.values(QueueName).includes(claim.queue as QueueName) ? claim.queue : 'unknown',
+        attempt: Number.isSafeInteger(claim.attempt) && claim.attempt >= 0 ? claim.attempt : null,
+        jobId: /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(claim.id) ? claim.id : null,
+        phase: context.buffering ? 'deferred_publication' : 'handler',
+        category: sqlState ? 'database' : error instanceof Error ? 'error' : 'unknown',
+        reasonCode:
+          typeof message === 'string' ? (PUBLICATION_FAILURE_REASONS.get(message) ?? 'other_error') : 'other_error',
+        sqlState,
+        aborted: abort.signal.aborted,
+      });
+    } catch {
+      // A diagnostic failure must not replace the original durable job outcome.
+    }
+  }
+
+  private warnDeferral(claim: QueueClaim, reason: JobDependencyReason) {
+    const queue = Object.values(QueueName).includes(claim.queue as QueueName) ? claim.queue : 'unknown';
+    const key = `${queue}:${reason}`;
+    const now = Date.now();
+    if (now - (this.deferralWarnedAt.get(key) ?? 0) < DEFERRAL_WARNING_INTERVAL_MS) {
+      return;
+    }
+    this.deferralWarnedAt.set(key, now);
+    try {
+      this.logger.warn(`Jobs in the ${queue} queue are waiting (${reason}); they retry automatically`);
+    } catch {
+      // A diagnostic failure must not replace the deferral.
     }
   }
 

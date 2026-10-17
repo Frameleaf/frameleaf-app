@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { describe } from 'vitest';
 import { SALT_ROUNDS } from 'src/constants.js';
-import { mapUserAdmin } from 'src/dtos/user.dto.js';
+import { UserAdminDeleteDto, mapUserAdmin } from 'src/dtos/user.dto.js';
 import { AdminAuditAction, AssetVisibility, JobName, UserMetadataKey, UserStatus } from 'src/enum.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
 import { UserMetadataItem } from 'src/types.js';
@@ -387,10 +387,14 @@ describe(UserAdminService.name, () => {
         mocks.user.update.mockResolvedValue(userStub.user1);
 
         await expect(
-          sut.delete(authStub.admin, userStub.user1.id, {
-            force,
-            confirmEmail: userStub.user1.email.toUpperCase(),
-          }),
+          sut.delete(
+            authStub.admin,
+            userStub.user1.id,
+            UserAdminDeleteDto.schema.parse({
+              force,
+              confirmEmail: `  ${userStub.user1.email.toUpperCase()}  `,
+            }),
+          ),
         ).resolves.toEqual(mapUserAdmin(userStub.user1));
       },
     );
@@ -585,14 +589,14 @@ describe(UserAdminService.name, () => {
 
       const saved = await sut.updatePreferences(authStub.admin, userStub.user1.id, {
         privacy: { suppression: { personIds: [] } },
-        ratings: { enabled: true },
+        ratings: { enabled: false },
       });
       expect(saved.privacy.suppression.personIds).toEqual([]);
       expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(
         userStub.user1.id,
         {
           key: UserMetadataKey.Preferences,
-          value: { ratings: { enabled: true }, privacy: { suppression: { personIds: [personId] } } },
+          value: { ratings: { enabled: false }, privacy: { suppression: { personIds: [personId] } } },
         },
         undefined,
       );
@@ -791,7 +795,7 @@ describe(UserAdminService.name, () => {
 
       await sut.updatePreferences(authStub.admin, userStub.user1.id, {
         download: { archiveSize: 1_234_567 },
-        ratings: { enabled: true },
+        ratings: { enabled: false },
       });
 
       expect(mocks.adminAudit.create).toHaveBeenCalledWith([

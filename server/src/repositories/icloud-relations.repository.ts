@@ -18,6 +18,7 @@ import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { DB } from 'src/schema/index.js';
 import { linkLivePhotoAssets } from 'src/utils/asset.util.js';
 import { onStacksJoined } from 'src/utils/locked-stacks.js';
+import { isLockedRow } from 'src/utils/locked.js';
 
 export type ICloudRelationEvent =
   | {
@@ -73,6 +74,7 @@ type Target = {
   stackId: string | null;
   livePhotoVideoId: string | null;
   visibility: AssetVisibility;
+  isLocked?: boolean;
 };
 @Injectable()
 export class ICloudRelationsRepository {
@@ -349,6 +351,13 @@ export class ICloudRelationsRepository {
               db,
             );
           if (ledger.length <= 100 && targets.length === ids.length) {
+            // Read lock records after acquiring asset rows, so a lock committed while waiting is visible.
+            const locked = new Set(
+              (await db.selectFrom('asset_lock').select('assetId').where('assetId', 'in', ids).execute()).map(
+                (row) => row.assetId,
+              ),
+            );
+            for (const target of targets) target.isLocked = locked.has(target.id);
             const still = targets.find((a) => a.id === origin.assetId)!;
             await this.fenceDrain(db);
             await this.linkMotion(db, ownerId, still, resources, targets, state);
@@ -598,6 +607,7 @@ export class ICloudRelationsRepository {
       return;
     }
     if (
+      isLockedRow(still) !== isLockedRow(motion) ||
       ![AssetVisibility.Timeline, AssetVisibility.Hidden].includes(motion.visibility) ||
       (state.motionAssetId === motion.id && motion.visibility !== AssetVisibility.Hidden)
     ) {
@@ -626,15 +636,10 @@ export class ICloudRelationsRepository {
             },
           },
           album: new AlbumRepository(db),
-          event: {
-            emit: () => {
-              state.events!.push({ name: 'AssetHide', assetId: motion.id, userId: ownerId });
-              return Promise.resolve();
-            },
-          },
         },
-        { photoAssetId: still.id, motionAssetId: motion.id, motionOwnerId: ownerId },
+        { photoAssetId: still.id, motionAssetId: motion.id },
       );
+      state.events!.push({ name: 'AssetHide', assetId: motion.id, userId: ownerId });
     }
     state.motionAssetId = motion.id;
   }

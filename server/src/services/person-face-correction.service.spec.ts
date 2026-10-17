@@ -23,6 +23,8 @@ describe(`${PersonService.name} face corrections (FL-38)`, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(PersonService));
+    // face writes run inside the partner-origin edit admission; let it pass through
+    mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
   });
 
   /** A 4000x3000 original, cropped to 2000x1500 at (1000, 500) and turned a quarter: 1500x2000 shown. */
@@ -252,6 +254,28 @@ describe(`${PersonService.name} face corrections (FL-38)`, () => {
         sut.correctFace(auth, face.id, { expectedRevision: face.updateId, personId: null }),
       ).rejects.toBeInstanceOf(ConflictException);
     });
+
+    it.each([true, false])(
+      'records corrected face ownership and propagates the edit when hidden=%s',
+      async (hidden) => {
+        const { auth, face } = setup();
+        mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([face.assetId]);
+        await sut.correctFace(auth, face.id, { expectedRevision: face.updateId, hidden });
+        expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledExactlyOnceWith(
+          'asset',
+          [face.assetId],
+          ['faces'],
+          auth.user.id,
+        );
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([
+          { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: face.assetId, fields: ['faces'] } },
+        ]);
+        await expect(sut.correctFace(auth, face.id, { expectedRevision: 'stale', hidden })).rejects.toBeInstanceOf(
+          ConflictException,
+        );
+        expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledTimes(1);
+      },
+    );
 
     it('unassigns a detected face as a correction', async () => {
       const { auth, face, person } = setup();

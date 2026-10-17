@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-  "node": "24.21.0",
-  "npm": "11.8.0",
-  "lockfileSha256": "5efddf7c35a2600f0228f0b973991838af8996fba8d5591dd7460dc3690a36dc",
+  "node": "26.11.1",
+  "npm": "12.2.0",
+  "lockfileSha256": "68562af46bc9b127c50012bc165cdf2380aeefc7200b0b30c5bbfd1a513c8ac1",
   "patches": [
     {
       "path": "patches/0001-isolated-package.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "ffe6b9980e37480d13fc83c217a2742dfe611eaedc67f41114e6a126664e92d3"
+      "sha256": "eb23cb96777b44a5b37cf099babec9bcdff31fb002010713f07fe8d739fa73b9"
     },
     {
       "path": "patches/0002-stable-worker-sourcemaps.patch",
@@ -671,6 +671,16 @@
       "sha256": "07921f9a153608f6d6cb6c9d889c18134ab672e2d08fbb101393ba4f498ae3b5"
     },
     {
+      "path": "patches/0139-latest-studio-dependencies.patch",
+      "sha256": "61a0d02f54b7510cda14860e5f59ab8124c80f28722ba2f0ce0895ce78c131dd",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0140-explicit-headless-typescript-loader.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "f6e6e095601d7ffc6bcf74d7bd991d38ba0cf2f3fb7f8c80299ce4f094222167"
+    },
+    {
       "path": "patches/0139-microphone-terminal-notification.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "9edae1a6575c3231e891cade718274278249cd575be0d3239d3ea3ba0565bab1"
@@ -681,5 +691,5 @@
       "sha256": "e8b6418c2e9a64d8a7ed2018059e655823f78244d69d68a37957e8feae99b54b"
     }
   ],
-  "sourceSha256": "11c977ef51aaf616ae0a0e7be1ff1ecf33ba0ebac8e155d3fc2e2454223a5a0d"
+  "sourceSha256": "e3f7e88e3e38e6ace377a230b47ec41f9197db373cbb5932024dd94b9b67c7e9"
 }

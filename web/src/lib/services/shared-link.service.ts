@@ -1,13 +1,12 @@
 import {
   createSharedLink,
   isHttpError,
-  removeSharedLinkAssets,
   updateSharedLink,
   type SharedLinkCreateDto,
   type SharedLinkEditDto,
   type SharedLinkResponseDto,
 } from '@frameleaf/sdk';
-import { modalManager, toastManager } from '@frameleaf/ui';
+import { toastManager } from '@frameleaf/ui';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
 import { Route } from '$lib/route';
@@ -74,40 +73,6 @@ export const handleUpdateSharedLink = async (
       return false;
     }
     handleError(error, $t('errors.failed_to_edit_shared_link'));
-    return false;
-  }
-};
-
-export const handleRemoveSharedLinkAssets = async (sharedLink: SharedLinkResponseDto, assetIds: string[]) => {
-  const $t = await getFormatter();
-  const success = await modalManager.showDialog({
-    title: $t('remove_assets_title'),
-    prompt: $t('remove_assets_shared_link_confirmation', { values: { count: assetIds.length } }),
-    confirmText: $t('remove'),
-  });
-  if (!success) {
-    return false;
-  }
-
-  try {
-    const results = await removeSharedLinkAssets({
-      id: sharedLink.id,
-      assetIdsDto: { assetIds },
-    });
-
-    for (const result of results) {
-      if (!result.success) {
-        continue;
-      }
-
-      sharedLink.assets = sharedLink.assets.filter((asset) => asset.id !== result.assetId);
-    }
-
-    const count = results.filter((item) => item.success).length;
-    toastManager.primary($t('assets_removed_count', { values: { count } }));
-    return true;
-  } catch (error) {
-    handleError(error, $t('errors.unable_to_remove_assets_from_shared_link'));
     return false;
   }
 };

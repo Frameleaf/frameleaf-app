@@ -1,4 +1,15 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import {
   compare,
@@ -46,6 +57,52 @@ const manifest = {
   "_page.js": { file: "page.js", css: ["page.css"] },
   "_lazy.js": { file: "lazy.js" },
 };
+
+test("checks the built app path from a SvelteKit 3 manifest without the old generated directory", () => {
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "frameleaf-kit3-budget-")),
+  );
+  const script = join(root, "scripts/frameleaf-web-bundle-budget.mjs");
+  const web = join(root, "web");
+  const client = join(web, ".svelte-kit/output/client");
+  const generated = join(web, ".svelte-kit/generated/build/client");
+  try {
+    for (const dir of [
+      join(root, "scripts"),
+      join(client, ".vite"),
+      generated,
+    ]) {
+      mkdirSync(dir, { recursive: true });
+    }
+    writeFileSync(
+      script,
+      readFileSync(
+        new URL("./frameleaf-web-bundle-budget.mjs", import.meta.url),
+      ),
+    );
+    writeFileSync(
+      join(client, ".vite/manifest.json"),
+      JSON.stringify(manifest).replaceAll("client-optimized", "build/client"),
+    );
+    writeFileSync(
+      join(generated, "app.js"),
+      'export const dictionary = {\n\t"/": [9,[2]],\n\t};',
+    );
+    for (const chunk of Object.values(manifest)) {
+      for (const file of [chunk.file, ...(chunk.css ?? [])])
+        writeFileSync(join(client, file), "built content");
+    }
+    writeFileSync(
+      join(web, "bundle-budget.json"),
+      JSON.stringify({ "/": 4096 }),
+    );
+    const result = spawnSync(process.execPath, [script], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /1 routes/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("counts what loads up front, CSS included, and never a lazy chunk", () => {
   const files = staticClosure(manifest, [

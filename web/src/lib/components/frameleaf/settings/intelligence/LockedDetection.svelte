@@ -76,6 +76,11 @@
       ? $t('frameleaf_intel_locked_caution_custom_help', { values: { score: nsfwDetection.threshold } })
       : $t(`frameleaf_intel_locked_caution_${caution}_help` as Translations),
   );
+  const cautionLead = $derived(
+    caution === 'custom'
+      ? $t('frameleaf_intel_custom')
+      : $t(`frameleaf_intel_locked_caution_${caution}` as Translations),
+  );
 </script>
 
 <KitPage>
@@ -101,7 +106,7 @@
       />
     </Row>
     {#if nsfwDetection.enabled}
-      <Row label={$t('frameleaf_intel_locked_caution')} help={cautionHelp}>
+      <Row label={$t('frameleaf_intel_locked_caution')} help={cautionHelp} lead={cautionLead}>
         <SegmentedControl
           label={$t('frameleaf_intel_locked_caution')}
           value={caution}

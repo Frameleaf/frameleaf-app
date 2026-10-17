@@ -8,10 +8,10 @@ import { HLS_SEGMENT_DURATION, HLS_SEGMENT_FILENAME_REGEX, HLS_VARIANTS, HLS_VER
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { ConfigFFmpegDto } from 'src/dtos/config.dto.js';
-import { CacheControl, ImmichWorker, Permission } from 'src/enum.js';
+import { CacheControl, FrameleafWorker, Permission } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { PendingEvents } from 'src/utils/event.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { getCodecString, getOutputSize } from 'src/utils/media.js';
 
 type AssetWithStreamInfo = { videoStream: VideoStreamInfo & { timeBase: number }; packets: VideoPacketInfo };
@@ -24,7 +24,7 @@ export class HlsService extends BaseService {
   private pendingSessions = new PendingEvents<'HlsSessionResult'>({ timeoutMs: 5000 });
   private sessions = new Map<string, ApiSession>();
 
-  @OnEvent({ name: 'HlsSessionResult', server: true, workers: [ImmichWorker.Api] })
+  @OnEvent({ name: 'HlsSessionResult', server: true, workers: [FrameleafWorker.Api] })
   onSessionResult(event: ArgOf<'HlsSessionResult'>) {
     this.pendingSessions.complete(event.sessionId, event);
     if (event.error) {
@@ -33,13 +33,13 @@ export class HlsService extends BaseService {
     }
   }
 
-  @OnEvent({ name: 'HlsSessionEnd', server: true, workers: [ImmichWorker.Api] })
+  @OnEvent({ name: 'HlsSessionEnd', server: true, workers: [FrameleafWorker.Api] })
   onSessionEnd({ sessionId }: ArgOf<'HlsSessionEnd'>) {
     this.sessions.delete(sessionId);
     this.pendingSegments.rejectByPrefix(`${sessionId}:`, 'Session ended');
   }
 
-  @OnEvent({ name: 'HlsSegmentResult', server: true, workers: [ImmichWorker.Api] })
+  @OnEvent({ name: 'HlsSegmentResult', server: true, workers: [FrameleafWorker.Api] })
   onSegmentResult(event: ArgOf<'HlsSegmentResult'>) {
     this.pendingSegments.complete(this.getSegmentKey(event), event);
   }
@@ -59,11 +59,13 @@ export class HlsService extends BaseService {
     // Sharing the sessionId allows only one microservices worker to successfully insert to the session table.
     // The microservices worker that creates a session owns the transcoding lifecycle for it.
     const sessionId = this.cryptoRepository.randomUUID();
-    this.websocketRepository.serverSend('HlsSessionRequest', { sessionId, assetId, ownerId: auth.user.id });
-    await this.pendingSessions.wait(sessionId);
+    const playlist = this.generateMainPlaylist(sessionId, ffmpeg, asset);
+    await this.pendingSessions.wait(sessionId, () => {
+      this.websocketRepository.serverSend('HlsSessionRequest', { sessionId, assetId, ownerId: auth.user.id });
+    });
     this.trackSession(sessionId);
 
-    return this.generateMainPlaylist(sessionId, ffmpeg, asset);
+    return playlist;
   }
 
   async getMediaPlaylist(auth: AuthDto, assetId: string, sessionId: string, variantIndex: number, position?: number) {
@@ -92,13 +94,13 @@ export class HlsService extends BaseService {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [assetId] });
 
     const session = await this.videoStreamRepository.getSession(sessionId);
-    if (!session) {
+    if (!session || session.assetId !== assetId) {
       throw new NotFoundException('Session not found');
     }
 
     const variantDir = StorageCore.getHlsVariantFolder({ ownerId: auth.user.id, sessionId, variantIndex });
     const path = join(variantDir, filename);
-    const response = new ImmichFileResponse({
+    const response = new FileDownloadResponse({
       path,
       contentType: 'video/mp4',
       cacheControl: CacheControl.PrivateWithCache,
@@ -108,18 +110,33 @@ export class HlsService extends BaseService {
     const segmentIndex = this.getSegmentIndex(apiSession, filename, initSegment);
     this.websocketRepository.serverSend('HlsHeartbeat', { sessionId, variantIndex, segmentIndex });
 
-    if (await this.storageRepository.checkFileExists(path, constants.R_OK)) {
-      return response;
-    }
-
-    this.websocketRepository.serverSend('HlsSegmentRequest', { sessionId, assetId, variantIndex, segmentIndex });
-    await this.pendingSegments.wait(this.getSegmentKey({ sessionId, variantIndex, segmentIndex }));
+    const result = { sessionId, variantIndex, segmentIndex };
+    const key = this.getSegmentKey(result);
+    await this.pendingSegments.wait(key, async (isPending) => {
+      const exists = await this.storageRepository.checkFileExists(path, constants.R_OK);
+      if (!isPending()) {
+        return;
+      }
+      if (exists) {
+        this.pendingSegments.complete(key, result);
+      } else {
+        this.websocketRepository.serverSend('HlsSegmentRequest', { ...result, assetId });
+      }
+    });
 
     return response;
   }
 
   async endSession(auth: AuthDto, assetId: string, sessionId: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [assetId] });
+
+    const session = await this.videoStreamRepository.getSession(sessionId);
+    if (!session) {
+      return;
+    }
+    if (session.assetId !== assetId) {
+      throw new NotFoundException('Session not found');
+    }
 
     this.websocketRepository.serverSend('HlsSessionEnd', { sessionId });
   }
@@ -178,8 +195,9 @@ export class HlsService extends BaseService {
       '#EXT-X-MAP:URI="init.mp4"',
     ];
 
+    const fullSegment = `#EXTINF:${fullSegmentDuration.toFixed(6)},`;
     for (let i = 0; i < segmentCount - 1; i++) {
-      lines.push(`#EXTINF:${fullSegmentDuration.toFixed(6)},`, `seg_${i}.m4s`);
+      lines.push(fullSegment, `seg_${i}.m4s`);
     }
     lines.push(`#EXTINF:${lastSegmentDuration.toFixed(6)},`, `seg_${segmentCount - 1}.m4s`, '#EXT-X-ENDLIST', '');
 

@@ -54,19 +54,19 @@ test('Command Center status links and failed-refresh recovery', async ({ context
   ] as const) {
     await expect(summary.getByRole('link', { name })).toHaveAttribute('href', `/user-settings?area=backups${view}`);
   }
-  await expect(summary.getByRole('link', { name: /Hosting for my buddy · incoming/ })).toContainText(/1(?:\.0)? KiB/);
-  await expect(summary.getByRole('link', { name: /Cloud Backup/ })).toContainText(/2(?:\.0)? KiB/);
+  await expect(summary.getByRole('link', { name: /Hosting for my buddy · incoming/ })).toContainText(/1(?:\.0)? KB/);
+  await expect(summary.getByRole('link', { name: /Cloud Backup/ })).toContainText(/2(?:\.0)? KB/);
   failed = true;
   await summary.getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(summary.getByRole('alert')).toBeVisible();
   await expect(summary.getByRole('link', { name: /Hosting for my buddy · incoming/ })).not.toContainText(
-    /1(?:\.0)? KiB/,
+    /1(?:\.0)? KB/,
   );
-  await expect(summary.getByRole('link', { name: /Cloud Backup/ })).not.toContainText(/2(?:\.0)? KiB/);
+  await expect(summary.getByRole('link', { name: /Cloud Backup/ })).not.toContainText(/2(?:\.0)? KB/);
   failed = false;
   await summary.getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(summary.getByRole('alert')).toHaveCount(0);
-  await expect(summary.getByRole('link', { name: /Cloud Backup/ })).toContainText(/2(?:\.0)? KiB/);
+  await expect(summary.getByRole('link', { name: /Cloud Backup/ })).toContainText(/2(?:\.0)? KB/);
 });
 
 test('ordinary account has no server-wide backup summary or backup requests', async ({ context, page }) => {

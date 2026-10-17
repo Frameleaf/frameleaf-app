@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { SharedSpaceEvent } from 'src/repositories/album-user.repository.js';
-import { AlbumKind, AlbumUserRole, AssetFileType, SharedSpaceEventType } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, AssetFileType, SharedSpaceEventType, UserMetadataKey } from 'src/enum.js';
 import { SharedSpaceService } from 'src/services/shared-space.service.js';
 import { emptyHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { ActivityFactory } from 'test/factories/activity.factory.js';
@@ -395,13 +395,16 @@ describe(SharedSpaceService.name, () => {
         },
       ]);
       mocks.user.get.mockResolvedValue(invitedUser);
+      mocks.frameleafUserLicense.getUserIds.mockResolvedValue([invitedUser.id]);
 
       const { members } = await sut.getMembers(AuthFactory.create(owner), space.id);
 
       expect(members).toHaveLength(3);
       expect(members.filter(({ pending }) => pending)).toEqual([
-        expect.objectContaining({ role: AlbumUserRole.Viewer, pending: true }),
+        expect.objectContaining({ role: AlbumUserRole.Viewer, pending: true, supporter: true }),
       ]);
+      // supporter option (b): the tag follows each member's own Individual licence on an unlicensed server
+      expect(members.filter(({ supporter }) => supporter).map(({ user }) => user.id)).toEqual([invitedUser.id]);
     });
   });
 
@@ -526,6 +529,27 @@ describe(SharedSpaceService.name, () => {
       expect(mocks.albumUser.getLinkedAlbumCounts).toHaveBeenCalledWith(space.id, [linkedAlbumId], {
         excludeNsfw: true,
       });
+    });
+
+    it('looks each member up once however many albums they linked', async () => {
+      const { space, owner } = spaceWithEditor();
+      asOwner(space);
+      const link = (linkedById: string | null) => ({
+        albumId: space.id,
+        linkedAlbumId: newUuid(),
+        linkedAlbumName: 'Album',
+        linkedAlbumIcon: null,
+        linkedById,
+        createdAt: newDate(),
+      });
+      mocks.albumUser.getLinkedAlbums.mockResolvedValue([link(owner.id), link(owner.id), link(null), link(owner.id)]);
+      mocks.albumUser.getLinkedAlbumCounts.mockResolvedValue([]);
+      mocks.user.get.mockResolvedValue(owner);
+
+      const { albums } = await sut.getLinkedAlbums(AuthFactory.create(owner), space.id);
+
+      expect(albums.map(({ linkedBy }) => linkedBy?.id ?? null)).toEqual([owner.id, owner.id, null, owner.id]);
+      expect(mocks.user.get).toHaveBeenCalledTimes(1);
     });
 
     it('refuses somebody who is not a member, even with an invitation', async () => {
@@ -661,6 +685,32 @@ describe(SharedSpaceService.name, () => {
       expect(JSON.stringify(linked)).not.toContain(personGroupId);
     });
 
+    it('looks each member up once however many people they linked, and drops removed accounts', async () => {
+      const { space, owner, editor } = spaceWithEditor();
+      asOwner(space);
+      const gone = newUuid();
+      const link = (personOwnerId: string) => ({
+        id: newUuid(),
+        albumId: space.id,
+        personOwnerId,
+        personGroupId: newUuid(),
+        name: 'Someone',
+        coverAssetId: null,
+        createdAt: newDate(),
+      });
+      mocks.albumUser.getLinkedPeople.mockResolvedValue([link(editor.id), link(gone), link(editor.id), link(gone)]);
+      mocks.albumUser.getLinkedPersonCounts.mockResolvedValue([]);
+      mocks.albumUser.getSpacePersonCandidates.mockResolvedValue([]);
+      mocks.user.get.mockImplementation(
+        (id: string) => Promise.resolve(id === editor.id ? editor : undefined) as never,
+      );
+
+      const { linked } = await sut.getPeople(AuthFactory.create(owner), space.id);
+
+      expect(linked.map(({ linkedBy }) => linkedBy.id)).toEqual([editor.id, editor.id]);
+      expect(mocks.user.get).toHaveBeenCalledTimes(2);
+    });
+
     it('offers only the caller’s own people as candidates, and not ones they already linked', async () => {
       const { space, editor } = spaceWithEditor();
       const alreadyLinked = newUuid();
@@ -679,6 +729,9 @@ describe(SharedSpaceService.name, () => {
       ]);
       mocks.albumUser.getLinkedPersonCounts.mockResolvedValue([]);
       mocks.user.get.mockResolvedValue(editor);
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { people: { suggestInSpaces: true } } },
+      ]);
       mocks.albumUser.getSpacePersonCandidates.mockResolvedValue([
         {
           personGroupId: alreadyLinked,
@@ -715,6 +768,21 @@ describe(SharedSpaceService.name, () => {
       expect(mocks.albumUser.getSpacePersonCandidates).toHaveBeenCalledWith(space.id, editor.id, {
         excludeNsfw: true,
       });
+    });
+
+    it('suggests nobody unless the account turned "Suggest matching people in shared Spaces" on (ACCOUNT-P2)', async () => {
+      const { space, editor } = spaceWithEditor();
+      asEditor(space);
+      mocks.albumUser.getLinkedPeople.mockResolvedValue([]);
+      mocks.albumUser.getLinkedPersonCounts.mockResolvedValue([]);
+      mocks.user.getMetadata.mockResolvedValue([]);
+
+      await expect(sut.getPeople(AuthFactory.create(editor), space.id)).resolves.toEqual({
+        linked: [],
+        candidates: [],
+      });
+      expect(mocks.user.getMetadata).toHaveBeenCalledWith(editor.id);
+      expect(mocks.albumUser.getSpacePersonCandidates).not.toHaveBeenCalled();
     });
   });
 
@@ -899,6 +967,62 @@ describe(SharedSpaceService.name, () => {
         { excludeNsfw: true },
         { inSpace: true },
       );
+    });
+
+    it('never ends a page inside a millisecond, so the millisecond `before` cursor skips nothing', async () => {
+      const { space, owner, editor } = spaceWithEditor();
+      asEditor(space);
+      const at = (iso: string) => new Date(iso);
+      // stored with microseconds, read back by the driver at millisecond precision
+      const boundary = '2026-10-16T10:00:00.123Z';
+      const newest = event({
+        albumId: space.id,
+        actorId: owner.id,
+        type: SharedSpaceEventType.AlbumLinked,
+        subject: 'Album',
+        createdAt: at('2026-10-16T10:00:01.000Z'),
+      });
+      const tied = [1, 2, 3].map(() =>
+        event({
+          albumId: space.id,
+          actorId: owner.id,
+          type: SharedSpaceEventType.AlbumLinked,
+          subject: 'Album',
+          createdAt: at(boundary),
+        }),
+      );
+      const older = event({
+        albumId: space.id,
+        actorId: owner.id,
+        type: SharedSpaceEventType.AlbumLinked,
+        subject: 'Album',
+        createdAt: at('2026-10-16T09:00:00.000Z'),
+      });
+      const all = [newest, ...tied, older];
+      mocks.albumUser.getSpaceVisit.mockResolvedValue(void 0);
+      mocks.albumUser.getSpaceEvents.mockImplementation((_id, { before, since, from, take }) =>
+        Promise.resolve(
+          since
+            ? []
+            : all
+                .filter(({ createdAt }) => (!before || createdAt < before) && (!from || createdAt >= from))
+                .slice(0, take),
+        ),
+      );
+      mocks.albumUser.filterVisibleSpaceAssetIds.mockResolvedValue(new Set());
+      mocks.user.get.mockResolvedValue(owner);
+
+      const first = await sut.getActivity(AuthFactory.create(editor), space.id, { take: 2 });
+      expect(first.events.map(({ id }) => id)).toEqual([newest.id, ...tied.map(({ id }) => id)]);
+      expect(first.hasMore).toBe(true);
+
+      // the web pages on with the oldest event's millisecond timestamp
+      const second = await sut.getActivity(AuthFactory.create(editor), space.id, {
+        before: first.events.at(-1)!.createdAt,
+        take: 2,
+      });
+      expect(second.events.map(({ id }) => id)).toEqual([older.id]);
+      expect(second.hasMore).toBe(false);
     });
 
     it('counts as unread only what others did after the member’s marker, among what they may see', async () => {

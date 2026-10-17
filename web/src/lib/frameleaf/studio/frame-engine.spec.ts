@@ -77,6 +77,8 @@ const fakeFrame = (
   let framePort: MessagePort | null = null;
   const createFrame = (parent: HTMLElement) => {
     const frame = document.createElement('iframe');
+    // Keep the protocol fixture same-origin and offline while iframe network loading is disabled.
+    frame.srcdoc = '';
     parent.append(frame);
     frames.push(frame);
     const view = frame.contentWindow!;

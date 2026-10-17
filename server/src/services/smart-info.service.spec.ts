@@ -1,5 +1,5 @@
 import { SystemConfig } from 'src/dtos/config.dto.js';
-import { AssetFileType, AssetVisibility, ImmichWorker, JobName, JobStatus } from 'src/enum.js';
+import { AssetFileType, AssetVisibility, FrameleafWorker, JobName, JobStatus } from 'src/enum.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { getCLIPModelInfo } from 'src/utils/misc.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -14,7 +14,7 @@ describe(SmartInfoService.name, () => {
     ({ sut, mocks } = newTestService(SmartInfoService));
 
     mocks.asset.getByIds.mockResolvedValue([AssetFactory.create()]);
-    mocks.config.getWorker.mockReturnValue(ImmichWorker.Microservices);
+    mocks.config.getWorker.mockReturnValue(FrameleafWorker.Microservices);
   });
 
   it('should work', () => {
@@ -160,9 +160,11 @@ describe(SmartInfoService.name, () => {
     it('should do nothing if machine learning is disabled', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.machineLearningDisabled);
 
-      await sut.handleQueueEncodeClip({});
+      await expect(sut.handleQueueEncodeClip({})).resolves.toBe(JobStatus.Skipped);
 
       expect(mocks.database.setDimensionSize).not.toHaveBeenCalled();
+      expect(mocks.assetJob.selectionForEncodeClip).not.toHaveBeenCalled();
+      expect(mocks.job.queueSelection).not.toHaveBeenCalled();
     });
 
     it('should queue the assets without clip embeddings', async () => {
@@ -201,8 +203,9 @@ describe(SmartInfoService.name, () => {
 
       expect(await sut.handleEncodeClip({ id: '123' })).toEqual(JobStatus.Skipped);
 
-      expect(mocks.asset.getByIds).not.toHaveBeenCalled();
+      expect(mocks.assetJob.getForClipEncoding).not.toHaveBeenCalled();
       expect(mocks.machineLearning.encodeImage).not.toHaveBeenCalled();
+      expect(mocks.search.upsert).not.toHaveBeenCalled();
     });
 
     it('should skip assets without a resize path', async () => {

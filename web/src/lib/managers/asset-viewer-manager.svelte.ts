@@ -38,6 +38,7 @@ export type Events = {
 class AssetViewerManager extends BaseEventManager<Events> {
   #zoomState = $state(createDefaultZoomState());
   #animationFrameId: number | null = null;
+  #assetRequest = 0;
 
   imgRef = $state<HTMLImageElement | undefined>();
   imageLoaderStatus = $state<ImageLoaderStatus | undefined>();
@@ -273,17 +274,29 @@ class AssetViewerManager extends BaseEventManager<Events> {
   }
 
   setAsset(asset: AssetResponseDto) {
+    this.#assetRequest++;
     this.#viewingAssetStoreState = asset;
     this.#viewState = true;
   }
 
-  async setAssetId(id: string): Promise<AssetResponseDto> {
+  async setAssetId(
+    id: string,
+    options: { isCurrent?: () => boolean; onSet?: () => void } = {},
+  ): Promise<AssetResponseDto> {
+    const request = ++this.#assetRequest;
+    const isCurrentSession = authManager.captureSession();
     const asset = await getAssetInfo({ ...authManager.params, id });
-    this.setAsset(asset);
+    if (request === this.#assetRequest && isCurrentSession() && (!options.isCurrent || options.isCurrent())) {
+      this.setAsset(asset);
+      options.onSet?.();
+    }
     return asset;
   }
 
   showAssetViewer(show: boolean) {
+    if (!show) {
+      this.#assetRequest++;
+    }
     this.#viewState = show;
   }
 }

@@ -84,6 +84,7 @@ export const transformPoints = (
   let currentWidth = startingDimensions.width;
   let currentHeight = startingDimensions.height;
   let transformedPoints = [...points];
+  let ownsPoints = false;
 
   // Handle crop first if not inverting
   if (!inverse) {
@@ -94,6 +95,7 @@ export const transformPoints = (
         x: p.x - cropX,
         y: p.y - cropY,
       }));
+      ownsPoints = true;
       currentWidth = cropWidth;
       currentHeight = cropHeight;
     }
@@ -102,7 +104,7 @@ export const transformPoints = (
   // Apply rotate and mirror transforms
   const editSequence = inverse ? edits.toReversed() : edits;
   for (const edit of editSequence) {
-    let matrix: Matrix = identity();
+    let matrix: Matrix;
     if (edit.action === 'rotate') {
       const angleDegrees = edit.parameters.angle;
       const angleRadians = (angleDegrees * Math.PI) / 180;
@@ -128,7 +130,17 @@ export const transformPoints = (
       continue;
     }
 
-    transformedPoints = transformedPoints.map((p) => applyToPoint(matrix, p));
+    if (!ownsPoints) {
+      transformedPoints = transformedPoints.map((p) => applyToPoint(matrix, p));
+      ownsPoints = true;
+    } else {
+      // Keep each matrix's arithmetic order: composition can change face truncation.
+      for (const point of transformedPoints) {
+        const { x, y } = point;
+        point.x = matrix.a * x + matrix.c * y + matrix.e;
+        point.y = matrix.b * x + matrix.d * y + matrix.f;
+      }
+    }
   }
 
   // Handle crop last if inverting
@@ -136,10 +148,14 @@ export const transformPoints = (
     const crop = edits.find((edit) => edit.action === 'crop');
     if (crop) {
       const { x: cropX, y: cropY } = crop.parameters;
-      transformedPoints = transformedPoints.map((p) => ({
-        x: p.x + cropX,
-        y: p.y + cropY,
-      }));
+      if (!ownsPoints) {
+        transformedPoints = transformedPoints.map((p) => ({ x: p.x + cropX, y: p.y + cropY }));
+      } else {
+        for (const point of transformedPoints) {
+          point.x += cropX;
+          point.y += cropY;
+        }
+      }
     }
   }
 

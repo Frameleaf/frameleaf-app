@@ -5,6 +5,7 @@
   import { Icon } from '@frameleaf/ui';
   import { mdiStar, mdiStarOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
+  import { onDestroy } from 'svelte';
 
   export type Rating = -1 | 1 | 2 | 3 | 4 | 5 | null;
 
@@ -21,6 +22,7 @@
   let hoverRating: Rating = $state(null);
   let focusRating: Rating = $state(null);
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  onDestroy(() => clearTimeout(timeoutId));
 
   const id = generateId();
 
@@ -79,6 +81,7 @@
         for={starId}
         class:cursor-pointer={!readOnly}
         class:ring-2={focusRating === value}
+        class:filled
         onmouseover={() => setHoverRating(value as Rating)}
         tabindex={-1}
         data-testid="star"

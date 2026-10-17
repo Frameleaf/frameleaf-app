@@ -1,41 +1,50 @@
 import { on } from 'svelte/events';
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 
 const isSupported = browser && 'wakeLock' in navigator;
 
 let sentinel: WakeLockSentinel | undefined;
 let acquiring = false;
-/**
- * Who currently wants the screen kept on (uploads, a playing slideshow). The lock is held
- * while anyone does, so one holder finishing never switches the screen off under another.
- */
+let retryRequested = false;
+// Holder names are idempotent: uploads and slideshows share one native lock.
 const holders = new Set<string>();
+
+async function releaseSentinel(lock: WakeLockSentinel) {
+  try {
+    await lock.release();
+  } catch (error) {
+    console.warn('Failed to release wake lock:', error);
+  }
+}
 
 export async function acquireWakeLock(holder = 'default') {
   holders.add(holder);
   if (!isSupported) {
     return;
   }
-  // eslint-disable-next-line tscompat/tscompat
   if (sentinel && !sentinel.released) {
     return;
   }
   if (acquiring) {
+    retryRequested = true;
     return;
   }
   acquiring = true;
   try {
-    // eslint-disable-next-line tscompat/tscompat
-    const lock = await navigator.wakeLock.request('screen');
-    if (holders.size === 0) {
-      // everyone let go while the request was in flight
-      // eslint-disable-next-line tscompat/tscompat
-      await lock.release().catch((error: unknown) => console.warn('Failed to release wake lock:', error));
-    } else {
-      sentinel = lock;
-    }
-  } catch (error) {
-    console.warn('Failed to acquire wake lock:', error);
+    do {
+      retryRequested = false;
+      try {
+        const lock = await navigator.wakeLock.request('screen');
+        if (holders.size === 0) {
+          await releaseSentinel(lock);
+        } else {
+          sentinel = lock;
+        }
+      } catch (error) {
+        console.warn('Failed to acquire wake lock:', error);
+      }
+      // Drain only newer intent; a refusal alone must not create a retry loop.
+    } while (retryRequested && holders.size > 0 && (!sentinel || sentinel.released));
   } finally {
     acquiring = false;
   }
@@ -48,24 +57,15 @@ export async function releaseWakeLock(holder = 'default') {
   }
 
   const toReleaseSentinel = sentinel;
-  // Unset first to avoid race condition after await
+  // A late release must not clear a newer acquisition.
   sentinel = undefined;
-
-  try {
-    // eslint-disable-next-line tscompat/tscompat
-    await toReleaseSentinel.release();
-  } catch (error) {
-    // an already released lock (the tab was hidden) can reject; nothing is left to undo
-    console.warn('Failed to release wake lock:', error);
-  }
+  await releaseSentinel(toReleaseSentinel);
 }
 
 if (isSupported) {
-  // Wake lock is cleared when user changes to a different tab,
-  // so we need to reacquire the wake lock when they come back.
   on(globalThis, 'visibilitychange', () => {
     if (holders.size > 0 && document.visibilityState === 'visible') {
-      void acquireWakeLock([...holders][0]);
+      void acquireWakeLock(holders.values().next().value);
     }
   });
 }

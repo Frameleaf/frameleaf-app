@@ -18,6 +18,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import {
+    GB,
     ICLOUD_MAX_CONNECTIONS,
     icloudAuthStep,
     icloudBlankDraft,
@@ -735,11 +736,11 @@
           {$t('frameleaf_icloud_staging')}
           <input
             type="number"
-            min={1 / 1024}
-            max={Number.MAX_SAFE_INTEGER / 1024 ** 3}
+            min={1024 ** 2 / GB}
+            max={Number.MAX_SAFE_INTEGER / GB}
             step="any"
-            value={draft.stagingGiB}
-            oninput={(event) => (draft.stagingGiB = event.currentTarget.value)}
+            value={draft.stagingGb}
+            oninput={(event) => (draft.stagingGb = event.currentTarget.value)}
             disabled={busy}
             aria-invalid={problems.includes('staging')}
           />

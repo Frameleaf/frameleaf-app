@@ -14,7 +14,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { CacheControl, Permission, StorageFolder } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import {
   FILMSTRIP_COUNT,
   FILMSTRIP_HEIGHT,
@@ -79,13 +79,13 @@ export class StudioMediaService extends BaseService {
     auth: AuthDto,
     id: string,
     dto: AssetFilmstripSpriteOptionsDto,
-  ): Promise<ImmichFileResponse> {
+  ): Promise<FileDownloadResponse> {
     const source = await this.resolveSource(auth, id);
     if (dto.version && dto.version !== source.version) {
       throw new NotFoundException('The video changed; fetch the filmstrip index again');
     }
     const { index, spritePath } = await this.ensureFilmstrip(source, dto);
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path: spritePath,
       contentType: index.mimeType,
       cacheControl: CacheControl.PrivateWithCache,

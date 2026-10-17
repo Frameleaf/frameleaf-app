@@ -45,6 +45,9 @@ export const requestServerInfo = async () => {
     return;
   }
 
+  const isCurrent = authManager.captureSession();
   const data = await getStorage();
-  userInteraction.serverInfo = data;
+  if (isCurrent()) {
+    userInteraction.serverInfo = data;
+  }
 };

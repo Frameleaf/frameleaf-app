@@ -28,7 +28,7 @@ import {
   AssetType,
   AssetVisibility,
   EnrichmentStaleReason,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   MlWorkload,
@@ -377,56 +377,86 @@ export class ImageEnrichmentService extends BaseService {
     // connection isn't held while tag application or job queueing runs —
     // those would compete for the same pool and deadlock under parallel
     // bulk-mark actions.
-    const { metadata, locked } = await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
-      // the actions that may lock the asset take its group's rows first (FL-34)
-      if ([AssetImageEnrichmentAction.MarkNsfw, AssetImageEnrichmentAction.AcceptNsfwResult].includes(dto.action)) {
-        await this.lockGroupRows(id, trx);
-      }
-      const m = await this.getEnrichmentMetadata(id, trx);
-      switch (dto.action) {
-        case AssetImageEnrichmentAction.AcceptNsfwResult: {
-          const nsfw = this.ensureManualNsfwMetadata(m, this.getEffectiveNsfw(m) ?? false);
-          nsfw.review = this.getReview(auth, 'accepted', this.getEffectiveNsfw(m) ?? false);
-          break;
-        }
-        case AssetImageEnrichmentAction.MarkNsfw: {
-          const nsfw = this.ensureManualNsfwMetadata(m, true);
-          nsfw.review = this.getReview(auth, 'marked-nsfw', true);
-          break;
-        }
-        case AssetImageEnrichmentAction.MarkSafe: {
-          // Unreachable: handled above by `markGroupSafe`, for the whole group in one transaction.
-          break;
-        }
-        case AssetImageEnrichmentAction.ClearGeneratedDescription:
-        case AssetImageEnrichmentAction.ClearGeneratedTags: {
-          // These actions only delete derived fields; the side-effect phase
-          // below performs the deletion and persists the result.
-          break;
-        }
-        case AssetImageEnrichmentAction.RerunImageDescription:
-        case AssetImageEnrichmentAction.RerunNsfwDetection: {
-          // Unreachable: queue-only actions return early above, before the
-          // metadata lock is taken. Listed to keep the switch exhaustive.
-          break;
-        }
-      }
-      await this.saveEnrichmentMetadata(id, m, trx);
-      // FL-34: the sensitive mark is the lock. Marking locks the asset (the owner's own lock), and
-      // accepting a sensitive detection locks it as detected (marking it safe unlocks it, in
-      // `markGroupSafe`). The lock record commits in the same transaction as the review and its privacy
-      // projection, so no reader ever sees one without the other. Albums, favourites and the stored
-      // visibility are untouched either way; stacks and live photos move as a whole.
-      let locked: string[] = [];
-      if (dto.action === AssetImageEnrichmentAction.MarkNsfw) {
-        locked = await this.assetRepository.lock([id], AssetLockReason.Marked, auth.user.id, trx);
-      } else if (dto.action === AssetImageEnrichmentAction.AcceptNsfwResult && m.nsfwDetection?.review?.isNsfw) {
-        locked = await this.assetRepository.lock([id], AssetLockReason.Detected, auth.user.id, trx);
-      }
-      return { metadata: m, locked };
-    });
+    const locksGroup = [AssetImageEnrichmentAction.MarkNsfw, AssetImageEnrichmentAction.AcceptNsfwResult].includes(
+      dto.action,
+    );
+    const admittedGroup = locksGroup ? await this.assetRepository.findLockGroupIds([id]) : [];
+    const { metadata, locked, visibilityIds } = await this.partnerOriginRepository.withOriginEdit(
+      'asset',
+      admittedGroup,
+      [],
+      () =>
+        this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
+          // the actions that may lock the asset take its group's rows first (FL-34)
+          if (locksGroup) {
+            await this.lockGroupRows(id, trx);
+          }
+          const groupIds = locksGroup ? await this.assetRepository.findLockGroupIds([id]) : [];
+          requireUnchangedGroup(groupIds, admittedGroup);
+          const m = await this.getEnrichmentMetadata(id, trx);
+          switch (dto.action) {
+            case AssetImageEnrichmentAction.AcceptNsfwResult: {
+              const nsfw = this.ensureManualNsfwMetadata(m, this.getEffectiveNsfw(m) ?? false);
+              nsfw.review = this.getReview(auth, 'accepted', this.getEffectiveNsfw(m) ?? false);
+              break;
+            }
+            case AssetImageEnrichmentAction.MarkNsfw: {
+              const nsfw = this.ensureManualNsfwMetadata(m, true);
+              nsfw.review = this.getReview(auth, 'marked-nsfw', true);
+              break;
+            }
+            case AssetImageEnrichmentAction.MarkSafe: {
+              // Unreachable: handled above by `markGroupSafe`, for the whole group in one transaction.
+              break;
+            }
+            case AssetImageEnrichmentAction.ClearGeneratedDescription:
+            case AssetImageEnrichmentAction.ClearGeneratedTags: {
+              // These actions only delete derived fields; the side-effect phase
+              // below performs the deletion and persists the result.
+              break;
+            }
+            case AssetImageEnrichmentAction.RerunImageDescription:
+            case AssetImageEnrichmentAction.RerunNsfwDetection: {
+              // Unreachable: queue-only actions return early above, before the
+              // metadata lock is taken. Listed to keep the switch exhaustive.
+              break;
+            }
+          }
+          await this.saveEnrichmentMetadata(id, m, trx);
+          // FL-34: the sensitive mark is the lock. Marking locks the asset (the owner's own lock), and
+          // accepting a sensitive detection locks it as detected (marking it safe unlocks it, in
+          // `markGroupSafe`). The lock record commits in the same transaction as the review and its privacy
+          // projection, so no reader ever sees one without the other. Albums, favourites and the stored
+          // visibility are untouched either way; stacks and live photos move as a whole.
+          let locked: string[] = [];
+          let visibilityIds: string[] = [];
+          if (dto.action === AssetImageEnrichmentAction.MarkNsfw) {
+            locked = await this.assetRepository.lock([id], AssetLockReason.Marked, auth.user.id, trx);
+            visibilityIds = groupIds;
+          } else if (dto.action === AssetImageEnrichmentAction.AcceptNsfwResult && m.nsfwDetection?.review?.isNsfw) {
+            locked = await this.assetRepository.lock([id], AssetLockReason.Detected, auth.user.id, trx);
+            visibilityIds = groupIds;
+          }
+          if (visibilityIds.length > 0)
+            await this.partnerOriginRepository.markOverridden(
+              'asset',
+              visibilityIds,
+              [AssetOriginField.Visibility],
+              auth.user.id,
+              trx,
+            );
+          return { metadata: m, locked, visibilityIds };
+        }),
+    );
     // the lock is committed: release what a locked photo may no longer be before anything below can fail
     await this.afterSensitiveLock(locked);
+    if (visibilityIds.length > 0)
+      await recordAssetEdit(
+        { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+        auth.user.id,
+        visibilityIds,
+        [AssetOriginField.Visibility],
+      );
     // Phase 2 (no lock): tag application + finalize. These are idempotent on
     // their applied-hash bookkeeping, so the brief unlocked window between
     // phases is safe even under concurrent reviewer/detection writes.
@@ -487,12 +517,21 @@ export class ImageEnrichmentService extends BaseService {
     for (const ids of chunk(dto.ids, UNLOCK_CHUNK_SIZE)) {
       // every metadata writer takes its assets' metadata locks, in id order, before any group's rows
       const groupIds = await this.assetRepository.findLockGroupIds(ids);
-      const { unlocked, reviewed } = await this.databaseRepository.withAssetMetadataLocks(groupIds, async (trx) => {
-        const unlocked = [...new Set((await this.assetRepository.unlock(ids, trx)).map(({ assetId }) => assetId))];
-        requireUnchangedGroup(unlocked, groupIds);
-        const reviewed = await this.recordOwnerUnlock(auth, unlocked, trx);
-        return { unlocked, reviewed };
-      });
+      const { unlocked, reviewed } = await this.partnerOriginRepository.withOriginEdit('asset', groupIds, [], () =>
+        this.databaseRepository.withAssetMetadataLocks(groupIds, async (trx) => {
+          const unlocked = [...new Set((await this.assetRepository.unlock(ids, trx)).map(({ assetId }) => assetId))];
+          requireUnchangedGroup(unlocked, groupIds);
+          const reviewed = await this.recordOwnerUnlock(auth, unlocked, trx);
+          await this.partnerOriginRepository.markOverridden(
+            'asset',
+            unlocked,
+            [AssetOriginField.Visibility],
+            auth.user.id,
+            trx,
+          );
+          return { unlocked, reviewed };
+        }),
+      );
       await this.clearSafeReviewTags(reviewed);
       await this.notifyAssetsUpdated(unlocked, auth.user.id);
       await this.recordPartnerUnlock(auth, unlocked);
@@ -546,31 +585,40 @@ export class ImageEnrichmentService extends BaseService {
   private async markGroupSafe(auth: AuthDto, id: string): Promise<void> {
     const groupIds = await this.assetRepository.findLockGroupIds([id]);
     const lockIds = [...new Set([id, ...groupIds])];
-    const { unlocked, reviewed } = await this.databaseRepository.withAssetMetadataLocks(lockIds, async (trx) => {
-      const members = await this.assetRepository.lockGroupMembers([id], trx);
-      const memberIds = members.map((member) => member.id);
-      requireUnchangedGroup(memberIds, lockIds);
-      if (members.some((member) => isLockedRow(member))) {
-        requireElevatedPermission(auth);
-      }
-      // Legacy compatibility kept apart (FL-34): Mark Safe answers a sensitive verdict, so it releases
-      // marked and detected locks only; an item kept in the upstream Locked folder stays Locked until
-      // its owner unlocks it.
-      const unlocked = (
-        await this.assetRepository.unlock([id], trx, [AssetLockReason.Marked, AssetLockReason.Detected])
-      ).map(({ assetId }) => assetId);
-      // the unlock works the group out again: it may release only what the elevation check saw
-      requireUnchangedGroup(unlocked, memberIds);
-      const ownerId = members.find((member) => member.id === id)?.ownerId;
-      const reviewIds = new Set([id, ...unlocked]);
-      const reviewed = await this.reviewSafe(
-        auth,
-        members.filter((member) => reviewIds.has(member.id) && member.ownerId === ownerId),
-        trx,
-        true,
-      );
-      return { unlocked, reviewed };
-    });
+    const { unlocked, reviewed } = await this.partnerOriginRepository.withOriginEdit('asset', lockIds, [], () =>
+      this.databaseRepository.withAssetMetadataLocks(lockIds, async (trx) => {
+        const members = await this.assetRepository.lockGroupMembers([id], trx);
+        const memberIds = members.map((member) => member.id);
+        requireUnchangedGroup(memberIds, lockIds);
+        if (members.some((member) => isLockedRow(member))) {
+          requireElevatedPermission(auth);
+        }
+        // Legacy compatibility kept apart (FL-34): Mark Safe answers a sensitive verdict, so it releases
+        // marked and detected locks only; an item kept in the upstream Locked folder stays Locked until
+        // its owner unlocks it.
+        const unlocked = (
+          await this.assetRepository.unlock([id], trx, [AssetLockReason.Marked, AssetLockReason.Detected])
+        ).map(({ assetId }) => assetId);
+        // the unlock works the group out again: it may release only what the elevation check saw
+        requireUnchangedGroup(unlocked, memberIds);
+        const ownerId = members.find((member) => member.id === id)?.ownerId;
+        const reviewIds = new Set([id, ...unlocked]);
+        const reviewed = await this.reviewSafe(
+          auth,
+          members.filter((member) => reviewIds.has(member.id) && member.ownerId === ownerId),
+          trx,
+          true,
+        );
+        await this.partnerOriginRepository.markOverridden(
+          'asset',
+          unlocked,
+          [AssetOriginField.Visibility],
+          auth.user.id,
+          trx,
+        );
+        return { unlocked, reviewed };
+      }),
+    );
     await this.clearSafeReviewTags(reviewed);
     await this.notifyAssetsUpdated(unlocked, auth.user.id);
     await this.recordPartnerUnlock(auth, unlocked);
@@ -618,7 +666,7 @@ export class ImageEnrichmentService extends BaseService {
    * owner has reviewed, so those photos move to their owners' Locked view instead of staying in view.
    * Switching it off unlocks nothing: a lock is only ever removed by its owner.
    */
-  @OnEvent({ name: 'ConfigUpdate', workers: [ImmichWorker.Microservices], server: true })
+  @OnEvent({ name: 'ConfigUpdate', workers: [FrameleafWorker.Microservices], server: true })
   async onConfigUpdate({ oldConfig, newConfig }: ArgOf<'ConfigUpdate'>) {
     const hideDetections = isNsfwHidingEnabled(newConfig.machineLearning);
     if (hideDetections === isNsfwHidingEnabled(oldConfig.machineLearning)) {
@@ -637,7 +685,7 @@ export class ImageEnrichmentService extends BaseService {
    * start, when hiding is on now and was not on the last time the server looked, lock them exactly as
    * switching it on does. The setting seen is remembered, so this happens once per switch-on.
    */
-  @OnEvent({ name: 'ConfigInit', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
   async onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
     const hideDetections = isNsfwHidingEnabled(newConfig.machineLearning);
     const state = await this.systemMetadataRepository.get(SystemMetadataKey.LockedDetectionsState);
@@ -2015,7 +2063,9 @@ export class ImageEnrichmentService extends BaseService {
     const tagHash = hash(tags);
     const descriptionMetadata = metadata.description?.status === 'success' ? metadata.description : undefined;
     const hasStoredTagApplication =
-      !!descriptionMetadata?.appliedTagHash || !!descriptionMetadata?.appliedTagValues?.length;
+      previousTagValues.length > 0 ||
+      !!descriptionMetadata?.appliedTagHash ||
+      !!descriptionMetadata?.appliedTagValues?.length;
     if (
       descriptionMetadata &&
       (tags.length > 0 || hasStoredTagApplication) &&

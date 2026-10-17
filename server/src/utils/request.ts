@@ -21,11 +21,9 @@ export const fromChecksum = (checksum: string): Buffer => {
 
 export const fromMaybeArray = <T>(param: T | T[]) => (Array.isArray(param) ? param[0] : param);
 
-export const getAppVersionFromUA = (ua: string) =>
-  ua.match(/^immich-(?:android|ios|unknown)\/(?<appVersion>.+)$/)?.groups?.appVersion ??
-  // legacy format
-  ua.match(/^Immich_(?:Android|iOS|Unknown)_(?<appVersion>.+)$/)?.groups?.appVersion ??
-  null;
+const appUserAgentPattern = /^(?:(?:frameleaf|immich)-(?:android|ios|unknown)\/|Immich_(?:Android|iOS|Unknown)_)(.+)$/;
+
+export const getAppVersionFromUA = (ua: string) => appUserAgentPattern.exec(ua)?.[1] ?? null;
 
 export const getUserAgentDetails = (headers: IncomingHttpHeaders) => {
   const userAgent = UAParser(headers['user-agent']);

@@ -219,6 +219,36 @@ describe('MlDestinationsPanel (FL-110)', () => {
     expect([...faceRoute.options].map((option) => option.value)).not.toContain(cloud.id);
   });
 
+  it('never says consent was revoked when the server refused to revoke it', async () => {
+    const consented = {
+      ...cloud,
+      consent: { ...cloud.consent, acknowledgedAt: '2026-09-26T00:00:00.000Z', version: '2026-10-01' },
+    };
+    sdkMock.revokeMlDestinationConsent.mockRejectedValue(new Error('offline'));
+    render(MlDestinationsPanel, { destinations: [destination(), consented], routes });
+
+    const row = screen.getByRole('listitem', { name: 'Frameleaf Cloud' });
+    await fireEvent.click(within(row).getByRole('button', { name: 'Revoke consent' }));
+
+    await waitFor(() => expect(sdkMock.revokeMlDestinationConsent).toHaveBeenCalled());
+    await waitFor(() => expect(within(row).getByRole('button', { name: 'Revoke consent' })).toBeEnabled());
+    expect(screen.queryByText(/Consent revoked for Frameleaf Cloud/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the destination form open when the server refuses the save', async () => {
+    sdkMock.updateMlDestination.mockRejectedValue(new Error('bad address'));
+    render(MlDestinationsPanel, { destinations: [destination(), cloud], routes });
+
+    const row = screen.getByRole('listitem', { name: 'Frameleaf Cloud' });
+    await fireEvent.click(within(row).getByRole('button', { name: 'Edit' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit destination' });
+    await fireEvent.submit(dialog.querySelector('form')!);
+
+    await waitFor(() => expect(sdkMock.updateMlDestination).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByRole('dialog', { name: 'Edit destination' })).toBeInTheDocument();
+  });
+
   it('routes a workload through the server and removes a route with an empty choice', async () => {
     sdkMock.setMlWorkloadRoute.mockResolvedValue({ routes });
     render(MlDestinationsPanel, { destinations: [destination(), cloud], routes });

@@ -1,6 +1,6 @@
-ARG STUDIO_NODE_IMAGE=node:24.21.0-bookworm@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4
+ARG STUDIO_NODE_IMAGE=node:26.11.1-bookworm@sha256:f1233c415b41ffcf237c717b3dea92e9d4ea006e0e4c71edcb790605d74f5404
 # BEGIN frameleaf-server-base
-ARG NODE_IMAGE=node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
+ARG NODE_IMAGE=node:26.11.1-trixie-slim@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0
 # Frameleaf builds its own server base instead of pulling a prebuilt one. The stages between these
 # markers reproduce the base-server-dev image from immich-app/base-images tag 202609151314 (commit
 # 0f4c144d44c0556f8a7fc9143f82a176986369fc, AGPL-3.0). The scripts, version pins and patches it runs
@@ -187,7 +187,8 @@ COPY --from=base-server-darktable /usr/local/bin/darktable /usr/local/bin/darkta
 COPY --from=base-server-darktable /usr/local/share/ /usr/local/share/
 COPY server/base-image/verify-darktable.mjs server/base-image/verify-darktable-develop.mjs /build/
 COPY --from=base-server-darktable /build/darktable-runtime-packages.txt /build/darktable-runtime-packages.txt
-RUN apt-update-strict && xargs -r apt-get install --no-install-recommends -yqq < /build/darktable-runtime-packages.txt
+# Cached build versions are ABI minimums; retain newer installed security updates.
+RUN apt-update-strict && test -s /build/darktable-runtime-packages.txt && sed -E 's/^([^=]+)=(.+)$/"\1 (>= \2)"/' /build/darktable-runtime-packages.txt > /tmp/darktable-runtime-dependencies.txt && xargs -r apt-get satisfy --no-install-recommends -yqq < /tmp/darktable-runtime-dependencies.txt && rm /tmp/darktable-runtime-dependencies.txt
 
 ENV LD_LIBRARY_PATH=/usr/lib/wsl/lib
 
@@ -219,9 +220,9 @@ FROM ${NODE_IMAGE} AS base-server-prod
 ARG DEBIAN_FRONTEND=noninteractive
 
 # renovate: datasource=custom.intel-igc depName=intel/intel-graphics-compiler
-ARG IGC_VERSION=2.38.2+22051
+ARG IGC_VERSION=2.41.5+22716
 # renovate: datasource=custom.intel-opencl-icd depName=intel/compute-runtime
-ARG COMPUTE_RUNTIME_VERSION=26.27.39122.11-0
+ARG COMPUTE_RUNTIME_VERSION=26.35.39758.10-0
 # renovate: datasource=custom.intel-gmmlib depName=intel/compute-runtime
 ARG GMMLIB_VERSION=22.10.0
 
@@ -271,7 +272,7 @@ RUN . /etc/os-release && \
   libwebpmux3 \
   libhwy1t64 \
   libaom3 && \
-  xargs -r apt-get install --no-install-recommends -yqq < /build/darktable-runtime-packages.txt && \
+  test -s /build/darktable-runtime-packages.txt && sed -E 's/^([^=]+)=(.+)$/"\1 (>= \2)"/' /build/darktable-runtime-packages.txt > /tmp/darktable-runtime-dependencies.txt && xargs -r apt-get satisfy --no-install-recommends -yqq < /tmp/darktable-runtime-dependencies.txt && rm /tmp/darktable-runtime-dependencies.txt && \
   ./ffmpeg.sh && \
   if [ $(arch) = "x86_64" ]; then \
   # Old driver
@@ -291,9 +292,9 @@ RUN . /etc/os-release && \
   'c1e1ecdfe2064c047c552651cfdcdafc504f2033afafba65654338b880048b67  intel-igc-core_1.0.17537.24_amd64.deb' \
   'dd016400f87fa2b6a9fa9fbcca7eb4a2629174a29de679709f9bec5cede88b0e  intel-igc-opencl_1.0.17537.24_amd64.deb' \
   'bbe71e4f414259e06a10cde72c29a2bd78d41b2bb2f6f8463b1806797fe66e85  intel-opencl-icd-legacy1_24.35.30872.36_amd64.deb' \
-  '3dbcbe4e716d62e9bd43a4a476d724cf772b4581dbcdd096d70df382e7ccad7e  intel-igc-core-2_2.38.2+22051_amd64.deb' \
-  'e265d191590efd5491bfbbd148c144fdd40aea51e0b57f8651130d2da20b8186  intel-igc-opencl-2_2.38.2+22051_amd64.deb' \
-  '6e447a783c99fb5634df298c135a81165be07db98672df96cdf413d22f3e6ac4  intel-opencl-icd_26.27.39122.11-0_amd64.deb' \
+  '0a6e64a663ae65a0fa02d6912ae3b6b37cf85b90c21cc423fd9fef70aaf4f628  intel-igc-core-2_2.41.5+22716_amd64.deb' \
+  '779e1b9e88098eb25711e9a8f67c2752665bad22f134aa40ed5649f6e1b87058  intel-igc-opencl-2_2.41.5+22716_amd64.deb' \
+  '61712caaddeba3d38e4f79e2a0fb23fea25596ca2d72c3144c6eea2331ec4301  intel-opencl-icd_26.35.39758.10-0_amd64.deb' \
   '6031a63d6e8a12ce61c14efc15f2c8e727061286e3820b8594e6d00615e04d54  libigdgmm12_22.10.0_amd64.deb' \
   > intel-drivers.sha256 && \
   sha256sum --strict -c intel-drivers.sha256 && \
@@ -420,6 +421,8 @@ ENTRYPOINT ["node", "/build/verify-darktable-develop.mjs"]
 # together with every licence notice it needs (attribution/, notices/).
 FROM ${STUDIO_NODE_IMAGE} AS studio-engine
 
+RUN npm install --global npm@11.8.0 --ignore-scripts --no-audit --no-fund
+
 WORKDIR /usr/src/app
 COPY ./scripts/frameleaf-studio-contracts.mjs ./scripts/frameleaf-studio-contracts.mjs
 COPY ./scripts/frameleaf-studio-rights.mjs ./scripts/frameleaf-studio-rights.mjs
@@ -463,7 +466,7 @@ FROM plugin-sdk AS plugins
 
 ARG TARGETPLATFORM
 
-COPY --from=ghcr.io/jdx/mise:2026.9.9@sha256:a88f300ef4365494b88f8eefd271bb92ba467d4a41835739a714426207215730 /usr/local/bin/mise /usr/local/bin/mise
+COPY --from=ghcr.io/jdx/mise:2026.10.8@sha256:b720f506c21a6bf5f733a3b1cd04361617ac461a597e44f513aa3976dcd71e57 /usr/local/bin/mise /usr/local/bin/mise
 
 COPY ./mise.toml ./mise.toml
 COPY ./mise.lock ./mise.lock

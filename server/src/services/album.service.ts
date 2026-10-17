@@ -46,6 +46,7 @@ import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { isSharedSpace, requireInvitableRole, requireSpaceOwner } from 'src/utils/shared-space.js';
+import { getSupporters } from 'src/utils/supporter.js';
 
 /** Why an editor's move is refused. The album's place is one stored value that everyone sees. */
 export const ALBUM_MOVE_OWNER_ONLY =
@@ -98,11 +99,32 @@ export class AlbumService extends BaseService {
       albums.map((album) => album.id),
       ownerId,
     );
-    return albums.map((album) => {
-      const item = this.withReadableParent(this.toListItem(album, albumMetadata), readable);
-      const origin = origins.get(album.id);
-      return origin ? { ...item, origin } : item;
-    });
+    return this.withSupporters(
+      auth,
+      albums.map((album) => {
+        const item = this.withReadableParent(this.toListItem(album, albumMetadata), readable);
+        const origin = origins.get(album.id);
+        return origin ? { ...item, origin } : item;
+      }),
+    );
+  }
+
+  /** Supporter option (b): mark the members who are supporters. A shared-link visitor is not told. */
+  private async withSupporters(auth: AuthDto, albums: AlbumResponseDto[]): Promise<AlbumResponseDto[]> {
+    if (auth.sharedLink || albums.length === 0) {
+      return albums;
+    }
+    const isSupporter = await getSupporters(
+      {
+        systemMetadataRepository: this.systemMetadataRepository,
+        frameleafUserLicenseRepository: this.frameleafUserLicenseRepository,
+      },
+      albums.flatMap(({ albumUsers }) => albumUsers.map(({ user }) => user.id)),
+    );
+    return albums.map((album) => ({
+      ...album,
+      albumUsers: album.albumUsers.map((member) => ({ ...member, supporter: isSupporter(member.user.id) })),
+    }));
   }
 
   /**
@@ -247,8 +269,9 @@ export class AlbumService extends BaseService {
     });
 
     const readable = await this.readableParents(auth, [mappedAlbum]);
+    const [withSupporters] = await this.withSupporters(auth, [mapAlbum(mappedAlbum)]);
     return {
-      ...this.withReadableParent(mapAlbum(mappedAlbum), readable),
+      ...this.withReadableParent(withSupporters, readable),
       startDate: asDateTimeString(albumMetadataForIds?.startDate ?? undefined),
       endDate: asDateTimeString(albumMetadataForIds?.endDate ?? undefined),
       assetCount: albumMetadataForIds?.assetCount ?? 0,
@@ -412,31 +435,29 @@ export class AlbumService extends BaseService {
     // FL-83 (AL-13): picking a specific item stops the cover following the newest item. Saved before
     // the album row is written and read back, so turning it on returns the newest item as the cover.
     const coverFollowsNewest = dto.albumThumbnailAssetId ? false : dto.coverFollowsNewest;
-    if (coverFollowsNewest !== undefined) {
-      await this.albumRepository.setCoverFollowsNewest(album.id, coverFollowsNewest);
-    }
-
-    const updatedAlbum = await this.albumRepository.update(
-      album.id,
-      {
-        id: album.id,
-        albumName: dto.albumName,
-        description: dto.description,
-        albumThumbnailAssetId: dto.albumThumbnailAssetId,
-        isActivityEnabled: dto.isActivityEnabled,
-        order: dto.order,
-        icon: dto.icon,
-        sortOrder: dto.sortOrder,
-      },
-      auth.user.id,
-    );
+    const fields = getAlbumEditFields(dto);
+    const updatedAlbum = await this.partnerOriginRepository.withOriginEdit('album', [album.id], fields, async () => {
+      if (coverFollowsNewest !== undefined) {
+        await this.albumRepository.setCoverFollowsNewest(album.id, coverFollowsNewest);
+      }
+      return this.albumRepository.update(
+        album.id,
+        {
+          id: album.id,
+          albumName: dto.albumName,
+          description: dto.description,
+          albumThumbnailAssetId: dto.albumThumbnailAssetId,
+          isActivityEnabled: dto.isActivityEnabled,
+          order: dto.order,
+          icon: dto.icon,
+          sortOrder: dto.sortOrder,
+        },
+        auth.user.id,
+      );
+    });
 
     // FL-326: an album copy's edited fields are its own from now on; copies of this album follow it
-    await recordAlbumEdit(
-      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
-      [album.id],
-      getAlbumEditFields(dto),
-    );
+    await recordAlbumEdit({ partnerOrigin: this.partnerOriginRepository, job: this.jobRepository }, [album.id], fields);
 
     // Members' open pages re-read the album (its shared order, name, cover); no email for an edit.
     await this.eventRepository.emit('AlbumUpdate', {
@@ -539,52 +560,57 @@ export class AlbumService extends BaseService {
     const album = await this.findOrFail(id, auth, { withAssets: false });
     await this.requireAccess({ auth, permission: Permission.AlbumAssetCreate, ids: [id] });
 
-    const { results, response } = await this.albumRepository.withMembershipWrite([id], async (tx, bulk) => {
-      if (sourceLinkId) {
-        await this.requireSourceLink(tx, auth, id, sourceLinkId);
-      }
-      const recorded = sourceLinkId
-        ? await this.albumSourceRepository.getRecordedAssetIds(tx, id, dto.ids)
-        : new Set<string>();
-      let inserted: Set<string> | undefined;
-      const sourceBulk = sourceLinkId
-        ? {
-            getAssetIds: bulk.getAssetIds.bind(bulk),
-            removeAssetIds: bulk.removeAssetIds.bind(bulk),
-            addAssetIds: async (albumId: string, assetIds: string[]) => {
-              const memberships = await bulk.addAssetIdsReturning(albumId, assetIds);
-              inserted = new Set(memberships.map(({ assetId }) => assetId));
-            },
-          }
-        : bulk;
-      const attempted = await addAssets(
-        auth,
-        { access: this.accessRepository, bulk: sourceBulk },
-        { parentId: id, assetIds: dto.ids, permission: Permission.AssetShare },
-      );
-      // An unfenced writer may win an absent-row insert after the utility's read. That is a
-      // duplicate, not source ownership, and must not produce addition events or follow-up jobs.
-      const results = attempted.map((result) =>
-        result.success && inserted && !inserted.has(result.id)
-          ? { id: result.id, success: false, error: BulkIdErrorReason.DUPLICATE }
-          : result,
-      );
-      const syncOwned = results.filter(
-        ({ success, error, id }) => !success && error === BulkIdErrorReason.DUPLICATE && recorded.has(id),
-      );
-      if (sourceLinkId) {
-        await this.albumSourceRepository.record(
-          tx,
-          sourceLinkId,
-          [...results.filter(({ success }) => success), ...syncOwned].map(({ id }) => id),
+    const { results, response } = await this.partnerOriginRepository.withOriginEdit('album', [id], [], () =>
+      this.albumRepository.withMembershipWrite([id], async (tx, bulk) => {
+        if (sourceLinkId) {
+          await this.requireSourceLink(tx, auth, id, sourceLinkId);
+        }
+        const recorded = sourceLinkId
+          ? await this.albumSourceRepository.getRecordedAssetIds(tx, id, dto.ids)
+          : new Set<string>();
+        let inserted: Set<string> | undefined;
+        const sourceBulk = sourceLinkId
+          ? {
+              getAssetIds: bulk.getAssetIds.bind(bulk),
+              removeAssetIds: bulk.removeAssetIds.bind(bulk),
+              addAssetIds: async (albumId: string, assetIds: string[]) => {
+                const memberships = await bulk.addAssetIdsReturning(albumId, assetIds);
+                inserted = new Set(memberships.map(({ assetId }) => assetId));
+              },
+            }
+          : bulk;
+        const attempted = await addAssets(
+          auth,
+          { access: this.accessRepository, bulk: sourceBulk },
+          { parentId: id, assetIds: dto.ids, permission: Permission.AssetShare },
         );
-      }
-      const owned = new Set(syncOwned.map(({ id }) => id));
-      return {
-        results,
-        response: results.map((result) => (owned.has(result.id) ? { id: result.id, success: true } : result)),
-      };
-    });
+        // An unfenced writer may win an absent-row insert after the utility's read. That is a
+        // duplicate, not source ownership, and must not produce addition events or follow-up jobs.
+        const results = attempted.map((result) =>
+          result.success && inserted && !inserted.has(result.id)
+            ? { id: result.id, success: false, error: BulkIdErrorReason.DUPLICATE }
+            : result,
+        );
+        const syncOwned = results.filter(
+          ({ success, error, id }) => !success && error === BulkIdErrorReason.DUPLICATE && recorded.has(id),
+        );
+        if (sourceLinkId) {
+          await this.albumSourceRepository.record(
+            tx,
+            sourceLinkId,
+            [...results.filter(({ success }) => success), ...syncOwned].map(({ id }) => id),
+          );
+        }
+        if (results.some(({ success }) => success)) {
+          await this.partnerOriginRepository.markOverridden('album', [id], [AlbumOriginField.Membership]);
+        }
+        const owned = new Set(syncOwned.map(({ id }) => id));
+        return {
+          results,
+          response: results.map((result) => (owned.has(result.id) ? { id: result.id, success: true } : result)),
+        };
+      }),
+    );
 
     const newAssetIds = results.filter(({ success }) => success).map(({ id }) => id);
     // Putting an item in a rule's smart album by hand is a decision the rule keeps (FL-60).
@@ -648,37 +674,44 @@ export class AlbumService extends BaseService {
     const albumAssetValues: { albumId: string; assetId: string }[] = [];
     const events: { id: string; userIds: string[]; recipientIds: string[] }[] = [];
     const spaceEvents: { album: MapAlbumDto; assetIds: string[] }[] = [];
-    for (const albumId of allowedAlbumIds) {
-      const existingAssetIds = await this.albumRepository.getAssetIds(albumId, [...allowedAssetIds]);
-      const notPresentAssetIds = [...allowedAssetIds.difference(existingAssetIds)];
-      if (notPresentAssetIds.length === 0) {
-        continue;
-      }
-      const album = await this.findOrFail(albumId, auth, { withAssets: false });
-      results.error = undefined;
-      results.success = true;
+    await this.partnerOriginRepository.withOriginEdit('album', [...allowedAlbumIds], [], async () => {
+      for (const albumId of allowedAlbumIds) {
+        const existingAssetIds = await this.albumRepository.getAssetIds(albumId, [...allowedAssetIds]);
+        const notPresentAssetIds = [...allowedAssetIds.difference(existingAssetIds)];
+        if (notPresentAssetIds.length === 0) {
+          continue;
+        }
+        const album = await this.findOrFail(albumId, auth, { withAssets: false });
+        results.error = undefined;
+        results.success = true;
 
-      for (const assetId of notPresentAssetIds) {
-        albumAssetValues.push({ albumId, assetId });
+        for (const assetId of notPresentAssetIds) {
+          albumAssetValues.push({ albumId, assetId });
+        }
+        const shown = await this.shownToMembers(notPresentAssetIds);
+        if (shown.length > 0) {
+          await this.albumRepository.update(
+            albumId,
+            {
+              id: albumId,
+              updatedAt: new Date(),
+              albumThumbnailAssetId:
+                album.albumThumbnailAssetId ?? (await this.firstCoverCandidate(auth, notPresentAssetIds)),
+            },
+            auth.user.id,
+          );
+        }
+        events.push(this.albumUpdateEvent(album, auth, shown.length > 0));
+        spaceEvents.push({ album, assetIds: notPresentAssetIds });
       }
-      const shown = await this.shownToMembers(notPresentAssetIds);
-      if (shown.length > 0) {
-        await this.albumRepository.update(
-          albumId,
-          {
-            id: albumId,
-            updatedAt: new Date(),
-            albumThumbnailAssetId:
-              album.albumThumbnailAssetId ?? (await this.firstCoverCandidate(auth, notPresentAssetIds)),
-          },
-          auth.user.id,
-        );
-      }
-      events.push(this.albumUpdateEvent(album, auth, shown.length > 0));
-      spaceEvents.push({ album, assetIds: notPresentAssetIds });
-    }
 
-    await this.albumRepository.addAssetIdsToAlbums(albumAssetValues);
+      await this.albumRepository.addAssetIdsToAlbums(albumAssetValues);
+      await this.partnerOriginRepository.markOverridden(
+        'album',
+        events.map(({ id }) => id),
+        [AlbumOriginField.Membership],
+      );
+    });
     if (events.length > 0) {
       await this.albumRepository.updateNewestCovers(events.map(({ id }) => id));
     }
@@ -706,46 +739,51 @@ export class AlbumService extends BaseService {
     await this.requireAccess({ auth, permission: Permission.AlbumAssetDelete, ids: [id] });
 
     const album = await this.findOrFail(id, auth, { withAssets: false });
-    const { results, response } = await this.albumRepository.withMembershipWrite([id], async (tx, bulk) => {
-      let ids = dto.ids;
-      let mine: Set<string> | undefined;
-      if (sourceLinkId) {
-        await this.requireSourceLink(tx, auth, id, sourceLinkId);
-        mine = await this.albumSourceRepository.getRecordedAssetIds(tx, id, ids, sourceLinkId);
-        // Drop this link's claim first, then see whether another link still owns the same generation.
-        await this.albumSourceRepository.unrecord(tx, sourceLinkId, [...mine]);
-        const held = await this.albumSourceRepository.getRecordedAssetIds(tx, id, [...mine]);
-        ids = [...mine.difference(held)];
-      }
-      const results = await removeAssets(
-        auth,
-        { access: this.accessRepository, bulk },
-        { parentId: id, assetIds: ids, canAlwaysRemove: Permission.AlbumDelete },
-      );
-      // A refused removal must keep its claim so a later authorized attempt can remove it.
-      if (sourceLinkId) {
-        await this.albumSourceRepository.record(
-          tx,
-          sourceLinkId,
-          results
-            .filter(({ success, error }) => !success && error === BulkIdErrorReason.NO_PERMISSION)
-            .map(({ id }) => id),
+    const { results, response } = await this.partnerOriginRepository.withOriginEdit('album', [id], [], () =>
+      this.albumRepository.withMembershipWrite([id], async (tx, bulk) => {
+        let ids = dto.ids;
+        let mine: Set<string> | undefined;
+        if (sourceLinkId) {
+          await this.requireSourceLink(tx, auth, id, sourceLinkId);
+          mine = await this.albumSourceRepository.getRecordedAssetIds(tx, id, ids, sourceLinkId);
+          // Drop this link's claim first, then see whether another link still owns the same generation.
+          await this.albumSourceRepository.unrecord(tx, sourceLinkId, [...mine]);
+          const held = await this.albumSourceRepository.getRecordedAssetIds(tx, id, [...mine]);
+          ids = [...mine.difference(held)];
+        }
+        const results = await removeAssets(
+          auth,
+          { access: this.accessRepository, bulk },
+          { parentId: id, assetIds: ids, canAlwaysRemove: Permission.AlbumDelete },
         );
-      }
-      const failures = new Map(results.filter(({ success }) => !success).map((result) => [result.id, result]));
-      const response = mine
-        ? dto.ids.map((assetId) => {
-            const failure = failures.get(assetId);
-            if (failure) {
-              return failure;
-            }
-            return mine.has(assetId)
-              ? { id: assetId, success: true }
-              : { id: assetId, success: false, error: BulkIdErrorReason.NOT_FOUND };
-          })
-        : results;
-      return { results, response };
-    });
+        // A refused removal must keep its claim so a later authorized attempt can remove it.
+        if (sourceLinkId) {
+          await this.albumSourceRepository.record(
+            tx,
+            sourceLinkId,
+            results
+              .filter(({ success, error }) => !success && error === BulkIdErrorReason.NO_PERMISSION)
+              .map(({ id }) => id),
+          );
+        }
+        if (results.some(({ success }) => success)) {
+          await this.partnerOriginRepository.markOverridden('album', [id], [AlbumOriginField.Membership]);
+        }
+        const failures = new Map(results.filter(({ success }) => !success).map((result) => [result.id, result]));
+        const response = mine
+          ? dto.ids.map((assetId) => {
+              const failure = failures.get(assetId);
+              if (failure) {
+                return failure;
+              }
+              return mine.has(assetId)
+                ? { id: assetId, success: true }
+                : { id: assetId, success: false, error: BulkIdErrorReason.NOT_FOUND };
+            })
+          : results;
+        return { results, response };
+      }),
+    );
 
     const removedIds = results.filter(({ success }) => success).map(({ id }) => id);
     const isOwner = album.albumUsers.some(({ role, user }) => role === AlbumUserRole.Owner && user.id === auth.user.id);

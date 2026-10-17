@@ -11,7 +11,7 @@ import {
   OAuthConfigDto,
 } from 'src/dtos/auth.dto.js';
 import { UserAdminResponseDto } from 'src/dtos/user.dto.js';
-import { ApiTag, AuthType, ImmichCookie } from 'src/enum.js';
+import { ApiTag, AuthCookie, AuthType } from 'src/enum.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { AuthService, type LoginDetails } from 'src/services/auth.service.js';
@@ -73,8 +73,8 @@ export class OAuthController {
       {
         isSecure: loginDetails.isSecure,
         values: [
-          { key: ImmichCookie.OAuthState, value: state },
-          { key: ImmichCookie.OAuthCodeVerifier, value: codeVerifier },
+          { key: AuthCookie.OAuthState, value: state },
+          { key: AuthCookie.OAuthCodeVerifier, value: codeVerifier },
         ],
       },
     );
@@ -95,15 +95,15 @@ export class OAuthController {
     @GetLoginDetails() loginDetails: LoginDetails,
   ): Promise<LoginResponseDto> {
     const body = await this.service.callback(dto, request.headers, loginDetails);
-    res.clearCookie(ImmichCookie.OAuthState);
-    res.clearCookie(ImmichCookie.OAuthCodeVerifier);
+    res.clearCookie(AuthCookie.OAuthState);
+    res.clearCookie(AuthCookie.OAuthCodeVerifier);
     return respondWithCookie(res, body, {
       isSecure: loginDetails.isSecure,
       rememberMe: dto.rememberMe,
       values: [
-        { key: ImmichCookie.AccessToken, value: body.accessToken },
-        { key: ImmichCookie.AuthType, value: AuthType.OAuth },
-        { key: ImmichCookie.IsAuthenticated, value: 'true' },
+        { key: AuthCookie.AccessToken, value: body.accessToken },
+        { key: AuthCookie.AuthType, value: AuthType.OAuth },
+        { key: AuthCookie.IsAuthenticated, value: 'true' },
       ],
     });
   }

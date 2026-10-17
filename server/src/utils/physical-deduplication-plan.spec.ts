@@ -266,6 +266,28 @@ describe('physical deduplication plans (FL-73)', () => {
     });
 
     it.each([
+      ['missing copy size', { items: [{ ...snapshot.items[0], sizeInBytes: undefined }] }],
+      ['negative copy size', { items: [{ ...snapshot.items[0], sizeInBytes: -1 }] }],
+      ['string copy size', { items: [{ ...snapshot.items[0], sizeInBytes: '10' }] }],
+      ['fractional retained size', { retained: [{ ...snapshot.retained[0], sizeInBytes: 0.5 }] }],
+      ['NaN retained size', { retained: [{ ...snapshot.retained[0], sizeInBytes: NaN }] }],
+      ['infinite reference count', { retained: [{ ...snapshot.retained[0], referencesBefore: Infinity }] }],
+      ['unsafe byte estimate', { estimatedBytes: Number.MAX_SAFE_INTEGER + 1 }],
+    ])('refuses frozen evidence with %s rather than changing its count', (_name, patch) => {
+      expect(() => parsePhysicalDeduplicationSnapshot({ ...snapshot, ...patch })).toThrow();
+    });
+
+    it('retains valid zero byte counts exactly', () => {
+      const emptyBytes = {
+        ...snapshot,
+        items: snapshot.items.map((item) => ({ ...item, sizeInBytes: 0 })),
+        retained: snapshot.retained.map((item) => ({ ...item, sizeInBytes: 0 })),
+        estimatedBytes: 0,
+      };
+      expect(parsePhysicalDeduplicationSnapshot(emptyBytes)).toEqual(emptyBytes);
+    });
+
+    it.each([
       ['missing', null],
       ['another version', { ...snapshot, version: 2 }],
       ['without copies', { ...snapshot, items: undefined }],

@@ -7,8 +7,8 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from immich_ml.config import log  # noqa: E402
-from immich_ml.main import app  # noqa: E402
+from frameleaf_ml.config import log  # noqa: E402
+from frameleaf_ml.main import app  # noqa: E402
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def pil_image() -> Image.Image:
 
 @pytest.fixture
 def mock_get_model() -> Iterator[mock.Mock]:
-    with mock.patch("immich_ml.models.cache.from_model_type", autospec=True) as mocked:
+    with mock.patch("frameleaf_ml.models.cache.from_model_type", autospec=True) as mocked:
         yield mocked
 
 
@@ -97,14 +97,14 @@ def providers(request: pytest.FixtureRequest) -> Iterator[mock.Mock]:
         raise ValueError("Missing marker 'providers'")
 
     providers = marker.args[0]
-    with mock.patch("immich_ml.sessions.ort.ort.get_available_providers") as mocked:
+    with mock.patch("frameleaf_ml.sessions.ort.ort.get_available_providers") as mocked:
         mocked.return_value = providers
         yield providers
 
 
 @pytest.fixture(scope="function")
 def ort_pybind() -> Iterator[mock.Mock]:
-    with mock.patch("immich_ml.sessions.ort.ort.capi._pybind_state") as mocked:
+    with mock.patch("frameleaf_ml.sessions.ort.ort.capi._pybind_state") as mocked:
         yield mocked
 
 
@@ -119,7 +119,7 @@ def ov_device_ids(request: pytest.FixtureRequest, ort_pybind: mock.Mock) -> Iter
 
 @pytest.fixture(scope="function")
 def ort_session() -> Iterator[mock.Mock]:
-    with mock.patch("immich_ml.sessions.ort.ort.InferenceSession") as mocked:
+    with mock.patch("frameleaf_ml.sessions.ort.ort.InferenceSession") as mocked:
         yield mocked
 
 
@@ -137,19 +137,19 @@ def stub_session() -> Callable[..., mock.Mock]:
 
 @pytest.fixture(scope="function")
 def ann_session() -> Iterator[mock.Mock]:
-    with mock.patch("immich_ml.sessions.ann.Ann") as mocked:
+    with mock.patch("frameleaf_ml.sessions.ann.Ann") as mocked:
         yield mocked
 
 
 @pytest.fixture(scope="function")
 def rknn_session() -> Iterator[mock.Mock]:
-    with mock.patch("immich_ml.sessions.rknn.RknnPoolExecutor") as mocked:
+    with mock.patch("frameleaf_ml.sessions.rknn.RknnPoolExecutor") as mocked:
         yield mocked
 
 
 @pytest.fixture(scope="function")
 def rmtree() -> Iterator[mock.Mock]:
-    with mock.patch("immich_ml.models.base.rmtree", autospec=True) as mocked:
+    with mock.patch("frameleaf_ml.models.base.rmtree", autospec=True) as mocked:
         mocked.avoids_symlink_attacks = True
         yield mocked
 
@@ -163,7 +163,7 @@ def path() -> Iterator[mock.Mock]:
     path.with_suffix.return_value = path
     path.return_value = path
 
-    with mock.patch("immich_ml.models.base.Path", return_value=path) as mocked:
+    with mock.patch("frameleaf_ml.models.base.Path", return_value=path) as mocked:
         yield mocked
 
 
@@ -187,5 +187,5 @@ def exception() -> Iterator[mock.Mock]:
 
 @pytest.fixture(scope="function")
 def snapshot_download() -> Iterator[mock.Mock]:
-    with mock.patch("immich_ml.models.base.snapshot_download") as mocked:
+    with mock.patch("frameleaf_ml.models.base.snapshot_download") as mocked:
         yield mocked

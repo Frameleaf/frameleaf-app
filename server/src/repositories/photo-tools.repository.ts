@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import { DEVELOP_PRESET_MAX } from 'src/dtos/photo-tools.dto.js';
 import { DB } from 'src/schema/index.js';
 import { DevelopExportTable, DevelopPresetTable } from 'src/schema/tables/photo-tools.table.js';
 
@@ -54,11 +55,22 @@ export class PhotoToolsRepository {
   }
 
   createPreset(preset: Insertable<DevelopPresetTable>): Promise<DevelopPreset> {
-    return this.db
-      .insertInto('develop_preset')
-      .values({ ...preset, settings: json(preset.settings) })
-      .returningAll()
-      .executeTakeFirstOrThrow();
+    return this.db.transaction().execute(async (tx) => {
+      await tx.selectFrom('user').select('id').where('id', '=', preset.ownerId).forUpdate().executeTakeFirstOrThrow();
+      const { count } = await tx
+        .selectFrom('develop_preset')
+        .select((eb) => eb.fn.countAll<number>().as('count'))
+        .where('ownerId', '=', preset.ownerId)
+        .executeTakeFirstOrThrow();
+      if (Number(count) >= DEVELOP_PRESET_MAX) {
+        throw new BadRequestException(`You can keep up to ${DEVELOP_PRESET_MAX} presets; delete one first`);
+      }
+      return tx
+        .insertInto('develop_preset')
+        .values({ ...preset, settings: json(preset.settings) })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+    });
   }
 
   updatePreset(

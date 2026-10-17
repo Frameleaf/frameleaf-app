@@ -4,10 +4,12 @@
    Animations API (setup-motion.ts), gated on mediaQueryManager.reducedMotion,
    and falls back to plain fades.
 
-   The stage is the plain canvas, with no washes or glows; the accent appears
-   along the chapter rail's progress and across the top of the link-to-Cloud
-   card. The logo fades in (Logo arrive). The import art uses neutral tiles
-   instead of sample photos. */
+   SHELL-P2 (owner 2026-10-16): the prototype's soft teal and green glows are
+   back on the stage, the "found your library" card and the link-to-Cloud card
+   (first-run-setup.css:49-56, 714-724, 1310-1330), laid over this theme's own
+   canvas and panel; the rejected brand's Ink surfaces are not. The accent
+   appears along the chapter rail's progress. The logo fades in (Logo arrive).
+   The import art uses neutral tiles instead of sample photos. */
 
 .frs {
   flex: 1 1 auto;
@@ -55,7 +57,9 @@
 .frs-stage-screen {
   display: flex;
   flex-direction: column;
-  background: var(--fl-canvas);
+  background:
+    radial-gradient(1200px 700px at 50% 38%, rgba(0, 196, 214, 0.1), transparent 60%),
+    radial-gradient(900px 600px at 70% 90%, rgba(54, 236, 114, 0.06), transparent 60%), var(--fl-canvas);
 }
 .frs-stage {
   position: relative;
@@ -775,8 +779,8 @@
   gap: 16px;
   padding: 20px;
   border-radius: var(--fl-radius-card);
-  background: var(--fl-panel);
-  border: 1px solid var(--fl-border);
+  background: radial-gradient(600px 200px at 0% 0%, rgba(0, 196, 214, 0.14), transparent 70%), var(--fl-panel);
+  border: 1px solid rgba(0, 196, 214, 0.25);
 }
 .frs-found > header,
 .frs-cloud-backup > header {
@@ -1358,11 +1362,14 @@
   align-items: center;
   padding: 24px;
   border-radius: var(--fl-radius-card);
-  background: var(--fl-panel);
-  border: 1px solid var(--fl-border);
+  background:
+    radial-gradient(500px 240px at 0% 50%, rgba(54, 236, 114, 0.14), transparent 70%),
+    radial-gradient(500px 240px at 100% 0%, rgba(0, 196, 214, 0.16), transparent 70%), var(--fl-panel);
+  border: 1px solid rgba(0, 196, 214, 0.3);
   position: relative;
   overflow: hidden;
 }
+/* The mark by itself, never on a tile or plate (owner, 2026-10-16). */
 .frs-link-art {
   display: grid;
   place-items: center;
@@ -1640,9 +1647,12 @@
     grid-column: 1;
   }
   .frs-link-art {
-    width: auto;
-    height: auto;
+    width: 64px;
+    height: 64px;
     justify-self: start;
+  }
+  .frs-link-art img {
+    width: 40px;
   }
 }
 @media (max-width: 560px) {

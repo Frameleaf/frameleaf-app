@@ -1,19 +1,20 @@
 # Native RAW development adapter and qualification
 
 Recipe v2 is the full native development path. Version 1 remains the existing quick-edit protocol and
-is never silently converted. The engine must be darktable 5.6.1, source commit
-`03179f8e080aa9cedebfe14b098b7ba88940a292`, little endian. The adapter first lets this engine
+is never silently converted. The engine must be darktable 5.6.2, source commit
+`20891f6c6fa7be995e5bf9dff9d1ee5062051773`, little endian. The adapter first lets this engine
 create camera defaults in a private CLI library, then changes native binary history transactionally.
+The stored `darktable/5.6.1` recipe identifier remains the control/history ABI: its native module layouts are byte-identical in 5.6.2. Binary validation and runtime/cache provenance identify 5.6.2 and its source commit.
 Original paths and adjacent sidecars never enter that library. Preview and final render the same
 full-resolution profiled 16-bit sRGB PNG; only their final JPEG/WebP encoding size differs.
 
 The serializers were checked against these primary source files at the pinned commit:
 
-- [exposure v7](https://github.com/darktable-org/darktable/blob/03179f8e080aa9cedebfe14b098b7ba88940a292/src/iop/exposure.c), [temperature v4](https://github.com/darktable-org/darktable/blob/03179f8e080aa9cedebfe14b098b7ba88940a292/src/iop/temperature.c)
-- [shadhi v5](https://github.com/darktable-org/darktable/blob/03179f8e080aa9cedebfe14b098b7ba88940a292/src/iop/shadhi.c), [colorbalance v3](https://github.com/darktable-org/darktable/blob/03179f8e080aa9cedebfe14b098b7ba88940a292/src/iop/colorbalance.c), [rgbcurve v1](https://github.com/darktable-org/darktable/blob/03179f8e080aa9cedebfe14b098b7ba88940a292/src/iop/rgbcurve.c)
-- [rawdenoise v2](https://github.com/darktable-org/darktable/blob/03179f8e080aa9cedebfe14b098b7ba88940a292/src/iop/rawdenoise.c), [sharpen v1](https://github.com/darktable-org/darktable/blob/03179f8e080aa9cedebfe14b098b7ba88940a292/src/iop/sharpen.c)
-- [lens v10](https://github.com/darktable-org/darktable/blob/03179f8e080aa9cedebfe14b098b7ba88940a292/src/iop/lens.cc), [clipping v5](https://github.com/darktable-org/darktable/blob/03179f8e080aa9cedebfe14b098b7ba88940a292/src/iop/clipping.c), [flip v2](https://github.com/darktable-org/darktable/blob/03179f8e080aa9cedebfe14b098b7ba88940a292/src/iop/flip.c)
-- [rasterfile v1](https://github.com/darktable-org/darktable/blob/03179f8e080aa9cedebfe14b098b7ba88940a292/src/iop/rasterfile.c), [blend v14](https://github.com/darktable-org/darktable/blob/03179f8e080aa9cedebfe14b098b7ba88940a292/src/develop/blend.h), [native order](https://github.com/darktable-org/darktable/blob/03179f8e080aa9cedebfe14b098b7ba88940a292/src/common/iop_order.c), [raster ID](https://github.com/darktable-org/darktable/blob/03179f8e080aa9cedebfe14b098b7ba88940a292/src/common/darktable.h)
+- [exposure v7](https://github.com/darktable-org/darktable/blob/20891f6c6fa7be995e5bf9dff9d1ee5062051773/src/iop/exposure.c), [temperature v4](https://github.com/darktable-org/darktable/blob/20891f6c6fa7be995e5bf9dff9d1ee5062051773/src/iop/temperature.c)
+- [shadhi v5](https://github.com/darktable-org/darktable/blob/20891f6c6fa7be995e5bf9dff9d1ee5062051773/src/iop/shadhi.c), [colorbalance v3](https://github.com/darktable-org/darktable/blob/20891f6c6fa7be995e5bf9dff9d1ee5062051773/src/iop/colorbalance.c), [rgbcurve v1](https://github.com/darktable-org/darktable/blob/20891f6c6fa7be995e5bf9dff9d1ee5062051773/src/iop/rgbcurve.c)
+- [rawdenoise v2](https://github.com/darktable-org/darktable/blob/20891f6c6fa7be995e5bf9dff9d1ee5062051773/src/iop/rawdenoise.c), [sharpen v1](https://github.com/darktable-org/darktable/blob/20891f6c6fa7be995e5bf9dff9d1ee5062051773/src/iop/sharpen.c)
+- [lens v10](https://github.com/darktable-org/darktable/blob/20891f6c6fa7be995e5bf9dff9d1ee5062051773/src/iop/lens.cc), [clipping v5](https://github.com/darktable-org/darktable/blob/20891f6c6fa7be995e5bf9dff9d1ee5062051773/src/iop/clipping.c), [flip v2](https://github.com/darktable-org/darktable/blob/20891f6c6fa7be995e5bf9dff9d1ee5062051773/src/iop/flip.c)
+- [rasterfile v1](https://github.com/darktable-org/darktable/blob/20891f6c6fa7be995e5bf9dff9d1ee5062051773/src/iop/rasterfile.c), [blend v14](https://github.com/darktable-org/darktable/blob/20891f6c6fa7be995e5bf9dff9d1ee5062051773/src/develop/blend.h), [native order](https://github.com/darktable-org/darktable/blob/20891f6c6fa7be995e5bf9dff9d1ee5062051773/src/common/iop_order.c), [raster ID](https://github.com/darktable-org/darktable/blob/20891f6c6fa7be995e5bf9dff9d1ee5062051773/src/common/darktable.h)
 
 Local masks are bounded coverage rasters inserted before demosaic with `rasterfile`; downstream
 native modules distort their masks through lens correction, camera pixel-aspect/tilted-sensor geometry, orientation, crop and straighten.
@@ -32,7 +33,7 @@ refuses drift. The lens patch only adds a diagnostic from native embedded-calibr
 Lensfun modifier flags. Missing, zero or invalid final calibration reports fail the render visibly.
 An unmodified release AppImage can qualify other controls but cannot qualify automatic lens correction.
 Record compiler/dependency/Lensfun database versions and compiled artifact hashes for both amd64 and arm64.
-Both patches were source-tested here; it has not been compiled or run with native calibration fixtures.
+Both patches apply unchanged to 5.6.2. Local Linux arm64 source builds and the calibrated Canon EOS70D oracle passed with this engine; amd64 and broader camera/lens coverage still require qualification.
 
 ## Required hosted evidence
 
@@ -49,7 +50,7 @@ camera-wide quality. Before launch, add representative Bayer/X-Trans/monochrome/
 qualify each control in isolation, colour/ICC preview-final parity, calibrated/missing-calibration lens
 cases, thin brush edges, semantic edges under geometry, failure/retry/worker restart and previous
 successful revision retention on CPU amd64/arm64 plus the optional GPU path. No such native renders
-were run in the source-only packet because darktable-cli is absent.
+are implied by the local Canon qualification.
 
 The normal unit tests deliberately use SQLite database doubles and mocked child processes. Those
 prove protocol/layout/transaction/cancellation boundaries only; they cannot establish native quality.
@@ -63,6 +64,29 @@ at the exact gitlinks from the darktable commit. Both patch files are SHA256-pin
 CMake, and refuse upstream source drift. This replaces manual patch application for production.
 The stage reuses the existing pinned LibRaw/jpegli/media builds, forbids an internal LibRaw fallback,
 uses portable CPU code, and disables darktable's own AI/download feature. Semantic masks use local ML.
+
+LibRaw uses the upstream master snapshot
+[`7bfffe2efa508da00c0d8af299c37cd426a4528d`](https://github.com/LibRaw/LibRaw/commit/7bfffe2efa508da00c0d8af299c37cd426a4528d),
+labelled `0.22.0-dev.7bfffe2e` to distinguish its development snapshot from a stable tag;
+its upstream header reports `0.22.0-Release`.
+It is not the latest stable release. The [0.22.2 tag](https://github.com/LibRaw/LibRaw/releases/tag/0.22.2)
+resolves to `b93f6e45c194f5df9b02a43b1af9a54b4f41f33f`; replacing the snapshot with it
+would remove Sony ARW6 CRAW HQ decoding (TIFF compression 32766), its black/white/linear-max
+calibration, and camera registrations for Canon EOS R50 V, Hasselblad X2D II 100C,
+Sony ILCE-1M2 and Sony ILCE-7M5. Public API headers otherwise match, but stable uses
+`libraw.so.25` while the snapshot and packaged Darktable use `libraw.so.26`.
+The stable swap is rejected until an upstream release preserves these decoder/calibration paths
+and its dependent native binaries are rebuilt and qualified. No local codec patches are substituted.
+
+Compared with the previous `e419de08` pin, the development snapshot preserves all public headers,
+exported symbols, ARW6 decoder/dispatch/calibration, camera metadata and colour tables. The A1 II
+camera's display alias changed; its registration remains present. Isolated Linux arm64 builds of
+both this snapshot and stable 0.22.2 load successfully. Their sensor-rendered full 16-bit pixels,
+ICC profiles and dimensions match the previous pin across all ten existing RAW format fixtures;
+original hashes remain unchanged. The development snapshot also passes the calibrated Canon EOS70D
+native oracle against Darktable 5.6.2 and Sharp 0.35.5/libvips 8.18.7. These fixtures do not exercise
+the removed cameras or ARW6, so their successful comparison does not override the source-proven
+support loss. Both upstream licence files are unchanged between these revisions.
 
 Lensfun 0.3.4 and its shipped version-1 database are pinned to source commit
 `101c745e847a5de4a1e569a94368ce2027198598`; no runtime database updater is installed. This is a fixed
@@ -79,7 +103,7 @@ records source/archive/patch and installed resource hashes. Image gates verify b
 markers, CLI version, critical data, every native resource hash and every ELF's resolved linkage.
 Missing packages, resource drift, unpatched modules and a wrong engine version fail the image build.
 
-Build commands for a dedicated image/qualification host, from the repository root (not run locally):
+Full production image commands for a dedicated qualification host, from the repository root:
 
 ```sh
 docker buildx build --platform linux/amd64 --load --target prod -f server/Dockerfile -t frameleaf-server:raw-development .
@@ -125,7 +149,7 @@ Checkout the e2e submodule first (`git submodule update --init e2e/test-assets`)
 the genuine EOS70D fixture SHA256 `f3e703f0461707a16b76a0bfae9a42f90b6ab9019e2c8cea90a17ebbe806c7fd`,
 mounts all inputs read-only and denies network during rendering. Its orientation-1 active dimensions
 are independently derived from the fixture's 5568x3708 sensor and the pinned
-[RawSpeed EOS70D crop x72/y38](https://github.com/darktable-org/rawspeed/blob/7cf3dc3b9d9c82b414198b1f57460478be6c6c9d/data/cameras.xml#L478).
+[RawSpeed EOS70D crop x72/y38](https://github.com/darktable-org/rawspeed/blob/c835b05aecfacb7343f7c424abd620aa12116c3f/data/cameras.xml#L478).
 The fixture's EF17-40mm f/4L USM calibration is present in pinned
 [Lensfun data](https://github.com/lensfun/lensfun/blob/101c745e847a5de4a1e569a94368ce2027198598/data/db/slr-canon.xml#L1111);
 the gate requires successful calibration, never treats absence as success. It invokes the full oracle
@@ -133,7 +157,10 @@ above and retains the local image ID/config, package/dependency manifests and fi
 architecture/candidate-specific artifact. Missing fixtures, hash drift, failed build, absent calibration,
 unsupported native history and unchanged isolated-control pixels fail the explicit job; nothing skips.
 
-No workflow, image build or deployment was executed in this source packet. Actual engine builds and
-this first camera qualification remain open on both architectures. Additional camera/lens-negative
+Local Linux arm64 source stages for Darktable 5.6.2, libvips 8.18.7, ImageMagick 7.1.2-33 and libheif
+1.23.6 built successfully. The package gate and calibrated Canon EOS70D oracle passed against the
+actual 5.6.2 engine using existing `darktable/5.6.1` recipes. Native HDR tests passed against libheif
+1.23.6. These are local source-stage results; full production images, hosted workflows, amd64 builds
+and deployment were not qualified by this packet. Additional camera/lens-negative
 fixtures, brush/gradient/bitmap and thin-edge mask geometry, worker lifetime/restart/batch, semantic
 models and photographer acceptance remain separate gates; this one RAW does not qualify them.

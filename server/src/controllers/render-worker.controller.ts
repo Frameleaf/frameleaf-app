@@ -54,7 +54,7 @@ import {
   RenderWorkerStreamSignalDto,
   RenderWorkerStreamSignalRequestDto,
 } from 'src/dtos/studio-preview-stream.dto.js';
-import { ApiTag, ImmichHeader } from 'src/enum.js';
+import { ApiTag, RequestHeader } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse, HomeNetworkOnly } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
@@ -217,7 +217,7 @@ export class RenderWorkerAdminController {
 
 const WorkerSessionHeader = () =>
   ApiHeader({
-    name: ImmichHeader.RenderWorkerSession,
+    name: RequestHeader.RenderWorkerSession,
     description: 'The session credential issued by admission',
     required: true,
   });
@@ -268,7 +268,7 @@ export class RenderWorkerController {
     history: history(),
   })
   async claimRenderOperation(
-    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Headers(RequestHeader.RenderWorkerSession) session: string | undefined,
     @Body() dto: RenderWorkerClaimRequestDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<RenderWorkerClaimDto | undefined> {
@@ -290,7 +290,7 @@ export class RenderWorkerController {
     history: history(),
   })
   heartbeatRenderOperation(
-    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Headers(RequestHeader.RenderWorkerSession) session: string | undefined,
     @Param() { id }: UUIDv7ParamDto,
     @Body() dto: RenderWorkerHeartbeatDto,
   ): Promise<RenderWorkerHeartbeatResponseDto> {
@@ -307,7 +307,7 @@ export class RenderWorkerController {
     history: history(),
   })
   reportRenderOperationProgress(
-    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Headers(RequestHeader.RenderWorkerSession) session: string | undefined,
     @Param() { id }: UUIDv7ParamDto,
     @Body() dto: RenderWorkerProgressDto,
   ): Promise<RenderWorkerWriteResultDto> {
@@ -324,7 +324,7 @@ export class RenderWorkerController {
     history: history(),
   })
   planRenderCheckpoint(
-    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Headers(RequestHeader.RenderWorkerSession) session: string | undefined,
     @Param() { id }: UUIDv7ParamDto,
     @Body() dto: RenderWorkerCheckpointPlanDto,
   ): Promise<RenderWorkerWriteResultDto> {
@@ -342,7 +342,7 @@ export class RenderWorkerController {
     history: history(),
   })
   completeRenderCheckpoint(
-    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Headers(RequestHeader.RenderWorkerSession) session: string | undefined,
     @Param() { id, sequence }: CheckpointParamDto,
     @Body() dto: RenderWorkerCheckpointCompleteDto,
   ): Promise<RenderWorkerWriteResultDto> {
@@ -359,7 +359,7 @@ export class RenderWorkerController {
     history: history(),
   })
   validateRenderOperation(
-    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Headers(RequestHeader.RenderWorkerSession) session: string | undefined,
     @Param() { id }: UUIDv7ParamDto,
     @Body() dto: RenderWorkerCompleteDto,
   ): Promise<RenderWorkerWriteResultDto> {
@@ -377,7 +377,7 @@ export class RenderWorkerController {
     history: history(),
   })
   completeRenderOperation(
-    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Headers(RequestHeader.RenderWorkerSession) session: string | undefined,
     @Param() { id }: UUIDv7ParamDto,
     @Body() dto: RenderWorkerCompleteDto,
   ): Promise<RenderWorkerWriteResultDto> {
@@ -394,7 +394,7 @@ export class RenderWorkerController {
     history: history(),
   })
   failRenderOperation(
-    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Headers(RequestHeader.RenderWorkerSession) session: string | undefined,
     @Param() { id }: UUIDv7ParamDto,
     @Body() dto: RenderWorkerFailDto,
   ): Promise<RenderWorkerWriteResultDto> {
@@ -411,7 +411,7 @@ export class RenderWorkerController {
     history: history(),
   })
   acknowledgeRenderCancel(
-    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Headers(RequestHeader.RenderWorkerSession) session: string | undefined,
     @Param() { id }: UUIDv7ParamDto,
     @Body() dto: RenderWorkerCancelAckDto,
   ): Promise<RenderWorkerWriteResultDto> {
@@ -430,7 +430,7 @@ export class RenderWorkerController {
     history: history(),
   })
   getRenderStreamSignal(
-    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Headers(RequestHeader.RenderWorkerSession) session: string | undefined,
     @Param() { id }: UUIDv7ParamDto,
     @Body() dto: RenderWorkerStreamSignalRequestDto,
   ): Promise<RenderWorkerStreamSignalDto> {
@@ -449,7 +449,7 @@ export class RenderWorkerController {
     history: history(),
   })
   offerRenderStream(
-    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Headers(RequestHeader.RenderWorkerSession) session: string | undefined,
     @Param() { id }: UUIDv7ParamDto,
     @Body() dto: RenderWorkerStreamOfferDto,
   ): Promise<RenderWorkerWriteResultDto> {
@@ -466,7 +466,7 @@ export class RenderWorkerController {
     history: history(),
   })
   getRenderRemoteReferences(
-    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Headers(RequestHeader.RenderWorkerSession) session: string | undefined,
   ): Promise<RenderWorkerRemoteReferenceDto[]> {
     return this.service.listRemoteReferences(session);
   }
@@ -481,7 +481,7 @@ export class RenderWorkerController {
     history: history(),
   })
   acknowledgeRenderRemoteReference(
-    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Headers(RequestHeader.RenderWorkerSession) session: string | undefined,
     @Param() { id }: UUIDv7ParamDto,
   ): Promise<RenderWorkerWriteResultDto> {
     return this.service.acknowledgeRemoteReference(session, id);
@@ -495,7 +495,7 @@ export class RenderWorkerController {
   @Authenticated({ public: true })
   @Endpoint({ summary: 'Upload a whole-export artifact', history: history() })
   async uploadRenderArtifact(
-    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Headers(RequestHeader.RenderWorkerSession) session: string | undefined,
     @Headers('x-render-claim-token') claimToken: string | undefined,
     @Param() { id, sequence }: CheckpointParamDto,
     @Query() dto: RenderWorkerArtifactDto,
@@ -511,7 +511,7 @@ export class RenderWorkerController {
   @Authenticated({ public: true })
   @Endpoint({ summary: 'Read a verified whole-export artifact under the current claim', history: history() })
   async readRenderArtifact(
-    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Headers(RequestHeader.RenderWorkerSession) session: string | undefined,
     @Headers('x-render-claim-token') claimToken: string | undefined,
     @Param() { id, sequence }: CheckpointParamDto,
     @Query() dto: RenderWorkerArtifactReadDto,
@@ -534,7 +534,7 @@ export class RenderWorkerController {
     history: history(),
   })
   async readRenderOperationInput(
-    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Headers(RequestHeader.RenderWorkerSession) session: string | undefined,
     @Param() { id, grant }: OperationInputParamDto,
     @Res() res: Response,
     @Next() next: NextFunction,

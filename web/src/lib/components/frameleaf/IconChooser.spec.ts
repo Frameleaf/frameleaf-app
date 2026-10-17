@@ -38,7 +38,7 @@ describe('IconChooser', () => {
       'fetch',
       vi.fn((url: string) =>
         url === '/mdi-icon-paths.json'
-          ? Promise.resolve({ json: () => Promise.resolve(mdiPaths) } as Response)
+          ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(mdiPaths) } as Response)
           : Promise.reject(new Error(`unexpected fetch: ${url}`)),
       ),
     );
@@ -101,5 +101,22 @@ describe('IconChooser', () => {
     expect(onClose).not.toHaveBeenCalled();
     await fireEvent.keyDown(search, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('reports a JSON HTTP path failure and refetches geometry when Retry is clicked', async () => {
+    const { mdiCameraBurst } = await import('@mdi/js');
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(Response.json({ message: 'unavailable' }, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ mdiCameraBurst }));
+    render(IconChooser, { value: null, onChange: vi.fn(), inline: true });
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Unable to load the icon catalogue'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.getByRole('option', { name: 'camera burst' })).toBeInTheDocument());
+    expect(screen.getByRole('option', { name: 'camera burst' }).querySelector('path')).toHaveAttribute(
+      'd',
+      mdiCameraBurst,
+    );
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(sdkMock.getAlbumIconCatalogue).toHaveBeenCalledTimes(1);
   });
 });

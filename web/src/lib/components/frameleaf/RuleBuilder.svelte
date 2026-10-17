@@ -19,7 +19,7 @@
     type PersonResponseDto,
     type TagResponseDto,
   } from '@frameleaf/sdk';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
@@ -52,7 +52,24 @@
   );
   const namedPeople = $derived(people.filter((person) => person.name));
 
-  let phrasesText = $state(rule.visualQueries.join(', '));
+  let phrasesText = $state(untrack(() => rule.visualQueries.join(', ')));
+  // The field is edited as text and committed on change; when the rule it is given changes some other
+  // way (a dialog resetting its draft on reopen), the field shows that rule again rather than old text.
+  // Only a change to the rule's phrases does this, so text being typed survives edits elsewhere.
+  let shownQueries = untrack(() => JSON.stringify(rule.visualQueries));
+  $effect(() => {
+    const queries = rule.visualQueries;
+    const key = JSON.stringify(queries);
+    if (key === shownQueries) {
+      return;
+    }
+    shownQueries = key;
+    untrack(() => {
+      if (JSON.stringify(parsePhrases(phrasesText)) !== key) {
+        phrasesText = queries.join(', ');
+      }
+    });
+  });
 
   /* ---- live preview: read-only, debounced, latest request wins ---- */
   let preview = $state<ClassificationPreviewResponseDto | undefined>();

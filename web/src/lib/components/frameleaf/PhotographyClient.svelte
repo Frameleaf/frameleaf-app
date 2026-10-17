@@ -6,21 +6,35 @@
    * Favourites and notes save by themselves a moment after the last change, with a quiet status
    * beside the count; there is no Save button to find, and leaving with something unsaved asks first.
    * "Send selections" stays the one deliberate action. Everything shown is translated.
+   *
+   * The entrance opens the invitation straight away and asks for a password only when the gallery
+   * has one. A photographer's Client preview (`#preview=` from the workspace) shows the same pages
+   * with nothing saved or sent.
    */
   import { onMount, onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import { Icon } from '@frameleaf/ui';
-  import { mdiChevronLeft, mdiChevronRight, mdiHeart, mdiHeartOutline } from '@mdi/js';
+  import {
+    mdiChevronLeft,
+    mdiChevronRight,
+    mdiClockOutline,
+    mdiEyeOutline,
+    mdiHeart,
+    mdiHeartOutline,
+    mdiLockOutline,
+  } from '@mdi/js';
   import { locale } from '$lib/stores/preferences.store';
   import {
     galleryRequest,
     galleryMedia,
     galleryFile,
     galleryLogo,
+    openGallerySession,
     type GuestGallery,
     type GuestPhoto,
     type Annotation,
     type PresentationBlock,
+    type PublicBrand,
   } from '$lib/frameleaf/photography/workflow-api';
   import Dialog from './Dialog.svelte';
   import PhotographyStatus, { photographyErrorKey, photographyLabelKey } from './PhotographyStatus.svelte';
@@ -30,6 +44,12 @@
   let session = $state('');
   let invitation = $state('');
   let password = $state('');
+  /** The invitation is good and its gallery has a password: the entrance asks for it. */
+  let needsPassword = $state(false);
+  /** The studio's look for the entrance, before the gallery itself is open. */
+  let gateBrand = $state<PublicBrand | null>(null);
+  /** The server ended access (expired, revoked or a bad link): the entrance says so. */
+  let accessEnded = $state(false);
   let busy = $state(false);
   let error = $state('');
   let notice = $state('');
@@ -81,6 +101,8 @@
     ),
   );
   const visible = $derived(filtered.slice(0, limit));
+  /** The photographer's Client preview: the client's pages, with nothing saved, sent or bought. */
+  const ownerPreview = $derived(!!gallery?.preview);
   const downloads = $derived(gallery?.photos.filter((photo) => photo.canDownload) ?? []);
   const readyOutputs = $derived(
     gallery?.photos.flatMap((photo) =>
@@ -90,12 +112,23 @@
   const approvalRevision = $derived(
     openedOutput ? (openedOutput.approvalPreviewUrl ? openedOutput.revisionId : null) : opened?.approvalRevisionId,
   );
-  const chosenOutputs = $derived(readyOutputs.filter(({ output }) => downloadChoices.includes(output.id)));
+  const downloadChoiceIds = $derived(new Set(downloadChoices));
+  const chosenOutputs = $derived(readyOutputs.filter(({ output }) => downloadChoiceIds.has(output.id)));
   const archiveCount = $derived(readyOutputs.length > 0 ? chosenOutputs.length : downloads.length);
+  /** Finished files are ready to keep: the cover calls it the client's finished collection. */
+  const finished = $derived(downloads.length > 0 || readyOutputs.length > 0);
   const archiveParts = $derived(Math.ceil(archiveCount / 1000));
   const cover = $derived(
     gallery?.photos.find((photo) => photo.id === gallery?.presentation.coverCaptureId) ?? gallery?.photos[0],
   );
+  /** The studio's initials for the round mark beside its name when it has no logo ("Cedar & Light" → CL). */
+  const monogram = (name: string) =>
+    name
+      .split(/\s+/)
+      .filter((word) => /\p{L}/u.test(word.charAt(0)))
+      .slice(0, 2)
+      .map((word) => word.charAt(0).toUpperCase())
+      .join('');
   const money = (total: number, currency: string) =>
     new Intl.NumberFormat($locale, { style: 'currency', currency }).format(total / 100);
   const selectedPrice = $derived(
@@ -182,6 +215,7 @@
     sessionStorage.removeItem(storageKey());
     clearTimeout(expiryTimer);
     error = message;
+    accessEnded = true;
     busy = false;
   }
   function failure(cause: unknown) {
@@ -203,6 +237,10 @@
     }
     expiryTimer = setTimeout(() => endAccess(), Math.min(remaining, 2_147_483_647));
   }
+  /**
+   * Opens the invitation: first without a password, straight from the link; the password form
+   * appears only when the gallery answers that it needs one.
+   */
   async function enter(event?: SubmitEvent) {
     event?.preventDefault();
     if (busy || !invitation) {
@@ -211,17 +249,25 @@
     busy = true;
     error = '';
     try {
-      const result = await galleryRequest<{ session: string; expiresAt: string }>(galleryId, '', '/session', 'POST', {
-        token: invitation,
-        password: password || undefined,
-      });
+      const tried = password;
+      const result = await openGallerySession(galleryId, invitation, tried);
       if (disposed) {
+        return;
+      }
+      if ('passwordRequired' in result) {
+        needsPassword = true;
+        gateBrand = result.brand ?? gateBrand;
+        password = '';
+        if (tried) {
+          error = $t('frameleaf_photography_client_password_wrong');
+        }
         return;
       }
       session = result.session;
       expiresAt = result.expiresAt;
       password = '';
       invitation = '';
+      needsPassword = false;
       remember();
       await reload();
     } catch (error_) {
@@ -392,6 +438,12 @@
   }
   /** A favourite, note or marked area changed: save it a moment after the last change. */
   function changed() {
+    if (ownerPreview) {
+      // The photographer's preview tries favourites and notes on the page only; the server keeps
+      // a preview from changing anything, so nothing is sent.
+      notice = '';
+      return;
+    }
     edits++;
     dirty = true;
     leaving = false;
@@ -458,7 +510,7 @@
     }
   }
   async function submit() {
-    if (!gallery || busy) {
+    if (!gallery || busy || ownerPreview) {
       return;
     }
     error = '';
@@ -662,7 +714,7 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   async function download(photo: GuestPhoto, output?: NonNullable<GuestPhoto['outputs']>[number]) {
-    if (!(output ? output.canDownload : photo.canDownload) || busy) {
+    if (!(output ? output.canDownload : photo.canDownload) || busy || ownerPreview) {
       return;
     }
     busy = true;
@@ -690,7 +742,7 @@
     }
   }
   async function zip(part = 0) {
-    if (busy || archiveCount === 0 || !Number.isSafeInteger(part) || part < 0 || part >= archiveParts) {
+    if (busy || ownerPreview || archiveCount === 0 || !Number.isSafeInteger(part) || part < 0 || part >= archiveParts) {
       return;
     }
     busy = true;
@@ -723,7 +775,7 @@
     }
   }
   async function approval(photo: GuestPhoto, approved: boolean) {
-    if (!gallery || !approvalRevision || busy) {
+    if (!gallery || !approvalRevision || busy || ownerPreview) {
       return;
     }
     const current = ++generation;
@@ -755,7 +807,7 @@
     }
   }
   async function checkout(orderId: string) {
-    if (busy) {
+    if (busy || ownerPreview) {
       return;
     }
     busy = true;
@@ -787,7 +839,7 @@
     }
   }
   async function acceptOrder(orderId: string) {
-    if (!gallery || busy) {
+    if (!gallery || busy || ownerPreview) {
       return;
     }
     const current = ++generation;
@@ -819,9 +871,19 @@
   onMount(() => {
     const hash = new URLSearchParams(location.hash.slice(1));
     invitation = hash.get('invitation') ?? '';
+    const previewSession = hash.get('preview') ?? '';
     if (invitation) {
       history.replaceState(history.state, '', location.pathname + location.search);
       sessionStorage.removeItem(storageKey());
+      // Straight in: the password form appears only if this gallery has one.
+      void enter();
+    } else if (previewSession) {
+      // A photographer's Client preview: a short session made by the workspace, kept like a client's.
+      history.replaceState(history.state, '', location.pathname + location.search);
+      session = previewSession;
+      expiresAt = hash.get('expires') || new Date(Date.now() + 3_600_000).toISOString();
+      remember();
+      void reload();
     } else {
       try {
         const saved = JSON.parse(sessionStorage.getItem(storageKey()) ?? 'null');
@@ -912,16 +974,10 @@
     data-palette={gallery.presentation.palette}
     style={`--pc-accent:${gallery.brand.color};--pc-studio-bg:${gallery.brand.background};--pc-studio-text:${gallery.brand.textColor}`}
   >
-    <header class="pc-header">
-      <a href="#collection" class="pc-studio"
-        >{#if logo}<img src={logo} alt="" />{/if}{gallery.brand.name}</a
-      >
-      <nav aria-label={$t('frameleaf_photography_client_collection')}>
-        <a href="#photographs">{$t('frameleaf_photography_client_photographs')}</a><a href="#your-order"
-          >{$t('frameleaf_photography_client_your_order')}</a
-        ><button type="button" disabled={busy} onclick={reload}>{$t('frameleaf_photography_refresh')}</button>
-      </nav>
-    </header>
+    {#if ownerPreview}<p class="pc-preview-banner" role="status">
+        <Icon icon={mdiEyeOutline} size="18" aria-hidden={true} />{$t('frameleaf_photography_client_preview_banner')}
+      </p>{/if}
+    {@render studioHeader(gallery.brand, logo)}
     <section class="pc-cover" id="collection" data-treatment={gallery.presentation.coverTreatment}>
       {#if cover && (coverPreview || thumbnails[cover.id]) && gallery.presentation.coverTreatment !== 'quiet'}<img
           src={coverPreview || thumbnails[cover.id]}
@@ -929,10 +985,29 @@
           style={`object-position:center ${gallery.presentation.coverFocal}%`}
         />{/if}
       <div class="pc-cover-copy">
-        <span>{gallery.brand.tagline}</span>
+        <span
+          >{finished
+            ? $t('frameleaf_photography_client_finished_collection')
+            : $t('frameleaf_photography_client_private_gallery')}</span
+        >
         <h1>{gallery.title}</h1>
+        <p class="pc-cover-meta">
+          {[
+            gallery.recipient.name,
+            gallery.date ? new Date(`${gallery.date}T12:00:00`).toLocaleDateString($locale, { dateStyle: 'long' }) : '',
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </p>
         <p>{gallery.presentation.introduction || $t('frameleaf_photography_client_intro_default')}</p>
-        <a href="#photographs">{$t('frameleaf_photography_client_explore')} ↓</a>
+        {#if gallery.mode !== 'edited-delivery' && !finished}<p class="pc-package-line">
+            {$t('frameleaf_photography_client_pricing', {
+              values: {
+                count: gallery.pricing.includedCount,
+                price: money(gallery.pricing.additionalPrice, gallery.pricing.currency),
+              },
+            })}
+          </p>{/if}
       </div>
     </section>
     <main id="photographs" class="pc-main">
@@ -973,7 +1048,7 @@
           /><button
             type="button"
             class="pc-primary"
-            disabled={busy || choices.length === 0}
+            disabled={busy || ownerPreview || choices.length === 0}
             onclick={() => (confirmSubmit = true)}>{$t('frameleaf_photography_client_send_selections')}</button
           >
         </div>
@@ -1148,11 +1223,14 @@
                   : $t('frameleaf_photography_payment_after_approval')}
               </p>
               {#if order.status === 'quoted'}<p>{order.terms}</p>
-                <button type="button" class="pc-primary" disabled={busy} onclick={() => acceptOrder(order.id)}
-                  >{$t('frameleaf_photography_client_accept_order')}</button
+                <button
+                  type="button"
+                  class="pc-primary"
+                  disabled={busy || ownerPreview}
+                  onclick={() => acceptOrder(order.id)}>{$t('frameleaf_photography_client_accept_order')}</button
                 >{:else if order.status === 'accepted' && order.total > 0 && gallery.checkoutAvailable}<button
                   type="button"
-                  disabled={busy}
+                  disabled={busy || ownerPreview}
                   onclick={() => checkout(order.id)}>{$t('frameleaf_photography_client_pay')}</button
                 >{:else if order.status === 'accepted' && order.total > 0}<p>
                   {$t('frameleaf_photography_client_arrange_payment')}
@@ -1167,7 +1245,7 @@
               {#each readyOutputs as item (item.output.id)}<label
                   ><input
                     type="checkbox"
-                    checked={downloadChoices.includes(item.output.id)}
+                    checked={downloadChoiceIds.has(item.output.id)}
                     onchange={(event) => {
                       downloadChoices = event.currentTarget.checked
                         ? [...downloadChoices, item.output.id]
@@ -1186,13 +1264,17 @@
               {#each Array.from({ length: archiveParts }, (_, part) => part) as part (part)}<button
                   type="button"
                   class="pc-primary"
-                  disabled={busy}
+                  disabled={busy || ownerPreview}
                   onclick={() => zip(part)}
                   >{$t('frameleaf_photography_client_download_part', {
                     values: { part: part + 1, files: Math.min(1000, archiveCount - part * 1000) },
                   })}</button
                 >{/each}
-            {:else}<button type="button" class="pc-primary" disabled={busy || archiveCount === 0} onclick={() => zip()}
+            {:else}<button
+                type="button"
+                class="pc-primary"
+                disabled={busy || ownerPreview || archiveCount === 0}
+                onclick={() => zip()}
                 >{readyOutputs.length > 0
                   ? $t('frameleaf_photography_client_download_selected')
                   : $t('frameleaf_photography_client_download_collection')}</button
@@ -1201,14 +1283,7 @@
         </div>
       </section>
     </main>
-    <footer class="pc-footer">
-      <strong>{gallery.brand.name}</strong>
-      <p>{gallery.brand.tagline}</p>
-      <div>
-        {#if gallery.brand.email}<a href={`mailto:${gallery.brand.email}`}>{gallery.brand.email}</a
-          >{/if}{#if gallery.brand.phone}<a href={`tel:${gallery.brand.phone}`}>{gallery.brand.phone}</a>{/if}
-      </div>
-    </footer>
+    {@render studioFooter(gallery.brand)}
     <Dialog
       open={!!opened}
       title={opened
@@ -1352,11 +1427,11 @@
               onRetry={() => void saveChoices()}
             />{#if approvalRevision}<button
                 type="button"
-                disabled={busy || !preview}
+                disabled={busy || ownerPreview || !preview}
                 onclick={() => approval(opened!, true)}>{$t('frameleaf_photography_client_approve')}</button
               ><button
                 type="button"
-                disabled={busy || !preview || !notes[opened.id]?.trim()}
+                disabled={busy || ownerPreview || !preview || !notes[opened.id]?.trim()}
                 onclick={() => approval(opened!, false)}>{$t('frameleaf_photography_client_request_adjustment')}</button
               >{/if}{#if (opened.outputs?.length ?? 0) === 0 && opened.canDownload}<button
                 type="button"
@@ -1445,21 +1520,69 @@
     >
   </div>
 {:else}
-  <main class="pc-access">
-    <span class="pc-eyebrow">{$t('frameleaf_photography_client_access_eyebrow')}</span>
-    <h1>{$t('frameleaf_photography_client_access_title')}</h1>
-    {#if error}<p role="alert">{error}</p>{/if}{#if invitation}<form onsubmit={enter}>
-        <label
-          >{$t('frameleaf_photography_client_password')}<input
-            type="password"
-            autocomplete="current-password"
-            bind:value={password}
-          /></label
-        ><button type="submit" disabled={busy}
-          >{busy ? $t('frameleaf_photography_client_opening') : $t('frameleaf_photography_client_open')}</button
-        >
-      </form>{:else if busy}<p role="status">{$t('frameleaf_photography_client_opening_yours')}</p>{:else}<p>
-        {$t('frameleaf_photography_client_open_invitation')}
-      </p>{/if}
-  </main>
+  <!-- The entrance (PhotographyClient.jsx `pc-access`): straight in, a password only when there is one. -->
+  <div
+    class="pc pc-gate"
+    style={gateBrand
+      ? `--pc-accent:${gateBrand.color};--pc-studio-bg:${gateBrand.background};--pc-studio-text:${gateBrand.textColor}`
+      : undefined}
+  >
+    {#if gateBrand}{@render studioHeader(gateBrand, '')}{/if}
+    <main class="pc-access">
+      <Icon icon={accessEnded ? mdiClockOutline : mdiLockOutline} size="32" aria-hidden={true} />
+      <h1>
+        {accessEnded
+          ? $t('frameleaf_photography_client_expired_title')
+          : $t('frameleaf_photography_client_access_title')}
+      </h1>
+      {#if accessEnded}<p role="alert">{error || $t('frameleaf_photography_client_expired_body')}</p>
+      {:else if needsPassword}<p>{$t('frameleaf_photography_client_password_hint')}</p>
+        <form onsubmit={enter}>
+          <label
+            >{$t('frameleaf_photography_client_password')}<input
+              type="password"
+              autocomplete="current-password"
+              required
+              bind:value={password}
+            /></label
+          ><button type="submit" disabled={busy}
+            >{busy ? $t('frameleaf_photography_client_opening') : $t('frameleaf_photography_client_open')}</button
+          >
+        </form>
+        {#if error}<p role="alert">{error}</p>{/if}
+      {:else if busy}<p role="status">{$t('frameleaf_photography_client_opening_yours')}</p>
+      {:else}{#if error}<p role="alert">{error}</p>{/if}
+        <p>{$t('frameleaf_photography_client_open_invitation')}</p>{/if}
+      {#if gateBrand?.email}<a href={`mailto:${gateBrand.email}`}
+          >{$t('frameleaf_photography_client_contact_named', { values: { name: gateBrand.name } })}</a
+        >{/if}
+    </main>
+    {#if gateBrand}{@render studioFooter(gateBrand)}{/if}
+  </div>
 {/if}
+
+{#snippet studioHeader(brand: PublicBrand, logoUrl: string)}<header class="pc-header">
+    <a href="#collection" class="pc-studio"
+      >{#if logoUrl}<img src={logoUrl} alt="" />{:else}<span class="pc-monogram" aria-hidden="true"
+          >{monogram(brand.name)}</span
+        >{/if}{brand.name}</a
+    >
+    <nav aria-label={$t('frameleaf_photography_client_collection')}>
+      <a href="#photographs" aria-current="page">{$t('frameleaf_photography_client_gallery_nav')}</a
+      >{#if brand.email || brand.phone}<a href="#contact">{$t('frameleaf_photography_client_contact_nav')}</a>{/if}
+    </nav>
+  </header>{/snippet}
+
+{#snippet studioFooter(brand: PublicBrand)}<footer class="pc-footer" id="contact">
+    <span
+      >{$t('frameleaf_photography_client_footer_copyright', {
+        values: { year: String(new Date().getFullYear()), name: brand.name },
+      })}</span
+    >
+    <span>{$t('frameleaf_photography_client_footer_note')}</span>
+    <span class="pc-footer-contact"
+      >{#if brand.email}<a href={`mailto:${brand.email}`}>{brand.email}</a>{/if}{#if brand.phone}<a
+          href={`tel:${brand.phone.replaceAll(/[^+0-9]/g, '')}`}>{brand.phone}</a
+        >{/if}</span
+    >
+  </footer>{/snippet}

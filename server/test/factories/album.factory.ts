@@ -43,7 +43,12 @@ export class AlbumFactory {
 
   owner(dto: UserLike = {}, builder?: FactoryBuilder<UserFactory>) {
     this.#owner = build(UserFactory.from(dto), builder);
-    this.albumUser({ userId: this.#owner.build().id, role: AlbumUserRole.Owner });
+    const userId = this.#owner.build().id;
+    this.#albumUsers = this.#albumUsers.filter((factory) => {
+      const member = factory.build();
+      return member.role !== AlbumUserRole.Owner && member.userId !== userId;
+    });
+    this.albumUser({ userId, role: AlbumUserRole.Owner });
     return this;
   }
 
@@ -53,7 +58,7 @@ export class AlbumFactory {
   }
 
   albumUser(dto: AlbumUserLike = {}, builder?: FactoryBuilder<AlbumUserFactory>) {
-    const albumUser = build(AlbumUserFactory.from(dto), builder);
+    const albumUser = build(AlbumUserFactory.from({ albumId: this.value.id, ...dto }), builder);
     this.#albumUsers.push(albumUser);
     return this;
   }
@@ -64,10 +69,6 @@ export class AlbumFactory {
     // use album owner by default
     if (!dto.ownerId) {
       asset.owner(this.#owner.build());
-    }
-
-    if (!this.#assets) {
-      this.#assets = [];
     }
 
     this.#assets.push(asset);

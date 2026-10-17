@@ -668,6 +668,9 @@ export class ICloudScheduledStagingService {
   /** No hashing/decoder work in the final transaction. Managed path locks must be held by the caller. */
   async holdPublicationFiles(input: ScheduledStagingInput, signal?: AbortSignal, destination?: string) {
     const privateWork = await this.repository.beginPrivateWork(input);
+    if (!privateWork) {
+      throw new Error('scheduled_audit_unavailable');
+    }
     const { path } = await this.directory(input, signal);
     const receipt = await this.cached(input, path, signal);
     const { guarded, resource } = await this.checkpoint(input, signal);
@@ -695,7 +698,7 @@ export class ICloudScheduledStagingService {
           input,
           () => open(binding.path, constants.O_RDONLY | constants.O_NOFOLLOW),
           signal,
-          (handle) => handle.close(),
+          (handle) => closeReadonly(handle),
         );
         files.push({ ...binding, handle });
       }
@@ -757,12 +760,12 @@ export class ICloudScheduledStagingService {
         return cleanup;
       };
       return { receipt, validation, current, release, paths: files.map(({ path }) => path) };
-    } catch {
-      const closed = await Promise.allSettled(files.map(({ handle }) => handle.close()));
-      if (closed.every(({ status }) => status === 'fulfilled')) {
+    } catch (error) {
+      const closed = await Promise.allSettled(files.map(({ handle }) => Promise.try(() => handle.close())));
+      if (!(error instanceof ScheduledReadonlyUnsettledError) && closed.every(({ status }) => status === 'fulfilled')) {
         await this.repository.finishPrivateWork(input, privateWork);
       }
-      throw new Error('scheduled_audit_unavailable');
+      throw new Error('scheduled_audit_unavailable', { cause: error });
     }
   }
 

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { timingSafeEqual } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SystemConfig } from 'src/dtos/config.dto.js';
@@ -171,6 +171,10 @@ export class MailConnectionService extends BaseService {
     }
     const revoked = await this.revoke(connection);
     await this.databaseRepository.withLock(DatabaseLock.FrameleafMailConnection, async () => {
+      const current = await readMailConnection(this.mailDeps);
+      if (current?.id !== connection.id) {
+        throw new ConflictException('The connected mail account changed; reload before disconnecting');
+      }
       await this.systemMetadataRepository.delete(SystemMetadataKey.FrameleafMailConnection);
       await this.systemMetadataRepository.delete(SystemMetadataKey.FrameleafMailSignIn);
     });

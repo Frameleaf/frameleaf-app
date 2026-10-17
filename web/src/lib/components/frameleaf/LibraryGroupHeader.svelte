@@ -76,7 +76,8 @@
     gap: 10px;
     box-sizing: border-box;
     margin: 0;
-    padding: 0 0 6px;
+    /* The lead is the gap above the group (LibraryTimeline), inside the height it reserves. */
+    padding: var(--fl-group-header-lead, 0px) 0 6px;
     background: linear-gradient(var(--fl-canvas) 78%, transparent);
     pointer-events: auto;
   }
@@ -97,6 +98,7 @@
   .fl-group-select {
     position: relative;
     display: grid;
+    flex: none;
     place-items: center;
     width: 32px;
     height: 32px;

@@ -12,6 +12,9 @@ import UploadPanel from './UploadPanel.svelte';
  * `fileUploadHandler` does, never by faking a timer-driven progress simulation.
  */
 
+const media = vi.hoisted(() => ({ maxMd: false, isFullSidebar: true, reducedMotion: false, pointerCoarse: false }));
+vi.mock('$lib/stores/media-query-manager.svelte', () => ({ mediaQueryManager: media }));
+
 const makeFile = (name: string, size = 1024) => new File([new Uint8Array(size)], name, { type: 'image/jpeg' });
 
 beforeEach(() => {
@@ -159,15 +162,16 @@ describe('UploadPanel', () => {
     expect(container.querySelector('.fl-progress-failed')).toBeNull();
   });
 
-  it('keeps the parallel-uploads tuning behind Options', () => {
+  it('opens expanded on a phone, with Parallel uploads in the footer rather than behind Options (SHELL-P7)', () => {
+    media.maxMd = true;
     uploadAssetsStore.addItem({ id: 'a', file: makeFile('a.jpg') });
 
     const { container } = render(UploadPanel);
-    const options = container.querySelector('details.fl-options')!;
 
-    expect(options).not.toHaveAttribute('open');
-    expect(options.querySelector('summary')).toHaveTextContent(en.frameleaf_transfer_options);
-    expect(options.querySelector('input[type="range"]')).not.toBeNull();
+    expect(screen.getByRole('region', { name: en.frameleaf_transfer_uploads })).toBeInTheDocument();
+    expect(screen.getByRole('slider', { name: new RegExp(en.frameleaf_transfer_parallel_uploads) })).toBeVisible();
+    expect(container.querySelector('details')).toBeNull();
+    media.maxMd = false;
   });
 
   it('offers the way to what just arrived once everything has finished', () => {

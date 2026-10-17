@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
+  import { longPress } from '$lib/actions/long-press';
   import { ProjectionType } from '$lib/constants';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
@@ -22,7 +23,6 @@
     mdiMotionPlayOutline,
     mdiRotate360,
   } from '@mdi/js';
-  import { onMount } from 'svelte';
   import type { ClassValue } from 'svelte/elements';
   import { motionFade } from '$lib/frameleaf/motion';
   import Thumbhash from '$lib/components/Thumbhash.svelte';
@@ -124,75 +124,6 @@
     onMouseEvent?.({ isMouseOver: false, selectedGroupIndex: groupIndex });
   };
 
-  let timer: ReturnType<typeof setTimeout> | null = null;
-
-  const preventContextMenu = (evt: Event) => evt.preventDefault();
-  const disposeables: (() => void)[] = [];
-
-  const clearLongPressTimer = () => {
-    if (!timer) {
-      return;
-    }
-    clearTimeout(timer);
-    timer = null;
-    for (const dispose of disposeables) {
-      dispose();
-    }
-    disposeables.length = 0;
-  };
-
-  let startX: number = 0;
-  let startY: number = 0;
-
-  function longPress(element: HTMLElement, { onLongPress }: { onLongPress: () => void }) {
-    let didPress = false;
-    const start = (evt: PointerEvent) => {
-      startX = evt.clientX;
-      startY = evt.clientY;
-      didPress = false;
-      // 350ms for longpress. For reference: iOS uses 500ms for default long press, or 200ms for fast long press.
-      timer = setTimeout(() => {
-        onLongPress();
-        element.addEventListener('contextmenu', preventContextMenu, { once: true });
-        disposeables.push(() => element.removeEventListener('contextmenu', preventContextMenu));
-        didPress = true;
-      }, 350);
-    };
-    const click = (e: MouseEvent) => {
-      if (!didPress) {
-        return;
-      }
-      e.stopPropagation();
-      e.preventDefault();
-    };
-    element.addEventListener('click', click);
-    element.addEventListener('pointerdown', start, { capture: true });
-    element.addEventListener('pointerup', clearLongPressTimer, { capture: true, passive: true });
-    return {
-      destroy: () => {
-        element.removeEventListener('click', click);
-        element.removeEventListener('pointerdown', start, true);
-        element.removeEventListener('pointerup', clearLongPressTimer, true);
-      },
-    };
-  }
-  function moveHandler(e: PointerEvent) {
-    if (Math.abs(startX - e.clientX) >= 10 || Math.abs(startY - e.clientY) >= 10) {
-      clearLongPressTimer();
-    }
-  }
-  onMount(() => {
-    document.addEventListener('scroll', clearLongPressTimer, { capture: true, passive: true });
-    document.addEventListener('wheel', clearLongPressTimer, { capture: true, passive: true });
-    document.addEventListener('contextmenu', clearLongPressTimer, { capture: true, passive: true });
-    document.addEventListener('pointermove', moveHandler, { capture: true, passive: true });
-    return () => {
-      document.removeEventListener('scroll', clearLongPressTimer, true);
-      document.removeEventListener('wheel', clearLongPressTimer, true);
-      document.removeEventListener('contextmenu', clearLongPressTimer, true);
-      document.removeEventListener('pointermove', moveHandler, true);
-    };
-  });
   const backgroundColorClass = $derived.by(() => {
     if (loaded && !selected) {
       return 'bg-transparent';

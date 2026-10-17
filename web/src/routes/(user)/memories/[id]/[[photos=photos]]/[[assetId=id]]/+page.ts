@@ -28,16 +28,23 @@ export const load = (async ({ url, params }) => {
     }
   }
 
-  const assetIds = new Set(memory.assets.map((asset) => asset.id));
-  const assetId =
-    [params.assetId, url.searchParams.get(QueryParameter.ASSET_ID)].find((id) => id && assetIds.has(id)) ??
-    memory.assets[0]?.id;
+  const queryAssetId = url.searchParams.get(QueryParameter.ASSET_ID);
+  let assetId = memory.assets[0]?.id;
+  for (const asset of memory.assets) {
+    if (params.assetId && asset.id === params.assetId) {
+      assetId = asset.id;
+      break;
+    }
+    if (queryAssetId && asset.id === queryAssetId) {
+      assetId = asset.id;
+    }
+  }
 
   if (!assetId) {
     redirect(307, memoryManager.memoriesHref);
   }
 
-  if (url.searchParams.get(QueryParameter.ASSET_ID) !== assetId) {
+  if (queryAssetId !== assetId) {
     const target = new URL(url);
     target.searchParams.set(QueryParameter.ASSET_ID, assetId);
     redirect(307, target.pathname + target.search);

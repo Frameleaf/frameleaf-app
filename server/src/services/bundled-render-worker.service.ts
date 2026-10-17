@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { OnEvent } from 'src/decorators.js';
-import { ImmichWorker, MediaOperationDestination, RenderWorkerAuditEvent, RenderWorkerStatus } from 'src/enum.js';
+import { FrameleafWorker, MediaOperationDestination, RenderWorkerAuditEvent, RenderWorkerStatus } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
   BUNDLED_RENDER_WORKER_APPROVAL,
@@ -27,7 +27,7 @@ export type BundledEnrolmentOutcome = 'disabled' | 'revoked' | 'enrolled' | 'una
  */
 @Injectable()
 export class BundledRenderWorkerService extends BaseService {
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   async onBootstrap(): Promise<void> {
     try {
       await this.ensureEnrolment();

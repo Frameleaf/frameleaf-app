@@ -35,6 +35,9 @@ export class PhotographyWorkflowRepository {
       published: boolean;
       submittedRounds: number;
       unpaidOrders: number;
+      outstanding: number;
+      currency: string;
+      invited: number;
       readyCount: number;
       pendingEdits: number;
     }>`
@@ -43,6 +46,9 @@ export class PhotographyWorkflowRepository {
       (workflow.value->'published' IS NOT NULL AND workflow.value->'published' <> 'null'::jsonb) AS published,
       jsonb_array_length(workflow.value->'rounds') AS "submittedRounds",
       (SELECT count(*)::int FROM jsonb_array_elements(workflow.value->'orders') orders WHERE orders->>'status' IN ('quoted','accepted')) AS "unpaidOrders",
+      (SELECT COALESCE(sum((orders->>'total')::bigint),0)::float8 FROM jsonb_array_elements(workflow.value->'orders') orders WHERE orders->>'status' IN ('quoted','accepted')) AS outstanding,
+      workflow.value->'config'->>'currency' AS currency,
+      (SELECT count(*)::int FROM jsonb_array_elements(COALESCE(workflow.value->'recipients','[]'::jsonb)) recipient WHERE NOT COALESCE((recipient->>'revoked')::boolean,false) AND (recipient->>'expiresAt' IS NULL OR (recipient->>'expiresAt')::timestamptz > now())) AS invited,
       (SELECT count(*)::int FROM jsonb_array_elements(workflow.value->'orders') orders,jsonb_array_elements(orders->'items') item WHERE orders->>'status' IN ('settled','free') AND item->>'approved'='true' AND item->>'finalPath' IS NOT NULL) AS "readyCount",
       (SELECT count(DISTINCT item->>'captureId')::int FROM jsonb_array_elements(workflow.value->'orders') orders,jsonb_array_elements(orders->'items') item WHERE orders->>'status' IN ('accepted','settled','free') AND (orders->>'paymentTiming' <> 'before-editing' OR orders->>'status' IN ('settled','free')) AND (CASE WHEN item ? 'outputs' THEN EXISTS(SELECT 1 FROM jsonb_array_elements(item->'outputs') output WHERE output->>'approved' <> 'true' OR output->>'revisionId' IS NULL) ELSE item->>'approved' <> 'true' OR item->>'revisionId' IS NULL END)) AS "pendingEdits"
       FROM public.photography_workflow workflow JOIN public.album album ON album.id=workflow."albumId"
@@ -56,6 +62,13 @@ export class PhotographyWorkflowRepository {
   async get(id: string): Promise<WorkflowRow | undefined> {
     const { rows } = await sql<WorkflowRow>`SELECT * FROM ${TABLE} WHERE id=${id}::uuid`.execute(this.db);
     return rows[0];
+  }
+  /** STUDIO-P1: the studio owner's name, which stands for the studio name until Branding is saved. */
+  async ownerName(ownerId: string): Promise<string | null> {
+    const { rows } = await sql<{ name: string }>`SELECT name FROM public."user" WHERE id=${ownerId}::uuid`.execute(
+      this.db,
+    );
+    return rows[0]?.name || null;
   }
   async mutate<T>(
     id: string,
@@ -101,6 +114,34 @@ export class PhotographyWorkflowRepository {
         tx,
       );
       return { row: { id, ownerId, albumId, revision, value }, result };
+    });
+  }
+  /**
+   * Rewrites only the stored guest sessions, keeping the workflow revision, so the studio's and guests'
+   * pending saves do not conflict with a session they cannot see.
+   */
+  async mutateSessions(
+    id: string,
+    ownerId: string,
+    albumId: string,
+    change: (sessions: PhotographyWorkflow['sessions']) => PhotographyWorkflow['sessions'],
+  ) {
+    await this.db.transaction().execute(async (tx) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${id}, 0))`.execute(tx);
+      const { rows } = await sql<{
+        ownerId: string;
+        albumId: string;
+        sessions: PhotographyWorkflow['sessions'] | null;
+      }>`SELECT "ownerId","albumId",value->'sessions' AS sessions FROM ${TABLE} WHERE id=${id}::uuid FOR UPDATE`.execute(
+        tx,
+      );
+      const current = rows[0];
+      if (!current || current.ownerId !== ownerId || current.albumId !== albumId)
+        throw new ForbiddenException('Shoot is unavailable');
+      const sessions = change(current.sessions ?? []);
+      await sql`UPDATE ${TABLE} SET value=jsonb_set(value,'{sessions}',${JSON.stringify(sessions)}::text::jsonb) WHERE id=${id}::uuid`.execute(
+        tx,
+      );
     });
   }
   async assets(ownerId: string, albumId: string, ids?: string[]) {

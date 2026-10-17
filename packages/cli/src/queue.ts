@@ -7,8 +7,6 @@ export type Task<T, R> = {
   data: T;
   error: unknown | undefined;
   count: number;
-  // TODO: Could be useful to adding progress property.
-  // TODO: Could be useful to adding start_at/end_at/duration properties.
   result: undefined | R;
 };
 
@@ -16,7 +14,6 @@ export type QueueOptions = {
   verbose?: boolean;
   concurrency?: number;
   retry?: number;
-  // TODO: Could be useful to adding timeout property for retry.
 };
 
 export type ComputedQueueOptions = Required<QueueOptions>;
@@ -47,13 +44,11 @@ export class Queue<T, R> {
   constructor(worker: (data: T) => Promise<R>, options?: QueueOptions) {
     this.options = { ...defaultQueueOptions, ...options };
     this.worker = worker;
-    this.store = new Map<string, Task<T, R>>();
-    this.queue = this.buildQueue();
+    this.queue = fastq.promise((id: string) => this.work(this.getTask(id)), this.options.concurrency);
   }
 
   get tasks(): Task<T, R>[] {
-    const tasks: Task<T, R>[] = this.store.values().toArray();
-    return tasks;
+    return this.store.values().toArray();
   }
 
   getTask(id: string): Task<T, R> {
@@ -87,42 +82,35 @@ export class Queue<T, R> {
     return this.queue.push(id);
   }
 
-  // TODO: Support more function delegation to fastq.
-
-  private buildQueue(): fastq.queueAsPromised<string, Task<T, R>> {
-    return fastq.promise((id: string) => {
-      const task = this.getTask(id);
-      return this.work(task);
-    }, this.options.concurrency);
-  }
-
   private async work(task: Task<T, R>): Promise<Task<T, R>> {
-    task.count += 1;
-    task.error = undefined;
-    task.status = 'processing';
-    if (this.options.verbose) {
-      console.log('[task] processing:', task);
-    }
-    try {
-      task.result = await this.worker(task.data);
-      task.status = 'succeeded';
+    for (;;) {
+      task.count += 1;
+      task.error = undefined;
+      task.status = 'processing';
       if (this.options.verbose) {
-        console.log('[task] succeeded:', task);
+        console.log('[task] processing:', task);
       }
-      return task;
-    } catch (error) {
-      task.error = error;
-      task.status = 'failed';
-      if (this.options.verbose) {
-        console.log('[task] failed:', task);
-      }
-      if (this.options.retry > 0 && task.count < this.options.retry) {
+      try {
+        task.result = await this.worker(task.data);
+        task.status = 'succeeded';
         if (this.options.verbose) {
-          console.log('[task] retry:', task);
+          console.log('[task] succeeded:', task);
         }
-        return this.work(task);
+        return task;
+      } catch (error) {
+        task.error = error;
+        task.status = 'failed';
+        if (this.options.verbose) {
+          console.log('[task] failed:', task);
+        }
+        if (this.options.retry > 0 && task.count < this.options.retry) {
+          if (this.options.verbose) {
+            console.log('[task] retry:', task);
+          }
+          continue;
+        }
+        return task;
       }
-      return task;
     }
   }
 }

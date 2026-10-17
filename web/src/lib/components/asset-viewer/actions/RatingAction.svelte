@@ -20,6 +20,7 @@
   import { Icon, IconButton } from '@frameleaf/ui';
   import { mdiStar, mdiStarOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
+  import { onDestroy } from 'svelte';
 
   type Props = {
     asset: AssetResponseDto;
@@ -27,6 +28,9 @@
   };
 
   let { asset, onAction }: Props = $props();
+
+  let destroyed = false;
+  onDestroy(() => (destroyed = true));
 
   const STARS = [1, 2, 3, 4, 5];
 
@@ -76,12 +80,18 @@
   };
 
   const rateAsset = async (rating: number | null) => {
+    const id = asset.id;
+    const isCurrentSession = authManager.captureSession();
+    const isCurrent = () => !destroyed && asset.id === id && isCurrentSession();
     try {
       await updateAsset({
-        id: asset.id,
+        id,
         updateAssetDto: { rating },
       });
 
+      if (!isCurrent()) {
+        return;
+      }
       asset = {
         ...asset,
         exifInfo: {
@@ -97,7 +107,9 @@
         rating,
       });
     } catch (error) {
-      handleError(error, $t('errors.unable_to_set_rating'));
+      if (isCurrent()) {
+        handleError(error, $t('errors.unable_to_set_rating'));
+      }
     }
   };
 

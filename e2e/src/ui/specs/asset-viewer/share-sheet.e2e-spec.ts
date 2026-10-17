@@ -5,7 +5,7 @@ import { setupAssetViewerFixture } from './utils';
 const fixture = setupAssetViewerFixture(3517);
 
 test.beforeEach(async ({ context, page }) => {
-  await context.addInitScript(() => localStorage.setItem('immich-ui-theme', JSON.stringify('dark')));
+  await context.addInitScript(() => localStorage.setItem('frameleaf-ui-theme', JSON.stringify('dark')));
   await context.route(`**/api/assets/${fixture.primaryAssetDto.id}`, (route) =>
     route.fulfill({ json: { ...fixture.primaryAssetDto, originalFileName: 'Hiking with Jamie.jpg' } }),
   );

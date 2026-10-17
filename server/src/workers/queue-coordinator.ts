@@ -116,13 +116,14 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
         const start = nextQueue;
         for (let offset = 0; offset < queues.length; offset++) {
           const capacity = QUEUE_EXECUTION_CAPACITY - active.size;
-          if (capacity <= 0) break;
+          if (stopping || capacity <= 0) break;
           const index = (start + offset) % queues.length;
           const queue = queues[index];
           if (outstanding && !outstanding.has(queue)) continue;
           // Resume at the next queue after filling the shared budget, so a deep queue cannot starve others.
           nextQueue = (index + 1) % queues.length;
           await store.feedManifest(queue);
+          if (stopping) break;
           const claims = await store.claim(queue, workerId, capacity);
           for (const claim of claims) {
             active.set(claim.id, claim);

@@ -190,7 +190,7 @@ const CLOUD_ROUTED_WORKLOADS = ['descriptions', 'upscale', 'restoration', 'studi
 const frameleafCloudDefaults = {
   // FL-158: Sign in with Frameleaf. Off at home until an administrator shows it. The client
   // authenticates with this server's key only (private_key_jwt); there is no client secret (FL-177).
-  // FL-235: the storage quota (GiB) of an account created by a Frameleaf invitation's first sign-in;
+  // FL-235: the storage quota (decimal GB, D5) of an account created by a Frameleaf invitation's first sign-in;
   // null is unlimited, so backup works out of the box (owner decision, 2026-10-01).
   signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false, invitedStorageQuota: null as number | null },
   // FL-161: what remote access may carry. Remote visitors always sign in with Frameleaf; originals,
@@ -553,7 +553,7 @@ const AdminConfigFrameleafCloudSchema = z
           .nullable()
           .optional()
           .describe(
-            'Storage quota in GiB for an account Sign in with Frameleaf creates for a person invited to this server; null or omitted is unlimited. Applied when the account is created; existing accounts keep their quota.',
+            'Storage quota in GB (1 GB = 1,000,000,000 bytes) for an account Sign in with Frameleaf creates for a person invited to this server; null or omitted is unlimited. Applied when the account is created; existing accounts keep their quota.',
           ),
       })
       .default(frameleafCloudDefaults.signIn)
@@ -1015,7 +1015,11 @@ const AdminConfigSchemaWithVisibility = z
         tokenEndpointAuthMethod: OAuthTokenEndpointAuthMethodSchema,
         timeout: z.int().min(1).describe('Timeout'),
         allowInsecureRequests: configBool.describe('Allow insecure requests'),
-        defaultStorageQuota: z.int().min(0).nullable().describe('Default storage quota'),
+        defaultStorageQuota: z
+          .int()
+          .min(0)
+          .nullable()
+          .describe('Default storage quota in GB (1 GB = 1,000,000,000 bytes) when the provider sends none'),
         enabled: configBool.describe('Enabled').meta({ visibility: Public }),
         issuerUrl: emptyOrUrl('Issuer URL must be an empty string or a valid URL').describe('Issuer URL'),
         accountManagementUrl: emptyOrUrl('Account management URL must be an empty string or a valid URL')
@@ -1030,7 +1034,7 @@ const AdminConfigSchemaWithVisibility = z
         signingAlgorithm: z.string().describe('Signing algorithm'),
         profileSigningAlgorithm: z.string().describe('Profile signing algorithm'),
         storageLabelClaim: z.string().describe('Storage label claim'),
-        storageQuotaClaim: z.string().describe('Storage quota claim'),
+        storageQuotaClaim: z.string().describe('Storage quota claim, a number of GB (1 GB = 1,000,000,000 bytes)'),
         roleClaim: z.string().describe('Role claim'),
         mobileOverrideEnabled: configBool.describe('Mobile override enabled'),
         mobileRedirectUri: z.string().describe('Mobile redirect URI (set to empty string to disable)'),
@@ -1211,15 +1215,12 @@ const getMeta = (schema: z.ZodType) =>
   (z.globalRegistry.get(schema) ?? {}) as { id?: string; description?: string; visibility?: ConfigVisibility };
 
 const unwrap = (schema: z.ZodType): z.ZodType => {
-  if (schema instanceof z.ZodPipe) {
-    return schema.def.in as z.ZodType;
-  }
   // FL-158: a section with a default (the Frameleaf sections) is walked like any other, so its
   // public properties are published and its visibility metadata is stripped
-  if (schema instanceof z.ZodDefault) {
-    return unwrap(schema.def.innerType as z.ZodType);
+  while (schema instanceof z.ZodDefault) {
+    schema = schema.def.innerType as z.ZodType;
   }
-  return schema;
+  return schema instanceof z.ZodPipe ? (schema.def.in as z.ZodType) : schema;
 };
 
 const visibleSchemas = new Map<z.ZodType, Map<ConfigVisibility, z.ZodType | undefined>>();
@@ -1279,19 +1280,28 @@ const applyVisibilityRecursive = (
   return visible;
 };
 
-const stripVisibilityMetadata = <T extends z.ZodType>(schema: T): T => {
-  const object = unwrap(schema);
-  if (object instanceof z.ZodObject) {
-    for (const value of Object.values(object.shape as Record<string, z.ZodType>)) {
-      stripVisibilityMetadata(value);
+export const stripVisibilityMetadata = <T extends z.ZodType>(schema: T): T => {
+  const pending: z.ZodType[] = [schema];
+  const visited = new WeakSet<z.ZodType>();
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+    const object = unwrap(current);
+    if (object instanceof z.ZodObject) {
+      const children = Object.values(object.shape as Record<string, z.ZodType>);
+      for (let index = children.length - 1; index >= 0; index--) {
+        pending.push(children[index]);
+      }
+      continue;
     }
 
-    return schema;
-  }
-
-  const { visibility, ...meta } = getMeta(schema);
-  if (visibility) {
-    z.globalRegistry.add(schema, meta);
+    const { visibility, ...meta } = getMeta(current);
+    if (visibility) {
+      z.globalRegistry.add(current, meta);
+    }
   }
 
   return schema;

@@ -38,7 +38,7 @@ test("Studio browser provisioning uses the exact official image and fails closed
   const version = JSON.parse(
     readFileSync(path.join(root, "studio/engine-package-lock.json"), "utf8"),
   ).packages["node_modules/playwright"].version;
-  assert.equal(version, "1.60.0");
+  assert.equal(version, "1.64.0");
   assert.equal(
     step.env.PLAYWRIGHT_BROWSERS_PATH,
     "${{ runner.temp }}/studio-playwright",
@@ -47,7 +47,7 @@ test("Studio browser provisioning uses the exact official image and fails closed
   assert.equal(step["continue-on-error"], undefined);
   assert.ok(
     step.run.includes(
-      `mcr.microsoft.com/playwright:v${version}-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948`,
+      `mcr.microsoft.com/playwright:v${version}-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f`,
     ),
   );
   const directory = mkdtempSync(path.join(tmpdir(), "studio-browser-install-"));
@@ -73,9 +73,9 @@ case "$1" in
     mkdir -p "$3/$folder"
     touch "$3/$folder/INSTALLATION_COMPLETE"
     case "$folder" in
-      chromium-1223) executable=chrome-linux64/chrome ;;
-      chromium_headless_shell-1223) executable=chrome-headless-shell-linux64/chrome-headless-shell ;;
-      ffmpeg-1011) executable=ffmpeg-linux ;;
+      chromium-1248) executable=chrome-linux64/chrome ;;
+      chromium_headless_shell-1248) executable=chrome-headless-shell-linux64/chrome-headless-shell ;;
+      ffmpeg-1013) executable=ffmpeg-linux ;;
       *) exit 42 ;;
     esac
     [ "$BAD_CACHE" != 1 ] || exit 0
@@ -183,7 +183,7 @@ test("Studio graph recovery preserves the failed gate and generates only genuine
   assert.equal(upload.with["if-no-files-found"], "error");
   assert.equal(
     upload.uses,
-    "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+    "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
   );
   assert.ok(
     steps.some((step) =>
@@ -216,7 +216,7 @@ test("Studio source recovery retains evidence without bypassing normal preparati
   assert.equal(upload.with["if-no-files-found"], "error");
   assert.equal(
     upload.uses,
-    "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+    "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
   );
   for (const step of steps.filter((step) =>
     /npm --prefix studio\/engine (?:ci|run build)/.test(step.run ?? ""),
@@ -660,7 +660,7 @@ test("hosted NAS fixtures require the pinned TrueNAS library and hashed renderer
     (step) => step.name === "Validate NAS package fixtures",
   );
   assert.ok(python && prepare && fixtures);
-  assert.equal(python.with["python-version"], "3.11.15");
+  assert.equal(python.with["python-version"], "3.11.17");
   assert.match(python.uses, /^actions\/setup-python@[a-f0-9]{40}$/);
   assert.ok(steps.indexOf(python) < steps.indexOf(prepare));
   assert.ok(steps.indexOf(prepare) < steps.indexOf(fixtures));
@@ -1086,7 +1086,7 @@ test("OpenAPI compares immutable same-repository base commits, not the moving ta
   );
   assert.equal(
     w.jobs["check-openapi"].env.OASDIFF_IMAGE,
-    "mirror.gcr.io/tufin/oasdiff@sha256:cc59265b995bd19e1e87cf4302ab70b520f730c33ebdf52e3cfa154fe4a3b2fb",
+    "mirror.gcr.io/tufin/oasdiff@sha256:6263a96dd2ef0726c54e21fea9b8e1607eac4841add0079324b424c1f52b819c",
   );
   assert.equal(
     comparison.run.replace(/\\\n/g, " ").trim().replace(/\s+/g, " "),
@@ -1938,4 +1938,26 @@ test("canonical TypeScript SDK generation has no workflow or mise raw bypass", (
   const mise = readFileSync(path.join(root, "mise.toml"), "utf8");
   assert.match(mise, /node scripts\/generate-typescript-sdk\.mjs/u);
   assert.doesNotMatch(mise, /oazapfts\s+--/u);
+});
+
+test("action upgrades preserve later mise authentication and the existing uv cache policy", () => {
+  for (const file of readdirSync(path.join(root, ".github/workflows")).filter(
+    (file) => /\.ya?ml$/.test(file),
+  )) {
+    for (const job of Object.values(workflow(file).jobs)) {
+      for (const step of job.steps ?? []) {
+        if (step.uses?.startsWith("jdx/mise-action@")) {
+          assert.equal(step.with.persist_github_token, true, file);
+        }
+      }
+    }
+  }
+  const ml = workflow("frameleaf-quality.yml").jobs[
+    "machine-learning"
+  ].steps.find((step) => step.uses?.startsWith("astral-sh/setup-uv@"));
+  assert.equal(ml.with["save-cache"], true);
+  const scanner = workflow("org-zizmor.yml").jobs.zizmor.steps.find((step) =>
+    step.uses?.startsWith("astral-sh/setup-uv@"),
+  );
+  assert.equal(scanner.with["enable-cache"], false);
 });

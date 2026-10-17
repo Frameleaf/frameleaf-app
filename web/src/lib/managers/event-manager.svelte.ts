@@ -16,7 +16,6 @@ import type {
 } from '@frameleaf/sdk';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { BaseEventManager } from '$lib/utils/base-event-manager.svelte';
-import type { TreeNode } from '$lib/utils/tree-utils';
 
 export type Events = {
   AppInit: [];
@@ -77,7 +76,6 @@ export type Events = {
 
   TagCreate: [TagResponseDto];
   TagUpdate: [TagResponseDto];
-  TagDelete: [TreeNode];
 
   UserPinCodeReset: [];
   /** FL-67: the signed-in account created its first PIN. */

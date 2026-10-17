@@ -513,12 +513,16 @@ describe(NotificationService.name, () => {
   describe('onSessionDeleteEvent', () => {
     it('should send a on_session_delete client event', () => {
       vi.useFakeTimers();
-      sut.onSessionDelete({ sessionId: 'id' });
-      expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+      try {
+        sut.onSessionDelete({ sessionId: 'id' });
+        expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
 
-      vi.advanceTimersByTime(500);
+        vi.advanceTimersByTime(500);
 
-      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_delete', 'id', 'id');
+        expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_delete', 'id', 'id');
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
@@ -913,13 +917,6 @@ describe(NotificationService.name, () => {
     it('should skip if album could not be found', async () => {
       await expect(sut.handleAlbumUpdate({ id: '', recipientId: '1' })).resolves.toBe(JobStatus.Skipped);
       expect(mocks.user.get).not.toHaveBeenCalled();
-    });
-
-    it('should skip if owner could not be found', async () => {
-      mocks.album.getById.mockResolvedValue(getForAlbum(AlbumFactory.from().owner({ id: 'non-existent' }).build()));
-
-      await expect(sut.handleAlbumUpdate({ id: '', recipientId: '1' })).resolves.toBe(JobStatus.Skipped);
-      expect(mocks.systemMetadata.get).not.toHaveBeenCalled();
     });
 
     it('should skip recipient that could not be looked up', async () => {

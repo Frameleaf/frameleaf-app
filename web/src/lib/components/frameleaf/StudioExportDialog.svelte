@@ -702,7 +702,7 @@
   .field select,
   .field input {
     min-height: 34px;
-    padding: 0 0.5rem;
+    padding: 0 var(--fl-space-3);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
     background: var(--fl-panel);
@@ -731,12 +731,32 @@
     align-items: center;
     padding-inline: var(--fl-space-2);
     margin-inline-start: calc(var(--fl-space-2) * -1);
+    gap: var(--fl-space-2);
     border-radius: var(--fl-radius-control);
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
+    cursor: pointer;
+  }
+  /* `display: inline-flex` drops the native disclosure marker; a chevron keeps "Advanced" reading as something that opens. */
+  .advanced summary::after {
+    content: '';
+    width: 0.4rem;
+    height: 0.4rem;
+    border-inline-end: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: translateY(-0.1rem) rotate(45deg);
+  }
+  @media (hover: hover) {
+    .advanced summary:hover {
+      color: var(--fl-text);
+      background: var(--fl-raised);
+    }
   }
   .advanced[open] summary {
     color: var(--fl-text);
+  }
+  .advanced[open] summary::after {
+    transform: translateY(0.1rem) rotate(-135deg);
   }
   .advanced-body {
     display: grid;

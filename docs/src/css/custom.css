@@ -3,9 +3,12 @@
  * bundles Infima by default. Infima is a CSS framework designed to
  * work well for content-centric websites.
  */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+@config '../../tailwind.config.js';
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
 @font-face {
   font-family: 'GoogleSans';

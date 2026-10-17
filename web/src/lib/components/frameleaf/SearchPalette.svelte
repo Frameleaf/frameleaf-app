@@ -70,6 +70,7 @@
     type PaletteSuggestion,
   } from '$lib/frameleaf/search-palette';
   import '$lib/frameleaf/tokens.css';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { savedSearchesStore } from '$lib/stores/saved-searches.svelte';
   import { searchStore } from '$lib/stores/search.svelte';
@@ -334,7 +335,9 @@
   const libraryQuery = $derived(compileFor(withoutPaletteScope(base, scope)));
   const next = $derived(scopeChoice === 'library' ? libraryQuery : currentQuery);
 
-  const body = $derived(paletteSearchBody(next));
+  // ACCOUNT-P3: Search › "Include archived items"; every count, facet, histogram and hit follows it.
+  const includeArchived = $derived(authManager.authenticated && !!authManager.preferences.search?.includeArchived);
+  const body = $derived(paletteSearchBody(next, includeArchived));
   const smart = $derived(smartEnabled && isSmartBody(body));
   const typing = $derived(text.trim().length > 0 || tokens.length > 0);
   const pending = $derived(deferredInput !== liveInput || loading);
@@ -510,6 +513,7 @@
   const catalogBody = $derived(
     paletteSearchBody(
       scopeChoice === 'library' ? emptyDiscoveryQuery() : withPaletteScope(emptyDiscoveryQuery(), scope),
+      includeArchived,
     ),
   );
   const catalogKey = $derived(JSON.stringify([catalogBody, generation]));
@@ -531,8 +535,8 @@
 
   const remoteKey = $derived(
     JSON.stringify([
-      paletteSearchBody(currentQuery),
-      paletteSearchBody(libraryQuery),
+      paletteSearchBody(currentQuery, includeArchived),
+      paletteSearchBody(libraryQuery, includeArchived),
       scopeChoice,
       smartEnabled,
       typing,
@@ -555,8 +559,8 @@
   });
 
   const runRemote = (signal: AbortSignal) => {
-    const currentBody = paletteSearchBody(currentQuery);
-    const libraryBody = paletteSearchBody(libraryQuery);
+    const currentBody = paletteSearchBody(currentQuery, includeArchived);
+    const libraryBody = paletteSearchBody(libraryQuery, includeArchived);
     const searchBody = scopeChoice === 'library' ? libraryBody : currentBody;
     const smartFor = (target: typeof searchBody) => smartEnabled && isSmartBody(target);
     // The count and the results are the answer; if either cannot be had, the search failed. The
@@ -824,7 +828,8 @@
     // compared as the server receives them, so reading conditions back as chips is not an edit.
     if (
       unsupported.length > 0 &&
-      JSON.stringify(paletteSearchBody(query)) === JSON.stringify(paletteSearchBody(initialQuery))
+      JSON.stringify(paletteSearchBody(query, includeArchived)) ===
+        JSON.stringify(paletteSearchBody(initialQuery, includeArchived))
     ) {
       onClose();
       return;
@@ -1844,6 +1849,10 @@
     display: flex;
     gap: 6px;
     align-items: baseline;
+    /* The label and its count share a baseline, and the line sits in the middle of the 44/48px
+       target (tokens.css) rather than at its top. */
+    flex-wrap: wrap;
+    align-content: center;
     padding: 4px 12px;
     border: 0;
     border-radius: calc(var(--fl-radius-control-compact) - 2px);

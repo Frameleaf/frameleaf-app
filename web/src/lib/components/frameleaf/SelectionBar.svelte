@@ -813,15 +813,26 @@
   button:hover {
     background: var(--fl-raised);
   }
+  /* Prototype `.sb-text` / `.sb-clear`: quiet text buttons that brighten on hover. */
   .text {
-    color: var(--fl-accent);
-    font-weight: 600;
+    color: var(--fl-muted);
     padding-inline: var(--fl-space-2);
   }
   .clear {
     color: var(--fl-muted);
   }
+  .text:hover,
+  .clear:hover {
+    color: var(--fl-text);
+  }
   .is-danger {
+    color: var(--fl-danger);
+  }
+  /* On the capsule a destructive action turns red only on hover (prototype `.sb-action.is-danger`). */
+  .action.is-danger {
+    color: var(--fl-text);
+  }
+  .action.is-danger:hover {
     color: var(--fl-danger);
   }
   .more {
@@ -865,9 +876,12 @@
     .selection-bar {
       inset-inline: 12px;
       inset-block-end: calc(max(10px, var(--fl-safe-bottom, 0px)) + 74px);
+      /* The capsule keeps to the screen; its action row scrolls instead of widening it. */
+      grid-template-columns: minmax(0, 1fr);
     }
     .pill {
       inline-size: 100%;
+      min-inline-size: 0;
       justify-content: space-between;
       row-gap: 4px;
       padding-inline-start: 12px;
@@ -876,6 +890,7 @@
       flex: 1 1 100%;
       flex-wrap: nowrap;
       justify-content: space-between;
+      min-inline-size: 0;
       overflow-x: auto;
     }
     /* No tooltips on touch: each action carries a short name under its icon. */

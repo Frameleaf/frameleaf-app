@@ -279,7 +279,7 @@ export const normalizeCommandSummary = (value: unknown): StudioCommandSummary =>
   }
 
   const raw = isPlainObject(value.counts) ? value.counts : {};
-  const counts: Record<string, number> = {};
+  const counts = Object.create(null) as Record<string, number>;
   let total = 0;
 
   for (const [id, count] of Object.entries(raw).slice(0, MAX_SUMMARY_ROWS)) {
@@ -380,7 +380,7 @@ export const diffStudioGraphs = (before: unknown, after: unknown): StudioGraphDi
 
 /** Combine the summaries of a run of saves into one, for a diff spanning several revisions. */
 export const mergeCommandSummaries = (summaries: readonly unknown[]): StudioCommandSummary => {
-  const counts: Record<string, number> = {};
+  const counts = Object.create(null) as Record<string, number>;
   let total = 0;
   for (const raw of summaries) {
     const summary = normalizeCommandSummary(raw);

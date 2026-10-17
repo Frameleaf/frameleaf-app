@@ -49,6 +49,10 @@
       border-radius: calc(var(--fl-radius-card) * 1.8);
     }
   }
+  /* A notice between rows keeps air before the next rule (backup-v2.css `.bk2-section > .bk2-alert`). */
+  .kit-section > :global(.kit-notice) {
+    margin-bottom: var(--fl-space-4);
+  }
   .heading {
     display: flex;
     align-items: center;

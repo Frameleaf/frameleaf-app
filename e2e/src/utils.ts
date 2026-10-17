@@ -65,7 +65,7 @@ import {
   viewAsset,
 } from '@frameleaf/sdk';
 import { BrowserContext } from '@playwright/test';
-import { exec, spawn } from 'node:child_process';
+import { exec } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -78,6 +78,7 @@ import { promisify } from 'node:util';
 import pg from 'pg';
 import { io, type Socket } from 'socket.io-client';
 import { amendBackupFixture } from 'src/backup-fixture.js';
+import { executeCommand } from 'src/command.js';
 import { loginDto, signupDto } from 'src/fixtures.js';
 import { makeRandomImage } from 'src/generators.js';
 import { ownedWait, settlePendingWaits } from 'src/harness-context.js';
@@ -102,7 +103,6 @@ import { playwrightDbHost, playwrightHost, playwriteBaseUrl } from '../playwrigh
 
 export type { Emitter } from '@socket.io/component-emitter';
 
-type CommandResponse = { stdout: string; stderr: string; exitCode: number | null };
 type WaitOptions = { event: EventType; id?: string; total?: number; timeout?: number; signal?: AbortSignal };
 type AdminSetupOptions = { onboarding?: boolean };
 type FileData = { bytes?: Buffer; filename: string };
@@ -128,27 +128,6 @@ export const dockerExec = (args: string[]) =>
 export const immichAdmin = (args: string[]) => dockerExec([`frameleaf-admin ${args.join(' ')}`]);
 export const specialCharStrings = ["'", '"', ',', '{', '}', '*'];
 export const TEN_TIMES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
-
-const executeCommand = (command: string, args: string[], options?: { cwd?: string }) => {
-  let _resolve: (value: CommandResponse) => void;
-  const promise = new Promise<CommandResponse>((resolve) => (_resolve = resolve));
-  const child = spawn(command, args, { stdio: 'pipe', cwd: options?.cwd });
-
-  let stdout = '';
-  let stderr = '';
-
-  child.stdout.on('data', (data) => (stdout += data.toString()));
-  child.stderr.on('data', (data) => (stderr += data.toString()));
-  child.on('exit', (exitCode) => {
-    _resolve({
-      stdout: stdout.trim(),
-      stderr: stderr.trim(),
-      exitCode,
-    });
-  });
-
-  return { promise, child };
-};
 
 let client: pg.Client | null = null;
 let connecting: Promise<pg.Client> | undefined;
@@ -566,7 +545,7 @@ export const utils = {
                 total.signal,
               );
             const startedEdits = new Set<string>();
-            phase = 'join started non-cancellable edits';
+            phase = 'settle non-cancellable edits before pausing';
             await waitUntil(
               total,
               async () => {
@@ -575,9 +554,32 @@ export const utils = {
                   if (
                     operation.kind === 'quick_edit' &&
                     ['photo_edit', 'video_edit', 'video_export'].includes(operation.settings?.edit) &&
-                    (operation.status !== 'queued' || operation.claimed || operation.remotePending)
+                    !startedEdits.has(operation.id)
                   ) {
                     startedEdits.add(operation.id);
+                    if (operation.status === 'queued' && !operation.claimed && !operation.remotePending) {
+                      try {
+                        await cancelMediaOperation(
+                          { id: operation.id },
+                          {
+                            headers: asBearerAuth(await ownerToken(total, operation.ownerId)),
+                            signal: total.signal,
+                          },
+                        );
+                      } catch (error) {
+                        const refusal = error as { status?: number; data?: { message?: string } };
+                        if (
+                          refusal.status !== 400 ||
+                          refusal.data?.message !== 'This edit finishes once it has started and cannot be cancelled'
+                        ) {
+                          throw error;
+                        }
+                        const remaining = await unfinishedOperations(total, operation.id);
+                        if (remaining.some((row) => row.status === 'queued' && !row.claimed && !row.remotePending)) {
+                          throw error;
+                        }
+                      }
+                    }
                   }
                 }
                 // A failed render can clear its claim while queued for retry; it still owns its saved edit.
@@ -1394,7 +1396,7 @@ export const utils = {
       {
         headers: asBearerAuth(accessToken),
         fetch: (...args: Parameters<typeof fetch>) =>
-          // eslint-disable-next-line unicorn/no-invalid-argument-count, unicorn/prefer-await
+          // eslint-disable-next-line unicorn/prefer-await
           fetch(...args).then((response) => {
             setCookie = response.headers.getSetCookie();
             return response;

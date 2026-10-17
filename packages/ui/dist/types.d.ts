@@ -415,11 +415,7 @@ export type LogoSet = {
         light: string;
         dark: string;
     };
-    stacked_futo: {
-        light: string;
-        dark: string;
-    };
     icon: string;
 };
-export type LogoVariants = 'stacked' | 'inline' | 'logo' | 'icon' | 'stacked-futo';
+export type LogoVariants = 'stacked' | 'inline' | 'logo' | 'icon';
 export {};

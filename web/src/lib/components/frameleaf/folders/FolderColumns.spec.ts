@@ -21,7 +21,7 @@ const tree = buildFolderTree([
   {
     path: '/photos/2026/Rockies',
     count: 24,
-    size: 5 * 1024 * 1024,
+    size: 5_000_000,
     coverAssetIds: ['r1', 'r2', 'r3', 'r4'],
     startDate: day('2026-08-02'),
     endDate: day('2026-08-09'),

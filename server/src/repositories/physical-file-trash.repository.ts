@@ -151,29 +151,35 @@ export class PhysicalFileTrashRepository {
     return { items: rows, total: totals.rows[0].total, totalBytes: totals.rows[0].totalBytes };
   }
   /**
-   * Takes a trashed file back out to `targetPath` and removes its trash row, under both paths' locks, in
-   * `trx` when one is given (the caller then registers the file in that transaction). Returns the entry,
+   * Takes a trashed file back out to `targetPath` and removes its trash row under both paths' locks.
+   * A journal committed before the move lets rollback or restart put it back. Returns the entry,
    * or undefined when it is no longer in the trash.
    */
   async untrash(
     id: string,
     targetPath: string,
     move: PhysicalFileTrashMove,
-    trx?: Transaction<DB>,
+    register?: (trx: Transaction<DB>, entry: PhysicalFileTrashEntry) => Promise<void>,
   ): Promise<PhysicalFileTrashEntry | undefined> {
-    const execute = async (trx: Transaction<DB>) => {
-      const entry = await this.getForUpdate(trx, id);
-      if (!entry) {
-        return;
-      }
-      for (const path of [entry.path, targetPath].toSorted()) {
-        await lockFilePath(trx, path);
-      }
-      await move(entry.path, targetPath);
-      await sql`DELETE FROM public.physical_file_trash WHERE id = ${id}::uuid`.execute(trx);
-      return entry;
-    };
-    return trx ? execute(trx) : this.db.transaction().execute(execute);
+    const original = await this.getById(id);
+    if (!original) return;
+    return withFileTrashMove(
+      this.db,
+      original.path,
+      original.originalFileName,
+      move,
+      async (trx) => {
+        const entry = await this.getForUpdate(trx, id);
+        if (!entry) {
+          return;
+        }
+        await move(entry.path, targetPath);
+        await register?.(trx, entry);
+        await sql`DELETE FROM public.physical_file_trash WHERE id = ${id}::uuid`.execute(trx);
+        return entry;
+      },
+      { targetPath, checksum: original.checksum },
+    );
   }
   /** Permanently deletes a trashed file: `unlink` runs under the path lock, then the row goes. */
   async purge(id: string, unlink: (path: string) => Promise<void>): Promise<PhysicalFileTrashEntry | undefined> {

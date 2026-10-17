@@ -1,0 +1,663 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -52,83 +52,83 @@
+     "changelog:rollup": "node scripts/changelog-rollup.mjs"
+   },
+   "dependencies": {
+-    "@hookform/resolvers": "5.2.2",
+-    "@huggingface/transformers": "4.1.0",
+-    "@lottiefiles/dotlottie-web": "0.76.0",
+-    "@mediabunny/aac-encoder": "1.50.8",
+-    "@mediabunny/ac3": "1.50.8",
+-    "@mediabunny/mp3-encoder": "1.50.8",
+-    "@mediabunny/prores": "1.50.8",
+-    "@radix-ui/react-accordion": "1.2.12",
+-    "@radix-ui/react-alert-dialog": "1.1.15",
+-    "@radix-ui/react-collapsible": "1.1.12",
+-    "@radix-ui/react-context-menu": "2.2.16",
+-    "@radix-ui/react-dialog": "1.1.15",
+-    "@radix-ui/react-dropdown-menu": "2.1.16",
+-    "@radix-ui/react-label": "2.1.8",
+-    "@radix-ui/react-popover": "1.1.15",
+-    "@radix-ui/react-progress": "1.1.8",
+-    "@radix-ui/react-scroll-area": "1.2.10",
+-    "@radix-ui/react-select": "2.2.6",
+-    "@radix-ui/react-separator": "1.1.8",
+-    "@radix-ui/react-slider": "1.3.6",
+-    "@radix-ui/react-slot": "1.2.4",
+-    "@radix-ui/react-switch": "1.2.6",
+-    "@radix-ui/react-tabs": "1.1.13",
+-    "@radix-ui/react-tooltip": "1.2.8",
+-    "@tanstack/react-router": "1.168.22",
+-    "@tanstack/react-virtual": "3.13.24",
++    "@hookform/resolvers": "5.9.1",
++    "@huggingface/transformers": "4.3.1",
++    "@lottiefiles/dotlottie-web": "0.81.0",
++    "@mediabunny/aac-encoder": "1.61.4",
++    "@mediabunny/ac3": "1.61.4",
++    "@mediabunny/mp3-encoder": "1.61.4",
++    "@mediabunny/prores": "1.61.4",
++    "@radix-ui/react-accordion": "1.3.1",
++    "@radix-ui/react-alert-dialog": "1.2.1",
++    "@radix-ui/react-collapsible": "1.2.1",
++    "@radix-ui/react-context-menu": "2.4.1",
++    "@radix-ui/react-dialog": "1.3.1",
++    "@radix-ui/react-dropdown-menu": "2.2.1",
++    "@radix-ui/react-label": "2.1.17",
++    "@radix-ui/react-popover": "1.3.1",
++    "@radix-ui/react-progress": "1.2.1",
++    "@radix-ui/react-scroll-area": "1.4.0",
++    "@radix-ui/react-select": "2.4.1",
++    "@radix-ui/react-separator": "1.2.0",
++    "@radix-ui/react-slider": "1.6.1",
++    "@radix-ui/react-slot": "1.5.0",
++    "@radix-ui/react-switch": "1.4.1",
++    "@radix-ui/react-tabs": "1.2.1",
++    "@radix-ui/react-tooltip": "1.4.1",
++    "@tanstack/react-router": "1.170.44",
++    "@tanstack/react-virtual": "3.14.18",
+     "class-variance-authority": "0.7.1",
+     "clsx": "2.1.1",
+-    "fflate": "0.8.2",
++    "fflate": "0.8.3",
+     "gifuct-js": "2.1.2",
+-    "i18next": "25.6.0",
+-    "i18next-browser-languagedetector": "8.2.0",
+-    "idb": "8.0.3",
++    "i18next": "26.4.4",
++    "i18next-browser-languagedetector": "8.2.1",
++    "idb": "8.0.4",
+     "kokoro-js": "1.2.1",
+-    "lucide-react": "0.468.0",
+-    "mediabunny": "1.50.8",
+-    "motion": "12.40.0",
+-    "onnxruntime-web": "1.26.0-dev.20260410-5e55544225",
+-    "react": "19.2.5",
+-    "react-colorful": "5.6.1",
+-    "react-dom": "19.2.5",
+-    "react-hook-form": "7.72.1",
+-    "react-hotkeys-hook": "5.2.4",
+-    "react-i18next": "16.2.4",
+-    "react-resizable-panels": "3.0.6",
+-    "sonner": "2.0.7",
+-    "tailwind-merge": "2.6.1",
++    "lucide-react": "1.56.0",
++    "mediabunny": "1.61.4",
++    "motion": "14.1.1",
++    "onnxruntime-web": "1.30.0",
++    "react": "19.3.0",
++    "react-colorful": "5.8.1",
++    "react-dom": "19.3.0",
++    "react-hook-form": "7.90.0",
++    "react-hotkeys-hook": "5.3.3",
++    "react-i18next": "17.0.16",
++    "react-resizable-panels": "4.14.5",
++    "sonner": "2.0.8",
++    "tailwind-merge": "3.7.0",
+     "tailwindcss-animate": "1.0.7",
+-    "zod": "4.3.6",
++    "zod": "4.6.7",
+     "zundo": "2.3.0",
+-    "zustand": "5.0.12"
++    "zustand": "5.0.15"
+   },
+   "devDependencies": {
+-    "@tailwindcss/vite": "4.2.2",
+-    "@tanstack/router-cli": "1.166.33",
+-    "@testing-library/dom": "10.4.1",
+-    "@testing-library/jest-dom": "6.9.1",
+-    "@testing-library/react": "16.3.2",
+-    "@types/node": "22.19.17",
+-    "@types/react": "19.2.14",
+-    "@types/react-dom": "19.2.3",
+-    "@vitejs/plugin-react": "6.0.1",
+-    "@vitest/coverage-v8": "4.1.10",
+-    "@webgpu/types": "0.1.69",
+-    "jsdom": "27.4.0",
+-    "playwright": "1.60.0",
+-    "tailwindcss": "4.2.2",
++    "@tailwindcss/vite": "4.3.3",
++    "@tanstack/router-cli": "1.167.43",
++    "@testing-library/dom": "10.4.2",
++    "@testing-library/jest-dom": "7.0.1",
++    "@testing-library/react": "16.3.3",
++    "@types/node": "26.6.5",
++    "@types/react": "19.3.0",
++    "@types/react-dom": "19.3.0",
++    "@vitejs/plugin-react": "6.1.2",
++    "@vitest/coverage-v8": "5.0.3",
++    "@webgpu/types": "0.1.74",
++    "jsdom": "30.1.2",
++    "playwright": "1.64.0",
++    "tailwindcss": "4.3.3",
+     "typescript": "7.0.2",
+-    "vite-plus": "0.2.4"
++    "vite-plus": "1.1.0"
+   },
+   "overrides": {
+-    "esbuild": "0.28.1",
++    "esbuild": "0.28.2",
+     "typescript": "7.0.2"
+   },
+-  "packageManager": "npm@11.8.0",
+   "engines": {
+     "node": "26.11.1",
+-    "npm": "11.8.0"
+-  }
++    "npm": "12.2.0"
++  },
++  "packageManager": "npm@12.2.0"
+ }
+diff --git a/src/components/ui/resizable.tsx b/src/components/ui/resizable.tsx
+--- a/src/components/ui/resizable.tsx
++++ b/src/components/ui/resizable.tsx
+@@ -6,11 +6,8 @@
+ const ResizablePanelGroup = ({
+   className,
+   ...props
+-}: React.ComponentProps<typeof ResizablePrimitive.PanelGroup>) => (
+-  <ResizablePrimitive.PanelGroup
+-    className={cn('flex h-full w-full data-[panel-group-direction=vertical]:flex-col', className)}
+-    {...props}
+-  />
++}: React.ComponentProps<typeof ResizablePrimitive.Group>) => (
++  <ResizablePrimitive.Group className={cn('h-full w-full', className)} {...props} />
+ )
+
+ const ResizablePanel = ResizablePrimitive.Panel
+@@ -19,12 +16,12 @@
+   withHandle,
+   className,
+   ...props
+-}: React.ComponentProps<typeof ResizablePrimitive.PanelResizeHandle> & {
++}: React.ComponentProps<typeof ResizablePrimitive.Separator> & {
+   withHandle?: boolean
+ }) => (
+-  <ResizablePrimitive.PanelResizeHandle
++  <ResizablePrimitive.Separator
+     className={cn(
+-      'relative flex w-px items-center justify-center bg-border after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 data-[panel-group-direction=vertical]:h-px data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:after:left-0 data-[panel-group-direction=vertical]:after:h-1 data-[panel-group-direction=vertical]:after:w-full data-[panel-group-direction=vertical]:after:-translate-y-1/2 data-[panel-group-direction=vertical]:after:translate-x-0 [&[data-panel-group-direction=vertical]>div]:rotate-90',
++      'relative flex w-px items-center justify-center bg-border after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 aria-[orientation=horizontal]:h-px aria-[orientation=horizontal]:w-full aria-[orientation=horizontal]:after:left-0 aria-[orientation=horizontal]:after:h-1 aria-[orientation=horizontal]:after:w-full aria-[orientation=horizontal]:after:-translate-y-1/2 aria-[orientation=horizontal]:after:translate-x-0 [&[aria-orientation=horizontal]>div]:rotate-90',
+       className,
+     )}
+     {...props}
+@@ -34,7 +31,7 @@
+         <GripVertical className="h-2.5 w-2.5" />
+       </div>
+     )}
+-  </ResizablePrimitive.PanelResizeHandle>
++  </ResizablePrimitive.Separator>
+ )
+
+ export { ResizablePanelGroup, ResizablePanel, ResizableHandle }
+diff --git a/src/features/editor/components/editor.tsx b/src/features/editor/components/editor.tsx
+--- a/src/features/editor/components/editor.tsx
++++ b/src/features/editor/components/editor.tsx
+@@ -1,9 +1,10 @@
+-import { useEffect, useState, useRef, useCallback, memo, lazy, Suspense } from 'react'
++import { useEffect, useState, useRef, useCallback, useMemo, memo, lazy, Suspense } from 'react'
+ import { useRouter } from '@tanstack/react-router'
+ import { useTranslation } from 'react-i18next'
+ import { createLogger, createOperationId } from '@/shared/logging/logger'
+ import { i18n } from '@/i18n'
+-import type { ImperativePanelHandle } from 'react-resizable-panels'
++import { useDefaultLayout, type PanelImperativeHandle } from 'react-resizable-panels'
++import { timelineLayoutStorage } from './timeline-layout-storage'
+ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable'
+ import { ErrorBoundary } from '@/app/error-boundary'
+ import { Toolbar } from './toolbar'
+@@ -402,7 +403,13 @@
+   const workspace = useEditorStore((s) => s.workspace)
+   const isMaskEditingActive = useMaskEditorStore((s) => s.isEditing)
+   const hasRefreshedMigrationStateRef = useRef(false)
+-  const timelinePanelRef = useRef<ImperativePanelHandle>(null)
++  const timelinePanelRef = useRef<PanelImperativeHandle>(null)
++  const layoutStorage = useMemo(() => timelineLayoutStorage(editorLayout), [editorLayout])
++  const { defaultLayout: timelineLayout, onLayoutChanged: saveTimelineLayout } = useDefaultLayout({
++    id: 'editor:timeline-layout',
++    panelIds: ['editor-preview', 'editor-timeline'],
++    storage: layoutStorage,
++  })
+   const previousWorkspaceRef = useRef(workspace)
+
+   // Guard against concurrent saves (e.g., spamming Ctrl+S)
+@@ -557,14 +564,14 @@
+     const timelinePanel = timelinePanelRef.current
+     if (!timelinePanel) return
+
+-    saveWorkspaceTimelineSize(previousWorkspace, timelinePanel.getSize())
++    saveWorkspaceTimelineSize(previousWorkspace, timelinePanel.getSize().asPercentage)
+
+     const targetSize =
+       loadWorkspaceTimelineSize(workspace) ??
+       EDITOR_WORKSPACE_TIMELINE_SIZE[workspace] ??
+       editorLayout.timelineDefaultSize
+     timelinePanel.resize(
+-      Math.min(editorLayout.timelineMaxSize, Math.max(editorLayout.timelineMinSize, targetSize)),
++      `${Math.min(editorLayout.timelineMaxSize, Math.max(editorLayout.timelineMinSize, targetSize))}%`,
+     )
+   }, [workspace, editorLayout])
+
+@@ -724,15 +731,18 @@
+           </div>
+         ) : (
+           <ResizablePanelGroup
+-            direction="vertical"
++            orientation="vertical"
+             className="flex-1 min-w-0"
+-            autoSaveId="editor:timeline-layout"
++            id="editor:timeline-layout"
++            defaultLayout={timelineLayout}
++            onLayoutChanged={saveTimelineLayout}
+           >
+             {/* Top - Preview + Properties (inline mode) */}
+             <ResizablePanel
+-              defaultSize={100 - editorLayout.timelineDefaultSize}
+-              minSize={100 - editorLayout.timelineMaxSize}
+-              maxSize={100 - editorLayout.timelineMinSize}
++              id="editor-preview"
++              defaultSize={`${100 - editorLayout.timelineDefaultSize}%`}
++              minSize={`${100 - editorLayout.timelineMaxSize}%`}
++              maxSize={`${100 - editorLayout.timelineMinSize}%`}
+             >
+               <div className="h-full flex overflow-hidden relative">
+                 {/* Left Sidebar - Media Library (inline with preview) */}
+@@ -771,10 +781,11 @@
+
+             {/* Bottom - Timeline */}
+             <ResizablePanel
+-              ref={timelinePanelRef}
+-              defaultSize={editorLayout.timelineDefaultSize}
+-              minSize={editorLayout.timelineMinSize}
+-              maxSize={editorLayout.timelineMaxSize}
++              id="editor-timeline"
++              panelRef={timelinePanelRef}
++              defaultSize={`${editorLayout.timelineDefaultSize}%`}
++              minSize={`${editorLayout.timelineMinSize}%`}
++              maxSize={`${editorLayout.timelineMaxSize}%`}
+             >
+               <InteractionLockRegion locked={isMaskEditingActive} className="h-full">
+                 <ErrorBoundary level="feature">
+diff --git a/src/features/editor/components/editor.test.tsx b/src/features/editor/components/editor.test.tsx
+--- a/src/features/editor/components/editor.test.tsx
++++ b/src/features/editor/components/editor.test.tsx
+@@ -53,9 +53,9 @@
+     ...props
+   }: {
+     children: ReactNode
+-    autoSaveId?: string
++    id?: string
+     className?: string
+-    direction?: string
++    orientation?: string
+   }) => {
+     mocks.resizablePanelGroup(props)
+     return <div>{children}</div>
+@@ -416,8 +416,8 @@
+
+     expect(mocks.resizablePanelGroup).toHaveBeenCalledWith(
+       expect.objectContaining({
+-        autoSaveId: 'editor:timeline-layout',
+-        direction: 'vertical',
++        id: 'editor:timeline-layout',
++        orientation: 'vertical',
+       }),
+     )
+   })
+diff --git a/src/features/editor/components/timeline-layout-storage.ts b/src/features/editor/components/timeline-layout-storage.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/components/timeline-layout-storage.ts
+@@ -0,0 +1,73 @@
++import type { EditorLayout } from '@/config/editor-layout';
++
++// v3 keyed layouts by sorted panel constraints; v4 uses stable panel identities.
++// Keep the old preference intact and translate only the matching editor preset.
++export function timelineLayoutStorage(layout: EditorLayout) {
++  const legacyKey = [
++    {
++      defaultSize: 100 - layout.timelineDefaultSize,
++      maxSize: 100 - layout.timelineMinSize,
++      minSize: 100 - layout.timelineMaxSize,
++    },
++    {
++      defaultSize: layout.timelineDefaultSize,
++      maxSize: layout.timelineMaxSize,
++      minSize: layout.timelineMinSize,
++    },
++  ]
++    .map((constraints) => JSON.stringify(constraints))
++    .sort()
++    .join(',');
++  return {
++    getItem(key: string): string | null {
++      try {
++        const current = window.localStorage.getItem(key);
++        if (current !== null) {
++          const saved: unknown = JSON.parse(current);
++          if (typeof saved === 'object' && saved !== null) {
++            const sizes = Object.values(saved);
++            if (
++              'editor-preview' in saved &&
++              'editor-timeline' in saved &&
++              sizes.length === 2 &&
++              sizes.every(
++                (size) =>
++                  typeof size === 'number' && Number.isFinite(size) && size >= 0 && size <= 100,
++              ) &&
++              Math.abs(sizes[0] + sizes[1] - 100) <= 0.01
++            )
++              return current;
++          }
++        }
++        if (key !== 'react-resizable-panels:editor:timeline-layout:editor-preview:editor-timeline')
++          return null;
++        const legacy = window.localStorage.getItem('react-resizable-panels:editor:timeline-layout');
++        if (legacy === null) return null;
++        const value: unknown = JSON.parse(legacy);
++        if (typeof value !== 'object' || value === null || !(legacyKey in value)) return null;
++        const entry: unknown = (value as Record<string, unknown>)[legacyKey];
++        if (typeof entry !== 'object' || entry === null || !('layout' in entry)) return null;
++        const sizes: unknown = entry.layout;
++        if (
++          !Array.isArray(sizes) ||
++          sizes.length !== 2 ||
++          !sizes.every(
++            (size) => typeof size === 'number' && Number.isFinite(size) && size >= 0 && size <= 100,
++          ) ||
++          Math.abs(sizes[0] + sizes[1] - 100) > 0.01
++        )
++          return null;
++        return JSON.stringify({ 'editor-preview': sizes[0], 'editor-timeline': sizes[1] });
++      } catch {
++        return null;
++      }
++    },
++    setItem(key: string, value: string): void {
++      try {
++        window.localStorage.setItem(key, value);
++      } catch {
++        /* Preferences remain optional when storage is unavailable. */
++      }
++    },
++  };
++}
+diff --git a/src/features/editor/components/timeline-layout-storage.test.ts b/src/features/editor/components/timeline-layout-storage.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/components/timeline-layout-storage.test.ts
+@@ -0,0 +1,42 @@
++import { beforeEach, describe, expect, it } from 'vite-plus/test';
++import { getEditorLayout } from '@/config/editor-layout';
++import { timelineLayoutStorage } from './timeline-layout-storage';
++
++const modernKey = 'react-resizable-panels:editor:timeline-layout:editor-preview:editor-timeline';
++const legacyKey = 'react-resizable-panels:editor:timeline-layout';
++const constraints =
++  '{"defaultSize":28,"maxSize":80,"minSize":14},{"defaultSize":72,"maxSize":86,"minSize":20}';
++
++describe('timeline layout preference migration', () => {
++  beforeEach(() => window.localStorage.clear());
++  it('restores the matching v3 percentage layout without deleting old preferences', () => {
++    const old = JSON.stringify({ [constraints]: { expandToSizes: {}, layout: [61, 39] } });
++    window.localStorage.setItem(legacyKey, old);
++    const storage = timelineLayoutStorage(getEditorLayout('compact'));
++    expect(JSON.parse(storage.getItem(modernKey)!)).toEqual({
++      'editor-preview': 61,
++      'editor-timeline': 39,
++    });
++    expect(window.localStorage.getItem(legacyKey)).toBe(old);
++    storage.setItem(modernKey, JSON.stringify({ 'editor-preview': 58, 'editor-timeline': 42 }));
++    expect(JSON.parse(storage.getItem(modernKey)!)).toEqual({
++      'editor-preview': 58,
++      'editor-timeline': 42,
++    });
++  });
++  it.each(['invalid', '{}', '{"editor-preview":60,"editor-timeline":60}'])(
++    'ignores a malformed current preference: %s',
++    (value) => {
++      window.localStorage.setItem(modernKey, value);
++      expect(timelineLayoutStorage(getEditorLayout('compact')).getItem(modernKey)).toBeNull();
++    },
++  );
++  it.each([
++    'invalid',
++    JSON.stringify({ other: { layout: [60, 40] } }),
++    JSON.stringify({ [constraints]: { layout: [60, 60] } }),
++  ])('ignores malformed or different preset preferences: %s', (value) => {
++    window.localStorage.setItem(legacyKey, value);
++    expect(timelineLayoutStorage(getEditorLayout('compact')).getItem(modernKey)).toBeNull();
++  });
++});
+diff --git a/src/test/vitest-matchers.d.ts b/src/test/vitest-matchers.d.ts
+new file mode 100644
+--- /dev/null
++++ b/src/test/vitest-matchers.d.ts
+@@ -0,0 +1,11 @@
++import 'vite-plus/test'
++import type { TestingLibraryMatchers } from '@testing-library/jest-dom/matchers'
++
++declare module 'vite-plus/test' {
++  interface Matchers<R = unknown, T = unknown> extends TestingLibraryMatchers<R, T> {}
++}
++
++import 'vitest'
++declare module 'vitest' {
++  interface Matchers<R = unknown, T = unknown> extends TestingLibraryMatchers<R, T> {}
++}
+diff --git a/src/components/brand/github-icon.tsx b/src/components/brand/github-icon.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/components/brand/github-icon.tsx
+@@ -0,0 +1,31 @@
++/**
++ * Preserved from lucide-react 0.468.0 (GitHub brand icon removed in Lucide 1).
++ * ISC License
++ *
++ * Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT). All other copyright (c) for Lucide are held by Lucide Contributors 2022.
++ *
++ * Permission to use, copy, modify, and/or distribute this software for any
++ * purpose with or without fee is hereby granted, provided that the above
++ * copyright notice and this permission notice appear in all copies.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
++ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
++ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
++ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
++ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ *
++ */
++import { createLucideIcon } from 'lucide-react'
++
++export const Github = createLucideIcon('Github', [
++  [
++    'path',
++    {
++      d: 'M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4',
++      key: 'tonef',
++    },
++  ],
++  ['path', { d: 'M9 18c-4.51 2-5-2-7-2', key: '9comsn' }],
++])
+diff --git a/src/features/editor/components/toolbar.tsx b/src/features/editor/components/toolbar.tsx
+--- a/src/features/editor/components/toolbar.tsx
++++ b/src/features/editor/components/toolbar.tsx
+@@ -1,3 +1,4 @@
++import { Github } from '@/components/brand/github-icon'
+ import { memo, useEffect, useMemo, useRef, useState } from 'react'
+ import { useNavigate } from '@tanstack/react-router'
+ import { useTranslation } from 'react-i18next'
+@@ -8,7 +9,6 @@
+   ChevronDown,
+   Download,
+   FolderArchive,
+-  Github,
+   Keyboard,
+   ListVideo,
+   Save,
+@@ -98,18 +98,15 @@
+   const maxItemEndFrame = useItemsStore((state) => state.maxItemEndFrame)
+   const mediaDependencyIds = useItemsStore((state) => state.mediaDependencyIds)
+   const brokenMediaIds = useMediaLibraryStore((state) => state.brokenMediaIds)
+-  const projectSummary = useMemo(
+-    () => {
+-      const projectMediaIds = new Set(mediaDependencyIds)
+-      return {
+-        durationSeconds: project.fps > 0 ? maxItemEndFrame / project.fps : 0,
+-        clipCount: itemCount,
+-        mediaCount: mediaDependencyIds.length,
+-        brokenMediaCount: brokenMediaIds.filter((mediaId) => projectMediaIds.has(mediaId)).length,
+-      }
+-    },
+-    [brokenMediaIds, itemCount, maxItemEndFrame, mediaDependencyIds, project.fps],
+-  )
++  const projectSummary = useMemo(() => {
++    const projectMediaIds = new Set(mediaDependencyIds)
++    return {
++      durationSeconds: project.fps > 0 ? maxItemEndFrame / project.fps : 0,
++      clipCount: itemCount,
++      mediaCount: mediaDependencyIds.length,
++      brokenMediaCount: brokenMediaIds.filter((mediaId) => projectMediaIds.has(mediaId)).length,
++    }
++  }, [brokenMediaIds, itemCount, maxItemEndFrame, mediaDependencyIds, project.fps])
+
+   useEffect(() => {
+     setHasUnseenWhatsNew(hasUnseenChangelog())
+diff --git a/src/routes/projects/index.tsx b/src/routes/projects/index.tsx
+--- a/src/routes/projects/index.tsx
++++ b/src/routes/projects/index.tsx
+@@ -1,3 +1,4 @@
++import { Github } from '@/components/brand/github-icon'
+ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+ import { useEffect, useState, useRef } from 'react'
+ import { Trans, useTranslation } from 'react-i18next'
+@@ -7,7 +8,7 @@
+ const logger = createLogger('ProjectsIndex')
+ import { Button } from '@/components/ui/button'
+ import { Separator } from '@/components/ui/separator'
+-import { Plus, Upload, FolderOpen, File, Github, BookOpen } from 'lucide-react'
++import { Plus, Upload, FolderOpen, File, BookOpen } from 'lucide-react'
+ import { FreeCutLogo } from '@/components/brand/freecut-logo'
+ import { DiscordIcon } from '@/components/brand/discord-icon'
+ import { DISCORD_INVITE_URL } from '@/config/community'
+diff --git a/src/routes/projects/new.tsx b/src/routes/projects/new.tsx
+--- a/src/routes/projects/new.tsx
++++ b/src/routes/projects/new.tsx
+@@ -8,7 +8,7 @@
+ import { useProjectStore } from '@/features/projects/stores/project-store'
+ import { FreeCutLogo } from '@/components/brand/freecut-logo'
+ import { Button } from '@/components/ui/button'
+-import { Github } from 'lucide-react'
++import { Github } from '@/components/brand/github-icon'
+ import { DiscordIcon } from '@/components/brand/discord-icon'
+ import { DISCORD_INVITE_URL } from '@/config/community'
+ import type { ProjectFormData } from '@/features/projects/utils/validation'
+diff --git a/src/features/preview/components/timecode-display.test.tsx b/src/features/preview/components/timecode-display.test.tsx
+--- a/src/features/preview/components/timecode-display.test.tsx
++++ b/src/features/preview/components/timecode-display.test.tsx
+@@ -42,13 +42,13 @@
+     const button = screen.getByRole('button')
+     const [currentTime, , totalTime] = button.querySelectorAll('span')
+
+-    expect(button).toHaveStyle({ width: 'calc(17ch + 0.75rem)' })
++    expect(button.style.width).toBe('calc(17ch + 0.75rem)')
+     expect(button).toHaveTextContent('00:00:12')
+     expect(button).toHaveTextContent('00:33:09')
+
+     fireEvent.click(button)
+
+-    expect(button).toHaveStyle({ width: 'calc(17ch + 0.75rem)' })
++    expect(button.style.width).toBe('calc(17ch + 0.75rem)')
+     expect(currentTime).not.toHaveStyle({ width: '11ch' })
+     expect(totalTime).not.toHaveStyle({ width: '11ch' })
+     expect(button).toHaveTextContent('0012')
+@@ -58,9 +58,7 @@
+   it('reserves enough width for hour-long SMPTE values', () => {
+     render(<TimecodeDisplay fps={30} totalFrames={180_001} />)
+
+-    expect(screen.getByRole('button')).toHaveStyle({
+-      width: 'calc(23ch + 0.75rem)',
+-    })
++    expect(screen.getByRole('button').style.width).toBe('calc(23ch + 0.75rem)')
+   })
+
+   it('shows the skim preview frame in the timecode readout', () => {
+diff --git a/src/features/media-library/components/media-card.test.tsx b/src/features/media-library/components/media-card.test.tsx
+--- a/src/features/media-library/components/media-card.test.tsx
++++ b/src/features/media-library/components/media-card.test.tsx
+@@ -307,6 +307,9 @@
+ }))
+
+ vi.mock('@/infrastructure/storage', () => ({
++  updateMedia: vi.fn(async () => undefined),
++  getCaptionsByContentHash: vi.fn(async () => undefined),
++  adoptCaptionsFromCache: vi.fn(async () => undefined),
+   saveCaptionThumbnail: vi.fn(async () => undefined),
+   deleteCaptionThumbnails: vi.fn(async () => undefined),
+   deleteCaptionEmbeddings: vi.fn(async () => undefined),
+diff --git a/src/features/timeline/components/filler-removal-dialog.test.tsx b/src/features/timeline/components/filler-removal-dialog.test.tsx
+--- a/src/features/timeline/components/filler-removal-dialog.test.tsx
++++ b/src/features/timeline/components/filler-removal-dialog.test.tsx
+@@ -99,11 +99,17 @@
+       summary: { rangeCount: 1, totalSeconds: 1 },
+     })
+   })
+-  afterEach(cleanup)
++  afterEach(() => {
++    cleanup()
++    vi.restoreAllMocks()
++  })
+
+   it.each([{ metaKey: true }, { ctrlKey: true }])(
+     'restores source timing with one Undo after edited preview and Apply (%j)',
+     async (modifier) => {
++      vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue(
++        'metaKey' in modifier ? 'Mozilla/5.0 (Macintosh)' : 'Mozilla/5.0 (Windows NT 10.0)',
++      )
+       render(<RemovalWorkflow />)
+       await editAndPreview()
+       expect(useItemsStore.getState().items).toEqual([makeAudioItem()])
+diff --git a/src/shared/utils/local-ort-assets.ts b/src/shared/utils/local-ort-assets.ts
+--- a/src/shared/utils/local-ort-assets.ts
++++ b/src/shared/utils/local-ort-assets.ts
+@@ -5,17 +5,17 @@
+  *
+  * - `ORT_WASM_JSEP` is what `onnxruntime-web` (the default bundle) loads: `ort-runtime.ts`.
+  * - `transformersOrtWasmPaths()` is what `@huggingface/transformers` 4.x chooses for itself
+- *   (asyncify, or the plain build in Safari), for every transformers.js consumer.
++ *   (its bundled asyncify pair, or its plain pair for Safari compatibility), for every transformers.js consumer.
+  * - `TRANSFORMERS_3_ORT_WASM` is the build transformers.js 3.8.1 loads: kokoro-js's own runtime and
+  *   the Whisper worker, which stays on 3.8.1 because 4.1.0 places word timestamps late (owner
+  *   decision 2026-09-29; `studio/tools/whisper-timing.test.mjs`).
+  */
+ import jsepMjs from 'onnxruntime-web/ort-wasm-simd-threaded.jsep.mjs?url'
+ import jsepWasm from 'onnxruntime-web/ort-wasm-simd-threaded.jsep.wasm?url'
+-import asyncifyMjs from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url'
+-import asyncifyWasm from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url'
+-import plainMjs from 'onnxruntime-web/ort-wasm-simd-threaded.mjs?url'
+-import plainWasm from 'onnxruntime-web/ort-wasm-simd-threaded.wasm?url'
++import asyncifyMjs from '../../../node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.mjs?url'
++import asyncifyWasm from '../../../node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm?url'
++import plainMjs from '../../../node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs?url'
++import plainWasm from '../../../node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm?url'
+ import kokoroMjs from '../../../node_modules/kokoro-js/node_modules/@huggingface/transformers/dist/ort-wasm-simd-threaded.jsep.mjs?url'
+ import kokoroWasm from '../../../node_modules/kokoro-js/node_modules/@huggingface/transformers/dist/ort-wasm-simd-threaded.jsep.wasm?url'
+
+@@ -25,8 +25,12 @@
+ }
+
+ /** Absolute, so a worker or a blob-URL module resolves it against the page, not itself. */
+-const absolute = (url: string) => new URL(url, globalThis.location?.href ?? 'http://localhost/').href
++const absolute = (url: string) =>
++  new URL(url, globalThis.location?.href ?? 'http://localhost/').href
+
+-const paths = (mjs: string, wasm: string): OrtWasmPaths => ({ mjs: absolute(mjs), wasm: absolute(wasm) })
++const paths = (mjs: string, wasm: string): OrtWasmPaths => ({
++  mjs: absolute(mjs),
++  wasm: absolute(wasm),
++})
+
+ export const ORT_WASM_JSEP = (): OrtWasmPaths => paths(jsepMjs, jsepWasm)

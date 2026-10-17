@@ -3,7 +3,7 @@ import { authManager } from '$lib/managers/auth-manager.svelte';
 import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
 import { Route } from '$lib/route';
 import { getFormatter } from '$lib/utils/i18n';
-import { init } from '$lib/utils/server';
+import { init } from '$lib/utils/server-client';
 import type { PageLoad } from './$types';
 
 export const ssr = false;

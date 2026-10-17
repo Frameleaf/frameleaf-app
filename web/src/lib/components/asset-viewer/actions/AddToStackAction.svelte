@@ -1,6 +1,8 @@
 <script lang="ts">
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
   import { AssetAction } from '$lib/constants';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { handleError } from '$lib/utils/handle-error';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import { createStack, type AssetResponseDto, type StackResponseDto } from '@frameleaf/sdk';
   import { mdiUploadMultiple } from '@mdi/js';
@@ -18,21 +20,24 @@
   let { asset, stack, onAction, text }: Props = $props();
 
   const handleAddUploadToStack = async () => {
-    const newAssetIds = await openFileUploadDialog({ multiple: true });
-    // Including the old stacks primary asset ID ensures that all assets of the
-    // old stack are automatically included in the new stack.
     const primaryAssetId = stack?.primaryAssetId ?? asset.id;
-
-    // First asset in the list will become the new primary asset.
-    const assetIds = [primaryAssetId, ...newAssetIds];
-
-    const newStack = await createStack({
-      stackCreateDto: {
-        assetIds,
-      },
-    });
-
-    onAction({ type: AssetAction.STACK, stack: newStack });
+    const handleAction = onAction;
+    const isCurrentSession = authManager.captureSession();
+    try {
+      const newAssetIds = await openFileUploadDialog({ multiple: true });
+      if (newAssetIds.length === 0 || !isCurrentSession()) {
+        return;
+      }
+      // The first ID remains primary and includes all members of its existing stack.
+      const newStack = await createStack({ stackCreateDto: { assetIds: [primaryAssetId, ...newAssetIds] } });
+      if (isCurrentSession()) {
+        handleAction({ type: AssetAction.STACK, stack: newStack });
+      }
+    } catch (error) {
+      if (isCurrentSession()) {
+        handleError(error, $t('errors.failed_to_stack_assets'));
+      }
+    }
   };
 </script>
 

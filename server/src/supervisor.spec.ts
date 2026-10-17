@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { ExitCode, ImmichWorker } from 'src/enum.js';
+import { ExitCode, FrameleafWorker } from 'src/enum.js';
 
 const fixture = vi.hoisted(() => ({
   maintenance: false,
@@ -7,6 +7,12 @@ const fixture = vi.hoisted(() => ({
   workers: [] as (EventEmitter & { name: string; stopped: Promise<void> })[],
   signals: new Map<string, () => void>(),
   nextStopped: undefined as Promise<void> | undefined,
+  clients: [] as { destroy: ReturnType<typeof vi.fn> }[],
+  lockAvailable: true,
+  lockError: undefined as Error | undefined,
+  unlockError: undefined as Error | undefined,
+  lockAttempts: 0,
+  failStart: undefined as string | undefined,
 }));
 
 // Import the real entry point; replace only OS processes, database and stop-proof transport.
@@ -15,6 +21,7 @@ vi.mock('node:child_process', async () => {
   const { EventEmitter } = await import('node:events');
   return {
     fork: (file: string) => {
+      if (file.endsWith(`/${fixture.failStart}.js`)) throw new Error('worker construction failed');
       const worker = Object.assign(new EventEmitter(), {
         name: file.split('/').at(-1)!.replace('.js', ''),
         stopped: Promise.resolve(),
@@ -36,6 +43,7 @@ vi.mock('node:worker_threads', async () => {
       postMessage = vi.fn();
       constructor(file: string) {
         super();
+        if (file.endsWith(`/${fixture.failStart}.js`)) throw new Error('worker construction failed');
         this.name = file.split('/').at(-1)!.replace('.js', '');
         fixture.nextStopped = undefined;
         fixture.starts.push(this.name);
@@ -47,10 +55,23 @@ vi.mock('node:worker_threads', async () => {
 });
 vi.mock('kysely', () => ({
   Kysely: class {
+    constructor() {
+      fixture.clients.push(this);
+    }
     destroy = vi.fn().mockResolvedValue(undefined);
     connection = () => ({ execute: (action: (db: unknown) => Promise<unknown>) => action(this) });
   },
-  sql: () => ({ execute: () => Promise.resolve({ rows: [{ pg_try_advisory_lock: true }] }) }),
+  sql: (strings: TemplateStringsArray) => ({
+    execute: () => {
+      if (strings.join('').includes('pg_advisory_unlock')) {
+        return fixture.unlockError ? Promise.reject(fixture.unlockError) : Promise.resolve({ rows: [] });
+      }
+      fixture.lockAttempts++;
+      return fixture.lockError
+        ? Promise.reject(fixture.lockError)
+        : Promise.resolve({ rows: [{ pg_try_advisory_lock: fixture.lockAvailable }] });
+    },
+  }),
 }));
 vi.mock('nest-commander', () => ({ CommandFactory: {} }));
 vi.mock('src/repositories/config.repository.js', () => ({
@@ -84,9 +105,10 @@ vi.mock('src/queue/supervisor.js', () => ({
   superviseQueueWorker: (worker: { stopped: Promise<void> }) => ({ stopped: worker.stopped }),
 }));
 
-const latest = (name: ImmichWorker) => fixture.workers.findLast((worker) => worker.name === name)!;
+const latest = (name: FrameleafWorker) => fixture.workers.findLast((worker) => worker.name === name)!;
 
 describe('supervisor worker-local restart lifecycle', () => {
+  let Workers: typeof import('src/supervisor.js').Workers;
   const argv = process.argv;
   const title = process.title;
   beforeEach(async () => {
@@ -97,6 +119,12 @@ describe('supervisor worker-local restart lifecycle', () => {
     fixture.workers = [];
     fixture.signals.clear();
     fixture.nextStopped = undefined;
+    fixture.clients = [];
+    fixture.lockAvailable = true;
+    fixture.lockError = undefined;
+    fixture.unlockError = undefined;
+    fixture.lockAttempts = 0;
+    fixture.failStart = undefined;
     process.argv = ['node', 'supervisor'];
     vi.stubEnv('FRAMELEAF_EDGE_SECRET', 'supervisor-unit-fixture');
     const on = process.on.bind(process);
@@ -111,7 +139,7 @@ describe('supervisor worker-local restart lifecycle', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'info').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    await import('src/supervisor.js');
+    Workers = (await import('src/supervisor.js')).Workers;
     await vi.advanceTimersByTimeAsync(0);
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge']);
   });
@@ -124,19 +152,143 @@ describe('supervisor worker-local restart lifecycle', () => {
     vi.unstubAllEnvs();
   });
 
+  it.each(['lock', 'unlock'] as const)('releases the lock-check client after a %s query failure', async (phase) => {
+    const failure = new Error(`${phase} failed`);
+    fixture[phase === 'lock' ? 'lockError' : 'unlockError'] = failure;
+    const workers = new Workers();
+    await expect(workers['waitForFreeLock']()).rejects.toBe(failure);
+    expect(fixture.clients.at(-1)!.destroy).toHaveBeenCalledOnce();
+  });
+
+  it.each([FrameleafWorker.Microservices, FrameleafWorker.Edge])(
+    'drains already started workers when constructing %s fails, then exits unsuccessfully',
+    async (failedWorker) => {
+      const workers = new Workers();
+      const starts = fixture.workers.length;
+      fixture.failStart = failedWorker;
+      await expect(workers.bootstrap()).resolves.toBeUndefined();
+      const running = fixture.workers.slice(starts);
+      expect(running.map(({ name }) => name)).toEqual(
+        failedWorker === FrameleafWorker.Edge ? ['api', 'microservices'] : ['api'],
+      );
+      expect((running[0] as unknown as { kill: ReturnType<typeof vi.fn> }).kill).toHaveBeenCalledWith('SIGTERM');
+      if (running.length === 2) {
+        expect((running[1] as unknown as { postMessage: ReturnType<typeof vi.fn> }).postMessage).toHaveBeenCalledWith(
+          'frameleaf:stop',
+        );
+      }
+      expect(process.exit).not.toHaveBeenCalled();
+      for (const worker of running) worker.emit('exit', 0);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(process.exit).toHaveBeenCalledExactlyOnceWith(1);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(fixture.workers).toHaveLength(starts + running.length);
+      expect(process.exit).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('exits unsuccessfully at the shutdown deadline if a startup survivor does not stop', async () => {
+    const workers = new Workers();
+    fixture.failStart = FrameleafWorker.Edge;
+    await expect(workers.bootstrap()).resolves.toBeUndefined();
+    const api = latest(FrameleafWorker.Api) as unknown as { kill: ReturnType<typeof vi.fn> };
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(api.kill).toHaveBeenCalledWith('SIGKILL');
+    expect(process.exit).toHaveBeenCalledWith(1);
+  });
+
+  it.each(['lock', 'unlock', 'proof'] as const)(
+    'exits unsuccessfully when %s fails before any worker starts',
+    async (phase) => {
+      const workers = new Workers();
+      const starts = fixture.starts.length;
+      const failure = new Error('startup admission failed');
+      if (phase === 'proof') vi.mocked(workers['workerStopProofs'].republish).mockRejectedValue(failure);
+      else fixture[phase === 'lock' ? 'lockError' : 'unlockError'] = failure;
+      await expect(workers.bootstrap()).resolves.toBeUndefined();
+      expect(fixture.starts).toHaveLength(starts);
+      expect(process.exit).toHaveBeenCalledExactlyOnceWith(1);
+    },
+  );
+
+  it('retains successful exit status for an ordinary empty supervisor stop', () => {
+    new Workers().stop('SIGTERM');
+    expect(process.exit).toHaveBeenCalledExactlyOnceWith(0);
+  });
+
+  it('keeps an already requested normal stop successful when pending startup rejects', async () => {
+    const workers = new Workers();
+    const entered = Promise.withResolvers<void>();
+    const pending = Promise.withResolvers<void>();
+    vi.mocked(workers['workerStopProofs'].republish).mockImplementation(() => {
+      entered.resolve();
+      return pending.promise;
+    });
+    const boot = workers.bootstrap();
+    await entered.promise;
+    workers.stop('SIGTERM');
+    pending.reject(new Error('closed during shutdown'));
+    await boot;
+    expect(process.exit).toHaveBeenCalledExactlyOnceWith(0);
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it('stops retrying a busy lock without republishing proofs or admitting replacement workers', async () => {
+    fixture.lockAvailable = false;
+    const workers = new Workers();
+    const attempts = fixture.lockAttempts;
+    const starts = fixture.starts.length;
+    let settled = false;
+    const pending = workers.bootstrap().then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const client = fixture.clients.at(-1)!;
+    expect(fixture.lockAttempts).toBe(attempts + 1);
+    workers.stop('SIGTERM');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(settled).toBe(true);
+    expect(fixture.lockAttempts).toBe(attempts + 1);
+    expect(client.destroy).toHaveBeenCalledOnce();
+    expect(workers['workerStopProofs'].republish).not.toHaveBeenCalled();
+    expect(fixture.starts).toHaveLength(starts);
+    await pending;
+  });
+
+  it('waits for lock release before republishing proof and admitting replacement workers', async () => {
+    fixture.lockAvailable = false;
+    const workers = new Workers();
+    const starts = fixture.starts.length;
+    const pending = workers.bootstrap();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(workers['workerStopProofs'].republish).not.toHaveBeenCalled();
+    expect(fixture.starts).toHaveLength(starts);
+    const client = fixture.clients.at(-1)!;
+    vi.mocked(workers['workerStopProofs'].republish).mockImplementation(() => {
+      expect(client.destroy).toHaveBeenCalledOnce();
+      return Promise.resolve();
+    });
+    fixture.lockAvailable = true;
+    await vi.advanceTimersByTimeAsync(1000);
+    await pending;
+    expect(client.destroy).toHaveBeenCalledOnce();
+    expect(workers['workerStopProofs'].republish).toHaveBeenCalledOnce();
+    expect(fixture.starts.slice(starts)).toEqual(['api', 'microservices', 'edge']);
+  });
+
   it('invalidates a failed executor retry across maintenance and reopens the API after End', async () => {
     // Hosted ordering: startup fails during restart, before API/edge exit with AppRestart.
-    latest(ImmichWorker.Microservices).emit('exit', 1);
+    latest(FrameleafWorker.Microservices).emit('exit', 1);
     await vi.advanceTimersByTimeAsync(0);
     fixture.maintenance = true;
-    latest(ImmichWorker.Api).emit('exit', ExitCode.AppRestart);
-    latest(ImmichWorker.Edge).emit('exit', ExitCode.AppRestart);
+    latest(FrameleafWorker.Api).emit('exit', ExitCode.AppRestart);
+    latest(FrameleafWorker.Edge).emit('exit', ExitCode.AppRestart);
     await vi.advanceTimersByTimeAsync(0);
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'maintenance']);
     await vi.advanceTimersByTimeAsync(1000);
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'maintenance']);
     fixture.maintenance = false;
-    latest(ImmichWorker.Maintenance).emit('exit', ExitCode.AppRestart);
+    latest(FrameleafWorker.Maintenance).emit('exit', ExitCode.AppRestart);
     await vi.advanceTimersByTimeAsync(0);
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'maintenance', 'api', 'microservices', 'edge']);
   });
@@ -148,12 +300,12 @@ describe('supervisor worker-local restart lifecycle', () => {
       if (delay === 1000) pending = action;
       return schedule(action, delay);
     }) as typeof setTimeout);
-    latest(ImmichWorker.Microservices).emit('exit', 1);
+    latest(FrameleafWorker.Microservices).emit('exit', 1);
     await vi.advanceTimersByTimeAsync(0);
     expect(pending).toBeDefined();
     fixture.maintenance = true;
-    latest(ImmichWorker.Api).emit('exit', ExitCode.AppRestart);
-    latest(ImmichWorker.Edge).emit('exit', ExitCode.AppRestart);
+    latest(FrameleafWorker.Api).emit('exit', ExitCode.AppRestart);
+    latest(FrameleafWorker.Edge).emit('exit', ExitCode.AppRestart);
     await vi.advanceTimersByTimeAsync(0);
     // Clearing a timer cannot recall a callback already handed to the event loop.
     pending!();
@@ -161,20 +313,20 @@ describe('supervisor worker-local restart lifecycle', () => {
   });
 
   it('still restarts an ordinary failed executor in the same lifecycle', async () => {
-    latest(ImmichWorker.Microservices).emit('exit', 1);
+    latest(FrameleafWorker.Microservices).emit('exit', 1);
     await vi.advanceTimersByTimeAsync(1000);
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'microservices']);
   });
 
   it('still restarts a poisoned API pool without restarting healthy workers', async () => {
-    latest(ImmichWorker.Api).emit('message', { type: 'database-unusable' });
-    latest(ImmichWorker.Api).emit('exit', 1);
+    latest(FrameleafWorker.Api).emit('message', { type: 'database-unusable' });
+    latest(FrameleafWorker.Api).emit('exit', 1);
     await vi.advanceTimersByTimeAsync(1000);
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'api']);
   });
 
   it('does not restart a failed executor after supervisor stop', async () => {
-    latest(ImmichWorker.Microservices).emit('exit', 1);
+    latest(FrameleafWorker.Microservices).emit('exit', 1);
     await vi.advanceTimersByTimeAsync(0);
     fixture.signals.get('SIGTERM')!();
     await vi.advanceTimersByTimeAsync(1000);
@@ -186,9 +338,9 @@ describe('supervisor worker-local restart lifecycle', () => {
     const proof = Promise.withResolvers<void>();
     // Give the next replacement the controlled stop boundary.
     fixture.nextStopped = proof.promise;
-    latest(ImmichWorker.Microservices).emit('exit', 1);
+    latest(FrameleafWorker.Microservices).emit('exit', 1);
     await vi.advanceTimersByTimeAsync(1000);
-    latest(ImmichWorker.Microservices).emit('exit', 1);
+    latest(FrameleafWorker.Microservices).emit('exit', 1);
     await vi.advanceTimersByTimeAsync(5000);
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'microservices']);
     proof.resolve();

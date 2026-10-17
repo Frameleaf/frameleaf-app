@@ -108,7 +108,7 @@ export const MANIFEST_ALBUMS = [
 
 export const GENERATED_KEY = {
   key: 'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=',
-  fingerprint: '0B2A-E445',
+  fingerprint: '3C0B-CF65',
   recoveryCode: 'FLRK-0W3G-E1R7-0W3G-E1R7-0W3G-E1R7-0W3G-E1R7-0W3G-E1R7-0W3G-E1R7-0W3G-E0',
   createdAt: '2026-09-26T03:00:00.000Z',
 };

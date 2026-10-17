@@ -21,8 +21,8 @@ import { TagBulkAssetsDto } from 'src/dtos/tag.dto.js';
 import {
   BootstrapEventPriority,
   DatabaseLock,
-  ImmichEnvironment,
-  ImmichWorker,
+  FrameleafEnvironment,
+  FrameleafWorker,
   JobName,
   JobStatus,
   QueueName,
@@ -92,14 +92,18 @@ export class WorkflowExecutionService extends BaseService {
   private jwtSecret!: string;
   // FL-179: the missing step table is reported once per process
 
-  @OnEvent({ name: 'AppBootstrap', priority: BootstrapEventPriority.PluginSync, workers: [ImmichWorker.Microservices] })
+  @OnEvent({
+    name: 'AppBootstrap',
+    priority: BootstrapEventPriority.PluginSync,
+    workers: [FrameleafWorker.Microservices],
+  })
   async onPluginSync() {
     await this.databaseRepository.withLock(DatabaseLock.PluginImport, async () => {
       // TODO avoid importing plugins in each worker
       // Can this use system metadata similar to geocoding?
 
       const { environment, resourcePaths, plugins } = this.configRepository.getEnv();
-      await this.importFolder(resourcePaths.corePlugin, { force: environment === ImmichEnvironment.Development });
+      await this.importFolder(resourcePaths.corePlugin, { force: environment === FrameleafEnvironment.Development });
 
       if (plugins.external.allow && plugins.external.installFolder) {
         await this.importFolders(plugins.external.installFolder);
@@ -107,7 +111,11 @@ export class WorkflowExecutionService extends BaseService {
     });
   }
 
-  @OnEvent({ name: 'AppBootstrap', priority: BootstrapEventPriority.PluginLoad, workers: [ImmichWorker.Microservices] })
+  @OnEvent({
+    name: 'AppBootstrap',
+    priority: BootstrapEventPriority.PluginLoad,
+    workers: [FrameleafWorker.Microservices],
+  })
   async onPluginLoad() {
     this.jwtSecret = this.cryptoRepository.randomBytesAsText(32);
 

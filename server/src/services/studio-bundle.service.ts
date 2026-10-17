@@ -23,12 +23,12 @@ import {
   StudioBundleSourceDto,
   StudioBundleUploadDto,
 } from 'src/dtos/studio-bundle.dto.js';
-import { ImmichWorker, MediaOperationKind, MediaOperationStatus, StorageFolder } from 'src/enum.js';
+import { FrameleafWorker, MediaOperationKind, MediaOperationStatus, StorageFolder } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
-import { ImmichReadStream, StorageRepository } from 'src/repositories/storage.repository.js';
+import { ReadStreamResponse, StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioBundleUpload, StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import {
   STUDIO_BUNDLE_DOCUMENT_RESERVATION,
@@ -387,7 +387,7 @@ export class StudioBundleService {
    * Stream a finished export. Looked up by owner, so this is the only way the file is reachable,
    * and an expired or swept file is gone rather than served late.
    */
-  async downloadExport(auth: AuthDto, operationId: string): Promise<ImmichReadStream> {
+  async downloadExport(auth: AuthDto, operationId: string): Promise<ReadStreamResponse> {
     const operation = await this.findOwnedBundle(auth, operationId);
     await this.requireCarriedItemsVisible(auth, operation);
     if (operation.kind !== MediaOperationKind.StudioBundleExport) {
@@ -637,7 +637,7 @@ export class StudioBundleService {
   /* The worker                                                           */
   /* ------------------------------------------------------------------ */
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.stopping = false;
     this.tickHandle ??= setInterval(() => this.tick(), STUDIO_BUNDLE_TICK_MS);
@@ -987,13 +987,20 @@ export class StudioBundleService {
       // A throw below skips `await finished`; observe it now so it cannot go unhandled.
       void finished.catch(() => {});
 
-      zip.addFile(join(staging, STUDIO_BUNDLE_MANIFEST_ENTRY), STUDIO_BUNDLE_MANIFEST_ENTRY);
-      zip.addFile(join(staging, STUDIO_BUNDLE_PROJECT_ENTRY), STUDIO_BUNDLE_PROJECT_ENTRY);
-      for (const embed of embeds) {
-        zip.addFile(embed.path, embed.entryName);
+      try {
+        zip.addFile(join(staging, STUDIO_BUNDLE_MANIFEST_ENTRY), STUDIO_BUNDLE_MANIFEST_ENTRY);
+        zip.addFile(join(staging, STUDIO_BUNDLE_PROJECT_ENTRY), STUDIO_BUNDLE_PROJECT_ENTRY);
+        for (const embed of embeds) {
+          zip.addFile(embed.path, embed.entryName);
+        }
+        await Promise.all([zip.finalize(), finished]);
+      } catch (error) {
+        zip.stream.destroy();
+        bounded.destroy();
+        output.destroy();
+        await finished.catch(() => {});
+        throw error;
       }
-      await zip.finalize();
-      await finished;
     } finally {
       await this.storage.unlinkDir(staging, { recursive: true, force: true });
     }

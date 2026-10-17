@@ -122,4 +122,25 @@ describe('CloudMlConsentDialog (FL-159)', () => {
     expect(screen.getByRole('button', { name: 'Accept and turn on' })).toBeDisabled();
     expect(sdkMock.grantMlDestinationConsent).toHaveBeenCalledTimes(1);
   });
+
+  it('never accepts with a feature whose terms have not been read yet (FC-62)', async () => {
+    let medicalTerms!: (value: ReturnType<typeof terms>) => void;
+    sdkMock.getCloudMlConsentTerms.mockImplementation(({ medicalSignals }) =>
+      medicalSignals ? new Promise((resolve) => (medicalTerms = resolve)) : Promise.resolve(terms('2026-10-01', 'a')),
+    );
+    sdkMock.grantMlDestinationConsent.mockResolvedValue({} as never);
+    render(CloudMlConsentDialog, { open: true, destinationId: 'cloud-1', consent, region: 'eu', onRecorded: vi.fn() });
+
+    await screen.findByText('Terms 2026-10-01.');
+    await fireEvent.click(screen.getByRole('checkbox', { name: /I have read these terms/ }));
+    // Medical signals asks for other terms, which are still on their way.
+    await fireEvent.click(screen.getByRole('switch', { name: /Describe health and medical details/ }));
+
+    expect(screen.getByRole('button', { name: 'Accept and turn on' })).toBeDisabled();
+    await fireEvent.click(screen.getByRole('button', { name: 'Accept and turn on' }));
+    expect(sdkMock.grantMlDestinationConsent).not.toHaveBeenCalled();
+
+    medicalTerms(terms('2026-11-01.2', 'b'));
+    await screen.findByText('Terms 2026-11-01.2.');
+  });
 });

@@ -1,9 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
+import type { QueueExecution } from 'src/queue/types.js';
 import type { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
 import type { JobItem } from 'src/types.js';
 import { JOBS_NOT_RETRIED } from 'src/constants.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
-import { AssetType, ImmichWorker, JobName, JobStatus, ManualJobName, QueueName } from 'src/enum.js';
+import { AssetType, FrameleafWorker, JobName, JobStatus, ManualJobName, QueueName } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { JobService } from 'src/services/job.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { getForAsset } from 'test/mappers.js';
@@ -17,7 +19,7 @@ describe(JobService.name, () => {
   beforeEach(() => {
     ({ sut, mocks } = newTestService(JobService));
 
-    mocks.config.getWorker.mockReturnValue(ImmichWorker.Microservices);
+    mocks.config.getWorker.mockReturnValue(FrameleafWorker.Microservices);
   });
 
   it('should work', () => {
@@ -287,6 +289,17 @@ describe(JobService.name, () => {
       expect(mocks.job.queue).not.toHaveBeenCalled();
     });
 
+    it('does not report a dependency refusal as a job error, so a deferred ML job is not logged on every retry', async () => {
+      const error = new Error('Machine learning destination refused');
+      mocks.job.run.mockRejectedValue(error);
+      const item = { name: JobName.Ocr, data: { id: 'asset-1' } } as const;
+      const execution = { dependencyReason: 'destination-unavailable' } as QueueExecution;
+
+      await expect(queueExecution.run(execution, () => sut.onJobRun(QueueName.Ocr, item))).rejects.toBe(error);
+
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('JobError', expect.anything());
+    });
+
     it('keeps the thumbnail job the retry-failed e2e fails out of the no-retry set', () => {
       expect(JOBS_NOT_RETRIED.has(JobName.AssetGenerateThumbnails)).toBe(false);
     });
@@ -492,6 +505,13 @@ describe(JobService.name, () => {
       });
 
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.BestPhotosScore, data: { id: asset.id } });
+      const publication = mocks.websocket.clientSend.mock.calls.find(([event]) => event === 'AssetEditReadyV2');
+      expect(publication?.[1]).toBe(asset.ownerId);
+      expect(publication?.[2]).toMatchObject({
+        asset: { id: asset.id, checksum: asset.checksum.toString('base64'), isEdited: asset.isEdited },
+        edit: [],
+      });
+      expect(publication?.[2]).not.toHaveProperty('asset.originalPath');
     });
   });
 });

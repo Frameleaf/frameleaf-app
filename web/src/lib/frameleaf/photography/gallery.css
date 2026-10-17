@@ -180,17 +180,39 @@
 }
 .pc-header nav {
   display: flex;
-  gap: 24px;
+  gap: 30px;
   align-items: center;
+  font-size: var(--fl-font-small);
 }
-.pc-studio {
-  font-family: 'Studio Serif', Georgia, serif;
-  font-size: 20px;
+.pc-header nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.pc-header nav a[aria-current='page'] {
+  text-decoration: underline;
+  text-underline-offset: 7px;
 }
 .pc-studio {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--fl-space-3);
+  color: var(--pc-accent, inherit);
+  font-family: 'Studio Serif', Georgia, serif;
+  font-size: 21px;
+  letter-spacing: -0.6px;
+}
+/* The round initials beside the studio's name when it has no logo (PhotographyClient.jsx `pc-monogram`). */
+.pc-monogram {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 37px;
+  height: 37px;
+  border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+  border-radius: 50%;
+  font-size: 14px;
+  letter-spacing: 0;
 }
 .pc-studio img {
   max-width: 100px;
@@ -241,11 +263,18 @@
   letter-spacing: 0.18em;
   font-size: var(--fl-font-micro);
 }
-.pc-cover-copy a {
-  margin-top: 26px;
-  display: inline-block;
-  border-bottom: 1px solid;
-  padding-bottom: 8px;
+.pc-cover-copy .pc-cover-meta {
+  margin: 0 0 var(--fl-space-3);
+  font-size: var(--fl-font-callout);
+  opacity: 0.8;
+}
+.pc-cover-copy .pc-package-line {
+  margin-top: var(--fl-space-2);
+  color: var(--pc-accent, inherit);
+  font-size: var(--fl-font-small);
+}
+.pc-cover[data-treatment='full'] .pc-package-line {
+  color: inherit;
 }
 .pc-cover[data-treatment='full'] {
   display: block;
@@ -428,17 +457,37 @@
   padding: 20px 0;
   border-bottom: 1px solid var(--pc-line);
 }
+/* PhotographyClient.jsx `pc-footer`: the studio on the left, a quiet note, then how to reach them. */
 .pc-footer {
-  padding: 50px 5vw;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--fl-space-4);
+  padding: 28px 5vw;
   border-top: 1px solid var(--pc-line);
+  color: color-mix(in srgb, var(--pc-text) 65%, transparent);
+  font-size: var(--fl-font-micro);
+}
+.pc-footer-contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fl-space-4);
+}
+/* The photographer's own look at the gallery, above everything the client sees. */
+.pc-preview-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--fl-space-2);
+  max-width: none !important;
+  margin: 0;
+  padding: 10px var(--fl-space-4);
+  background: var(--pc-accent, #496e53);
+  color: #fff;
+  font-size: var(--fl-font-small);
+  line-height: 1.4 !important;
   text-align: center;
-}
-.pc-footer p {
-  margin: auto;
-}
-.pc-footer a {
-  display: inline-block;
-  margin: 12px;
 }
 .pc-dialog {
   display: flex;
@@ -480,34 +529,59 @@
 .pc-comparison button {
   margin-top: 16px;
 }
+/* The entrance sits between the studio's header and footer, in the studio's colours. */
+.pc-gate {
+  display: flex;
+  flex-direction: column;
+}
 .pc-access {
-  min-height: 100dvh;
+  flex: 1;
+  min-height: 480px;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  gap: 28px;
-  background: #f5f2ec;
-  color: #263329;
-  padding: 32px;
+  gap: var(--fl-space-3);
+  padding: 45px 24px;
   text-align: center;
 }
-.pc-access h1 {
-  font-family: Georgia, serif;
-  font-size: var(--fl-font-hero);
+.pc .pc-access h1 {
+  max-width: 600px;
+  margin: 4px 0;
+  color: var(--pc-accent, #263329);
+  font-family: 'Studio Serif', Georgia, serif;
+  font-size: clamp(28px, 3vw, 32px);
+  font-weight: 600;
+}
+.pc-access p {
+  max-width: 440px;
+  margin: 0;
+  color: color-mix(in srgb, var(--pc-text) 75%, transparent);
 }
 .pc-access form {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  max-width: 400px;
-  width: 100%;
+  display: grid;
+  gap: var(--fl-space-4);
+  width: min(320px, 100%);
+  margin-top: var(--fl-space-3);
+}
+.pc .pc-access label {
+  display: grid;
+  gap: var(--fl-space-2);
+  text-align: start;
+  font-size: var(--fl-font-small);
 }
 .pc-access input {
-  padding: 12px;
-  border: 1px solid #b9beb9;
-  color: #263329;
+  padding: 10px var(--fl-space-3);
+  border: 1px solid #c6cec1;
+  border-radius: 6px;
+  color: #292e2a;
   background: #fff;
+}
+.pc-access a {
+  margin: 10px 0;
+  color: var(--pc-accent, inherit);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 @media (max-width: 1000px) {
   .pc[data-template='proofing'] .pc-grid {
@@ -526,9 +600,20 @@
     align-items: flex-start;
   }
   .pc-header nav {
-    gap: 12px;
+    gap: 16px;
     flex-wrap: wrap;
     font-size: var(--fl-font-small);
+  }
+  .pc-header {
+    align-items: center;
+  }
+  .pc-studio {
+    font-size: 18px;
+  }
+  .pc-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 24px 20px;
   }
   .pc-cover {
     display: block;

@@ -14,7 +14,7 @@ import {
 } from 'src/dtos/physical-deduplication.dto.js';
 import {
   DatabaseLock,
-  ImmichWorker,
+  FrameleafWorker,
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
@@ -318,7 +318,7 @@ export class PhysicalDeduplicationPlanService {
   /* The worker                                                          */
   /* ------------------------------------------------------------------ */
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.stopping = false;
     this.tickHandle ??= setInterval(() => this.tick(), PHYSICAL_DEDUPLICATION_TICK_MS);
@@ -588,9 +588,20 @@ export class PhysicalDeduplicationPlanService {
       this.logger.log(`Physical deduplication job ${id} cancelled`);
       return false;
     }
-    if (written.pauseRequestedAt && (await this.operations.settlePause(id, claimToken))) {
-      this.logger.log(`Physical deduplication job ${id} paused`);
-      return false;
+    if (written.pauseRequestedAt) {
+      if (await this.operations.settlePause(id, claimToken)) {
+        this.logger.log(`Physical deduplication job ${id} paused`);
+        return false;
+      }
+      // A withdrawn pause can continue; cancellation or claim loss cannot.
+      if (
+        !(await this.operations.heartbeat(id, claimToken, PHYSICAL_DEDUPLICATION_LEASE_MS, {
+          requireActiveClaim: true,
+        }))
+      ) {
+        await this.operations.acknowledgeCancel(id, claimToken, { released: false });
+        return false;
+      }
     }
     return true;
   }

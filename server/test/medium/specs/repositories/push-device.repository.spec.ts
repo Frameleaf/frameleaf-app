@@ -46,6 +46,71 @@ afterAll(async () => {
 });
 
 describe('push device registry (FL-228)', () => {
+  it('keeps replacement tokens after late invalid-token answers and removes matching tokens', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { session } = await ctx.newSession({ userId: user.id });
+    const device = await sut.upsert(
+      registration(user.id, session.id, { pushToken: 'device-old', pushToStartToken: 'start-old' }),
+    );
+    const activity = await sut.setActivity(device.id, {
+      activityId: 'activity-1',
+      kind: 'cloud-backup-activation',
+      token: 'activity-old',
+    });
+    await sut.update(session.id, { pushToken: 'device-new', pushToStartToken: 'start-new' });
+    await sut.setActivity(device.id, {
+      activityId: 'activity-1',
+      kind: 'cloud-backup-activation',
+      token: 'activity-new',
+    });
+
+    await sut.deleteByIds([{ id: device.id, token: 'device-old', platform: 'apns' }]);
+    await sut.clearPushToStartTokens([{ id: device.id, token: 'start-old', platform: 'apns' }]);
+    await sut.deleteActivitiesByIds([{ id: activity.id, token: 'activity-old', platform: 'apns' }]);
+    expect(await sut.getBySession(session.id)).toMatchObject({
+      id: device.id,
+      pushToken: 'device-new',
+      pushToStartToken: 'start-new',
+      activities: [{ id: activity.id, token: 'activity-new' }],
+    });
+
+    await sut.clearPushToStartTokens([{ id: device.id, token: 'start-new', platform: 'apns' }]);
+    await sut.deleteActivitiesByIds([{ id: activity.id, token: 'activity-new', platform: 'apns' }]);
+    expect(await sut.getBySession(session.id)).toMatchObject({ pushToStartToken: null, activities: [] });
+    await sut.deleteByIds([{ id: device.id, token: 'device-new', platform: 'apns' }]);
+    expect(await sut.getBySession(session.id)).toBeUndefined();
+  });
+
+  it.each([PushPlatform.Ios, PushPlatform.Android])(
+    'keeps tokens after their APNs environment or platform changes to %s',
+    async (platform) => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { session } = await ctx.newSession({ userId: user.id });
+      const fields = { pushToken: 'device', pushToStartToken: 'start' };
+      const device = await sut.upsert(registration(user.id, session.id, { ...fields, apnsEnvironment: 'sandbox' }));
+      const activity = await sut.setActivity(device.id, {
+        activityId: 'activity-1',
+        kind: 'cloud-backup-activation',
+        token: 'activity',
+      });
+      await sut.upsert(registration(user.id, session.id, { ...fields, platform, apnsEnvironment: null }));
+
+      await sut.deleteByIds([{ id: device.id, token: 'device', platform: 'apns-sandbox' }]);
+      await sut.clearPushToStartTokens([{ id: device.id, token: 'start', platform: 'apns-sandbox' }]);
+      await sut.deleteActivitiesByIds([{ id: activity.id, token: 'activity', platform: 'apns-sandbox' }]);
+      expect(await sut.getBySession(session.id)).toMatchObject({
+        id: device.id,
+        platform,
+        pushToken: 'device',
+        pushToStartToken: 'start',
+        apnsEnvironment: null,
+        activities: [{ id: activity.id, token: 'activity' }],
+      });
+    },
+  );
+
   it('registers one device per session and rotates its tokens in place', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();

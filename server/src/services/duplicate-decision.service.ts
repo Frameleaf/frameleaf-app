@@ -752,8 +752,7 @@ export class DuplicateDecisionService {
       if (
         locationKept &&
         (was.latitude !== left.latitude || was.longitude !== left.longitude) &&
-        was.latitude !== null &&
-        was.longitude !== null
+        (was.latitude === null) === (was.longitude === null)
       ) {
         update.latitude = was.latitude;
         update.longitude = was.longitude;

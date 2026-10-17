@@ -29,19 +29,33 @@ export function getServerErrorMessage(error: unknown) {
     }
   }
 
-  if (Array.isArray(data?.errors) && data.errors.length > 0) {
-    const details = data.errors
-      .map(({ path, message }) => {
-        const field = path
-          .map((segment, i) => (typeof segment === 'number' ? `[${segment}]` : i === 0 ? segment : `.${segment}`))
-          .join('');
-        return field ? `${field}: ${message}` : message;
-      })
-      .join(', ');
-    return `${data.message}: ${details}`;
+  const message = typeof data?.message === 'string' ? data.message : undefined;
+  const details: string[] = [];
+  if (Array.isArray(data?.errors)) {
+    for (const issue of data.errors) {
+      if (!Array.isArray(issue?.path) || typeof issue.message !== 'string') {
+        continue;
+      }
+      let field = '';
+      let valid = true;
+      for (let index = 0; index < issue.path.length; index++) {
+        const segment = issue.path[index];
+        if (typeof segment === 'number') {
+          field += `[${segment}]`;
+        } else if (typeof segment === 'string') {
+          field += index === 0 ? segment : `.${segment}`;
+        } else {
+          valid = false;
+          break;
+        }
+      }
+      if (valid) {
+        details.push(field ? `${field}: ${issue.message}` : issue.message);
+      }
+    }
   }
 
-  return data?.message || error.message;
+  return details.length > 0 ? `${message ?? error.message}: ${details.join(', ')}` : message || error.message;
 }
 
 export function standardizeError(error: unknown) {

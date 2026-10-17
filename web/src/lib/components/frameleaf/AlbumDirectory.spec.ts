@@ -19,7 +19,7 @@ const jamie = userAdminFactory.build({ id: 'jamie', name: 'Jamie' });
 const app = vi.hoisted(() => ({
   page: { url: new URL('http://localhost/albums'), state: {} },
   goto: vi.fn(),
-  replaceState: vi.fn(),
+  replaceState: vi.fn<(url: string | URL, state: App.PageState) => Promise<void>>(async () => {}),
   routerStarted: true,
 }));
 vi.mock('$app/state', () => ({ page: app.page }));
@@ -33,7 +33,12 @@ vi.mock('$app/navigation', () => ({
 vi.mock('$lib/utils/router-started', () => ({ hasRouterStarted: () => app.routerStarted }));
 
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
-  authManager: { user: { id: 'me', isAdmin: false, name: 'Me', email: 'me@example.com' }, params: {} },
+  authManager: {
+    user: { id: 'me', isAdmin: false, name: 'Me', email: 'me@example.com' },
+    params: {},
+    // A toast's Undo only acts for the session that showed it (toast.ts); this session never changes.
+    captureSession: () => () => true,
+  },
 }));
 vi.mock('$lib/components/assets/thumbnail/ImageThumbnail.svelte', async () => {
   const { default: TestImage } = await import('$lib/../test-data/frameleaf/TestImage.svelte');
@@ -189,7 +194,7 @@ describe('AlbumDirectory', () => {
     );
   });
 
-  it('keeps shared spaces top level, opening on their own page, with a way to Sharing and its invitations', () => {
+  it('keeps shared spaces top level, opening on their own page, with a link to waiting invitations', () => {
     renderWithTooltips(AlbumDirectory, { tree, spaceInvitations: 2, onRefresh: vi.fn() });
 
     const shelf = screen.getByRole('region', { name: 'Shared spaces' });
@@ -201,7 +206,9 @@ describe('AlbumDirectory', () => {
     ).toBeNull();
 
     expect(screen.getByRole('link', { name: '2 invitations waiting' })).toHaveAttribute('href', '/sharing');
-    expect(screen.getByRole('link', { name: 'Open Sharing' })).toHaveAttribute('href', '/sharing');
+    // SHARING-P9: the prototype's plain heading, without the extra hint and Open Sharing link.
+    expect(screen.queryByRole('link', { name: 'Open Sharing' })).toBeNull();
+    expect(shelf).not.toHaveTextContent('A shared space is a top-level library');
   });
 
   it('offers to make the first shared space when there are albums but no spaces', () => {
@@ -209,6 +216,8 @@ describe('AlbumDirectory', () => {
 
     const shelf = screen.getByRole('region', { name: 'Shared spaces' });
     expect(shelf).toHaveTextContent('No shared spaces yet');
+    // With nothing to show, one line says what a shared space is.
+    expect(shelf).toHaveTextContent('A shared space is a top-level library');
     expect(screen.getByRole('button', { name: 'New shared space' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /invitations? waiting/ })).toBeNull();
   });
@@ -219,8 +228,9 @@ describe('AlbumDirectory', () => {
 
     expect(await screen.findByRole('dialog', { name: 'New shared space' })).toBeInTheDocument();
     expect(app.replaceState).toHaveBeenCalledOnce();
-    const [url] = app.replaceState.mock.calls[0] as [URL];
-    expect(url.search).toBe('');
+    const [url] = app.replaceState.mock.calls[0];
+    expect(url).toBeInstanceOf(URL);
+    expect(new URL(url).search).toBe('');
   });
 
   it('waits for the router before touching the address on a direct load', async () => {
@@ -333,7 +343,7 @@ describe('AlbumDirectory', () => {
     const menu = within(await screen.findByRole('menu', { name: 'Actions for Summer in the Rockies' }));
     await fireEvent.click(menu.getByRole('menuitem', { name: 'Share' }));
 
-    const dialog = within(await screen.findByRole('dialog', { name: 'Share this album' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Share album' }));
     const people = await dialog.findByRole('listbox', { name: 'People to invite' });
     expect(within(people).getByRole('option', { name: /Jamie/ })).toBeInTheDocument();
     expect(dialog.queryByRole('combobox', { name: /search/i })).toBeNull();

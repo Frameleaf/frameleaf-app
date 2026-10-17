@@ -21,7 +21,7 @@ import {
 import { MlDestinationResponseDto } from 'src/dtos/ml-destination.dto.js';
 import {
   FRAMELEAF_CLOUD_ML_WORKLOADS,
-  ImmichWorker,
+  FrameleafWorker,
   MachineLearningHardwareAcceleration,
   MediaOperationKind,
   MediaOperationStatus,
@@ -119,7 +119,7 @@ export class CloudMlService extends BaseService {
    * releases what the AI Wallet held for it and charges only GPU time already used. Every
    * microservices worker hears the change; a cancel already asked for is not asked for again.
    */
-  @OnEvent({ name: 'ConfigUpdate', workers: [ImmichWorker.Microservices], server: true })
+  @OnEvent({ name: 'ConfigUpdate', workers: [FrameleafWorker.Microservices], server: true })
   async onConfigUpdate({ oldConfig, newConfig }: ArgOf<'ConfigUpdate'>) {
     if (!oldConfig.frameleafCloud.cloudMl.enabled || newConfig.frameleafCloud.cloudMl.enabled) {
       return;
@@ -145,7 +145,7 @@ export class CloudMlService extends BaseService {
   @OnEvent({ name: 'AppBootstrap' })
   async onBootstrap() {
     this.machineLearningRepository.setCloudProber(({ maxAgeMs }) => this.probe(maxAgeMs));
-    if (this.configRepository.getWorker() === ImmichWorker.Api) {
+    if (this.configRepository.getWorker() === FrameleafWorker.Api) {
       await this.deliverMigrationNotice();
     }
   }

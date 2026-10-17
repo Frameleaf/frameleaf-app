@@ -19,6 +19,7 @@ import {
   lockedOwnerScope,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
+import { planObservationMerge } from 'src/utils/pets.js';
 
 export type Pet = Selectable<PetTable>;
 export type PetObservation = Selectable<PetObservationTable>;
@@ -448,23 +449,16 @@ export class PetRepository {
   /**
    * Move the whole durable side of one pet onto another, inside one transaction.
    *
-   * `reassign`, `promote` and `discard` come from `planObservationMerge`, so the conflict
-   * rule lives in a tested pure function rather than in SQL.
+   * Plan from current decisions under row locks; the conflict rule stays in `planObservationMerge`.
    */
   async mergeInto(
     ownerId: string,
     {
       sourceId,
       targetId,
-      reassign,
-      promote,
-      discard,
     }: {
       sourceId: string;
       targetId: string;
-      reassign: string[];
-      promote: string[];
-      discard: string[];
     },
   ): Promise<void> {
     await this.db.transaction().execute(async (tx) => {
@@ -473,12 +467,25 @@ export class PetRepository {
         .select('id')
         .where('id', 'in', [sourceId, targetId])
         .where('ownerId', '=', ownerId)
+        .orderBy('id')
+        .forUpdate()
         .execute();
       if (owned.length !== 2) {
         // Re-checked inside the transaction so a concurrent delete or owner change
         // cannot let a merge land on a pet the caller no longer owns.
         return;
       }
+      const observations = await tx
+        .selectFrom('pet_observation')
+        .selectAll()
+        .where('petId', 'in', [sourceId, targetId])
+        .orderBy('id')
+        .forUpdate()
+        .execute();
+      const { reassign, promote, discard } = planObservationMerge(
+        observations.filter(({ petId }) => petId === sourceId),
+        observations.filter(({ petId }) => petId === targetId),
+      );
       if (discard.length > 0) {
         await tx.deleteFrom('pet_observation').where('id', 'in', discard).execute();
       }

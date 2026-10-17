@@ -256,3 +256,30 @@ describe(`${NotificationAdminService.name} test email with a write-only password
     expect(mocks.email.verifySmtp).toHaveBeenCalledWith(expect.objectContaining({ password: 'typed' }));
   });
 });
+
+describe('administrator email template previews', () => {
+  it.each([
+    { template: EmailTemplate.WELCOME, saved: 'welcome-template' },
+    { template: EmailTemplate.ALBUM_INVITE, saved: 'invite-template' },
+    { template: EmailTemplate.ALBUM_UPDATE, saved: 'update-template' },
+  ])('uses the matching saved template for $template and honors a draft override', async ({ template, saved }) => {
+    const { sut, mocks } = newTestService(NotificationAdminService);
+    mocks.systemMetadata.get.mockResolvedValue({
+      templates: {
+        email: {
+          welcomeTemplate: 'welcome-template',
+          albumInviteTemplate: 'invite-template',
+          albumUpdateTemplate: 'update-template',
+        },
+      },
+    });
+    mocks.email.renderEmail.mockResolvedValue({ html: 'rendered-preview', text: '' });
+    for (const draft of ['', 'draft-template']) {
+      await expect(sut.getTemplate(template, draft)).resolves.toEqual({ name: template, html: 'rendered-preview' });
+      expect(mocks.email.renderEmail).toHaveBeenLastCalledWith(
+        expect.objectContaining({ template, customTemplate: draft || saved }),
+      );
+    }
+    expect(mocks.email.sendEmail).not.toHaveBeenCalled();
+  });
+});

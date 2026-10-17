@@ -67,7 +67,6 @@ import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
-import { recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
 import { getDimensions } from 'src/utils/asset.util.js';
@@ -81,7 +80,7 @@ import {
   sameChecksum,
 } from 'src/utils/face-anchor.js';
 import { type FaceSource, getFaceSourceRevision } from 'src/utils/face-source.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions, isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
 import { isLockedAssetRow } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -434,20 +433,29 @@ export class PersonService extends BaseService {
 
     // FL-38: the face is written only at the revision checked above, together with the history
     // entry, so an undo never overwrites a correction another view made meanwhile
-    const outcome = await this.personRepository.undoFaceCorrection(
-      entry.id,
-      { id: face.id, expectedRevision: face.updateId },
-      entry.action === 'remove' ? { restore: true } : { personGroupId: restoreTo },
-    );
-    if (outcome === 'already-undone') {
-      throw correctionConflict('already-undone', 'This change was already undone');
-    }
-    if (outcome === 'face-changed') {
-      throw correctionConflict('face-changed', 'This face has changed since');
-    }
+    await this.partnerOriginRepository.withOriginEdit('asset', [face.assetId], [], async () => {
+      const outcome = await this.personRepository.undoFaceCorrection(
+        entry.id,
+        { id: face.id, expectedRevision: face.updateId },
+        entry.action === 'remove' ? { restore: true } : { personGroupId: restoreTo },
+      );
+      if (outcome === 'already-undone') {
+        throw correctionConflict('already-undone', 'This change was already undone');
+      }
+      if (outcome === 'face-changed') {
+        throw correctionConflict('face-changed', 'This face has changed since');
+      }
+      await this.partnerOriginRepository.markOverridden(
+        'asset',
+        [face.assetId],
+        [AssetOriginField.Faces],
+        auth.user.id,
+      );
+    });
 
     await this.refreshFeaturePhotos(auth.user.id, [restoreTo, face.personGroupId], face.id);
     await this.refreshIdentities(asset.ownerId, { assetIds: [asset.id] });
+    await this.noteFaceEdit([face.assetId]);
 
     const [undone] = await this.mapCorrections(auth, [{ ...entry, faceId: face.id, undoneAt: new Date() }]);
     return undone;
@@ -574,43 +582,56 @@ export class PersonService extends BaseService {
     const changeFeaturePhoto = new Map<string, PersonId>();
     const corrections: FaceCorrectionInput[] = [];
     const assetIds: string[] = [];
-    for (const data of dto.data) {
-      const faces = await this.personRepository.getFacesByIds(
-        [{ personGroupId: data.personId, assetId: data.assetId }],
-        { viewingUserId: auth.user.id },
-      );
+    await this.partnerOriginRepository.withOriginEdit(
+      'asset',
+      dto.data.map(({ assetId }) => assetId),
+      [],
+      async () => {
+        for (const data of dto.data) {
+          const faces = await this.personRepository.getFacesByIds(
+            [{ personGroupId: data.personId, assetId: data.assetId }],
+            { viewingUserId: auth.user.id },
+          );
 
-      for (const face of faces) {
-        await this.requireAccess({ auth, permission: Permission.PersonCreate, ids: [face.id] });
-        if (person.faceAssetId === null) {
-          changeFeaturePhoto.set(personKey(person), person);
+          for (const face of faces) {
+            await this.requireAccess({ auth, permission: Permission.PersonCreate, ids: [face.id] });
+            if (person.faceAssetId === null) {
+              changeFeaturePhoto.set(personKey(person), person);
+            }
+            if (face.person && face.person.faceAssetId === face.id) {
+              changeFeaturePhoto.set(personKey(face.person), face.person);
+            }
+
+            await this.personRepository.reassignFace(face.id, person.personGroupId);
+            corrections.push({
+              ownerId: auth.user.id,
+              actorId: auth.user.id,
+              action: isNew ? 'new-person' : 'reassign',
+              faceId: face.id,
+              fromPersonId: face.personGroupId,
+              toPersonId: person.personGroupId,
+              fromPersonName: face.person?.name ?? null,
+              toPersonName: person.name,
+            });
+            assetIds.push(face.assetId);
+          }
+
+          result.push(mapPerson(person));
         }
-        if (face.person && face.person.faceAssetId === face.id) {
-          changeFeaturePhoto.set(personKey(face.person), face.person);
-        }
-
-        await this.personRepository.reassignFace(face.id, person.personGroupId);
-        corrections.push({
-          ownerId: auth.user.id,
-          actorId: auth.user.id,
-          action: isNew ? 'new-person' : 'reassign',
-          faceId: face.id,
-          fromPersonId: face.personGroupId,
-          toPersonId: person.personGroupId,
-          fromPersonName: face.person?.name ?? null,
-          toPersonName: person.name,
-        });
-        assetIds.push(face.assetId);
-      }
-
-      result.push(mapPerson(person));
-    }
+        await this.recordFaceCorrections(corrections);
+        await this.partnerOriginRepository.markOverridden(
+          'asset',
+          [...new Set(assetIds)],
+          [AssetOriginField.Faces],
+          auth.user.id,
+        );
+      },
+    );
     if (changeFeaturePhoto.size > 0) {
       await this.createNewFeaturePhoto(changeFeaturePhoto.values().toArray());
     }
-    await this.recordFaceCorrections(corrections);
     await this.refreshIdentities(auth.user.id, { assetIds });
-    await this.noteFaceEdit(auth.user.id, assetIds);
+    await this.noteFaceEdit(assetIds);
     return result;
   }
 
@@ -621,27 +642,35 @@ export class PersonService extends BaseService {
     const person = await this.findOrFail(auth, personGroupId);
     const isNew = !(await this.personRepository.hasFaces(person.personGroupId));
 
-    await this.personRepository.reassignFace(face.id, person.personGroupId);
+    await this.partnerOriginRepository.withOriginEdit('asset', [face.assetId], [], async () => {
+      await this.personRepository.reassignFace(face.id, person.personGroupId);
+      await this.recordFaceCorrections([
+        {
+          ownerId: auth.user.id,
+          actorId: auth.user.id,
+          action: isNew ? 'new-person' : 'reassign',
+          faceId: face.id,
+          fromPersonId: face.personGroupId,
+          toPersonId: person.personGroupId,
+          fromPersonName: face.person?.name ?? null,
+          toPersonName: person.name,
+        },
+      ]);
+      await this.partnerOriginRepository.markOverridden(
+        'asset',
+        [face.assetId],
+        [AssetOriginField.Faces],
+        auth.user.id,
+      );
+    });
     if (person.faceAssetId === null) {
       await this.createNewFeaturePhoto([person]);
     }
     if (face.person && face.person.faceAssetId === face.id) {
       await this.createNewFeaturePhoto([face.person]);
     }
-    await this.recordFaceCorrections([
-      {
-        ownerId: auth.user.id,
-        actorId: auth.user.id,
-        action: isNew ? 'new-person' : 'reassign',
-        faceId: face.id,
-        fromPersonId: face.personGroupId,
-        toPersonId: person.personGroupId,
-        fromPersonName: face.person?.name ?? null,
-        toPersonName: person.name,
-      },
-    ]);
     await this.refreshIdentities(auth.user.id, { assetIds: [face.assetId] });
-    await this.noteFaceEdit(auth.user.id, [face.assetId]);
+    await this.noteFaceEdit([face.assetId]);
 
     return mapPerson(await this.findOrFail(auth, personGroupId));
   }
@@ -730,7 +759,7 @@ export class PersonService extends BaseService {
     return this.personRepository.getStatistics(personGroupId, auth.user.id, getHiddenContentQueryOptions(auth));
   }
 
-  async getThumbnail(auth: AuthDto, personGroupId: string): Promise<ImmichFileResponse> {
+  async getThumbnail(auth: AuthDto, personGroupId: string): Promise<FileDownloadResponse> {
     await this.requirePerson(auth, Permission.PersonRead, personGroupId);
     const person = await this.personRepository.getByGroupId({ ownerId: auth.user.id, personGroupId });
     if (!person || !person.thumbnailPath) {
@@ -748,7 +777,7 @@ export class PersonService extends BaseService {
       }
     }
 
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path: person.thumbnailPath,
       contentType: mimeTypes.lookup(person.thumbnailPath),
       cacheControl: CacheControl.PrivateWithoutCache,
@@ -797,15 +826,20 @@ export class PersonService extends BaseService {
       faceId = face.id;
     }
 
-    const person = await this.personRepository.update({
-      ownerId,
-      personGroupId,
-      faceAssetId: faceId,
-      name,
-      birthDate,
-      isHidden,
-      isFavorite,
-      color,
+    const partnerPeople = BaseService.create(PartnerPeopleService, this);
+    const person = await this.partnerOriginRepository.withPersonOrigin(ownerId, personGroupId, async () => {
+      const person = await this.personRepository.update({
+        ownerId,
+        personGroupId,
+        faceAssetId: faceId,
+        name,
+        birthDate,
+        isHidden,
+        isFavorite,
+        color,
+      });
+      await partnerPeople.noteEdit(ownerId, personGroupId, dto);
+      return person;
     });
 
     if (assetId) {
@@ -814,8 +848,6 @@ export class PersonService extends BaseService {
 
     // FL-326: an edit of a partner's person copy stops that detail following, and the person's own copies
     // follow the new name, birth date and hidden state
-    const partnerPeople = BaseService.create(PartnerPeopleService, this);
-    await partnerPeople.noteEdit(ownerId, personGroupId, dto);
     if (PartnerPeopleService.touchesFollowedFields(dto)) {
       await partnerPeople.propagatePerson(ownerId, personGroupId);
     }
@@ -865,12 +897,16 @@ export class PersonService extends BaseService {
     }
 
     const people = await this.personRepository.delete(groupIds, ownerId);
+    await this.cleanupRemovedPeople(people, ownerId);
+  }
+
+  private async cleanupRemovedPeople(people: { thumbnailPath: string }[], ownerId?: string) {
     await Promise.all(people.map((person) => this.storageRepository.unlink(person.thumbnailPath)));
     await this.personRepository.deleteEmptyGroups();
     // deleting, merging away and cleaning up people all come through here: merge-suggestion answers
     // follow their anchor faces to whoever holds them now, or go (FL-57)
     await this.reanchorMergeVerdicts(ownerId);
-    this.logger.debug(`Deleted ${groupIds.length} people`);
+    this.logger.debug(`Deleted ${people.length} people`);
   }
 
   @OnJob({ name: JobName.PersonCleanup, queue: QueueName.BackgroundTask })
@@ -1414,8 +1450,25 @@ export class PersonService extends BaseService {
         this.logger.log(`Merging ${mergeName} into ${targetPerson.name || targetPerson.personGroupId}`);
 
         try {
-          await this.personRepository.reassignFaces(mergeData);
-          await this.removeAllPersonGroups([mergeId], targetPerson.ownerId);
+          const people = await this.personRepository.withMergeWrite(async () => {
+            const survivor = await this.personRepository.getByGroupId({
+              ownerId: targetPerson.ownerId,
+              personGroupId: targetPerson.personGroupId,
+            });
+            const removed = await this.personRepository.getByGroupId({
+              ownerId: targetPerson.ownerId,
+              personGroupId: mergeId,
+            });
+            if (!survivor || !removed) throw new ConflictException('Person changed during merge');
+            await this.personRepository.reassignFaces(mergeData);
+            await this.personRepository.repointPartnerPersonLinks(
+              targetPerson.ownerId,
+              mergeId,
+              targetPerson.personGroupId,
+            );
+            return this.personRepository.delete([mergeId], targetPerson.ownerId);
+          }, targetPerson.ownerId);
+          await this.cleanupRemovedPeople(people, targetPerson.ownerId);
 
           this.logger.log(`Merged ${mergeName} into ${targetPerson.name || targetPerson.personGroupId}`);
           results.push({ id: mergeId, success: true });
@@ -1440,10 +1493,6 @@ export class PersonService extends BaseService {
             },
           ]);
           await this.refreshIdentities(targetPerson.ownerId, { personGroupIds: [targetPerson.personGroupId] });
-          // FL-326: later partner copies of a merged-away person's faces land on the survivor
-          await this.duringForkWrites('re-point partner people', () =>
-            this.personRepository.repointPartnerPersonLinks(targetPerson.ownerId, mergeId, targetPerson.personGroupId),
-          );
         } catch (error: any) {
           this.logger.error(`Unable to record the merge of ${mergeId}: ${error}`, error?.stack);
         }
@@ -1490,12 +1539,15 @@ export class PersonService extends BaseService {
     await this.requireFaceSource(asset, dto.assetId, dto.expectedSourceRevision);
 
     const id = this.cryptoRepository.randomUUID();
-    await this.personRepository.createAssetFace({
-      id,
-      personGroupId: person.personGroupId,
-      assetId: dto.assetId,
-      ...this.toStoredFaceBox(asset, dto),
-      sourceType: SourceType.Manual,
+    await this.partnerOriginRepository.withOriginEdit('asset', [asset.id], [], async () => {
+      await this.personRepository.createAssetFace({
+        id,
+        personGroupId: person.personGroupId,
+        assetId: dto.assetId,
+        ...this.toStoredFaceBox(asset, dto),
+        sourceType: SourceType.Manual,
+      });
+      await this.partnerOriginRepository.markOverridden('asset', [asset.id], [AssetOriginField.Faces], auth.user.id);
     });
 
     if (!person.faceAssetId) {
@@ -1503,7 +1555,7 @@ export class PersonService extends BaseService {
     }
     // FL-57: a new face of a named person can change what generated text should say
     await this.refreshIdentities(asset.ownerId, { assetIds: [asset.id] });
-    await this.noteFaceEdit(auth.user.id, [asset.id]);
+    await this.noteFaceEdit([asset.id]);
 
     return this.mapStoredFace(auth, id);
   }
@@ -1555,14 +1607,23 @@ export class PersonService extends BaseService {
       box = this.toStoredFaceBox(asset, dto.box);
     }
 
-    const changed = await this.personRepository.correctFace(id, dto.expectedRevision, {
-      personGroupId: dto.personId === undefined ? undefined : (target?.personGroupId ?? null),
-      box,
-      hidden: dto.hidden,
+    await this.partnerOriginRepository.withOriginEdit('asset', [face.assetId], [], async () => {
+      const changed = await this.personRepository.correctFace(id, dto.expectedRevision, {
+        personGroupId: dto.personId === undefined ? undefined : (target?.personGroupId ?? null),
+        box,
+        hidden: dto.hidden,
+      });
+      if (changed === 0) {
+        throw staleFace();
+      }
+      await this.recordFaceCorrections(this.faceCorrectionEntries(auth, face, dto, target, targetIsNew, !!box));
+      await this.partnerOriginRepository.markOverridden(
+        'asset',
+        [face.assetId],
+        [AssetOriginField.Faces],
+        auth.user.id,
+      );
     });
-    if (changed === 0) {
-      throw staleFace();
-    }
 
     const previous = face.person;
     const leavesPrevious = (dto.personId !== undefined && dto.personId !== face.personGroupId) || dto.hidden === true;
@@ -1584,8 +1645,8 @@ export class PersonService extends BaseService {
       });
     }
 
-    await this.recordFaceCorrections(this.faceCorrectionEntries(auth, face, dto, target, targetIsNew, !!box));
     await this.refreshIdentities(auth.user.id, { assetIds: [face.assetId] });
+    await this.noteFaceEdit([face.assetId]);
 
     return this.mapStoredFace(auth, id);
   }
@@ -1661,44 +1722,62 @@ export class PersonService extends BaseService {
       fromPersonName: face.person?.name ?? null,
     };
 
-    if (dto.force) {
-      // recorded first: the face row is gone afterwards; a refused delete withdraws it again
-      const [recorded] =
-        (await this.duringForkWrites('record face corrections', () =>
-          this.personRepository.recordFaceCorrections([correction]),
-        )) ?? [];
-      if (dto.expectedRevision === undefined) {
-        await this.personRepository.deleteAssetFace(id);
-      } else if ((await this.personRepository.deleteFaceAtRevision(id, dto.expectedRevision, { force: true })) === 0) {
-        if (recorded) {
-          await this.duringForkWrites('withdraw a face correction', () =>
-            this.personRepository.deleteFaceCorrection(recorded.id),
-          );
+    await this.partnerOriginRepository.withOriginEdit('asset', [face.assetId], [], async () => {
+      if (dto.force) {
+        // recorded first: the face row is gone afterwards; a refused delete withdraws it again
+        const [recorded] =
+          (await this.duringForkWrites('record face corrections', () =>
+            this.personRepository.recordFaceCorrections([correction]),
+          )) ?? [];
+        if (dto.expectedRevision === undefined) {
+          await this.personRepository.deleteAssetFace(id);
+        } else if (
+          (await this.personRepository.deleteFaceAtRevision(id, dto.expectedRevision, { force: true })) === 0
+        ) {
+          if (recorded) {
+            await this.duringForkWrites('withdraw a face correction', () =>
+              this.personRepository.deleteFaceCorrection(recorded.id),
+            );
+          }
+          throw staleFaceRemoval();
         }
-        throw staleFaceRemoval();
+      } else {
+        if (dto.expectedRevision === undefined) {
+          await this.personRepository.softDeleteAssetFaces(id);
+        } else if (
+          (await this.personRepository.deleteFaceAtRevision(id, dto.expectedRevision, { force: false })) === 0
+        ) {
+          // FL-38: refuse to remove a face someone changed since this client read it
+          throw staleFaceRemoval();
+        }
+        await this.recordFaceCorrections([correction]);
       }
-    } else {
-      if (dto.expectedRevision === undefined) {
-        await this.personRepository.softDeleteAssetFaces(id);
-      } else if ((await this.personRepository.deleteFaceAtRevision(id, dto.expectedRevision, { force: false })) === 0) {
-        // FL-38: refuse to remove a face someone changed since this client read it
-        throw staleFaceRemoval();
-      }
-      await this.recordFaceCorrections([correction]);
-    }
+      await this.partnerOriginRepository.markOverridden(
+        'asset',
+        [face.assetId],
+        [AssetOriginField.Faces],
+        auth.user.id,
+      );
+    });
     await this.refreshFeaturePhotos(auth.user.id, [face.personGroupId], id);
     await this.refreshIdentities(auth.user.id, { assetIds: [face.assetId] });
-    await this.noteFaceEdit(auth.user.id, [face.assetId]);
+    await this.noteFaceEdit([face.assetId]);
   }
 
-  /** FL-326: a face edit makes a partner copy's faces its owner's; copies of these items re-copy them. */
-  private noteFaceEdit(userId: string, assetIds: string[]) {
-    return recordAssetEdit(
-      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
-      userId,
-      [...new Set(assetIds)],
-      [AssetOriginField.Faces],
-    );
+  /** Face overrides commit with the edit; dispatch changes to following copies afterward. */
+  private async noteFaceEdit(assetIds: string[]) {
+    if (assetIds.length === 0) {
+      return;
+    }
+    const sources = await this.partnerOriginRepository.getIdsWithFollowers('asset', [...new Set(assetIds)]);
+    if (sources.length > 0) {
+      await this.jobRepository.queueAll(
+        sources.map((sourceId) => ({
+          name: JobName.PartnerPropagate as const,
+          data: { kind: 'asset' as const, sourceId, fields: [AssetOriginField.Faces] },
+        })),
+      );
+    }
   }
 
   private async requireFaceSource(asset: FaceSource, assetId: string, expectedSourceRevision?: string) {

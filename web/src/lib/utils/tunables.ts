@@ -1,17 +1,12 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import { DURATION } from '$lib/frameleaf/tokens';
 
 function getBoolean(string: string | null, fallback: boolean) {
-  if (string === null) {
-    return fallback;
-  }
-  return 'true' === string;
+  return string === null ? fallback : string === 'true';
 }
 function getNumber(string: string | null, fallback: number) {
-  if (string === null) {
-    return fallback;
-  }
-  return Number.parseInt(string);
+  const value = string === null ? fallback : Number.parseInt(string);
+  return Number.isFinite(value) ? value : fallback;
 }
 const storage = browser
   ? localStorage

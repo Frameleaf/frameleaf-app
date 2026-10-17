@@ -69,6 +69,7 @@
   import { LngLatBounds, type GeoJSONSource, type Map } from 'maplibre-gl';
   import { onDestroy, tick } from 'svelte';
   import { t } from 'svelte-i18n';
+  import { MediaQuery } from 'svelte/reactivity';
   import { AttributionControl, GeoJSON, MapLibre, Marker, MarkerLayer } from 'svelte-maplibre';
 
   /**
@@ -152,6 +153,8 @@
   let zoom = $state(2);
   let changed = $state(false);
   let settingsOpen = $state(false);
+  /** The phone layout (the stylesheet's 640px): the tools are a bar along the foot of the map. */
+  const phone = new MediaQuery('max-width: 640px');
   let status = $state('');
   let hoveredCluster = $state<Feature>();
   let hoveredSingle = $state<Feature>();
@@ -399,7 +402,15 @@
     if (!map || markers.length === 0) {
       return;
     }
-    map.fitBounds(extent(), { padding: 48, maxZoom: 15, animate: announce });
+    // Clear of the floating overlays: the in-view chip and legend (top, bottom) and the tools, a column
+    // on the right (72px) or, on a phone, a bar above the legend (DISCOVERY-P2, about 140px from the foot).
+    map.fitBounds(extent(), {
+      padding: phone.current
+        ? { top: 64, bottom: 156, left: 32, right: 32 }
+        : { top: 64, bottom: 64, left: 48, right: 120 },
+      maxZoom: 15,
+      animate: announce,
+    });
     changed = false;
     if (announce) {
       status = $t('frameleaf_map_status_reset');
@@ -1057,10 +1068,29 @@
     padding-inline-start: 12px;
     border-inline-start: 1px solid var(--fl-border);
   }
-  /* A phone's map is too narrow for the legend and the credit line side by side: the legend sits above it. */
+  /*
+   * A phone's map is too narrow for the legend and the credit line side by side: the legend sits above
+   * it, without the counts (map-view.css:642-668). The tools leave the right-hand column, which hid a
+   * third of the map, for a bar above the legend at the right (DISCOVERY-P2).
+   */
   @media (max-width: 640px) {
     .legend {
       bottom: calc(var(--fl-space-3) + var(--fl-space-8));
+    }
+    .legend .legend-counts {
+      display: none;
+    }
+    .tools {
+      top: auto;
+      /* The legend's foot, its 30px and 8px between them. */
+      bottom: calc(var(--fl-space-3) + var(--fl-space-8) + 30px + var(--fl-space-2));
+      flex-direction: row;
+    }
+    /* With the column gone, "Search this area" sits under the in-view chip instead of over it. */
+    .top-center {
+      top: calc(var(--fl-space-3) + 34px + var(--fl-space-2));
+      left: var(--fl-space-3);
+      transform: none;
     }
   }
   .video-dot {
@@ -1100,14 +1130,6 @@
     transform: translateX(-50%);
     box-shadow: var(--fl-shadow-2);
     border-radius: var(--fl-radius-card);
-  }
-  /* On a phone the card is as wide as the map, so it sits below the control column, not under it. */
-  @media (max-width: 640px) {
-    .offline,
-    .load-failed {
-      top: auto;
-      bottom: 72px;
-    }
   }
   .offline strong {
     color: var(--fl-text);
@@ -1284,6 +1306,19 @@
     border-radius: var(--fl-radius-card);
     background: var(--fl-panel);
     box-shadow: var(--fl-shadow-2);
+  }
+  /* On a phone the settings open from the bar below as a sheet across the foot (map-view.css:670-679). */
+  @media (max-width: 640px) {
+    .settings {
+      top: auto;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      width: auto;
+      max-width: none;
+      max-height: 70%;
+      border-radius: var(--fl-radius-card) var(--fl-radius-card) 0 0;
+    }
   }
   .settings header {
     display: flex;

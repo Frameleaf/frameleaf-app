@@ -82,7 +82,7 @@
   // A review or "Take the tour" link. Only an address change opens it: closing must not reopen it
   // while the address still carries the request.
   $effect(() => {
-    const step = requestedTourStep(page.url.searchParams);
+    const step = requestedTourStep(new URLSearchParams(page.url.searchParams.toString()));
     untrack(() => {
       if (step === null || open) {
         return;
@@ -139,10 +139,10 @@
       return;
     }
     if (page.url.searchParams.has('tour')) {
-      const url = new URL(page.url);
+      const url = new URL(page.url.href);
       url.searchParams.delete('tour');
       url.searchParams.delete('tourStep');
-      await goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true, keepFocus: true });
+      await goto(`${url.pathname}${url.search}`, { replace: true, reset: false });
     }
   };
 </script>

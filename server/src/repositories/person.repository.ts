@@ -7,7 +7,7 @@ import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { AssetFace } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetType, AssetVisibility, SourceType, UserMetadataKey } from 'src/enum.js';
-import { publicationDatabase } from 'src/queue/transaction.js';
+import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
@@ -228,6 +228,16 @@ export class PersonRepository {
   ) {
     this.db = publicationDatabase(this.db);
   }
+  /** Copy, merge and undo serialize recipient mappings through their face writes; no I/O inside. */
+  async withMergeWrite<T>(write: () => Promise<T>, ownerId: string): Promise<T> {
+    return this.db.transaction().execute(async (tx) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`partner-person-owner:v1:${ownerId.toLowerCase()}`},0))`.execute(
+        tx,
+      );
+      return publicationTransaction.run(tx, write);
+    });
+  }
+
   @GenerateSql({ params: [{ oldPersonGroupId: DummyValue.UUID, newPersonGroupId: DummyValue.UUID }] })
   async reassignFaces({
     oldPersonGroupId,
@@ -828,7 +838,7 @@ export class PersonRepository {
         )
         .execute();
       // the rest is shared with someone else, so this user gets a group of their own for each
-      const mapping = await trx
+      await trx
         .with('shared', (db) =>
           db
             .selectFrom('person')
@@ -854,32 +864,23 @@ export class PersonRepository {
             .columns(['id', 'clusterGroupId'])
             .expression((eb) =>
               eb.selectFrom('mapping').select(['mapping.newId', sql.val(newClusterId).as('clusterGroupId')]),
-            ),
+            )
+            .returning('id'),
         )
-        .selectFrom('mapping')
-        .select(['mapping.oldId', 'mapping.newId'])
-        .execute();
-      if (mapping.length === 0) {
-        return;
-      }
-      const oldIds = mapping.map(({ oldId }) => oldId);
-      const newIds = mapping.map(({ newId }) => newId);
-      const remapped = sql<{
-        oldId: string;
-        newId: string;
-      }>`(select unnest(${`{${oldIds}}`}::uuid[]) as "oldId", unnest(${`{${newIds}}`}::uuid[]) as "newId")`.as(
-        'mapping',
-      );
-      await trx
-        .updateTable('person')
-        .from(remapped)
-        .set((eb) => ({ personGroupId: eb.ref('mapping.newId') }))
-        .whereRef('person.personGroupId', '=', 'mapping.oldId')
-        .where('person.ownerId', '=', userId)
-        .execute();
-      await trx
+        // These dependencies preserve the original write order for sync metadata.
+        .with('moved_people', (db) =>
+          db
+            .updateTable('person')
+            .from('mapping')
+            .innerJoin('created', 'created.id', 'mapping.newId')
+            .set((eb) => ({ personGroupId: eb.ref('mapping.newId') }))
+            .whereRef('person.personGroupId', '=', 'mapping.oldId')
+            .where('person.ownerId', '=', userId)
+            .returning('person.personGroupId'),
+        )
         .updateTable('asset_face')
-        .from(remapped)
+        .from('mapping')
+        .innerJoin('moved_people', 'moved_people.personGroupId', 'mapping.newId')
         .set((eb) => ({ personGroupId: eb.ref('mapping.newId') }))
         .whereRef('asset_face.personGroupId', '=', 'mapping.oldId')
         .where(({ exists, selectFrom }) =>
@@ -970,18 +971,17 @@ export class PersonRepository {
     if (ids.length === 0) {
       return Promise.resolve([]);
     }
-    const assetIds: string[] = [];
-    const personGroupIds: string[] = [];
-    for (const { assetId, personGroupId } of ids) {
-      assetIds.push(assetId);
-      personGroupIds.push(personGroupId);
-    }
     return this.db
       .selectFrom('asset_face')
       .selectAll('asset_face')
       .select(withPerson({ viewingUserId }))
-      .where('asset_face.assetId', 'in', assetIds)
-      .where('asset_face.personGroupId', 'in', personGroupIds)
+      .where((eb) =>
+        eb(
+          eb.refTuple('asset_face.assetId', 'asset_face.personGroupId'),
+          'in',
+          ids.map(({ assetId, personGroupId }) => eb.tuple(eb.val(assetId), eb.val(personGroupId))),
+        ),
+      )
       .where('asset_face.deletedAt', 'is', null)
       .execute();
   }
@@ -1079,35 +1079,18 @@ export class PersonRepository {
       await sql`REINDEX TABLE face_search`.execute(this.db);
     }
   }
-  @GenerateSql({ params: [[], []] })
-  async updateVisibility(visible: AssetFace[], hidden: AssetFace[]): Promise<void> {
+  @GenerateSql({ params: [[{ id: DummyValue.UUID }], [{ id: DummyValue.UUID_1 }]] })
+  async updateVisibility(visible: Pick<AssetFace, 'id'>[], hidden: Pick<AssetFace, 'id'>[]): Promise<void> {
     if (visible.length === 0 && hidden.length === 0) {
       return;
     }
-    await this.db.transaction().execute(async (trx) => {
-      if (visible.length > 0) {
-        await trx
-          .updateTable('asset_face')
-          .set({ isVisible: true })
-          .where(
-            'asset_face.id',
-            'in',
-            visible.map(({ id }) => id),
-          )
-          .execute();
-      }
-      if (hidden.length > 0) {
-        await trx
-          .updateTable('asset_face')
-          .set({ isVisible: false })
-          .where(
-            'asset_face.id',
-            'in',
-            hidden.map(({ id }) => id),
-          )
-          .execute();
-      }
-    });
+    const hiddenIds = hidden.map(({ id }) => id);
+    const ids = [...visible.map(({ id }) => id), ...hiddenIds];
+    await this.db
+      .updateTable('asset_face')
+      .set((eb) => ({ isVisible: eb.not(eb('asset_face.id', '=', anyUuid(hiddenIds))).$castTo<boolean>() }))
+      .where('asset_face.id', '=', anyUuid(ids))
+      .execute();
   }
   @GenerateSql({ params: [{ personGroupId: DummyValue.UUID, assetId: DummyValue.UUID }] })
   getForFeatureFaceUpdate({ personGroupId, assetId }: { personGroupId: string; assetId: string }) {

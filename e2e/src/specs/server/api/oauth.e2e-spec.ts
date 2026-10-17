@@ -62,9 +62,10 @@ const loginWithOAuth = async (sub: OAuthUser | string, redirectUri?: string) => 
   const response5 = await redirect(response4.header.location, response3.cookies.slice(1));
   const redirectUrl = response5.location;
 
-  expect(redirectUrl).toBeDefined();
+  expect(redirectUrl).toEqual(expect.any(String));
   const params = new URL(redirectUrl).searchParams;
-  expect(params.get('code')).toBeDefined();
+  // URLSearchParams.get returns null for a missing parameter, which toBeDefined would accept
+  expect(params.get('code')).toMatch(/\S/);
   expect(params.get('state')).toBe(state);
 
   return { url: redirectUrl, state, codeVerifier };
@@ -114,7 +115,7 @@ describe(`/oauth`, () => {
       expect(params.get('client_id')).toBe('client-default');
       expect(params.get('response_type')).toBe('code');
       expect(params.get('redirect_uri')).toBe('http://127.0.0.1:2285/auth/login');
-      expect(params.get('state')).toBeDefined();
+      expect(params.get('state')).toMatch(/\S/);
     });
 
     it('should not include the prompt parameter when not configured', async () => {
@@ -278,7 +279,7 @@ describe(`/oauth`, () => {
       });
 
       const user = await getMyUser({ headers: asBearerAuth(body.accessToken) });
-      expect(user.quotaSizeInBytes).toBe(25 * 2 ** 30); // 25 GiB;
+      expect(user.quotaSizeInBytes).toBe(25 * 1000 ** 3); // 25 GB (D5: decimal)
     });
 
     it('should set the storage label from a claim', async () => {
@@ -521,7 +522,7 @@ describe(`/oauth`, () => {
       expect(params.get('client_id')).toBe('client-default');
       expect(params.get('response_type')).toBe('code');
       expect(params.get('redirect_uri')).toBe(mobileOverrideRedirectUri);
-      expect(params.get('state')).toBeDefined();
+      expect(params.get('state')).toMatch(/\S/);
     });
 
     it('should send the Frameleaf app its own callback beside the mobile redirect (FL-131)', async () => {

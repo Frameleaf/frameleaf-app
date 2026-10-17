@@ -81,14 +81,21 @@ export const requestOnce = async <T>(context: WaitContext, create: () => Abortab
   context.remaining();
   const pending = create();
   pending.timeout({ deadline: context.remaining() });
+  let transport: ClientRequest | undefined;
   let transportClosed: Promise<void> | undefined;
   pending.once?.('request', ({ req }) => {
+    transport = req;
     transportClosed = new Promise<void>((resolve) => {
       req.once('close', resolve);
     });
   });
   const abort = () => {
-    pending.abort();
+    // SuperAgent's abort preserves partial bodies that SuperTest validates; destroy the transport instead.
+    if (transport) {
+      transport.destroy();
+    } else {
+      pending.abort();
+    }
   };
   context.signal.addEventListener('abort', abort, { once: true });
   try {

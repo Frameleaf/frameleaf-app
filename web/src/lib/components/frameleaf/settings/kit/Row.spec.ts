@@ -26,6 +26,25 @@ describe('kit Row', () => {
     );
   });
 
+  it('draws the choice the help says back in bold (ADMIN-P6)', () => {
+    render(Row, {
+      label: 'Search quality',
+      lead: 'Balanced',
+      help: 'Balanced: good results for everyday searches.',
+    });
+
+    const bold = screen.getByText('Balanced:');
+    expect(bold.tagName).toBe('B');
+    expect(bold.parentElement).toHaveTextContent('Balanced: good results for everyday searches.');
+  });
+
+  it('draws help that does not start with the choice as it is', () => {
+    render(Row, { label: 'Search quality', lead: 'Custom', help: 'A model saved outside the choices.' });
+
+    expect(screen.getByText('A model saved outside the choices.').tagName).toBe('P');
+    expect(document.querySelector('b')).toBeNull();
+  });
+
   it('keeps a link inside the app in the same tab', () => {
     render(Row, { label: 'Email', link: { text: 'Set up email', href: '/user-settings?area=notifications' } });
 

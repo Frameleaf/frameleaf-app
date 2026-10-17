@@ -43,7 +43,8 @@ test.describe('Database Backups', () => {
   });
 
   test('restore a backup from settings', async ({ context, page }) => {
-    test.setTimeout(60_000);
+    // Snapshot creation, restore validation and both server restarts can exceed one minute on CI.
+    test.setTimeout(120_000);
 
     await utils.resetBackups(admin.accessToken);
     const filename = await utils.createBackup(admin.accessToken);
@@ -152,7 +153,7 @@ test.describe('Database Backups', () => {
   });
 
   test('restore a backup from onboarding', async ({ context, page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(120_000);
 
     await utils.resetBackups(admin.accessToken);
     await utils.createBackup(admin.accessToken);
@@ -161,7 +162,7 @@ test.describe('Database Backups', () => {
     await utils.resetDatabase();
 
     await page.goto('/');
-    await page.getByRole('button', { name: 'Restore from backup' }).click();
+    await page.getByRole('button', { name: 'Restore from a backup' }).click(); // frameleaf_maintenance_restore_from_backup
 
     try {
       await page.waitForURL('/maintenance**');

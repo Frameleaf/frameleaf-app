@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { ModuleRef, Reflector } from '@nestjs/core';
-import { orderBy } from 'lodash-es';
 import { Socket } from 'socket.io';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { AssetLocalEffectBundle } from 'src/repositories/asset-local-effect.repository.js';
@@ -12,7 +11,7 @@ import { Asset } from 'src/database.js';
 import { EventConfig } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import {
-  ImmichWorker,
+  FrameleafWorker,
   JobStatus,
   MetadataKey,
   NotificationLevel,
@@ -249,6 +248,7 @@ export class EventRepository {
     if (!worker) {
       throw new Error('Unable to determine worker type');
     }
+    const defaultWorker = Object.values(FrameleafWorker).includes(worker);
 
     // discovery
     for (const Service of services) {
@@ -270,8 +270,7 @@ export class EventRepository {
           continue;
         }
 
-        const workers = event.workers ?? Object.values(ImmichWorker);
-        if (!workers.includes(worker)) {
+        if (!(event.workers?.includes(worker) ?? defaultWorker)) {
           continue;
         }
 
@@ -285,10 +284,8 @@ export class EventRepository {
       }
     }
 
-    const handlers = orderBy(items, ['priority'], ['asc']);
-
     // register by priority
-    for (const handler of handlers) {
+    for (const handler of items.sort((left, right) => left.priority - right.priority)) {
       this.addHandler(handler);
     }
   }

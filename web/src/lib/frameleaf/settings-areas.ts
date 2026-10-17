@@ -6,6 +6,7 @@
  * an area or section, and what a search over the Command Center returns.
  */
 import type { Component } from 'svelte';
+import type { Translations } from 'svelte-i18n';
 
 export type SettingsGroupId = 'command' | 'library' | 'server' | 'personal';
 
@@ -272,6 +273,33 @@ export const PLAIN_AREAS: readonly SettingsAreaId[] = Object.freeze([
   'maintenance',
 ]);
 export const isPlainArea = (area: SettingsAreaId) => PLAIN_AREAS.includes(area);
+
+/**
+ * The sentence under a page's own heading where the prototype words it differently from the short
+ * line (`subtitle`) that lists the page on its landing page and in search (ADMIN-P6), by section key.
+ */
+export const PAGE_DESCRIPTIONS: Readonly<Record<string, Translations>> = Object.freeze({
+  'smart-search': 'frameleaf_page_smart_search_description',
+  faces: 'frameleaf_page_faces_description',
+  documents: 'frameleaf_page_documents_description',
+  'sensitive-detection': 'frameleaf_page_locked_detection_description',
+  descriptions: 'frameleaf_page_descriptions_description',
+  'smart-albums': 'frameleaf_page_smart_albums_description',
+  image: 'frameleaf_page_previews_description',
+  'video-transcoding': 'frameleaf_page_playback_description',
+  'integrity-checks': 'frameleaf_page_file_checks_description',
+  integrity: 'frameleaf_page_file_checks_description',
+  repair: 'frameleaf_page_repair_description',
+  'enrichment-care': 'frameleaf_page_enrichment_description',
+  duplicates: 'frameleaf_page_duplicates_description',
+  deduplication: 'frameleaf_page_deduplication_description',
+  notifications: 'frameleaf_page_email_description',
+  'email-preferences': 'frameleaf_page_email_preferences_description',
+  'version-check': 'frameleaf_page_versions_description',
+  server: 'frameleaf_page_identity_description',
+  logging: 'frameleaf_page_diagnostics_description',
+  theme: 'frameleaf_page_branding_description',
+});
 
 /** Pages a landing page keeps behind "Advanced": kept, and closed until asked for. */
 export const ADVANCED_SECTIONS: Partial<Record<SettingsAreaId, readonly string[]>> = Object.freeze({

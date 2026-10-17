@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { browser } from '$app/environment';
+  import { browser } from '$app/env';
   import { page } from '$app/state';
+  import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
   import RailSavedSearches from '$lib/components/frameleaf/RailSavedSearches.svelte';
   import Sidebar from '$lib/components/sidebar/Sidebar.svelte';
   import {
@@ -27,7 +28,6 @@
   import { Route } from '$lib/route';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { albumTreeDropdown, sidebarCollapsed } from '$lib/stores/preferences.store';
-  import { albumIconPath } from '$lib/utils/album-icons';
   import { handleError } from '$lib/utils/handle-error';
   import { getAlbumTree, getPartners, PartnerDirection, type PartnerResponseDto } from '@frameleaf/sdk';
   import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
@@ -141,7 +141,15 @@
 
   /** The list scrolls; the footer's entries stay at the foot of the rail (`sidebar-bottom`). */
   const listSections = $derived(sections.filter(({ id }) => id !== 'footer'));
-  const footerDestinations = $derived(sections.find(({ id }) => id === 'footer')?.destinations ?? []);
+  // Once the server or the person has a supporter key, "Support Frameleaf" thanks them instead
+  // (owner 2026-10-16, option c). It still opens the same page.
+  const footerDestinations = $derived(
+    (sections.find(({ id }) => id === 'footer')?.destinations ?? []).map((destination) =>
+      destination.id === 'support' && authManager.isPurchased
+        ? { ...destination, labelKey: 'frameleaf_support_thanks' as Translations }
+        : destination,
+    ),
+  );
 
   const pathname = $derived(page.url.pathname);
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
@@ -198,7 +206,7 @@
   };
 </script>
 
-{#snippet railLink(label: string, icon: string, href: string, current: boolean, nested: boolean)}
+{#snippet railLink(label: string, icon: string | FrameleafAlbumNode, href: string, current: boolean, nested: boolean)}
   <a
     {href}
     class="fl-link"
@@ -209,7 +217,11 @@
     aria-label={iconOnly ? label : undefined}
     data-sveltekit-preload-data="hover"
   >
-    <Icon {icon} size="1.25em" aria-hidden={true} class="fl-icon" />
+    {#if typeof icon === 'string'}
+      <Icon {icon} size="1.25em" aria-hidden={true} class="fl-icon" />
+    {:else}
+      <AlbumIcon name={icon.icon} size="1.25em" class="fl-icon" />
+    {/if}
     {#if !iconOnly}<span class="fl-label">{label}</span>{/if}
   </a>
 {/snippet}
@@ -219,23 +231,17 @@
     $t(destination.labelKey),
     destination.icon,
     destination.href,
-    isDestinationCurrent(page.url, destination),
+    isDestinationCurrent(new URL(page.url.href), destination),
     false,
   )}
 {/snippet}
 
 {#snippet albumLink(node: FrameleafAlbumNode)}
-  {@render railLink(node.name, albumIconPath(node.icon), Route.viewAlbum({ id: node.id }), isAlbumCurrent(node), true)}
+  {@render railLink(node.name, node, Route.viewAlbum({ id: node.id }), isAlbumCurrent(node), true)}
 {/snippet}
 
 {#snippet spaceLink(node: FrameleafAlbumNode)}
-  {@render railLink(
-    node.name,
-    albumIconPath(node.icon),
-    Route.viewSharedSpace({ id: node.id }),
-    isSpaceCurrent(node),
-    true,
-  )}
+  {@render railLink(node.name, node, Route.viewSharedSpace({ id: node.id }), isSpaceCurrent(node), true)}
 {/snippet}
 
 {#snippet railHeader({ collapsed, toggle }: { collapsed: boolean; toggle: () => void })}
@@ -363,7 +369,7 @@
                     aria-current={isAlbumCurrent(collection) ? 'page' : undefined}
                     data-sveltekit-preload-data="hover"
                   >
-                    <Icon icon={albumIconPath(collection.icon)} size="1.25em" aria-hidden={true} class="fl-icon" />
+                    <AlbumIcon name={collection.icon} size="1.25em" class="fl-icon" />
                     <span class="fl-label" title={collection.name}>{collection.name}</span>
                   </a>
                 </div>
@@ -534,8 +540,17 @@
   .fl-heading-toggle:hover {
     color: var(--fl-text);
   }
+  /* styles.css `.rail-heading-toggle svg`: the chevron shows on hover or focus, and stays while
+     its section is folded away. */
   .fl-heading-toggle :global(.fl-heading-chevron) {
-    transition: rotate var(--fl-duration-pop) var(--fl-spring);
+    opacity: 0;
+    transition:
+      opacity var(--fl-motion-fast) var(--fl-ease),
+      rotate var(--fl-duration-pop) var(--fl-spring);
+  }
+  .fl-heading-toggle:is(:hover, :focus-visible) :global(.fl-heading-chevron),
+  .fl-heading-toggle[aria-expanded='false'] :global(.fl-heading-chevron) {
+    opacity: 1;
   }
   .fl-heading-toggle[aria-expanded='false'] :global(.fl-heading-chevron) {
     rotate: -90deg;
@@ -612,7 +627,8 @@
     width: 100%;
     padding: 7px 22px;
     border: 0;
-    border-radius: var(--fl-radius-sm);
+    /* `.sidebar button { border-radius: 0 }`: flat, full-width rows. */
+    border-radius: 0;
     background: transparent;
     color: var(--fl-text);
     text-align: start;

@@ -22,7 +22,13 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { providerOf, signInProviderFor } from '$lib/components/frameleaf/settings/notifications/mail-providers';
   import { getMailConnection, MailConnectionStatus, MailTransportType, type MailConnectionDto } from '@frameleaf/sdk';
-  import { mdiEmailAlertOutline, mdiEmailCheckOutline, mdiEmailOffOutline } from '@mdi/js';
+  import {
+    mdiEmailAlertOutline,
+    mdiEmailCheckOutline,
+    mdiEmailFastOutline,
+    mdiEmailOffOutline,
+    mdiEmailOutline,
+  } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   let { sections }: { sections: SettingsHostSection[] } = $props();
@@ -94,11 +100,17 @@
         };
   });
 
+  const ROW_ICONS: Record<string, string> = {
+    'email-preferences': mdiEmailOutline,
+    notifications: mdiEmailFastOutline,
+  };
+
   const rows = (admin: boolean) =>
     sections
       .filter((section) => Boolean(section.admin) === admin)
       .map((section): LinkRow => ({
-        icon: section.icon,
+        // The prototype's mail icons (settings-v2/server/notifications.jsx); the navigation keeps the bell.
+        icon: ROW_ICONS[section.key] ?? section.icon,
         title: section.title,
         body: section.subtitle,
         href: commandCenterUrl('notifications', section.key),
@@ -120,12 +132,12 @@
     {/snippet}
   </Hero>
 
-  <Section title={$t('frameleaf_notify_for_you')}>
+  <Section title={$t('frameleaf_notify_for_you')} description={$t('frameleaf_notify_for_you_description')}>
     <Links stacked rows={rows(false)} />
   </Section>
 
   {#if rows(true).length > 0}
-    <Section title={$t('frameleaf_sharing_server_title')} description={$t('frameleaf_sharing_server_description')}>
+    <Section title={$t('frameleaf_sharing_server_title')} description={$t('frameleaf_notify_server_description')}>
       <Links stacked rows={rows(true)} />
     </Section>
   {/if}

@@ -70,6 +70,75 @@ describe(buildAlbumTree.name, () => {
     expect(tree.collections).toEqual([]);
     expect(tree.albums).toEqual([parent, child]);
   });
+
+  it('keeps duplicate shelves independent and preserves empty-parent membership', () => {
+    const first = album({ id: '', kind: AlbumKind.Collection, assetCount: 2 });
+    const second = album({ id: '', kind: AlbumKind.Collection, assetCount: 7 });
+    const child = album({ id: 'child', parentId: '', assetCount: 3 });
+    const inputs = [child, first, second];
+    const tree = buildAlbumTree(inputs);
+
+    expect(tree.collections).toEqual([
+      { collection: first, albums: [child], albumCount: 1, assetCount: 5 },
+      { collection: second, albums: [child], albumCount: 1, assetCount: 10 },
+    ]);
+    expect(tree.albums).toEqual([child]);
+    expect(tree.collections[0].albums[0]).toBe(child);
+    tree.collections[0].albums.pop();
+    expect(tree.collections[1].albums).toEqual([child]);
+    expect(inputs).toEqual([child, first, second]);
+  });
+
+  it('does not rescan each album parent for every collection', () => {
+    let parentReads = 0;
+    const collections = Array.from({ length: 40 }, (_, index) =>
+      album({ id: `collection-${index}`, kind: AlbumKind.Collection }),
+    );
+    const members = Array.from({ length: 80 }, (_, index) => {
+      const member = album({ id: `album-${index}`, parentId: `collection-${index % 40}` });
+      Object.defineProperty(member, 'parentId', {
+        get: () => {
+          parentReads++;
+          return `collection-${index % 40}`;
+        },
+      });
+      return member;
+    });
+
+    const tree = buildAlbumTree([...members, ...collections]);
+
+    expect(tree.collections[0].albums.map(({ id }) => id)).toEqual(['album-0', 'album-40']);
+    expect(tree.albums).toEqual([]);
+    expect(parentReads).toBe(members.length);
+  });
+
+  it('classifies each input once and skips sparse entries and unknown kinds', () => {
+    let kindReads = 0;
+    const family = album({ id: 'family', kind: AlbumKind.Collection });
+    const child = album({ id: 'child', parentId: 'family' });
+    const space = album({ id: 'space', kind: AlbumKind.Space });
+    const unknown = album({ id: 'unknown' });
+    Reflect.set(unknown, 'kind', 'unsupported');
+    const inputs = [child, family, space, unknown];
+    for (const input of inputs) {
+      const kind = input.kind;
+      Object.defineProperty(input, 'kind', {
+        get: () => {
+          kindReads++;
+          return kind;
+        },
+      });
+    }
+    inputs.length++;
+
+    const tree = buildAlbumTree(inputs);
+
+    expect(tree.collections[0].collection).toBe(family);
+    expect(tree.collections[0].albums).toEqual([child]);
+    expect(tree.albums).toEqual([]);
+    expect(tree.spaces).toEqual([space]);
+    expect(kindReads).toBe(4);
+  });
 });
 
 describe(orderAlbumTree.name, () => {
@@ -126,5 +195,22 @@ describe(albumOrderGroup.name, () => {
     expect(albumOrderGroup(items, null, 'loose')).toEqual(['loose', 'orphan']);
     expect(albumOrderGroup(items, null, 'space')).toEqual(['space']);
     expect(albumOrderGroup(items, null, 'unknown')).toBeUndefined();
+  });
+
+  it.each([
+    { parentId: null, firstId: 'family', expected: ['family'] },
+    { parentId: null, firstId: 'space', expected: ['space'] },
+    { parentId: 'family', firstId: 'winter', expected: ['rockies', 'winter'] },
+  ])('does not build an unused collection index for $parentId / $firstId', ({ parentId, firstId, expected }) => {
+    let reads = 0;
+    const counted = items.map((item) => ({
+      ...item,
+      get kind() {
+        reads++;
+        return item.kind;
+      },
+    }));
+    expect(albumOrderGroup(counted, parentId, firstId)).toEqual(expected);
+    expect(reads).toBe(items.length + 1);
   });
 });

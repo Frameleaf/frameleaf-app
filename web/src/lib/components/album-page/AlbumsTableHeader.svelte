@@ -1,7 +1,7 @@
 <script lang="ts">
   import { albumViewSettings, SortOrder, AlbumSortBy } from '$lib/stores/preferences.store';
   import type { AlbumSortOptionMetadata } from '$lib/utils/album-utils';
-  import { t } from 'svelte-i18n';
+  import { t, type Translations } from 'svelte-i18n';
 
   interface Props {
     option: AlbumSortOptionMetadata;
@@ -10,22 +10,26 @@
   let { option }: Props = $props();
 
   const handleSort = () => {
-    if ($albumViewSettings.sortBy === option.id) {
-      $albumViewSettings.sortOrder = $albumViewSettings.sortOrder === SortOrder.Asc ? SortOrder.Desc : SortOrder.Asc;
-    } else {
-      $albumViewSettings.sortBy = option.id;
-      $albumViewSettings.sortOrder = option.defaultOrder;
-    }
+    albumViewSettings.update((settings) => ({
+      ...settings,
+      sortBy: option.id,
+      sortOrder:
+        settings.sortBy === option.id
+          ? settings.sortOrder === SortOrder.Asc
+            ? SortOrder.Desc
+            : SortOrder.Asc
+          : option.defaultOrder,
+    }));
   };
 
-  let albumSortByNames: Record<AlbumSortBy, string> = $derived({
-    [AlbumSortBy.Title]: $t('sort_title'),
-    [AlbumSortBy.ItemCount]: $t('sort_items'),
-    [AlbumSortBy.DateModified]: $t('sort_modified'),
-    [AlbumSortBy.DateCreated]: $t('sort_created'),
-    [AlbumSortBy.MostRecentPhoto]: $t('sort_recent'),
-    [AlbumSortBy.OldestPhoto]: $t('sort_oldest'),
-  });
+  const albumSortByKeys: Record<AlbumSortBy, Translations> = {
+    [AlbumSortBy.Title]: 'sort_title',
+    [AlbumSortBy.ItemCount]: 'sort_items',
+    [AlbumSortBy.DateModified]: 'sort_modified',
+    [AlbumSortBy.DateCreated]: 'sort_created',
+    [AlbumSortBy.MostRecentPhoto]: 'sort_recent',
+    [AlbumSortBy.OldestPhoto]: 'sort_oldest',
+  };
 </script>
 
 <th class="text-sm font-medium {option.columnStyle}">
@@ -41,6 +45,6 @@
         &#8593;
       {/if}
     {/if}
-    {albumSortByNames[option.id]}
+    {$t(albumSortByKeys[option.id])}
   </button>
 </th>

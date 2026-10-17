@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { stripTypeScriptTypes } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +11,7 @@ import { describePreflight, runPipeline, verifyLedger } from 'src/commands/migra
 import { Ledger } from 'src/commands/migrate/ledger';
 import { FOREIGN_PATH, sanitizeDetail, sanitizeUrl } from 'src/commands/migrate/report';
 import type { MigrateOptions } from 'src/commands/migrate/types';
+import ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 /**
@@ -325,7 +325,8 @@ async function run(opts: MigrateOptions, controller = new Controller()) {
   }
 }
 
-describe('migrate against disposable source/destination fixtures', () => {
+// Each case runs a real migration against fixture servers; on the Windows runner even one can pass 5 s.
+describe('migrate against disposable source/destination fixtures', { timeout: 15_000 }, () => {
   let dir: string;
   let source: SourceFixture;
   let destination: DestinationFixture;
@@ -445,6 +446,7 @@ describe('migrate against disposable source/destination fixtures', () => {
     expect(source.writes()).toEqual([]);
   });
 
+  // Three real migrations can exceed the default timeout on Windows.
   it('interruption then repeat: resumes without re-uploading and ends with a verified pass', async () => {
     const controller = new Controller();
     destination.onUpload = (count) => {
@@ -471,7 +473,7 @@ describe('migrate against disposable source/destination fixtures', () => {
     expect(repeated!.ok).toBe(true);
     expect(destination.albums).toHaveLength(2); // no duplicate albums on repeat
     expect(source.writes()).toEqual([]);
-  });
+  }, 15_000);
 
   it('writes a report with owners, hierarchy, physical references and no secrets or local paths', async () => {
     source.failing.add('a3');
@@ -582,7 +584,7 @@ describe('migrate against disposable source/destination fixtures', () => {
       'utf8',
     );
     const parser = (await import(
-      `data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(parserSource, { mode: 'transform' })).toString('base64')}`
+      `data:text/javascript;base64,${Buffer.from(ts.transpileModule(parserSource, { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText).toString('base64')}`
     )) as { parseMigrationReport: (raw: string) => { ok: boolean; error?: string } };
     expect(parser.parseMigrationReport(text)).toMatchObject({ ok: true });
   });

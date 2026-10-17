@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { downloadManager } from '$lib/managers/download-manager.svelte';
 import { revokeSessionView } from '$lib/utils/session-privacy';
 
-vi.mock('$app/environment', () => ({ browser: true }));
+vi.mock('$app/env', () => ({ browser: true }));
 
 describe('revokeSessionView', () => {
   beforeEach(() => {

@@ -108,15 +108,28 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    position: relative;
+    isolation: isolate;
     min-width: 44px;
-    padding: 0.375rem;
+    padding: 0 var(--fl-space-2);
     color: var(--fl-text);
     background: transparent;
-    border: 1px solid transparent;
-    border-radius: var(--fl-radius-pill);
+    border: 0;
   }
-  .upload-menu :global(.menu-root > button:hover) {
+  /* The prototype's Upload is a bordered `.button` (UploadPanel.jsx, styles.css `.topbar > .button`):
+     the drawn box is its 34px, the button keeps the 44px target floor (tokens.css). */
+  .upload-menu :global(.menu-root > button)::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset: calc(50% - 17px) 0;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
     background: var(--fl-raised);
+    transition: background var(--fl-motion-fast) var(--fl-ease);
+  }
+  .upload-menu :global(.menu-root > button:hover)::before {
+    background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 8%);
   }
   .upload-menu :global(.menu-root > button) {
     gap: 0.375rem;
@@ -136,7 +149,7 @@
     }
     /* With its label the button is a pill of text: the label keeps the room any button's does. */
     .upload-menu :global(.menu-root > button) {
-      padding-inline: 0.6875rem;
+      padding-inline: var(--fl-space-3);
     }
   }
   /* Phones: 44px like the rest of the top bar's row (TopBar.svelte), not the 48px touch floor. */

@@ -1,8 +1,8 @@
 import {
+  AssetDevelopFileKind,
   AssetMediaSize,
   AssetVisibility,
   bulkTagAssets,
-  createStack,
   deleteAssets,
   deleteStacks,
   downloadArchive as requestArchive,
@@ -13,14 +13,12 @@ import {
   untagAssets,
   updateAsset,
   updateAssets,
+  viewAssetDevelopFile,
   type AssetResponseDto,
-  type AssetTypeEnum,
   type DownloadArchiveInfo,
   type DownloadInfoDto,
   type DownloadResponseDto,
-  type ExifResponseDto,
   type StackResponseDto,
-  type UserResponseDto,
 } from '@frameleaf/sdk';
 import { toastManager } from '@frameleaf/ui';
 import { DateTime } from 'luxon';
@@ -162,10 +160,15 @@ export const downloadArchive = (fileName: string, options: Omit<DownloadInfoDto,
     return mine;
   };
 
+  // Each item downloads as it is shown (owner, 2026-10-16): `edited` asks the server for the version
+  // on screen (the owner's current version or edit, else the original). The server fills in the
+  // account's details-file choice (ACCOUNT-P5) because the request leaves it out.
+  const edited = true;
+
   const fetchArchive =
     (archive: DownloadArchiveInfo, archiveName: string): DownloadTask =>
     (context) => {
-      const stream = new StreamedDownload(() => downloadUrlPost(streamUrl(), archive.assetIds, archiveName));
+      const stream = new StreamedDownload(() => downloadUrlPost(streamUrl(), archive.assetIds, archiveName, edited));
       // A part that could never be held is ready at once; it does not wait for the parts before it.
       if (archive.size > bufferLimit()) {
         return Promise.resolve(stream);
@@ -176,7 +179,7 @@ export const downloadArchive = (fileName: string, options: Omit<DownloadInfoDto,
           size: archive.size,
           request: (fetch) =>
             requestArchive(
-              { ...params, downloadArchiveDto: { assetIds: archive.assetIds, archiveName, edited: true } },
+              { ...params, downloadArchiveDto: { assetIds: archive.assetIds, archiveName, edited } },
               { signal: context.signal, fetch },
             ),
           stream,
@@ -245,10 +248,13 @@ export const downloadArchive = (fileName: string, options: Omit<DownloadInfoDto,
 };
 
 /**
- * Downloads one file (an original, its edited version or a Live Photo's motion part) through the
+ * Downloads one file (an original, the version on screen or a Live Photo's motion part) through the
  * download panel, with Cancel and Retry (FL-45 D-3). A file up to `bufferLimit()` (or of unknown
  * size) is fetched with progress; a larger one is ready at once and Save streams it through the
  * browser. Returns the panel row's key.
+ *
+ * `edited` asks for the item as it is shown (the server's choice of the current version); a
+ * `revisionId` names the develop version exactly, for the viewer that is showing it.
  */
 export const downloadAssetFile = ({
   id,
@@ -256,22 +262,25 @@ export const downloadAssetFile = ({
   edited,
   size,
   format,
+  revisionId,
 }: {
   id: string;
   filename: string;
   edited: boolean;
   size?: number;
   format?: 'sdr-jpeg' | 'hdr-jpeg' | 'hdr-heic';
+  /** The owner's develop version on screen: its rendered master is downloaded. */
+  revisionId?: string;
 }) =>
   downloadManager.start(
     { name: filename, assetIds: [id], count: 1, total: format ? 0 : (size ?? 0), group: downloadGroup() },
     withDownloadErrors((context) =>
       holdOrStream(context, {
         // An edited file is not the size recorded for the original, so its headers decide.
-        size: edited || format || !size ? undefined : size,
+        size: edited || format || revisionId || !size ? undefined : size,
         fetcher: async (input, init) => {
           const response = await fetch(input, init);
-          if ((edited || format) && response.ok) {
+          if ((edited || format || revisionId) && response.ok) {
             const extension = (
               {
                 'image/jpeg': 'jpeg',
@@ -289,34 +298,27 @@ export const downloadAssetFile = ({
           return response;
         },
         request: (fetch) =>
-          requestAsset(
-            { ...authManager.params, id, edited, ...(format && { format }) },
-            { signal: context.signal, fetch },
-          ),
+          revisionId
+            ? viewAssetDevelopFile(
+                { id, revisionId, kind: AssetDevelopFileKind.Master },
+                { signal: context.signal, fetch },
+              )
+            : requestAsset(
+                { ...authManager.params, id, edited, ...(format && { format }) },
+                { signal: context.signal, fetch },
+              ),
         stream: new StreamedDownload((name) =>
-          downloadUrl(getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited, format }), name),
+          downloadUrl(
+            revisionId
+              ? // develop-api's `developFileUrl`, without its editor imports
+                `${getBaseUrl()}/assets/${encodeURIComponent(id)}/develop/revisions/${encodeURIComponent(revisionId)}/file?kind=${AssetDevelopFileKind.Master}`
+              : getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited, format }),
+            name,
+          ),
         ),
       }),
     ),
   );
-
-/**
- * Returns the lowercase filename extension without a dot (.) and
- * an empty string when not found.
- */
-export function getFilenameExtension(filename: string): string {
-  const lastIndex = Math.max(0, filename.lastIndexOf('.'));
-  const startIndex = (lastIndex || Infinity) + 1;
-  return filename.slice(startIndex).toLowerCase();
-}
-
-/**
- * Returns the filename of an asset including file extension
- */
-export function getAssetFilename(asset: AssetResponseDto): string {
-  const fileExtension = getFilenameExtension(asset.originalPath);
-  return `${asset.originalFileName}.${fileExtension}`;
-}
 
 function isRotated90CW(orientation: number) {
   return [5, 6, 90].includes(orientation);
@@ -330,15 +332,6 @@ export function isFlipped(orientation?: string | null) {
   const value = Number(orientation);
   return value && (isRotated270CW(value) || isRotated90CW(value));
 }
-
-export const getDimensions = (exifInfo: ExifResponseDto) => {
-  const { exifImageWidth: width, exifImageHeight: height } = exifInfo;
-  if (isFlipped(exifInfo.orientation)) {
-    return { width: height, height: width };
-  }
-
-  return { width, height };
-};
 
 export function getFileSize(asset: AssetResponseDto, maxPrecision = 4): string {
   const size = asset.exifInfo?.fileSizeInByte || 0;
@@ -392,33 +385,37 @@ async function addSupportedMimeTypes(): Promise<void> {
     return;
   }
 
-  if (globalThis.isSecureContext && typeof ImageDecoder !== 'undefined') {
-    const dynamicMimeTypes = [{ type: 'image/jxl' }, { type: 'image/heic', aliases: ['image/heif'] }];
-
-    for (const mime of dynamicMimeTypes) {
-      const isMimeTypeSupported = await ImageDecoder.isTypeSupported(mime.type);
-      if (isMimeTypeSupported) {
-        for (const mimeType of [mime.type, ...(mime.aliases || [])]) {
-          supportedImageMimeTypes.add(mimeType);
+  const probes = [
+    { type: 'image/jxl', aliases: [], sample: 'data:image/jxl;base64,/woIAAAMABKIAgC4AF3lEgA=' },
+    {
+      type: 'image/heic',
+      aliases: ['image/heif'],
+      sample:
+        'data:image/heic;base64,AAAAGGZ0eXBoZWljAAAAAG1pZjFoZWljAAABrW1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAHBpY3QAAAAAAAAAAAAAAAAAAAAADnBpdG0AAAAAAAIAAAAQaWRhdAAAAAAAAQABAAAAOGlsb2MBAAAAREAAAgABAAAAAAAAAc0AAQAAAAAAAAAsAAIAAQAAAAAAAAABAAAAAAAAAAgAAAA4aWluZgAAAAAAAgAAABVpbmZlAgAAAQABAABodmMxAAAAABVpbmZlAgAAAAACAABncmlkAAAAANhpcHJwAAAAtmlwY28AAAB2aHZjQwEDcAAAAAAAAAAAAB7wAPz9+PgAAA8DIAABABhAAQwB//8DcAAAAwCQAAADAAADAB66AkAhAAEAKkIBAQNwAAADAJAAAAMAAAMAHqAggQWW6q6a5uBAQMCAAAADAIAAAAMAhCIAAQAGRAHBc8GJAAAAFGlzcGUAAAAAAAAAAQAAAAEAAAAUaXNwZQAAAAAAAABAAAAAQAAAABBwaXhpAAAAAAMICAgAAAAaaXBtYQAAAAAAAAACAAECgQMAAgIChAAAABppcmVmAAAAAAAAAA5kaW1nAAIAAQABAAAANG1kYXQAAAAoKAGvCchMZYA50NoPIfzz81Qfsm577GJt3lf8kLAr+NbNIoeRR7JeYA==',
+    },
+  ];
+  await Promise.all(
+    probes.map(async ({ type, aliases, sample }) => {
+      const enable = () => {
+        for (const mime of [type, ...aliases]) {
+          supportedImageMimeTypes.add(mime);
+        }
+      };
+      if (globalThis.isSecureContext && typeof ImageDecoder !== 'undefined') {
+        try {
+          if (await ImageDecoder.isTypeSupported(type)) {
+            enable();
+          }
+          return;
+        } catch {
+          // A failed capability query can still use the browser's image decoder.
         }
       }
-    }
-
-    return;
-  }
-
-  const jxlImg = new Image();
-  jxlImg.addEventListener('load', () => {
-    supportedImageMimeTypes.add('image/jxl');
-  });
-  jxlImg.src = 'data:image/jxl;base64,/woIAAAMABKIAgC4AF3lEgA='; // Small valid JPEG XL image
-
-  const heicImg = new Image();
-  heicImg.addEventListener('load', () => {
-    supportedImageMimeTypes.add('image/heic');
-  });
-  heicImg.src =
-    'data:image/heic;base64,AAAAGGZ0eXBoZWljAAAAAG1pZjFoZWljAAABrW1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAHBpY3QAAAAAAAAAAAAAAAAAAAAADnBpdG0AAAAAAAIAAAAQaWRhdAAAAAAAAQABAAAAOGlsb2MBAAAAREAAAgABAAAAAAAAAc0AAQAAAAAAAAAsAAIAAQAAAAAAAAABAAAAAAAAAAgAAAA4aWluZgAAAAAAAgAAABVpbmZlAgAAAQABAABodmMxAAAAABVpbmZlAgAAAAACAABncmlkAAAAANhpcHJwAAAAtmlwY28AAAB2aHZjQwEDcAAAAAAAAAAAAB7wAPz9+PgAAA8DIAABABhAAQwB//8DcAAAAwCQAAADAAADAB66AkAhAAEAKkIBAQNwAAADAJAAAAMAAAMAHqAggQWW6q6a5uBAQMCAAAADAIAAAAMAhCIAAQAGRAHBc8GJAAAAFGlzcGUAAAAAAAAAAQAAAAEAAAAUaXNwZQAAAAAAAABAAAAAQAAAABBwaXhpAAAAAAMICAgAAAAaaXBtYQAAAAAAAAACAAECgQMAAgIChAAAABppcmVmAAAAAAAAAA5kaW1nAAIAAQABAAAANG1kYXQAAAAoKAGvCchMZYA50NoPIfzz81Qfsm577GJt3lf8kLAr+NbNIoeRR7JeYA=='; // Small valid HEIC/HEIF image
+      const image = new Image();
+      image.addEventListener('load', enable, { once: true });
+      image.src = sample;
+    }),
+  );
 }
 // eslint-disable-next-line unicorn/no-top-level-side-effects
 void addSupportedMimeTypes();
@@ -434,63 +431,9 @@ export function isWebCompatibleImage(asset: AssetResponseDto): boolean {
   return supportedImageMimeTypes.has(asset.originalMimeType);
 }
 
-export const getAssetType = (type: AssetTypeEnum) => {
-  switch (type) {
-    case 'IMAGE': {
-      return 'Photo';
-    }
-    case 'VIDEO': {
-      return 'Video';
-    }
-    default: {
-      return 'Asset';
-    }
-  }
-};
-
-export const getOwnedAssetsWithWarning = (assets: TimelineAsset[], user: UserResponseDto | null): string[] => {
-  const ids = [...assets].filter((a) => user && a.ownerId === user.id).map((a) => a.id);
-
-  const numberOfIssues = [...assets].filter((a) => user && a.ownerId !== user.id).length;
-  if (numberOfIssues > 0) {
-    const $t = get(t);
-    toastManager.warning($t('errors.cant_change_metadata_assets_count', { values: { count: numberOfIssues } }));
-  }
-  return ids;
-};
-
 export type StackResponse = {
   stack?: StackResponseDto;
   toDeleteIds: string[];
-};
-
-export const stackAssets = async (assets: { id: string }[], showNotification = true): Promise<StackResponse> => {
-  if (assets.length < 2) {
-    return { stack: undefined, toDeleteIds: [] };
-  }
-
-  const $t = get(t);
-
-  try {
-    const stack = await createStack({ stackCreateDto: { assetIds: assets.map(({ id }) => id) } });
-    if (showNotification) {
-      toastManager.primary({
-        description: $t('stacked_assets_count', { values: { count: stack.assets.length } }),
-        button: {
-          label: $t('view_stack'),
-          onclick: () => navigate({ targetRoute: 'current', assetId: stack.primaryAssetId }),
-        },
-      });
-    }
-
-    return {
-      stack,
-      toDeleteIds: assets.slice(1).map((asset) => asset.id),
-    };
-  } catch (error) {
-    handleError(error, $t('errors.failed_to_stack_assets'));
-    return { stack: undefined, toDeleteIds: [] };
-  }
 };
 
 export const deleteStack = async (stackIds: string[]) => {
@@ -522,18 +465,27 @@ export const deleteStack = async (stackIds: string[]) => {
 
 export const keepThisDeleteOthers = async (keepAsset: AssetResponseDto, stack: StackResponseDto) => {
   const $t = get(t);
+  const isCurrentSession = authManager.captureSession();
 
   try {
     const assetsToDeleteIds = stack.assets.filter((asset) => asset.id !== keepAsset.id).map((asset) => asset.id);
     await deleteAssets({ assetBulkDeleteDto: { ids: assetsToDeleteIds } });
+    if (!isCurrentSession()) {
+      return;
+    }
     await deleteStacks({ bulkIdsDto: { ids: [stack.id] } });
 
+    if (!isCurrentSession()) {
+      return;
+    }
     toastManager.primary($t('kept_this_deleted_others', { values: { count: assetsToDeleteIds.length } }));
 
     keepAsset.stack = null;
     return keepAsset;
   } catch (error) {
-    handleError(error, $t('errors.failed_to_keep_this_delete_others'));
+    if (isCurrentSession()) {
+      handleError(error, $t('errors.failed_to_keep_this_delete_others'));
+    }
   }
 };
 
@@ -627,12 +579,12 @@ const imgToBlob = async (imageElement: HTMLImageElement) => {
   if (context) {
     context.drawImage(imageElement, 0, 0);
 
-    return await new Promise<Blob>((resolve) => {
+    return await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob((blob) => {
         if (blob) {
           resolve(blob);
         } else {
-          throw new Error('Canvas conversion to Blob failed');
+          reject(new Error('Canvas conversion to Blob failed'));
         }
       });
     });

@@ -107,7 +107,7 @@ describe('OcrManager', () => {
 
       await Promise.all([promise1, promise2]);
 
-      // CancellableTask waits for first request, so second request is ignored
+      // Concurrent reads share the first request until the store is cleared.
       // The data should be from the first request that completed
       expect(ocrManager.data).toEqual(firstData);
     });
@@ -116,7 +116,7 @@ describe('OcrManager', () => {
       const error = new Error('Network error');
       vi.mocked(getAssetOcr).mockRejectedValue(error);
 
-      // The error should be handled by CancellableTask
+      // OCR read errors are handled by the store.
       await expect(ocrManager.getAssetOcr('asset-error')).resolves.not.toThrow();
     });
   });

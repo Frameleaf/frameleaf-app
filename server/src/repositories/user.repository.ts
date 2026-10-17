@@ -586,6 +586,27 @@ export class UserRepository {
           .executeTakeFirstOrThrow(),
       );
   }
+  insertPartnerLockedNotice(userId: string): Promise<boolean> {
+    return this.insertMetadataIfAbsent(userId, UserMetadataKey.PartnerLockedNotice, {
+      flaggedAt: new Date().toISOString(),
+      dismissedAt: null,
+    });
+  }
+
+  async insertMetadataIfAbsent<T extends keyof UserMetadata>(
+    userId: string,
+    key: T,
+    value: UserMetadata[T],
+  ): Promise<boolean> {
+    const inserted = await this.db
+      .insertInto('user_metadata')
+      .values({ userId, key, value })
+      .onConflict((oc) => oc.columns(['userId', 'key']).doNothing())
+      .returning('key')
+      .executeTakeFirst();
+    return inserted !== undefined;
+  }
+
   async upsertMetadata<T extends keyof UserMetadata>(
     id: string,
     {

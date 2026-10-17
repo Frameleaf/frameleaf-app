@@ -15,3 +15,5 @@ from
   "version_history"
 order by
   "createdAt" desc
+limit
+  $1

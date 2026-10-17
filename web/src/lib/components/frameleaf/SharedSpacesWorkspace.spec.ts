@@ -153,7 +153,7 @@ describe('SharedSpacesWorkspace', () => {
       const menu = await openMenu('Family Space');
       await fireEvent.click(menu.getByRole('menuitem', { name: 'Share' }));
 
-      expect(await screen.findByRole('dialog', { name: 'Share this shared space' })).toBeInTheDocument();
+      expect(await screen.findByRole('dialog', { name: 'Share shared space' })).toBeInTheDocument();
     });
 
     it('deletes an owned space after the Frameleaf confirmation', async () => {

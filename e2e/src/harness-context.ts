@@ -2,7 +2,7 @@ import { withDeadline, type WaitContext } from './harness-wait';
 
 // Resolve the runner during module collection, never after a test has timed out and
 // another test has become current. Playwright does not load Vitest's worker runtime.
-const runner = process.env.VITEST ? await import('vitest/suite') : undefined;
+const runner = process.env.VITEST ? await import('vitest') : undefined;
 const scopes = new WeakMap<AbortSignal, { controller: AbortController; pending: Set<Promise<unknown>> }>();
 const callerWaits = new WeakMap<AbortSignal, Set<Promise<unknown>>>();
 
@@ -21,7 +21,7 @@ export const ownedWait = async <T>(
   operation: (context: WaitContext) => Promise<T>,
   signal?: AbortSignal,
 ): Promise<T> => {
-  const task = runner?.getCurrentTest();
+  const task = runner?.TestRunner.getCurrentTest();
   const context = task?.context;
   let scope = context && scopes.get(context.signal);
   if (context && !scope) {

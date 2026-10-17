@@ -14,11 +14,26 @@ const config: ImportConfig = {
 };
 const fixture = frozenSource(config.version);
 const makeSource = (
-  overrides: { writers?: boolean; writable?: boolean; extraMigration?: boolean; extraColumn?: boolean } = {},
+  overrides: {
+    writers?: boolean;
+    writable?: boolean;
+    extraMigration?: boolean;
+    missingMigration?: boolean;
+    extraColumn?: boolean;
+    missingColumn?: boolean;
+    retypedColumn?: boolean;
+  } = {},
 ) => {
-  const columns = Object.entries(fixture.structure.tables).flatMap(([table, shape]) =>
-    Object.entries(shape).map(([column, properties]) => ({ table_name: table, column_name: column, ...properties })),
-  );
+  const columns = Object.entries(fixture.structure.tables)
+    .flatMap(([table, shape]) =>
+      Object.entries(shape).map(([column, properties]) => ({ table_name: table, column_name: column, ...properties })),
+    )
+    .filter((column) => !(overrides.missingColumn && column.table_name === 'asset' && column.column_name === 'ownerId'))
+    .map((column) =>
+      overrides.retypedColumn && column.table_name === 'asset' && column.column_name === 'ownerId'
+        ? { ...column, type: 'text' }
+        : column,
+    );
   if (overrides.extraColumn) {
     columns.push({
       table_name: 'user',
@@ -45,9 +60,10 @@ const makeSource = (
         return overrides.writers ? [{ present: 1 }] : [];
       }
       if (statement.includes('SELECT name')) {
-        return [...fixture.migrations, ...(overrides.extraMigration ? ['future-migration'] : [])].map((name) => ({
-          name,
-        }));
+        return [
+          ...fixture.migrations.slice(overrides.missingMigration ? 1 : 0),
+          ...(overrides.extraMigration ? ['future-migration'] : []),
+        ].map((name) => ({ name }));
       }
       if (statement.includes('format_type')) {
         return columns;
@@ -108,10 +124,28 @@ describe('source preflight', () => {
   it.each([
     [{ writers: true }, 'SOURCE_WRITERS'],
     [{ writable: true }, 'SOURCE_WRITERS'],
-    [{ extraMigration: true }, 'UNKNOWN_SOURCE_MIGRATIONS'],
+    [{ missingMigration: true }, 'UNKNOWN_SOURCE_MIGRATIONS'],
+    [{ missingMigration: true, extraMigration: true }, 'UNKNOWN_SOURCE_MIGRATIONS'],
     [{ extraColumn: true }, 'UNKNOWN_SOURCE_SCHEMA'],
+    [{ extraMigration: true, missingColumn: true }, 'UNKNOWN_SOURCE_SCHEMA'],
+    [{ extraMigration: true, retypedColumn: true }, 'UNKNOWN_SOURCE_SCHEMA'],
   ] as const)('fails closed for %j', async (overrides, code) => {
     await expect(makeSource(overrides).source.preflight()).rejects.toThrow(code);
+  });
+
+  it('admits a newer release whose ledger and read columns still contain the newest frozen shape', async () => {
+    await expect(makeSource({ extraMigration: true, extraColumn: true }).source.preflight()).resolves.toMatch(
+      /^[a-f\d]{64}$/u,
+    );
+    const { source } = makeSource({ extraMigration: true });
+    await expect(new ImmichSource(source.db, { ...config, version: '3.3.3' }).preflight()).resolves.toBeTruthy();
+  });
+
+  it('refuses a version that understates the frozen shape its ledger contains', async () => {
+    const { source } = makeSource({ extraMigration: true });
+    await expect(new ImmichSource(source.db, { ...config, version: '3.0.0' }).preflight()).rejects.toThrow(
+      'UNKNOWN_SOURCE_MIGRATIONS',
+    );
   });
 
   it('refuses writersStopped=false before database access', async () => {

@@ -1,25 +1,36 @@
 import { cancelImageUrl } from '$lib/utils/sw-messaging';
 
 export function loadImage(src: string, onLoad: () => void, onError: () => void, onStart?: () => void) {
-  let destroyed = false;
-
-  const handleLoad = () => !destroyed && onLoad();
-  const handleError = () => !destroyed && onError();
-
-  const img = document.createElement('img');
-  img.addEventListener('load', handleLoad);
-  img.addEventListener('error', handleError);
-
   onStart?.();
-  img.src = src;
+  const image = document.createElement('img');
+  let active = true;
 
-  return () => {
-    destroyed = true;
-    img.removeEventListener('load', handleLoad);
-    img.removeEventListener('error', handleError);
-    cancelImageUrl(src);
-    img.remove();
+  const destroy = () => {
+    if (!active) {
+      return;
+    }
+    active = false;
+    image.removeEventListener('load', handleLoad);
+    image.removeEventListener('error', handleError);
+    try {
+      cancelImageUrl(src);
+    } finally {
+      image.remove();
+    }
   };
+
+  const complete = (callback: () => void) => {
+    if (active) {
+      destroy();
+      callback();
+    }
+  };
+  const handleLoad = () => complete(onLoad);
+  const handleError = () => complete(onError);
+  image.addEventListener('load', handleLoad);
+  image.addEventListener('error', handleError);
+  image.src = src;
+  return destroy;
 }
 
 export type LoadImageFunction = typeof loadImage;

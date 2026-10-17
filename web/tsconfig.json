@@ -13,8 +13,9 @@
     "sourceMap": true,
     "strict": true,
     "target": "es2022",
-    "types": ["vitest/globals"]
+    "types": ["vitest/globals", "$app/types"]
   },
-  "exclude": ["vite.config.ts"],
-  "extends": "./.svelte-kit/tsconfig.json"
+  "exclude": ["vite.config.ts", "src/service-worker"],
+  "extends": "$app/tsconfig",
+  "include": ["src", "tests"]
 }

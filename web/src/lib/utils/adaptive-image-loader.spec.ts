@@ -1,3 +1,4 @@
+import { loadImage, type LoadImageFunction } from '$lib/actions/image-loader.svelte';
 import { AdaptiveImageLoader, type QualityList } from '$lib/utils/adaptive-image-loader.svelte';
 import { cancelImageUrl } from '$lib/utils/sw-messaging';
 
@@ -29,6 +30,23 @@ function createQualityList(overrides?: {
       onAfterError: overrides?.onAfterError?.original,
     },
   ];
+}
+
+function controlledImageLoader() {
+  const requests: {
+    url: string;
+    onLoad: () => void;
+    onError: () => void;
+    onStart?: () => void;
+    destroy: ReturnType<typeof vi.fn>;
+  }[] = [];
+  const imageLoader: LoadImageFunction = (url, onLoad, onError, onStart) => {
+    const destroy = vi.fn();
+    requests.push({ url, onLoad, onError, onStart, destroy });
+    onStart?.();
+    return destroy;
+  };
+  return { imageLoader, requests };
 }
 
 describe('AdaptiveImageLoader', () => {
@@ -299,6 +317,145 @@ describe('AdaptiveImageLoader', () => {
       loader.onError('thumbnail');
 
       expect(loader.status.urls.preview).toBe('/preview.jpg');
+    });
+  });
+  describe('request lifecycle', () => {
+    afterEach(() => vi.restoreAllMocks());
+    it('starts the thumbnail only once, including after it completes', () => {
+      const { imageLoader, requests } = controlledImageLoader();
+      const loader = new AdaptiveImageLoader(createQualityList(), undefined, imageLoader);
+      loader.start();
+      loader.start();
+      requests[0].onLoad();
+      loader.start();
+      expect(requests.map(({ url }) => url)).toEqual(['/thumbnail.jpg']);
+    });
+
+    it('does not start requests after destroy', () => {
+      const { imageLoader, requests } = controlledImageLoader();
+      const loader = new AdaptiveImageLoader(createQualityList(), undefined, imageLoader);
+      loader.destroy();
+      loader.start();
+      expect(requests).toHaveLength(0);
+      expect(loader.status.started).toBe(false);
+    });
+
+    it('cleans up each pending request only once', () => {
+      const { imageLoader, requests } = controlledImageLoader();
+      const loader = new AdaptiveImageLoader(createQualityList(), undefined, imageLoader);
+      loader.start();
+      loader.trigger('preview');
+      loader.destroy();
+      loader.destroy();
+      expect(requests[0].destroy).toHaveBeenCalledOnce();
+      expect(requests[1].destroy).toHaveBeenCalledOnce();
+    });
+
+    it('sends service worker cancellation only once for each configured URL', () => {
+      const loader = new AdaptiveImageLoader(createQualityList());
+      loader.destroy();
+      loader.destroy();
+      expect(vi.mocked(cancelImageUrl).mock.calls).toEqual([['/thumbnail.jpg'], ['/preview.jpg'], ['/original.jpg']]);
+    });
+
+    it('releases settled requests before retrying and ignores their late callbacks', () => {
+      const { imageLoader, requests } = controlledImageLoader();
+      const onError = vi.fn();
+      const onImageReady = vi.fn();
+      const loader = new AdaptiveImageLoader(createQualityList(), { onError, onImageReady }, imageLoader);
+      loader.trigger('preview');
+      requests[0].onError();
+      expect(requests[0].destroy).toHaveBeenCalledOnce();
+      expect(loader.trigger('preview')).toBe(false);
+      expect(loader.status.quality.preview).toBe('unloaded');
+      expect(loader.status.hasError).toBe(false);
+      requests[0].onStart?.();
+      requests[0].onLoad();
+      requests[0].onError();
+      expect(loader.status.urls.preview).toBe('/preview.jpg');
+      expect(loader.status.quality.preview).toBe('unloaded');
+      expect(loader.status.hasError).toBe(false);
+      expect(onError).toHaveBeenCalledOnce();
+      expect(onImageReady).not.toHaveBeenCalled();
+      requests[1].onLoad();
+      expect(loader.status.quality.preview).toBe('success');
+      expect(onImageReady).toHaveBeenCalledOnce();
+      loader.destroy();
+      expect(requests[0].destroy).toHaveBeenCalledOnce();
+      expect(requests[1].destroy).toHaveBeenCalledOnce();
+    });
+
+    it('keeps progressive fallback and quality ordering while releasing completed requests', () => {
+      const { imageLoader, requests } = controlledImageLoader();
+      const onUrlChange = vi.fn();
+      const qualityList = createQualityList({
+        onAfterError: {
+          thumbnail: (loader) => loader.trigger('preview'),
+          preview: (loader) => loader.trigger('original'),
+        },
+      });
+      const loader = new AdaptiveImageLoader(qualityList, { onUrlChange }, imageLoader);
+      loader.start();
+      requests[0].onError();
+      requests[1].onError();
+      requests[2].onLoad();
+      requests[0].onLoad();
+      requests[1].onError();
+      expect(requests.map(({ url }) => url)).toEqual(['/thumbnail.jpg', '/preview.jpg', '/original.jpg']);
+      expect(onUrlChange).toHaveBeenCalledExactlyOnceWith('/original.jpg');
+      expect(loader.status.quality).toEqual({ thumbnail: 'error', preview: 'error', original: 'success' });
+      expect(loader.status.hasError).toBe(false);
+      expect(requests.every(({ destroy }) => destroy.mock.calls.length === 1)).toBe(true);
+      loader.destroy();
+      expect(requests.every(({ destroy }) => destroy.mock.calls.length === 1)).toBe(true);
+    });
+
+    it('cleans up requests that synchronously finish or destroy the loader', () => {
+      const destroy = vi.fn();
+      const imageLoader: LoadImageFunction = (_url, onLoad, _onError, onStart) => {
+        onStart?.();
+        onLoad();
+        return destroy;
+      };
+      const loader = new AdaptiveImageLoader(
+        createQualityList(),
+        { onImageReady: () => loader.destroy() },
+        imageLoader,
+      );
+      loader.start();
+      expect(loader.status.quality.thumbnail).toBe('success');
+      expect(destroy).toHaveBeenCalledOnce();
+      loader.destroy();
+      expect(destroy).toHaveBeenCalledOnce();
+    });
+
+    it('stops lifecycle callbacks if an earlier callback destroys the loader', () => {
+      const onImageReady = vi.fn();
+      const onAfterLoad = vi.fn();
+      const qualityList = createQualityList({ onAfterLoad: { thumbnail: onAfterLoad } });
+      const loader = new AdaptiveImageLoader(qualityList, {
+        onUrlChange: () => loader.destroy(),
+        onImageReady,
+      });
+      loader.onLoad('thumbnail');
+      expect(onImageReady).not.toHaveBeenCalled();
+      expect(onAfterLoad).not.toHaveBeenCalled();
+    });
+
+    it('releases the real preload image listeners after completion', () => {
+      const image = document.createElement('img');
+      vi.spyOn(document, 'createElement').mockReturnValueOnce(image);
+      const onImageReady = vi.fn();
+      const loader = new AdaptiveImageLoader(createQualityList(), { onImageReady }, loadImage);
+      loader.start();
+      image.dispatchEvent(new Event('load'));
+      expect(loader.status.quality.thumbnail).toBe('success');
+      expect(onImageReady).toHaveBeenCalledOnce();
+      expect(cancelImageUrl).toHaveBeenCalledExactlyOnceWith('/thumbnail.jpg');
+      image.dispatchEvent(new Event('error'));
+      expect(loader.status.hasError).toBe(false);
+      loader.destroy();
+      expect(cancelImageUrl).toHaveBeenCalledOnce();
     });
   });
 });

@@ -20,7 +20,7 @@ import {
   CacheControl,
   EnrichmentItemState,
   EnrichmentStaleReason,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   MlWorkload,
@@ -60,7 +60,7 @@ import {
   enrichmentConfigHash,
   identityHash,
 } from 'src/utils/enrichment-plan.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -473,7 +473,7 @@ export class VideoMomentIndexService {
   }
 
   /** One reusable frame's image, under the same access as its video. */
-  async getFrameFile(auth: AuthDto, frameId: string): Promise<ImmichFileResponse> {
+  async getFrameFile(auth: AuthDto, frameId: string): Promise<FileDownloadResponse> {
     const frame = await this.moments.getFrame(frameId);
     // A frame that does not exist and one of a video the caller may not read answer the same, so
     // frame ids never confirm that somebody else's video exists.
@@ -481,7 +481,7 @@ export class VideoMomentIndexService {
     if (!frame) {
       throw new BadRequestException(`Not found or no ${Permission.AssetRead} access`);
     }
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path: frame.path,
       contentType: mimeTypes.lookup(frame.path),
       // Frame files are named per cut, so a cached copy can never be of an old frame.
@@ -606,7 +606,7 @@ export class VideoMomentIndexService {
    * and generated moments are dropped, and their files removed. Manual moments, typed transcripts
    * and the cover choice stay. The next plan cuts the frames again.
    */
-  @OnEvent({ name: 'AssetMetadataExtracted', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AssetMetadataExtracted', workers: [FrameleafWorker.Microservices] })
   async onAssetMetadataExtracted({ assetId }: ArgOf<'AssetMetadataExtracted'>) {
     const index = await this.moments.getIndex(assetId);
     if (!index) {

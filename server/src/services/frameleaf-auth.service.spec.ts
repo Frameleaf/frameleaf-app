@@ -566,7 +566,8 @@ describe(FrameleafAuthService.name, () => {
     });
 
     describe('storage quota for invited accounts (FL-235)', () => {
-      const GiB = 1024 ** 3;
+      // D5: a quota in GB is decimal, 5 GB = 5,000,000,000 bytes
+      const GB = 1000 ** 3;
       const setQuota = (invitedStorageQuota: number | null) => {
         metadata.set(SystemMetadataKey.SystemConfig, { frameleafCloud: { signIn: { invitedStorageQuota } } });
         clearConfigCache();
@@ -591,7 +592,7 @@ describe(FrameleafAuthService.name, () => {
         setQuota(5);
         newAccount();
         await sut.exchangeToken({ token: await mint() }, loginDetails);
-        expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: 5 * GiB }));
+        expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: 5 * GB }));
       });
 
       it('never caps the server owner', async () => {
@@ -612,7 +613,7 @@ describe(FrameleafAuthService.name, () => {
         metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), accountId: 'someone-else' });
         const token = await mint({ claims: { frameleaf_role: 'admin', frameleaf_access: 'owner' } });
         await sut.exchangeToken({ token }, loginDetails);
-        expect(mocks.user.create).toHaveBeenLastCalledWith(expect.objectContaining({ quotaSizeInBytes: 5 * GiB }));
+        expect(mocks.user.create).toHaveBeenLastCalledWith(expect.objectContaining({ quotaSizeInBytes: 5 * GB }));
       });
 
       it('leaves existing accounts unchanged', async () => {
@@ -955,11 +956,19 @@ describe(FrameleafAuthService.name, () => {
         sid: 'fl-sid',
         sub: 'fl-sub',
         authTime: null,
+        createdAt: new Date(),
         handoffExpiresAt: new Date(Date.now() + 30_000),
       } as never);
       mocks.session.get.mockResolvedValue({ id: 'session-1' } as never);
       mocks.user.get.mockResolvedValue(user as never);
       mocks.crypto.randomBytesAsText.mockReturnValue('new-token');
+      mocks.frameleafAccount.getSession.mockResolvedValue({
+        sessionId: 'session-1',
+        userId: user.id,
+        sub: 'fl-sub',
+        sid: 'fl-sid',
+      } as never);
+      mocks.frameleafAccount.isSignInRevoked.mockResolvedValue(false);
 
       await expect(sut.redeemHandoff({ code }, loginDetails)).resolves.toMatchObject({ userId: user.id });
       expect(mocks.frameleafAccount.tagSession).toHaveBeenCalledWith(

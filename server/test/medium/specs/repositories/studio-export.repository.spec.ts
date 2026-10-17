@@ -1,5 +1,6 @@
 import { Kysely, Transaction, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
+import type { StudioExportLibrarySave } from 'src/repositories/studio-export.repository.js';
 import {
   AssetLockReason,
   AssetType,
@@ -704,6 +705,82 @@ describe(StudioExportRepository.name, () => {
   describe('a result kept with its project, then saved to the library (FL-194)', () => {
     const kept = (staged: { version: StudioExportVersion }) =>
       `/data/exports/${staged.version.ownerId}/studio-exports/versions/${staged.version.id}.mp4`;
+
+    const transfer = async () => {
+      const context = setup();
+      const { user } = await context.ctx.newUser();
+      const sources = [await ownSource(context.ctx, user.id)];
+      const staged = await stagedExport(context, user.id, sources);
+      await context.sut.publish(
+        publication(staged, sources, {
+          expectedScope: StudioExportScope.Project,
+          retainInProject: true,
+          path: kept(staged),
+        }),
+      );
+      const move = vi.fn().mockResolvedValue(undefined);
+      const rollback = vi.fn().mockResolvedValue(undefined);
+      const input: StudioExportLibrarySave = {
+        ...publication(staged, sources),
+        files: {
+          sourcePath: kept(staged),
+          paths: [kept(staged), publication(staged, sources).path],
+          move,
+          rollback,
+        },
+      };
+      return { context, staged, input, move, rollback };
+    };
+
+    it('rolls back library adoption and queued metadata when scheduling rejects after transfer', async () => {
+      const { context, staged, input, move, rollback } = await transfer();
+      let created: string | undefined;
+      await expect(
+        context.sut.saveToLibrary(input, async (tx, assetId) => {
+          expect(tx.isTransaction).toBe(true);
+          created = assetId;
+          await new SqlQueueStore(defaultDatabase).enqueue(
+            [
+              {
+                queue: 'studio-library-save-test',
+                name: JobName.AssetExtractMetadata,
+                data: { id: assetId },
+                safeToRetry: true,
+                sensitive: false,
+                deadlineMs: 60_000,
+              },
+            ],
+            tx,
+          );
+          throw new Error('metadata admission rejected');
+        }),
+      ).rejects.toThrow('metadata admission rejected');
+      expect(move).toHaveBeenCalledOnce();
+      expect(rollback).toHaveBeenCalledOnce();
+      expect(await context.sut.getById(staged.version.id)).toMatchObject({
+        scope: StudioExportScope.Project,
+        outputPath: input.files!.sourcePath,
+        resultAssetId: null,
+      });
+      expect(created).toBeDefined();
+      expect(await defaultDatabase.selectFrom('asset').select('id').where('id', '=', created!).execute()).toEqual([]);
+      expect((await sql`SELECT id FROM job WHERE data->>'id'=${created!}`.execute(defaultDatabase)).rows).toEqual([]);
+    });
+
+    it('admits one competing library transfer and refuses recovery after acceptance', async () => {
+      const { context, input, move, rollback } = await transfer();
+      const schedule = vi.fn().mockResolvedValue(undefined);
+      const results = await Promise.all([
+        context.sut.saveToLibrary(input, schedule),
+        context.sut.saveToLibrary(input, schedule),
+      ]);
+      expect(move).toHaveBeenCalledOnce();
+      expect(schedule).toHaveBeenCalledOnce();
+      expect(results[0].version.resultAssetId).toBe(results[1].version.resultAssetId);
+      expect(results.filter((result) => result.createdAssetId !== null)).toHaveLength(1);
+      expect(await context.sut.restoreLibrarySaveFiles(input)).toBe(false);
+      expect(rollback).not.toHaveBeenCalled();
+    });
 
     it('keeps an all-own result out of the library until the owner saves it, with its privacy', async () => {
       const context = setup();

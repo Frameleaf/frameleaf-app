@@ -89,6 +89,7 @@ import { operationExecution } from 'src/utils/execution-signal.js';
 import { appleFingerprintHash, identityRoleOf } from 'src/utils/icloud-identity.js';
 import * as privateCopyFiles from 'src/utils/icloud-private-copy.js';
 import { decryptICloudSession, encryptICloudSession } from 'src/utils/icloud-sync.js';
+import { scheduledAuditClaimHolder } from 'src/utils/icloud-weekly.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
@@ -2271,7 +2272,7 @@ describe('iCloud exact identity adoption', () => {
         const [claim] = await identities.claim(
           f.user.id,
           [f.resource.sourceAssetId.toUpperCase()],
-          `icloud-sync:audit:${operation.id}`,
+          scheduledAuditClaimHolder(f.user.id, authority),
           600,
         );
         expect(claim).toBeDefined();
@@ -2289,6 +2290,54 @@ describe('iCloud exact identity adoption', () => {
         );
         return { f, auth, input, authority, resource, cohort, claim };
       }
+
+      it.each(['legacy', 'another-owner', 'another-incarnation'] as const)(
+        'rejects a %s scheduled item holder at claim binding, admission and final publication',
+        async (kind) => {
+          const { f, authority, resource, claim } = await scheduledAuthorityFixture();
+          const guarded = await db
+            .transaction()
+            .execute((tx) => guardScheduledAudit(tx, authority, f.user.id, { resource }));
+          expect(guarded).toBeDefined();
+          const holder =
+            kind === 'legacy'
+              ? `icloud-sync:audit:${authority.operationId}`
+              : scheduledAuditClaimHolder(kind === 'another-owner' ? randomUUID() : f.user.id, {
+                  ...authority,
+                  ...(kind === 'another-incarnation' && { operationClaimToken: randomUUID() }),
+                });
+          await sql`UPDATE public.icloud_claim SET holder=${holder} WHERE id=${claim.id}::uuid`.execute(db);
+          const worker = new ICloudScheduledWorkerRepository(
+            db,
+            new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()),
+          );
+          expect(await worker.bindClaim(authority, f.user.id, claim.id)).toBe(false);
+          await db.transaction().execute(async (tx) => {
+            expect(await guardScheduledAudit(tx, authority, f.user.id, { resource })).toBeUndefined();
+            const { rows } = await sql<{ allowed: boolean }>`SELECT
+              ${scheduledAuditFinalFence(authority, guarded!, resource)} AS allowed`.execute(tx);
+            expect(rows[0].allowed).toBe(false);
+          });
+        },
+      );
+
+      it('keeps a live old-incarnation item claim distinct from its replacement and late release', async () => {
+        const { f, authority, claim } = await scheduledAuthorityFixture();
+        const replacement = { ...authority, operationClaimToken: randomUUID() };
+        const oldHolder = scheduledAuditClaimHolder(f.user.id, authority);
+        const newHolder = scheduledAuditClaimHolder(f.user.id, replacement);
+        const [held] = await identities.claim(f.user.id, [f.resource.sourceAssetId], newHolder, 600);
+        expect(held.id).toBe(claim.id);
+        expect(held.holder).toBe(oldHolder);
+        expect(await identities.release(f.user.id, [claim.id], newHolder)).toEqual([]);
+        await sql`UPDATE public.icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second'
+          WHERE id=${claim.id}::uuid`.execute(db);
+        const [next] = await identities.claim(f.user.id, [f.resource.sourceAssetId], newHolder, 600);
+        expect(next.id).not.toBe(claim.id);
+        expect(next.holder).toBe(newHolder);
+        expect(await identities.release(f.user.id, [claim.id], oldHolder)).toEqual([]);
+        expect((await identities.claim(f.user.id, [f.resource.sourceAssetId], newHolder, 600))[0].id).toBe(next.id);
+      });
 
       it.each([false, true])(
         'admits actual durable authority after session deletion; protected=%s; publication stays unavailable',
@@ -2611,6 +2660,9 @@ describe('iCloud exact identity adoption', () => {
           await probe.close();
           let completed = false;
           const transport = {
+            withSessionCrypto<T>(action: () => Promise<T>) {
+              return action();
+            },
             decodeSession: vi.fn((scope: string, encrypted: string) => {
               try {
                 return Promise.resolve(
@@ -2678,6 +2730,10 @@ describe('iCloud exact identity adoption', () => {
           await sql`DELETE FROM public.icloud_resource WHERE id=${fixture.resource.id}::uuid`.execute(db);
           await sql`UPDATE public.media_operation SET status='queued',"claimToken"=NULL,"claimExpiresAt"=NULL
             WHERE id=${fixture.authority.operationId}::uuid`.execute(db);
+          // Claiming the operation again starts a new worker incarnation; item claims are bound to an
+          // incarnation (scheduledAuditClaimHolder), so the admission fixture's claim is expired here.
+          await sql`UPDATE public.icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second'
+            WHERE "ownerId"=${fixture.f.user.id}::uuid`.execute(db);
           const outbox = operations();
           const claimed = await db.transaction().execute(async (tx) => {
             // Other tests' durable queue rows stay untouched; real SKIP LOCKED selects this obligation.

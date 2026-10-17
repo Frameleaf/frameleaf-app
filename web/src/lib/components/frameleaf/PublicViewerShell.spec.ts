@@ -106,6 +106,15 @@ describe('PublicViewerShell', () => {
     expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
   });
 
+  it('keeps the words of the icon-only phone actions as their names, and Download all spelled out (SHARING-P6)', () => {
+    setup(link({ allowUpload: true }));
+    // On phones .pv-label is visually hidden; the words still name the button.
+    for (const name of ['Add photos', 'Select']) {
+      expect(screen.getByRole('button', { name }).querySelector('.pv-label')).toHaveTextContent(name);
+    }
+    expect(screen.getByRole('button', { name: 'Download all' }).querySelector('.pv-label')).toBeNull();
+  });
+
   it('keeps an empty selection from downloading', () => {
     setup(link(), { selecting: true, selectedCount: 0 });
     expect(screen.getByRole('button', { name: 'Download selected (0)' })).toBeDisabled();

@@ -127,6 +127,9 @@
       groupBy: value ? PlacesGroupBy.CountryState : PlacesGroupBy.None,
     }));
 
+  /** A cover without a thumbnail shows the card's own surface, not the browser's broken-image icon. */
+  const hideBroken = (event: Event) => ((event.currentTarget as HTMLImageElement).style.visibility = 'hidden');
+
   const mapHref = (city: PlaceCity) =>
     city.latitude !== null && city.longitude !== null
       ? Route.map({ zoom: 11, lat: city.latitude, lng: city.longitude })
@@ -142,7 +145,12 @@
       href={Route.search(city.query)}
       aria-label={$t('frameleaf_places_card_label', { values: { name: city.name, count: city.count } })}
     >
-      <img src={getAssetMediaUrl({ id: city.coverId, size: AssetMediaSize.Thumbnail })} alt="" loading="lazy" />
+      <img
+        src={getAssetMediaUrl({ id: city.coverId, size: AssetMediaSize.Thumbnail })}
+        alt=""
+        loading="lazy"
+        onerror={hideBroken}
+      />
       <span class="dv-shade" aria-hidden="true"></span>
       <span class="dv-place-copy">
         <strong>{city.name}</strong>
@@ -176,6 +184,7 @@
         src={getAssetMediaUrl({ id: landmark.coverAssetId, size: AssetMediaSize.Thumbnail })}
         alt=""
         loading="lazy"
+        onerror={hideBroken}
       />
       <span class="dv-shade" aria-hidden="true"></span>
       <span class="dv-landmark-kind">
@@ -264,13 +273,15 @@
             </button>
           </h2>
           <a class="dv-link" href={Route.search(country.query)}>
-            {$t('view_all')}
+            {$t('frameleaf_explore_view_all')}
             <Icon icon={mdiChevronRight} size="16" />
           </a>
         </div>
         {#if open}
           {#each country.states as state (state.id)}
             {@const dots = stateMapDots(state.cities, MAP_WIDTH, MAP_HEIGHT)}
+            <!-- A place name can hold spaces ("British Columbia"), which break a url(#id) reference. -->
+            {@const gridId = `dv-grid-${state.id.replaceAll(/[^\w-]/g, '_')}`}
             <div class="dv-state">
               <div class="dv-state-map">
                 <!-- Places.jsx:141-145: the prototype's offline stylised map of the state's places. -->
@@ -281,11 +292,11 @@
                   aria-hidden="true"
                 >
                   <defs>
-                    <pattern id="dv-grid-{state.id}" width="24" height="24" patternUnits="userSpaceOnUse">
+                    <pattern id={gridId} width="24" height="24" patternUnits="userSpaceOnUse">
                       <path d="M 24 0 L 0 0 0 24" fill="none" class="dv-grid-line" />
                     </pattern>
                   </defs>
-                  <rect width={MAP_WIDTH} height={MAP_HEIGHT} fill="url(#dv-grid-{state.id})" />
+                  <rect width={MAP_WIDTH} height={MAP_HEIGHT} fill="url(#{gridId})" />
                   {#each dots as dot (dot.id)}
                     <circle cx={dot.x} cy={dot.y} r={dot.r} class="dv-dot" />
                   {/each}

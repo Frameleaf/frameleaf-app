@@ -91,50 +91,58 @@
     }
   };
 
-  const hiddenCount = $derived(people.filter((person) => person.isHidden).length + hiddenFaces.length);
-  const visiblePeople = $derived(
-    people
-      .filter((p) => assetViewerManager.isShowingHiddenPeople || !p.isHidden)
-      .map((person) => {
-        if (!person.birthDate) {
-          return { formattedBirthDate: undefined, formattedAge: undefined, ...person };
-        }
-        const personBirthDate = DateTime.fromISO(person.birthDate);
-        const ageInYears = Math.floor(DateTime.fromISO(asset.localDateTime).diff(personBirthDate, 'years').years);
-        const ageInMonths = Math.floor(DateTime.fromISO(asset.localDateTime).diff(personBirthDate, 'months').months);
+  const hiddenCount = $derived(people.reduce((count, person) => count + (person.isHidden ? 1 : 0), hiddenFaces.length));
+  const visiblePeople = $derived.by(() => {
+    const visible = [];
+    const showHidden = assetViewerManager.isShowingHiddenPeople;
+    let assetDate: DateTime | undefined;
+    for (const person of people) {
+      if (!showHidden && person.isHidden) {
+        continue;
+      }
+      if (!person.birthDate) {
+        visible.push({ formattedBirthDate: undefined, formattedAge: undefined, ...person });
+        continue;
+      }
+      const personBirthDate = DateTime.fromISO(person.birthDate);
+      assetDate ??= DateTime.fromISO(asset.localDateTime);
+      const ageInYears = Math.floor(assetDate.diff(personBirthDate, 'years').years);
+      const ageInMonths = Math.floor(assetDate.diff(personBirthDate, 'months').months);
 
-        let formattedAge;
-        if (ageInYears < 0) {
-          return { formattedBirthDate: undefined, formattedAge: undefined, ...person };
-        }
-        if (ageInMonths < 12) {
-          formattedAge = $t('age_months', { values: { months: ageInMonths } });
-        } else if (ageInMonths > 12 && ageInMonths < 24) {
-          formattedAge = $t('age_year_months', { values: { months: ageInMonths - 12 } });
-        } else {
-          formattedAge = $t('age_years', { values: { years: ageInYears } });
-        }
+      let formattedAge;
+      if (ageInYears < 0) {
+        visible.push({ formattedBirthDate: undefined, formattedAge: undefined, ...person });
+        continue;
+      }
+      if (ageInMonths < 12) {
+        formattedAge = $t('age_months', { values: { months: ageInMonths } });
+      } else if (ageInMonths > 12 && ageInMonths < 24) {
+        formattedAge = $t('age_year_months', { values: { months: ageInMonths - 12 } });
+      } else {
+        formattedAge = $t('age_years', { values: { years: ageInYears } });
+      }
 
-        const formattedBirthDate = personBirthDate.toLocaleString(
-          {
-            month: 'long',
-            day: 'numeric',
-            year: 'numeric',
-          },
-          { locale: $locale },
-        );
-        return { formattedBirthDate, formattedAge, ...person };
-      }),
-  );
+      const formattedBirthDate = personBirthDate.toLocaleString(
+        {
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric',
+        },
+        { locale: $locale },
+      );
+      visible.push({ formattedBirthDate, formattedAge, ...person });
+    }
+    return visible;
+  });
 </script>
 
 <OnEvents {onPersonUpdate} {onPersonFacesChange} />
 
 {#if !authManager.isSharedLink}
-  <section class="px-4 pt-4 text-sm">
+  <section class="text-sm">
     {#if isOwner || visiblePeople.length > 0 || unassignedFaces.length > 0}
-      <div class="flex h-10 w-full items-center justify-between">
-        <Text size="small" color="muted">{$t('people')}</Text>
+      <div class="fl-info-heading-row">
+        <h3 class="fl-info-heading">{$t('people')}</h3>
         <div class="flex items-center gap-2">
           {#if isOwner}
             {#if hiddenCount > 0}

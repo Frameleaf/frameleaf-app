@@ -27,16 +27,16 @@
    * page that mounts this view; tiles offer their hover quick actions (`AssetTile.jsx`), and an empty
    * view shows the Frameleaf empty state rather than the legacy upload card.
    */
-  import { browser } from '$app/environment';
+  import { browser } from '$app/env';
   import { afterNavigate, goto, replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import BulkConfirmDialog from '$lib/components/frameleaf/BulkConfirmDialog.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import LibraryEmptyState from '$lib/components/frameleaf/LibraryEmptyState.svelte';
-  import LibraryLayoutSwitch from '$lib/components/frameleaf/LibraryLayoutSwitch.svelte';
-  import LibraryPhoneMenu from '$lib/components/frameleaf/LibraryPhoneMenu.svelte';
+  import LibraryLayoutSwitch, { showLibraryLayout } from '$lib/components/frameleaf/LibraryLayoutSwitch.svelte';
   import LibraryCompare from '$lib/components/frameleaf/LibraryCompare.svelte';
+  import LibraryFilterPanel from '$lib/components/frameleaf/LibraryFilterPanel.svelte';
   import LibraryStatusBar from '$lib/components/frameleaf/LibraryStatusBar.svelte';
   import ThumbnailSizeControl from '$lib/components/frameleaf/ThumbnailSizeControl.svelte';
   import LibraryTimeline from '$lib/components/frameleaf/LibraryTimeline.svelte';
@@ -48,6 +48,7 @@
   import WorkFileNamesToggle from '$lib/components/frameleaf/WorkFileNamesToggle.svelte';
   import {
     activeFilterFields,
+    discoveryUrl,
     withoutDiscoveryFilter,
     type DiscoveryDestination,
     type DiscoveryFilterSection,
@@ -68,7 +69,8 @@
   } from '$lib/frameleaf/album-view-sort';
   import type { TileLayout } from '$lib/frameleaf/library-grid';
   import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
-  import { timelineQueryOptions } from '$lib/frameleaf/library-query-options';
+  import { searchQueryForTimeline, timelineQueryOptions } from '$lib/frameleaf/library-query-options';
+  import { locale } from '$lib/stores/preferences.store';
   import { librarySession, type LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import type { LibraryGrouping, LibrarySessionAction, LibrarySort } from '$lib/frameleaf/library-session';
   import {
@@ -167,8 +169,15 @@
     title?: string;
     /** Rendered above the results toolbar, inside the scrolling area. */
     children?: Snippet;
+    /**
+     * A strip under the header row (the title and the layout switch), above the toolbar band: Best
+     * Photos' "Best moments in your videos" (LIB-P3).
+     */
+    subheader?: Snippet;
     /** Extra results-toolbar controls (sort, grouping, view). */
     toolbar?: Snippet;
+    /** A page's own choices at the start of the results toolbar, after the count (Locked's reasons). */
+    toolbarStart?: Snippet;
     /** Album, shared-link and trash context for the bulk actions (FL-32). */
     bulkContext?: Omit<BulkActionContext, 'assets' | 'count' | 'currentUserId' | 'snapshot'>;
     /**
@@ -232,6 +241,12 @@
     publicView?: boolean;
     /** The library status bar (counts, selection, save state). Off for pages that are not a library view. */
     statusBar?: boolean;
+    /**
+     * Best Photos (LIB-P3): the page's own order is the quality ranking. Browse, Work and the list
+     * offer "Best first" and open on it each visit, as the template's Best Photos does; the Timeline
+     * keeps its dated groups.
+     */
+    ranked?: boolean;
   };
 
   let {
@@ -255,7 +270,9 @@
     shell,
     title,
     children,
+    subheader,
     toolbar,
+    toolbarStart,
     selectionBar,
     noSelectionBar = false,
     headerHasSlideshow = false,
@@ -271,6 +288,7 @@
     empty,
     publicView = false,
     statusBar = true,
+    ranked = false,
   }: Props = $props();
 
   timelineManager = new TimelineManager();
@@ -322,15 +340,56 @@
   });
   // Only above tablet width; a public page and a picking step have no information panel.
   const canShowInfoPanel = $derived(!publicView && !selectionMode && !mediaQueryManager.maxMd);
-  const showInfoPanel = $derived(canShowInfoPanel && inspectorOpen && !sidePanelOpen);
+
+  /**
+   * LIB-P1: the toolbar's Filter (and its "Choose a filter" menu) opens the template's Filters panel
+   * docked beside the photos (`App.jsx` `panel === "filters"`), and the grid follows each choice
+   * live. A host with a filter panel of its own still gets the request (`onOpenFilterPanel`).
+   */
+  let filterPanelOpen = $state(false);
+  let filterSection = $state<DiscoveryFilterSection>('people');
+  const openFilterPanel = (section: DiscoveryFilterSection) => {
+    if (onOpenFilterPanel) {
+      onOpenFilterPanel(section);
+      return;
+    }
+    filterSection = section;
+    filterPanelOpen = true;
+  };
+  const closeFilterPanel = () => {
+    filterPanelOpen = false;
+  };
+
+  /**
+   * A choice in the panel. What the page's photos can be narrowed by applies to the grid at once.
+   * Beyond that (a place, a camera, a date range, several people) the search results apply the whole
+   * query, with the page's own scope carried along, so the person lands on exactly what they asked
+   * for rather than on a choice that quietly did nothing.
+   */
+  const applyFilterPanelQuery = (query: DiscoveryQuery) => {
+    const base = options ?? {};
+    if (timelineQueryOptions(query, base).unapplied.length === 0) {
+      session.setQuery(query);
+      return;
+    }
+    const search = searchQueryForTimeline(query, base);
+    if (!search) {
+      toastManager.warning($t('frameleaf_library_filter_not_here'));
+      return;
+    }
+    filterPanelOpen = false;
+    toastManager.primary($t('frameleaf_library_filter_opened_in_search'));
+    void goto(discoveryUrl(search));
+  };
+  /** The panel's counts are for the search this page stands for. */
+  const filterCountQuery = $derived(
+    filterPanelOpen ? (searchQueryForTimeline(session.query, options ?? {}) ?? session.query) : session.query,
+  );
+
+  const showInfoPanel = $derived(canShowInfoPanel && inspectorOpen && !sidePanelOpen && !filterPanelOpen);
   const selecting = $derived(session.selection.length > 0);
   // The root names its theme itself: the page area has no themed ancestor to inherit one from.
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
-  /**
-   * Phones get one toolbar row: the count, Filter and a single view menu (`LibraryPhoneMenu`)
-   * in place of the layout switch and the toolbar's Sort, Grid / List, Slideshow and More.
-   */
-  const phone = $derived(mediaQueryManager.maxMd);
   /** FL-61: the Compare view (culling) is open over the results, which stay where they were. */
   const comparing = $derived(session.state.view === 'compare');
 
@@ -420,10 +479,16 @@
     const userId = albumSortUserId;
     albumPersonalSort = id && userId && browser ? untrack(() => readAlbumViewSort(localStorage, userId, id)) : null;
   });
+  /** LIB-P3: Best Photos keeps its own sort for the visit, opening on the ranking. */
+  let rankedSort = $state<LibrarySort>('quality');
   const activeSort = $derived<LibrarySort>(
-    albumSortId ? effectiveAlbumSort(albumPersonalSort, options?.order) : session.state.sort,
+    ranked ? rankedSort : albumSortId ? effectiveAlbumSort(albumPersonalSort, options?.order) : session.state.sort,
   );
   const changeAlbumSort = (sort: LibrarySort) => {
+    if (ranked) {
+      rankedSort = sort;
+      return;
+    }
     if (albumSortId && albumSortUserId) {
       albumPersonalSort = writeAlbumViewSort(
         browser ? localStorage : undefined,
@@ -439,7 +504,10 @@
   );
   const TIMELINE_SORTS: readonly LibrarySort[] = ['captured-desc', 'captured-asc'];
   const FLAT_SORTS: readonly LibrarySort[] = ['captured-desc', 'captured-asc', 'imported-desc', 'filename', 'rating'];
-  const sorts = $derived(sortable ? (gridLayout === 'timeline' ? TIMELINE_SORTS : FLAT_SORTS) : undefined);
+  const RANKED_SORTS: readonly LibrarySort[] = ['quality', ...FLAT_SORTS];
+  const sorts = $derived(
+    sortable ? (gridLayout === 'timeline' ? TIMELINE_SORTS : ranked ? RANKED_SORTS : FLAT_SORTS) : undefined,
+  );
   const shownSort = $derived(
     gridLayout === 'timeline' && !TIMELINE_SORTS.includes(activeSort) ? albumOrderSort(options?.order) : activeSort,
   );
@@ -461,6 +529,10 @@
       }
       case 'rating': {
         return flat ? { ...base, orderedBy: TimelineOrderedSort.Rating } : base;
+      }
+      case 'quality': {
+        // Best Photos' ranking (`GET /timeline/ordered?sort=quality`); the Timeline stays dated.
+        return flat ? { ...base, orderedBy: TimelineOrderedSort.Quality } : base;
       }
       default: {
         // Newest first; on an album that overrides a shared oldest-first order for this viewer only.
@@ -517,7 +589,7 @@
     restoredContext = storageContext;
     restoredView = urlView;
     writtenView = undefined;
-    session.restore(page.url, storageUserId, storageContext);
+    session.restore(new URL(page.url.href), storageUserId, storageContext);
     // FL-48: a link this version cannot read is refused out loud and left in the address bar, rather
     // than being quietly replaced by the stored view.
     if (session.refusedView) {
@@ -552,7 +624,7 @@
       if (next.href !== current.href) {
         // A URL we just wrote is the current session, not a new link to restore from.
         writtenView = next.searchParams.get('fl');
-        replaceState(next, page.state);
+        replaceState(next, page.state).catch((error) => handleError(error, $t('error')));
       }
     }
   });
@@ -954,6 +1026,16 @@
   let toolbarStrip = $state<HTMLElement>();
 
   /**
+   * LIB-P4: the library is the page itself (Photos, Favorites, Archive ...), not a column inside a
+   * page that pads its own. It then gives back the page area's inset (see `.fl-library` below) and
+   * keeps the page gutter inside the timeline's scroll area instead, so the frosted toolbar band
+   * runs from the rail to the window edge as in the template, and the header, the photos and the
+   * scrubber keep 24px (8px on phones) from them.
+   */
+  const pageLevel = $derived(!!root?.parentElement?.classList.contains('fl-scope'));
+  const gutter = $derived(pageLevel ? (mediaQueryManager.maxMd ? 8 : 24) : 0);
+
+  /**
    * The capsules centre over the photos, between the rail and the inspector (apple-style.css
    * `--fl-left` / `--fl-right`), and the group headers and scrubber stick below the frosted
    * toolbar whatever its height (App.jsx publishes `--fl-sticky-offset` the same way).
@@ -1098,7 +1180,8 @@
       id: 'studio',
       label: $t('frameleaf_selection_open_in_studio'),
       icon: mdiOpenInNew,
-      // Not the accent button: handing a selection to Studio is one option among several.
+      // The capsule's one accent button, as in the prototype (App.jsx `primary: true`).
+      primary: true,
       disabled: studioIds.length === 0,
       onClick: openInStudio,
     },
@@ -1158,15 +1241,8 @@
    * grouping, status capsule) stays away until there is something to arrange.
    */
   const uploadStats = uploadAssetsStore.stats;
-  const firstRun = $derived(
-    !publicView &&
-      !selectionMode &&
-      destination?.kind === 'library' &&
-      !options?.bbox &&
-      !options?.userId &&
-      !session.filterActive &&
-      resultCount === 0,
-  );
+  // Only the owner's own Photos timeline: an empty Best Photos, Locked or map area is not a new library.
+  const firstRun = $derived(!publicView && !selectionMode && ownTimeline && !session.filterActive && resultCount === 0);
   /** Selected items this view does not show (chosen elsewhere with the same session), App.jsx's "outside". */
   const selectedOutside = $derived(snapshot ? 0 : session.selection.filter((id) => !findAsset(id)).length);
 
@@ -1368,10 +1444,23 @@
 
   const canSlideshow = $derived(libraryChrome && !!viewer && !headerHasSlideshow);
   const canSelectAllMatching = $derived(!selectionBar && !noSelectionBar);
-  /** Grid or List in the toolbar (or the phone menu); the Timeline and a public page have neither. */
-  const toolbarView = $derived(
-    gridLayout === 'timeline' || publicView ? undefined : listView ? ('list' as const) : ('grid' as const),
-  );
+  /**
+   * Grid or List in the toolbar, in every layout as in the template (LIB-P7). The Timeline is drawn
+   * as a grid of dated rows, so Grid reads as chosen there. A public page has neither, and nor has
+   * Locked, which offers the Timeline only.
+   */
+  const toolbarView = $derived(publicView || lockedView ? undefined : listView ? ('list' as const) : ('grid' as const));
+
+  /**
+   * The toolbar's Grid or List. The list is Browse's and Work's rows (S-15), so choosing List in the
+   * Timeline shows the photos as a list in Browse, the default layout, and the switch above says so.
+   */
+  const changeView = (view: 'grid' | 'list') => {
+    if (view === 'list' && gridLayout === 'timeline') {
+      showLibraryLayout(session, 'browse');
+    }
+    session.patchView({ view });
+  };
 
   /** The tile that holds keyboard focus, if any. The scroll anchor is not a focus. */
   const focusedTileAsset = () => {
@@ -1528,6 +1617,12 @@
           session.patchView({ view: 'grid' });
           return;
         }
+        // The docked Filters panel closes first, as the template's Escape closes `panel`.
+        if (filterPanelOpen && surface === 'timeline') {
+          event.preventDefault();
+          filterPanelOpen = false;
+          return;
+        }
         if (surface === 'viewer') {
           // The viewer closes itself; the item stays open so reopening it resumes it.
           return;
@@ -1630,62 +1725,50 @@
         quickActions={quickActionsFor}
         timelineCaptions={gridLayout === 'timeline'}
         empty={emptyState}
+        {gutter}
       >
         {#snippet header()}
           <!-- Prototype `.collection-header`: the page's own header and the layout switch beside it. -->
-          <div class="fl-library-header" class:has-title={!!title}>
+          <div class="fl-library-header" class:has-title={!!title} class:has-toolbar={!publicView && !firstRun}>
             <div class="fl-library-header-content">
               {#if title}
                 <h1 class="fl-library-title">{title}</h1>
               {/if}
               {@render children?.()}
             </div>
-            {#if !publicView && !phone && !firstRun}
+            <!-- LIB-P5: phones too show Timeline, Browse and Work beside the title, as the template does. -->
+            {#if !publicView && !firstRun}
               <LibraryLayoutSwitch {session} layouts={lockedView ? ['timeline'] : undefined} />
             {/if}
           </div>
+          {#if subheader}
+            <div class="fl-library-subheader">{@render subheader()}</div>
+          {/if}
           {#if !publicView && !firstRun}
             <div class="fl-library-toolbar" bind:this={toolbarStrip}>
+              <!-- Compare, Quick edit and Open in Studio live on the selection bar (September 24). -->
               <ResultsToolbar
                 {session}
-                {onOpenFilterPanel}
+                onOpenFilterPanel={openFilterPanel}
+                {filterPanelOpen}
+                onCloseFilterPanel={closeFilterPanel}
                 count={resultCount}
-                onSlideshow={canSlideshow && !phone ? () => void startSlideshow() : undefined}
+                onSlideshow={canSlideshow ? () => void startSlideshow() : undefined}
                 inspectorOpen={canShowInfoPanel ? inspectorOpen : undefined}
                 onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
-                sorts={phone ? undefined : sorts}
+                {sorts}
                 sort={shownSort}
-                onSortChange={albumSortId ? changeAlbumSort : undefined}
+                onSortChange={albumSortId || ranked ? changeAlbumSort : undefined}
                 unappliedFields={queryApplied.unapplied}
-                view={phone ? undefined : toolbarView}
-                onViewChange={(view) => session.patchView({ view })}
-                onMoreActions={libraryChrome && !phone ? () => (moreActionsOpen = true) : undefined}
+                view={toolbarView}
+                onViewChange={changeView}
+                onMoreActions={libraryChrome ? () => (moreActionsOpen = true) : undefined}
+                leading={toolbarStart}
               >
                 {@render toolbar?.()}
                 <!-- FL-33: Work's file-name toggle lives in the sticky toolbar, in Work only. -->
                 {#if gridLayout === 'work' && !listView}
                   <WorkFileNamesToggle />
-                {/if}
-                <!-- Compare, Quick edit and Open in Studio live on the selection bar (September 24). -->
-                {#if phone && libraryChrome}
-                  <LibraryPhoneMenu
-                    {session}
-                    layouts={lockedView ? ['timeline'] : undefined}
-                    current={gridLayout}
-                    {sorts}
-                    sort={shownSort}
-                    onSortChange={albumSortId ? changeAlbumSort : undefined}
-                    view={toolbarView}
-                    onViewChange={(view) => session.patchView({ view })}
-                    onSlideshow={canSlideshow ? () => void startSlideshow() : undefined}
-                    selectAllLabel={resultCount === null
-                      ? $t('frameleaf_library_select_all_matching')
-                      : $t('frameleaf_library_select_all_matching_count', { values: { count: resultCount } })}
-                    onSelectAll={canSelectAllMatching
-                      ? () => void (selectAll === 'loaded' ? selectAllLoaded() : selectAllMatching())
-                      : undefined}
-                    empty={resultCount === 0}
-                  />
                 {/if}
               </ResultsToolbar>
             </div>
@@ -1703,6 +1786,21 @@
         </div>
       {/if}
     </div>
+
+    {#if filterPanelOpen && libraryChrome}
+      <LibraryFilterPanel
+        query={session.query}
+        countQuery={filterCountQuery}
+        section={filterSection}
+        matchingLabel={resultCount === null
+          ? undefined
+          : $t('frameleaf_search_matching_for', { values: { label: resultCount.toLocaleString($locale) } })}
+        scopeLabel={title}
+        count={resultCount}
+        onChange={applyFilterPanelQuery}
+        onClose={closeFilterPanel}
+      />
+    {/if}
 
     {#if showInfoPanel && !publicView}
       <aside class="fl-library-panel" aria-label={$t('frameleaf_work_inspector_title')}>
@@ -1756,11 +1854,12 @@
     {/if}
   {/if}
   {#if showStatusBar && !firstRun}
-    <!-- The capsule says only what the page does not already show; with nothing to say it is not drawn. -->
+    <!-- App.jsx footer (LIB-P6): the count, the selection, "Saved on this device" and Thumbnail size. -->
     {#if thumbnailControl}
       <LibraryStatusBar
         count={resultCount}
         total={statusTotal}
+        selected={session.selection.length}
         outside={selectedOutside}
         saved={savedOnDevice}
         hidden={selecting}
@@ -1774,6 +1873,7 @@
       <LibraryStatusBar
         count={resultCount}
         total={statusTotal}
+        selected={session.selection.length}
         outside={selectedOutside}
         saved={savedOnDevice}
         hidden={selecting}
@@ -1883,20 +1983,18 @@
     min-height: 0;
   }
   /*
-   * The library as the page itself (Photos, Favorites, Archive ...) carries the page gutter: 24px with
-   * the page area's own 8px, which is also what keeps the date scrubber off the window edge. A page
-   * that wraps it (an album, a tag, a person) pads its own column the same way.
+   * LIB-P4: the library as the page itself (Photos, Favorites, Archive ...) gives back the page area's
+   * 8px inset (UserPageLayout `p-2`) at the top and both sides, so its scroll area, and with it the
+   * frosted toolbar band, reaches the top bar, the rail and the window edge. The page gutter is kept
+   * inside the scroll area (`gutter`). A page that wraps it (an album, a tag, a person) pads its own
+   * column, and the band then spans that column.
    */
-  @media (min-width: 768px) {
-    :global(.fl-scope) > .fl-library {
-      padding-inline: var(--fl-space-4);
-    }
-    /* The information panel is docked at the page's edge, not floated in from it. */
-    :global(.fl-scope) > .fl-library:has(.fl-library-panel) {
-      padding-inline-end: 0;
-    }
+  :global(.fl-scope) > .fl-library {
+    margin: -0.5rem -0.5rem 0;
+    height: calc(100% + 0.5rem);
   }
   .fl-library-body {
+    position: relative;
     display: flex;
     flex: 1 1 auto;
     min-height: 0;
@@ -1916,11 +2014,21 @@
    * the header above it and the grouping row below it scroll away as in the template.
    */
   .fl-library-header {
+    position: relative;
     display: flex;
     flex-wrap: wrap;
     align-items: flex-end;
     justify-content: space-between;
     gap: 12px;
+  }
+  /* Template `.collection-header` border: one hairline across the page, over the toolbar band. */
+  .fl-library-header.has-toolbar::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    inset-inline: calc(-1 * var(--fl-library-gutter-start, 0px)) calc(-1 * var(--fl-library-gutter-end, 0px));
+    border-bottom: 1px solid var(--fl-border);
+    pointer-events: none;
   }
   .fl-library-header-content {
     flex: 1 1 auto;
@@ -1951,9 +2059,8 @@
    */
   .fl-library-header.has-title {
     min-height: 77px;
-    /* The title starts on the line of the toolbar's count; the tabs end on the photos' edge. */
+    /* The title starts on the line of the toolbar's count and the photos' edge (template 24px). */
     padding: 0 0 var(--fl-space-3);
-    padding-inline-start: var(--fl-space-3);
   }
   .fl-library-title {
     font-size: 30px;
@@ -1963,6 +2070,10 @@
   .fl-library-toolbar {
     position: relative;
   }
+  /* Under the header's hairline, clear of it and of the toolbar band (24px between sections). */
+  .fl-library-subheader {
+    padding-top: var(--fl-space-6);
+  }
   /*
    * Phones: the photos keep the page area's 8px edge; the header and the toolbar's text and controls
    * sit at the 16px page gutter.
@@ -1970,6 +2081,7 @@
   @media (max-width: 767px) {
     .fl-library-header,
     .fl-library-header.has-title,
+    .fl-library-subheader,
     .fl-library-toolbar {
       padding-inline: var(--fl-space-2);
     }
@@ -1980,11 +2092,11 @@
     z-index: 5;
   }
   .fl-library-toolbar::before {
-    /* The frosted strip spans the scroller's width under the toolbar. */
+    /* LIB-P4: the frosted band spans the scroll area edge to edge, over the gutters and the scrubber's column. */
     content: '';
     position: absolute;
-    inset: 0 -8px auto;
-    bottom: 0;
+    inset-block: 0;
+    inset-inline: calc(-1 * var(--fl-library-gutter-start, 0px)) calc(-1 * var(--fl-library-gutter-end, 0px));
     z-index: -1;
     border-bottom: 1px solid var(--fl-material-edge);
     background: var(--fl-material);
@@ -1996,7 +2108,8 @@
     transform-origin: left bottom;
   }
   @supports (animation-timeline: scroll()) {
-    .fl-library.has-sticky-toolbar :global(.fl-timeline-scroll) {
+    /* The Years and Months cards scroll in their own scroller (TimelineCards), the header with them. */
+    .fl-library.has-sticky-toolbar :global(:is(.fl-timeline-scroll, .fl-tl-cards-scroll)) {
       scroll-timeline: --fl-library block;
     }
     .has-sticky-toolbar .fl-library-header :global(h1) {
@@ -2038,8 +2151,6 @@
   }
   .fl-library-panel {
     flex: 0 0 320px;
-    /* The date scrubber's ticks stay clear of the panel's edge. */
-    margin-inline-start: var(--fl-space-2);
     overflow-y: auto;
     border-inline-start: 1px solid var(--fl-border);
     background: var(--fl-panel);

@@ -242,6 +242,47 @@ describe('buildStudioExportContract (FL-102)', () => {
     expect(parseStudioExportContract(contract)).toEqual(contract);
   });
 
+  it.each([
+    { video: { minBitDepth: 8, transfer: 'unknown' }, audio: null },
+    { video: { minBitDepth: 8 }, audio: null },
+    { video: { minBitDepth: 8, transfer: null } },
+    { video: { minBitDepth: 8, transfer: null }, audio: {} },
+    {
+      video: { minBitDepth: 8, transfer: null },
+      audio: { policy: 'other', channels: 2, channelLayout: 'stereo', sampleRate: 48_000 },
+    },
+    {
+      video: { minBitDepth: 8, transfer: null },
+      audio: { policy: 'preserve', channels: -1, channelLayout: null, sampleRate: null },
+    },
+    {
+      video: { minBitDepth: 8, transfer: null },
+      audio: { policy: 'stereo', channels: 2, channelLayout: 2, sampleRate: 48_000 },
+    },
+    {
+      video: { minBitDepth: 8, transfer: null },
+      audio: { policy: 'stereo', channels: 2, channelLayout: 'stereo', sampleRate: 0 },
+    },
+    ...[
+      { inPoint: -1, outPoint: 2, cadence: '24/1' },
+      { inPoint: 0, outPoint: 0, cadence: '24/1' },
+      { inPoint: 0.5, outPoint: 2, cadence: '24/1' },
+      { inPoint: 0, outPoint: 2, cadence: '0/1' },
+      { inPoint: 0, outPoint: 2, cadence: 'broken' },
+    ].map((range) => ({ video: { minBitDepth: 8, transfer: null }, audio: null, range })),
+  ])('refuses malformed persisted contract fields %#', (contract) => {
+    expect(parseStudioExportContract(contract)).toBeNull();
+  });
+
+  it('retains nullable audio facts and exact selected ranges when parsing', () => {
+    const contract = {
+      video: { minBitDepth: 8, transfer: null },
+      audio: { policy: 'preserve', channels: null, channelLayout: null, sampleRate: null },
+      range: { inPoint: 1, outPoint: 2, cadence: '30000/1001' },
+    };
+    expect(parseStudioExportContract(contract)).toEqual(contract);
+  });
+
   it('parses only a contract it wrote', () => {
     expect(parseStudioExportContract({ video: { minBitDepth: 10, transfer: null }, audio: null })).not.toBeNull();
     expect(parseStudioExportContract({ video: { minBitDepth: 12 } })).toBeNull();

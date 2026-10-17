@@ -59,4 +59,30 @@ describe('Thumbnail component', () => {
     const thumbhash = sut.getByTestId('thumbhash');
     expect(thumbhash).not.toBeFalsy();
   });
+
+  it.each(['unmount', 'pointercancel'])('cancels a pending hold on %s', (reason) => {
+    vi.useFakeTimers();
+    const onSelect = vi.fn();
+    const sut = render(Thumbnail, {
+      asset: timelineAssetFactory.build({ isImage: true, isVideo: false }),
+      onSelect,
+    });
+    const container = sut.baseElement.querySelector('[data-thumbnail-focus-container]')!;
+    container.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+    try {
+      if (reason === 'unmount') {
+        sut.unmount();
+      } else {
+        container.dispatchEvent(new MouseEvent('pointercancel', { bubbles: true }));
+      }
+      vi.advanceTimersByTime(350);
+      expect(onSelect).not.toHaveBeenCalled();
+    } finally {
+      if (reason !== 'unmount') {
+        sut.unmount();
+      }
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
 });

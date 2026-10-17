@@ -186,8 +186,10 @@ test.describe('pet recognition', () => {
       await page.goto('/pets');
 
       const status = recognitionSection(page).getByTestId('pet-recognition-unavailable');
-      await expect(status).toContainText('Pet recognition is off:');
-      await expect(status).toContainText(sentence);
+      // DISCOVERY-P7: a calm notice, its title, what still works, then the reason
+      await expect(status).toContainText('Pet recognition is off');
+      await expect(status).toContainText('You can still name your pets and mark them in photos.');
+      await expect(status).toContainText(`It’s off because ${sentence}`);
       // the base fixture signs in an administrator, who is sent to the destination settings
       await expect(status.getByRole('link', { name: 'Open processing settings' })).toBeVisible();
       await expect(recognitionSection(page).getByRole('button', { name: 'Look for pets' })).toHaveCount(0);

@@ -12,7 +12,7 @@ import {
   AdminAuditAction,
   AssetStatus,
   DatabaseLock,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   MediaOperationDestination,
@@ -320,7 +320,7 @@ export class LibraryScanService {
   /* Worker                                                              */
   /* ------------------------------------------------------------------ */
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.stopping = false;
     this.tickHandle ??= setInterval(() => void this.tick(), LIBRARY_SCAN_TICK_MS);
@@ -671,7 +671,7 @@ export class LibraryScanService {
           break;
         }
         case AssetSyncResult.CHECK_OFFLINE: {
-          const inFolder = library.importPaths.some((importPath) => asset.originalPath.startsWith(importPath));
+          const inFolder = library.importPaths.some((importPath) => isSameOrInside(asset.originalPath, importPath));
           const excluded = library.exclusionPatterns.some((pattern) => picomatch.isMatch(asset.originalPath, pattern));
           if (inFolder && !excluded) {
             (asset.status === AssetStatus.Trashed ? trashedToOnline : toOnline).push(asset.id);
@@ -997,9 +997,20 @@ export class LibraryScanService {
       return false;
     }
 
-    if (written.pauseRequestedAt && (await this.operations.settlePause(operation.id, claimToken))) {
-      this.logger.log(`Scan ${operation.id} paused`);
-      return false;
+    if (written.pauseRequestedAt) {
+      if (await this.operations.settlePause(operation.id, claimToken)) {
+        this.logger.log(`Scan ${operation.id} paused`);
+        return false;
+      }
+      // A withdrawn pause can continue; cancellation or claim loss cannot.
+      if (
+        !(await this.operations.heartbeat(operation.id, claimToken, LIBRARY_SCAN_LEASE_MS, {
+          requireActiveClaim: true,
+        }))
+      ) {
+        await this.settleCancel(operation, claimToken, result);
+        return false;
+      }
     }
 
     return true;

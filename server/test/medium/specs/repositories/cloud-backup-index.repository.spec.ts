@@ -1,7 +1,7 @@
 import { Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
-import { AlbumUserRole, AssetFileType, AssetStatus, AssetVisibility } from 'src/enum.js';
+import { AlbumUserRole, AssetFileType, AssetStatus, AssetVisibility, MediaOperationStatus } from 'src/enum.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -31,6 +31,100 @@ beforeAll(async () => {
 });
 
 describe(CloudBackupIndexRepository.name, () => {
+  const liveVerification = async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const bucket = `https://s3.test/${randomUUID()}`;
+    const claimToken = randomUUID();
+    const { rows } = await sql<{ id: string }>`INSERT INTO media_operation
+      ("ownerId", kind, destination, label, snapshot, settings, status, "claimToken", "claimExpiresAt")
+      VALUES (${user.id}::uuid, 'cloud_backup', 'local', 'Verify',
+        ${{ bucketRef: bucket, task: 'verify', depth: 'sample' }}::jsonb, '{}'::jsonb,
+        'rendering', ${claimToken}::uuid, clock_timestamp() + interval '1 hour') RETURNING id`.execute(defaultDatabase);
+    return {
+      sut,
+      proof: {
+        bucket,
+        sha256: sha('verified'),
+        operationId: rows[0].id,
+        claimToken,
+        method: 'sha256-get' as const,
+        result: 'passed' as const,
+      },
+    };
+  };
+
+  it.each([
+    ['expired', { claimExpiresAt: new Date(0) }],
+    ['cancel requested', { cancelRequestedAt: new Date() }],
+    ['pause requested', { pauseRequestedAt: new Date() }],
+    ['paused', { status: MediaOperationStatus.Paused }],
+    ['queued', { status: MediaOperationStatus.Queued }],
+  ] as const)('refuses verification proof from a %s worker', async (_reason, patch) => {
+    const { sut, proof } = await liveVerification();
+    await defaultDatabase.updateTable('media_operation').set(patch).where('id', '=', proof.operationId).execute();
+    await sut.recordObjectVerification(proof);
+    expect(
+      await defaultDatabase
+        .selectFrom('cloud_backup_object_verification')
+        .selectAll()
+        .where('operationId', '=', proof.operationId)
+        .execute(),
+    ).toEqual([]);
+  });
+
+  it('rechecks lease expiry after waiting for an operation row lock', async () => {
+    const { sut, proof } = await liveVerification();
+    const { promise: entered, resolve: signalEntered } = Promise.withResolvers<void>();
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
+    let blockerPid = 0;
+    await sql`UPDATE media_operation SET "claimExpiresAt" = clock_timestamp() + interval '2 seconds'
+      WHERE id = ${proof.operationId}::uuid`.execute(defaultDatabase);
+    const locking = defaultDatabase.transaction().execute(async (trx) => {
+      blockerPid = (await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(trx)).rows[0].pid;
+      await trx
+        .selectFrom('media_operation')
+        .select('id')
+        .where('id', '=', proof.operationId)
+        .forUpdate()
+        .executeTakeFirstOrThrow();
+      signalEntered();
+      await held;
+    });
+    let writing: Promise<void> | undefined;
+    try {
+      await Promise.race([entered, locking]);
+      writing = sut.recordObjectVerification(proof);
+      await vi.waitFor(
+        async () => {
+          const { rows } = await sql<{ waiting: number }>`SELECT count(*)::int AS waiting FROM pg_stat_activity
+          WHERE datname=current_database() AND ${blockerPid}=ANY(pg_blocking_pids(pid))`.execute(defaultDatabase);
+          expect(rows[0].waiting).toBeGreaterThan(0);
+        },
+        { timeout: 5000 },
+      );
+      const { rows } = await sql<{
+        remaining: number;
+      }>`SELECT extract(epoch FROM ("claimExpiresAt" - clock_timestamp()))::float8 AS remaining
+        FROM media_operation WHERE id = ${proof.operationId}::uuid`.execute(defaultDatabase);
+      expect(rows[0].remaining).toBeGreaterThan(0);
+      await sql`SELECT pg_sleep(${rows[0].remaining + 0.01})`.execute(defaultDatabase);
+      release();
+      await locking;
+      await writing;
+      expect(
+        await defaultDatabase
+          .selectFrom('cloud_backup_object_verification')
+          .selectAll()
+          .where('operationId', '=', proof.operationId)
+          .execute(),
+      ).toEqual([]);
+    } finally {
+      release();
+      await Promise.allSettled([locking, ...(writing ? [writing] : [])]);
+    }
+  });
+
   it('persists unknown expired receipts as pruned and never adopts them as retained again', async () => {
     const { sut } = setup();
     const bucket = `https://s3.example.test/${randomUUID()}`;

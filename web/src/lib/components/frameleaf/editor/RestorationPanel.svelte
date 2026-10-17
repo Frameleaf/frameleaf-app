@@ -95,10 +95,12 @@
     mdiCompare,
     mdiDeleteOutline,
     mdiDownload,
+    mdiImageSizeSelectLarge,
     mdiMagnify,
     mdiMovieOpenOutline,
     mdiPlayCircleOutline,
     mdiRefresh,
+    mdiServerOutline,
     mdiStop,
   } from '@mdi/js';
   import { onDestroy, onMount, untrack } from 'svelte';
@@ -129,6 +131,14 @@
      */
     title?: string;
     subsection?: boolean;
+    /**
+     * VIEWER-P6: the photo editor's Enhance tab in the template's form (Editor.jsx:1872-1924): one
+     * "Enhance & upscale" card with a Lighter-to-Heavier model slider and one button. The slider
+     * decides where the work runs (a white or green stop on this server or your network, a blue stop
+     * on Frameleaf Cloud, confirmed with its cost); it restores faithfully at up to 4×, the centre of
+     * the photo first. The restorations list below is unchanged.
+     */
+    enhance?: boolean;
   };
 
   let {
@@ -142,6 +152,7 @@
     onUseInStudio,
     title,
     subsection = false,
+    enhance = false,
   }: Props = $props();
 
   const isVideo = isVideoAsset(asset);
@@ -223,6 +234,38 @@
       smoothRunsOn = start.runsOn;
     }
   });
+  /* VIEWER-P6: the Enhance card's slider, and the destination its stop stands for. */
+  let enhanceModelId = $state<string | null>(null);
+  let enhanceRunsOn = $state<'local' | 'cloud' | null>(null);
+  /** The home destination that would take the work right now, this server first. */
+  const enhanceLocal = $derived(
+    destinations.find((candidate) => candidate.kind !== MlDestinationKind.FrameleafCloud && candidate.available) ??
+      null,
+  );
+  const enhanceGpu = $derived.by((): DetectedGpu | null => {
+    const gpu = enhanceLocal?.gpu;
+    return gpu ? { name: gpu.name, vramGb: gpu.memoryTotalBytes / 1024 ** 3, backend: 'CUDA', profile: null } : null;
+  });
+  const enhanceRoute = $derived(options?.route ?? 'local');
+  // The slider starts on the model that fits here, as Where each job runs would choose it.
+  $effect(() => {
+    if (!enhance || !options || enhanceModelId) {
+      return;
+    }
+    const start = resolvePosition('upscale', null, { gpu: enhanceGpu, route: enhanceRoute });
+    if (start) {
+      enhanceModelId = start.item.id;
+      enhanceRunsOn = start.runsOn;
+    }
+  });
+  // The stop decides the destination: a blue stop is Frameleaf Cloud, any other the home destination.
+  $effect(() => {
+    if (!enhance) {
+      return;
+    }
+    destinationId =
+      enhanceRunsOn === 'cloud' ? cloudDestinationId : enhanceRunsOn === 'local' ? (enhanceLocal?.id ?? null) : null;
+  });
   const canSmoothLocally = $derived(smoothRunsOn === 'local' && !!smoothLocal && !submitting);
   const canSmoothOnCloud = $derived(smoothRunsOn === 'cloud' && !!cloudDestinationId && !!options);
   const previewEstimate = $derived(selected ? formatEstimateSeconds(selected.estimate.previewSeconds, $locale) : null);
@@ -250,17 +293,25 @@
     }
   };
 
+  /** Only the answer for the latest mode and upscale is shown, whatever order the answers arrive in. */
+  let optionsRequest = 0;
   const loadOptions = async (nextMode: AssetRestorationMode, nextUpscale: RestorationUpscale) => {
+    const request = ++optionsRequest;
     optionsPending = true;
     try {
       const next = await getAssetRestorationOptions({ id: asset.id, mode: nextMode, upscale: nextUpscale });
+      if (request !== optionsRequest) {
+        return;
+      }
       options = next;
       destinationId = defaultDestinationId(
         next.destinations,
         untrack(() => destinationId),
       );
     } finally {
-      optionsPending = false;
+      if (request === optionsRequest) {
+        optionsPending = false;
+      }
     }
   };
 
@@ -287,6 +338,11 @@
 
   onMount(async () => {
     stopActivity = activitySession.watch();
+    // VIEWER-P6 (Editor.jsx:1904): Enhance & upscale enlarges up to 4×, capped at 4K by the server.
+    if (enhance) {
+      upscale = 4;
+      optionsKey = `${mode}:${upscale}`;
+    }
     try {
       await Promise.all([
         loadList(),
@@ -664,229 +720,282 @@
       <h2>{title ?? $t('frameleaf_restoration_title')}</h2>
     </div>
   {/if}
-  <p class="rs-lead">{$t('frameleaf_restoration_lead')}</p>
-
-  <h3>{$t('frameleaf_restoration_mode')}</h3>
-  <div class="ed-row" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_restoration_mode')}>
-    {#each RESTORATION_MODES as candidate (candidate)}
-      <button
-        type="button"
-        role="radio"
-        class="ed-chip"
-        aria-checked={mode === candidate}
-        onclick={() => (mode = candidate)}
-      >
-        {$t(restorationModeKey(candidate))}
-      </button>
-    {/each}
-  </div>
-  <p class="rs-help">{$t(restorationModeHelpKey(mode))}</p>
-
-  <h3>{$t('frameleaf_restoration_upscale')}</h3>
-  <div class="ed-row" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_restoration_upscale')}>
-    {#each RESTORATION_UPSCALES as factor (factor)}
-      <button
-        type="button"
-        role="radio"
-        class="ed-chip"
-        aria-checked={upscale === factor}
-        onclick={() => (upscale = factor)}
-      >
-        {upscaleLabel(factor)}
-      </button>
-    {/each}
-  </div>
-  {#if options}
-    <p class="rs-help">
-      {$t('frameleaf_restoration_output_size', {
-        values: { width: options.outputWidth, height: options.outputHeight },
-      })}
-      {#if capped}
-        · {$t('frameleaf_restoration_output_capped')}
-      {/if}
-    </p>
-  {/if}
-  <label class="rs-check">
-    <input type="checkbox" bind:checked={keepGrain} />
-    <span>{$t('frameleaf_restoration_keep_grain')}</span>
-    <small>{$t('frameleaf_restoration_keep_grain_help')}</small>
-  </label>
-
-  <h3>{$t('frameleaf_restoration_preview_area')}</h3>
-  <div class="ed-row" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_restoration_preview_area')}>
-    <button
-      type="button"
-      role="radio"
-      class="ed-chip"
-      aria-checked={regionChoice === 'centre'}
-      onclick={() => (regionChoice = 'centre')}
-    >
-      {$t('frameleaf_restoration_area_centre')}
-    </button>
-    <button
-      type="button"
-      role="radio"
-      class="ed-chip"
-      aria-checked={regionChoice === 'crop'}
-      disabled={!cropUsable}
-      title={cropUsable ? undefined : $t('frameleaf_restoration_area_crop_hint')}
-      onclick={() => (regionChoice = 'crop')}
-    >
-      {$t('frameleaf_restoration_area_crop')}
-    </button>
-  </div>
-  {#if isVideo && options}
-    <label class="rs-field">
-      <span>{$t('frameleaf_restoration_clip_start')}</span>
-      <input
-        type="number"
-        min="0"
-        max={maxStart}
-        step="0.5"
-        value={startSeconds ?? Math.round((maxStart / 2) * 2) / 2}
-        oninput={(event) => {
-          const value = Number(event.currentTarget.value);
-          startSeconds = Number.isFinite(value) ? Math.max(0, Math.min(maxStart, value)) : null;
-        }}
-      />
-    </label>
-    <p class="rs-help">{$t('frameleaf_restoration_clip_help', { values: { seconds: options.previewSeconds ?? 5 } })}</p>
-  {/if}
-
-  <h3>{$t('frameleaf_restoration_destination')}</h3>
-  {#if loadError}
-    <p class="ed-empty">{loadError}</p>
-  {:else if !options}
-    <p class="rs-help" aria-busy="true">{$t('loading')}</p>
-  {:else if destinations.length === 0}
-    <p class="ed-empty">{$t('frameleaf_restoration_no_destinations')}</p>
-  {:else}
-    <label class="rs-field">
-      <span>{$t('frameleaf_restoration_process_on')}</span>
-      <select
-        value={destinationId ?? ''}
-        disabled={optionsPending}
-        onchange={(event) => (destinationId = event.currentTarget.value || null)}
-      >
-        <option value="" disabled>{$t('frameleaf_restoration_choose_destination')}</option>
-        {#each destinations as candidate (candidate.id)}
-          <option value={candidate.id} disabled={!candidate.available}>
-            {candidate.name} · {$t(destinationKindKey(candidate.kind))}{candidate.available
-              ? ''
-              : ` · ${$t('frameleaf_restoration_unavailable')}`}
-          </option>
-        {/each}
-      </select>
-    </label>
-    {#if selected}
-      {#if !selected.available && selected.refusal}
-        <p class="rs-warning" role="status">
-          {$t(mlRefusalLabelKey(selected.refusal))}{selected.refusalDetail ? ` ${selected.refusalDetail}` : ''}
-        </p>
-      {:else if selected.leavesNetwork}
-        <p class="rs-warning" role="status">
-          <Icon icon={mdiCloudOutline} size="14" />
-          {$t('frameleaf_restoration_leaves_network')}
-        </p>
-        <!-- FL-72: a cloud job's cost is only known once Frameleaf Cloud settles it. -->
-        <p class="rs-help">{$t('frameleaf_restoration_cloud_cost_uncertain')}</p>
+  {#if enhance}
+    <!-- VIEWER-P6 (Editor.jsx:1872-1924): one card, one slider, one button, in household words. -->
+    <div class="ed-toggle ed-cloud" data-testid="restoration-enhance">
+      <strong>
+        <Icon icon={mdiImageSizeSelectLarge} size="16" />
+        {$t('frameleaf_enhance_title')}
+      </strong>
+      <p class="rs-lead">{$t('frameleaf_enhance_lead')}</p>
+      {#if loadError}
+        <p class="ed-empty">{loadError}</p>
+      {:else if !options}
+        <p class="rs-help" aria-busy="true">{$t('loading')}</p>
       {:else}
-        <p class="rs-help">{$t('frameleaf_restoration_stays_on_network')}</p>
+        <ModelSlider
+          workload="upscale"
+          value={enhanceModelId}
+          gpu={enhanceGpu}
+          route={enhanceRoute}
+          label={$t('frameleaf_enhance_model')}
+          localDisabledReason={enhanceLocal ? '' : $t('frameleaf_enhance_no_local')}
+          onChange={(id, state) => {
+            enhanceModelId = id;
+            enhanceRunsOn = state.runsOn;
+          }}
+        />
       {/if}
-    {:else}
-      <p class="rs-warning" role="status">{$t('frameleaf_restoration_pick_destination')}</p>
-    {/if}
-    {#each destinations.filter((candidate) => !candidate.available && candidate.id !== destinationId) as refused (refused.id)}
-      <p class="rs-help">
-        {refused.name}: {refused.refusal
-          ? $t(mlRefusalLabelKey(refused.refusal))
-          : $t('frameleaf_restoration_unavailable')}
-      </p>
-    {/each}
-
-    <h3>{$t('frameleaf_restoration_estimate')}</h3>
-    {#if selected}
-      <dl class="rs-facts">
-        <dt>{$t('frameleaf_restoration_estimate_preview')}</dt>
-        <dd>
-          {previewEstimate
-            ? $t('frameleaf_restoration_about', { values: { time: previewEstimate } })
-            : $t('frameleaf_restoration_estimate_unmeasured')}
-        </dd>
-        <dt>{$t('frameleaf_restoration_estimate_full')}</dt>
-        <dd>
-          {fullEstimate
-            ? $t('frameleaf_restoration_about', { values: { time: fullEstimate } })
-            : $t('frameleaf_restoration_estimate_unmeasured')}
-        </dd>
-        <!-- Prototype Estimate (Studio.jsx:1619-1629): Output and Cloud cost. The output is the capped
-             size the server will render; no charge is invented for a destination that leaves the network. -->
-        {#if options}
-          <dt>{$t('frameleaf_restoration_estimate_output')}</dt>
-          <dd>
-            {$t('frameleaf_restoration_output_dimensions', {
-              values: { width: options.outputWidth, height: options.outputHeight },
-            })}
-          </dd>
+      <div class="rs-actions">
+        <button type="button" class="ed-button primary" disabled={!canRequest} onclick={requestPreview}>
+          <Icon icon={onCloud ? mdiCloudOutline : mdiServerOutline} size="18" />
+          {#if submitting}
+            {$t('frameleaf_restoration_requesting')}
+          {:else if onCloud}
+            {$t('frameleaf_enhance_run_cloud')}
+          {:else if selected && selected.kind !== MlDestinationKind.Local}
+            {$t('frameleaf_enhance_run_on', { values: { name: selected.name } })}
+          {:else}
+            {$t('frameleaf_enhance_run_here')}
+          {/if}
+        </button>
+        {#if onCloud && selected && !selected.available}
+          <p class="rs-help">{$t('frameleaf_enhance_cloud_unavailable')}</p>
+        {:else if onCloud}
+          <p class="rs-help">{$t('frameleaf_enhance_cloud_cost')}</p>
+        {:else if enhanceRunsOn === 'cloud' && !cloudDestinationId}
+          <p class="rs-help">{$t('frameleaf_enhance_needs_cloud')}</p>
         {/if}
-        <dt>{$t('frameleaf_restoration_estimate_cloud_cost')}</dt>
-        <dd>
-          {onCloud
-            ? $t('frameleaf_restoration_estimate_cost_on_confirm')
-            : selected.leavesNetwork
-              ? $t('frameleaf_restoration_estimate_unmeasured')
-              : $t('frameleaf_restoration_estimate_cost_none')}
-        </dd>
-      </dl>
-      <p class="rs-help">
-        {selected.estimate.sampleCount > 0
-          ? $t('frameleaf_restoration_estimate_basis', {
-              values: { count: selected.estimate.sampleCount, days: selected.estimate.windowDays },
-            })
-          : $t('frameleaf_restoration_estimate_none_help')}
-      </p>
-    {:else}
-      <p class="rs-help">{$t('frameleaf_restoration_estimate_pick')}</p>
-    {/if}
-  {/if}
+        <p class="rs-help">{$t('frameleaf_enhance_preview_help')}</p>
+      </div>
+    </div>
+  {:else}
+    <p class="rs-lead">{$t('frameleaf_restoration_lead')}</p>
 
-  <!-- Prototype RestorePanel tools row (Studio.jsx:1632-1640): Loupe and, for video, Use current frame. -->
-  <div class="ed-row">
-    <button
-      type="button"
-      class="ed-chip"
-      aria-pressed={loupe}
-      data-testid="restoration-loupe-toggle"
-      onclick={() => onLoupeChange?.(!loupe)}
-    >
-      <Icon icon={mdiMagnify} size="16" />
-      {$t('frameleaf_restoration_loupe')}
-    </button>
-    {#if isVideo && currentFrameSeconds}
-      <button type="button" class="ed-chip" disabled={!options} onclick={useCurrentFrame}>
-        <Icon icon={mdiRefresh} size="16" />
-        {$t('frameleaf_restoration_use_current_frame')}
+    <h3>{$t('frameleaf_restoration_mode')}</h3>
+    <div class="ed-row" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_restoration_mode')}>
+      {#each RESTORATION_MODES as candidate (candidate)}
+        <button
+          type="button"
+          role="radio"
+          class="ed-chip"
+          aria-checked={mode === candidate}
+          onclick={() => (mode = candidate)}
+        >
+          {$t(restorationModeKey(candidate))}
+        </button>
+      {/each}
+    </div>
+    <p class="rs-help">{$t(restorationModeHelpKey(mode))}</p>
+
+    <h3>{$t('frameleaf_restoration_upscale')}</h3>
+    <div class="ed-row" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_restoration_upscale')}>
+      {#each RESTORATION_UPSCALES as factor (factor)}
+        <button
+          type="button"
+          role="radio"
+          class="ed-chip"
+          aria-checked={upscale === factor}
+          onclick={() => (upscale = factor)}
+        >
+          {upscaleLabel(factor)}
+        </button>
+      {/each}
+    </div>
+    {#if options}
+      <p class="rs-help">
+        {$t('frameleaf_restoration_output_size', {
+          values: { width: options.outputWidth, height: options.outputHeight },
+        })}
+        {#if capped}
+          · {$t('frameleaf_restoration_output_capped')}
+        {/if}
+      </p>
+    {/if}
+    <label class="rs-check">
+      <input type="checkbox" bind:checked={keepGrain} />
+      <span>{$t('frameleaf_restoration_keep_grain')}</span>
+      <small>{$t('frameleaf_restoration_keep_grain_help')}</small>
+    </label>
+
+    <h3>{$t('frameleaf_restoration_preview_area')}</h3>
+    <div class="ed-row" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_restoration_preview_area')}>
+      <button
+        type="button"
+        role="radio"
+        class="ed-chip"
+        aria-checked={regionChoice === 'centre'}
+        onclick={() => (regionChoice = 'centre')}
+      >
+        {$t('frameleaf_restoration_area_centre')}
       </button>
+      <button
+        type="button"
+        role="radio"
+        class="ed-chip"
+        aria-checked={regionChoice === 'crop'}
+        disabled={!cropUsable}
+        title={cropUsable ? undefined : $t('frameleaf_restoration_area_crop_hint')}
+        onclick={() => (regionChoice = 'crop')}
+      >
+        {$t('frameleaf_restoration_area_crop')}
+      </button>
+    </div>
+    {#if isVideo && options}
+      <label class="rs-field">
+        <span>{$t('frameleaf_restoration_clip_start')}</span>
+        <input
+          type="number"
+          min="0"
+          max={maxStart}
+          step="0.5"
+          value={startSeconds ?? Math.round((maxStart / 2) * 2) / 2}
+          oninput={(event) => {
+            const value = Number(event.currentTarget.value);
+            startSeconds = Number.isFinite(value) ? Math.max(0, Math.min(maxStart, value)) : null;
+          }}
+        />
+      </label>
+      <p class="rs-help">
+        {$t('frameleaf_restoration_clip_help', { values: { seconds: options.previewSeconds ?? 5 } })}
+      </p>
     {/if}
-  </div>
-  <div class="rs-actions">
-    <button type="button" class="ed-button primary" disabled={!canRequest} onclick={requestPreview}>
-      <Icon icon={onCloud ? mdiCloudOutline : isVideo ? mdiPlayCircleOutline : mdiAutoFix} size="18" />
-      {#if submitting}
-        {$t('frameleaf_restoration_requesting')}
-      {:else if onCloud}
-        {$t('frameleaf_restoration_estimate_on_cloud')}
-      {:else if isVideo}
-        {$t('frameleaf_restoration_preview_seconds', { values: { seconds: options?.previewSeconds ?? 5 } })}
+
+    <h3>{$t('frameleaf_restoration_destination')}</h3>
+    {#if loadError}
+      <p class="ed-empty">{loadError}</p>
+    {:else if !options}
+      <p class="rs-help" aria-busy="true">{$t('loading')}</p>
+    {:else if destinations.length === 0}
+      <p class="ed-empty">{$t('frameleaf_restoration_no_destinations')}</p>
+    {:else}
+      <label class="rs-field">
+        <span>{$t('frameleaf_restoration_process_on')}</span>
+        <select
+          value={destinationId ?? ''}
+          disabled={optionsPending}
+          onchange={(event) => (destinationId = event.currentTarget.value || null)}
+        >
+          <option value="" disabled>{$t('frameleaf_restoration_choose_destination')}</option>
+          {#each destinations as candidate (candidate.id)}
+            <option value={candidate.id} disabled={!candidate.available}>
+              {candidate.name} · {$t(destinationKindKey(candidate.kind))}{candidate.available
+                ? ''
+                : ` · ${$t('frameleaf_restoration_unavailable')}`}
+            </option>
+          {/each}
+        </select>
+      </label>
+      {#if selected}
+        {#if !selected.available && selected.refusal}
+          <p class="rs-warning" role="status">
+            {$t(mlRefusalLabelKey(selected.refusal))}{selected.refusalDetail ? ` ${selected.refusalDetail}` : ''}
+          </p>
+        {:else if selected.leavesNetwork}
+          <p class="rs-warning" role="status">
+            <Icon icon={mdiCloudOutline} size="14" />
+            {$t('frameleaf_restoration_leaves_network')}
+          </p>
+          <!-- FL-72: a cloud job's cost is only known once Frameleaf Cloud settles it. -->
+          <p class="rs-help">{$t('frameleaf_restoration_cloud_cost_uncertain')}</p>
+        {:else}
+          <p class="rs-help">{$t('frameleaf_restoration_stays_on_network')}</p>
+        {/if}
       {:else}
-        {$t('frameleaf_restoration_request_preview')}
+        <p class="rs-warning" role="status">{$t('frameleaf_restoration_pick_destination')}</p>
       {/if}
-    </button>
-    {#if onCloud && !cloudUpscale}
-      <p class="rs-warning" role="status">{$t('frameleaf_restoration_cloud_needs_upscale')}</p>
+      {#each destinations.filter((candidate) => !candidate.available && candidate.id !== destinationId) as refused (refused.id)}
+        <p class="rs-help">
+          {refused.name}: {refused.refusal
+            ? $t(mlRefusalLabelKey(refused.refusal))
+            : $t('frameleaf_restoration_unavailable')}
+        </p>
+      {/each}
+
+      <h3>{$t('frameleaf_restoration_estimate')}</h3>
+      {#if selected}
+        <dl class="rs-facts">
+          <dt>{$t('frameleaf_restoration_estimate_preview')}</dt>
+          <dd>
+            {previewEstimate
+              ? $t('frameleaf_restoration_about', { values: { time: previewEstimate } })
+              : $t('frameleaf_restoration_estimate_unmeasured')}
+          </dd>
+          <dt>{$t('frameleaf_restoration_estimate_full')}</dt>
+          <dd>
+            {fullEstimate
+              ? $t('frameleaf_restoration_about', { values: { time: fullEstimate } })
+              : $t('frameleaf_restoration_estimate_unmeasured')}
+          </dd>
+          <!-- Prototype Estimate (Studio.jsx:1619-1629): Output and Cloud cost. The output is the capped
+             size the server will render; no charge is invented for a destination that leaves the network. -->
+          {#if options}
+            <dt>{$t('frameleaf_restoration_estimate_output')}</dt>
+            <dd>
+              {$t('frameleaf_restoration_output_dimensions', {
+                values: { width: options.outputWidth, height: options.outputHeight },
+              })}
+            </dd>
+          {/if}
+          <dt>{$t('frameleaf_restoration_estimate_cloud_cost')}</dt>
+          <dd>
+            {onCloud
+              ? $t('frameleaf_restoration_estimate_cost_on_confirm')
+              : selected.leavesNetwork
+                ? $t('frameleaf_restoration_estimate_unmeasured')
+                : $t('frameleaf_restoration_estimate_cost_none')}
+          </dd>
+        </dl>
+        <p class="rs-help">
+          {selected.estimate.sampleCount > 0
+            ? $t('frameleaf_restoration_estimate_basis', {
+                values: { count: selected.estimate.sampleCount, days: selected.estimate.windowDays },
+              })
+            : $t('frameleaf_restoration_estimate_none_help')}
+        </p>
+      {:else}
+        <p class="rs-help">{$t('frameleaf_restoration_estimate_pick')}</p>
+      {/if}
     {/if}
-    <p class="rs-help">{$t('frameleaf_restoration_request_help')}</p>
-  </div>
+
+    <!-- Prototype RestorePanel tools row (Studio.jsx:1632-1640): Loupe and, for video, Use current frame. -->
+    <div class="ed-row">
+      <button
+        type="button"
+        class="ed-chip"
+        aria-pressed={loupe}
+        data-testid="restoration-loupe-toggle"
+        onclick={() => onLoupeChange?.(!loupe)}
+      >
+        <Icon icon={mdiMagnify} size="16" />
+        {$t('frameleaf_restoration_loupe')}
+      </button>
+      {#if isVideo && currentFrameSeconds}
+        <button type="button" class="ed-chip" disabled={!options} onclick={useCurrentFrame}>
+          <Icon icon={mdiRefresh} size="16" />
+          {$t('frameleaf_restoration_use_current_frame')}
+        </button>
+      {/if}
+    </div>
+    <div class="rs-actions">
+      <button type="button" class="ed-button primary" disabled={!canRequest} onclick={requestPreview}>
+        <Icon icon={onCloud ? mdiCloudOutline : isVideo ? mdiPlayCircleOutline : mdiAutoFix} size="18" />
+        {#if submitting}
+          {$t('frameleaf_restoration_requesting')}
+        {:else if onCloud}
+          {$t('frameleaf_restoration_estimate_on_cloud')}
+        {:else if isVideo}
+          {$t('frameleaf_restoration_preview_seconds', { values: { seconds: options?.previewSeconds ?? 5 } })}
+        {:else}
+          {$t('frameleaf_restoration_request_preview')}
+        {/if}
+      </button>
+      {#if onCloud && !cloudUpscale}
+        <p class="rs-warning" role="status">{$t('frameleaf_restoration_cloud_needs_upscale')}</p>
+      {/if}
+      <p class="rs-help">{$t('frameleaf_restoration_request_help')}</p>
+    </div>
+  {/if}
 
   {#if isVideo}
     <!--

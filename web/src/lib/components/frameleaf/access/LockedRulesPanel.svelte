@@ -103,11 +103,31 @@
   const petIds = $derived(new Set(pets.map((pet) => pet.id)));
   const missingPetIds = $derived(draft.petIds.filter((id) => !petIds.has(id)));
   const sortedPets = $derived(sortPets(pets));
+  let generation = 0;
+  let disposed = false;
+  const ownerId = authManager.authenticated ? authManager.user.id : undefined;
+  const capture = () => {
+    const current = generation;
+    const isCurrentSession = authManager.captureSession();
+    return () => !disposed && current === generation && isCurrentSession();
+  };
+
+  $effect(() => {
+    const currentOwner = authManager.authenticated ? authManager.user.id : undefined;
+    if (currentOwner !== ownerId) {
+      relock();
+    }
+  });
 
   const isStatus = (error: unknown, status: number) => isHttpError(error) && error.status === status;
 
   /** Forget everything the unlocked session revealed. */
   const drop = () => {
+    generation++;
+    searchController?.abort();
+    searchController = undefined;
+    clearTimeout(searchTimer);
+    searchingPeople = false;
     baseline = emptyLockedRules();
     draft = emptyLockedRules();
     revision = '';
@@ -128,8 +148,11 @@
     notice = message;
   };
 
-  const resolvePeople = async (ids: string[]) => {
+  const resolvePeople = async (ids: string[], isCurrent: () => boolean) => {
     const results = await Promise.allSettled(ids.map((id) => getPerson({ id })));
+    if (!isCurrent()) {
+      return;
+    }
     const resolved: Record<string, PersonResponseDto | null> = {};
     for (const [index, id] of ids.entries()) {
       const result = results[index];
@@ -138,19 +161,27 @@
     people = resolved;
   };
 
-  const applyLoaded = async (preferences: UserPreferencesResponseDto) => {
+  const applyLoaded = async (preferences: UserPreferencesResponseDto, isCurrent: () => boolean) => {
     baseline = lockedRulesFrom(preferences);
     draft = lockedRulesFrom(preferences);
     revision = preferences.revision;
     conflict = false;
-    await resolvePeople(baseline.personIds);
+    await resolvePeople(baseline.personIds, isCurrent);
   };
 
   /** Load the rules; only while the session is unlocked before and after the read. */
   const load = async () => {
+    generation++;
+    const isCurrent = capture();
+    if (!isCurrent()) {
+      return;
+    }
     error = '';
     try {
       const before = await getAuthStatus();
+      if (!isCurrent()) {
+        return;
+      }
       if (!before.pinCode) {
         drop();
         phase = 'no-pin';
@@ -167,7 +198,13 @@
         getAllPets({ withHidden: true }),
         getAllPeople({ withHidden: true, size: PEOPLE_PAGE_SIZE }),
       ]);
+      if (!isCurrent()) {
+        return;
+      }
       const after = await getAuthStatus();
+      if (!isCurrent()) {
+        return;
+      }
       // The read itself says whether it named the rules: a session that locked and unlocked again
       // between the two status checks still gets blanked rules here, never an editable empty draft.
       if (!after.isElevated || !preferences.lockedRulesRevealed) {
@@ -178,13 +215,19 @@
       tags = allTags;
       pets = allPets;
       allPeople = peoplePage.people;
-      await applyLoaded(preferences);
+      await applyLoaded(preferences, isCurrent);
+      if (!isCurrent()) {
+        return;
+      }
       tagQuery = '';
       personQuery = '';
       personResults = [];
       notice = '';
       phase = 'ready';
     } catch {
+      if (!isCurrent()) {
+        return;
+      }
       // Never leave an editable draft on screen that was not loaded: saving it would replace the
       // stored rules with whatever it holds.
       drop();
@@ -197,12 +240,19 @@
     if (phase !== 'ready' || saving || conflict) {
       return;
     }
+    const isCurrent = capture();
+    if (!isCurrent()) {
+      return;
+    }
 
     saving = true;
     error = '';
     notice = '';
     try {
       const status = await getAuthStatus();
+      if (!isCurrent()) {
+        return;
+      }
       if (!status.isElevated) {
         relock($t('frameleaf_locked_rules_unlock_again'));
         return;
@@ -212,10 +262,16 @@
       try {
         response = await updateMyPreferences({ userPreferencesUpdateDto: lockedRulesUpdate(draft, revision) });
       } catch (error_) {
+        if (!isCurrent()) {
+          return;
+        }
         if (!isStatus(error_, 409)) {
           throw error_;
         }
         const latest = await getMyPreferences();
+        if (!isCurrent()) {
+          return;
+        }
         if (!latest.lockedRulesRevealed) {
           relock($t('frameleaf_locked_rules_unlock_again'));
           return;
@@ -228,6 +284,9 @@
         response = await updateMyPreferences({ userPreferencesUpdateDto: lockedRulesUpdate(draft, decision.revision) });
       }
 
+      if (!isCurrent()) {
+        return;
+      }
       if (!response.lockedRulesRevealed) {
         relock($t('frameleaf_locked_rules_unlock_again'));
         return;
@@ -238,6 +297,9 @@
       authManager.setPreferences(withoutLockedRuleIds(response));
       notice = $t('frameleaf_locked_rules_saved');
     } catch (error_) {
+      if (!isCurrent()) {
+        return;
+      }
       if (isStatus(error_, 403) || isStatus(error_, 401)) {
         relock($t('frameleaf_locked_rules_unlock_again'));
       } else if (isStatus(error_, 409)) {
@@ -255,13 +317,21 @@
     if (phase !== 'ready' || saving || document.visibilityState !== 'visible') {
       return;
     }
+    const isCurrent = capture();
     try {
       // An unlock that expired while away is not a change made elsewhere: lock the panel instead.
-      if (!(await getAuthStatus()).isElevated) {
+      const status = await getAuthStatus();
+      if (!isCurrent()) {
+        return;
+      }
+      if (!status.isElevated) {
         relock($t('frameleaf_locked_rules_unlock_again'));
         return;
       }
       const latest = await getMyPreferences();
+      if (!isCurrent()) {
+        return;
+      }
       if (!latest.lockedRulesRevealed) {
         relock($t('frameleaf_locked_rules_unlock_again'));
         return;
@@ -293,6 +363,10 @@
   };
 
   const createTag = async () => {
+    const isCurrent = capture();
+    if (!isCurrent() || phase !== 'ready') {
+      return;
+    }
     const name = tagQuery.trim();
     if (!canCreateTag(tags, name) || creatingTag) {
       return;
@@ -301,6 +375,9 @@
     error = '';
     try {
       const created = await upsertTags({ tagUpsertDto: { tags: [name] } });
+      if (!isCurrent()) {
+        return;
+      }
       const known = new Set(tags.map((tag) => tag.id));
       tags = [...tags, ...created.filter((tag) => !known.has(tag.id))];
       const leaf = created.find((tag) => tag.value.toLocaleLowerCase() === name.toLocaleLowerCase()) ?? created.at(-1);
@@ -309,6 +386,9 @@
       }
       tagQuery = '';
     } catch {
+      if (!isCurrent()) {
+        return;
+      }
       error = $t('frameleaf_locked_rules_tag_create_failed');
     } finally {
       creatingTag = false;
@@ -316,20 +396,24 @@
   };
 
   const runPersonSearch = async (name: string) => {
+    const isCurrent = capture();
+    if (!isCurrent() || phase !== 'ready') {
+      return;
+    }
     const controller = new AbortController();
     searchController = controller;
     searchingPeople = true;
     try {
       const results = await searchPerson({ name, withHidden: true }, { signal: controller.signal });
-      if (searchController === controller) {
+      if (isCurrent() && searchController === controller) {
         personResults = results.filter((person) => !draft.personIds.includes(person.id));
       }
     } catch {
-      if (!controller.signal.aborted) {
+      if (isCurrent() && !controller.signal.aborted) {
         personResults = [];
       }
     } finally {
-      if (searchController === controller) {
+      if (isCurrent() && searchController === controller) {
         searchingPeople = false;
         searchController = undefined;
       }
@@ -381,8 +465,8 @@
   });
 
   onDestroy(() => {
-    searchController?.abort();
-    clearTimeout(searchTimer);
+    disposed = true;
+    drop();
   });
 </script>
 

@@ -21,6 +21,7 @@
   import { getAssetInfo, type AssetResponseDto } from '@frameleaf/sdk';
   import { Icon, modalManager } from '@frameleaf/ui';
   import { mdiCalendar, mdiPencil } from '@mdi/js';
+  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -40,32 +41,61 @@
 
   let failure = $state<InlineEditFailure | null>(null);
 
+  let alive = true;
+  let generation = 0;
+  let previousAssetId: string | undefined;
+  onDestroy(() => {
+    alive = false;
+  });
+  $effect.pre(() => {
+    if (asset.id === previousAssetId) {
+      return;
+    }
+    previousAssetId = asset.id;
+    generation++;
+    failure = null;
+  });
+  const captureView = () => {
+    const owner = generation;
+    const isCurrentSession = authManager.captureSession();
+    return () => alive && owner === generation && isCurrentSession();
+  };
+
   const handleChangeDate = async () => {
     if (!isOwner) {
       return;
     }
 
+    const isCurrent = captureView();
     const succeeded = await modalManager.show(ViewerDateDialog, {
       asset,
       initialDate: dateTime,
       initialTimeZone: timeZone,
       onError: (error: unknown) => {
-        failure = classifyInlineEditError(error);
+        if (isCurrent()) {
+          failure = classifyInlineEditError(error);
+        }
       },
     });
 
-    if (succeeded) {
+    if (succeeded && isCurrent()) {
       failure = null;
     }
   };
 
   const reload = async () => {
+    const isCurrent = captureView();
     try {
       const updated = await getAssetInfo({ id: asset.id });
+      if (!isCurrent()) {
+        return;
+      }
       failure = null;
       onAssetRefresh?.(updated);
     } catch (error) {
-      handleError(error, $t('frameleaf_info_error_reload_failed'));
+      if (isCurrent()) {
+        handleError(error, $t('frameleaf_info_error_reload_failed'));
+      }
     }
   };
 </script>

@@ -21,28 +21,17 @@ import {
   type UserResponseDto,
 } from '@frameleaf/sdk';
 import { toastManager, type ActionItem } from '@frameleaf/ui';
-import { mdiImageOutline, mdiPlusBoxOutline, mdiUpload } from '@mdi/js';
+import { mdiImageOutline, mdiUpload } from '@mdi/js';
 import { type MessageFormatter } from 'svelte-i18n';
 import { goto } from '$app/navigation';
 import { type AlbumDetailsDraft } from '$lib/frameleaf/album-directory';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';
-import { createAlbumAndRedirect } from '$lib/utils/album-utils';
 import { downloadArchive } from '$lib/utils/asset-utils';
 import { openFileUploadDialog } from '$lib/utils/file-uploader';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
-
-export const getAlbumsActions = ($t: MessageFormatter) => {
-  const Create: ActionItem = {
-    title: $t('create_album'),
-    icon: mdiPlusBoxOutline,
-    onAction: () => createAlbumAndRedirect(),
-  };
-
-  return { Create };
-};
 
 export const getAlbumAssetActions = ($t: MessageFormatter, album: AlbumResponseDto, asset: AssetResponseDto) => {
   const SetCover: ActionItem = {
@@ -66,19 +55,40 @@ export const getAlbumAssetsActions = ($t: MessageFormatter, album: AlbumResponse
 };
 
 export const addAssetsToAlbums = async (albumIds: string[], assetIds: string[], { notify }: { notify: boolean }) => {
+  const owner = authManager.authenticated ? authManager.user.id : undefined;
+  const sharedLink = authManager.isSharedLink;
+  const params = { ...authManager.params };
+  const isCurrent = () => {
+    const currentOwner = authManager.authenticated ? authManager.user.id : undefined;
+    return (
+      owner === currentOwner &&
+      sharedLink === authManager.isSharedLink &&
+      params.key === authManager.params.key &&
+      params.slug === authManager.params.slug
+    );
+  };
   const $t = await getFormatter();
+  if (!isCurrent()) {
+    return false;
+  }
 
   try {
     if (albumIds.length === 1) {
       const albumId = albumIds[0];
-      const results = await addToAlbum({ ...authManager.params, id: albumId, bulkIdsDto: { ids: assetIds } });
+      const results = await addToAlbum({ ...params, id: albumId, bulkIdsDto: { ids: assetIds } });
+      if (!isCurrent()) {
+        return false;
+      }
       if (notify) {
         notifyAddToAlbum($t, albumId, assetIds, results);
       }
     }
 
     if (albumIds.length > 1) {
-      const results = await addToAlbums({ ...authManager.params, albumsAddAssetsDto: { albumIds, assetIds } });
+      const results = await addToAlbums({ ...params, albumsAddAssetsDto: { albumIds, assetIds } });
+      if (!isCurrent()) {
+        return false;
+      }
       if (notify) {
         notifyAddToAlbums($t, albumIds, assetIds, results);
       }
@@ -87,14 +97,25 @@ export const addAssetsToAlbums = async (albumIds: string[], assetIds: string[], 
     eventManager.emit('AlbumAddAssets', { assetIds, albumIds });
     return true;
   } catch (error) {
+    if (!isCurrent()) {
+      return false;
+    }
     handleError(error, $t('errors.error_adding_assets_to_album'));
     return false;
   }
 };
 
 const notifyAddToAlbum = ($t: MessageFormatter, albumId: string, assetIds: string[], results: BulkIdResponseDto[]) => {
-  const successCount = results.filter(({ success }) => success).length;
-  const duplicateCount = results.filter(({ error }) => error === 'duplicate').length;
+  let successCount = 0;
+  let duplicateCount = 0;
+  for (const { success, error } of results) {
+    if (success) {
+      successCount++;
+    }
+    if (error === BulkIdErrorReason.Duplicate) {
+      duplicateCount++;
+    }
+  }
   let description: string | undefined;
 
   if (duplicateCount === assetIds.length) {
@@ -323,7 +344,10 @@ export const handleEditAlbumDetails = async (album: AlbumResponseDto, draft: Alb
   }
 
   try {
-    saved = await moveAlbumToCollection({ id: album.id, moveAlbumDto: { collectionId: parentId } });
+    saved = await moveAlbumToCollection({
+      id: album.id,
+      moveAlbumDto: { collectionId: parentId, expectedParentId: album.parentId },
+    });
   } catch (error) {
     eventManager.emit('AlbumUpdate', saved);
     handleError(error, $t('frameleaf_albums_move_failed'));

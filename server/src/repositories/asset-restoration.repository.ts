@@ -1,11 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
 import { MediaOperationStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
-import { EXPIRING_RESULT_STATUSES } from 'src/utils/restoration.js';
+import { EXPIRING_RESULT_STATUSES, canDiscardRestoration } from 'src/utils/restoration.js';
 
 export type AssetRestoration = Selectable<AssetRestorationTable>;
 export type RestoredForPlayback = Pick<
@@ -136,14 +136,50 @@ export class AssetRestorationRepository {
     patch: AssetRestorationUpdate & { status: AssetRestorationStatus },
     /** A transaction to write in, when the transition must land together with the job's completion. */
     executor: Kysely<DB> = this.db,
+    operation?: { stage: 'preview' | 'full'; id: string | null },
   ): Promise<AssetRestoration | undefined> {
     return (await executor
       .updateTable('asset_restoration')
       .set(patch)
       .where('id', '=', id)
       .where('status', 'in', [...from])
+      .$if(!!operation, (qb) =>
+        qb.where(
+          operation!.stage === 'preview' ? 'previewOperationId' : 'fullOperationId',
+          operation!.id === null ? 'is' : '=',
+          operation!.id,
+        ),
+      )
       .returningAll()
       .executeTakeFirst()) as AssetRestoration | undefined;
+  }
+
+  /** Return the locked row's latest paths and job links as the owner discards it. */
+  async discard(id: string): Promise<AssetRestoration | undefined> {
+    return this.db.transaction().execute(async (tx) => {
+      const row = await tx
+        .selectFrom('asset_restoration')
+        .selectAll()
+        .where('id', '=', id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!row || !canDiscardRestoration(row.status as AssetRestorationStatus)) return;
+      await tx
+        .updateTable('asset_restoration')
+        .set({
+          status: AssetRestorationStatus.Discarded,
+          previewBeforePath: null,
+          previewAfterPath: null,
+          resultPath: null,
+          resultPreviewPath: null,
+          previewExpiresAt: null,
+          resultExpiresAt: null,
+          isCurrent: false,
+        })
+        .where('id', '=', id)
+        .execute();
+      return row as AssetRestoration;
+    });
   }
 
   /**
@@ -159,12 +195,16 @@ export class AssetRestorationRepository {
         .where('isCurrent', '=', true)
         .execute();
       if (restorationId) {
-        await trx
+        const selected = await trx
           .updateTable('asset_restoration')
           .set({ isCurrent: true })
           .where('id', '=', restorationId)
           .where('assetId', '=', assetId)
-          .execute();
+          .where('status', '=', AssetRestorationStatus.Restored)
+          .where('resultPath', '!=', '')
+          .returning('id')
+          .executeTakeFirst();
+        if (!selected) throw new BadRequestException('Only a finished restoration can be used as the playback version');
       }
     });
   }
@@ -184,6 +224,28 @@ export class AssetRestorationRepository {
       .orderBy('previewExpiresAt', 'asc')
       .limit(limit)
       .execute()) as unknown as AssetRestoration[];
+  }
+
+  async clearExpiredPreview(
+    id: string,
+    status: AssetRestorationStatus,
+    now: Date,
+    executor: Kysely<DB> = this.db,
+  ): Promise<AssetRestoration | undefined> {
+    return (await executor
+      .updateTable('asset_restoration')
+      .set({
+        previewBeforePath: null,
+        previewAfterPath: null,
+        previewExpiresAt: null,
+        ...(status === AssetRestorationStatus.PreviewReady && { status: AssetRestorationStatus.Expired }),
+      })
+      .where('id', '=', id)
+      .where('status', '=', status)
+      .where('previewExpiresAt', 'is not', null)
+      .where('previewExpiresAt', '<=', now)
+      .returningAll()
+      .executeTakeFirst()) as AssetRestoration | undefined;
   }
 
   /**
@@ -211,8 +273,9 @@ export class AssetRestorationRepository {
     id: string,
     status: AssetRestorationStatus,
     now: Date,
+    executor: Kysely<DB> = this.db,
   ): Promise<AssetRestoration | undefined> {
-    return (await this.db
+    return (await executor
       .updateTable('asset_restoration')
       .set({ resultPath: null, resultPreviewPath: null, resultExpiresAt: null })
       .where('id', '=', id)

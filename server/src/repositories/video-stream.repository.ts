@@ -73,47 +73,40 @@ export class VideoStreamRepository {
 
   @GenerateSql({ params: [DummyValue.UUID] })
   async getForMainPlaylist(id: string) {
-    return this.db
-      .selectFrom('asset')
-      .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
-      .where('asset.id', '=', id)
-      .innerJoin('asset_video', 'asset.id', 'asset_video.assetId')
-      .innerJoin('asset_keyframe', 'asset.id', 'asset_keyframe.assetId')
-      .select((eb) => withVideoStream(eb).$notNull().as('videoStream'))
-      .select((eb) => withVideoPackets(eb).$notNull().as('packets'))
-      .executeTakeFirst();
+    return this.streamAsset(id).executeTakeFirst();
   }
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
   async getForMediaPlaylist(id: string, sessionId: string) {
-    return this.db
-      .selectFrom('asset')
-      .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+    return this.streamAsset(id)
       .innerJoin('video_stream_session', 'asset.id', 'video_stream_session.assetId')
-      .where('asset.id', '=', id)
       .where('video_stream_session.id', '=', sessionId)
       .where('video_stream_session.expiresAt', '>', new Date())
-      .innerJoin('asset_video', 'asset.id', 'asset_video.assetId')
-      .innerJoin('asset_keyframe', 'asset.id', 'asset_keyframe.assetId')
-      .select((eb) => withVideoStream(eb).$notNull().as('videoStream'))
-      .select((eb) => withVideoPackets(eb).$notNull().as('packets'))
       .executeTakeFirst();
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
   async getForTranscoding(id: string) {
+    return this.streamAsset(id)
+      .leftJoin('asset_audio', 'asset.id', 'asset_audio.assetId')
+      .select((eb) => [
+        'asset.originalPath',
+        withAudioStream(eb).as('audioStream'),
+        withVideoFormat(eb).$notNull().as('format'),
+      ])
+      .executeTakeFirst();
+  }
+
+  private streamAsset(id: string) {
     return this.db
       .selectFrom('asset')
       .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
       .where('asset.id', '=', id)
-      .leftJoin('asset_audio', 'asset.id', 'asset_audio.assetId')
       .innerJoin('asset_video', 'asset.id', 'asset_video.assetId')
       .innerJoin('asset_keyframe', 'asset.id', 'asset_keyframe.assetId')
-      .select('asset.originalPath')
-      .select((eb) => withAudioStream(eb).as('audioStream'))
-      .select((eb) => withVideoStream(eb).$notNull().as('videoStream'))
-      .select((eb) => withVideoFormat(eb).$notNull().as('format'))
-      .select((eb) => withVideoPackets(eb).$notNull().as('packets'))
-      .executeTakeFirst();
+      .select((eb) => [
+        withVideoStream(eb).$notNull().as('videoStream'),
+        withVideoPackets(eb).$notNull().as('packets'),
+      ]);
   }
 }

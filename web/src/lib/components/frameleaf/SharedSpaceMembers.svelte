@@ -6,6 +6,7 @@
   import PersonPhoto from '$lib/components/frameleaf/PersonPhoto.svelte';
   import RecipientGroupsDialog from '$lib/components/frameleaf/RecipientGroupsDialog.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
+  import SupporterTag from '$lib/components/frameleaf/SupporterTag.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import {
     alreadyInvolvedIds,
@@ -189,11 +190,17 @@
     query = '';
   };
 
-  const changeRole = (member: SharedSpaceMemberResponseDto, role: AlbumUserRole) =>
-    run(
+  const changeRole = async (member: SharedSpaceMemberResponseDto, select: HTMLSelectElement) => {
+    const role = select.value as AlbumUserRole;
+    const changed = await run(
       () => updateAlbumUser({ id: space.id, userId: member.user.id, updateAlbumUserDto: { role } }).then(() => {}),
       $t('frameleaf_spaces_role_changed', { values: { name: member.user.name, role: roleLabel(role) } }),
     );
+    // A refused change leaves the member's role as it was, so the menu must not show the new one.
+    if (!changed) {
+      select.value = member.role;
+    }
+  };
 
   /**
    * Removing a member or leaving asks first in the Frameleaf dialog (AL-43); withdrawing an
@@ -253,7 +260,10 @@
       <li class:pending={member.pending}>
         <PersonPhoto user={member.user} />
         <span class="name">
-          <strong>{member.user.name}</strong>
+          <span class="name-row">
+            <strong>{member.user.name}</strong>
+            {#if member.supporter}<SupporterTag />{/if}
+          </span>
           <small>{member.user.email}</small>
         </span>
 
@@ -272,7 +282,7 @@
             <select
               value={member.role}
               disabled={busy}
-              onchange={(event) => changeRole(member, event.currentTarget.value as AlbumUserRole)}
+              onchange={(event) => void changeRole(member, event.currentTarget)}
             >
               {#each SPACE_ROLE_OPTIONS as role (role)}
                 <option value={role}>{roleLabel(role)}</option>
@@ -497,6 +507,13 @@
   .name strong {
     font-size: 0.8125rem;
     font-weight: 600;
+  }
+  .name-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--fl-space-1) var(--fl-space-2);
+    min-width: 0;
   }
   .name small {
     color: var(--fl-muted);

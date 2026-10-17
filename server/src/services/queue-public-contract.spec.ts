@@ -28,7 +28,9 @@ describe('public queue job compatibility (FL-283)', () => {
     const legacyNames = Object.values(JobName).filter((name) => name !== JobName.PhotographyWorkflowRender);
     const schema = QueueJobResponseDto.schema.shape.name;
 
-    expect(z.toJSONSchema(schema).enum).toEqual(legacyNames);
+    const document = z.toJSONSchema(schema);
+    const root = document.$ref ? document.$defs![document.$ref.slice('#/$defs/'.length)] : document;
+    expect(root.enum).toEqual(legacyNames);
     for (const name of legacyNames) expect(schema.parse(name)).toBe(name);
     expect(schema.safeParse(JobName.PhotographyWorkflowRender).success).toBe(false);
   });

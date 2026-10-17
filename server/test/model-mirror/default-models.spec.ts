@@ -9,10 +9,10 @@ import { defaults } from 'src/config.js';
 const MODEL_SOURCE_ORG = 'frameleaf';
 
 const readDefaultModelSource = () => {
-  const config = readFileSync(resolve(import.meta.dirname, '../../../machine-learning/immich_ml/config.py'), 'utf8');
+  const config = readFileSync(resolve(import.meta.dirname, '../../../machine-learning/frameleaf_ml/config.py'), 'utf8');
   const match = /^DEFAULT_MODEL_SOURCE_URL = "(https:\/\/[^"]+)"$/m.exec(config);
   if (!match) {
-    throw new Error('DEFAULT_MODEL_SOURCE_URL not found in machine-learning/immich_ml/config.py');
+    throw new Error('DEFAULT_MODEL_SOURCE_URL not found in machine-learning/frameleaf_ml/config.py');
   }
   return match[1].replace(/\/+$/, '');
 };

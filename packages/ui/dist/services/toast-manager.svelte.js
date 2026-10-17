@@ -37,15 +37,17 @@ class ToastManager {
     }
     async mount() {
         if (!this.#ref) {
-            this.#ref = await mount(ToastPanel, {
+            this.#ref = mount(ToastPanel, {
                 target: document.body,
                 props: this.#props,
             });
         }
     }
     async unmount() {
-        if (this.#ref) {
-            await unmount(this.#ref);
+        const ref = this.#ref;
+        this.#ref = undefined;
+        if (ref) {
+            await unmount(ref);
         }
     }
     primary(item, options) {

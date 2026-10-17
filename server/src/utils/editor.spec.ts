@@ -76,6 +76,54 @@ const createFace = (params: Partial<AssetFace> = {}): AssetFace => ({
 describe('checkFaceVisibility', () => {
   const assetDimensions = { width: 1000, height: 1000 };
 
+  it.each([149.9999999999, 150, 150.0000000001])('keeps the exact half-overlap boundary at %s', (x1) => {
+    const face = createFace();
+    const result = checkFaceVisibility([face], assetDimensions, { x1, y1: 100, x2: 500, y2: 500 });
+    expect(result).toEqual(x1 <= 150 ? { visible: [face], hidden: [] } : { visible: [], hidden: [face] });
+  });
+
+  it.each([
+    { boundingBoxX2: 100 },
+    { boundingBoxX1: NaN },
+    { boundingBoxX2: Infinity },
+    { boundingBoxX1: 200, boundingBoxX2: 100 },
+    { imageWidth: 0 },
+  ])('keeps undefined or non-overlapping face areas hidden: %j', (params) => {
+    const face = createFace(params);
+    expect(checkFaceVisibility([face], assetDimensions, { x1: 0, y1: 0, x2: 500, y2: 500 })).toEqual({
+      visible: [],
+      hidden: [face],
+    });
+  });
+
+  it('partitions sparse frozen inputs in order with original references, including duplicates', () => {
+    const inside = Object.freeze(createFace({ isVisible: false }));
+    const outside = Object.freeze(createFace({ boundingBoxX1: 600, boundingBoxX2: 700 }));
+    const faces = [outside, inside, outside, inside];
+    delete faces[1];
+    Object.freeze(faces);
+    const crop = Object.freeze({ x1: 0, y1: 0, x2: 500, y2: 500 });
+    const dimensions = Object.freeze({ ...assetDimensions });
+    const result = checkFaceVisibility(faces, dimensions, crop);
+    expect(result.visible).toEqual([inside]);
+    expect(result.hidden).toEqual([outside, outside]);
+    expect(result.visible[0]).toBe(inside);
+    expect(result.hidden[0]).toBe(outside);
+    expect(result.hidden[1]).toBe(outside);
+    expect(checkFaceVisibility(faces, dimensions)).toEqual({ visible: [inside], hidden: [] });
+    expect(faces).toHaveLength(4);
+    expect(1 in faces).toBe(false);
+    expect(inside.isVisible).toBe(false);
+    expect(outside.isVisible).toBe(true);
+  });
+
+  it('keeps non-finite target dimensions hidden and an infinite containing crop visible', () => {
+    const face = createFace();
+    const crop = { x1: 0, y1: 0, x2: Infinity, y2: Infinity };
+    expect(checkFaceVisibility([face], assetDimensions, crop).visible).toEqual([face]);
+    expect(checkFaceVisibility([face], { width: Infinity, height: 1000 }, crop).hidden).toEqual([face]);
+  });
+
   it('should return only non-visible faces when no crop is provided', () => {
     const faces = [
       createFace({ id: 'face-1', isVisible: true }),
@@ -310,6 +358,51 @@ const createOcr = (
 
 describe('checkOcrVisibility', () => {
   const assetDimensions = { width: 1000, height: 1000 };
+
+  it.each([149.9999999999, 150, 150.0000000001])('keeps the exact half-overlap boundary at %s', (x1) => {
+    const ocr = createOcr();
+    const result = checkOcrVisibility([ocr], assetDimensions, { x1, y1: 100, x2: 500, y2: 500 });
+    expect(result).toEqual(x1 <= 150 ? { visible: [ocr], hidden: [] } : { visible: [], hidden: [ocr] });
+  });
+
+  it.each([{ x1: 0.1, x2: 0.1, x3: 0.1, x4: 0.1 }, { x1: NaN }, { x2: Infinity }])(
+    'keeps undefined OCR areas hidden: %j',
+    (params) => {
+      const ocr = createOcr(params);
+      expect(checkOcrVisibility([ocr], assetDimensions, { x1: 0, y1: 0, x2: 500, y2: 500 })).toEqual({
+        visible: [],
+        hidden: [ocr],
+      });
+    },
+  );
+
+  it('partitions sparse frozen inputs in order with original references and all DTO fields', () => {
+    const inside = Object.freeze(createOcr({ isVisible: false, text: 'Original text', boxScore: 0.7 }));
+    const outside = Object.freeze(createOcr({ x1: 0.6, x2: 0.7, x3: 0.7, x4: 0.6 }));
+    const ocrs = [outside, inside, outside, inside];
+    delete ocrs[1];
+    Object.freeze(ocrs);
+    const crop = Object.freeze({ x1: 0, y1: 0, x2: 500, y2: 500 });
+    const dimensions = Object.freeze({ ...assetDimensions });
+    const result = checkOcrVisibility(ocrs, dimensions, crop);
+    expect(result.visible).toEqual([inside]);
+    expect(result.hidden).toEqual([outside, outside]);
+    expect(result.visible[0]).toBe(inside);
+    expect(result.hidden[0]).toBe(outside);
+    expect(result.hidden[1]).toBe(outside);
+    expect(checkOcrVisibility(ocrs, dimensions)).toEqual({ visible: [inside], hidden: [] });
+    expect(ocrs).toHaveLength(4);
+    expect(1 in ocrs).toBe(false);
+    expect(inside.isVisible).toBe(false);
+    expect(outside.isVisible).toBe(true);
+  });
+
+  it('keeps non-finite target dimensions hidden and an infinite containing crop visible', () => {
+    const ocr = createOcr();
+    const crop = { x1: 0, y1: 0, x2: Infinity, y2: Infinity };
+    expect(checkOcrVisibility([ocr], assetDimensions, crop).visible).toEqual([ocr]);
+    expect(checkOcrVisibility([ocr], { width: Infinity, height: 1000 }, crop).hidden).toEqual([ocr]);
+  });
 
   it('should return only non-visible OCR entries when no crop is provided', () => {
     const ocrs = [

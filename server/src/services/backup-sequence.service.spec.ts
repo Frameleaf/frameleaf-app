@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { JobName, JobStatus, SystemMetadataKey } from 'src/enum.js';
+import { DatabaseLock, JobName, JobStatus, SystemMetadataKey } from 'src/enum.js';
 import { BACKUP_SEQUENCE_CRON, BackupSequenceService } from 'src/services/backup-sequence.service.js';
 import { type BackupSequenceState, deriveBackupSchedule, effectiveBackupSchedule } from 'src/utils/backup-sequence.js';
 
@@ -9,6 +9,7 @@ type Place = { on: boolean; busy: boolean };
 const setup = (options: { chosen?: string; databaseEnabled?: boolean; databaseCron?: string } = {}) => {
   const order: string[] = [];
   const stored: { state?: BackupSequenceState } = {};
+  let lockTail = Promise.resolve();
   const buddy: Place = { on: true, busy: false };
   const cloud: Place = { on: true, busy: false };
   const config = {
@@ -35,7 +36,14 @@ const setup = (options: { chosen?: string; databaseEnabled?: boolean; databaseCr
         return Promise.resolve();
       }),
     },
-    database: { tryLock: vi.fn().mockResolvedValue(true) },
+    database: {
+      tryLock: vi.fn().mockResolvedValue(true),
+      withLock: vi.fn((_lock: DatabaseLock, work: () => Promise<unknown>) => {
+        const pending = lockTail.then(work);
+        lockTail = pending.then(() => {}).catch(() => {});
+        return pending;
+      }),
+    },
     cron: { create: vi.fn(), update: vi.fn() },
     job: { queue: vi.fn().mockResolvedValue(undefined) },
     buddyRepository: { state: vi.fn().mockResolvedValue({ settings: { schedule: '0 4 * * *' } }) },
@@ -62,20 +70,23 @@ const setup = (options: { chosen?: string; databaseEnabled?: boolean; databaseCr
       }),
     },
   };
-  const sut = new BackupSequenceService(
-    mocks.logger as never,
-    mocks.config as never,
-    mocks.metadata as never,
-    mocks.database as never,
-    mocks.cron as never,
-    mocks.job as never,
-    mocks.buddyRepository as never,
-    mocks.databaseBackup as never,
-    mocks.buddyBackup as never,
-    mocks.cloudBackup as never,
-  );
-  (sut as unknown as { readConfig: () => Promise<unknown> }).readConfig = () => Promise.resolve(config);
-  return { sut, mocks, order, stored, buddy, cloud, config };
+  const createService = () => {
+    const sut = new BackupSequenceService(
+      mocks.logger as never,
+      mocks.config as never,
+      mocks.metadata as never,
+      mocks.database as never,
+      mocks.cron as never,
+      mocks.job as never,
+      mocks.buddyRepository as never,
+      mocks.databaseBackup as never,
+      mocks.buddyBackup as never,
+      mocks.cloudBackup as never,
+    );
+    (sut as unknown as { readConfig: () => Promise<unknown> }).readConfig = () => Promise.resolve(config);
+    return sut;
+  };
+  return { sut: createService(), createService, mocks, order, stored, buddy, cloud, config };
 };
 
 describe('the one backup schedule (FL-362)', () => {
@@ -125,6 +136,47 @@ describe('the one backup schedule (FL-362)', () => {
   });
 
   describe('a run', () => {
+    it('serializes advancement across workers while the local backup is running', async () => {
+      const { sut, createService, mocks, buddy, cloud } = setup();
+      buddy.on = false;
+      cloud.on = false;
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      mocks.databaseBackup.handleBackupDatabase.mockImplementationOnce(async () => {
+        entered.resolve();
+        await release.promise;
+        return JobStatus.Success;
+      });
+      const starting = sut.handleStart();
+      await entered.promise;
+      const advancing = createService().move();
+      release.resolve();
+      await Promise.all([starting, advancing]);
+      expect(mocks.databaseBackup.handleBackupDatabase).toHaveBeenCalledOnce();
+      expect(mocks.database.withLock).toHaveBeenCalledTimes(2);
+      for (const [lock] of mocks.database.withLock.mock.calls) expect(lock).toBe(DatabaseLock.BackupSequenceRun);
+    });
+
+    it('retains a scheduled tick received while another worker advances the run', async () => {
+      const { sut, createService, mocks, stored, buddy } = setup();
+      buddy.on = false;
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      mocks.databaseBackup.handleBackupDatabase.mockImplementationOnce(async () => {
+        entered.resolve();
+        await release.promise;
+        return JobStatus.Success;
+      });
+      const starting = sut.handleStart();
+      await entered.promise;
+      const ticking = createService().handleStart();
+      release.resolve();
+      expect(await Promise.all([starting, ticking])).toEqual([JobStatus.Success, JobStatus.Skipped]);
+      expect(stored.state?.dueAt).toEqual(expect.any(String));
+      expect(stored.state?.run).toMatchObject({ place: 'cloud', begun: true });
+      expect(mocks.databaseBackup.handleBackupDatabase).toHaveBeenCalledOnce();
+    });
+
     it('backs up this server, then the buddy, then the cloud, each when the one before has finished', async () => {
       const { sut, order, stored, buddy, cloud } = setup();
 

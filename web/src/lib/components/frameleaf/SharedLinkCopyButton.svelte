@@ -26,7 +26,10 @@
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   const copy = async () => {
-    await copyToClipboard(value);
+    // A refused copy is reported by copyToClipboard; the tick and the caller's confirmation are not shown.
+    if (!(await copyToClipboard(value))) {
+      return;
+    }
     onCopied?.();
     copied = true;
     clearTimeout(timer);

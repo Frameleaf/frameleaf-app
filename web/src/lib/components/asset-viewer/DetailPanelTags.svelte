@@ -26,6 +26,7 @@
   import { getAllTags, getAssetInfo, upsertTags, type AssetResponseDto, type TagResponseDto } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
   import { mdiClose, mdiPlus, mdiTagOutline, mdiTagPlusOutline } from '@mdi/js';
+  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -53,6 +54,31 @@
   let active = $state(0);
   let input: HTMLInputElement | undefined = $state();
 
+  let alive = true;
+  let generation = 0;
+  let previousAssetId: string | undefined;
+  onDestroy(() => {
+    alive = false;
+  });
+  $effect.pre(() => {
+    if (asset.id === previousAssetId) {
+      return;
+    }
+    previousAssetId = asset.id;
+    generation++;
+    failure = null;
+    pending = null;
+    isSaving = false;
+    query = '';
+    open = false;
+    active = 0;
+  });
+  const captureView = () => {
+    const owner = generation;
+    const isCurrentSession = authManager.captureSession();
+    return () => alive && owner === generation && isCurrentSession();
+  };
+
   const options = $derived(
     tagSuggestions(
       allTags ?? [],
@@ -65,10 +91,16 @@
     if (allTags) {
       return;
     }
+    const isCurrent = captureView();
     try {
-      allTags = await getAllTags();
+      const loaded = await getAllTags();
+      if (isCurrent()) {
+        allTags = loaded;
+      }
     } catch (error) {
-      handleError(error, $t('errors.frameleaf_tags_unable_to_load'));
+      if (isCurrent()) {
+        handleError(error, $t('errors.frameleaf_tags_unable_to_load'));
+      }
     }
   };
 
@@ -81,12 +113,18 @@
     input.focus();
   });
 
-  const refresh = async () => {
-    asset = await getAssetInfo({ id: asset.id });
-    onAssetRefresh?.(asset);
+  const refresh = async (isCurrent = captureView()) => {
+    const updated = await getAssetInfo({ id: asset.id });
+    if (!isCurrent()) {
+      return;
+    }
+    asset = updated;
+    onAssetRefresh?.(updated);
   };
 
   const run = async (change: NonNullable<typeof pending>) => {
+    const id = asset.id;
+    const isCurrent = captureView();
     isSaving = true;
     pending = change;
     try {
@@ -94,27 +132,41 @@
         let tagId = change.option.id;
         if (change.option.create) {
           const [created] = await upsertTags({ tagUpsertDto: { tags: [change.option.id] } });
+          if (!isCurrent()) {
+            return;
+          }
           allTags = allTags ? [...allTags, created] : [created];
           tagId = created.id;
         }
-        await tagAssets({ tagIds: [tagId], assetIds: [asset.id], showNotification: false });
+        await tagAssets({ tagIds: [tagId], assetIds: [id], showNotification: false });
+        if (!isCurrent()) {
+          return;
+        }
         toastManager.primary(change.option.create ? $t('frameleaf_info_tag_created') : $t('frameleaf_info_tag_added'));
       } else {
-        await removeTag({ tagIds: [change.tagId], assetIds: [asset.id], showNotification: false });
+        await removeTag({ tagIds: [change.tagId], assetIds: [id], showNotification: false });
+        if (!isCurrent()) {
+          return;
+        }
         toastManager.primary($t('frameleaf_info_tag_removed'));
       }
       failure = null;
       pending = null;
-      eventManager.emit('AssetsTag', [asset.id]);
-      await refresh();
+      eventManager.emit('AssetsTag', [id]);
+      await refresh(isCurrent);
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       failure = classifyInlineEditError(error);
       handleError(
         error,
         change.kind === 'add' ? $t('frameleaf_info_error_add_tag') : $t('frameleaf_info_error_remove_tag'),
       );
     } finally {
-      isSaving = false;
+      if (isCurrent()) {
+        isSaving = false;
+      }
     }
   };
 
@@ -126,12 +178,18 @@
   };
 
   const reload = async () => {
+    const isCurrent = captureView();
     try {
-      await refresh();
+      await refresh(isCurrent);
+      if (!isCurrent()) {
+        return;
+      }
       failure = null;
       pending = null;
     } catch (error) {
-      handleError(error, $t('frameleaf_info_error_reload_failed'));
+      if (isCurrent()) {
+        handleError(error, $t('frameleaf_info_error_reload_failed'));
+      }
     }
   };
 
@@ -182,8 +240,10 @@
 <OnEvents {onAssetsTag} />
 
 {#if tags.length > 0 || canEdit}
-  <section class="fl-info-tags px-4 pt-4" data-testid="detail-panel-tags">
-    <h3>{$t('tags')}</h3>
+  <section class="fl-info-tags" data-testid="detail-panel-tags">
+    <div class="fl-info-heading-row">
+      <h3 class="fl-info-heading">{$t('tags')}</h3>
+    </div>
     <div class="fl-chips">
       {#each tags as tag (tag.id)}
         <span class="fl-tag">
@@ -270,16 +330,7 @@
 {/if}
 
 <style>
-  /* .mv-info h3 (media-viewer.css:979-989). */
-  h3 {
-    margin: 0 0 10px;
-    color: var(--fl-viewer-muted);
-    font-size: var(--fl-font-micro, 11px);
-    font-weight: 550;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-  }
-
+  /* The label is the card's shared .fl-info-heading (DetailPanel, media-viewer.css:979-989). */
   .fl-chips {
     display: flex;
     flex-wrap: wrap;

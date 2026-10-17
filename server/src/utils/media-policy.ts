@@ -37,7 +37,7 @@ import {
   ToneMapping,
   VideoCodec,
 } from 'src/enum.js';
-import { formatRational, toTrackTimescale } from 'src/utils/rational-time.js';
+import { coerceRational, formatRational, toTrackTimescale } from 'src/utils/rational-time.js';
 import { type OutputCadenceDecision, OutputCadenceMode, resolveSourceTimeBase } from 'src/utils/video-timing.js';
 
 /**
@@ -930,21 +930,26 @@ const DEFAULT_AUDIO_SAMPLES_PER_FRAME = 4608;
 
 /** How long one coded audio frame lasts, in seconds, or null when the rate is unknown. */
 export const audioFrameSeconds = (audio: Pick<AudioStreamInfo, 'codecName' | 'sampleRate'>): number | null => {
-  if (!audio.sampleRate || audio.sampleRate <= 0) {
+  if (!audio.sampleRate || !Number.isSafeInteger(audio.sampleRate) || audio.sampleRate <= 0) {
     return null;
   }
   const codec = (audio.codecName ?? '').toLowerCase();
-  const samples = codec.startsWith('pcm_') ? 1 : (AUDIO_SAMPLES_PER_FRAME[codec] ?? DEFAULT_AUDIO_SAMPLES_PER_FRAME);
+  const samples = codec.startsWith('pcm_')
+    ? 1
+    : Object.hasOwn(AUDIO_SAMPLES_PER_FRAME, codec)
+      ? AUDIO_SAMPLES_PER_FRAME[codec]
+      : DEFAULT_AUDIO_SAMPLES_PER_FRAME;
   return samples / audio.sampleRate;
 };
 
 /** How long one picture lasts, in seconds, from the exact cadence when there is one. */
 export const videoFrameSeconds = (video: Pick<VideoStreamInfo, 'frameRate' | 'frameRateRational'>): number | null => {
-  const exact = video.frameRateRational;
-  if (exact && exact.num > 0 && exact.den > 0) {
+  const exact = coerceRational(video.frameRateRational);
+  if (exact && exact.num > 0) {
     return exact.den / exact.num;
   }
-  return video.frameRate && video.frameRate > 0 ? 1 / video.frameRate : null;
+  const seconds = video.frameRate && 1 / video.frameRate;
+  return seconds && Number.isFinite(seconds) && seconds > 0 ? seconds : null;
 };
 
 /** The audio a delivery must carry: the source's layout, or an explicitly chosen stereo downmix. */
@@ -1003,7 +1008,14 @@ export const findAvAlignmentMismatch = (
   }
   const videoDuration = video.duration;
   const audioDuration = audio.duration;
-  if (typeof videoDuration !== 'number' || typeof audioDuration !== 'number') {
+  if (
+    typeof videoDuration !== 'number' ||
+    typeof audioDuration !== 'number' ||
+    !Number.isFinite(videoDuration) ||
+    !Number.isFinite(audioDuration) ||
+    videoDuration < 0 ||
+    audioDuration < 0
+  ) {
     return 'the durations of its audio and video streams could not be measured';
   }
   const tolerance = (videoFrameSeconds(video) ?? 0) + (audioFrameSeconds(audio) ?? 0);

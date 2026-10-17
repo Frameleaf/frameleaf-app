@@ -10,10 +10,10 @@ module.exports = {
     extend: {
       colors: {
         // Light Theme
-        'immich-primary': '#4250af',
+        'frameleaf-primary': '#4250af',
 
         // Dark Theme
-        'immich-dark-primary': '#adcbfa',
+        'frameleaf-dark-primary': '#adcbfa',
       },
     },
   },

@@ -103,7 +103,7 @@ export const parseRecoveryRoots = (value?: string | null): RecoveryRootConfig[] 
 /** True when `candidate` is strictly inside `root`, lexically. */
 export const isPathWithin = (root: string, candidate: string) => {
   const relative = path.relative(root, candidate);
-  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+  return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 };
 
 /** The root a path lies in. A path inside two roots belongs to the most specific one. */

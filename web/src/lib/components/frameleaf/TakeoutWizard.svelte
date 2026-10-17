@@ -8,9 +8,9 @@
 
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import Steps from '$lib/components/frameleaf/settings/kit/Steps.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { formatBytes } from '$lib/frameleaf/physical-dedup';
   import {
@@ -30,7 +30,6 @@
     type TakeoutArchiveProgress,
   } from '$lib/frameleaf/takeout';
   import '$lib/frameleaf/tokens.css';
-  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
   import { downloadBlob } from '$lib/utils';
@@ -44,7 +43,6 @@
     getBaseUrl,
     getTakeoutItems,
     getTakeoutPairs,
-    getTakeoutRoots,
     resolveTakeoutItem,
     scanTakeoutImport,
     startTakeoutImport,
@@ -57,18 +55,20 @@
     verifyTakeoutArchiveChunk,
     type TakeoutItemResponseDto,
     type TakeoutResponseDto,
-    type TakeoutRootDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiCheck, mdiImageOffOutline } from '@mdi/js';
+  import { mdiAlertCircleOutline, mdiCheck, mdiImageOffOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
    * One Google Photos import (FL-65), approved as the prototype's Google Photos import flow
    * (frameleaf-prototype `settings-v2/library/google-import.jsx`): Upload → Check → Import, moving on
-   * by itself so the owner chooses the ZIP files and presses Import once. It is the body of a wide
+   * by itself so the owner chooses the ZIP files and presses Import once. It is the body of a
    * Command Center dialog (FL-83, `TakeoutSettingsSection`), which carries the title.
+   *
+   * ACCOUNT-P6: the start screen is the prototype's start dialog alone (the three steps and the
+   * warning); the account's imports and the folder import live on the page, not here.
    *
    * Only the upload needs this page open; it resumes by checking every byte already on the server.
    * Checking and importing are background jobs on the server, so every later screen says a large
@@ -77,11 +77,9 @@
    */
 
   let {
-    imports = [],
     current: initial,
     onClose,
   }: {
-    imports?: TakeoutResponseDto[];
     current?: TakeoutResponseDto;
     /** Closes the Command Center dialog that hosts the wizard. */
     onClose?: () => void;
@@ -91,8 +89,7 @@
    * Moves the hosting dialog to another import, or to the start. The host reads the import from the
    * address and loads it from the server, so the page's own data is never reloaded.
    */
-  const openImport = (id?: string) =>
-    goto(Route.takeout(id ? { import: id } : undefined), { noScroll: true, keepFocus: true });
+  const openImport = (id?: string) => goto(Route.takeout(id ? { import: id } : undefined), { reset: false });
   const close = () => (onClose ? onClose() : history.back());
 
   const SHOWN = 50;
@@ -102,11 +99,6 @@
   let error = $state('');
   let announcement = $state('');
   let fileInput = $state<HTMLInputElement>();
-
-  // Start
-  let roots = $state<TakeoutRootDto[]>([]);
-  let rootId = $state('');
-  let folder = $state('');
 
   // Upload
   let upload = $state<TakeoutArchiveProgress>();
@@ -126,7 +118,6 @@
   let failed = $state<TakeoutItemResponseDto[]>([]);
   let cancelOpen = $state(false);
 
-  const isAdmin = $derived(authManager.user.isAdmin);
   const view = $derived(takeoutView(current, !!upload));
   const step = $derived(takeoutStep(view));
   const fromFolder = $derived(current?.sources.some((source) => source.kind === TakeoutSourceKind.Directory) ?? false);
@@ -256,14 +247,6 @@
   }
 
   onMount(() => {
-    if (isAdmin) {
-      void getTakeoutRoots()
-        .then((result) => {
-          roots = result.roots;
-          rootId = result.roots[0]?.id ?? '';
-        })
-        .catch(() => {});
-    }
     if (current && handoff?.id === current.id) {
       const { files } = handoff;
       handoff = undefined;
@@ -311,15 +294,6 @@
       await openImport(created.id);
     });
   };
-
-  const importFolder = () =>
-    run(async () => {
-      const created = await createTakeoutImport({
-        takeoutCreateDto: { name: defaultName(), rootId, directory: folder.trim() },
-      });
-      await scanTakeoutImport({ id: created.id });
-      await openImport(created.id);
-    });
 
   /* Upload, then check ------------------------------------------------ */
 
@@ -468,13 +442,6 @@
   /** The staged photo, made small by the server; the browser's sign-in cookie authorises it. */
   const previewUrl = (item: TakeoutItemResponseDto) =>
     `${getBaseUrl()}/takeout/${current?.id}/items/${item.id}/preview`;
-
-  const importTone = (state: TakeoutState) => {
-    if (state === TakeoutState.Failed) {
-      return 'danger';
-    }
-    return state === TakeoutState.Completed ? 'teal' : 'neutral';
-  };
 </script>
 
 {#snippet leaveNote(uploading: boolean)}
@@ -496,16 +463,18 @@
 {/snippet}
 
 <div class="fl-takeout">
-  <!-- The hosting dialog carries the title. -->
-  <ol class="stepper" aria-label={$t('frameleaf_takeout_steps_label')}>
-    {#each stepLabels as label, index (index)}
-      <li aria-current={index === step ? 'step' : undefined} class:done={index < step}>
-        <span aria-hidden="true">
-          {#if index < step}<Icon icon={mdiCheck} size="14" />{:else}{index + 1}{/if}
-        </span>{label}
-      </li>
-    {/each}
-  </ol>
+  <!-- The hosting dialog carries the title. The start screen's own steps say the same (ACCOUNT-P6). -->
+  {#if view !== 'start'}
+    <ol class="stepper" aria-label={$t('frameleaf_takeout_steps_label')}>
+      {#each stepLabels as label, index (index)}
+        <li aria-current={index === step ? 'step' : undefined} class:done={index < step}>
+          <span aria-hidden="true">
+            {#if index < step}<Icon icon={mdiCheck} size="14" />{:else}{index + 1}{/if}
+          </span>{label}
+        </li>
+      {/each}
+    </ol>
+  {/if}
 
   <input
     bind:this={fileInput}
@@ -527,72 +496,31 @@
   <p class="sr-only" role="status" aria-live="polite">{announcement}</p>
 
   {#if view === 'start'}
-    <ol class="intro">
-      <li>
-        <strong>{$t('frameleaf_takeout_step_upload')}</strong>{$t('frameleaf_takeout_start_step_upload')}
-      </li>
-      <li><strong>{$t('frameleaf_takeout_step_check')}</strong>{$t('frameleaf_takeout_start_step_check')}</li>
-      <li>
-        <strong>{$t('frameleaf_takeout_step_import')}</strong>{$t('frameleaf_takeout_start_step_import')}
-      </li>
-    </ol>
-    <div class="note-box warn" role="note">
-      <strong>{$t('frameleaf_takeout_all_files_title')}</strong>
-      <p>{$t('frameleaf_takeout_all_files_body')}</p>
+    <!-- ACCOUNT-P6: the prototype's start dialog, the three steps (Upload is now) and the warning. -->
+    <Steps
+      stacked
+      label={$t('frameleaf_takeout_steps_label')}
+      steps={[
+        { title: $t('frameleaf_takeout_step_upload'), detail: $t('frameleaf_takeout_start_step_upload'), state: 'now' },
+        {
+          title: $t('frameleaf_takeout_step_check'),
+          detail: $t('frameleaf_takeout_start_step_check'),
+          state: 'waiting',
+        },
+        {
+          title: $t('frameleaf_takeout_step_import'),
+          detail: $t('frameleaf_takeout_start_step_import'),
+          state: 'waiting',
+        },
+      ]}
+    />
+    <div class="note-box warn with-icon" role="note">
+      <span class="note-icon" aria-hidden="true"><Icon icon={mdiAlertCircleOutline} size="20" /></span>
+      <div>
+        <strong>{$t('frameleaf_takeout_all_files_title')}</strong>
+        <p>{$t('frameleaf_takeout_all_files_body')}</p>
+      </div>
     </div>
-
-    {#if isAdmin}
-      <details class="more">
-        <summary>{$t('frameleaf_takeout_folder_summary')}</summary>
-        {#if roots.length === 0}
-          <p class="muted">{$t('frameleaf_takeout_no_roots')}</p>
-        {:else}
-          <p class="muted">{$t('frameleaf_takeout_folder_help')}</p>
-          <label>
-            {$t('frameleaf_takeout_root_label')}
-            <select bind:value={rootId}>
-              {#each roots as root (root.id)}
-                <option value={root.id}>{root.path}</option>
-              {/each}
-            </select>
-          </label>
-          <label>
-            {$t('frameleaf_takeout_folder_label')}
-            <input bind:value={folder} maxlength="4096" placeholder="Takeout" />
-          </label>
-          <div>
-            <Button disabled={busy || !rootId} onclick={importFolder}>{$t('frameleaf_takeout_import_folder')}</Button>
-          </div>
-        {/if}
-      </details>
-    {/if}
-
-    <section class="imports">
-      <h2>{$t('frameleaf_takeout_previous_heading')}</h2>
-      {#if imports.length === 0}
-        <p class="muted">{$t('frameleaf_takeout_previous_empty')}</p>
-      {:else}
-        <ul>
-          {#each imports as entry (entry.id)}
-            <li>
-              <a href={Route.takeout({ import: entry.id })}>
-                <strong>{entry.name}</strong>
-                <span class="muted">
-                  {$t('frameleaf_takeout_import_summary', {
-                    values: { imported: entry.counts.imported, matched: entry.counts.matched },
-                  })}
-                </span>
-              </a>
-              <Badge
-                value={$t(takeoutStateKey(entry.state))}
-                label={$t(takeoutStateKey(entry.state))}
-                tone={importTone(entry.state)}
-              />
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    </section>
   {:else if current && (view === 'upload' || view === 'stopped')}
     {#if view === 'stopped'}
       <div class="note-box warn" role="status">
@@ -942,21 +870,6 @@
     color: var(--fl-teal);
     border-color: var(--fl-teal);
   }
-  .intro {
-    display: grid;
-    gap: 0.75rem;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .intro li {
-    display: grid;
-    gap: 0.25rem;
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
-    background: var(--fl-raised);
-  }
   .bar {
     display: grid;
     gap: 0.5rem;
@@ -982,8 +895,23 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }
+  /* The prototype's warning notice (settings-v2 kit `Notice tone="warn"`): a warm wash, not just a line. */
   .note-box.warn {
-    border-color: var(--fl-warning);
+    border-color: color-mix(in srgb, var(--fl-warning) 55%, var(--fl-border));
+    background: color-mix(in srgb, var(--fl-warning) 10%, var(--fl-panel));
+  }
+  .note-box.with-icon {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 0.75rem;
+  }
+  .note-box.with-icon > div {
+    display: grid;
+    gap: 0.25rem;
+  }
+  .note-icon {
+    display: inline-flex;
+    color: var(--fl-warning);
   }
   .note-box.good {
     border-color: var(--fl-teal);
@@ -1011,8 +939,7 @@
     gap: 0.5rem;
     font-size: var(--fl-font-small);
   }
-  input:not([type='checkbox'], [type='radio'], [type='file']),
-  select {
+  input:not([type='checkbox'], [type='radio'], [type='file']) {
     min-width: 0;
     padding: 0.4375rem 0.75rem;
     color: var(--fl-text);
@@ -1020,11 +947,6 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
   }
-  .imports {
-    display: grid;
-    gap: 0.75rem;
-  }
-  .imports ul,
   .files,
   .albums {
     display: grid;
@@ -1032,21 +954,6 @@
     margin: 0;
     padding: 0;
     list-style: none;
-  }
-  .imports li {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
-  }
-  .imports a {
-    display: grid;
-    gap: 0.25rem;
-    color: inherit;
-    text-decoration: none;
   }
   .files li {
     display: flex;

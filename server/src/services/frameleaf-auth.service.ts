@@ -6,7 +6,7 @@ import {
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { parse } from 'cookie';
+import { parseCookie as parse } from 'cookie';
 import { timingSafeEqual } from 'node:crypto';
 import type { JWTPayload } from 'jose';
 import type { IncomingHttpHeaders } from 'node:http';
@@ -28,16 +28,17 @@ import {
 } from 'src/dtos/frameleaf-auth.dto.js';
 import { mapNotification } from 'src/dtos/notification.dto.js';
 import { mapUserAdmin } from 'src/dtos/user.dto.js';
-import { AdminAuditAction, DatabaseLock, ImmichCookie, NotificationLevel, NotificationType } from 'src/enum.js';
+import { AdminAuditAction, AuthCookie, DatabaseLock, NotificationLevel, NotificationType } from 'src/enum.js';
 import { ClientTokenRejection, type OAuthConfig, type OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { type LoginDetails, UNVERIFIED_EMAIL_MESSAGE, emailVerificationProblem } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
-import { HumanReadableSize } from 'src/utils/bytes.js';
+import { DecimalSize } from 'src/utils/bytes.js';
 import { identityDirectory, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS,
   FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS,
   FRAMELEAF_EXCHANGE_TOKEN_TYPE,
+  FRAMELEAF_SCOPE,
   type FrameleafAccess,
   frameleafAccess,
   frameleafCallbackUrl,
@@ -177,8 +178,26 @@ export class FrameleafAuthService extends BaseService {
   /** `POST oauth/frameleaf/callback`: finish a sign-in and create a tagged session. */
   async callback(dto: OAuthCallbackDto, headers: IncomingHttpHeaders, loginDetails: LoginDetails) {
     const config = await this.requireConfig();
+    const authority = await this.signInAuthority(config);
+    const issuedAt = new Date();
+    if (!authority) {
+      throw new UnauthorizedException(NOT_AVAILABLE_MESSAGE);
+    }
     const { profile, sid, idToken } = await this.exchange(config, dto, headers);
-    return this.signIn(profile, loginDetails, { sid, bearerToken: idToken });
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafServerClaim, () =>
+      this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+        if (authority !== (await this.signInAuthority(config))) {
+          throw new UnauthorizedException(NOT_AVAILABLE_MESSAGE);
+        }
+        const checkRevocation = async () => {
+          if (await this.frameleafAccountRepository.isSignInRevoked({ sub: profile.sub, sid: sid ?? null, issuedAt })) {
+            throw new UnauthorizedException(NOT_AVAILABLE_MESSAGE);
+          }
+        };
+        await checkRevocation();
+        return this.signIn(profile, loginDetails, { sid, bearerToken: idToken }, undefined, checkRevocation);
+      }),
+    );
   }
 
   /**
@@ -209,6 +228,10 @@ export class FrameleafAuthService extends BaseService {
       );
     }
 
+    const authority = await this.signInAuthority(config);
+    if (!authority) {
+      throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
+    }
     let claims: JWTPayload;
     try {
       claims = await this.oauthRepository.verifyClientToken(config, dto.token, {
@@ -241,41 +264,55 @@ export class FrameleafAuthService extends BaseService {
 
     const sid = typeof claims.sid === 'string' ? claims.sid : null;
     const tolerance = FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS;
-    const redeemed = await this.frameleafAccountRepository.redeemExchangeToken({
-      jti,
-      sub,
-      sid,
-      // a revocation within the clock tolerance of the mint counts as after it
-      issuedAt: new Date((iat - tolerance) * 1000),
-      // after this the token is refused as expired anyway
-      expiresAt: new Date((Math.min(exp, iat + FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS) + tolerance) * 1000),
-    });
-    if (redeemed === 'revoked') {
-      throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
-    }
-    if (redeemed === 'replayed') {
-      this.logger.warn(`Refused a Frameleaf exchange token that was already used`);
-      throw exchangeRefusal(FrameleafTokenExchangeErrorCode.Replayed);
-    }
-
-    return this.signIn(
-      claims as OAuthProfile,
-      loginDetails,
-      { sid: sid ?? undefined },
-      (refusal) => exchangeRefusal(SIGN_IN_REFUSAL_CODES[refusal]),
-      async (sessionId) => {
-        // A back-channel logout records the revocation before it looks for tagged sessions, so a
-        // logout that raced this sign-in either finds this session or is seen here.
-        const revoked = await this.frameleafAccountRepository.isSignInRevoked({
-          sub,
-          sid,
-          issuedAt: new Date((iat - tolerance) * 1000),
-        });
-        if (revoked) {
-          await this.endSessions([sessionId]);
+    const expiresAt = new Date((Math.min(exp, iat + FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS) + tolerance) * 1000);
+    const checkExpiry = () => {
+      if (Date.now() >= expiresAt.getTime()) {
+        throw exchangeRefusal(FrameleafTokenExchangeErrorCode.Expired);
+      }
+    };
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafServerClaim, () =>
+      this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+        if (authority !== (await this.signInAuthority(config))) {
           throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
         }
-      },
+        checkExpiry();
+        const redeemed = await this.frameleafAccountRepository.redeemExchangeToken({
+          jti,
+          sub,
+          sid,
+          // a revocation within the clock tolerance of the mint counts as after it
+          issuedAt: new Date((iat - tolerance) * 1000),
+          // after this the token is refused as expired anyway
+          expiresAt,
+        });
+        if (redeemed === 'revoked') {
+          throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
+        }
+        if (redeemed === 'replayed') {
+          this.logger.warn(`Refused a Frameleaf exchange token that was already used`);
+          throw exchangeRefusal(FrameleafTokenExchangeErrorCode.Replayed);
+        }
+
+        return this.signIn(
+          claims as OAuthProfile,
+          loginDetails,
+          { sid: sid ?? undefined },
+          (refusal) => exchangeRefusal(SIGN_IN_REFUSAL_CODES[refusal]),
+          async () => {
+            checkExpiry();
+            // A back-channel logout records the revocation before it looks for tagged sessions, so a
+            // logout that raced this sign-in either finds this session or is seen here.
+            const revoked = await this.frameleafAccountRepository.isSignInRevoked({
+              sub,
+              sid,
+              issuedAt: new Date((iat - tolerance) * 1000),
+            });
+            if (revoked) {
+              throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
+            }
+          },
+        );
+      }),
     );
   }
 
@@ -360,34 +397,26 @@ export class FrameleafAuthService extends BaseService {
       const ownerAccountId = linked ? cloudLink?.accountId : undefined;
       const isOwner = ownerAccountId ? profile.sub === ownerAccountId : access === 'owner';
       const quota = isOwner ? null : (frameleafCloud.signIn?.invitedStorageQuota ?? null);
-      const create = () =>
-        this.createUser({
-          name: typeof profile.name === 'string' && profile.name.trim() ? profile.name.trim() : email,
-          email,
-          isAdmin: role === 'admin',
-          quotaSizeInBytes: quota === null ? null : quota * HumanReadableSize.GiB,
-        });
-      // FL-292: while nobody administers the server (set up from the Frameleaf app), only the account
-      // that owns it may become its first administrator, one claim at a time with the other setup paths
-      user = firstAdministrator
-        ? await this.databaseRepository.withLock(DatabaseLock.FrameleafServerClaim, async () => {
-            if (await this.userRepository.getAdmin()) {
-              return create();
-            }
-            const created = await create();
-            await this.recordAdminEvents([
-              {
-                userId: created.id,
-                actorId: created.id,
-                action: AdminAuditAction.AccountCreated,
-                subject: created.name,
-                detail: 'server-claimed:app-frameleaf',
-              },
-            ]);
-            this.logger.log(`This server's owner ${email} signed in with Frameleaf and administers it`);
-            return created;
-          })
-        : await create();
+      // The caller holds the setup claim lock before the Cloud authority lock, as setup does.
+      user = await this.createUser({
+        name: typeof profile.name === 'string' && profile.name.trim() ? profile.name.trim() : email,
+        email,
+        isAdmin: role === 'admin',
+        // D5: the invited quota is decimal GB
+        quotaSizeInBytes: quota === null ? null : quota * DecimalSize.GB,
+      });
+      if (firstAdministrator) {
+        await this.recordAdminEvents([
+          {
+            userId: user.id,
+            actorId: user.id,
+            action: AdminAuditAction.AccountCreated,
+            subject: user.name,
+            detail: 'server-claimed:app-frameleaf',
+          },
+        ]);
+        this.logger.log(`This server's owner ${email} signed in with Frameleaf and administers it`);
+      }
       await this.frameleafAccountRepository.upsertLink({
         userId: user.id,
         sub: profile.sub,
@@ -410,14 +439,19 @@ export class FrameleafAuthService extends BaseService {
       loginDetails,
       oauth,
     );
-    await this.frameleafAccountRepository.tagSession({
-      sessionId: session.id,
-      userId: user.id,
-      sid: sid ?? null,
-      sub: profile.sub,
-      authTime: typeof profile.auth_time === 'number' ? new Date(profile.auth_time * 1000) : null,
-    });
-    await afterTag?.(session.id);
+    try {
+      await this.frameleafAccountRepository.tagSession({
+        sessionId: session.id,
+        userId: user.id,
+        sid: sid ?? null,
+        sub: profile.sub,
+        authTime: typeof profile.auth_time === 'number' ? new Date(profile.auth_time * 1000) : null,
+      });
+      await afterTag?.(session.id);
+    } catch (error) {
+      await this.endSessions([session.id]);
+      throw error;
+    }
     return response;
   }
 
@@ -469,11 +503,14 @@ export class FrameleafAuthService extends BaseService {
   /** `POST oauth/frameleaf/handoff/redeem`: exchange a handoff code for a new, tagged session. */
   async redeemHandoff(dto: FrameleafHandoffRedeemDto, loginDetails: LoginDetails) {
     const parent = await this.frameleafAccountRepository.takeHandoff(this.hashCode(dto.code));
-    if (!parent || !parent.handoffExpiresAt || new Date(parent.handoffExpiresAt).getTime() < Date.now()) {
+    if (!parent || !parent.handoffExpiresAt || new Date(parent.handoffExpiresAt).getTime() <= Date.now()) {
       throw new UnauthorizedException('This sign-in code is not valid any more');
     }
     const parentSession = await this.sessionRepository.get(parent.sessionId);
-    const user = parentSession ? await this.userRepository.get(parent.userId, { withDeleted: false }) : undefined;
+    const user =
+      parentSession && (!parentSession.expiresAt || new Date(parentSession.expiresAt).getTime() > Date.now())
+        ? await this.userRepository.get(parent.userId, { withDeleted: false })
+        : undefined;
     if (!user) {
       throw new UnauthorizedException('This sign-in code is not valid any more');
     }
@@ -483,13 +520,43 @@ export class FrameleafAuthService extends BaseService {
       loginDetails,
       { sid: parent.sid ?? undefined },
     );
-    await this.frameleafAccountRepository.tagSession({
-      sessionId: session.id,
-      userId: user.id,
-      sid: parent.sid,
-      sub: parent.sub,
-      authTime: parent.authTime,
-    });
+    try {
+      await this.frameleafAccountRepository.tagSession({
+        sessionId: session.id,
+        userId: user.id,
+        sid: parent.sid,
+        sub: parent.sub,
+        authTime: parent.authTime,
+      });
+      const [sourceSession, sourceTag, link, currentUser] = await Promise.all([
+        this.sessionRepository.get(parent.sessionId),
+        this.frameleafAccountRepository.getSession(parent.sessionId),
+        this.frameleafAccountRepository.getLinkByUser(parent.userId),
+        this.userRepository.get(parent.userId, { withDeleted: false }),
+      ]);
+      // Logout records revocation before collecting tagged sessions, including a child it could miss.
+      const revoked = await this.frameleafAccountRepository.isSignInRevoked({
+        sub: parent.sub,
+        sid: parent.sid,
+        issuedAt: parent.createdAt,
+      });
+      if (
+        !sourceSession ||
+        (sourceSession.expiresAt && new Date(sourceSession.expiresAt).getTime() <= Date.now()) ||
+        sourceTag?.sub !== parent.sub ||
+        sourceTag.userId !== parent.userId ||
+        sourceTag.sid !== parent.sid ||
+        link?.sub !== parent.sub ||
+        !currentUser ||
+        revoked ||
+        new Date(parent.handoffExpiresAt).getTime() <= Date.now()
+      ) {
+        throw new UnauthorizedException('This sign-in code is not valid any more');
+      }
+    } catch (error) {
+      await this.endSessions([session.id]);
+      throw error;
+    }
     return response;
   }
 
@@ -643,6 +710,32 @@ export class FrameleafAuthService extends BaseService {
     }
   }
 
+  /** Local authority only: issuer verification must finish before taking the Cloud link lock. */
+  private async signInAuthority(config: OAuthConfig): Promise<string | null> {
+    const { cloudUrl, link, linked } = await readCloudLink({
+      configRepository: this.configRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+    });
+    if (
+      !linked ||
+      !link ||
+      link.oidc?.issuer !== config.issuerUrl ||
+      link.oidc?.clientId !== config.clientId ||
+      (link.oidc.scope || FRAMELEAF_SCOPE) !== config.scope
+    ) {
+      return null;
+    }
+    return JSON.stringify({
+      cloudUrl,
+      instanceId: link.instanceId,
+      accountId: link.accountId ?? null,
+      linkedAt: link.linkedAt ?? null,
+      issuer: config.issuerUrl,
+      clientId: config.clientId,
+      scope: config.scope,
+    });
+  }
+
   /** Bind a preview to this exact Cloud link generation without putting link credentials in the token. */
   private async pendingLinkAuthority(config: OAuthConfig): Promise<string> {
     const { cloudUrl, link, linked } = await readCloudLink({
@@ -715,11 +808,11 @@ export class FrameleafAuthService extends BaseService {
 
   private async exchange(config: OAuthConfig, dto: OAuthCallbackDto, headers: IncomingHttpHeaders) {
     const cookies = parse(headers.cookie || '');
-    const expectedState = dto.state ?? cookies[ImmichCookie.OAuthState];
+    const expectedState = dto.state ?? cookies[AuthCookie.OAuthState];
     if (!expectedState?.length) {
       throw new BadRequestException('OAuth state is missing');
     }
-    const codeVerifier = dto.codeVerifier ?? cookies[ImmichCookie.OAuthCodeVerifier];
+    const codeVerifier = dto.codeVerifier ?? cookies[AuthCookie.OAuthCodeVerifier];
     if (!codeVerifier?.length) {
       throw new BadRequestException('OAuth code verifier is missing');
     }

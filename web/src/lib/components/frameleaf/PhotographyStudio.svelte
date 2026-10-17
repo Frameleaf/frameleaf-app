@@ -104,7 +104,9 @@
       </section>
     </main>
     <footer class="pc-footer">{site.brand.name}</footer>
-  </div>{:else}<main class="pc-access">
-    <h1>{error || $t('frameleaf_photography_public_opening')}</h1>
-    {#if error}<button type="button" onclick={reload}>{$t('frameleaf_error_retry')}</button>{/if}
-  </main>{/if}
+  </div>{:else}<div class="pc pc-gate">
+    <main class="pc-access">
+      <h1>{error || $t('frameleaf_photography_public_opening')}</h1>
+      {#if error}<button type="button" onclick={reload}>{$t('frameleaf_error_retry')}</button>{/if}
+    </main>
+  </div>{/if}

@@ -114,7 +114,7 @@
     const params = new URLSearchParams(page.url.search);
     params.delete('assetId');
     const query = params.toString();
-    handlePromiseError(goto(`${page.url.pathname}${query ? `?${query}` : ''}`, { noScroll: true, keepFocus: true }));
+    handlePromiseError(goto(`${page.url.pathname}${query ? `?${query}` : ''}`, { reset: false }));
   };
 
   // A share revoked (or an item locked) elsewhere: drop it, and close the viewer if it was open.

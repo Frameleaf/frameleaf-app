@@ -9,7 +9,7 @@ import { AssetMetadataKey, CacheControl, Permission } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { factory } from 'test/small.factory.js';
 import { ControllerContext, automock, controllerSetup, mockBaseService } from 'test/utils.js';
 
@@ -223,7 +223,7 @@ describe(AssetMediaController.name, () => {
           const bytes = Buffer.from('authored SDR restoration fixture');
           await writeFile(path, bytes);
           restorationService.getPlaybackChoice.mockResolvedValue({
-            file: new ImmichFileResponse({
+            file: new FileDownloadResponse({
               path,
               contentType: 'image/jpeg',
               cacheControl: CacheControl.PrivateWithoutCache,

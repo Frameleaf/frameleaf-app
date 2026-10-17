@@ -257,6 +257,12 @@ export const duplicateQualityReasons = (assets: readonly ReviewAsset[]): Map<str
   const sizes = assets.map((asset) => bytes(asset));
   const areas = assets.map((asset) => pixels(asset));
   const counts = assets.map((asset) => getExifCount(asset as AssetResponseDto));
+  const largestSize = Math.max(...sizes);
+  const smallestSize = Math.min(...sizes);
+  const largestArea = Math.max(...areas);
+  const smallestArea = Math.min(...areas);
+  const mostMetadata = Math.max(...counts);
+  const leastMetadata = Math.min(...counts);
 
   for (const [index, asset] of assets.entries()) {
     const list = reasons.get(asset.id) as DuplicateQualityReason[];
@@ -265,17 +271,17 @@ export const duplicateQualityReasons = (assets: readonly ReviewAsset[]): Map<str
         ranks[index] === topRank ? DuplicateQualityReason.OriginalFormat : DuplicateQualityReason.CompressedCopy,
       );
     }
-    if (areas[index] > 0 && Math.min(...areas) !== Math.max(...areas)) {
+    if (areas[index] > 0 && smallestArea !== largestArea) {
       list.push(
-        areas[index] === Math.max(...areas)
+        areas[index] === largestArea
           ? DuplicateQualityReason.HighestResolution
           : DuplicateQualityReason.LowerResolution,
       );
     }
-    if (sizes[index] > 0 && sizes[index] === Math.max(...sizes) && Math.min(...sizes) !== Math.max(...sizes)) {
+    if (sizes[index] > 0 && sizes[index] === largestSize && smallestSize !== largestSize) {
       list.push(DuplicateQualityReason.LargestFile);
     }
-    if (counts[index] === Math.max(...counts) && Math.min(...counts) !== Math.max(...counts)) {
+    if (counts[index] === mostMetadata && leastMetadata !== mostMetadata) {
       list.push(DuplicateQualityReason.MostMetadata);
     }
   }

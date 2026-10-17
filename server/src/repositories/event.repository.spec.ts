@@ -1,5 +1,6 @@
 import { ModuleRef, Reflector } from '@nestjs/core';
-import { BootstrapEventPriority, ImmichWorker } from 'src/enum.js';
+import { OnEvent } from 'src/decorators.js';
+import { BootstrapEventPriority, FrameleafWorker } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -17,7 +18,7 @@ const setup = (event: string, handlers: Handler[]) => {
 };
 
 /** Registers the real services' handlers the way the app does, without constructing the services. */
-const setupServices = (worker: ImmichWorker) => {
+const setupServices = (worker: FrameleafWorker) => {
   const logger = { setContext: vi.fn(), error: vi.fn() };
   const reflector = new Reflector();
   const moduleRef = {
@@ -37,7 +38,62 @@ const setupServices = (worker: ImmichWorker) => {
 
 describe(EventRepository.name, () => {
   describe('setup', () => {
-    it.each([ImmichWorker.Api, ImmichWorker.Microservices])(
+    it('keeps stable numeric priority, receiver binding and worker filtering without repeated worker lists', async () => {
+      const calls: string[] = [];
+      class Handlers {
+        first() {
+          calls.push(this.constructor.name + '.first');
+        }
+        tied() {
+          calls.push(this.constructor.name + '.tied');
+        }
+        early() {
+          calls.push(this.constructor.name + '.early');
+        }
+        excluded() {
+          throw new Error('excluded worker');
+        }
+        get inaccessible() {
+          throw new Error('accessors must not be evaluated');
+        }
+      }
+      for (const [method, priority] of [
+        ['first', 0],
+        ['tied', 0],
+        ['early', -1],
+      ] as const) {
+        OnEvent({ name: 'AppBootstrap', priority })(
+          Handlers.prototype,
+          method,
+          Object.getOwnPropertyDescriptor(Handlers.prototype, method)!,
+        );
+      }
+      OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })(
+        Handlers.prototype,
+        'excluded',
+        Object.getOwnPropertyDescriptor(Handlers.prototype, 'excluded')!,
+      );
+      const reflector = new Reflector();
+      const instance = new Handlers();
+      const sut = new EventRepository(
+        { get: (token: unknown) => (token === Reflector ? reflector : instance) } as unknown as ModuleRef,
+        { getWorker: () => FrameleafWorker.Api } as ConfigRepository,
+        { setContext: vi.fn() } as unknown as LoggingRepository,
+      );
+      const values = vi.spyOn(Object, 'values');
+      let workerLists: number;
+      try {
+        sut.setup({ services: [Handlers] });
+        workerLists = values.mock.calls.filter(([target]) => target === FrameleafWorker).length;
+      } finally {
+        values.mockRestore();
+      }
+      await sut.emit('AppBootstrap');
+      expect(calls).toEqual(['Handlers.early', 'Handlers.first', 'Handlers.tied']);
+      expect(workerLists).toBeLessThanOrEqual(1);
+    });
+
+    it.each([FrameleafWorker.Api, FrameleafWorker.Microservices])(
       'publishes the restart notification before the %s worker exits',
       (worker) => {
         const restart = setupServices(worker).labels('AppRestart');
@@ -50,7 +106,7 @@ describe(EventRepository.name, () => {
     );
     // FL-179: Studio revocation is an access boundary, so its priority (-1) must place it ahead of every
     // other AssetDelete handler in the order the handlers are emitted, on every worker that runs them.
-    it.each([ImmichWorker.Microservices, ImmichWorker.Api])(
+    it.each([FrameleafWorker.Microservices, FrameleafWorker.Api])(
       'registers Studio revocation first of the AssetDelete handlers on the %s worker',
       (worker) => {
         const { labels } = setupServices(worker);
@@ -75,7 +131,7 @@ describe(EventRepository.name, () => {
     // Canonical database migrations run in DatabaseService's bootstrap step: the first AppBootstrap handler,
     // awaited before the queue workers start (QueueService) and before the API listens for HTTP
     // (configureExpress runs after NestFactory.create resolves module init).
-    it.each([ImmichWorker.Api, ImmichWorker.Microservices])(
+    it.each([FrameleafWorker.Api, FrameleafWorker.Microservices])(
       'does not register automatic media-upgrade work on the %s worker',
       (worker) => {
         const { labels } = setupServices(worker);
@@ -89,7 +145,7 @@ describe(EventRepository.name, () => {
     );
 
     it('runs the database bootstrap first and the queue workers after it on the API worker', () => {
-      const { labels } = setupServices(ImmichWorker.Api);
+      const { labels } = setupServices(FrameleafWorker.Api);
       const bootstrap = labels('AppBootstrap');
 
       expect(bootstrap[0]).toBe('DatabaseService.onBootstrap');
@@ -97,7 +153,7 @@ describe(EventRepository.name, () => {
     });
 
     it('runs the canonical database bootstrap before queue workers on the microservices worker', () => {
-      const { labels } = setupServices(ImmichWorker.Microservices);
+      const { labels } = setupServices(FrameleafWorker.Microservices);
       const bootstrap = labels('AppBootstrap');
 
       expect(bootstrap[0]).toBe('DatabaseService.onBootstrap');

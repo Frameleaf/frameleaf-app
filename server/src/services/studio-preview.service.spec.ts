@@ -457,6 +457,16 @@ describe(StudioPreviewService.name, () => {
       expect(storage.unlinkDir).toHaveBeenCalledTimes(2);
     });
 
+    it('keeps failed directory removal pending for the next retention pass', async () => {
+      vi.mocked(previews.listRetired).mockResolvedValue([frameStub()]);
+      storage.unlinkDir.mockRejectedValueOnce(new Error('directory cleanup unavailable'));
+      await sut.sweep();
+      expect(previews.deleteEvictedBefore).not.toHaveBeenCalled();
+      await sut.sweep();
+      expect(storage.unlinkDir).toHaveBeenCalledTimes(2);
+      expect(previews.deleteEvictedBefore).toHaveBeenCalledTimes(1);
+    });
+
     it('sweeps retired frames and old tombstones', async () => {
       const expired = frameStub({ id: 'old-1' });
       vi.mocked(previews.listRetired).mockResolvedValue([expired]);
@@ -962,6 +972,13 @@ describe(StudioPreviewService.name, () => {
   });
 
   describe('cancel', () => {
+    it('does not report successful retirement when directory removal fails', async () => {
+      vi.mocked(previews.getForOwner).mockResolvedValue(frameStub());
+      storage.unlinkDir.mockRejectedValueOnce(new Error('directory cleanup unavailable'));
+      await expect(sut.cancel(authStub.user1, frameStub().id)).rejects.toThrow('directory cleanup unavailable');
+      expect(operations.requestCancel).not.toHaveBeenCalled();
+    });
+
     it('releases the frame and stops the render', async () => {
       vi.mocked(previews.getForOwner).mockResolvedValue(frameStub({ status: StudioPreviewStatus.Rendering }));
 

@@ -264,6 +264,7 @@ export interface VideoCodecSWConfig {
 
 export interface ProbeOptions {
   countFrames: boolean;
+  signal?: AbortSignal;
 }
 
 export interface VideoInterfaces {
@@ -764,7 +765,7 @@ export interface ExtensionVersion {
   installedVersion: string | null;
 }
 
-export interface ImmichFile extends Express.Multer.File {
+export interface FrameleafFile extends Express.Multer.File {
   uuid: string;
   /** sha256 hash of file */
   checksum: Buffer;
@@ -794,8 +795,8 @@ export type UploadRequest = {
 };
 
 export interface UploadFiles {
-  assetData: ImmichFile[];
-  sidecarData: ImmichFile[];
+  assetData: FrameleafFile[];
+  sidecarData: FrameleafFile[];
 }
 
 export interface IBulkAsset {
@@ -1545,6 +1546,8 @@ export type UserPreferences = {
     enabled: boolean;
     sidebarWeb: boolean;
     minimumFaces: number;
+    /** ACCOUNT-P2: in a Space shared with me, suggest who is who from the people I have named */
+    suggestInSpaces: boolean;
   };
   ratings: {
     enabled: boolean;
@@ -1565,6 +1568,12 @@ export type UserPreferences = {
   download: {
     archiveSize: number;
     includeEmbeddedVideos: boolean;
+    /** ACCOUNT-P5: put each photo's details file (XMP sidecar) beside it in a download */
+    includeSidecar: boolean;
+  };
+  /** ACCOUNT-P3: the search screens show archived photos; the client sends the visibility, the server stores it only */
+  search: {
+    includeArchived: boolean;
   };
   purchase: {
     showSupportBadge: boolean;

@@ -171,8 +171,9 @@ const nextDay = (value: string) => {
 };
 
 /**
- * The selection as the server's structured filter. Dates are the days the photos were taken,
- * inclusive at both ends; albums are any of the chosen ones. Null when the choice is incomplete,
+ * The selection as the server's structured filter. Dates are the days the photos were taken on their
+ * own clock (`localDateTime`, the day the timeline and search show), inclusive at both ends; albums
+ * are any of the chosen ones. Null when the choice is incomplete,
  * so the dialog never asks the server about half a selection.
  */
 export const scopeToRequest = (choice: ScopeChoice): PreservationScopeDto | null => {
@@ -190,14 +191,14 @@ export const scopeToRequest = (choice: ScopeChoice): PreservationScopeDto | null
       if (choice.from && choice.to && choice.from > choice.to) {
         return null;
       }
-      const takenAt: NonNullable<SearchFilter['takenAt']> = {};
+      const localDateTime: NonNullable<SearchFilter['localDateTime']> = {};
       if (choice.from) {
-        takenAt.gte = `${choice.from}T00:00:00.000Z`;
+        localDateTime.gte = `${choice.from}T00:00:00.000Z`;
       }
       if (choice.to) {
-        takenAt.lt = nextDay(choice.to);
+        localDateTime.lt = nextDay(choice.to);
       }
-      return { filter: { takenAt } };
+      return { filter: { localDateTime } };
     }
     case 'albums': {
       return choice.albumIds.length > 0 ? { filter: { albumIds: { any: [...choice.albumIds] } } } : null;

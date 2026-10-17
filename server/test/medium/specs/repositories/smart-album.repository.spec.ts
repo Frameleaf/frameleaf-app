@@ -1,5 +1,6 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { AssetType } from 'src/enum.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -186,6 +187,66 @@ describe(SmartAlbumRepository.name, () => {
   });
 
   describe('excludeAsset', () => {
+    it('keeps an owner exclusion when a delayed match reaches publication afterwards', async () => {
+      const { sut, database, assetRepository, userRepository } = setup();
+      const user = await createUser(userRepository);
+      const asset = await createAsset(assetRepository, user.id);
+      await sut.ensureForUser(user.id, [{ kind: 'travel', name: 'Travel' }]);
+      const smartAlbumId = (await sut.getSmartAlbumIdForOwnerAndKind(user.id, 'travel'))!;
+      await sut.excludeAsset(smartAlbumId, asset.id);
+      await sut.addAssetToSmartAlbum(smartAlbumId, asset.id, 'clip');
+      expect(await sut.isExcluded(smartAlbumId, asset.id)).toBe(true);
+      expect(await sut.getMatchingKinds(asset.id, user.id)).toEqual([]);
+      expect(
+        await database.selectFrom('album_asset').select('assetId').where('assetId', '=', asset.id).execute(),
+      ).toEqual([]);
+    });
+
+    it('waits for an in-flight owner exclusion before admitting a delayed match', async () => {
+      const { sut, database, assetRepository, userRepository } = setup();
+      const user = await createUser(userRepository);
+      const asset = await createAsset(assetRepository, user.id);
+      await sut.ensureForUser(user.id, [{ kind: 'travel', name: 'Travel' }]);
+      const smartAlbumId = (await sut.getSmartAlbumIdForOwnerAndKind(user.id, 'travel'))!;
+      const { promise: entered, resolve: signalEntered } = Promise.withResolvers<void>();
+      const { promise: held, resolve: release } = Promise.withResolvers<void>();
+      let blockerPid = 0;
+      const exclusion = database.transaction().execute((tx) =>
+        publicationTransaction.run(tx, async () => {
+          blockerPid = (await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(tx)).rows[0].pid;
+          await sut.excludeAsset(smartAlbumId, asset.id);
+          signalEntered();
+          await held;
+        }),
+      );
+      let adding: Promise<void> | undefined;
+      try {
+        await Promise.race([entered, exclusion]);
+        adding = sut.addAssetToSmartAlbum(smartAlbumId, asset.id, 'clip');
+        await vi.waitFor(
+          async () => {
+            const { rows } = await sql<{ waiting: number }>`
+            SELECT count(*)::int AS waiting FROM pg_stat_activity
+            WHERE datname=current_database() AND ${blockerPid}=ANY(pg_blocking_pids(pid))
+          `.execute(database);
+            expect(rows[0].waiting).toBeGreaterThan(0);
+          },
+          { timeout: 5000 },
+        );
+        release();
+        await exclusion;
+        await adding;
+        expect(await sut.isExcluded(smartAlbumId, asset.id)).toBe(true);
+        expect(await sut.getMatchingKinds(asset.id, user.id)).toEqual([]);
+        expect(
+          await database.selectFrom('album_asset').select('assetId').where('assetId', '=', asset.id).execute(),
+        ).toEqual([]);
+      } finally {
+        release();
+        await Promise.allSettled([exclusion, ...(adding ? [adding] : [])]);
+      }
+    });
+
     it('should record the exclusion and remove the asset from the smart album', async () => {
       const { sut, database, assetRepository, userRepository } = setup();
       const user = await createUser(userRepository);

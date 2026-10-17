@@ -1,10 +1,12 @@
 import { DocumentLineStatus, type DocumentLineDto, type DocumentResponseDto } from '@frameleaf/sdk';
 import { toastManager } from '@frameleaf/ui';
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import DocumentTextSection from '$lib/components/frameleaf/DocumentTextSection.svelte';
+import { DOCUMENT_REREAD_POLL_MS } from '$lib/frameleaf/documents';
+import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
 import { ocrManager } from '$lib/stores/ocr.svelte';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import en from '../../../../../i18n/en.json';
@@ -85,5 +87,74 @@ describe('DocumentTextSection', () => {
     await userEvent.click(hide);
     expect(screen.getByRole('button', { name: en.frameleaf_documents_show_regions })).toBeInTheDocument();
     expect(ocrManager.showOverlay).toBe(false);
+  });
+
+  it('replaces the displayed OCR boxes when Read again completes while keeping the overlay visible', async () => {
+    const before = {
+      ...document(),
+      canEdit: true,
+      lines: [line('old', 'Old')],
+      recognition: { enabled: true, routed: true },
+    };
+    const after = { ...before, recognizedAt: '2026-10-14T12:00:00.000Z', lines: [line('fresh', 'Fresh')] };
+    sdkMock.getDocument.mockResolvedValueOnce(before).mockResolvedValue(after);
+    const oldBox = {
+      id: 'old',
+      assetId: asset.id,
+      text: 'Old',
+      x1: 0,
+      y1: 0,
+      x2: 1,
+      y2: 0,
+      x3: 1,
+      y3: 1,
+      x4: 0,
+      y4: 1,
+      boxScore: 0.9,
+      textScore: 0.8,
+    };
+    sdkMock.getAssetOcr.mockResolvedValueOnce([oldBox]).mockResolvedValue([{ ...oldBox, id: 'fresh', text: 'Fresh' }]);
+    assetCacheManager.clearOcrCache();
+    await ocrManager.getAssetOcr(asset.id);
+    render(DocumentTextSection, { asset });
+    const readAgain = await screen.findByRole('button', { name: en.frameleaf_documents_read_again });
+    await userEvent.click(screen.getByRole('button', { name: en.frameleaf_documents_show_regions }));
+    vi.useFakeTimers();
+    try {
+      await fireEvent.click(readAgain);
+      await vi.advanceTimersByTimeAsync(DOCUMENT_REREAD_POLL_MS);
+      expect(ocrManager.data.map(({ id, text }) => [id, text])).toEqual([['fresh', 'Fresh']]);
+      expect(ocrManager.showOverlay).toBe(true);
+      expect(sdkMock.getAssetOcr).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+      ocrManager.clear();
+      assetCacheManager.clearOcrCache();
+    }
+  });
+
+  it('stops waiting for a new reading once the section is gone', async () => {
+    const before = { ...document(), canEdit: true, recognition: { enabled: true, routed: true } };
+    sdkMock.getDocument.mockResolvedValueOnce(before);
+    const { unmount } = render(DocumentTextSection, { asset });
+    const readAgain = await screen.findByRole('button', { name: en.frameleaf_documents_read_again });
+    vi.useFakeTimers();
+    try {
+      let answer: (value: DocumentResponseDto) => void = () => {};
+      sdkMock.getDocument.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)) as never);
+      await fireEvent.click(readAgain);
+      await vi.advanceTimersByTimeAsync(DOCUMENT_REREAD_POLL_MS);
+      expect(sdkMock.getDocument).toHaveBeenCalledTimes(2);
+
+      // the viewer closes while that read is on its way
+      unmount();
+      answer(before);
+      sdkMock.getDocument.mockResolvedValue(before);
+      await vi.advanceTimersByTimeAsync(DOCUMENT_REREAD_POLL_MS * 3);
+
+      expect(sdkMock.getDocument).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

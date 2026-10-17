@@ -20,10 +20,19 @@ export const onRouteError = (req: Request | undefined, res: Response, error: Err
   }
 
   if (error instanceof Error) {
-    // Error text can contain credentials, provider bodies and another account's content, so log only
-    // the error class and the stack frames (code locations), never the message.
-    const frames = (error.stack ?? '').split('\n').filter((line) => line.trimStart().startsWith('at '));
-    logger.error(['Unknown route error', error.name, ...frames].join('\n'));
+    // Names and serialized stacks can contain private error text, including frame-shaped multiline messages.
+    const errorClass = (
+      [
+        [TypeError, 'TypeError'],
+        [RangeError, 'RangeError'],
+        [SyntaxError, 'SyntaxError'],
+        [ReferenceError, 'ReferenceError'],
+        [URIError, 'URIError'],
+        [EvalError, 'EvalError'],
+        [AggregateError, 'AggregateError'],
+      ] as const
+    ).find(([ErrorClass]) => error instanceof ErrorClass)?.[1];
+    logger.error(`Unknown route error\n${errorClass ?? 'Error'}`);
     return { canWrite: true };
   }
 

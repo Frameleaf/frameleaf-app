@@ -454,5 +454,5 @@ export declare const setChildContext: (key: ChildKey) => {
     getByKey: (key: ChildKey) => ChildData | undefined;
 };
 export declare const getChildContext: (key: ChildKey) => () => {
-    register: (key: ChildKey, data: () => ChildData) => void;
+    register: (key: ChildKey, data: () => ChildData) => () => void;
 };

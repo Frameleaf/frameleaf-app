@@ -1,7 +1,7 @@
 import { AssetTypeEnum, AssetVisibility } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { emptyDiscoveryQuery, type DiscoveryQuery } from '$lib/components/discovery/query';
-import { timelineQueryOptions, viewInLibraryHref } from './library-query-options';
+import { searchQueryForTimeline, timelineQueryOptions, viewInLibraryHref } from './library-query-options';
 import { readLibraryView } from './library-session';
 
 const query = (filter: DiscoveryQuery['filter'], text = ''): DiscoveryQuery => ({
@@ -66,6 +66,37 @@ describe('timelineQueryOptions (FL-30, M3)', () => {
     const result = timelineQueryOptions(query({ personIds: { any: ['other'] } }), { ...base, personId: 'p1' });
     expect(result.options.personId).toBe('p1');
     expect(result.unapplied).toEqual(['personIds']);
+  });
+});
+
+describe('searchQueryForTimeline (LIB-P1)', () => {
+  it('carries the page’s own scope into the search, beside the panel’s conditions', () => {
+    const narrowed = query({ make: { eq: 'Canon' } });
+    expect(searchQueryForTimeline(narrowed, base)?.filter).toEqual({ make: { eq: 'Canon' } });
+    expect(searchQueryForTimeline(narrowed, { ...base, isFavorite: true })?.filter).toEqual({
+      make: { eq: 'Canon' },
+      isFavorite: { eq: true },
+    });
+    expect(searchQueryForTimeline(narrowed, { visibility: AssetVisibility.Archive })?.filter).toEqual({
+      make: { eq: 'Canon' },
+      visibility: { eq: AssetVisibility.Archive },
+    });
+    expect(
+      searchQueryForTimeline(query({ personIds: { any: ['p2', 'p3'] } }), { ...base, personId: 'p1' })?.filter,
+    ).toEqual({ personIds: { any: ['p2', 'p3'], all: ['p1'] } });
+    // The query it was given is left as it was.
+    expect(narrowed.filter).toEqual({ make: { eq: 'Canon' } });
+  });
+
+  it('refuses a page a search cannot stand for', () => {
+    for (const options of [
+      { ...base, userId: 'partner' },
+      { ...base, bbox: '1,2,3,4' },
+      { visibility: AssetVisibility.Locked },
+      { ...base, suppressedOnly: true },
+    ]) {
+      expect(searchQueryForTimeline(query({}), options)).toBeNull();
+    }
   });
 });
 

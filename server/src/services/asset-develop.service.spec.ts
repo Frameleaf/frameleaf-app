@@ -522,12 +522,13 @@ describe(AssetDevelopService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([video.id]));
       await expect(
         sut.save(authStub.user1, video.id, { recipe: defaultDevelopRecipe(), render: true }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).rejects.toThrow('Develop recipes apply to images; videos use the video editor');
 
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue({ ...asset, isOffline: true } as never);
       await expect(
         sut.save(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), render: true }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).rejects.toThrow('The original file is offline and cannot be rendered');
 
       expect(developRepository.create).not.toHaveBeenCalled();
     });
@@ -665,7 +666,7 @@ describe(AssetDevelopService.name, () => {
           signal,
         );
         expect((await stat(file.path)).size).toBe(4);
-        file.release?.();
+        await file.release?.();
         await vi.waitFor(async () => {
           await expect(stat(file.path)).rejects.toMatchObject({ code: 'ENOENT' });
         });
@@ -762,7 +763,7 @@ describe(AssetDevelopService.name, () => {
       expect(file.fileName).toContain('_still_hdr.heic');
       expect(mocks.asset.updateAll).not.toHaveBeenCalled();
       expect(mocks.media.writeStrippedStill).not.toHaveBeenCalled();
-      file.release?.();
+      await file.release?.();
       await vi.waitFor(async () => expect(await stat(file.path).catch(() => null)).toBeNull());
       vi.unstubAllEnvs();
     });
@@ -1073,18 +1074,23 @@ describe(AssetDevelopService.name, () => {
       vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
       try {
         const fill = 'e'.repeat(64);
-        developRepository.getArtifacts.mockResolvedValue([
-          { id: fill, assetId: asset.id, ownerId: asset.ownerId, kind: 'fill', path: '/artifact.png' },
-        ]);
+        developRepository.getArtifacts.mockImplementation((_assetId: string, ids: string[]) =>
+          Promise.resolve(
+            ids.includes(fill)
+              ? [{ id: fill, assetId: asset.id, ownerId: asset.ownerId, kind: 'fill', path: '/artifact.png' }]
+              : [],
+          ),
+        );
         await expect(
           sut.preview(authStub.user1, asset.id, {
             recipe: {
-              version: 3,
+              version,
               cleanup: [{ id: 'fill', method: 'remove', region: { x: 0, y: 0, w: 1, h: 1 }, fill }],
             },
             size: 256,
           }),
-        ).rejects.toBeInstanceOf(BadRequestException);
+        ).rejects.toMatchObject({ response: { code: 'develop_artifact_changed' } });
+        expect(mocks.crypto.hashFile).toHaveBeenCalledWith('/artifact.png', 'sha256');
         expect(mocks.media.decodeDevelopArtifact).not.toHaveBeenCalled();
         expect(mocks.media.generateHdrRenditions).not.toHaveBeenCalled();
       } finally {
@@ -1793,6 +1799,50 @@ describe(AssetDevelopService.name, () => {
       // the sweep dispatches the retry with its row; a second job here would run it twice
       expect(mocks.job.queue).not.toHaveBeenCalled();
       expect(developRepository.setCurrent).not.toHaveBeenCalled();
+    });
+
+    it('leaves the replacement version alone when failure settlement loses its claim', async () => {
+      const revision = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued });
+      developRepository.get.mockResolvedValue(revision);
+      mocks.media.encodeDevelopOutput.mockRejectedValueOnce(new Error('libvips: out of memory'));
+      mocks.mediaOperation.fail.mockResolvedValue(false);
+
+      await expect(sut.handleRender({ id: revision.id, operationId: 'op-1' })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.mediaOperation.fail).toHaveBeenCalled();
+      expect(developRepository.update).not.toHaveBeenCalledWith(
+        revision.id,
+        expect.objectContaining({ status: AssetDevelopRevisionStatus.Failed }),
+      );
+      expect(developRepository.setCurrent).not.toHaveBeenCalled();
+    });
+
+    it('retains the imported master when permanent failure settlement loses its claim', async () => {
+      const revision = revisionStub({
+        assetId: asset.id,
+        kind: AssetDevelopRevisionKind.External,
+        status: AssetDevelopRevisionStatus.Queued,
+        masterPath: '/thumbs/imported-master.tif',
+        sourceChecksum: Buffer.alloc(32, 3),
+        renditionChecksum: renditionSha,
+      });
+      developRepository.get.mockResolvedValue(revision);
+      mocks.mediaOperation.fail.mockResolvedValue(false);
+
+      await expect(sut.handleRender({ id: revision.id, operationId: 'op-1' })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        'op-1',
+        'token-1',
+        expect.objectContaining({ errorCode: 'source_changed' }),
+        { retry: false },
+      );
+      expect(developRepository.update).not.toHaveBeenCalledWith(revision.id, { masterPath: null });
+      expect(developRepository.update).not.toHaveBeenCalledWith(
+        revision.id,
+        expect.objectContaining({ status: AssetDevelopRevisionStatus.Failed }),
+      );
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(revision.masterPath);
     });
 
     it('reports the failure once the job has used its automatic retry', async () => {

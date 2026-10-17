@@ -102,10 +102,10 @@
     loading = true;
     exportStatus = '';
     try {
-      const url = new URL(page.url);
+      const url = new URL(page.url.href);
       url.searchParams.set('scope', scope);
       url.searchParams.set('range', next.range ?? range);
-      await goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true, keepFocus: true });
+      await goto(`${url.pathname}${url.search}`, { replace: true, reset: false });
     } catch (error) {
       handleError(error, $t('frameleaf_analytics_load_failed'));
     } finally {
@@ -224,7 +224,7 @@
               : 'frameleaf_analytics_growth_items_title',
           )}
           {labels}
-          unit={metric === 'storage' ? 'GiB' : $t('frameleaf_analytics_unit_items')}
+          unit={metric === 'storage' ? 'GB' : $t('frameleaf_analytics_unit_items')}
           height={260}
           datasets={metric === 'storage'
             ? [
@@ -505,7 +505,8 @@
     max-width: 1440px;
     min-width: 0;
     margin: 0 auto;
-    padding: clamp(16px, 3vw, 36px);
+    /* Hosted only in the settings pane, which already insets it (command-center.css `.cc-main > .settings-analytics`). */
+    padding: 0;
     color: var(--fl-text);
     background: var(--fl-canvas);
     font-size: 13px;

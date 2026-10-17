@@ -541,12 +541,24 @@ describe(PreservationService.name, () => {
       repository.lockedRestoreItemIds.mockResolvedValue([itemId]);
 
       await expect(
-        sut.updateDecisions(owner, restore.id, { items: [{ id: itemId, decisions: { description: 'replace' } }] }),
+        sut.updateDecisions(owner, restore.id, {
+          conflictDefault: 'replace',
+          restoreEditRecipes: false,
+          items: [{ id: itemId, decisions: { description: 'replace' } }],
+        }),
       ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repository.updateRestore).not.toHaveBeenCalled();
       expect(repository.setDecisions).not.toHaveBeenCalled();
 
       const items = [{ id: itemId, decisions: { description: 'replace' as const } }];
-      await sut.updateDecisions(unlocked, restore.id, { items });
+      await sut.updateDecisions(unlocked, restore.id, {
+        conflictDefault: 'replace',
+        restoreEditRecipes: false,
+        items,
+      });
+      expect(repository.updateRestore).toHaveBeenCalledWith(restore.id, {
+        options: { conflictDefault: 'replace', restoreEditRecipes: false },
+      });
       expect(repository.setDecisions).toHaveBeenCalledWith(restore.id, items);
     });
 

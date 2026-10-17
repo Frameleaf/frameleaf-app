@@ -32,8 +32,8 @@
    * text tabs; the current one reads in the text colour over a 2px underline. The Locked collection
    * offers the Timeline only (`App.jsx` `collection === "Locked" ? ["timeline"]`).
    *
-   * The underline slides from the old tab to the new one (sliding-plate.ts). On phones the switch
-   * is not drawn: the library's view menu carries the same three choices (`LibraryPhoneMenu`).
+   * The underline slides from the old tab to the new one (sliding-plate.ts). Phones show it beside
+   * the title too, with tighter tabs, as the template does (LIB-P5).
    */
   import { slidingPlate } from '$lib/components/timeline/sliding-plate';
   import { t } from 'svelte-i18n';

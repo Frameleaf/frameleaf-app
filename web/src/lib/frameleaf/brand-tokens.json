@@ -167,8 +167,8 @@
       "symbol": 16
     },
     "surfaces": {
-      "dark": "frameleaf-logo-dark.svg",
-      "light": "gradient symbol plus the name set in text",
+      "dark": "frameleaf-logo-dark.svg, the brand kit's dark logo unmodified, no plate",
+      "light": "frameleaf-logo-on-light.svg, dark-ink Frame, no plate",
       "photo": "white artwork"
     }
   },

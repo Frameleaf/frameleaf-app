@@ -42,6 +42,7 @@
    * call, which is what the delete and archive entries reported into before.
    */
   import { goto } from '$app/navigation';
+  import { gotoWithFocusAndScroll } from '$lib/utils/navigation';
   import { shortcuts } from '$lib/actions/shortcut';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import ShareSheet from '$lib/components/frameleaf/ShareSheet.svelte';
@@ -305,12 +306,12 @@
     });
   });
 
-  const handleNavigate = async (href: string | undefined, options?: { replaceState?: boolean }) => {
+  const handleNavigate = async (href: string | undefined, options?: { replace?: boolean }) => {
     if (assetViewerManager.isViewing || !href) {
       return;
     }
 
-    await goto(href, { noScroll: true, keepFocus: true, ...options });
+    await goto(href, { reset: false, ...options });
   };
 
   const setProgressDuration = (asset: TimelineAsset) => {
@@ -393,7 +394,7 @@
       if (atLastItem) {
         showEndCard();
       } else if (current?.nextHref) {
-        await handleNavigate(current.nextHref, { replaceState: true });
+        await handleNavigate(current.nextHref, { replace: true });
       } else {
         await handleAction('handleProgressLast', 'pause');
       }
@@ -630,7 +631,7 @@
       return;
     }
 
-    handlePromiseError(goto(memoryManager.memoriesHref, { replaceState: true, noScroll: true }));
+    handlePromiseError(gotoWithFocusAndScroll(memoryManager.memoriesHref, { replace: true, noScroll: true }));
   });
 
   $effect(() => {
@@ -665,6 +666,8 @@
   let exportRun = $state<MemoryExportResponseDto | undefined>();
   let exportBusy = $state(false);
   let exportTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Bumped when the memory changes or the player goes: an answer about an earlier run is dropped. */
+  let exportGeneration = 0;
 
   const exportActive = $derived(!!exportRun && isExportActive(exportRun.status));
   const exportPercent = $derived(exportRun ? Math.round(exportProgress(exportRun) * 100) : 0);
@@ -682,9 +685,17 @@
     if (!exportRun) {
       return;
     }
+    const asked = exportGeneration;
     try {
-      exportRun = await getMemoryExport({ id: exportRun.id });
+      const next = await getMemoryExport({ id: exportRun.id });
+      if (asked !== exportGeneration) {
+        return;
+      }
+      exportRun = next;
     } catch (error) {
+      if (asked !== exportGeneration) {
+        return;
+      }
       // the run is gone (deleted, or its memory was), so there is nothing left to follow
       handleError(error, $t('frameleaf_memories_export_failed'));
       exportRun = undefined;
@@ -703,6 +714,7 @@
   // reload, or from another tab — instead of offering to start a second one.
   $effect(() => {
     const memoryId = current?.memory.id;
+    exportGeneration++;
     stopPolling();
     exportRun = undefined;
     if (!memoryId) {
@@ -733,6 +745,7 @@
 
     return () => {
       stale = true;
+      exportGeneration++;
       stopPolling();
     };
   });
@@ -742,8 +755,13 @@
       return;
     }
     exportBusy = true;
+    const asked = exportGeneration;
     try {
-      exportRun = await createMemoryExport({ id: current.memory.id, memoryExportCreateDto: {} });
+      const created = await createMemoryExport({ id: current.memory.id, memoryExportCreateDto: {} });
+      if (asked !== exportGeneration) {
+        return;
+      }
+      exportRun = created;
       status = $t('frameleaf_memories_export_started');
       if (isExportActive(exportRun.status)) {
         stopPolling();
@@ -761,8 +779,13 @@
       return;
     }
     exportBusy = true;
+    const asked = exportGeneration;
     try {
-      exportRun = await cancelMemoryExport({ id: exportRun.id });
+      const cancelled = await cancelMemoryExport({ id: exportRun.id });
+      if (asked !== exportGeneration) {
+        return;
+      }
+      exportRun = cancelled;
       status = $t('frameleaf_memories_export_cancelled');
       if (!isExportActive(exportRun.status)) {
         stopPolling();
@@ -1065,7 +1088,7 @@
       <div class="fmp-heading">
         <strong>{headline?.title}</strong>
         <small>
-          {#if headline?.subtitle}{headline.subtitle}<span aria-hidden="true"> · </span>{/if}
+          {#if headline?.subtitle}{headline.subtitle}<span aria-hidden="true">&nbsp;·&nbsp;</span>{/if}
           {$t('frameleaf_memories_item_count', { values: { count: current.memory.assets.length } })}
         </small>
       </div>
@@ -1383,7 +1406,7 @@
                   <strong>{lowerThird.place}</strong>
                   <span>
                     {lowerThird.day}{#if lowerThird.video && videoMuted}
-                      <span aria-hidden="true"> · </span>{$t('frameleaf_memories_video_muted')}{/if}
+                      <span aria-hidden="true">&nbsp;·&nbsp;</span>{$t('frameleaf_memories_video_muted')}{/if}
                   </span>
                   {#if currentPeople.length > 0}
                     {@const names = currentPeople.map((person) => person.name).join(', ')}

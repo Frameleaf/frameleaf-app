@@ -389,6 +389,7 @@ select
           "user"
         where
           "user"."id" = "shared_link"."userId"
+          and "user"."deletedAt" is null
       ) as obj
   ) as "user"
 from
@@ -428,6 +429,7 @@ select
           "user"
         where
           "user"."id" = "shared_link"."userId"
+          and "user"."deletedAt" is null
       ) as obj
   ) as "user"
 from

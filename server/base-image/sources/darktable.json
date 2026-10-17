@@ -1,24 +1,24 @@
 {
   "name": "darktable",
   "repository": "darktable-org/darktable",
-  "version": "5.6.1",
-  "revision": "03179f8e080aa9cedebfe14b098b7ba88940a292",
+  "version": "5.6.2",
+  "revision": "20891f6c6fa7be995e5bf9dff9d1ee5062051773",
   "inputs": [
     {
       "name": "darktable",
       "repository": "darktable-org/darktable",
-      "revision": "03179f8e080aa9cedebfe14b098b7ba88940a292",
-      "sha256": "135386b79b6923766f17fd5094d2d1d4b6243b759840b74542f24242875ce3ae",
+      "revision": "20891f6c6fa7be995e5bf9dff9d1ee5062051773",
+      "sha256": "a8caff7310ac2cf0cc94c899f5f5ff9fb180b4013217803ceb76326e96dd90c0",
       "path": ".",
-      "url": "https://codeload.github.com/darktable-org/darktable/tar.gz/03179f8e080aa9cedebfe14b098b7ba88940a292"
+      "url": "https://codeload.github.com/darktable-org/darktable/tar.gz/20891f6c6fa7be995e5bf9dff9d1ee5062051773"
     },
     {
       "name": "rawspeed",
       "repository": "darktable-org/rawspeed",
-      "revision": "7cf3dc3b9d9c82b414198b1f57460478be6c6c9d",
-      "sha256": "15b531f069f87e682d5c4e670115b371c85d9a1924b1a3682eacab2a9f398cd6",
+      "revision": "c835b05aecfacb7343f7c424abd620aa12116c3f",
+      "sha256": "decde2f173834fae39d577177efb9d96490c6bd06beacec81898796b3aacb140",
       "path": "src/external/rawspeed",
-      "url": "https://codeload.github.com/darktable-org/rawspeed/tar.gz/7cf3dc3b9d9c82b414198b1f57460478be6c6c9d"
+      "url": "https://codeload.github.com/darktable-org/rawspeed/tar.gz/c835b05aecfacb7343f7c424abd620aa12116c3f"
     },
     {
       "name": "whereami",

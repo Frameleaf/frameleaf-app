@@ -11,7 +11,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { CastService } from 'src/services/cast.service.js';
 import { CastMediaKind } from 'src/utils/cast-media.js';
-import { ImmichFileResponse, sendFile } from 'src/utils/file.js';
+import { FileDownloadResponse, sendFile } from 'src/utils/file.js';
 import { UUIDParamDto } from 'src/validation.js';
 
 const history = () => new HistoryBuilder().added('v3');
@@ -75,7 +75,7 @@ export class CastController {
               size: AssetMediaSize.PREVIEW,
               edited: true,
             });
-            if (!(preview instanceof ImmichFileResponse)) {
+            if (!(preview instanceof FileDownloadResponse)) {
               // the preview is not generated yet; the original is a separate, explicitly issued URL
               throw new NotFoundException('This item has no preview yet');
             }

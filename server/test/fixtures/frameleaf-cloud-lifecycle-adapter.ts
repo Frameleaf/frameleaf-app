@@ -169,13 +169,15 @@ export class LibraryMlLifecycleAdapter {
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    const recorded = this.api.createRecordedMlLifecycleServer({
-      storageOrigin: origin,
-      fault: this.fault === 'corrupt-output' || this.fault === 'repeated-part-1-prefix' ? undefined : this.fault,
-      now: () => nowMs,
-    });
-    const folder = await mkdtemp(join(tmpdir(), 'library-ml-lifecycle-'));
+    let recorded: RecordedServer;
+    let folder = '';
     try {
+      recorded = this.api.createRecordedMlLifecycleServer({
+        storageOrigin: origin,
+        fault: this.fault === 'corrupt-output' || this.fault === 'repeated-part-1-prefix' ? undefined : this.fault,
+        now: () => nowMs,
+      });
+      folder = await mkdtemp(join(tmpdir(), 'library-ml-lifecycle-'));
       const logger = {
         setContext: () => {},
         warn: () => {},
@@ -396,11 +398,14 @@ export class LibraryMlLifecycleAdapter {
       // Never surface transport exceptions, signed URLs, headers or tokens to test reporters.
       throw new Error(`Library lifecycle action unavailable: ${caseId} (${name})`);
     } finally {
-      server.closeAllConnections();
-      await new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(new Error('Local lifecycle server cleanup failed')) : resolve())),
-      );
-      await rm(folder, { recursive: true, force: true });
+      try {
+        server.closeAllConnections();
+        await new Promise<void>((resolve, reject) =>
+          server.close((error) => (error ? reject(new Error('Local lifecycle server cleanup failed')) : resolve())),
+        );
+      } finally {
+        if (folder) await rm(folder, { recursive: true, force: true });
+      }
     }
   }
 }

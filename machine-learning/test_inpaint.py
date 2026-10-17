@@ -16,11 +16,11 @@ from onnx import TensorProto, helper
 from PIL import Image
 from pytest_mock import MockerFixture
 
-from immich_ml.models import get_model_class
-from immich_ml.models.base import ModelUnavailableError
-from immich_ml.models.constants import get_inpaint_model_file
-from immich_ml.models.inpaint import InpaintModel
-from immich_ml.schemas import ModelTask, ModelType, validate_options
+from frameleaf_ml.models import get_model_class
+from frameleaf_ml.models.base import ModelUnavailableError
+from frameleaf_ml.models.constants import get_inpaint_model_file
+from frameleaf_ml.models.inpaint import InpaintModel
+from frameleaf_ml.schemas import ModelTask, ModelType, validate_options
 
 FILL = 200.0
 SIZE = 8
@@ -131,7 +131,7 @@ class TestInpaintDownload:
         sut = InpaintModel("frameleaf-inpaint", cache_dir=tmp_path)
         content = b"lama"
         mocker.patch(
-            "immich_ml.models.inpaint.get_inpaint_model_file",
+            "frameleaf_ml.models.inpaint.get_inpaint_model_file",
             return_value=mock.Mock(repo="frameleaf-inpaint", sha256=hashlib.sha256(content).hexdigest()),
         )
 
@@ -172,7 +172,7 @@ def serve(mocker: MockerFixture, model: Any) -> None:
     async def get(*args: Any, **kwargs: Any) -> Any:
         return model
 
-    mocker.patch("immich_ml.main.model_cache.get", side_effect=get)
+    mocker.patch("frameleaf_ml.main.model_cache.get", side_effect=get)
 
 
 class TestInpaintEndpoint:

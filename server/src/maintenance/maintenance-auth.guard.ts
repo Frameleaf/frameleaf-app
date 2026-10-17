@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, SetMetadata, applyDecorators } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, SetMetadata } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { MaintenanceAuthDto } from 'src/dtos/maintenance.dto.js';
@@ -6,10 +6,7 @@ import { MetadataKey } from 'src/enum.js';
 import { MaintenanceWorkerService } from 'src/maintenance/maintenance-worker.service.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 
-export const MaintenanceRoute = (options = {}): MethodDecorator => {
-  const decorators: MethodDecorator[] = [SetMetadata(MetadataKey.AuthRoute, options)];
-  return applyDecorators(...decorators);
-};
+export const MaintenanceRoute = (options = {}): MethodDecorator => SetMetadata(MetadataKey.AuthRoute, options);
 
 export interface MaintenanceAuthRequest extends Request {
   auth?: MaintenanceAuthDto;
@@ -26,10 +23,9 @@ export class MaintenanceAuthGuard implements CanActivate {
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const targets = [context.getHandler()];
-    const options = this.reflector.getAllAndOverride<{ _emptyObject: never } | undefined>(
+    const options = this.reflector.get<{ _emptyObject: never } | undefined>(
       MetadataKey.AuthRoute,
-      targets,
+      context.getHandler(),
     );
     if (!options) {
       return true;

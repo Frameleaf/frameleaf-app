@@ -30,6 +30,7 @@ import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { appleFingerprintHash } from 'src/utils/icloud-identity.js';
 import { ValidationInputEnvelope, privateCopyIdentity, validationInputScope } from 'src/utils/icloud-private-copy.js';
+import { scheduledAuditClaimHolder } from 'src/utils/icloud-weekly.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -86,6 +87,9 @@ describe('validation input SQL disposal concurrency', () => {
     // Scoped reversible seals stand in for transport cryptography, never repository admission.
     const seals = new Map<string, { scope: string; payload: string }>();
     const transport = {
+      withSessionCrypto<T>(action: () => Promise<T>) {
+        return action();
+      },
       encodeSession(scope: string, payload: unknown) {
         const seal = randomUUID();
         seals.set(seal, { scope, payload: canonicalJson(payload) });
@@ -262,10 +266,10 @@ describe('validation input SQL disposal concurrency', () => {
       const [claim] = await identities.claim(
         user.id,
         [source.sourceAssetId],
-        `icloud-sync:audit:${operation.id}`,
+        scheduledAuditClaimHolder(user.id, authority),
         1800,
       );
-      if (!claim || claim.holder !== `icloud-sync:audit:${operation.id}`)
+      if (!claim || claim.holder !== scheduledAuditClaimHolder(user.id, authority))
         throw new Error('fixture_audit_claim_missing');
       const worker = new ICloudScheduledWorkerRepository(db, staging);
       expect(await worker.bindClaim(authority, user.id, claim.id)).toBe(true);

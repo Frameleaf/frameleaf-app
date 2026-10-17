@@ -113,7 +113,7 @@ test.describe('Frameleaf Cloud remote access', () => {
     await page.reload();
     await expect(page.getByText('24 ms')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText('Connected since')).toBeVisible();
-    await expect(page.getByText('5 MiB in, 50 MiB out')).toBeVisible();
+    await expect(page.getByText('5 MB in, 50 MB out')).toBeVisible();
     await expect(page.getByText(/^Last problem/)).toHaveCount(0);
   });
 
@@ -121,8 +121,8 @@ test.describe('Frameleaf Cloud remote access', () => {
     mock.remote = { ...defaults(), enabled: true, relayConnected: true };
     await page.goto(remotePage);
     const meter = page.getByRole('meter', { name: 'Relay use this month' });
-    await expect(meter).toHaveAttribute('aria-valuenow', '171798691840', { timeout: 30_000 });
-    await expect(page.getByText('160 GiB of 200 GiB')).toBeVisible();
+    await expect(meter).toHaveAttribute('aria-valuenow', '160000000000', { timeout: 30_000 });
+    await expect(page.getByText('160 GB of 200 GB')).toBeVisible();
     expect(mock.requests.some(({ method, path }) => method === 'GET' && path === 'admin/cloud/remote/usage')).toBe(
       true,
     );

@@ -185,6 +185,10 @@ export class AssetUploadResourceRepository {
         if (!owner) {
           throw new NotFoundException('Upload owner unavailable');
         }
+        const now = new Date();
+        if (rows.some((row) => row.expiresAt <= now && !(allowExpiredPublished && row.state === 'published'))) {
+          throw new NotFoundException('Upload unavailable');
+        }
         return callback(tx, rows);
       },
     );

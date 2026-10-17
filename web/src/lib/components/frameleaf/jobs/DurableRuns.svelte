@@ -81,8 +81,11 @@
     itemsUnavailable = false;
     void loadItems(id);
   };
-  const load = async (skip = offset) => {
+  /** A read asked for while another is on its way (a refresh, a poll): it runs once that read ends. */
+  let queuedSkip: number | null = null;
+  const load = async (skip = offset): Promise<void> => {
     if (loading) {
+      queuedSkip = skip;
       return;
     }
     loading = true;
@@ -99,6 +102,11 @@
       unavailable = true;
     } finally {
       loading = false;
+    }
+    if (queuedSkip !== null) {
+      const next = queuedSkip;
+      queuedSkip = null;
+      await load(next);
     }
   };
   $effect(() => {

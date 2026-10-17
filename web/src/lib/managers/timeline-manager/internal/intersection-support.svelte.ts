@@ -1,5 +1,5 @@
 import { TUNABLES } from '$lib/utils/tunables';
-import { TimelineManager } from '../timeline-manager.svelte';
+import type { TimelineManager } from '../timeline-manager.svelte';
 import type { TimelineMonth } from '../timeline-month.svelte';
 
 const {
@@ -33,20 +33,15 @@ function calculateViewportProximity(regionTop: number, regionBottom: number, win
     return ViewportProximity.FarFromViewport;
   }
 
-  if (regionBottom < windowTop || regionTop >= windowBottom) {
-    return ViewportProximity.NearViewport;
-  }
-
-  return ViewportProximity.InViewport;
+  return regionBottom < windowTop || regionTop >= windowBottom
+    ? ViewportProximity.NearViewport
+    : ViewportProximity.InViewport;
 }
 
 export function updateTimelineMonthViewportProximity(timelineManager: TimelineManager, month: TimelineMonth) {
-  const proximity = calculateViewportProximity(
-    month.top,
-    month.top + month.height,
-    timelineManager.visibleWindow.top,
-    timelineManager.visibleWindow.bottom,
-  );
+  const top = month.top;
+  const visibleWindow = timelineManager.visibleWindow;
+  const proximity = calculateViewportProximity(top, top + month.height, visibleWindow.top, visibleWindow.bottom);
 
   month.viewportProximity = proximity;
   if (isInOrNearViewport(proximity)) {

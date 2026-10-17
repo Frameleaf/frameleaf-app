@@ -13,7 +13,7 @@ import {
   type PetResponseDto,
   type SearchFilter,
 } from '@frameleaf/sdk';
-import type { Translations } from 'svelte-i18n';
+import type { MessageFormatter, Translations } from 'svelte-i18n';
 import { toPixelBox, type FaceBox, type Size } from '$lib/frameleaf/face-tags';
 
 /**
@@ -49,6 +49,28 @@ export const sortPets = <T extends { name: string; isFavorite: boolean }>(pets: 
       Number(isUnnamedPet(a)) - Number(isUnnamedPet(b)) ||
       a.name.localeCompare(b.name),
   );
+
+/**
+ * The Pets summary line under the title (DISCOVERY-P8), as People's: "2 pets · 14 photos", with
+ * "· 1 hidden pet" while hidden pets are left out. The pets and photos counted are the ones the grid
+ * shows; the photos are each shown pet's confirmed photos, so a photo of two pets counts for both.
+ */
+export const petsSummary = (
+  pets: Pick<PetResponseDto, 'isHidden' | 'assetCount'>[],
+  showHidden: boolean,
+  $t: MessageFormatter,
+): string => {
+  const shown = pets.filter((pet) => showHidden || !pet.isHidden);
+  const hidden = pets.filter((pet) => pet.isHidden).length;
+  const photos = shown.reduce((total, pet) => total + pet.assetCount, 0);
+  return [
+    $t('frameleaf_pets_count', { values: { count: shown.length } }),
+    shown.length > 0 ? $t('frameleaf_people_photos_count', { values: { count: photos } }) : '',
+    hidden > 0 && !showHidden ? $t('frameleaf_pets_hidden_count', { values: { count: hidden } }) : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+};
 
 /** The i18n key for a species, so the page never renders a raw enum value. */
 export const speciesLabelKey = (species: PetSpecies): Translations => `frameleaf_pets_species_${species}`;

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Icon } from '@frameleaf/ui';
-  import { mdiAlertCircleOutline } from '@mdi/js';
+  import { mdiAlertCircleOutline, mdiCheckCircle } from '@mdi/js';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -9,16 +9,12 @@
    * `design/frameleaf/template/src/App.jsx` and apple-style.css "floating capsule toolbar".
    *
    * It only appears where photos are browsed (library, person and partner views, September 24
-   * polish pass), and it says only what the page does not already show:
-   *
-   * - "128 of 4,210 items" while a filter narrows the view. Unfiltered, the count is in the results
-   *   toolbar above the photos and is not repeated here.
-   * - Selected items these results do not show, when there are any. The selected count itself is on
-   *   the selection bar, which takes this bar's place while anything is selected.
-   * - That this device could not keep the view. When it could, nothing is said.
-   *
-   * With none of those and no controls it is not drawn at all. Compare, Quick edit and Open in
-   * Studio are not here; they live on the selection bar. On phones the tab bar replaces it.
+   * polish pass). As in the template (LIB-P6) it says how many items the view shows ("128 of
+   * 4,210 items" while a filter narrows it), how many are selected and how many of those these
+   * results do not show, and whether this device kept the view ("Saved on this device"), then the
+   * Thumbnail size control. Compare, Quick edit and Open in Studio are not here; they live on the
+   * selection bar, which takes this bar's place while anything is selected. On phones the tab bar
+   * replaces it.
    *
    * `controls` is the trailing slot for the Thumbnail size control (Packet 2i).
    */
@@ -27,6 +23,8 @@
     count: number | null;
     /** Items in the whole scope (library, person, partner) before any filter, when known. */
     total?: number | null;
+    /** Items selected in the session. */
+    selected?: number;
     /** Selected items these results do not show. */
     outside?: number;
     /** Whether the view state was kept on this device (`LibrarySessionStore.persist`). */
@@ -36,43 +34,47 @@
     controls?: Snippet;
   };
 
-  let { count, total = null, saved, hidden = false, outside = 0, controls }: Props = $props();
+  let { count, total = null, selected = 0, saved, hidden = false, outside = 0, controls }: Props = $props();
 
   const filtered = $derived(count !== null && total !== null && total !== count);
-  const hasText = $derived(filtered || outside > 0 || !saved);
+  const shown = $derived(count ?? total);
 </script>
 
-{#if hasText || controls}
-  <footer
-    class="fl-status-bar"
-    class:is-hidden={hidden}
-    aria-hidden={hidden}
-    inert={hidden}
-    data-testid="library-status-bar"
+<footer
+  class="fl-status-bar"
+  class:is-hidden={hidden}
+  aria-hidden={hidden}
+  inert={hidden}
+  data-testid="library-status-bar"
+>
+  <span class="fl-status-counts" aria-live="polite">
+    {#if shown !== null}
+      <!-- Keyed on the text, so a new count fades in rather than snapping. -->
+      {#key `${count}/${total}`}
+        <span class="fl-reveal">
+          {filtered
+            ? $t('frameleaf_status_items_of', { values: { count, total } })
+            : $t('frameleaf_status_items', { values: { count: shown } })}
+        </span>
+      {/key}
+      <i aria-hidden="true"></i>
+    {/if}
+    {$t('selected_count', { values: { count: selected } })}
+    {#if outside > 0}
+      {$t('frameleaf_status_outside', { values: { count: outside } })}
+    {/if}
+  </span>
+  <span
+    class="fl-status-saved"
+    class:is-unsaved={!saved}
+    role="status"
+    title={saved ? undefined : $t('frameleaf_status_not_saved_help')}
   >
-    {#if filtered || outside > 0}
-      <span class="fl-status-counts" aria-live="polite">
-        {#if filtered}
-          <!-- Keyed on the text, so a new count fades in rather than snapping. -->
-          {#key `${count}/${total}`}
-            <span class="fl-reveal">{$t('frameleaf_status_items_of', { values: { count, total } })}</span>
-          {/key}
-        {/if}
-        {#if outside > 0}
-          {#if filtered}<i aria-hidden="true"></i>{/if}
-          {$t('frameleaf_status_selected_outside', { values: { count: outside } })}
-        {/if}
-      </span>
-    {/if}
-    {#if !saved}
-      <span class="fl-status-saved" role="status" title={$t('frameleaf_status_not_saved_help')}>
-        <Icon icon={mdiAlertCircleOutline} size="13" aria-hidden={true} />
-        {$t('frameleaf_status_not_saved')}
-      </span>
-    {/if}
-    {@render controls?.()}
-  </footer>
-{/if}
+    <Icon icon={saved ? mdiCheckCircle : mdiAlertCircleOutline} size="13" aria-hidden={true} />
+    {saved ? $t('frameleaf_status_saved') : $t('frameleaf_status_not_saved')}
+  </span>
+  {@render controls?.()}
+</footer>
 
 <style>
   /* apple-style.css: the library bar floats as a frosted capsule centred over the photos. */
@@ -130,16 +132,29 @@
     margin: 0 12px;
     border-inline-start: 1px solid var(--fl-material-edge);
   }
+  /* Template `.saved-label`: muted, with the teal check; a view this device could not keep warns. */
   .fl-status-saved {
     display: flex;
     align-items: center;
     gap: var(--fl-space-2);
-    color: var(--fl-text);
+    color: var(--fl-on-material-muted);
     font-size: var(--fl-font-small);
     white-space: nowrap;
   }
   .fl-status-saved :global(svg) {
+    color: var(--fl-teal);
+  }
+  .fl-status-saved.is-unsaved {
+    color: var(--fl-text);
+  }
+  .fl-status-saved.is-unsaved :global(svg) {
     color: var(--fl-warning);
+  }
+  /* Template `@media (max-width: 1000px)`: a narrow window keeps the counts and the size control. */
+  @media (max-width: 1000px) {
+    .fl-status-saved:not(.is-unsaved) {
+      display: none;
+    }
   }
   /* On phones the tab bar replaces the library bar. */
   @media (max-width: 700px) {

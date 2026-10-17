@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { render } from '@react-email/render';
+import { render, toPlainText } from '@react-email/render';
 import { createTransport } from 'nodemailer';
 import React, { createElement } from 'react';
 import type { EmailImageAttachment } from 'src/types.js';
@@ -155,10 +155,10 @@ export class EmailRepository {
     this.logger.setContext(EmailRepository.name);
   }
 
-  verifySmtp(options: SmtpOptions): Promise<true> {
+  async verifySmtp(options: SmtpOptions): Promise<true> {
     const transport = this.createTransport(options);
     try {
-      return transport.verify();
+      return await transport.verify();
     } finally {
       transport.close();
     }
@@ -167,11 +167,20 @@ export class EmailRepository {
   async renderEmail(request: EmailRenderRequest): Promise<{ html: string; text: string }> {
     const component = this.render(request);
     const html = await render(component, { pretty: false });
-    const text = await render(component, { plainText: true });
+    const text = toPlainText(html);
     return { html, text };
   }
 
-  sendEmail({ to, from, subject, html, text, smtp, imageAttachments }: SendEmailOptions): Promise<SendEmailResponse> {
+  async sendEmail({
+    to,
+    from,
+    replyTo,
+    subject,
+    html,
+    text,
+    smtp,
+    imageAttachments,
+  }: SendEmailOptions): Promise<SendEmailResponse> {
     this.logger.debug(`Sending email to ${to} with subject: ${subject}`);
     const transport = this.createTransport(smtp);
 
@@ -182,7 +191,7 @@ export class EmailRepository {
     }));
 
     try {
-      return transport.sendMail({ to, from, subject, html, text, attachments });
+      return await transport.sendMail({ to, from, replyTo, subject, html, text, attachments });
     } finally {
       transport.close();
     }

@@ -54,7 +54,7 @@ const NOT_LOCATION = new Set(['TimeZoneCity']);
 
 /** every tag, in any group, whose name says it places the file */
 const readGps = async (path: string) => {
-  const tags = await reader.readRaw(path, { readArgs: ['-a', '-G1', '-ee', '-n'], useMWG: false });
+  const tags = await reader.readRaw(path, { readArgs: ['-a', '-G1', '-ee', '-n'] });
   return Object.keys(tags).filter((key) => {
     const name = key.split(':').at(-1) ?? key;
     return (
@@ -120,7 +120,7 @@ describe('MetadataRepository.acquireLocationFreeOriginal', () => {
     expect(await sut.inspectLocation(lease.path)).toEqual({ locationTags: [], problems: [], samsungTrailer: false });
     expect(lease.path.startsWith(join(mediaLocation, 'tmp', 'location-free'))).toBe(true);
     // the rest of the metadata and the image itself survive
-    const copy = await reader.readRaw(lease.path, { readArgs: ['-G1'], useMWG: false });
+    const copy = await reader.readRaw(lease.path, { readArgs: ['-G1'] });
     expect(copy).toMatchObject({ 'IFD0:Make': 'Canon', 'IFD0:Model': 'EOS 70D' });
     await expect(sharp(lease.path).metadata()).resolves.toMatchObject({ width: 16, height: 8 });
     // the original keeps its bytes (and its location) for the owner
@@ -286,7 +286,6 @@ describe('MetadataRepository.acquireLocationFreeOriginal', () => {
     expect(await readGps(lease.path)).toEqual([]);
     const copy = await reader.readRaw(lease.path, {
       readArgs: ['-G1', '-Samsung:all', '-MotionPhoto*'],
-      useMWG: false,
     });
     expect(Object.keys(copy).filter((key) => key.startsWith('Samsung:'))).toEqual([]);
     await expect(sharp(lease.path).metadata()).resolves.toMatchObject({ format: 'jpeg' });

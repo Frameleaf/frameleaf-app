@@ -913,6 +913,28 @@ describe(MemoryService.name, () => {
         mocks.memory.cleanup.mock.invocationCallOrder[0],
       );
     });
+
+    it('delegates highlight deletion without unlinking its saved library result', async () => {
+      const auth = factory.auth();
+      const memoryId = newUuid();
+      const savedPath = '/data/library/saved-highlight.mp4';
+      const archivePath = '/data/exports/archive.zip';
+      mocks.access.memory.checkOwnerAccess.mockResolvedValue(new Set([memoryId]));
+      mocks.memory.delete.mockResolvedValue();
+      mocks.memory.searchExports.mockResolvedValue([
+        exportRun({ ownerId: auth.user.id, memoryId, format: MemoryExportFormat.Highlight, path: savedPath }),
+        exportRun({ ownerId: auth.user.id, memoryId, path: archivePath }),
+      ] as never);
+
+      await sut.remove(auth, memoryId);
+
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(savedPath);
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(archivePath);
+      expect(highlights.removeForMemory).toHaveBeenCalledExactlyOnceWith(auth.user.id, memoryId);
+      expect(highlights.removeForMemory.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.memory.delete.mock.invocationCallOrder[0],
+      );
+    });
   });
 
   describe('getExport', () => {
@@ -1135,6 +1157,28 @@ describe(MemoryService.name, () => {
 
       await expect(sut.handleMemoryExport({ id: run.id })).resolves.toBe(JobStatus.Success);
       expect(addFile).toHaveBeenCalledWith(locked.originalPath, expect.any(String));
+    });
+
+    it('keeps every emitted filename unique when originals already contain generated suffixes', async () => {
+      const ownerId = newUuid();
+      const assets = ['photo.jpg', 'photo+1.jpg', 'photo.jpg', 'photo+2.jpg', 'photo.jpg'].map((originalFileName) =>
+        AssetFactory.create({ ownerId, originalFileName }),
+      );
+      const run = exportRun({ ownerId, assetIds: assets.map(({ id }) => id), assetCount: assets.length });
+      mocks.memory.claimExport.mockResolvedValue({ ...run, status: MemoryExportStatus.Running } as never);
+      mocks.memory.getExportForJob.mockResolvedValue({ ...run, cancelRequestedAt: null } as never);
+      mocks.asset.getByIds.mockResolvedValue(assets as never);
+      mocks.storage.stat.mockResolvedValue({ size: 42 } as never);
+      const { addFile } = givenZip();
+
+      await expect(sut.handleMemoryExport({ id: run.id })).resolves.toBe(JobStatus.Success);
+      expect(addFile.mock.calls.map(([, filename]) => filename)).toEqual([
+        'photo.jpg',
+        'photo+1.jpg',
+        'photo+2.jpg',
+        'photo+2+1.jpg',
+        'photo+3.jpg',
+      ]);
     });
 
     it('should rename the archive into place only once it is complete', async () => {

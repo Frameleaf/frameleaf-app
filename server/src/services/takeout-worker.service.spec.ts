@@ -161,17 +161,24 @@ describe(TakeoutWorkerService.name, () => {
       isInsideRoots: vi.fn((folder: string, roots: string[]) =>
         Promise.resolve(roots.some((root) => folder.startsWith(root))),
       ),
-      copyToLibrary: vi.fn().mockResolvedValue({
-        size: 10,
-        checksum: Buffer.alloc(32, 1),
-        legacyChecksum: Buffer.alloc(20, 1),
-      }),
+      copyToLibrary: vi.fn(
+        async (
+          _staged: string,
+          _size: number,
+          _destination: string,
+          _signal: AbortSignal,
+          onCreated: () => Promise<void>,
+        ) => {
+          await onCreated();
+          return { size: 10, checksum: Buffer.alloc(32, 1), legacyChecksum: Buffer.alloc(20, 1) };
+        },
+      ),
     };
     assetMedia = {
       bulkUploadCheck: vi.fn().mockResolvedValue({ results: [{ id: 'sha256' }, { id: 'sha1' }] }),
       uploadAsset: vi.fn().mockResolvedValue({ id: assetId, status: AssetMediaStatus.CREATED }),
     };
-    assets = { lock: vi.fn(), update: vi.fn() };
+    assets = { lock: vi.fn(), update: vi.fn(), fillMissingMetadata: vi.fn().mockResolvedValue(true) };
     albums = {
       create: vi.fn().mockResolvedValue({ id: 'album-1' }),
       addAssets: vi.fn().mockResolvedValue([{ id: assetId, success: true }]),
@@ -204,7 +211,274 @@ describe(TakeoutWorkerService.name, () => {
     });
   });
 
+  describe('worker lifetime', () => {
+    let heartbeat: () => void;
+    const turn = () => new Promise((resolve) => setImmediate(resolve));
+    const digest = { size: 10, checksum: Buffer.alloc(32, 1), legacyChecksum: Buffer.alloc(20, 1) };
+
+    beforeEach(() => {
+      vi.spyOn(globalThis, 'setInterval').mockImplementation(((callback: () => void) => {
+        heartbeat = callback;
+        return 0 as never;
+      }) as never);
+    });
+    afterEach(async () => {
+      await sut.onShutdown();
+      vi.restoreAllMocks();
+    });
+
+    it('returns a claim delivered after shutdown without starting the import', async () => {
+      const claimed = Promise.withResolvers<{ operation: MediaOperation; claimToken: string } | undefined>();
+      operations.claimNext.mockReturnValueOnce(claimed.promise);
+      sut.tick();
+      sut.tick();
+      expect(operations.claimNext).toHaveBeenCalledOnce();
+      const stop = sut.onShutdown();
+      try {
+        claimed.resolve({ operation: operationOf('import'), claimToken });
+        await stop;
+        expect(repository.getById).not.toHaveBeenCalled();
+        expect(operations.requeue).toHaveBeenCalledWith(operationId, claimToken, { delayMs: 0, returnAttempt: true });
+        expect(operations.complete).not.toHaveBeenCalled();
+      } finally {
+        claimed.resolve(undefined);
+        await stop;
+      }
+    });
+
+    it('returns prepared work when shutdown starts during the owner read', async () => {
+      const owner = Promise.withResolvers<typeof authStub.user1.user>();
+      operations.claimNext.mockResolvedValueOnce({ operation: operationOf('import'), claimToken });
+      users.get.mockReturnValueOnce(owner.promise);
+      sut.tick();
+      await vi.waitFor(() => expect(users.get).toHaveBeenCalledOnce());
+      const stop = sut.onShutdown();
+      try {
+        owner.resolve({ ...authStub.user1.user });
+        await stop;
+        expect(repository.pendingItems).not.toHaveBeenCalled();
+        expect(operations.requeue).toHaveBeenCalledWith(operationId, claimToken, { delayMs: 0, returnAttempt: true });
+        expect(operations.complete).not.toHaveBeenCalled();
+      } finally {
+        owner.resolve({ ...authStub.user1.user });
+        await stop;
+      }
+    });
+
+    it('does not upload a file whose noncooperative copy finishes after shutdown', async () => {
+      const copied = Promise.withResolvers<typeof digest>();
+      pending = [[itemOf()]];
+      operations.claimNext.mockResolvedValueOnce({ operation: operationOf('import'), claimToken });
+      staging.copyToLibrary.mockReturnValueOnce(copied.promise);
+      sut.tick();
+      await vi.waitFor(() => expect(staging.copyToLibrary).toHaveBeenCalledOnce());
+      const stop = sut.onShutdown();
+      try {
+        copied.resolve(digest);
+        await stop;
+        expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
+        expect(operations.requeue).toHaveBeenCalledWith(operationId, claimToken, { delayMs: 0, returnAttempt: true });
+      } finally {
+        copied.resolve(digest);
+        await stop;
+      }
+    });
+
+    it('never overlaps heartbeat writes', async () => {
+      const items = Promise.withResolvers<TakeoutItem[]>(),
+        written = Promise.withResolvers<typeof working>();
+      operations.claimNext.mockResolvedValueOnce({ operation: operationOf('import'), claimToken });
+      repository.pendingItems.mockReturnValueOnce(items.promise);
+      sut.tick();
+      await vi.waitFor(() => expect(repository.pendingItems).toHaveBeenCalledOnce());
+      try {
+        operations.setBulkResult.mockReturnValueOnce(written.promise);
+        heartbeat();
+        heartbeat();
+        expect(operations.setBulkResult).toHaveBeenCalledTimes(2);
+      } finally {
+        written.resolve(working);
+        items.resolve([]);
+        await sut.onShutdown();
+      }
+    });
+
+    it('waits for its outstanding heartbeat before shutdown returns', async () => {
+      const items = Promise.withResolvers<TakeoutItem[]>(),
+        written = Promise.withResolvers<typeof working>();
+      operations.claimNext.mockResolvedValueOnce({ operation: operationOf('import'), claimToken });
+      repository.pendingItems.mockReturnValueOnce(items.promise);
+      sut.tick();
+      await vi.waitFor(() => expect(repository.pendingItems).toHaveBeenCalledOnce());
+      operations.setBulkResult.mockReturnValueOnce(written.promise);
+      heartbeat();
+      let stopped = false;
+      const stop = sut.onShutdown().then(() => {
+        stopped = true;
+      });
+      try {
+        items.resolve([]);
+        await vi.waitFor(() => expect(operations.requeue).toHaveBeenCalled());
+        await turn();
+        expect(stopped).toBe(false);
+      } finally {
+        written.resolve(working);
+        items.resolve([]);
+        await stop;
+      }
+    });
+
+    it('orders the retry checkpoint after an earlier heartbeat snapshot', async () => {
+      const items = Promise.withResolvers<TakeoutItem[]>(),
+        written = Promise.withResolvers<typeof working>();
+      operations.claimNext.mockResolvedValueOnce({ operation: operationOf('import'), claimToken });
+      repository.pendingItems.mockReturnValueOnce(items.promise);
+      repository.retryFailed.mockResolvedValue(1);
+      sut.tick();
+      await vi.waitFor(() => expect(repository.pendingItems).toHaveBeenCalledOnce());
+      try {
+        operations.setBulkResult.mockReturnValueOnce(written.promise);
+        heartbeat();
+        items.resolve([]);
+        await vi.waitFor(() => expect(repository.retryFailed).toHaveBeenCalled());
+        await turn();
+        expect(operations.setBulkResult).toHaveBeenCalledTimes(2);
+        expect(operations.requeue).not.toHaveBeenCalled();
+        written.resolve(working);
+        await vi.waitFor(() => expect(operations.requeue).toHaveBeenCalled());
+        expect(operations.setBulkResult).toHaveBeenLastCalledWith(
+          operationId,
+          claimToken,
+          expect.objectContaining({ result: { itemRetryUsed: true } }),
+        );
+      } finally {
+        written.resolve(working);
+        items.resolve([]);
+        await sut.onShutdown();
+      }
+    });
+
+    it('aborts an active copy when its heartbeat cannot renew the claim', async () => {
+      pending = [[itemOf()]];
+      operations.claimNext.mockResolvedValueOnce({ operation: operationOf('import'), claimToken });
+      let signal!: AbortSignal;
+      staging.copyToLibrary.mockImplementationOnce(
+        (_path: string, _size: number, _destination: string, copySignal: AbortSignal) => {
+          signal = copySignal;
+          return new Promise((_resolve, reject) =>
+            signal.addEventListener('abort', () => reject(signal.reason), { once: true }),
+          );
+        },
+      );
+      sut.tick();
+      await vi.waitFor(() => expect(staging.copyToLibrary).toHaveBeenCalledOnce());
+      try {
+        operations.setBulkResult.mockRejectedValueOnce(new Error('database unavailable'));
+        heartbeat();
+        await turn();
+        expect(signal.aborted).toBe(true);
+        await vi.waitFor(() => expect(operations.fail).toHaveBeenCalled());
+        expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
+      } finally {
+        await sut.onShutdown();
+      }
+    });
+
+    it('refuses new ticks once shutdown has completed', async () => {
+      await sut.onShutdown();
+      sut.tick();
+      expect(operations.claimNext).not.toHaveBeenCalled();
+    });
+
+    it.each(['pause', 'cancel', 'claim loss'] as const)(
+      'closes scan input before settling %s and retains the unfinished archive',
+      async (request) => {
+        const cleaned = Promise.withResolvers<void>();
+        const close = vi.fn();
+        repository.getById.mockResolvedValue(rowOf('scanning'));
+        repository.sources.mockResolvedValue([
+          { id: 'source', name: 'takeout.zip', kind: 'zip', path: '/staged/archive', scanned: false },
+        ]);
+        staging.openArchive.mockResolvedValue({ source: {}, close });
+        staging.readArchiveDirectory.mockResolvedValue([
+          { name: 'Takeout/Google Photos/Trip/photo.jpg', uncompressedSize: 10, modifiedAt: new Date(0) },
+        ]);
+        staging.stageArchiveEntry.mockImplementationOnce(
+          (_path: string, _source: unknown, _entry: unknown, _destination: string, signal: AbortSignal) =>
+            new Promise((_resolve, reject) =>
+              signal.addEventListener(
+                'abort',
+                () => {
+                  void cleaned.promise.then(() => reject(signal.reason));
+                },
+                { once: true },
+              ),
+            ),
+        );
+        operations.claimNext.mockResolvedValueOnce({ operation: operationOf('scan'), claimToken });
+        sut.tick();
+        await vi.waitFor(() => expect(staging.stageArchiveEntry).toHaveBeenCalledOnce());
+        try {
+          operations.setBulkResult.mockResolvedValueOnce(
+            request === 'claim loss'
+              ? undefined
+              : {
+                  ...working,
+                  pauseRequestedAt: request === 'pause' ? new Date() : null,
+                  cancelRequestedAt: request === 'cancel' ? new Date() : null,
+                },
+          );
+          heartbeat();
+          await turn();
+          expect(close).not.toHaveBeenCalled();
+          expect(operations.settlePause).not.toHaveBeenCalled();
+          expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
+          cleaned.resolve();
+          if (request !== 'claim loss') {
+            const settle = request === 'pause' ? operations.settlePause : operations.acknowledgeCancel;
+            await vi.waitFor(() => expect(settle).toHaveBeenCalledOnce());
+            expect(close.mock.invocationCallOrder[0]).toBeLessThan(settle.mock.invocationCallOrder[0]);
+          }
+          await sut.onShutdown();
+          expect(close).toHaveBeenCalledOnce();
+          if (request === 'claim loss') expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
+          expect(operations.requeue).not.toHaveBeenCalled();
+          expect(operations.fail).not.toHaveBeenCalled();
+          expect(operations.complete).not.toHaveBeenCalled();
+          expect(repository.markSourceScanned).not.toHaveBeenCalled();
+          expect(staging.remove).not.toHaveBeenCalledWith('/staged/archive');
+        } finally {
+          cleaned.resolve();
+          await sut.onShutdown();
+        }
+      },
+    );
+  });
+
   describe('run', () => {
+    it.each([true, false])(
+      'settles cancellation when an interrupted pause cannot requeue (requeued: %s)',
+      async (requeued) => {
+        operations.settlePause.mockResolvedValue(false);
+        operations.requeue.mockResolvedValue(requeued);
+        const worker = sut as unknown as {
+          settleInterrupt(
+            run: { operation: MediaOperation; claimToken: string },
+            interrupt: { request: 'pause' },
+          ): Promise<void>;
+        };
+
+        await worker.settleInterrupt({ operation: operationOf('import'), claimToken }, { request: 'pause' });
+
+        expect(operations.requeue).toHaveBeenCalledWith(operationId, claimToken, { delayMs: 0, returnAttempt: true });
+        if (requeued) {
+          expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
+        } else {
+          expect(operations.acknowledgeCancel).toHaveBeenCalledWith(operationId, claimToken, { released: false });
+        }
+      },
+    );
+
     it('fails a job that does not name an import step', async () => {
       await sut.run({ ...operationOf('scan'), snapshot: {} } as MediaOperation, claimToken);
       expect(operations.fail).toHaveBeenCalledWith(
@@ -244,6 +518,15 @@ describe(TakeoutWorkerService.name, () => {
   });
 
   describe('import', () => {
+    it('never records or cleans up a destination whose exclusive creation failed', async () => {
+      pending = [[itemOf()]];
+      staging.copyToLibrary.mockRejectedValueOnce(Object.assign(new Error('already exists'), { code: 'EEXIST' }));
+      await sut.run(operationOf('import'), claimToken);
+      expect(repository.itemCreating).not.toHaveBeenCalled();
+      expect(staging.remove).not.toHaveBeenCalled();
+      expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
+    });
+
     it('copies a new photo into the library, applies its metadata and restores its album', async () => {
       pending = [[itemOf()]];
 
@@ -258,6 +541,7 @@ describe(TakeoutWorkerService.name, () => {
         10,
         expect.stringMatching(/^\/data\/upload\/user-id\/.+\.jpg$/),
         expect.any(AbortSignal),
+        expect.any(Function),
       );
       expect(assetMedia.uploadAsset).toHaveBeenCalledWith(
         expect.objectContaining({ user: expect.objectContaining({ id: ownerId }) }),
@@ -321,7 +605,27 @@ describe(TakeoutWorkerService.name, () => {
 
       await sut.run(operationOf('import'), claimToken);
 
-      expect(assets.update).toHaveBeenCalledWith(expect.anything(), assetId, { isFavorite: true });
+      expect(assets.fillMissingMetadata).toHaveBeenCalledWith(expect.anything(), assetId, { isFavorite: true });
+      expect(assets.update).not.toHaveBeenCalled();
+    });
+
+    it('withholds albums when the guarded metadata read finds the matched photo newly Locked', async () => {
+      repository.getById.mockResolvedValue(rowOf('importing', { updateMatchedMetadata: true }));
+      pending = [[itemOf()]];
+      assetMedia.bulkUploadCheck.mockResolvedValue({ results: [{ id: 'sha256', assetId }] });
+      assets.fillMissingMetadata.mockResolvedValue(false);
+
+      await sut.run(operationOf('import'), claimToken);
+
+      expect(assets.fillMissingMetadata).toHaveBeenCalledWith(expect.anything(), assetId, {
+        description: 'From Google',
+        latitude: 1,
+        longitude: 2,
+        isFavorite: true,
+      });
+      expect(assets.update).not.toHaveBeenCalled();
+      expect(albums.addAssets).not.toHaveBeenCalled();
+      expect(repository.itemDone).toHaveBeenCalledWith(itemOf().id, 'matched');
     });
 
     it('finishes an interrupted creation as the import’s own, without a second copy', async () => {
@@ -469,6 +773,31 @@ describe(TakeoutWorkerService.name, () => {
       expect(operations.fail).not.toHaveBeenCalled();
     });
 
+    it.each([false, true])(
+      'rechecks active authority after a failed pause before importing (renewed: %s)',
+      async (renewed) => {
+        pending = [[itemOf()]];
+        operations.setBulkResult.mockResolvedValueOnce({ ...working, pauseRequestedAt: new Date() });
+        operations.settlePause.mockResolvedValueOnce(false);
+        operations.heartbeat.mockResolvedValue(renewed);
+
+        await sut.run(operationOf('import'), claimToken);
+
+        expect(operations.heartbeat).toHaveBeenCalledWith(operationId, claimToken, expect.any(Number), {
+          requireActiveClaim: true,
+        });
+        if (renewed) {
+          expect(assetMedia.uploadAsset).toHaveBeenCalledOnce();
+          expect(operations.complete).toHaveBeenCalled();
+        } else {
+          expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
+          expect(operations.acknowledgeCancel).toHaveBeenCalledWith(operationId, claimToken, { released: false });
+          expect(operations.complete).not.toHaveBeenCalled();
+          expect(operations.fail).not.toHaveBeenCalled();
+        }
+      },
+    );
+
     it('acknowledges a cancel at the next progress write', async () => {
       pending = [[itemOf()]];
       operations.setBulkResult.mockResolvedValue({ ...working, cancelRequestedAt: new Date() });
@@ -615,6 +944,47 @@ describe(TakeoutWorkerService.name, () => {
       );
       // The only photo and video sharing the name: linked without asking.
       expect(repository.recordPair).toHaveBeenCalledWith(importId, 'p', 'v', true);
+    });
+
+    it('preserves every ambiguous photo/video combination in a shared scan group', async () => {
+      staging.readArchiveDirectory.mockResolvedValue([]);
+      repository.folders.mockResolvedValue(['Trip']);
+      repository.folderFiles.mockResolvedValue([
+        { id: 'p1', name: 'IMG_1.jpg', kind: 'image', metadata: null },
+        { id: 'p2', name: 'img_1.heic', kind: 'image', metadata: null },
+        { id: 'v1', name: 'IMG_1.mp4', kind: 'video', metadata: null },
+        { id: 'v2', name: 'img_1.mov', kind: 'video', metadata: null },
+      ]);
+      await sut.run(operationOf('scan'), claimToken);
+      expect(repository.recordPair.mock.calls).toEqual([
+        [importId, 'p1', 'v1', false],
+        [importId, 'p1', 'v2', false],
+        [importId, 'p2', 'v1', false],
+        [importId, 'p2', 'v2', false],
+      ]);
+    });
+
+    it('keeps invalid sidecar matching case-insensitive and limited to the media filename prefix', async () => {
+      staging.readArchiveDirectory.mockResolvedValue([]);
+      repository.folders.mockResolvedValue(['Trip']);
+      repository.folderFiles.mockResolvedValue([
+        { id: 'p', name: 'IMG_1.jpg', kind: 'image', metadata: null },
+        { id: 's', name: 'img_1.JPG.json', kind: 'sidecar', metadata: null },
+        { id: 'other', name: 'IMG_10.jpg', kind: 'image', metadata: null },
+      ]);
+      await sut.run(operationOf('scan'), claimToken);
+      expect(repository.recordItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'p',
+          warnings: expect.arrayContaining(['invalid_sidecar']),
+        }),
+      );
+      expect(repository.recordItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'other',
+          warnings: ['no_sidecar'],
+        }),
+      );
     });
   });
 });

@@ -109,6 +109,18 @@ describe('documents', () => {
     ]);
   });
 
+  it('keeps the first occurrence of a document repeated within the incoming page', () => {
+    const current = [{ id: '1', name: 'existing' }];
+    const page = [
+      { id: '2', name: 'first' },
+      { id: '2', name: 'duplicate' },
+      { id: '1', name: 'overlap' },
+    ];
+    expect(appendDocumentPage(current, page)).toEqual([current[0], page[0]]);
+    expect(current).toHaveLength(1);
+    expect(page).toHaveLength(3);
+  });
+
   it('keeps only the newest request current and cancels the one before it', () => {
     const requests = new LatestRequest();
     const first = requests.start();

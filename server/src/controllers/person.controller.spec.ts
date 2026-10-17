@@ -63,22 +63,22 @@ describe(PersonController.name, () => {
 
   describe('PUT /people/:id', () => {
     it('should require a valid uuid', async () => {
-      const { status, body } = await request(ctx.getHttpServer()).put(`/people/123`);
+      const { status, body } = await request(ctx.getHttpServer()).put(`/people/123`).send({ name: 'Person' });
       expect(status).toBe(400);
-      expect(body).toEqual(
-        errorDto.validationError([{ path: [], message: 'Invalid input: expected object, received undefined' }]),
-      );
+      expect(body).toEqual(errorDto.validationError([{ path: ['id'], message: 'Invalid UUID' }]));
+      expect(service.update).not.toHaveBeenCalled();
     });
 
     it(`should not allow a null name`, async () => {
       const { status, body } = await request(ctx.getHttpServer())
-        .post(`/people`)
+        .put(`/people/${factory.uuid()}`)
         .send({ name: null })
         .set('Authorization', `Bearer token`);
       expect(status).toBe(400);
       expect(body).toEqual(
         errorDto.validationError([{ path: ['name'], message: 'Invalid input: expected string, received null' }]),
       );
+      expect(service.update).not.toHaveBeenCalled();
     });
 
     it(`should require featureFaceAssetId to be a uuid`, async () => {

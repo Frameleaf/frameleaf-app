@@ -127,7 +127,7 @@ with
     with
       "today" as (
         select
-          make_date(year::int, $1::int, $2::int) as "date"
+          make_date(year::int, $1::int, 1) + ($2::int - 1) as "date"
         from
           generate_series(
             (
@@ -171,6 +171,8 @@ with
         limit
           $6
       ) as "a" on true
+    where
+      date_part('month', today.date) = $7
   )
 select
   date_part(
@@ -1061,20 +1063,6 @@ where
     where
       nsfw_asset.id = "asset"."id"
       and nsfw_asset.is_nsfw = true
-  )
-
--- AssetRepository.detectOfflineExternalAssets
-update "asset"
-set
-  "isOffline" = $1,
-  "deletedAt" = $2
-where
-  "isOffline" = $3
-  and "isExternal" = $4
-  and "libraryId" = $5::uuid
-  and (
-    not "originalPath" like $6
-    or "originalPath" ~ $7
   )
 
 -- AssetRepository.filterNewExternalAssetPaths

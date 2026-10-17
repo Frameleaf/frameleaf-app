@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
-import { ImmichEnvironment, JobName, JobStatus, UserAvatarColor, UserMetadataKey } from 'src/enum.js';
+import { FrameleafEnvironment, JobName, JobStatus, UserAvatarColor, UserMetadataKey } from 'src/enum.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -14,7 +14,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { UserService } from 'src/services/user.service.js';
-import { HumanReadableSize } from 'src/utils/bytes.js';
+import { DecimalSize } from 'src/utils/bytes.js';
 import { mediumFactory, newMediumService } from 'test/medium.factory.js';
 import { factory, newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -22,7 +22,7 @@ import { getKyselyDB } from 'test/utils.js';
 let defaultDatabase: Kysely<DB>;
 
 const setup = (db?: Kysely<DB>) => {
-  process.env.FRAMELEAF_ENV = ImmichEnvironment.Testing;
+  process.env.FRAMELEAF_ENV = FrameleafEnvironment.Testing;
 
   return newMediumService(UserService, {
     database: db || defaultDatabase,
@@ -280,7 +280,7 @@ describe(UserService.name, () => {
         return rows.every((row) => row.isPendingSyncReset);
       };
 
-      await sut.updateMyPreferences(unlocked, { memories: { enabled: false }, ratings: { enabled: true } });
+      await sut.updateMyPreferences(unlocked, { memories: { enabled: false }, ratings: { enabled: false } });
       await expect(pending()).resolves.toBe(false);
 
       await sut.updateMyPreferences(unlocked, { privacy: { suppression: { personIds: [newUuid()] } } });
@@ -307,7 +307,8 @@ describe(UserService.name, () => {
       const dto = { download: { archiveSize: 1_234_567 } };
 
       await expect(sut.getMyPreferences(auth)).resolves.toMatchObject({
-        download: { archiveSize: 4 * HumanReadableSize.GiB },
+        // D5: archive sizes are decimal (4 GB)
+        download: { archiveSize: 4 * DecimalSize.GB },
       });
       await expect(sut.updateMyPreferences(auth, dto)).resolves.toMatchObject(dto);
       await expect(sut.getMyPreferences(auth)).resolves.toMatchObject(dto);
@@ -385,7 +386,7 @@ describe(UserService.name, () => {
     });
   });
 
-  describe.sequential('handleUserDeleteCheck', () => {
+  describe('handleUserDeleteCheck', { concurrent: false }, () => {
     beforeEach(async () => {
       const { sut, ctx } = setup();
       // These tests specifically have to be sequential otherwise we hit race conditions with config changes applying in incorrect tests

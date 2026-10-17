@@ -369,15 +369,25 @@ export class CloudBackupStoreRepository {
     }
     const response = await this.send(connection, { method: 'GET', query });
     const xml = await response.text();
-    const objects = xmlValues(xml, 'Contents').map((entry) => ({
-      key: xmlValue(entry, 'Key') ?? '',
-      size: Number(xmlValue(entry, 'Size') ?? 0),
-      etag: xmlValue(entry, 'ETag'),
-    }));
-    const truncated = xmlValue(xml, 'IsTruncated') === 'true';
+    const objects = xmlValues(xml, 'Contents').map((entry) => {
+      const size = xmlValue(entry, 'Size')?.trim();
+      return {
+        key: xmlValue(entry, 'Key') ?? '',
+        size: size ? Number(size) : NaN,
+        etag: xmlValue(entry, 'ETag'),
+      };
+    });
+    const truncated = xmlValue(xml, 'IsTruncated');
+    const nextToken = truncated === 'true' ? xmlValue(xml, 'NextContinuationToken') : null;
+    if (
+      !['true', 'false'].includes(truncated ?? '') ||
+      (truncated === 'true' && (!nextToken || nextToken === options.continuationToken)) ||
+      objects.some(({ key, size }) => !key || !Number.isSafeInteger(size) || size < 0)
+    )
+      throw new CloudBackupStoreError('Invalid backup object listing.', null, 'InvalidListing');
     return {
-      objects: objects.filter(({ key }) => key !== ''),
-      nextToken: truncated ? xmlValue(xml, 'NextContinuationToken') : null,
+      objects,
+      nextToken,
     };
   }
 
@@ -389,8 +399,14 @@ export class CloudBackupStoreRepository {
   ): Promise<number> {
     let token: string | null = null;
     let total = 0;
+    const seen = new Set<string>();
     do {
       const page = await this.list(connection, prefix, { continuationToken: token });
+      if (page.nextToken) {
+        if (seen.has(page.nextToken))
+          throw new CloudBackupStoreError('Invalid backup object listing.', null, 'InvalidListing');
+        seen.add(page.nextToken);
+      }
       total += page.objects.length;
       if (page.objects.length > 0) {
         await onPage(page.objects);
@@ -1429,8 +1445,13 @@ export class CloudBackupStoreRepository {
       }
       if (!response) throw new Error('Encrypted upload did not complete');
       const answer = await response.text();
-      const code = providerErrorCode(xmlValue(answer, 'Code'));
-      if (code) throw new CloudBackupStoreError('Provider refused encrypted upload completion', response.status, code);
+      const rawCode = xmlValue(answer, 'Code');
+      if (rawCode)
+        throw new CloudBackupStoreError(
+          'Provider refused encrypted upload completion',
+          response.status,
+          providerErrorCode(rawCode),
+        );
       const etag = response.headers.get('etag') ?? xmlValue(answer, 'ETag');
       if (!etag)
         throw new CloudBackupStoreError('Provider did not confirm encrypted object', response.status, 'MissingETag');
@@ -1460,8 +1481,8 @@ export class CloudBackupStoreRepository {
     const probeKey = `${CLOUD_BACKUP_PROBE_PREFIX}${randomUUID()}`;
     const testKey = randomBytes(32);
     const content = randomBytes(64);
-    const { encrypted } = await this.putWithCustomerKey(connection, probeKey, content, testKey);
     try {
+      const { encrypted } = await this.putWithCustomerKey(connection, probeKey, content, testKey);
       if (!encrypted) {
         throw new CloudBackupClaimError(
           'sse-c-unsupported',
@@ -1476,7 +1497,7 @@ export class CloudBackupStoreRepository {
         );
       }
     } finally {
-      await this.delete(connection, probeKey).catch((error: unknown) =>
+      await withExecutionCleanup(() => this.delete(connection, probeKey)).catch((error: unknown) =>
         this.logger.warn(`Could not remove the capability check's test file: ${String(error)}`),
       );
     }
@@ -1817,9 +1838,15 @@ export class CloudBackupStoreRepository {
           etag: xmlValue(part, 'ETag') ?? '',
         })),
       );
-      const next = xmlValue(xml, 'IsTruncated') === 'true' ? xmlValue(xml, 'NextPartNumberMarker') : '';
-      if ((next === marker && next) || parts.length > 10_000)
-        throw new CloudBackupStoreError('Invalid multipart listing.', null, null);
+      const truncated = xmlValue(xml, 'IsTruncated');
+      const next = truncated === 'true' ? xmlValue(xml, 'NextPartNumberMarker') : '';
+      if (
+        !['true', 'false'].includes(truncated ?? '') ||
+        (truncated === 'true' &&
+          (!next || !Number.isSafeInteger(Number(next)) || Number(next) <= Number(marker) || Number(next) > 10_000)) ||
+        parts.length > 10_000
+      )
+        throw new CloudBackupStoreError('Invalid multipart listing.', null, 'InvalidListing');
       marker = next ?? '';
     } while (marker);
     return parts;

@@ -9,12 +9,8 @@ const ASSET_REQUEST_REGEX = /^\/api\/assets\/[a-f0-9-]+\/(original|thumbnail)/;
 
 const sw = globalThis as unknown as ServiceWorkerGlobalScope;
 
-const handleActivate = (event: ExtendableEvent) => {
-  event.waitUntil(sw.clients.claim());
-};
-
-const handleInstall = (event: ExtendableEvent) => {
-  event.waitUntil(sw.skipWaiting());
+const handleLifecycle = (event: ExtendableEvent) => {
+  event.waitUntil(event.type === 'install' ? sw.skipWaiting() : sw.clients.claim());
 };
 
 const handleFetch = (event: FetchEvent): void => {
@@ -22,15 +18,14 @@ const handleFetch = (event: FetchEvent): void => {
     return;
   }
 
-  // Cache requests for thumbnails
   const url = new URL(event.request.url);
-  if (url.origin === globalThis.location.origin && ASSET_REQUEST_REGEX.test(url.pathname)) {
-    event.respondWith(handleAssetFetch(event.request));
+  if (url.origin !== sw.location.origin || !ASSET_REQUEST_REGEX.test(url.pathname)) {
     return;
   }
+  event.respondWith(handleAssetFetch(event.request));
 };
 
-sw.addEventListener('install', handleInstall, { passive: true });
-sw.addEventListener('activate', handleActivate, { passive: true });
+sw.addEventListener('install', handleLifecycle, { passive: true });
+sw.addEventListener('activate', handleLifecycle, { passive: true });
 sw.addEventListener('fetch', handleFetch, { passive: true });
 installMessageListener();

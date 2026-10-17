@@ -76,9 +76,17 @@
   margin-top: 3px;
   accent-color: var(--fl-accent);
 }
-.fcj-consent span {
+/* Only the text column is a grid; spans inside it (the terms link's icon) stay inline. */
+.fcj-consent > span {
   display: grid;
   gap: 2px;
+}
+/* The base styles make an svg a block; keep the open-in-new icon on the link's line. */
+.fcj-consent a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fl-space-1);
+  white-space: nowrap;
 }
 .fcj-consent small {
   color: var(--fl-muted);

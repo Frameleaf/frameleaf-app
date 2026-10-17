@@ -1,6 +1,6 @@
 import pytest
 
-from immich_ml.env_aliases import (
+from frameleaf_ml.env_aliases import (
     ENV_ALIASES,
     EnvAliasConflictError,
     apply_env_aliases,
@@ -75,7 +75,7 @@ def test_read_env_prefers_the_new_name() -> None:
 
 
 def test_settings_read_the_new_names(monkeypatch: pytest.MonkeyPatch) -> None:
-    from immich_ml.config import NonPrefixedSettings
+    from frameleaf_ml.config import NonPrefixedSettings
 
     monkeypatch.setenv("FRAMELEAF_HOST", "127.0.0.1")
     monkeypatch.setenv("FRAMELEAF_PORT", "3010")

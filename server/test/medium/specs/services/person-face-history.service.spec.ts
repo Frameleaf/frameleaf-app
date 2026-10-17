@@ -12,6 +12,7 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
+import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -120,6 +121,64 @@ const reason = async (promise: Promise<unknown>) => {
 };
 
 describe('face decisions through reprocessing (FL-57)', () => {
+  it.each(['bulk', 'single', 'undo'] as const)(
+    'rolls back %s reassignment and history when origin recording fails',
+    async (action) => {
+      const { sut, ctx, auth, user, asset, ada, bea, face, facesOf, jobs } = await setup();
+      try {
+        let correctionId = '';
+        if (action === 'undo') {
+          await sut.reassignFacesById(auth, bea.personGroupId, { id: face.id });
+          const { corrections } = await sut.getCorrectionHistory(auth, bea.personGroupId, { page: 1, size: 10 });
+          correctionId = corrections[0].id;
+        }
+        const { user: sharer } = await ctx.newUser();
+        const { asset: source } = await ctx.newAsset({ ownerId: sharer.id });
+        const origins = ctx.get(PartnerOriginRepository);
+        await origins.createAssetOrigin({
+          id: asset.id,
+          sourceId: source.id,
+          ownerId: user.id,
+          rootOwnerId: sharer.id,
+          partnerSharedById: sharer.id,
+        });
+        const beforeFaces = await facesOf();
+        const history = () =>
+          sql`SELECT * FROM public.face_correction WHERE "ownerId" = ${user.id}::uuid ORDER BY id`.execute(
+            ctx.database,
+          );
+        const beforeHistory = await history();
+        const original = origins.markOverridden.bind(origins);
+        const recording = vi.spyOn(origins, 'markOverridden').mockImplementationOnce(async (...args) => {
+          await original(...args);
+          throw new Error('override failed');
+        });
+        jobs.queue.mockClear();
+        jobs.queueAll.mockClear();
+        try {
+          const edit =
+            action === 'bulk'
+              ? sut.reassignFaces(auth, bea.personGroupId, {
+                  data: [{ assetId: asset.id, personId: ada.personGroupId }],
+                })
+              : action === 'single'
+                ? sut.reassignFacesById(auth, bea.personGroupId, { id: face.id })
+                : sut.undoCorrection(auth, correctionId);
+          await expect(edit).rejects.toThrow('override failed');
+        } finally {
+          recording.mockRestore();
+        }
+        expect(await facesOf()).toEqual(beforeFaces);
+        expect((await history()).rows).toEqual(beforeHistory.rows);
+        expect((await origins.getOrigin('asset', asset.id))?.overriddenFields).toEqual([]);
+        expect(jobs.queue).not.toHaveBeenCalled();
+        expect(jobs.queueAll).not.toHaveBeenCalled();
+      } finally {
+        await ctx.database.destroy();
+      }
+    },
+  );
+
   it('keeps a correction and its history through forced recognition and forced detection, then undoes it', async () => {
     const { sut, ctx, auth, ada, bea, face, neighbour, detect, facesOf } = await setup();
 

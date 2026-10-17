@@ -38,7 +38,13 @@
   const valid = $derived(name.trim().length > 0 && email.trim().length > 0);
   const hasPhoto = $derived(!!user.profileImagePath);
 
-  const reloadUser = async () => authManager.setUser(await getMyUser());
+  const reloadUser = async () => {
+    const isCurrent = authManager.captureSession();
+    const updated = await getMyUser();
+    if (isCurrent()) {
+      authManager.setUser(updated);
+    }
+  };
 
   const uploadPhoto = async (event: Event) => {
     const input = event.currentTarget as HTMLInputElement;
@@ -53,11 +59,21 @@
       return;
     }
     photoWorking = true;
+    const isCurrent = authManager.captureSession();
     try {
       await createProfileImage({ createProfileImageDto: { file } });
+      if (!isCurrent()) {
+        return;
+      }
       await reloadUser();
+      if (!isCurrent()) {
+        return;
+      }
       toastManager.primary($t('frameleaf_access_profile_photo_updated'));
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       photoError = getServerErrorMessage(error) ?? $t('frameleaf_access_profile_photo_failed');
     } finally {
       photoWorking = false;
@@ -65,13 +81,23 @@
   };
 
   const removePhoto = async () => {
+    const isCurrent = authManager.captureSession();
     photoWorking = true;
     photoError = '';
     try {
       await deleteProfileImage();
+      if (!isCurrent()) {
+        return;
+      }
       await reloadUser();
+      if (!isCurrent()) {
+        return;
+      }
       toastManager.primary($t('frameleaf_access_profile_photo_removed'));
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       handleError(error, $t('errors.unable_to_save_profile'));
     } finally {
       photoWorking = false;
@@ -82,9 +108,16 @@
     if (avatarColor === user.avatarColor) {
       return;
     }
+    const isCurrent = authManager.captureSession();
     try {
-      authManager.setUser(await updateMyUser({ userUpdateMeDto: { avatarColor } }));
+      const updated = await updateMyUser({ userUpdateMeDto: { avatarColor } });
+      if (isCurrent()) {
+        authManager.setUser(updated);
+      }
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       handleError(error, $t('errors.unable_to_save_profile'));
     }
   };
@@ -95,13 +128,20 @@
       return;
     }
     saving = true;
+    const isCurrent = authManager.captureSession();
     try {
       const updated = await updateMyUser({ userUpdateMeDto: { name: name.trim(), email: email.trim() } });
+      if (!isCurrent()) {
+        return;
+      }
       authManager.setUser(updated);
       name = updated.name;
       email = updated.email;
       toastManager.primary($t('saved_profile'));
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       handleError(error, $t('errors.unable_to_save_profile'));
     } finally {
       saving = false;
@@ -168,18 +208,6 @@
 
   <form autocomplete="off" onsubmit={save}>
     <Section title={$t('frameleaf_prefs_profile_name_and_email')}>
-      {#snippet action()}
-        <Button
-          disabled={saving || !dirty}
-          onclick={() => {
-            name = user.name;
-            email = user.email;
-          }}
-        >
-          {$t('frameleaf_prefs_profile_undo')}
-        </Button>
-        <Button type="submit" variant="primary" disabled={saving || !dirty || !valid}>{$t('save')}</Button>
-      {/snippet}
       <Row label={$t('frameleaf_prefs_profile_name')} help={$t('frameleaf_prefs_profile_name_help')}>
         <Field
           label={$t('frameleaf_prefs_profile_name')}
@@ -201,6 +229,19 @@
           onChange={(value) => (email = value)}
         />
       </Row>
+      <!-- ACCOUNT-P9: Save and Undo sit at the foot of the card, under the fields they act on (prototype `bk2-actions`). -->
+      <div class="actions">
+        <Button type="submit" variant="primary" disabled={saving || !dirty || !valid}>{$t('save')}</Button>
+        <Button
+          disabled={saving || !dirty}
+          onclick={() => {
+            name = user.name;
+            email = user.email;
+          }}
+        >
+          {$t('frameleaf_prefs_profile_undo')}
+        </Button>
+      </div>
       <!-- Only a helper asks for these, so they stay closed at the bottom. -->
       <Advanced summary={$t('frameleaf_prefs_profile_support')}>
         <Row label={$t('frameleaf_prefs_profile_account_id')} help={$t('frameleaf_prefs_profile_account_id_help')}>
@@ -220,6 +261,14 @@
 <style>
   .file {
     display: none;
+  }
+  /* backup-v2.css `.bk2-actions`: a rule above, the buttons together, air before what follows. */
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-2);
+    padding: var(--fl-space-4) 0 var(--fl-space-6);
+    border-top: 1px solid var(--fl-border);
   }
   .error {
     margin: 0;

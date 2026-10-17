@@ -46,11 +46,7 @@ export class PartnerLockedNoticeService extends BaseService {
     if (await this.userRepository.hasPinCode(ownerId)) {
       return false;
     }
-    await this.userRepository.upsertMetadata(ownerId, {
-      key: UserMetadataKey.PartnerLockedNotice,
-      value: { flaggedAt: new Date().toISOString(), dismissedAt: null },
-    });
-    return true;
+    return this.userRepository.insertPartnerLockedNotice(ownerId);
   }
 
   private async readRecord(userId: string): Promise<NoticeRecord | null> {

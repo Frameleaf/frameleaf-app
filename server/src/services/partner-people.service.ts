@@ -14,6 +14,8 @@ export type PartnerFaceCopyInput = {
   targetOwnerId: string;
   /** The partner whose sharing produced the copy. */
   partnerSharedById: string;
+  /** Prepared before propagation takes its database transaction. */
+  maxDistance?: number;
 };
 
 /** What a person edit touched, as `PersonUpdateDto` carries it. */
@@ -60,27 +62,35 @@ export class PartnerPeopleService extends BaseService {
       return 0;
     }
 
-    // a copy always comes from the sharing partner's library (their own item, or their copy: A to B to C)
-    const sourceOwnerId = input.partnerSharedById;
+    const maxDistance =
+      input.maxDistance ??
+      (faces.some((face) => face.personGroupId && face.hasEmbedding)
+        ? (await this.getConfig({ withCache: true })).machineLearning.facialRecognition.maxDistance
+        : undefined);
     const mapped = new Map<string, string>();
-    const copies: Array<{ sourceFaceId: string; faceId: string; personGroupId: string | null }> = [];
-    for (const face of faces) {
-      let personGroupId: string | null = null;
-      if (face.personGroupId) {
-        personGroupId =
-          mapped.get(face.personGroupId) ??
-          (await this.resolvePerson({
-            ...input,
-            sourceOwnerId,
-            sourcePersonGroupId: face.personGroupId,
-            sampleFaceId: face.hasEmbedding ? face.id : undefined,
-          }));
-        mapped.set(face.personGroupId, personGroupId);
+    const count = await this.personRepository.withMergeWrite(async () => {
+      // a copy always comes from the sharing partner's library (their own item, or their copy: A to B to C)
+      const sourceOwnerId = input.partnerSharedById;
+      const copies: Array<{ sourceFaceId: string; faceId: string; personGroupId: string | null }> = [];
+      for (const face of faces) {
+        let personGroupId: string | null = null;
+        if (face.personGroupId) {
+          personGroupId =
+            mapped.get(face.personGroupId) ??
+            (await this.resolvePerson({
+              ...input,
+              maxDistance,
+              sourceOwnerId,
+              sourcePersonGroupId: face.personGroupId,
+              sampleFaceId: face.hasEmbedding ? face.id : undefined,
+            }));
+          mapped.set(face.personGroupId, personGroupId);
+        }
+        copies.push({ sourceFaceId: face.id, faceId: randomUUID(), personGroupId });
       }
-      copies.push({ sourceFaceId: face.id, faceId: randomUUID(), personGroupId });
-    }
 
-    const count = await this.personRepository.copyFacesToAsset(input.targetAssetId, copies);
+      return this.personRepository.copyFacesToAsset(input.targetAssetId, copies);
+    }, input.targetOwnerId);
     await this.queueMissingThumbnails(input.targetOwnerId, [...new Set(mapped.values())]);
     return count;
   }
@@ -93,26 +103,31 @@ export class PartnerPeopleService extends BaseService {
     if (entry.undoneAt) {
       throw conflict('already-undone', 'This change was already undone');
     }
-    const link = await this.personRepository.getPartnerPersonLinkByCorrection(auth.user.id, entry.id);
-    if (!link) {
-      throw conflict('person-gone', 'The partner person this merge came from is no longer linked');
-    }
+    const personGroupId = await this.personRepository.withMergeWrite(async () => {
+      const link = await this.personRepository.getPartnerPersonLinkByCorrection(auth.user.id, entry.id);
+      if (!link) {
+        if ((await this.personRepository.getFaceCorrection(auth.user.id, entry.id))?.undoneAt) {
+          throw conflict('already-undone', 'This change was already undone');
+        }
+        throw conflict('person-gone', 'The partner person this merge came from is no longer linked');
+      }
 
-    const faceIds = await this.personRepository.getPartnerMergedFaceIds(
-      auth.user.id,
-      link.sourcePersonGroupId,
-      link.personGroupId,
-    );
-    const personGroupId = await this.createPersonCopy(
-      {
-        targetOwnerId: auth.user.id,
-        partnerSharedById: link.partnerSharedById,
-        sourceOwnerId: link.partnerSharedById,
-        sourcePersonGroupId: link.sourcePersonGroupId,
-        fallbackName: entry.fromPersonName ?? '',
-      },
-      { correctionId: entry.id, personGroupId: link.personGroupId, faceIds },
-    );
+      const faceIds = await this.personRepository.getPartnerMergedFaceIds(
+        auth.user.id,
+        link.sourcePersonGroupId,
+        link.personGroupId,
+      );
+      return this.createPersonCopy(
+        {
+          targetOwnerId: auth.user.id,
+          partnerSharedById: link.partnerSharedById,
+          sourceOwnerId: link.partnerSharedById,
+          sourcePersonGroupId: link.sourcePersonGroupId,
+          fallbackName: entry.fromPersonName ?? '',
+        },
+        { correctionId: entry.id, personGroupId: link.personGroupId, faceIds },
+      );
+    }, auth.user.id);
     await this.queueMissingThumbnails(auth.user.id, [personGroupId]);
   }
 
@@ -127,10 +142,6 @@ export class PartnerPeopleService extends BaseService {
     ];
     while (queue.length > 0) {
       const current = queue.shift()!;
-      const source = await this.personRepository.getByGroupId(current);
-      if (!source) {
-        continue;
-      }
       const followers = await this.partnerOriginRepository.getPersonFollowers(current.ownerId, current.personGroupId);
       for (const follower of followers) {
         const key = `${follower.ownerId}/${follower.personGroupId}`;
@@ -138,20 +149,36 @@ export class PartnerPeopleService extends BaseService {
           continue;
         }
         seen.add(key);
-        const overridden = new Set(follower.overriddenFields);
-        const values = {
-          ...(!overridden.has('name') && { name: source.name }),
-          ...(!overridden.has('birthDate') && { birthDate: source.birthDate }),
-          ...(!overridden.has('hidden') && { isHidden: source.isHidden }),
-        };
-        if (Object.keys(values).length > 0) {
-          await this.personRepository.update({
-            ownerId: follower.ownerId,
-            personGroupId: follower.personGroupId,
-            ...values,
-          });
-        }
-        queue.push({ ownerId: follower.ownerId, personGroupId: follower.personGroupId });
+        const applied = await this.partnerOriginRepository.withPersonOrigin(
+          follower.ownerId,
+          follower.personGroupId,
+          async (origin) => {
+            if (
+              !origin?.following ||
+              origin.sourceOwnerId !== current.ownerId ||
+              origin.sourcePersonGroupId !== current.personGroupId
+            ) {
+              return false;
+            }
+            const source = await this.personRepository.getByGroupId(current);
+            if (!source) return false;
+            const overridden = new Set(origin.overriddenFields);
+            const values = {
+              ...(!overridden.has('name') && { name: source.name }),
+              ...(!overridden.has('birthDate') && { birthDate: source.birthDate }),
+              ...(!overridden.has('hidden') && { isHidden: source.isHidden }),
+            };
+            if (Object.keys(values).length > 0) {
+              await this.personRepository.update({
+                ownerId: follower.ownerId,
+                personGroupId: follower.personGroupId,
+                ...values,
+              });
+            }
+            return true;
+          },
+        );
+        if (applied) queue.push({ ownerId: follower.ownerId, personGroupId: follower.personGroupId });
       }
     }
   }
@@ -183,6 +210,7 @@ export class PartnerPeopleService extends BaseService {
     sourceOwnerId: string;
     sourcePersonGroupId: string;
     sampleFaceId?: string;
+    maxDistance?: number;
   }): Promise<string> {
     const { targetOwnerId, partnerSharedById, sourceOwnerId, sourcePersonGroupId } = input;
     const link = await this.personRepository.getPartnerPersonLink(targetOwnerId, sourcePersonGroupId);
@@ -221,7 +249,7 @@ export class PartnerPeopleService extends BaseService {
 
     let match: { personGroupId: string; name: string } | undefined;
     if (clusterGroupId && input.sampleFaceId) {
-      match = await this.findMatch(input.sampleFaceId, clusterGroupId, targetOwnerId);
+      match = await this.findMatch(input.sampleFaceId, clusterGroupId, targetOwnerId, input.maxDistance);
     }
     if (match) {
       const sourcePerson = await this.personRepository.getByGroupId({
@@ -273,16 +301,17 @@ export class PartnerPeopleService extends BaseService {
   }
 
   /** The recipient's closest own person within the recognition threshold, if any. */
-  private async findMatch(faceId: string, clusterGroupId: string, ownerId: string) {
+  private async findMatch(faceId: string, clusterGroupId: string, ownerId: string, maxDistance?: number) {
     const embedding = await this.personRepository.getFaceEmbedding(faceId);
     if (!embedding) {
       return;
     }
-    const { machineLearning } = await this.getConfig({ withCache: true });
+    const threshold =
+      maxDistance ?? (await this.getConfig({ withCache: true })).machineLearning.facialRecognition.maxDistance;
     const matches = await this.searchRepository.searchFaces({
       clusterGroupId,
       embedding,
-      maxDistance: machineLearning.facialRecognition.maxDistance,
+      maxDistance: threshold,
       numResults: 10,
       hasPerson: true,
     });

@@ -6,15 +6,13 @@ export const getContextMenuPositionFromEvent = (
   event: MouseEvent | KeyboardEvent,
   align: Align = 'middle',
 ): ContextMenuPosition => {
-  const { currentTarget, target } = event;
-  const x = 'x' in event ? event.x : 0;
-  const y = 'y' in event ? event.y : 0;
-  const box = ((currentTarget || target) as HTMLElement)?.getBoundingClientRect();
+  const anchor = (event.currentTarget ?? event.target) as Element | null;
+  const box = typeof anchor?.getBoundingClientRect === 'function' ? anchor.getBoundingClientRect() : undefined;
   if (box) {
     return getContextMenuPositionFromBoundingRect(box, align);
   }
 
-  return { x, y };
+  return { x: 'x' in event ? event.x : 0, y: 'y' in event ? event.y : 0 };
 };
 
 export const getContextMenuPositionFromBoundingRect = (rect: DOMRect, align: Align = 'middle'): ContextMenuPosition => {

@@ -5,7 +5,7 @@ import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { JobRunItemPageDto, JobRunPageDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
 import { JobCreateDto } from 'src/dtos/job.dto.js';
 import { AssetType, AssetVisibility, IntegrityReport, JobName, JobStatus, ManualJobName } from 'src/enum.js';
-import { afterJobCommit } from 'src/queue/context.js';
+import { afterJobCommit, queueExecution } from 'src/queue/context.js';
 import { ArgsOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
@@ -178,7 +178,10 @@ export class JobService extends BaseService {
       }
       await this.jobRepository.collectFollowups(() => this.onSuccess(job, response));
     } catch (error: unknown) {
-      await this.reportJobError(job, error);
+      // A dependency refusal defers the job rather than failing it; the queue warns about it once.
+      if (!queueExecution.getStore()?.dependencyReason) {
+        await this.reportJobError(job, error);
+      }
       throw error;
     } finally {
       try {
@@ -211,16 +214,6 @@ export class JobService extends BaseService {
       !(job.name === JobName.AssetGenerateVideoDuplicateFrames && response === JobStatus.Skipped);
     if (shouldRunFollowUp) {
       await this.onDone(job);
-    } else if (job.name === JobName.AssetVideoEditGeneration && response === JobStatus.Failed) {
-      // FL-39: a failed version render still settles. Only the fork's history view listens for
-      // this; official clients would treat AssetEditReadyV2 as a published edit and refetch.
-      const asset = await this.assetRepository.getById(job.data.id);
-      if (asset) {
-        this.websocketRepository.clientSend('VideoEditVersionFailedV1', asset.ownerId, {
-          assetId: asset.id,
-          versionId: job.data.versionId ?? null,
-        });
-      }
     }
   }
 
@@ -294,39 +287,10 @@ export class JobService extends BaseService {
       }
 
       case JobName.AssetEditThumbnailGeneration: {
-        const asset = await this.assetRepository.getById(item.data.id);
-        const edits = await this.assetEditRepository.getWithSyncInfo(item.data.id);
-
+        const asset = await this.sendAssetEditReady(item.data.id);
         if (asset) {
-          this.websocketRepository.clientSend('AssetEditReadyV2', asset.ownerId, {
-            asset: {
-              id: asset.id,
-              ownerId: asset.ownerId,
-              originalFileName: asset.originalFileName,
-              thumbhash: asset.thumbhash ? hexOrBufferToBase64(asset.thumbhash) : null,
-              checksum: hexOrBufferToBase64(asset.checksum),
-              fileCreatedAt: asset.fileCreatedAt,
-              fileModifiedAt: asset.fileModifiedAt,
-              createdAt: asset.createdAt,
-              localDateTime: asset.localDateTime,
-              duration: asset.duration,
-              type: asset.type,
-              deletedAt: asset.deletedAt,
-              isFavorite: asset.isFavorite,
-              visibility: effectiveVisibilityOf(asset),
-              livePhotoVideoId: asset.livePhotoVideoId,
-              stackId: asset.stackId,
-              libraryId: asset.libraryId,
-              width: asset.width,
-              height: asset.height,
-              isEdited: asset.isEdited,
-            },
-            edit: edits,
-          });
-
           await this.jobRepository.queue({ name: JobName.BestPhotosScore, data: item.data });
         }
-
         break;
       }
 

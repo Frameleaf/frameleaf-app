@@ -1,82 +1,49 @@
 import type { StackResponseDto } from '@frameleaf/sdk';
-import { modalManager, toastManager } from '@frameleaf/ui';
-import { render, screen, waitFor } from '@testing-library/svelte';
-import userEvent from '@testing-library/user-event';
+import { render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
-import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import ViewerStackStrip from '$lib/components/frameleaf/ViewerStackStrip.svelte';
-import { AssetAction } from '$lib/constants';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import en from '../../../../../i18n/en.json';
 
 /**
- * FL-35 / FL-83: the viewer's stack strip, with the template's two inline decisions — "set as
- * stack primary" (`updateStack`) and "keep this, delete the others" (`keepThisDeleteOthers`).
- * Both are the owner's only.
+ * FL-35 / VIEWER-P3: the viewer's stack card (MediaViewer.jsx:2026-2063). It names the stack and
+ * shows its members, the open one marked and the primary labelled. The stack's decisions (keep this
+ * and remove the rest, set as primary) are in the More menu's Stack group, never on the card.
  */
 
-const auth = vi.hoisted(() => ({ user: { id: 'owner' }, authenticated: true }));
-vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
-
-const setup = (ownerId = 'owner') => {
-  const primary = assetFactory.build({ ownerId });
-  const current = assetFactory.build({ ownerId });
-  const other = assetFactory.build({ ownerId });
+const setup = () => {
+  const primary = assetFactory.build();
+  const current = assetFactory.build();
+  const other = assetFactory.build();
   const stack: StackResponseDto = { id: 'stack-1', primaryAssetId: primary.id, assets: [primary, current, other] };
-  const onAction = vi.fn();
-  render(ViewerStackStrip, { stack, asset: current, onAction, onSelect: vi.fn(), onPreview: vi.fn() });
-  return { stack, primary, current, other, onAction };
+  const onSelect = vi.fn();
+  const result = render(ViewerStackStrip, { stack, asset: current, onSelect, onPreview: vi.fn() });
+  return { ...result, stack, primary, current, other, onSelect };
 };
 
 describe('ViewerStackStrip', () => {
   beforeAll(() => addMessages('dev', en));
-  beforeEach(() => {
-    vi.resetAllMocks();
-    vi.spyOn(toastManager, 'primary').mockImplementation(() => {});
-  });
-  afterEach(() => vi.restoreAllMocks());
 
-  it('makes the viewed item the stack primary', async () => {
-    const { current, stack, onAction } = setup();
-    const updated = { ...stack, primaryAssetId: current.id };
-    sdkMock.updateStack.mockResolvedValue(updated);
-
-    await userEvent.click(screen.getByRole('button', { name: en.set_stack_primary_asset }));
-
-    expect(sdkMock.updateStack).toHaveBeenCalledWith({ id: 'stack-1', stackUpdateDto: { primaryAssetId: current.id } });
-    expect(onAction).toHaveBeenCalledWith({ type: AssetAction.SET_STACK_PRIMARY_ASSET, stack: updated });
+  it('is a small card named after the stack, with one tile per member', () => {
+    setup();
+    const card = screen.getByRole('region', { name: 'Stack · 3 items' });
+    expect(card).toHaveTextContent('Stack · 3 items');
+    expect(within(card).getAllByRole('listitem')).toHaveLength(3);
   });
 
-  it('keeps the viewed item and deletes the others after confirmation', async () => {
-    const { current, primary, other, onAction } = setup();
-    vi.spyOn(modalManager, 'showDialog').mockResolvedValue(true);
-    sdkMock.deleteAssets.mockResolvedValue(undefined as never);
-    sdkMock.deleteStacks.mockResolvedValue(undefined as never);
-
-    await userEvent.click(screen.getByRole('button', { name: en.keep_this_delete_others }));
-
-    await waitFor(() => expect(sdkMock.deleteStacks).toHaveBeenCalledWith({ bulkIdsDto: { ids: ['stack-1'] } }));
-    expect(sdkMock.deleteAssets).toHaveBeenCalledWith({ assetBulkDeleteDto: { ids: [primary.id, other.id] } });
-    expect(onAction).toHaveBeenCalledWith({
-      type: AssetAction.UNSTACK,
-      assets: [expect.objectContaining({ id: current.id })],
-    });
+  it('marks the open member and labels the primary', () => {
+    const { container } = setup();
+    const tiles = container.querySelectorAll('li');
+    expect(tiles[1]).toHaveAttribute('aria-current', 'true');
+    expect(tiles[0]).not.toHaveAttribute('aria-current');
+    expect(tiles[0]).toHaveTextContent('Primary');
+    expect(tiles[1]).not.toHaveTextContent('Primary');
   });
 
-  it('deletes nothing when the confirmation is declined', async () => {
-    const { onAction } = setup();
-    vi.spyOn(modalManager, 'showDialog').mockResolvedValue(false);
-
-    await userEvent.click(screen.getByRole('button', { name: en.keep_this_delete_others }));
-
-    expect(sdkMock.deleteAssets).not.toHaveBeenCalled();
-    expect(sdkMock.deleteStacks).not.toHaveBeenCalled();
-    expect(onAction).not.toHaveBeenCalled();
-  });
-
-  it('offers neither decision to someone who does not own the item', () => {
-    setup('someone-else');
-    expect(screen.queryByRole('button', { name: en.set_stack_primary_asset })).not.toBeInTheDocument();
+  it('keeps the stack decisions off the card', () => {
+    setup();
     expect(screen.queryByRole('button', { name: en.keep_this_delete_others })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: en.frameleaf_viewer_menu_keep_this })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: en.set_stack_primary_asset })).not.toBeInTheDocument();
   });
 });

@@ -3,4 +3,4 @@
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
 </script>
 
-<UserPageLayout rail={false}><PhotographyWorkspace /></UserPageLayout>
+<UserPageLayout rail={false} fill><PhotographyWorkspace /></UserPageLayout>

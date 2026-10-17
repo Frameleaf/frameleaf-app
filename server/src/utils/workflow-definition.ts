@@ -84,7 +84,7 @@ export const assertWorkflowJson = (value: unknown): void => {
     throw new Error('Workflow definitions must contain ordinary JSON values.');
   };
   check(value, 0);
-  if (JSON.stringify(value).length > WORKFLOW_LIMITS.bytes) {
+  if (Buffer.byteLength(JSON.stringify(value), 'utf8') > WORKFLOW_LIMITS.bytes) {
     throw new Error('Choose a workflow smaller than 256 KB.');
   }
 };
@@ -107,11 +107,8 @@ export function validateStepConfig(schema: WorkflowParameterSchema, config: unkn
   if (config === undefined) {
     return [`${path} are missing.`];
   }
-  if (config === null) {
-    if ((schema.required ?? []).length > 0) {
-      errors.push(`${path} require configured values.`);
-    }
-    return errors;
+  if (config === null && !schema.type && !schema.array && !schema.properties && !schema.enum) {
+    return (schema.required ?? []).length > 0 ? [`${path} require configured values.`] : [];
   }
   if (schema.array || schema.type === 'array') {
     if (!Array.isArray(config)) {

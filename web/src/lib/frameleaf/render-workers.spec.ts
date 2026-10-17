@@ -15,9 +15,11 @@ import {
   auditDetailEntries,
   auditEventIsRefusal,
   auditEventKey,
+  bytesToGB,
   bytesToGiB,
   destinationKey,
   filterWorkers,
+  gbToBytes,
   gibToBytes,
   isRenderWorkerKind,
   limitFormFrom,
@@ -178,18 +180,22 @@ describe('units', () => {
   it('converts ceilings between the wire and the form and back', () => {
     expect(msToMinutes('90000')).toBe(1.5);
     expect(minutesToMs(1.5)).toBe('90000');
+    // GPU memory as cards are sold (1024³ bytes to the GB); output sizes in decimal GB (D5).
     expect(bytesToGiB(String(2 * 1024 ** 3))).toBe(2);
     expect(gibToBytes(0.5)).toBe(String(512 * 1024 ** 2));
+    expect(bytesToGB(String(2 * 1000 ** 3))).toBe(2);
+    expect(gbToBytes(0.5)).toBe('500000000');
     expect(msToMinutes(null)).toBeNull();
     expect(bytesToGiB('')).toBeNull();
+    expect(bytesToGB('')).toBeNull();
   });
 });
 
 describe('parseLimitForm', () => {
-  const form = (overrides: Partial<{ concurrency: string; wallClockMinutes: string; outputGiB: string }>) => ({
+  const form = (overrides: Partial<{ concurrency: string; wallClockMinutes: string; outputGB: string }>) => ({
     concurrency: '2',
     wallClockMinutes: '',
-    outputGiB: '',
+    outputGB: '',
     ...overrides,
   });
 
@@ -221,9 +227,9 @@ describe('parseLimitForm', () => {
       ok: false,
       field: 'wallClockMinutes',
     });
-    expect(parseLimitForm(form({ outputGiB: 'lots' }), { minConcurrency: 0 })).toEqual({
+    expect(parseLimitForm(form({ outputGB: 'lots' }), { minConcurrency: 0 })).toEqual({
       ok: false,
-      field: 'outputGiB',
+      field: 'outputGB',
     });
   });
 
@@ -231,9 +237,9 @@ describe('parseLimitForm', () => {
     expect(limitFormFrom({ maxConcurrentOperations: 3, maxWallClockMs: '120000', maxOutputBytes: null })).toEqual({
       concurrency: '3',
       wallClockMinutes: '2',
-      outputGiB: '',
+      outputGB: '',
     });
-    expect(limitFormFrom(null)).toEqual({ concurrency: '', wallClockMinutes: '', outputGiB: '' });
+    expect(limitFormFrom(null)).toEqual({ concurrency: '', wallClockMinutes: '', outputGB: '' });
   });
 });
 
@@ -302,7 +308,7 @@ describe('parseWorkerForm', () => {
       conformanceMaxAgeMs: 2 * 60 * 60_000,
       maxConcurrentOperations: 1,
       maxWallClockMs: '600000',
-      maxOutputBytes: String(10 * 1024 ** 3),
+      maxOutputBytes: String(10 * 1000 ** 3),
       gpuMemoryBytes: String(16 * 1024 ** 3),
       activeOperations: 0,
       lastAdmittedAt: null,
@@ -321,7 +327,7 @@ describe('parseWorkerForm', () => {
       gpuMemoryGiB: '16',
       concurrency: '1',
       wallClockMinutes: '10',
-      outputGiB: '10',
+      outputGB: '10',
     });
   });
 });

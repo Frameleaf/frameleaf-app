@@ -1,5 +1,5 @@
 import { modalManager, toastManager } from '@frameleaf/ui';
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import ConfirmDialog from '$lib/components/frameleaf/ConfirmDialog.svelte';
 import Toast from '$lib/components/frameleaf/Toast.svelte';
 import { installFrameleafKit } from './kit-bridge';
@@ -12,7 +12,7 @@ describe('legacy kit bridge', () => {
   // The spy stands in for the kit's own `open`, so nothing is mounted.
   const open = vi.spyOn(toastManager, 'open').mockImplementation(() => {});
   const setOptions = vi.spyOn(toastManager, 'setOptions');
-  installFrameleafKit();
+  beforeEach(() => installFrameleafKit());
 
   afterAll(() => {
     toastManager.open = originalOpen;

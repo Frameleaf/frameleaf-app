@@ -82,7 +82,8 @@ describe(DownloadService.name, () => {
       for (const response of [albumDownload, timelineDownload]) {
         const plannedAssetIds = response.archives.flatMap(({ assetIds }) => assetIds);
         expect(plannedAssetIds).toEqual(expect.arrayContaining([visible.id, markedSafe.id, tagOnly.id]));
-        expect(plannedAssetIds).not.toEqual(expect.arrayContaining([unreviewedNsfw.id, markedNsfw.id]));
+        expect(plannedAssetIds).not.toContain(unreviewedNsfw.id);
+        expect(plannedAssetIds).not.toContain(markedNsfw.id);
         expect(response.totalSize).toBe(3000);
       }
 

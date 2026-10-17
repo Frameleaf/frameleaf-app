@@ -55,6 +55,24 @@ describe('logging interceptor redaction (FL-81)', () => {
     });
   });
 
+  it.each([
+    '/LINK',
+    '/API/ADMIN/LICENSE/ACTIVATE/',
+    '/API/LICENSE/LINK-CODE',
+    '/API/USERS/ME/LICENSE/',
+    '/admin/license/activate',
+    '/license/link-code',
+    '/users/me/license',
+  ])('excludes the whole query of a credential route regardless of casing or API prefix: %s', (path) => {
+    expect(redactLogUrl(`${path}?anything=synthetic-private-material&page=2`)).toBe(`${path}?********`);
+  });
+
+  it('keeps ordinary queries on routes whose names only start with a credential route', () => {
+    for (const path of ['/links', '/api/licenses', '/admin/license-history', '/users/me/license-history']) {
+      expect(redactLogUrl(`${path}?page=2`)).toBe(`${path}?page=2`);
+    }
+  });
+
   it('leaves an address without credentials unchanged', () => {
     expect(redactLogUrl('/api/server/ping')).toBe('/api/server/ping');
     expect(redactLogUrl('/api/search?size=10&page=2')).toBe('/api/search?size=10&page=2');

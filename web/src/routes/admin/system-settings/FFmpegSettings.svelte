@@ -234,6 +234,7 @@
     <Row
       label={$t('frameleaf_play_vid_which')}
       help={rule ? $t(`frameleaf_play_vid_${rule}_help` as Translations) : $t('frameleaf_play_vid_rule_custom_help')}
+      lead={rule ? $t(RULE_NAME[rule]) : undefined}
     >
       <SegmentedControl
         label={$t('frameleaf_play_vid_which')}
@@ -255,6 +256,7 @@
       help={quality
         ? $t(`frameleaf_play_vid_${quality}_help` as Translations)
         : $t('frameleaf_play_vid_quality_custom_help')}
+      lead={quality ? $t(QUALITY_NAME[quality]) : $t('frameleaf_play_custom')}
     >
       <SegmentedControl
         label={$t('frameleaf_play_vid_quality')}

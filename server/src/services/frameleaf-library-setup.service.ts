@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { OnEvent } from 'src/decorators.js';
 import { AdminConfigDto } from 'src/dtos/config.dto.js';
-import { ImmichWorker, JobName, QueueName, SyncEntityType } from 'src/enum.js';
+import { FrameleafWorker, JobName, QueueName, SyncEntityType } from 'src/enum.js';
 import { IMPORT_DERIVED_RUN_KIND, IMPORT_DERIVED_STAGES, importDerivedRunId } from 'src/immich-import/derived-work.js';
 import { listRuns } from 'src/queue/run-query.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -297,7 +297,7 @@ export class FrameleafLibrarySetupService {
     };
   }
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     if (!process.env.FRAMELEAF_MANAGER_INSTALLATION) {
       return;

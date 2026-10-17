@@ -334,12 +334,15 @@ export function takeoutStableId(namespace: string) {
  * title is the file's own name, then the one carrying the most details. Ties keep the scan's order.
  */
 export const takeoutMostLikelySidecar = <T extends { metadata: TakeoutMetadata }>(name: string, candidates: T[]) => {
-  const score = ({ metadata }: T) =>
-    (normalizedName(metadata.title) === normalizedName(name) ? 100 : 0) + Object.keys(metadata).length;
+  const normalized = normalizedName(name);
   let best: T | undefined;
+  let bestScore = -1;
   for (const candidate of candidates) {
-    if (!best || score(candidate) > score(best)) {
+    const score =
+      (normalizedName(candidate.metadata.title) === normalized ? 100 : 0) + Object.keys(candidate.metadata).length;
+    if (score > bestScore) {
       best = candidate;
+      bestScore = score;
     }
   }
   return best;

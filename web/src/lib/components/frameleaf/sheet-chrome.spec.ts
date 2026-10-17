@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { readFileSync } from 'node:fs';
+import Dialog from '$lib/components/frameleaf/Dialog.svelte';
 import Menu from '$lib/components/frameleaf/Menu.svelte';
 
 /**
@@ -77,6 +78,22 @@ describe('September 24 sheet chrome', () => {
         expect(classes, `${file} .${surface}`).toContain('fl-continuous-corners');
       }
     }
+  });
+
+  it('centres the dialog and offers a medium (720px) size beside the default and wide ones', () => {
+    const css = styles('Dialog.svelte');
+    expect(css).toMatch(/\.dialog {[^}]*inset: 0;\s*margin: auto;/);
+    expect(css).toMatch(/\.dialog\.medium {\s*max-width: min\(720px, calc\(100vw - 32px\)\);/);
+
+    const children = createRawSnippet(() => ({ render: () => '<p>Body</p>' }));
+    const medium = render(Dialog, { title: 'Import', closeLabel: 'Close', size: 'medium', children });
+    expect(medium.container.querySelector('dialog')).toHaveClass('medium');
+    expect(medium.container.querySelector('dialog')).not.toHaveClass('wide');
+    medium.unmount();
+
+    const wide = render(Dialog, { title: 'Compare', closeLabel: 'Close', wide: true, children });
+    expect(wide.container.querySelector('dialog')).toHaveClass('wide');
+    expect(wide.container.querySelector('dialog')).not.toHaveClass('medium');
   });
 
   it('turns the dialog rise into a crossfade under Reduce Motion and drops the blur for Increase Contrast', () => {

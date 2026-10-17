@@ -56,7 +56,7 @@ describe(BulkOperationService.name, () => {
   let albums: { addAssets: any; removeAssets: any };
   let tags: { bulkTagAssets: any; removeAssets: any };
   let trash: { restoreAssets: any };
-  let stacks: { create: any; deleteAll: any };
+  let stacks: { create: any; deleteAll: any; unstackSelection: any };
   let enrichment: { updateAssetEnrichment: any; unlockAssets: any };
   let users: { get: any; getMetadata: any };
   let apiKeys: { getById: any };
@@ -83,6 +83,7 @@ describe(BulkOperationService.name, () => {
       requeue: vi.fn().mockResolvedValue(true),
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
       settlePause: vi.fn().mockResolvedValue(true),
+      heartbeat: vi.fn().mockResolvedValue(true),
       getDateTimeOriginals: vi.fn().mockResolvedValue(new Map()),
       getLockedIds: vi.fn().mockResolvedValue(new Set()),
     } as unknown as MediaOperationRepository;
@@ -97,7 +98,7 @@ describe(BulkOperationService.name, () => {
     albums = { addAssets: vi.fn(), removeAssets: vi.fn() };
     tags = { bulkTagAssets: vi.fn().mockResolvedValue({ count: 0 }), removeAssets: vi.fn() };
     trash = { restoreAssets: vi.fn().mockResolvedValue({ count: 0 }) };
-    stacks = { create: vi.fn(), deleteAll: vi.fn() };
+    stacks = { create: vi.fn(), deleteAll: vi.fn(), unstackSelection: vi.fn() };
     enrichment = {
       updateAssetEnrichment: vi.fn().mockResolvedValue({}),
       unlockAssets: vi.fn().mockResolvedValue(undefined),
@@ -172,6 +173,35 @@ describe(BulkOperationService.name, () => {
   });
 
   describe('applyBatch', () => {
+    it.each([false, true])('unstack checks complete current stacks with recorded elevation=%s', async (elevated) => {
+      const snapshot = snapshotOf({
+        action: MediaOperationBulkAction.Unstack,
+        elevated,
+        payload: { stackIds: [newUuid(), newUuid()] },
+      });
+      const [changed, locked, moved] = snapshot.assetIds;
+      stacks.unstackSelection.mockResolvedValue({
+        deletedStackIds: snapshot.payload.stackIds!.slice(0, 1),
+        unstackedAssetIds: [changed],
+        lockedAssetIds: [locked],
+      });
+      vi.mocked(operations.getLockedIds).mockResolvedValue(new Set([locked]));
+      const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds);
+      expect(stacks.unstackSelection).toHaveBeenCalledExactlyOnceWith(
+        authStub.user1,
+        snapshot.payload.stackIds,
+        snapshot.assetIds,
+        elevated,
+      );
+      expect(stacks.deleteAll).not.toHaveBeenCalled();
+      expect(operations.getLockedIds).not.toHaveBeenCalled();
+      expect(outcomes).toEqual([
+        { id: changed, status: MediaOperationItemStatus.Ok },
+        { id: locked, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_locked' },
+        { id: moved, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_not_stacked' },
+      ]);
+    });
+
     describe('a transactional archive (FL-32)', () => {
       const archiveOperationId = newUuid();
       const jobId = '0195e2a0-0000-7000-8000-0000000000b1';
@@ -195,6 +225,7 @@ describe(BulkOperationService.name, () => {
           archiveOperationId,
           jobId,
           snapshot.assetIds,
+          false,
         );
         expect(assets.updateAll).not.toHaveBeenCalled();
         expect(assets.notifyVisibilityChanged).toHaveBeenCalledWith([archived], authStub.user1.user.id);
@@ -224,6 +255,7 @@ describe(BulkOperationService.name, () => {
           archiveOperationId,
           jobId,
           snapshot.assetIds,
+          false,
         );
         expect(assets.notifyVisibilityChanged).toHaveBeenCalledWith([restored], authStub.user1.user.id);
         expect(outcomes).toEqual([
@@ -245,9 +277,13 @@ describe(BulkOperationService.name, () => {
 
         const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds, {}, jobId);
 
-        expect(archiveOperations.publish).toHaveBeenCalledWith(authStub.user1.user.id, archiveOperationId, jobId, [
-          mine,
-        ]);
+        expect(archiveOperations.publish).toHaveBeenCalledWith(
+          authStub.user1.user.id,
+          archiveOperationId,
+          jobId,
+          [mine],
+          false,
+        );
         expect(outcomes).toContainEqual(
           expect.objectContaining({ id: theirs, reasonKey: 'frameleaf_bulk_reason_no_permission' }),
         );
@@ -273,7 +309,7 @@ describe(BulkOperationService.name, () => {
           );
           const touched =
             action === MediaOperationBulkAction.Archive ? archiveOperations.publish : archiveOperations.restore;
-          expect(touched).toHaveBeenLastCalledWith(authStub.user1.user.id, archiveOperationId, jobId, rest);
+          expect(touched).toHaveBeenLastCalledWith(authStub.user1.user.id, archiveOperationId, jobId, rest, false);
           expect(outcomes).toContainEqual({
             id: lockedSince,
             status: MediaOperationItemStatus.Skipped,
@@ -281,6 +317,35 @@ describe(BulkOperationService.name, () => {
           });
         }
       });
+
+      it.each([MediaOperationBulkAction.Archive, MediaOperationBulkAction.Unarchive])(
+        'passes recorded elevation to the final %s admission and reports a late lock',
+        async (action) => {
+          const target =
+            action === MediaOperationBulkAction.Archive ? archiveOperations.publish : archiveOperations.restore;
+          for (const elevated of [false, true]) {
+            const snapshot = snapshotOf({ action, elevated, payload: { archiveOperationId } });
+            mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+            target.mockResolvedValue(new Map(snapshot.assetIds.map((id) => [id, 'locked'])));
+            const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds, {}, jobId);
+            expect(target).toHaveBeenLastCalledWith(
+              authStub.user1.user.id,
+              archiveOperationId,
+              jobId,
+              snapshot.assetIds,
+              elevated,
+            );
+            expect(outcomes).toEqual(
+              snapshot.assetIds.map((id) => ({
+                id,
+                status: MediaOperationItemStatus.Skipped,
+                reasonKey: 'frameleaf_bulk_reason_locked',
+              })),
+            );
+            expect(assets.notifyVisibilityChanged).not.toHaveBeenCalled();
+          }
+        },
+      );
 
       it('archives an ordinary job without an operation as before', async () => {
         const snapshot = snapshotOf({ action: MediaOperationBulkAction.Archive });
@@ -558,6 +623,22 @@ describe(BulkOperationService.name, () => {
   });
 
   describe('run', () => {
+    it('does not unstack when the submitting key no longer permits stack deletion', async () => {
+      const snapshot = snapshotOf({
+        action: MediaOperationBulkAction.Unstack,
+        apiKeyId: newUuid(),
+        payload: { stackIds: [newUuid()] },
+      });
+      apiKeys.getById.mockResolvedValue({ permissions: ['asset.update'] });
+      await sut.run(operationOf(snapshot), 'claim');
+      expect(stacks.unstackSelection).not.toHaveBeenCalled();
+      expect(operations.fail).toHaveBeenCalledWith(
+        expect.any(String),
+        'claim',
+        expect.objectContaining({ errorCode: 'bulk_credentials_revoked' }),
+      );
+    });
+
     it('works through the frozen set and completes', async () => {
       const snapshot = snapshotOf();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
@@ -655,8 +736,25 @@ describe(BulkOperationService.name, () => {
 
       await sut.run(operationOf(snapshot), 'claim');
 
+      expect(operations.heartbeat).toHaveBeenCalledWith(expect.any(String), 'claim', expect.any(Number), {
+        requireActiveClaim: true,
+      });
       expect(assets.updateAll).toHaveBeenCalledTimes(1);
       expect(operations.complete).toHaveBeenCalled();
+    });
+
+    it('stops before a batch when a failed pause cannot renew its active claim', async () => {
+      const snapshot = snapshotOf();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+      vi.mocked(operations.setBulkResult).mockResolvedValueOnce({ ...running, pauseRequestedAt: new Date() });
+      vi.mocked(operations.settlePause).mockResolvedValueOnce(false);
+      vi.mocked(operations.heartbeat).mockResolvedValue(false);
+
+      await sut.run(operationOf(snapshot), 'claim');
+
+      expect(assets.updateAll).not.toHaveBeenCalled();
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(expect.any(String), 'claim', { released: false });
+      expect(operations.complete).not.toHaveBeenCalled();
     });
 
     it('stops writing the moment its claim is taken away', async () => {

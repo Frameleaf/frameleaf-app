@@ -111,7 +111,7 @@ describe('/admin/database-backups', () => {
 
   // => action: restore database flow
 
-  describe.sequential('POST /start-restore', () => {
+  describe('POST /start-restore', { concurrent: false }, () => {
     // The hook covers End, the bounded restart wait, and recreating the admin.
     afterAll(async () => {
       await request(app)
@@ -134,14 +134,14 @@ describe('/admin/database-backups', () => {
       });
     }, 70_000);
 
-    it.sequential('should not work when the server is configured', async () => {
+    it('should not work when the server is configured', { concurrent: false }, async () => {
       const { status, body } = await request(app).post('/admin/database-backups/start-restore');
 
       expect(status).toBe(400);
       expect(body).toEqual(errorDto.badRequest('Admin setup is not available'));
     });
 
-    it.sequential('should enter maintenance mode in "database restore mode"', async () => {
+    it('should enter maintenance mode in "database restore mode"', { concurrent: false }, async () => {
       await utils.resetDatabase(); // reset database before running this test
 
       const { status, headers } = await request(app).post('/admin/database-backups/start-restore');
@@ -175,7 +175,7 @@ describe('/admin/database-backups', () => {
 
   // => action: restore database
 
-  describe.sequential('POST /backups/restore', () => {
+  describe('POST /backups/restore', { concurrent: false }, () => {
     // Register teardown before entering maintenance: failed assertions must not strand later specs.
     afterEach(async () => {
       if (!cookie) {
@@ -214,7 +214,7 @@ describe('/admin/database-backups', () => {
       await utils.connectDatabase();
     });
 
-    it.sequential('should restore a backup', { timeout: 60_000 }, async () => {
+    it('should restore a backup', { concurrent: false, timeout: 60_000 }, async () => {
       const asset = await utils.createAsset(admin.accessToken);
       await request(app)
         .put(`/assets/${asset.id}`)
@@ -285,9 +285,9 @@ describe('/admin/database-backups', () => {
         .toEqual(before.landmarks);
     });
 
-    it.sequential(
+    it(
       'refuses a noncanonical source before changing the current database',
-      { timeout: 60_000 },
+      { concurrent: false, timeout: 60_000 },
       async () => {
         const filename = 'noncanonical.sql';
         await utils.putTextFile('SELECT 1;\n-- PostgreSQL database dump complete\n', `/data/backups/${filename}`);
@@ -327,7 +327,7 @@ describe('/admin/database-backups', () => {
       },
     );
 
-    it.sequential('fail to restore a corrupted backup', { timeout: 60_000 }, async () => {
+    it('fail to restore a corrupted backup', { concurrent: false, timeout: 60_000 }, async () => {
       const filename = await utils.prepareTestBackup('corrupted', admin.accessToken);
 
       const { status, headers } = await request(app)
@@ -392,7 +392,7 @@ describe('/admin/database-backups', () => {
       await waitForServerRestart();
     });
 
-    it.sequential('rollback to restore point if backup is missing admin', { timeout: 60_000 }, async () => {
+    it('rollback to restore point if backup is missing admin', { concurrent: false, timeout: 120_000 }, async () => {
       const filename = await utils.prepareTestBackup('empty', admin.accessToken);
 
       const { status, headers } = await request(app)
@@ -420,7 +420,17 @@ describe('/admin/database-backups', () => {
         )
         .toBeTruthy();
 
-      // The restore and completed rollback share this test's unchanged 60-second deadline.
+      // Restore and rollback each replay the canonical schema; bound each phase to 60 seconds.
+      await ownedWait('Waiting for missing-admin restore to reach rollback', 60_000, (context) =>
+        pollRequest(
+          context,
+          () => request(app).get('/admin/maintenance/status').send({ token: 'token' }),
+          ({ status, body }) => {
+            expect(status).toBe(200);
+            return body.task === 'rollback' || body.task === 'error';
+          },
+        ),
+      );
       const failedRestore = await ownedWait('Waiting for missing-admin rollback', 60_000, (context) =>
         pollRequest(
           context,
@@ -454,10 +464,13 @@ describe('/admin/database-backups', () => {
 
       await request(app).post('/admin/maintenance').set('cookie', cookie!).send({ action: 'end' }).expect(201);
       await waitForServerRestart();
+      const restoredAdmin = await request(app).get('/users/me').set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(restoredAdmin.status).toBe(200);
+      expect(restoredAdmin.body).toEqual(expect.objectContaining({ id: admin.userId, isAdmin: true }));
     });
 
     // FL-81: a backup from a newer server cannot be migrated down; it is refused before anything changes.
-    it.sequential('refuses a backup made by a newer server', { timeout: 60_000 }, async () => {
+    it('refuses a backup made by a newer server', { concurrent: false, timeout: 60_000 }, async () => {
       const created = await utils.createBackup(admin.accessToken);
       const filename = created.replace(/-v.+-pg/, '-v999.0.0-pg');
       expect(filename).not.toBe(created);
@@ -493,7 +506,7 @@ describe('/admin/database-backups', () => {
     });
 
     // FL-81: while a restore runs, a second restore or End (which would restart the worker mid-restore) is refused.
-    it.sequential('refuses conflicting actions while a restore runs', { timeout: 60_000 }, async () => {
+    it('refuses conflicting actions while a restore runs', { concurrent: false, timeout: 60_000 }, async () => {
       const filename = await utils.createBackup(admin.accessToken);
 
       const { status, headers } = await request(app)

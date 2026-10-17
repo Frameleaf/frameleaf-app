@@ -30,6 +30,7 @@
   import {
     CLOUD_BACKUP_PRICING,
     cloudPlanPrice,
+    discountOffer,
     discountPercent,
     formatUsd,
     productKeyMessageKey,
@@ -38,11 +39,11 @@
     serverLicenceKind,
   } from '$lib/frameleaf/cloud';
   import type { LinkNotice } from '$lib/frameleaf/license-relay';
-  import { withoutLockedRuleIds } from '$lib/frameleaf/locked-rules';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
+  import { setSupportBadgeVisibility } from '$lib/utils/purchase-utils';
   import {
     activateLicense,
     deleteUserLicense,
@@ -53,7 +54,6 @@
     redeemLicenseLinkCode,
     removeLicenseKey,
     setUserLicense,
-    updateMyPreferences,
     type CloudMlWalletDto,
     type LicenseProductDto,
     type LicenseProductsResponseDto,
@@ -137,6 +137,8 @@
   // the share Frameleaf Cloud published (license/products) for that licence
   const share = $derived(discount?.share ?? 0);
   const pct = $derived(discountPercent(share));
+  // D1: what each licence takes off plans, as Frameleaf Cloud published it (7% and 5% bundled)
+  const offer = $derived(discountOffer(products));
 
   const loadServerLicense = async () => {
     if (!isAdmin) {
@@ -164,6 +166,7 @@
 
   /** Back from the store tab: read the plan, key and credit again so a finished purchase shows. */
   const recheck = async () => {
+    const isCurrent = authManager.captureSession();
     if (!awaitingStore || checking || busy) {
       return;
     }
@@ -171,7 +174,13 @@
     const before = { plan: currentPlan?.state, key: !!serverKey || !!personal, credit: wallet?.availableUsd };
     try {
       await loadServerLicense();
+      if (!isCurrent()) {
+        return;
+      }
       await reloadUser();
+      if (!isCurrent()) {
+        return;
+      }
       const changed =
         before.plan !== currentPlan?.state ||
         before.key !== (!!serverKey || !!personal) ||
@@ -188,8 +197,16 @@
   };
 
   const reloadUser = async () => {
-    authManager.setUser(await getMyUser());
+    const isCurrent = authManager.captureSession();
+    const updated = await getMyUser();
+    if (!isCurrent()) {
+      return;
+    }
+    authManager.setUser(updated);
     await featureFlagsManager.init();
+    if (!isCurrent()) {
+      return;
+    }
     authManager.isPurchased = !!authManager.user.license || featureFlagsManager.value.supporter;
   };
 
@@ -201,6 +218,7 @@
       : $t('frameleaf_buy_supporter_individual_title');
 
   const activate = async (event?: SubmitEvent) => {
+    const isCurrent = authManager.captureSession();
     event?.preventDefault();
     if (busy) {
       return;
@@ -222,10 +240,19 @@
       } else {
         await setUserLicense({ licenseActivateDto: { key: check.key } });
       }
+      if (!isCurrent()) {
+        return;
+      }
       await reloadUser();
+      if (!isCurrent()) {
+        return;
+      }
       key = '';
       success = $t('frameleaf_buy_activated');
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       keyError = getServerErrorMessage(error) ?? $t('frameleaf_buy_activation_failed');
     } finally {
       busy = false;
@@ -233,6 +260,7 @@
   };
 
   const remove = async (kind: 'server' | 'individual') => {
+    const isCurrent = authManager.captureSession();
     busy = true;
     actionError = '';
     try {
@@ -241,9 +269,18 @@
       } else {
         await deleteUserLicense();
       }
+      if (!isCurrent()) {
+        return;
+      }
       await reloadUser();
+      if (!isCurrent()) {
+        return;
+      }
       success = $t('frameleaf_buy_removed');
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       actionError = getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed');
     } finally {
       busy = false;
@@ -253,10 +290,7 @@
   const setBadgeHidden = async (hidden: boolean) => {
     actionError = '';
     try {
-      const response = await updateMyPreferences({
-        userPreferencesUpdateDto: { purchase: { showSupportBadge: !hidden } },
-      });
-      authManager.setPreferences(withoutLockedRuleIds(response));
+      await setSupportBadgeVisibility(!hidden);
     } catch (error) {
       actionError = getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed');
     }
@@ -338,7 +372,11 @@
     <section class="buy-section" aria-labelledby="buy-cloud">
       <div class="buy-section-head">
         <h2 id="buy-cloud">{$t('frameleaf_settings_area_cloud')}</h2>
-        <p>{$t('frameleaf_buy_cloud_description')}</p>
+        <p>
+          {$t('frameleaf_buy_cloud_description')}
+          <!-- D1: either licence comes before a plan or AI credit -->
+          {#if !discount}{$t('frameleaf_buy_licence_first')}{/if}
+        </p>
       </div>
       {#if currentPlan}
         <p class="auth-success" role="status">
@@ -477,14 +515,16 @@
               : $t('frameleaf_buy_supporter_individual_description')}
             features={supporter.id === 'supporter-server'
               ? [
-                  $t('frameleaf_buy_supporter_server_feature_accounts'),
                   $t('frameleaf_buy_supporter_server_feature_badge'),
-                  $t('frameleaf_buy_supporter_feature_lifetime'),
+                  $t('frameleaf_buy_supporter_server_feature_buddy'),
+                  $t('frameleaf_buy_supporter_server_feature_cloud_backup'),
+                  $t('frameleaf_buy_supporter_feature_discount', { values: { pct: offer.server } }),
                 ]
               : [
-                  $t('frameleaf_buy_supporter_individual_feature_account'),
                   $t('frameleaf_buy_supporter_individual_feature_badge'),
-                  $t('frameleaf_buy_supporter_feature_lifetime'),
+                  $t('frameleaf_buy_supporter_individual_feature_cloud_backup'),
+                  $t('frameleaf_buy_supporter_feature_discount', { values: { pct: offer.individual } }),
+                  $t('frameleaf_buy_supporter_individual_feature_account'),
                 ]}
             recommended={supporter.id === 'supporter-server'}
           >
@@ -504,6 +544,7 @@
           </BuyPlanCard>
         {/each}
       </div>
+      <p class="buy-note">{$t('frameleaf_buy_buddy_note')}</p>
     {/if}
 
     {#if !personal}

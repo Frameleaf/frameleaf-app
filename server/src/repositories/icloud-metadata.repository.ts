@@ -2,7 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
+import { randomUUID } from 'node:crypto';
 import { AssetLockReason, AssetVisibility } from 'src/enum.js';
+import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
 
@@ -66,7 +68,11 @@ export class ICloudMetadataRepository {
    * any assets it locks (FL-34) are added to `locked`, for the caller's follow-up once it commits.
    */
   async reconcile(connectionId: string, ownerId: string, assetId?: string, locked: string[] = []): Promise<boolean> {
-    return this.db.transaction().execute(async (db) => {
+    const committedLocks: string[] = [];
+    const complete = await this.db.transaction().execute(async (db) => {
+      // Owner FKs are acquired before asset rows, matching owner deletion's lock order.
+      const owner = await db.selectFrom('user').select('id').where('id', '=', ownerId).forKeyShare().executeTakeFirst();
+      if (!owner) return true;
       const connection =
         await sql`SELECT id FROM public.icloud_connection WHERE id=${connectionId}::uuid AND "ownerId"=${ownerId}::uuid AND state='connected' FOR UPDATE`.execute(
           db,
@@ -145,7 +151,21 @@ export class ICloudMetadataRepository {
         ) {
           if (candidate.previous?.applied.visibility === undefined) {
             // the lock also releases every cover, featured photo and face thumbnail it was (FL-53)
-            locked.push(...(await new AssetRepository(db).lock([candidate.assetId], AssetLockReason.Marked, null)));
+            const newlyLocked = await new AssetRepository(db).lock([candidate.assetId], AssetLockReason.Marked, null);
+            const effects = new AssetLocalEffectRepository(db);
+            for (let offset = 0; offset < newlyLocked.length; offset += 100) {
+              const lockedCascade = await AssetLocalEffectRepository.selectLockedAdmissions(
+                db,
+                newlyLocked.slice(offset, offset + 100),
+              );
+              await effects.append(db, ownerId, randomUUID(), {
+                origin: { kind: 'lock' },
+                assets: [],
+                stacks: [],
+                lockedCascade,
+              });
+            }
+            committedLocks.push(...newlyLocked);
             state.applied.visibility = AssetVisibility.Locked;
           } else {
             state.overridden.push('isHidden');
@@ -188,10 +208,11 @@ export class ICloudMetadataRepository {
       );
       return !(await this.candidate(db, connectionId, ownerId, assetId));
     });
+    locked.push(...committedLocks);
+    return complete;
   }
   /** Returns the ids of the assets it locked (FL-34). */
-  async afterExtraction(assetId: string, ownerId: string): Promise<string[]> {
-    const locked: string[] = [];
+  async afterExtraction(assetId: string, ownerId: string, locked: string[] = []): Promise<string[]> {
     const { rows } = await sql<{
       connectionId: string;
     }>`SELECT DISTINCT r."connectionId" FROM public.icloud_resource r

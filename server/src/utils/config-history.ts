@@ -143,6 +143,13 @@ const redact = (value: unknown): unknown => {
   if (Array.isArray(value)) {
     return value.map((item) => redact(item));
   }
+  if (isPlainObject(value)) {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([key]) => !isSecretPath(key))
+        .map(([key, item]) => [key, redact(item)]),
+    );
+  }
   return value;
 };
 

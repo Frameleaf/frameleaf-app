@@ -6,27 +6,19 @@ import { handleCancel } from './request';
 
 const sw = globalThis as unknown as ServiceWorkerGlobalScope;
 
-export const installMessageListener = () => {
-  sw.addEventListener('message', (event) => {
-    if (!event.data?.type) {
-      return;
-    }
-
-    switch (event.data.type) {
-      case 'cancel': {
-        const url = event.data.url ? new URL(event.data.url, globalThis.location.origin) : undefined;
-        if (!url) {
-          return;
-        }
-
-        const client = event.source;
-        if (!client) {
-          return;
-        }
-
-        handleCancel(url);
-        break;
-      }
-    }
-  });
+const handleMessage = (event: ExtendableMessageEvent) => {
+  if (!event.source || event.data?.type !== 'cancel' || typeof event.data.url !== 'string' || !event.data.url) {
+    return;
+  }
+  let url: URL;
+  try {
+    url = new URL(event.data.url, sw.location.origin);
+  } catch {
+    return;
+  }
+  if (url.origin === sw.location.origin) {
+    handleCancel(url);
+  }
 };
+
+export const installMessageListener = () => sw.addEventListener('message', handleMessage);

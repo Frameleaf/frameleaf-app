@@ -35,7 +35,7 @@ export const StudioEmbeddedSubtitleSealSchema = z
       TEXT_TRACKS[seal.container] === seal.codec &&
       !seal.source.zeroCue &&
       seal.source.cueCount > 0 &&
-      BigInt(seal.source.sizeInBytes) <= 1024n * 1024n,
+      Number(seal.source.sizeInBytes) <= 1024 * 1024,
   );
 export type StudioEmbeddedSubtitleSeal = z.infer<typeof StudioEmbeddedSubtitleSealSchema>;
 

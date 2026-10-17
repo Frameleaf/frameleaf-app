@@ -548,7 +548,7 @@ export class EdgeRelayService {
         created.on('close', () => close('the relay closed the connection'));
         created.on('error', (error: Error) => close(`the tunnel failed: ${error.message}`));
       });
-      server.on('stream', (stream, headers) => {
+      server.on('stream', (stream: ServerHttp2Stream, headers: IncomingHttpHeaders) => {
         stream.on('error', () => stream.destroy());
         const method = headers[':method'];
         if (method === 'CONNECT') {

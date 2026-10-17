@@ -16,7 +16,7 @@ import {
 } from 'src/dtos/icloud-sync.dto.js';
 import {
   AssetType,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   MediaOperationKind,
@@ -544,7 +544,7 @@ export class ICloudSyncService {
   /* Schedule and worker                                                 */
   /* ------------------------------------------------------------------ */
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   async onBootstrap(): Promise<void> {
     this.stopping = false;
     // The worker runs even when the connector is switched off, so a queued run ends honestly.
@@ -842,9 +842,16 @@ export class ICloudSyncService {
       this.logger.log(`iCloud sync run ${id} cancelled by its owner`);
       return false;
     }
-    if (written.pauseRequestedAt && (await this.operations.settlePause(id, claim.claimToken))) {
-      this.logger.log(`iCloud sync run ${id} paused by its owner`);
-      return false;
+    if (written.pauseRequestedAt) {
+      if (await this.operations.settlePause(id, claim.claimToken)) {
+        this.logger.log(`iCloud sync run ${id} paused by its owner`);
+        return false;
+      }
+      // A withdrawn pause can continue; cancellation or claim loss cannot.
+      if (!(await this.operations.heartbeat(id, claim.claimToken, ICLOUD_LEASE_MS, { requireActiveClaim: true }))) {
+        await this.acknowledgeCancel(claim, connectionId);
+        return false;
+      }
     }
     return true;
   }

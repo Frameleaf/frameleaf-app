@@ -6,7 +6,7 @@ import {
 } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
-  GIB,
+  GB,
   icloudAuthStep,
   icloudConsentNeeded,
   icloudDraft,
@@ -64,7 +64,7 @@ const connection = (overrides: Partial<ICloudConnectionResponseDto> = {}): IClou
     recoverExternalAsManaged: false,
     intervalHours: 24,
     concurrency: 1,
-    stagingBytes: 20 * GIB,
+    stagingBytes: 20 * GB,
   },
   ...overrides,
 });
@@ -141,7 +141,7 @@ describe('sync preferences', () => {
     const draft = icloudDraft(connection());
     expect(icloudDraftProblems(draft)).toEqual([]);
     expect(
-      icloudDraftProblems({ ...draft, label: ' ', intervalHours: '0', concurrency: '5', stagingGiB: '0.0001' }),
+      icloudDraftProblems({ ...draft, label: ' ', intervalHours: '0', concurrency: '5', stagingGb: '0.0001' }),
     ).toEqual(['label', 'interval', 'concurrency', 'staging']);
     expect(icloudDraftProblems({ ...draft, intervalHours: '1.5' })).toEqual(['interval']);
     expect(icloudDraftProblems({ ...draft, librariesAll: false, libraries: [] })).toEqual(['libraries']);
@@ -160,7 +160,7 @@ describe('sync preferences', () => {
   });
 
   it('keeps the exact staging bytes unless the budget was changed, and drops albums of unselected libraries', () => {
-    const current = connection({ config: { ...connection().config, stagingBytes: 20 * GIB + 7 } });
+    const current = connection({ config: { ...connection().config, stagingBytes: 20 * GB + 7 } });
     const draft = {
       ...icloudDraft(current),
       librariesAll: false,
@@ -174,10 +174,10 @@ describe('sync preferences', () => {
       ],
     };
     const update = icloudDraftUpdate(draft, current, inventory);
-    expect(update.config?.stagingBytes).toBe(20 * GIB + 7);
+    expect(update.config?.stagingBytes).toBe(20 * GB + 7);
     expect(update.config?.libraries).toEqual(['personal']);
     expect(update.config?.albums).toEqual(['personal:a']);
-    expect(icloudDraftUpdate({ ...draft, stagingGiB: '2' }, current).config?.stagingBytes).toBe(2 * GIB);
+    expect(icloudDraftUpdate({ ...draft, stagingGb: '2' }, current).config?.stagingBytes).toBe(2 * GB);
   });
 
   it('asks for consent only to what saving newly allows', () => {

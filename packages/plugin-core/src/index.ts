@@ -10,6 +10,12 @@ type MatchValueConfig = {
 
 const matchValueResult = (value: string, config: MatchValueConfig) => {
   const { pattern, matchType = 'contains', caseSensitive = false } = config;
+  if (matchType === 'regex') {
+    if (typeof value !== 'string' || typeof pattern !== 'string') {
+      throw new TypeError('Regular-expression inputs must be strings');
+    }
+    return { workflow: { continue: new RegExp(pattern, caseSensitive ? '' : 'i').test(value) } };
+  }
   const searchName = caseSensitive ? value : value.toLowerCase();
   const searchPattern = caseSensitive ? pattern : pattern.toLowerCase();
 
@@ -24,12 +30,6 @@ const matchValueResult = (value: string, config: MatchValueConfig) => {
 
     case 'startsWith': {
       return { workflow: { continue: searchName.startsWith(searchPattern) } };
-    }
-
-    case 'regex': {
-      const flags = caseSensitive ? '' : 'i';
-      const regex = new RegExp(searchPattern, flags);
-      return { workflow: { continue: regex.test(value) } };
     }
 
     default: {
@@ -182,21 +182,23 @@ const methods = wrapper<Manifest>({
   },
 
   assetTagFilter: ({ config, data }) => {
-    const assetTags = data.asset.tags.map((tag) => tag.id);
-
-    for (const tag of config.tags) {
-      if (assetTags.includes(tag)) {
-        if (config.matching === 'any') {
-          return { workflow: { continue: true } };
-        } else if (config.matching === 'none') {
-          return { workflow: { continue: false } };
-        }
-      } else if (config.matching === 'all') {
-        return { workflow: { continue: false } };
+    const tags = new Set(data.asset.tags.map((tag) => tag.id));
+    let continueWorkflow = true;
+    switch (config.matching) {
+      case 'any': {
+        continueWorkflow = config.tags.some((tag) => tags.has(tag));
+        break;
+      }
+      case 'all': {
+        continueWorkflow = config.tags.every((tag) => tags.has(tag));
+        break;
+      }
+      case 'none': {
+        continueWorkflow = !config.tags.some((tag) => tags.has(tag));
+        break;
       }
     }
-
-    return { workflow: { continue: config.matching !== 'any' } };
+    return { workflow: { continue: continueWorkflow } };
   },
 
   assetTypeFilter: ({ config, data }) => {

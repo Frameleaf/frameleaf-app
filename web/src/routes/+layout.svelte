@@ -28,18 +28,8 @@
   import { installSearchShortcuts } from '$lib/frameleaf/search-shortcuts';
   import { applyThemeColor } from '$lib/frameleaf/theme-color';
   import { viewerZoomTransition } from '$lib/frameleaf/viewer-zoom';
-  import frameleafLogoDarkUrl from '$lib/assets/frameleaf/frameleaf-logo-dark.svg?url';
-  import frameleafSymbolUrl from '$lib/assets/frameleaf/frameleaf-symbol.svg?url';
   import { getServerConfig } from '@frameleaf/sdk';
-  import {
-    logoManager,
-    modalManager,
-    setLocale,
-    setTranslations,
-    Theme,
-    themeManager,
-    TooltipProvider,
-  } from '@frameleaf/ui';
+  import { modalManager, setLocale, setTranslations, Theme, themeManager, TooltipProvider } from '@frameleaf/ui';
   import { En } from 'media-chrome/lang/en';
   import { addTranslation } from 'media-chrome/utils/i18n';
   import { onMount, type Snippet } from 'svelte';
@@ -67,18 +57,6 @@
   interface Props {
     children?: Snippet;
   }
-
-  // FL-135: app-owned marks render through $lib/components/frameleaf/Logo.svelte. This only swaps the
-  // mark @frameleaf/ui draws inside its own components (the Modal header icon, SupporterBadge) so no
-  // vendored Immich logo is shown. The kit ships no light-background wordmark, so light lockups
-  // fall back to the gradient symbol, mirroring Logo.svelte's rule.
-  const frameleafLockup = { light: frameleafSymbolUrl, dark: frameleafLogoDarkUrl };
-  logoManager.setLogo({
-    stacked: frameleafLockup,
-    unstacked: frameleafLockup,
-    stacked_futo: frameleafLockup,
-    icon: frameleafSymbolUrl,
-  });
 
   const MediaChromeDefaultKeys = [
     'Start airplay',

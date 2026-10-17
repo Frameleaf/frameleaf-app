@@ -27,6 +27,7 @@ export class GrantAdminCommand extends CommandRunner {
     } catch (error) {
       console.error(error);
       console.error('Unable to grant admin access to user');
+      process.exitCode = 1;
     }
   }
 }
@@ -51,6 +52,7 @@ export class RevokeAdminCommand extends CommandRunner {
     } catch (error) {
       console.error(error);
       console.error('Unable to revoke admin access from user');
+      process.exitCode = 1;
     }
   }
 }

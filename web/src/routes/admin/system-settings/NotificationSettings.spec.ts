@@ -19,6 +19,7 @@ import { goto } from '$app/navigation';
 import { SIGN_IN_POLL_MS } from '$lib/components/frameleaf/settings/notifications/mail-sign-in.svelte';
 import { confirmFrameleaf } from '$lib/frameleaf/confirm';
 import { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
+import { deferredPromise } from '@test-data/deferred';
 import en from '../../../../../i18n/en.json';
 import NotificationSettings from './NotificationSettings.svelte';
 
@@ -258,6 +259,29 @@ describe('Email delivery: signing in with Google or Microsoft (FL-379)', () => {
     });
   });
 
+  it.each([false, true])('saves only the SMTP draft actually tested (changed while waiting: %s)', async (changed) => {
+    const { store, save } = open(config({ host: 'smtp.example.com', username: 'sender@example.com' }, true), answer());
+    store.draft.notifications.smtp.replyTo = 'tested@example.com';
+    save.mockImplementation(async ({ config }) => ({ config, revision: 'r2' }));
+    const pending = deferredPromise<{ messageId: string }>();
+    vi.mocked(sendTestEmailAdmin).mockReturnValueOnce(pending.promise);
+    await fireEvent.click(button(en.frameleaf_notify_test_send));
+    await waitFor(() => expect(sendTestEmailAdmin).toHaveBeenCalled());
+    if (changed) {
+      store.draft.notifications.smtp.replyTo = 'later@example.com';
+    }
+    pending.resolve({ messageId: 'm1' });
+    await screen.findByText(/^Sent to taylor@example\.com at /);
+    if (changed) {
+      expect(save).not.toHaveBeenCalled();
+      expect(store.draft.notifications.smtp.replyTo).toBe('later@example.com');
+      expect(store.dirty).toBe(true);
+    } else {
+      await waitFor(() => expect(save).toHaveBeenCalledOnce());
+      expect(save.mock.calls[0][0].config.notifications.smtp.replyTo).toBe('tested@example.com');
+    }
+  });
+
   describe('signed in', () => {
     const signedIn = (connection = connected()) =>
       open(config({ type: connection.provider as unknown as MailTransportType }, true), answer({ connection }));
@@ -430,6 +454,64 @@ describe('Email delivery: signing in with Google or Microsoft (FL-379)', () => {
       await pick('Gmail');
       expect(await screen.findByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
       expect(within(tiles()).queryByRole('button', { name: /^Microsoft/ })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('who emails come from, and the emails themselves (ADMIN-P3)', () => {
+    const from = (saved: AdminConfigDto, sender: string) => {
+      saved.notifications.smtp.from = sender;
+      return saved;
+    };
+    const inboxRow = () => screen.getByText(en.frameleaf_notify_inbox).closest('.kit-row') as HTMLElement;
+
+    it('shows the sender as an inbox will, and changes only its name under Advanced', async () => {
+      const { store } = open(
+        from(
+          config({ host: 'mail.example.com', username: 'photos@example.com' }, true),
+          'Rivera photos <photos@example.com>',
+        ),
+        answer(),
+      );
+      await waitFor(() => expect(within(inboxRow()).getByText('Rivera photos')).toBeInTheDocument());
+      expect(within(inboxRow()).getByText('photos@example.com')).toBeInTheDocument();
+
+      await fireEvent.input(screen.getByRole('textbox', { name: en.frameleaf_notify_delivery_sender_name }), {
+        target: { value: 'Home archive' },
+      });
+      expect(store.draft.notifications.smtp.from).toBe('Home archive <photos@example.com>');
+      expect(within(inboxRow()).getByText('Home archive')).toBeInTheDocument();
+    });
+
+    it('shows the signed-in account’s own address when the saved sender names another', async () => {
+      open(
+        from(config({ type: MailTransportType.Gmail }, true), 'Rivera photos <photos@example.com>'),
+        answer({ connection: connected() }),
+      );
+      await screen.findByText('Signed in as');
+      expect(within(inboxRow()).getByText('rivera@gmail.com')).toBeInTheDocument();
+      expect(within(inboxRow()).queryByText('Rivera photos')).not.toBeInTheDocument();
+    });
+
+    it('changes the wording of one email in plain words and keeps it as the template the server renders', async () => {
+      const { store } = open(config({ host: 'mail.example.com' }, true), answer());
+      // The old template editor is gone.
+      expect(screen.queryByText('Email Templates')).not.toBeInTheDocument();
+
+      await fireEvent.click(
+        await screen.findByRole('button', { name: 'Edit the wording of the Welcome email', hidden: true }),
+      );
+      const dialog = await screen.findByRole('dialog', { name: 'Welcome email' });
+      const box = within(dialog).getByRole('textbox', { name: 'Welcome email wording' });
+      await fireEvent.input(box, { target: { value: 'Hello ' } });
+      await fireEvent.click(within(dialog).getByRole('button', { name: /Person’s name/ }));
+      expect(box).toHaveValue('Hello [Person’s name]');
+      expect(within(dialog).getByText('Hello Morgan')).toBeInTheDocument();
+
+      await fireEvent.click(within(dialog).getByRole('button', { name: 'Use this wording' }));
+      expect(store.draft.templates.email.welcomeTemplate).toBe('Hello {displayName}');
+      expect(
+        screen.getByText('Welcome email: your wording is ready. Save your changes to keep it.'),
+      ).toBeInTheDocument();
     });
   });
 

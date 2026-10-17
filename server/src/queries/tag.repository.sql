@@ -185,16 +185,45 @@ where
 rollback
 
 -- TagRepository.delete
+begin
+select
+  "id"
+from
+  "tag"
+where
+  "userId" = (
+    select
+      "moved"."userId"
+    from
+      "tag" as "moved"
+    where
+      "moved"."id" = $1
+  )
+order by
+  "id"
+for update
+select distinct
+  "tag_asset"."assetId"
+from
+  "tag_asset"
+  inner join "tag_closure" on "tag_closure"."id_descendant" = "tag_asset"."tagId"
+where
+  "tag_closure"."id_ancestor" = $1
 delete from "tag"
 where
   "id" = $1
+commit
 
 -- TagRepository.addAssetIds
+begin
 insert into
   "tag_asset" ("tagId", "assetId")
 values
   ($1, $2)
 on conflict do nothing
+returning
+  *
+rollback
 
 -- TagRepository.removeAssetIds
 delete from "tag_asset"
@@ -203,6 +232,7 @@ where
   and "assetId" in ($2)
 
 -- TagRepository.upsertAssetIds
+begin
 insert into
   "tag_asset" ("assetId", "tagIds")
 values
@@ -210,6 +240,7 @@ values
 on conflict do nothing
 returning
   *
+rollback
 
 -- TagRepository.removeAssetTagValues
 delete from "tag_asset"
@@ -231,9 +262,15 @@ delete from "tag_asset"
 where
   "assetId" = $1
 insert into
-  "tag_asset" ("tagId", "assetId")
-values
-  ($1, $2)
+  "tag_asset" ("assetId", "tagId")
+select
+  $1::uuid as "assetId",
+  unnest($2::uuid[]) as "tagId"
+from
+  (
+    select
+      1
+  ) as "dummy"
 on conflict do nothing
 returning
   *

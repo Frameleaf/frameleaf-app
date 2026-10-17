@@ -68,6 +68,34 @@ describe('People library page loading', () => {
   });
 });
 
+// DISCOVERY-P1/P3: the title, summary and controls share the page's one-row header, and Show hidden
+// is always offered, as in the prototype.
+describe('People library header', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
+    sdkMock.getMergeSuggestions.mockResolvedValue({ suggestions: [] });
+    sdkMock.getAssetStatistics.mockResolvedValue({ images: 0, videos: 0, total: 0 });
+  });
+
+  it('offers Show hidden with nobody hidden, and reveals hidden people when pressed', async () => {
+    const shown = peopleListItemFactory.build({ id: 'shown', name: 'Ada', isHidden: false });
+    const { container } = render(PeoplePage, { data: data([shown], false) });
+
+    const header = container.querySelector('.pl-header');
+    expect(header?.querySelector('h1')?.textContent).toBe('people');
+    const toggle = screen.getByRole('button', { name: 'frameleaf_people_show_hidden' });
+    expect(header?.contains(toggle)).toBe(true);
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+
+    await fireEvent.click(toggle);
+    expect(screen.getByRole('button', { name: 'frameleaf_people_hide_hidden' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+});
+
 // FL-57: the banner's answers go to the server as verdicts; "ignore" is about the reviewed person
 // alone, so every suggestion naming them leaves the queue.
 describe('People library merge suggestions', () => {

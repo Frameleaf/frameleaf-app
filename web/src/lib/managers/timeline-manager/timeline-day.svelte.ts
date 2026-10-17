@@ -186,7 +186,9 @@ export class TimelineDay {
     const manager = this.timelineMonth.timelineManager;
     const visibleWindow = manager.visibleWindow;
     if (this.viewerAssets.length === 0 || !this.viewerAssets[0].position) {
-      this.activeViewerAssets = [];
+      if (this.activeViewerAssets.length > 0) {
+        this.activeViewerAssets = [];
+      }
       this.isInOrNearViewport = false;
       return;
     }
@@ -200,7 +202,11 @@ export class TimelineDay {
     const last = lowerBound(this.viewerAssets, expandedBottom, (p) => p.top) - 1;
 
     const hasActive = last >= first && first < this.viewerAssets.length;
-    this.activeViewerAssets = hasActive ? this.viewerAssets.slice(first, last + 1) : [];
+    const active = this.activeViewerAssets;
+    const count = hasActive ? last - first + 1 : 0;
+    if (active.length !== count || active.some((asset, index) => asset !== this.viewerAssets[first + index])) {
+      this.activeViewerAssets = hasActive ? this.viewerAssets.slice(first, last + 1) : [];
+    }
     this.isInOrNearViewport = hasActive;
   }
 

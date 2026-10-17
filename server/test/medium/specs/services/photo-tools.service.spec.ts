@@ -12,6 +12,7 @@ import {
   AssetDevelopRevisionStatus,
   AssetDevelopSaveDto,
 } from 'src/dtos/asset-develop.dto.js';
+import { DEVELOP_PRESET_MAX } from 'src/dtos/photo-tools.dto.js';
 import { AssetType, AssetVisibility, ChecksumAlgorithm, JobName, JobStatus } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
@@ -127,14 +128,24 @@ const exists = (path: string) =>
     .then(() => true)
     .catch(() => false);
 
+let previousMediaLocation: string | undefined;
+
 beforeAll(async () => {
   database = await getKyselyDB();
+  try {
+    previousMediaLocation = StorageCore.getMediaLocation();
+  } catch {
+    // no media location configured for this run
+  }
   root = await mkdtemp(join(tmpdir(), 'fl64-'));
   StorageCore.setMediaLocation(root);
   await mkdir(join(root, 'library'), { recursive: true });
 });
 
 afterAll(async () => {
+  if (previousMediaLocation !== undefined) {
+    StorageCore.setMediaLocation(previousMediaLocation);
+  }
   await rm(root, { recursive: true, force: true });
 });
 
@@ -556,5 +567,37 @@ describe('derivative privacy (FL-64)', () => {
     await expect(
       database.selectFrom('develop_preset').select('id').where('ownerId', '=', user.id).execute(),
     ).resolves.toEqual([]);
+  });
+
+  it('admits only one concurrent preset at the owner cap and leaves another owner independent', async () => {
+    const { ctx, presets } = setup();
+    const { user } = await ctx.newUser();
+    const { user: other } = await ctx.newUser();
+    await database
+      .insertInto('develop_preset')
+      .values(
+        Array.from({ length: DEVELOP_PRESET_MAX - 1 }, (_, i) => ({
+          ownerId: user.id,
+          name: `preset-${i}`,
+          settings: {},
+        })),
+      )
+      .execute();
+    const mine = factory.auth({ user });
+    const results = await Promise.allSettled(
+      ['first', 'second'].map((name) => presets.createPreset(mine, { name, settings: {} as never })),
+    );
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.filter((result) => result.status === 'rejected');
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toBeInstanceOf(BadRequestException);
+    expect(await new PhotoToolsRepository(database).countPresets(user.id)).toBe(DEVELOP_PRESET_MAX);
+    await expect(
+      presets.createPreset(factory.auth({ user: other }), {
+        name: 'first',
+        settings: {} as never,
+      }),
+    ).resolves.toMatchObject({ name: 'first' });
+    expect(await new PhotoToolsRepository(database).countPresets(other.id)).toBe(1);
   });
 });

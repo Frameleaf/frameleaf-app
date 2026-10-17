@@ -10,7 +10,7 @@ export class StackFactory {
   #primaryAsset: AssetFactory;
 
   private constructor(private readonly value: Selectable<StackTable>) {
-    this.#primaryAsset = AssetFactory.from();
+    this.#primaryAsset = AssetFactory.from({ id: value.primaryAssetId });
     this.value.primaryAssetId = this.#primaryAsset.build().id;
   }
 

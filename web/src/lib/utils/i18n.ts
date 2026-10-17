@@ -31,19 +31,22 @@ export const convertBCP47 = (code: string) => code.replaceAll('_', '-');
 
 export const langCodes = fileCodes.map((code) => convertBCP47(code));
 
-// https://github.com/kaisermann/svelte-i18n/blob/780932a3e1270d521d348aac8ba03be9df309f04/src/runtime/stores/locale.ts#L11
-const getSubLocales = (locale: string) => {
-  return convertBCP47(locale)
-    .split('-')
-    .map((_, i, arr) => arr.slice(0, i + 1).join('-'))
-    .reverse();
-};
-
 export const getClosestAvailableLocale = (locales: readonly string[], allLocales: readonly string[]) => {
   const allLocalesSet = new Set(allLocales.map((locale) => convertBCP47(locale)));
-  return locales
-    .map((locale) => aliases[locale] ?? locale)
-    .find((locale) => getSubLocales(locale).some((subLocale) => allLocalesSet.has(subLocale)));
+  const requestedLocales = locales.map((locale) => aliases[locale] ?? locale);
+  for (const locale of requestedLocales) {
+    let candidate = convertBCP47(locale);
+    for (;;) {
+      if (allLocalesSet.has(candidate)) {
+        return locale;
+      }
+      const separator = candidate.lastIndexOf('-');
+      if (separator === -1) {
+        break;
+      }
+      candidate = candidate.slice(0, separator);
+    }
+  }
 };
 
 export const getPreferredLocale = () => getClosestAvailableLocale(navigator.languages, langCodes);

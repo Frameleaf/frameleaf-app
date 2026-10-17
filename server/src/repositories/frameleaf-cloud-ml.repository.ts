@@ -389,9 +389,14 @@ export class FrameleafCloudMlRepository {
         }
         this.checkStorageAddress(gateway, part.url);
         const body = Buffer.alloc(part.bytes);
-        const { bytesRead } = await handle.read(body, 0, part.bytes, start);
-        if (bytesRead !== part.bytes) {
-          throw new CloudTransferError('input-changed', `The prepared input ${target.inputId} ended early`);
+        let read = 0;
+        while (read < part.bytes) {
+          if (signal?.aborted) throw new CloudTransferError('stopped', 'The upload was stopped');
+          const { bytesRead } = await handle.read(body, read, part.bytes - read, start + read);
+          if (bytesRead === 0) {
+            throw new CloudTransferError('input-changed', `The prepared input ${target.inputId} ended early`);
+          }
+          read += bytesRead;
         }
         const response = await this.storageSend(part.url, 'PUT', target.headers, body, signal);
         const etag = response.headers.get('etag');
@@ -453,7 +458,7 @@ export class FrameleafCloudMlRepository {
           throw new CloudTransferError('sha256-mismatch', `Output ${output.outputId} is larger than its record`);
         }
         hash.update(chunk);
-        await handle.write(chunk);
+        await handle.writeFile(chunk);
       }
       if (bytes !== output.bytes || hash.digest('hex') !== output.sha256) {
         throw new CloudTransferError('sha256-mismatch', `Output ${output.outputId} does not match its SHA-256`);

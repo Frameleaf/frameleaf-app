@@ -57,6 +57,32 @@ describe(ClassificationService.name, () => {
   });
 
   describe('createRule', () => {
+    it.each(['insert response', 'readback'] as const)(
+      'never deletes a committed rule after a failed %s',
+      async (phase) => {
+        const auth = factory.auth();
+        const albumId = newUuid();
+        const rule = ruleOf({ albumId, ownerId: auth.user.id });
+        const failure = new Error('connection lost');
+        Object.assign(sut, { _albumService: { create: vi.fn().mockResolvedValue({ id: albumId }) } });
+        mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-1']));
+        if (phase === 'insert response') mocks.classification.createRule.mockRejectedValueOnce(failure);
+        else mocks.classification.createRule.mockResolvedValueOnce(rule as never);
+        mocks.classification.getRule.mockRejectedValue(failure);
+        await expect(
+          sut.createRule(auth, {
+            ...criteria,
+            tagIds: ['tag-1'],
+            albumName: 'Lake',
+            archive: false,
+            enabled: true,
+          }),
+        ).rejects.toBe(failure);
+        expect(mocks.album.delete).not.toHaveBeenCalled();
+        expect(mocks.album.deleteFailedClassificationAlbum).toHaveBeenCalledExactlyOnceWith(albumId, auth.user.id);
+      },
+    );
+
     it('refuses a rule with nothing to match, so it can never sweep the whole library', async () => {
       const auth = factory.auth();
       await expect(

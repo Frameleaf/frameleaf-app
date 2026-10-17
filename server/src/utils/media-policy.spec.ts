@@ -23,8 +23,10 @@ import {
   applyEditedMasterPixelFormatPolicy,
   assertOriginalPreserved,
   assertRenderSourceIsOriginal,
+  audioFrameSeconds,
   buildEditedMasterLineage,
   computeRecipeRevision,
+  findAvAlignmentMismatch,
   getDeliveryAudioChannelArgs,
   getEditedMasterColorArgs,
   getEditedMasterColorRange,
@@ -40,6 +42,7 @@ import {
   validateAudioMaster,
   validateFullClipMasterTiming,
   validateVideoMaster,
+  videoFrameSeconds,
 } from 'src/utils/media-policy.js';
 import { FRAME_RATE_NTSC_30 } from 'src/utils/rational-time.js';
 import { OutputCadenceMode } from 'src/utils/video-timing.js';
@@ -851,5 +854,56 @@ describe('validateAudioMaster (FL-102)', () => {
   it('leaves a muted recipe and a silent source alone', () => {
     expect(check(layouts.stereo, undefined, { muted: true })).not.toThrow();
     expect(check(undefined, undefined)).not.toThrow();
+  });
+});
+
+describe('A/V measurement boundaries', () => {
+  const video = { duration: 10, frameRate: 30, frameRateRational: null };
+  const audio = { duration: 10, codecName: 'aac', sampleRate: 48_000 };
+
+  it.each([NaN, Infinity, -Infinity, -1])('refuses equal invalid stream durations %s', (duration) => {
+    expect(findAvAlignmentMismatch({ ...video, duration }, { ...audio, duration })).toContain('could not be measured');
+    expect(() =>
+      validateAudioMaster({
+        source: audio,
+        output: { ...audio, duration },
+        outputVideo: { ...video, duration },
+      }),
+    ).toThrowError(MediaPolicyError);
+  });
+
+  it.each(['constructor', '__proto__'])('uses the unknown-codec allowance for %s', (codecName) => {
+    expect(audioFrameSeconds({ ...audio, codecName })).toBe(4608 / 48_000);
+    expect(findAvAlignmentMismatch(video, { ...audio, codecName, duration: 11 })).toContain('drift apart');
+  });
+
+  it.each([Infinity, 0.5, Number.MIN_VALUE])(
+    'does not derive an audio frame from invalid sample rate %s',
+    (sampleRate) => {
+      expect(audioFrameSeconds({ ...audio, sampleRate })).toBeNull();
+      expect(findAvAlignmentMismatch(video, { ...audio, sampleRate, duration: 11 })).toContain('drift apart');
+    },
+  );
+
+  it.each([
+    { num: 1, den: Infinity },
+    { num: 0.1, den: 1 },
+  ])('does not derive a video frame from an invalid exact cadence %j', (frameRateRational) => {
+    const invalid = { ...video, frameRate: null, frameRateRational };
+    expect(videoFrameSeconds(invalid)).toBeNull();
+    expect(findAvAlignmentMismatch(invalid, { ...audio, duration: 11 })).toContain('drift apart');
+  });
+
+  it.each([Infinity, Number.MIN_VALUE])('refuses a non-finite frame allowance from fallback rate %s', (frameRate) => {
+    const invalid = { ...video, frameRate };
+    expect(videoFrameSeconds(invalid)).toBeNull();
+    expect(findAvAlignmentMismatch(invalid, { ...audio, duration: 11 })).toContain('drift apart');
+  });
+
+  it('keeps valid duration, PCM, unknown-codec and cadence fallback behavior', () => {
+    expect(findAvAlignmentMismatch(video, { ...audio, duration: 10.05 })).toBeNull();
+    expect(audioFrameSeconds({ ...audio, codecName: 'pcm_s24le' })).toBe(1 / 48_000);
+    expect(audioFrameSeconds({ ...audio, codecName: 'unknown' })).toBe(4608 / 48_000);
+    expect(videoFrameSeconds({ ...video, frameRateRational: { num: 0, den: 1 } })).toBe(1 / 30);
   });
 });

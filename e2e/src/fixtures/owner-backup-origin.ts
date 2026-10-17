@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { once } from 'node:events';
 import { createReadStream } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:https';
 import type { AddressInfo } from 'node:net';
+import { pipeline } from 'node:stream/promises';
 
 /** Owned TLS provider fixture: plaintext bytes + SSE-C header echo, not provider encryption certification. */
 export class OwnerBackupOrigin {
@@ -99,17 +99,20 @@ export class OwnerBackupOrigin {
         }
         if (file) {
           res.setHeader('content-length', file.size);
-          let first = true;
-          for await (const chunk of createReadStream(file.path)) {
-            if (!res.write(chunk)) {
-              await once(res, 'drain');
-            }
-            if (first && hook) {
-              await hook.run();
-            }
-            first = false;
-          }
-          res.end();
+          await pipeline(
+            createReadStream(file.path),
+            async function* (source) {
+              let first = true;
+              for await (const chunk of source) {
+                yield chunk;
+                if (first && hook) {
+                  await hook.run();
+                }
+                first = false;
+              }
+            },
+            res,
+          );
           return;
         }
         // A real chunk reaches the app before the normal-API/DB fixture interleave. No app response interception.
@@ -119,6 +122,9 @@ export class OwnerBackupOrigin {
         }
         res.end(body!.subarray(1));
       } catch (error) {
+        if (res.destroyed && (error as NodeJS.ErrnoException).code === 'ERR_STREAM_PREMATURE_CLOSE') {
+          return;
+        }
         this.errors.push(error);
         if (res.headersSent) {
           res.destroy();

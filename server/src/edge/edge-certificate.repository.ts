@@ -157,8 +157,9 @@ export class EdgeCertificateRepository {
         }
         // for DNS-01 this is already the record value: base64url SHA-256 of the key authorization
         const value = await client.getChallengeKeyAuthorization(challenge);
-        await request.setChallenge(value);
+        // The TXT write may commit before its acknowledgement fails.
         published.push(value);
+        await request.setChallenge(value);
         pending.push(challenge);
       }
       for (const challenge of pending) {
@@ -172,10 +173,12 @@ export class EdgeCertificateRepository {
       return { certificate, key, accountUrl };
     } finally {
       for (const value of published) {
-        await request.removeChallenge(value).catch((error: unknown) => {
+        try {
+          await request.removeChallenge(value);
+        } catch (error) {
           // the cloud removes challenge values on its own after an hour
           this.logger.warn(`A certificate challenge record could not be removed: ${error}`);
-        });
+        }
       }
     }
   }

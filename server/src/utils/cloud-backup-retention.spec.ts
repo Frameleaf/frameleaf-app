@@ -55,6 +55,20 @@ describe('cloud backup retention (FL-164)', () => {
     });
   });
 
+  it.each(['20260230T030000', '20260229T030000', '20260431T030000', '20260926T240000'])(
+    'refuses a normalized calendar timestamp %s in either manifest format',
+    (timestamp) => {
+      expect(manifestTime(`m/${timestamp}Z.json.gz`)).toBeNull();
+      expect(manifestTime(`m/v1/f0000000-0000-4000-8000-000000000001/1/${timestamp}Z.json.gz`)).toBeNull();
+    },
+  );
+  it('keeps valid leap days and valid client-format manifest times', () => {
+    expect(manifestTime('m/20240229T030000Z.json.gz')).toEqual(new Date('2024-02-29T03:00:00.000Z'));
+    expect(manifestTime('m/v1/f0000000-0000-4000-8000-000000000001/1/20260926T030000Z.json.gz')).toEqual(
+      new Date('2026-09-26T03:00:00.000Z'),
+    );
+  });
+
   describe(retentionPlan.name, () => {
     it('keeps 7 daily, 4 weekly and 12 monthly runs and removes the rest', () => {
       const manifests = nightly(400);
@@ -263,6 +277,24 @@ describe('cloud backup retention (FL-164)', () => {
       );
       expect(manifest.assets['asset-1'].details).toBeUndefined();
       expect(manifest.albums).toEqual({});
+    });
+
+    it.each(['assets', 'profiles'])('refuses an array in the %s record', (field) => {
+      expect(() => readManifest(manifestBody({ [field]: [] }))).toThrow();
+    });
+    it.each([1, 2, 3])('keeps a valid empty version %d manifest', (version) => {
+      const manifest = readManifest(
+        manifestBody({
+          version,
+          instanceId: 'f0000000-0000-4000-8000-000000000001',
+          assets: {},
+          profiles: {},
+          database: null,
+        }),
+      );
+      expect(manifest.assets).toEqual({});
+      expect(manifest.profiles).toEqual({});
+      expect(manifest.version).toBe(version);
     });
 
     it('refuses anything it could not read in full', () => {

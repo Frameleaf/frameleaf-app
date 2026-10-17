@@ -10,7 +10,9 @@ import {
   searchAssetStatistics,
   searchFacets,
   SearchFacetField,
+  searchMemories,
 } from '@frameleaf/sdk';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { load } from './+page';
 
 vi.mock('@frameleaf/sdk', async (original) => {
@@ -32,18 +34,15 @@ vi.mock('@frameleaf/sdk', async (original) => {
     })),
     searchAssets: vi.fn(async () => ({ assets: { items: [] }, albums: { items: [] } })),
     getVisitedLandmarks: vi.fn(async () => []),
+    searchMemories: vi.fn(async () => []),
+    memoriesStatistics: vi.fn(async () => ({ total: 0 })),
   };
 });
-vi.mock('$lib/managers/memory-manager.svelte', () => ({
-  memoryManager: {
-    setFilters: () => {},
-    applyPreferences: async () => {},
-    refresh: async () => {},
-    memories: [],
-  },
-}));
 vi.mock('$lib/utils/auth', () => ({ authenticate: vi.fn() }));
-vi.mock('$lib/utils/i18n', () => ({ getFormatter: async () => (key: string) => key }));
+vi.mock('$lib/utils/i18n', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/i18n')>()),
+  getFormatter: async () => (key: string) => key,
+}));
 
 const open = () => load({ url: new URL('https://example.test/explore') } as never);
 
@@ -53,7 +52,10 @@ const open = () => load({ url: new URL('https://example.test/explore') } as neve
  * visibility, so archived, Locked and Live Photo video parts are never counted or covered.
  */
 describe('the Explore loader', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    eventManager.emit('AuthLogout');
+  });
 
   it('counts and covers People, Places and Things with Timeline visibility, in one request', async () => {
     const data = await open();
@@ -156,4 +158,13 @@ describe('the Explore loader', () => {
       visibility: AssetVisibility.Timeline,
     });
   });
+});
+
+it('loads memories once using the current preferences instead of superseded filters and another page', async () => {
+  vi.clearAllMocks();
+  eventManager.emit('AuthLogout');
+  const data = await open();
+  expect(data.failed.memories).toBe(false);
+  expect(searchMemories).toHaveBeenCalledOnce();
+  expect(vi.mocked(searchMemories).mock.calls[0][0]).toMatchObject({ page: 1 });
 });

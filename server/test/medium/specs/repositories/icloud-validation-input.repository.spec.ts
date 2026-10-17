@@ -45,6 +45,7 @@ import {
   validationInputScope,
   validationInputsScope,
 } from 'src/utils/icloud-private-copy.js';
+import { scheduledAuditClaimHolder } from 'src/utils/icloud-weekly.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -221,11 +222,15 @@ describe('scheduled validation input durable accounting baseline', () => {
     };
     await sql`UPDATE public.media_operation SET status='rendering',"claimToken"=${authority.operationClaimToken}::uuid,
       "claimExpiresAt"=clock_timestamp()+interval '1 hour' WHERE id=${operation.id}::uuid`.execute(db);
-    const [claim] = await identities.claim(user.id, [source.sourceAssetId], `icloud-sync:audit:${operation.id}`, 1800);
-    if (!claim || claim.holder !== `icloud-sync:audit:${operation.id}`) throw new Error('fixture_audit_claim_missing');
+    const holder = scheduledAuditClaimHolder(user.id, authority);
+    const [claim] = await identities.claim(user.id, [source.sourceAssetId], holder, 1800);
+    if (!claim || claim.holder !== holder) throw new Error('fixture_audit_claim_missing');
     // Scoped reversible seals stand in for transport cryptography, never repository admission.
     const seals = new Map<string, { scope: string; payload: string }>();
     const transport = {
+      withSessionCrypto<T>(action: () => Promise<T>) {
+        return action();
+      },
       encodeSession(scope: string, payload: unknown) {
         const seal = randomUUID();
         seals.set(seal, { scope, payload: canonicalJson(payload) });
@@ -447,7 +452,7 @@ describe('scheduled validation input durable accounting baseline', () => {
           const [claim] = await new ICloudIdentityRepository(db).claim(
             input.ownerId,
             [NAME],
-            `icloud-sync:audit:${authority.operationId}`,
+            scheduledAuditClaimHolder(input.ownerId, authority),
             1800,
           );
           expect(claim.id).not.toBe(oldWork.payload.itemClaimId);
@@ -881,6 +886,27 @@ describe('scheduled validation input durable accounting baseline', () => {
     expect(settled).toBeDefined();
     return { settled, token, payload: settled.payload.current.payload };
   }
+
+  it.each(['legacy', 'another-incarnation'] as const)(
+    'retains settled input bytes and charge for a live %s item holder',
+    async (kind) => {
+      const f = await settledPlan();
+      const { settled, token, payload } = await settleInput(f);
+      const holder =
+        kind === 'legacy'
+          ? `icloud-sync:audit:${payload.operationId}`
+          : scheduledAuditClaimHolder(payload.ownerId, { ...payload, operationClaimToken: randomUUID() });
+      await sql`UPDATE public.icloud_claim SET holder=${holder} WHERE id=${payload.itemClaimId}::uuid`.execute(db);
+      expect(await f.staging.disposeValidationInput(f.input, settled)).toBe(false);
+      expect(await f.staging.validationInputs(f.input)).toEqual(settled);
+      expect(Number((await f.sync.resource(f.input.resource.id))?.reservedBytes)).toBe(20);
+      expect(await readFile(payload.inputPath)).toEqual(f.bytes);
+      await sql`UPDATE public.icloud_claim SET holder=${scheduledAuditClaimHolder(payload.ownerId, payload)}
+        WHERE id=${payload.itemClaimId}::uuid`.execute(db);
+      expect(await f.staging.disposeValidationInput(f.input, settled)).toBe(true);
+      await f.staging.finishPrivateWork(f.input, token);
+    },
+  );
 
   it('disposes only the settled input charge and acknowledges retained replay without touching a successor', async () => {
     const f = await settledPlan();

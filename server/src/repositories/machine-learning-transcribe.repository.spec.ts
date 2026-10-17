@@ -121,6 +121,23 @@ describe('MachineLearningRepository.transcribe', () => {
     ).rejects.toThrow();
   });
 
+  it.each([64 * 1024, 1024 * 1024])(
+    'refuses oversized complete lines with %i-byte chunks before delivery',
+    async (chunk) => {
+      const oversized = {
+        ...segment(0, 'one'),
+        words: Array.from({ length: 600 }, () => ({ start: 0, end: 1, text: 'a'.repeat(512) })),
+      };
+      const onSegment = vi.fn();
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamed(ndjson(info, oversized, { type: 'done' }), chunk)));
+      await expect(
+        sut.transcribe(selection, wavPath, { language: null }, new AbortController().signal, onSegment),
+      ).rejects.toThrow('A transcript line is too long');
+      expect(onSegment).not.toHaveBeenCalled();
+      expect(selection.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ outcome: 'failure' }));
+    },
+  );
+
   it('never sends to Frameleaf Cloud', async () => {
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);

@@ -74,7 +74,11 @@ export const holdPendingLinkCode = (code: string): boolean => {
     return false;
   }
   try {
-    storage()?.setItem(PENDING_LINK_CODE, code);
+    const store = storage();
+    if (!store) {
+      return false;
+    }
+    store.setItem(PENDING_LINK_CODE, code);
     return true;
   } catch {
     return false;

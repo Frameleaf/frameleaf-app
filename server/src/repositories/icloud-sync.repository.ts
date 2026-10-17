@@ -802,7 +802,7 @@ export class ICloudSyncRepository {
     ownerId: string,
     cleanup: (resources: ICloudResource[]) => Promise<void>,
   ): Promise<ICloudRemoveResult> {
-    return this.active(async (db): Promise<ICloudRemoveResult> => {
+    const removeConnection = async (db: Kysely<DB>): Promise<ICloudRemoveResult> => {
       const connection = await sql<ICloudConnection>`SELECT * FROM public.icloud_connection
         WHERE id = ${id}::uuid AND "ownerId" = ${ownerId}::uuid FOR UPDATE`
         .execute(db)
@@ -838,7 +838,8 @@ export class ICloudSyncRepository {
         db,
       );
       return 'removed';
-    });
+    };
+    return this.staging.withCryptography(() => this.active(removeConnection));
   }
   /**
    * Reconciliation findings for the owner (FL-68), newest first: items that need review, failed or

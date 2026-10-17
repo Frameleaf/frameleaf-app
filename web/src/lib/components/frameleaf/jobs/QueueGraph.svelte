@@ -38,7 +38,6 @@
         items[2].push(statistics.active);
         items[3].push(statistics.waiting + statistics.paused);
       } else {
-        items[0].push(timestamp);
         items[1].push(null);
         items[2].push(null);
         items[3].push(null);

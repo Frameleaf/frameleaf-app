@@ -1,5 +1,5 @@
 import { redirect } from '@sveltejs/kit';
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import { Route } from '$lib/route';
 import { authenticate } from '$lib/utils/auth';
 import type { PageLoad } from './$types';

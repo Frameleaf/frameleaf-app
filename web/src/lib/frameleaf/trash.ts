@@ -106,11 +106,18 @@ export const mergeTrashPage = (
   page: readonly TrashItemResponseDto[],
   replace: boolean,
 ) => {
-  if (replace) {
-    return [...page];
-  }
-  const seen = new Set(rows.map((row) => row.id));
-  return [...rows, ...page.filter((row) => !seen.has(row.id))];
+  const current = replace ? [] : rows;
+  const seen = new Set(current.map((row) => row.id));
+  return [
+    ...current,
+    ...page.filter((row) => {
+      if (seen.has(row.id)) {
+        return false;
+      }
+      seen.add(row.id);
+      return true;
+    }),
+  ];
 };
 
 /** "And 4 more" after the listed names, or null when every name is listed. */

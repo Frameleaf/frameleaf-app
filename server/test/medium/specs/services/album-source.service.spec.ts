@@ -169,6 +169,43 @@ describe(AlbumSourceService.name, () => {
   });
 
   describe('resolve', () => {
+    it('keeps source links and later source renames away from partner album copies', async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const { album: original } = await ctx.newAlbum({ ownerId: alice.id, albumName: 'Family' });
+      const { album: copy } = await ctx.newAlbum({ ownerId: bob.id, albumName: 'Family' });
+      const origins = ctx.get(PartnerOriginRepository);
+      await origins.createOrigin('album', {
+        id: copy.id,
+        sourceId: original.id,
+        ownerId: bob.id,
+        rootOwnerId: alice.id,
+        partnerSharedById: alice.id,
+      });
+      const auth = factory.auth({ user: bob });
+
+      const { links } = await sut.resolve(auth, { sources: [source('partner-name', 'Family')] });
+
+      expect(links[0].outcome).toBe('created');
+      expect(links[0].albumId).not.toBe(copy.id);
+      expect(await origins.getOrigin('album', links[0].albumId)).toBeUndefined();
+      await expect(sut.update(auth, links[0].id, { name: 'Phone family' })).resolves.toMatchObject({
+        albumName: 'Phone family',
+        renamed: true,
+      });
+      expect(
+        (
+          await defaultDatabase
+            .selectFrom('album')
+            .select('albumName')
+            .where('id', '=', copy.id)
+            .executeTakeFirstOrThrow()
+        ).albumName,
+      ).toBe('Family');
+      expect(await origins.getOrigin('album', copy.id)).toMatchObject({ following: true, overriddenFields: [] });
+    });
+
     it('creates one album per new source and reuses the link afterwards', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();

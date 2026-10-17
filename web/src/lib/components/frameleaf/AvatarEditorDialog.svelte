@@ -185,26 +185,46 @@
       return;
     }
     saving = true;
+    const isCurrent = authManager.captureSession();
     try {
       if (mode === 'color') {
         if (user.profileImagePath !== '') {
           await deleteProfileImage();
+          if (!isCurrent()) {
+            return;
+          }
         }
-        authManager.setUser(await updateMyUser({ userUpdateMeDto: { avatarColor: color } }));
+        const updated = await updateMyUser({ userUpdateMeDto: { avatarColor: color } });
+        if (!isCurrent()) {
+          return;
+        }
+        authManager.setUser(updated);
       } else if (selected && image) {
         const unchanged = selected.id === 'current' && zoom === 1 && offset.x === 0 && offset.y === 0;
         if (!unchanged) {
           const blob = await renderCrop(image);
+          if (!isCurrent()) {
+            return;
+          }
           const file = new File([blob], 'profile-picture.png', { type: 'image/png' });
           await createProfileImage({
             createProfileImageDto: selected.assetId ? { file, assetId: selected.assetId } : { file, keepSource: true },
           });
+          if (!isCurrent()) {
+            return;
+          }
           await authManager.refresh();
+          if (!isCurrent()) {
+            return;
+          }
         }
       }
       toastManager.primary($t('saved_profile'));
       open = false;
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       handleError(error, $t('errors.unable_to_save_profile'));
     } finally {
       saving = false;

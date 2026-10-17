@@ -5,13 +5,14 @@
   "type": "module",
   "main": "auth-server.ts",
   "scripts": {
-    "start": "tsx startup.ts"
+    "start": "tsx startup.ts",
+    "test": "node --test startup.test.mjs"
   },
   "devDependencies": {
-    "jose": "^6.0.0",
-    "@types/oidc-provider": "^9.0.0",
-    "oidc-provider": "^9.0.0",
-    "tsx": "^4.20.6"
+    "jose": "^6.2.12",
+    "@types/oidc-provider": "^9.12.1",
+    "oidc-provider": "^9.12.2",
+    "tsx": "^4.23.15"
   },
-  "packageManager": "pnpm@11.24.0"
+  "packageManager": "pnpm@12.11.2"
 }

@@ -63,7 +63,7 @@ it('destroys a timed-out query connection and retries the same proof after proto
     let startup = true;
     let pending = Buffer.alloc(0);
     socket.on('data', (bytes) => {
-      pending = Buffer.concat([pending, bytes]);
+      pending = Buffer.concat([pending, typeof bytes === 'string' ? Buffer.from(bytes) : bytes]);
       if (startup) {
         if (pending.length < 4 || pending.length < pending.readInt32BE(0)) return;
         pending = pending.subarray(pending.readInt32BE(0));

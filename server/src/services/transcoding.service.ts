@@ -17,7 +17,7 @@ import {
 } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { DatabaseLock, ImmichWorker, JobName, QueueName, TranscodeTarget } from 'src/enum.js';
+import { DatabaseLock, FrameleafWorker, JobName, QueueName, TranscodeTarget } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isVideoStreamSessionPkConstraint } from 'src/utils/database.js';
 import { BaseConfig } from 'src/utils/media.js';
@@ -25,6 +25,7 @@ import { BaseConfig } from 'src/utils/media.js';
 type Session = {
   assetId: string;
   expiresAt: Date;
+  leaseRenewal?: Promise<void>;
   id: string;
   lastActivityTime: Date;
   lastClientRequestedSegment: number | null;
@@ -45,13 +46,13 @@ export class TranscodingService extends BaseService {
   private videoInterfaces: VideoInterfaces = { dri: [], mali: false };
   private cleanupInterval: NodeJS.Timeout | null = null;
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   async onBootstrap() {
     const [videoInterfaces] = await Promise.all([this.storageCore.getVideoInterfaces(), this.removeExpiredSessions()]);
     this.videoInterfaces = videoInterfaces;
   }
 
-  @OnEvent({ name: 'AppShutdown', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppShutdown', workers: [FrameleafWorker.Microservices] })
   onShutdown() {
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
@@ -65,7 +66,7 @@ export class TranscodingService extends BaseService {
     return this.removeExpiredSessions();
   }
 
-  @OnEvent({ name: 'HlsSessionRequest', server: true, workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'HlsSessionRequest', server: true, workers: [FrameleafWorker.Microservices] })
   async onSessionRequest({ assetId, sessionId, ownerId }: ArgOf<'HlsSessionRequest'>) {
     try {
       const expiresAt = new Date(Date.now() + HLS_LEASE_DURATION_MS);
@@ -96,13 +97,14 @@ export class TranscodingService extends BaseService {
     }
   }
 
-  @OnEvent({ name: 'HlsSessionEnd', server: true, workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'HlsSessionEnd', server: true, workers: [FrameleafWorker.Microservices] })
   async onSessionEnd({ sessionId }: ArgOf<'HlsSessionEnd'>) {
     const session = this.sessions.get(sessionId);
     if (!session) {
       return;
     }
     this.sessions.delete(sessionId);
+    session.startToken++;
     if (this.cleanupInterval && this.sessions.size === 0) {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;
@@ -112,28 +114,41 @@ export class TranscodingService extends BaseService {
     await this.videoStreamRepository.deleteSession(sessionId);
   }
 
-  @OnEvent({ name: 'HlsHeartbeat', server: true, workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'HlsHeartbeat', server: true, workers: [FrameleafWorker.Microservices] })
   async onHeartbeat({ sessionId, segmentIndex }: ArgOf<'HlsHeartbeat'>) {
     const session = this.sessions.get(sessionId);
     if (!session) {
       return;
     }
 
-    session.lastActivityTime = new Date();
+    const now = new Date();
+    session.lastActivityTime = now;
 
     if (segmentIndex !== undefined) {
       session.lastClientRequestedSegment = segmentIndex;
       this.applyBackpressure(session);
     }
 
-    const remaining = session.expiresAt.getTime() - Date.now();
-    if (remaining < HLS_LEASE_DURATION_MS / 2) {
-      session.expiresAt = new Date(Date.now() + HLS_LEASE_DURATION_MS);
-      await this.videoStreamRepository.extendSession(sessionId, session.expiresAt);
+    if (session.leaseRenewal) {
+      return session.leaseRenewal;
+    }
+    if (session.expiresAt.getTime() - now.getTime() >= HLS_LEASE_DURATION_MS / 2) {
+      return;
+    }
+
+    const expiresAt = new Date(now.getTime() + HLS_LEASE_DURATION_MS);
+    const renewal = Promise.resolve(this.videoStreamRepository.extendSession(sessionId, expiresAt)).then(() => {
+      session.expiresAt = expiresAt;
+    });
+    session.leaseRenewal = renewal;
+    try {
+      await renewal;
+    } finally {
+      session.leaseRenewal = undefined;
     }
   }
 
-  @OnEvent({ name: 'HlsSegmentRequest', server: true, workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'HlsSegmentRequest', server: true, workers: [FrameleafWorker.Microservices] })
   async onSegmentRequest({ sessionId, variantIndex, segmentIndex }: ArgOf<'HlsSegmentRequest'>) {
     const session = this.sessions.get(sessionId);
     if (!session) {
@@ -319,7 +334,7 @@ export class TranscodingService extends BaseService {
       if (session.process !== process) {
         return;
       }
-      stderr += chunk.toString();
+      stderr = (stderr + chunk.toString()).slice(-65_536);
     });
 
     process.on('exit', (code) => {

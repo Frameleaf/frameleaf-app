@@ -1,10 +1,10 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
-import { get, isEqual, set } from 'lodash-es';
+import { get, isEqual, isNil, set } from 'lodash-es';
 import { createHash } from 'node:crypto';
 import { SAVED_SEARCH_MAX_COUNT, type UserPreferencesUpdateDto } from 'src/dtos/user-preferences.dto.js';
 import { AssetOrder, UserMetadataKey } from 'src/enum.js';
 import { DeepPartial, SavedSearch, UserMetadataItem, UserPreferences } from 'src/types.js';
-import { HumanReadableSize } from 'src/utils/bytes.js';
+import { DecimalSize } from 'src/utils/bytes.js';
 import { emptySuppressionPreferences } from 'src/utils/hidden-content.js';
 import { getKeysDeep } from 'src/utils/misc.js';
 import { canonicalJson } from 'src/utils/object.js';
@@ -129,13 +129,16 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
       enabled: true,
       sidebarWeb: true,
       minimumFaces: 3,
+      // ACCOUNT-P2, prototype `settings-v2/server/sharing.jsx`: "Suggest matching people in shared Spaces" off
+      suggestInSpaces: false,
     },
     sharedLinks: {
       enabled: true,
       sidebarWeb: true,
     },
+    // D6 (owner, 2026-10-16): star ratings are on by default.
     ratings: {
-      enabled: false,
+      enabled: true,
     },
     tags: {
       enabled: true,
@@ -147,8 +150,17 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
       albumUpdate: true,
     },
     download: {
-      archiveSize: HumanReadableSize.GiB * 4,
+      // D5: 4 GB is 4,000,000,000 bytes. An account that stored another size keeps it exactly.
+      archiveSize: DecimalSize.GB * 4,
       includeEmbeddedVideos: false,
+      // ACCOUNT-P5, prototype `preferences.jsx` Downloads: a details file beside each photo. There is no
+      // original-or-edited choice: a download is the version on screen (owner, 2026-10-16).
+      includeSidecar: true,
+    },
+    // ACCOUNT-P3, prototype `preferences.jsx` Look: the search screens leave archived photos out unless asked
+    // for. Applied by the client (it sends the visibility); search with no visibility is unchanged.
+    search: {
+      includeArchived: false,
     },
     purchase: {
       showSupportBadge: true,
@@ -184,11 +196,11 @@ export const getPreferencesPartial = (newPreferences: UserPreferences) => {
   const partial: DeepPartial<UserPreferences> = {};
   for (const property of getKeysDeep(defaultPreferences)) {
     const newValue = get(newPreferences, property);
-    const isEmpty = [undefined, null, ''].includes(newValue);
+    if (newValue === '' || isNil(newValue)) {
+      continue;
+    }
     const defaultValue = get(defaultPreferences, property);
-    const matchesDefault = newValue === defaultValue || isEqual(newValue, defaultValue);
-
-    if (isEmpty || matchesDefault) {
+    if (newValue === defaultValue || isEqual(newValue, defaultValue)) {
       continue;
     }
 

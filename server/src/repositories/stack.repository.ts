@@ -361,6 +361,55 @@ export class StackRepository {
     );
   }
 
+  async unstackSelection(
+    auth: AuthDto,
+    stackIds: string[],
+    assetIds: string[],
+    elevated: boolean,
+    capture?: (sequenced: boolean) => void,
+  ) {
+    const existing =
+      stackIds.length > 0
+        ? await this.db
+            .selectFrom('stack')
+            .select('id')
+            .where('id', 'in', stackIds)
+            .where('ownerId', '=', auth.user.id)
+            .execute()
+        : [];
+    const targets = existing.map((row) => row.id).sort();
+    if (targets.length === 0) return { deletedStackIds: [], unstackedAssetIds: [], lockedAssetIds: [] };
+    return this.authorityWrite(
+      auth.user.id,
+      [],
+      targets,
+      async (tx) => {
+        const members = await tx
+          .selectFrom('asset')
+          .select(['id', 'stackId'])
+          .select(isLocked().as('isLocked'))
+          .where('stackId', 'in', targets)
+          .execute();
+        const selected = new Set(assetIds);
+        const requested = new Set(members.filter((row) => selected.has(row.id)).map((row) => row.stackId!));
+        const blocked = new Set(elevated ? [] : members.filter((row) => row.isLocked).map((row) => row.stackId!));
+        const deletedStackIds = [...requested].filter((id) => !blocked.has(id));
+        if (deletedStackIds.length > 0) await tx.deleteFrom('stack').where('id', 'in', deletedStackIds).execute();
+        return {
+          deletedStackIds,
+          unstackedAssetIds: members
+            .filter((row) => selected.has(row.id) && !blocked.has(row.stackId!))
+            .map((row) => row.id),
+          lockedAssetIds: members
+            .filter((row) => selected.has(row.id) && blocked.has(row.stackId!))
+            .map((row) => row.id),
+        };
+      },
+      auth,
+      capture,
+    );
+  }
+
   async update(
     id: string,
     entity: Updateable<StackTable>,

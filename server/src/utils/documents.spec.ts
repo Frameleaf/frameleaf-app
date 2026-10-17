@@ -254,6 +254,40 @@ describe('suggestDocumentFields', () => {
     expect(suggestions.get(DocumentField.Total)?.map((item) => item.value)).toEqual(['$12.50', '11.30']);
   });
 
+  it.each(['1234.50', '$1234.50', '€12345,67', '123456.78', '£12345.00', '1,234.50', '1 234,50'])(
+    'preserves every digit and separator in the total %s',
+    (amount) => {
+      const suggestions = suggestDocumentFields([source('total', `Total ${amount}`, box(0.1, 0.1))]);
+      expect(suggestions.get(DocumentField.Total)).toEqual([
+        expect.objectContaining({ value: amount, lineId: 'total' }),
+      ]);
+    },
+  );
+
+  it('keeps the first five distinct candidates in reading order', () => {
+    const values = ['a', 'A', 'b', 'c', 'd', 'e', 'f'].map((name) => `${name}@example.test`);
+    const lines = values.map((text, index) => source(`line-${index}`, text, box(0.1, index / 10)));
+    const original = structuredClone(lines);
+    const suggestions = suggestDocumentFields(lines);
+    expect(suggestions.get(DocumentField.Email)?.map((item) => item.value)).toEqual([
+      'a@example.test',
+      'b@example.test',
+      'c@example.test',
+      'd@example.test',
+      'e@example.test',
+    ]);
+    expect(lines).toEqual(original);
+  });
+
+  it('preserves currency integer totals and ignores bare integer totals', () => {
+    expect(suggestDocumentFields([source('total', 'Total $1234', box(0.1, 0.1))]).get(DocumentField.Total)).toEqual([
+      expect.objectContaining({ value: '$1234' }),
+    ]);
+    expect(
+      suggestDocumentFields([source('total', `Total ${'9'.repeat(512)}`, box(0.1, 0.1))]).get(DocumentField.Total),
+    ).toBeUndefined();
+  });
+
   it('reads a total whose amount is a separate line on the same row', () => {
     const suggestions = suggestDocumentFields([
       source('label', 'TOTAL', box(0.1, 0.5, 0.2)),

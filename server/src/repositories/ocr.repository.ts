@@ -64,7 +64,6 @@ export class OcrRepository {
   async upsert(assetId: string, ocrDataList: Insertable<AssetOcrTable>[], searchText: string) {
     const adopt = async (db: Kysely<DB>) => {
       let query = db.with('deleted_ocr', (db) => db.deleteFrom('asset_ocr').where('assetId', '=', assetId));
-      // eslint-disable-next-line unicorn/prefer-ternary
       if (ocrDataList.length > 0) {
         (query as any) = query
           .with('inserted_ocr', (db) => db.insertInto('asset_ocr').values(ocrDataList))

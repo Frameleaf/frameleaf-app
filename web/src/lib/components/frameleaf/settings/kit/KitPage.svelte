@@ -27,6 +27,28 @@
     padding-bottom: var(--fl-space-8);
     color: var(--fl-text);
   }
+  /*
+   * A choice between a few settings values is the prototype's `.bk2-segmented` (backup-v2.css): a
+   * 12px track with the chosen value filled with the accent. The shared control keeps its quieter
+   * filter look everywhere else.
+   */
+  .kit-page :global(.segments) {
+    gap: var(--fl-space-1);
+    padding: var(--fl-space-1);
+    border-radius: var(--fl-radius-card);
+  }
+  .kit-page :global(.segments > button) {
+    padding-inline: var(--fl-space-3);
+    border-radius: var(--fl-radius-control);
+  }
+  .kit-page :global(.segments > button[aria-pressed='true']) {
+    color: var(--fl-accent-text);
+    background: var(--fl-accent);
+    box-shadow: none;
+  }
+  .kit-page :global(.segments > button[aria-pressed='true']:disabled) {
+    opacity: 0.6;
+  }
   @container kit (max-width: 620px) {
     /* The phone rhythm between sections. */
     .kit-page {

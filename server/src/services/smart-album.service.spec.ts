@@ -195,6 +195,26 @@ describe(SmartAlbumService.name, () => {
   });
 
   describe('evaluate (CLIP)', () => {
+    it.each(['malformed', '[]', '[0,0]', '[null]', '[1e999]'])(
+      'retries an invalid cached query result %s after the model recovers',
+      async (invalid) => {
+        mocks.systemMetadata.get.mockResolvedValue({
+          smartAlbums: { enabled: true, builtIn: { travel: { clipQueries: ['cache recovery'] } } },
+          machineLearning: { clip: { modelName: newUuid() } },
+        });
+        mocks.smartAlbum.getAllSmartAlbumIdsForOwner.mockResolvedValue(albumMap({ travel: travelAlbumId }));
+        mocks.search.getEmbedding.mockResolvedValue({ assetId, embedding: unitVector(0) } as never);
+        mocks.machineLearning.encodeText.mockResolvedValueOnce(invalid).mockResolvedValue(unitVector(0));
+
+        await sut.evaluate({ assetId, ownerId, tags: [] });
+        expect(mocks.smartAlbum.addAssetToSmartAlbum).not.toHaveBeenCalled();
+        await sut.evaluate({ assetId, ownerId, tags: [] });
+
+        expect(mocks.machineLearning.encodeText).toHaveBeenCalledTimes(2);
+        expect(mocks.smartAlbum.addAssetToSmartAlbum).toHaveBeenCalledExactlyOnceWith(travelAlbumId, assetId, 'clip');
+      },
+    );
+
     it('should add asset with source "clip" when similarity meets the threshold', async () => {
       withClipConfig(mocks, 'clip-model-match');
       mocks.smartAlbum.getAllSmartAlbumIdsForOwner.mockResolvedValue(albumMap({ travel: travelAlbumId }));

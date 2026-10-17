@@ -190,7 +190,7 @@ describe('AccountDetailTabs (FL-76)', () => {
       statistics,
       sessions: [],
       libraries: [],
-      physicalBytes: 1024,
+      physicalBytes: 1000,
       preferencesEditable: true,
       savePreferences: vi.fn(),
       loadPreferences: vi.fn(),
@@ -198,7 +198,7 @@ describe('AccountDetailTabs (FL-76)', () => {
 
     expect(screen.getByText(en.frameleaf_account_detail_originals_logical)).toBeInTheDocument();
     expect(screen.getByText(en.frameleaf_account_detail_originals_physical)).toBeInTheDocument();
-    expect(screen.getByText('1 KiB')).toBeInTheDocument();
+    expect(screen.getByText('1 KB')).toBeInTheDocument();
   });
 
   it.each([

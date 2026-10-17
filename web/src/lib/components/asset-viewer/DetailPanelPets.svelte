@@ -170,9 +170,9 @@
 </script>
 
 {#if available}
-  <section class="px-4 pt-4 text-sm" aria-labelledby="viewer-pets-heading" data-testid="viewer-pets">
-    <div class="flex h-10 w-full items-center justify-between">
-      <h3 id="viewer-pets-heading" class="text-sm text-immich-fg/70 dark:text-immich-dark-fg/70">
+  <section class="text-sm" aria-labelledby="viewer-pets-heading" data-testid="viewer-pets">
+    <div class="fl-info-heading-row">
+      <h3 id="viewer-pets-heading" class="fl-info-heading">
         {$t('frameleaf_viewer_pets')}
       </h3>
       {#if editable && pets.length > 0}

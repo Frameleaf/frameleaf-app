@@ -15,7 +15,7 @@ Automatic schema migration uses `public.frameleaf_migrations`. Do not rename or 
 
 ## Fresh canonical installations and source import
 
-Do not replace an Immich server image with Frameleaf while pointing it at the original Immich database. Create a separate, empty PostgreSQL 19 database and distinct media copies, then follow the [one-time offline import](../administration/import-immich.md). The importer reads supported stable Immich 3.x through 3.2.4, preserves content and access controls, and requires verification before activation.
+Do not replace an Immich server image with Frameleaf while pointing it at the original Immich database. Create a separate, empty PostgreSQL 19 database and distinct media copies, then follow the [one-time offline import](../administration/import-immich.md). The importer reads Immich 2.0 or later, preserves content and access controls, and requires verification before activation.
 
 An older PostgreSQL data directory cannot be opened merely by changing its image to PostgreSQL 19. Frameleaf has no in-place legacy vector-extension conversion or database handoff/return mode. A Frameleaf backup must contain the canonical ledger to be restored as a Frameleaf database.
 

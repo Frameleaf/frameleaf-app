@@ -1,5 +1,5 @@
 import { isHttpError, type ApiHttpError } from '@frameleaf/sdk';
-import type { HandleClientError } from '@sveltejs/kit';
+import type { HandleClientError } from '@sveltejs/kit/hooks';
 
 const DEFAULT_MESSAGE = 'Hmm, not sure about that. Check the logs or open a ticket?';
 
@@ -37,8 +37,12 @@ const parseError = (error: unknown, status: number, message: string) => {
   };
 };
 
-export const handleError: HandleClientError = ({ error, status, message }) => {
-  const result = parseError(error, status, message);
+export const handleError: HandleClientError = ({ error, kind }) => {
+  const result = parseError(
+    error,
+    kind === 'unknown' ? 500 : error.status,
+    kind === 'unknown' ? DEFAULT_MESSAGE : error.message,
+  );
   console.error(`[hooks.client.ts]:handleError ${result.message}`, error);
-  return result;
+  return { ...result, status: result.code };
 };

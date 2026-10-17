@@ -1,28 +1,47 @@
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function updateObject(target: any, source: any): boolean {
-  if (!target) {
+export function updateObject(target: unknown, source: unknown): boolean {
+  if (!target || typeof target !== 'object' || !source || typeof source !== 'object') {
     return false;
   }
+  const targetRecord = target as Record<string, unknown>;
+  const sourceRecord = source as Record<string, unknown>;
   let updated = false;
-  for (const key in source) {
-    if (!Object.prototype.hasOwnProperty.call(source, key)) {
+  for (const key in sourceRecord) {
+    if (!Object.hasOwn(sourceRecord, key) || key === '__proto__' || key === 'constructor') {
       continue;
     }
-    if (key === '__proto__' || key === 'constructor') {
+    const previous = targetRecord[key];
+    const value = sourceRecord[key];
+    if (previous === value) {
       continue;
     }
-    const isDate = target[key] instanceof Date;
-    if (typeof target[key] === 'object' && !isDate) {
-      updated ||= updateObject(target[key], source[key]);
-    } else {
-      if (target[key] !== source[key]) {
-        target[key] = source[key];
+    if (
+      Array.isArray(previous) &&
+      Array.isArray(value) &&
+      previous.length === value.length &&
+      previous.every((item, index) => item === value[index])
+    ) {
+      continue;
+    }
+    if (
+      previous &&
+      value &&
+      typeof previous === 'object' &&
+      typeof value === 'object' &&
+      !Array.isArray(previous) &&
+      !Array.isArray(value) &&
+      !(previous instanceof Date) &&
+      !(value instanceof Date)
+    ) {
+      if (updateObject(previous, value)) {
         updated = true;
       }
+    } else {
+      targetRecord[key] = value;
+      updated = true;
     }
   }
   return updated;
 }
 export function isMismatched<T>(option: T | undefined, value: T): boolean {
-  return option === undefined ? false : option !== value;
+  return option !== undefined && option !== value;
 }

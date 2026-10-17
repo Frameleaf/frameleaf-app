@@ -280,7 +280,9 @@ for (const name of ["auth-mobile.md", "protocols.md", "worker-wire-models.md"]) 
   const text = fs.readFileSync(path.join(out, name), "utf8");
   for (const [, ref, file] of text.matchAll(/https:\/\/github\.com\/Frameleaf\/frameleaf-app\/blob\/([^/]+)\/([^#)\s]+)(?:#[^)\s]*)?/g)) {
     assert.equal(ref, revision, "Protocol source revision drift: " + name);
-    inputs[file] = hash(fs.readFileSync(path.join(root, file), "utf8"));
+    // Historical permalinks keep the old namespace; hash the moved runtime source for drift checks.
+    const sourceFile = file.replace(/^machine-learning\/immich_ml\//, "machine-learning/frameleaf_ml/");
+    inputs[sourceFile] = hash(fs.readFileSync(path.join(root, sourceFile), "utf8"));
   }
 }
 const manifest = {

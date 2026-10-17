@@ -10,12 +10,12 @@ import { IWorker, citiesFile } from 'src/constants.js';
 import { EnvSchema } from 'src/dtos/env.dto.js';
 import {
   DatabaseExtension,
-  ImmichEnvironment,
-  ImmichHeader,
+  FrameleafEnvironment,
+  FrameleafWorker,
   ImmichTelemetry,
-  ImmichWorker,
   LogFormat,
   LogLevel,
+  RequestHeader,
 } from 'src/enum.js';
 import { AppReleaseConfig, parseAppReleases, parseHelpLinks } from 'src/utils/app-releases.js';
 import { EnvAlias, deprecatedEnvWarning, describeEnvName, resolveEnvAliases } from 'src/utils/env-aliases.js';
@@ -32,7 +32,7 @@ import {
 export interface EnvData {
   host?: string;
   port: number;
-  environment: ImmichEnvironment;
+  environment: FrameleafEnvironment;
   configFile?: string;
   logLevel?: LogLevel;
   logFormat?: LogFormat;
@@ -115,7 +115,7 @@ export interface EnvData {
     recoveryRoots?: RecoveryRootConfig[];
   };
 
-  workers: ImmichWorker[];
+  workers: FrameleafWorker[];
 
   /** FL-291: the stop budget (FRAMELEAF_SHUTDOWN_GRACE_SECONDS, FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS). */
   shutdown: {
@@ -202,7 +202,7 @@ const getEnv = (): EnvData => {
 
   const workers = parseWorkerSelection(dto);
 
-  const environment = dto.FRAMELEAF_ENV || ImmichEnvironment.Production;
+  const environment = dto.FRAMELEAF_ENV || FrameleafEnvironment.Production;
   const buildFolder = dto.FRAMELEAF_BUILD_DATA || '/build';
   const folders = {
     geodata: join(buildFolder, 'geodata'),
@@ -262,9 +262,9 @@ const getEnv = (): EnvData => {
           mount: true,
           generateId: true,
           setup: (cls, req: Request, res: Response) => {
-            const cid = req.header(ImmichHeader.CorrelationId) || cls.get(CLS_ID);
+            const cid = req.header(RequestHeader.CorrelationId) || cls.get(CLS_ID);
             cls.set(CLS_ID, cid);
-            res.header(ImmichHeader.CorrelationId, cid);
+            res.header(RequestHeader.CorrelationId, cid);
           },
         },
       },
@@ -368,7 +368,7 @@ let cached: EnvData | undefined;
 
 @Injectable()
 export class ConfigRepository {
-  constructor(@Inject(IWorker) @Optional() private worker?: ImmichWorker) {}
+  constructor(@Inject(IWorker) @Optional() private worker?: FrameleafWorker) {}
 
   getEnv() {
     if (!cached) {
@@ -379,11 +379,11 @@ export class ConfigRepository {
   }
 
   isDev() {
-    return this.getEnv().environment === ImmichEnvironment.Development;
+    return this.getEnv().environment === FrameleafEnvironment.Development;
   }
 
   isProduction() {
-    return this.getEnv().environment === ImmichEnvironment.Production;
+    return this.getEnv().environment === FrameleafEnvironment.Production;
   }
 
   getWorker() {

@@ -117,16 +117,23 @@ export class IdentityPostValidator {
   validate(description: string, knownPersons: KnownPerson[]): IdentityValidationResult {
     const flags: IdentityValidationResult['flags'] = {};
     // Tokenize each known name on whitespace so multi-word names like "Mary Jane"
-    // don't lose their second token to the hallucination pass. Lowercased so the
-    // lookup below survives case mismatches (model emits "Conner", DB stores
-    // "conner" — both should match). Empty strings filtered defensively
-    // (would always match `\b\b`).
+    // don't lose their second token to the hallucination pass. Case-insensitive
+    // matching below preserves their spelling; empty tokens must never match.
     const knownNames = new Set(
       knownPersons.flatMap((p) =>
         p.name
           .split(/\s+/)
-          .map((token) => token.trim().toLowerCase())
+          .map((token) => token.trim())
           .filter((token) => token.length > 0),
+      ),
+    );
+    // Protect complete known tokens before the English candidate heuristic splits their spelling.
+    const knownNameSpans = [...knownNames].flatMap((token) =>
+      Array.from(
+        description.matchAll(
+          new RegExp(String.raw`(?<![\p{L}\p{M}\p{N}_])${escapeRegExp(token)}(?![\p{L}\p{M}\p{N}_])`, 'giu'),
+        ),
+        (match) => [match.index, match.index + match[0].length],
       ),
     );
 
@@ -144,9 +151,7 @@ export class IdentityPostValidator {
       if (COMMON_NON_NAME_WORDS.has(word)) {
         return match;
       }
-      // Known persons are fine. Compare lowercased so case mismatch between
-      // the model's output and the DB-stored name doesn't strip a real name.
-      if (knownNames.has(word.toLowerCase())) {
+      if (knownNameSpans.some(([start, end]) => offset >= start && offset + word.length <= end)) {
         return match;
       }
       // Anything else that looks like a name mid-sentence is hallucinated.
@@ -158,17 +163,8 @@ export class IdentityPostValidator {
       flags.hallucinatedNames = [...new Set(hallucinatedNames)];
     }
 
-    // ---- Step 2: check whether any known name token now appears in the description ----
-    // Word-boundary regex (not substring) so a known person "Anne" doesn't false-positive
-    // against "Annette". Iterates tokens from `knownNames` (which was built by splitting
-    // each full name on whitespace), so a description mentioning just "Mary" or "Jane"
-    // still counts as referencing the person "Mary Jane".
-    const descriptionContainsKnownName = [...knownNames].some((token) =>
-      new RegExp(String.raw`\b${escapeRegExp(token)}\b`, 'i').test(stripped),
-    );
-
-    // ---- Step 3: substitute / flag generic references ----
-    if (!descriptionContainsKnownName && knownPersons.length > 0) {
+    // ---- Step 2: substitute / flag generic references when no known token was present ----
+    if (knownNameSpans.length === 0 && knownPersons.length > 0) {
       const genericMatch = GENERIC_PERSON_PATTERN.exec(stripped);
       if (genericMatch) {
         if (knownPersons.length === 1) {

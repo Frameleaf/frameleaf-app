@@ -232,4 +232,24 @@ describe('CloudBackupRestoreSection (FL-164)', () => {
     expect(await screen.findByText(/2 deleted items came back with their details/)).toBeInTheDocument();
     expect(screen.getByText(/Details came back for 1 item/)).toBeInTheDocument();
   });
+
+  it('shows the results of the newest search, never a slower earlier one', async () => {
+    let first!: (value: never) => void;
+    sdkMock.searchCloudBackupManifestItems
+      .mockReturnValueOnce(new Promise((resolve) => (first = resolve)) as never)
+      .mockResolvedValue({ manifestKey: MANIFEST_KEY, total: 1, items: [item({ name: 'Elk.jpg' })] });
+    renderSection();
+    await waitFor(() => expect(sdkMock.searchCloudBackupManifestItems).toHaveBeenCalledTimes(1));
+
+    await fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'elk' } });
+    await waitFor(() => expect(sdkMock.searchCloudBackupManifestItems).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Elk.jpg')).toBeInTheDocument();
+
+    // The first, unfiltered search answers last.
+    first({ manifestKey: MANIFEST_KEY, total: 1, items: [item({ assetId: 'other', name: 'Moose.jpg' })] } as never);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.queryByText('Moose.jpg')).toBeNull();
+    expect(screen.getByText('Elk.jpg')).toBeInTheDocument();
+  });
 });

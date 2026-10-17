@@ -1,12 +1,16 @@
+import { mdiCameraBurst, mdiFolderOutline, mdiHeartOutline } from '@mdi/js';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
+import { resetIconCatalogueCache } from '$lib/frameleaf/icon-catalogue';
 import { RAIL_CLOSED_SECTIONS_KEY } from '$lib/frameleaf/navigation';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';
-import { sidebarCollapsed } from '$lib/stores/preferences.store';
+import { albumTreeDropdown, sidebarCollapsed } from '$lib/stores/preferences.store';
 import { savedSearchesStore } from '$lib/stores/saved-searches.svelte';
+import { albumFactory } from '@test-data/factories/album-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import en from '../../../../../i18n/en.json';
@@ -34,6 +38,9 @@ beforeEach(() => {
   addMessages('dev', en);
   localStorage.clear();
   sidebarCollapsed.set(false);
+  albumTreeDropdown.set(false);
+  resetIconCatalogueCache();
+  app.page.url = new URL('http://localhost/photos');
   authManager.setUser(userAdminFactory.build());
   sdkMock.getAlbumTree.mockResolvedValue({ collections: [], albums: [], spaces: [] });
   sdkMock.getPartners.mockResolvedValue([]);
@@ -42,9 +49,68 @@ beforeEach(() => {
 
 afterEach(() => {
   authManager.reset();
+  vi.unstubAllGlobals();
+});
+
+const treeWithIcon = (icon: string | null) => ({
+  collections: [
+    {
+      collection: albumFactory.build({ id: 'collection', albumName: 'Collection', icon }),
+      albums: [albumFactory.build({ id: 'child', albumName: 'Child', parentId: 'collection', icon })],
+      albumCount: 1,
+      assetCount: 0,
+    },
+  ],
+  albums: [albumFactory.build({ id: 'album', albumName: 'Album', icon })],
+  spaces: [albumFactory.build({ id: 'space', albumName: 'Space', icon })],
 });
 
 describe('LibraryRail', () => {
+  it.each([
+    ['mdiCameraBurst', mdiCameraBurst],
+    ['heart', mdiHeartOutline],
+    [null, mdiFolderOutline],
+    ['__proto__', mdiFolderOutline],
+    ['mdiUnknown', mdiFolderOutline],
+  ])('renders stored %s geometry for every tree node while preserving its link', async (icon, expected) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ mdiCameraBurst })));
+    sdkMock.getAlbumTree.mockResolvedValue(treeWithIcon(icon));
+    albumTreeDropdown.set(true);
+    app.page.url = new URL(Route.viewAlbum({ id: 'child' }), 'http://localhost');
+    render(LibraryRail);
+
+    for (const [name, id] of [
+      ['Collection', 'collection'],
+      ['Child', 'child'],
+      ['Album', 'album'],
+      ['Space', 'space'],
+    ]) {
+      const link = await screen.findByRole('link', { name });
+      await waitFor(() => expect(link.querySelector('path')).toHaveAttribute('d', expected));
+      expect(link).toHaveAttribute('href', id === 'space' ? Route.viewSharedSpace({ id }) : Route.viewAlbum({ id }));
+      expect(link.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    }
+    expect(screen.getByRole('link', { name: 'Child' })).toHaveAttribute('aria-current', 'page');
+    expect(fetch).toHaveBeenCalledTimes(icon?.startsWith('mdi') ? 1 : 0);
+  });
+
+  it('updates stored icon geometry after an album event and releases the subscription on unmount', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ mdiCameraBurst, mdiHeartOutline })));
+    sdkMock.getAlbumTree.mockResolvedValue(treeWithIcon('mdiCameraBurst'));
+    const { unmount } = render(LibraryRail);
+    const link = await screen.findByRole('link', { name: 'Album' });
+    await waitFor(() => expect(link.querySelector('path')).toHaveAttribute('d', mdiCameraBurst));
+
+    sdkMock.getAlbumTree.mockResolvedValue(treeWithIcon('mdiHeartOutline'));
+    eventManager.emit('AlbumUpdate', albumFactory.build({ icon: 'mdiHeartOutline' }));
+    await waitFor(() => expect(link.querySelector('path')).toHaveAttribute('d', mdiHeartOutline));
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(sdkMock.getAlbumTree).toHaveBeenCalledTimes(2);
+    unmount();
+    eventManager.emit('AlbumUpdate', albumFactory.build());
+    expect(sdkMock.getAlbumTree).toHaveBeenCalledTimes(2);
+  });
+
   it('lists the sections in the September 24 order: Explore, Albums, Shared spaces, Tools', () => {
     render(LibraryRail);
 
@@ -194,6 +260,15 @@ describe('LibraryRail', () => {
     expect(within(list).queryByRole('link', { name: 'Settings' })).toBeNull();
     // Reading and tab order stay list first, footer last.
     expect(list.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('thanks a supporter in place of "Support Frameleaf" once the server or the person has a key', () => {
+    authManager.isPurchased = true;
+    const { container } = render(LibraryRail);
+    const footer = container.querySelector<HTMLElement>('.fl-rail-footer')!;
+
+    expect(within(footer).getByRole('link', { name: 'Thanks for supporting' })).toHaveAttribute('href', Route.buy());
+    expect(within(footer).queryByRole('link', { name: 'Support Frameleaf' })).toBeNull();
   });
 
   it('lists each partner library under Shared spaces, and no "All shared spaces" entry', async () => {

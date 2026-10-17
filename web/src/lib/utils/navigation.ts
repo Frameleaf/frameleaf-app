@@ -1,5 +1,5 @@
 import { isHttpError } from '@frameleaf/sdk';
-import { goto } from '$app/navigation';
+import { goto, type GotoOptions } from '$app/navigation';
 import { page } from '$app/state';
 import type { RouteId } from '$app/types';
 import { COMMAND_CENTER_PATH } from '$lib/frameleaf/settings-areas';
@@ -94,7 +94,7 @@ export function currentUrlReplaceAssetId(assetId: string) {
 }
 
 function replaceScrollTarget(url: string, searchParams?: AssetGridRouteSearchParams | null) {
-  const parsed = new URL(url, page.url);
+  const parsed = new URL(url, page.url.href);
 
   const { at: assetId } = searchParams || { at: null };
 
@@ -133,15 +133,72 @@ interface AssetGridRoute extends Route {
 
 type ImmichRoute = AssetRoute | AssetGridRoute;
 
-type NavOptions = {
-  /* navigate even if url is the same */
-  forceNavigate?: boolean | undefined;
-  replaceState?: boolean | undefined;
-  noScroll?: boolean | undefined;
-  keepFocus?: boolean | undefined;
-  invalidateAll?: boolean | undefined;
-  state?: App.PageState | undefined;
-};
+type NavOptions = GotoOptions & { forceNavigate?: boolean };
+
+/** Retain independent scroll/focus handling for the five callers that need only one reset. */
+export async function gotoWithFocusAndScroll(
+  href: string | URL,
+  { keepFocus = false, noScroll = false, ...options }: GotoOptions & { keepFocus?: boolean; noScroll?: boolean } = {},
+) {
+  if (keepFocus === noScroll) {
+    return goto(href, { ...options, reset: !keepFocus });
+  }
+  const target = new URL(href, page.url.href);
+  if (!keepFocus && document.activeElement instanceof HTMLElement && document.activeElement !== document.body) {
+    document.activeElement.blur();
+  }
+  const activeElement = document.activeElement;
+  await goto(href, { ...options, reset: false });
+  const fragment = target.hash
+    ? document.querySelector<HTMLElement>(`#${CSS.escape(decodeURIComponent(target.hash.slice(1)))}`)
+    : null;
+  if (!noScroll) {
+    if (fragment) {
+      fragment.scrollIntoView();
+    } else {
+      scrollTo(0, 0);
+    }
+  }
+  // As in Kit, preserve focus explicitly moved by the destination while it rendered.
+  if (!keepFocus && (document.activeElement === activeElement || document.activeElement === document.body)) {
+    const autofocus = document.querySelector<HTMLElement>('[autofocus]');
+    if (autofocus) {
+      autofocus.focus({ preventScroll: true });
+    } else {
+      const element = fragment ?? document.body;
+      const tabindex = element.getAttribute('tabindex');
+      element.setAttribute('tabindex', '-1');
+      element.focus({ preventScroll: true, focusVisible: false });
+      if (tabindex === null) {
+        element.toggleAttribute('tabindex', false);
+      } else {
+        element.setAttribute('tabindex', tabindex);
+      }
+      const selection = getSelection();
+      const ranges = selection
+        ? Array.from({ length: selection.rangeCount }, (_, i) => selection.getRangeAt(i).cloneRange())
+        : [];
+      setTimeout(() => {
+        if (!selection || selection.rangeCount !== ranges.length) {
+          return;
+        }
+        if (
+          ranges.every((range, i) => {
+            const current = selection.getRangeAt(i);
+            return (
+              range.startContainer === current.startContainer &&
+              range.endContainer === current.endContainer &&
+              range.startOffset === current.startOffset &&
+              range.endOffset === current.endOffset
+            );
+          })
+        ) {
+          selection.removeAllRanges();
+        }
+      }, 0);
+    }
+  }
+}
 
 function isAssetRoute(route: Route): route is AssetRoute {
   return route.targetRoute === 'current' && 'assetId' in route;
@@ -180,19 +237,3 @@ export function navigate(change: ImmichRoute, options?: NavOptions): Promise<voi
   // future navigation requests here
   throw `Invalid navigation: ${JSON.stringify(change)}`;
 }
-
-export const clearQueryParam = async (queryParam: string, url: URL) => {
-  if (!url.searchParams.has(queryParam)) {
-    return;
-  }
-
-  url.searchParams.delete(queryParam);
-  await goto(url, { keepFocus: true });
-};
-
-export const setQueryValue = async (queryKey: string, queryValue: string) => {
-  const url = location.href;
-  const urlObject = new URL(url);
-  urlObject.searchParams.set(queryKey, queryValue);
-  await goto(urlObject, { keepFocus: true });
-};

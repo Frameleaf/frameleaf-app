@@ -14,17 +14,21 @@ class SavedSearchesStore {
   loaded = $state(false);
   #revision: string | undefined;
   #loading: Promise<void> | undefined;
+  #queue: Promise<void> = Promise.resolve();
   #generation = 0;
+  #needsRead = true;
 
   constructor() {
-    onLibraryAccessChange(() => {
+    onLibraryAccessChange((change) => {
       const wasLoaded = this.loaded;
       this.#generation += 1;
       this.list = [];
       this.loaded = false;
       this.#revision = undefined;
+      this.#needsRead = true;
       this.#loading = undefined;
-      if (wasLoaded) {
+      this.#queue = Promise.resolve();
+      if (wasLoaded && change !== 'revoked') {
         void this.load();
       }
     });
@@ -36,50 +40,83 @@ class SavedSearchesStore {
       return this.#loading;
     }
     const generation = this.#generation;
-    this.#loading = getMyPreferences()
-      .then((preferences) => {
-        if (generation !== this.#generation) {
-          return;
-        }
-        this.list = preferences.savedSearches ?? [];
-        this.#revision = preferences.revision;
-        this.loaded = true;
-      })
-      .catch(() => {
-        // Saved searches are optional; the palette and the rail work without them
-        if (generation === this.#generation) {
-          this.#loading = undefined;
-        }
-      });
-    return this.#loading;
+    const pending = this.#queue.then(async () => {
+      if (!(await this.#read(generation)) && generation === this.#generation && this.#loading === pending) {
+        this.#loading = undefined;
+      }
+    });
+    this.#loading = pending;
+    this.#queue = pending;
+    return pending;
   }
 
-  async #write(list: SavedSearch[]): Promise<boolean> {
-    const generation = this.#generation;
+  async #read(generation: number): Promise<boolean> {
+    if (generation !== this.#generation) {
+      return false;
+    }
     try {
-      const response = await updateMyPreferences({
-        userPreferencesUpdateDto: { savedSearches: list, expectedRevision: this.#revision },
-      });
-      if (generation === this.#generation) {
-        this.list = response.savedSearches ?? list;
-        this.#revision = response.revision;
-        this.loaded = true;
+      const preferences = await getMyPreferences();
+      if (generation !== this.#generation) {
+        return false;
       }
+      this.list = preferences.savedSearches ?? [];
+      this.#revision = preferences.revision;
+      this.loaded = true;
+      this.#needsRead = false;
       return true;
     } catch {
-      // Changed elsewhere (a stale revision) or refused: show what the server has now
-      await this.load(true);
+      if (generation === this.#generation) {
+        this.#needsRead = true;
+      }
+      // Saved searches are optional; the palette and the rail work without them.
       return false;
     }
   }
 
+  #write(change: (list: SavedSearch[]) => SavedSearch[]): Promise<boolean> {
+    const generation = this.#generation;
+    const loading = this.#loading;
+    const pending = this.#queue.then(async () => {
+      if (generation !== this.#generation || (this.#needsRead && !(await this.#read(generation)))) {
+        return false;
+      }
+      if (generation !== this.#generation) {
+        return false;
+      }
+      try {
+        const list = change(this.list);
+        const response = await updateMyPreferences({
+          userPreferencesUpdateDto: { savedSearches: list, expectedRevision: this.#revision },
+        });
+        if (generation !== this.#generation) {
+          return false;
+        }
+        this.list = response.savedSearches ?? list;
+        this.#revision = response.revision;
+        this.loaded = true;
+        this.#needsRead = false;
+        this.#loading ??= Promise.resolve();
+        return true;
+      } catch {
+        // Re-read conflicts before the next queued edit derives its list and revision.
+        if (!(await this.#read(generation)) && generation === this.#generation && this.#loading === loading) {
+          this.#loading = undefined;
+        }
+        return false;
+      }
+    });
+    this.#queue = pending.then(() => {});
+    return pending;
+  }
+
   /** Saves (or replaces, by name) a compiled search. */
   save(name: string, query: DiscoveryQuery) {
-    return this.#write(upsertSavedSearch(this.list, toSavedSearch(name, query)));
+    const entry = toSavedSearch(name, query);
+    return this.#write((list) => upsertSavedSearch(list, entry));
   }
 
   remove(name: string) {
-    return this.#write(removeSavedSearch(this.list, name));
+    return this.#write((list) => removeSavedSearch(list, name));
   }
 }
 

@@ -6,11 +6,11 @@ import {
   type UserAdminResponseDto,
   type UserPreferencesResponseDto,
 } from '@frameleaf/sdk';
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import { withoutLockedRuleIds } from '$lib/frameleaf/locked-rules';
-import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
+import { clearPrivateBrowserState, getPrivateBrowserStateGeneration } from '$lib/frameleaf/private-browser-state';
 import { retireStudioImportSessions } from '$lib/frameleaf/studio/import-retention';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';
@@ -24,6 +24,13 @@ class AuthManager {
 
   #user = $state<UserAdminResponseDto>();
   #preferences = $state<UserPreferencesResponseDto>();
+  #sessionGeneration = 0;
+
+  captureSession() {
+    const generation = this.#sessionGeneration;
+    const privateGeneration = getPrivateBrowserStateGeneration();
+    return () => generation === this.#sessionGeneration && privateGeneration === getPrivateBrowserStateGeneration();
+  }
 
   get authenticated() {
     return !!(this.#user && this.#preferences);
@@ -65,19 +72,24 @@ class AuthManager {
   }
 
   async refresh() {
+    const isCurrent = this.captureSession();
     try {
       const [user, preferences] = await Promise.all([getMyUser(), getMyPreferences()]);
-      if (this.#user && this.#user.id !== user.id) {
-        retireStudioImportSessions();
+      if (!isCurrent()) {
+        return;
       }
-      this.#preferences = withoutLockedRuleIds(preferences);
-      this.#user = user;
+      this.setUser(user);
+      this.setPreferences(preferences);
+      const isCurrentUser = this.captureSession();
 
       if (user.license?.activatedAt) {
         this.isPurchased = true;
       } else {
         // FL-156: a server supporter key (not a Frameleaf Cloud plan) gives everyone the badge
         const features = await getServerFeatures().catch(() => {});
+        if (!isCurrentUser()) {
+          return;
+        }
         if (features?.supporter) {
           this.isPurchased = true;
         }
@@ -97,8 +109,13 @@ class AuthManager {
     if (!this.authenticated) {
       return;
     }
+    const isCurrent = this.captureSession();
     try {
-      this.setPreferences(await getMyPreferences());
+      const preferences = await getMyPreferences();
+      if (!isCurrent()) {
+        return;
+      }
+      this.setPreferences(preferences);
       eventManager.emit('UserPreferencesRemoteUpdate');
     } catch {
       // keep the preferences this session has
@@ -106,6 +123,10 @@ class AuthManager {
   }
 
   setUser(user: UserAdminResponseDto) {
+    if (this.#user?.id !== user.id) {
+      this.#sessionGeneration++;
+      this.isPurchased = false;
+    }
     if (this.#user && this.#user.id !== user.id) {
       retireStudioImportSessions();
     }
@@ -151,7 +172,9 @@ class AuthManager {
   }
 
   reset() {
+    this.#sessionGeneration++;
     retireStudioImportSessions();
+    this.isPurchased = false;
     this.#user = undefined;
     this.#preferences = undefined;
   }

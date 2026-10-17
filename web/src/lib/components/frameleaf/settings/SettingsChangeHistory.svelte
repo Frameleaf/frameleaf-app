@@ -10,8 +10,9 @@
    * - For an administrator: the server's settings history. Credential entries name the credential
    *   and never a value; a change from the server command line or Frameleaf Cloud says so.
    * - For everyone: the account's own preference history. Locked-content rules appear only as changed.
+   *
+   * With nothing saved yet, the page says so and offers nothing else to do, as the prototype's hero.
    */
-  import Button from '$lib/components/frameleaf/Button.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
@@ -43,25 +44,13 @@
     ownName: string;
     error?: boolean;
     onRetry: () => void;
-    onConfigure: () => void;
-    configureLabel: string;
     /** The name of a settings page as the navigation says it: "Server & updates › Updates". */
     pageTitle?: (page: SettingPage) => string | undefined;
     /** The moment "today" is measured from (for tests). */
     now?: Date;
   };
 
-  let {
-    entries,
-    preferences,
-    ownName,
-    error = false,
-    onRetry,
-    onConfigure,
-    configureLabel,
-    pageTitle,
-    now = new Date(),
-  }: Props = $props();
+  let { entries, preferences, ownName, error = false, onRetry, pageTitle, now = new Date() }: Props = $props();
 
   type RawChange = { path: string; before: string | null; after: string | null; protected?: boolean } & Partial<
     Pick<SystemConfigHistoryChangeDto, 'credential'>
@@ -223,11 +212,7 @@
       title={$t('frameleaf_words_history_empty')}
       body={entries === undefined ? $t('frameleaf_words_history_empty_own') : $t('frameleaf_words_history_empty_body')}
       label={$t('frameleaf_settings_area_history')}
-    >
-      {#snippet actions()}
-        <Button onclick={onConfigure}>{configureLabel}</Button>
-      {/snippet}
-    </Hero>
+    />
   {:else if items}
     {#each groups as group (group.day)}
       <Section title={$t(`frameleaf_words_history_group_${group.day}`)}>

@@ -10,6 +10,7 @@ import multer, { memoryStorage } from 'multer';
 import { ClsService } from 'nestjs-cls';
 import { ZodSerializerInterceptor, ZodValidationPipe } from 'nestjs-zod';
 import { ChildProcessWithoutNullStreams } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { Duplex, Readable, Writable } from 'node:stream';
 import { PNG } from 'pngjs';
 import { Mock, Mocked, assert, vitest } from 'vitest';
@@ -382,7 +383,7 @@ export const getMocks = () => {
     assetJob: automock(AssetJobRepository, { args: [database] }),
     assetRestoration: automock(AssetRestorationRepository),
     classification: automock(ClassificationRepository, { args: [database], strict: false }),
-    clusterGroup: automock(ClusterGroupRepository),
+    clusterGroup: automock(ClusterGroupRepository, { args: [database] }),
     app: automock(AppRepository, { strict: false }),
     config: newConfigRepositoryMock(),
     database: databaseMock,
@@ -408,7 +409,7 @@ export const getMocks = () => {
     ocr: automock(OcrRepository, { args: [database], strict: false }),
     oauth: automock(OAuthRepository, { args: [loggerMock] }),
     partner: automock(PartnerRepository, { strict: false }),
-    partnerOrigin: automock(PartnerOriginRepository, { strict: false }),
+    partnerOrigin: automock(PartnerOriginRepository, { args: [database], strict: false }),
     person: automock(PersonRepository, { args: [database], strict: false }),
     physicalFile: automock(PhysicalFileRepository, { strict: false }),
     physicalFileTrash: automock(PhysicalFileTrashRepository, { strict: false }),
@@ -460,6 +461,23 @@ export const getMocks = () => {
   mocks.partner.getAll.mockResolvedValue([]);
   mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([]);
   mocks.partnerOrigin.getFollowers.mockResolvedValue([]);
+  mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
+  mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (_owner, _group, write) => write(undefined));
+  // Write wrappers run their callback by default so a test cannot pass while silently skipping the write.
+  mocks.partnerOrigin.withOwnerTagEdit.mockImplementation(async (_owner, write) => write());
+  mocks.person.withMergeWrite.mockImplementation(async (write) => write());
+  mocks.album.withMembershipWrite.mockImplementation(async (_ids, write) =>
+    write(undefined as never, mocks.album as never),
+  );
+  mocks.asset.withMetadataUpdate.mockImplementation(async (_id, write) =>
+    write(mocks.asset as never, mocks.access as never, undefined as never),
+  );
+  mocks.asset.withLivePhotoUpdate.mockImplementation(async (_id, _motion, write) =>
+    write(mocks.asset as never, mocks.access as never),
+  );
+  mocks.itemShare.withTransaction.mockImplementation(async (callback) =>
+    callback(mocks.itemShare as never, mocks.user as never, mocks.asset as never, mocks.access as never),
+  );
   mocks.classification.getRuleByAlbumId.mockResolvedValue(undefined);
   mocks.classification.recordAlbumRemovals.mockResolvedValue({
     added: 0,
@@ -618,7 +636,8 @@ export const getKyselyDB = async (suffix?: string, log?: KyselyConfig['log']): P
   const connection = { connectionType: 'url', url: withDatabase(testUrl, 'postgres') } as DatabaseConnectionParams;
   const sql = createPostgres({ maxConnections: 1, connection });
 
-  const randomSuffix = Math.random().toString(36).slice(2, 7);
+  // 5 random base36 chars collided across the ~1,400 clones of a medium run ("already exists").
+  const randomSuffix = randomUUID().replaceAll('-', '');
   const dbName = `frameleaf_${suffix ?? randomSuffix}`;
   try {
     await sql.unsafe(`CREATE DATABASE ${dbName} WITH TEMPLATE ${templateName} OWNER postgres;`);

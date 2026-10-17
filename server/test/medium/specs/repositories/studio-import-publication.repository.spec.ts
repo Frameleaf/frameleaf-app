@@ -764,9 +764,11 @@ describe('Studio import publication — real journal SQL acceptance', () => {
     const otherProject = await f.projects.create({ ownerId: f.user.id, name: 'Same-owner concurrent quota' });
     const second = { ...f.key, projectId: otherProject.id, importId: randomUUID(), publicationId: randomUUID() };
     await Promise.all([f.repo.register(f.key), f.repo.register(second)]);
+    const firstFile = await file(f.key);
+    const secondFile = await file(second);
     const results = await Promise.allSettled([
-      f.repo.prepare(f.key, await file(f.key), removeScratch),
-      f.repo.prepare(second, await file(second), removeScratch),
+      f.repo.prepare(f.key, firstFile, removeScratch),
+      f.repo.prepare(second, secondFile, removeScratch),
     ]);
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     const winner = results[0].status === 'fulfilled' ? f.key : second;

@@ -122,6 +122,52 @@ describe('photography OpenAPI contract', () => {
       expect(schemas.PhotographyPublicSiteDto).toMatchObject({
         properties: { brand: expect.any(Object), portfolio: { type: 'array' } },
       });
+      const session = document.paths['/photography/galleries/{id}/session'].post!;
+      expect(session.responses['401']).toMatchObject({
+        content: {
+          'application/json': { schema: { $ref: '#/components/schemas/PhotographyGalleryPasswordRequiredDto' } },
+        },
+      });
+      expect(session.responses['403']).toBeTruthy();
+      expect(schemas.PhotographyGalleryPasswordRequiredDto).toMatchObject({
+        required: expect.arrayContaining(['message', 'passwordRequired', 'brand']),
+        properties: {
+          passwordRequired: { type: 'boolean' },
+          brand: { properties: { logoUrl: expect.any(Object), name: { type: 'string' } } },
+        },
+      });
+      const preview = document.paths['/photography/workflows/{id}/preview'].post!;
+      expect(preview.operationId).toBe('photographyPreview');
+      expect(preview.requestBody).toMatchObject({
+        content: { 'application/json': { schema: { $ref: '#/components/schemas/PhotographyPreviewSessionDto' } } },
+      });
+      expect(preview.responses['201']).toMatchObject({
+        content: {
+          'application/json': { schema: { $ref: '#/components/schemas/PhotographyPreviewSessionResponseDto' } },
+        },
+      });
+      expect(schemas.PhotographyPreviewSessionDto).toMatchObject({ type: 'object', additionalProperties: false });
+      expect(schemas.PhotographyPreviewSessionResponseDto).toMatchObject({
+        required: expect.arrayContaining(['session', 'expiresAt']),
+      });
+      expect(schemas.PhotographyGalleryDto).toMatchObject({
+        required: expect.arrayContaining(['date', 'preview']),
+        properties: {
+          date: { type: 'string', nullable: true },
+          preview: { type: 'boolean' },
+          recipient: { properties: { id: { type: 'string' } } },
+        },
+      });
+      // the client preview recipient stays a UUID (321117aada)
+      expect((schemas.PhotographyGalleryDto as any).properties.recipient.properties.id.format).toBe('uuid');
+      expect((schemas.PhotographyWorkflowListDto as any).properties.galleries.items).toMatchObject({
+        required: expect.arrayContaining(['outstanding', 'currency', 'invited']),
+        properties: {
+          outstanding: { type: 'integer' },
+          currency: { type: 'string' },
+          invited: { type: 'integer' },
+        },
+      });
     } finally {
       await app.close();
     }

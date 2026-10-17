@@ -196,7 +196,7 @@
     {#if fullscreenEnabled || fullscreen}
       <button
         type="button"
-        class="fl-tool"
+        class="fl-tool fl-fullscreen"
         aria-label={fullscreen ? $t('frameleaf_viewer_exit_fullscreen') : $t('frameleaf_viewer_enter_fullscreen')}
         title={fullscreen ? $t('frameleaf_viewer_exit_fullscreen') : $t('frameleaf_viewer_enter_fullscreen')}
         aria-pressed={fullscreen}
@@ -263,6 +263,11 @@
 
   .fl-tool.active {
     background: color-mix(in srgb, var(--fl-viewer-text) 12%, transparent);
+  }
+
+  /* A pressed tool (a playing slideshow, the filmstrip shown, a panorama looked around) takes the accent; full screen, as in the template, does not (.mv-tool[aria-pressed], media-viewer.css:120-122). */
+  .fl-tool[aria-pressed='true']:not(.fl-fullscreen) {
+    color: var(--fl-accent);
   }
 
   .fl-tool:disabled {

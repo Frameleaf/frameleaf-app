@@ -1,5 +1,5 @@
 import { Kysely, sql } from 'kysely';
-import { AssetOrder, AssetOrderBy, AssetVisibility, CalendarHeatmapType } from 'src/enum.js';
+import { AssetFileType, AssetOrder, AssetOrderBy, AssetVisibility, CalendarHeatmapType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -69,6 +69,78 @@ const keyframeRow = (assetId: string, n: number) => ({
 });
 
 describe(AssetRepository.name, () => {
+  it('calendar day lookup skips impossible leap dates while retaining valid anniversaries', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const ids = new Map<string, string>();
+    for (const day of ['2019-02-28', '2020-02-28', '2020-02-29', '2020-03-01']) {
+      const { asset } = await ctx.newAsset({ ownerId: user.id, localDateTime: new Date(`${day}T12:00:00Z`) });
+      await ctx.database.insertInto('asset_job_status').values({ assetId: asset.id }).execute();
+      await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: `${asset.id}.jpg` });
+      ids.set(day, asset.id);
+    }
+    const ordinary = await sut.getByDayOfYear([user.id], { year: 2024, month: 2, day: 28 });
+    expect(ordinary.map(({ year }) => year)).toEqual([2020, 2019]);
+    const leap = await sut.getByDayOfYear([user.id], { year: 2024, month: 2, day: 29 });
+    expect(leap).toHaveLength(1);
+    expect(leap[0]).toMatchObject({ year: 2020, assets: [expect.objectContaining({ id: ids.get('2020-02-29') })] });
+  });
+
+  it('NSFW lookup retains its Set contract across parameter chunks', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { asset: first } = await ctx.newAsset({ ownerId: user.id, is_nsfw: true });
+    const { asset: last } = await ctx.newAsset({ ownerId: user.id, is_nsfw: true });
+    const { asset: visible } = await ctx.newAsset({ ownerId: user.id });
+    expect(await sut.getNsfwAssetIds([])).toEqual(new Set());
+    expect(await sut.getNsfwAssetIds([first.id, visible.id])).toEqual(new Set([first.id]));
+    const ids = [first.id, ...Array.from({ length: 65_499 }, () => visible.id), last.id, visible.id];
+    expect(await sut.getNsfwAssetIds(ids)).toEqual(new Set([first.id, last.id]));
+  });
+
+  it.each(['/archive/photos', String.raw`/archive/100%_done\album`])(
+    'uses literal import-folder boundaries and preserves exclusion/page guards for %s',
+    async (root) => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const library = await ctx.database
+        .insertInto('library')
+        .values({
+          name: 'Literal folder fixture',
+          ownerId: user.id,
+          importPaths: [root],
+          exclusionPatterns: [],
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      const add = (originalPath: string, extra = {}) =>
+        ctx.newAsset({
+          ownerId: user.id,
+          libraryId: library.id,
+          isExternal: true,
+          originalPath,
+          ...extra,
+        });
+      const { asset: inside } = await add(`${root}/inside.jpg`);
+      const { asset: nested } = await add(`${root}/nested/inside.jpg`);
+      const { asset: sibling } = await add(`${root}-old/other.jpg`);
+      const { asset: excluded } = await add(`${root}/blocked.jpg`);
+      const { asset: offline } = await add(`${root}-old/offline.jpg`, { isOffline: true });
+      const { asset: internal } = await add(`${root}-old/internal.jpg`, { isExternal: false });
+      const ids = [inside, nested, sibling, excluded, offline, internal].map(({ id }) => id);
+      for (const folder of [root, `${root}/`]) {
+        expect((await sut.getExcludedExternalAssetIds(library.id, ids, [folder], ['**/blocked.jpg'])).sort()).toEqual(
+          [sibling.id, excluded.id].sort(),
+        );
+      }
+      expect((await sut.getExcludedExternalAssetIds(library.id, ids, ['/'], [])).sort()).toEqual([]);
+      expect((await sut.getExcludedExternalAssetIds(library.id, ids, [], [])).sort()).toEqual(
+        [inside.id, nested.id, sibling.id, excluded.id].sort(),
+      );
+      expect(await sut.getExcludedExternalAssetIds(library.id, [inside.id], [root], ['**/blocked.jpg'])).toEqual([]);
+    },
+  );
+
   describe('getTimeBucket', () => {
     it('should order assets by local day first and fileCreatedAt within each day', async () => {
       const { ctx, sut } = setup();

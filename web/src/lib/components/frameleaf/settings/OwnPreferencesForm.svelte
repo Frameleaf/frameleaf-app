@@ -29,7 +29,8 @@
 
   type Props = {
     store: AccountPreferencesDraftStore;
-    children: Snippet;
+    /** The fields; a page that lays its fields out itself passes none and keeps only the Save bar. */
+    children?: Snippet;
   };
 
   let { store, children }: Props = $props();
@@ -130,9 +131,11 @@
     </div>
   {/if}
 
-  <div class="fields">
-    {@render children()}
-  </div>
+  {#if children}
+    <div class="fields">
+      {@render children()}
+    </div>
+  {/if}
 
   {#if errorText}
     <p class="error" role="alert">{errorText}</p>

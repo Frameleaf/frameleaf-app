@@ -35,7 +35,7 @@ import {
 import { AssetDownloadOriginalDto } from 'src/dtos/asset.dto.js';
 import { type AuthDto } from 'src/dtos/auth.dto.js';
 import { VideoEditVersionParamsDto } from 'src/dtos/editing.dto.js';
-import { ApiTag, CacheControl, ImmichHeader, Permission, RouteKey } from 'src/enum.js';
+import { ApiTag, CacheControl, Permission, RequestHeader, RouteKey } from 'src/enum.js';
 import { AssetUploadInterceptor } from 'src/middleware/asset-upload.interceptor.js';
 import { Auth, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { FileUploadInterceptor, getFiles } from 'src/middleware/file-upload.interceptor.js';
@@ -44,7 +44,7 @@ import { RemoteMediaCeiling } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { type AssetMediaRedirectResponse, AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
-import { ImmichFileResponse, sendFile } from 'src/utils/file.js';
+import { FileDownloadResponse, sendFile } from 'src/utils/file.js';
 import { FileNotEmptyValidator, UUIDParamDto } from 'src/validation.js';
 
 @ApiTags(ApiTag.Assets)
@@ -64,10 +64,10 @@ export class AssetMediaController {
     auth: AuthDto,
     id: string,
     view: 'video' | 'preview' | 'fullsize',
-    ordinary: () => Promise<ImmichFileResponse | AssetMediaRedirectResponse>,
+    ordinary: () => Promise<FileDownloadResponse | AssetMediaRedirectResponse>,
     via: FrameleafVia | null = null,
     dynamicRange?: AssetMediaOptionsDto['dynamicRange'],
-  ): Promise<ImmichFileResponse | AssetMediaRedirectResponse> {
+  ): Promise<FileDownloadResponse | AssetMediaRedirectResponse> {
     // FL-161: through the relay a full-size restored result is refused like an original
     const fullSizeAllowed = view === 'fullsize' ? await this.service.fullSizeAllowed(via) : true;
     const choice = await this.restorationService.getPlaybackChoice(auth, id, view, fullSizeAllowed);
@@ -77,8 +77,8 @@ export class AssetMediaController {
       return choice.file;
     }
     const response = await ordinary();
-    return choice.revalidate && response instanceof ImmichFileResponse
-      ? new ImmichFileResponse({ ...response, cacheControl: CacheControl.PrivateWithoutCache })
+    return choice.revalidate && response instanceof FileDownloadResponse
+      ? new FileDownloadResponse({ ...response, cacheControl: CacheControl.PrivateWithoutCache })
       : response;
   }
 
@@ -87,7 +87,7 @@ export class AssetMediaController {
   @UseInterceptors(AssetUploadInterceptor, FileUploadInterceptor)
   @ApiConsumes('multipart/form-data')
   @ApiHeader({
-    name: ImmichHeader.Checksum,
+    name: RequestHeader.Checksum,
     description:
       'SHA-256 checksum (preferred) or SHA-1 checksum (legacy) for duplicate detection before upload; hex or base64-encoded',
     required: false,
@@ -220,7 +220,7 @@ export class AssetMediaController {
           )
         : await this.service.viewThumbnail(auth, id, dto, via);
 
-    if (viewThumbnailRes instanceof ImmichFileResponse) {
+    if (viewThumbnailRes instanceof FileDownloadResponse) {
       await sendFile(res, next, () => Promise.resolve(viewThumbnailRes), this.logger);
     } else {
       // viewThumbnailRes is a AssetMediaRedirectResponse
@@ -269,7 +269,7 @@ export class AssetMediaController {
           ? this.service.playbackVideo(auth, id, false)
           : ((await this.withPlaybackChoice(auth, id, 'video', () =>
               this.service.playbackVideo(auth, id, edited ?? true),
-            )) as ImmichFileResponse),
+            )) as FileDownloadResponse),
       this.logger,
     );
   }

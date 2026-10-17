@@ -78,14 +78,16 @@ export const randomImage = async (rng: SeededRandom, { width, height }: { width:
       // Checkerboard
       const squareSize = 10;
       svgPattern = `<svg width="${width}" height="${height}">
-        ${Array.from({ length: height / squareSize }, (_, row) =>
-          Array.from({ length: width / squareSize }, (_, col) => {
-            const isEven = (row + col) % 2 === 0;
-            return `<rect x="${col * squareSize}" y="${row * squareSize}"
-              width="${squareSize}" height="${squareSize}"
-              fill="rgb(${isEven ? r1 : r2},${isEven ? g1 : g2},${isEven ? b1 : b2})"/>`;
-          }).join(''),
-        ).join('')}
+        <defs>
+          <pattern id="checkerboard" width="${squareSize * 2}" height="${squareSize * 2}" patternUnits="userSpaceOnUse">
+            <rect width="${squareSize}" height="${squareSize}" fill="rgb(${r1},${g1},${b1})"/>
+            <rect x="${squareSize}" width="${squareSize}" height="${squareSize}" fill="rgb(${r2},${g2},${b2})"/>
+            <rect y="${squareSize}" width="${squareSize}" height="${squareSize}" fill="rgb(${r2},${g2},${b2})"/>
+            <rect x="${squareSize}" y="${squareSize}" width="${squareSize}" height="${squareSize}" fill="rgb(${r1},${g1},${b1})"/>
+          </pattern>
+        </defs>
+        <rect width="${Math.floor(width / squareSize) * squareSize}"
+          height="${Math.floor(height / squareSize) * squareSize}" fill="url(#checkerboard)"/>
       </svg>`;
       break;
     }

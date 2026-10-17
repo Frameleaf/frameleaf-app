@@ -18,7 +18,7 @@
 </script>
 
 <div class="auth-card">
-  <div class="auth-heading"><h1>{$t('maintenance_restore_from_backup')}</h1></div>
+  <div class="auth-heading"><h1>{$t('frameleaf_maintenance_restore_from_backup')}</h1></div>
   <div class="backups">
     <MaintenanceBackupList {expectedVersion} />
   </div>

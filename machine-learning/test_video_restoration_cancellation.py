@@ -18,8 +18,8 @@ SERVER = """
 import os, sys, time
 from pathlib import Path
 from types import SimpleNamespace
-from immich_ml.video_restoration import app, __main__ as entrypoint
-from immich_ml.video_restoration.models import RuntimeInvocation, SelectedModel
+from frameleaf_ml.video_restoration import app, __main__ as entrypoint
+from frameleaf_ml.video_restoration.models import RuntimeInvocation, SelectedModel
 from test_video_restoration_runtime import warm_spec, invocation
 from test_video_restoration import TestRegistry, evaluate, passing_record, fake_result
 
@@ -34,7 +34,8 @@ def main():
     init_model(sys.argv[1], sys.argv[2])
     if sys.argv[3] == 'blocked':
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        Path('active-pid').write_text(str(os.getpid()))
+        Path('active-pid.tmp').write_text(str(os.getpid()))
+        Path('active-pid.tmp').replace('active-pid')
         time.sleep(90)
 if __name__ == '__main__':
     main()

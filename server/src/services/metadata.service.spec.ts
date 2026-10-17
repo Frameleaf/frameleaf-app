@@ -13,8 +13,8 @@ import {
   AssetVisibility,
   ChecksumAlgorithm,
   ExifOrientation,
-  ImmichEnvironment,
-  ImmichWorker,
+  FrameleafEnvironment,
+  FrameleafWorker,
   JobName,
   JobStatus,
   SourceType,
@@ -104,7 +104,7 @@ describe(MetadataService.name, () => {
     mockReadTags();
     mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue([]);
 
-    mocks.config.getWorker.mockReturnValue(ImmichWorker.Microservices);
+    mocks.config.getWorker.mockReturnValue(FrameleafWorker.Microservices);
 
     delete process.env.TZ;
   });
@@ -167,7 +167,7 @@ describe(MetadataService.name, () => {
     const settled = () => new Promise((resolve) => setTimeout(resolve, 20));
 
     it('should not fetch the landmark icon pack outside production', async () => {
-      mocks.config.getEnv.mockReturnValue(mockEnvData({ environment: ImmichEnvironment.Testing }));
+      mocks.config.getEnv.mockReturnValue(mockEnvData({ environment: FrameleafEnvironment.Testing }));
 
       await sut.onBootstrap();
       await settled();
@@ -252,6 +252,64 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleMetadataExtraction', () => {
+    it.each([false, true])(
+      'starts publication writes concurrently and awaits their completion (faces: %s)',
+      async (faces) => {
+        const asset = AssetFactory.create();
+        const writes = Promise.withResolvers<void>();
+        const assetStarted = Promise.withResolvers<void>();
+        const exifStarted = Promise.withResolvers<void>();
+        const facesStarted = Promise.withResolvers<void>();
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mocks.systemMetadata.get.mockResolvedValue({ metadata: { faces: { import: faces } } });
+        mockReadTags(makeFaceTags());
+        mocks.asset.update.mockImplementation(async () => {
+          assetStarted.resolve();
+          await writes.promise;
+          return;
+        });
+        mocks.asset.upsertExif.mockImplementation(async () => {
+          exifStarted.resolve();
+          await writes.promise;
+        });
+        mocks.person.getDistinctNames.mockImplementation(async () => {
+          facesStarted.resolve();
+          await writes.promise;
+          return [];
+        });
+        const extraction = sut.handleMetadataExtraction({ id: asset.id });
+        try {
+          await Promise.all([assetStarted.promise, exifStarted.promise, ...(faces ? [facesStarted.promise] : [])]);
+          expect(mocks.asset.upsertJobStatus).not.toHaveBeenCalled();
+          expect(mocks.event.emit).not.toHaveBeenCalled();
+          if (!faces) {
+            expect(mocks.person.getDistinctNames).not.toHaveBeenCalled();
+          }
+        } finally {
+          writes.resolve();
+          await extraction;
+        }
+        expect(mocks.asset.upsertJobStatus).toHaveBeenCalledOnce();
+        expect(mocks.event.emit).toHaveBeenCalledWith(
+          'AssetMetadataExtracted',
+          expect.objectContaining({ assetId: asset.id }),
+        );
+      },
+    );
+
+    it('preserves synchronous asset-write errors and does not start later writes', async () => {
+      const asset = AssetFactory.create();
+      const failure = new Error('asset write rejected');
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.asset.update.mockImplementation(() => {
+        throw failure;
+      });
+      await expect(sut.handleMetadataExtraction({ id: asset.id })).rejects.toBe(failure);
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertJobStatus).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+
     it('persists image encoding through existing source-checked metadata publication', async () => {
       const asset = AssetFactory.create({ originalFileName: 'IMG_1.HEIC' });
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
@@ -942,6 +1000,24 @@ describe(MetadataService.name, () => {
         value: 'TagA',
         parent: undefined,
       });
+    });
+
+    it.each([
+      { tags: { HierarchicalSubject: ['A/B|C/D', '|A||B|', 2024] }, expected: ['A|B/C|D', '/A//B/', '2024'] },
+      { tags: { TagsList: [], HierarchicalSubject: ['ignored'], Keywords: ['ignored'] }, expected: [] },
+      { tags: { HierarchicalSubject: [], Keywords: ['ignored'] }, expected: [] },
+    ])('preserves raw hierarchy delimiters and empty-list precedence: $tags', async ({ tags, expected }) => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: expected, updateId: 'fixture' });
+      mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
+      mockReadTags(tags);
+      await sut.handleMetadataExtraction({ id: asset.id });
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: expect.objectContaining({ tags: expected.length > 0 ? expected : null }),
+        }),
+      );
     });
 
     it('should extract tags from HierarchicalSubject as a list with a number', async () => {

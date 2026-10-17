@@ -15,6 +15,7 @@ import {
   bindGrowth,
   cameraName,
   collectedSeriesFor,
+  fixedBuckets,
   groupCameras,
   historyState,
   parseAnalyticsScope,
@@ -159,6 +160,55 @@ describe('bindGrowth', () => {
   const window = analyticsWindow(AnalyticsRange.Year, new Date('2026-09-19T12:00:00.000Z'));
   const at = (iso: string, series: AnalyticsSeriesId, value: number) => ({ series, value, observedAt: new Date(iso) });
 
+  it('keeps the first reading on ties and selects timestamp references in growth-series order', () => {
+    const bytes = at('2026-08-20T00:00:00Z', AnalyticsSeriesId.LibraryPhysicalBytes, 42);
+    const items = at('2026-08-20T00:00:00Z', AnalyticsSeriesId.LibraryItems, 0);
+    const tied = at('2026-08-20T00:00:00Z', AnalyticsSeriesId.LibraryItems, 99);
+    const bound = bindGrowth(window.buckets, [bytes, items, tied]);
+    const august = bound[window.buckets.findIndex((bucket) => bucket.key === '2026-08')];
+    expect(august[AnalyticsSeriesId.LibraryItems]).toBe(0);
+    expect(august[AnalyticsSeriesId.LibraryPhysicalBytes]).toBe(42);
+    expect(august.observedAt).toBe(items.observedAt);
+  });
+
+  it('handles overlapping and unordered buckets without carrying observations across gaps', () => {
+    const first = at('2026-08-01T00:00:00Z', AnalyticsSeriesId.LibraryItems, 4);
+    const last = at('2026-08-31T23:59:59.999Z', AnalyticsSeriesId.LibraryItems, 2);
+    const buckets = [
+      { key: 'last', from: '2026-08-31', through: '2026-08-31', partial: true },
+      { key: 'month', from: '2026-08-01', through: '2026-08-31', partial: false },
+      { key: 'gap', from: '2026-08-02', through: '2026-08-30', partial: true },
+    ];
+    const bound = bindGrowth(buckets, [last, first]);
+    expect(bound.map((row) => row[AnalyticsSeriesId.LibraryItems])).toEqual([2, 2, null]);
+    expect(bound[0].observedAt).toBe(last.observedAt);
+    expect(bound[1].observedAt).toBe(last.observedAt);
+    expect(bound[2].observedAt).toBeNull();
+  });
+
+  it('does not read invalid dates without a bucket and rejects them when a bucket is evaluated', () => {
+    const invalid = { series: AnalyticsSeriesId.LibraryItems, value: 1, observedAt: new Date(NaN) };
+    expect(bindGrowth([], [invalid])).toEqual([]);
+    const holes: typeof window.buckets = [];
+    holes.length = 2;
+    expect(bindGrowth(holes, [invalid])).toEqual(holes);
+    expect(() => bindGrowth(window.buckets, [invalid])).toThrow(RangeError);
+  });
+
+  it('skips sparse samples and excludes readings for other series', () => {
+    const items = at('2026-08-20T00:00:00Z', AnalyticsSeriesId.LibraryItems, 5);
+    const unrelated = at('2026-08-31T00:00:00Z', AnalyticsSeriesId.HostCapacityBytes, 99);
+    const samples: Array<typeof items> = [];
+    samples.length = 3;
+    samples[1] = items;
+    samples[2] = unrelated;
+    const bound = bindGrowth(window.buckets, samples);
+    const august = bound[window.buckets.findIndex((bucket) => bucket.key === '2026-08')];
+    expect(august[AnalyticsSeriesId.LibraryItems]).toBe(5);
+    expect(august.observedAt).toBe(items.observedAt);
+    expect(Object.keys(august)).not.toContain(AnalyticsSeriesId.HostCapacityBytes);
+  });
+
   it('leaves buckets without observations as gaps instead of zero or carried values (missing observations)', () => {
     const bound = bindGrowth(window.buckets, [
       at('2026-06-10T00:00:00Z', AnalyticsSeriesId.LibraryItems, 900),
@@ -237,5 +287,70 @@ describe('cameras', () => {
     expect(cameraName('Apple', 'iPhone 16 Pro')).toBe('Apple iPhone 16 Pro');
     expect(cameraName('Sony', ' ')).toBeNull();
     expect(cameraName(null, 'X100V')).toBe('X100V');
+  });
+});
+
+describe('fixed analytics buckets', () => {
+  it('preserves key order, duplicate keys, zero fills and per-key addition order', () => {
+    const rows = [
+      { key: '__proto__', count: 2 },
+      { key: 'photo', count: 0.1 },
+      {
+        key: 'ignored',
+        get count(): number {
+          throw new Error('Unselected count was read');
+        },
+      },
+      { key: 'photo', count: 0.2 },
+      { key: 'photo', count: -0.3 },
+      { key: '__proto__', count: 3 },
+      { key: 'nan', count: NaN },
+      { key: 'nan', count: 2 },
+    ];
+    expect(fixedBuckets(['photo', 'missing', '__proto__', 'photo', 'nan'], rows)).toEqual([
+      { key: 'photo', count: 0.1 + 0.2 - 0.3 },
+      { key: 'missing', count: 0 },
+      { key: '__proto__', count: 5 },
+      { key: 'photo', count: 0.1 + 0.2 - 0.3 },
+      { key: 'nan', count: NaN },
+    ]);
+  });
+
+  it('skips sparse rows and never reads rows for an empty key list', () => {
+    const rows: Array<{ key: string; count: number }> = [];
+    rows.length = 3;
+    rows[1] = { key: 'photo', count: -0 };
+    expect(fixedBuckets(['photo'], rows)).toEqual([{ key: 'photo', count: 0 }]);
+    const unread = [
+      {
+        get key(): string {
+          throw new Error('Unexpected row read');
+        },
+        count: 1,
+      },
+    ];
+    expect(fixedBuckets([], unread)).toEqual([]);
+    const keys: string[] = [];
+    keys.length = 3;
+    expect(fixedBuckets(keys, unread)).toEqual(keys);
+    keys[1] = 'photo';
+    const expected: Array<{ key: string; count: number }> = [];
+    expected.length = 3;
+    expected[1] = { key: 'photo', count: 0 };
+    expect(fixedBuckets(keys, rows)).toEqual(expected);
+  });
+
+  it('reads each row key only once across all requested buckets', () => {
+    const keys = ['one', 'two', 'three', 'four', 'five'];
+    let reads = 0;
+    const rows = Array.from({ length: 200 }, (_, index) => ({
+      get key() {
+        reads++;
+        return keys[index % keys.length];
+      },
+      count: 1,
+    }));
+    expect(fixedBuckets(keys, rows)).toEqual(keys.map((key) => ({ key, count: 40 })));
+    expect(reads).toBeLessThanOrEqual(rows.length);
   });
 });

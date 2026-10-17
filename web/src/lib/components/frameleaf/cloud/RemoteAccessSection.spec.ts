@@ -419,15 +419,15 @@ describe('RemoteAccessSection (FL-165)', () => {
         relayConnected: true,
         relayLatencyMs: 23,
         relayConnectedAt: '2026-09-26T12:00:00.000Z',
-        relayBytesIn: 2048,
-        relayBytesOut: 3_145_728,
+        relayBytesIn: 2000,
+        relayBytesOut: 3_000_000,
       }),
     );
     render(RemoteAccessSection);
 
     expect(await screen.findByText('23 ms')).toBeInTheDocument();
     expect(screen.getByText('Connected since')).toBeInTheDocument();
-    expect(screen.getByText(/2 KiB in, 3 MiB out/)).toBeInTheDocument();
+    expect(screen.getByText(/2 KB in, 3 MB out/)).toBeInTheDocument();
     expect(screen.queryByText(/Last problem/)).not.toBeInTheDocument();
   });
 
@@ -549,8 +549,8 @@ describe('RemoteAccessSection relay use this month (FL-166)', () => {
     period: '2026-09',
     periodStart: '2026-09-01T00:00:00.000Z',
     periodEnd: '2026-10-01T00:00:00.000Z',
-    bytes: 171_798_691_840,
-    limitBytes: 214_748_364_800,
+    bytes: 160_000_000_000,
+    limitBytes: 200_000_000_000,
     throttled: false,
     throttleBps: null,
     throttleUntil: null,
@@ -576,16 +576,16 @@ describe('RemoteAccessSection relay use this month (FL-166)', () => {
     render(RemoteAccessSection);
 
     const meter = await screen.findByRole('meter', { name: 'Relay use this month' });
-    expect(meter).toHaveAttribute('aria-valuenow', '171798691840');
-    expect(meter).toHaveAttribute('aria-valuemax', '214748364800');
+    expect(meter).toHaveAttribute('aria-valuenow', '160000000000');
+    expect(meter).toHaveAttribute('aria-valuemax', '200000000000');
     expect(meter.className).toContain('is-high');
-    expect(screen.getByText('160 GiB of 200 GiB')).toBeInTheDocument();
+    expect(screen.getByText('160 GB of 200 GB')).toBeInTheDocument();
   });
 
   it('says the relay is slowed down, not cut off, once the allowance is used up', async () => {
     sdkMock.getRemoteAccessUsage.mockResolvedValue(
       usage({
-        bytes: 214_748_364_800,
+        bytes: 200_000_000_000,
         throttled: true,
         throttleBps: 1_000_000,
         throttleUntil: '2026-10-01T00:00:00.000Z',

@@ -58,8 +58,9 @@ describe('YearScrubber', () => {
     expect(screen.getByTestId('frameleaf-year-scrubber').style.getPropertyValue('--fl-scrub-clear')).toBe('120px');
   });
 
-  it('asks for no clearance in its own column', () => {
+  // LIB-P4: the header block spans the scrubber's own column too, so the track keeps clear of it there.
+  it('keeps its track clear of the page header in its own column as well', () => {
     render(YearScrubber, { timelineManager: new TimelineManager(), clear: 120 });
-    expect(screen.getByTestId('frameleaf-year-scrubber').style.getPropertyValue('--fl-scrub-clear')).toBe('');
+    expect(screen.getByTestId('frameleaf-year-scrubber').style.getPropertyValue('--fl-scrub-clear')).toBe('120px');
   });
 });

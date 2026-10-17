@@ -62,6 +62,8 @@
   let restoreOf = $state<PreservationRestoreDto | null>(null);
   let restorePackageId = $state<string | null>(null);
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
+  /** A read on its way when the panel went must not schedule another. */
+  let destroyed = false;
 
   const isAdmin = $derived(!!authManager.user?.isAdmin);
   const openRestores = $derived(
@@ -83,16 +85,25 @@
 
   const load = async () => {
     try {
-      [packages, restores] = await Promise.all([getPreservationPackages(), getPreservationRestores()]);
+      const [nextPackages, nextRestores] = await Promise.all([getPreservationPackages(), getPreservationRestores()]);
+      if (destroyed) {
+        return;
+      }
+      [packages, restores] = [nextPackages, nextRestores];
       loaded = true;
     } catch (error) {
-      handleError(error, $t('frameleaf_preservation_load_error'));
+      if (!destroyed) {
+        handleError(error, $t('frameleaf_preservation_load_error'));
+      }
     }
     schedule();
   };
 
   const schedule = () => {
     clearTimeout(pollTimer);
+    if (destroyed) {
+      return;
+    }
     const delay = pollDelay([...packages.map((item) => item.operation), ...restores.map((item) => item.operation)]);
     if (delay) {
       pollTimer = setTimeout(() => void load(), delay);
@@ -144,7 +155,10 @@
   };
 
   onMount(() => void load());
-  onDestroy(() => clearTimeout(pollTimer));
+  onDestroy(() => {
+    destroyed = true;
+    clearTimeout(pollTimer);
+  });
 </script>
 
 <div class="preservation">

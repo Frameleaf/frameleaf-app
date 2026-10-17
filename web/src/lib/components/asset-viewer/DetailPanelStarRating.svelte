@@ -18,6 +18,7 @@
   import { getAssetInfo, updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
   import { Text } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
+  import { onDestroy } from 'svelte';
 
   interface Props {
     asset: AssetResponseDto;
@@ -32,46 +33,79 @@
   let isSaving = $state(false);
   /** The last value chosen, so a retryable failure replays that value and not the stored one. */
   let pending = $state<Rating | null>(null);
+  let destroyed = false;
+  onDestroy(() => (destroyed = true));
+  let displayedAssetId = asset.id;
+  $effect(() => {
+    if (displayedAssetId !== asset.id) {
+      displayedAssetId = asset.id;
+      failure = null;
+      pending = null;
+      isSaving = false;
+    }
+  });
+  const captureView = () => {
+    const id = asset.id;
+    const isCurrentSession = authManager.captureSession();
+    return () => !destroyed && asset.id === id && isCurrentSession();
+  };
 
   const handleChangeRating = async (next: Rating) => {
+    const isCurrent = captureView();
     isSaving = true;
     pending = next;
     try {
       await updateAsset({ id: asset.id, updateAssetDto: { rating: next } });
+      if (!isCurrent()) {
+        return;
+      }
       failure = null;
       pending = null;
       // The top row's Rating tool reads the viewer's asset, so hand it the stored value.
       onAssetRefresh?.({ ...asset, exifInfo: { ...asset.exifInfo, rating: next, isRejected: next === -1 } });
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       failure = classifyInlineEditError(error);
       handleError(error, $t('errors.cant_apply_changes'));
     } finally {
-      isSaving = false;
+      if (isCurrent()) {
+        isSaving = false;
+      }
     }
   };
 
   const reload = async () => {
+    const isCurrent = captureView();
     try {
       const updated = await getAssetInfo({ id: asset.id });
+      if (!isCurrent()) {
+        return;
+      }
       failure = null;
       pending = null;
       onAssetRefresh?.(updated);
     } catch (error) {
-      handleError(error, $t('frameleaf_info_error_reload_failed'));
+      if (isCurrent()) {
+        handleError(error, $t('frameleaf_info_error_reload_failed'));
+      }
     }
   };
 </script>
 
 {#if isOwner && !asset.isTrashed && !authManager.isSharedLink && authManager.authenticated && authManager.preferences.ratings.enabled}
-  <section class="px-4 pt-4" data-testid="frameleaf-info-rating">
-    <div class="flex h-8 w-full items-center text-sm">
-      <Text color="muted">{$t('frameleaf_info_rating')}</Text>
+  <section data-testid="frameleaf-info-rating">
+    <div class="fl-info-heading-row">
+      <h3 class="fl-info-heading">{$t('frameleaf_info_rating')}</h3>
     </div>
     <div class="flex items-center gap-2">
       {#if rating === -1}
         <Text color="muted">{$t('frameleaf_library_rating_rejected')}</Text>
       {/if}
-      <StarRating {rating} onRating={(value) => handlePromiseError(handleChangeRating(value))} />
+      {#key asset.id}
+        <StarRating {rating} onRating={(value) => handlePromiseError(handleChangeRating(value))} />
+      {/key}
       <button
         type="button"
         class="fl-stars-clear"
@@ -95,6 +129,48 @@
 {/if}
 
 <style>
+  /*
+   * .mv-stars (media-viewer.css:204-228): 34px stars, muted until set, set stars in the warm
+   * star colour; a star grows a little under the pointer.
+   */
+  [data-testid='frameleaf-info-rating'] :global([data-testid='star-container']) {
+    gap: var(--fl-space-half);
+  }
+
+  [data-testid='frameleaf-info-rating'] :global([data-testid='star']) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: var(--fl-radius-control);
+    color: var(--fl-viewer-muted);
+    transition:
+      transform var(--fl-motion-fast) var(--fl-ease),
+      color var(--fl-motion-fast) var(--fl-ease);
+  }
+
+  [data-testid='frameleaf-info-rating'] :global([data-testid='star'].filled) {
+    color: var(--fl-warning);
+  }
+
+  [data-testid='frameleaf-info-rating'] :global([data-testid='star']:hover) {
+    transform: scale(1.12);
+  }
+
+  @media (pointer: coarse) {
+    [data-testid='frameleaf-info-rating'] :global([data-testid='star']) {
+      width: 40px;
+      height: 40px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-testid='frameleaf-info-rating'] :global([data-testid='star']:hover) {
+      transform: none;
+    }
+  }
+
   /* .mv-stars-clear (media-viewer.css:229-240). */
   .fl-stars-clear {
     margin-inline-start: 6px;

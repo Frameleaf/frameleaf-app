@@ -1,7 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, type SqlBool, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AssetType, AssetVisibility } from 'src/enum.js';
+import { publicationDatabase } from 'src/queue/transaction.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
 import { asUuid } from 'src/utils/database.js';
 import { isNotLocked } from 'src/utils/locked.js';
@@ -20,7 +23,56 @@ const filenameStem = (column: string) => sql<string>`lower(regexp_replace(${sql.
 
 @Injectable()
 export class LivePhotoRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
+  constructor(@InjectKysely() private db: Kysely<DB>) {
+    this.db = publicationDatabase(this.db);
+  }
+
+  async withRelinkTransaction<T>(
+    photoId: string,
+    videoId: string,
+    callback: (assets: AssetRepository, albums: AlbumRepository) => Promise<T>,
+  ): Promise<T> {
+    const execute = async (tx: Kysely<DB>) => {
+      const assetIds = [...new Set([photoId.toLowerCase(), videoId.toLowerCase()])].sort();
+      for (const id of assetIds) {
+        await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${id})::int)`.execute(tx);
+      }
+      const memberships = await tx.selectFrom('album_asset').select('albumId').where('assetId', '=', videoId).execute();
+      const albumIds = new Set(memberships.map(({ albumId }) => albumId));
+      try {
+        // Album writers take album rows before asset/FK locks; refuse contention rather than invert that order.
+        if (albumIds.size > 0) {
+          await tx
+            .selectFrom('album')
+            .select('id')
+            .where('id', 'in', [...albumIds].sort())
+            .orderBy('id')
+            .forNoKeyUpdate()
+            .noWait()
+            .execute();
+        }
+        await tx
+          .selectFrom('asset')
+          .select('id')
+          .where('id', 'in', assetIds)
+          .orderBy('id')
+          .forUpdate()
+          .noWait()
+          .execute();
+      } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === '55P03') {
+          throw new ConflictException('The pair or its album membership is changing; retry relinking.');
+        }
+        throw error;
+      }
+      const current = await tx.selectFrom('album_asset').select('albumId').where('assetId', '=', videoId).execute();
+      if (current.some(({ albumId }) => !albumIds.has(albumId))) {
+        throw new ConflictException('The pair or its album membership is changing; retry relinking.');
+      }
+      return callback(new AssetRepository(tx), new AlbumRepository(tx));
+    };
+    return this.db.isTransaction ? execute(this.db) : this.db.transaction().execute(execute);
+  }
 
   /**
    * High-confidence candidates: a still image and a video that share Apple's

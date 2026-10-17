@@ -6,24 +6,32 @@
    * Usage: <div use:portal={'css selector'}> or <div use:portal={document.body}>
    */
   export function portal(element: HTMLElement, target: HTMLElement | string = 'body') {
-    let targetElement;
+    let generation = 0;
+    let destroyed = false;
     async function update(newTarget: HTMLElement | string) {
-      target = newTarget;
-      if (typeof target === 'string') {
-        targetElement = document.querySelector(target);
+      if (destroyed) {
+        return;
+      }
+      const current = ++generation;
+      let targetElement;
+      if (typeof newTarget === 'string') {
+        targetElement = document.querySelector(newTarget);
         if (targetElement === null) {
           await tick();
-          targetElement = document.querySelector(target);
+          if (destroyed || current !== generation) {
+            return;
+          }
+          targetElement = document.querySelector(newTarget);
         }
         if (targetElement === null) {
-          throw new Error(`No element found matching css selector: "${target}"`);
+          throw new Error(`No element found matching css selector: "${newTarget}"`);
         }
-      } else if (target instanceof HTMLElement) {
-        targetElement = target;
+      } else if (newTarget instanceof HTMLElement) {
+        targetElement = newTarget;
       } else {
         throw new TypeError(
           `Unknown portal target type: ${
-            target === null ? 'null' : typeof target
+            newTarget === null ? 'null' : typeof newTarget
           }. Allowed types: string (CSS selector) or HTMLElement.`,
         );
       }
@@ -32,9 +40,8 @@
     }
 
     function destroy() {
-      if (element.parentNode) {
-        element.remove();
-      }
+      destroyed = true;
+      element.remove();
     }
 
     handlePromiseError(update(target));

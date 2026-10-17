@@ -20,10 +20,11 @@ import { maskWeight, originalMaskWeight } from 'src/utils/develop-recipe.js';
 
 const execFile = promisify(execFileCallback);
 
-// release-5.6.1: https://github.com/darktable-org/darktable/tree/03179f8e080aa9cedebfe14b098b7ba88940a292
+// release-5.6.2: https://github.com/darktable-org/darktable/tree/20891f6c6fa7be995e5bf9dff9d1ee5062051773
+// Recipe darktable/5.6.1 retains its byte-identical control/history ABI; runtime/cache identity follows 5.6.2.
 // The deployment image must pin this source and its dependencies; --version verifies the release, not build provenance.
 export const DARKTABLE_RENDERER_VERSION =
-  'frameleaf-darktable/2;darktable/5.6.1;03179f8e080aa9cedebfe14b098b7ba88940a292;lens-calibration/1;mask-geometry/1;omp-thread-limit/1';
+  'frameleaf-darktable/2;darktable/5.6.2;20891f6c6fa7be995e5bf9dff9d1ee5062051773;lens-calibration/1;mask-geometry/1;omp-thread-limit/1';
 export const DARKTABLE_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_BYTES = 1024 ** 3;
 // ponytail: one native render per worker process; use shared admission if the deployment needs a global ceiling.
@@ -59,8 +60,8 @@ async function runDarktable(args: string[], signal: AbortSignal) {
 
 /** Only accepts the pinned release banner, never development builds or another patch release. */
 export function verifyDarktableVersion(stdout: string): void {
-  if (!/^darktable 5\.6\.1\r?\n/.test(stdout)) {
-    throw new Error('Native development requires darktable 5.6.1');
+  if (!/^darktable 5\.6\.2\r?\n/.test(stdout)) {
+    throw new Error('Native development requires darktable 5.6.2');
   }
 }
 
