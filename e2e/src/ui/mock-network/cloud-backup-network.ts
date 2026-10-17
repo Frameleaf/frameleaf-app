@@ -126,6 +126,7 @@ export const cloudBackupStatus = (mock: CloudBackupMockState) => ({
   keyFingerprint: mock.configured ? GENERATED_KEY.fingerprint : null,
   keyLoaded: mock.configured,
   lastRun: null,
+  coverage: null,
   lastSuccessAt: null,
   lastManifestKey: null,
   usage: mock.configured ? { objects: 0, bytes: 0 } : null,
