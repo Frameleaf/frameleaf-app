@@ -3,11 +3,9 @@ name: Migration Order
   pull_request:
     branches:
       - main
-      - master/frameleaf-implementation
   push:
     branches:
       - main
-      - master/frameleaf-implementation
 permissions:
   contents: read
 concurrency:

@@ -50,7 +50,7 @@ test("signed NAS bytes refuse stale templates, altered downloads and contradicto
   const signed = JSON.parse(await fs.readFile(file));
   const request = async () => ({
     head_sha: sourceCommit,
-    head_branch: "master/frameleaf-implementation",
+    head_branch: "main",
     head_repository: { full_name: "Frameleaf/frameleaf-app" },
     event: "workflow_dispatch",
     status: "completed",
