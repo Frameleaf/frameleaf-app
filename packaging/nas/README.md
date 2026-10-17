@@ -1,5 +1,9 @@
 # Frameleaf NAS distribution
 
+See [release preparation and platform submission instructions](SUBMISSION.md)
+for the independent Frameleaf 1.0.0 release, the NAS packages workflow, and the
+Unraid, TrueNAS and private Synology distribution paths.
+
 The Manager installation path uses `node packaging/nas/build-manager.cjs
 MANAGER_MANIFEST OUTPUT`. It authenticates the independently published Manager
 component, exact successful two-architecture build, immutable image digest and
@@ -39,7 +43,7 @@ separately; publication does not imply acceptance. The generated
 [Unraid setup guide](unraid/README.md) covers HTTPS/WebUI matching, custom storage,
 claiming the administrator, manual dependencies and recovery scope.
 
-`node packaging/nas/build.cjs RELEASE frameleaf-vX.Y.Z-N OUTPUT` builds TrueNAS Community app source and Unraid XML templates from one Frameleaf release. Before writing output it verifies version 3 release and NAS manifests, SHA256SUMS, asset hashes, all application image signatures, exact release attestations using committed `cosign.pub`, and the successful source build run. Install Cosign and server workspace dependencies; use `GITHUB_TOKEN` for authenticated reads when needed. Keep both manifests with packages and preserve digest references.
+`node packaging/nas/build.cjs RELEASE frameleaf-vX.Y.Z OUTPUT` builds TrueNAS Community app source and Unraid XML templates from one Frameleaf release. Before writing output it verifies version 3 release and NAS manifests, SHA256SUMS, asset hashes, all application image signatures, exact release attestations using committed `cosign.pub`, and the successful source build run. Install Cosign and server workspace dependencies; use `GITHUB_TOKEN` for authenticated reads when needed. Keep both manifests with packages and preserve digest references.
 
 These packages create a fresh canonical Frameleaf database on PostgreSQL 19 beta 4 with pgvector 0.8.7 and HNSW. Mount the database directory at `/var/lib/postgresql`; PostgreSQL writes its versioned data beneath it. An offline, read-only Immich 3.x export through stable 3.2.4 is a separate one-time import source. Never reuse an older PostgreSQL volume as the canonical database.
 

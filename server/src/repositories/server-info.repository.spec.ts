@@ -3,15 +3,27 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ServerInfoRepository } from 'src/repositories/server-info.repository.js';
 import { FrameleafFeedRelease, rolloutBucket } from 'src/utils/frameleaf-release.js';
-import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
+import { cloudContractFixture as legacyCloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
+
+// Adapt the retained legacy contract to the independent release epoch without rewriting its source fixture.
+const independentFeedFixture = (name: string): FrameleafFeedRelease => {
+  const original = legacyCloudContractFixture<FrameleafFeedRelease>(name);
+  return {
+    ...original,
+    tag: `frameleaf-v${original.version}`,
+    ...(original.fallback
+      ? { fallback: { ...original.fallback, tag: `frameleaf-v${original.fallback.version}` } }
+      : {}),
+  };
+};
 
 // Frameleaf Cloud release feed response (FC-70, `GET /v1/releases/latest`).
 // TODO(FC-70): replace with the shared fixture in packages/contracts/fixtures/releases/ when it lands.
 const feedRelease = (extra: Partial<FrameleafFeedRelease> = {}): FrameleafFeedRelease => ({
   version: '3.2.1',
-  tag: 'frameleaf-v3.2.1-4',
+  tag: 'frameleaf-v3.2.1',
   publishedAt: '2026-09-25T12:00:00Z',
-  url: 'https://github.com/Frameleaf/frameleaf-app/releases/tag/frameleaf-v3.2.1-4',
+  url: 'https://github.com/Frameleaf/frameleaf-app/releases/tag/frameleaf-v3.2.1',
   notesUrl: 'https://help.frameleaf.app/releases/3.2.1',
   minimumSupported: null,
   ...extra,
@@ -69,7 +81,7 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
     });
 
     it('asks the beta channel for release candidates', async () => {
-      const fetch = respond(feedRelease({ version: '3.3.0-rc.1', tag: 'frameleaf-v3.3.0-rc.1-2' }));
+      const fetch = respond(feedRelease({ version: '3.3.0-rc.1', tag: 'frameleaf-v3.3.0-rc.1' }));
       vitest.stubGlobal('fetch', fetch);
 
       await expect(repository.getLatestRelease(ReleaseChannel.ReleaseCandidate, SEED)).resolves.toEqual(
@@ -100,7 +112,7 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
       const fetch = vitest
         .fn()
         .mockResolvedValueOnce(feedResponse)
-        .mockResolvedValueOnce(Response.json(release('frameleaf-v3.2.0-2')));
+        .mockResolvedValueOnce(Response.json(release('frameleaf-v3.2.0')));
       vitest.stubGlobal('fetch', fetch);
 
       await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toEqual({
@@ -114,7 +126,7 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
       const fetch = vitest
         .fn()
         .mockRejectedValueOnce(new TypeError('fetch failed'))
-        .mockResolvedValueOnce(Response.json(release('frameleaf-v3.2.0-2')));
+        .mockResolvedValueOnce(Response.json(release('frameleaf-v3.2.0')));
       vitest.stubGlobal('fetch', fetch);
 
       await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toEqual(
@@ -126,7 +138,7 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
 
   describe('GitHub releases fallback', () => {
     it("reads the stable version from Frameleaf's latest GitHub release", async () => {
-      const fetch = feedDownThen(Response.json(release('frameleaf-v3.2.1-4')));
+      const fetch = feedDownThen(Response.json(release('frameleaf-v3.2.1')));
       vitest.stubGlobal('fetch', fetch);
 
       await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toEqual({
@@ -143,9 +155,9 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
     it('reads recent releases, prereleases included, for the release-candidate channel', async () => {
       const fetch = feedDownThen(
         Response.json([
-          release('frameleaf-v3.2.1-1'),
-          release('frameleaf-v3.3.0-rc.1-2', { prerelease: true }),
-          release('frameleaf-v9.0.0-1', { draft: true }),
+          release('frameleaf-v3.2.1'),
+          release('frameleaf-v3.3.0-rc.1', { prerelease: true }),
+          release('frameleaf-v9.0.0', { draft: true }),
           release('v4.0.0'),
         ]),
       );
@@ -159,12 +171,8 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
 
     it('falls back to the release list for Stable when the latest release is a release candidate', async () => {
       const fetch = feedDownThen(
-        Response.json(release('frameleaf-v3.3.0-rc.1-1')),
-        Response.json([
-          release('frameleaf-v3.3.0-rc.1-1'),
-          release('frameleaf-v3.2.1-2'),
-          release('frameleaf-v3.2.0-1'),
-        ]),
+        Response.json(release('frameleaf-v3.3.0-rc.1')),
+        Response.json([release('frameleaf-v3.3.0-rc.1'), release('frameleaf-v3.2.1'), release('frameleaf-v3.2.0')]),
       );
       vitest.stubGlobal('fetch', fetch);
 
@@ -230,8 +238,8 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
       const fetch = vitest
         .fn()
         .mockResolvedValueOnce(Response.json(feedRelease(flags)))
-        .mockResolvedValueOnce(Response.json(release('frameleaf-v3.2.1-4')))
-        .mockResolvedValueOnce(Response.json([release('frameleaf-v3.2.1-4'), release('frameleaf-v3.2.0-2')]));
+        .mockResolvedValueOnce(Response.json(release('frameleaf-v3.2.1')))
+        .mockResolvedValueOnce(Response.json([release('frameleaf-v3.2.1'), release('frameleaf-v3.2.0')]));
       vitest.stubGlobal('fetch', fetch);
 
       await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toEqual(
@@ -239,8 +247,8 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
       );
     });
 
-    describe('with the published feed answer (frameleaf-cloud#83)', () => {
-      const stable = cloudContractFixture<FrameleafFeedRelease>('releases/latest-stable.json');
+    describe('with an independent-epoch staged feed answer', () => {
+      const stable = independentFeedFixture('releases/latest-stable.json');
       const seeds = Array.from({ length: 200 }, (_, i) => `seed-${i}`);
 
       it('offers 3.2.1 inside its 25% rollout and 3.2.0 outside it, with one request each', async () => {
@@ -262,7 +270,7 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
       });
 
       it('offers the fully rolled-out release candidate to every server', async () => {
-        const fetch = respond(cloudContractFixture('releases/latest-beta.json'));
+        const fetch = respond(independentFeedFixture('releases/latest-beta.json'));
         vitest.stubGlobal('fetch', fetch);
         for (const seed of seeds.slice(0, 20)) {
           await expect(repository.getLatestRelease(ReleaseChannel.ReleaseCandidate, seed)).resolves.toEqual(
@@ -275,9 +283,9 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
     describe('with the feed fallback', () => {
       const fallback = {
         version: '3.2.0',
-        tag: 'frameleaf-v3.2.0-2',
+        tag: 'frameleaf-v3.2.0',
         publishedAt: '2026-09-20T12:00:00Z',
-        url: 'https://github.com/Frameleaf/frameleaf-app/releases/tag/frameleaf-v3.2.0-2',
+        url: 'https://github.com/Frameleaf/frameleaf-app/releases/tag/frameleaf-v3.2.0',
         notesUrl: 'https://help.frameleaf.app/releases/3.2.0',
         minimumSupported: null,
         rolloutPercent: 100,
@@ -314,7 +322,7 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
         const fetch = vitest
           .fn()
           .mockResolvedValueOnce(Response.json(feedRelease({ fallback: { ...fallback, version: '3.3.0' } })))
-          .mockResolvedValueOnce(Response.json(release('frameleaf-v3.2.1-4')));
+          .mockResolvedValueOnce(Response.json(release('frameleaf-v3.2.1')));
         vitest.stubGlobal('fetch', fetch);
         await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toEqual(
           expect.objectContaining({ version: 'v3.2.1' }),
@@ -335,15 +343,15 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
     });
 
     it('skips GitHub releases whose body withdraws them or stages them past this server', async () => {
-      const withdrawn = release('frameleaf-v3.2.1-4', { body: 'Notes\nwithdrawn: data loss on upgrade\n' });
+      const withdrawn = release('frameleaf-v3.2.1', { body: 'Notes\nwithdrawn: data loss on upgrade\n' });
       vitest.stubGlobal(
         'fetch',
         feedDownThen(
           Response.json(withdrawn),
           Response.json([
             withdrawn,
-            release('frameleaf-v3.2.0-2', { body: `rollout: ${rolloutBucket(SEED, '3.2.0')}%` }),
-            release('frameleaf-v3.1.0-1'),
+            release('frameleaf-v3.2.0', { body: `rollout: ${rolloutBucket(SEED, '3.2.0')}%` }),
+            release('frameleaf-v3.1.0'),
           ]),
         ),
       );
@@ -353,7 +361,7 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
     });
 
     it('offers nothing when every Frameleaf release on GitHub is withdrawn', async () => {
-      const withdrawn = release('frameleaf-v3.2.1-4', { body: 'withdrawn: broken' });
+      const withdrawn = release('frameleaf-v3.2.1', { body: 'withdrawn: broken' });
       vitest.stubGlobal('fetch', feedDownThen(Response.json(withdrawn), Response.json([withdrawn])));
       await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toBeNull();
     });
@@ -363,7 +371,7 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
         const fetch = vitest
           .fn()
           .mockResolvedValueOnce(Response.json(feedRelease(flags as Partial<FrameleafFeedRelease>)))
-          .mockResolvedValueOnce(Response.json(release('frameleaf-v3.2.0-2')));
+          .mockResolvedValueOnce(Response.json(release('frameleaf-v3.2.0')));
         vitest.stubGlobal('fetch', fetch);
         await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toEqual(
           expect.objectContaining({ version: 'v3.2.0' }),

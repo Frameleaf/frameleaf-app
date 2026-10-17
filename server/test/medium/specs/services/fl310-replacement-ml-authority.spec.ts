@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { gzipSync } from 'node:zlib';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
 import { RESTORATION_PROTOCOL, RESTORATION_RESULT_HEADER } from 'src/dtos/restoration-inference.dto.js';
@@ -362,7 +363,7 @@ describe('FL310 replacement ML authority regression', () => {
           files: mode === 'file' ? [{ path: filename, sha256, size: historicalBytes.length }] : [],
           manifest: {
             version: 1,
-            frameleafVersion: '2.6.0',
+            frameleafVersion: serverVersion.toString(),
             storageRoot: directory,
             storageRoots: [directory],
             library: {

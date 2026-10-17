@@ -48,7 +48,6 @@
   import WorkFileNamesToggle from '$lib/components/frameleaf/WorkFileNamesToggle.svelte';
   import {
     activeFilterFields,
-    discoveryUrl,
     withoutDiscoveryFilter,
     type DiscoveryDestination,
     type DiscoveryFilterSection,
@@ -361,25 +360,12 @@
   };
 
   /**
-   * A choice in the panel. What the page's photos can be narrowed by applies to the grid at once.
-   * Beyond that (a place, a camera, a date range, several people) the search results apply the whole
-   * query, with the page's own scope carried along, so the person lands on exactly what they asked
-   * for rather than on a choice that quietly did nothing.
+   * A choice in the panel narrows the page's photos in place, whatever it is (FL-425): the time
+   * buckets take the whole filter (a place, a camera, a date range, several people, an enrichment
+   * state) beside the page's own scope, as the template's grid follows every choice.
    */
   const applyFilterPanelQuery = (query: DiscoveryQuery) => {
-    const base = options ?? {};
-    if (timelineQueryOptions(query, base).unapplied.length === 0) {
-      session.setQuery(query);
-      return;
-    }
-    const search = searchQueryForTimeline(query, base);
-    if (!search) {
-      toastManager.warning($t('frameleaf_library_filter_not_here'));
-      return;
-    }
-    filterPanelOpen = false;
-    toastManager.primary($t('frameleaf_library_filter_opened_in_search'));
-    void goto(discoveryUrl(search));
+    session.setQuery(query);
   };
   /** The panel's counts are for the search this page stands for. */
   const filterCountQuery = $derived(
@@ -394,10 +380,10 @@
   const comparing = $derived(session.state.view === 'compare');
 
   /**
-   * The part of the session's query the time buckets can apply (review M3): a "View in library" link
-   * from Tags or Folders, or a session restored on this device, can carry one. Those conditions
-   * narrow the grid itself, so the count, the empty state and Slideshow describe what is shown; the
-   * rest (`unapplied`) stays for the search results page, where the whole query applies.
+   * The session's query as the time buckets apply it (review M3, FL-425): the Filters panel, a "View
+   * in library" link from Tags or Folders, or a session restored on this device can carry one. Every
+   * filter condition narrows the grid itself, so the count, the empty state and Slideshow describe
+   * what is shown; only search text (`unapplied`) stays for the search results page.
    */
   const queryApplied = $derived.by(() =>
     options && !publicView && !selectionMode
@@ -416,7 +402,6 @@
         selectionMode ||
         !options?.albumId ||
         query.spaceId ||
-        query.imageEnrichment ||
         query.queryAssetId ||
         query.view !== 'photos' ||
         timelineQueryOptions(query, {}).options.albumId !== options.albumId ||
@@ -431,9 +416,9 @@
     return () => removeEventListener(FILTER_APPLY_EVENT, apply);
   });
   /**
-   * A condition the buckets cannot apply never stays on a library page (review M3): "View in library"
-   * sends such queries to the search results instead, and one restored with the session is dropped
-   * here, so every chip, the count and "select all matching" describe exactly what the grid shows.
+   * Search text, which the buckets cannot run, never stays on a library page (review M3): "View in
+   * library" sends such queries to the search results instead, and text restored with the session is
+   * dropped here, so every chip, the count and "select all matching" describe exactly what the grid shows.
    */
   $effect(() => {
     const { unapplied } = queryApplied;

@@ -437,6 +437,17 @@ describe(RestorationWorkerService.name, () => {
       const selection = restore.mock.calls[0][0];
       expect(restorationAdmissionOf(selection)).toEqual({ cloudUploadConfirmed: true });
       expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringContaining('/after-'));
+      // FL-423: no model was chosen, so the worker uses its own for the mode
+      expect(restore.mock.calls[0][2].modelId).toBeNull();
+    });
+
+    it('asks the worker for the model the person chose (FL-423)', async () => {
+      await sut.run(operation({ snapshot: snapshot({ modelId: 'realbasicvsr-x4' }) }), CLAIM);
+
+      expect(restore.mock.calls[0][2]).toMatchObject({
+        mode: AssetRestorationMode.Faithful,
+        modelId: 'realbasicvsr-x4',
+      });
     });
 
     it('leaves the row running while the job waits for its automatic retry (FL-104)', async () => {
@@ -664,6 +675,8 @@ describe(RestorationWorkerService.name, () => {
       );
 
       expect(restore).toHaveBeenCalled();
+      // FL-423: the worker is asked for exactly the reviewed model, so it never runs another one
+      expect(restore.mock.calls[0][2].modelId).toBe('faithful-v1');
       expect(operations.fail).not.toHaveBeenCalledWith(
         OPERATION_ID,
         CLAIM,

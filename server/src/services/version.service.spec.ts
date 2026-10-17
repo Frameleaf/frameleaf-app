@@ -46,6 +46,14 @@ describe(VersionService.name, () => {
       expect(mocks.versionHistory.create).toHaveBeenCalledWith({ version: expect.any(String) });
     });
 
+    it('does not run an Immich memory migration for a Frameleaf 1.x upgrade', async () => {
+      mocks.versionHistory.getLatest.mockResolvedValue({ id: 'version-1', createdAt: new Date(), version: '1.0.0' });
+      mocks.versionHistory.create.mockResolvedValue(factory.versionHistory());
+      await sut.onBootstrap();
+      expect(mocks.versionHistory.create).toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalledWith({ name: JobName.MemoryGenerate });
+    });
+
     it('should skip a duplicate version', async () => {
       mocks.versionHistory.getLatest.mockResolvedValue({
         id: 'version-1',

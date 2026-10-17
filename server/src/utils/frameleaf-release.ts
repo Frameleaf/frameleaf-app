@@ -9,8 +9,8 @@ import { ReleaseChannel } from 'src/enum.js';
  * The Frameleaf Cloud release feed (FC-70) is asked first. It is public, needs no authentication and
  * can be cached for an hour. Frameleaf's GitHub releases are the fallback when the feed cannot answer.
  *
- * Release tags are `frameleaf-v<semver>-<n>` (`.github/frameleaf-release.cjs` `chooseTag`): the base
- * version of the build and a sequence number for rebuilds of that version.
+ * Independent releases use `frameleaf-v<semver>`. Legacy numbered rebuilds are not update offers
+ * in the Frameleaf 1.x epoch; their signed bundles remain available for explicit recovery.
  */
 export const FRAMELEAF_RELEASE_FEED = 'https://api.frameleaf.cloud/v1/releases/latest';
 export const FRAMELEAF_RELEASES_API = 'https://api.github.com/repos/Frameleaf/frameleaf-app/releases';
@@ -90,7 +90,7 @@ const parseFeedEntry = (body: unknown, channel: ReleaseChannel): Omit<ParsedFeed
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return;
   }
-  const { version, publishedAt, withdrawn, rolloutPercent } = body as Partial<FrameleafFeedRelease>;
+  const { version, tag, publishedAt, withdrawn, rolloutPercent } = body as Partial<FrameleafFeedRelease>;
   if (withdrawn !== undefined && withdrawn !== null && typeof withdrawn !== 'boolean') {
     return;
   }
@@ -102,7 +102,7 @@ const parseFeedEntry = (body: unknown, channel: ReleaseChannel): Omit<ParsedFeed
     return;
   }
   const normalized = valid(version);
-  if (!normalized) {
+  if (!normalized || tag !== `frameleaf-v${normalized}` || !parseFrameleafReleaseTag(tag)) {
     return;
   }
   if (channel === ReleaseChannel.Stable && new SemVer(normalized).prerelease.length > 0) {
@@ -142,22 +142,21 @@ export const parseFrameleafFeedRelease = (body: unknown, channel: ReleaseChannel
   return { ...release, fallback: parsed };
 };
 
-const TAG = /^frameleaf-v(\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?)-(\d+)$/;
+const TAG = /^frameleaf-v(\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?)$/;
 
-export type FrameleafReleaseTag = { version: string; sequence: number };
+export type FrameleafReleaseTag = { version: string };
 
-/** The base version and sequence of a Frameleaf release tag, or undefined for any other tag. */
+/** Independent Frameleaf SemVer, excluding the retired numeric rebuild suffix. */
 export const parseFrameleafReleaseTag = (tag: string): FrameleafReleaseTag | undefined => {
   const match = TAG.exec(tag);
   if (!match) {
     return undefined;
   }
-  const [, version, sequence] = match;
-  const number = Number(sequence);
-  if (!valid(version) || !Number.isSafeInteger(number)) {
+  const [, version] = match;
+  if (!valid(version)) {
     return undefined;
   }
-  return { version, sequence: number };
+  return { version };
 };
 
 export type GitHubRelease = {
@@ -170,8 +169,8 @@ export type GitHubRelease = {
 
 /**
  * The newest Frameleaf release in a list of GitHub releases: drafts and tags that are not Frameleaf
- * release tags are ignored, prereleases only count when `includePrerelease` is set, and a rebuild of
- * the same version (a higher sequence) wins over the earlier one. With `offered`, a release it rejects (withdrawn,
+ * release tags are ignored and prereleases only count when `includePrerelease` is set.
+ * With `offered`, a release it rejects (withdrawn,
  * or outside this server's staged rollout) is skipped, so an earlier offered release is found instead.
  */
 export const newestFrameleafRelease = (
@@ -193,7 +192,7 @@ export const newestFrameleafRelease = (
       continue;
     }
     const order = best ? semver.compare(best.semver) : 1;
-    if (order > 0 || (order === 0 && best && tag.sequence > best.tag.sequence)) {
+    if (order > 0) {
       best = { release, tag, semver };
     }
   }

@@ -1045,7 +1045,8 @@ export class PhotographyWorkflowService {
         Date.parse(row.value.config.expiresAt ?? '9999-01-01'),
       ),
     ).toISOString();
-    await this.repository.mutate(id, row.ownerId, row.albumId, undefined, row.value, (value) => {
+    // FL-423: a client signing in is not the owner's edit, so the owner's revision stays as it is
+    await this.repository.mutateKeepingRevision(id, row.ownerId, row.albumId, undefined, row.value, (value) => {
       const current = this.requireRecipient({ ...row, value }, recipient.id);
       if (current.passwordHash !== passwordHash || current.tokenHash !== tokenHash)
         throw new ForbiddenException('Invalid invitation or password');
@@ -1267,7 +1268,9 @@ export class PhotographyWorkflowService {
     change: (value: PhotographyWorkflow, recipient: Recipient, row: WorkflowRow) => Promise<void> | void,
   ) {
     const guest = await this.guest(id, token);
-    const { row } = await this.repository.mutate(
+    // FL-423: a client's choices, submissions, quotes and approvals keep the owner's revision. The
+    // client's own save is still refused once the owner has changed the gallery since it loaded.
+    const { row } = await this.repository.mutateKeepingRevision(
       id,
       guest.row.ownerId,
       guest.row.albumId,
@@ -1739,20 +1742,28 @@ export class PhotographyWorkflowService {
     if (!row || !row.value.publication) return JobStatus.Skipped;
     const claim = randomUUID();
     const publicationId = row.value.publication.id;
-    const claimed = await this.repository.mutate(id, row.ownerId, row.albumId, undefined, row.value, (value) => {
-      const p = value.publication;
-      if (
-        !p ||
-        p.id !== publicationId ||
-        (p.status === 'rendering' && Date.parse(p.updatedAt) > Date.now() - 10 * 60_000) ||
-        p.status === 'ready'
-      )
-        return false;
-      p.status = 'rendering';
-      p.claim = claim;
-      p.updatedAt = iso();
-      return true;
-    });
+    // FL-423: the render is background work, not the owner's edit; none of its writes change the revision
+    const claimed = await this.repository.mutateKeepingRevision(
+      id,
+      row.ownerId,
+      row.albumId,
+      undefined,
+      row.value,
+      (value) => {
+        const p = value.publication;
+        if (
+          !p ||
+          p.id !== publicationId ||
+          (p.status === 'rendering' && Date.parse(p.updatedAt) > Date.now() - 10 * 60_000) ||
+          p.status === 'ready'
+        )
+          return false;
+        p.status = 'rendering';
+        p.claim = claim;
+        p.updatedAt = iso();
+        return true;
+      },
+    );
     if (!claimed.result) {
       const p = claimed.row.value.publication;
       if (p?.status === 'rendering')
@@ -1784,7 +1795,7 @@ export class PhotographyWorkflowService {
         if (!logo || logo.isOffline) throw new ForbiddenException('Studio logo unavailable');
         const file = path.join(folder, 'studio-logo.png');
         await this.atomicFile(file, (await preparePhotographyLogo(await this.logoBytes(logo.originalPath))).original);
-        await this.repository.mutate(id, row.ownerId, row.albumId, undefined, row.value, (value) => {
+        await this.repository.mutateKeepingRevision(id, row.ownerId, row.albumId, undefined, row.value, (value) => {
           if (value.publication?.claim !== claim) throw new ConflictException('Publication superseded');
           value.publication.logoPath = file;
         });
@@ -1816,7 +1827,7 @@ export class PhotographyWorkflowService {
         await this.atomicFile(previewPath, await renderPhotographyRendition(source, watermark, logo, 2400));
         await this.atomicFile(thumbnailPath, await renderPhotographyRendition(source, watermark, logo, 480));
         // Existing successful files remain until the entire new proof set is ready.
-        await this.repository.mutate(id, row.ownerId, row.albumId, undefined, row.value, (value) => {
+        await this.repository.mutateKeepingRevision(id, row.ownerId, row.albumId, undefined, row.value, (value) => {
           const p = value.publication;
           if (!p || p.claim !== claim) throw new ConflictException('Publication superseded');
           p.photos = p.photos.filter((photo) => photo.captureId !== captureId);
@@ -1897,7 +1908,7 @@ export class PhotographyWorkflowService {
           }
       activeCaptureId = null;
       row = (await this.repository.get(id))!;
-      await this.repository.mutate(id, row.ownerId, row.albumId, undefined, row.value, async (value) => {
+      await this.repository.mutateKeepingRevision(id, row.ownerId, row.albumId, undefined, row.value, async (value) => {
         const p = value.publication;
         if (!p || p.claim !== claim) throw new ConflictException('Publication superseded');
         const eligible = await this.eligible({ ...row!, value }, p.captureIds);
@@ -1949,20 +1960,27 @@ export class PhotographyWorkflowService {
     } catch {
       const current = await this.repository.get(id);
       if (current)
-        await this.repository.mutate(id, current.ownerId, current.albumId, undefined, current.value, (value) => {
-          if (value.publication?.claim !== claim) {
-            return;
-          }
+        await this.repository.mutateKeepingRevision(
+          id,
+          current.ownerId,
+          current.albumId,
+          undefined,
+          current.value,
+          (value) => {
+            if (value.publication?.claim !== claim) {
+              return;
+            }
 
-          value.publication.status = 'failed';
-          value.publication.failedCaptureId = activeCaptureId;
-          const failed = value.captures.find((capture) => capture.id === activeCaptureId);
-          if (failed) failed.processing = 'failed';
-          value.publication.claim = null;
-          value.publication.error =
-            'Photograph preparation failed. Check source processing, edit revisions and watermark logo, then retry.';
-          value.publication.updatedAt = iso();
-        });
+            value.publication.status = 'failed';
+            value.publication.failedCaptureId = activeCaptureId;
+            const failed = value.captures.find((capture) => capture.id === activeCaptureId);
+            if (failed) failed.processing = 'failed';
+            value.publication.claim = null;
+            value.publication.error =
+              'Photograph preparation failed. Check source processing, edit revisions and watermark logo, then retry.';
+            value.publication.updatedAt = iso();
+          },
+        );
       return JobStatus.Failed;
     }
   }
@@ -2153,29 +2171,37 @@ export class PhotographyWorkflowService {
     const { row, recipient } = await this.guest(id, token);
     const requests = dto.outputs ?? dto.captureIds.map((captureId) => ({ captureId, outputId: undefined }));
     const zipId = randomUUID();
-    await this.repository.mutate(id, row.ownerId, row.albumId, row.revision, row.value, async (value) => {
-      const current = this.requireRecipient({ ...row, value }, recipient.id);
-      const entries = [];
-      for (const request of requests) {
-        const output = await this.downloadItem({ ...row, value }, current, request.captureId, request.outputId);
-        entries.push({
-          captureId: request.captureId,
-          orderId: output.orderId,
-          outputId: output.id,
-          revisionId: output.revisionId!,
+    // FL-423: a client's archive request keeps the owner's revision
+    await this.repository.mutateKeepingRevision(
+      id,
+      row.ownerId,
+      row.albumId,
+      row.revision,
+      row.value,
+      async (value) => {
+        const current = this.requireRecipient({ ...row, value }, recipient.id);
+        const entries = [];
+        for (const request of requests) {
+          const output = await this.downloadItem({ ...row, value }, current, request.captureId, request.outputId);
+          entries.push({
+            captureId: request.captureId,
+            orderId: output.orderId,
+            outputId: output.id,
+            revisionId: output.revisionId!,
+          });
+        }
+        value.zips = value.zips.filter((zip) => !expired(zip.expiresAt));
+        if (value.zips.length >= 2000) throw new ConflictException('Archive request limit reached');
+        value.zips.push({
+          id: zipId,
+          recipientId: recipient.id,
+          captureIds: [...new Set(requests.map((request) => request.captureId))],
+          entries,
+          createdAt: iso(),
+          expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
         });
-      }
-      value.zips = value.zips.filter((zip) => !expired(zip.expiresAt));
-      if (value.zips.length >= 2000) throw new ConflictException('Archive request limit reached');
-      value.zips.push({
-        id: zipId,
-        recipientId: recipient.id,
-        captureIds: [...new Set(requests.map((request) => request.captureId))],
-        entries,
-        createdAt: iso(),
-        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
-      });
-    });
+      },
+    );
     return { id: zipId, status: 'ready', url: `/api/photography/galleries/${id}/zip/${zipId}` };
   }
   private zipRequest(row: WorkflowRow, recipient: Recipient, zipId: string) {
@@ -2213,7 +2239,8 @@ export class PhotographyWorkflowService {
     const entries = captureId
       ? [{ captureId, outputId }]
       : (request!.entries ?? request!.captureIds.map((captureId) => ({ captureId, outputId: undefined })));
-    await this.repository.mutate(id, row.ownerId, row.albumId, undefined, row.value, async (value) => {
+    // FL-423: recording a client's download keeps the owner's revision
+    await this.repository.mutateKeepingRevision(id, row.ownerId, row.albumId, undefined, row.value, async (value) => {
       const current = this.requireRecipient({ ...row, value }, recipient.id);
       for (const entry of entries) {
         const delivered = await this.downloadItem(
@@ -2301,7 +2328,8 @@ export class PhotographyWorkflowService {
       !session.url.startsWith('https://checkout.stripe.com/')
     )
       throw new ServiceUnavailableException('Invalid hosted checkout response');
-    await this.repository.mutate(id, row.ownerId, row.albumId, undefined, row.value, (value) => {
+    // FL-423: a client's checkout keeps the owner's revision
+    await this.repository.mutateKeepingRevision(id, row.ownerId, row.albumId, undefined, row.value, (value) => {
       const currentRecipient = this.requireRecipient({ ...row, value }, recipient.id);
       const current = value.orders.find((o) => o.id === orderId && o.recipientId === currentRecipient.id);
       if (!current || current.status !== 'accepted') throw new ConflictException('Order changed during checkout');
@@ -2370,7 +2398,8 @@ export class PhotographyWorkflowService {
         : session.status === 'expired'
           ? 'cancelled'
           : null;
-    await this.repository.mutate(row.id, row.ownerId, row.albumId, undefined, row.value, (value) => {
+    // FL-423: the payment provider's confirmation of a client's payment keeps the owner's revision
+    await this.repository.mutateKeepingRevision(row.id, row.ownerId, row.albumId, undefined, row.value, (value) => {
       if (value.receipts.some((receipt) => receipt.reference === event.id)) return;
       const current = value.orders.find((o) => o.id === orderId)!;
       if (current.checkoutId !== order.checkoutId) throw new ConflictException('Checkout identity changed');

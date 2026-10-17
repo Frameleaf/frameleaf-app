@@ -1198,7 +1198,7 @@ describe(DatabaseBackupService.name, () => {
       mocks.user.hasAdmin.mockResolvedValue(true);
 
       await expect(
-        sut.restoreDatabaseBackup('frameleaf-db-backup-20260101T000000-v2.5.0-pg19.1.sql.gz'),
+        sut.restoreDatabaseBackup('frameleaf-db-backup-20260101T000000-v0.9.0-pg19.1.sql.gz'),
       ).resolves.toBeUndefined();
     });
 

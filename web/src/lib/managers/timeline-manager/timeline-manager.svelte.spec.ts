@@ -2,6 +2,7 @@ import {
   AssetLockReason,
   AssetTypeEnum,
   AssetVisibility,
+  ImageEnrichmentFilter,
   TimeBucketDateType,
   type AssetResponseDto,
   type TimeBucketAssetResponseDto,
@@ -897,6 +898,20 @@ describe('TimelineManager', () => {
       timelineManager.upsertAssetsFromLiveEvent([deriveLocalDateTimeFromFileCreatedAt(timelineAssetFactory.build())]);
 
       expect(timelineManager.assetCount).toEqual(0);
+    });
+
+    // FL-425: only the server knows what a camera, a place or several people match.
+    it('does not insert live event assets into a timeline narrowed by a search filter or an enrichment state', async () => {
+      for (const narrowing of [
+        { filter: JSON.stringify({ make: { eq: 'Canon' } }) },
+        { imageEnrichment: ImageEnrichmentFilter.MissingImageDescription },
+      ]) {
+        await timelineManager.updateOptions({ visibility: AssetVisibility.Timeline, ...narrowing });
+
+        timelineManager.upsertAssetsFromLiveEvent([deriveLocalDateTimeFromFileCreatedAt(timelineAssetFactory.build())]);
+
+        expect(timelineManager.assetCount).toEqual(0);
+      }
     });
 
     it('does not insert unknown live event assets into album timelines', async () => {

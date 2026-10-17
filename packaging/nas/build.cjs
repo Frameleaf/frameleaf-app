@@ -6,7 +6,7 @@ const { verifyBundle, verifyNasManifest } = require('../../.github/verify-releas
 
 const root = __dirname;
 const digest = /^sha256:[a-f0-9]{64}$/;
-const tag = /^frameleaf-v(\d+)\.(\d+)\.(\d+)-(\d+)$/;
+const tag = /^frameleaf-v(\d+)\.(\d+)\.(\d+)(?:-(\d+))?$/;
 
 async function build(directory, expectedTag, output, verification = {}) {
   assert(tag.test(expectedTag), 'A stable Frameleaf release is required');

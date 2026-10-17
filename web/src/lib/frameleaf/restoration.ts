@@ -198,6 +198,109 @@ export const defaultDestinationId = (
   return ordered.find((item) => item.available && !item.leavesNetwork)?.id ?? null;
 };
 
+/**
+ * FL-423: one stop of the Enhance model slider (prototype Editor.jsx:1884-1890, ModelSlider.jsx): a
+ * model a computer at home runs, or Frameleaf Cloud, whose model is chosen with its estimate.
+ */
+export type EnhanceStop = {
+  id: string;
+  /** The model's own name; empty for a computer that listed no models (its usual model). */
+  name: string;
+  band: 'cpu' | 'gpu' | 'cloud';
+  runsOn: 'local' | 'cloud';
+  /** The kind of restoration the stop asks for; null for Frameleaf Cloud, which keeps the request's. */
+  mode: AssetRestorationMode | null;
+  /** The model id the request names; null leaves the choice to the computer. */
+  model: string | null;
+  disabled: boolean;
+  reason: 'not-ready' | 'needs-cloud' | null;
+};
+
+export const ENHANCE_CLOUD_STOP = 'frameleaf-cloud';
+export const ENHANCE_OWN_MODEL_STOP = 'own-model';
+
+/** Lighter to heavier: Faithful models before Creative ones, each kind in the order the computer lists them. */
+const MODE_WEIGHT: Record<AssetRestorationMode, number> = {
+  [AssetRestorationMode.Faithful]: 0,
+  [AssetRestorationMode.Creative]: 1,
+  [AssetRestorationMode.SmoothMotion]: 2,
+};
+
+/**
+ * The Enhance slider's stops: every restoration model the computer at home reported (one that is not
+ * ready stays visible, crossed out), then a blue Frameleaf Cloud stop unless Where each job runs keeps
+ * this work at home. A computer that listed no models gets one stop for its usual model.
+ */
+export const enhanceStops = ({
+  home,
+  mode,
+  route,
+  cloud,
+}: {
+  home: Pick<AssetRestorationDestinationDto, 'models' | 'gpu'> | null;
+  mode: AssetRestorationMode;
+  route: 'local' | 'both' | 'cloud';
+  /** A Frameleaf Cloud destination is set up. */
+  cloud: boolean;
+}): EnhanceStop[] => {
+  const stops: EnhanceStop[] = [];
+  if (home) {
+    const band = home.gpu ? 'gpu' : 'cpu';
+    const models = home.models
+      .filter((model) => model.mode !== AssetRestorationMode.SmoothMotion)
+      .map((model, index) => ({ model, index }))
+      .sort((a, b) => MODE_WEIGHT[a.model.mode] - MODE_WEIGHT[b.model.mode] || a.index - b.index)
+      .map(({ model }) => model);
+    if (models.length === 0) {
+      stops.push({
+        id: ENHANCE_OWN_MODEL_STOP,
+        name: '',
+        band,
+        runsOn: 'local',
+        mode,
+        model: null,
+        disabled: false,
+        reason: null,
+      });
+    }
+    for (const model of models) {
+      stops.push({
+        id: model.id,
+        name: model.name,
+        band,
+        runsOn: 'local',
+        mode: model.mode,
+        model: model.id,
+        disabled: !model.available,
+        reason: model.available ? null : 'not-ready',
+      });
+    }
+  }
+  if (route !== 'local') {
+    stops.push({
+      id: ENHANCE_CLOUD_STOP,
+      name: '',
+      band: 'cloud',
+      runsOn: 'cloud',
+      mode: null,
+      model: null,
+      disabled: !cloud,
+      reason: cloud ? null : 'needs-cloud',
+    });
+  }
+  return stops;
+};
+
+/**
+ * Where the slider starts: the first ready model of the kind the server starts on (Settings › AI
+ * restoration), else the first that can be chosen at home. Never a stop that cannot be chosen, and
+ * never Frameleaf Cloud, which the person picks themselves.
+ */
+export const initialEnhanceStop = (stops: readonly EnhanceStop[], mode: AssetRestorationMode) =>
+  stops.find((stop) => !stop.disabled && stop.runsOn === 'local' && stop.mode === mode) ??
+  stops.find((stop) => !stop.disabled && stop.runsOn === 'local') ??
+  null;
+
 /** Whether the picked upscale was reduced by the 4K cap. */
 export const isOutputCapped = (
   options: Pick<
