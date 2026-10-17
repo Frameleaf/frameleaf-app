@@ -8,27 +8,34 @@ vi.mock('$lib/frameleaf/develop-api', () => ({
   PREVIEW_DEBOUNCE_MS: 0,
   developFileUrl: () => '/file',
   followDevelop: () => () => {},
-  requestDevelopPreview: () => Promise.resolve(undefined),
+  requestDevelopPreview: () => Promise.resolve(null),
 }));
 
 const asset = assetFactory.build({ type: AssetTypeEnum.Image, id: 'raw-1', originalFileName: 'IMG_1.CR3' });
 
-describe('NativeRawEditor Save version', () => {
+describe('NativeRawEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sdkMock.getAssetDevelop.mockResolvedValue({ assetId: asset.id, currentRevisionId: null, revisions: [] });
     sdkMock.getDevelopPresets.mockResolvedValue([]);
+    sdkMock.getAssetInfo.mockResolvedValue(asset);
   });
 
-  it('saves one version for a double press while the first save is on its way', async () => {
+  it('opens the RAW develop editor on the photo, with the way back to quick edits', async () => {
+    const onLegacy = vi.fn();
+    render(NativeRawEditor, { asset, onClose: vi.fn(), onLegacy });
+    expect(screen.getByText('IMG_1.CR3', { selector: 'strong' })).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_raw_quick_edits' }));
+    expect(onLegacy).toHaveBeenCalled();
+  });
+
+  it('saves one version for repeated presses while the first save is on its way', async () => {
     let finish: (value: AssetDevelopRevisionResponseDto) => void = () => {};
     sdkMock.saveAssetDevelop.mockImplementation(() => new Promise((resolve) => (finish = resolve)));
     render(NativeRawEditor, { asset, onClose: vi.fn(), onLegacy: vi.fn() });
 
-    const save = screen.getByRole('button', { name: 'frameleaf_editor_save_version' });
-    await waitFor(() => expect(save).toBeEnabled());
-    await fireEvent.click(save);
-    await fireEvent.click(save);
+    await waitFor(() => expect(screen.getByText('frameleaf_develop_status_saved')).toBeInTheDocument());
+    await fireEvent.keyDown(document.body, { key: 's', ctrlKey: true });
     await fireEvent.keyDown(document.body, { key: 's', ctrlKey: true });
 
     expect(sdkMock.saveAssetDevelop).toHaveBeenCalledTimes(1);
