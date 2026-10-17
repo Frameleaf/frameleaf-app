@@ -21,4 +21,4 @@ Keep the source application stopped during the offline import. When setting up p
 
 ## OAuth sign-in
 
-Configure the Frameleaf callback with your identity provider: `frameleaf-auth:///oauth-callback`, or `https://<server>/api/oauth/frameleaf-mobile-redirect` when using the mobile redirect override. Administration → Settings → Authentication shows the exact addresses for this server. See [OAuth Authentication](./oauth.md#frameleaf-mobile-app) for configuration details.
+Configure the Frameleaf callback with your identity provider: `frameleaf-auth:///oauth-callback`, or `https://<server>/api/oauth/frameleaf-mobile-redirect` when using the mobile redirect override. Administration → Settings → Authentication shows the exact addresses for this server. See [OAuth Authentication](./oauth.md#mobile-redirect-uri) for configuration details.
