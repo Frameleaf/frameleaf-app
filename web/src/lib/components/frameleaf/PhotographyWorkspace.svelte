@@ -43,6 +43,7 @@
     mdiStar,
     mdiStarOutline,
     mdiTrayArrowDown,
+    mdiTune,
     mdiWatermark,
     mdiWeb,
   } from '@mdi/js';
@@ -76,6 +77,7 @@
     type Workspace,
   } from '$lib/frameleaf/photography/api';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
+  import { isRawName } from '$lib/frameleaf/library-care';
   import { loadWorkflowSummaries, type WorkflowSummary } from '$lib/frameleaf/photography/workflow-api';
   import { DURATION, ICON_SIZE } from '$lib/frameleaf/tokens';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -115,7 +117,18 @@
     target instanceof HTMLElement &&
     (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(target.tagName));
 
-  let section = $state<Section>('shoots');
+  let {
+    initialShoot,
+    initialSection,
+  }: {
+    /** A shoot to open first: the RAW develop editor's way back (FL-420). */
+    initialShoot?: string;
+    /** `galleries`: the editor's Proof opens the shoot's galleries. */
+    initialSection?: 'galleries';
+  } = $props();
+
+  // svelte-ignore state_referenced_locally
+  let section = $state<Section>(initialShoot && initialSection === 'galleries' ? 'galleries' : 'shoots');
   let shootFilter = $state<ShootFilter>('all');
   let workspace = $state<Workspace>({ revision: null, shoots: [] });
   let workflowSummaries = $state<WorkflowSummary[]>([]);
@@ -127,7 +140,8 @@
   let message = $state('');
   let search = $state('');
   let sort = $state('date');
-  let activeId = $state<string | null>(null);
+  // svelte-ignore state_referenced_locally
+  let activeId = $state<string | null>(initialShoot ?? null);
   let photos = $state<Photo[]>([]);
   let photoLoading = $state(false);
   let photoError = $state('');
@@ -182,6 +196,9 @@
     (filter === 'selected' && (photo.rating ?? 0) >= 4) ||
     (filter === 'edited' && photo.rating !== -1 && !!photo.currentRevisionId);
   const visible = $derived(photos.filter((photo) => matches(photo, tab)));
+  /** FL-420: what "Open in RAW editor" opens: the chosen RAW photographs, else every RAW one. */
+  const rawPhotos = $derived(photos.filter((photo) => isRawName(photo.fileName)));
+  const chosenRaw = $derived(rawPhotos.filter((photo) => selected.includes(photo.id)).map((photo) => photo.id));
   const availableAlbums = $derived(
     albums.filter(
       (album) =>
@@ -764,8 +781,9 @@
       <p>
         {$t('frameleaf_photography_originals_local')}<small>{$t('frameleaf_photography_originals_local_detail')}</small>
       </p>
-      <a href={Route.libraryCare()}
-        >{$t('frameleaf_photography_library_care')} <Icon icon={mdiChevronRight} size="1rem" aria-hidden={true} /></a
+      <a href={Route.rawSupport()}
+        >{$t('frameleaf_photography_raw_compatibility')}
+        <Icon icon={mdiChevronRight} size="1rem" aria-hidden={true} /></a
       >
     </div>
   </aside>
@@ -1076,6 +1094,17 @@
                     <dd>{photos.filter((photo) => photo.rating === -1).length}</dd>
                   </div>
                 </dl>
+                {#if rawPhotos.length > 0}<a
+                    class="phw-raw-editor fl-control primary"
+                    href={Route.photographyDevelop({
+                      shoot: active.id,
+                      photo: inspecting && isRawName(inspecting.fileName) ? inspecting.id : undefined,
+                      only: chosenRaw.length > 0 ? chosenRaw.join(',') : undefined,
+                    })}
+                    ><Icon icon={mdiTune} size="1rem" aria-hidden={true} />{chosenRaw.length > 0
+                      ? $t('frameleaf_photography_open_raw_editor_count', { values: { count: chosenRaw.length } })
+                      : $t('frameleaf_photography_open_raw_editor')}</a
+                  >{:else if photos.length > 0}<p class="phw-small">{$t('frameleaf_photography_no_raw_photos')}</p>{/if}
                 {#if inspecting}<h3>{inspecting.fileName}</h3>
                   {#if active.albumId}<a
                       href={Route.viewAlbumAsset({ albumId: active.albumId, assetId: inspecting.id })}
