@@ -10,7 +10,7 @@ Your administrator must enable the connector using the [server setup guide](iclo
 
 Have your Apple account password and a trusted Apple device available. Enable **Access iCloud Data on the Web** on that device. Advanced Data Protection may require you to approve web access again when it expires. This connector supports trusted-device verification codes; SMS verification is not supported.
 
-The implementation has passed local protocol, database, and web tests. A live Apple-account sync has not yet been verified. Start with a small album before selecting a large library.
+Start with a small album before selecting a large library.
 
 ## Connect and choose photos
 
@@ -80,7 +80,7 @@ A complete source inventory can remove a membership managed by that connection. 
 
 Favorites, hidden status, and capture dates are supported. Metadata locks and tracked local changes remain authoritative; missing source data does not erase destination values. On the first sync of an existing asset, a source favorite can replace Frameleaf's default false value because an earlier untracked manual false cannot be distinguished from that default. Later comparisons use the saved sync history.
 
-Source captions, locations, and timezone fields are not currently supported by the verified adapter. Existing extracted or locally entered values are preserved. Unhiding a photo in Apple does not automatically remove a Frameleaf privacy choice.
+Source captions, locations, and timezone fields are not imported. Existing extracted or locally entered values are preserved. Unhiding a photo in Apple does not automatically remove a Frameleaf privacy choice.
 
 ## Monitor, pause, and resume
 
@@ -110,7 +110,7 @@ The Frameleaf app for iPhone can back up the same iCloud photos the sync imports
 - **Privacy.** Answers only ever cover your own connections and photos. Locked and hidden photos follow the same rules as the app's backup status.
 - **Matching rules.** Matching an iPhone item to an iCloud record uses the item's iCloud identifier. That identifier is undocumented, so a match only counts when the bytes agree (the same SHA-256 or Apple's fingerprint), or when the filename, capture date, type and size agree. A weaker match is reported but never acted on.
 - **Claims.** Before the app fetches an iCloud item and uploads it, it claims the item: the still, the Live Photo motion, the RAW and the current edit. While the app holds the claim, the sync waits for it and doesn't download the item, and an upload by any other path is refused. The sync claims items the same way. An item a healthy connection covers is the sync's to fetch. If the connection is unhealthy, the app can take over the item at once when you choose **Back them up from this iPhone**, and does so on its own after 72 hours.
-- **Already uploaded items.** `POST /icloud-sync/identities/attach` lets a registered backup device attach its iCloud identifiers to up to 500 resources it already uploaded. Each item names its asset, resource role and SHA-256; edit renders also name their edit version. The server checks the current owned original under the same Locked and hidden rules as backup status. Inaccessible, missing and mismatched assets all return `unavailable`; unparseable identifiers return `invalid`. Attachment records evidence only: it does not change media or mark a reuse audit verified.
+- **Already uploaded items.** `POST /icloud-sync/identities/attach` lets a registered backup device attach its iCloud identifiers to up to 500 resources it already uploaded. Each item names its asset, resource role and SHA-256; edit renders also name their edit version. The server checks the current owned original under the same Locked and hidden rules as backup status. Inaccessible, missing and mismatched assets all return `unavailable`; unparseable identifiers return `invalid`. Attaching identifiers does not change any media.
 - **Switching it off.** An administrator can turn identity matching off with `FRAMELEAF_ICLOUD_IDENTITY_MATCHING=false`. Only photos with the same SHA-256 are then treated as the same.
 
 ## Troubleshooting
