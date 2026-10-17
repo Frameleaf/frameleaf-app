@@ -489,6 +489,9 @@
   .raw-care-header p {
     margin: 0;
   }
+  .raw-care-header .raw-muted {
+    font-size: 15px;
+  }
   .raw-eyebrow {
     font: var(--fl-type-micro);
     letter-spacing: 0.08em;
@@ -889,6 +892,9 @@
     }
     .raw-care-header {
       flex-wrap: wrap;
+    }
+    .raw-care-header > .raw-grow {
+      display: none;
     }
     .raw-core-badge {
       max-width: none;

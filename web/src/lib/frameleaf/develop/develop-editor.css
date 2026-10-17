@@ -74,7 +74,8 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 30px;
+  /* The app's compact desktop control (Dialog `compactControls`); 48px on touch, below. */
+  min-height: 34px;
   padding: 5px 12px;
   border: 1px solid var(--fl-border);
   border-radius: var(--fl-radius-control);
@@ -1071,6 +1072,17 @@
 }
 .rde-dialog-content .rde-check {
   font-size: 12px;
+  padding: 4px 0;
+}
+/* The dialog sits outside the workspace (top layer): its checkboxes keep their own size. */
+.rde-dialog-content input[type='checkbox'] {
+  accent-color: var(--fl-accent);
+  width: 14px;
+  height: 14px;
+  min-height: auto;
+  min-width: auto;
+  margin: 0;
+  flex-shrink: 0;
 }
 .rde-export-status {
   color: var(--fl-muted);
@@ -1078,6 +1090,12 @@
   padding-left: 10px;
 }
 
+@media (pointer: coarse) {
+  .rde-button,
+  .rde-workspace select {
+    min-height: 48px;
+  }
+}
 @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
   .rde-header,
   .rde-toast {
