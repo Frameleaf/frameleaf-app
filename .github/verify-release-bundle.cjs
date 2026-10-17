@@ -26,10 +26,7 @@ async function verifyBundle(
   expectedTag,
   { authenticate = false, run, request = github } = {},
 ) {
-  assert.match(
-    expectedTag,
-    /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-\d+$/,
-  );
+  assert.match(expectedTag, /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
   const names = MANAGER_ASSETS.filter((name) => name !== "SHA256SUMS");
   const lines = (await fs.readFile(path.join(directory, "SHA256SUMS"), "utf8"))
     .trimEnd()

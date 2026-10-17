@@ -9,16 +9,35 @@ export class Refusal extends Error {
     super(code);
   }
 }
-export const sha256 = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
+export const sha256 = (value: string | Buffer) =>
+  createHash('sha256').update(value).digest('hex');
 export const digest = (value: unknown): string => sha256(JSON.stringify(value));
-export const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/);
+export const identifier = z
+  .string()
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/);
 export const containerId = z.string().regex(/^[a-f0-9]{64}$/);
-export const releaseTag = z.string().regex(/^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-\d+$/);
-export const imageDigest = z.string().regex(/^[a-z0-9./:_-]+@sha256:[a-f0-9]{64}$/);
+export const releaseTag = z
+  .string()
+  .regex(/^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
+export const imageDigest = z
+  .string()
+  .regex(/^[a-z0-9./:_-]+@sha256:[a-f0-9]{64}$/);
 export const secureToken = z.string().regex(/^[a-f0-9]{64}$/);
 
-export type Mount = { type: 'bind' | 'volume'; source: string; target: string; readOnly: boolean };
-export type Database = { container: string; host: string; port: number; name: string; user: string; password: string };
+export type Mount = {
+  type: 'bind' | 'volume';
+  source: string;
+  target: string;
+  readOnly: boolean;
+};
+export type Database = {
+  container: string;
+  host: string;
+  port: number;
+  name: string;
+  user: string;
+  password: string;
+};
 export type Source = {
   id: string;
   project: string | null;
@@ -34,8 +53,18 @@ export type Source = {
   unsupportedSettings: string[];
   fingerprint: string;
   platform: 'docker' | 'unraid';
-  postgres: { major: number; version: string; extensions: { name: string; version: string }[]; identity: string };
-  summary: { users: number; assets: number; albums: number; databaseBytes: number };
+  postgres: {
+    major: number;
+    version: string;
+    extensions: { name: string; version: string }[];
+    identity: string;
+  };
+  summary: {
+    users: number;
+    assets: number;
+    albums: number;
+    databaseBytes: number;
+  };
   restart: Record<string, { Name: string; MaximumRetryCount: number }>;
 };
 export type Backup = {
@@ -46,7 +75,11 @@ export type Backup = {
   verified: boolean;
   sha256: string;
 };
-export function recentBackup(backups: Backup[], source: Source, now = Date.now()): Backup | undefined {
+export function recentBackup(
+  backups: Backup[],
+  source: Source,
+  now = Date.now(),
+): Backup | undefined {
   return backups
     .filter(
       (b) =>
@@ -132,11 +165,16 @@ export function publicSource(source: Source) {
 }
 /** Logs are never a route to Docker inspection output, environment values or command arguments. */
 export function redact(text: string, secrets: string[] = []): string {
-  for (const value of secrets.filter((v) => v.length >= 3).sort((a, b) => b.length - a.length))
+  for (const value of secrets
+    .filter((v) => v.length >= 3)
+    .sort((a, b) => b.length - a.length))
     text = text.split(value).join('[redacted]');
   return text
     .replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi, '$1[redacted]@')
-    .replace(/((?:password|secret|token|authorization|cookie|api[_-]?key)\s*[:=]\s*)[^\s,;]+/gi, '$1[redacted]')
+    .replace(
+      /((?:password|secret|token|authorization|cookie|api[_-]?key)\s*[:=]\s*)[^\s,;]+/gi,
+      '$1[redacted]',
+    )
     .replace(/\b(Bearer|Basic)\s+[^\s]+/gi, '$1 [redacted]')
     .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
 }

@@ -42,6 +42,8 @@ jobs:
         run: |
           node .github/check-runners.cjs
           node .github/check-release.cjs
+          node scripts/frameleaf-version.cjs --check
+          node --test scripts/frameleaf-version.test.cjs packaging/nas/workflow.test.cjs
           node .github/check-jira.cjs
           node scripts/frameleaf-distribution-gates.mjs
           node --test docker/frameleaf-delivery.test.mjs
