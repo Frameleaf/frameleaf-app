@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "description": "Every third-party engine, model, voice, font and asset Frameleaf uses that needs credit. Source of truth for the About screen, docs/docs/overview/acknowledgements.md and licenses/THIRD-PARTY-NOTICES.md; scripts/frameleaf-acknowledgements.mjs checks coverage and regenerates both documents.",
-  "decisions": "Owner decisions FL-146 comments 34941, 34943 and 34944 (2026-09-25).",
+  "decisions": "Owner decisions FL-146 comments 34941, 34943 and 34944 (2026-09-25). Legal review 2026-10-17 (FL-445): all model and asset use by users is personal use by the server owner on their own server; this is the recorded basis for every licence.",
   "groups": {
     "studio-editor": "Studio video editor",
     "studio-models": "Studio models, voices and runtimes",
@@ -30,7 +30,7 @@
     },
     {
       "status": "looked-up",
-      "notice": "Local use only: not offered on Frameleaf Cloud (non-commercial licence; owner decision FL-146, 2026-09-25).",
+      "notice": "Local use only: not offered on Frameleaf Cloud (non-commercial licence; owner decision FL-146, 2026-09-25). Basis: personal use by the server owner on their own server (legal review 2026-10-17, FL-445).",
       "id": "musicgen-small",
       "group": "studio-models",
       "name": "MusicGen small (ONNX conversion)",
@@ -381,8 +381,8 @@
       "source": "studio/dependency-attribution.json (Apache-2.0)"
     },
     {
-      "status": "to-confirm",
-      "notice": null,
+      "status": "recorded",
+      "notice": "Used under the Lottie Simple License for personal use by the server owner on their own server (legal review 2026-10-17, FL-445).",
       "id": "lottiefiles",
       "group": "studio-assets",
       "name": "LottieFiles animations",
@@ -447,7 +447,7 @@
     },
     {
       "status": "looked-up",
-      "notice": "buffalo_l is used under a commercial licence the owner obtained from InsightFace at no cost, in support of open source (FL-146, 2026-09-25). buffalo_m, buffalo_s and antelopev2 are provided under InsightFace’s model terms: non-commercial research only.",
+      "notice": "buffalo_l is used under a commercial licence the owner obtained from InsightFace at no cost, in support of open source (FL-146, 2026-09-25). buffalo_m, buffalo_s and antelopev2 are provided under InsightFace’s model terms (non-commercial research only) and run for personal use by the server owner on their own server (legal review 2026-10-17, FL-445).",
       "id": "insightface",
       "group": "library-models",
       "name": "InsightFace face detection and recognition (buffalo_l, buffalo_m, buffalo_s, antelopev2)",
@@ -542,7 +542,7 @@
     },
     {
       "status": "looked-up",
-      "notice": "Local use only: not offered on Frameleaf Cloud (non-commercial licence; owner decision FL-146, 2026-09-25).",
+      "notice": "Local use only: not offered on Frameleaf Cloud (non-commercial licence; owner decision FL-146, 2026-09-25). Basis: personal use by the server owner on their own server (legal review 2026-10-17, FL-445).",
       "id": "nllb-clip",
       "group": "library-models",
       "name": "NLLB-CLIP (base and large, SigLIP)",
@@ -632,8 +632,8 @@
       "source": "OpenAI Whisper repository LICENSE (MIT); Hugging Face cards openai/whisper-large-v3-turbo (mit), openai/whisper-small (apache-2.0), dropbox-dash/faster-whisper-large-v3-turbo (mit), Systran/faster-whisper-small (mit); faster-whisper and CTranslate2 on PyPI (MIT); the model files are served from the Frameleaf model mirror (models.frameleaf.cloud, frameleaf/whisper-large-v3-turbo and frameleaf/whisper-small)"
     },
     {
-      "status": "to-confirm",
-      "notice": "The 3B model’s Qwen Research License does not permit commercial use; whether it may stay the default, and on Frameleaf Cloud, needs an owner decision.",
+      "status": "recorded",
+      "notice": "The 3B model (the default) is under the Qwen Research License (non-commercial); the 7B model is under Apache-2.0. Both run for personal use by the server owner on their own server (legal review 2026-10-17, FL-445). The 3B model is not offered on Frameleaf Cloud (owner decision FL-146, 2026-09-25).",
       "id": "qwen2.5-vl",
       "group": "library-models",
       "name": "Qwen2.5-VL Instruct 3B and 7B (photo descriptions)",
