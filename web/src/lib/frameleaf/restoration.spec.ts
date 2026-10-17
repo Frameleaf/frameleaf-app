@@ -184,7 +184,7 @@ describe('the Enhance model slider (FL-423)', () => {
   const model = (id: string, mode: AssetRestorationMode, available = true) => ({
     id,
     name: id,
-    family: id.split('-')[0],
+    family: id.split('-', 1)[0],
     mode,
     available,
   });

@@ -46,7 +46,7 @@
         : '';
   const reasons = $derived([
     ...new Set([
-      ...(noLocalReason && !stops.some((stop) => stop.runsOn === 'local') ? [noLocalReason] : []),
+      ...(noLocalReason && stops.every((stop) => stop.runsOn !== 'local') ? [noLocalReason] : []),
       ...stops.filter((stop) => stop.disabled).map((stop) => reasonOf(stop)),
     ]),
   ]);
