@@ -807,6 +807,27 @@ describe(MachineLearningRepository.name, () => {
       },
     );
 
+    it('names the chosen model to the worker and refuses an answer from another one (FL-423)', async () => {
+      const fetch = vi.fn().mockImplementation(() => Promise.resolve(answer(result())));
+      vi.stubGlobal('fetch', fetch);
+
+      await restore({ modelId: 'realbasicvsr-x4' });
+      expect(JSON.parse(String((fetch.mock.calls[0][1].body as FormData).get('request')))).toMatchObject({
+        modelId: 'realbasicvsr-x4',
+      });
+
+      // left out, the worker uses its own model for the mode
+      await rm(outputPath, { force: true });
+      await restore();
+      expect(JSON.parse(String((fetch.mock.calls[1][1].body as FormData).get('request')))).not.toHaveProperty(
+        'modelId',
+      );
+
+      await rm(outputPath, { force: true });
+      await expect(restore({ modelId: 'seedvr2-3b' })).rejects.toThrow('a different request or model');
+      expect(existsSync(outputPath)).toBe(false);
+    });
+
     it('sends a still as an image request with no duration', async () => {
       const fetch = vi.fn().mockResolvedValue(answer(result()));
       vi.stubGlobal('fetch', fetch);

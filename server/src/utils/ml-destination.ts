@@ -1,5 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { SystemConfig } from 'src/config.js';
+import type { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
+import { type RestorationModelCapability, RestorationModelState } from 'src/dtos/restoration-inference.dto.js';
 import type { MlProbeHardware } from 'src/schema/tables/ml-destination.table.js';
 import {
   CLOUD_ML_DESTINATION_KINDS,
@@ -299,12 +301,47 @@ export const restorationRoleConflict = async (
 /** Execution providers that mean "no accelerator". */
 const CPU_PROVIDERS = new Set(['CPUExecutionProvider', 'AzureExecutionProvider']);
 
+/**
+ * FL-423: one restoration model a home restoration worker reported at its last health check, kept
+ * beside its GPUs so the editor can offer it without asking the worker again. `available` is the rule
+ * admission uses (FL-42): the worker says it is available, with verified weights and a qualification.
+ */
+export type MlProbeRestorationModel = {
+  id: string;
+  family: string;
+  mode: AssetRestorationMode;
+  name: string;
+  available: boolean;
+};
+
+/** The stored hardware facts, with the restoration models a restoration worker reported (FL-423). */
+export type MlProbeFacts = MlProbeHardware & { restorationModels?: MlProbeRestorationModel[] };
+
+export const restorationModelsFromReport = (
+  models: Pick<
+    RestorationModelCapability,
+    'id' | 'family' | 'mode' | 'displayName' | 'state' | 'fingerprint' | 'qualificationId'
+  >[],
+): MlProbeRestorationModel[] =>
+  models.map((model) => ({
+    id: model.id,
+    family: model.family,
+    mode: model.mode,
+    name: model.displayName,
+    available: model.state === RestorationModelState.Available && !!model.fingerprint && !!model.qualificationId,
+  }));
+
+/** The restoration models a destination reported at its last health check; none for any other worker. */
+export const storedRestorationModels = (hardware: MlProbeHardware | null): MlProbeRestorationModel[] =>
+  (hardware as MlProbeFacts | null)?.restorationModels ?? [];
+
 /** The hardware facts worth keeping from one probe, or null when the worker did not report them. */
 export const hardwareFromProbe = (
   probe: Pick<MlEndpointProbe, 'reachable' | 'hardware'>,
   gpus: MlProbeHardware['gpus'] = [],
-): MlProbeHardware | null => {
-  if (!probe.reachable || (!probe.hardware && gpus.length === 0)) {
+  restorationModels: MlProbeRestorationModel[] = [],
+): MlProbeFacts | null => {
+  if (!probe.reachable || (!probe.hardware && gpus.length === 0 && restorationModels.length === 0)) {
     return null;
   }
   return {
@@ -312,6 +349,7 @@ export const hardwareFromProbe = (
     providers: [...(probe.hardware?.providers ?? [])],
     cudaDeviceCount: Math.max(probe.hardware?.cudaDeviceCount ?? 0, gpus.length),
     gpus,
+    ...(restorationModels.length > 0 && { restorationModels }),
   };
 };
 

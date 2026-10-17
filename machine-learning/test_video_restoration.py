@@ -412,6 +412,27 @@ class TestRegistry:
 
         assert error.value.code == RestorationErrorCode.MODEL_UNAVAILABLE
 
+    def test_a_request_naming_a_model_gets_exactly_that_model(self, tmp_path: Path) -> None:
+        # FL-423: the model a person chose reaches the worker as modelId; another one is never substituted.
+        first = make_spec(tmp_path)
+        second = first.model_copy(update={"id": "realbasicvsr-second", "displayName": "Second model"})
+        registry = self.write_config(tmp_path, first, passing_record(first))
+        manifest = json.loads((tmp_path / "models.json").read_text())
+        manifest["models"].append(second.model_dump(mode="json"))
+        (tmp_path / "models.json").write_text(json.dumps(manifest))
+        qualification = json.loads((tmp_path / "qualification.json").read_text())
+        qualification["records"].append(passing_record(second).model_dump(mode="json"))
+        (tmp_path / "qualification.json").write_text(json.dumps(qualification))
+
+        assert [model.id for model in registry.refresh().models] == [first.id, second.id]
+        assert registry.select(RestorationMode.FAITHFUL, None, None).spec.id == first.id
+        assert registry.select(RestorationMode.FAITHFUL, second.id, None).spec.id == second.id
+        for mode, model_id in [(RestorationMode.FAITHFUL, "seedvr2-test"), (RestorationMode.CREATIVE, second.id)]:
+            with pytest.raises(RestorationFailure) as error:
+                registry.select(mode, model_id, None)
+            assert error.value.code == RestorationErrorCode.MODEL_UNAVAILABLE
+            assert error.value.model_id == model_id
+
     def test_reports_a_missing_manifest(self, tmp_path: Path) -> None:
         registry = RestorationRegistry(tmp_path / "missing.json", tmp_path / "missing-too.json", gpu_query=lambda: [])
 
@@ -764,6 +785,16 @@ class TestSourceChecks:
             RestorationRequest.model_validate(
                 request_payload(kind="image", source={"width": 640, "height": 360}, segment={"startMs": 0, "endMs": 1})
             )
+
+    def test_request_contract_names_the_chosen_model_and_nothing_undeclared(self) -> None:
+        # FL-423: the server sends the person's model choice as modelId, which the contract declares; the
+        # closed keyspace (extra="forbid") still refuses any field it does not.
+        assert RestorationRequest.model_validate(request_payload(modelId="seedvr2-3b")).modelId == "seedvr2-3b"
+        assert RestorationRequest.model_validate(request_payload(modelId=None)).modelId is None
+        with pytest.raises(ValidationError):
+            RestorationRequest.model_validate(request_payload(modelId=""))
+        with pytest.raises(ValidationError):
+            RestorationRequest.model_validate(request_payload(model="seedvr2-3b"))
 
 
 def fake_result(output: Path) -> RestorationResult:
