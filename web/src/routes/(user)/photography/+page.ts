@@ -5,5 +5,10 @@ import type { PageLoad } from './$types';
 export const load = (async ({ url }) => {
   await authenticate(url);
   const $t = await getFormatter();
-  return { meta: { title: $t('frameleaf_photography') } };
+  return {
+    // FL-420: the RAW develop editor returns to the shoot it was opened from (Proof: its galleries).
+    shoot: url.searchParams.get('shoot') ?? undefined,
+    section: url.searchParams.get('section') === 'galleries' ? ('galleries' as const) : undefined,
+    meta: { title: $t('frameleaf_photography') },
+  };
 }) satisfies PageLoad;

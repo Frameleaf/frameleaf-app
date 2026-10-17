@@ -828,6 +828,25 @@
 .phw-stats dt {
   color: var(--fl-muted);
 }
+/* FL-420: the prototype's primary "Open in RAW editor" under the shoot's counts. */
+.phw-inspector-body > a.phw-raw-editor {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--fl-space-2);
+  width: 100%;
+  min-height: var(--fl-control-height-compact, 34px);
+  padding: 0.4375rem 0.75rem;
+  border: 1px solid var(--fl-accent);
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-accent);
+  color: var(--fl-accent-text);
+  font-weight: 600;
+  margin-bottom: var(--fl-space-3);
+}
+.phw-inspector-body > a.phw-raw-editor:hover {
+  background: var(--fl-accent-hover, var(--fl-accent));
+}
 .phw-small {
   font-size: var(--fl-font-micro);
   color: var(--fl-muted);
