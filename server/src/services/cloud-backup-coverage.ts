@@ -339,14 +339,16 @@ export class CloudBackupCoverage {
     const rows: BackupCoverageRow[] = report.pages.flatMap(
       (body) => (JSON.parse(body) as { rows: BackupCoverageRow[] }).rows,
     );
+    // a later sequence too: an earlier header may have reached Frameleaf Cloud before its answer was lost
     const bodies = backupCoverageBodies({
-      sequence: report.sequence,
+      sequence: report.sequence + 1,
       inventoryAt: new Date(report.inventoryAt as unknown as string).toISOString(),
       snapshot: null,
       rows: rows.map((row) => ({ ...row, includedOriginals: null })),
     });
     await this.selection.updateCoverageReport(report.runId, {
       revisionId: bodies.header.revisionId,
+      sequence: bodies.header.sequence,
       snapshot: null,
       pages: bodies.pages,
       runReport: { ...(report.runReport ?? {}), manifestKey: null },
