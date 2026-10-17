@@ -255,6 +255,8 @@ export const endpointTags: Record<ApiTag, string> = {
   [ApiTag.ApiKeys]: 'An api key can be used to programmatically access the Frameleaf API.',
   [ApiTag.Assets]: 'An asset is an image or video that has been uploaded to Frameleaf.',
   [ApiTag.AssetFiles]: 'An asset file is a file associated with an asset, including edited versions, thumbnails, etc.',
+  [ApiTag.Attention]:
+    'What needs an administrator on this server: a drive filling up, a missed backup, background work that stopped or a new version.',
   [ApiTag.Authentication]: 'Endpoints related to user authentication, including OAuth.',
   [ApiTag.AuthenticationAdmin]: 'Administrative endpoints related to authentication.',
   [ApiTag.ClusterGroups]:

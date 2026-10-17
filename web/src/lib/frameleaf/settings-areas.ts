@@ -144,13 +144,14 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     personal: ['password', 'user-pin-code-settings', 'oauth', 'suppressed-content', 'authorized-devices', 'api-keys'],
   },
   // The account's own email notifications sit with the server's email delivery, as in the template.
-  // FL-368: "Emails you receive" comes first, because every account has it.
+  // FL-368: "Emails you receive" comes first, because every account has it. FL-421: an
+  // administrator's "What needs your attention" (`signals`, the prototype's key) comes next.
   {
     id: 'notifications',
     group: 'server',
-    sections: ['notifications'],
+    sections: ['notifications', 'signals'],
     personal: ['email-preferences'],
-    order: ['email-preferences', 'notifications'],
+    order: ['email-preferences', 'signals', 'notifications'],
   },
   // FL-368: the three household pages first, then the ones behind "Advanced" (`ADVANCED_SECTIONS`).
   {
@@ -302,6 +303,7 @@ export const PAGE_DESCRIPTIONS: Readonly<Record<string, Translations>> = Object.
   deduplication: 'frameleaf_page_deduplication_description',
   notifications: 'frameleaf_page_email_description',
   'email-preferences': 'frameleaf_page_email_preferences_description',
+  signals: 'frameleaf_page_signals_description',
   'version-check': 'frameleaf_page_versions_description',
   server: 'frameleaf_page_identity_description',
   logging: 'frameleaf_page_diagnostics_description',
@@ -635,6 +637,7 @@ export type DirectoryGroupId =
   | 'locked_content'
   | 'devices'
   | 'email'
+  | 'alerts'
   | 'this_server'
   | 'updates'
   | 'maps'
@@ -703,7 +706,8 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     'authorized-devices': 'devices',
     'api-keys': 'devices',
   },
-  notifications: { notifications: 'email', 'email-preferences': 'email' },
+  // FL-421: the prototype's "Alerts" group (CommandCenter.jsx `signals: "Alerts"`).
+  notifications: { notifications: 'email', 'email-preferences': 'email', signals: 'alerts' },
   server: {
     server: 'this_server',
     theme: 'this_server',

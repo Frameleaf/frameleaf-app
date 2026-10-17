@@ -993,6 +993,12 @@ export type FrameleafCloudLink = {
   };
   /** FL-155: sha256 of headless link tokens already used, so a token never links twice. */
   usedLinkTokens?: string[];
+  /**
+   * FL-433: the link token (sha256) this server is sending to Frameleaf Cloud, saved before it is sent. A token is
+   * spent (`usedLinkTokens`) only when Frameleaf Cloud accepts it or refuses it as used, so a start that stops
+   * earlier sends it again; finding this marker then means an earlier start may have been accepted unheard.
+   */
+  pendingLinkToken?: { hash: string; startedAt: string };
 };
 
 /**
