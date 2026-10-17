@@ -5,7 +5,7 @@ import { AssetFile } from 'src/database.js';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { AssetJobName, AssetStatsResponseDto } from 'src/dtos/asset.dto.js';
 import { defaults } from 'src/dtos/config.dto.js';
-import { AssetEditAction, type AssetEditActionItem } from 'src/dtos/editing.dto.js';
+import { AssetEditAction, type AssetEditActionItem, VideoTrimMode } from 'src/dtos/editing.dto.js';
 import {
   AssetFileType,
   AssetLockReason,
@@ -2819,6 +2819,56 @@ describe(AssetService.name, () => {
           edits: [{ action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 1922, height: 1080 } }],
         }),
       ).rejects.toThrow('Crop parameters are out of bounds');
+    });
+
+    describe('the default trim mode (FL-422)', () => {
+      const trim = { action: AssetEditAction.Trim, parameters: { startMs: 1000, endMs: 4000 } } as const;
+      const fastTrim = { ...trim, parameters: { ...trim.parameters, mode: VideoTrimMode.Fast } };
+
+      beforeEach(() => {
+        mocks.asset.getForEdit.mockResolvedValue({
+          type: AssetType.Video,
+          duration: 5000,
+          originalPath: '/original.mp4',
+          originalFileName: 'original.mp4',
+          livePhotoVideoId: null,
+          exifImageWidth: 1920,
+          exifImageHeight: 1080,
+          orientation: null,
+          projectionType: null,
+        });
+        mocks.media.probe.mockResolvedValue({
+          format: { duration: 30 },
+          videoStreams: [{ width: 1920, height: 1080, rotation: 0, pixelFormat: 'yuv420p' }],
+        } as any);
+        mocks.assetEdit.replaceAll.mockResolvedValue([]);
+      });
+
+      it('cuts a trim that names no mode fast when the setting says Fast', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({ editing: { trimMode: VideoTrimMode.Fast } });
+        await sut.editAsset(authStub.admin, 'asset-1', { edits: [trim] });
+        expect(mocks.assetEdit.replaceAll).toHaveBeenCalledWith('asset-1', [fastTrim], 'save');
+      });
+
+      it('keeps a trim that names its mode, whatever the setting says', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({ editing: { trimMode: VideoTrimMode.Fast } });
+        const precise = { ...trim, parameters: { ...trim.parameters, mode: VideoTrimMode.Precise } };
+        await sut.editAsset(authStub.admin, 'asset-1', { edits: [precise] });
+        expect(mocks.assetEdit.replaceAll).toHaveBeenCalledWith('asset-1', [precise], 'save');
+      });
+
+      it('leaves the recipe as sent with the default setting, so a missing mode stays precise', async () => {
+        await sut.editAsset(authStub.admin, 'asset-1', { edits: [trim] });
+        expect(mocks.assetEdit.replaceAll).toHaveBeenCalledWith('asset-1', [trim], 'save');
+      });
+
+      it('puts a version or a preserved recipe back exactly', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({ editing: { trimMode: VideoTrimMode.Fast } });
+        await sut.editAsset(authStub.admin, 'asset-1', { edits: [trim] }, 'revert');
+        expect(mocks.assetEdit.replaceAll).toHaveBeenLastCalledWith('asset-1', [trim], 'revert');
+        await sut.editAsset(authStub.admin, 'asset-1', { edits: [trim] }, 'save', { exact: true });
+        expect(mocks.assetEdit.replaceAll).toHaveBeenLastCalledWith('asset-1', [trim], 'save');
+      });
     });
 
     it.each([

@@ -31,6 +31,7 @@ import {
   AssetEditsCreateDto,
   AssetEditsResponseDto,
   VideoEditVersionResponseDto,
+  VideoTrimMode,
 } from 'src/dtos/editing.dto.js';
 import { AssetOcrResponseDto } from 'src/dtos/ocr.dto.js';
 import {
@@ -1403,6 +1404,8 @@ export class AssetService extends BaseService {
     id: string,
     dto: AssetEditsCreateDto,
     purpose: 'save' | 'revert' = 'save',
+    /** Store the recipe exactly as given: a revert, or a preserved recipe being put back. */
+    { exact = purpose === 'revert' }: { exact?: boolean } = {},
   ): Promise<AssetEditsResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetEditCreate, ids: [id] });
 
@@ -1411,7 +1414,10 @@ export class AssetService extends BaseService {
       throw new BadRequestException('Asset not found');
     }
 
-    const edits = dto.edits as AssetEditActionItem[];
+    const edits =
+      asset.type === AssetType.Video && !exact
+        ? await this.withDefaultTrimMode(dto.edits as AssetEditActionItem[])
+        : (dto.edits as AssetEditActionItem[]);
     const supportedActions = asset.type === AssetType.Video ? videoEditActions : imageEditActions;
     const unsupportedAction = edits.find((edit) => !supportedActions.has(edit.action));
     if (unsupportedAction) {
@@ -1524,6 +1530,26 @@ export class AssetService extends BaseService {
       assetId: id,
       edits: newEdits,
     };
+  }
+
+  /**
+   * FL-422: a trim that names no mode is cut the way Settings › Edited masters says ("How trims are
+   * cut"). A missing mode already renders precisely, so only a Fast default is written into the
+   * recipe; a saved version is never re-cut by a later change of the setting.
+   */
+  private async withDefaultTrimMode(edits: AssetEditActionItem[]): Promise<AssetEditActionItem[]> {
+    if (!edits.some((edit) => edit.action === AssetEditAction.Trim && !edit.parameters.mode)) {
+      return edits;
+    }
+    const { editing } = await this.getConfig({ withCache: true });
+    if (editing.trimMode !== VideoTrimMode.Fast) {
+      return edits;
+    }
+    return edits.map((edit) =>
+      edit.action === AssetEditAction.Trim && !edit.parameters.mode
+        ? { ...edit, parameters: { ...edit.parameters, mode: VideoTrimMode.Fast } }
+        : edit,
+    );
   }
 
   async getVideoEditVersions(auth: AuthDto, id: string): Promise<VideoEditVersionResponseDto[]> {
