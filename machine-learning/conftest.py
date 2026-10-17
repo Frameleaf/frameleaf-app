@@ -22,7 +22,15 @@ def mock_get_model() -> Iterator[mock.Mock]:
         yield mocked
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(autouse=True)
+def isolated_thread_pool() -> Iterator[None]:
+    # Each test models a fresh worker, including tests that call main.run without entering an ASGI lifespan.
+    with mock.patch("frameleaf_ml.main.thread_pool", None):
+        yield
+
+
+# Native factory tests also own this module's executor; never overlap their lifespan with a shared client.
+@pytest.fixture
 def deployed_app() -> Iterator[TestClient]:
     with TestClient(app) as client:
         yield client
@@ -189,3 +197,42 @@ def exception() -> Iterator[mock.Mock]:
 def snapshot_download() -> Iterator[mock.Mock]:
     with mock.patch("frameleaf_ml.models.base.snapshot_download") as mocked:
         yield mocked
+
+
+@pytest.fixture
+def synthetic_clip_cache(tmp_path):
+    import numpy as np
+    import onnx
+    from onnx import TensorProto, helper, numpy_helper
+    from tokenizers import Tokenizer, models, pre_tokenizers
+
+    from frameleaf_ml.staging import RECEIPT, cache_hashes
+
+    name = "ViT-B-32__openai"
+    cache = tmp_path / "cache" / "clip" / name
+    textual = cache / "textual"
+    textual.mkdir(parents=True)
+    weights = numpy_helper.from_array(np.ones((4, 2), dtype=np.float32), name="weights")
+    model = helper.make_model(
+        helper.make_graph(
+            [
+                helper.make_node("Cast", ["text"], ["float"], to=TensorProto.FLOAT),
+                helper.make_node("MatMul", ["float", "weights"], ["embedding"]),
+            ],
+            "synthetic-clip",
+            [helper.make_tensor_value_info("text", TensorProto.INT32, [1, 4])],
+            [helper.make_tensor_value_info("embedding", TensorProto.FLOAT, [1, 2])],
+            [weights],
+        ),
+        opset_imports=[helper.make_opsetid("", 17)],
+        ir_version=9,
+    )
+    onnx.save(model, textual / "model.onnx")
+    tokenizer = Tokenizer(models.WordLevel({"<pad>": 0, "<unk>": 1, "frameleaf": 2, "fixture": 3}, unk_token="<unk>"))
+    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+    tokenizer.save(str(textual / "tokenizer.json"))
+    (textual / "tokenizer_config.json").write_text(json.dumps({"pad_token": "<pad>"}))
+    (cache / "config.json").write_text(json.dumps({"text_cfg": {"context_length": 4}}))
+    hashes = cache_hashes(cache)
+    (cache / RECEIPT).write_text(json.dumps(hashes))
+    return name, cache, hashes

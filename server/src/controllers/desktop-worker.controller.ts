@@ -1,0 +1,240 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Res,
+  StreamableFile,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiHeader, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { DesktopModelInventoryDto } from 'src/dtos/desktop-model-inventory.dto.js';
+import {
+  DesktopAcceptedQualificationDto,
+  DesktopQualificationChallengeDto,
+  DesktopQualificationIdParamDto,
+} from 'src/dtos/desktop-qualification.dto.js';
+import {
+  DesktopWorkerAckDto,
+  DesktopWorkerClaimDto,
+  DesktopWorkerHeartbeatDto,
+} from 'src/dtos/desktop-worker-job.dto.js';
+import { DesktopSessionDto, DesktopWorkerPayloadDto } from 'src/dtos/desktop-worker.dto.js';
+import { ApiTag } from 'src/enum.js';
+import { Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { DesktopWorkerLanGuard } from 'src/middleware/desktop-worker-lan.guard.js';
+import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
+import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
+import { UUIDParamDto } from 'src/validation.js';
+
+const history = () => new HistoryBuilder().added('v3.2.0').alpha('v3.2.0');
+@ApiTags(ApiTag.Server)
+@ApiBearerAuth()
+@ApiHeader({
+  name: 'x-frameleaf-desktop-proof',
+  required: true,
+  description: 'Canonical base64 installation-signed worker request proof. Photo sessions are not accepted.',
+})
+@Controller('desktop')
+export class DesktopWorkerController {
+  constructor(
+    private service: DesktopWorkerService,
+    private qualification: DesktopQualificationService,
+  ) {}
+
+  @Post('worker/models')
+  @UseGuards(DesktopWorkerLanGuard)
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ public: true })
+  @Endpoint({ summary: 'Read selected model availability for this signed desktop worker', history: history() })
+  async readDesktopModelInventory(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
+    @Body() dto: DesktopWorkerPayloadDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<DesktopModelInventoryDto> {
+    response.setHeader('Cache-Control', 'no-store');
+    return this.qualification.inventory(authorization, proof, dto.payload);
+  }
+
+  @Post('worker/challenges')
+  @UseGuards(DesktopWorkerLanGuard)
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ public: true })
+  @Endpoint({ summary: 'Issue an installation-signed model qualification challenge', history: history() })
+  async createDesktopQualificationChallenge(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
+    @Body() dto: DesktopWorkerPayloadDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<DesktopQualificationChallengeDto> {
+    response.setHeader('Cache-Control', 'no-store');
+    return this.qualification.issue(authorization, proof, dto.payload);
+  }
+
+  @Get('worker/challenges/:id')
+  @UseGuards(DesktopWorkerLanGuard)
+  @Authenticated({ public: true })
+  @Endpoint({ summary: 'Read an unexpired challenge for the current desktop credential', history: history() })
+  async readDesktopQualificationChallenge(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
+    @Param() { id }: DesktopQualificationIdParamDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<DesktopQualificationChallengeDto> {
+    response.setHeader('Cache-Control', 'no-store');
+    return this.qualification.read(authorization, proof, id);
+  }
+
+  @Post('worker/challenges/:id/report')
+  @UseGuards(DesktopWorkerLanGuard)
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ public: true })
+  @Endpoint({
+    summary: 'Record exact desktop qualification evidence without granting inference scope',
+    history: history(),
+  })
+  async recordDesktopQualification(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
+    @Param() { id }: DesktopQualificationIdParamDto,
+    @Body() dto: DesktopWorkerPayloadDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<DesktopWorkerAckDto> {
+    response.setHeader('Cache-Control', 'no-store');
+    return this.qualification.record(authorization, proof, id, dto.payload);
+  }
+
+  @Get('worker/qualifications/:id')
+  @UseGuards(DesktopWorkerLanGuard)
+  @Authenticated({ public: true })
+  @Endpoint({ summary: 'Read accepted runtime evidence without granting processing scope', history: history() })
+  async readDesktopAcceptedQualification(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
+    @Param() { id }: DesktopQualificationIdParamDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<DesktopAcceptedQualificationDto> {
+    response.setHeader('Cache-Control', 'no-store');
+    return this.qualification.accepted(authorization, proof, id);
+  }
+
+  @Post('worker/claim')
+  @UseGuards(DesktopWorkerLanGuard)
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ public: true })
+  @Endpoint({ summary: 'Claim one qualified desktop inference attempt', history: history() })
+  async claimDesktopTask(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
+    @Body() dto: DesktopWorkerPayloadDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<DesktopWorkerClaimDto> {
+    const controller = new AbortController();
+    const close = () => controller.abort();
+    response.once('close', close);
+    response.setHeader('Cache-Control', 'no-store');
+    try {
+      return await this.service.claim(authorization, proof, dto.payload, controller.signal);
+    } catch (error) {
+      if (
+        controller.signal.aborted &&
+        (error === controller.signal.reason ||
+          (error instanceof Error && error.name === 'AbortError' && error.cause === controller.signal.reason))
+      ) {
+        return { task: null };
+      }
+      throw error;
+    } finally {
+      response.off('close', close);
+    }
+  }
+
+  @Get('tasks/:id/input')
+  @UseGuards(DesktopWorkerLanGuard)
+  @Authenticated({ public: true })
+  @FileResponse()
+  @Endpoint({ summary: 'Read only the input bound to this desktop attempt handle', history: history() })
+  async readDesktopTaskInput(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
+    @Param() { id }: UUIDParamDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<StreamableFile> {
+    const input = await this.service.input(authorization, proof, id);
+    response.setHeader('Cache-Control', 'no-store');
+    return new StreamableFile(input, { type: 'application/octet-stream', length: input.length });
+  }
+
+  @Post('worker/heartbeat')
+  @UseGuards(DesktopWorkerLanGuard)
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ public: true })
+  @Endpoint({ summary: 'Renew a bounded desktop inference lease', history: history() })
+  heartbeatDesktopTask(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
+    @Body() dto: DesktopWorkerPayloadDto,
+  ): Promise<DesktopWorkerHeartbeatDto> {
+    return this.service.heartbeat(authorization, proof, dto.payload);
+  }
+
+  @Post('tasks/:id/result')
+  @UseGuards(DesktopWorkerLanGuard)
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ public: true })
+  @Endpoint({ summary: 'Stage an idempotent desktop inference result for NAS validation', history: history() })
+  completeDesktopTask(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: DesktopWorkerPayloadDto,
+  ): Promise<DesktopWorkerAckDto> {
+    return this.service.complete(authorization, proof, id, dto.payload);
+  }
+
+  @Post('tasks/:id/fail')
+  @UseGuards(DesktopWorkerLanGuard)
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ public: true })
+  @Endpoint({ summary: 'Report a bounded desktop attempt failure', history: history() })
+  failDesktopTask(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: DesktopWorkerPayloadDto,
+  ): Promise<DesktopWorkerAckDto> {
+    return this.service.fail(authorization, proof, id, dto.payload);
+  }
+
+  @Post('worker/session')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ public: true })
+  @Endpoint({ summary: 'Rotate a live installation-bound worker credential', history: history() })
+  renewDesktopWorkerSession(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
+    @Body() dto: DesktopWorkerPayloadDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<DesktopSessionDto> {
+    response.setHeader('Cache-Control', 'no-store');
+    return this.service.renew(authorization, proof, dto.payload);
+  }
+
+  @Delete('worker/session')
+  @Authenticated({ public: true })
+  @Endpoint({ summary: 'Revoke this desktop worker grant', history: history() })
+  revokeDesktopWorkerSession(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
+  ): Promise<DesktopWorkerAckDto> {
+    return this.service.revoke(authorization, proof);
+  }
+}

@@ -55,6 +55,16 @@ describe(SmartAlbumService.name, () => {
   });
 
   describe('evaluate', () => {
+    it('cannot write a prepared membership after the index transition guard refuses', async () => {
+      mocks.smartAlbum.getAllSmartAlbumIdsForOwner.mockResolvedValue(albumMap({ travel: travelAlbumId }));
+      mocks.machineLearning.captureClipRead.mockResolvedValue({
+        assertCurrent: () => Promise.resolve(),
+        publish: () => Promise.reject(new Error('desktop_clip_index_changed')),
+      });
+      await expect(sut.evaluate({ assetId, ownerId, tags: ['beach'] })).rejects.toThrow('desktop_clip_index_changed');
+      expect(mocks.smartAlbum.addAssetToSmartAlbum).not.toHaveBeenCalled();
+    });
+
     it('should add asset to matching kinds based on tags', async () => {
       mocks.smartAlbum.getAllSmartAlbumIdsForOwner.mockResolvedValue(albumMap({ travel: travelAlbumId }));
 

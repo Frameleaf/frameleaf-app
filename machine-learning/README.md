@@ -20,6 +20,40 @@ CUDA, ROCM and OpenVINO are supported as acceleration APIs. To use them, you can
 To add or remove dependencies, you can use the commands `uv add $PACKAGE_NAME` and `uv remove $PACKAGE_NAME`, respectively.
 Be sure to commit the `uv.lock` and `pyproject.toml` files with `uv lock` to reflect any changes in dependencies.
 
+## Native desktop inference
+
+The foreground sidecar starts with `python -m frameleaf_ml.native_runtime --cache-dir
+<private-cache> --port <loopback-port> --provider CPUExecutionProvider`. Supply
+`FRAMELEAF_ML_AUTH_TOKEN` through its environment as a random alphanumeric value of
+at least 48 characters. Only authenticated `/ping` and library `/predict` requests
+are accepted. Model acquisition is separate: stop inference before running
+`python -m frameleaf_ml.staging` against the private cache. Runtime downloads are disabled.
+
+Run qualification in a fresh process:
+
+```sh
+python -m frameleaf_ml.native_qualification --spec approved-fixture.json \
+  --cache-dir private-cache --output qualification.json
+```
+
+`QualificationSpec` in `frameleaf_ml/native_qualification.py` defines the strict
+versioned JSON contract. The supervisor must supply approved model artifact,
+preprocessing and fixture hashes, expected production output, the selected provider,
+a memory floor and a deadline. The report binds the exact spec bytes and runtime
+fingerprint. Accept a report only after exit code zero and exact binding validation;
+exit 1 refuses qualification, and exit 124 terminates an exceeded deadline.
+The report alone never grants NAS model permission.
+
+Qualification currently executes ONNX CLIP, face and OCR library pipelines.
+Every selected model must execute; an empty face fixture cannot qualify an unrun
+recognizer. Provider availability alone does not qualify acceleration. CPU execution
+and CUDA graph execution are distinguished from mixed CUDA/CPU partitioning.
+CoreML, OpenVINO and MIGraphX device execution still require additional qualification
+and are reported incompatible. Native Python provider fallback is disabled.
+Offline face batching writes a derived graph in private runtime storage and preserves
+approved source weights. Torch enrichment qualification and desktop supervisor
+integration remain pending.
+
 # Image Enrichment Models
 
 This fork adds two optional image enrichment tasks:

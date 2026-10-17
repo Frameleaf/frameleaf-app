@@ -1,5 +1,6 @@
 import type { Transaction } from 'kysely';
 import type { JobItem } from 'src/types.js';
+import type { AssetSourceSnapshot } from 'src/utils/asset-source-authority.js';
 import { readQueueDeadlineProfiles } from 'src/queue/configuration.js';
 
 export const QUEUE_TIMING = {
@@ -60,6 +61,10 @@ export type QueueClaim = {
   safeToRetry?: boolean;
 };
 export type QueueExecution = {
+  sourceAuthorities?: Map<
+    string,
+    { ownerId: string; snapshot: AssetSourceSnapshot; assertCurrent: (tx?: Transaction<any>) => Promise<void> }
+  >;
   claim: QueueClaim;
   signal: AbortSignal;
   /** A handler must report actual new bytes/frames/items, never a timer tick. */

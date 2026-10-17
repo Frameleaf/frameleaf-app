@@ -449,6 +449,12 @@ export const getMocks = () => {
     workflow: automock(WorkflowRepository, { strict: true }),
   };
 
+  mocks.machineLearning.selectBackgroundPool.mockImplementation((selection) => Promise.resolve(selection));
+  mocks.machineLearning.captureClipRead.mockResolvedValue({
+    assertCurrent: () => Promise.resolve(),
+    publish: (write) => write(),
+  });
+
   // every new user gets a cluster group, which is incidental to most tests
   mocks.clusterGroup.create.mockResolvedValue(ClusterGroupFactory.create());
 

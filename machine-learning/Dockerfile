@@ -150,7 +150,8 @@ ARG DEVICE
 
 # mimalloc is preloaded into the inference workers only (frameleaf_ml/__main__.py): a global
 # /etc/ld.so.preload would also load it into the Studio worker's Chromium, which then crashes (FL-408).
-RUN MIMALLOC=$(case "$DEVICE" in cuda) echo "libmimalloc2.0";; openvino|rocm);; *) echo "libmimalloc3";; esac); \
+# ONNX Runtime's ARM64 CPU visual session aborts in mimalloc 3; use the system allocator there.
+RUN MIMALLOC=$(case "$DEVICE:$(uname -m)" in cuda:*) echo "libmimalloc2.0";; cpu:aarch64|openvino:*|rocm:*);; *) echo "libmimalloc3";; esac); \
     apt-get update && \
     apt-get install -y --no-install-recommends tini ccache libgl1 libglib2.0-0 libgomp1 $MIMALLOC && \
     apt-get autoremove -yqq && \

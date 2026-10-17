@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "epoch": 3,
+  "spaces": [
+    {
+      "spaceKey": "clip-space:fcbf57323b51dfc38ff89ceb12ceeb2b33e1c80d84a5afeb0717df54855e708d",
+      "visualModelKey": "clip:398f0c8fa848e0f32d68c50e6340069a60a5f7fa04e83675f0da3b43e850492e",
+      "textModelKeys": [
+        "clip:7a768d9b914e5ed32afa2c01566dc6c1dd6dcd9e01bed476d4ce5cae38a945db",
+        "clip:c8e479514fdcf9f76b63e46a1333245aba14eed444f3a9409e02d3bb33511c76"
+      ]
+    },
+    {
+      "spaceKey": "clip-space:e8f8e2a7750b1e85c9cbf71d3a52eb5b0faf8ce5009ce8c7e00c518ad389cdcd",
+      "visualModelKey": "clip:b5b9a9d4748410f5c869fe1b73a16ab8caa25f852aec6075b12403ebd2cf5956",
+      "textModelKeys": [
+        "clip:93f4dc772f817655256678095702dd151c8714e238fccbd7a49f544960fb52a6",
+        "clip:d89f5dad3c5a6d8111d881614655d55d5d4f6b1d275ff5f10cd5a3230779eb87"
+      ]
+    },
+    {
+      "spaceKey": "clip-space:80167c8697c78672eccfe901463ea15b7b8d6f7ccf4cd76cfec5e05f8ea09ef4",
+      "visualModelKey": "clip:7d8e951e7259720b2f3e7d948634bb3a2bd3e249d7977c992edd805b1cf7590c",
+      "textModelKeys": [
+        "clip:8b51224c49d3b550804d5e5783f7c28ce6045e1edae80d2f94625c3c2f9f7af1",
+        "clip:b4704cde2de61c7622e9d334e2c3bc82e080496deeb87d928f5b98eb5ef273bd"
+      ]
+    },
+    {
+      "spaceKey": "clip-space:debeaa1c77437324df97d57157ec2c7699b19f9dab586f32c6d404ffc3b01f42",
+      "visualModelKey": "clip:9bdd3d0ac4df2b78898464dcbe90bee65837a232f4d78a9aa423f7b1ec5cbfc5",
+      "textModelKeys": [
+        "clip:0453ec17e5424614824c0007ead0f4a781c7e9f0af22a02e5f1d17aa591aaddd",
+        "clip:418365970c0870e23feafc284090bac624d421af6c8eae50660f7558272c09fb"
+      ]
+    }
+  ]
+}

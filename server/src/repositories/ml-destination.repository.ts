@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, Selectable, SqlBool, Updateable, sql } from 'kysely';
+import { Insertable, Kysely, Selectable, SqlBool, type Transaction, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import { randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { MlEndpoint } from 'src/repositories/machine-learning.repository.js';
+import type { MlEndpoint, MlSelection } from 'src/repositories/machine-learning.repository.js';
 import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { MlDestinationHealth, MlDestinationKind, MlWorkload, SystemMetadataKey } from 'src/enum.js';
@@ -339,21 +340,132 @@ export class MlDestinationRepository {
     return this.db.selectFrom('ml_workload_route').selectAll().where('workload', '=', workload).executeTakeFirst();
   }
 
+  private lockRoute(db: Kysely<DB>, workload: MlWorkload) {
+    return sql`SELECT pg_advisory_xact_lock(hashtextextended('frameleaf:ml-route:' || ${workload}::text, 0))`.execute(
+      db,
+    );
+  }
+
+  private writeRouteOrigin(
+    db: Kysely<DB>,
+    workload: MlWorkload,
+    destinationId: string | null,
+    origin: 'default' | 'pinned',
+  ) {
+    const values = { workload, destinationId, origin, revisionId: randomUUID(), updatedAt: new Date() };
+    return db
+      .insertInto('ml_workload_route_origin')
+      .values(values)
+      .onConflict((oc) =>
+        origin === 'default' ? oc.column('workload').doNothing() : oc.column('workload').doUpdateSet(values),
+      )
+      .returning(['workload', 'revisionId'])
+      .executeTakeFirst();
+  }
+
   /**
    * Route a workload to a destination. FL-186: the route no longer carries the Frameleaf Cloud model
    * (`ml_cloud_model_choice` does), so `modelId` is left untouched and is no longer read.
    */
   async setRoute(workload: MlWorkload, destinationId: string): Promise<void> {
-    await this.db
-      .insertInto('ml_workload_route')
-      .values({ workload, destinationId, updatedAt: new Date() })
-      .onConflict((oc) => oc.column('workload').doUpdateSet({ destinationId, updatedAt: new Date() }))
-      .execute();
+    await this.db.transaction().execute(async (db) => {
+      await this.lockRoute(db, workload);
+      await db
+        .insertInto('ml_workload_route')
+        .values({ workload, destinationId, updatedAt: new Date() })
+        .onConflict((oc) => oc.column('workload').doUpdateSet({ destinationId, updatedAt: new Date() }))
+        .execute();
+      await this.writeRouteOrigin(db, workload, destinationId, 'pinned');
+    });
+  }
+
+  async setDefaultRoute(workload: MlWorkload, destinationId: string): Promise<boolean> {
+    return this.db.transaction().execute(async (db) => {
+      await this.lockRoute(db, workload);
+      const route = await db
+        .selectFrom('ml_workload_route')
+        .select('workload')
+        .where('workload', '=', workload)
+        .executeTakeFirst();
+      const intent = await db
+        .selectFrom('ml_workload_route_origin')
+        .select('workload')
+        .where('workload', '=', workload)
+        .executeTakeFirst();
+      if (route || intent) return false;
+      const recorded = await this.writeRouteOrigin(db, workload, destinationId, 'default');
+      if (!recorded) return false;
+      const inserted = await db
+        .insertInto('ml_workload_route')
+        .values({ workload, destinationId, updatedAt: new Date() })
+        .onConflict((oc) => oc.column('workload').doNothing())
+        .returning('workload')
+        .executeTakeFirst();
+      if (!inserted) {
+        await db
+          .deleteFrom('ml_workload_route_origin')
+          .where('workload', '=', workload)
+          .where('revisionId', '=', recorded.revisionId)
+          .execute();
+        return false;
+      }
+      return true;
+    });
   }
 
   @GenerateSql({ params: [DummyValue.STRING] })
   async clearRoute(workload: MlWorkload): Promise<void> {
-    await this.db.deleteFrom('ml_workload_route').where('workload', '=', workload).execute();
+    await this.db.transaction().execute(async (db) => {
+      await this.lockRoute(db, workload);
+      await db.deleteFrom('ml_workload_route').where('workload', '=', workload).execute();
+      await this.writeRouteOrigin(db, workload, null, 'pinned');
+    });
+  }
+
+  @GenerateSql()
+  getRouteStates() {
+    const current = sql<SqlBool>`(origin.origin='pinned' AND origin."destinationId" IS NULL AND route.workload IS NULL)
+      OR (route."destinationId"=origin."destinationId")`;
+    return this.db
+      .selectFrom('ml_workload_route as route')
+      .fullJoin('ml_workload_route_origin as origin', 'origin.workload', 'route.workload')
+      .select([
+        sql<MlWorkload>`COALESCE(route.workload, origin.workload)`.as('workload'),
+        'route.destinationId',
+        sql<'default' | 'pinned' | 'legacy'>`CASE WHEN ${current} THEN origin.origin ELSE 'legacy' END`.as('origin'),
+        sql<string | null>`CASE WHEN ${current} THEN origin."revisionId" ELSE NULL END`.as('revisionId'),
+      ])
+      .orderBy('workload', 'asc')
+      .execute();
+  }
+
+  async assertDefaultRoute(
+    selection: Pick<MlSelection, 'destinationId' | 'kind' | 'endpoint'>,
+    revisionId: string,
+    tx?: Transaction<DB>,
+    workload: MlWorkload = MlWorkload.Clip,
+  ) {
+    const { destinationId } = selection;
+    if (tx) await this.lockRoute(tx, workload);
+    const repository = tx ? new MlDestinationRepository(tx) : this;
+    const route = (await repository.getRouteStates()).find((route) => route.workload === workload);
+    if (route?.origin !== 'default' || route.destinationId !== destinationId || route.revisionId !== revisionId)
+      throw new Error('desktop_pool_route_changed');
+    const destination = await (tx ?? this.db)
+      .selectFrom('ml_destination')
+      .selectAll()
+      .where('id', '=', destinationId)
+      .$if(!!tx, (query) => query.forShare())
+      .executeTakeFirst();
+    if (
+      !destination ||
+      !destination.enabled ||
+      destination.kind !== selection.kind ||
+      !destination.workloads.includes(workload) ||
+      destination.url !== selection.endpoint.url ||
+      (destination.authToken ?? null) !== (selection.endpoint.authToken ?? null)
+    )
+      throw new Error('desktop_pool_destination_changed');
   }
 
   /** FL-186: the Frameleaf Cloud model an administrator chose per model group. */

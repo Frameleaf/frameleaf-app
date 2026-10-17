@@ -469,3 +469,20 @@ export const asset_backup_deletion_capture = registerFunction({
   language: 'PLPGSQL',
   body: BACKUP_DELETION_CAPTURE_BODY,
 });
+
+export const desktop_clip_producer_guard = registerFunction({
+  name: 'desktop_clip_producer_guard',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    DECLARE role text;
+    BEGIN
+      IF TG_TABLE_NAME = 'smart_search_description' THEN role := 'text';
+      ELSIF TG_TABLE_NAME IN ('smart_search', 'asset_video_duplicate_frame', 'video_moment_frame_embedding') THEN role := 'image';
+      ELSE RAISE EXCEPTION 'unsupported_clip_store';
+      END IF;
+      NEW."producerAdmissionKey" := CASE WHEN NEW."producerModelKey" IS NULL THEN 'legacy' ELSE role || ':' || NEW."producerModelKey" END;
+      INSERT INTO public.desktop_clip_producer (key) VALUES (NEW."producerAdmissionKey") ON CONFLICT DO NOTHING;
+      RETURN NEW;
+    END`,
+});

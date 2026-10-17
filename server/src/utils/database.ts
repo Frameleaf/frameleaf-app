@@ -18,7 +18,7 @@ import {
 } from 'kysely';
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { PostgresJSDialect } from 'kysely-postgres-js';
-import { Notice, PostgresError } from 'postgres';
+import postgres, { type Notice, type PostgresError } from 'postgres';
 import type { AudioStreamInfo, VectorExtension, VideoFormat, VideoPacketInfo, VideoStreamInfo } from 'src/types.js';
 import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { LockableProperty, Person, columns, lockableProperties } from 'src/database.js';
@@ -112,11 +112,16 @@ export const getKyselyConfig = (connection: DatabaseConnectionParams): KyselyCon
       if (isAssetChecksumConstraint(event.error)) {
         return;
       }
+      const privateInference = /\bdesktop_(?:ml_(?:task|attempt)|worker_(?:session|challenge))\b/u.test(
+        event.query.sql,
+      );
+      // eslint-disable-next-line import-x/no-named-as-default-member -- postgres exposes this class on its default ESM export.
+      const sqlState = event.error instanceof postgres.PostgresError ? event.error.code : undefined;
       console.error('Query failed :', {
         durationMs: event.queryDurationMillis,
-        error: event.error,
+        error: privateInference ? { code: sqlState } : event.error,
         sql: event.query.sql,
-        params: event.query.parameters,
+        params: privateInference ? '[redacted]' : event.query.parameters,
       });
     },
   };
