@@ -1,3 +1,4 @@
+import { Reflector } from '@nestjs/core';
 import { AssetMediaController } from 'src/controllers/asset-media.controller.js';
 import { CloudBackupOwnerController } from 'src/controllers/cloud-backup-owner.controller.js';
 import { EnrichmentController } from 'src/controllers/enrichment.controller.js';
@@ -9,8 +10,10 @@ import { UserController } from 'src/controllers/user.controller.js';
 // @nestjs/swagger's DECORATORS.API_RESPONSE
 const API_RESPONSE = 'swagger/apiResponse';
 
-const contentTypes = (method: object) => {
-  const responses = Reflect.getMetadata(API_RESPONSE, method) as Record<string, { content?: object }>;
+const reflector = new Reflector();
+
+const contentTypes = (method: (...args: never[]) => unknown) => {
+  const responses = reflector.get<Record<string, { content?: object }>>(API_RESPONSE, method);
   return Object.keys(responses['200']?.content ?? {}).toSorted();
 };
 
