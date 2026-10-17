@@ -1092,10 +1092,11 @@ export class RenderWorkerService {
             ? [(tx: Transaction<DB>, paths: string[]) => this.studioExports.retireArtifacts(tx, operation, paths)]
             : []),
         );
-      } else if (stored.some((chunk) => chunk.sequence > dto.sequence)) {
-        if (!(await this.operations.invalidateCheckpointsFrom(operation.id, dto.claimToken, dto.sequence + 1))) {
-          return { accepted: false, refusal: null };
-        }
+      } else if (
+        stored.some((chunk) => chunk.sequence > dto.sequence) &&
+        !(await this.operations.invalidateCheckpointsFrom(operation.id, dto.claimToken, dto.sequence + 1))
+      ) {
+        return { accepted: false, refusal: null };
       }
     }
 
