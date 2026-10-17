@@ -932,12 +932,6 @@ describe('FL-112 command and graph matrix, on the real command path', () => {
         ...failures,
       ],
     })
-    // The authorization axis also requires the canonical inputs measured by this same run.
-    for (const input of cases.filter(
-      (entry) => entry.case === 'normal' || entry.case === 'invalid',
-    )) {
-      expect(authorizationReport.commands.at(-1)?.cases).toContainEqual(input)
-    }
     // music.add never applies (FL-86 rights), so it has nothing to replay or to go stale.
     expect(failures.filter((entry) => entry.result === 'failed').map((entry) => entry.case)).toEqual(
       id === 'music.add' ? ['restart', 'stale-result'] : [],

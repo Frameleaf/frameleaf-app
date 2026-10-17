@@ -67,7 +67,8 @@ describe('owner camera evidence', () => {
     await waitFor(() => expect(sdkMock.getAssetMetadata).toHaveBeenCalledTimes(2));
     expect(signal?.aborted).toBe(true);
     finish(metadata());
-    await Promise.resolve();
+    // let the stale answer settle before checking that it was dropped
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByText('Original camera', { exact: false })).not.toBeInTheDocument();
   });
   it('offers visible retry after a failed fetch', async () => {

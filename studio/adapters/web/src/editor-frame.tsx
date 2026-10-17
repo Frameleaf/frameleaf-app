@@ -360,7 +360,11 @@ function EditorApp({ state, projectId }: { state: Session; projectId: string }) 
   return (
     <ErrorBoundary level="app">
       <TooltipProvider delayDuration={300}>
-        {state.relinkGuarded && <div role="alert">Your replacement is saved. Reload this project before editing.</div>}
+        {state.relinkGuarded && (
+          <div role="alert">
+            {state.context.strings?.relinkReload ?? 'Your replacement is saved. Reload this project before editing.'}
+          </div>
+        )}
         <div className="contents" inert={state.relinkGuarded || undefined}>
           <RouterProvider router={router} />
         </div>
@@ -493,7 +497,9 @@ function watchLocalImportsFor(state: Session) {
       cancelUnknown: () => {
         if (current()) post({
           type: 'notify',
-          message: 'Cancellation unavailable; reconcile publication receipts in the original project.',
+          message:
+            state.context.strings?.importCancelUnknown ??
+            "The cancel could not be confirmed, so the upscaled file may still be kept with this project.",
           tone: 'error',
         })
       },
@@ -679,7 +685,7 @@ function installMediaRelink(state: Session) {
       if (success)
         useMediaLibraryStore
           .getState()
-          .showNotification({ type: 'success', message: 'Media relinked and saved' })
+          .showNotification({ type: 'success', message: state.context.strings?.relinkSaved ?? 'Media relinked and saved' })
       return success
     }),
   )

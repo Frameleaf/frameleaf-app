@@ -1,5 +1,5 @@
 import { State as BuddyPairingState, type BuddyStatusDto } from '@frameleaf/sdk';
-import { buddyBackupPresentation } from './buddy-backup';
+import { buddyBackupPresentation, buddyConnectionKey } from './buddy-backup';
 
 const paired = (): BuddyStatusDto => ({
   enabled: true,
@@ -117,5 +117,14 @@ describe('Buddy backup controls and recovery presentation', () => {
     const status = paired();
     status.pairing!.state = BuddyPairingState.Pending;
     expect(buddyBackupPresentation(status, true)).toMatchObject({ write: false, send: false, read: false });
+  });
+});
+
+describe(buddyConnectionKey.name, () => {
+  it('names the connection in words, never the raw kind', () => {
+    expect(buddyConnectionKey('wan')).toBe('frameleaf_buddy_connection_wan');
+    expect(buddyConnectionKey('relay')).toBe('frameleaf_buddy_connection_relay');
+    expect(buddyConnectionKey('something-new')).toBe('frameleaf_buddy_connection_other');
+    expect(buddyConnectionKey(null)).toBeNull();
   });
 });

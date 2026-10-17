@@ -234,7 +234,9 @@ describe('adaptive preview quality changes previews only (FL-98)', () => {
       expect(result.current.fastScrubScaledKeyframes).toEqual(keyframesBefore)
       await saveTimeline('fl-adaptive')
       expect(await stored('fl-adaptive')).toBe(before)
+      const postsBefore = vi.mocked(post).mock.calls.length
       render(createElement(ExportDialog, { open: true, onClose: () => {} }))
+      expect(vi.mocked(post).mock.calls.length).toBeGreaterThan(postsBefore)
       expect(vi.mocked(post).mock.calls.at(-1)?.[0]).toEqual(requestBefore)
       expect(requestBefore).toEqual({ type: 'request-export', kind: 'video' })
     } finally {

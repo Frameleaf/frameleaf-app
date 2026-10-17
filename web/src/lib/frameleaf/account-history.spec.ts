@@ -88,7 +88,7 @@ describe(formatHistoryDate.name, () => {
   });
 });
 
-it('says when the account set up a new server with its setup code (FL-292)', () => {
+it('says when the account set up a new server (FL-292)', () => {
   expect(describe_(AdminAuditAction.AccountCreated, 'server-claimed:web')).toBe(
     en.frameleaf_account_history_server_claimed_web,
   );

@@ -498,12 +498,20 @@
       // What the photo shows is about to change: the current picture stays until the new one has loaded.
       holdCurrentPhoto('ready');
       bumpPlaybackRevision(asset.id);
-      const refreshedAsset = await getAssetInfo({ id: asset.id });
-      if (!isCurrent()) {
-        return;
+      try {
+        const refreshedAsset = await getAssetInfo({ id: asset.id });
+        if (!isCurrent()) {
+          return;
+        }
+        onAssetChange?.(refreshedAsset);
+        assetViewerManager.setAsset(refreshedAsset);
+      } catch (error) {
+        // The version is saved; the editor still closes and the viewer keeps the asset it has.
+        if (!isCurrent()) {
+          return;
+        }
+        handleError(error, $t('errors.failed_to_load_asset'));
       }
-      onAssetChange?.(refreshedAsset);
-      assetViewerManager.setAsset(refreshedAsset);
     }
     assetViewerManager.closeEditor();
     await tick();

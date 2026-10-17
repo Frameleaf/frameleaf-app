@@ -1,6 +1,6 @@
 <script lang="ts">
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import { buddyBackupPresentation } from '$lib/frameleaf/buddy-backup';
+  import { buddyBackupPresentation, buddyConnectionKey } from '$lib/frameleaf/buddy-backup';
   import { backupPageUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
@@ -105,7 +105,7 @@
         </div>
         <div>
           <dt>{$t('frameleaf_buddy_connection')}</dt>
-          <dd>{buddy.connection ?? $t('frameleaf_buddy_waiting_for_a_transfer')}</dd>
+          <dd>{$t(buddyConnectionKey(buddy.connection) ?? 'frameleaf_buddy_waiting_for_a_transfer')}</dd>
         </div>
         <div>
           <dt>{$t('frameleaf_buddy_transfer_speed')}</dt>
