@@ -90,6 +90,18 @@ describe('AssetDevelopRecipeDto', () => {
     expect(save.success).toBe(true);
     expect(save.data).toMatchObject({ render: true });
     expect(AssetDevelopSaveDto.schema.safeParse({ recipe: { version: 1 }, label: '' }).success).toBe(false);
+    // FL-431: the optional current-version precondition; null means "the original is current".
+    const expected = '7d4b6d0e-3c1f-4c7a-9c55-2f1f0b8f2a10';
+    expect(
+      AssetDevelopSaveDto.schema.safeParse({ recipe: { version: 1 }, expectedCurrentRevisionId: expected }).data,
+    ).toMatchObject({ expectedCurrentRevisionId: expected });
+    expect(
+      AssetDevelopSaveDto.schema.safeParse({ recipe: { version: 1 }, expectedCurrentRevisionId: null }).data,
+    ).toMatchObject({ expectedCurrentRevisionId: null });
+    expect(save.data).not.toHaveProperty('expectedCurrentRevisionId');
+    expect(
+      AssetDevelopSaveDto.schema.safeParse({ recipe: { version: 1 }, expectedCurrentRevisionId: 'nope' }).success,
+    ).toBe(false);
 
     const preview = AssetDevelopPreviewDto.schema.safeParse({ recipe: { version: 1 } });
     expect(preview.data).toMatchObject({ size: 1280 });
