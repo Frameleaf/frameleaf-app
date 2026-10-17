@@ -1629,7 +1629,7 @@ export const hiddenContentOrOthersRules = (options: HiddenContentQueryOptions = 
     predicates.push(hiddenFromOthers(options.othersRulesViewerId, assetAlias));
   }
   if (predicates.length === 0) {
-    return undefined;
+    return;
   }
   return predicates.length === 1 ? predicates[0] : sql<boolean>`(${sql.join(predicates, sql` or `)})`;
 };
