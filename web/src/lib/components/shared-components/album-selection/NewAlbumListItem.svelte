@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { SCROLL_PROPERTIES } from '$lib/components/shared-components/album-selection/album-selection-utils';
-  import { Icon } from '@immich/ui';
+  import { scrollProperties } from '$lib/components/shared-components/album-selection/album-selection-utils';
+  import { Icon } from '@frameleaf/ui';
   import { mdiPlus } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { Action } from 'svelte/action';
@@ -16,7 +16,7 @@
   const scrollIntoViewIfSelected: Action = (node) => {
     $effect(() => {
       if (selected) {
-        node.scrollIntoView(SCROLL_PROPERTIES);
+        node.scrollIntoView(scrollProperties());
       }
     });
   };

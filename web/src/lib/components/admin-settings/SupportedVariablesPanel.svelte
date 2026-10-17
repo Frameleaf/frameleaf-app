@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Card, CardBody, Text } from '@immich/ui';
+  import { Card, CardBody, Text } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
 </script>
 

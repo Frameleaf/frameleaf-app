@@ -1,0 +1,16 @@
+{
+  "description": "A stored supporter key certificate stays active past exp (lic_exp null)",
+  "jws": "eyJhbGciOiJFZERTQSIsInR5cCI6ImxpY2Vuc2Urand0Iiwia2lkIjoiUzFBXzE2bG9uc0RHQVctUGNEMnJUcDV1TDg3aklaUl9MR18xcTVSMVBpayJ9.eyJpc3MiOiJodHRwczovL2lkLmZyYW1lbGVhZi5jbG91ZCIsImF1ZCI6ImZyYW1lbGVhZi1zZXJ2ZXIiLCJzdWIiOiIwMTkyYTFiMi1jM2Q0LTdlNWYtOGE2Yi03YzhkOWUwZjFhMmIiLCJpaWQiOiIwMTkyYTFiMi1jM2Q0LTdlNWYtOWE2Yi0wMDAwMDAwMDAwMDEiLCJjbmYiOnsiamt0IjoiWGozZ3RYSUxkaVFGMUZld2VRYXgtWEl6cllvdFNKNlRvVEptT2MwNHdSRSJ9LCJsaWMiOnsiaWQiOiIwMTkyYTFiMi1jM2Q0LTdlNWYtYWE2Yi0wMDAwMDAwMDAwMGEiLCJsYXN0NCI6IkgyM0oiLCJraW5kIjoic2VydmVyIn0sImVudCI6WyJTVVBQT1JURVJfU0VSVkVSIl0sImxpY19leHAiOm51bGwsInVwZCI6eyJhZnRlciI6ODY0MDAsInVybCI6Imh0dHBzOi8vYXBpLmZyYW1lbGVhZi5jbG91ZC92MS9saWNlbnNlcy9yZWZyZXNoIn0sImdyYWNlX2RheXMiOjE0LCJpYXQiOjE3OTAzODA4MDAsIm5iZiI6MTc5MDM4MDgwMCwiZXhwIjoxNzkwOTg1NjAwLCJqdGkiOiIwMTkyYTFiMi1jM2Q0LTdlNWYtOGE2Yi0wMDAwMDAwMDAwYzIifQ.gdYJctmWS0_z4XP0gvhUILYg7UUPJ_WwL-vt8TKGemRan70cX6EE4yTtXfF4F45L_d0SMoE_uJYFjMcQlCwMBA",
+  "context": {
+    "instanceId": "0192a1b2-c3d4-7e5f-9a6b-000000000001",
+    "accountId": "0192a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+    "jkt": "Xj3gtXILdiQF1FeweQax-XIzrYotSJ6ToTJmOc04wRE",
+    "now": 1795564800,
+    "allowExpired": true
+  },
+  "expect": {
+    "ok": true,
+    "kind": "server",
+    "state": "active"
+  }
+}

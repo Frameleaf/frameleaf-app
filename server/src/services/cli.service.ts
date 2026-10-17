@@ -1,4 +1,4 @@
-import { schemaDiff } from '@immich/sql-tools';
+import { schemaDiff } from '@frameleaf/sql-tools';
 import { Injectable } from '@nestjs/common';
 import { isAbsolute, join } from 'node:path';
 import { SALT_ROUNDS } from 'src/constants.js';
@@ -6,8 +6,8 @@ import { MaintenanceAuthDto } from 'src/dtos/maintenance.dto.js';
 import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
 import { MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { compareCodeUnits } from 'src/utils/compare.js';
 import { createMaintenanceLoginUrl, generateMaintenanceSecret } from 'src/utils/maintenance.js';
-import { getExternalDomain } from 'src/utils/misc.js';
 
 export type SchemaReport = {
   migrations: MigrationStatus[];
@@ -23,33 +23,28 @@ type MigrationStatus = {
 export class CliService extends BaseService {
   async schemaReport(): Promise<SchemaReport> {
     const allFiles = await this.storageRepository.readdir(join(import.meta.dirname, '../schema/migrations'));
-    const files = allFiles.filter((file) => file.endsWith('.js')).map((file) => file.slice(0, -3));
-    const rows = await this.databaseRepository.getMigrations();
-    const filesSet = new Set(files);
-    const rowsSet = new Set(rows.map((item) => item.name));
-    const combined = [...filesSet, ...rowsSet].toSorted();
-
-    const migrations: MigrationStatus[] = [];
-
-    for (const name of combined) {
-      if (filesSet.has(name) && rowsSet.has(name)) {
-        migrations.push({ name, status: 'applied' });
+    const files = new Set<string>();
+    const migrations = new Map<string, MigrationStatus['status']>();
+    for (const file of allFiles) {
+      if (!file.endsWith('.js')) {
         continue;
       }
-
-      if (filesSet.has(name) && !rowsSet.has(name)) {
-        migrations.push({ name, status: 'missing' });
-        continue;
-      }
-
-      if (!filesSet.has(name) && rowsSet.has(name)) {
-        migrations.push({ name, status: 'deleted' });
-      }
+      const name = file.slice(0, -3);
+      files.add(name);
+      migrations.set(name, 'missing');
+    }
+    for (const { name } of await this.databaseRepository.getMigrations()) {
+      migrations.set(name, files.has(name) ? 'applied' : 'deleted');
     }
 
     const drift = await this.databaseRepository.getSchemaDrift();
 
-    return { migrations, drift };
+    return {
+      migrations: Array.from(migrations, ([name, status]) => ({ name, status })).sort((a, b) =>
+        compareCodeUnits(a.name, b.name),
+      ),
+      drift,
+    };
   }
 
   async listUsers(): Promise<UserAdminResponseDto[]> {
@@ -72,6 +67,8 @@ export class CliService extends BaseService {
     await this.userRepository.update(admin.id, { password: hashedPassword });
 
     if (invalidateSessions) {
+      // frameleaf-admin has no event handlers or socket server to tell open tabs: they sign out on their
+      // next request, which the deleted session fails with 401
       await this.sessionRepository.invalidateAll({ userId: admin.id });
     }
 
@@ -79,15 +76,21 @@ export class CliService extends BaseService {
   }
 
   async disablePasswordLogin(): Promise<void> {
-    const config = await this.getConfig({ withCache: false });
-    config.passwordLogin.enabled = false;
-    await this.updateConfig(config);
+    await this.updateConfigExclusively(
+      (config) => {
+        config.passwordLogin.enabled = false;
+      },
+      { source: 'server-cli' },
+    );
   }
 
   async enablePasswordLogin(): Promise<void> {
-    const config = await this.getConfig({ withCache: false });
-    config.passwordLogin.enabled = true;
-    await this.updateConfig(config);
+    await this.updateConfigExclusively(
+      (config) => {
+        config.passwordLogin.enabled = true;
+      },
+      { source: 'server-cli' },
+    );
   }
 
   async disableMaintenanceMode(): Promise<{ alreadyDisabled: boolean }> {
@@ -112,7 +115,7 @@ export class CliService extends BaseService {
 
   async enableMaintenanceMode(): Promise<{ authUrl: string; alreadyEnabled: boolean }> {
     const { server } = await this.getConfig({ withCache: true });
-    const baseUrl = getExternalDomain(server);
+    const baseUrl = await this.getPublicUrl(server);
 
     const payload: MaintenanceAuthDto = {
       username: 'cli-admin',
@@ -168,15 +171,21 @@ export class CliService extends BaseService {
   }
 
   async disableOAuthLogin(): Promise<void> {
-    const config = await this.getConfig({ withCache: false });
-    config.oauth.enabled = false;
-    await this.updateConfig(config);
+    await this.updateConfigExclusively(
+      (config) => {
+        config.oauth.enabled = false;
+      },
+      { source: 'server-cli' },
+    );
   }
 
   async enableOAuthLogin(): Promise<void> {
-    const config = await this.getConfig({ withCache: false });
-    config.oauth.enabled = true;
-    await this.updateConfig(config);
+    await this.updateConfigExclusively(
+      (config) => {
+        config.oauth.enabled = true;
+      },
+      { source: 'server-cli' },
+    );
   }
 
   async getSampleFilePaths(): Promise<string[]> {

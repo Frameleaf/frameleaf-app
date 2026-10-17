@@ -1,11 +1,11 @@
-import { schemaFromCode } from '@immich/sql-tools';
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { DateTime } from 'luxon';
 import { v4 } from 'uuid';
 import { AssetMetadataKey, UserMetadataKey } from 'src/enum.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { BaseSync, SyncRepository } from 'src/repositories/sync.repository.js';
+import { getFrameleafSchema } from 'src/schema/frameleaf-schema.js';
 import { DB } from 'src/schema/index.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -23,6 +23,10 @@ const setup = (db?: Kysely<DB>) => {
 
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
+});
+
+afterAll(async () => {
+  await defaultDatabase?.destroy();
 });
 
 const deletedLongAgo = DateTime.now().minus({ days: 35 }).toISO();
@@ -224,18 +228,51 @@ describe(SyncService.name, () => {
       expect(after[0].id).toBe(keep.id);
     });
 
-    it('should cleanup every table', async () => {
+    const directAuditTables = [
+      { table: 'tag_audit', columns: ['tagId', 'userId'] },
+      { table: 'tag_asset_audit', columns: ['tagId', 'assetId', 'userId'] },
+      { table: 'pet_audit', columns: ['petId', 'ownerId'] },
+      { table: 'pet_observation_audit', columns: ['observationId', 'petId', 'assetId', 'ownerId'] },
+    ] as const;
+
+    it.each(directAuditTables)('prunes old $table tombstones and retains recent ones', async ({ table, columns }) => {
+      const { sut, ctx } = setup();
+      const recentId = v4();
+      for (const [id, deletedAt] of [
+        [v4(), deletedLongAgo],
+        [recentId, DateTime.now().minus({ days: 1 }).toISO()],
+      ]) {
+        await sql`INSERT INTO ${sql.table(table)}
+          (${sql.join(['id', ...columns, 'deletedAt'].map((column) => sql.ref(column)))})
+          VALUES (${sql.join([id, ...columns.map(() => v4()), deletedAt])})`.execute(ctx.database);
+      }
+
+      await assertTableCount(ctx.database, table, 2);
+      await expect(sut.onAuditTableCleanup()).resolves.toBeUndefined();
+      const { rows } = await sql<{ id: string }>`SELECT id FROM ${sql.table(table)}`.execute(ctx.database);
+      expect(rows).toEqual([{ id: recentId }]);
+    });
+
+    it('should cleanup every table through its respective cleanup path', async () => {
       const { sut } = setup();
 
-      const auditTables = schemaFromCode()
-        .tables.filter((table) => table.name.endsWith('_audit'))
+      // Render-worker actions and iCloud integrity results are operational history, not sync
+      // tombstones. Neither has deletedAt, and sync must never prune either record.
+      const notSyncTombstones = new Set(['render_worker_audit', 'icloud_identity_audit']);
+      const auditTables = getFrameleafSchema()
+        .tables.filter((table) => table.name.endsWith('_audit') && !notSyncTombstones.has(table.name))
         .map(({ name }) => name);
+
+      // TagSync prunes these directly; the real-table retention cases above cover that path.
+      const directTables = new Set<string>(directAuditTables.map(({ table }) => table));
+      expect([...directTables].every((table) => auditTables.includes(table))).toBe(true);
+      const baseAuditTables = auditTables.filter((table) => !directTables.has(table));
 
       const auditCleanupSpy = vi.spyOn(BaseSync.prototype as any, 'auditCleanup');
       await expect(sut.onAuditTableCleanup()).resolves.toBeUndefined();
 
-      expect(auditCleanupSpy).toHaveBeenCalledTimes(auditTables.length);
-      for (const table of auditTables) {
+      expect(auditCleanupSpy).toHaveBeenCalledTimes(baseAuditTables.length);
+      for (const table of baseAuditTables) {
         expect(auditCleanupSpy, `Audit table ${table} was not cleaned up`).toHaveBeenCalledWith(table, 31);
       }
     });

@@ -6,7 +6,15 @@ const DuplicateResponseSchema = z
   .object({
     duplicateId: z.uuidv4().describe('Duplicate group ID'),
     assets: z.array(AssetResponseSchema).describe('Duplicate assets'),
-    suggestedKeepAssetIds: z.array(z.uuidv4()).describe('Suggested asset IDs to keep based on file size and EXIF data'),
+    reviewRequiredReasons: z
+      .array(z.string())
+      .optional()
+      .describe('Safety reasons that prevent unattended disposal of the non-suggested copies'),
+    suggestedKeepAssetIds: z
+      .array(z.uuidv4())
+      .describe(
+        'Suggested asset IDs to keep based on format preference (RAW, HEIC/HEIF/HIF, then other formats), file size and EXIF data',
+      ),
   })
   .meta({ id: 'DuplicateResponseDto' });
 

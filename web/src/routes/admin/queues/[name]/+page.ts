@@ -1,30 +1,11 @@
-import { getQueue, getQueueJobs, QueueJobStatus } from '@immich/sdk';
 import { redirect } from '@sveltejs/kit';
 import { fromQueueSlug, Route } from '$lib/route';
-import { authenticate, requestServerInfo } from '$lib/utils/auth';
-import { getFormatter } from '$lib/utils/i18n';
+import { authenticate } from '$lib/utils/auth';
 import type { PageLoad } from './$types';
 
+/** FL-71: one queue opens inside Compute & jobs → Job manager; this address only redirects. */
 export const load = (async ({ params, url }) => {
   await authenticate(url, { admin: true });
-  await requestServerInfo();
-
   const name = fromQueueSlug(params.name);
-  if (!name) {
-    redirect(307, Route.queues());
-  }
-
-  const [queue, failedJobs] = await Promise.all([
-    getQueue({ name }),
-    getQueueJobs({ name, status: [QueueJobStatus.Failed, QueueJobStatus.Paused] }),
-  ]);
-  const $t = await getFormatter();
-
-  return {
-    queue,
-    failedJobs,
-    meta: {
-      title: $t('admin.queue_details'),
-    },
-  };
+  redirect(307, name ? Route.viewQueue({ name }) : Route.queues());
 }) satisfies PageLoad;

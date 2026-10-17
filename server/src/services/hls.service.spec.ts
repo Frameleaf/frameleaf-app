@@ -13,29 +13,29 @@ const eiffelExpectedMediaPlaylist = `#EXTM3U
 #EXT-X-MEDIA-SEQUENCE:0
 #EXT-X-PLAYLIST-TYPE:VOD
 #EXT-X-MAP:URI="init.mp4"
-#EXTINF:2.007222,
+#EXTINF:2.007387,
 seg_0.m4s
-#EXTINF:2.007222,
+#EXTINF:2.007387,
 seg_1.m4s
-#EXTINF:2.007222,
+#EXTINF:2.007387,
 seg_2.m4s
-#EXTINF:2.007222,
+#EXTINF:2.007387,
 seg_3.m4s
-#EXTINF:2.007222,
+#EXTINF:2.007387,
 seg_4.m4s
-#EXTINF:2.007222,
+#EXTINF:2.007387,
 seg_5.m4s
-#EXTINF:2.007222,
+#EXTINF:2.007387,
 seg_6.m4s
-#EXTINF:2.007222,
+#EXTINF:2.007387,
 seg_7.m4s
-#EXTINF:2.007222,
+#EXTINF:2.007387,
 seg_8.m4s
-#EXTINF:2.007222,
+#EXTINF:2.007387,
 seg_9.m4s
-#EXTINF:2.007222,
+#EXTINF:2.007387,
 seg_10.m4s
-#EXTINF:0.281011,
+#EXTINF:0.281034,
 seg_11.m4s
 #EXT-X-ENDLIST
 `;
@@ -69,27 +69,27 @@ const trainExpectedMediaPlaylist = `#EXTM3U
 #EXT-X-MEDIA-SEQUENCE:0
 #EXT-X-PLAYLIST-TYPE:VOD
 #EXT-X-MAP:URI="init.mp4"
-#EXTINF:2.000000,
+#EXTINF:2.016412,
 seg_0.m4s
-#EXTINF:2.000000,
+#EXTINF:2.016412,
 seg_1.m4s
-#EXTINF:2.000000,
+#EXTINF:2.016412,
 seg_2.m4s
-#EXTINF:2.000000,
+#EXTINF:2.016412,
 seg_3.m4s
-#EXTINF:2.000000,
+#EXTINF:2.016412,
 seg_4.m4s
-#EXTINF:2.000000,
+#EXTINF:2.016412,
 seg_5.m4s
-#EXTINF:2.000000,
+#EXTINF:2.016412,
 seg_6.m4s
-#EXTINF:2.000000,
+#EXTINF:2.016412,
 seg_7.m4s
-#EXTINF:2.000000,
+#EXTINF:2.016412,
 seg_8.m4s
-#EXTINF:2.000000,
+#EXTINF:2.016412,
 seg_9.m4s
-#EXTINF:1.733333,
+#EXTINF:1.574216,
 seg_10.m4s
 #EXT-X-ENDLIST
 `;
@@ -99,40 +99,40 @@ const sessionId = '00000000-0000-0000-0000-000000000000';
 const eiffelExpectedMasterAv1 = `#EXTM3U
 #EXT-X-VERSION:7
 #EXT-X-INDEPENDENT-SEGMENTS
-#EXT-X-STREAM-INF:BANDWIDTH=1350000,RESOLUTION=480x852,CODECS="av01.0.04M.08,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.910
+#EXT-X-STREAM-INF:BANDWIDTH=1350000,RESOLUTION=480x852,CODECS="av01.0.04M.08,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.908
 ${sessionId}/0/playlist.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=1620000,RESOLUTION=480x852,CODECS="hvc1.1.6.L90.B0,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.910
+#EXT-X-STREAM-INF:BANDWIDTH=1620000,RESOLUTION=480x852,CODECS="hvc1.1.6.L90.B0,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.908
 ${sessionId}/1/playlist.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=3375000,RESOLUTION=480x852,CODECS="avc1.64001e,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.910
+#EXT-X-STREAM-INF:BANDWIDTH=3375000,RESOLUTION=480x852,CODECS="avc1.64001e,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.908
 ${sessionId}/2/playlist.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=2700000,RESOLUTION=720x1280,CODECS="av01.0.05M.08,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.910
+#EXT-X-STREAM-INF:BANDWIDTH=2700000,RESOLUTION=720x1280,CODECS="av01.0.05M.08,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.908
 ${sessionId}/3/playlist.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=3375000,RESOLUTION=720x1280,CODECS="hvc1.1.6.L93.B0,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.910
+#EXT-X-STREAM-INF:BANDWIDTH=3375000,RESOLUTION=720x1280,CODECS="hvc1.1.6.L93.B0,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.908
 ${sessionId}/4/playlist.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=6750000,RESOLUTION=720x1280,CODECS="avc1.64001f,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.910
+#EXT-X-STREAM-INF:BANDWIDTH=6750000,RESOLUTION=720x1280,CODECS="avc1.64001f,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.908
 ${sessionId}/5/playlist.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=5400000,RESOLUTION=1080x1920,CODECS="av01.0.08M.08,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.910
+#EXT-X-STREAM-INF:BANDWIDTH=5400000,RESOLUTION=1080x1920,CODECS="av01.0.08M.08,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.908
 ${sessionId}/6/playlist.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=6075000,RESOLUTION=1080x1920,CODECS="hvc1.1.6.L120.B0,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.910
+#EXT-X-STREAM-INF:BANDWIDTH=6075000,RESOLUTION=1080x1920,CODECS="hvc1.1.6.L120.B0,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.908
 ${sessionId}/7/playlist.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=10800000,RESOLUTION=1080x1920,CODECS="avc1.640028,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.910
+#EXT-X-STREAM-INF:BANDWIDTH=10800000,RESOLUTION=1080x1920,CODECS="avc1.640028,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.908
 ${sessionId}/8/playlist.m3u8
 `;
 
 const eiffelExpectedMasterNoAv1 = `#EXTM3U
 #EXT-X-VERSION:7
 #EXT-X-INDEPENDENT-SEGMENTS
-#EXT-X-STREAM-INF:BANDWIDTH=1620000,RESOLUTION=480x852,CODECS="hvc1.1.6.L90.B0,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.910
+#EXT-X-STREAM-INF:BANDWIDTH=1620000,RESOLUTION=480x852,CODECS="hvc1.1.6.L90.B0,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.908
 ${sessionId}/1/playlist.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=3375000,RESOLUTION=480x852,CODECS="avc1.64001e,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.910
+#EXT-X-STREAM-INF:BANDWIDTH=3375000,RESOLUTION=480x852,CODECS="avc1.64001e,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.908
 ${sessionId}/2/playlist.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=3375000,RESOLUTION=720x1280,CODECS="hvc1.1.6.L93.B0,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.910
+#EXT-X-STREAM-INF:BANDWIDTH=3375000,RESOLUTION=720x1280,CODECS="hvc1.1.6.L93.B0,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.908
 ${sessionId}/4/playlist.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=6750000,RESOLUTION=720x1280,CODECS="avc1.64001f,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.910
+#EXT-X-STREAM-INF:BANDWIDTH=6750000,RESOLUTION=720x1280,CODECS="avc1.64001f,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.908
 ${sessionId}/5/playlist.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=6075000,RESOLUTION=1080x1920,CODECS="hvc1.1.6.L120.B0,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.910
+#EXT-X-STREAM-INF:BANDWIDTH=6075000,RESOLUTION=1080x1920,CODECS="hvc1.1.6.L120.B0,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.908
 ${sessionId}/7/playlist.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=10800000,RESOLUTION=1080x1920,CODECS="avc1.640028,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.910
+#EXT-X-STREAM-INF:BANDWIDTH=10800000,RESOLUTION=1080x1920,CODECS="avc1.640028,mp4a.40.2",VIDEO-RANGE=SDR,FRAME-RATE=24.908
 ${sessionId}/8/playlist.m3u8
 `;
 
@@ -221,6 +221,27 @@ describe(HlsService.name, () => {
     it('omits AV1 when it is not in the configured codecs', async () => {
       setup(eiffelTower);
       await expect(sut.getMainPlaylist(auth, assetId)).resolves.toBe(eiffelExpectedMasterNoAv1);
+    });
+
+    it('does not create a worker session when no configured variant can be offered', async () => {
+      setup(eiffelTower, [], []);
+      await expect(sut.getMainPlaylist(auth, assetId)).rejects.toThrow('No supported variants');
+      expect(mocks.websocket.serverSend).not.toHaveBeenCalled();
+    });
+
+    it('receives a session result emitted immediately by request dispatch', async () => {
+      setup(eiffelTower, allCodecs);
+      mocks.websocket.serverSend.mockImplementation((...args) => {
+        if (args[0] === 'HlsSessionRequest') sut.onSessionResult({ sessionId });
+      });
+      vi.useFakeTimers();
+      try {
+        const result = sut.getMainPlaylist(auth, assetId).catch((error: unknown) => error);
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(await result).toBe(eiffelExpectedMasterAv1);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('offers every resolution up to the source and derives 4K codec levels (waterfall, 4K, 29.83fps)', async () => {
@@ -319,6 +340,50 @@ describe(HlsService.name, () => {
       mocks.storage.checkFileExists.mockResolvedValue(true);
     });
 
+    it('returns separate file responses to concurrent requests waiting on one segment', async () => {
+      mocks.storage.checkFileExists.mockResolvedValue(false);
+      const requests = Array.from({ length: 8 }, () =>
+        sut.getSegment(auth, assetId, sessionId, variantIndex, 'seg_1.m4s'),
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      sut.onSegmentResult({ sessionId, variantIndex, segmentIndex: 1 });
+
+      const responses = await Promise.all(requests);
+      expect(mocks.websocket.serverSend.mock.calls.filter(([event]) => event === 'HlsSegmentRequest')).toHaveLength(1);
+      expect(mocks.storage.checkFileExists).toHaveBeenCalledOnce();
+      expect(new Set(responses).size).toBe(8);
+      for (const response of responses) {
+        expect(response).toEqual(
+          expect.objectContaining({ path: expect.stringContaining('seg_1.m4s'), contentType: 'video/mp4' }),
+        );
+      }
+    });
+
+    it.each(['segment failed', 'session failed', 'Session ended'])(
+      'rejects all concurrent segment requests when %s',
+      async (error) => {
+        mocks.storage.checkFileExists.mockResolvedValue(false);
+        const requests = Array.from({ length: 8 }, () =>
+          sut.getSegment(auth, assetId, sessionId, variantIndex, 'seg_1.m4s').catch((error_: unknown) => error_),
+        );
+        await new Promise((resolve) => setImmediate(resolve));
+        if (error === 'segment failed') {
+          sut.onSegmentResult({ sessionId, variantIndex, segmentIndex: 1, error });
+        } else if (error === 'session failed') {
+          sut.onSessionResult({ sessionId, error });
+        } else {
+          sut.onSessionEnd({ sessionId });
+        }
+
+        const failures = await Promise.all(requests);
+        for (const failure of failures) {
+          expect(failure).toBeInstanceOf(Error);
+          expect((failure as Error).message).toBe(error);
+          expect(failure).toBe(failures[0]);
+        }
+      },
+    );
+
     it('emits HlsHeartbeat with segmentIndex 0 for the first init.mp4 request', async () => {
       await sut.getSegment(auth, assetId, sessionId, variantIndex, 'init.mp4');
       expect(mocks.websocket.serverSend).toHaveBeenCalledWith('HlsHeartbeat', {
@@ -395,6 +460,32 @@ describe(HlsService.name, () => {
       );
     });
 
+    it('refuses a segment session belonging to another asset before file access or worker traffic', async () => {
+      mocks.videoStream.getSession.mockResolvedValueOnce({ id: sessionId, assetId: 'another' } as never);
+      await expect(sut.getSegment(auth, assetId, sessionId, 0, 'seg_1.m4s')).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.storage.checkFileExists).not.toHaveBeenCalled();
+      expect(mocks.websocket.serverSend).not.toHaveBeenCalled();
+    });
+
+    it('captures a segment completion that arrives while its file check is pending', async () => {
+      const exists = Promise.withResolvers<boolean>();
+      mocks.storage.checkFileExists.mockReturnValueOnce(exists.promise);
+      vi.useFakeTimers();
+      try {
+        const result = sut.getSegment(auth, assetId, sessionId, 0, 'seg_1.m4s').catch((error: unknown) => error);
+        await vi.advanceTimersByTimeAsync(0);
+        sut.onSegmentResult({ sessionId, variantIndex: 0, segmentIndex: 1 });
+        exists.resolve(false);
+        await vi.advanceTimersByTimeAsync(15_000);
+        expect(await result).toEqual(expect.objectContaining({ path: expect.stringContaining('seg_1.m4s') }));
+        expect(mocks.websocket.serverSend.mock.calls.filter(([event]) => event === 'HlsSegmentRequest')).toHaveLength(
+          0,
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('uses the initSegment hint for init.mp4', async () => {
       await sut.getSegment(auth, assetId, sessionId, variantIndex, 'init.mp4', 7);
       expect(mocks.websocket.serverSend).toHaveBeenCalledWith('HlsHeartbeat', {
@@ -430,8 +521,24 @@ describe(HlsService.name, () => {
       const auth = factory.auth();
       const assetId = 'asset-1';
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      mocks.videoStream.getSession.mockResolvedValueOnce({ id: sessionId, assetId } as never);
       await sut.endSession(auth, assetId, sessionId);
       expect(mocks.websocket.serverSend).toHaveBeenCalledWith('HlsSessionEnd', { sessionId });
+    });
+
+    it('does not end a session attached to another asset', async () => {
+      const auth = factory.auth();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.videoStream.getSession.mockResolvedValueOnce({ id: sessionId, assetId: 'another' } as never);
+      await expect(sut.endSession(auth, 'asset-1', sessionId)).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.websocket.serverSend).not.toHaveBeenCalled();
+    });
+
+    it('keeps ending an absent session idempotent without worker traffic', async () => {
+      const auth = factory.auth();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      await expect(sut.endSession(auth, 'asset-1', sessionId)).resolves.toBeUndefined();
+      expect(mocks.websocket.serverSend).not.toHaveBeenCalled();
     });
   });
 });

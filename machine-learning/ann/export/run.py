@@ -116,7 +116,6 @@ def export(model: ExportBase) -> None:
     converter.convert()
 
     armnn_model_path = f"output/{model.name}.armnn"
-    os.environ["LD_LIBRARY_PATH"] = "armnn"
     subprocess.run(
         [
             "./armnnconverter",
@@ -130,7 +129,9 @@ def export(model: ExportBase) -> None:
             "output_tensor",
             "-p",
             armnn_model_path,
-        ]
+        ],
+        check=True,
+        env={**os.environ, "LD_LIBRARY_PATH": "armnn"},
     )
 
 
@@ -143,13 +144,9 @@ def main() -> None:
         logging.warning(
             "No CUDA available, cannot create fp16 model! proceeding to create a fp32 model (use only for testing)"
         )
-    models = [
-        ClipVision("ViT-B-32", "openai", device),
-        ArcFace("buffalo_l_rec.onnx", device),
-        RetinaFace("buffalo_l_det.onnx", device),
-    ]
-    for model in models:
-        export(model)
+    export(ClipVision("ViT-B-32", "openai", device))
+    export(ArcFace("buffalo_l_rec.onnx", device))
+    export(RetinaFace("buffalo_l_det.onnx", device))
 
 
 if __name__ == "__main__":

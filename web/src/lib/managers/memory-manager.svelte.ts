@@ -1,14 +1,21 @@
 import {
   type AssetResponseDto,
   MemorySearchOrder,
+  addMemoryAssets,
+  addMemoryShowLess,
   deleteMemory,
+  getMemoryShowLess,
   type MemoryResponseDto,
+  type MemoryShowLessDto,
+  type MemoryShowLessResponseDto,
   removeMemoryAssets,
+  removeMemoryShowLess,
   searchMemories,
+  updateAsset,
   updateMemory,
   memoriesStatistics,
-} from '@immich/sdk';
-import { toastManager } from '@immich/ui';
+} from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { isEqual, omitBy } from 'lodash-es';
 import { DateTime } from 'luxon';
 import { t } from 'svelte-i18n';
@@ -17,12 +24,15 @@ import { fromStore, get } from 'svelte/store';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import { QueryParameter } from '$lib/constants';
+import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
+import { trackSessionLockRefresh } from '$lib/frameleaf/session-access.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { userPreferencesManager } from '$lib/managers/user-preferences-manager.svelte';
 import { Route } from '$lib/route';
-import { memoryLaneTitle } from '$lib/utils';
+import { memoryHeadline } from '$lib/utils';
+import { handleError } from '$lib/utils/handle-error';
 import { toTimelineAsset } from '$lib/utils/timeline-util';
 
 type MemoriesSearchDto = Parameters<typeof searchMemories>[0];
@@ -46,18 +56,37 @@ export type MemoryState = {
   getAssetHref: (assetId: string) => string | undefined;
 };
 
+/** How long the "Remove from memory" toast offers Undo; an emptied memory is deleted after it. */
+export const MEMORY_REMOVE_UNDO_TIMEOUT_MS = 6000;
+
 class MemoryManager {
   #loading = $state<Promise<void>>();
   #filters = $state<MemoriesSearchDto>({ size: 250, order: MemorySearchOrder.Desc });
   #hasNextPage: boolean = true;
   #page: number = 1;
   #total: number | undefined = $state();
+  /** Memories received from the server, including empty ones that are never listed. */
+  #received = 0;
   #queued: boolean = false;
+  #generation = 0;
 
   constructor() {
+    // FL-62: the first page already honours the owner's Memory settings.
+    this.#filters = omitBy(this.#preferenceFilters(), (item) => item === undefined);
     eventManager.on({
-      AuthLogout: () => this.clearCache(),
+      AuthLogout: () => {
+        this.clearCache();
+        this.hidden = [];
+        this.showLess = [];
+      },
       AuthUserLoaded: () => this.initialize(),
+    });
+    // FL-195 follow-up: a memory holding a Locked item shows only to the owner's unlocked session, so
+    // every lock and unlock reloads the list rather than keep what the other state saw
+    onLibraryAccessChange((change) => {
+      if (change === 'restricted' || change === 'expanded') {
+        void trackSessionLockRefresh(this.reloadForSessionAccess());
+      }
     });
 
     // loaded event might have already happened
@@ -85,20 +114,38 @@ class MemoryManager {
     return this.initialize();
   }
 
+  /** Drop every memory this session state loaded and read them again (a page in flight is discarded). */
+  async reloadForSessionAccess() {
+    this.clearCache();
+    this.hidden = [];
+    this.showLess = [];
+    await Promise.all([this.initialize(), this.loadHidden(), this.loadShowLess()]);
+  }
+
   applyPreferences() {
-    const { showUpcoming, onlyFavorites } = userPreferencesManager.memories;
-    this.setFilters({
-      order: MemorySearchOrder.Desc,
-      isSaved: onlyFavorites ? true : undefined,
-      isUpcoming: showUpcoming ? undefined : false,
-    });
+    this.setFilters(this.#preferenceFilters());
 
     return this.refresh();
   }
 
+  #preferenceFilters(): MemoriesSearchDto {
+    const { showUpcoming, onlyFavorites } = userPreferencesManager.memories;
+    return {
+      size: 250,
+      order: MemorySearchOrder.Desc,
+      isSaved: onlyFavorites ? true : undefined,
+      isUpcoming: showUpcoming ? undefined : false,
+    };
+  }
+
   memories = $state<MemoryResponseDto[]>([]);
 
-  #memoryLaneTitle = fromStore(memoryLaneTitle);
+  /** FL-62: memories the owner hid, listed only under "Hidden memories" on the index. */
+  hidden = $state<MemoryResponseDto[]>([]);
+  /** FL-62: the owner's show-less rules (people, pets, days and kinds). */
+  showLess = $state<MemoryShowLessResponseDto[]>([]);
+
+  #memoryHeadline = fromStore(memoryHeadline);
 
   #url = $derived({
     memoryId: page.params.id,
@@ -119,13 +166,28 @@ class MemoryManager {
     return lookup;
   });
 
+  #memoryLocation = $derived(this.#lookup.get(this.#url.memoryId ?? ''));
+
+  #viewerAssets = $derived.by(() => {
+    const location = this.#memoryLocation;
+    if (!location) {
+      return [];
+    }
+    const index = location.memoryIndex;
+    return [
+      ...(this.memories[index - 1]?.assets ?? []),
+      ...this.memories[index].assets,
+      ...(this.memories[index + 1]?.assets ?? []),
+    ];
+  });
+
   current = $derived.by((): MemoryState | undefined => {
     const { memoryId, assetId } = this.#url;
     if (memoryId === undefined || assetId === undefined) {
       return;
     }
 
-    const location = this.#lookup.get(memoryId);
+    const location = this.#memoryLocation;
     if (!location) {
       return;
     }
@@ -143,7 +205,7 @@ class MemoryManager {
     return {
       memory,
       asset: toTimelineAsset(memory.assets[assetIndex]),
-      viewerAssets: [...(previousMemory?.assets ?? []), ...memory.assets, ...(nextMemory?.assets ?? [])],
+      viewerAssets: this.#viewerAssets,
       previousMemory: this.#toAdjacentMemory(previousMemory),
       nextMemory: this.#toAdjacentMemory(nextMemory),
       previousHref:
@@ -175,7 +237,7 @@ class MemoryManager {
       return;
     }
 
-    return { href, assetId: asset.id, title: this.#memoryLaneTitle.current(memory) };
+    return { href, assetId: asset.id, title: this.#memoryHeadline.current(memory).title };
   }
 
   // the memory holding an asset, checking the given memory first, then the ones next to it
@@ -196,6 +258,12 @@ class MemoryManager {
     return location ? this.memories[location.memoryIndex] : undefined;
   }
 
+  #captureState() {
+    const generation = this.#generation;
+    const isCurrentSession = authManager.captureSession();
+    return () => generation === this.#generation && isCurrentSession();
+  }
+
   /** Fetch a memory that is not part of the loaded pages, i.e. when opening a link to an older one. */
   async loadMemory(id: string) {
     const memory = this.#getMemory(id);
@@ -203,8 +271,13 @@ class MemoryManager {
       return memory;
     }
 
+    const isCurrent = this.#captureState();
     const [loaded] = await searchMemories({ id }).catch(() => []);
-    if (!loaded) {
+    if (!isCurrent()) {
+      return;
+    }
+    // A memory whose items were all removed has nothing to show (it is deleted once its Undo closes).
+    if (!loaded || loaded.assets.length === 0) {
       return;
     }
 
@@ -228,40 +301,270 @@ class MemoryManager {
     this.memories = this.memories.filter((memory) => memory.assets.length > 0);
   }
 
-  async deleteCurrentAsset() {
+  /**
+   * FL-83 (MPY-1): removing the current item from its memory is undoable, as in the
+   * prototype's `MemoryPlayer.jsx`. The removal is sent to the server at once (a reload or a
+   * closed tab never loses it) and Undo puts the item back through the inverse call. A memory
+   * emptied this way leaves the list at once and is deleted on the server when its Undo window
+   * closes unused (`MemoryPlayer.jsx` keeps it only while it can still be restored). Until then an
+   * empty memory from the server is never listed, so a reload in between shows nothing broken.
+   */
+  async removeCurrentAsset() {
     const current = this.current;
     if (!current) {
       return;
     }
 
-    const memoryId = current.memory.id;
-    const assetId = current.asset.id;
-    await this.#leaveCurrentAsset();
-    await this.#deleteAsset(memoryId, assetId);
+    const memory = this.#getMemory(current.memory.id);
+    const assetIndex = memory?.assets.findIndex((asset) => asset.id === current.asset.id) ?? -1;
+    if (!memory || assetIndex === -1) {
+      return;
+    }
+
+    // Captured before the item disappears, since `current` is derived from the loaded assets.
+    const { nextHref, previousHref } = current;
+    const isCurrentSession = authManager.captureSession();
+    const asset = memory.assets[assetIndex];
+    const removed = await removeMemoryAssets({ id: memory.id, bulkIdsDto: { ids: [asset.id] } });
+    if (!isCurrentSession()) {
+      return;
+    }
+    if (removed.find((result) => result.id === asset.id)?.success !== true) {
+      throw new Error('Unable to remove the item from this memory');
+    }
+    memory.assets.splice(assetIndex, 1);
+    const memoryIndex = this.memories.indexOf(memory);
+    const emptied = memory.assets.length === 0;
+    if (emptied) {
+      this.memories = this.memories.filter((item) => item !== memory);
+    }
+    await this.#goto(nextHref ?? previousHref ?? this.memoriesHref);
+    if (!isCurrentSession()) {
+      return;
+    }
+
+    const translate = get(t);
+    // Undo and the end of the window race for one outcome; whichever runs first wins.
+    let settled = false;
+    const finalize = emptied
+      ? setTimeout(() => {
+          if (settled || !isCurrentSession()) {
+            return;
+          }
+          settled = true;
+          void deleteMemory({ id: memory.id }).catch((error) =>
+            handleError(error, translate('errors.something_went_wrong')),
+          );
+        }, MEMORY_REMOVE_UNDO_TIMEOUT_MS)
+      : undefined;
+    toastManager.primary(
+      {
+        description: translate('frameleaf_memories_item_removed', { values: { name: asset.originalFileName } }),
+        button: (close) => ({
+          label: translate('undo'),
+          onclick: () => {
+            close();
+            if (settled || !isCurrentSession()) {
+              return;
+            }
+            settled = true;
+            clearTimeout(finalize);
+            void this.#restoreAsset(memory, memoryIndex, asset, assetIndex, emptied, isCurrentSession).catch((error) =>
+              handleError(error, translate('errors.something_went_wrong')),
+            );
+          },
+        }),
+      },
+      { timeout: MEMORY_REMOVE_UNDO_TIMEOUT_MS },
+    );
   }
 
-  async deleteCurrentMemory() {
+  async #restoreAsset(
+    memory: MemoryResponseDto,
+    memoryIndex: number,
+    asset: AssetResponseDto,
+    assetIndex: number,
+    emptied: boolean,
+    isCurrentSession: () => boolean,
+  ) {
+    const restored = await addMemoryAssets({ id: memory.id, bulkIdsDto: { ids: [asset.id] } });
+    if (!isCurrentSession()) {
+      return;
+    }
+    if (restored.find((result) => result.id === asset.id)?.success !== true) {
+      throw new Error('Unable to restore the item to this memory');
+    }
+    memory.assets.splice(Math.min(assetIndex, memory.assets.length), 0, asset);
+    if (emptied && !this.memories.includes(memory)) {
+      this.memories.splice(Math.min(memoryIndex, this.memories.length), 0, memory);
+    }
+  }
+
+  /**
+   * FL-83 (MPY-3): the player's heart favorites the item being shown, not the memory
+   * (the memory's own saved flag lives on the index card).
+   */
+  async toggleCurrentAssetFavorite() {
     const current = this.current;
     if (!current) {
       return;
     }
 
-    const { id } = current.memory;
-    await this.#goto(current.nextMemory?.href ?? current.previousMemory?.href ?? this.memoriesHref);
-    await this.#deleteMemory(id);
-    toastManager.primary(get(t)('removed_memory'));
+    const { id } = current.asset;
+    const isFavorite = !current.asset.isFavorite;
+    const isCurrentSession = authManager.captureSession();
+    await updateAsset({ id, updateAssetDto: { isFavorite } });
+    if (!isCurrentSession()) {
+      return;
+    }
+    for (const memory of this.memories) {
+      for (const asset of memory.assets) {
+        if (asset.id === id) {
+          asset.isFavorite = isFavorite;
+        }
+      }
+    }
   }
 
-  async toggleCurrentMemorySaved() {
-    const memory = this.current?.memory;
+  /**
+   * Toggles the saved (favorite) flag of any loaded memory, not just the one currently open.
+   * Used by the memory index, whose cards act on a memory without opening the player. A saved
+   * memory is kept: the server never cleans it up.
+   */
+  async toggleMemorySaved(id: string) {
+    const memory = this.#getMemory(id);
     if (!memory) {
       return;
     }
 
     const isSaved = !memory.isSaved;
-    await updateMemory({ id: memory.id, memoryUpdateDto: { isSaved } });
-    memory.isSaved = isSaved;
-    toastManager.primary(get(t)(isSaved ? 'added_to_favorites' : 'removed_from_favorites'));
+    const isCurrentSession = authManager.captureSession();
+    await updateMemory({ id, memoryUpdateDto: { isSaved } });
+    if (isCurrentSession()) {
+      memory.isSaved = isSaved;
+    }
+  }
+
+  /**
+   * FL-62 (MI-1, Memories.jsx:208-211): hiding replaces deleting. The memory leaves the index and
+   * the player and waits under "Hidden memories", where Restore brings it back. Navigates away first
+   * when it is the memory currently open, so the url never points at a hidden position.
+   */
+  async hideMemory(id: string) {
+    const memory = this.#getMemory(id);
+    if (!memory) {
+      return;
+    }
+
+    const isCurrentSession = authManager.captureSession();
+    if (this.current?.memory.id === id) {
+      await this.#goto(this.current.nextMemory?.href ?? this.current.previousMemory?.href ?? this.memoriesHref);
+    }
+    if (!isCurrentSession()) {
+      return;
+    }
+    const updated = await updateMemory({ id, memoryUpdateDto: { isHidden: true } });
+    if (!isCurrentSession()) {
+      return;
+    }
+    this.memories = this.memories.filter((item) => item.id !== id);
+    this.hidden = [{ ...memory, ...updated, assets: updated.assets ?? memory.assets }, ...this.hidden];
+  }
+
+  /** FL-62: Restore from "Hidden memories" puts the memory back in its place in the index. */
+  async restoreMemory(id: string) {
+    const memory = this.hidden.find((item) => item.id === id);
+    if (!memory) {
+      return;
+    }
+
+    const isCurrentSession = authManager.captureSession();
+    const updated = await updateMemory({ id, memoryUpdateDto: { isHidden: false } });
+    if (!isCurrentSession()) {
+      return;
+    }
+    const restored = { ...memory, ...updated, assets: updated.assets ?? memory.assets };
+    this.hidden = this.hidden.filter((item) => item.id !== id);
+    if (restored.assets.length > 0 && !this.#lookup.has(id)) {
+      // memories are ordered by date, descending
+      const index = this.memories.findIndex(({ memoryAt }) => memoryAt < restored.memoryAt);
+      this.memories.splice(index === -1 ? this.memories.length : index, 0, restored);
+    }
+  }
+
+  /** The owner's hidden memories, for the index's "Hidden memories" section. */
+  async loadHidden() {
+    const isCurrent = this.#captureState();
+    const items = await searchMemories({ isHidden: true, order: MemorySearchOrder.Desc, size: 250 });
+    if (!isCurrent()) {
+      return;
+    }
+    this.hidden = items.filter((item) => item.assets.length > 0);
+  }
+
+  /**
+   * FL-62: the owner's own title and item order. The title replaces the generated one everywhere
+   * (null returns to it); the order is the memory's own items in the order the owner chose, and the
+   * player plays them in that order from then on.
+   */
+  async updateCuration(id: string, curation: { title?: string | null; assetOrder?: string[] }) {
+    const memory = this.#getMemory(id);
+    if (!memory) {
+      return;
+    }
+
+    const isCurrentSession = authManager.captureSession();
+    const updated = await updateMemory({ id, memoryUpdateDto: curation });
+    if (!isCurrentSession()) {
+      return;
+    }
+    if (curation.title !== undefined) {
+      memory.title = updated.title ?? null;
+    }
+    if (curation.assetOrder) {
+      const byId = new Map(memory.assets.map((asset) => [asset.id, asset] as const));
+      const ordered = curation.assetOrder.map((assetId) => byId.get(assetId)).filter((asset) => asset !== undefined);
+      const rest = memory.assets.filter((asset) => !curation.assetOrder!.includes(asset.id));
+      memory.assets = [...ordered, ...rest];
+    }
+  }
+
+  /** The owner's show-less rules, for Memory settings. */
+  async loadShowLess() {
+    const isCurrent = this.#captureState();
+    const rules = await getMemoryShowLess();
+    if (isCurrent()) {
+      this.showLess = rules;
+    }
+  }
+
+  /**
+   * FL-62: "Show less" for a person or pet, a day or a kind. The server drops matching memories from
+   * every search and stops generating them, so the index reloads rather than guessing which to drop.
+   */
+  async addShowLess(rule: MemoryShowLessDto) {
+    const isCurrentSession = authManager.captureSession();
+    await addMemoryShowLess({ memoryShowLessDto: rule });
+    if (!isCurrentSession()) {
+      return;
+    }
+    const loading = this.#reload();
+    await Promise.all([this.loadShowLess(), loading]);
+  }
+
+  async removeShowLess(rule: MemoryShowLessDto) {
+    const isCurrentSession = authManager.captureSession();
+    await removeMemoryShowLess({ memoryShowLessDto: { kind: rule.kind, value: rule.value } });
+    if (!isCurrentSession()) {
+      return;
+    }
+    const loading = this.#reload();
+    await Promise.all([this.loadShowLess(), loading]);
+  }
+
+  async #reload() {
+    this.clearCache();
+    return this.initialize();
   }
 
   // navigate away before removing something, so the url never points at a deleted position
@@ -271,37 +574,13 @@ class MemoryManager {
   }
 
   #goto(href: string) {
-    return goto(href, { replaceState: true, noScroll: true, keepFocus: true });
-  }
-
-  async #deleteMemory(id: string) {
-    if (!this.#getMemory(id)) {
-      return;
-    }
-
-    await deleteMemory({ id });
-    this.memories = this.memories.filter((memory) => memory.id !== id);
-  }
-
-  async #deleteAsset(memoryId: string, assetId: string) {
-    const memory = this.#getMemory(memoryId);
-    if (!memory?.assets.some((asset) => asset.id === assetId)) {
-      return;
-    }
-
-    if (memory.assets.length === 1) {
-      await this.#deleteMemory(memoryId);
-      return;
-    }
-
-    await removeMemoryAssets({ id: memoryId, bulkIdsDto: { ids: [assetId] } });
-    memory.assets = memory.assets.filter((asset) => asset.id !== assetId);
+    return goto(href, { replace: true, reset: false });
   }
 
   loadNextPage() {
     if (this.#hasNextPage) {
       if (this.#loading === undefined) {
-        this.#loading = this.load(this.#page++);
+        void this.initialize().catch((error) => handleError(error, get(t)('errors.something_went_wrong')));
       } else {
         this.#queued = true;
       }
@@ -321,43 +600,56 @@ class MemoryManager {
   }
 
   private clearCache() {
+    this.#generation++;
+    this.#loading = undefined;
+    this.#queued = false;
     this.#hasNextPage = true;
     this.#page = 1;
     this.#total = undefined;
+    this.#received = 0;
     this.memories = [];
   }
 
   private initialize() {
     if (!this.#loading) {
-      this.#loading = this.load(this.#page++);
+      const loading = this.load(this.#generation).finally(() => {
+        if (this.#loading === loading) {
+          this.#loading = undefined;
+        }
+      });
+      this.#loading = loading;
     }
 
     return this.#loading;
   }
 
-  private async load(page: number) {
-    const items = await searchMemories({ ...this.#filters, page });
-
-    if (this.#queued) {
+  private async load(generation: number) {
+    do {
       this.#queued = false;
-      this.#loading = this.load(this.#page++);
-      await this.#loading;
-      return;
-    }
-
-    for (const item of items) {
-      if (!this.#lookup.has(item.id)) {
-        this.memories.push(item);
+      const items = await searchMemories({ ...this.#filters, page: this.#page });
+      if (generation !== this.#generation) {
+        return;
       }
-    }
 
-    if (this.#total === undefined) {
-      const { total } = await memoriesStatistics(this.#filters);
+      const total = this.#total ?? (await memoriesStatistics(this.#filters)).total;
+      if (generation !== this.#generation) {
+        return;
+      }
+
+      this.#page++;
+      this.#received += items.length;
       this.#total = total;
-    }
+      const knownIds = new Set(this.memories.map(({ id }) => id));
+      for (const item of items) {
+        // Empty memories count toward pagination but never appear in the list.
+        if (item.assets.length > 0 && !knownIds.has(item.id)) {
+          knownIds.add(item.id);
+          this.memories.push(item);
+        }
+      }
 
-    this.#hasNextPage = this.memories.length < this.#total;
-    this.#loading = undefined;
+      this.#hasNextPage = this.#received < total;
+    } while (this.#queued && this.#hasNextPage);
   }
 
   private scheduleHourlyRefresh() {
@@ -370,23 +662,17 @@ class MemoryManager {
 
     const initialDelay = nextEvent.diff(now).as('milliseconds');
 
-    setTimeout(() => {
-      if (this.#page <= 2) {
-        this.clearCache();
-        this.loadNextPage();
+    const refresh = () => {
+      if (!authManager.authenticated || this.#page > 2) {
+        return;
       }
+      this.clearCache();
+      this.loadNextPage();
+    };
 
-      // Schedule subsequent events hourly
-      setInterval(
-        () => {
-          if (this.#page > 2) {
-            return;
-          }
-          this.clearCache();
-          this.loadNextPage();
-        },
-        60 * 60 * 1000,
-      );
+    setTimeout(() => {
+      refresh();
+      setInterval(refresh, 60 * 60 * 1000);
     }, initialDelay);
   }
 }

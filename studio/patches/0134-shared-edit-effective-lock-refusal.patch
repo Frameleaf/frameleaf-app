@@ -1,0 +1,145 @@
+diff --git a/src/features/timeline/stores/actions/edit/join-actions.ts b/src/features/timeline/stores/actions/edit/join-actions.ts
+index a960e22..d6b001e 100644
+--- a/src/features/timeline/stores/actions/edit/join-actions.ts
++++ b/src/features/timeline/stores/actions/edit/join-actions.ts
+@@ -6,7 +6,7 @@ import { useTransitionsStore } from '../../transitions-store'
+ import { useKeyframesStore } from '../../keyframes-store'
+ import { useTimelineSettingsStore } from '../../timeline-settings-store'
+ import { execute, applyTransitionRepairs } from '../shared'
+-import { getSynchronizedLinkedCounterpartPairForEdit } from '../linked-edit'
++import { getSynchronizedLinkedCounterpartPairForEdit, getLinkedItemsForEdit, hasLockedEditParticipants } from '../linked-edit'
+ import { isLinkedSelectionEnabled } from './shared'
+ 
+ /** Complete pre-mutation plan for a longer source-contiguous native chain. */
+@@ -139,6 +139,8 @@ export function joinItems(itemIds: string[]): void {
+     .filter((item) => itemIds.includes(item.id))
+     .toSorted((left, right) => left.from - right.from)
+   if (itemsToJoin.length < 2) return
++  if (hasLockedEditParticipants(itemIds.flatMap((id) =>
++    getLinkedItemsForEdit(items, id, isLinkedSelectionEnabled())))) return
+   const chain =
+     itemsToJoin.length > 2 ? planLinkedChainJoin(items, itemIds, isLinkedSelectionEnabled()) : null
+   if (itemsToJoin.length > 2 && !chain) return
+diff --git a/src/features/timeline/stores/actions/edit/split-actions.ts b/src/features/timeline/stores/actions/edit/split-actions.ts
+index 1d3a907..5c1f463 100644
+--- a/src/features/timeline/stores/actions/edit/split-actions.ts
++++ b/src/features/timeline/stores/actions/edit/split-actions.ts
+@@ -4,7 +4,7 @@ import { useItemsStore } from '../../items-store'
+ import { useTimelineSettingsStore } from '../../timeline-settings-store'
+ import { useSelectionStore } from '@/shared/state/selection'
+ import { execute, applyTransitionRepairs } from '../shared'
+-import { getLinkedItemsForEdit } from '../linked-edit'
++import { getLinkedItemsForEdit, hasLockedEditParticipants } from '../linked-edit'
+ import { getUniqueLinkedItemAnchorIds } from '../../../utils/linked-items'
+ import { applySplitBookkeeping, type SplitResultEntry } from '../split-bookkeeping'
+ import { isLinkedSelectionEnabled, isInTransitionOverlap } from './shared'
+@@ -17,6 +17,8 @@ export function splitItem(
+   const items = useItemsStore.getState().items
+   const itemsToSplit = getLinkedItemsForEdit(items, id, isLinkedSelectionEnabled())
+ 
++  if (hasLockedEditParticipants(itemsToSplit)) return null
++
+   for (const item of itemsToSplit) {
+     // Bounds check first — out-of-range splits are a silent no-op (handled by _splitItem),
+     // must not fall through to transition zone check which would false-positive.
+@@ -78,6 +80,8 @@ export function splitAllItemsAtFrame(splitFrame: number): number {
+     : overlappingItemIds
+ 
+   if (anchorIds.length === 0) return 0
++  if (hasLockedEditParticipants(anchorIds.flatMap((id) =>
++    getLinkedItemsForEdit(items, id, isLinkedSelectionEnabled())))) return 0
+ 
+   let splitCount = 0
+ 
+@@ -154,6 +158,8 @@ export function splitAllItemsAtFrame(splitFrame: number): number {
+  */
+ export function splitItemAtFrames(id: string, splitFrames: number[]): number {
+   if (splitFrames.length === 0) return 0
++  if (hasLockedEditParticipants(getLinkedItemsForEdit(
++    useItemsStore.getState().items, id, isLinkedSelectionEnabled()))) return 0
+ 
+   const sorted = [...splitFrames].sort((a, b) => b - a)
+   let splitCount = 0
+diff --git a/src/features/timeline/stores/actions/edit/trim-actions.ts b/src/features/timeline/stores/actions/edit/trim-actions.ts
+index 4eb01e4..6cc0439 100644
+--- a/src/features/timeline/stores/actions/edit/trim-actions.ts
++++ b/src/features/timeline/stores/actions/edit/trim-actions.ts
+@@ -4,6 +4,7 @@ import { useKeyframesStore } from '../../keyframes-store'
+ import { useTimelineSettingsStore } from '../../timeline-settings-store'
+ import { execute, applyTransitionRepairs } from '../shared'
+ import {
++  hasLockedEditParticipants,
+   getMatchingSynchronizedLinkedCounterpartForEdit,
+   getSynchronizedLinkedCounterpartPairForEdit,
+   getSynchronizedLinkedItemsForEdit,
+@@ -603,6 +604,8 @@ export function slipItem(id: string, slipDelta: number): void {
+         isLinkedSelectionEnabled(),
+       )
+ 
++      if (hasLockedEditParticipants(synchronizedItems)) return
++
+       const sourceStart = item.sourceStart ?? 0
+       const sourceEnd = item.sourceEnd
+       if (sourceEnd === undefined) return
+@@ -727,6 +730,9 @@ export function slideItem(
+               candidate.from === counterpartEnd,
+           ) ?? rightCounterpart)
+         : null
++      if (hasLockedEditParticipants([
++        item, leftNeighbor, rightNeighbor, synchronizedCounterpart, cpLeftAdj, cpRightAdj,
++      ].filter((candidate): candidate is TimelineItem => candidate !== null))) return
+       const timelineFps = useTimelineSettingsStore.getState().fps
+       let clampedSlideDelta = clampSlideParticipantDelta(
+         slideDelta,
+diff --git a/src/features/timeline/stores/actions/item-actions.ts b/src/features/timeline/stores/actions/item-actions.ts
+index 0f2e152..a642359 100644
+--- a/src/features/timeline/stores/actions/item-actions.ts
++++ b/src/features/timeline/stores/actions/item-actions.ts
+@@ -29,8 +29,8 @@ import { useEditorStore } from '@/shared/state/editor'
+ import { useSelectionStore } from '@/shared/state/selection'
+ import { emitUiSound } from '@/shared/ui/ui-sound'
+ import { execute, applyTransitionRepairs, warnIfOverlapping } from './shared'
+-import { buildLinkedLeftShiftUpdates, expandIdsWithLinkedItems } from './linked-edit'
+-import { propagateRemovedIntervalsToSyncLockedTracks } from './sync-lock-ripple'
++import { buildLinkedLeftShiftUpdates, expandIdsWithLinkedItems, hasLockedEditParticipants } from './linked-edit'
++import { buildRemovedIntervalPreviewUpdatesForSyncLockedTracks, propagateRemovedIntervalsToSyncLockedTracks } from './sync-lock-ripple'
+ import {
+   canLinkSelection,
+   expandSelectionWithLinkedItems,
+@@ -1040,6 +1040,15 @@ export function rippleDeleteItems(ids: string[]): void {
+   const filteredUpdates =
+     coveredSet.size > 0 ? updates.filter((u) => !coveredSet.has(u.id)) : updates
+ 
++  // Include indirectly shifted, covered and sync-lock interval participants before any write.
++  const propagation = buildRemovedIntervalPreviewUpdatesForSyncLockedTracks({
++    items: remainingItems.filter((item) => !coveredSet.has(item.id)),
++    tracks: useItemsStore.getState().tracks, editedTrackIds, intervals: removedIntervals,
++  })
++  const affectedIds = new Set([...allRemoveIds, ...filteredUpdates.map(({ id }) => id),
++    ...propagation.map(({ id }) => id)])
++  if (hasLockedEditParticipants(items.filter((item) => affectedIds.has(item.id)))) return
++
+   execute(
+     'RIPPLE_DELETE_ITEMS',
+     () => {
+diff --git a/src/features/timeline/stores/actions/linked-edit.ts b/src/features/timeline/stores/actions/linked-edit.ts
+index 740faa9..8bab10f 100644
+--- a/src/features/timeline/stores/actions/linked-edit.ts
++++ b/src/features/timeline/stores/actions/linked-edit.ts
+@@ -1,3 +1,5 @@
++import { useItemsStore } from '../items-store'
++import { resolveEffectiveTrackStates } from '../../utils/group-utils'
+ import type { TimelineItem } from '@/types/timeline'
+ import {
+   buildSynchronizedLinkedMoveUpdates,
+@@ -143,3 +145,10 @@ export function buildSynchronizedLinkedMoveUpdatesForEdit(
+ 
+   return buildSynchronizedLinkedMoveUpdates(items, baseDeltaByItemId)
+ }
++
++/** Refuse a whole edit when any participant inherits a locked lane. */
++export function hasLockedEditParticipants(participants: readonly TimelineItem[]): boolean {
++  const lockedTrackIds = new Set(resolveEffectiveTrackStates(useItemsStore.getState().tracks)
++    .filter((track) => track.locked).map((track) => track.id))
++  return participants.some((item) => lockedTrackIds.has(item.trackId))
++}

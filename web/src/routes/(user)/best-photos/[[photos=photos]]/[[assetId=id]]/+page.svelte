@@ -1,165 +1,98 @@
 <script lang="ts">
+  import BestMoments from '$lib/components/frameleaf/BestMoments.svelte';
+  import LibraryEmptyState from '$lib/components/frameleaf/LibraryEmptyState.svelte';
+  import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
-  import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
-  import GalleryViewer from '$lib/components/shared-components/gallery-viewer/GalleryViewer.svelte';
-  import ArchiveAction from '$lib/components/timeline/actions/ArchiveAction.svelte';
-  import ChangeDate from '$lib/components/timeline/actions/ChangeDateAction.svelte';
-  import ChangeDescription from '$lib/components/timeline/actions/ChangeDescriptionAction.svelte';
-  import ChangeLocation from '$lib/components/timeline/actions/ChangeLocationAction.svelte';
-  import CreateSharedLink from '$lib/components/timeline/actions/CreateSharedLinkAction.svelte';
-  import DeleteAssets from '$lib/components/timeline/actions/DeleteAssetsAction.svelte';
-  import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
-  import FavoriteAction from '$lib/components/timeline/actions/FavoriteAction.svelte';
-  import MarkNsfwAction from '$lib/components/timeline/actions/MarkNsfwAction.svelte';
-  import SetVisibilityAction from '$lib/components/timeline/actions/SetVisibilityAction.svelte';
-  import TagAction from '$lib/components/timeline/actions/TagAction.svelte';
-  import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
-  import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
-  import { authManager } from '$lib/managers/auth-manager.svelte';
-  import type { Viewport } from '$lib/managers/timeline-manager/types';
-  import { getAssetBulkActions } from '$lib/services/asset.service';
-  import { handleError } from '$lib/utils/handle-error';
-  import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import { getBestPhotos, type BestPhotoAssetResponseDto } from '@immich/sdk';
-  import { ActionButton, CommandPaletteDefaultProvider, IconButton, LoadingSpinner } from '@immich/ui';
-  import { mdiDotsVertical, mdiSelectAll } from '@mdi/js';
+  import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
+  import Portal from '$lib/elements/Portal.svelte';
+  import { brandedArchiveName } from '$lib/frameleaf/archive-name';
+  import type { BestMoment } from '$lib/frameleaf/best-moments';
+  import { BEST_PHOTOS_QUALITY_MIN_SCORE } from '$lib/frameleaf/explore';
+  import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
+  import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+  import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
+  import { navigate } from '$lib/utils/navigation';
+  import { AssetVisibility, getBestPhotos, type BestPhotoAssetResponseDto } from '@frameleaf/sdk';
+  import { mdiStarOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
+  /**
+   * Best Photos (FL-50, LIB-P3): the standard library view over the photos and videos Frameleaf
+   * rates highest, as the template's Best Photos collection is one of the library's destinations
+   * (`App.jsx` `collection === "Best Photos"`). It has the large title with Timeline, Browse and
+   * Work, the toolbar (Filter, Slideshow, sort, Grid / List), the date scrubber and the status
+   * capsule like Favorites or Archive.
+   *
+   * The time buckets keep the owner's own items scored from the Best Photos threshold up
+   * (`bestPhotos`). The Timeline groups them by date; Browse, Work and the list open on the quality
+   * ranking ("Best first", `GET /timeline/ordered?sort=quality`), never on star ratings, which each
+   * tile shows as everywhere else. Archived items stay out, as before.
+   *
+   * "Best moments in your videos" stays as a strip under the title: the ranked videos with a best
+   * frame, each played from that moment.
+   */
   interface Props {
     data: PageData;
   }
 
   let { data }: Props = $props();
 
-  const viewport: Viewport = $state({ width: 0, height: 0 });
-  let page = $state(1);
-  let isLoading = $state(true);
-  let assets: BestPhotoAssetResponseDto[] = $state([]);
-  let resultsElement: HTMLElement | undefined = $state();
+  let timelineManager = $state<TimelineManager>() as TimelineManager;
+  let viewerInvisible = $state(false);
+  const options = { visibility: AssetVisibility.Timeline, withStacked: true, bestPhotos: true };
 
-  const onAssetDelete = (assetIds: string[]) => {
-    const deleted = new Set(assetIds);
-    assets = assets.filter((asset) => !deleted.has(asset.id));
-  };
-
-  const reload = async () => {
-    page = 1;
-    assets = [];
-    await loadNextPage(true);
-  };
-
-  // eslint-disable-next-line svelte/valid-prop-names-in-kit-pages
-  export const loadNextPage = async (force?: boolean) => {
-    if (!page || (isLoading && !force)) {
-      return;
-    }
-
-    isLoading = true;
-
-    try {
-      const response = await getBestPhotos({ page, limit: 100 });
-      assets.push(...response.items);
-      page = Number(response.nextPage) || 0;
-    } catch (error) {
-      handleError(error, $t('failed_to_load_assets'));
-    } finally {
-      isLoading = false;
-    }
-  };
-
-  const handleSelectAll = () => {
-    assetMultiSelectManager.selectAssets(assets.map((asset) => toTimelineAsset(asset)));
-  };
-
-  const handleSetVisibility = (assetIds: string[]) => {
-    assetMultiSelectManager.clear();
-    onAssetDelete(assetIds);
-  };
-
+  /**
+   * The ranked items the moments strip reads (each video's best frame), from the same threshold the
+   * grid's buckets and Explore's Best Photos card use, so the strip never lists a video the grid has not.
+   */
+  let rankedItems = $state<BestPhotoAssetResponseDto[]>([]);
   onMount(() => {
-    void reload();
+    getBestPhotos({ page: 1, limit: 500, minScore: BEST_PHOTOS_QUALITY_MIN_SCORE })
+      .then((response) => (rankedItems = response.items))
+      .catch(() => {
+        // The strip is a refinement: without it the page still shows every best photo.
+      });
   });
+
+  /** A ranked video's best moment: open it in the viewer, starting there (FL-50). */
+  const playMoment = ({ asset, timestampMs }: BestMoment) => {
+    videoSeek.request(asset.id, timestampMs);
+    void navigate({ targetRoute: 'current', assetId: asset.id });
+  };
 </script>
 
-<UserPageLayout hideNavbar={assetMultiSelectManager.selectionActive} title={data.meta.title} scrollbar={false}>
-  <section
-    class="m-4 mb-12 bg-immich-bg dark:bg-immich-dark-bg"
-    bind:clientHeight={viewport.height}
-    bind:clientWidth={viewport.width}
-    bind:this={resultsElement}
+<UserPageLayout scrollbar={false}>
+  <LibraryView
+    bind:timelineManager
+    title={data.meta.title}
+    {options}
+    ranked={true}
+    destination={{ kind: 'library' }}
+    downloadFileName={brandedArchiveName($t('frameleaf_archive_name_best_photos'))}
+    enableRouting
+    selectAll="loaded"
+    onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >
-    {#if assets.length > 0}
-      <GalleryViewer
-        {assets}
-        assetInteraction={assetMultiSelectManager}
-        onEndReached={loadNextPage}
-        showArchiveIcon={true}
-        {viewport}
-        onReload={reload}
-        slidingWindowOffset={resultsElement?.offsetTop ?? 0}
-      />
-    {:else if !isLoading}
-      <div class="flex min-h-[calc(66vh-11rem)] w-full place-content-center items-center">
-        <EmptyPlaceholder text={$t('no_best_photos_scored')} />
-      </div>
-    {/if}
+    {#snippet subheader()}
+      <BestMoments assets={rankedItems} onPlay={playMoment} />
+    {/snippet}
 
-    {#if isLoading}
-      <div class="flex items-center justify-center py-16">
-        <LoadingSpinner size="giant" />
-      </div>
-    {/if}
-  </section>
+    {#snippet empty()}
+      <LibraryEmptyState
+        icon={mdiStarOutline}
+        title={$t('frameleaf_best_photos_empty_title')}
+        message={$t('frameleaf_best_photos_empty_body')}
+      />
+    {/snippet}
+
+    {#snippet viewer()}
+      <Portal target="body">
+        {#if assetViewerManager.isViewing}
+          <TimelineAssetViewer bind:invisible={viewerInvisible} {timelineManager} withStacked />
+        {/if}
+      </Portal>
+    {/snippet}
+  </LibraryView>
 </UserPageLayout>
-
-{#if assetMultiSelectManager.selectionActive}
-  <AssetSelectControlBar>
-    {@const Actions = getAssetBulkActions($t)}
-    <CommandPaletteDefaultProvider name={$t('assets')} actions={Object.values(Actions)} />
-    <CreateSharedLink />
-    <IconButton
-      shape="round"
-      color="secondary"
-      variant="ghost"
-      aria-label={$t('select_all')}
-      icon={mdiSelectAll}
-      onclick={handleSelectAll}
-    />
-    <ActionButton action={Actions.AddToAlbum} />
-    {#if assetMultiSelectManager.isAllUserOwned}
-      <FavoriteAction
-        removeFavorite={assetMultiSelectManager.isAllFavorite}
-        onFavorite={(ids, isFavorite) => {
-          for (const id of ids) {
-            const asset = assets.find((asset) => asset.id === id);
-            if (asset) {
-              asset.isFavorite = isFavorite;
-            }
-          }
-        }}
-      />
-
-      <ButtonContextMenu icon={mdiDotsVertical} title={$t('menu')}>
-        <DownloadAction menuItem />
-        <ChangeDate menuItem />
-        <ChangeDescription menuItem />
-        <ChangeLocation menuItem />
-        <ArchiveAction menuItem unarchive={assetMultiSelectManager.isAllArchived} />
-        {#if assetMultiSelectManager.ownedAssets.length > 0}
-          <MarkNsfwAction menuItem />
-          <MarkNsfwAction menuItem markSafe />
-        {/if}
-        <SetVisibilityAction menuItem onVisibilitySet={handleSetVisibility} />
-        {#if authManager.preferences.tags.enabled}
-          <TagAction menuItem />
-        {/if}
-        <DeleteAssets menuItem {onAssetDelete} onUndoDelete={reload} />
-      </ButtonContextMenu>
-    {:else}
-      <DownloadAction />
-    {/if}
-  </AssetSelectControlBar>
-{/if}

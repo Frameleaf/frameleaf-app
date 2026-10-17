@@ -1,5 +1,5 @@
-import { Column, PrimaryGeneratedColumn, Table } from '@immich/sql-tools';
-import type { Generated } from '@immich/sql-tools';
+import { Column, PrimaryGeneratedColumn, Table } from '@frameleaf/sql-tools';
+import type { Generated } from '@frameleaf/sql-tools';
 
 @Table({ name: 'naturalearth_countries', primaryConstraintName: 'naturalearth_countries_pkey' })
 export class NaturalEarthCountriesTable {

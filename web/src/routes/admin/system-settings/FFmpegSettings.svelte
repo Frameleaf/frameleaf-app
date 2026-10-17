@@ -1,453 +1,634 @@
 <script lang="ts">
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SettingCheckboxes from './SettingCheckboxes.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSelect from './SettingSelect.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
-  import SettingButtonsRow from '$lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
-  import { SettingInputFieldType } from '$lib/constants';
-  import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  /**
+   * Editing & playback › Video playback copies (FL-366, after the approved prototype
+   * `settings-v2/care/playback.jsx`, `VideoCopies`): opens on what happens to videos today, then two
+   * choices, "Which videos get a copy" and "Playback quality", that write the `ffmpeg.*` numbers the
+   * server keeps (`$lib/frameleaf/playback-presets`). HDR, adapting to the connection and the graphics
+   * card are one switch each; "Remake copies" starts the video conversion job for every video
+   * (`force`), as the Job manager does. Every `ffmpeg.*` field stays in four closed Advanced groups,
+   * each with its trade name said beside it.
+   *
+   * What the graphics card is comes from the server's own check (`getHardwareCheck`), which the
+   * Graphics card check page shows in full.
+   *
+   * Left for later (server work): how many videos have a copy and the space they take, MB a minute
+   * per choice, remaking copies tonight from the save, "Test it" and the "graphics card stopped
+   * helping" state.
+   */
+  import { goto } from '$app/navigation';
+  import Button from '$lib/components/frameleaf/Button.svelte';
+  import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
+  import Checks from '$lib/components/frameleaf/settings/editing/Checks.svelte';
+  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
+  import Amount from '$lib/components/frameleaf/settings/kit/Amount.svelte';
+  import Field from '$lib/components/frameleaf/settings/kit/Field.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import Select from '$lib/components/frameleaf/settings/kit/Select.svelte';
+  import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
+  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
+  import {
+    applyPlaybackQuality,
+    COPY_RULES,
+    copyRuleOf,
+    PLAYBACK_QUALITIES,
+    playbackQualityOf,
+    policyOf,
+    type CopyRule,
+    type PlaybackQuality,
+  } from '$lib/frameleaf/playback-presets';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
+  import { handleError } from '$lib/utils/handle-error';
   import {
     AudioCodec,
     CQMode,
+    getHardwareCheck,
+    getQueue,
+    HardwareBackend,
     HlsVideoResolution,
+    QueueCommand,
+    QueueName,
+    runQueueCommandLegacy,
     ToneMapping,
     TranscodeHWAccel,
     TranscodePolicy,
     VideoCodec,
     VideoContainer,
-  } from '@immich/sdk';
-  import { Icon, Link } from '@immich/ui';
-  import { mdiHelpCircleOutline } from '@mdi/js';
-  import { isEqual, sortBy } from 'lodash-es';
-  import { t } from 'svelte-i18n';
-  import { fade } from 'svelte/transition';
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
+  import {
+    mdiChevronRight,
+    mdiPlayBoxMultipleOutline,
+    mdiShieldCheckOutline,
+    mdiSync,
+    mdiVideoOffOutline,
+  } from '@mdi/js';
+  import { onMount } from 'svelte';
+  import { t, type Translations } from 'svelte-i18n';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  const config = $derived(systemConfigManager.value);
-  let configToEdit = $state(systemConfigManager.cloneValue());
+  const settingsDraft = requireSystemConfigDraft();
+  const configToEdit = $derived(settingsDraft.draft);
+  const config = $derived(settingsDraft.baseline);
+
+  const rule = $derived(copyRuleOf(configToEdit.ffmpeg.transcode));
+  const quality = $derived(playbackQualityOf(configToEdit.ffmpeg));
+  const RULE_NAME: Record<CopyRule, Translations> = {
+    needed: 'frameleaf_play_vid_needed',
+    all: 'frameleaf_play_vid_all',
+  };
+  const QUALITY_NAME: Record<PlaybackQuality, Translations> = {
+    good: 'frameleaf_play_vid_good',
+    better: 'frameleaf_play_vid_better',
+    best: 'frameleaf_play_vid_best',
+  };
+  const POLICY_NAME: Record<TranscodePolicy, Translations> = {
+    [TranscodePolicy.Required]: 'frameleaf_play_rule_required',
+    [TranscodePolicy.All]: 'frameleaf_play_rule_all',
+    [TranscodePolicy.Optimal]: 'frameleaf_play_rule_optimal',
+    [TranscodePolicy.Bitrate]: 'frameleaf_play_rule_bitrate',
+    [TranscodePolicy.Disabled]: 'frameleaf_play_rule_disabled',
+  };
+
+  const SIZES = [
+    { value: '480', label: '480p' },
+    { value: '720', label: '720p' },
+    { value: '1080', label: '1080p' },
+    { value: '1440', label: '1440p' },
+    { value: '2160', label: '4K' },
+  ];
+  const sizeName = (size: string) =>
+    SIZES.find((option) => option.value === size)?.label ?? $t('frameleaf_play_target_original');
+
+  /** The choices that decide which videos already have a copy that is now out of date. */
+  const copyFields = (ffmpeg: typeof config.ffmpeg) =>
+    JSON.stringify([ffmpeg.transcode, ffmpeg.targetResolution, ffmpeg.crf, ffmpeg.preset]);
+  const changed = $derived(copyFields(configToEdit.ffmpeg) !== copyFields(config.ffmpeg));
+  const undo = () => {
+    configToEdit.ffmpeg.transcode = config.ffmpeg.transcode;
+    configToEdit.ffmpeg.targetResolution = config.ffmpeg.targetResolution;
+    configToEdit.ffmpeg.crf = config.ffmpeg.crf;
+    configToEdit.ffmpeg.preset = config.ffmpeg.preset;
+  };
+
+  // HDR on regular screens is tone mapping; turning it back on keeps the saved method.
+  const hdr = $derived(configToEdit.ffmpeg.tonemap !== ToneMapping.Disabled);
+  const setHdr = (on: boolean) => {
+    configToEdit.ffmpeg.tonemap = on
+      ? config.ffmpeg.tonemap === ToneMapping.Disabled
+        ? ToneMapping.Hable
+        : config.ffmpeg.tonemap
+      : ToneMapping.Disabled;
+  };
+
+  /** What the server's own check found for video, as the kind of card the converter uses. */
+  const BACKEND_ACCEL: Partial<Record<HardwareBackend, TranscodeHWAccel>> = {
+    [HardwareBackend.Nvenc]: TranscodeHWAccel.Nvenc,
+    [HardwareBackend.Qsv]: TranscodeHWAccel.Qsv,
+    [HardwareBackend.VaApi]: TranscodeHWAccel.Vaapi,
+  };
+  const KIND_NAME: Record<TranscodeHWAccel, Translations> = {
+    [TranscodeHWAccel.Nvenc]: 'frameleaf_play_card_nvenc',
+    [TranscodeHWAccel.Qsv]: 'frameleaf_play_card_qsv',
+    [TranscodeHWAccel.Vaapi]: 'frameleaf_play_card_vaapi',
+    [TranscodeHWAccel.Rkmpp]: 'frameleaf_play_card_rkmpp',
+    [TranscodeHWAccel.Disabled]: 'frameleaf_play_off',
+  };
+  let found = $state<{ accel?: TranscodeHWAccel; name: string } | null>(null);
+  const card = $derived(configToEdit.ffmpeg.accel !== TranscodeHWAccel.Disabled);
+  /** The kind turning the switch on uses: the one saved before, else the one the check found. */
+  const cardKind = $derived(config.ffmpeg.accel === TranscodeHWAccel.Disabled ? found?.accel : config.ffmpeg.accel);
+  const cardHelp = $derived.by(() => {
+    if (card) {
+      return $t('frameleaf_play_vid_card_set', { values: { name: $t(KIND_NAME[configToEdit.ffmpeg.accel]) } });
+    }
+    if (found?.accel) {
+      return $t('frameleaf_play_vid_card_found', { values: { name: found.name } });
+    }
+    return $t('frameleaf_play_vid_card_none');
+  });
+
+  let waiting = $state(0);
+  let said = $state('');
+  let remaking = $state(false);
+
+  onMount(() => {
+    void getQueue({ name: QueueName.VideoConversion })
+      .then((queue) => (waiting = (queue?.statistics.active ?? 0) + (queue?.statistics.waiting ?? 0)))
+      .catch(() => {
+        // The status then says what happens to videos, without a count.
+      });
+    void getHardwareCheck()
+      .then((check) => {
+        const server = check?.server;
+        const accel = server ? BACKEND_ACCEL[server.backend] : undefined;
+        found = accel ? { accel, name: server?.model ?? server?.vendor ?? $t(KIND_NAME[accel]) } : null;
+      })
+      .catch(() => {
+        // The Graphics card check page says why the server could not be checked.
+      });
+  });
+
+  const hero = $derived.by(() => {
+    if (configToEdit.ffmpeg.transcode === TranscodePolicy.Disabled) {
+      return {
+        tone: 'quiet' as const,
+        icon: mdiVideoOffOutline,
+        title: $t('frameleaf_play_vid_off'),
+        body: $t('frameleaf_play_vid_off_body'),
+      };
+    }
+    if (waiting > 0) {
+      return {
+        tone: 'good' as const,
+        icon: mdiSync,
+        title: $t('frameleaf_play_vid_working'),
+        body: $t('frameleaf_play_vid_working_body', { values: { count: waiting } }),
+      };
+    }
+    const size = sizeName(config.ffmpeg.targetResolution);
+    const savedRule = copyRuleOf(config.ffmpeg.transcode);
+    return {
+      tone: 'good' as const,
+      icon: mdiPlayBoxMultipleOutline,
+      title: $t('frameleaf_play_vid_ok'),
+      body:
+        savedRule === 'all'
+          ? $t('frameleaf_play_vid_ok_all', { values: { size } })
+          : savedRule === 'needed'
+            ? $t('frameleaf_play_vid_ok_needed', { values: { size } })
+            : $t('frameleaf_play_vid_ok_custom'),
+    };
+  });
+
+  const remake = async () => {
+    remaking = true;
+    try {
+      await runQueueCommandLegacy({
+        name: QueueName.VideoConversion,
+        queueCommandDto: { command: QueueCommand.Start, force: true },
+      });
+      said = $t('frameleaf_play_vid_remake_started');
+    } catch (error) {
+      handleError(error, $t('frameleaf_play_vid_remake_failed'));
+    } finally {
+      remaking = false;
+    }
+  };
+
+  const SPEEDS = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow'];
 </script>
 
-<div>
-  <div in:fade={{ duration: 500 }}>
-    <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
-      <div class="ms-4 mt-4 flex flex-col gap-4">
-        <p class="text-sm dark:text-immich-dark-fg">
-          <Icon icon={mdiHelpCircleOutline} class="inline" size="15" />
-          <FormatMessage key="admin.transcoding_codecs_learn_more">
-            {#snippet children({ tag, message })}
-              {#if tag === 'h264-link'}
-                <Link href="https://trac.ffmpeg.org/wiki/Encode/H.264">{message}</Link>
-              {:else if tag === 'hevc-link'}
-                <Link href="https://trac.ffmpeg.org/wiki/Encode/H.265">{message}</Link>
-              {:else if tag === 'vp9-link'}
-                <Link href="https://trac.ffmpeg.org/wiki/Encode/VP9">{message}</Link>
-              {/if}
-            {/snippet}
-          </FormatMessage>
-        </p>
+<KitPage>
+  <Said message={said} onDismiss={() => (said = '')} />
 
-        <SettingAccordion
-          key="transcoding-policy"
-          title={$t('admin.transcoding_policy')}
-          subtitle={$t('admin.transcoding_policy_description')}
-        >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
-            <SettingSelect
-              label={$t('admin.transcoding_transcode_policy')}
-              {disabled}
-              desc={$t('admin.transcoding_transcode_policy_description')}
-              bind:value={configToEdit.ffmpeg.transcode}
-              name="transcode"
-              options={[
-                { value: TranscodePolicy.All, text: $t('all_videos') },
-                {
-                  value: TranscodePolicy.Optimal,
-                  text: $t('admin.transcoding_optimal_description'),
-                },
-                {
-                  value: TranscodePolicy.Bitrate,
-                  text: $t('admin.transcoding_bitrate_description'),
-                },
-                {
-                  value: TranscodePolicy.Required,
-                  text: $t('admin.transcoding_required_description'),
-                },
-                {
-                  value: TranscodePolicy.Disabled,
-                  text: $t('admin.transcoding_disabled_description'),
-                },
-              ]}
-              isEdited={configToEdit.ffmpeg.transcode !== config.ffmpeg.transcode}
-            />
+  <Hero tone={hero.tone} icon={hero.icon} title={hero.title} body={hero.body} label={$t('frameleaf_play_vid_label')} />
 
-            <SettingCheckboxes
-              label={$t('admin.transcoding_accepted_video_codecs')}
-              {disabled}
-              desc={$t('admin.transcoding_accepted_video_codecs_description')}
-              bind:value={configToEdit.ffmpeg.acceptedVideoCodecs}
-              name="videoCodecs"
-              lockedOptions={[configToEdit.ffmpeg.targetVideoCodec]}
-              options={[
-                { value: VideoCodec.H264, text: 'H.264' },
-                { value: VideoCodec.Hevc, text: 'HEVC' },
-                { value: VideoCodec.Vp9, text: 'VP9' },
-                { value: VideoCodec.Av1, text: 'AV1' },
-              ]}
-              isEdited={!isEqual(
-                sortBy(configToEdit.ffmpeg.acceptedVideoCodecs),
-                sortBy(config.ffmpeg.acceptedVideoCodecs),
-              )}
-            />
+  <Section title={$t('frameleaf_play_vid_section')}>
+    <Row
+      label={$t('frameleaf_play_vid_which')}
+      help={rule ? $t(`frameleaf_play_vid_${rule}_help` as Translations) : $t('frameleaf_play_vid_rule_custom_help')}
+      lead={rule ? $t(RULE_NAME[rule]) : undefined}
+    >
+      <SegmentedControl
+        label={$t('frameleaf_play_vid_which')}
+        options={[
+          ...COPY_RULES.map((value) => ({ value, label: $t(RULE_NAME[value]) })),
+          ...(rule ? [] : [{ value: 'custom', label: $t(POLICY_NAME[configToEdit.ffmpeg.transcode]) }]),
+        ]}
+        value={rule ?? 'custom'}
+        {disabled}
+        onChange={(value) => {
+          if (value !== 'custom') {
+            configToEdit.ffmpeg.transcode = policyOf(value as CopyRule);
+          }
+        }}
+      />
+    </Row>
+    <Row
+      label={$t('frameleaf_play_vid_quality')}
+      help={quality
+        ? $t(`frameleaf_play_vid_${quality}_help` as Translations)
+        : $t('frameleaf_play_vid_quality_custom_help')}
+      lead={quality ? $t(QUALITY_NAME[quality]) : $t('frameleaf_play_custom')}
+    >
+      <SegmentedControl
+        label={$t('frameleaf_play_vid_quality')}
+        options={[
+          ...PLAYBACK_QUALITIES.map((value) => ({ value, label: $t(QUALITY_NAME[value]) })),
+          ...(quality ? [] : [{ value: 'custom', label: $t('frameleaf_play_custom') }]),
+        ]}
+        value={quality ?? 'custom'}
+        {disabled}
+        onChange={(value) => {
+          if (value !== 'custom') {
+            applyPlaybackQuality(configToEdit.ffmpeg, value as PlaybackQuality);
+          }
+        }}
+      />
+    </Row>
+    {#if changed}
+      <Notice title={$t('frameleaf_play_vid_changed')} tone="warn">
+        {$t('frameleaf_play_vid_changed_body')}
+        {#snippet action()}
+          <Button onclick={undo}>{$t('frameleaf_play_undo')}</Button>
+        {/snippet}
+      </Notice>
+    {/if}
+    <Row label={$t('frameleaf_play_vid_remake_row')} help={$t('frameleaf_play_vid_remake_help')}>
+      <Button disabled={remaking || configToEdit.ffmpeg.transcode === TranscodePolicy.Disabled} onclick={remake}>
+        {$t('frameleaf_play_vid_remake')}
+      </Button>
+    </Row>
+    <Row label={$t('frameleaf_play_vid_hdr')} help={$t('frameleaf_play_vid_hdr_help')}>
+      <Switch label={$t('frameleaf_play_vid_hdr')} checked={hdr} held={disabled} onChange={setHdr} />
+    </Row>
+    <Row label={$t('frameleaf_play_vid_adaptive')} help={$t('frameleaf_play_vid_adaptive_help')}>
+      <Switch
+        label={$t('frameleaf_play_vid_adaptive')}
+        checked={configToEdit.ffmpeg.realtime.enabled}
+        held={disabled}
+        onChange={(value) => (configToEdit.ffmpeg.realtime.enabled = value)}
+      />
+    </Row>
+    <Notice icon={mdiShieldCheckOutline} title={$t('frameleaf_play_vid_pledge')}>
+      {$t('frameleaf_play_vid_pledge_body')}
+    </Notice>
+  </Section>
 
-            <SettingCheckboxes
-              label={$t('admin.transcoding_accepted_audio_codecs')}
-              {disabled}
-              desc={$t('admin.transcoding_accepted_audio_codecs_description')}
-              bind:value={configToEdit.ffmpeg.acceptedAudioCodecs}
-              name="audioCodecs"
-              lockedOptions={[configToEdit.ffmpeg.targetAudioCodec]}
-              options={[
-                { value: AudioCodec.Aac, text: 'AAC' },
-                { value: AudioCodec.Mp3, text: 'MP3' },
-                { value: AudioCodec.Opus, text: 'Opus' },
-                { value: AudioCodec.PcmS16Le, text: 'PCM (16 bit)' },
-              ]}
-              isEdited={!isEqual(
-                sortBy(configToEdit.ffmpeg.acceptedAudioCodecs),
-                sortBy(config.ffmpeg.acceptedAudioCodecs),
-              )}
-            />
+  <Section title={$t('frameleaf_play_vid_speed')}>
+    <Row label={$t('frameleaf_play_vid_card')} help={cardHelp}>
+      <Switch
+        label={$t('frameleaf_play_vid_card')}
+        checked={card}
+        held={disabled || (!card && !cardKind)}
+        onChange={(value) => {
+          if (!value) {
+            configToEdit.ffmpeg.accel = TranscodeHWAccel.Disabled;
+          } else if (cardKind) {
+            configToEdit.ffmpeg.accel = cardKind;
+          }
+        }}
+      />
+    </Row>
+    <Row label={$t('frameleaf_play_vid_card_where')} help={$t('frameleaf_play_vid_card_where_help')}>
+      <Button onclick={() => goto(commandCenterUrl('processing', 'hardware'))}>
+        {$t('frameleaf_play_vid_card_check')}
+        <Icon icon={mdiChevronRight} size="1em" aria-hidden={true} />
+      </Button>
+    </Row>
 
-            <SettingCheckboxes
-              label={$t('admin.transcoding_accepted_containers')}
-              {disabled}
-              desc={$t('admin.transcoding_accepted_containers_description')}
-              bind:value={configToEdit.ffmpeg.acceptedContainers}
-              name="videoContainers"
-              options={[
-                { value: VideoContainer.Mov, text: 'MOV' },
-                { value: VideoContainer.Ogg, text: 'Ogg' },
-                { value: VideoContainer.Webm, text: 'WebM' },
-              ]}
-              isEdited={!isEqual(
-                sortBy(configToEdit.ffmpeg.acceptedContainers),
-                sortBy(config.ffmpeg.acceptedContainers),
-              )}
-            />
-          </div>
-        </SettingAccordion>
+    <Advanced summary={$t('frameleaf_play_adv_rule')}>
+      <p class="hint">{$t('frameleaf_play_adv_rule_hint')}</p>
+      <Row label={$t('frameleaf_play_rule')} help={$t('frameleaf_play_rule_help')}>
+        <Select
+          label={$t('frameleaf_play_rule')}
+          value={configToEdit.ffmpeg.transcode}
+          options={Object.values(TranscodePolicy).map((value) => ({ value, label: $t(POLICY_NAME[value]) }))}
+          {disabled}
+          onChange={(value) => (configToEdit.ffmpeg.transcode = value as TranscodePolicy)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_play_accept_video')} help={$t('frameleaf_play_accept_video_help')}>
+        <Checks
+          label={$t('frameleaf_play_accept_video')}
+          value={configToEdit.ffmpeg.acceptedVideoCodecs}
+          locked={[configToEdit.ffmpeg.targetVideoCodec]}
+          options={[
+            { value: VideoCodec.H264, label: 'H.264' },
+            { value: VideoCodec.Hevc, label: 'HEVC' },
+            { value: VideoCodec.Vp9, label: 'VP9' },
+            { value: VideoCodec.Av1, label: 'AV1' },
+          ]}
+          {disabled}
+          onChange={(value) => (configToEdit.ffmpeg.acceptedVideoCodecs = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_play_accept_audio')} help={$t('frameleaf_play_accept_audio_help')}>
+        <Checks
+          label={$t('frameleaf_play_accept_audio')}
+          value={configToEdit.ffmpeg.acceptedAudioCodecs}
+          locked={[configToEdit.ffmpeg.targetAudioCodec]}
+          options={[
+            { value: AudioCodec.Aac, label: 'AAC' },
+            { value: AudioCodec.Mp3, label: 'MP3' },
+            { value: AudioCodec.Opus, label: 'Opus' },
+            { value: AudioCodec.PcmS16Le, label: 'PCM 16-bit' },
+          ]}
+          {disabled}
+          onChange={(value) => (configToEdit.ffmpeg.acceptedAudioCodecs = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_play_accept_files')} help={$t('frameleaf_play_accept_files_help')}>
+        <Checks
+          label={$t('frameleaf_play_accept_files')}
+          value={configToEdit.ffmpeg.acceptedContainers}
+          options={[
+            { value: VideoContainer.Mov, label: 'MOV' },
+            { value: VideoContainer.Ogg, label: 'Ogg' },
+            { value: VideoContainer.Webm, label: 'WebM' },
+          ]}
+          {disabled}
+          onChange={(value) => (configToEdit.ffmpeg.acceptedContainers = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_play_max_rate')} help={$t('frameleaf_play_max_rate_help')}>
+        <Field
+          label={$t('frameleaf_play_max_rate')}
+          value={configToEdit.ffmpeg.maxBitrate}
+          {disabled}
+          onChange={(value) => (configToEdit.ffmpeg.maxBitrate = value)}
+        />
+      </Row>
+    </Advanced>
 
-        <SettingAccordion
-          key="encoding-options"
-          title={$t('admin.transcoding_encoding_options')}
-          subtitle={$t('admin.transcoding_encoding_options_description')}
-        >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
-            <SettingSelect
-              label={$t('admin.transcoding_video_codec')}
-              {disabled}
-              desc={$t('admin.transcoding_video_codec_description')}
-              bind:value={configToEdit.ffmpeg.targetVideoCodec}
-              options={[
-                { value: VideoCodec.H264, text: 'h264' },
-                { value: VideoCodec.Hevc, text: 'hevc' },
-                { value: VideoCodec.Vp9, text: 'vp9' },
-                { value: VideoCodec.Av1, text: 'av1' },
-              ]}
-              name="vcodec"
-              isEdited={configToEdit.ffmpeg.targetVideoCodec !== config.ffmpeg.targetVideoCodec}
-              onSelect={() => (configToEdit.ffmpeg.acceptedVideoCodecs = [configToEdit.ffmpeg.targetVideoCodec])}
-            />
+    <Advanced summary={$t('frameleaf_play_adv_made')}>
+      <p class="hint">{$t('frameleaf_play_adv_made_hint')}</p>
+      <Row label={$t('frameleaf_play_target_size')}>
+        <Select
+          label={$t('frameleaf_play_target_size')}
+          value={configToEdit.ffmpeg.targetResolution}
+          options={[
+            ...SIZES,
+            ...(SIZES.some((option) => option.value === configToEdit.ffmpeg.targetResolution) ||
+            configToEdit.ffmpeg.targetResolution === 'original'
+              ? []
+              : [{ value: configToEdit.ffmpeg.targetResolution, label: configToEdit.ffmpeg.targetResolution }]),
+            { value: 'original', label: $t('frameleaf_play_target_original') },
+          ]}
+          {disabled}
+          onChange={(value) => (configToEdit.ffmpeg.targetResolution = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_play_video_format')} help={$t('frameleaf_play_video_format_help')}>
+        <Select
+          label={$t('frameleaf_play_video_format')}
+          value={configToEdit.ffmpeg.targetVideoCodec}
+          options={[
+            { value: VideoCodec.H264, label: 'H.264' },
+            { value: VideoCodec.Hevc, label: 'HEVC' },
+            { value: VideoCodec.Vp9, label: 'VP9' },
+            { value: VideoCodec.Av1, label: 'AV1' },
+          ]}
+          {disabled}
+          onChange={(value) => {
+            // As before: only the new format is played as it is, so older copies are not kept.
+            configToEdit.ffmpeg.targetVideoCodec = value as VideoCodec;
+            configToEdit.ffmpeg.acceptedVideoCodecs = [value as VideoCodec];
+          }}
+        />
+      </Row>
+      <Row label={$t('frameleaf_play_crf')} help={$t('frameleaf_play_crf_help')}>
+        <Amount
+          label={$t('frameleaf_play_crf')}
+          unit={$t('frameleaf_play_crf_unit')}
+          min={0}
+          max={51}
+          value={configToEdit.ffmpeg.crf}
+          {disabled}
+          onChange={(value) => (configToEdit.ffmpeg.crf = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_play_speed')} help={$t('frameleaf_play_speed_help')}>
+        <Select
+          label={$t('frameleaf_play_speed')}
+          value={configToEdit.ffmpeg.preset}
+          options={[
+            ...SPEEDS.map((speed) => ({ value: speed, label: speed })),
+            ...(SPEEDS.includes(configToEdit.ffmpeg.preset)
+              ? []
+              : [{ value: configToEdit.ffmpeg.preset, label: configToEdit.ffmpeg.preset }]),
+          ]}
+          {disabled}
+          onChange={(value) => (configToEdit.ffmpeg.preset = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_play_sound')} help={$t('frameleaf_play_sound_help')}>
+        <!-- PCM is left out here: it is a poor choice for space. -->
+        <Select
+          label={$t('frameleaf_play_sound')}
+          value={configToEdit.ffmpeg.targetAudioCodec}
+          options={[
+            { value: AudioCodec.Aac, label: 'AAC' },
+            { value: AudioCodec.Mp3, label: 'MP3' },
+            { value: AudioCodec.Opus, label: 'Opus' },
+          ]}
+          {disabled}
+          onChange={(value) => {
+            const codec = value as AudioCodec;
+            configToEdit.ffmpeg.targetAudioCodec = codec;
+            if (!configToEdit.ffmpeg.acceptedAudioCodecs.includes(codec)) {
+              configToEdit.ffmpeg.acceptedAudioCodecs = [...configToEdit.ffmpeg.acceptedAudioCodecs, codec];
+            }
+          }}
+        />
+      </Row>
+      <Row label={$t('frameleaf_play_threads')} help={$t('frameleaf_play_threads_help')}>
+        <Amount
+          label={$t('frameleaf_play_threads')}
+          unit={$t('frameleaf_play_threads_unit')}
+          min={0}
+          max={256}
+          value={configToEdit.ffmpeg.threads}
+          {disabled}
+          onChange={(value) => (configToEdit.ffmpeg.threads = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_play_tonemap')} help={$t('frameleaf_play_tonemap_help')}>
+        <Select
+          label={$t('frameleaf_play_tonemap')}
+          value={configToEdit.ffmpeg.tonemap}
+          options={[
+            { value: ToneMapping.Hable, label: 'Hable' },
+            { value: ToneMapping.Mobius, label: 'Mobius' },
+            { value: ToneMapping.Reinhard, label: 'Reinhard' },
+            { value: ToneMapping.Disabled, label: $t('frameleaf_play_off') },
+          ]}
+          {disabled}
+          onChange={(value) => (configToEdit.ffmpeg.tonemap = value as ToneMapping)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_play_two_pass')} help={$t('frameleaf_play_two_pass_help')}>
+        <Switch
+          label={$t('frameleaf_play_two_pass')}
+          checked={configToEdit.ffmpeg.twoPass}
+          held={disabled}
+          onChange={(value) => (configToEdit.ffmpeg.twoPass = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_play_gop')} help={$t('frameleaf_play_gop_help')}>
+        <Amount
+          label={$t('frameleaf_play_gop')}
+          unit={$t('frameleaf_play_frames_unit')}
+          min={0}
+          max={100_000}
+          value={configToEdit.ffmpeg.gopSize}
+          {disabled}
+          onChange={(value) => (configToEdit.ffmpeg.gopSize = value)}
+        />
+      </Row>
+    </Advanced>
 
-            <!-- PCM is excluded here since it's a bad choice for users storage-wise -->
-            <SettingSelect
-              label={$t('admin.transcoding_audio_codec')}
-              {disabled}
-              desc={$t('admin.transcoding_audio_codec_description')}
-              bind:value={configToEdit.ffmpeg.targetAudioCodec}
-              options={[
-                { value: AudioCodec.Aac, text: 'aac' },
-                { value: AudioCodec.Mp3, text: 'mp3' },
-                { value: AudioCodec.Opus, text: 'opus' },
-              ]}
-              name="acodec"
-              isEdited={configToEdit.ffmpeg.targetAudioCodec !== config.ffmpeg.targetAudioCodec}
-              onSelect={() =>
-                configToEdit.ffmpeg.acceptedAudioCodecs.includes(configToEdit.ffmpeg.targetAudioCodec)
-                  ? null
-                  : void configToEdit.ffmpeg.acceptedAudioCodecs.push(configToEdit.ffmpeg.targetAudioCodec)}
-            />
+    <Advanced summary={$t('frameleaf_play_adv_card')}>
+      <p class="hint">{$t('frameleaf_play_adv_card_hint')}</p>
+      <Row label={$t('frameleaf_play_card_kind')} help={$t('frameleaf_play_card_kind_help')}>
+        <Select
+          label={$t('frameleaf_play_card_kind')}
+          value={configToEdit.ffmpeg.accel}
+          options={Object.values(TranscodeHWAccel).map((value) => ({ value, label: $t(KIND_NAME[value]) }))}
+          {disabled}
+          onChange={(value) => (configToEdit.ffmpeg.accel = value as TranscodeHWAccel)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_play_card_decode')} help={$t('frameleaf_play_card_decode_help')}>
+        <Switch
+          label={$t('frameleaf_play_card_decode')}
+          checked={configToEdit.ffmpeg.accelDecode}
+          held={disabled}
+          onChange={(value) => (configToEdit.ffmpeg.accelDecode = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_play_card_device')} help={$t('frameleaf_play_card_device_help')}>
+        <Field
+          label={$t('frameleaf_play_card_device')}
+          value={configToEdit.ffmpeg.preferredHwDevice}
+          {disabled}
+          onChange={(value) => (configToEdit.ffmpeg.preferredHwDevice = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_play_bframes')} help={$t('frameleaf_play_bframes_help')}>
+        <Amount
+          label={$t('frameleaf_play_bframes')}
+          unit={$t('frameleaf_play_frames_unit')}
+          min={-1}
+          max={16}
+          value={configToEdit.ffmpeg.bframes}
+          {disabled}
+          onChange={(value) => (configToEdit.ffmpeg.bframes = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_play_refs')} help={$t('frameleaf_play_refs_help')}>
+        <Amount
+          label={$t('frameleaf_play_refs')}
+          unit={$t('frameleaf_play_frames_unit')}
+          min={0}
+          max={6}
+          value={configToEdit.ffmpeg.refs}
+          {disabled}
+          onChange={(value) => (configToEdit.ffmpeg.refs = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_play_cq_mode')} help={$t('frameleaf_play_cq_mode_help')}>
+        <Select
+          label={$t('frameleaf_play_cq_mode')}
+          value={configToEdit.ffmpeg.cqMode}
+          options={[
+            { value: CQMode.Auto, label: $t('frameleaf_play_cq_auto') },
+            { value: CQMode.Cqp, label: 'CQP' },
+            { value: CQMode.Icq, label: 'ICQ' },
+          ]}
+          {disabled}
+          onChange={(value) => (configToEdit.ffmpeg.cqMode = value as CQMode)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_play_temporal')} help={$t('frameleaf_play_temporal_help')}>
+        <Switch
+          label={$t('frameleaf_play_temporal')}
+          checked={configToEdit.ffmpeg.temporalAQ}
+          held={disabled}
+          onChange={(value) => (configToEdit.ffmpeg.temporalAQ = value)}
+        />
+      </Row>
+    </Advanced>
 
-            <SettingSelect
-              label={$t('admin.transcoding_target_resolution')}
-              {disabled}
-              desc={$t('admin.transcoding_target_resolution_description')}
-              bind:value={configToEdit.ffmpeg.targetResolution}
-              options={[
-                { value: '2160', text: '4k' },
-                { value: '1440', text: '1440p' },
-                { value: '1080', text: '1080p' },
-                { value: '720', text: '720p' },
-                { value: '480', text: '480p' },
-                { value: 'original', text: $t('original') },
-              ]}
-              name="resolution"
-              isEdited={configToEdit.ffmpeg.targetResolution !== config.ffmpeg.targetResolution}
-            />
+    <Advanced summary={$t('frameleaf_play_adv_hls')}>
+      <p class="hint">{$t('frameleaf_play_adv_hls_hint')}</p>
+      <Row label={$t('frameleaf_play_stream_formats')}>
+        <Checks
+          label={$t('frameleaf_play_stream_formats')}
+          value={configToEdit.ffmpeg.realtime.videoCodecs}
+          options={[
+            { value: VideoCodec.H264, label: 'H.264' },
+            { value: VideoCodec.Hevc, label: 'HEVC' },
+            { value: VideoCodec.Av1, label: 'AV1' },
+          ]}
+          disabled={disabled || !configToEdit.ffmpeg.realtime.enabled}
+          onChange={(value) => (configToEdit.ffmpeg.realtime.videoCodecs = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_play_stream_steps')} help={$t('frameleaf_play_stream_steps_help')}>
+        <Checks
+          label={$t('frameleaf_play_stream_steps')}
+          value={configToEdit.ffmpeg.realtime.resolutions}
+          options={[
+            { value: HlsVideoResolution.$480, label: '480p' },
+            { value: HlsVideoResolution.$720, label: '720p' },
+            { value: HlsVideoResolution.$1080, label: '1080p' },
+            { value: HlsVideoResolution.$1440, label: '1440p' },
+            { value: HlsVideoResolution.$2160, label: '4K' },
+          ]}
+          disabled={disabled || !configToEdit.ffmpeg.realtime.enabled}
+          onChange={(value) => (configToEdit.ffmpeg.realtime.resolutions = value)}
+        />
+      </Row>
+    </Advanced>
+  </Section>
 
-            <SettingInputField
-              inputType={SettingInputFieldType.NUMBER}
-              {disabled}
-              label={$t('admin.transcoding_constant_rate_factor')}
-              description={$t('admin.transcoding_constant_rate_factor_description')}
-              bind:value={configToEdit.ffmpeg.crf}
-              required={true}
-              isEdited={configToEdit.ffmpeg.crf !== config.ffmpeg.crf}
-            />
+  <SettingActions keys={['ffmpeg']} {disabled} />
+</KitPage>
 
-            <SettingSelect
-              label={$t('admin.transcoding_preset_preset')}
-              {disabled}
-              desc={$t('admin.transcoding_preset_preset_description')}
-              bind:value={configToEdit.ffmpeg.preset}
-              name="preset"
-              options={[
-                { value: 'ultrafast', text: 'ultrafast' },
-                { value: 'superfast', text: 'superfast' },
-                { value: 'veryfast', text: 'veryfast' },
-                { value: 'faster', text: 'faster' },
-                { value: 'fast', text: 'fast' },
-                { value: 'medium', text: 'medium' },
-                { value: 'slow', text: 'slow' },
-                { value: 'slower', text: 'slower' },
-                { value: 'veryslow', text: 'veryslow' },
-              ]}
-              isEdited={configToEdit.ffmpeg.preset !== config.ffmpeg.preset}
-            />
-
-            <SettingInputField
-              inputType={SettingInputFieldType.TEXT}
-              {disabled}
-              label={$t('admin.transcoding_max_bitrate')}
-              description={$t('admin.transcoding_max_bitrate_description')}
-              bind:value={configToEdit.ffmpeg.maxBitrate}
-              isEdited={configToEdit.ffmpeg.maxBitrate !== config.ffmpeg.maxBitrate}
-            />
-
-            <SettingInputField
-              inputType={SettingInputFieldType.NUMBER}
-              {disabled}
-              label={$t('admin.transcoding_threads')}
-              description={$t('admin.transcoding_threads_description')}
-              bind:value={configToEdit.ffmpeg.threads}
-              isEdited={configToEdit.ffmpeg.threads !== config.ffmpeg.threads}
-            />
-
-            <SettingSelect
-              label={$t('admin.transcoding_tone_mapping')}
-              {disabled}
-              desc={$t('admin.transcoding_tone_mapping_description')}
-              bind:value={configToEdit.ffmpeg.tonemap}
-              name="tonemap"
-              options={[
-                {
-                  value: ToneMapping.Hable,
-                  text: 'Hable',
-                },
-                {
-                  value: ToneMapping.Mobius,
-                  text: 'Mobius',
-                },
-                {
-                  value: ToneMapping.Reinhard,
-                  text: 'Reinhard',
-                },
-                {
-                  value: ToneMapping.Disabled,
-                  text: $t('disabled'),
-                },
-              ]}
-              isEdited={configToEdit.ffmpeg.tonemap !== config.ffmpeg.tonemap}
-            />
-
-            <SettingSwitch
-              title={$t('admin.transcoding_two_pass_encoding')}
-              {disabled}
-              subtitle={$t('admin.transcoding_two_pass_encoding_setting_description')}
-              bind:checked={configToEdit.ffmpeg.twoPass}
-              isEdited={configToEdit.ffmpeg.twoPass !== config.ffmpeg.twoPass}
-            />
-          </div>
-        </SettingAccordion>
-
-        <SettingAccordion
-          key="hardware-acceleration"
-          title={$t('admin.transcoding_hardware_acceleration')}
-          subtitle={$t('admin.transcoding_hardware_acceleration_description')}
-        >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
-            <SettingSelect
-              label={$t('admin.transcoding_acceleration_api')}
-              {disabled}
-              desc={$t('admin.transcoding_acceleration_api_description')}
-              bind:value={configToEdit.ffmpeg.accel}
-              name="accel"
-              options={[
-                { value: TranscodeHWAccel.Nvenc, text: $t('admin.transcoding_acceleration_nvenc') },
-                {
-                  value: TranscodeHWAccel.Qsv,
-                  text: $t('admin.transcoding_acceleration_qsv'),
-                },
-                {
-                  value: TranscodeHWAccel.Vaapi,
-                  text: $t('admin.transcoding_acceleration_vaapi'),
-                },
-                {
-                  value: TranscodeHWAccel.Rkmpp,
-                  text: $t('admin.transcoding_acceleration_rkmpp'),
-                },
-                {
-                  value: TranscodeHWAccel.Disabled,
-                  text: $t('disabled'),
-                },
-              ]}
-              isEdited={configToEdit.ffmpeg.accel !== config.ffmpeg.accel}
-            />
-
-            <SettingSwitch
-              title={$t('admin.transcoding_hardware_decoding')}
-              {disabled}
-              subtitle={$t('admin.transcoding_hardware_decoding_setting_description')}
-              bind:checked={configToEdit.ffmpeg.accelDecode}
-              isEdited={configToEdit.ffmpeg.accelDecode !== config.ffmpeg.accelDecode}
-            />
-
-            <SettingSelect
-              label={$t('admin.transcoding_constant_quality_mode')}
-              desc={$t('admin.transcoding_constant_quality_mode_description')}
-              bind:value={configToEdit.ffmpeg.cqMode}
-              options={[
-                { value: CQMode.Auto, text: 'Auto' },
-                { value: CQMode.Icq, text: 'ICQ' },
-                { value: CQMode.Cqp, text: 'CQP' },
-              ]}
-              isEdited={configToEdit.ffmpeg.cqMode !== config.ffmpeg.cqMode}
-              {disabled}
-            />
-
-            <SettingSwitch
-              title={$t('admin.transcoding_temporal_aq')}
-              {disabled}
-              subtitle={$t('admin.transcoding_temporal_aq_description')}
-              bind:checked={configToEdit.ffmpeg.temporalAQ}
-              isEdited={configToEdit.ffmpeg.temporalAQ !== config.ffmpeg.temporalAQ}
-            />
-
-            <SettingInputField
-              inputType={SettingInputFieldType.TEXT}
-              label={$t('admin.transcoding_preferred_hardware_device')}
-              description={$t('admin.transcoding_preferred_hardware_device_description')}
-              bind:value={configToEdit.ffmpeg.preferredHwDevice}
-              isEdited={configToEdit.ffmpeg.preferredHwDevice !== config.ffmpeg.preferredHwDevice}
-              {disabled}
-            />
-          </div>
-        </SettingAccordion>
-
-        <SettingAccordion
-          key="advanced-options"
-          title={$t('advanced')}
-          subtitle={$t('admin.transcoding_advanced_options_description')}
-        >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
-            <SettingInputField
-              inputType={SettingInputFieldType.NUMBER}
-              label={$t('admin.transcoding_max_b_frames')}
-              description={$t('admin.transcoding_max_b_frames_description')}
-              bind:value={configToEdit.ffmpeg.bframes}
-              isEdited={configToEdit.ffmpeg.bframes !== config.ffmpeg.bframes}
-              {disabled}
-            />
-
-            <SettingInputField
-              inputType={SettingInputFieldType.NUMBER}
-              label={$t('admin.transcoding_reference_frames')}
-              description={$t('admin.transcoding_reference_frames_description')}
-              bind:value={configToEdit.ffmpeg.refs}
-              isEdited={configToEdit.ffmpeg.refs !== config.ffmpeg.refs}
-              {disabled}
-            />
-
-            <SettingInputField
-              inputType={SettingInputFieldType.NUMBER}
-              label={$t('admin.transcoding_max_keyframe_interval')}
-              description={$t('admin.transcoding_max_keyframe_interval_description')}
-              bind:value={configToEdit.ffmpeg.gopSize}
-              isEdited={configToEdit.ffmpeg.gopSize !== config.ffmpeg.gopSize}
-              {disabled}
-            />
-          </div>
-        </SettingAccordion>
-
-        <SettingAccordion
-          key="realtime-transcoding"
-          title={$t('admin.transcoding_realtime')}
-          subtitle={$t('admin.transcoding_realtime_description')}
-        >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
-            <SettingSwitch
-              title={$t('admin.transcoding_realtime_enabled')}
-              subtitle={$t('admin.transcoding_realtime_enabled_description')}
-              bind:checked={configToEdit.ffmpeg.realtime.enabled}
-              isEdited={configToEdit.ffmpeg.realtime.enabled !== config.ffmpeg.realtime.enabled}
-              {disabled}
-            />
-
-            <SettingCheckboxes
-              label={$t('admin.transcoding_realtime_video_codecs')}
-              desc={$t('admin.transcoding_realtime_video_codecs_description')}
-              disabled={disabled || !configToEdit.ffmpeg.realtime.enabled}
-              bind:value={configToEdit.ffmpeg.realtime.videoCodecs}
-              name="realtimeVideoCodecs"
-              options={[
-                { value: VideoCodec.H264, text: 'H.264' },
-                { value: VideoCodec.Hevc, text: 'HEVC' },
-                { value: VideoCodec.Av1, text: 'AV1' },
-              ]}
-              isEdited={!isEqual(
-                sortBy(configToEdit.ffmpeg.realtime.videoCodecs),
-                sortBy(config.ffmpeg.realtime.videoCodecs),
-              )}
-            />
-
-            <SettingCheckboxes
-              label={$t('admin.transcoding_realtime_resolutions')}
-              desc={$t('admin.transcoding_realtime_resolutions_description')}
-              disabled={disabled || !configToEdit.ffmpeg.realtime.enabled}
-              bind:value={configToEdit.ffmpeg.realtime.resolutions}
-              name="realtimeResolutions"
-              options={[
-                { value: HlsVideoResolution.$480, text: '480p' },
-                { value: HlsVideoResolution.$720, text: '720p' },
-                { value: HlsVideoResolution.$1080, text: '1080p' },
-                { value: HlsVideoResolution.$1440, text: '1440p' },
-                { value: HlsVideoResolution.$2160, text: '2160p' },
-              ]}
-              isEdited={!isEqual(
-                sortBy(configToEdit.ffmpeg.realtime.resolutions),
-                sortBy(config.ffmpeg.realtime.resolutions),
-              )}
-            />
-          </div>
-        </SettingAccordion>
-      </div>
-
-      <div class="ms-4">
-        <SettingButtonsRow bind:configToEdit keys={['ffmpeg']} {disabled} />
-      </div>
-    </form>
-  </div>
-</div>
+<style>
+  .hint {
+    max-width: 560px;
+    margin: 0 0 var(--fl-space-3);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    line-height: 1.5;
+  }
+</style>

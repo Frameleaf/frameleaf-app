@@ -37,7 +37,7 @@ export class InvocationTracker {
        * Marks this invocation as complete
        */
       endInvocation: () => {
-        this.invocationsEnded = invocation;
+        this.invocationsEnded = Math.max(this.invocationsEnded, invocation);
       },
     };
   }

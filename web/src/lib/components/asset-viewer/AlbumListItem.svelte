@@ -1,10 +1,12 @@
 <script lang="ts">
-  import { SCROLL_PROPERTIES } from '$lib/components/shared-components/album-selection/album-selection-utils';
+  import { longPress } from '$lib/actions/long-press';
+  import { scrollProperties } from '$lib/components/shared-components/album-selection/album-selection-utils';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
+  import { locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
-  import { normalizeSearchString } from '$lib/utils/string-utils.js';
-  import { type AlbumResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { splitSearchMatch } from '$lib/utils/string-utils.js';
+  import { type AlbumResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiCheckCircle } from '@mdi/js';
   import type { Action } from 'svelte/action';
   import AlbumListItemDetails from './AlbumListItemDetails.svelte';
@@ -30,26 +32,12 @@
   const scrollIntoViewIfSelected: Action = (node) => {
     $effect(() => {
       if (selected) {
-        node.scrollIntoView(SCROLL_PROPERTIES);
+        node.scrollIntoView(scrollProperties());
       }
     });
   };
 
-  // This part of the code is responsible for splitting album name into 3 parts where part 2 is the search query
-  // It is used to highlight the search query in the album name
-  const albumNameArray: string[] = $derived.by(() => {
-    let { albumName } = album;
-    let findIndex = normalizeSearchString(albumName).indexOf(normalizeSearchString(searchQuery));
-    if (findIndex === -1) {
-      return [albumName, '', ''];
-    }
-    let findLength = searchQuery.length;
-    return [
-      albumName.slice(0, findIndex),
-      albumName.slice(findIndex, findIndex + findLength),
-      albumName.slice(findIndex + findLength),
-    ];
-  });
+  const albumNameArray = $derived(splitSearchMatch(album.albumName, searchQuery, $locale));
 
   const handleMultiSelectClicked = (e?: MouseEvent) => {
     e?.stopPropagation();
@@ -69,51 +57,6 @@
   const onMouseLeave = () => {
     mouseOver = false;
   };
-
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const preventContextMenu = (evt: Event) => evt.preventDefault();
-  const disposeables: (() => void)[] = [];
-  const clearLongPressTimer = () => {
-    if (!timer) {
-      return;
-    }
-    clearTimeout(timer);
-    timer = null;
-    for (const dispose of disposeables) {
-      dispose();
-    }
-    disposeables.length = 0;
-  };
-  function longPress(element: HTMLElement, { onLongPress }: { onLongPress: () => void }) {
-    let didPress = false;
-    const start = () => {
-      didPress = false;
-      // 350ms for longpress. For reference: iOS uses 500ms for default long press, or 200ms for fast long press.
-      timer = setTimeout(() => {
-        onLongPress();
-        element.addEventListener('contextmenu', preventContextMenu, { once: true });
-        disposeables.push(() => element.removeEventListener('contextmenu', preventContextMenu));
-        didPress = true;
-      }, 350);
-    };
-    const click = (e: MouseEvent) => {
-      if (!didPress) {
-        return;
-      }
-      e.stopPropagation();
-      e.preventDefault();
-    };
-    element.addEventListener('click', click);
-    element.addEventListener('pointerdown', start, { capture: true });
-    element.addEventListener('pointerup', clearLongPressTimer, { capture: true, passive: true });
-    return {
-      destroy: () => {
-        element.removeEventListener('click', click);
-        element.removeEventListener('pointerdown', start, true);
-        element.removeEventListener('pointerup', clearLongPressTimer, true);
-      },
-    };
-  }
 </script>
 
 <div
@@ -157,7 +100,7 @@
     <button
       type="button"
       onclick={handleMultiSelectClicked}
-      class="absolute top-4 right-0 p-3 hover:cursor-pointer focus:outline-none"
+      class="absolute inset-e-0 top-4 p-3 hover:cursor-pointer focus:outline-none"
       role="checkbox"
       tabindex={-1}
       aria-checked={selected}

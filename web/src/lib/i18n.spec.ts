@@ -67,5 +67,27 @@ describe('i18n', () => {
       expect(getClosestAvailableLocale(['zh-SG'], allLocales)).toBe('zh-Hans');
       expect(getClosestAvailableLocale(['zh-TW'], allLocales)).toBe('zh-Hant');
     });
+
+    it('preserves the requested region and extensions while falling back through subtags', () => {
+      expect(getClosestAvailableLocale(['sr_Cyrl_RS'], ['sr-Cyrl'])).toBe('sr_Cyrl_RS');
+      expect(getClosestAvailableLocale(['en-US-u-ca-gregory'], ['en'])).toBe('en-US-u-ca-gregory');
+      expect(getClosestAvailableLocale(['zh-Hant-HK'], ['zh-Hant', 'en'])).toBe('zh-Hant-HK');
+      expect(getClosestAvailableLocale(['sr'], ['sr-Cyrl'])).toBeUndefined();
+    });
+
+    it('keeps caller arrays unchanged and accepts underscore-based availability codes', () => {
+      const requested = Object.freeze(['invalid', 'pt-BR']);
+      const available = Object.freeze(['pt_BR', 'en_US']);
+      expect(getClosestAvailableLocale(requested, available)).toBe('pt-BR');
+      expect(requested).toEqual(['invalid', 'pt-BR']);
+      expect(available).toEqual(['pt_BR', 'en_US']);
+    });
+
+    it('retains exact alias matching and the existing empty-segment behavior', () => {
+      expect(getClosestAvailableLocale(['zh_CN'], ['zh-Hans'])).toBeUndefined();
+      expect(getClosestAvailableLocale(['EN-us'], ['en'])).toBeUndefined();
+      expect(getClosestAvailableLocale(['en--US'], ['en-'])).toBe('en--US');
+      expect(getClosestAvailableLocale([''], [''])).toBe('');
+    });
   });
 });

@@ -4,28 +4,20 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetStatus, AssetType, AssetVisibility } from 'src/enum.js';
-import {
-  DerivedBackfillResult,
-  TableVerification,
-  combineVerifications,
-  getForkSchemaPhase,
-  lockForkAssetParent,
-  readsForkSidecar,
-  verifyRows,
-  writesForkSidecar,
-  writesLegacy,
-} from 'src/repositories/fork-derived-results.js';
+import { deferJobAdoption } from 'src/queue/context.js';
 import { DB } from 'src/schema/index.js';
 import { AssetBestPhotoScoreTable } from 'src/schema/tables/asset-best-photo-score.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { anyUuid, asUuid, withHiddenContentFilter } from 'src/utils/database.js';
+import { isLocked, revealedLockScope } from 'src/utils/locked.js';
 import { paginationHelper } from 'src/utils/pagination.js';
 
 export type BestPhotoScore = Selectable<AssetBestPhotoScoreTable>;
-
 export type BestPhotoScoreUpsert = Omit<Insertable<AssetBestPhotoScoreTable>, 'createdAt' | 'updatedAt'>;
-type BestPhotoBackfillTables = { assetBestPhotoScore: TableVerification };
+
 type BestPhotoAssetRow = Selectable<AssetTable> & {
+  /** FL-195: a revealed lock reads as `locked` in the response (`effectiveVisibilityOf`) */
+  isLocked: boolean;
   bestPhotoScore: number;
   bestPhotoAestheticScore: number | null;
   bestPhotoTechnicalScore: number | null;
@@ -38,7 +30,6 @@ type BestPhotoAssetRow = Selectable<AssetTable> & {
   bestPhotoFrameScore: number | null;
   bestPhotoFrameMetadata: Record<string, unknown> | null;
 };
-
 export interface BestPhotosQueryOptions extends HiddenContentQueryOptions {
   ownerId: string;
   limit: number;
@@ -46,22 +37,21 @@ export interface BestPhotosQueryOptions extends HiddenContentQueryOptions {
   minScore?: number;
   includeArchived?: boolean;
 }
-
 @Injectable()
 export class BestPhotosRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   @GenerateSql({ params: [DummyValue.UUID] })
   async getScore(assetId: string): Promise<BestPhotoScore | undefined> {
-    const phase = await getForkSchemaPhase(this.db);
     return this.db
-      .withSchema(readsForkSidecar(phase) ? 'immich_fork' : 'public')
+      .withSchema('public')
       .selectFrom('asset_best_photo_score')
       .selectAll()
       .where('assetId', '=', asUuid(assetId))
       .executeTakeFirst();
   }
-
   @GenerateSql({
     params: [
       {
@@ -82,31 +72,21 @@ export class BestPhotosRepository {
     ],
   })
   async upsertScore(score: BestPhotoScoreUpsert): Promise<void> {
-    const phase = await getForkSchemaPhase(this.db);
-    await this.db.transaction().execute(async (trx) => {
-      if (writesForkSidecar(phase)) {
-        const asset = await lockForkAssetParent(trx, score.assetId);
-        if (asset.ownerId !== score.ownerId) {
-          throw new Error(`Cannot write fork best-photo score with mismatched owner for asset ${score.assetId}`);
-        }
+    const adopt = async (db: Kysely<DB>) => {
+      const asset = await db
+        .selectFrom('asset')
+        .select('ownerId')
+        .where('id', '=', score.assetId)
+        .forUpdate()
+        .executeTakeFirstOrThrow();
+      if (asset.ownerId !== score.ownerId) {
+        throw new Error('Best photo score owner mismatch');
       }
-      if (writesLegacy(phase)) {
-        await this.upsertInto(trx.withSchema('public'), score);
-      }
-      if (writesForkSidecar(phase)) {
-        if (writesLegacy(phase)) {
-          const legacy = await trx
-            .withSchema('public')
-            .selectFrom('asset_best_photo_score')
-            .selectAll()
-            .where('assetId', '=', asUuid(score.assetId))
-            .executeTakeFirstOrThrow();
-          await this.copyExact(trx.withSchema('immich_fork'), legacy);
-        } else {
-          await this.upsertInto(trx.withSchema('immich_fork'), score);
-        }
-      }
-    });
+      await this.upsertInto(db, score);
+    };
+    if (!deferJobAdoption(adopt)) {
+      await this.db.transaction().execute(adopt);
+    }
   }
 
   private async upsertInto(db: Kysely<DB>, score: BestPhotoScoreUpsert): Promise<void> {
@@ -133,14 +113,6 @@ export class BestPhotosRepository {
       .execute();
   }
 
-  private async copyExact(db: Kysely<DB>, score: BestPhotoScore): Promise<void> {
-    await db
-      .insertInto('asset_best_photo_score')
-      .values(score)
-      .onConflict((oc) => oc.column('assetId').doUpdateSet(score))
-      .execute();
-  }
-
   @GenerateSql({
     params: [
       {
@@ -153,8 +125,7 @@ export class BestPhotosRepository {
     ],
   })
   async getBestPhotos(options: BestPhotosQueryOptions) {
-    const phase = await getForkSchemaPhase(this.db);
-    const scoreSchema = readsForkSidecar(phase) ? 'immich_fork' : 'public';
+    const scoreSchema = 'public';
     const query = (this.db as Kysely<any>)
       .selectFrom(`${scoreSchema}.asset_best_photo_score as asset_best_photo_score`)
       .innerJoin('public.asset as asset', 'asset.id', 'asset_best_photo_score.assetId')
@@ -166,14 +137,16 @@ export class BestPhotosRepository {
         sql.lit(AssetVisibility.Timeline),
         ...(options.includeArchived ? [sql.lit(AssetVisibility.Archive)] : []),
       ])
+      // FL-195: the owner's own marks and detections rank like any other item in an unlocked session
+      .where(revealedLockScope(options.revealLockedOwnerId, 'asset'))
       .where('asset.type', 'in', [sql.lit(AssetType.Image), sql.lit(AssetType.Video)])
       .$if(options.minScore !== undefined, (qb) => qb.where('asset_best_photo_score.score', '>=', options.minScore!))
       .$call((qb) => withHiddenContentFilter(qb, options));
-
     const [{ count }, items] = await Promise.all([
       query.select((eb) => eb.fn.countAll().as('count')).executeTakeFirstOrThrow(),
       query
         .selectAll('asset')
+        .select(sql<boolean>`${isLocked('asset')}`.as('isLocked'))
         .select([
           'asset_best_photo_score.score as bestPhotoScore',
           'asset_best_photo_score.aestheticScore as bestPhotoAestheticScore',
@@ -193,70 +166,21 @@ export class BestPhotosRepository {
         .offset((options.page - 1) * options.limit)
         .execute(),
     ]);
-
     return { ...paginationHelper(items as BestPhotoAssetRow[], options.limit), total: Number(count) };
   }
-
   @GenerateSql({ params: [[DummyValue.UUID]] })
   async deleteForAssets(assetIds: string[]): Promise<void> {
     if (assetIds.length === 0) {
       return;
     }
-    const phase = await getForkSchemaPhase(this.db);
     await this.db.transaction().execute(async (trx) => {
-      if (writesLegacy(phase)) {
+      {
         await trx
           .withSchema('public')
           .deleteFrom('asset_best_photo_score')
           .where('assetId', '=', anyUuid(assetIds))
           .execute();
       }
-      if (writesForkSidecar(phase)) {
-        await trx
-          .withSchema('immich_fork')
-          .deleteFrom('asset_best_photo_score')
-          .where('assetId', '=', anyUuid(assetIds))
-          .execute();
-      }
-    });
-  }
-
-  async backfillScores(ids: string[]): Promise<DerivedBackfillResult<BestPhotoBackfillTables>> {
-    return this.db.transaction().execute(async (trx) => {
-      await sql`
-        INSERT INTO immich_fork.orphaned_records ("sourceTable", "sourceKey", payload)
-        SELECT 'asset_best_photo_score', score."assetId"::text, to_jsonb(score)
-        FROM public.asset_best_photo_score score
-        LEFT JOIN public.asset ON asset.id = score."assetId"
-        WHERE asset.id IS NULL
-        ON CONFLICT ("sourceTable", "sourceKey") DO UPDATE SET payload = EXCLUDED.payload
-      `.execute(trx);
-      if (ids.length > 0) {
-        await sql`DELETE FROM immich_fork.asset_best_photo_score WHERE "assetId" = ANY(${ids}::uuid[])`.execute(trx);
-        await sql`
-          INSERT INTO immich_fork.asset_best_photo_score
-          SELECT score.* FROM public.asset_best_photo_score score
-          INNER JOIN public.asset ON asset.id = score."assetId"
-          WHERE score."assetId" = ANY(${ids}::uuid[])
-          ON CONFLICT ("assetId") DO UPDATE SET
-            "ownerId" = EXCLUDED."ownerId", score = EXCLUDED.score,
-            "aestheticScore" = EXCLUDED."aestheticScore", "technicalScore" = EXCLUDED."technicalScore",
-            "subjectScore" = EXCLUDED."subjectScore", "diversityScore" = EXCLUDED."diversityScore",
-            "scoreVersion" = EXCLUDED."scoreVersion", "computedAt" = EXCLUDED."computedAt",
-            metadata = EXCLUDED.metadata, "bestFrameTimestampMs" = EXCLUDED."bestFrameTimestampMs",
-            "frameScore" = EXCLUDED."frameScore", "frameMetadata" = EXCLUDED."frameMetadata",
-            "createdAt" = EXCLUDED."createdAt", "updatedAt" = EXCLUDED."updatedAt"
-        `.execute(trx);
-      }
-      await sql`
-        DELETE FROM immich_fork.asset_best_photo_score score
-        WHERE NOT EXISTS (SELECT 1 FROM public.asset WHERE asset.id = score."assetId")
-      `.execute(trx);
-      const rows = await sql<BestPhotoScore>`
-        SELECT * FROM immich_fork.asset_best_photo_score
-        WHERE "assetId" = ANY(${ids}::uuid[]) ORDER BY "assetId"::text
-      `.execute(trx);
-      return combineVerifications(ids.length, { assetBestPhotoScore: verifyRows(rows.rows) });
     });
   }
 }

@@ -1,9 +1,22 @@
-import { defaults } from './fetch-client.js';
+import { mergeHeaders } from '@oazapfts/runtime/headers';
+import { defaults, uploadTakeoutArchiveChunk as generatedUploadTakeoutArchiveChunk } from './fetch-client.js';
 import { MalformedResponseError } from './fetch-errors.js';
 
 export * from './fetch-client.js';
 export { mergePersonLegacy as mergePerson } from './fetch-client.js';
 export * from './fetch-errors.js';
+export * from './job-runs.js';
+
+// Raw Blob operations do not get a content type from oazapfts. Keep this default
+// outside generated code, with the usual global-then-per-request header precedence.
+export const uploadTakeoutArchiveChunk: typeof generatedUploadTakeoutArchiveChunk = (params, opts) =>
+  generatedUploadTakeoutArchiveChunk(params, {
+    ...opts,
+    headers: mergeHeaders(
+      mergeHeaders({ 'Content-Type': 'application/octet-stream' }, defaults.headers),
+      opts?.headers,
+    ),
+  });
 
 export interface InitOptions {
   baseUrl: string;
@@ -50,20 +63,27 @@ const assertNoApiKey = (headerKey: string) => {
   }
 };
 
+const isJsonMediaType = (value: string) =>
+  /^[^/\s]+\/(?:json|[^/\s]+\+json)$/i.test(value.split(';', 1)[0].trim());
+
 export const jsonOnly =
   (impl?: typeof fetch): typeof fetch =>
   async (input, options) => {
     const response = await (impl ?? fetch)(input, options);
+    if (response.status === 204) {
+      return response;
+    }
 
-    const expectsJson = new Headers(options?.headers)
-      .get('accept')
-      ?.includes('json');
-    if (!expectsJson || response.status === 204) {
+    const headers =
+      options?.headers ??
+      (input instanceof Request ? input.headers : undefined);
+    const accept = new Headers(headers).get('accept');
+    if (!accept?.split(',').some(isJsonMediaType)) {
       return response;
     }
 
     const contentType = response.headers.get('content-type');
-    if (!contentType?.includes('json')) {
+    if (!contentType || !isJsonMediaType(contentType)) {
       throw new MalformedResponseError(
         'Expected a JSON response',
         response.url,

@@ -28,6 +28,7 @@ import {
   TranscodeTarget,
   VideoCodec,
 } from 'src/enum.js';
+import { AudioChannelPolicy, getDeliveryAudioChannelArgs } from 'src/utils/media-policy.js';
 
 export const isVideoRotated = (videoStream: VideoStreamInfo): boolean => Math.abs(videoStream.rotation) === 90;
 
@@ -230,10 +231,12 @@ export class BaseConfig implements VideoCodecSWConfig {
     const options = ['-c:v', videoCodec, '-c:a', audioCodec, '-map', `0:${videoStream.index}`, '-map_metadata', '-1'];
     if (audioStream) {
       options.push('-map', `0:${audioStream.index}`);
-      // If there are more than 2 channels sometimes the channel config is broken when re-encoded
-      // TODO: Store the number of channels in the db and then set it during the transcoding: -channel_layout 5.1
+      // FL-102: the channel count, layout and sample rate are now probed and persisted, so a
+      // downmix is a choice a target makes rather than the only safe option. The default here
+      // stays a stereo downmix because this class builds playback proxies and HLS renditions,
+      // which are allowed to be stereo; the edited-master paths ask for Preserve instead.
       if ([TranscodeTarget.All, TranscodeTarget.Audio].includes(target)) {
-        options.push('-ac', '2');
+        options.push(...getDeliveryAudioChannelArgs(audioStream, this.getAudioChannelPolicy()));
       }
     }
     if (this.getBFrames() > -1) {
@@ -255,6 +258,14 @@ export class BaseConfig implements VideoCodecSWConfig {
     }
 
     return options;
+  }
+
+  /**
+   * FL-102: what this target asks of the source's channel layout. A playback proxy or an HLS
+   * rendition folds to stereo; a master overrides this with {@link AudioChannelPolicy.Preserve}.
+   */
+  getAudioChannelPolicy(): AudioChannelPolicy {
+    return AudioChannelPolicy.DownmixStereo;
   }
 
   getEncoderOptions(): string[] {
@@ -407,7 +418,18 @@ export class BaseConfig implements VideoCodecSWConfig {
   }
 
   getVideoCodec(): string {
-    return this.config.targetVideoCodec;
+    // Generic H.264/HEVC names can resolve to hardware encoders even with acceleration disabled.
+    switch (this.config.targetVideoCodec) {
+      case VideoCodec.H264: {
+        return 'libx264';
+      }
+      case VideoCodec.Hevc: {
+        return 'libx265';
+      }
+      default: {
+        return this.config.targetVideoCodec;
+      }
+    }
   }
 
   getBFrames() {
@@ -477,6 +499,8 @@ export class BaseHWConfig extends BaseConfig {
   }
 }
 
+const THUMBNAIL_SINGLE_GOP_FRAMES = 250;
+
 export class ThumbnailConfig extends BaseConfig {
   constructor(
     config: ConfigFFmpegDto,
@@ -492,8 +516,13 @@ export class ThumbnailConfig extends BaseConfig {
 
   getBaseInputOptions(videoStream: VideoStreamInfo, format?: VideoFormat): string[] {
     // skip_frame nointra skips all frames for some MPEG-TS files. Look at ffmpeg tickets 7950 and 7895 for more details.
+    // It also leaves a start time after the last keyframe without a frame, and ffmpeg then writes nothing. A clip
+    // of at most one default GOP (250 frames for x264, x265 and NVENC) may hold a single keyframe, its first
+    // frame, which puts every later start time there: such a clip is cheap to decode in full instead.
+    const singleGop =
+      this.startTime > 0 && videoStream.frameCount > 0 && videoStream.frameCount <= THUMBNAIL_SINGLE_GOP_FRAMES;
     const options =
-      format?.formatName === 'mpegts'
+      format?.formatName === 'mpegts' || singleGop
         ? ['-sws_flags', 'accurate_rnd+full_chroma_int']
         : ['-skip_frame', 'nointra', '-sws_flags', 'accurate_rnd+full_chroma_int'];
 
@@ -1124,4 +1153,33 @@ export class RkmppHwDecodeConfig extends RkmppSwDecodeConfig {
     }
     return [];
   }
+}
+
+/**
+ * Live and Motion Photos (`keyFrame` in a develop recipe): one full-resolution PNG frame of the motion
+ * clip at `timeMs`. Input seeking decodes up to the exact frame; the display matrix rotation is applied
+ * (ffmpeg's autorotate) so the frame is oriented like the still. HDR clips are tone mapped to BT.709 the
+ * way video thumbnails are; nothing is scaled.
+ */
+export function getKeyframeCommand(config: ConfigFFmpegDto, video: VideoStreamInfo, timeMs: number): TranscodeCommand {
+  const tonemap = new ThumbnailConfig({ ...config, targetResolution: 'original' }).getToneMapping(video);
+  return {
+    inputOptions: ['-ss', (Math.max(0, timeMs) / 1000).toFixed(3)],
+    outputOptions: [
+      '-map',
+      `0:${video.index}`,
+      '-map_metadata',
+      '-1',
+      '-an',
+      '-frames:v',
+      '1',
+      '-update',
+      '1',
+      '-c:v',
+      'png',
+      ...(tonemap.length > 0 ? ['-vf', tonemap.join(',')] : []),
+    ],
+    twoPass: false,
+    progress: { frameCount: 1, percentInterval: 100 },
+  };
 }

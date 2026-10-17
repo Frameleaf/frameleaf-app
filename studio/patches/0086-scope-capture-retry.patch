@@ -1,0 +1,80 @@
+Subject: Retry rejected HDR scope captures through the existing display fallback (FL-98)
+
+--- a/src/features/preview/components/color-scopes-view.tsx
++++ b/src/features/preview/components/color-scopes-view.tsx
+@@ -149,12 +149,15 @@
+   // started again by the next tick.
+   if (cached && sameKey(cached.key, key) && performance.now() < cached.retryAt) return cached.sample
+   const entry: HdrSampleCache = { key, sample: Promise.resolve(null), retryAt: Number.POSITIVE_INFINITY }
+-  entry.sample = capture('pq', { preferRenderedFrame: true }).then((signal) => {
++  entry.sample = Promise.resolve().then(() => capture('pq', { preferRenderedFrame: true })).then((signal) => {
+     if (!signal) {
+       entry.retryAt = performance.now() + HDR_SAMPLE_RETRY_MS
+       return null
+     }
+     return { pixels: signalToScopePixels(signal, width, height), frame: signal.frame }
++  }).catch(() => {
++    entry.retryAt = performance.now() + HDR_SAMPLE_RETRY_MS
++    return null
+   })
+   cache.current = entry
+   return entry.sample
+--- a/src/features/preview/components/color-scopes-view.test.tsx
++++ b/src/features/preview/components/color-scopes-view.test.tsx
+@@ -317,6 +317,56 @@
+     expect(usePreviewBridgeStore.getState().captureFrameSignal).toHaveBeenCalledOnce()
+   })
+
++  it.each(['reject', 'throw'] as const)('recovers a %s capture at the same paused HDR frame', async (failure) => {
++    placeClip('pq', 'none')
++    let now = 0
++    vi.spyOn(performance, 'now').mockImplementation(() => now)
++    const capture = vi.fn().mockImplementationOnce(() => {
++      if (failure === 'throw') throw new Error('temporary capture failure')
++      return Promise.reject(new Error('temporary capture failure'))
++    }).mockResolvedValue(pqFrame(12))
++    usePreviewBridgeStore.setState({ captureFrameSignal: capture })
++    await act(async () => { render(<ColorScopesView open />) })
++    await tick(100)
++    expect(renderer.uploadFromCanvas).toHaveBeenCalledOnce()
++    expect(label()).toBe('Scopes · Clipped SDR preview · HDR project · float capture unavailable · frame 12')
++    now = 1999
++    await tick(200)
++    expect(capture).toHaveBeenCalledOnce()
++    now = 2000
++    await tick(300)
++    expect(capture).toHaveBeenCalledTimes(2)
++    expect(label()).toBe('Scopes · BT.2100 PQ · BT.2020 · 1.0 = 10,000 cd/m² · frame 12')
++    expect(renderer.uploadFrame).toHaveBeenCalledOnce()
++  })
++
++  it('recovers a rejected HDR capture on the CPU path without changing frame', async () => {
++    placeClip('pq', 'none')
++    let now = 0
++    vi.spyOn(performance, 'now').mockImplementation(() => now)
++    createRenderer.mockResolvedValue(null)
++    const context = {
++      createImageData: (width: number, height: number) => new ImageData(width, height),
++      putImageData: vi.fn(), fillRect: vi.fn(), save: vi.fn(), restore: vi.fn(),
++      beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(),
++      fillText: vi.fn(), arc: vi.fn(),
++    }
++    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context as never)
++    const capture = vi.fn().mockRejectedValueOnce(new Error('temporary capture failure')).mockResolvedValue(pqFrame(12))
++    usePreviewBridgeStore.setState({ captureFrameSignal: capture, captureFrameImageData: vi.fn().mockResolvedValue(new ImageData(2, 2)) })
++    const view = render(<ColorScopesView open />)
++    await tick(100)
++    expect(context.putImageData).toHaveBeenCalled()
++    expect(label()).toBe('Scopes · Clipped SDR preview · HDR project · float capture unavailable · frame 12')
++    expect(capture).toHaveBeenCalledOnce()
++    now = 2000
++    await act(async () => { view.rerender(<ColorScopesView open={false} />) })
++    await act(async () => { view.rerender(<ColorScopesView open />) })
++    await tick(200)
++    expect(capture).toHaveBeenCalledTimes(2)
++    expect(label()).toBe('Scopes · BT.2100 PQ · BT.2020 · 1.0 = 10,000 cd/m² · frame 12')
++  })
++
+   it('reuses a paused HDR sample until the frame, graph or colour inputs change', async () => {
+     placeClip('pq')
+     await act(async () => { render(<ColorScopesView open />) })

@@ -11,42 +11,279 @@ describe('Executor Queue test', function () {
     expect(n3).toBe(12);
   });
 
-  it('should respect concurrency parameter', function () {
-    vi.useFakeTimers();
-    const eq = new ExecutorQueue({ concurrency: 3 });
+  it('starts tasks in FIFO order and respects concurrency', async () => {
+    const eq = new ExecutorQueue({ concurrency: 2 });
+    const started: number[] = [];
+    const releases: Array<() => void> = [];
+    const tasks = Array.from({ length: 4 }, (_, id) =>
+      eq.addTask(() => {
+        started.push(id);
+        return new Promise<number>((resolve) => {
+          releases.push(() => resolve(id));
+        });
+      }),
+    );
+    expect(started).toEqual([0, 1]);
+    releases[1]();
+    await tasks[1];
+    expect(started).toEqual([0, 1, 2]);
+    releases[0]();
+    await tasks[0];
+    expect(started).toEqual([0, 1, 2, 3]);
+    releases[2]();
+    releases[3]();
+    expect(await Promise.all(tasks)).toEqual([0, 1, 2, 3]);
+  });
 
-    const finished = vi.fn();
-    const started = vi.fn();
+  it.each([0, -1, 1.5, NaN, Infinity, -Infinity])(
+    'defaults invalid constructor concurrency %s to two',
+    (concurrency) => {
+      expect(new ExecutorQueue({ concurrency }).concurrency).toBe(2);
+    },
+  );
 
-    const timeoutPromiseBuilder = (delay: number, id: string) =>
-      new Promise((resolve) => {
-        started();
-        setTimeout(() => {
-          finished();
-          resolve(id);
-        }, delay);
+  it.each([0, -1, 1.5, NaN, Infinity, -Infinity])('ignores invalid concurrency assignment %s', (concurrency) => {
+    const eq = new ExecutorQueue({ concurrency: 2 });
+    // Stop the original Infinity loop at its first dispatch, so this regression cannot hang tests.
+    vi.spyOn(eq as unknown as { tryRun(): void }, 'tryRun').mockImplementation(() => {
+      throw new Error('Invalid concurrency dispatched a task');
+    });
+    expect(() => {
+      eq.concurrency = concurrency;
+    }).not.toThrow();
+    expect(eq.concurrency).toBe(2);
+  });
+
+  it('does not loop over unused slots for a large valid concurrency', () => {
+    const eq = new ExecutorQueue();
+    vi.spyOn(eq as unknown as { tryRun(): void }, 'tryRun').mockImplementation(() => {
+      throw new Error('Empty queue dispatched a task');
+    });
+    expect(() => {
+      eq.concurrency = Number.MAX_SAFE_INTEGER;
+    }).not.toThrow();
+    expect(eq.concurrency).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
+  it('raises capacity immediately and lowering it lets running tasks finish', async () => {
+    const eq = new ExecutorQueue({ concurrency: 1 });
+    const started: number[] = [];
+    const releases: Array<() => void> = [];
+    const tasks = Array.from({ length: 4 }, (_, id) =>
+      eq.addTask(() => {
+        started.push(id);
+        return new Promise<number>((resolve) => {
+          releases.push(() => resolve(id));
+        });
+      }),
+    );
+    eq.concurrency = 3;
+    expect(started).toEqual([0, 1, 2]);
+    eq.concurrency = 1;
+    releases[0]();
+    releases[1]();
+    await Promise.all([tasks[0], tasks[1]]);
+    expect(started).toEqual([0, 1, 2]);
+    releases[2]();
+    await tasks[2];
+    expect(started).toEqual([0, 1, 2, 3]);
+    releases[3]();
+    expect(await Promise.all(tasks)).toEqual([0, 1, 2, 3]);
+  });
+
+  it('propagates thrown and rejected errors and keeps draining', async () => {
+    const eq = new ExecutorQueue({ concurrency: 1 });
+    const thrown = new Error('thrown');
+    const rejected = new Error('rejected');
+    const tasks = [
+      eq.addTask(() => {
+        throw thrown;
+      }),
+      eq.addTask(() => Promise.reject(rejected)),
+      eq.addTask(() => Promise.resolve('last')),
+    ];
+    expect(await Promise.allSettled(tasks)).toEqual([
+      { status: 'rejected', reason: thrown },
+      { status: 'rejected', reason: rejected },
+      { status: 'fulfilled', value: 'last' },
+    ]);
+  });
+
+  it('drains a large pending batch in FIFO order', async () => {
+    const eq = new ExecutorQueue({ concurrency: 1 });
+    let release!: () => void;
+    const first = eq.addTask(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const started: number[] = [];
+    const tasks = Array.from({ length: 5000 }, (_, id) =>
+      eq.addTask(async () => {
+        started.push(id);
+        return id;
+      }),
+    );
+    release();
+    await first;
+    const expected = Array.from({ length: 5000 }, (_, id) => id);
+    expect(await Promise.all(tasks)).toEqual(expected);
+    expect(started).toEqual(expected);
+  });
+
+  it('rejects only pending promises with a supplied reason and can be reused after clear', async () => {
+    const eq = new ExecutorQueue({ concurrency: 1 });
+    let release!: () => void;
+    const started: string[] = [];
+    const first = eq.addTask(
+      () =>
+        new Promise<string>((resolve) => {
+          release = () => resolve('first');
+        }),
+    );
+    const pending = Array.from({ length: 20 }, () =>
+      eq.addTask(async () => {
+        started.push('cancelled');
+      }),
+    );
+    const settled = Promise.allSettled(pending);
+    const reason = new Error('cancel');
+    eq.clear(reason);
+    eq.clear(reason);
+    const next = eq.addTask(async () => {
+      started.push('next');
+      return 'next';
+    });
+    expect(await settled).toEqual(pending.map(() => ({ status: 'rejected', reason })));
+    release();
+    expect(await first).toBe('first');
+    expect(await next).toBe('next');
+    expect(started).toEqual(['next']);
+  });
+
+  it('clears after dequeuing part of a pending batch without rejecting its running task', async () => {
+    const eq = new ExecutorQueue({ concurrency: 1 });
+    let releaseFirst!: () => void;
+    let releaseSecond!: () => void;
+    const first = eq.addTask(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseFirst = resolve;
+        }),
+    );
+    const second = eq.addTask(
+      () =>
+        new Promise<string>((resolve) => {
+          releaseSecond = () => resolve('second');
+        }),
+    );
+    const pending = Array.from({ length: 30 }, () => eq.addTask(async () => 'cancelled'));
+    const settled = Promise.allSettled(pending);
+    releaseFirst();
+    await first;
+    const reason = new Error('cancel after dequeue');
+    eq.clear(reason);
+    expect(await settled).toEqual(pending.map(() => ({ status: 'rejected', reason })));
+    const next = eq.addTask(async () => 'next');
+    releaseSecond();
+    expect(await second).toBe('second');
+    expect(await next).toBe('next');
+  });
+
+  it('starts reentrant submissions immediately when capacity permits, even during draining', async () => {
+    const eq = new ExecutorQueue({ concurrency: 1 });
+    let release!: () => void;
+    const first = eq.addTask(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const started: string[] = [];
+    let nested!: Promise<string>;
+    const next = eq.addTask(async () => {
+      started.push('outer');
+      eq.concurrency = 2;
+      nested = eq.addTask(async () => {
+        started.push('inner');
+        return 'inner';
       });
+      expect(started).toEqual(['outer', 'inner']);
+      eq.clear();
+      return 'outer';
+    });
+    release();
+    await first;
+    expect(started).toEqual(['outer', 'inner']);
+    expect(await next).toBe('outer');
+    expect(await nested).toBe('inner');
+  });
 
-    // The first 3 should be finished within 200ms (concurrency 3)
-    void eq.addTask(() => timeoutPromiseBuilder(100, 'T1'));
-    void eq.addTask(() => timeoutPromiseBuilder(200, 'T2'));
-    void eq.addTask(() => timeoutPromiseBuilder(150, 'T3'));
-    // The last task will be executed after 200ms and will finish at 400ms
-    void eq.addTask(() => timeoutPromiseBuilder(200, 'T4'));
+  it.each([1, 4])(
+    'settles a large pending batch of synchronous failures at concurrency %s and can be reused',
+    async (concurrency) => {
+      const eq = new ExecutorQueue({ concurrency });
+      let release!: () => void;
+      const blocked = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const blockers = Array.from({ length: concurrency }, () => eq.addTask(() => blocked));
+      const started: number[] = [];
+      const failures = Array.from({ length: 5000 }, (_, id) => new Error(`failure ${id}`));
+      const settled: unknown[] = [];
+      const tasks = failures.map((error, id) =>
+        eq
+          .addTask(() => {
+            started.push(id);
+            throw error;
+          })
+          .catch((error_: unknown) => {
+            settled.push(error_);
+            return error_;
+          }),
+      );
+      release();
+      await blockers[0];
+      for (let i = 0; i < 20; i++) {
+        await Promise.resolve();
+      }
+      try {
+        // Check settlement before awaiting the batch, so an overflowing implementation cannot hang.
+        expect(settled).toHaveLength(failures.length);
+        expect(started).toEqual(failures.map((_, id) => id));
+        expect(await Promise.all(tasks)).toEqual(failures);
+        let reused = false;
+        const next = eq.addTask(async () => {
+          reused = true;
+          return 'next';
+        });
+        expect(reused).toBe(true);
+        expect(await next).toBe('next');
+      } finally {
+        eq.clear();
+      }
+    },
+  );
 
-    expect(finished).not.toHaveBeenCalled();
-    expect(started).toHaveBeenCalledTimes(3);
+  it('rejects queued-but-not-started tasks on clear() without touching running ones', async () => {
+    const eq = new ExecutorQueue({ concurrency: 1 });
 
-    vi.advanceTimersByTime(100);
-    expect(finished).toHaveBeenCalledTimes(1);
+    let releaseFirst: (() => void) | undefined;
+    const first = eq.addTask(
+      () =>
+        new Promise((resolve) => {
+          releaseFirst = () => resolve('first');
+        }),
+    );
+    const second = eq.addTask(() => Promise.resolve('second'));
 
-    vi.advanceTimersByTime(250);
-    expect(finished).toHaveBeenCalledTimes(3);
-    // expect(started).toHaveBeenCalledTimes(4)
+    // `second` is still waiting for a slot behind `first`; clearing must drop only that one.
+    eq.clear();
 
-    //TODO : fix The test ...
+    await expect(second).rejects.toThrow();
 
-    vi.runAllTimers();
-    vi.useRealTimers();
+    releaseFirst?.();
+    await expect(first).resolves.toBe('first');
   });
 });

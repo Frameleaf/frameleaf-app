@@ -18,7 +18,7 @@ const setup = async () => {
   child.stdout.on('data', (data) => {
     const input = data.toString();
     console.log(input);
-    if (input.includes('Immich Microservices is running')) {
+    if (input.includes('Frameleaf Microservices is running')) {
       _resolve();
     }
   });

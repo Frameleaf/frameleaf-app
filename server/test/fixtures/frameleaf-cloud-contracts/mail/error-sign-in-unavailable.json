@@ -1,0 +1,30 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.frameleaf.cloud/v1/instance/mail/sign-ins",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://api.frameleaf.cloud/v1/instance/mail/sign-ins, ath, nonce>",
+      "Content-Type": "application/json"
+    },
+    "note": "The provider (here Microsoft) isn't configured on this deployment yet. The same answer on token.",
+    "body": {
+      "service": "microsoft",
+      "state": "fixture-state-0000000000000000",
+      "codeChallenge": "FIXTUREONLYFIXTUREONLYFIXTUREONLYFIXTUREONL"
+    }
+  },
+  "status": 503,
+  "headers": {
+    "Retry-After": "3600"
+  },
+  "body": {
+    "code": "mail-sign-in-unavailable",
+    "message": "Signing in with this mail provider isn't available yet.",
+    "retryable": true,
+    "data": {
+      "retryAfterSec": 3600
+    },
+    "requestId": "req_01J8ZK3M4N5P6Q90"
+  }
+}

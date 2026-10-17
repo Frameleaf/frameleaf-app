@@ -1,5 +1,5 @@
-import { createJob, type JobCreateDto } from '@immich/sdk';
-import { toastManager } from '@immich/ui';
+import { createJob, type JobCreateDto } from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';

@@ -7,7 +7,7 @@ from locust import HttpUser, events, task
 from locust.env import Environment
 from PIL import Image
 
-byte_image = BytesIO()
+byte_image = b""
 
 
 @events.init_command_line_parser.add_listener
@@ -16,7 +16,7 @@ def _(parser: ArgumentParser) -> None:
     parser.add_argument("--face-model", type=str, default="buffalo_l")
     parser.add_argument(
         "--face-min-score",
-        type=int,
+        type=float,
         default=0.034,
         help=(
             "Returns all faces at or above this score. The default returns 1 face per request; "
@@ -30,8 +30,10 @@ def _(parser: ArgumentParser) -> None:
 def on_test_start(environment: Environment, **kwargs: Any) -> None:
     global byte_image
     assert environment.parsed_options is not None
-    image = Image.new("RGB", (environment.parsed_options.image_size, environment.parsed_options.image_size))
-    image.save(byte_image, format="jpeg")
+    size = environment.parsed_options.image_size
+    with Image.new("RGB", (size, size)) as image, BytesIO() as buffer:
+        image.save(buffer, format="jpeg")
+        byte_image = buffer.getvalue()
 
 
 class InferenceLoadTest(HttpUser):
@@ -41,7 +43,7 @@ class InferenceLoadTest(HttpUser):
 
     # re-use the image across all instances in a process
     def on_start(self) -> None:
-        self.data = byte_image.getvalue()
+        self.data = byte_image
 
 
 class CLIPTextFormDataLoadTest(InferenceLoadTest):

@@ -7,9 +7,11 @@ export function parseUtcDate(date: string) {
   return DateTime.fromISO(date, { zone: 'UTC' }).toUTC();
 }
 
+const rangeFormatters: Partial<
+  Record<'short' | 'long', { locale: string | undefined; formatter: Intl.DateTimeFormat }>
+> = {};
+
 const getDateRange = (startTimestamp: string, endTimestamp: string, format: 'short' | 'long') => {
-  // We don't need to check if the locale is set/nonempty. MDN's Intl docs:
-  // "If the application doesn't provide a locales argument, or the runtime doesn't have a locale that matches the request, then the runtime's default locale is used."
   const userLocale = get(locale);
   const startDate = DateTime.fromISO(startTimestamp).setZone('UTC');
   const endDate = DateTime.fromISO(endTimestamp).setZone('UTC');
@@ -18,11 +20,16 @@ const getDateRange = (startTimestamp: string, endTimestamp: string, format: 'sho
     return endDate.setLocale(userLocale).toLocaleString({ month: 'long', year: 'numeric' });
   }
 
-  const formatter = new Intl.DateTimeFormat(
-    userLocale,
-    format === 'short' ? dateFormats.albumShort : dateFormats.album,
-  );
-  return formatter.formatRange(startDate.toJSDate(), endDate.toJSDate());
+  let cached = rangeFormatters[format];
+  // Keep at most one locale per style, rather than retaining every language selected.
+  if (!cached || cached.locale !== userLocale) {
+    cached = {
+      locale: userLocale,
+      formatter: new Intl.DateTimeFormat(userLocale, format === 'short' ? dateFormats.albumShort : dateFormats.album),
+    };
+    rangeFormatters[format] = cached;
+  }
+  return cached.formatter.formatRange(startDate.toJSDate(), endDate.toJSDate());
 };
 
 /**
@@ -35,11 +42,3 @@ export const getShortDateRange = (start: string, end: string) => getDateRange(st
  * Get localized date range in long format. Timestamps are expected to be date-only in UTC.
  */
 export const getAlbumDateRange = (start: string, end: string) => getDateRange(start, end, 'long');
-
-/**
- * Use this to convert from "5pm EST" to "5pm UTC"
- *
- * Useful with some APIs where you want to query by "today", but the values in the database are stored as UTC
- */
-export const asLocalTimeISO = (date: DateTime<true>) =>
-  (date.setZone('utc', { keepLocalTime: true }) as DateTime<true>).toISO();

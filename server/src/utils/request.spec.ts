@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { fromChecksum, getAppVersionFromUA } from 'src/utils/request.js';
+import { fromChecksum, getAppVersionFromUA, getUserAgentDetails } from 'src/utils/request.js';
 
 describe(fromChecksum.name, () => {
   const sha1Buffer = createHash('sha1').update('hello').digest();
@@ -36,6 +36,25 @@ describe(fromChecksum.name, () => {
 });
 
 describe(getAppVersionFromUA.name, () => {
+  it.each(['android', 'ios', 'unknown'])('gets the Frameleaf %s app version', (platform) => {
+    expect(getAppVersionFromUA(`frameleaf-${platform}/3.2.0`)).toBe('3.2.0');
+  });
+
+  it.each([
+    '',
+    'frameleaf-ios/',
+    'frameleaf-desktop/3.2.0',
+    'Frameleaf-ios/3.2.0',
+    'frameleaf-iOS/3.2.0',
+    'prefix frameleaf-ios/3.2.0',
+    'frameleaf-ios/3.2.0\nextra',
+    'immich-ios/',
+    'immich-iOS/3.2.0',
+    'Immich_ios_3.2.0',
+  ])('rejects unsupported or incomplete user agents: %j', (userAgent) => {
+    expect(getAppVersionFromUA(userAgent)).toBeNull();
+  });
+
   it('should get the app version for android', () => {
     expect(getAppVersionFromUA('immich-android/1.123.4')).toEqual('1.123.4');
   });
@@ -60,5 +79,17 @@ describe(getAppVersionFromUA.name, () => {
     it('should get the app version from the old unknown format', () => {
       expect(getAppVersionFromUA('Immich_Unknown_1.123.4')).toEqual('1.123.4');
     });
+  });
+});
+
+describe(getUserAgentDetails.name, () => {
+  it('includes the Frameleaf version and retains fallback device headers', () => {
+    expect(
+      getUserAgentDetails({ 'user-agent': 'frameleaf-ios/3.2.0', devicemodel: 'phone', devicetype: 'iOS' }),
+    ).toEqual({ deviceType: 'phone', deviceOS: 'iOS', appVersion: '3.2.0' });
+  });
+
+  it('retains empty details when user-agent and device headers are absent', () => {
+    expect(getUserAgentDetails({})).toEqual({ deviceType: '', deviceOS: '', appVersion: null });
   });
 });

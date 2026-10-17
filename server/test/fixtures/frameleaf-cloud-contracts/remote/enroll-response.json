@@ -1,0 +1,15 @@
+{
+  "label": "u225vlzhsdlhwh4l",
+  "domain": "frameleaf.net",
+  "status": "enrolled",
+  "names": {
+    "relay": "r.u225vlzhsdlhwh4l.frameleaf.net",
+    "lanPattern": "{ipv4}.u225vlzhsdlhwh4l.frameleaf.net",
+    "ipv6Pattern": "{ipv6}.u225vlzhsdlhwh4l.frameleaf.net"
+  },
+  "relay": { "id": "eu1", "host": "eu1.relays.frameleaf.cloud", "port": 443 },
+  "caa": { "issue": "letsencrypt.org", "validationMethods": "dns-01", "accountUri": "https://acme-v02.api.letsencrypt.org/acme/acct/123456789" },
+  "certProfile": "tlsserver",
+  "renewBeforeDays": 25,
+  "cloneSuspected": false
+}

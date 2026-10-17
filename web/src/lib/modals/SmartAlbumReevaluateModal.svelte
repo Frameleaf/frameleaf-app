@@ -1,13 +1,14 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   import { handleError } from '$lib/utils/handle-error';
   import {
     getSmartAlbumReevaluateEstimate,
-    Kind,
+    type SmartAlbumBuiltInKind as SmartAlbumKind,
     triggerSmartAlbumReevaluate,
     type SmartAlbumReevaluateEstimateDto,
     type SmartAlbumReevaluateRequestDto,
-  } from '@immich/sdk';
-  import { Button, LoadingSpinner, Modal, ModalBody, ModalFooter } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Button, LoadingSpinner, Modal, ModalBody, ModalFooter } from '@frameleaf/ui';
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -17,7 +18,7 @@
     onClose: (result?: { queued: boolean }) => void;
     // Optional built-in kind to scope the re-evaluation to (e.g. "food").
     // When omitted, the job runs against every enabled kind.
-    kind?: Kind;
+    kind?: SmartAlbumKind;
     // Human-readable name of the scoped kind, shown in the modal title and
     // descriptive copy (e.g. "Food"). Falls back to the raw kind id.
     kindLabel?: string;
@@ -108,7 +109,7 @@
             <dt class="text-immich-fg/70 dark:text-immich-dark-fg/70">
               {$t('admin.smart_albums_reevaluate_modal_eligible_assets')}
             </dt>
-            <dd class="font-medium">{estimate.totalAssets.toLocaleString()}</dd>
+            <dd class="font-medium">{estimate.totalAssets.toLocaleString($locale)}</dd>
           </div>
         </dl>
         <p class="mt-4 text-sm text-immich-fg/60 dark:text-immich-dark-fg/60">

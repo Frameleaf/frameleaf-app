@@ -74,22 +74,55 @@ const SharedLinkLoginSchema = z
   })
   .meta({ id: 'SharedLinkLoginDto' });
 
+/**
+ * What a shared link's viewers learn about the person who shared it: the display name and nothing
+ * else (FL-83, prototype "Shared by …"). No email, no user id beyond the link's existing `userId`, and
+ * no profile image, which an anonymous viewer could not fetch anyway.
+ */
+const SharedLinkOwnerResponseSchema = z
+  .object({
+    name: z.string().describe('Display name of the user who created the link'),
+  })
+  .describe('Public details of the shared link owner')
+  .meta({ id: 'SharedLinkOwnerResponseDto' });
+
 const SharedLinkResponseSchema = z
   .object({
     id: z.uuidv4().describe('Shared link ID'),
     description: z.string().nullable().describe('Link description'),
-    password: z.string().nullable().describe('Has password'),
+    password: z
+      .string()
+      .nullable()
+      .describe('Has password: a fixed mask when the link has one, never the password itself'),
     userId: z.uuidv4().describe('Owner user ID'),
     key: z.string().describe('Encryption key (base64url)'),
     type: SharedLinkTypeSchema,
     createdAt: isoDatetimeToDate.describe('Creation date'),
     expiresAt: isoDatetimeToDate.nullable().describe('Expiration date'),
     assets: z.array(AssetResponseSchema),
+    assetCount: z
+      .int()
+      .min(0)
+      .describe("Number of assets the link shares: its own for an individual link, the album's for an album link"),
+    coverAssetIds: z
+      .array(z.uuidv4())
+      .describe(
+        "Up to four assets for a cover: an album's chosen cover and then its newest, or an individual link's first",
+      ),
     album: AlbumResponseSchema.optional(),
     allowUpload: z.boolean().describe('Allow uploads'),
     allowDownload: z.boolean().describe('Allow downloads'),
     showMetadata: z.boolean().describe('Show metadata'),
     slug: z.string().nullable().describe('Custom URL slug'),
+    url: z
+      .string()
+      .nullable()
+      .describe(
+        "The link's public address: the server's external domain, then /s/<slug> (URL-encoded) or /share/<key>. Null when no external domain is set; a client then puts the same path after the address it uses.",
+      ),
+    owner: SharedLinkOwnerResponseSchema.optional().describe(
+      'Display name of the user who created the link, for "Shared by" on the public page',
+    ),
   })
   .describe('Shared link response')
   .meta({ id: 'SharedLinkResponseDto' });
@@ -100,30 +133,77 @@ export class SharedLinkEditDto extends createZodDto(SharedLinkEditSchema) {}
 export class SharedLinkLoginDto extends createZodDto(SharedLinkLoginSchema) {}
 export class SharedLinkResponseDto extends createZodDto(SharedLinkResponseSchema) {}
 
-export function mapSharedLink(sharedLink: SharedLink, options: { stripAssetMetadata: boolean }): SharedLinkResponseDto {
+/**
+ * FL-161: what a response carries in place of a shared link's password. Passwords are stored hashed,
+ * so there is nothing to show; an edit that sends this value back leaves the password unchanged.
+ */
+export const SHARED_LINK_PASSWORD_MASK = '********';
+
+/**
+ * FL-305: a link's public address, as the web shows it. Only the configured external domain makes it
+ * absolute: an address from the request (its Host header) could be spoofed or name an internal host.
+ */
+export const sharedLinkUrl = (
+  sharedLink: Pick<SharedLink, 'key' | 'slug'>,
+  externalDomain: string | undefined,
+): string | null => {
+  const base = externalDomain?.trim().replace(/\/+$/, '');
+  if (!base) {
+    return null;
+  }
+  const path = sharedLink.slug
+    ? `/s/${encodeURIComponent(sharedLink.slug)}`
+    : `/share/${sharedLink.key.toString('base64url')}`;
+  return `${base}${path}`;
+};
+
+const SHARED_LINK_COVER_ASSETS = 4;
+
+/** An album's cover items from its loaded assets (oldest first): the cover its owner chose, then the newest. */
+const albumCoverAssets = (album: SharedLink['album']): { id: string }[] => {
+  const newest = (album?.assets ?? []).toReversed();
+  const chosen = newest.find(({ id }) => id === album?.albumThumbnailAssetId);
+  return chosen ? [chosen, ...newest.filter((asset) => asset !== chosen)] : newest;
+};
+
+export function mapSharedLink(
+  sharedLink: SharedLink,
+  options: { stripAssetMetadata: boolean; externalDomain?: string },
+): SharedLinkResponseDto {
   const assets = sharedLink.assets || [];
+  const isAlbum = sharedLink.type === SharedLinkType.Album;
+  // The list of links loads the count and an album's cover on their own; one link read alone carries everything.
+  const assetCount = sharedLink.assetCount ?? (isAlbum ? (sharedLink.album?.assets.length ?? 0) : assets.length);
+  const coverAssets = isAlbum ? (sharedLink.coverAssets ?? albumCoverAssets(sharedLink.album)) : assets;
 
   const response = {
     id: sharedLink.id,
     description: sharedLink.description,
-    password: sharedLink.password,
+    password: sharedLink.password ? SHARED_LINK_PASSWORD_MASK : null,
     userId: sharedLink.userId,
     key: sharedLink.key.toString('base64url'),
     type: sharedLink.type,
     createdAt: sharedLink.createdAt,
     expiresAt: sharedLink.expiresAt,
     assets: assets.map((asset) => mapAsset(asset, { stripMetadata: options.stripAssetMetadata })),
+    assetCount,
+    coverAssetIds: coverAssets.slice(0, SHARED_LINK_COVER_ASSETS).map(({ id }) => id),
     album: sharedLink.album ? mapAlbum(sharedLink.album) : undefined,
     allowUpload: sharedLink.allowUpload,
     allowDownload: sharedLink.allowDownload,
     showMetadata: sharedLink.showExif,
     slug: sharedLink.slug,
+    url: sharedLinkUrl(sharedLink, options.externalDomain),
+    // pick the name explicitly so nothing else about the owner can ride along
+    owner: sharedLink.owner ? { name: sharedLink.owner.name } : undefined,
   };
 
   // unless we select sharedLink.album.sharedLinks this will be wrong
   if (response.album) {
     response.album.hasSharedLink = true;
     response.album.shared = true;
+    // the list of links does not load the album's assets, which is where mapAlbum counts them
+    response.album.assetCount = assetCount;
   }
 
   return response;

@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { AssetTypeEnum, AssetVisibility, type AssetResponseDto, type StackResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility, type AssetResponseDto, type StackResponseDto } from '@frameleaf/sdk';
 import { BrowserContext } from '@playwright/test';
 import { randomPreview, randomThumbnail } from 'src/ui/generators/timeline.js';
 
@@ -19,7 +19,7 @@ export const createMockStackAsset = (ownerId: string): AssetResponseDto => {
     ownerId,
     owner: {
       id: ownerId,
-      email: 'admin@immich.cloud',
+      email: 'admin@example.com',
       name: 'Admin',
       profileImagePath: '',
       profileChangedAt: now,
@@ -104,6 +104,31 @@ export const createMockStack = (
 };
 
 export const setupBrokenAssetMockApiRoutes = async (context: BrowserContext, mockStack: MockStack) => {
+  // The info panel's enrichment and pet sections load for every owned photo. Unserved, they raise
+  // error toasts, which dock at the bottom centre over the viewer's stack card (VIEWER-P3).
+  await context.route('**/api/assets/*/image-enrichment', async (route, request) => {
+    if (request.method() !== 'GET') {
+      return route.fallback();
+    }
+    const assetId = new URL(request.url()).pathname.split('/').at(-2)!;
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      json: {
+        assetId,
+        description: { status: 'missing', appliedDescription: false, appliedTags: false },
+        nsfwDetection: { status: 'missing', appliedTags: false, effectiveIsNsfw: false },
+      },
+    });
+  });
+  await context.route('**/api/pets**', async (route, request) => {
+    if (request.method() !== 'GET') {
+      return route.fallback();
+    }
+    // no pets, and none in this photo
+    return route.fulfill({ status: 200, contentType: 'application/json', json: [] });
+  });
+
   await context.route('**/api/stacks/*', async (route, request) => {
     if (request.method() !== 'GET') {
       return route.fallback();

@@ -21,9 +21,16 @@ import { BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.j
 import {
   AssetFaceUpdateDto,
   MergePersonDto,
+  MergeSuggestionsResponseDto,
   PeopleResponseDto,
   PeopleUpdateDto,
+  PersonCorrectionDto,
+  PersonCorrectionSearchDto,
+  PersonCorrectionsResponseDto,
   PersonCreateDto,
+  PersonMergeVerdictCreateDto,
+  PersonMergeVerdictDeleteDto,
+  PersonMergeVerdictResponseDto,
   PersonResponseDto,
   PersonSearchDto,
   PersonStatisticsResponseDto,
@@ -31,6 +38,7 @@ import {
 } from 'src/dtos/person.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { RemoteMediaCeiling } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PersonService } from 'src/services/person.service.js';
 import { sendFile } from 'src/utils/file.js';
@@ -91,6 +99,63 @@ export class PersonController {
     return this.service.deleteAll(auth, dto);
   }
 
+  // NOTE: this must be declared before `getPerson(:id)` below — both are GET and Nest
+  // matches routes in declaration order, so a later position here would make
+  // `/people/merge-suggestions` fall through to `:id` and fail UUID validation.
+  @Get('merge-suggestions')
+  @Authenticated({ permission: Permission.PersonRead })
+  @Endpoint({
+    summary: 'Get merge suggestions',
+    description:
+      'Retrieve suggested pairs of people that may be the same person, based on face similarity, for the guided merge review flow.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  getMergeSuggestions(@Auth() auth: AuthDto): Promise<MergeSuggestionsResponseDto> {
+    return this.service.getMergeSuggestions(auth);
+  }
+
+  @Put('merge-suggestions/verdicts')
+  @Authenticated({ permission: Permission.PersonUpdate })
+  @Endpoint({
+    summary: 'Record a merge suggestion verdict',
+    description:
+      'Answer a suggested pair of people: "same" merges them now, "different" never suggests the pair again, "later" skips it for 30 days and "ignore" stops suggesting `personId` with anyone. Replaces an earlier verdict for the same pair (a "later" never replaces a "different"); the pair may be given in either order.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  setMergeVerdict(
+    @Auth() auth: AuthDto,
+    @Body() dto: PersonMergeVerdictCreateDto,
+  ): Promise<PersonMergeVerdictResponseDto> {
+    return this.service.setMergeVerdict(auth, dto);
+  }
+
+  @Delete('merge-suggestions/verdicts')
+  @Authenticated({ permission: Permission.PersonUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Undo a merge suggestion verdict',
+    description:
+      'Remove the recorded verdict for a pair of people, so the pair can be suggested again. The same person id twice undoes "ignore" for that person.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  deleteMergeVerdict(@Auth() auth: AuthDto, @Body() dto: PersonMergeVerdictDeleteDto): Promise<void> {
+    return this.service.deleteMergeVerdict(auth, dto);
+  }
+
+  @Post('corrections/:id/undo')
+  @Authenticated({ permission: Permission.PersonUpdate })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Undo a face correction',
+    description:
+      'Reverse one manual face decision from the correction history, while the face still stands as the decision ' +
+      'left it (same original, same place, same person). Otherwise 409 with a `reason`.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  undoCorrection(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<PersonCorrectionDto> {
+    return this.service.undoCorrection(auth, id);
+  }
+
   @Get(':id')
   @Authenticated({ permission: Permission.PersonRead })
   @Endpoint({
@@ -144,6 +209,24 @@ export class PersonController {
     return this.service.delete(auth, id);
   }
 
+  @Get(':id/corrections')
+  @Authenticated({ permission: Permission.PersonRead })
+  @Endpoint({
+    summary: 'Get correction history',
+    description:
+      'Retrieve the manual face decisions made about this person (faces moved onto or off them, "not a face of ' +
+      'anyone", merges and moved face boxes), most recent first, a page at a time. Only the owner sees them. A ' +
+      'photo that can no longer be shown (trashed, Locked, hidden) is left out of the evidence.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  getCorrectionHistory(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Query() dto: PersonCorrectionSearchDto,
+  ): Promise<PersonCorrectionsResponseDto> {
+    return this.service.getCorrectionHistory(auth, id, dto);
+  }
+
   @Get(':id/statistics')
   @Authenticated({ permission: Permission.PersonStatistics })
   @Endpoint({
@@ -158,6 +241,8 @@ export class PersonController {
   @Get(':id/thumbnail')
   @FileResponse()
   @Authenticated({ permission: Permission.PersonRead })
+  // FL-161: shown by the dozen on the people pages; counted against the higher media ceiling
+  @RemoteMediaCeiling()
   @Endpoint({
     summary: 'Get person thumbnail',
     description: 'Retrieve the thumbnail file for a person.',
@@ -217,6 +302,6 @@ export class PersonController {
     @Param() { id }: UUIDParamDto,
     @Body() dto: MergePersonDto,
   ): Promise<BulkIdResponseDto[]> {
-    return this.service.mergePeople(auth, { ids: [id, ...dto.ids] });
+    return this.service.mergePerson(auth, id, dto);
   }
 }

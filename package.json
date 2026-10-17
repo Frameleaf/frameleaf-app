@@ -1,19 +1,19 @@
 {
-  "name": "immich-monorepo",
+  "name": "frameleaf-monorepo",
   "version": "3.2.0",
-  "description": "Monorepo for Immich",
+  "description": "Monorepo for Frameleaf",
   "type": "module",
   "private": true,
   "scripts": {
     "format": "prettier --cache --check i18n/",
     "format:fix": "prettier --cache --write --list-different i18n"
   },
-  "packageManager": "pnpm@11.24.0",
+  "packageManager": "pnpm@12.11.2",
   "engines": {
     "pnpm": ">=10.0.0"
   },
   "devDependencies": {
-    "prettier": "^3.8.3",
+    "prettier": "^3.9.10",
     "prettier-plugin-sort-json": "^4.2.0"
   }
 }

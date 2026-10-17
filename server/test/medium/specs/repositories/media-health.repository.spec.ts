@@ -1,21 +1,11 @@
 import { Kysely, sql } from 'kysely';
-import { AssetStatus, MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum.js';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import forkCatalog from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
+import { AssetStatus, AssetVisibility, MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaHealthRepository, UpsertMediaHealthFinding } from 'src/repositories/media-health.repository.js';
 import { DB } from 'src/schema/index.js';
-import {
-  down as revertHealthTriggers,
-  up as repairHealthTriggers,
-} from 'src/schema/migrations/2100000000060-FixMediaHealthUpdatedAtTriggers.js';
-import {
-  down as revertHealthSchema,
-  up as reconcileHealthSchema,
-} from 'src/schema/migrations/2100000000070-ReconcileMediaHealthSchema.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils.js';
+import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 
@@ -86,7 +76,7 @@ describe(MediaHealthRepository.name, () => {
       const admitted = runs.filter((run) => !!run);
       expect(admitted).toHaveLength(1);
       await expect(sut.createRun(MediaHealthCategory.Missing, other.id, 60_000)).resolves.toBeDefined();
-      for (const schema of ['public', 'immich_fork']) {
+      for (const schema of ['public']) {
         await defaultDatabase
           .withSchema(schema)
           .updateTable('asset_health_run')
@@ -156,202 +146,18 @@ describe(MediaHealthRepository.name, () => {
   });
 
   describe('finding state transitions', () => {
-    it('reconciles and rolls back health metadata without changing functions, owner runs, or findings', async () => {
-      await sql`UPDATE immich_fork.state SET phase = 'legacy' WHERE id = 1`.execute(defaultDatabase);
-      let reconciled = true;
-      try {
-        await revertHealthSchema(defaultDatabase);
-        reconciled = false;
-        const { asset, candidate, finding, sut, user } = await arrangeManagedRelink();
-        const runBefore = await sut.getLatestRun(MediaHealthCategory.Missing, user.id);
-        const catalogBefore = await getCatalogEvidence(defaultDatabase);
-        const storageBefore = await sql`SELECT oid, relfilenode FROM pg_class
-          WHERE oid IN ('public.asset_health_run'::regclass, 'public.asset_health'::regclass,
-            'public.asset_health_candidate'::regclass) ORDER BY oid`.execute(defaultDatabase);
-
-        await reconcileHealthSchema(defaultDatabase);
-        reconciled = true;
-
-        const catalogAfter = await getCatalogEvidence(defaultDatabase);
-        expect(catalogAfter.functions).toEqual(catalogBefore.functions);
-        expect(catalogAfter.triggers).toEqual(catalogBefore.triggers);
-        expect(catalogAfter.indexes).toEqual(
-          expect.arrayContaining([
-            {
-              definition:
-                'CREATE INDEX "asset_health_run_ownerId_idx" ON public.asset_health_run USING btree ("ownerId")',
-              identity: 'public.asset_health_run.asset_health_run_ownerId_idx',
-            },
-          ]),
-        );
-        expect(catalogAfter.migrationOverrides).toContain('function_media_health_updated_at');
-        expect(await sut.getLatestRun(MediaHealthCategory.Missing, user.id)).toEqual(runBefore);
-        expect(await sut.getByIds([finding.id])).toEqual([finding]);
-        expect(await sut.getCandidatesByHealthIds([finding.id])).toEqual([candidate]);
-        const storageAfter = await sql`SELECT oid, relfilenode FROM pg_class
-          WHERE oid IN ('public.asset_health_run'::regclass, 'public.asset_health'::regclass,
-            'public.asset_health_candidate'::regclass) ORDER BY oid`.execute(defaultDatabase);
-        expect(storageAfter.rows).toEqual(storageBefore.rows);
-
-        await revertHealthSchema(defaultDatabase);
-        reconciled = false;
-        expect(await getCatalogEvidence(defaultDatabase)).toEqual(catalogBefore);
-        expect(await sut.getLatestRun(MediaHealthCategory.Missing, user.id)).toEqual(runBefore);
-        await sut.markDismissed([finding.id]);
-        expect(await sut.getByIds([finding.id])).toEqual([
-          expect.objectContaining({ assetId: asset.id, status: MediaHealthStatus.Dismissed }),
-        ]);
-      } finally {
-        if (!reconciled) {
-          await reconcileHealthSchema(defaultDatabase);
-        }
-        await sql`UPDATE immich_fork.state SET phase = 'active' WHERE id = 1`.execute(defaultDatabase);
-      }
-    });
-
-    it('upgrades populated legacy health tables without rewriting rows or changing asset sync triggers', async () => {
-      await sql`UPDATE immich_fork.state SET phase = 'legacy' WHERE id = 1`.execute(defaultDatabase);
-      try {
-        await revertHealthTriggers(defaultDatabase);
-        const { asset, finding, candidate, sut } = await arrangeManagedRelink();
-        const before = await sql`SELECT oid, relfilenode FROM pg_class
-          WHERE oid IN ('public.asset_health'::regclass, 'public.asset_health_candidate'::regclass) ORDER BY oid`.execute(
-          defaultDatabase,
-        );
-        await repairHealthTriggers(defaultDatabase);
-        await repairHealthTriggers(defaultDatabase);
-
-        expect(await sut.getByIds([finding.id])).toEqual([finding]);
-        expect(await sut.getCandidatesByHealthIds([finding.id])).toEqual([candidate]);
-        const after = await sql`SELECT oid, relfilenode FROM pg_class
-          WHERE oid IN ('public.asset_health'::regclass, 'public.asset_health_candidate'::regclass) ORDER BY oid`.execute(
-          defaultDatabase,
-        );
-        expect(after.rows).toEqual(before.rows);
-        await sut.markDismissed([finding.id]);
-        expect(await sut.getByIds([finding.id])).toEqual([
-          expect.objectContaining({ status: MediaHealthStatus.Dismissed }),
-        ]);
-        const originalAsset = await defaultDatabase
-          .withSchema('public')
-          .selectFrom('asset')
-          .select(['updateId', 'updatedAt'])
-          .where('id', '=', asset.id)
-          .executeTakeFirstOrThrow();
-        const updatedAsset = await defaultDatabase
-          .withSchema('public')
-          .updateTable('asset')
-          .set({ originalFileName: 'updated.jpg' })
-          .where('id', '=', asset.id)
-          .returningAll()
-          .executeTakeFirstOrThrow();
-        expect(updatedAsset.updateId).not.toBe(originalAsset.updateId);
-        expect(new Date(updatedAsset.updatedAt).getTime()).toBeGreaterThan(new Date(originalAsset.updatedAt).getTime());
-
-        const catalog = await getCatalogEvidence(defaultDatabase);
-        expect(catalog.functions.find(({ identity }) => identity === 'public.media_health_updated_at()')).toEqual(
-          forkCatalog.functions.find(({ identity }) => identity === 'public.media_health_updated_at()'),
-        );
-        for (const table of ['asset_health', 'asset_health_candidate']) {
-          const identity = `public.${table}.${table}_updatedAt`;
-          expect(catalog.triggers.find((trigger) => trigger.identity === identity)).toEqual(
-            forkCatalog.triggers.find((trigger) => trigger.identity === identity),
-          );
-          const override = await sql<{ definition: string }>`SELECT value->>'sql' AS definition
-            FROM public.migration_overrides WHERE name = ${`trigger_${table}_updatedAt`}`.execute(defaultDatabase);
-          expect(override.rows[0].definition).toContain('EXECUTE FUNCTION media_health_updated_at();');
-        }
-      } finally {
-        await repairHealthTriggers(defaultDatabase);
-        await sql`UPDATE immich_fork.state SET phase = 'active' WHERE id = 1`.execute(defaultDatabase);
-      }
-    });
-
-    it.each(['legacy', 'dual-write', 'active'])('rescans an existing finding in the %s phase', async (phase) => {
-      await sql`UPDATE immich_fork.state SET phase = ${phase} WHERE id = 1`.execute(defaultDatabase);
-      try {
-        const { ctx, sut } = setup();
-        const { user } = await ctx.newUser();
-        const { asset } = await ctx.newAsset({ ownerId: user.id });
-        const dto = { ...findingDto(asset.id, asset.originalPath, null), category: MediaHealthCategory.Corrupt };
-        const first = await sut.upsertFinding(dto);
-        assert.isDefined(first);
-        const second = await sut.upsertFinding({ ...dto, status: MediaHealthStatus.CorruptConfirmed });
-        assert.isDefined(second);
-
-        expect(second).toMatchObject({ id: first.id, status: MediaHealthStatus.CorruptConfirmed });
-        if (phase !== 'active') {
-          expect(new Date(second.updatedAt).getTime()).toBeGreaterThan(new Date(first.updatedAt).getTime());
-        }
-        if (phase === 'dual-write') {
-          const sidecar = await defaultDatabase
-            .withSchema('immich_fork')
-            .selectFrom('asset_health')
-            .selectAll()
-            .where('id', '=', first.id)
-            .executeTakeFirstOrThrow();
-          expect(sidecar).toEqual(second);
-        }
-      } finally {
-        await sql`UPDATE immich_fork.state SET phase = 'active' WHERE id = 1`.execute(defaultDatabase);
-      }
-    });
-
-    it('updates an existing legacy candidate without requiring an updateId column', async () => {
-      await sql`UPDATE immich_fork.state SET phase = 'legacy' WHERE id = 1`.execute(defaultDatabase);
-      try {
-        const { candidate } = await arrangeManagedRelink();
-        const updated = await defaultDatabase
-          .withSchema('public')
-          .updateTable('asset_health_candidate')
-          .set({ status: MediaHealthStatus.Dismissed })
-          .where('id', '=', candidate.id)
-          .returningAll()
-          .executeTakeFirstOrThrow();
-        expect(updated.status).toBe(MediaHealthStatus.Dismissed);
-        expect(new Date(updated.updatedAt).getTime()).toBeGreaterThan(new Date(candidate.updatedAt).getTime());
-      } finally {
-        await sql`UPDATE immich_fork.state SET phase = 'active' WHERE id = 1`.execute(defaultDatabase);
-      }
-    });
-
-    it.each(['legacy', 'active'])('filters findings by health status in the %s schema phase', async (phase) => {
-      await sql`UPDATE immich_fork.state SET phase = ${phase} WHERE id = 1`.execute(defaultDatabase);
-      try {
-        const { ctx, sut } = setup();
-        const [{ user }, { user: otherUser }] = await Promise.all([ctx.newUser(), ctx.newUser()]);
-        const cases = [
-          { category: MediaHealthCategory.Missing, status: MediaHealthStatus.Missing },
-          { category: MediaHealthCategory.Missing, status: MediaHealthStatus.Found },
-          { category: MediaHealthCategory.Corrupt, status: MediaHealthStatus.CorruptConfirmed },
-        ];
-
-        for (const { category, status } of cases) {
-          const [{ asset }, { asset: otherAsset }] = await Promise.all([
-            ctx.newAsset({ ownerId: user.id, is_nsfw: false }),
-            ctx.newAsset({ ownerId: otherUser.id, is_nsfw: false }),
-          ]);
-          const finding = await sut.upsertFinding({
-            ...findingDto(asset.id, asset.originalPath, null),
-            category,
-            status,
-          });
-          assert.isDefined(finding);
-          await sut.upsertFinding({
-            ...findingDto(otherAsset.id, otherAsset.originalPath, null),
-            category,
-            status,
-          });
-
-          const options = { ownerId: user.id, category, privacy: { excludeNsfw: true }, size: 200 };
-          await expect(sut.list({ ...options, status })).resolves.toEqual([
-            expect.objectContaining({ id: finding.id, category, status }),
-          ]);
-          await expect(sut.list({ ...options, status: MediaHealthStatus.Dismissed })).resolves.toEqual([]);
-        }
-      } finally {
-        await sql`UPDATE immich_fork.state SET phase = 'active' WHERE id = 1`.execute(defaultDatabase);
-      }
+    it('rescans the same canonical finding without duplicating or losing its run', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const run = await sut.createRun(MediaHealthCategory.Missing, user.id);
+      const first = await sut.upsertFinding(findingDto(asset.id, asset.originalPath, run.id));
+      const next = await sut.upsertFinding({
+        ...findingDto(asset.id, asset.originalPath, run.id),
+        status: MediaHealthStatus.Found,
+      });
+      expect(next).toMatchObject({ id: first!.id, status: MediaHealthStatus.Found, runId: run.id });
+      expect(await sut.getByIds([first!.id], user.id)).toHaveLength(1);
     });
 
     it('scopes finding reads and dismissals to one owner', async () => {
@@ -696,8 +502,7 @@ describe(MediaHealthRepository.name, () => {
         canonicalAssetId: string;
       }>`
         SELECT a."originalPath", a.checksum, a."fileModifiedAt", p."canonicalAssetId"
-        FROM public.asset a JOIN immich_fork.asset_physical_file m ON m."assetId" = a.id
-        JOIN immich_fork.physical_file p ON p.id = m."physicalFileId" WHERE a.id = ${asset.id}::uuid
+        FROM public.asset a JOIN public.physical_file p ON p.id = a."physicalOriginalFileId" WHERE a.id = ${asset.id}::uuid
       `.execute(defaultDatabase);
       const relinked = relinkedRows.rows[0];
       expect(relinked).toMatchObject({
@@ -750,6 +555,37 @@ describe(MediaHealthRepository.name, () => {
       [row] = await sut.getByIds([finding.id]);
       expect(row.status).toBe(MediaHealthStatus.Relinked);
     });
+
+    it('records the status a dismissal replaced and reopens to it only while still dismissed (FL-69, UT-2)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const run = await sut.createRun(MediaHealthCategory.Missing);
+      const finding = await sut.upsertFinding({
+        ...findingDto(asset.id, asset.originalPath, run.id),
+        resolution: { autoRelinkable: false },
+      });
+      assert.isDefined(finding);
+
+      await sut.markDismissed([finding.id]);
+      await sut.markDismissed([finding.id]);
+      let [row] = await sut.getByIds([finding.id]);
+      expect(row.resolution).toEqual({ autoRelinkable: false, dismissedFrom: MediaHealthStatus.Missing });
+
+      await expect(sut.reopenFinding(finding.id, MediaHealthStatus.Trashed, MediaHealthStatus.Missing)).resolves.toBe(
+        false,
+      );
+      await expect(sut.reopenFinding(finding.id, MediaHealthStatus.Dismissed, MediaHealthStatus.Missing)).resolves.toBe(
+        true,
+      );
+      [row] = await sut.getByIds([finding.id]);
+      expect(row).toMatchObject({
+        status: MediaHealthStatus.Missing,
+        dismissedAt: null,
+        resolution: { autoRelinkable: false },
+      });
+      expect(row.resolution).not.toHaveProperty('dismissedFrom');
+    });
   });
 
   describe('replaceCandidates', () => {
@@ -798,6 +634,42 @@ describe(MediaHealthRepository.name, () => {
           },
         ]),
       ).rejects.toThrow('Cannot replace media-health candidates for multiple findings');
+    });
+  });
+
+  describe('Locked media (FL-34)', () => {
+    it("lists Locked media to an interactive read only for its owner's elevated session", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: timeline } = await ctx.newAsset({ ownerId: user.id });
+      const { result: locked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      await sut.upsertFinding(findingDto(timeline.id, timeline.originalPath, null));
+      const lockedFinding = await sut.upsertFinding(findingDto(locked.id, locked.originalPath, null));
+      assert.isDefined(lockedFinding);
+
+      const ordinary = {};
+      const elevated = { lockedOwnerId: user.id };
+      const listed = async (privacy?: { lockedOwnerId?: string }) =>
+        (await sut.list({ ownerId: user.id, privacy, size: 10 })).map(({ assetId }) => assetId).sort();
+
+      await expect(listed(ordinary)).resolves.toEqual([timeline.id]);
+      await expect(listed(elevated)).resolves.toEqual([timeline.id, locked.id].sort());
+      await expect(sut.count({ ownerId: user.id, privacy: ordinary })).resolves.toBe(1);
+      await expect(sut.getByIds([lockedFinding.id], user.id, ordinary)).resolves.toEqual([]);
+      await expect(sut.getAssets([locked.id], user.id, ordinary)).resolves.toEqual([]);
+      // the row carries the lock, so the response reports it as `locked`
+      await expect(sut.getAssets([locked.id], user.id, elevated)).resolves.toEqual([
+        expect.objectContaining({ id: locked.id, isLocked: true }),
+      ]);
+      await expect(sut.getAssets([timeline.id], user.id, elevated)).resolves.toEqual([
+        expect.objectContaining({ id: timeline.id, isLocked: false }),
+      ]);
+
+      // a background job passes no privacy and still sees the Locked finding
+      await expect(listed()).resolves.toEqual([timeline.id, locked.id].sort());
+      await expect(sut.getByIds([lockedFinding.id], user.id)).resolves.toEqual([
+        expect.objectContaining({ id: lockedFinding.id }),
+      ]);
     });
   });
 });

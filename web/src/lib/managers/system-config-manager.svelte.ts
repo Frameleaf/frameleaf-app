@@ -1,4 +1,4 @@
-import { getConfig, getConfigDefaults, type AdminConfigDto } from '@immich/sdk';
+import { getConfig, getConfigDefaults, type AdminConfigDto } from '@frameleaf/sdk';
 import { cloneDeep } from 'lodash-es';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 

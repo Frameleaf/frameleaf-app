@@ -34,41 +34,76 @@ interface Options {
 }
 
 export const contextMenuNavigation: Action<HTMLElement, Options> = (node, options: Options) => {
+  let isOpen = options.isOpen;
+  let generation = 0;
+  let destroyed = false;
   const getCurrentElement = () => {
-    const { container, selectedId: activeId } = options;
-    return container?.querySelector(`#${activeId}`) as HTMLElement | null;
+    const { container, selectedId } = options;
+    return container ? getItems(container).find((item) => item.id === selectedId) : undefined;
   };
 
+  /**
+   * The rows the keys move through: the options only. A grouped menu also holds heading rows and
+   * separators, which have no id and are never a choice.
+   */
+  const getItems = (container: HTMLElement) =>
+    [...container.children].filter((child) => child.matches('[role^="menuitem"]')) as HTMLElement[];
+
   const close = () => {
+    generation++;
     const { closeDropdown, selectionChanged } = options;
     selectionChanged(undefined);
     closeDropdown();
   };
 
   const moveSelection = async (direction: 'up' | 'down', event: KeyboardEvent) => {
-    const { selectionChanged, container, openDropdown } = options;
+    const owner = generation;
+    const currentContainer = options.isOpen ? options.container : undefined;
+    const { openDropdown } = options;
     if (openDropdown) {
       openDropdown(event);
       await tick();
     }
-
-    if (!container) {
+    if (destroyed || owner !== generation || !options.isOpen) {
       return;
     }
 
-    const children = Array.from(container.children).filter((child) => child.tagName !== 'HR') as HTMLElement[];
+    const { container, selectedId, selectionChanged } = options;
+    if (!container || (currentContainer && currentContainer !== container)) {
+      return;
+    }
+    const children = getItems(container);
     if (children.length === 0) {
       return;
     }
 
-    const currentEl = getCurrentElement();
-    const currentIndex = currentEl ? children.indexOf(currentEl) : -1;
-    const directionFactor = (direction === 'up' ? -1 : 1) + (direction === 'up' && currentIndex === -1 ? 1 : 0);
-    const newIndex = (currentIndex + directionFactor + children.length) % children.length;
+    const currentIndex = children.findIndex((item) => item.id === selectedId);
+    let newIndex = currentIndex + (direction === 'up' ? -1 : 1);
+    if (newIndex < 0) {
+      newIndex = children.length - 1;
+    } else if (newIndex >= children.length) {
+      newIndex = 0;
+    }
     const selectedNode = children[newIndex];
-    selectedNode?.scrollIntoView({ block: 'nearest' });
+    selectedNode.scrollIntoView({ block: 'nearest' });
+    selectionChanged(selectedNode.id);
+  };
 
-    selectionChanged(selectedNode?.id);
+  /** Home and End belong to an open menu only; a closed one leaves them to the page. */
+  const moveToEdge = (edge: 'first' | 'last', event: KeyboardEvent) => {
+    const { selectionChanged, container, isOpen } = options;
+    if (!isOpen || !container) {
+      return;
+    }
+    event.preventDefault();
+
+    const selectedNode = getItems(container).at(edge === 'first' ? 0 : -1);
+    if (!selectedNode) {
+      return;
+    }
+    selectedNode.scrollIntoView({ block: 'nearest' });
+
+    selectionChanged(selectedNode.id);
   };
 
   const onEscape = (event: KeyboardEvent) => {
@@ -84,6 +119,7 @@ export const contextMenuNavigation: Action<HTMLElement, Options> = (node, option
   const handleClick = (event: KeyboardEvent) => {
     const { selectedId, isOpen, closeDropdown } = options;
     if (isOpen && !selectedId) {
+      generation++;
       closeDropdown();
       return;
     }
@@ -98,6 +134,8 @@ export const contextMenuNavigation: Action<HTMLElement, Options> = (node, option
   const { destroy } = shortcuts(node, [
     { shortcut: { key: 'ArrowUp' }, onShortcut: (event) => moveSelection('up', event) },
     { shortcut: { key: 'ArrowDown' }, onShortcut: (event) => moveSelection('down', event) },
+    { shortcut: { key: 'Home' }, onShortcut: (event) => moveToEdge('first', event), preventDefault: false },
+    { shortcut: { key: 'End' }, onShortcut: (event) => moveToEdge('last', event), preventDefault: false },
     { shortcut: { key: 'Escape' }, onShortcut: (event) => onEscape(event), preventDefault: false },
     { shortcut: { key: ' ' }, onShortcut: (event) => handleClick(event) },
     { shortcut: { key: 'Enter' }, onShortcut: (event) => handleClick(event) },
@@ -105,8 +143,15 @@ export const contextMenuNavigation: Action<HTMLElement, Options> = (node, option
 
   return {
     update(newOptions) {
+      if (isOpen && !newOptions.isOpen) {
+        generation++;
+      }
+      isOpen = newOptions.isOpen;
       options = newOptions;
     },
-    destroy,
+    destroy() {
+      destroyed = true;
+      destroy?.();
+    },
   };
 };

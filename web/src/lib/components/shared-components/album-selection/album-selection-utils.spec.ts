@@ -1,4 +1,4 @@
-import type { AlbumResponseDto } from '@immich/sdk';
+import type { AlbumResponseDto } from '@frameleaf/sdk';
 import {
   type AlbumModalRow,
   AlbumModalRowConverter,
@@ -85,6 +85,15 @@ describe('Album Modal', () => {
       createAlbumRow(birthdayAlbum, false),
       createAlbumRow(christmasAlbum, false),
     ]);
+  });
+
+  it('marks matching recent and full-list rows without changing keyboard positions', () => {
+    const converter = new AlbumModalRowConverter(AlbumSortBy.MostRecentPhoto, SortOrder.Desc);
+    const album = albumFactory.build();
+    const rows = converter.toModalRows('', [album], [album], 2, [album.id, album.id, 'missing']);
+    const albumRows = rows.filter((row) => row.type === AlbumModalRowType.ALBUM_ITEM);
+    expect(albumRows.map((row) => row.multiSelected)).toEqual([true, true]);
+    expect(albumRows.map((row) => row.selected)).toEqual([false, true]);
   });
 
   it('search changes messaging and removes recent and non-matching albums', () => {

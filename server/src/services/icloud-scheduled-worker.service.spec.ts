@@ -1,0 +1,345 @@
+import { createHash } from 'node:crypto';
+import { AssetType } from 'src/enum.js';
+import { ICloudScheduledWorkerService } from 'src/services/icloud-scheduled-worker.service.js';
+import { scheduledAuditClaimHolder } from 'src/utils/icloud-weekly.js';
+
+describe('scheduled iCloud worker incarnation', () => {
+  it('binds the private claim holder to owner, operation and worker token with a scheduled digest domain', () => {
+    const authority = { operationId: 'operation', operationClaimToken: 'private-worker-token' };
+    const holder = scheduledAuditClaimHolder('owner', authority);
+    const digest = createHash('sha256')
+      .update('frameleaf:scheduled-identity-audit:item-claim:v1\0')
+      .update(JSON.stringify(['owner', authority.operationId, authority.operationClaimToken]))
+      .digest('hex');
+    expect(holder).toBe(`icloud-sync:audit:operation:weekly:v1:${digest}`);
+    expect(scheduledAuditClaimHolder('owner', authority)).toBe(holder);
+    expect(scheduledAuditClaimHolder('another-owner', authority)).not.toBe(holder);
+    expect(scheduledAuditClaimHolder('owner', { ...authority, operationId: 'another-operation' })).not.toBe(holder);
+    expect(scheduledAuditClaimHolder('owner', { ...authority, operationClaimToken: 'another-token' })).not.toBe(holder);
+    expect(holder).not.toContain(authority.operationClaimToken);
+  });
+
+  it('does not inherit a live prior worker claim while its download and release are pending', async () => {
+    vi.stubEnv('FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION', 'true');
+    const entered = Promise.withResolvers<void>();
+    const finishDownload = Promise.withResolvers<void>();
+    let held: { id: string; holder: string } | undefined;
+    const repository = {
+      dispatch: vi.fn().mockResolvedValue([{ id: 'audit', result: 'pending' }]),
+      stopState: vi
+        .fn()
+        .mockResolvedValueOnce({ live: true })
+        .mockResolvedValueOnce({ live: true })
+        .mockResolvedValue({ live: false }),
+      check: vi.fn().mockResolvedValue({ source: { sourceAssetId: 'ITEM' } }),
+      bindClaim: vi.fn().mockResolvedValue(true),
+      allocate: vi.fn().mockResolvedValue({ id: 'resource', leaseToken: 'lease' }),
+    };
+    const identities = {
+      claim: vi.fn((_owner: string, _names: string[], holder: string) => {
+        held ??= { id: 'live-item-claim', holder };
+        return Promise.resolve([held]);
+      }),
+      release: vi.fn().mockResolvedValue([]),
+    };
+    const staging = {
+      download: vi
+        .fn()
+        .mockImplementationOnce(async () => {
+          entered.resolve();
+          await finishDownload.promise;
+          throw new Error('old download stopped');
+        })
+        .mockRejectedValue(new Error('replacement must not download')),
+    };
+    const operations = {
+      reportProgress: vi.fn().mockResolvedValue(true),
+      requeue: vi.fn().mockResolvedValue(true),
+    };
+    const sut = new ICloudScheduledWorkerService(
+      repository as never,
+      identities as never,
+      staging as never,
+      {} as never,
+      operations as never,
+      { enabled: () => true } as never,
+    );
+    const operation = { id: 'operation', ownerId: 'owner' } as never;
+    const oldRun = sut.run(operation, 'old-worker-token');
+    try {
+      await entered.promise;
+      await sut.run(operation, 'replacement-worker-token');
+      expect(repository.allocate).toHaveBeenCalledTimes(1);
+      expect(repository.bindClaim).toHaveBeenCalledTimes(1);
+      expect(staging.download).toHaveBeenCalledTimes(1);
+      expect(identities.release).not.toHaveBeenCalled();
+      expect(operations.requeue).toHaveBeenCalledWith('operation', 'replacement-worker-token', {
+        delayMs: 60_000,
+        returnAttempt: true,
+      });
+      const oldHolder = identities.claim.mock.calls[0][2];
+      const newHolder = identities.claim.mock.calls[1][2];
+      expect(oldHolder).not.toBe(newHolder);
+      expect(oldHolder).not.toContain('old-worker-token');
+      expect(newHolder).not.toContain('replacement-worker-token');
+    } finally {
+      finishDownload.resolve();
+      await oldRun;
+      vi.unstubAllEnvs();
+    }
+    expect(identities.release).toHaveBeenCalledExactlyOnceWith(
+      'owner',
+      ['live-item-claim'],
+      identities.claim.mock.calls[0][2],
+    );
+  });
+});
+
+describe('scheduled iCloud item claim settlement', () => {
+  it.each([
+    ['capacity', false],
+    ['capacity', true],
+    ['cancellation', false],
+    ['cancellation', true],
+    ['pause', false],
+    ['pause', true],
+  ] as const)('releases the claim before %s settlement (release failure: %s)', async (phase, failedRelease) => {
+    vi.stubEnv('FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION', 'true');
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const failure = new Error('controlled item claim release failure');
+    const repository = {
+      dispatch: vi.fn().mockResolvedValue([{ id: 'audit', result: 'pending' }]),
+      stopState: vi
+        .fn()
+        .mockResolvedValueOnce({ live: true })
+        .mockResolvedValue({
+          live: true,
+          ...(phase === 'pause' ? { pauseRequestedAt: new Date() } : { cancelRequestedAt: new Date() }),
+        }),
+      check: vi.fn().mockResolvedValue({ source: { sourceAssetId: 'ITEM' } }),
+      bindClaim: vi.fn().mockResolvedValue(true),
+      allocate: vi.fn().mockResolvedValue(phase === 'capacity' ? undefined : { id: 'resource', leaseToken: 'lease' }),
+      settleUnavailable: vi.fn().mockResolvedValue(true),
+      cancelRemaining: vi.fn().mockResolvedValue(true),
+    };
+    const identities = {
+      claim: vi.fn((_owner: string, _names: string[], holder: string) =>
+        Promise.resolve([{ id: 'item-claim', holder }]),
+      ),
+      release: vi.fn(() => {
+        entered.resolve();
+        return release.promise;
+      }),
+    };
+    const operations = {
+      reportProgress: vi.fn().mockResolvedValue(true),
+      requeue: vi.fn().mockResolvedValue(true),
+      acknowledgeCancel: vi.fn().mockResolvedValue(true),
+      settlePause: vi.fn().mockResolvedValue(true),
+      complete: vi.fn(),
+    };
+    const staging = {
+      download: vi.fn().mockRejectedValue(new Error('controlled cancelled download')),
+      cleanupRetired: vi.fn().mockResolvedValue(undefined),
+    };
+    const sut = new ICloudScheduledWorkerService(
+      repository as never,
+      identities as never,
+      staging as never,
+      {} as never,
+      operations as never,
+      { enabled: () => true } as never,
+    );
+    const running = sut.run({ id: 'operation', ownerId: 'owner' } as never, 'token').catch((error: unknown) => error);
+    try {
+      await entered.promise;
+      const earlyTransitions =
+        operations.requeue.mock.calls.length +
+        operations.acknowledgeCancel.mock.calls.length +
+        operations.settlePause.mock.calls.length;
+      if (failedRelease) release.reject(failure);
+      else release.resolve();
+      const error = await running;
+      expect(earlyTransitions).toBe(0);
+      expect(error).toBe(failedRelease ? failure : undefined);
+      expect(operations.complete).not.toHaveBeenCalled();
+      if (failedRelease) {
+        expect(operations.requeue).not.toHaveBeenCalled();
+        expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
+        expect(operations.settlePause).not.toHaveBeenCalled();
+      } else if (phase === 'capacity') {
+        expect(operations.requeue).toHaveBeenCalledWith('operation', 'token', {
+          delayMs: 60_000,
+          returnAttempt: true,
+        });
+        expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
+      } else if (phase === 'cancellation') {
+        expect(operations.acknowledgeCancel).toHaveBeenCalledWith('operation', 'token', { released: true });
+        expect(operations.requeue).not.toHaveBeenCalled();
+      } else {
+        expect(operations.settlePause).toHaveBeenCalledWith('operation', 'token');
+        expect(operations.requeue).not.toHaveBeenCalled();
+        expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
+      }
+    } finally {
+      release.resolve();
+      await running;
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+describe('scheduled iCloud publication descriptor settlement', () => {
+  it.each([
+    ['match', false],
+    ['mismatch', false],
+    ['match', true],
+    ['mismatch', true],
+  ] as const)('settles every %s descriptor before completion (release failure: %s)', async (outcome, failedRelease) => {
+    vi.stubEnv('FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION', 'true');
+    const expectedSha256 = Buffer.alloc(32, 1);
+    const verified = { sha256: outcome === 'match' ? expectedSha256 : Buffer.alloc(32, 2) };
+    const entered = Promise.withResolvers<void>();
+    const releases = [Promise.withResolvers<void>(), Promise.withResolvers<void>()];
+    let held = 0;
+    const files = releases.map((release) => ({
+      release: vi.fn(() => {
+        entered.resolve();
+        return release.promise;
+      }),
+      paths: [],
+      current: () => Promise.resolve(true),
+      validation: {},
+    }));
+    const repository = {
+      dispatch: vi.fn().mockResolvedValue([{ id: 'audit', result: 'pending' }]),
+      stopState: vi.fn().mockResolvedValue({ live: true }),
+      check: vi
+        .fn()
+        .mockResolvedValue({ source: { sourceAssetId: 'cpl-asset' }, request: { expectedSha256 }, private: true }),
+      bindClaim: vi.fn().mockResolvedValue(true),
+      allocate: vi.fn().mockResolvedValue({ id: 'resource', leaseToken: 'lease', source: { type: AssetType.Image } }),
+      publishMatch: vi.fn().mockResolvedValue(true),
+      settleUnavailable: vi.fn().mockResolvedValue(undefined),
+    };
+    const identities = {
+      claim: vi.fn((_owner: string, _names: string[], holder: string) =>
+        Promise.resolve([{ id: 'item-claim', holder }]),
+      ),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+    const staging = {
+      download: vi.fn().mockResolvedValue({ payload: { path: '/owned-fixture' } }),
+      validate: vi.fn().mockResolvedValue({
+        result: Promise.resolve({ status: 'validated', verified, validation: {} }),
+        settled: Promise.resolve(),
+      }),
+      holdPublicationFiles: vi.fn(() => Promise.resolve(files[held++])),
+      cleanupRetired: vi.fn().mockResolvedValue(undefined),
+    };
+    const recovery = {
+      reconcile: vi.fn(async (input) => {
+        await input.scheduledValidate('/owned-fixture-one');
+        await input.scheduledValidate('/owned-fixture-two');
+        return { outcome: 'imported' };
+      }),
+    };
+    const operations = {
+      reportProgress: vi.fn().mockResolvedValue(true),
+      beginValidation: vi.fn().mockResolvedValue(true),
+      complete: vi.fn().mockResolvedValue(true),
+      fail: vi.fn().mockResolvedValue(undefined),
+    };
+    const sut = new ICloudScheduledWorkerService(
+      repository as never,
+      identities as never,
+      staging as never,
+      recovery as never,
+      operations as never,
+      { enabled: () => true } as never,
+    );
+    const running = sut.run({ id: 'operation', ownerId: 'owner' } as never, 'claim-token');
+    try {
+      await entered.promise;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(identities.release).not.toHaveBeenCalled();
+      if (outcome === 'mismatch') {
+        expect(files[1].release).toHaveBeenCalledOnce();
+        if (failedRelease) releases[0].reject(new Error('controlled private descriptor release failure'));
+        else releases[0].resolve();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(operations.complete).not.toHaveBeenCalled();
+      }
+    } finally {
+      if (failedRelease) releases[0].reject(new Error('controlled private descriptor release failure'));
+      for (const release of releases) release.resolve();
+      await running;
+      vi.unstubAllEnvs();
+    }
+    if (failedRelease) {
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(operations.fail).toHaveBeenCalledWith(
+        'operation',
+        'claim-token',
+        { error: 'iCloud audit did not complete', errorCode: 'icloud_audit_unavailable' },
+        { retry: false },
+      );
+    } else {
+      expect(operations.complete).toHaveBeenCalledOnce();
+      expect(operations.fail).not.toHaveBeenCalled();
+    }
+    expect(identities.release).toHaveBeenCalledOnce();
+  });
+});
+
+describe('scheduled validation input settlement gate', () => {
+  it('refuses publication and completion when input disposal rejects settlement', async () => {
+    vi.stubEnv('FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION', 'true');
+    const digest = Buffer.alloc(32, 1);
+    const settled = Promise.reject(new Error('input disposal refused'));
+    void settled.catch(() => {});
+    const repository = {
+      dispatch: vi.fn().mockResolvedValue([{ id: 'audit', result: 'pending' }]),
+      stopState: vi.fn().mockResolvedValue({ live: true }),
+      check: vi.fn().mockResolvedValue({ source: { sourceAssetId: 'ITEM' }, request: { expectedSha256: digest } }),
+      bindClaim: vi.fn().mockResolvedValue(true),
+      allocate: vi.fn().mockResolvedValue({ id: 'resource', leaseToken: 'lease' }),
+      publishMatch: vi.fn(),
+      settleUnavailable: vi.fn(),
+    };
+    const staging = {
+      download: vi.fn().mockResolvedValue({}),
+      validate: vi.fn().mockResolvedValue({
+        result: Promise.resolve({ status: 'validated', verified: { sha256: digest } }),
+        settled,
+      }),
+      holdPublicationFiles: vi.fn(),
+      cleanupRetired: vi.fn(),
+    };
+    const operations = { reportProgress: vi.fn().mockResolvedValue(true), complete: vi.fn(), fail: vi.fn() };
+    const recovery = { reconcile: vi.fn() };
+    const sut = new ICloudScheduledWorkerService(
+      repository as never,
+      {
+        claim: vi.fn((_owner: string, _names: string[], holder: string) => Promise.resolve([{ id: 'claim', holder }])),
+        release: vi.fn(),
+      } as never,
+      staging as never,
+      recovery as never,
+      operations as never,
+      { enabled: () => true } as never,
+    );
+    try {
+      await sut.run({ id: 'operation', ownerId: 'owner' } as never, 'token');
+      expect(repository.publishMatch).not.toHaveBeenCalled();
+      expect(staging.holdPublicationFiles).not.toHaveBeenCalled();
+      expect(recovery.reconcile).not.toHaveBeenCalled();
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(operations.fail).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});

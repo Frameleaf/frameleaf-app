@@ -5,8 +5,8 @@ import {
   ForeignKeyColumn,
   Table,
   UpdateDateColumn,
-} from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { CreateIdColumn, UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { partner_delete_audit } from 'src/schema/functions.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
@@ -40,8 +40,13 @@ export class PartnerTable {
   @UpdateDateColumn()
   updatedAt!: Generated<Timestamp>;
 
+  /** Retired (FL-326): partners receive their own copies. Still sent in `SyncPartnerV1` for older clients. */
   @Column({ type: 'boolean', default: false })
   inTimeline!: Generated<boolean>;
+
+  /** Retired (FL-326): locations are always shared with partners. Kept, unread, for existing rows. */
+  @Column({ type: 'boolean', default: false })
+  shareLocation!: Generated<boolean>;
 
   @UpdateIdColumn({ index: true })
   updateId!: Generated<string>;

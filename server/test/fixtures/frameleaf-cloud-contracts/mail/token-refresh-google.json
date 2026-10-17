@@ -1,0 +1,24 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.frameleaf.cloud/v1/instance/mail/token",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://api.frameleaf.cloud/v1/instance/mail/token, ath, nonce>",
+      "Content-Type": "application/json"
+    },
+    "note": "Refresh. Google keeps the same refresh token, so none is returned.",
+    "body": {
+      "grant": "refresh_token",
+      "service": "google",
+      "refreshToken": "1//0FIXTURE-ONLY-not-a-real-google-refresh-token"
+    }
+  },
+  "status": 200,
+  "headers": {},
+  "body": {
+    "accessToken": "ya29.FIXTURE-ONLY-not-a-real-google-access-token",
+    "expiresInSec": 3599,
+    "scope": "https://www.googleapis.com/auth/gmail.send"
+  }
+}

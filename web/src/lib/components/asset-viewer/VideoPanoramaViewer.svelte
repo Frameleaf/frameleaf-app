@@ -1,9 +1,9 @@
 <script lang="ts">
   import { getAssetPlaybackUrl, getAssetUrl } from '$lib/utils';
-  import type { AssetResponseDto } from '@immich/sdk';
-  import { LoadingSpinner } from '@immich/ui';
+  import type { AssetResponseDto } from '@frameleaf/sdk';
+  import { LoadingSpinner } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
-  import { fade } from 'svelte/transition';
+  import { motionFade } from '$lib/frameleaf/motion';
 
   interface Props {
     asset: AssetResponseDto;
@@ -19,7 +19,7 @@
   ]);
 </script>
 
-<div transition:fade={{ duration: 150 }} class="flex h-full place-content-center place-items-center select-none">
+<div transition:motionFade={{ duration: 150 }} class="flex h-full place-content-center place-items-center select-none">
   {#await modules}
     <LoadingSpinner />
   {:then [PhotoSphereViewer, adapter, videoPlugin]}

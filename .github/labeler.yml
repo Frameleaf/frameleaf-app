@@ -16,12 +16,6 @@ documentation:
           - web/src/**
           - web/static/**
 
-📱mobile:
-  - changed-files:
-      - any-glob-to-any-file:
-          - mobile/lib/**
-          - mobile/test/**
-
 🗄️server:
   - changed-files:
       - any-glob-to-any-file:

@@ -1,16 +1,12 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
+import { DURATION } from '$lib/frameleaf/tokens';
 
 function getBoolean(string: string | null, fallback: boolean) {
-  if (string === null) {
-    return fallback;
-  }
-  return 'true' === string;
+  return string === null ? fallback : string === 'true';
 }
 function getNumber(string: string | null, fallback: number) {
-  if (string === null) {
-    return fallback;
-  }
-  return Number.parseInt(string);
+  const value = string === null ? fallback : Number.parseInt(string);
+  return Number.isFinite(value) ? value : fallback;
 }
 const storage = browser
   ? localStorage
@@ -29,7 +25,8 @@ export const TUNABLES = {
     NAVIGATE_ON_ASSET_IN_VIEW: getBoolean(storage.getItem('ASSET_GRID.NAVIGATE_ON_ASSET_IN_VIEW'), false),
   },
   IMAGE_THUMBNAIL: {
-    THUMBHASH_FADE_DURATION: getNumber(storage.getItem('THUMBHASH_FADE_DURATION'), 100),
+    // The brand's base duration (--fl-motion): a placeholder gives way to its photo like any other reveal.
+    THUMBHASH_FADE_DURATION: getNumber(storage.getItem('THUMBHASH_FADE_DURATION'), DURATION.base),
   },
   IMAGE_RASTER: {
     MAX_PIXELS: getNumber(storage.getItem('IMAGE_RASTER.MAX_PIXELS'), 0),

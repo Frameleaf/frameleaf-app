@@ -1,89 +1,56 @@
 <script lang="ts">
-  import empty2Url from '$lib/assets/empty-2.svg';
-  import Albums from '$lib/components/album-page/AlbumsList.svelte';
+  import { invalidate } from '$app/navigation';
+  import SharedSpacesWorkspace from '$lib/components/frameleaf/SharedSpacesWorkspace.svelte';
+  import SharedWithYouSection from '$lib/components/frameleaf/SharedWithYouSection.svelte';
+  import Theme from '$lib/components/frameleaf/Theme.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
-  import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
-  import { Route } from '$lib/route';
-  import { getAlbumsActions } from '$lib/services/album.service';
-  import { getSharedLinksActions } from '$lib/services/shared-link.service';
-  import {
-    AlbumFilter,
-    AlbumGroupBy,
-    AlbumSortBy,
-    AlbumViewMode,
-    SortOrder,
-    type AlbumViewSettings,
-  } from '$lib/stores/preferences.store';
-  import { t } from 'svelte-i18n';
+  import UserSidebar from '$lib/components/shared-components/side-bar/UserSidebar.svelte';
+  import { Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import type { PageData } from './$types';
 
-  type Props = {
+  interface Props {
     data: PageData;
-  };
+  }
 
   let { data }: Props = $props();
 
-  const settings: AlbumViewSettings = {
-    view: AlbumViewMode.Cover,
-    filter: AlbumFilter.Shared,
-    groupBy: AlbumGroupBy.None,
-    groupOrder: SortOrder.Desc,
-    sortBy: AlbumSortBy.MostRecentPhoto,
-    sortOrder: SortOrder.Desc,
-    showAllAlbums: false,
-    collapsedGroups: {},
-  };
-
-  const { Create: CreateAlbum } = $derived(getAlbumsActions($t));
-  const { ViewAll: ViewSharedLinks } = $derived(getSharedLinksActions($t));
+  // The Shared spaces workspace (FL-55): every top-level shared space plus the
+  // account's partners, then the items shared with you one by one (FL-83 AL-30b). Mutations go through the album service and re-run this
+  // route's loader, the same pattern the Albums page (FL-52) uses.
+  const refresh = () => invalidate('spaces:data');
 </script>
 
-<UserPageLayout title={data.meta.title} actions={[CreateAlbum, ViewSharedLinks]}>
-  <div class="flex flex-col">
-    {#if data.partners.length > 0}
-      <div class="mt-2 mb-6">
-        <div>
-          <p class="mb-4 font-medium dark:text-immich-dark-fg">{$t('partners')}</p>
-        </div>
+<UserPageLayout>
+  {#snippet sidebar()}
+    <UserSidebar />
+  {/snippet}
 
-        <div class="flex flex-row flex-wrap gap-4">
-          {#each data.partners as partner (partner.id)}
-            <a
-              href={Route.viewPartner(partner)}
-              class="flex gap-4 rounded-lg px-5 py-4 transition-all hover:bg-gray-200 dark:hover:bg-gray-700"
-            >
-              <UserAvatar user={partner} size="lg" />
-              <div class="text-start">
-                <p class="text-immich-fg dark:text-immich-dark-fg">
-                  {partner.name}
-                </p>
-                <p class="text-sm text-immich-fg/75 dark:text-immich-dark-fg/75">
-                  {partner.email}
-                </p>
-              </div>
-            </a>
-          {/each}
-        </div>
-      </div>
-
-      <hr class="mb-4 dark:border-immich-dark-gray" />
-    {/if}
-
-    <div class="mt-2 mb-6">
-      <div>
-        <p class="mb-4 font-medium dark:text-immich-dark-fg">{$t('albums')}</p>
-      </div>
-
-      <div>
-        <!-- Shared Album List -->
-        <Albums sharedAlbums={data.sharedAlbums} userSettings={settings} showOwner>
-          <!-- Empty List -->
-          {#snippet empty()}
-            <EmptyPlaceholder text={$t('no_shared_albums_message')} src={empty2Url} class="mx-auto mt-10" />
-          {/snippet}
-        </Albums>
-      </div>
+  <Theme theme={themeManager.value === AppTheme.Dark ? 'dark' : 'light'}>
+    <!-- The page surface reaches the foot of the window however little is shared. -->
+    <div class="fl-page-fill">
+      <SharedSpacesWorkspace
+        spaces={data.spaces}
+        partners={data.partners}
+        invitations={data.invitations}
+        onRefresh={refresh}
+      />
+      <!-- FL-83 (AL-30b): items people shared with you one by one; share notifications link here. -->
+      <SharedWithYouSection />
     </div>
-  </div>
+  </Theme>
 </UserPageLayout>
+
+<style>
+  /*
+   * Everything below the top bar, less the layout's 8px gutter above and below, so the Frameleaf
+   * surface never stops short of the window with the page background showing under it.
+   */
+  .fl-page-fill {
+    min-height: calc(100dvh - var(--fl-topbar-height) - 1rem);
+  }
+  @media (max-width: 767px) {
+    .fl-page-fill {
+      min-height: calc(100dvh - var(--fl-topbar-height-phone) - 0.5rem - max(0.5rem, var(--fl-tabbar-space, 0px)));
+    }
+  }
+</style>

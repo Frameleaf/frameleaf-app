@@ -4,13 +4,34 @@ import { MediaRepository } from 'src/repositories/media.repository.js';
 
 export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaRepository>> => {
   return {
+    getHdrCodecCapabilities: vitest.fn().mockResolvedValue(null),
+    inspectImageEncoding: vitest.fn().mockResolvedValue({
+      dynamicRange: 'unknown',
+      gainMap: 'none',
+      referenceWhite: 203,
+      reconstructionAvailable: false,
+    }),
+    decodeHdrImage: vitest.fn(),
+    encodeHdrImage: vitest.fn(),
+    exportPhotoStill: vitest.fn(),
+    generateHdrRenditions: vitest.fn(),
+    onModuleInit: vitest.fn(),
+    onModuleDestroy: vitest.fn().mockResolvedValue(undefined),
     generateThumbnail: vitest.fn().mockImplementation(() => Promise.resolve()),
+    generateImageThumbnails: vitest.fn().mockResolvedValue({
+      info: { width: 0, height: 0, channels: 3 },
+      thumbhash: Buffer.from(''),
+      isTransparent: false,
+    }),
     writeExif: vitest.fn().mockImplementation(() => Promise.resolve()),
+    removeLocation: vitest.fn().mockResolvedValue(true),
     copyTagGroup: vitest.fn().mockImplementation(() => Promise.resolve()),
     generateThumbhash: vitest.fn().mockResolvedValue(Buffer.from('')),
     decodeImage: vitest.fn().mockResolvedValue({ data: Buffer.from(''), info: {} }),
     extract: vitest.fn().mockResolvedValue(null),
     probe: vitest.fn(),
+    probeEmbeddedSubtitles: vitest.fn(),
+    probeHdrMastering: vitest.fn().mockResolvedValue([]),
     probePackets: vitest.fn().mockResolvedValue({
       totalDuration: 0,
       packetCount: 0,
@@ -21,7 +42,17 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
     }),
     transcode: vitest.fn(),
     getImageMetadata: vitest.fn(),
+    getOrientedSize: vitest.fn().mockResolvedValue({ width: 0, height: 0 }),
     scoreThumbnailCandidate: vitest.fn().mockResolvedValue(0),
     composeImageGrid: vitest.fn().mockImplementation(() => Promise.resolve()),
+    composeFilmstrip: vitest.fn().mockImplementation(() => Promise.resolve()),
+    writeCloudUpload: vitest.fn().mockImplementation(() => Promise.resolve()),
+    writeStrippedStill: vitest.fn().mockImplementation(() => Promise.resolve()),
+    renderDevelopGeometry: vitest
+      .fn()
+      .mockImplementation((data: Buffer, info: unknown) => Promise.resolve({ data, info })),
+    encodeDevelopOutput: vitest.fn().mockResolvedValue(Buffer.from('')),
+    normalizeDevelopArtifact: vitest.fn(),
+    decodeDevelopArtifact: vitest.fn(),
   };
 };

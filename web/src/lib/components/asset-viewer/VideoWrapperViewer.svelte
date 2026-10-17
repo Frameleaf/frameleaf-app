@@ -2,7 +2,7 @@
   import VideoNativeViewer from '$lib/components/asset-viewer/VideoNativeViewer.svelte';
   import VideoPanoramaViewer from '$lib/components/asset-viewer/VideoPanoramaViewer.svelte';
   import { ProjectionType } from '$lib/constants';
-  import type { AssetResponseDto } from '@immich/sdk';
+  import type { AssetResponseDto } from '@frameleaf/sdk';
 
   interface Props {
     asset: AssetResponseDto;
@@ -17,6 +17,7 @@
     onNextAsset?: () => void;
     onVideoEnded?: () => void;
     onVideoStarted?: () => void;
+    onPlayEncoded?: () => void;
   }
 
   let {
@@ -32,6 +33,7 @@
     onNextAsset,
     onVideoEnded,
     onVideoStarted,
+    onPlayEncoded,
   }: Props = $props();
 
   const effectiveAssetId = $derived(assetId ?? asset.id);
@@ -52,5 +54,6 @@
     {onVideoEnded}
     {onVideoStarted}
     {onClose}
+    {onPlayEncoded}
   />
 {/if}

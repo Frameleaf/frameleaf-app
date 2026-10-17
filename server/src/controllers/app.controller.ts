@@ -8,14 +8,18 @@ export class AppController {
   constructor(private service: SystemConfigService) {}
 
   @ApiExcludeEndpoint()
+  @Get('.well-known/frameleaf')
+  @Authenticated({ public: true })
+  getFrameleafWellKnown() {
+    return this.service.getWellKnown();
+  }
+
+  // Keep discovery working for installed clients during the rename.
+  @ApiExcludeEndpoint()
   @Get('.well-known/immich')
   @Authenticated({ public: true })
   getImmichWellKnown() {
-    return {
-      api: {
-        endpoint: '/api',
-      },
-    };
+    return this.service.getWellKnown();
   }
 
   @ApiExcludeEndpoint()

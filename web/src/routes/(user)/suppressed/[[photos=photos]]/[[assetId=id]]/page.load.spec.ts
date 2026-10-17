@@ -1,4 +1,4 @@
-import { getAllAlbums, getAuthStatus, type AuthStatusResponseDto } from '@immich/sdk';
+import { getAllAlbums, getAuthStatus, type AuthStatusResponseDto } from '@frameleaf/sdk';
 import { redirect } from '@sveltejs/kit';
 import type { MessageFormatter } from 'svelte-i18n';
 import { authenticate } from '$lib/utils/auth';
@@ -6,8 +6,8 @@ import { getFormatter } from '$lib/utils/i18n';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { load } from './+page';
 
-vi.mock('@immich/sdk', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@immich/sdk')>();
+vi.mock('@frameleaf/sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@frameleaf/sdk')>();
 
   return {
     ...actual,
@@ -41,23 +41,30 @@ describe('suppressed content page load', () => {
   const formatMessage: MessageFormatter = (key) => (typeof key === 'string' ? key : key.id);
 
   const loadPage = (path = '/suppressed', search = '') =>
-    load({ url: new URL(`http://localhost${path}${search}`) } as Parameters<typeof load>[0]);
+    load({ url: new URL(`http://localhost${path}${search}`), depends: vi.fn() } as unknown as Parameters<
+      typeof load
+    >[0]);
 
   beforeEach(() => {
+    vi.mocked(redirect).mockClear();
+    vi.mocked(getAllAlbums).mockClear();
     vi.mocked(authenticate).mockResolvedValue(undefined);
     vi.mocked(getAuthStatus).mockResolvedValue(authStatus());
     vi.mocked(getFormatter).mockResolvedValue(formatMessage);
   });
 
-  it('requires elevated PIN access before loading suppressed albums', async () => {
+  it('opens inside the app while locked and loads nothing suppressed before the PIN (LIB-P2)', async () => {
     vi.mocked(getAuthStatus).mockResolvedValue(authStatus({ isElevated: false }));
 
-    await expect(loadPage('/suppressed', '?tab=albums')).rejects.toMatchObject({
-      status: 307,
-      location: '/auth/pin-prompt?continue=%2Fsuppressed%3Ftab%3Dalbums',
+    await expect(loadPage('/suppressed', '?tab=albums')).resolves.toEqual({
+      unlocked: false,
+      ownedAlbums: [],
+      sharedAlbums: [],
+      tab: 'albums',
+      meta: { title: 'suppressed_content' },
     });
 
-    expect(redirect).toHaveBeenCalledWith(307, '/auth/pin-prompt?continue=%2Fsuppressed%3Ftab%3Dalbums');
+    expect(redirect).not.toHaveBeenCalled();
     expect(getAllAlbums).not.toHaveBeenCalled();
   });
 
@@ -72,6 +79,7 @@ describe('suppressed content page load', () => {
       .mockResolvedValueOnce([sharedVisible, sharedEmpty]);
 
     await expect(loadPage('/suppressed', '?tab=albums')).resolves.toEqual({
+      unlocked: true,
       ownedAlbums: [ownedVisible],
       sharedAlbums: [sharedVisible],
       tab: 'albums',

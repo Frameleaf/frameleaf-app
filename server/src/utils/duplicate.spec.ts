@@ -77,6 +77,29 @@ describe('duplicate utils', () => {
       expect(getExifCount(asset)).toBe(12);
     });
 
+    it('counts own enumerable EXIF values without converting or changing them', () => {
+      const exif = Object.assign(Object.create({ inherited: 'ignored' }), {
+        zero: 0,
+        negativeZero: -0,
+        notANumber: NaN,
+        empty: '',
+        missing: undefined,
+        disabled: false,
+        negative: -1,
+        text: '0',
+        list: [],
+        object: {},
+      });
+      Object.defineProperties(exif, {
+        hidden: { value: 'ignored' },
+        [Symbol('ignored')]: { value: 'ignored', enumerable: true },
+      });
+      const asset = { ...createAsset('mixed'), exifInfo: exif };
+      expect(getExifCount(asset)).toBe(4);
+      expect(asset.exifInfo).toBe(exif);
+      expect(Object.is(exif.negativeZero, -0)).toBe(true);
+    });
+
     it('should not count null or undefined values', () => {
       const asset = createAsset('asset-1', 1000, {
         make: 'Canon',
@@ -92,6 +115,34 @@ describe('duplicate utils', () => {
   });
 
   describe('suggestDuplicate', () => {
+    it('keeps the first tied asset reference without changing the input order', () => {
+      const first = jpg('same', 1000);
+      const second = jpg('same', 1000);
+      const inputs = [first, jpg('smaller', 500), second];
+
+      expect(suggestDuplicate(inputs)).toBe(first);
+      expect(inputs[0]).toBe(first);
+      expect(inputs[1].id).toBe('smaller');
+      expect(inputs[2]).toBe(second);
+    });
+
+    it('ranks candidates in a linear number of format reads', () => {
+      let formatReads = 0;
+      const assets = Array.from({ length: 128 }, (_, index) => {
+        const asset = jpg(`asset-${index}`, (index * 73) % 128);
+        Object.defineProperty(asset, 'originalFileName', {
+          get: () => {
+            formatReads++;
+            return 'asset.jpg';
+          },
+        });
+        return asset;
+      });
+
+      expect(suggestDuplicate(assets)?.id).toBe('asset-7');
+      expect(formatReads).toBeLessThanOrEqual(assets.length * 2);
+    });
+
     it('should return undefined for empty list', () => {
       expect(suggestDuplicate([])).toBeUndefined();
     });
@@ -191,13 +242,28 @@ describe('duplicate utils', () => {
       expect(suggestDuplicate([smallHeic, largeHeic, jpgAsset], { preferOriginalFormat: true })?.id).toBe('large-heic');
     });
 
-    it('should keep the largest file regardless of format when disabled', () => {
+    it('should retain HEIC even when the legacy setting is disabled', () => {
       const largeJpg = jpg('large-jpg', 9000);
       const smallHeic = heic('small-heic', 1000);
 
-      expect(suggestDuplicate([largeJpg, smallHeic], { preferOriginalFormat: false })?.id).toBe('large-jpg');
-      // disabled is the default
-      expect(suggestDuplicate([largeJpg, smallHeic])?.id).toBe('large-jpg');
+      expect(suggestDuplicate([largeJpg, smallHeic], { preferOriginalFormat: false })?.id).toBe('small-heic');
+      expect(suggestDuplicate([largeJpg, smallHeic])?.id).toBe('small-heic');
+    });
+
+    it.each(['HEIC', 'heif', 'HIF'])('prefers %s with missing file size over a larger JPEG', (extension) => {
+      const original = createAsset('original', null, {}, `IMG_1.${extension}`);
+      expect(suggestDuplicate([jpg('large-jpg', 9000), original])?.id).toBe('original');
+    });
+
+    it('retains RAW before HEIC without caller options', () => {
+      expect(suggestDuplicate([heic('large-heic', 9000), raw('small-raw', 1000)])?.id).toBe('small-raw');
+    });
+
+    it('has a stable tie-breaker independent of group order', () => {
+      const a = jpg('a', 1000);
+      const b = jpg('b', 1000);
+      expect(suggestDuplicate([a, b])?.id).toBe('a');
+      expect(suggestDuplicate([b, a])?.id).toBe('a');
     });
 
     it('should pass options through suggestDuplicateKeepAssetIds', () => {

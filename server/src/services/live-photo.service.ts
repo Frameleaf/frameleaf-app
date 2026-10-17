@@ -7,12 +7,14 @@ import {
   LivePhotoRelinkResponseDto,
 } from 'src/dtos/live-photo.dto.js';
 import { AssetType, AssetVisibility } from 'src/enum.js';
-import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LivePhotoCandidateRow, LivePhotoRepository } from 'src/repositories/live-photo.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { linkLivePhotoAssets } from 'src/utils/asset.util.js';
+import { getConfig } from 'src/utils/config.js';
 
 // A live photo's still and motion video are written within the same capture
 // instant, so a tight window keeps the filename fallback conservative.
@@ -28,14 +30,25 @@ export class LivePhotoService {
   constructor(
     private logger: LoggingRepository,
     private assetRepository: AssetRepository,
-    private albumRepository: AlbumRepository,
     private eventRepository: EventRepository,
     private livePhotoRepository: LivePhotoRepository,
+    private configRepository: ConfigRepository,
+    private systemMetadataRepository: SystemMetadataRepository,
   ) {
     this.logger.setContext(LivePhotoService.name);
   }
 
   async getCandidates(auth: AuthDto): Promise<LivePhotoCandidatesResponseDto> {
+    // Library care → "Suggest Live Photo relinking" (FL-69, settings-catalog.mjs:939-944): off, no
+    // pairs are suggested. Pairs a person already chose can still be relinked.
+    const { libraryCare } = await getConfig(
+      { configRepo: this.configRepository, metadataRepo: this.systemMetadataRepository, logger: this.logger },
+      { withCache: true },
+    );
+    if (!libraryCare.livePhotoRepair) {
+      return { candidates: [], total: 0, suggestionsEnabled: false };
+    }
+
     const ownerId = auth.user.id;
     const [byContentId, byFilename] = await Promise.all([
       this.livePhotoRepository.getUnlinkedByContentId(ownerId),
@@ -70,19 +83,12 @@ export class LivePhotoService {
       });
     }
 
-    return { candidates, total: candidates.length };
+    return { candidates, total: candidates.length, suggestionsEnabled: true };
   }
 
   async relink(auth: AuthDto, dto: LivePhotoRelinkDto): Promise<LivePhotoRelinkResponseDto> {
-    const ownerId = auth.user.id;
-    const assetIds = [...new Set(dto.pairs.flatMap(({ photoId, videoId }) => [photoId, videoId]))];
-    const assets = await this.assetRepository.getByIds(assetIds);
-    const assetById = new Map(assets.map((asset) => [asset.id, asset]));
-
     const results: LivePhotoRelinkResponseDto['results'] = [];
-    // `assetById` is a single snapshot, so guard against a request that reuses the
-    // same photo or video across pairs — otherwise a later pair would validate
-    // against stale state and overwrite an already-applied link.
+    // Keep successful pairs when a later pair is rejected, and refuse same-request reuse.
     const linkedPhotos = new Set<string>();
     const linkedVideos = new Set<string>();
     for (const { photoId, videoId } of dto.pairs) {
@@ -91,24 +97,44 @@ export class LivePhotoService {
         continue;
       }
 
-      const error = await this.validatePair(ownerId, videoId, assetById.get(photoId), assetById.get(videoId));
-      if (error) {
-        results.push({ photoId, videoId, success: false, error });
-        continue;
+      const result = await this.relinkOne(auth, photoId, videoId);
+      if (result.success) {
+        linkedPhotos.add(photoId);
+        linkedVideos.add(videoId);
       }
-
-      // Re-validated above: photo is owned, unlinked, and the video is a
-      // standalone motion asset owned by the same user.
-      await linkLivePhotoAssets(
-        { asset: this.assetRepository, album: this.albumRepository, event: this.eventRepository },
-        { photoAssetId: photoId, motionAssetId: videoId, motionOwnerId: ownerId },
-      );
-      linkedPhotos.add(photoId);
-      linkedVideos.add(videoId);
-      results.push({ photoId, videoId, success: true });
+      results.push({ photoId, videoId, ...result });
     }
 
     return { results };
+  }
+
+  /**
+   * Validate and link a single still + video pair (FL-70). Used by the durable bulk-operation
+   * worker (`relink-live-photo`), which applies its frozen set of stills one item at a time and
+   * does its own cross-item deduplication and access accounting for the batch; `relink` above
+   * keeps its same-request reuse guard.
+   */
+  async relinkOne(auth: AuthDto, photoId: string, videoId: string): Promise<{ success: boolean; error?: string }> {
+    const ownerId = auth.user.id;
+    const result = await this.livePhotoRepository.withRelinkTransaction(photoId, videoId, async (assets, albums) => {
+      const rows = await assets.getByIds([photoId, videoId]);
+      const assetById = new Map(rows.map((asset) => [asset.id, asset]));
+      const error = await this.validatePair(
+        assets,
+        ownerId,
+        videoId,
+        assetById.get(photoId),
+        assetById.get(videoId),
+        !!auth.session?.hasElevatedPermission,
+      );
+      if (error) return { success: false, error };
+      await linkLivePhotoAssets({ asset: assets, album: albums }, { photoAssetId: photoId, motionAssetId: videoId });
+      return { success: true };
+    });
+    if (result.success) {
+      await this.eventRepository.emit('AssetHide', { assetId: videoId, userId: ownerId });
+    }
+    return result;
   }
 
   /**
@@ -117,13 +143,34 @@ export class LivePhotoService {
    * belong to the user, and are still eligible for relinking.
    */
   private async validatePair(
+    assetRepository: AssetRepository,
     ownerId: string,
     videoId: string,
-    photo: { ownerId: string; type: AssetType; livePhotoVideoId: string | null; deletedAt: Date | null } | undefined,
-    video: { ownerId: string; type: AssetType; deletedAt: Date | null; visibility: AssetVisibility } | undefined,
+    photo:
+      | {
+          ownerId: string;
+          type: AssetType;
+          livePhotoVideoId: string | null;
+          deletedAt: Date | null;
+          isLocked?: boolean;
+        }
+      | undefined,
+    video:
+      | { ownerId: string; type: AssetType; deletedAt: Date | null; visibility: AssetVisibility; isLocked?: boolean }
+      | undefined,
+    elevated: boolean,
   ): Promise<string | undefined> {
     if (!photo || !video) {
       return 'Asset not found';
+    }
+    // Locked media is only the owner's, and only in an unlocked session: a locked half answers like a
+    // missing one. A locked still and an unlocked video (or the reverse) are never paired, because a
+    // Live Photo locks and unlocks as a whole.
+    if ((photo.isLocked || video.isLocked) && !elevated) {
+      return 'Asset not found';
+    }
+    if (!!photo.isLocked !== !!video.isLocked) {
+      return 'A Locked item cannot be paired with one that is not Locked';
     }
     if (photo.ownerId !== ownerId || video.ownerId !== ownerId) {
       return 'Asset does not belong to the user';
@@ -140,7 +187,7 @@ export class LivePhotoService {
     if (video.visibility === AssetVisibility.Hidden) {
       return 'Video is already part of a live photo';
     }
-    const existingLinks = await this.assetRepository.getLivePhotoCount(videoId);
+    const existingLinks = await assetRepository.getLivePhotoCount(videoId);
     if (existingLinks > 0) {
       return 'Video is already linked to another image';
     }

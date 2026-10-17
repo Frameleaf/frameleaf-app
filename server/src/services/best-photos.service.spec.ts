@@ -3,6 +3,7 @@ import { BEST_PHOTO_SCORE_VERSION } from 'src/dtos/best-photos.dto.js';
 import { AssetStatus, AssetType, AssetVisibility, JobName, JobStatus } from 'src/enum.js';
 import { BestPhotosService } from 'src/services/best-photos.service.js';
 import { probeStub } from 'test/fixtures/media.stub.js';
+import { newSystemMetadataRepositoryMock } from 'test/repositories/system-metadata.repository.mock.js';
 import { factory } from 'test/small.factory.js';
 
 describe(BestPhotosService.name, () => {
@@ -10,21 +11,22 @@ describe(BestPhotosService.name, () => {
   const assetJobRepository = {
     getForBestPhotoScoring: vitest.fn(),
     getForVideoDuplicateFrameJob: vitest.fn(),
-    streamForBestPhotosScoring: vitest.fn(),
+    selectionForBestPhotosScoring: vitest.fn(),
   };
   const bestPhotosRepository = {
     getBestPhotos: vitest.fn(),
     upsertScore: vitest.fn(),
   };
-  const jobRepository = { queueAll: vitest.fn() };
+  const jobRepository = { queueSelection: vitest.fn(), guardAssetSource: vitest.fn() };
   const mediaRepository = { scoreThumbnailCandidate: vitest.fn(), transcode: vitest.fn() };
   const configRepository = { getEnv: vitest.fn() };
-  const systemMetadataRepository = { get: vitest.fn(), readFile: vitest.fn() };
+  const systemMetadataRepository = newSystemMetadataRepositoryMock();
 
   let sut: BestPhotosService;
 
   beforeEach(() => {
     vitest.resetAllMocks();
+    jobRepository.guardAssetSource.mockResolvedValue(undefined);
     configRepository.getEnv.mockReturnValue({});
     sut = new BestPhotosService(
       logger as never,
@@ -48,6 +50,19 @@ describe(BestPhotosService.name, () => {
     });
   });
 
+  it('does not read or score an asset when its source guard rejects the run', async () => {
+    const sourceChanged = new Error('Asset inputs changed before publication');
+    jobRepository.guardAssetSource.mockRejectedValueOnce(sourceChanged);
+
+    await expect(sut.handleScore({ id: 'asset-1' })).rejects.toBe(sourceChanged);
+
+    expect(jobRepository.guardAssetSource).toHaveBeenCalledExactlyOnceWith('asset-1');
+    expect(assetJobRepository.getForBestPhotoScoring).not.toHaveBeenCalled();
+    expect(mediaRepository.scoreThumbnailCandidate).not.toHaveBeenCalled();
+    expect(mediaRepository.transcode).not.toHaveBeenCalled();
+    expect(bestPhotosRepository.upsertScore).not.toHaveBeenCalled();
+  });
+
   it('should score good images higher than low-quality images', async () => {
     const asset = {
       id: 'asset-1',
@@ -66,6 +81,7 @@ describe(BestPhotosService.name, () => {
     mediaRepository.scoreThumbnailCandidate.mockResolvedValueOnce(150).mockResolvedValueOnce(-30);
 
     await expect(sut.handleScore({ id: asset.id })).resolves.toBe(JobStatus.Success);
+    expect(jobRepository.guardAssetSource).toHaveBeenCalledExactlyOnceWith(asset.id);
     const goodScore = bestPhotosRepository.upsertScore.mock.calls[0][0].score;
 
     assetJobRepository.getForBestPhotoScoring.mockResolvedValue({
@@ -200,12 +216,12 @@ describe(BestPhotosService.name, () => {
   });
 
   it('should queue single asset scoring jobs for a backfill', async () => {
-    assetJobRepository.streamForBestPhotosScoring.mockReturnValue([{ id: 'asset-1' }, { id: 'asset-2' }]);
+    assetJobRepository.selectionForBestPhotosScoring.mockReturnValue([{ id: 'asset-1' }, { id: 'asset-2' }]);
 
     await expect(sut.handleQueueAll({ force: true })).resolves.toBe(JobStatus.Success);
-    expect(jobRepository.queueAll).toHaveBeenCalledWith([
-      { name: JobName.BestPhotosScore, data: { id: 'asset-1' } },
-      { name: JobName.BestPhotosScore, data: { id: 'asset-2' } },
-    ]);
+    expect(jobRepository.queueSelection).toHaveBeenCalledWith(
+      JobName.BestPhotosScore,
+      assetJobRepository.selectionForBestPhotosScoring.mock.results[0].value,
+    );
   });
 });

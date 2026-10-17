@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getAlbumDateRange } from '$lib/utils/date-time';
-  import type { AlbumResponseDto } from '@immich/sdk';
+  import type { AlbumResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -8,7 +8,7 @@
   };
 
   const { album }: Props = $props();
-  const startDate = album.startDate;
+  const startDate = $derived(album.startDate);
 </script>
 
 <span class="my-2 flex gap-2 text-sm font-medium text-gray-500" data-testid="album-details">

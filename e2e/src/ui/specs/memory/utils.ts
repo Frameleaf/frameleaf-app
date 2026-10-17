@@ -1,5 +1,5 @@
 /* eslint-disable unicorn/no-this-outside-of-class */
-import type { AssetResponseDto } from '@immich/sdk';
+import type { AssetResponseDto } from '@frameleaf/sdk';
 import { expect, Page } from '@playwright/test';
 
 function getAssetIdFromUrl(url: URL): string | null {
@@ -17,7 +17,8 @@ export const memoryViewerUtils = {
 
   async waitForMemoryLoad(page: Page) {
     await expect(this.locator(page)).toBeVisible();
-    await expect(page.locator('#memory-viewer img').first()).toBeVisible();
+    // A photo shows as an image; a video's poster image gives way to the playing video.
+    await expect(page.locator('#memory-viewer').locator('img, video').filter({ visible: true }).first()).toBeVisible();
   },
 
   async openMemoryPageWithAsset(page: Page, memoryId: string, assetId: string) {
@@ -32,11 +33,12 @@ export const memoryGalleryUtils = {
   },
 
   thumbnailWithAssetId(page: Page, assetId: string) {
-    return page.locator(`#gallery-memory [data-thumbnail-focus-container][data-asset="${assetId}"]`);
+    // The gallery is the Frameleaf results grid: each tile names its item and opens it from its button.
+    return page.locator(`#gallery-memory [data-asset-id="${assetId}"]`).getByRole('button').first();
   },
 
   async scrollToGallery(page: Page) {
-    const showGalleryButton = page.getByLabel('Show gallery');
+    const showGalleryButton = page.getByLabel('Select items below');
     if (await showGalleryButton.isVisible()) {
       await showGalleryButton.click();
     }
@@ -50,7 +52,7 @@ export const memoryGalleryUtils = {
 
   async getAllThumbnails(page: Page) {
     await this.scrollToGallery(page);
-    return page.locator('#gallery-memory [data-thumbnail-focus-container]');
+    return page.locator('#gallery-memory [data-asset-id]');
   },
 };
 

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { longPress } from '$lib/actions/long-press';
   import { ProjectionType } from '$lib/constants';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
@@ -8,8 +10,8 @@
   import { moveFocus } from '$lib/utils/focus-util';
   import { currentUrlReplaceAssetId } from '$lib/utils/navigation';
   import { getAltText } from '$lib/utils/thumbnail-util';
-  import { AssetMediaSize, AssetVisibility, type UserResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { AssetMediaSize, AssetVisibility, type UserResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiArchiveArrowDownOutline,
     mdiCameraBurst,
@@ -21,9 +23,8 @@
     mdiMotionPlayOutline,
     mdiRotate360,
   } from '@mdi/js';
-  import { onMount } from 'svelte';
   import type { ClassValue } from 'svelte/elements';
-  import { fade } from 'svelte/transition';
+  import { motionFade } from '$lib/frameleaf/motion';
   import Thumbhash from '$lib/components/Thumbhash.svelte';
   import ImageThumbnail from './ImageThumbnail.svelte';
   import VideoThumbnail from './VideoThumbnail.svelte';
@@ -123,75 +124,6 @@
     onMouseEvent?.({ isMouseOver: false, selectedGroupIndex: groupIndex });
   };
 
-  let timer: ReturnType<typeof setTimeout> | null = null;
-
-  const preventContextMenu = (evt: Event) => evt.preventDefault();
-  const disposeables: (() => void)[] = [];
-
-  const clearLongPressTimer = () => {
-    if (!timer) {
-      return;
-    }
-    clearTimeout(timer);
-    timer = null;
-    for (const dispose of disposeables) {
-      dispose();
-    }
-    disposeables.length = 0;
-  };
-
-  let startX: number = 0;
-  let startY: number = 0;
-
-  function longPress(element: HTMLElement, { onLongPress }: { onLongPress: () => void }) {
-    let didPress = false;
-    const start = (evt: PointerEvent) => {
-      startX = evt.clientX;
-      startY = evt.clientY;
-      didPress = false;
-      // 350ms for longpress. For reference: iOS uses 500ms for default long press, or 200ms for fast long press.
-      timer = setTimeout(() => {
-        onLongPress();
-        element.addEventListener('contextmenu', preventContextMenu, { once: true });
-        disposeables.push(() => element.removeEventListener('contextmenu', preventContextMenu));
-        didPress = true;
-      }, 350);
-    };
-    const click = (e: MouseEvent) => {
-      if (!didPress) {
-        return;
-      }
-      e.stopPropagation();
-      e.preventDefault();
-    };
-    element.addEventListener('click', click);
-    element.addEventListener('pointerdown', start, { capture: true });
-    element.addEventListener('pointerup', clearLongPressTimer, { capture: true, passive: true });
-    return {
-      destroy: () => {
-        element.removeEventListener('click', click);
-        element.removeEventListener('pointerdown', start, true);
-        element.removeEventListener('pointerup', clearLongPressTimer, true);
-      },
-    };
-  }
-  function moveHandler(e: PointerEvent) {
-    if (Math.abs(startX - e.clientX) >= 10 || Math.abs(startY - e.clientY) >= 10) {
-      clearLongPressTimer();
-    }
-  }
-  onMount(() => {
-    document.addEventListener('scroll', clearLongPressTimer, { capture: true, passive: true });
-    document.addEventListener('wheel', clearLongPressTimer, { capture: true, passive: true });
-    document.addEventListener('contextmenu', clearLongPressTimer, { capture: true, passive: true });
-    document.addEventListener('pointermove', moveHandler, { capture: true, passive: true });
-    return () => {
-      document.removeEventListener('scroll', clearLongPressTimer, true);
-      document.removeEventListener('wheel', clearLongPressTimer, true);
-      document.removeEventListener('contextmenu', clearLongPressTimer, true);
-      document.removeEventListener('pointermove', moveHandler, true);
-    };
-  });
   const backgroundColorClass = $derived.by(() => {
     if (loaded && !selected) {
       return 'bg-transparent';
@@ -376,7 +308,7 @@
           href={currentUrlReplaceAssetId(asset.id)}
           onclick={(evt) => evt.preventDefault()}
           tabindex={-1}
-          aria-label="Thumbnail URL"
+          aria-label={$t('frameleaf_thumbnail_open', { values: { name: asset.originalFileName } })}
         >
         </a>
       {/if}
@@ -385,8 +317,8 @@
     {#if selectionCandidate}
       <div
         class={['absolute top-0 z-2 size-full bg-immich-primary opacity-40', { 'rounded-xl': selected }]}
-        in:fade={{ duration: 100 }}
-        out:fade={{ duration: 100 }}
+        in:motionFade={{ duration: 100 }}
+        out:motionFade={{ duration: 100 }}
       ></div>
     {/if}
 
@@ -423,9 +355,9 @@
           onPreview?.($state.snapshot(asset));
         }}
         class="absolute inset-e-1 bottom-1 z-2 rounded-full bg-black/25 p-1.5 transition-colors hover:bg-black/50 focus:outline-none"
-        in:fade={{ duration: 100 }}
+        in:motionFade={{ duration: 100 }}
         tabindex={-1}
-        aria-label="Preview asset"
+        aria-label={$t('frameleaf_thumbnail_preview', { values: { name: asset.originalFileName } })}
       >
         <Icon icon={mdiMagnifyPlusOutline} size="20" class="text-white" />
       </button>

@@ -159,7 +159,7 @@ Sigstore is already configured by `id-token: write`. The change is code-only:
 - name: Attest build provenance
   uses: actions/attest-build-provenance@<pinned-sha>
   with:
-    subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/immich-server
+    subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/frameleaf-server
     subject-digest: ${{ steps.build.outputs.digest }}
     push-to-registry: true
 ```
@@ -170,8 +170,8 @@ Add `id: build` to the existing `docker/build-push-action` step so
 Consumers verify with:
 
 ```bash
-gh attestation verify oci://ghcr.io/adamtaylor152/immich-server:commit-<sha> \
-  --owner adamtaylor152
+gh attestation verify oci://ghcr.io/frameleaf/frameleaf-server:commit-<sha> \
+  --owner Frameleaf
 ```
 
 This was deferred from round 2 to keep that round's scope narrow. The

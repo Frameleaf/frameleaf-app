@@ -12,13 +12,13 @@ import {
   defaults,
   getAllAlbums,
   getSupportedMediaTypes,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import byteSize from 'byte-size';
 import { Matcher, watch as watchFs } from 'chokidar';
 import { MultiBar, Presets, SingleBar } from 'cli-progress';
 import { chunk } from 'lodash-es';
 import micromatch from 'micromatch';
-import { Stats, createReadStream, existsSync } from 'node:fs';
+import { Stats, createReadStream, statSync } from 'node:fs';
 import { stat, unlink } from 'node:fs/promises';
 import path, { basename } from 'node:path';
 import { Queue } from 'src/queue.js';
@@ -56,7 +56,6 @@ class UploadFile extends File {
     super([], basename(filepath));
   }
 
-  // @ts-expect-error size is already a property on the new File interface
   get size() {
     return this._size;
   }
@@ -102,12 +101,12 @@ export const startWatch = async (
     },
   });
 
-  const onFile = async (path: string, stats?: Stats) => {
+  const onFile = (path: string, stats?: Stats) => {
     if (stats?.isDirectory()) {
       return;
     }
-    const ext = '.' + path.split('.').pop()?.toLowerCase();
-    if (!ext || !extensions.has(ext)) {
+    const ext = '.' + path.slice(path.lastIndexOf('.') + 1).toLowerCase();
+    if (!extensions.has(ext)) {
       return;
     }
 
@@ -183,150 +182,154 @@ export const checkForDuplicates = async (files: string[], { concurrency, skipHas
   }
 
   let multiBar: MultiBar | undefined;
+  const onInterrupt = () => {
+    multiBar?.stop();
+    process.exit(0);
+  };
   let totalSize = 0;
   const statsMap = new Map<string, Stats>();
 
   // Calculate total size first
-  for (const filepath of files) {
-    const stats = await stat(filepath);
-    statsMap.set(filepath, stats);
-    totalSize += stats.size;
-  }
-
-  if (progress) {
-    multiBar = new MultiBar(
-      {
-        format: '{message} | {bar} | {percentage}% | ETA: {eta_formatted} | {value}/{total}',
-        formatValue: (v: number, options, type) => {
-          // Don't format percentage
-          if (type === 'percentage') {
-            return v.toString();
-          }
-          return byteSize(v).toString();
-        },
-        etaBuffer: 100, // Increase samples for ETA calculation
-      },
-      Presets.shades_classic,
-    );
-
-    // Ensure we restore cursor on interrupt
-    process.on('SIGINT', () => {
-      if (multiBar) {
-        multiBar.stop();
-      }
-      process.exit(0);
-    });
-  } else {
-    console.log(`Received ${files.length} files (${byteSize(totalSize)}), hashing...`);
-  }
-
-  const hashProgressBar = multiBar?.create(totalSize, 0, {
-    message: 'Hashing files          ',
-  });
-  const checkProgressBar = multiBar?.create(totalSize, 0, {
-    message: 'Checking for duplicates',
-  });
-
-  const newFiles: string[] = [];
-  const duplicates: Asset[] = [];
-
-  const checkBulkUploadQueue = new Queue<AssetBulkUploadCheckItem[], void>(
-    async (assets: AssetBulkUploadCheckItem[]) => {
-      const response = await checkBulkUpload({ assetBulkUploadCheckDto: { assets } });
-
-      const results = response.results as AssetBulkUploadCheckResults;
-
-      // Every file is submitted once per digest (see below), so results are
-      // aggregated by `id` (the file path): a reject on any digest means the
-      // server already has the file.
-      const checkedFiles = new Set<string>();
-      const duplicateAssetIds = new Map<string, string>();
-      for (const { id: filepath, assetId, action } of results) {
-        checkedFiles.add(filepath);
-        if (action !== AssetUploadAction.Accept) {
-          // rejects are always duplicates
-          duplicateAssetIds.set(filepath, assetId as string);
-        }
-      }
-
-      // Update progress based on total size of processed files
-      let processedSize = 0;
-      for (const filepath of checkedFiles) {
-        const duplicateAssetId = duplicateAssetIds.get(filepath);
-        if (duplicateAssetId === undefined) {
-          newFiles.push(filepath);
-        } else {
-          duplicates.push({ id: duplicateAssetId, filepath });
-        }
-
-        const stats = statsMap.get(filepath);
-        processedSize += stats?.size || 0;
-      }
-      checkProgressBar?.increment(processedSize);
-    },
-    { concurrency, retry: 3 },
-  );
-
-  const results: { id: string; checksum: string }[] = [];
-  let checkBulkUploadRequests: AssetBulkUploadCheckItem[] = [];
-
-  const queue = new Queue<string, AssetBulkUploadCheckItem[]>(
-    async (filepath: string): Promise<AssetBulkUploadCheckItem[]> => {
-      const stats = statsMap.get(filepath);
-      if (!stats) {
-        throw new Error(`Stats not found for ${filepath}`);
-      }
-      // The server persists SHA-256 for assets uploaded after the SHA-256
-      // transition and SHA-1 for legacy rows, and matches the supplied digest
-      // byte-for-byte. Submit both digests for each file so duplicates are found
-      // against either kind of row; the two items share the same `id` and are
-      // always sent in the same batch, so the check queue can aggregate them.
-      const { sha1, sha256 } = await hashFile(filepath);
-      const dtos = [
-        { id: filepath, checksum: sha256 },
-        { id: filepath, checksum: sha1 },
-      ];
-
-      results.push(...dtos);
-      checkBulkUploadRequests.push(...dtos);
-      if (checkBulkUploadRequests.length >= 5000) {
-        const batch = checkBulkUploadRequests;
-        checkBulkUploadRequests = [];
-        void checkBulkUploadQueue.push(batch);
-      }
-
-      hashProgressBar?.increment(stats.size);
-      return results;
-    },
-    { concurrency, retry: 3 },
-  );
-
-  for (const item of files) {
-    void queue.push(item);
-  }
-
-  await queue.drained();
-
-  if (checkBulkUploadRequests.length > 0) {
-    void checkBulkUploadQueue.push(checkBulkUploadRequests);
-  }
-
-  await checkBulkUploadQueue.drained();
-
-  multiBar?.stop();
-
-  console.log(`Found ${newFiles.length} new files and ${duplicates.length} duplicate${s(duplicates.length)}`);
-
-  // Report failures
-  const failedTasks = queue.tasks.filter((task) => task.status === 'failed');
-  if (failedTasks.length > 0) {
-    console.log(`Failed to verify ${failedTasks.length} file${s(failedTasks.length)}:`);
-    for (const task of failedTasks) {
-      console.log(`- ${task.data} - ${task.error}`);
+  for (const batch of chunk(files, concurrency)) {
+    const stats = await Promise.all(batch.map((filepath) => stat(filepath)));
+    for (const [index, filepath] of batch.entries()) {
+      statsMap.set(filepath, stats[index]);
+      totalSize += stats[index].size;
     }
   }
 
-  return { newFiles, duplicates };
+  try {
+    if (progress) {
+      multiBar = new MultiBar(
+        {
+          format: '{message} | {bar} | {percentage}% | ETA: {eta_formatted} | {value}/{total}',
+          formatValue: (v: number, options, type) => {
+            // Don't format percentage
+            if (type === 'percentage') {
+              return v.toString();
+            }
+            return byteSize(v).toString();
+          },
+          etaBuffer: 100, // Increase samples for ETA calculation
+        },
+        Presets.shades_classic,
+      );
+
+      // Ensure we restore cursor on interrupt
+      process.once('SIGINT', onInterrupt);
+    } else {
+      console.log(`Received ${files.length} files (${byteSize(totalSize)}), hashing...`);
+    }
+
+    const hashProgressBar = multiBar?.create(totalSize, 0, {
+      message: 'Hashing files          ',
+    });
+    const checkProgressBar = multiBar?.create(totalSize, 0, {
+      message: 'Checking for duplicates',
+    });
+
+    const newFiles: string[] = [];
+    const duplicates: Asset[] = [];
+
+    const checkBulkUploadQueue = new Queue<AssetBulkUploadCheckItem[], void>(
+      async (assets: AssetBulkUploadCheckItem[]) => {
+        const response = await checkBulkUpload({ assetBulkUploadCheckDto: { assets } });
+
+        const results = response.results as AssetBulkUploadCheckResults;
+
+        // Every file is submitted once per digest (see below), so results are
+        // aggregated by `id` (the file path): a reject on any digest means the
+        // server already has the file.
+        const checkedFiles = new Set<string>();
+        const duplicateAssetIds = new Map<string, string>();
+        for (const { id: filepath, assetId, action } of results) {
+          checkedFiles.add(filepath);
+          if (action !== AssetUploadAction.Accept) {
+            // rejects are always duplicates
+            duplicateAssetIds.set(filepath, assetId as string);
+          }
+        }
+
+        // Update progress based on total size of processed files
+        let processedSize = 0;
+        for (const filepath of checkedFiles) {
+          const duplicateAssetId = duplicateAssetIds.get(filepath);
+          if (duplicateAssetId === undefined) {
+            newFiles.push(filepath);
+          } else {
+            duplicates.push({ id: duplicateAssetId, filepath });
+          }
+
+          const stats = statsMap.get(filepath);
+          processedSize += stats?.size || 0;
+        }
+        checkProgressBar?.increment(processedSize);
+      },
+      { concurrency, retry: 3 },
+    );
+
+    let checkBulkUploadRequests: AssetBulkUploadCheckItem[] = [];
+
+    const queue = new Queue<string, void>(
+      async (filepath: string) => {
+        const stats = statsMap.get(filepath);
+        if (!stats) {
+          throw new Error(`Stats not found for ${filepath}`);
+        }
+        // The server persists SHA-256 for assets uploaded after the SHA-256
+        // transition and SHA-1 for legacy rows, and matches the supplied digest
+        // byte-for-byte. Submit both digests for each file so duplicates are found
+        // against either kind of row; the two items share the same `id` and are
+        // always sent in the same batch, so the check queue can aggregate them.
+        const { sha1, sha256 } = await hashFile(filepath);
+        const dtos = [
+          { id: filepath, checksum: sha256 },
+          { id: filepath, checksum: sha1 },
+        ];
+
+        checkBulkUploadRequests.push(...dtos);
+        if (checkBulkUploadRequests.length >= 5000) {
+          const batch = checkBulkUploadRequests;
+          checkBulkUploadRequests = [];
+          void checkBulkUploadQueue.push(batch);
+        }
+
+        hashProgressBar?.increment(stats.size);
+      },
+      { concurrency, retry: 3 },
+    );
+
+    for (const item of files) {
+      void queue.push(item);
+    }
+
+    await queue.drained();
+
+    if (checkBulkUploadRequests.length > 0) {
+      void checkBulkUploadQueue.push(checkBulkUploadRequests);
+    }
+
+    await checkBulkUploadQueue.drained();
+
+    multiBar?.stop();
+    multiBar = undefined;
+
+    console.log(`Found ${newFiles.length} new files and ${duplicates.length} duplicate${s(duplicates.length)}`);
+
+    // Report failures
+    const failedTasks = queue.tasks.filter((task) => task.status === 'failed');
+    if (failedTasks.length > 0) {
+      console.log(`Failed to verify ${failedTasks.length} file${s(failedTasks.length)}:`);
+      for (const task of failedTasks) {
+        console.log(`- ${task.data} - ${task.error}`);
+      }
+    }
+
+    return { newFiles, duplicates };
+  } finally {
+    process.off('SIGINT', onInterrupt);
+    multiBar?.stop();
+  }
 };
 
 export const uploadFiles = async (files: string[], options: UploadOptionsDto): Promise<Asset[]> => {
@@ -339,10 +342,12 @@ export const uploadFiles = async (files: string[], options: UploadOptionsDto): P
   // Compute total size first
   let totalSize = 0;
   const statsMap = new Map<string, Stats>();
-  for (const filepath of files) {
-    const stats = await stat(filepath);
-    statsMap.set(filepath, stats);
-    totalSize += stats.size;
+  for (const batch of chunk(files, concurrency)) {
+    const stats = await Promise.all(batch.map((filepath) => stat(filepath)));
+    for (const [index, filepath] of batch.entries()) {
+      statsMap.set(filepath, stats[index]);
+      totalSize += stats[index].size;
+    }
   }
 
   if (dryRun) {
@@ -389,7 +394,7 @@ export const uploadFiles = async (files: string[], options: UploadOptionsDto): P
         successSize += stats.size ?? 0;
       }
 
-      uploadProgress?.update(successSize, { value_formatted: byteSize(successSize + duplicateSize) });
+      uploadProgress?.update(successSize + duplicateSize, { value_formatted: byteSize(successSize + duplicateSize) });
 
       return response;
     },
@@ -429,8 +434,9 @@ const uploadFile = async (
   const { baseUrl, headers } = defaults;
 
   const formData = new FormData();
-  formData.append('fileCreatedAt', stats.mtime.toISOString());
-  formData.append('fileModifiedAt', stats.mtime.toISOString());
+  const modifiedAt = stats.mtime.toISOString();
+  formData.append('fileCreatedAt', modifiedAt);
+  formData.append('fileModifiedAt', modifiedAt);
   formData.append('fileSize', String(stats.size));
   formData.append('isFavorite', 'false');
   formData.append('assetData', new UploadFile(input, stats.size));
@@ -444,8 +450,10 @@ const uploadFile = async (
       const stats = await stat(sidecarPath);
       const sidecarData = new UploadFile(sidecarPath, stats.size);
       formData.append('sidecarData', sidecarData);
-    } catch {
-      // noop
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        throw error;
+      }
     }
   }
 
@@ -470,21 +478,24 @@ export const findSidecar = (filepath: string): string | undefined => {
 
   // XMP sidecars can come in two filename formats. For a photo named photo.ext, the filenames are photo.ext.xmp and photo.xmp
   for (const sidecarPath of [`${noExtension}.xmp`, `${filepath}.xmp`]) {
-    if (existsSync(sidecarPath)) {
+    try {
+      statSync(sidecarPath);
       return sidecarPath;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        throw error;
+      }
     }
   }
 };
 
 export const deleteFiles = async (uploaded: Asset[], duplicates: Asset[], options: UploadOptionsDto): Promise<void> => {
-  let fileCount = 0;
-  if (options.delete) {
-    fileCount += uploaded.length;
-  }
-
-  if (options.deleteDuplicates) {
-    fileCount += duplicates.length;
-  }
+  const files = new Set(
+    [...(options.delete ? uploaded : []), ...(options.deleteDuplicates ? duplicates : [])].map(
+      ({ filepath }) => filepath,
+    ),
+  );
+  const fileCount = files.size;
 
   if (options.dryRun) {
     console.log(`Would have deleted ${fileCount} local asset${s(fileCount)}`);
@@ -502,35 +513,28 @@ export const deleteFiles = async (uploaded: Asset[], duplicates: Asset[], option
   );
   deletionProgress.start(fileCount, 0);
 
-  const chunkDelete = async (files: Asset[]) => {
-    for (const assetBatch of chunk(files, options.concurrency)) {
-      await Promise.all(
-        assetBatch.map(async (input: Asset) => {
-          await unlink(input.filepath);
-          const sidecarPath = findSidecar(input.filepath);
-          if (sidecarPath) {
-            await unlink(sidecarPath);
-          }
-        }),
-      );
-      deletionProgress.update(assetBatch.length);
-    }
-  };
-
   try {
-    if (options.delete) {
-      await chunkDelete(uploaded);
+    const sidecars = new Set<string>();
+    for (const filepath of files) {
+      const sidecar = findSidecar(filepath);
+      if (sidecar && !files.has(sidecar)) {
+        sidecars.add(sidecar);
+      }
     }
-
-    if (options.deleteDuplicates) {
-      await chunkDelete(duplicates);
+    for (const batch of chunk(files.values().toArray(), options.concurrency)) {
+      await Promise.all(batch.map((filepath) => unlink(filepath)));
+      deletionProgress.increment(batch.length);
+    }
+    // Shared sidecars are removed once, after all selected originals were removed.
+    for (const batch of chunk(sidecars.values().toArray(), options.concurrency)) {
+      await Promise.all(batch.map((filepath) => unlink(filepath)));
     }
   } finally {
     deletionProgress.stop();
   }
 };
 
-const updateAlbums = async (assets: Asset[], options: UploadOptionsDto) => {
+export const updateAlbums = async (assets: Asset[], options: UploadOptionsDto) => {
   if (!options.album && !options.albumName) {
     return;
   }
@@ -538,17 +542,26 @@ const updateAlbums = async (assets: Asset[], options: UploadOptionsDto) => {
 
   const albums = await getAllAlbums({});
   const existingAlbums = new Map(albums.map((album) => [album.albumName, album.id]));
-  const newAlbums: Set<string> = new Set();
-  for (const { filepath } of assets) {
-    const albumName = getAlbumName(filepath, options);
-    if (albumName && !existingAlbums.has(albumName)) {
-      newAlbums.add(albumName);
+  const assetsByName = new Map<string, string[]>();
+  for (const { filepath, id } of assets) {
+    const name = getAlbumName(filepath, options);
+    if (name) {
+      const ids = assetsByName.get(name);
+      if (ids) {
+        ids.push(id);
+      } else {
+        assetsByName.set(name, [id]);
+      }
     }
   }
+  const newAlbums = assetsByName
+    .keys()
+    .filter((name) => !existingAlbums.has(name))
+    .toArray();
 
   if (dryRun) {
     // TODO print asset counts for new albums
-    console.log(`Would have created ${newAlbums.size} new album${s(newAlbums.size)}`);
+    console.log(`Would have created ${newAlbums.length} new album${s(newAlbums.length)}`);
     console.log(`Would have updated albums of ${assets.length} asset${s(assets.length)}`);
     return;
   }
@@ -557,10 +570,10 @@ const updateAlbums = async (assets: Asset[], options: UploadOptionsDto) => {
     { format: 'Creating albums | {bar} | {percentage}% | ETA: {eta}s | {value}/{total} albums' },
     Presets.shades_classic,
   );
-  progressBar.start(newAlbums.size, 0);
+  progressBar.start(newAlbums.length, 0);
 
   try {
-    for (const albumNames of chunk([...newAlbums], concurrency)) {
+    for (const albumNames of chunk(newAlbums, concurrency)) {
       const items = await Promise.all(
         albumNames.map((albumName: string) => createAlbum({ createAlbumDto: { albumName } })),
       );
@@ -573,21 +586,21 @@ const updateAlbums = async (assets: Asset[], options: UploadOptionsDto) => {
     progressBar.stop();
   }
 
-  console.log(`Successfully created ${newAlbums.size} new album${s(newAlbums.size)}`);
+  console.log(`Successfully created ${newAlbums.length} new album${s(newAlbums.length)}`);
   console.log(`Successfully updated ${assets.length} asset${s(assets.length)}`);
 
   const albumToAssets = new Map<string, string[]>();
-  for (const asset of assets) {
-    const albumName = getAlbumName(asset.filepath, options);
-    if (!albumName) {
-      continue;
-    }
-    const albumId = existingAlbums.get(albumName);
+  for (const [name, ids] of assetsByName) {
+    const albumId = existingAlbums.get(name);
     if (albumId) {
-      if (!albumToAssets.has(albumId)) {
-        albumToAssets.set(albumId, []);
+      const existing = albumToAssets.get(albumId);
+      if (existing) {
+        for (const id of ids) {
+          existing.push(id);
+        }
+      } else {
+        albumToAssets.set(albumId, ids);
       }
-      albumToAssets.get(albumId)?.push(asset.id);
     }
   }
 

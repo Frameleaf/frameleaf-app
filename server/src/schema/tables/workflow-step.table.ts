@@ -1,6 +1,6 @@
-import { WorkflowStepConfig } from '@immich/plugin-sdk';
-import { Column, ForeignKeyColumn, PrimaryGeneratedColumn, Table } from '@immich/sql-tools';
-import type { Generated } from '@immich/sql-tools';
+import { WorkflowStepConfig } from '@frameleaf/plugin-sdk';
+import { Column, ForeignKeyColumn, PrimaryGeneratedColumn, Table } from '@frameleaf/sql-tools';
+import type { Generated } from '@frameleaf/sql-tools';
 import { PluginMethodTable } from 'src/schema/tables/plugin-method.table.js';
 import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 

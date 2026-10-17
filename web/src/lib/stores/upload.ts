@@ -13,19 +13,27 @@ function createUploadStore() {
   const { subscribe } = uploadAssets;
 
   const isUploading = derived(uploadAssets, (items) => items.length > 0);
-  const isDismissible = derived(uploadAssets, (items) =>
-    items.some((item) => item.state === UploadState.ERROR || item.state === UploadState.DUPLICATED),
-  );
-  const remainingUploads = derived(
-    uploadAssets,
-    (values) => values.filter((a) => a.state === UploadState.PENDING || a.state === UploadState.STARTED).length,
+  const remainingUploads = derived(uploadAssets, (values) =>
+    values.reduce(
+      (count, asset) => count + (asset.state === UploadState.PENDING || asset.state === UploadState.STARTED ? 1 : 0),
+      0,
+    ),
   );
 
   const addItem = (newAsset: UploadAsset) => {
     uploadAssets.update(($assets) => {
-      const duplicate = $assets.some((asset) => asset.id === newAsset.id);
-      if (duplicate) {
-        return $assets.map((asset) => (asset.id === newAsset.id ? newAsset : asset));
+      let replacement: UploadAsset[] | undefined;
+      for (let index = 0; index < $assets.length; index++) {
+        const asset = $assets[index];
+        if (asset.id === newAsset.id) {
+          replacement ??= $assets.slice(0, index);
+          replacement.push(newAsset);
+        } else {
+          replacement?.push(asset);
+        }
+      }
+      if (replacement) {
+        return replacement;
       }
 
       stats.update((stats) => {
@@ -46,13 +54,18 @@ function createUploadStore() {
   };
 
   const updateProgress = (id: string, loaded: number, total: number) => {
+    const transferred = Number.isFinite(loaded) ? Math.max(0, loaded) : 0;
+    const size = Number.isFinite(total) ? Math.max(0, total) : 0;
     updateAssetMap(id, (v) => {
-      const uploadSpeed = v.startDate ? loaded / ((Date.now() - v.startDate) / 1000) : 0;
+      const elapsed = v.startDate === undefined ? 0 : (Date.now() - v.startDate) / 1000;
+      const measuredSpeed = elapsed > 0 ? transferred / elapsed : 0;
+      const speed = Number.isFinite(measuredSpeed) ? measuredSpeed : 0;
+      const eta = speed > 0 ? Math.ceil(Math.max(0, size - transferred) / speed) : 0;
       return {
         ...v,
-        progress: Math.floor((loaded / total) * 100),
-        speed: uploadSpeed,
-        eta: Math.ceil((total - loaded) / uploadSpeed),
+        progress: size > 0 ? Math.min(100, Math.floor((transferred / size) * 100)) : 0,
+        speed,
+        eta: Number.isFinite(eta) ? eta : 0,
       };
     });
   };
@@ -115,10 +128,32 @@ function createUploadStore() {
     });
   };
 
+  /**
+   * "Dismiss errors" (FL-45 U-1, UploadPanel.jsx `dismissUploadErrors`): drops the failed uploads
+   * only; duplicates stay listed until "Clear finished" or Done.
+   */
   const dismissErrors = () =>
-    uploadAssets.update((value) =>
-      value.filter((e) => e.state !== UploadState.ERROR && e.state !== UploadState.DUPLICATED),
-    );
+    uploadAssets.update((value) => {
+      const errors = value.reduce((count, item) => count + (item.state === UploadState.ERROR ? 1 : 0), 0);
+      if (errors > 0) {
+        // The dismissed files leave the batch, so "Uploading N of M" counts only what remains.
+        stats.update((current) => ({ ...current, errors: current.errors - errors, total: current.total - errors }));
+      }
+      return value.filter((item) => item.state !== UploadState.ERROR);
+    });
+
+  /**
+   * "Clear finished" (FL-45, UploadPanel.jsx `clearFinishedUploads`): drops the uploads that are
+   * done or turned out to be duplicates while the rest keep going. Failed ones stay for a retry.
+   */
+  const clearFinished = () =>
+    uploadAssets.update((value) => {
+      const duplicates = value.reduce((count, item) => count + (item.state === UploadState.DUPLICATED ? 1 : 0), 0);
+      if (duplicates > 0) {
+        stats.update((current) => ({ ...current, duplicates: current.duplicates - duplicates }));
+      }
+      return value.filter((item) => item.state !== UploadState.DONE && item.state !== UploadState.DUPLICATED);
+    });
 
   const reset = () => {
     uploadAssets.set([]);
@@ -151,10 +186,10 @@ function createUploadStore() {
   return {
     stats,
     remainingUploads,
-    isDismissible,
     isUploading,
     track,
     dismissErrors,
+    clearFinished,
     reset,
     markStarted,
     addItem,

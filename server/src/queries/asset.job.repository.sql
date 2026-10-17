@@ -7,7 +7,20 @@ select
   "ownerId",
   "duplicateId",
   "stackId",
-  "visibility",
+  (
+    case
+      when "asset"."visibility" = 'hidden' then "asset"."visibility"
+      when exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) then 'locked'::asset_visibility_enum
+      else "asset"."visibility"
+    end
+  ) as "visibility",
   "smart_search"."embedding"
 from
   "asset"
@@ -33,6 +46,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -66,6 +80,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -192,6 +207,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -213,6 +229,8 @@ select
   "asset"."ownerId",
   "asset"."thumbhash",
   "asset"."type",
+  "asset"."checksum",
+  "asset"."checksumAlgorithm",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -223,6 +241,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited",
           "asset_file"."isProgressive",
           "asset_file"."isTransparent"
@@ -230,7 +249,7 @@ select
           "asset_file"
         where
           "asset_file"."assetId" = "asset"."id"
-          and "asset_file"."type" in ($1, $2, $3)
+          and "asset_file"."type" in ($1, $2, $3, $4, $5)
       ) as agg
   ) as "files",
   (
@@ -304,13 +323,21 @@ select
         where
           "asset_video"."assetId" is not null
       ) as obj
-  ) as "format"
+  ) as "format",
+  (
+    select
+      "video_moment_index"."coverTimestampMs"
+    from
+      "video_moment_index"
+    where
+      "video_moment_index"."assetId" = "asset"."id"
+  ) as "coverTimestampMs"
 from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
   left join "asset_video" on "asset_video"."assetId" = "asset"."id"
 where
-  "asset"."id" = $4
+  "asset"."id" = $6
 
 -- AssetJobRepository.getForMetadataExtraction
 select
@@ -332,6 +359,14 @@ select
   "asset"."width",
   "asset"."height",
   "asset"."isEdited",
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -357,6 +392,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -386,6 +422,7 @@ select
   "asset_file"."path",
   "asset_file"."type",
   "asset_file"."physicalFileId",
+  "asset_file"."renditionIdentity",
   "asset_file"."isEdited"
 from
   "asset_file"
@@ -402,7 +439,17 @@ from
   inner join "asset_job_status" as "job_status" on "job_status"."assetId" = "asset"."id"
 where
   "asset"."deletedAt" is null
-  and "asset"."visibility" in ('archive', 'timeline')
+  and (
+    "asset"."visibility" in ('archive', 'timeline')
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
   and "job_status"."duplicatesDetectedAt" is null
 
 -- AssetJobRepository.streamForVideoDuplicateFrames
@@ -415,7 +462,14 @@ where
   "asset"."type" = 'VIDEO'
   and "asset"."deletedAt" is null
   and "asset"."visibility" != 'hidden'
-  and "asset"."visibility" != 'locked'
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
 group by
   "asset"."id"
 having
@@ -426,7 +480,20 @@ select
   "asset"."id",
   "asset"."ownerId",
   "asset"."originalPath",
-  "asset"."visibility",
+  (
+    case
+      when "asset"."visibility" = 'hidden' then "asset"."visibility"
+      when exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) then 'locked'::asset_visibility_enum
+      else "asset"."visibility"
+    end
+  ) as "visibility",
   (
     select
       to_json(obj)
@@ -532,6 +599,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -549,6 +617,7 @@ where
 select
   "asset"."id",
   "asset"."visibility",
+  "asset"."checksum",
   to_json("asset_exif") as "exifInfo",
   (
     select
@@ -573,6 +642,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -723,7 +793,11 @@ select
   "asset"."ownerId",
   "asset"."livePhotoVideoId",
   "asset"."originalPath",
+  "asset"."physicalOriginalFileId",
+  "asset"."checksum",
+  "asset"."originalFileName",
   "asset"."isOffline",
+  "asset"."deletedAt",
   to_json("asset_exif") as "exifInfo",
   (
     select
@@ -735,6 +809,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -798,6 +873,7 @@ select
   "asset"."id",
   "asset"."ownerId",
   "asset"."originalPath",
+  "asset"."checksum",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -808,6 +884,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -824,7 +901,10 @@ select
           "asset_audio"."index",
           "asset_audio"."codecName",
           "asset_audio"."profile",
-          "asset_audio"."bitrate"
+          "asset_audio"."bitrate",
+          "asset_audio"."channels",
+          "asset_audio"."channelLayout",
+          "asset_audio"."sampleRate"
         from
           (
             select
@@ -941,6 +1021,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -985,6 +1066,7 @@ select
           "asset_file"."path",
           "asset_file"."type",
           "asset_file"."physicalFileId",
+          "asset_file"."renditionIdentity",
           "asset_file"."isEdited"
         from
           "asset_file"
@@ -1075,20 +1157,7 @@ where
       and "asset_file"."type" = $2
   )
   and "asset"."visibility" in ('archive', 'timeline')
-  and (
-    "asset"."type" = 'IMAGE'
-    or (
-      "asset"."type" = 'VIDEO'
-      and exists (
-        select
-          "asset_video_duplicate_frame"."assetId"
-        from
-          "asset_video_duplicate_frame"
-        where
-          "asset_video_duplicate_frame"."assetId" = "asset"."id"
-      )
-    )
-  )
+  and "asset"."type" in ('IMAGE', 'VIDEO')
   and not exists (
     select
       "asset_metadata"."assetId"
@@ -1102,7 +1171,7 @@ where
 order by
   "asset"."fileCreatedAt" desc
 
--- AssetJobRepository.streamForSmartAlbumReevaluation
+-- AssetJobRepository.getForSmartAlbumReevaluation
 select
   "asset"."id",
   "asset"."ownerId",
@@ -1126,6 +1195,7 @@ where
       and "asset_file"."type" = 'preview'
   )
   and asset_metadata.value -> 'description' ->> 'status' = $2
+  and "asset"."id" = $3::uuid
 order by
   "asset"."fileCreatedAt" desc
 

@@ -81,7 +81,7 @@ export function resourceFingerprint(descriptor: Record<string, unknown>): string
   return createHash('sha256').update(canonical).digest('hex');
 }
 
-function decodedName(field: unknown): string | undefined {
+export function decodedName(field: unknown): string | undefined {
   if (!object(field) || typeof field.value !== 'string') {
     return;
   }

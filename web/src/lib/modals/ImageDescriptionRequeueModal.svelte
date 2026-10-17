@@ -1,20 +1,22 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   import { handleError } from '$lib/utils/handle-error';
   import {
     deferImageDescriptionRequeue,
     getImageDescriptionRequeueEstimate,
     triggerImageDescriptionRequeue,
     type ImageDescriptionRequeueEstimateDto,
-  } from '@immich/sdk';
-  import { Button, LoadingSpinner, Modal, ModalBody, ModalFooter } from '@immich/ui';
+  } from '@frameleaf/sdk';
+  import { Button, LoadingSpinner, Modal, ModalBody, ModalFooter } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
 
-  type CloseResult = { queued: boolean } | { deferred: true };
+  type CloseResult = { queued: boolean; cloudBatches: boolean } | { deferred: true };
 
   interface Props {
     // Resolves with one of:
     //   - { queued: true|false }: re-queue was triggered (true = newly enqueued,
-    //     false = a re-queue was already in-flight).
+    //     false = a re-queue was already in-flight); `cloudBatches` (FL-163): descriptions go to
+    //     Frameleaf Cloud, which describes them in batches, so nothing was queued.
     //   - { deferred: true }: admin chose "Re-queue later". The pending marker
     //     is now set server-side so the banner reminds them.
     //   - undefined: dismissed/cancelled, or the estimate fetch failed.
@@ -92,19 +94,19 @@
             <dt class="text-immich-fg/70 dark:text-immich-dark-fg/70">
               {$t('admin.machine_learning_image_description_requeue_modal_total_assets')}
             </dt>
-            <dd class="font-medium">{estimate.totalAssets.toLocaleString()}</dd>
+            <dd class="font-medium">{estimate.totalAssets.toLocaleString($locale)}</dd>
           </div>
           <div class="flex justify-between">
             <dt class="text-immich-fg/70 dark:text-immich-dark-fg/70">
               {$t('admin.machine_learning_image_description_requeue_modal_with_description')}
             </dt>
-            <dd class="font-medium">{estimate.withDescription.toLocaleString()}</dd>
+            <dd class="font-medium">{estimate.withDescription.toLocaleString($locale)}</dd>
           </div>
           <div class="flex justify-between">
             <dt class="text-immich-fg/70 dark:text-immich-dark-fg/70">
               {$t('admin.machine_learning_image_description_requeue_modal_without_description')}
             </dt>
-            <dd class="font-medium">{estimate.withoutDescription.toLocaleString()}</dd>
+            <dd class="font-medium">{estimate.withoutDescription.toLocaleString($locale)}</dd>
           </div>
           <hr class="border-primary/20" />
           <div class="flex justify-between">

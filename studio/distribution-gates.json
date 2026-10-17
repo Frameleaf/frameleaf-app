@@ -1,0 +1,130 @@
+{
+  "approvalSource": [
+    "studio/dependency-attribution.json (resources, embeddedComponents, dolbyTools)",
+    "studio/rights-approval.json (owner-approved resource rows, FL-146)"
+  ],
+  "description": "FL-136 (REL-104): the release-time gates for shipping Frameleaf's web bundle, worker container image and cloud execution. This file does not re-decide Studio resource rights - those decisions live in studio/dependency-attribution.json and are approved (or not) in studio/rights-approval.json, and are admitted at engine runtime by server/src/utils/studio-rights.ts. This file (a) links every currently-blocked embedded/tool obligation to a named owner and an explicit release gate, and (b) records the non-Studio distribution concerns (store/service credentials, billing, disclosures, consent) that block a real release. Native/mobile app store distribution is out of scope: native apps ship from their own separate repos (owner decision, 2026-09-29).",
+  "gates": [
+    {
+      "area": "worker",
+      "component": "tool:dolby-portal / tool:dolby-artistic-trim (CM Analyze, Metafier, Mezzinator, artistic trims)",
+      "description": "A worker offering edited-Dolby-Vision export must use administrator-installed Dolby tools at a verified candidate-chain version. Detecting or installing a Dolby tool automatically is never a passing qualification.",
+      "enforcedBy": [
+        "studio/tools/preflight-validators.mjs (verdict() always reports goNoGo:false and blocks on unresolved Dolby automation rights)",
+        "scripts/frameleaf-studio-preflight.test.mjs"
+      ],
+      "id": "dolby-tool-admission",
+      "owner": null,
+      "reason": "Needs the owner's qualified worker address, administrator-installed CM Analyze/Metafier/Mezzinator paths, and verified candidate-chain versions (FL-109 / VID-204). No agent may install, license or approve these tools.",
+      "status": "blocked-on-owner"
+    },
+    {
+      "area": ["web-bundle", "worker-container"],
+      "component": "embeddedComponents: ffmpeg (@mediabunny/aac-encoder, @mediabunny/ac3), lame (@mediabunny/mp3-encoder), turbores (@mediabunny/prores), moss-ort (public/moss-tts/vendor/ort), moss-tokenizer (public/moss-tts/tokenizer_sandbox.js)",
+      "description": "The Freecut engine build embeds WASM wrappers around FFmpeg (LGPL-2.1-or-later), LAME (LGPL) and TurboRes (MPL). Shipping them requires the exact embedded source/build mapping and LGPL/MPL corresponding-source obligations to be satisfied, not just a wrapper licence text The bundled MOSS ORT runtime and tokenizer sandbox carry the same unqualified embedded-source-mapping gap.",
+      "enforcedBy": [
+        "studio/dependency-attribution.json embeddedComponents[].rightsStatus",
+        "scripts/frameleaf-distribution-gates.mjs (fails if a blocked embedded component loses its gate record)"
+      ],
+      "id": "embedded-codec-corresponding-source",
+      "owner": null,
+      "reason": "Needs legal/engineering review of the exact embedded build and corresponding-source offer before these can ship; studio/dependency-attribution.json already records each as rightsStatus: \"blocked\" pending that review.",
+      "status": "blocked-on-owner"
+    },
+    {
+      "area": "cloud",
+      "component": "model:Xenova/musicgen-small",
+      "description": "MusicGen small carries a CC-BY-NC-4.0 (non-commercial) licence, so it must never be offered on Frameleaf Cloud (hosted use); local/server/LAN-worker use stays approved.",
+      "enforcedBy": [
+        "studio/rights-approval.json resources[].excludedUses.hostedUse",
+        "server/src/utils/studio-rights.generated.ts"
+      ],
+      "id": "musicgen-hosted-exclusion",
+      "owner": "Owner (AJ Taylor)",
+      "reason": "Owner decision, Jira FL-146 comment 34944 (2026-09-25). Enforced as an excludedUses.hostedUse entry in studio/rights-approval.json.",
+      "status": "cleared"
+    },
+    {
+      "area": "cloud",
+      "component": "Frameleaf Cloud (hosted backup/remote-access/GPU offering)",
+      "description": "Frameleaf Cloud uses Stripe as its payment processor (decided: FC-21, frameleaf-cloud docs/entitlements-stripe-licensing.md:15 and :22). The app shows prices in USD and never embeds Stripe keys; licensing arrives as signed certificates from the cloud entitlement service. Only provisioning the actual Stripe account and keys remains.",
+      "id": "frameleaf-cloud-billing-account",
+      "owner": null,
+      "reason": "Processor decided: Stripe; blocked on FC-76 [OPS-011] key provisioning. No agent may create or fund the account or hold its keys - needs the owner to provision FC-76.",
+      "status": "blocked-on-owner"
+    },
+    {
+      "area": "cloud",
+      "component": "Frameleaf Cloud data processing (backup, remote access, cloud GPU rendering)",
+      "description": "The privacy notice basis is approved: frameleaf-cloud docs/legal/PRIVACY-NOTICE.md has owner and counsel approval, recorded 2026-09-27 (FC-16). Cloud processing additionally needs a separate, versioned, per-feature in-app disclosure accepted on the server (consentVersion YYYY-MM-DD.N, frameleaf-cloud docs/instance-contract.md:105) before a given cloud feature can be offered; that disclosure text does not exist yet.",
+      "enforcedBy": ["frameleaf-cloud docs/legal/PRIVACY-NOTICE.md (FC-16)"],
+      "id": "frameleaf-cloud-privacy-disclosure",
+      "owner": null,
+      "reason": "Basis approved (FC-16); the per-feature in-app disclosure text is not yet written and stays owner-gated, as does the DPA/subprocessor list pending re-review after the move to DigitalOcean and OVH. No agent may write or approve the disclosure text on the owner's behalf.",
+      "status": "blocked-on-owner"
+    },
+    {
+      "area": ["web-bundle", "worker-container"],
+      "component": "Runtime model downloads (machine learning model source, Hugging Face fallback)",
+      "description": "An administrator must be able to see and consent to where machine learning models are fetched from before first use.",
+      "enforcedBy": ["docs/docs/install/environment-variables.md"],
+      "id": "model-download-consent",
+      "owner": "Owner (AJ Taylor)",
+      "reason": "Already implemented and documented: MACHINE_LEARNING_MODEL_SOURCE_URL/HF_ENDPOINT selection, no usage statistics sent, and the Frameleaf model mirror keeps the Hugging Face layout so an administrator can point at their own mirror.",
+      "status": "cleared"
+    },
+    {
+      "area": ["web-bundle", "worker-container"],
+      "component": "ghcr.io/frameleaf/* image publication",
+      "description": "Publishing the web/server/worker/ML container images to GHCR needs the registry credentials and cosign signing keys already covered by FL-24's release workflow.",
+      "enforcedBy": [
+        ".github/workflows/deploy-production.yml",
+        ".github/frameleaf-deploy-test.test.cjs"
+      ],
+      "id": "distribution-registry-credentials",
+      "owner": "Owner (AJ Taylor)",
+      "reason": "Covered by FL-24 (REL-200): secrets.COSIGN_PRIVATE_KEY/COSIGN_PASSWORD and the deploy-test-gated promote/sign job in .github/workflows/deploy-production.yml. Recorded here only as a cross-reference, not duplicated.",
+      "status": "cleared"
+    },
+    {
+      "area": ["web-bundle", "worker-container"],
+      "component": "runtime:onnx-cdn (onnxruntime-web 1.26.0-dev.20260410-5e55544225, plus the transformers 3.8.1 jsep wasm pair installed under kokoro-js)",
+      "description": "Resolved by engineering, per owner decision (2026-09-29, no runtime CDN): studio patch 0029 (commit 80b176d8c3, superseding the withdrawn 9cc280000a) serves every ONNX Runtime WebAssembly the engine loads from the engine build's own origin, byte-digest pinned, instead of jsdelivr. A Chromium regression test checks every build is served same-origin with no CDN request. The owner re-approved this row on 2026-09-29 at its bundled locator and file digests; studio/rights-approval.json's stored digest matches the current row (verified independently).",
+      "enforcedBy": [
+        "studio/rights-approval.json resources[] (runtime:onnx-cdn - approvedOn 2026-09-29)",
+        "server/src/utils/studio-rights.generated.ts (regenerated; row allowed)"
+      ],
+      "id": "runtime-onnx-cdn-bundled",
+      "owner": "Owner (AJ Taylor)",
+      "reason": "Cleared: the owner re-approved runtime:onnx-cdn at its bundled, no-CDN locator on 2026-09-29 (recorded in studio/rights-approval.json, noted on Jira FL-86 and FL-136). This row is stable across the 0029 revision (only runtime:whisper-transformers changed again).",
+      "status": "cleared"
+    },
+    {
+      "area": ["web-bundle", "worker-container"],
+      "component": "runtime:whisper-transformers (@huggingface/transformers 3.8.1, bundled in the engine build under kokoro-js's pinned install)",
+      "description": "The Whisper worker stays on transformers.js 3.8.1 (bundled, no CDN) rather than moving to the installed 4.1.0: the owner chose 3.8.1 because 4.1.0 shifts word timestamps about a word late (owner decision 2026-09-29). Patch 0029 (commit 80b176d8c3, superseding the withdrawn 9cc280000a/fccb0a8977) changed this row's locator to the bundled 3.8.1 install and its file digest to kokoro-js/node_modules/@huggingface/transformers/dist/transformers.web.js (sha256 1b41438d839ca3ea1346031472edee8cb3eefbf0bad48945f969559e2eb03394, row digest 86972408a2e5ece3d966f5564eeb4215ba45d767fe980433ed66fef78191e481). That digest does not match studio/rights-approval.json's stored 2026-09-29 approval (which was for the withdrawn 4.1.0 row, verified independently), so approval has lapsed again and Whisper (and anything that shares this runtime) is blocked until the owner re-approves the new row. Re-approved by the owner on 2026-09-29 at this exact row digest (studio commit 69f286911a, following patch 0029/80b176d8c3): studio/rights-approval.json now carries approvedOn 2026-09-29 with a matching digest, and the regenerated server mirror/engine policy admit it again.",
+      "enforcedBy": [
+        "studio/rights-approval.json resources[] (runtime:whisper-transformers - approvedOn 2026-09-29)",
+        "server/src/utils/studio-rights.generated.ts (regenerated; row allowed)"
+      ],
+      "id": "runtime-whisper-transformers-pending-reapproval",
+      "owner": "Owner (AJ Taylor)",
+      "reason": "Cleared: the owner re-approved runtime:whisper-transformers at row digest 86972408a2e5ece3d966f5564eeb4215ba45d767fe980433ed66fef78191e481 on 2026-09-29 (relayed via the coordinator to studio-editing, recorded in studio/rights-approval.json commit 69f286911a, noted on Jira FL-86, FL-111 and FL-136).",
+      "status": "cleared"
+    },
+    {
+      "area": ["web-bundle", "worker-container"],
+      "component": "model:supertonic-3 and all 64 voice:kokoro-*/voice:supertonic-* rows (Kokoro-82M and Supertonic-3 TTS voices)",
+      "description": "studio patch 0030 (commit 453b223aae, on top of 69f286911a) pinned model:supertonic-3 and all 64 Kokoro/Supertonic voice rows to exact Hugging Face commits, with a sha256 per file (they previously carried revision: null - a moving 'resolve/main' target). Supertonic now loads from the pinned Space commit. Pinning changed all 65 rows' locator/revision/files, so their prior owner approval lapsed for all of them at once (verified independently: none of the 65 rows in studio/rights-approval.json carry a matching digest or approvedOn after this commit). Text-to-speech (Kokoro and Supertonic-3 voices) is refused until the owner re-approves. Re-approved by the owner on 2026-09-29 at all 65 commit-pinned row digests (studio commit d5faeb08c5, following patch 0030/453b223aae): verified independently that all 65 rows in studio/rights-approval.json now carry a matching digest and approvedOn, and the regenerated server mirror/engine policy admit them again.",
+      "enforcedBy": [
+        "studio/rights-approval.json resources[] (model:supertonic-3, voice:kokoro-*, voice:supertonic-* - approvedOn 2026-09-29)",
+        "server/src/utils/studio-rights.generated.ts (regenerated; all 65 rows allowed)"
+      ],
+      "id": "tts-voice-models-pending-reapproval",
+      "owner": "Owner (AJ Taylor)",
+      "reason": "Cleared: the owner approved all 65 commit-pinned TTS rows on 2026-09-29 (recorded in studio/rights-approval.json commit d5faeb08c5, noted on Jira FL-136).",
+      "status": "cleared"
+    }
+  ],
+  "schemaVersion": 1
+}

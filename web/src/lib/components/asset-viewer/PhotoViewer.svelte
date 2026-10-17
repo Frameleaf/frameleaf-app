@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { imageViewingPreference } from '$lib/frameleaf/viewer-preferences';
   import { shortcuts } from '$lib/actions/shortcut';
+  import { isControlTarget } from '$lib/frameleaf/viewer-keys';
   import { zoomImageAction } from '$lib/actions/zoom-image';
   import AdaptiveImage from '$lib/components/AdaptiveImage.svelte';
-  import FaceEditor from '$lib/components/asset-viewer/face-editor/FaceEditor.svelte';
   import OcrBoundingBox from '$lib/components/asset-viewer/OcrBoundingBox.svelte';
   import AssetViewerEvents from '$lib/components/AssetViewerEvents.svelte';
   import Thumbhash from '$lib/components/Thumbhash.svelte';
@@ -10,6 +11,9 @@
   import { castManager } from '$lib/managers/cast-manager.svelte';
   import { faceManager } from '$lib/stores/face.svelte';
   import { ocrManager } from '$lib/stores/ocr.svelte';
+  import { prefersReducedMotion } from '$lib/frameleaf/motion';
+  import { mayHaveDevelopPlaybackRevision } from '$lib/frameleaf/playback-revision.svelte';
+  import { effectiveTransition, SlideshowTransition } from '$lib/frameleaf/slideshow-transitions';
   import { SlideshowLook, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { handlePromiseError } from '$lib/utils';
   import { canCopyImageToClipboard, copyImageToClipboard } from '$lib/utils/asset-utils';
@@ -17,10 +21,9 @@
   import { handleError } from '$lib/utils/handle-error';
   import { getOcrBoundingBoxes } from '$lib/utils/ocr-utils';
   import { getBoundingBox, type BoundingBox } from '$lib/utils/people-utils';
-  import { type SharedLinkResponseDto } from '@immich/sdk';
-  import { toastManager } from '@immich/ui';
+  import { type SharedLinkResponseDto } from '@frameleaf/sdk';
+  import { toastManager } from '@frameleaf/ui';
   import { onDestroy, untrack } from 'svelte';
-  import { useSwipe, type SwipeCustomEvent } from 'svelte-gestures';
   import { t } from 'svelte-i18n';
   import type { AssetCursor } from './AssetViewer.svelte';
 
@@ -30,12 +33,13 @@
     sharedLink?: SharedLinkResponseDto;
     onReady?: () => void;
     onError?: () => void;
-    onSwipe?: (event: SwipeCustomEvent) => void;
+    /** The preview address is not settled yet: show the thumbnail and wait before asking for more. */
+    holdFullSize?: boolean;
   };
 
-  let { cursor, element = $bindable(), sharedLink, onReady, onError, onSwipe }: Props = $props();
+  let { cursor, element = $bindable(), sharedLink, onReady, onError, holdFullSize = false }: Props = $props();
 
-  const { slideshowState, slideshowLook } = slideshowStore;
+  const { slideshowState, slideshowLook, slideshowTransition } = slideshowStore;
   const asset = $derived(cursor.current);
 
   let visibleImageReady: boolean = $state(false);
@@ -75,7 +79,10 @@
     return scaleToFit(getNaturalSize(assetViewerManager.imgRef), { width: containerWidth, height: containerHeight });
   });
 
-  const highlightedBoxes = $derived(getBoundingBox(assetViewerManager.highlightedFaces, overlaySize));
+  // Stored face boxes use original/legacy edit geometry; a developed crop can move them.
+  const highlightedBoxes = $derived(
+    mayHaveDevelopPlaybackRevision(asset) ? [] : getBoundingBox(assetViewerManager.highlightedFaces, overlaySize),
+  );
   const isHighlighting = $derived(highlightedBoxes.length > 0);
 
   let visibleBoxes = $state<BoundingBox[]>([]);
@@ -86,6 +93,13 @@
   });
 
   const ocrBoxes = $derived(ocrManager.showOverlay ? getOcrBoundingBoxes(ocrManager.data, overlaySize) : []);
+
+  // FL-63: the region of the line or value the information panel points at, on this photo only
+  const documentHighlight = $derived(
+    ocrManager.highlight?.assetId === asset.id
+      ? getOcrBoundingBoxes([ocrManager.highlight], overlaySize)[0]
+      : undefined,
+  );
 
   const onCopy = async () => {
     if (!canCopyImageToClipboard() || !assetViewerManager.imgRef) {
@@ -105,13 +119,16 @@
     assetViewerManager.animatedZoom(targetZoom);
   };
 
-  const onFaceEditModeChange = (isFaceEditMode: boolean) => {
-    if (isFaceEditMode && assetViewerManager.zoom > 1) {
-      onZoom();
+  // Keyboard zoom steps (+ / = and -), bounded by the fit level and the wheel zoom's maximum.
+  const onZoomIn = () => assetViewerManager.animatedZoom(Math.min(assetViewerManager.zoom * 1.25, 10));
+  const onZoomOut = () => assetViewerManager.animatedZoom(Math.max(assetViewerManager.zoom / 1.25, 1));
+
+  // S starts a slideshow; while one runs, the slideshow controls own S (play and pause).
+  const onPlaySlideshow = () => {
+    if ($slideshowState === SlideshowState.None) {
+      $slideshowState = SlideshowState.PlaySlideshow;
     }
   };
-
-  const onPlaySlideshow = () => ($slideshowState = SlideshowState.PlaySlideshow);
 
   // TODO move to action + command palette
   const onCopyShortcut = (event: KeyboardEvent) => {
@@ -150,14 +167,21 @@
     }
   };
 
+  // FL-36: the Memories transition plays over a dimmed, blurred backdrop of the photo
+  // (MediaViewer.jsx:1350-1358), as the Blurred background look does.
+  const memoriesBackdrop = $derived(
+    $slideshowState !== SlideshowState.None &&
+      effectiveTransition($slideshowTransition, prefersReducedMotion()) === SlideshowTransition.Memories,
+  );
   const blurredSlideshow = $derived(
-    $slideshowState !== SlideshowState.None && $slideshowLook === SlideshowLook.BlurredBackground && !!asset.thumbhash,
+    $slideshowState !== SlideshowState.None &&
+      ($slideshowLook === SlideshowLook.BlurredBackground || memoriesBackdrop) &&
+      !!asset.thumbhash,
   );
 
   let adaptiveImage = $state<HTMLDivElement | undefined>();
 
   const faceToNameMap = $derived.by(() => {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const map = new Map<Faces, string>();
     for (const face of faceManager.data) {
       if (!face.person) {
@@ -174,7 +198,7 @@
   const faces = $derived(Array.from(faceToNameMap.keys()));
 
   const boundingBoxes = $derived.by(() => {
-    if (assetViewerManager.isFaceEditMode || ocrManager.showOverlay) {
+    if (mayHaveDevelopPlaybackRevision(asset) || assetViewerManager.isFaceEditMode || ocrManager.showOverlay) {
       return [];
     }
 
@@ -200,12 +224,28 @@
   });
 </script>
 
-<AssetViewerEvents {onCopy} {onZoom} {onFaceEditModeChange} />
+<AssetViewerEvents {onCopy} {onZoom} />
 
 <svelte:document
   use:shortcuts={[
     { shortcut: { key: 'z' }, onShortcut: onZoom, preventDefault: true },
+    // FL-38: the face tagger is a modal dialog that keeps its keys to itself, so zoom needs no carve-out.
+    { shortcut: { key: '=' }, onShortcut: onZoomIn, preventDefault: true },
+    { shortcut: { key: '+' }, onShortcut: onZoomIn, preventDefault: true },
+    { shortcut: { key: '+', shift: true }, onShortcut: onZoomIn, preventDefault: true },
+    { shortcut: { key: '-' }, onShortcut: onZoomOut, preventDefault: true },
     { shortcut: { key: 's' }, onShortcut: onPlaySlideshow, preventDefault: true },
+    // V-15: Space plays the slideshow too, unless it is pressing a focused control (MediaViewer.jsx:781-784).
+    {
+      shortcut: { key: ' ' },
+      onShortcut: (event) => {
+        if (isControlTarget(event.target)) {
+          return;
+        }
+        event.preventDefault();
+        onPlaySlideshow();
+      },
+    },
     { shortcut: { key: 'c', ctrl: true }, onShortcut: onCopyShortcut, preventDefault: false },
     { shortcut: { key: 'c', meta: true }, onShortcut: onCopyShortcut, preventDefault: false },
   ]}
@@ -217,14 +257,14 @@
   bind:clientWidth={containerWidth}
   bind:clientHeight={containerHeight}
   role="presentation"
-  ondblclick={onZoom}
   use:zoomImageAction={{ zoomTarget: adaptiveImage }}
-  {...useSwipe((event) => onSwipe?.(event))}
 >
   <AdaptiveImage
+    dynamicRange={$imageViewingPreference}
     {asset}
     {sharedLink}
     {container}
+    {holdFullSize}
     objectFit={$slideshowState !== SlideshowState.None && $slideshowLook === SlideshowLook.Cover ? 'cover' : 'contain'}
     {onUrlChange}
     onImageReady={() => {
@@ -240,7 +280,10 @@
   >
     {#snippet backdrop()}
       {#if blurredSlideshow}
-        <Thumbhash base64ThumbHash={asset.thumbhash!} class="absolute inset-s-0 top-0 left-0 h-dvh w-dvw" />
+        <Thumbhash
+          base64ThumbHash={asset.thumbhash!}
+          class="absolute inset-s-0 top-0 left-0 h-dvh w-dvw {memoriesBackdrop ? 'brightness-50 saturate-[1.15]' : ''}"
+        />
       {/if}
     {/snippet}
     {#snippet overlays()}
@@ -264,6 +307,7 @@
         {@const isActive = assetViewerManager.highlightedFaces.some((f) => f.id === boundingbox.id)}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
+          data-testid="face-hotspot"
           class="pointer-events-auto absolute rounded-lg {isActive && 'border-3 border-solid border-white'}"
           style="top: {boundingbox.top}px; left: {boundingbox.left}px; height: {boundingbox.height}px; width: {boundingbox.width}px;"
           onpointerenter={() => assetViewerManager.setHighlightedFaces([boundingbox.face])}
@@ -272,7 +316,7 @@
           {#if isActive && boundingbox.name}
             <div
               aria-hidden="true"
-              class="absolute rounded-sm bg-white/90 px-2 py-1 text-sm font-medium whitespace-nowrap text-black shadow-lg"
+              class="fl-face-label"
               style="top: {boundingbox.height + 4}px; {assetViewerManager.imgRef
                 ? boundingbox.left >= 0
                   ? `right: ${Math.max(boundingbox.left + boundingbox.width - assetViewerManager.imgRef.clientWidth, 0)}px;`
@@ -288,10 +332,48 @@
       {#each ocrBoxes as ocrBox (ocrBox.id)}
         <OcrBoundingBox {ocrBox} />
       {/each}
+
+      {#if documentHighlight}
+        <svg
+          class="pointer-events-none absolute top-0 left-0 overflow-visible"
+          width={overlaySize.width}
+          height={overlaySize.height}
+          aria-hidden="true"
+          data-testid="document-region-highlight"
+        >
+          <polygon
+            points={documentHighlight.points.map((point) => `${point.x},${point.y}`).join(' ')}
+            style:fill="color-mix(in srgb, var(--fl-teal) 18%, transparent)"
+            style:stroke="var(--fl-teal)"
+            stroke-width="2"
+            stroke-dasharray="6 4"
+          />
+        </svg>
+      {/if}
     {/snippet}
   </AdaptiveImage>
-
-  {#if assetViewerManager.isFaceEditMode && assetViewerManager.imgRef}
-    <FaceEditor htmlElement={assetViewerManager.imgRef} {containerWidth} {containerHeight} assetId={asset.id} />
-  {/if}
 </div>
+
+<style>
+  /* A small dark glass chip, like the Live badge: the viewer has no light surfaces. */
+  .fl-face-label {
+    position: absolute;
+    padding: var(--fl-space-1) var(--fl-space-2);
+    border: 1px solid var(--fl-viewer-border);
+    border-radius: var(--fl-radius-sm);
+    background: color-mix(in srgb, var(--fl-viewer-panel) 82%, transparent);
+    backdrop-filter: var(--fl-material-blur);
+    box-shadow: var(--fl-shadow-1);
+    color: var(--fl-viewer-text);
+    font: var(--fl-type-caption);
+    font-weight: 550;
+    white-space: nowrap;
+  }
+
+  @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+    .fl-face-label {
+      background: var(--fl-viewer-panel);
+      backdrop-filter: none;
+    }
+  }
+</style>

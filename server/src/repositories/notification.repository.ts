@@ -1,3 +1,4 @@
+import { sql } from 'kysely';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Insertable, Kysely, Updateable } from 'kysely';
@@ -18,15 +19,14 @@ export class NotificationRepository {
           // remove soft-deleted notifications
           eb.and([eb('deletedAt', 'is not', null), eb('deletedAt', '<', DateTime.now().minus({ days: 3 }).toJSDate())]),
 
-          // remove old, read notifications
+          // Compatibility policy: old notifications read within the last two days.
           eb.and([
-            // keep recently read messages around for a few days
             eb('readAt', '>', DateTime.now().minus({ days: 2 }).toJSDate()),
             eb('createdAt', '<', DateTime.now().minus({ days: 15 }).toJSDate()),
           ]),
 
           eb.and([
-            // remove super old, unread notifications
+            // Retained compatibility predicate: SQL '= NULL' does not match unread rows.
             eb('readAt', '=', null),
             eb('createdAt', '<', DateTime.now().minus({ days: 30 }).toJSDate()),
           ]),
@@ -54,6 +54,22 @@ export class NotificationRepository {
       .execute();
   }
 
+  /**
+   * FL-155: whether `userId` already has a notification carrying `dedupeKey` (in `data`) created
+   * after `since`, read or not, so a repeating condition notifies once per window.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING, DummyValue.DATE] })
+  async findRecentByDedupeKey(userId: string, dedupeKey: string, since: Date) {
+    const row = await this.db
+      .selectFrom('notification')
+      .select('id')
+      .where('userId', '=', userId)
+      .where(sql<string>`"data"->>'dedupeKey'`, '=', dedupeKey)
+      .where('createdAt', '>', since)
+      .executeTakeFirst();
+    return row ?? null;
+  }
+
   create(notification: Insertable<NotificationTable>) {
     return this.db
       .insertInto('notification')
@@ -67,7 +83,7 @@ export class NotificationRepository {
       .selectFrom('notification')
       .select(columns.notification)
       .where('id', '=', id)
-      .where('deletedAt', 'is not', null)
+      .where('deletedAt', 'is', null)
       .executeTakeFirst();
   }
 

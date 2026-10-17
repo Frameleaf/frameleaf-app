@@ -5,7 +5,7 @@ import { SchedulerRegistry } from '@nestjs/schedule';
 import { Test } from '@nestjs/testing';
 import { ClsModule } from 'nestjs-cls';
 import { KyselyModule } from 'nestjs-kysely';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { format } from 'sql-formatter';
 import { GENERATE_SQL_KEY, GenerateSqlQueries } from 'src/decorators.js';
@@ -46,7 +46,8 @@ const reflector = new Reflector();
 type Repository = new (...args: any[]) => any;
 type SqlGeneratorOptions = { targetDir: string };
 
-class SqlGenerator {
+// eslint-disable-next-line unicorn/no-exports-in-scripts
+export class SqlGenerator {
   private app: INestApplication | null = null;
   private sqlLogger = new SqlLogger();
   private results: Record<string, string[]> = {};
@@ -62,17 +63,14 @@ class SqlGenerator {
         }
         await this.process(Repository);
       }
-      await this.write();
-      this.stats();
+      const written = await this.write();
+      this.stats(written);
     } finally {
       await this.close();
     }
   }
 
   private async setup() {
-    await rm(this.options.targetDir, { force: true, recursive: true });
-    await mkdir(this.options.targetDir);
-
     if (!process.env.DB_HOSTNAME) {
       process.env.DB_HOSTNAME = 'localhost';
     }
@@ -96,7 +94,8 @@ class SqlGenerator {
       providers: [...repositories, AuthService, SchedulerRegistry],
     }).compile();
 
-    this.app = await moduleFixture.createNestApplication().init();
+    this.app = moduleFixture.createNestApplication();
+    await this.app.init();
   }
 
   async process(Repository: Repository) {
@@ -137,12 +136,9 @@ class SqlGenerator {
         continue;
       }
 
-      // empty decorator implies calling with no arguments
-      if (queries.length === 0) {
-        queries.push({ params: [] });
-      }
-
-      for (const { name, params, stream } of queries) {
+      // An empty decorator supplies no arguments without changing shared metadata.
+      const cases: GenerateSqlQueries[] = queries.length > 0 ? queries : [{ params: [] }];
+      for (const { name, params, stream } of cases) {
         let queryLabel = `${label}.${key}`;
         if (name) {
           queryLabel += ` (${name})`;
@@ -150,18 +146,18 @@ class SqlGenerator {
 
         this.sqlLogger.clear();
 
-        if (stream) {
-          try {
+        try {
+          if (stream) {
             const result: AsyncIterableIterator<unknown> = target.apply(instance, params);
             for await (const _ of result) {
               break;
             }
-          } catch (error) {
-            handleError(queryLabel, error);
+          } else {
+            await target.apply(instance, params);
           }
-        } else {
-          // errors still generate sql, which is all we care about
-          await target.apply(instance, params).catch((error: Error) => handleError(queryLabel, error));
+        } catch (error) {
+          // Failed execution can still record useful SQL.
+          handleError(queryLabel, error);
         }
 
         if (this.sqlLogger.queries.length === 0) {
@@ -177,20 +173,43 @@ class SqlGenerator {
   }
 
   private async write() {
+    await mkdir(this.options.targetDir, { recursive: true });
+    const expectedFiles = new Set<string>();
+    let written = 0;
     for (const [repoName, data] of Object.entries(this.results)) {
       // only contains the header
       if (data.length === 1) {
         continue;
       }
       const filename = repoName.replaceAll(/[A-Z]/g, (letter) => `.${letter.toLowerCase()}`).replace('.', '');
-      const file = join(this.options.targetDir, `${filename}.sql`);
-      await writeFile(file, data.join('\n\n') + '\n');
+      const basename = `${filename}.sql`;
+      expectedFiles.add(basename);
+      const file = join(this.options.targetDir, basename);
+      const content = data.join('\n\n') + '\n';
+      let current: string | undefined;
+      try {
+        current = await readFile(file, 'utf8');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
+      }
+      if (current !== content) {
+        await writeFile(file, content);
+        written++;
+      }
     }
+    // Prune only generated SQL after every intended output was written successfully.
+    for (const filename of await readdir(this.options.targetDir)) {
+      if (filename.endsWith('.sql') && !expectedFiles.has(filename)) {
+        await rm(join(this.options.targetDir, filename));
+      }
+    }
+    return written;
   }
 
-  private stats() {
-    console.log(`Wrote ${Object.keys(this.results).length} files`);
-    console.log(`Generated ${Object.values(this.results).flat().length} queries`);
+  private stats(written: number) {
+    console.log(`Wrote ${written} files`);
+    const groups = Object.values(this.results).reduce((count, data) => count + Math.max(0, data.length - 1), 0);
+    console.log(`Generated ${groups} query groups`);
   }
 
   private async close() {
@@ -204,14 +223,16 @@ class SqlGenerator {
   }
 }
 
-new SqlGenerator({ targetDir: './src/queries' })
-  .run()
-  .then(() => {
-    console.log('Done');
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error(error);
-    console.log('Something went wrong');
-    process.exit(1);
-  });
+if (import.meta.main) {
+  new SqlGenerator({ targetDir: './src/queries' })
+    .run()
+    .then(() => {
+      console.log('Done');
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error(error);
+      console.log('Something went wrong');
+      process.exit(1);
+    });
+}

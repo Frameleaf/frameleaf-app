@@ -368,6 +368,44 @@ describe('CancellableTask', () => {
   });
 
   describe('error handling', () => {
+    it('keeps a newer execution running when a canceled execution fails later', async () => {
+      const errorCallback = vi.fn();
+      const task = new CancellableTask(undefined, undefined, errorCallback);
+      let rejectOlder!: (error: Error) => void;
+      const older = task.execute(() => new Promise<void>((_, reject) => (rejectOlder = reject)), true);
+      task.cancel();
+
+      let resolveLatest!: () => void;
+      const latest = task.execute(() => new Promise<void>((resolve) => (resolveLatest = resolve)), true);
+      const latestToken = task.cancelToken;
+      const latestCompletion = task.complete;
+      const waiting = task.waitUntilCompletion();
+
+      rejectOlder(new Error('Older execution failed after cancellation'));
+      expect(await older).toBe('CANCELED');
+      expect(task.cancelToken).toBe(latestToken);
+      expect(task.complete).toBe(latestCompletion);
+      expect(task.loading).toBe(true);
+      expect(errorCallback).not.toHaveBeenCalled();
+
+      resolveLatest();
+      expect(await latest).toBe('LOADED');
+      expect(await waiting).toBe('WAITED');
+      expect(task.executed).toBe(true);
+    });
+
+    it.each([null, undefined])('reports a %s rejection and allows re-execution', async (error) => {
+      const errorCallback = vi.fn();
+      const task = new CancellableTask(undefined, undefined, errorCallback);
+      const completion = task.complete;
+
+      expect(await task.execute(() => Promise.reject(error), true)).toBe('ERRORED');
+      await expect(completion).rejects.toBeUndefined();
+      expect(errorCallback).toHaveBeenCalledExactlyOnceWith(error);
+      expect(await task.execute(async () => {}, true)).toBe('LOADED');
+      expect(task.executed).toBe(true);
+    });
+
     it('should return ERRORED when task throws non-abort error', async () => {
       const task = new CancellableTask();
       const error = new Error('Task failed');

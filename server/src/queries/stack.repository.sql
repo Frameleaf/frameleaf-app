@@ -10,6 +10,14 @@ select
       (
         select
           "asset".*,
+          exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          ) as "isLocked",
           to_json("exifInfo") as "exifInfo"
         from
           "asset"
@@ -30,6 +38,7 @@ select
               "asset_exif"."fNumber",
               "asset_exif"."focalLength",
               "asset_exif"."fps",
+              "asset_exif"."imageEncoding",
               "asset_exif"."iso",
               "asset_exif"."latitude",
               "asset_exif"."lensModel",
@@ -53,47 +62,27 @@ select
         where
           "asset"."deletedAt" is null
           and "asset"."stackId" = "stack"."id"
-          and "asset"."visibility" in ('archive', 'timeline')
+          and (
+            "asset"."visibility" in ('archive', 'timeline')
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and not (
-            case
-              when "asset"."id" is null then false
-              when coalesce(
-                (
-                  select
-                    phase
-                  from
-                    immich_fork.state
-                  where
-                    id = 1
-                ),
-                'inactive'
-              ) in ('legacy', 'dual-write', 'ready') then exists (
-                select
-                  1
-                from
-                  asset as nsfw_asset
-                where
-                  nsfw_asset.id = "asset"."id"
-                  and nsfw_asset.is_nsfw = true
-              )
-              when (
-                select
-                  phase
-                from
-                  immich_fork.state
-                where
-                  id = 1
-              ) = 'active' then not exists (
-                select
-                  1
-                from
-                  immich_fork.asset_privacy as privacy_asset
-                where
-                  privacy_asset."assetId" = "asset"."id"
-                  and privacy_asset."isNsfw" = false
-              )
-              else false
-            end
+            exists (
+              select
+                1
+              from
+                public.asset as nsfw_asset
+              where
+                nsfw_asset.id = "asset"."id"
+                and nsfw_asset.is_nsfw = true
+            )
           )
         order by
           "asset"."fileCreatedAt" asc
@@ -104,53 +93,43 @@ from
   inner join "asset" as "primaryAsset" on "primaryAsset"."id" = "stack"."primaryAssetId"
 where
   "stack"."ownerId" = $1
+  and not exists (
+    select
+      1 as "exists"
+    from
+      "asset" as "lockedPrimary"
+    where
+      "lockedPrimary"."id" = "stack"."primaryAssetId"
+      and exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "lockedPrimary"."id"
+      )
+  )
   and "primaryAsset"."deletedAt" is null
   and not (
-    case
-      when "primaryAsset"."id" is null then false
-      when coalesce(
-        (
-          select
-            phase
-          from
-            immich_fork.state
-          where
-            id = 1
-        ),
-        'inactive'
-      ) in ('legacy', 'dual-write', 'ready') then exists (
-        select
-          1
-        from
-          asset as nsfw_asset
-        where
-          nsfw_asset.id = "primaryAsset"."id"
-          and nsfw_asset.is_nsfw = true
-      )
-      when (
-        select
-          phase
-        from
-          immich_fork.state
-        where
-          id = 1
-      ) = 'active' then not exists (
-        select
-          1
-        from
-          immich_fork.asset_privacy as privacy_asset
-        where
-          privacy_asset."assetId" = "primaryAsset"."id"
-          and privacy_asset."isNsfw" = false
-      )
-      else false
-    end
+    exists (
+      select
+        1
+      from
+        public.asset as nsfw_asset
+      where
+        nsfw_asset.id = "primaryAsset"."id"
+        and nsfw_asset.is_nsfw = true
+    )
   )
 
 -- StackRepository.delete
-delete from "stack"
+select
+  "id",
+  "ownerId"
+from
+  "stack"
 where
-  "id" = $1::uuid
+  "id" in ($1)
 
 -- StackRepository.getById
 select
@@ -162,6 +141,14 @@ select
       (
         select
           "asset".*,
+          exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          ) as "isLocked",
           (
             select
               coalesce(json_agg(agg), '[]')
@@ -201,6 +188,7 @@ select
               "asset_exif"."fNumber",
               "asset_exif"."focalLength",
               "asset_exif"."fps",
+              "asset_exif"."imageEncoding",
               "asset_exif"."iso",
               "asset_exif"."latitude",
               "asset_exif"."lensModel",
@@ -224,47 +212,27 @@ select
         where
           "asset"."deletedAt" is null
           and "asset"."stackId" = "stack"."id"
-          and "asset"."visibility" in ('archive', 'timeline')
+          and (
+            "asset"."visibility" in ('archive', 'timeline')
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and not (
-            case
-              when "asset"."id" is null then false
-              when coalesce(
-                (
-                  select
-                    phase
-                  from
-                    immich_fork.state
-                  where
-                    id = 1
-                ),
-                'inactive'
-              ) in ('legacy', 'dual-write', 'ready') then exists (
-                select
-                  1
-                from
-                  asset as nsfw_asset
-                where
-                  nsfw_asset.id = "asset"."id"
-                  and nsfw_asset.is_nsfw = true
-              )
-              when (
-                select
-                  phase
-                from
-                  immich_fork.state
-                where
-                  id = 1
-              ) = 'active' then not exists (
-                select
-                  1
-                from
-                  immich_fork.asset_privacy as privacy_asset
-                where
-                  privacy_asset."assetId" = "asset"."id"
-                  and privacy_asset."isNsfw" = false
-              )
-              else false
-            end
+            exists (
+              select
+                1
+              from
+                public.asset as nsfw_asset
+              where
+                nsfw_asset.id = "asset"."id"
+                and nsfw_asset.is_nsfw = true
+            )
           )
         order by
           "asset"."fileCreatedAt" asc
@@ -275,47 +243,33 @@ from
   inner join "asset" as "primaryAsset" on "primaryAsset"."id" = "stack"."primaryAssetId"
 where
   "id" = $1::uuid
+  and not exists (
+    select
+      1 as "exists"
+    from
+      "asset" as "lockedPrimary"
+    where
+      "lockedPrimary"."id" = "stack"."primaryAssetId"
+      and exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "lockedPrimary"."id"
+      )
+  )
   and "primaryAsset"."deletedAt" is null
   and not (
-    case
-      when "primaryAsset"."id" is null then false
-      when coalesce(
-        (
-          select
-            phase
-          from
-            immich_fork.state
-          where
-            id = 1
-        ),
-        'inactive'
-      ) in ('legacy', 'dual-write', 'ready') then exists (
-        select
-          1
-        from
-          asset as nsfw_asset
-        where
-          nsfw_asset.id = "primaryAsset"."id"
-          and nsfw_asset.is_nsfw = true
-      )
-      when (
-        select
-          phase
-        from
-          immich_fork.state
-        where
-          id = 1
-      ) = 'active' then not exists (
-        select
-          1
-        from
-          immich_fork.asset_privacy as privacy_asset
-        where
-          privacy_asset."assetId" = "primaryAsset"."id"
-          and privacy_asset."isNsfw" = false
-      )
-      else false
-    end
+    exists (
+      select
+        1
+      from
+        public.asset as nsfw_asset
+      where
+        nsfw_asset.id = "primaryAsset"."id"
+        and nsfw_asset.is_nsfw = true
+    )
   )
 
 -- StackRepository.getForAssetRemoval
@@ -329,8 +283,9 @@ where
   "asset"."id" = $1
 
 -- StackRepository.merge
-update "asset"
-set
-  "stackId" = $1
+select
+  "ownerId"
+from
+  "stack"
 where
-  "asset"."stackId" = $2
+  "id" = $1

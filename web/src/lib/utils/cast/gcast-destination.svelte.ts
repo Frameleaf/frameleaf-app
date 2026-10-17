@@ -23,9 +23,14 @@ export class GCastDestination implements ICastDestination {
   private session: chrome.cast.Session | null = null;
   private currentMedia: chrome.cast.media.Media | null = null;
   private currentUrl: string | null = null;
+  private mediaGeneration = 0;
 
   async initialize(): Promise<boolean> {
-    if (!authManager.authenticated || !authManager.preferences.cast.gCastEnabled) {
+    // FL-77: never load the Cast framework while an administrator has turned casting off.
+    const { gCastEnabled, adminDisabled } = authManager.authenticated
+      ? authManager.preferences.cast
+      : { gCastEnabled: false, adminDisabled: true };
+    if (!gCastEnabled || adminDisabled) {
       this.isAvailable = false;
       return false;
     }
@@ -93,7 +98,9 @@ export class GCastDestination implements ICastDestination {
   }
 
   async loadMedia(mediaUrl: string, sessionKey: string, reload: boolean = false): Promise<void> {
-    if (!this.isAvailable || !this.isConnected || !this.session) {
+    const generation = ++this.mediaGeneration;
+    const session = this.session;
+    if (!this.isAvailable || !this.isConnected || !session) {
       return;
     }
 
@@ -101,10 +108,20 @@ export class GCastDestination implements ICastDestination {
     if (this.currentUrl === mediaUrl && !reload) {
       return;
     }
+    const isCurrentSession = authManager.captureSession();
+    const isCurrent = () =>
+      generation === this.mediaGeneration &&
+      this.session === session &&
+      this.isAvailable &&
+      this.isConnected &&
+      isCurrentSession();
 
     // we need to send content type in the request
     // in the future we can swap this out for an API call to get image metadata
     const assetHead = await fetch(mediaUrl, { method: 'HEAD' });
+    if (!isCurrent()) {
+      return;
+    }
     const contentType = assetHead.headers.get('content-type');
 
     if (!contentType) {
@@ -112,19 +129,24 @@ export class GCastDestination implements ICastDestination {
     }
 
     // build the authenticated media request and send it to the cast device
-    const authenticatedUrl = `${mediaUrl}&sessionKey=${sessionKey}`;
-    const mediaInfo = new chrome.cast.media.MediaInfo(authenticatedUrl, contentType);
+    const authenticatedUrl = new URL(mediaUrl, location.href);
+    authenticatedUrl.searchParams.set('sessionKey', sessionKey);
+    const mediaInfo = new chrome.cast.media.MediaInfo(authenticatedUrl.href, contentType);
 
     // Create a queue with a single item and set it to repeat
     const queueItem = new chrome.cast.media.QueueItem(mediaInfo);
     const queueLoadRequest = new chrome.cast.media.QueueLoadRequest([queueItem]);
     queueLoadRequest.repeatMode = chrome.cast.media.RepeatMode.SINGLE;
 
-    const successCallback = this.onMediaDiscovered.bind(this, SESSION_DISCOVERY_CAUSE.LOAD_MEDIA);
+    const successCallback = (media: chrome.cast.media.Media) => {
+      if (isCurrent()) {
+        this.onMediaDiscovered(SESSION_DISCOVERY_CAUSE.LOAD_MEDIA, media);
+      }
+    };
 
     this.currentUrl = mediaUrl;
 
-    return this.session.queueLoad(queueLoadRequest, successCallback, this.onError.bind(this));
+    return session.queueLoad(queueLoadRequest, successCallback, this.onError.bind(this));
   }
 
   ///
@@ -159,6 +181,7 @@ export class GCastDestination implements ICastDestination {
   }
 
   disconnect(): void {
+    this.mediaGeneration++;
     this.session?.leave(() => {
       this.session = null;
       this.castState = CastState.IDLE;

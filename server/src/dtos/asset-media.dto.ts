@@ -26,6 +26,13 @@ const AssetMediaOptionsSchema = z
         .getExtensions(),
     ),
     edited: stringToBool.default(false).optional().describe('Return edited asset if available'),
+    faceSource: stringToBool.optional().describe('Return the ordinary edited preview used for face coordinates'),
+    dynamicRange: z
+      .enum(['auto', 'sdr', 'hdr'])
+      .optional()
+      .describe(
+        'Defaults to compatible SDR. Auto prefers an available HDR derivative; explicit HDR fails when unavailable.',
+      ),
   })
   .meta({ id: 'AssetMediaOptionsDto' });
 
@@ -102,5 +109,18 @@ const AssetBulkUploadCheckSchema = z
   .meta({ id: 'AssetBulkUploadCheckDto' });
 
 export class AssetMediaOptionsDto extends createZodDto(AssetMediaOptionsSchema) {}
+
+const AssetPlaybackOptionsSchema = z
+  .object({
+    edited: stringToBool
+      .default(true)
+      .optional()
+      .describe(
+        "Play the edited version when one exists (default). false plays the unedited source for the asset's owner, as the quick editor needs; everyone else is always given the edited version",
+      ),
+  })
+  .meta({ id: 'AssetPlaybackOptionsDto' });
+
+export class AssetPlaybackOptionsDto extends createZodDto(AssetPlaybackOptionsSchema) {}
 export class AssetMediaCreateDto extends createZodDto(AssetMediaCreateSchema) {}
 export class AssetBulkUploadCheckDto extends createZodDto(AssetBulkUploadCheckSchema) {}

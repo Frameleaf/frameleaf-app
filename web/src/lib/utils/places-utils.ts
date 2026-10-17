@@ -1,17 +1,5 @@
-import { type AssetResponseDto } from '@immich/sdk';
 import { get } from 'svelte/store';
 import { PlacesGroupBy, placesViewSettings, type PlacesViewSettings } from '$lib/stores/preferences.store';
-
-/**
- * --------------
- * Places Grouping
- * --------------
- */
-export interface PlacesGroup {
-  id: string;
-  name: string;
-  places: AssetResponseDto[];
-}
 
 /**
  * ----------------------------
@@ -29,7 +17,7 @@ export const isPlacesGroupCollapsed = (settings: PlacesViewSettings, groupId: st
   if (settings.groupBy === PlacesGroupBy.None) {
     return false;
   }
-  return getCollapsedPlacesGroups(settings).includes(groupId);
+  return settings.collapsedGroups?.[settings.groupBy]?.includes(groupId) ?? false;
 };
 
 export const togglePlacesGroupCollapsing = (groupId: string) => {
@@ -51,9 +39,8 @@ export const togglePlacesGroupCollapsing = (groupId: string) => {
 
 export const collapseAllPlacesGroups = (groupIds: string[]) => {
   placesViewSettings.update((settings) => {
-    const collapsedGroups = getCollapsedPlacesGroups(settings);
-    collapsedGroups.length = 0;
-    collapsedGroups.push(...groupIds);
+    settings.collapsedGroups ??= {};
+    settings.collapsedGroups[settings.groupBy] = [...groupIds];
     return settings;
   });
 };

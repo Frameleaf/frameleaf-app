@@ -8,7 +8,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream';
 import { Observable } from 'rxjs';
-import type { ImmichFile, UploadFile, UploadFiles } from 'src/types.js';
+import type { FrameleafFile, UploadFile, UploadFiles } from 'src/types.js';
 import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
 import { RouteKey } from 'src/enum.js';
 import { AuthRequest } from 'src/middleware/auth.guard.js';
@@ -29,7 +29,7 @@ export function getFiles(files: UploadFiles) {
   };
 }
 
-type ImmichMulterFile = Express.Multer.File & { uuid: string };
+type UploadMulterFile = Express.Multer.File & { uuid: string };
 
 interface Callback<T> {
   (error: Error): void;
@@ -94,7 +94,7 @@ export class FileUploadInterceptor implements NestInterceptor {
     }
   }
 
-  private handleFile(request: AuthRequest, file: Express.Multer.File, callback: Callback<Partial<ImmichFile>>) {
+  private handleFile(request: AuthRequest, file: Express.Multer.File, callback: Callback<Partial<FrameleafFile>>) {
     request.on('error', (error) => {
       if ('code' in error && error.code === 'ECONNRESET') {
         this.logger.debug('Upload was cancelled');
@@ -105,7 +105,7 @@ export class FileUploadInterceptor implements NestInterceptor {
     });
 
     try {
-      (file as ImmichMulterFile).uuid = randomUUID();
+      (file as UploadMulterFile).uuid = randomUUID();
 
       const uploadRequest = asUploadRequest(request, file);
 

@@ -3,7 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
-import { SyncAckDeleteDto, SyncAckDto, SyncAckSetDto, SyncStreamDto } from 'src/dtos/sync.dto.js';
+import { SyncAckDeleteDto, SyncAckDto, SyncAckSetDto, SyncAckV2Dto, SyncStreamDto } from 'src/dtos/sync.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js';
@@ -39,10 +39,27 @@ export class SyncController {
   @Authenticated({ permission: Permission.SyncCheckpointRead })
   @Endpoint({
     summary: 'Retrieve acknowledgements',
-    description: 'Retrieve the synchronization acknowledgments for the current session.',
+    description:
+      'Retrieve the legacy synchronization acknowledgments for the current session. Use GET /sync/ack/v2 for all sync families, including album source links.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  getSyncAck(@Auth() auth: AuthDto): Promise<SyncAckDto[]> {
+  async getSyncAck(@Auth() auth: AuthDto): Promise<SyncAckDto[]> {
+    const acks = await this.service.getAcks(auth);
+    return acks.flatMap((ack) => {
+      const result = SyncAckDto.schema.safeParse(ack);
+      return result.success ? [result.data] : [];
+    });
+  }
+
+  @Get('ack/v2')
+  @Authenticated({ permission: Permission.SyncCheckpointRead })
+  @Endpoint({
+    summary: 'Retrieve all acknowledgements',
+    description:
+      'Retrieve synchronization acknowledgments for every sync family in the current session, including album source links. Acknowledgment IDs are opaque and can be sent unchanged to POST /sync/ack.',
+    history: new HistoryBuilder().added('v2'),
+  })
+  getSyncAckV2(@Auth() auth: AuthDto): Promise<SyncAckV2Dto[]> {
     return this.service.getAcks(auth);
   }
 

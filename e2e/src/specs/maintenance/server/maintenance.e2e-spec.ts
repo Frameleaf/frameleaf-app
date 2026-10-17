@@ -1,4 +1,4 @@
-import { LoginResponseDto } from '@immich/sdk';
+import { LoginResponseDto } from '@frameleaf/sdk';
 import { errorDto } from 'src/responses.js';
 import { app, utils } from 'src/utils.js';
 import request from 'supertest';
@@ -45,7 +45,7 @@ describe('/admin/maintenance', () => {
 
   // => enter maintenance mode
 
-  describe.sequential('POST /', () => {
+  describe('POST /', { concurrent: false }, () => {
     it('should be a no-op if try to exit maintenance mode', async () => {
       const { status } = await request(app)
         .post('/admin/maintenance')
@@ -87,7 +87,7 @@ describe('/admin/maintenance', () => {
 
   // => in maintenance mode
 
-  describe.sequential('in maintenance mode', () => {
+  describe('in maintenance mode', { concurrent: false }, () => {
     describe('GET ~/server/config', async () => {
       it('should indicate we are in maintenance mode', async () => {
         const { status, body } = await request(app).get('/server/config');
@@ -111,7 +111,7 @@ describe('/admin/maintenance', () => {
       it('should fail without cookie or token in body', async () => {
         const { status, body } = await request(app).post('/admin/maintenance/login').send({});
         expect(status).toBe(401);
-        expect(body).toEqual({ message: 'Missing JWT Token' });
+        expect(body).toEqual(errorDto.unauthorized('Missing JWT Token'));
       });
 
       it('should succeed with cookie', async () => {
@@ -152,7 +152,7 @@ describe('/admin/maintenance', () => {
 
   // => exit maintenance mode
 
-  describe.sequential('POST /', () => {
+  describe('POST /', { concurrent: false }, () => {
     it('should exit maintenance mode', async () => {
       const { status } = await request(app).post('/admin/maintenance').set('cookie', cookie!).send({
         action: 'end',

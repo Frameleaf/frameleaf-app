@@ -1,0 +1,31 @@
+--- a/src/infrastructure/gpu-effects/common.ts
++++ b/src/infrastructure/gpu-effects/common.ts
+@@ -135,9 +135,27 @@
+   }
+   return color;
+ }
++// quantizeToF16 may flush half subnormals. Preserve deterministic ties-to-even
++// coverage below the half normal boundary using only integer significand bits.
++fn fl_half_coverage(alpha: f32) -> f32 {
++  let value = clamp(alpha, 0.0, 1.0);
++  if (value == 0.0 || value >= 0.00006103515625) { return quantizeToF16(value); }
++  let bits = bitcast<u32>(value);
++  let exponent = (bits >> 23u) & 255u;
++  if (exponent < 102u) { return 0.0; }
++  let shift = 126u - exponent;
++  let significand = (bits & 8388607u) | 8388608u;
++  var mantissa = significand >> shift;
++  let remainder = significand & ((1u << shift) - 1u);
++  let halfway = 1u << (shift - 1u);
++  if (remainder > halfway || (remainder == halfway && (mantissa & 1u) != 0u)) {
++    mantissa += 1u;
++  }
++  return f32(mantissa) * 0.000000059604644775390625;
++}
+ fn fl_blur_output(color: vec4f) -> vec4f {
+   if (!FL_EXTENDED_RANGE) { return color; }
+-  let coverage = quantizeToF16(clamp(color.a, 0.0, 1.0));
++  let coverage = fl_half_coverage(color.a);
+   if (coverage <= 0.0) { return vec4f(0.0); }
+   return vec4f(fl_range3(color.rgb / color.a), coverage);
+ }

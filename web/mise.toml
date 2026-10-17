@@ -1,5 +1,5 @@
 [tasks.install]
-run = "pnpm install --filter immich-web --frozen-lockfile"
+run = "pnpm install --filter 'frameleaf-web...' --frozen-lockfile"
 
 [tasks.build]
 run = "pnpm run build"
@@ -19,7 +19,7 @@ run = [
 ]
 
 [tasks."start-demo"]
-env.IMMICH_SERVER_URL = "https://demo.immich.app"
+env.FRAMELEAF_SERVER_URL = "https://demo.immich.app"
 run = { task = ":start" }
 
 [tasks.test]
@@ -46,6 +46,13 @@ run = "pnpm run check:svelte"
 [tasks.check]
 run = { tasks = [":check-typescript", ":check-svelte"] }
 
+# FL-139: the JS and CSS each route loads up front stays within web/bundle-budget.json
+[tasks.bundle-budget]
+run = [
+  { task = ":build" },
+  "node ../scripts/frameleaf-web-bundle-budget.mjs",
+]
+
 [tasks.ci-unit]
 run = [
   { task = "//:sdk:install" },
@@ -54,6 +61,7 @@ run = [
   { task = ":format" },
   { task = ":check" },
   { task = ":test --run" },
+  { task = ":bundle-budget" },
 ]
 
 [tasks.checklist]

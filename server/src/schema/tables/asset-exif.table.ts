@@ -1,7 +1,18 @@
-import { Column, ForeignKeyColumn, Index, Int8, Table, UpdateDateColumn } from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+import {
+  AfterInsertTrigger,
+  AfterUpdateTrigger,
+  Column,
+  ForeignKeyColumn,
+  Index,
+  Int8,
+  Table,
+  UpdateDateColumn,
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import type { ImageEncodingInfo } from 'src/dtos/image-encoding.dto.js';
 import { LockableProperty } from 'src/database.js';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { asset_exif_landmark_match } from 'src/schema/functions.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 
 @Table('asset_exif')
@@ -15,7 +26,23 @@ import { AssetTable } from 'src/schema/tables/asset.table.js';
   using: 'gin',
   expression: 'f_unaccent("description") gin_trgm_ops',
 })
+// Rating and capture time live on different tables: this supplies the rating prefix,
+// while PostgreSQL still orders matching assets by capture time and id after the join.
+@Index({
+  name: 'asset_exif_rating_order_idx',
+  expression: '(COALESCE(rating, 0)) DESC, "assetId"',
+})
 @UpdatedAtTrigger('asset_exif_updatedAt')
+@AfterInsertTrigger({
+  name: 'asset_exif_landmark_match_insert',
+  scope: 'row',
+  function: asset_exif_landmark_match,
+})
+@AfterUpdateTrigger({
+  name: 'asset_exif_landmark_match_update',
+  scope: 'row',
+  function: asset_exif_landmark_match,
+})
 export class AssetExifTable {
   @ForeignKeyColumn(() => AssetTable, { onDelete: 'CASCADE', primary: true })
   assetId!: string;
@@ -94,6 +121,9 @@ export class AssetExifTable {
 
   @Column({ type: 'character varying', nullable: true })
   colorspace!: string | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  imageEncoding!: ImageEncodingInfo | null;
 
   @Column({ type: 'integer', nullable: true })
   bitsPerSample!: number | null;

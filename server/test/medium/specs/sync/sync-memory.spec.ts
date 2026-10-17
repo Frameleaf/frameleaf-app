@@ -53,6 +53,7 @@ describe(SyncEntityType.MemoryV1, () => {
     const { auth, user, ctx } = await setup();
     const memoryRepo = ctx.get(MemoryRepository);
     const { memory } = await ctx.newMemory({ ownerId: user.id });
+    await ctx.syncStream(auth, [SyncRequestType.MemoriesV1]);
     await memoryRepo.delete(memory.id);
 
     const response = await ctx.syncStream(auth, [SyncRequestType.MemoriesV1]);

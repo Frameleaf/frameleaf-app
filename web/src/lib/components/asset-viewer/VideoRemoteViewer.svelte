@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { castManager, CastState } from '$lib/managers/cast-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { Icon, IconButton, LoadingSpinner } from '@immich/ui';
+  import { Icon, IconButton, LoadingSpinner } from '@frameleaf/ui';
   import { mdiCastConnected, mdiPause, mdiPlay } from '@mdi/js';
+  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -13,6 +15,12 @@
   }
 
   let { poster, assetFileUrl, onVideoEnded, onVideoStarted }: Props = $props();
+
+  let alive = true;
+  let castRequest = 0;
+  onDestroy(() => {
+    alive = false;
+  });
 
   let previousPlayerState: CastState | null = $state(null);
 
@@ -40,7 +48,12 @@
   });
 
   $effect(() => {
-    if (castManager.castState === CastState.IDLE && previousPlayerState !== CastState.PAUSED) {
+    if (
+      castManager.castState === CastState.IDLE &&
+      previousPlayerState !== null &&
+      previousPlayerState !== CastState.IDLE &&
+      previousPlayerState !== CastState.PAUSED
+    ) {
       onVideoEnded();
     }
 
@@ -51,13 +64,21 @@
     if (!url || !castManager.isCasting) {
       return;
     }
+    const request = ++castRequest;
+    const isCurrentSession = authManager.captureSession();
+    const isCurrent = () =>
+      alive && request === castRequest && url === assetFileUrl && castManager.isCasting && isCurrentSession();
     const fullUrl = new URL(url, location.href);
 
     try {
       await castManager.loadMedia(fullUrl.href, force);
-      onVideoStarted();
+      if (isCurrent()) {
+        onVideoStarted();
+      }
     } catch (error) {
-      handleError(error, 'Unable to cast');
+      if (isCurrent()) {
+        handleError(error, 'Unable to cast');
+      }
       return;
     }
   };
@@ -73,7 +94,7 @@
   <span>{$t('connected_to')} {castManager.receiverName}</span>
 </span>
 
-<img src={poster} alt="poster" class="m-4 rounded-xl" />
+<img src={poster} alt="" class="m-4 rounded-xl" />
 
 <div class="flex place-content-center place-items-center">
   {#if castManager.castState === CastState.BUFFERING}

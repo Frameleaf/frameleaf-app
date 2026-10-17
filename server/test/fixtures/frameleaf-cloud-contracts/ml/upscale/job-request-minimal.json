@@ -1,0 +1,15 @@
+{
+  "estimate": "est1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "workload": "upscale",
+  "modelSku": "ms_54S55W7C",
+  "modelRev": "mr_0WNPDD697MT0",
+  "inputs": [
+    {
+      "inputId": "a1",
+      "contentType": "image/jpeg",
+      "bytes": 2811904,
+      "sha256": "5b1f0d3c9a7e2b4c6d8e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e"
+    }
+  ],
+  "request": {}
+}

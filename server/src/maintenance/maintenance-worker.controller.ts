@@ -25,7 +25,7 @@ import {
   SetMaintenanceModeDto,
 } from 'src/dtos/maintenance.dto.js';
 import { ServerConfigDto, ServerPingResponse, ServerVersionResponseDto } from 'src/dtos/server.dto.js';
-import { ImmichCookie } from 'src/enum.js';
+import { AuthCookie } from 'src/enum.js';
 import { MaintenanceRoute } from 'src/maintenance/maintenance-auth.guard.js';
 import { MaintenanceWorkerService } from 'src/maintenance/maintenance-worker.service.js';
 import { GetLoginDetails } from 'src/middleware/auth.guard.js';
@@ -107,7 +107,7 @@ export class MaintenanceWorkerController {
 
   @Get('admin/maintenance/status')
   maintenanceStatus(@Req() request: Request): Promise<MaintenanceStatusResponseDto> {
-    return this.service.status(request.cookies[ImmichCookie.MaintenanceToken]);
+    return this.service.status(request.cookies[AuthCookie.MaintenanceToken]);
   }
 
   @Get('admin/maintenance/detect-install')
@@ -122,17 +122,19 @@ export class MaintenanceWorkerController {
     @GetLoginDetails() loginDetails: LoginDetails,
     @Res({ passthrough: true }) res: Response,
   ): Promise<MaintenanceAuthDto> {
-    const token = dto.token ?? request.cookies[ImmichCookie.MaintenanceToken];
+    const token = dto.token ?? request.cookies[AuthCookie.MaintenanceToken];
     const auth = await this.service.login(token);
     return respondWithCookie(res, auth, {
       isSecure: loginDetails.isSecure,
-      values: [{ key: ImmichCookie.MaintenanceToken, value: token }],
+      values: [{ key: AuthCookie.MaintenanceToken, value: token }],
     });
   }
 
   @Post('admin/maintenance')
   @MaintenanceRoute()
   setMaintenanceMode(@Body() dto: SetMaintenanceModeDto): void {
+    // FL-81: a conflicting action is refused with 409 before the action runs in the background
+    this.service.claimAction(dto);
     void this.service.setAction(dto);
   }
 }

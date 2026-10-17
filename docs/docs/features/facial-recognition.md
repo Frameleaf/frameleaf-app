@@ -2,19 +2,13 @@
 
 ## Overview
 
-Immich recognizes faces in your photos and videos and groups them together into people. You can then assign names to these people and search for them.
+Frameleaf recognizes faces in your photos and videos and groups them together into people. You can then assign names to these people and search for them.
 
-The list of people is shown in the Explore page.
-
-<img src={require('./img/facial-recognition-1.webp').default} title='Facial Recognition 1' />
+The list of people is shown on the **People** page, which you can open from the sidebar.
 
 Upon clicking on a person, a list of assets that contain their face will be shown.
 
-<img src={require('./img/facial-recognition-2.webp').default} title='Facial Recognition 2' />
-
-The asset detail view will also show the faces that are recognized in the asset.
-
-<img src={require('./img/facial-recognition-3.webp').default} title='Facial Recognition 3' />
+The information panel of a photo or video also shows the people recognized in it.
 
 ## Actions
 
@@ -26,9 +20,7 @@ Additional actions you can do include:
 - Merging two or more detected people into one person
 - Favoriting a person to pin them to the top of the list
 
-It can be found from the app bar when you access the detail view of a person.
-
-<img src={require('./img/facial-recognition-4.webp').default} title='Facial Recognition 4' />
+These actions are on a person's page: **Featured photo**, **Hide**, **Set date of birth**, **Merge people** and **Favorite**.
 
 ## How Face Detection Works
 
@@ -39,7 +31,7 @@ Face detection sends the generated preview image to the machine learning service
 The facial recognition algorithm we use is derived from [DBSCAN](https://www.youtube.com/watch?v=RDZUdRSDOok), a popular clustering algorithm. It essentially treats each detected face as a point in a graph and aims to group points that are close to each other.
 
 :::note
-An important concept is whether something is a _core point_. A core point has a minimum number of points around it within a certain distance. A non-core point can only be assigned to a cluster if it can reach a core point; a non-core point can't be used to extend a cluster even if it's part of one. In Immich, the _Minimum Recognized Faces_ setting controls the threshold to be considered a core point.
+An important concept is whether something is a _core point_. A core point has a minimum number of points around it within a certain distance. A non-core point can only be assigned to a cluster if it can reach a core point; a non-core point can't be used to extend a cluster even if it's part of one. In Frameleaf, the _Minimum Recognized Faces_ setting controls the threshold to be considered a core point.
 :::
 
 For each face, it looks around it to find other faces within a certain distance. Faces within this distance are considered similar, so it then checks if any of these faces are associated with a person.

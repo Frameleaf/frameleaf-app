@@ -1,6 +1,8 @@
 import { persisted } from 'svelte-persisted-store';
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import { defaultLang } from '$lib/constants';
+import { defaultAlbumDirectoryView, type AlbumDirectoryView } from '$lib/frameleaf/album-directory';
+import type { LibraryLayout } from '$lib/frameleaf/library-session';
 import { convertBCP47, getPreferredLocale } from '$lib/utils/i18n';
 
 // Locale to use for formatting dates, numbers, etc.
@@ -19,26 +21,32 @@ export const lang = persisted<string>('lang', preferredLocale || defaultLang.cod
   },
 });
 
+/**
+ * The Map screen's settings sheet (prototype `defaultMapSettings`): a date preset, what to include
+ * and whether the in-view list is open. Shared spaces and partner items are included by default.
+ */
 export interface MapSettings {
-  allowDarkMode: boolean;
+  datePreset: 'all' | '30d' | 'year' | 'custom';
+  /** Custom range start, `YYYY-MM-DD`; empty when unset. */
+  dateAfter: string;
+  /** Custom range end, `YYYY-MM-DD`; empty when unset. */
+  dateBefore: string;
   includeArchived: boolean;
-  onlyFavorites: boolean;
-  withPartners: boolean;
   withSharedAlbums: boolean;
+  withPartners: boolean;
+  onlyFavorites: boolean;
   showAssetPanel: boolean;
-  relativeDate: string;
-  dateAfter?: string;
-  dateBefore?: string;
 }
 
-const defaultMapSettings = {
-  allowDarkMode: true,
+const defaultMapSettings: MapSettings = {
+  datePreset: 'all',
+  dateAfter: '',
+  dateBefore: '',
   includeArchived: false,
+  withSharedAlbums: true,
+  withPartners: true,
   onlyFavorites: false,
-  withPartners: false,
-  withSharedAlbums: false,
   showAssetPanel: false,
-  relativeDate: '',
 };
 
 const persistedObject = <T>(key: string, defaults: T) =>
@@ -120,13 +128,28 @@ export const albumViewSettings = persisted<AlbumViewSettings>('album-view-settin
   collapsedGroups: {},
 });
 
+/**
+ * Frameleaf Albums page view (FL-52): filter pill, sort, grid or list, and the
+ * collapsed collection shelves. A per-device convenience, never authority; the
+ * page repairs a stale or edited value with `normalizeAlbumDirectoryView`.
+ */
+export const albumDirectoryView = persisted<AlbumDirectoryView>('frameleaf-album-directory', {
+  ...defaultAlbumDirectoryView,
+});
+
 export enum PlacesGroupBy {
   None = 'None',
   Country = 'Country',
+  // Frameleaf (FL-51): country, then state, matching the September 22, 2026 design
+  // revision's Places grouping. Kept as its own value (not a variant of Country) so a
+  // saved preference from before this story still round-trips through the same enum.
+  CountryState = 'CountryState',
 }
 
+// FL-83 (PL-1): grouped by country and state by default, as the prototype's Places opens
+// grouped (`Places.jsx`); the choice is still persisted once changed.
 export const placesViewSettings = persisted<PlacesViewSettings>('places-view-settings', {
-  groupBy: PlacesGroupBy.None,
+  groupBy: PlacesGroupBy.CountryState,
   collapsedGroups: {},
 });
 
@@ -140,13 +163,22 @@ export const loopVideo = persisted<boolean>('loop-video', true, {});
 
 export const autoPlayVideo = persisted<boolean>('auto-play-video', true, {});
 
+// Realtime-transcoding quality: 'auto' lets hls.js adapt, a number pins the rendition by its short side (e.g. 720).
+export const videoQuality = persisted<'auto' | number>('video-quality', 'auto', {});
+
 export const alwaysLoadOriginalVideo = persisted<boolean>('always-load-original-video', false, {});
 
-export const recentAlbumsDropdown = persisted<boolean>('recent-albums-open', true, {});
+// ACCOUNT-P3 "Use less movement" lives in reduce-motion.store.ts, which media-query-manager reads.
+
+// ACCOUNT-P3 "Open the library in": the layout a fresh visit to the library opens in. Null (never
+// chosen) keeps the layout used last, as before.
+export const libraryStartLayout = persisted<LibraryLayout | null>('frameleaf-library-start', null, {});
 
 export const albumTreeDropdown = persisted<boolean>('album-tree-open', false, {});
 
 // Primary sidebar width (px) when expanded, and whether it is collapsed to an icon-only rail.
-export const sidebarWidth = persisted<number>('sidebar-width', 256, {});
+// The prototype's `.sidebar` is 228px (styles.css:291); a width the person dragged to is kept.
+export const SIDEBAR_DEFAULT_WIDTH = 228;
+export const sidebarWidth = persisted<number>('sidebar-width', SIDEBAR_DEFAULT_WIDTH, {});
 
 export const sidebarCollapsed = persisted<boolean>('sidebar-collapsed', false, {});

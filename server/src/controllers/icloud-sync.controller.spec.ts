@@ -10,9 +10,28 @@ describe('iCloud API authorization and input boundaries', () => {
   let context: ControllerContext;
   const ownerId = randomUUID(),
     id = randomUUID();
-  const repository = { get: vi.fn(), create: vi.fn(), update: vi.fn(), counts: vi.fn() };
+  const repository = {
+    get: vi.fn(),
+    list: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    counts: vi.fn(),
+    latestOperation: vi.fn(),
+    remove: vi.fn(),
+  };
+  const logger = { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const transport = { enabled: () => true, authenticate: vi.fn() };
   const staging = { root: vi.fn() };
+  const weekly = {
+    status: vi.fn().mockResolvedValue({
+      enabled: false,
+      includeProtected: false,
+      available: false,
+      regrantRequired: false,
+      executionAvailable: false,
+    }),
+    setAuthority: vi.fn(),
+  };
   beforeAll(async () => {
     const service = new ICloudSyncService(
       repository as never,
@@ -25,6 +44,13 @@ describe('iCloud API authorization and input boundaries', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
+      logger as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      weekly as never,
+      { schedule: vi.fn() } as never,
     );
     context = await controllerSetup(ICloudSyncController, [{ provide: ICloudSyncService, useValue: service }]);
   });
@@ -35,10 +61,39 @@ describe('iCloud API authorization and input boundaries', () => {
     vi.clearAllMocks();
     context.reset();
     context.authenticate.mockResolvedValue({ user: { id: ownerId }, session: { hasElevatedPermission: false } });
+    repository.list.mockResolvedValue([]);
+    repository.latestOperation.mockResolvedValue(undefined);
     repository.get.mockImplementation((_id, owner) =>
       Promise.resolve(owner === ownerId ? { id, ownerId, config: ICloudConfigSchema.parse({}) } : undefined),
     );
   });
+  it('validates explicit weekly consent without accepting private bindings or API-key authority', async () => {
+    const input = { enabled: true, includeProtected: false, requestKey: randomUUID() };
+    await request(context.getHttpServer())
+      .patch('/icloud-sync/connections/not-a-uuid/identity-reuse-authority')
+      .send(input)
+      .expect(400);
+    await request(context.getHttpServer())
+      .patch(`/icloud-sync/connections/${id}/identity-reuse-authority`)
+      .send({ ...input, grantGeneration: 1 })
+      .expect(400);
+    await request(context.getHttpServer())
+      .patch(`/icloud-sync/connections/${id}/identity-reuse-authority`)
+      .send({ ...input, enabled: false, includeProtected: true })
+      .expect(400);
+    await request(context.getHttpServer())
+      .patch(`/icloud-sync/connections/${id}/identity-reuse-authority`)
+      .send({ ...input, requestKey: 'invalid' })
+      .expect(400);
+    context.authenticate.mockResolvedValue({ user: { id: ownerId }, session: {}, apiKey: {} });
+    await request(context.getHttpServer())
+      .patch(`/icloud-sync/connections/${id}/identity-reuse-authority`)
+      .send(input)
+      .expect(403);
+    expect(weekly.setAuthority).not.toHaveBeenCalled();
+    expect(transport.authenticate).not.toHaveBeenCalled();
+  });
+
   it('requires authentication and rejects malformed IDs and unknown configuration keys', async () => {
     context.authenticate.mockRejectedValueOnce(new UnauthorizedException());
     await request(context.getHttpServer()).get('/icloud-sync/connections').expect(401);
@@ -74,5 +129,18 @@ describe('iCloud API authorization and input boundaries', () => {
       .send({ action: 'login', appleId: 'owner@example.test', password: 'private-password' })
       .expect(400);
     expect(transport.authenticate).not.toHaveBeenCalled();
+  });
+  it('removes only through the owner-scoped path and never with a malformed ID', async () => {
+    await request(context.getHttpServer()).post('/icloud-sync/connections/not-a-uuid/remove').expect(400);
+    expect(repository.remove).not.toHaveBeenCalled();
+    repository.remove.mockResolvedValue('still-connected');
+    await request(context.getHttpServer()).post(`/icloud-sync/connections/${id}/remove`).expect(400);
+    expect(repository.remove).toHaveBeenCalledWith(id, ownerId, expect.any(Function));
+    repository.remove.mockResolvedValue('removed');
+    await request(context.getHttpServer()).post(`/icloud-sync/connections/${id}/remove`).expect(204);
+    context.authenticate.mockResolvedValue({ user: { id: randomUUID() }, session: {} });
+    repository.remove.mockClear();
+    await request(context.getHttpServer()).post(`/icloud-sync/connections/${id}/remove`).expect(404);
+    expect(repository.remove).not.toHaveBeenCalled();
   });
 });

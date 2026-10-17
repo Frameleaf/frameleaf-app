@@ -1,6 +1,7 @@
-import { JustifiedLayout, type LayoutOptions } from '@immich/justified-layout-wasm';
-import type { AssetResponseDto } from '@immich/sdk';
+import { JustifiedLayout, type LayoutOptions } from '@frameleaf/justified-layout-wasm';
+import type { AssetResponseDto } from '@frameleaf/sdk';
 import createJustifiedLayout from 'justified-layout';
+import { filledJustifiedLayout } from '$lib/frameleaf/justified-rows';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { getAssetRatio } from '$lib/utils/asset-utils';
 import { isTimelineAsset, isTimelineAssets } from '$lib/utils/timeline-util';
@@ -23,12 +24,29 @@ export type CommonLayoutOptions = {
   rowWidth: number;
   spacing: number;
   heightTolerance: number;
+  /**
+   * Frameleaf (FL-33): stretch the final row of a group to the container width when it fits inside
+   * the height tolerance, so a day group with only a few photos still fills the timeline. The
+   * upstream layouts leave that row ragged.
+   */
+  fillRowWidth?: boolean;
+  /**
+   * Frameleaf (FL-33, T-7): space for a caption under every row. Tiles keep the row height; the next
+   * row starts this much lower and the group grows by it per row. Honoured by the filling layout.
+   */
+  captionHeight?: number;
 };
 
 export function getJustifiedLayoutFromAssets(
   assets: TimelineAsset[] | AssetResponseDto[],
   options: CommonLayoutOptions,
 ): CommonJustifiedLayout {
+  if (options.fillRowWidth) {
+    return filledJustifiedLayout(
+      assets.map((asset) => (isTimelineAsset(asset) ? asset.ratio : (getAssetRatio(asset) ?? 1))),
+      options,
+    );
+  }
   if (useWasm) {
     return isTimelineAssets(assets) ? wasmLayoutFromTimeline(assets, options) : wasmLayoutFromDto(assets, options);
   }
@@ -98,11 +116,15 @@ class Adapter {
 }
 
 export function justifiedLayout(assets: (TimelineAsset | AssetResponseDto)[], options: CommonLayoutOptions) {
-  const adapter = {
+  if (assets.length === 0) {
+    return new Adapter({ containerHeight: 0, widowCount: 0, boxes: [] });
+  }
+
+  const adapter: Parameters<typeof createJustifiedLayout>[1] = {
     targetRowHeight: options.rowHeight,
     containerWidth: options.rowWidth,
     boxSpacing: options.spacing,
-    targetRowHeightTolerange: options.heightTolerance,
+    targetRowHeightTolerance: options.heightTolerance,
     containerPadding: 0,
   };
 

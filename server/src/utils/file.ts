@@ -1,12 +1,28 @@
 import { NotFoundException, StreamableFile } from '@nestjs/common';
 import { NextFunction, Response } from 'express';
 import { access, constants } from 'node:fs/promises';
-import { basename, extname } from 'node:path';
+import { basename, extname, parse } from 'node:path';
 import { promisify } from 'node:util';
+import sanitize from 'sanitize-filename';
 import { CacheControl } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { ImmichReadStream } from 'src/repositories/storage.repository.js';
+import { ReadStreamResponse } from 'src/repositories/storage.repository.js';
 import { onRouteError } from 'src/utils/logger.js';
+
+export const nextArchiveName = (paths: Map<string, number>, originalFileName: string) => {
+  const base = sanitize(originalFileName) || 'unnamed';
+  let filename = base;
+  let count = paths.get(base) ?? 0;
+  if (paths.has(filename)) {
+    const parsedFilename = parse(base);
+    do {
+      filename = `${parsedFilename.name}+${++count}${parsedFilename.ext}`;
+    } while (paths.has(filename));
+  }
+  paths.set(base, count);
+  paths.set(filename, 0);
+  return filename;
+};
 
 export function getFileNameWithoutExtension(path: string): string {
   return basename(path, getFilenameExtension(path));
@@ -24,13 +40,15 @@ export function getLivePhotoMotionFilename(stillName: string, motionName: string
   return getFileNameWithoutExtension(stillName) + getFilenameExtension(motionName);
 }
 
-export class ImmichFileResponse {
+export class FileDownloadResponse {
   public readonly path!: string;
   public readonly contentType!: string;
   public readonly cacheControl!: CacheControl;
   public readonly fileName?: string;
+  /** called once the file has been sent or the send failed, e.g. to let a temporary copy go (FL-54) */
+  public readonly release?: () => void | Promise<void>;
 
-  constructor(response: ImmichFileResponse) {
+  constructor(response: FileDownloadResponse) {
     Object.assign(this, response);
   }
 }
@@ -47,15 +65,12 @@ const cacheControlHeaders: Record<CacheControl, string | null> = {
 export const sendFile = async (
   res: Response,
   next: NextFunction,
-  handler: () => Promise<ImmichFileResponse> | ImmichFileResponse,
+  handler: () => Promise<FileDownloadResponse> | FileDownloadResponse,
   logger: LoggingRepository,
 ): Promise<void> => {
-  // promisified version of 'res.sendFile' for cleaner async handling
-  const _sendFile = (path: string, options: SendFileOptions) =>
-    promisify<string, SendFileOptions>(res.sendFile).bind(res)(path, options);
-
+  let file: FileDownloadResponse | undefined;
   try {
-    const file = await handler();
+    file = await handler();
 
     await access(file.path, constants.R_OK);
 
@@ -70,15 +85,19 @@ export const sendFile = async (
       res.header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(file.fileName)}`);
     }
 
-    return await _sendFile(file.path, { dotfiles: 'allow' });
+    const path = file.path;
+    const options: SendFileOptions = { dotfiles: 'allow' };
+    return await promisify<string, SendFileOptions>(res.sendFile).call(res, path, options);
   } catch (error: Error | any) {
     const { canWrite } = onRouteError(undefined, res, error, logger);
     if (canWrite) {
       next(new NotFoundException());
     }
+  } finally {
+    await file?.release?.();
   }
 };
 
-export const asStreamableFile = ({ stream, type, disposition, length }: ImmichReadStream) => {
+export const asStreamableFile = ({ stream, type, disposition, length }: ReadStreamResponse) => {
   return new StreamableFile(stream, { type, disposition, length });
 };

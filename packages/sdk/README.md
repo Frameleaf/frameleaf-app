@@ -1,23 +1,26 @@
-# @immich/sdk
+# @frameleaf/sdk
 
-A TypeScript SDK for interfacing with the [Immich](https://immich.app/) API.
+A TypeScript SDK for interfacing with the Frameleaf API.
 
-## Install
+## Build the workspace package
+
+The SDK is local to this repository. Consumers declare `"@frameleaf/sdk": "workspace:*"`; no published Immich package is required. From the repository root:
 
 ```bash
-npm i --save @immich/sdk
+pnpm install --frozen-lockfile
+pnpm --filter @frameleaf/sdk build
 ```
 
 ## Usage
 
-For a more detailed example, check out the [`@immich/cli`](https://github.com/immich-app/immich/tree/main/cli).
+For a more detailed example, check out the [`@frameleaf/cli`](../cli).
 
 ```typescript
-import { getAllAlbums, getMyUser, init } from "@immich/sdk";
+import { getAllAlbums, getMyUser, init } from "@frameleaf/sdk";
 
-const API_KEY = "<API_KEY>"; // process.env.IMMICH_API_KEY
+const API_KEY = "<API_KEY>"; // process.env.FRAMELEAF_API_KEY
 
-init({ baseUrl: "https://demo.immich.app/api", apiKey: API_KEY });
+init({ baseUrl: "https://photos.example.com/api", apiKey: API_KEY });
 
 const user = await getMyUser();
 const albums = await getAllAlbums({});

@@ -1,7 +1,12 @@
-import { isHttpError, type ApiHttpError } from '@immich/sdk';
-import type { HandleClientError } from '@sveltejs/kit';
+import { isHttpError, type ApiHttpError } from '@frameleaf/sdk';
+import type { HandleClientError } from '@sveltejs/kit/hooks';
 
 const DEFAULT_MESSAGE = 'Hmm, not sure about that. Check the logs or open a ticket?';
+
+const reasonOf = (data: unknown) => {
+  const reason = (data as { reason?: unknown } | undefined)?.reason;
+  return typeof reason === 'string' ? reason : undefined;
+};
 
 const parseHTTPError = (httpError: ApiHttpError) => {
   const statusCode = httpError?.status || httpError?.data?.statusCode || 500;
@@ -15,6 +20,8 @@ const parseHTTPError = (httpError: ApiHttpError) => {
   return {
     message: message || DEFAULT_MESSAGE,
     code: statusCode,
+    // A machine-readable cause, such as a shared link's `expired`.
+    reason: reasonOf(httpError?.data),
     stack: httpError?.stack,
   };
 };
@@ -30,8 +37,12 @@ const parseError = (error: unknown, status: number, message: string) => {
   };
 };
 
-export const handleError: HandleClientError = ({ error, status, message }) => {
-  const result = parseError(error, status, message);
+export const handleError: HandleClientError = ({ error, kind }) => {
+  const result = parseError(
+    error,
+    kind === 'unknown' ? 500 : error.status,
+    kind === 'unknown' ? DEFAULT_MESSAGE : error.message,
+  );
   console.error(`[hooks.client.ts]:handleError ${result.message}`, error);
-  return result;
+  return { ...result, status: result.code };
 };

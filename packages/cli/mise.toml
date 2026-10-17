@@ -1,5 +1,5 @@
 [tasks.install]
-run = "pnpm install --filter @immich/cli --frozen-lockfile"
+run = "pnpm install --filter @frameleaf/cli --frozen-lockfile"
 
 [tasks.build]
 env._.path = "./node_modules/.bin"

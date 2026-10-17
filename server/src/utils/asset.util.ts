@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { StorageCore } from 'src/cores/storage.core.js';
+import type { AssetRepository } from 'src/repositories/asset.repository.js';
 import { AssetFile } from 'src/database.js';
 import { BulkIdErrorReason, BulkIdResponseDto } from 'src/dtos/asset-ids.response.dto.js';
 import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
@@ -8,28 +8,97 @@ import { AssetFileType, AssetType, AssetVisibility, Permission } from 'src/enum.
 import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
-import { AssetRepository } from 'src/repositories/asset.repository.js';
-import { EventRepository } from 'src/repositories/event.repository.js';
-import { PartnerRepository } from 'src/repositories/partner.repository.js';
-import { IBulkAsset, ImmichFile, UploadFile, UploadRequest } from 'src/types.js';
+import { FrameleafFile, IBulkAsset, UploadFile, UploadRequest } from 'src/types.js';
 import { checkAccess } from 'src/utils/access.js';
 
 export const getAssetFile = (files: AssetFile[], type: AssetFileType, { isEdited }: { isEdited: boolean }) => {
   return files.find((file) => file.type === type && file.isEdited === isEdited);
 };
 
-export const getAssetFiles = (files: AssetFile[]) => ({
-  fullsizeFile: getAssetFile(files, AssetFileType.FullSize, { isEdited: false }),
-  previewFile: getAssetFile(files, AssetFileType.Preview, { isEdited: false }),
-  thumbnailFile: getAssetFile(files, AssetFileType.Thumbnail, { isEdited: false }),
-  sidecarFile: getAssetFile(files, AssetFileType.Sidecar, { isEdited: false }),
+type AssetFileSlot =
+  | 'fullsizeFile'
+  | 'previewFile'
+  | 'thumbnailFile'
+  | 'sidecarFile'
+  | 'editedFullsizeFile'
+  | 'editedPreviewFile'
+  | 'editedThumbnailFile'
+  | 'encodedVideoFile';
 
-  editedFullsizeFile: getAssetFile(files, AssetFileType.FullSize, { isEdited: true }),
-  editedPreviewFile: getAssetFile(files, AssetFileType.Preview, { isEdited: true }),
-  editedThumbnailFile: getAssetFile(files, AssetFileType.Thumbnail, { isEdited: true }),
-
-  encodedVideoFile: getAssetFile(files, AssetFileType.EncodedVideo, { isEdited: false }),
-});
+export const getAssetFiles = (files: AssetFile[]) => {
+  const selected: Record<AssetFileSlot, AssetFile | undefined> = {
+    fullsizeFile: undefined,
+    previewFile: undefined,
+    thumbnailFile: undefined,
+    sidecarFile: undefined,
+    editedFullsizeFile: undefined,
+    editedPreviewFile: undefined,
+    editedThumbnailFile: undefined,
+    encodedVideoFile: undefined,
+  };
+  for (let index = 0; index < files.length; index++) {
+    const file = files[index];
+    const isEdited = file.isEdited;
+    if (typeof isEdited !== 'boolean') {
+      continue;
+    }
+    switch (file.type) {
+      case AssetFileType.FullSize: {
+        if (isEdited) {
+          selected.editedFullsizeFile ??= file;
+        } else {
+          selected.fullsizeFile ??= file;
+        }
+        break;
+      }
+      case AssetFileType.Preview: {
+        if (isEdited) {
+          selected.editedPreviewFile ??= file;
+        } else {
+          selected.previewFile ??= file;
+        }
+        break;
+      }
+      case AssetFileType.Thumbnail: {
+        if (isEdited) {
+          selected.editedThumbnailFile ??= file;
+        } else {
+          selected.thumbnailFile ??= file;
+        }
+        break;
+      }
+      case AssetFileType.Sidecar: {
+        if (!isEdited) {
+          selected.sidecarFile ??= file;
+        }
+        break;
+      }
+      case AssetFileType.EncodedVideo: {
+        if (!isEdited) {
+          selected.encodedVideoFile ??= file;
+        }
+        break;
+      }
+      case AssetFileType.HdrFullSize:
+      case AssetFileType.HdrPreview: {
+        break;
+      }
+    }
+    if (
+      selected.fullsizeFile &&
+      selected.previewFile &&
+      selected.thumbnailFile &&
+      selected.sidecarFile &&
+      selected.editedFullsizeFile &&
+      selected.editedPreviewFile &&
+      selected.editedThumbnailFile &&
+      selected.encodedVideoFile
+    ) {
+      break;
+    }
+  }
+  return selected;
+};
 
 export const addAssets = async (
   auth: AuthDto,
@@ -46,6 +115,7 @@ export const addAssets = async (
   });
 
   const results: BulkIdResponseDto[] = [];
+  const newAssetIds: string[] = [];
   for (const assetId of dto.assetIds) {
     const hasAsset = existingAssetIds.has(assetId);
     if (hasAsset) {
@@ -60,10 +130,10 @@ export const addAssets = async (
     }
 
     existingAssetIds.add(assetId);
+    newAssetIds.push(assetId);
     results.push({ id: assetId, success: true });
   }
 
-  const newAssetIds = results.filter(({ success }) => success).map(({ id }) => id);
   if (newAssetIds.length > 0) {
     await bulk.addAssetIds(dto.parentId, newAssetIds);
   }
@@ -91,6 +161,7 @@ export const removeAssets = async (
         });
 
   const results: BulkIdResponseDto[] = [];
+  const removedIds: string[] = [];
   for (const assetId of dto.assetIds) {
     const hasAsset = existingAssetIds.has(assetId);
     if (!hasAsset) {
@@ -105,10 +176,10 @@ export const removeAssets = async (
     }
 
     existingAssetIds.delete(assetId);
+    removedIds.push(assetId);
     results.push({ id: assetId, success: true });
   }
 
-  const removedIds = results.filter(({ success }) => success).map(({ id }) => id);
   if (removedIds.length > 0) {
     await bulk.removeAssetIds(dto.parentId, removedIds);
   }
@@ -116,41 +187,10 @@ export const removeAssets = async (
   return results;
 };
 
-export type PartnerIdOptions = {
-  userId: string;
-  repository: PartnerRepository;
-  /** only include partners with `inTimeline: true` */
-  timelineEnabled?: boolean;
-};
-export const getMyPartnerIds = async ({ userId, repository, timelineEnabled }: PartnerIdOptions) => {
-  const partnerIds = new Set<string>();
-  const partners = await repository.getAll(userId);
-  for (const partner of partners) {
-    // ignore deleted users
-    if (!partner.sharedBy || !partner.sharedWith) {
-      continue;
-    }
-
-    // wrong direction
-    if (partner.sharedWithId !== userId) {
-      continue;
-    }
-
-    if (timelineEnabled && !partner.inTimeline) {
-      continue;
-    }
-
-    partnerIds.add(partner.sharedById);
-  }
-
-  return [...partnerIds];
-};
-
-export type AssetHookRepositories = { asset: AssetRepository; event: EventRepository };
-
-export const onBeforeLink = async (
-  { asset: assetRepository, event: eventRepository }: AssetHookRepositories,
-  { userId, livePhotoVideoId }: { userId: string; livePhotoVideoId: string },
+export const getLivePhotoMotion = async (
+  assetRepository: AssetRepository,
+  userId: string,
+  livePhotoVideoId: string,
 ) => {
   const motionAsset = await assetRepository.getById(livePhotoVideoId);
   if (!motionAsset) {
@@ -162,67 +202,29 @@ export const onBeforeLink = async (
   if (motionAsset.ownerId !== userId) {
     throw new BadRequestException('Live photo video does not belong to the user');
   }
-
-  if (motionAsset && motionAsset.visibility === AssetVisibility.Timeline) {
-    await assetRepository.update({ id: livePhotoVideoId, visibility: AssetVisibility.Hidden });
-    await eventRepository.emit('AssetHide', { assetId: motionAsset.id, userId });
-  }
-};
-
-export const onBeforeUnlink = async (
-  { asset: assetRepository }: AssetHookRepositories,
-  { livePhotoVideoId }: { livePhotoVideoId: string },
-) => {
-  const motion = await assetRepository.getById(livePhotoVideoId);
-  if (!motion) {
-    return null;
-  }
-
-  if (StorageCore.isAndroidMotionPath(motion.originalPath)) {
-    throw new BadRequestException('Cannot unlink Android motion photos');
-  }
-
-  return motion;
-};
-
-export const onAfterUnlink = async (
-  { asset: assetRepository, event: eventRepository }: AssetHookRepositories,
-  { userId, livePhotoVideoId, visibility }: { userId: string; livePhotoVideoId: string; visibility: AssetVisibility },
-) => {
-  await assetRepository.update({ id: livePhotoVideoId, visibility });
-  await eventRepository.emit('AssetShow', { assetId: livePhotoVideoId, userId });
+  return motionAsset;
 };
 
 export type LivePhotoLinkRepositories = {
   asset: Pick<AssetRepository, 'update'>;
   album: Pick<AlbumRepository, 'removeAssetsFromAll'>;
-  event: Pick<EventRepository, 'emit'>;
 };
 
 /**
  * Link a still image to its motion video as a live photo: point the photo at the
- * video, hide the video from the timeline, remove it from any albums, and emit the
- * hide event. Shared by metadata extraction and the live-photo relink utility so
- * both code paths behave identically.
+ * video, hide the video from the timeline and remove it from any albums.
+ * Callers supply transaction-bound repositories and announce the link after commit.
  */
 export const linkLivePhotoAssets = async (
-  { asset: assetRepository, album: albumRepository, event: eventRepository }: LivePhotoLinkRepositories,
-  {
-    photoAssetId,
-    motionAssetId,
-    motionOwnerId,
-  }: { photoAssetId: string; motionAssetId: string; motionOwnerId: string },
+  { asset: assetRepository, album: albumRepository }: LivePhotoLinkRepositories,
+  { photoAssetId, motionAssetId }: { photoAssetId: string; motionAssetId: string },
 ): Promise<void> => {
-  await Promise.all([
-    assetRepository.update({ id: photoAssetId, livePhotoVideoId: motionAssetId }),
-    assetRepository.update({ id: motionAssetId, visibility: AssetVisibility.Hidden }),
-    albumRepository.removeAssetsFromAll([motionAssetId]),
-  ]);
-
-  await eventRepository.emit('AssetHide', { assetId: motionAssetId, userId: motionOwnerId });
+  await assetRepository.update({ id: photoAssetId, livePhotoVideoId: motionAssetId });
+  await assetRepository.update({ id: motionAssetId, visibility: AssetVisibility.Hidden });
+  await albumRepository.removeAssetsFromAll([motionAssetId]);
 };
 
-export function mapToUploadFile(file: ImmichFile): UploadFile {
+export function mapToUploadFile(file: FrameleafFile): UploadFile {
   return {
     uuid: file.uuid,
     checksum: file.checksum,
@@ -238,7 +240,7 @@ export const asUploadRequest = (request: AuthRequest, file: Express.Multer.File)
     auth: request.user || null,
     body: request.body,
     fieldName: file.fieldname as UploadFieldName,
-    file: mapToUploadFile(file as ImmichFile),
+    file: mapToUploadFile(file as FrameleafFile),
   };
 };
 

@@ -1,8 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
+import type { MlSelection } from 'src/repositories/machine-learning.repository.js';
 import { SystemConfig } from 'src/config.js';
 import { CLIP_ZERO_SHOT_LABELS, CLIP_ZERO_SHOT_PROMPT } from 'src/constants/clip-zero-shot-labels.js';
 import { ZERO_SHOT_TAG_NAMESPACE } from 'src/constants/zero-shot-tag.js';
+import { MlWorkload } from 'src/enum.js';
+import { afterJobCommit, publishJobResult, queueExecution } from 'src/queue/context.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { dot, l2Normalize, parseEmbedding } from 'src/utils/embedding.js';
@@ -13,6 +16,7 @@ type LabelEmbedding = { label: string; embedding: Float32Array };
 
 // One cache entry per CLIP model name. We memoize the promise so concurrent
 // callers share a single ML round-trip during cold start.
+const QUEUE_VOCABULARY = new Map<string, LabelEmbedding[]>();
 const VOCABULARY_CACHE = new Map<string, Promise<LabelEmbedding[]>>();
 
 @Injectable()
@@ -44,12 +48,15 @@ export class ZeroShotTaggingService extends BaseService {
       if (scored.length === 0) {
         return;
       }
-      await this.applyTags(
-        assetId,
-        ownerId,
-        scored.map((entry) => `${ZERO_SHOT_TAG_NAMESPACE}/${entry.label}`),
+      await publishJobResult(() =>
+        this.applyTags(
+          assetId,
+          ownerId,
+          scored.map((entry) => `${ZERO_SHOT_TAG_NAMESPACE}/${entry.label}`),
+        ),
       );
     } catch (error) {
+      if (queueExecution.getStore()) throw error;
       this.logger.warn(
         `Zero-shot tagging failed for asset ${assetId}: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -57,6 +64,17 @@ export class ZeroShotTaggingService extends BaseService {
   }
 
   private async getVocabularyEmbeddings(clip: SystemConfig['machineLearning']['clip']): Promise<LabelEmbedding[]> {
+    // Queue requests retain their own destination and cancellation ownership; no shared in-flight request.
+    if (queueExecution.getStore()) {
+      const selection = await this.selectRoutedMlDestination({ workload: MlWorkload.Clip });
+      const key = `${selection.destinationId}/${clip.modelName}`;
+      const ready = QUEUE_VOCABULARY.get(key);
+      if (ready) return ready;
+      const encoded = await this.encodeVocabulary(clip, selection);
+      if (QUEUE_VOCABULARY.size >= 16) QUEUE_VOCABULARY.clear();
+      QUEUE_VOCABULARY.set(key, encoded);
+      return encoded;
+    }
     const cacheKey = clip.modelName;
     const cached = VOCABULARY_CACHE.get(cacheKey);
     if (cached) {
@@ -71,11 +89,15 @@ export class ZeroShotTaggingService extends BaseService {
     return promise;
   }
 
-  private async encodeVocabulary(clip: SystemConfig['machineLearning']['clip']): Promise<LabelEmbedding[]> {
+  private async encodeVocabulary(
+    clip: SystemConfig['machineLearning']['clip'],
+    admitted?: MlSelection,
+  ): Promise<LabelEmbedding[]> {
     this.logger.log(`Encoding ${CLIP_ZERO_SHOT_LABELS.length} zero-shot labels for model ${clip.modelName}`);
     const results: LabelEmbedding[] = [];
+    const selection = admitted ?? (await this.selectRoutedMlDestination({ workload: MlWorkload.Clip }));
     for (const label of CLIP_ZERO_SHOT_LABELS) {
-      const raw = await this.machineLearningRepository.encodeText(CLIP_ZERO_SHOT_PROMPT(label), {
+      const raw = await this.machineLearningRepository.encodeText(selection, CLIP_ZERO_SHOT_PROMPT(label), {
         modelName: clip.modelName,
       });
       const parsed = parseEmbedding(raw);
@@ -94,7 +116,7 @@ export class ZeroShotTaggingService extends BaseService {
     const items: Insertable<TagAssetTable>[] = upserted.map((tag) => ({ tagId: tag.id, assetId }));
     const inserted = await this.tagRepository.upsertAssetIds(items);
     if (inserted.length > 0) {
-      await this.eventRepository.emit('AssetTag', { assetId, userId: ownerId });
+      await afterJobCommit(() => this.eventRepository.emit('AssetTag', { assetId, userId: ownerId }));
     }
   }
 }

@@ -11,6 +11,30 @@ describe(IdentityPostValidator.name, () => {
     sut = new IdentityPostValidator();
   });
 
+  describe('known name spellings', () => {
+    it.each(['Anne-Marie', "O'Brien", 'O’Brien', 'José', 'Jose\u{301}', 'Zoë', 'İpek', '李雷'])(
+      'preserves the known name %s and does not duplicate it at a generic reference',
+      (name) => {
+        const text = `With ${name}, a child smiles.`;
+        expect(sut.validate(text, [person(name)])).toEqual({ description: text, flags: {} });
+      },
+    );
+
+    it('still strips an unknown name beside a known compound name', () => {
+      expect(sut.validate("I saw O'Brien and Madison.", [person("O'Brien")])).toEqual({
+        description: "I saw O'Brien and Someone.",
+        flags: { hallucinatedNames: ['Madison'] },
+      });
+    });
+
+    it('does not treat a known Unicode name as present inside a longer name', () => {
+      expect(sut.validate('I saw 李雷娜 beside a child.', [person('李雷')])).toEqual({
+        description: 'I saw 李雷娜 beside 李雷.',
+        flags: {},
+      });
+    });
+  });
+
   describe('hallucinated name stripping', () => {
     it('strips a mid-sentence capitalized word that is not a known person', () => {
       const { description, flags } = sut.validate('A boy and Madison are playing baseball.', []);

@@ -196,6 +196,7 @@ describe(ApiKeyService.name, () => {
       mocks.apiKey.getById.mockResolvedValue(void 0);
 
       await expect(sut.rotate(auth, id)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(sut.rotate(auth, id)).rejects.toThrow(/^API Key not found$/);
 
       expect(mocks.apiKey.update).not.toHaveBeenCalled();
     });

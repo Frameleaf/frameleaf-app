@@ -1,4 +1,5 @@
-import { getAssetInfo, getAssetOcr, getFaces } from '@immich/sdk';
+import { getAssetInfo, getAssetOcr, getFaces } from '@frameleaf/sdk';
+import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 
@@ -6,6 +7,10 @@ const defaultSerializer = <K>(params: K) => JSON.stringify(params);
 
 class AsyncCache<K, V> {
   #cache = new Map<string, V>();
+  #pending = new Map<string, { promise: Promise<V> }>();
+  #generation = 0;
+  #cacheGeneration = 0;
+  #keyGenerations = new Map<string, number>();
 
   constructor(private fetcher: (params: K) => Promise<V>) {}
 
@@ -17,20 +22,57 @@ class AsyncCache<K, V> {
       return cached;
     }
 
-    const value = await this.fetcher(params);
-    if (value && updateCache) {
-      this.#cache.set(cacheKey, value);
-    }
+    const generation = this.#generation;
+    const cacheGeneration = this.#cacheGeneration;
+    const keyGeneration = this.#keyGenerations.get(cacheKey);
+    let pending = this.#pending.get(cacheKey);
+    try {
+      if (!pending) {
+        pending = { promise: this.fetcher(params) };
+        if (
+          generation === this.#generation &&
+          cacheGeneration === this.#cacheGeneration &&
+          keyGeneration === this.#keyGenerations.get(cacheKey)
+        ) {
+          this.#pending.set(cacheKey, pending);
+        }
+      }
+      const value = await pending.promise;
+      if (generation !== this.#generation || keyGeneration !== this.#keyGenerations.get(cacheKey)) {
+        throw new DOMException('Asset cache invalidated', 'AbortError');
+      }
+      if (value && updateCache && cacheGeneration === this.#cacheGeneration) {
+        this.#cache.set(cacheKey, value);
+      }
 
-    return value;
+      return value;
+    } catch (error) {
+      if (generation !== this.#generation || keyGeneration !== this.#keyGenerations.get(cacheKey)) {
+        throw new DOMException('Asset cache invalidated', 'AbortError');
+      }
+      throw error;
+    } finally {
+      if (pending && this.#pending.get(cacheKey) === pending) {
+        this.#pending.delete(cacheKey);
+      }
+    }
   }
 
   clearKey(params: K) {
     const cacheKey = defaultSerializer(params);
     this.#cache.delete(cacheKey);
+    this.#pending.delete(cacheKey);
+    this.#keyGenerations.set(cacheKey, (this.#keyGenerations.get(cacheKey) ?? 0) + 1);
   }
 
-  clear() {
+  /** `revoke` also rejects fetches still in flight: their answers belong to the old access boundary. */
+  clear(revoke = false) {
+    this.#cacheGeneration++;
+    if (revoke) {
+      this.#generation++;
+      this.#keyGenerations.clear();
+    }
+    this.#pending.clear();
     this.#cache.clear();
   }
 }
@@ -41,6 +83,7 @@ class AssetCacheManager {
   #faceCache = new AsyncCache(getFaces);
 
   constructor() {
+    onLibraryAccessChange(() => this.revoke());
     eventManager.on({
       AssetEditsApplied: (assetId) => {
         this.invalidateAsset(assetId);
@@ -82,10 +125,18 @@ class AssetCacheManager {
     this.#faceCache.clear();
   }
 
+  /** Drops cached answers; fetches in flight still resolve (a data refresh, not an access change). */
   invalidate() {
     this.clearAssetCache();
     this.clearOcrCache();
     this.clearFaceCache();
+  }
+
+  /** An access boundary (lock, account switch): drops cached answers and rejects fetches in flight. */
+  revoke() {
+    this.#assetCache.clear(true);
+    this.#ocrCache.clear(true);
+    this.#faceCache.clear(true);
   }
 }
 

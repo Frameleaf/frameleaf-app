@@ -96,6 +96,11 @@ export class ApiService {
         html = render(index, meta);
       }
 
+      if (request.path === '/link') {
+        // CLD-004: the page strips anything in its address at once; until then no referrer carries it
+        res.header('Referrer-Policy', 'no-referrer');
+      }
+
       res.status(status).type(responseType).header('Cache-Control', 'no-store').send(html);
     };
   }

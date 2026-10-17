@@ -1,4 +1,4 @@
-// Read-only contract checks for hosted CI and the canonical container publisher.
+// Read-only contract checks for GitHub-hosted CI and the canonical container publisher.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -18,11 +18,11 @@ const workflows = Object.fromEntries(
       load(fs.readFileSync(path.join(directory, file), "utf8")),
     ]),
 );
-const hosted = new Set([
+// GitHub-hosted runners only; Namespace and self-hosted labels are rejected.
+const supported = new Set([
   "ubuntu-24.04",
   "ubuntu-24.04-arm",
   "windows-latest",
-  "macos-26",
 ]);
 let count = 0;
 for (const [file, workflow] of Object.entries(workflows)) {
@@ -58,79 +58,148 @@ for (const [file, workflow] of Object.entries(workflows)) {
         `${label}: missing local workflow`,
       );
     } else if (job["runs-on"] === "${{ matrix.runner }}") {
-      if (file === "local-multi-runner-build.yml" && id === "build")
+      if (
+        file === "local-multi-runner-build.yml" &&
+        (id === "build" || id === "publish")
+      )
         assert.equal(
           job.strategy.matrix.include,
           "${{ fromJSON(needs.matrix.outputs.matrix) }}",
+        );
+      else if (file === "cli.yml" && id === "build")
+        assert.deepEqual(
+          job.strategy?.matrix,
+          {
+            include: [
+              {
+                runner: "ubuntu-24.04",
+                architecture: "amd64",
+                "node-architecture": "x64",
+              },
+              {
+                runner: "ubuntu-24.04-arm",
+                architecture: "arm64",
+                "node-architecture": "arm64",
+              },
+            ],
+          },
+          `${label}: uncontrolled native CLI runner matrix`,
         );
       else {
         const runners = job.strategy?.matrix?.runner;
         assert(
           Array.isArray(runners) &&
             runners.length &&
-            runners.every((runner) => hosted.has(runner)),
+            runners.every((runner) => supported.has(runner)),
           `${label}: uncontrolled runner matrix`,
         );
       }
+    } else if (file === "fl103-linux-intake.yml" && id === "intake") {
+      // Dispatched only in the private qualification repository; its intake
+      // needs a fresh GitHub-hosted VM with systemd.
+      assert.equal(
+        job["runs-on"],
+        "ubuntu-24.04",
+        `${label}: intake VM changed`,
+      );
+      assert.equal(
+        job.if,
+        "github.repository == 'Frameleaf/frameleaf-qualification' && github.ref == 'refs/heads/aj/fl103-linux-intake-execute'",
+        `${label}: hosted intake must stay outside this repository's CI`,
+      );
+      assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
     } else
       assert(
-        hosted.has(job["runs-on"]),
-        `${label}: not a supported hosted runner`,
+        supported.has(job["runs-on"]),
+        `${label}: not a supported GitHub-hosted runner`,
       );
     count++;
   }
 }
+const webSteps = workflows["test.yml"].jobs["e2e-tests-web"].steps;
+const browserInstall = webSteps.findIndex(
+  (step) => step.name === "Install Playwright Browsers",
+);
+const browserPreflight = webSteps.findIndex(
+  (step) => step.name === "Verify Playwright browser launch",
+);
+const stackStart = webSteps.findIndex((step) => step.name === "Docker build");
+assert.match(
+  webSteps[browserInstall]?.run ?? "",
+  /playwright install --with-deps chromium --only-shell/,
+);
+assert(
+  browserPreflight > browserInstall && browserPreflight < stackStart,
+  "Browser launch must be verified before starting the E2E stack",
+);
+assert.match(
+  webSteps[browserPreflight]?.run ?? "",
+  /chromium\.launch\(\{ timeout: 15000 \}\)/,
+);
 const docker = workflows["docker.yml"];
 assert.deepEqual(docker.on.push.branches, ["main"]);
 assert(
   !docker.on.pull_request && !docker.on.release,
   "Candidate publishing must not run on PR/release events",
 );
-for (const name of ["server", "machine-learning"])
+// FL-142: the built images are archived (not pushed), deployment-tested, and only then pushed.
+for (const name of ["server", "machine-learning"]) {
   assert.deepEqual(
     docker.jobs[name].needs,
-    ["integration", "certification"],
-    "Both quality gates must precede publishing",
+    ["changes", "integration"],
+    "Both quality gates must precede building",
   );
-assert.equal(
-  docker.jobs.integration.uses,
-  "./.github/workflows/fork-integration.yml",
-);
-assert.equal(
-  docker.jobs.certification.uses,
-  "./.github/workflows/fork-roundtrip.yml",
-);
-const roundtripConcurrency = workflows["fork-roundtrip.yml"].concurrency;
-assert.equal(
-  roundtripConcurrency?.group,
-  "${{ github.workflow }}-${{ github.ref }}-roundtrip",
-  "Roundtrip concurrency must isolate each workflow/ref from its caller",
-);
-assert.equal(
-  roundtripConcurrency["cancel-in-progress"],
-  "${{ github.event_name == 'pull_request' }}",
-);
-for (const event_name of [
-  "pull_request",
-  "push",
-  "schedule",
-  "workflow_dispatch",
-  "workflow_call",
-]) {
   assert.equal(
-    runInNewContext(roundtripConcurrency["cancel-in-progress"].slice(3, -2), {
-      github: { event_name },
-    }),
-    event_name === "pull_request",
-    "Only stale PR certification may be cancelled; publication gates must finish",
+    docker.jobs[name].with.mode,
+    "archive",
+    `${name}: builds must not push before the deployment test`,
   );
 }
-assert(Object.hasOwn(workflows["fork-integration.yml"].on, "workflow_call"));
 assert(
-  !workflows["fork-integration.yml"].on.push,
+  ["integration", "server", "machine-learning"].every((gate) =>
+    docker.jobs["deploy-test"].needs.includes(gate),
+  ),
+  "The deployment test runs on the quality-gated builds",
+);
+for (const name of [
+  "server-publish",
+  "machine-learning-publish",
+  "machine-learning-hardware",
+  "retag-server",
+  "retag-machine-learning",
+]) {
+  assert(
+    docker.jobs[name].needs.includes("deploy-test"),
+    `${name}: the deployment test must precede publishing`,
+  );
+  assert.match(
+    docker.jobs[name].if,
+    /needs\['deploy-test'\]\.result == 'success'/,
+    `${name}: publishing requires a passed deployment test`,
+  );
+}
+assert.equal(docker.jobs["server-publish"].with.mode, "publish");
+assert.equal(docker.jobs["machine-learning-publish"].with.mode, "publish");
+assert.equal(docker.jobs["machine-learning-hardware"].with.mode, "push");
+assert.equal(
+  docker.jobs.integration.uses,
+  "./.github/workflows/frameleaf-quality.yml",
+);
+assert(Object.hasOwn(workflows["frameleaf-quality.yml"].on, "workflow_call"));
+assert(
+  !workflows["frameleaf-quality.yml"].on.push,
   "Mainline integration is invoked by Docker only",
 );
-const ml = docker.jobs["machine-learning"].strategy.matrix.include;
+const cpu = docker.jobs["machine-learning"].with;
+const ml = [
+  {
+    device: cpu.device,
+    suffix: cpu.suffix,
+    platforms: cpu.platforms,
+    target: cpu.target,
+  },
+  ...docker.jobs["machine-learning-hardware"].strategy.matrix.include,
+];
 assert.deepEqual(
   ml.map(({ device, suffix, platforms, target }) => ({
     device,
@@ -165,7 +234,7 @@ for (const spec of VARIANTS) {
     matrix.map((row) => row.platform),
     spec.platforms,
   );
-  assert(matrix.every((row) => hosted.has(row.runner)));
+  assert(matrix.every((row) => supported.has(row.runner)));
   for (const change of [
     { PLATFORMS: "linux/ppc64le" },
     { PLATFORMS: "linux/amd64,linux/amd64" },
@@ -191,5 +260,5 @@ assert(
   "Zizmor must execute the real pinned scanner",
 );
 console.log(
-  `Hosted runner, pinned-action, quality-gate and image-variant contracts passed for ${count} jobs.`,
+  `GitHub-hosted runner, pinned-action, quality-gate and image-variant contracts passed for ${count} jobs.`,
 );

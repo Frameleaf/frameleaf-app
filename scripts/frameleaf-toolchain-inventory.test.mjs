@@ -55,7 +55,7 @@ test("parses pinned workflow and container runtime sources", () => {
   assert.deepEqual(
     parseWorkflowPins(
       `jobs:\n  test:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@${actionSha}\n      - run: docker run ghcr.io/jdx/mise:2026.1@sha256:${imageSha}\n`,
-      ".github/workflows/fork-integration.yml",
+      ".github/workflows/frameleaf-quality.yml",
     ),
     [
       {
@@ -63,21 +63,21 @@ test("parses pinned workflow and container runtime sources", () => {
         declared: actionSha,
         kind: "commit",
         name: "actions/checkout",
-        source: ".github/workflows/fork-integration.yml",
+        source: ".github/workflows/frameleaf-quality.yml",
       },
       {
         category: "workflow-runner",
         declared: "ubuntu-24.04",
         kind: "image-label",
         name: "github-hosted-runner",
-        source: ".github/workflows/fork-integration.yml",
+        source: ".github/workflows/frameleaf-quality.yml",
       },
       {
         category: "container-image",
         declared: `ghcr.io/jdx/mise:2026.1@sha256:${imageSha}`,
         kind: "tag-and-digest",
         name: "ghcr.io/jdx/mise",
-        source: ".github/workflows/fork-integration.yml",
+        source: ".github/workflows/frameleaf-quality.yml",
       },
     ],
   );
@@ -114,10 +114,6 @@ test("builds deterministic evidence and distinguishes resolved, missing, and non
     mkdirSync(path.join(repository, ".github/workflows"), { recursive: true });
     mkdirSync(path.join(repository, "icloud-bridge"), { recursive: true });
     mkdirSync(path.join(repository, "machine-learning"), { recursive: true });
-    mkdirSync(path.join(repository, "mobile/android/gradle/wrapper"), {
-      recursive: true,
-    });
-    mkdirSync(path.join(repository, "mobile/ios"), { recursive: true });
     mkdirSync(path.join(repository, "packages/cli"), { recursive: true });
     mkdirSync(path.join(repository, "packages/e2e-auth-server"), {
       recursive: true,
@@ -134,7 +130,6 @@ test("builds deterministic evidence and distinguishes resolved, missing, and non
       "deployment/mise.toml",
       "docs/mise.toml",
       "machine-learning/mise.toml",
-      "mobile/mise.toml",
     ])
       writeFileSync(path.join(repository, file), "");
     writeFileSync(path.join(repository, ".nvmrc"), "1.2.3\n");
@@ -150,36 +145,12 @@ test("builds deterministic evidence and distinguishes resolved, missing, and non
       path.join(repository, "machine-learning/pyproject.toml"),
       'requires-python = ">=3.12,<4"\n',
     );
-    writeFileSync(
-      path.join(repository, "mobile/pubspec.yaml"),
-      "environment:\n  sdk: '>=3.12 <4'\n  flutter: 3.47.2\n",
-    );
-    writeFileSync(
-      path.join(
-        repository,
-        "mobile/android/gradle/wrapper/gradle-wrapper.properties",
-      ),
-      "distributionUrl=gradle-8.14-all.zip\n",
-    );
-    writeFileSync(
-      path.join(repository, "mobile/ios/Podfile.lock"),
-      "COCOAPODS: 1.17.0\n",
-    );
-    writeFileSync(
-      path.join(repository, "mobile/android/Gemfile.lock"),
-      "BUNDLED WITH\n   2.3.7\n",
-    );
-    for (const file of [
-      "mise.lock",
-      "pnpm-lock.yaml",
-      "machine-learning/uv.lock",
-      "mobile/pubspec.lock",
-    ]) {
+    for (const file of ["mise.lock", "pnpm-lock.yaml", "machine-learning/uv.lock"]) {
       writeFileSync(path.join(repository, file), `${file}\n`);
     }
     const imageSha = "b".repeat(64);
     writeFileSync(
-      path.join(repository, ".github/workflows/fork-integration.yml"),
+      path.join(repository, ".github/workflows/frameleaf-quality.yml"),
       `jobs:\n  test:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@${"a".repeat(40)}\n`,
     );
     for (const file of [
@@ -202,7 +173,7 @@ test("builds deterministic evidence and distinguishes resolved, missing, and non
     );
     const unsafeSentinel = path.join(repository, "unsafe-wrapper-executed");
     writeFileSync(
-      path.join(bin, "flutter"),
+      path.join(bin, "pnpm"),
       `#!/bin/sh\nprintf touched > '${unsafeSentinel}'\n`,
       { mode: 0o755 },
     );
@@ -253,15 +224,11 @@ test("builds deterministic evidence and distinguishes resolved, missing, and non
     );
     assert.equal(
       first.resolutions.find((item) => item.name === "pnpm").status,
-      "missing-not-probed",
+      "present-not-probed",
     );
     assert.equal(
       first.resolutions.find((item) => item.name === "pnpm").comparisonStatus,
       "unavailable",
-    );
-    assert.equal(
-      first.resolutions.find((item) => item.name === "flutter").status,
-      "present-not-probed",
     );
     assert.equal(
       first.resolutions.find((item) => item.name === "node").versionOutput,

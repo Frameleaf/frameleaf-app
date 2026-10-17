@@ -31,6 +31,7 @@ select
               "asset_exif"."fNumber",
               "asset_exif"."focalLength",
               "asset_exif"."fps",
+              "asset_exif"."imageEncoding",
               "asset_exif"."iso",
               "asset_exif"."latitude",
               "asset_exif"."lensModel",
@@ -54,51 +55,43 @@ select
         where
           "shared_link"."id" = "shared_link_asset"."sharedLinkId"
           and "asset"."deletedAt" is null
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
           and not (
-            case
-              when "asset"."id" is null then false
-              when coalesce(
-                (
-                  select
-                    phase
-                  from
-                    immich_fork.state
-                  where
-                    id = 1
-                ),
-                'inactive'
-              ) in ('legacy', 'dual-write', 'ready') then exists (
-                select
-                  1
-                from
-                  asset as nsfw_asset
-                where
-                  nsfw_asset.id = "asset"."id"
-                  and nsfw_asset.is_nsfw = true
-              )
-              when (
-                select
-                  phase
-                from
-                  immich_fork.state
-                where
-                  id = 1
-              ) = 'active' then not exists (
-                select
-                  1
-                from
-                  immich_fork.asset_privacy as privacy_asset
-                where
-                  privacy_asset."assetId" = "asset"."id"
-                  and privacy_asset."isNsfw" = false
-              )
-              else false
-            end
+            exists (
+              select
+                1
+              from
+                public.asset as nsfw_asset
+              where
+                nsfw_asset.id = "asset"."id"
+                and nsfw_asset.is_nsfw = true
+            )
           )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg
   ) as "assets",
+  (
+    select
+      to_json(obj)
+    from
+      (
+        select
+          "user"."name"
+        from
+          "user"
+        where
+          "user"."id" = "shared_link"."userId"
+          and "user"."deletedAt" is null
+      ) as obj
+  ) as "owner",
   to_json("album") as "album"
 from
   "shared_link"
@@ -143,6 +136,7 @@ from
               "asset_exif"."fNumber",
               "asset_exif"."focalLength",
               "asset_exif"."fps",
+              "asset_exif"."imageEncoding",
               "asset_exif"."iso",
               "asset_exif"."latitude",
               "asset_exif"."lensModel",
@@ -166,46 +160,24 @@ from
         where
           "album_asset"."assetId" = "asset"."id"
           and "asset"."deletedAt" is null
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
           and not (
-            case
-              when "asset"."id" is null then false
-              when coalesce(
-                (
-                  select
-                    phase
-                  from
-                    immich_fork.state
-                  where
-                    id = 1
-                ),
-                'inactive'
-              ) in ('legacy', 'dual-write', 'ready') then exists (
-                select
-                  1
-                from
-                  asset as nsfw_asset
-                where
-                  nsfw_asset.id = "asset"."id"
-                  and nsfw_asset.is_nsfw = true
-              )
-              when (
-                select
-                  phase
-                from
-                  immich_fork.state
-                where
-                  id = 1
-              ) = 'active' then not exists (
-                select
-                  1
-                from
-                  immich_fork.asset_privacy as privacy_asset
-                where
-                  privacy_asset."assetId" = "asset"."id"
-                  and privacy_asset."isNsfw" = false
-              )
-              else false
-            end
+            exists (
+              select
+                1
+              from
+                public.asset as nsfw_asset
+              where
+                nsfw_asset.id = "asset"."id"
+                and nsfw_asset.is_nsfw = true
+            )
           )
         order by
           "asset"."fileCreatedAt" asc
@@ -265,12 +237,87 @@ select
         where
           "shared_link"."id" = "shared_link_asset"."sharedLinkId"
           and "asset"."deletedAt" is null
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
         order by
           "asset"."fileCreatedAt" asc
         limit
           $1
       ) as agg
   ) as "assets",
+  case
+    when "shared_link"."type" = $2 then (
+      select
+        count(*)::int as "count"
+      from
+        "album_asset"
+        inner join "asset" on "asset"."id" = "album_asset"."assetId"
+      where
+        "album_asset"."albumId" = "shared_link"."albumId"
+        and "asset"."deletedAt" is null
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+    )
+    else (
+      select
+        count(*)::int as "count"
+      from
+        "shared_link_asset"
+        inner join "asset" on "asset"."id" = "shared_link_asset"."assetId"
+      where
+        "shared_link"."id" = "shared_link_asset"."sharedLinkId"
+        and "asset"."deletedAt" is null
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+    )
+  end as "assetCount",
+  (
+    select
+      coalesce(json_agg(agg), '[]')
+    from
+      (
+        select
+          "asset"."id"
+        from
+          "album_asset"
+          inner join "asset" on "asset"."id" = "album_asset"."assetId"
+          inner join "album" as "cover_album" on "cover_album"."id" = "album_asset"."albumId"
+        where
+          "album_asset"."albumId" = "shared_link"."albumId"
+          and "asset"."deletedAt" is null
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        order by
+          "asset"."id" = "cover_album"."albumThumbnailAssetId" desc,
+          "asset"."fileCreatedAt" desc
+        limit
+          $3
+      ) as agg
+  ) as "coverAssets",
   to_json("album") as "album"
 from
   "shared_link"
@@ -307,12 +354,12 @@ from
       and "album"."deletedAt" is null
   ) as "album" on true
 where
-  "shared_link"."userId" = $2
+  "shared_link"."userId" = $4
   and (
-    "shared_link"."type" = $3
+    "shared_link"."type" = $5
     or "album"."id" is not null
   )
-  and "shared_link"."albumId" = $4
+  and "shared_link"."albumId" = $6
 order by
   "shared_link"."createdAt" desc
 
@@ -342,6 +389,7 @@ select
           "user"
         where
           "user"."id" = "shared_link"."userId"
+          and "user"."deletedAt" is null
       ) as obj
   ) as "user"
 from
@@ -381,6 +429,7 @@ select
           "user"
         where
           "user"."id" = "shared_link"."userId"
+          and "user"."deletedAt" is null
       ) as obj
   ) as "user"
 from
@@ -429,6 +478,7 @@ from
           "asset_exif"."fNumber",
           "asset_exif"."focalLength",
           "asset_exif"."fps",
+          "asset_exif"."imageEncoding",
           "asset_exif"."iso",
           "asset_exif"."latitude",
           "asset_exif"."lensModel",
@@ -451,6 +501,14 @@ from
       ) as "exifInfo" on true
     where
       "asset"."id" = "shared_link_asset"."assetId"
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
   ) as "assets" on true
 where
   "shared_link"."id" = $1

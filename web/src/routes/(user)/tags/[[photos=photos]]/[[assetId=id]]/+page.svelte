@@ -1,39 +1,30 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  /**
+   * Tags as collections (FL-46, redesigned). With no tag chosen the page is the index: a card per
+   * top-level tag, or the whole tree as a list (`TagIndex`). With one chosen (`?path=<the tag's full
+   * name>`, as before, so existing links keep working) it is that tag's page: its header
+   * (`TagPageHeader`) above the real library grid bound to the tag, which brings Timeline, Browse
+   * and Work, Filter, Slideshow, sorting, selection with the bulk actions, and the viewer on this
+   * route (`/tags/photos/<id>?path=…`). That half is `TagLibrary`, which the loader fetches along
+   * with the data when a tag is chosen, so the index does not carry the grid and the viewer (FL-139).
+   *
+   * The tag filter matches a tag and every tag inside it, which is also what the tag's count, cover
+   * and dates describe. The loader answers "not found" for a tag that is gone or hidden while the
+   * session is locked.
+   */
+  import { invalidateAll } from '$app/navigation';
+  import { scrollMemory, scrollMemoryClearer } from '$lib/actions/scroll-memory';
   import OnEvents from '$lib/components/OnEvents.svelte';
-  import UserPageLayout, { headerId } from '$lib/components/layouts/UserPageLayout.svelte';
-  import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
-  import Breadcrumbs from '$lib/components/shared-components/tree/Breadcrumbs.svelte';
-  import TreeItemThumbnails from '$lib/components/shared-components/tree/TreeItemThumbnails.svelte';
-  import TreeItems from '$lib/components/shared-components/tree/TreeItems.svelte';
-  import Sidebar from '$lib/components/sidebar/Sidebar.svelte';
-  import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
-  import Timeline from '$lib/components/timeline/Timeline.svelte';
-  import ArchiveAction from '$lib/components/timeline/actions/ArchiveAction.svelte';
-  import ChangeDate from '$lib/components/timeline/actions/ChangeDateAction.svelte';
-  import ChangeDescription from '$lib/components/timeline/actions/ChangeDescriptionAction.svelte';
-  import ChangeLocation from '$lib/components/timeline/actions/ChangeLocationAction.svelte';
-  import CreateSharedLink from '$lib/components/timeline/actions/CreateSharedLinkAction.svelte';
-  import DeleteAssets from '$lib/components/timeline/actions/DeleteAssetsAction.svelte';
-  import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
-  import FavoriteAction from '$lib/components/timeline/actions/FavoriteAction.svelte';
-  import MarkNsfwAction from '$lib/components/timeline/actions/MarkNsfwAction.svelte';
-  import SelectAllAssets from '$lib/components/timeline/actions/SelectAllAction.svelte';
-  import SetVisibilityAction from '$lib/components/timeline/actions/SetVisibilityAction.svelte';
-  import TagAction from '$lib/components/timeline/actions/TagAction.svelte';
-  import { AssetAction } from '$lib/constants';
-  import SkipLink from '$lib/elements/SkipLink.svelte';
-  import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
-  import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
+  import TagIndex from '$lib/components/frameleaf/tags/TagIndex.svelte';
+  import Theme from '$lib/components/frameleaf/Theme.svelte';
+  import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
+  import { buildTagTree, tagAndDescendantIds, tagAtPath } from '$lib/frameleaf/tag-tree';
+  import type { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
-  import { getAssetBulkActions } from '$lib/services/asset.service';
-  import { getTagActions } from '$lib/services/tag.service';
-  import { joinPaths, TreeNode } from '$lib/utils/tree-utils';
-  import { getAllTags, type TagResponseDto } from '@immich/sdk';
-  import { ActionButton, CommandPaletteDefaultProvider, Text } from '@immich/ui';
-  import { mdiDotsVertical, mdiTag, mdiTagMultiple } from '@mdi/js';
-  import { t } from 'svelte-i18n';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { onDestroy } from 'svelte';
+  import { getAssetInfo } from '@frameleaf/sdk';
+  import { Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import type { PageData } from './$types';
 
   interface Props {
@@ -42,120 +33,80 @@
 
   let { data }: Props = $props();
 
-  let tags = $derived<TagResponseDto[]>(data.tags);
-  const tree = $derived(TreeNode.fromTags(tags));
-  const tag = $derived(tree.traverse(data.path));
+  let destroyed = false;
+  onDestroy(() => (destroyed = true));
 
-  let timelineManager = $state<TimelineManager>() as TimelineManager;
-  const options = $derived({ deferInit: !tag, tagId: tag?.id });
+  const tree = $derived(buildTagTree(data.tags, data.statistics));
+  const node = $derived(tagAtPath(tree, data.path));
 
-  const handleNavigation = (tag: string) => navigateToView(joinPaths(data.path, tag));
+  // The tag's page (the grid and the viewer) arrives with the data, and only when a tag is chosen.
+  const TagLibrary = $derived(data.TagLibrary);
+  let timelineManager = $state<TimelineManager>();
+  // The selection bar's Tag offers the tags by their full names, as it does on an album.
+  const tagOptions = $derived(data.tags.map(({ id, value }) => ({ id, name: value })));
 
-  const getLink = (path: string) => Route.tags({ path });
+  // Items gained or lost the tag, or left the Timeline: the counts, covers and dates are re-read.
+  const refresh = () => void invalidateAll();
 
-  const navigateToView = (path: string) => goto(getLink(path));
-
-  const handleSetVisibility = (assetIds: string[]) => {
-    timelineManager.removeAssets(assetIds);
-    assetMultiSelectManager.clear();
-  };
-
-  const onRefresh = async () => {
-    tags = await getAllTags();
-  };
-
-  const onTagUpdate = async (response: TagResponseDto) => {
-    if (response.value !== tag.path) {
-      await navigateToView(response.value || '');
+  /**
+   * Tags changed on some items (the viewer's information panel says so). An item that no longer
+   * carries this tag, or any tag inside it, leaves the grid at once instead of on the next visit.
+   * Only a handful are looked up; a larger change is picked up by the re-read alone.
+   */
+  const onAssetsTag = async (ids: string[]) => {
+    refresh();
+    if (!node || !timelineManager || ids.length > 12) {
+      return;
     }
-
-    await onRefresh();
-  };
-
-  const onTagDelete = async (response: TreeNode) => {
-    if (response.path === tag.path) {
-      await navigateToView(tag.parent ? tag.parent.path : '');
+    const manager = timelineManager;
+    const tagId = node.id;
+    const isCurrentSession = authManager.captureSession();
+    const carried = new Set(tagAndDescendantIds(node));
+    try {
+      const assets = await Promise.all(ids.map((id) => getAssetInfo({ id })));
+      if (destroyed || !isCurrentSession() || timelineManager !== manager || node?.id !== tagId) {
+        return;
+      }
+      const gone = assets.filter((asset) => (asset.tags ?? []).every((tag) => !carried.has(tag.id)));
+      if (gone.length > 0) {
+        manager.removeAssets(gone.map((asset) => asset.id));
+      }
+    } catch {
+      // The counts above are re-read either way; the grid catches up when the page is next opened.
     }
-
-    await onRefresh();
   };
-
-  const { Create, Update, Delete } = $derived(getTagActions($t, tag));
 </script>
 
-<OnEvents onTagCreate={onRefresh} {onTagUpdate} {onTagDelete} />
+<OnEvents {onAssetsTag} onAssetsDelete={refresh} onAssetsArchive={refresh} onAssetsUnarchive={refresh} />
 
-<UserPageLayout title={data.meta.title} actions={[Create, Update, Delete]}>
-  {#snippet sidebar()}
-    <Sidebar>
-      <SkipLink target={`#${headerId}`} text={$t('skip_to_tags')} breakpoint="md" />
-      <section>
-        <Text class="mb-4 ps-4" size="small">{$t('explorer')}</Text>
-        <div class="h-full">
-          <TreeItems icons={{ default: mdiTag, active: mdiTag }} {tree} active={tag.path} {getLink} />
-        </div>
-      </section>
-    </Sidebar>
-  {/snippet}
+{#if node && TagLibrary}
+  <!--
+    The same shell as Photos: the header scrolls away with the photos under it. LibraryView is the
+    page area's own child, so it carries the page gutter and the header spans the page (DISCOVERY-P4).
+  -->
+  <UserPageLayout scrollbar={false} use={[[scrollMemoryClearer, { routeStartsWith: Route.tags() }]]}>
+    <TagLibrary {node} {tree} {tagOptions} bind:timelineManager onMutated={refresh} />
+  </UserPageLayout>
+{:else}
+  <!-- Back from a tag finds the index where it was left, as the Albums page does. -->
+  <UserPageLayout scrollbar={true} use={[[scrollMemory, { routeStartsWith: Route.tags() }]]}>
+    <Theme theme={themeManager.value === AppTheme.Dark ? 'dark' : 'light'}>
+      <!-- The page surface reaches the foot of the window however few tags there are. -->
+      <div class="fl-page-fill">
+        <TagIndex {tree} />
+      </div>
+    </Theme>
+  </UserPageLayout>
+{/if}
 
-  <Breadcrumbs node={tag} icon={mdiTagMultiple} title={$t('tags')} {getLink} />
-
-  <section class="mt-2 h-[calc(100%-(--spacing(20)))] immich-scrollbar overflow-auto">
-    {#if tag.hasAssets}
-      <Timeline
-        enableRouting={true}
-        bind:timelineManager
-        {options}
-        assetInteraction={assetMultiSelectManager}
-        removeAction={AssetAction.UNARCHIVE}
-      >
-        {#snippet empty()}
-          <TreeItemThumbnails items={tag.children} icon={mdiTag} onClick={handleNavigation} />
-        {/snippet}
-      </Timeline>
-    {:else}
-      <TreeItemThumbnails items={tag.children} icon={mdiTag} onClick={handleNavigation} />
-    {/if}
-  </section>
-</UserPageLayout>
-
-<section>
-  {#if assetMultiSelectManager.selectionActive}
-    <div class="fixed inset-s-0 top-0 w-full">
-      <AssetSelectControlBar>
-        {@const Actions = getAssetBulkActions($t)}
-        <CommandPaletteDefaultProvider name={$t('assets')} actions={Object.values(Actions)} />
-        <CreateSharedLink />
-        <SelectAllAssets {timelineManager} assetInteraction={assetMultiSelectManager} />
-        <ActionButton action={Actions.AddToAlbum} />
-        <FavoriteAction
-          removeFavorite={assetMultiSelectManager.isAllFavorite}
-          onFavorite={(ids, isFavorite) => timelineManager.update(ids, (asset) => (asset.isFavorite = isFavorite))}
-        ></FavoriteAction>
-        <ButtonContextMenu icon={mdiDotsVertical} title={$t('menu')}>
-          <DownloadAction menuItem />
-          <ChangeDate menuItem />
-          <ChangeDescription menuItem />
-          <ChangeLocation menuItem />
-          <ArchiveAction
-            menuItem
-            onArchive={(ids, visibility) => timelineManager.update(ids, (asset) => (asset.visibility = visibility))}
-          />
-          {#if assetMultiSelectManager.ownedAssets.length > 0}
-            <MarkNsfwAction menuItem />
-            <MarkNsfwAction menuItem markSafe />
-          {/if}
-          {#if authManager.preferences.tags.enabled}
-            <TagAction menuItem />
-          {/if}
-          <DeleteAssets
-            menuItem
-            onAssetDelete={(assetIds) => timelineManager.removeAssets(assetIds)}
-            onUndoDelete={(assets) => timelineManager.upsertAssets(assets)}
-          />
-          <SetVisibilityAction menuItem onVisibilitySet={handleSetVisibility} />
-        </ButtonContextMenu>
-      </AssetSelectControlBar>
-    </div>
-  {/if}
-</section>
+<style>
+  /* As on the Albums page: everything below the top bar, less the layout's gutter above and below. */
+  .fl-page-fill {
+    min-height: calc(100dvh - var(--fl-topbar-height) - 1rem);
+  }
+  @media (max-width: 767px) {
+    .fl-page-fill {
+      min-height: calc(100dvh - var(--fl-topbar-height-phone) - 0.5rem - max(0.5rem, var(--fl-tabbar-space, 0px)));
+    }
+  }
+</style>

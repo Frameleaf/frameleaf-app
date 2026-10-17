@@ -1,4 +1,5 @@
-import { registerFunction } from '@immich/sql-tools';
+import { registerFunction } from '@frameleaf/sql-tools';
+import { BACKUP_DELETION_CAPTURE_BODY } from 'src/utils/cloud-backup-deletion-sql.js';
 
 export const immich_uuid_v7 = registerFunction({
   name: 'immich_uuid_v7',
@@ -90,6 +91,43 @@ export const ll_to_earth_public = registerFunction({
   strict: true,
   behavior: 'immutable',
   body: `SELECT public.cube(public.cube(public.cube(public.earth()*cos(radians(latitude))*cos(radians(longitude))),public.earth()*cos(radians(latitude))*sin(radians(longitude))),public.earth()*sin(radians(latitude)))::public.earth`,
+});
+
+/**
+ * Keeps `asset_landmark` in step with an asset's coordinates, whichever code path wrote them (FL-352).
+ * 200000 is LANDMARK_MAX_RADIUS_M. A failure here must never fail the exif write itself. The change test
+ * lives in the body because the schema reader cannot print a WHEN clause that names both OLD and NEW.
+ */
+export const asset_exif_landmark_match = registerFunction({
+  name: 'asset_exif_landmark_match',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      IF TG_OP = 'UPDATE' AND OLD.latitude IS NOT DISTINCT FROM NEW.latitude
+        AND OLD.longitude IS NOT DISTINCT FROM NEW.longitude THEN
+        RETURN NULL;
+      END IF;
+      DELETE FROM public.asset_landmark WHERE "assetId" = NEW."assetId";
+      IF NEW.latitude IS NOT NULL AND NEW.longitude IS NOT NULL THEN
+        INSERT INTO public.asset_landmark ("assetId", "landmarkId")
+        SELECT NEW."assetId", l.id
+        FROM public.landmark l
+        WHERE public.earth_box(public.ll_to_earth_public(NEW.latitude, NEW.longitude), 200000)
+            OPERATOR(public.@>) public.ll_to_earth_public(l.latitude, l.longitude)
+          AND public.earth_distance(
+            public.ll_to_earth_public(NEW.latitude, NEW.longitude),
+            public.ll_to_earth_public(l.latitude, l.longitude)) <= l."radiusM"
+          AND (NOT EXISTS (SELECT FROM public.landmark_area a WHERE a."landmarkId" = l.id)
+            OR EXISTS (SELECT FROM public.landmark_area a
+              WHERE a."landmarkId" = l.id AND a.area @> point(NEW.longitude, NEW.latitude)))
+        ON CONFLICT DO NOTHING;
+      END IF;
+      RETURN NULL;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING 'asset_exif_landmark_match: %', SQLERRM;
+      RETURN NULL;
+    END`,
 });
 
 export const user_delete_audit = registerFunction({
@@ -366,4 +404,68 @@ export const album_parent_cycle_check = registerFunction({
       END IF;
       RETURN NEW;
     END`,
+});
+
+export const tag_delete_audit = registerFunction({
+  name: 'tag_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `BEGIN INSERT INTO tag_audit ("tagId", "userId") SELECT id, "userId" FROM OLD; RETURN NULL; END`,
+});
+export const tag_asset_delete_audit = registerFunction({
+  name: 'tag_asset_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `BEGIN
+    INSERT INTO tag_asset_audit ("tagId", "assetId", "userId")
+    SELECT deleted."tagId", deleted."assetId", coalesce(tag."userId", asset."ownerId")
+    FROM OLD AS deleted LEFT JOIN tag ON tag.id = deleted."tagId" LEFT JOIN asset ON asset.id = deleted."assetId"
+    WHERE coalesce(tag."userId", asset."ownerId") IS NOT NULL
+      AND (tag."userId" IS NULL OR asset."ownerId" IS NULL OR tag."userId" = asset."ownerId");
+    RETURN NULL; END`,
+});
+
+export const tag_asset_update_id = registerFunction({
+  name: 'tag_asset_update_id',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `BEGIN NEW."updateId" := immich_uuid_v7(); RETURN NEW; END`,
+});
+
+export const pet_delete_audit = registerFunction({
+  name: 'pet_delete_audit',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: `BEGIN INSERT INTO pet_audit ("petId", "ownerId") SELECT id, "ownerId" FROM OLD; RETURN NULL; END`,
+});
+export const pet_observation_delete_audit = registerFunction({
+  name: 'pet_observation_delete_audit',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: `BEGIN
+ INSERT INTO pet_observation_audit ("observationId", "petId", "assetId", "ownerId")
+ SELECT deleted.id, deleted."petId", deleted."assetId", coalesce(pet."ownerId", asset."ownerId")
+ FROM OLD AS deleted LEFT JOIN pet ON pet.id = deleted."petId" LEFT JOIN asset ON asset.id = deleted."assetId"
+ WHERE coalesce(pet."ownerId", asset."ownerId") IS NOT NULL
+ AND (pet."ownerId" IS NULL OR asset."ownerId" IS NULL OR pet."ownerId" = asset."ownerId");
+ RETURN NULL; END`,
+});
+export const pet_update_id = registerFunction({
+  name: 'pet_update_id',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: `BEGIN NEW."updateId" := immich_uuid_v7(); RETURN NEW; END`,
+});
+export const pet_observation_update_id = registerFunction({
+  name: 'pet_observation_update_id',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: `BEGIN NEW."updateId" := immich_uuid_v7(); RETURN NEW; END`,
+});
+
+export const asset_backup_deletion_capture = registerFunction({
+  name: 'asset_backup_deletion_capture',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: BACKUP_DELETION_CAPTURE_BODY,
 });

@@ -1,10 +1,12 @@
-import type { AlbumResponseDto } from '@immich/sdk';
+import type { AlbumResponseDto } from '@frameleaf/sdk';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
+import { motionScrollBehavior } from '$lib/frameleaf/motion';
 import { sortAlbums } from '$lib/utils/album-utils';
 import { normalizeSearchString } from '$lib/utils/string-utils';
 
-export const SCROLL_PROPERTIES: ScrollIntoViewOptions = { block: 'center', behavior: 'smooth' };
+/** FL-139: centred, and without the smooth scroll under Reduce Motion. */
+export const scrollProperties = (): ScrollIntoViewOptions => ({ block: 'center', behavior: motionScrollBehavior() });
 
 export enum AlbumModalRowType {
   SECTION = 'section',
@@ -45,6 +47,7 @@ export class AlbumModalRowConverter {
     // only show recent albums if no search was entered
     const recentAlbumsToShow = search.length === 0 ? recentAlbums : [];
     const rows: AlbumModalRow[] = [{ type: AlbumModalRowType.NEW_ALBUM, selected: selectedRowIndex === 0 }];
+    const selectedAlbumIds = new Set(multiSelectedAlbumIds);
 
     const normalizedSearch = normalizeSearchString(search);
     const filteredAlbums = sortAlbums(
@@ -67,7 +70,7 @@ export class AlbumModalRowConverter {
           rows.push({
             type: AlbumModalRowType.ALBUM_ITEM,
             selected: selectedRowIndex === i + selectedOffsetDueToNewAlbumRow,
-            multiSelected: multiSelectedAlbumIds.includes(album.id),
+            multiSelected: selectedAlbumIds.has(album.id),
             album,
           });
         }
@@ -83,7 +86,7 @@ export class AlbumModalRowConverter {
         rows.push({
           type: AlbumModalRowType.ALBUM_ITEM,
           selected: selectedRowIndex === i + selectedOffsetDueToNewAndRecents,
-          multiSelected: multiSelectedAlbumIds.includes(album.id),
+          multiSelected: selectedAlbumIds.has(album.id),
           album,
         });
       }

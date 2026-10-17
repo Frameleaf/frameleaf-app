@@ -3,14 +3,14 @@
   import { shortcuts } from '$lib/actions/shortcut';
   import ContextMenu from '$lib/components/shared-components/context-menu/ContextMenu.svelte';
   import { languageManager } from '$lib/managers/language-manager.svelte';
-  import { optionClickCallbackStore, selectedIdStore } from '$lib/stores/context-menu.store';
+  import { createContextMenu } from '$lib/stores/context-menu.store';
   import {
     getContextMenuPositionFromBoundingRect,
     getContextMenuPositionFromEvent,
     type Align,
   } from '$lib/utils/context-menu';
   import { generateId } from '$lib/utils/generate-id';
-  import { IconButton, type Color, type Size, type Variants } from '@immich/ui';
+  import { IconButton, type Color, type Size, type Variants } from '@frameleaf/ui';
   import type { Snippet } from 'svelte';
   import type { HTMLAttributes } from 'svelte/elements';
 
@@ -34,6 +34,10 @@
      */
     buttonClass?: string | undefined;
     hideContent?: boolean;
+    /** See ContextMenu: caps the menu at `window height - menuMaxHeightInset` pixels, scrolling inside. */
+    menuMaxHeightInset?: number;
+    /** See ContextMenu: keeps the menu's bottom edge this many pixels above the window's bottom. */
+    menuBottomInset?: number;
     children?: Snippet;
     offset?: {
       x: number;
@@ -51,6 +55,8 @@
     variant = 'ghost',
     buttonClass = undefined,
     hideContent = false,
+    menuMaxHeightInset = undefined,
+    menuBottomInset = undefined,
     children,
     offset,
     ...restProps
@@ -65,7 +71,7 @@
   const buttonId = `context-menu-button-${id}`;
   const menuId = `context-menu-${id}`;
 
-  const openDropdown = (event: KeyboardEvent | MouseEvent) => {
+  const layoutAlign = $derived.by(() => {
     let layoutAlign = align;
     if (languageManager.rtl) {
       if (align.includes('left')) {
@@ -74,9 +80,18 @@
         layoutAlign = align.replace('right', 'left') as Align;
       }
     }
+    return layoutAlign;
+  });
+
+  $effect(() => {
+    if (isOpen && menuContainer) {
+      menuContainer.focus();
+    }
+  });
+
+  const openDropdown = (event: KeyboardEvent | MouseEvent) => {
     contextMenuPosition = getContextMenuPositionFromEvent(event, layoutAlign);
     isOpen = true;
-    menuContainer?.focus();
   };
 
   const handleClick = (event: MouseEvent) => {
@@ -100,7 +115,7 @@
       return;
     }
 
-    contextMenuPosition = getContextMenuPositionFromBoundingRect(buttonContainer.getBoundingClientRect(), align);
+    contextMenuPosition = getContextMenuPositionFromBoundingRect(buttonContainer.getBoundingClientRect(), layoutAlign);
   };
 
   const closeDropdown = () => {
@@ -112,9 +127,7 @@
     $selectedIdStore = undefined;
   };
 
-  const handleOptionClick = () => {
-    closeDropdown();
-  };
+  const { selectedId: selectedIdStore } = createContextMenu(closeDropdown);
 
   const handleDocumentClick = (event: MouseEvent) => {
     if (!isOpen) {
@@ -133,12 +146,6 @@
     const button = buttonContainer?.querySelector(`#${buttonId}`) as HTMLButtonElement | null;
     button?.focus();
   };
-
-  $effect(() => {
-    if (isOpen) {
-      $optionClickCallbackStore = handleOptionClick;
-    }
-  });
 </script>
 
 <svelte:window onresize={onResize} />
@@ -195,6 +202,8 @@
         bind:menuElement={menuContainer}
         id={menuId}
         isVisible={isOpen}
+        maxHeightInset={menuMaxHeightInset}
+        bottomInset={menuBottomInset}
         x={contextMenuPosition.x - (offset?.x ?? 0)}
         y={contextMenuPosition.y + (offset?.y ?? 0)}
       >

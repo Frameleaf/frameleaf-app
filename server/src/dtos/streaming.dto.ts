@@ -1,6 +1,20 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
-import { ImmichHeader } from 'src/enum.js';
+import { RequestHeader } from 'src/enum.js';
+
+const normalizeHlsHeaders = (headers: unknown) => {
+  if (!headers || typeof headers !== 'object' || Array.isArray(headers)) return headers;
+  const values = headers as Record<string, unknown>;
+  return {
+    ...values,
+    [RequestHeader.HlsInitSegment]: Object.hasOwn(values, RequestHeader.HlsInitSegment)
+      ? values[RequestHeader.HlsInitSegment]
+      : values['x-immich-hls-msn'],
+    [RequestHeader.HlsPosition]: Object.hasOwn(values, RequestHeader.HlsPosition)
+      ? values[RequestHeader.HlsPosition]
+      : values['x-immich-hls-pos'],
+  };
+};
 
 const HlsSessionParamSchema = z.object({
   id: z.uuidv4(),
@@ -28,15 +42,15 @@ export class HlsSegmentParamDto extends createZodDto(HlsSegmentParamSchema) {}
 
 const HlsSegmentHeaderSchema = z.object({
   // Lets the client hint at which segment will be loaded after init.mp4.
-  [ImmichHeader.HlsInitSegment]: z.coerce.number().int().min(0).optional(),
+  [RequestHeader.HlsInitSegment]: z.coerce.number().int().min(0).optional(),
 });
 
-export class HlsSegmentHeaderDto extends createZodDto(HlsSegmentHeaderSchema) {}
+export class HlsSegmentHeaderDto extends createZodDto(z.preprocess(normalizeHlsHeaders, HlsSegmentHeaderSchema)) {}
 
 const HlsPlaylistHeaderSchema = z.object({
   // Lets the client hint at which segment will be loaded after the playlist.
   // A position rather than a segment index since indices aren't comparable across variants.
-  [ImmichHeader.HlsPosition]: z.coerce.number().min(0).optional(),
+  [RequestHeader.HlsPosition]: z.coerce.number().min(0).optional(),
 });
 
-export class HlsPlaylistHeaderDto extends createZodDto(HlsPlaylistHeaderSchema) {}
+export class HlsPlaylistHeaderDto extends createZodDto(z.preprocess(normalizeHlsHeaders, HlsPlaylistHeaderSchema)) {}

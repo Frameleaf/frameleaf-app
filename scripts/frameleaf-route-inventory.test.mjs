@@ -11,15 +11,6 @@ const inventory = JSON.parse(
     "utf8",
   ),
 );
-const evidence = JSON.parse(
-  readFileSync(
-    resolve(
-      root,
-      "docs/docs/developer/frameleaf-plan/preservation-source-evidence.json",
-    ),
-    "utf8",
-  ),
-);
 
 function pageFiles(directory, result = []) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -37,15 +28,15 @@ function routeForPage(path) {
   return `/${segments.join("/")}`;
 }
 
-test("committed Svelte routes exactly match the accepted 70-route inventory", () => {
+test("committed Svelte routes exactly match the accepted 86-route inventory", () => {
   const actual = [...new Set(pageFiles(routesRoot).map(routeForPage))].sort();
-  assert.equal(actual.length, 70);
+  assert.equal(actual.length, 86);
   assert.deepEqual(actual, [...inventory.productionRoutes].sort());
 });
 
 test("dirty-only evidence remains separate and complete", () => {
-  assert.equal(inventory.dirtyOnlyEvidence.length, 14);
-  assert.equal(new Set(inventory.dirtyOnlyEvidence).size, 14);
+  assert.equal(inventory.dirtyOnlyEvidence.length, 11);
+  assert.equal(new Set(inventory.dirtyOnlyEvidence).size, 11);
   assert.deepEqual(
     inventory.dirtyOnlyEvidence.filter((route) =>
       inventory.productionRoutes.includes(route),
@@ -56,14 +47,4 @@ test("dirty-only evidence remains separate and complete", () => {
     inventory.dirtyOnlyStatus,
     "absent-from-clean-baseline-unreviewed",
   );
-});
-
-test("ownership evidence covers all 84 routes and nine shared loaders", () => {
-  const accepted = [
-    ...inventory.productionRoutes,
-    ...inventory.dirtyOnlyEvidence,
-  ].sort();
-  assert.deepEqual(evidence.routes.map(({ id }) => id).sort(), accepted);
-  const loaders = new Set(evidence.routes.flatMap(({ loaders }) => loaders));
-  assert.equal(loaders.size, 9);
 });

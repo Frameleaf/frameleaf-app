@@ -1,13 +1,29 @@
-import { JobStatus } from 'src/enum.js';
+import { DateTime } from 'luxon';
+import { serverVersion } from 'src/constants.js';
+import { defaults } from 'src/dtos/config.dto.js';
+import { CronJob, JobName, JobStatus, ReleaseChannel, SystemMetadataKey, VersionCheckFrequency } from 'src/enum.js';
 import { VersionService } from 'src/services/version.service.js';
 import { factory } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
+
+const mockVersionResponse = (version: string) => ({
+  version,
+  published_at: DateTime.utc().toISO(),
+});
+
+const enabled = { newVersionCheck: { enabled: true, channel: ReleaseChannel.Stable } };
 
 vitest.mock('node:fs', () => ({ readFileSync: () => JSON.stringify({ version: 'v3.0.0' }) }));
 
 describe(VersionService.name, () => {
   let sut: VersionService;
   let mocks: ServiceMocks;
+
+  /** The saved config (automatic checks on unless given) and the last version-check state. */
+  const given = (state: unknown, config: unknown = enabled) =>
+    mocks.systemMetadata.get.mockImplementation((key: SystemMetadataKey) =>
+      Promise.resolve((key === SystemMetadataKey.SystemConfig ? config : state) as never),
+    );
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(VersionService));
@@ -40,12 +56,29 @@ describe(VersionService.name, () => {
       expect(mocks.versionHistory.create).not.toHaveBeenCalled();
     });
 
-    it('does not schedule or fetch external version checks', async () => {
+    it('does not wait for the first check before scheduling the cron job', async () => {
       mocks.database.tryLock.mockResolvedValue(true);
-      mocks.versionHistory.getLatest.mockResolvedValue({ ...factory.versionHistory(), version: '3.0.0' });
+      given(null);
+      mocks.serverInfo.getLatestRelease.mockReturnValue(new Promise(() => {}));
+      mocks.versionHistory.getLatest.mockResolvedValue({ id: 'version-1', createdAt: new Date(), version: '3.0.0' });
+
       await sut.onBootstrap();
-      expect(mocks.cron.create).not.toHaveBeenCalled();
-      expect(mocks.serverInfo.getLatestRelease).not.toHaveBeenCalled();
+      expect(mocks.cron.create).toHaveBeenCalledWith(expect.objectContaining({ name: CronJob.VersionCheck }));
+    });
+
+    it('should create a version check cron job when the database lock is acquired', async () => {
+      mocks.database.tryLock.mockResolvedValue(true);
+      mocks.versionHistory.getLatest.mockResolvedValue({
+        id: 'version-1',
+        createdAt: new Date(),
+        version: '3.0.0',
+      });
+      await sut.onBootstrap();
+      expect(mocks.cron.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: CronJob.VersionCheck,
+        }),
+      );
     });
   });
 
@@ -68,19 +101,177 @@ describe(VersionService.name, () => {
     });
   });
 
-  describe('handleVersionCheck', () => {
-    it('skips existing jobs even with a legacy enabled setting', async () => {
-      mocks.systemMetadata.get.mockResolvedValue({ newVersionCheck: { enabled: true } });
+  describe('handQueueVersionCheck', () => {
+    it('should queue a version check job', async () => {
+      await expect(sut.handleQueueVersionCheck()).resolves.toBeUndefined();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.VersionCheck, data: {} });
+    });
+  });
+
+  describe('handVersionCheck', () => {
+    it('should not run if version check is disabled', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ newVersionCheck: { enabled: false } });
+      await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Skipped);
+    });
+
+    it('should skip if the last check was less than 50 seconds ago', async () => {
+      given({ checkedAt: DateTime.utc().minus({ seconds: 30 }).toISO(), releaseVersion: '1.0.0' });
       await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Skipped);
       expect(mocks.serverInfo.getLatestRelease).not.toHaveBeenCalled();
+    });
+
+    it('should run a forced check if the last check was more than 50 seconds ago', async () => {
+      given({ checkedAt: DateTime.utc().minus({ seconds: 60 }).toISO(), releaseVersion: '1.0.0' });
+      mocks.serverInfo.getLatestRelease.mockResolvedValue(mockVersionResponse('v3.0.0'));
+      await expect(sut.handleVersionCheck({ force: true })).resolves.toEqual(JobStatus.Success);
+      expect(mocks.serverInfo.getLatestRelease).toHaveBeenCalled();
+    });
+
+    describe('check frequency (FL-71)', () => {
+      const withFrequency = (frequency?: VersionCheckFrequency) => ({
+        newVersionCheck: { enabled: true, channel: ReleaseChannel.Stable, ...(frequency && { frequency }) },
+      });
+      const checkedHoursAgo = (hours: number) => ({
+        checkedAt: DateTime.utc().minus({ hours }).toISO(),
+        releaseVersion: 'v3.0.0',
+      });
+
+      beforeEach(() => {
+        mocks.serverInfo.getLatestRelease.mockResolvedValue(mockVersionResponse('v3.0.0'));
+      });
+
+      it('defaults to daily: the hourly tick does not ask again within a day', async () => {
+        given(checkedHoursAgo(2), withFrequency());
+        await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Skipped);
+        expect(mocks.serverInfo.getLatestRelease).not.toHaveBeenCalled();
+      });
+
+      it('asks again once a day has passed on the daily schedule', async () => {
+        given(checkedHoursAgo(24), withFrequency(VersionCheckFrequency.Daily));
+        await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Success);
+        expect(mocks.serverInfo.getLatestRelease).toHaveBeenCalledWith(ReleaseChannel.Stable, expect.any(String));
+      });
+
+      it('does not drift an hour a day: the tick just short of 24 hours after the last check asks', async () => {
+        given(
+          { checkedAt: DateTime.utc().minus({ hours: 24 }).plus({ seconds: 20 }).toISO(), releaseVersion: 'v3.0.0' },
+          withFrequency(VersionCheckFrequency.Daily),
+        );
+        await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Success);
+      });
+
+      it('waits a week on the weekly schedule', async () => {
+        given(checkedHoursAgo(6 * 24), withFrequency(VersionCheckFrequency.Weekly));
+        await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Skipped);
+        expect(mocks.serverInfo.getLatestRelease).not.toHaveBeenCalled();
+      });
+
+      it('asks once a week has passed on the weekly schedule', async () => {
+        given(checkedHoursAgo(7 * 24), withFrequency(VersionCheckFrequency.Weekly));
+        await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Success);
+        expect(mocks.serverInfo.getLatestRelease).toHaveBeenCalled();
+      });
+
+      it('asks at once when nothing was checked yet', async () => {
+        given(null, withFrequency(VersionCheckFrequency.Weekly));
+        await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Success);
+      });
+
+      it('a forced check (checks just switched on) ignores the schedule', async () => {
+        given(checkedHoursAgo(2), withFrequency(VersionCheckFrequency.Weekly));
+        await expect(sut.handleVersionCheck({ force: true })).resolves.toEqual(JobStatus.Success);
+      });
+
+      it('never checks while checks are off, whatever the frequency', async () => {
+        given(null, { newVersionCheck: { enabled: false, frequency: VersionCheckFrequency.Daily } });
+        await expect(sut.handleVersionCheck({ force: true })).resolves.toEqual(JobStatus.Skipped);
+        expect(mocks.serverInfo.getLatestRelease).not.toHaveBeenCalled();
+      });
+    });
+
+    it('should run and notify if a new version is available', async () => {
+      given(null);
+      mocks.serverInfo.getLatestRelease.mockResolvedValue(mockVersionResponse('v100.0.0'));
+      await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Success);
+      expect(mocks.systemMetadata.set).toHaveBeenCalled();
+      expect(mocks.logger.log).toHaveBeenCalled();
+      expect(mocks.websocket.clientBroadcast).toHaveBeenCalled();
+    });
+
+    it('should not notify if the version is equal', async () => {
+      given(null);
+      mocks.serverInfo.getLatestRelease.mockResolvedValue(mockVersionResponse('v3.0.0'));
+      await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Success);
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.VersionCheckState, {
+        checkedAt: expect.any(String),
+        releaseVersion: 'v3.0.0',
+        rolloutSeed: expect.stringMatching(/^[a-f0-9]{32}$/),
+      });
+      expect(mocks.websocket.clientBroadcast).not.toHaveBeenCalled();
+    });
+
+    it('keeps the staged-rollout seed across checks (FL-142)', async () => {
+      given({ checkedAt: DateTime.utc().minus({ days: 2 }).toISO(), releaseVersion: 'v3.0.0', rolloutSeed: 'seed-1' });
+      mocks.serverInfo.getLatestRelease.mockResolvedValue(mockVersionResponse('v3.0.0'));
+      await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Success);
+      expect(mocks.serverInfo.getLatestRelease).toHaveBeenCalledWith(ReleaseChannel.Stable, 'seed-1');
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(
+        SystemMetadataKey.VersionCheckState,
+        expect.objectContaining({ rolloutSeed: 'seed-1' }),
+      );
+    });
+
+    it('announces nothing when no release is offered to this server (withdrawn or staged, FL-142)', async () => {
+      given(null);
+      mocks.serverInfo.getLatestRelease.mockResolvedValue(null);
+      await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Success);
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(
+        SystemMetadataKey.VersionCheckState,
+        expect.objectContaining({ releaseVersion: `v${serverVersion.toString()}` }),
+      );
+      expect(mocks.websocket.clientBroadcast).not.toHaveBeenCalled();
+    });
+
+    it('should handle a version check error', async () => {
+      given(null);
+      mocks.serverInfo.getLatestRelease.mockRejectedValue(new Error('Version service is down'));
+      await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Failed);
       expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
       expect(mocks.websocket.clientBroadcast).not.toHaveBeenCalled();
+      expect(mocks.logger.warn).toHaveBeenCalled();
+    });
+  });
+
+  describe('onConfigUpdate', () => {
+    it('should queue a version check job when newVersionCheck is enabled', async () => {
+      await sut.onConfigUpdate({
+        oldConfig: { ...defaults, newVersionCheck: { ...defaults.newVersionCheck, enabled: false } },
+        newConfig: { ...defaults, newVersionCheck: { ...defaults.newVersionCheck, enabled: true } },
+      });
+      // switching checks on asks now, whatever the schedule
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.VersionCheck, data: { force: true } });
+    });
+
+    it('should not queue a version check job when newVersionCheck is disabled', async () => {
+      await sut.onConfigUpdate({
+        oldConfig: { ...defaults, newVersionCheck: { ...defaults.newVersionCheck, enabled: true } },
+        newConfig: { ...defaults, newVersionCheck: { ...defaults.newVersionCheck, enabled: false } },
+      });
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('should not queue a version check job when newVersionCheck was already enabled', async () => {
+      await sut.onConfigUpdate({
+        oldConfig: { ...defaults, newVersionCheck: { ...defaults.newVersionCheck, enabled: true } },
+        newConfig: { ...defaults, newVersionCheck: { ...defaults.newVersionCheck, enabled: true } },
+      });
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
   });
 
   describe('onWebsocketConnection', () => {
-    it('should send on_server_version client event', () => {
-      sut.onWebsocketConnection({ userId: '42' });
+    it('should send on_server_version client event', async () => {
+      await sut.onWebsocketConnection({ userId: '42' });
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_server_version', '42', {
         major: 3,
         minor: 0,
@@ -90,9 +281,21 @@ describe(VersionService.name, () => {
       expect(mocks.websocket.clientSend).toHaveBeenCalledTimes(1);
     });
 
-    it('ignores cached external release notifications', () => {
-      mocks.systemMetadata.get.mockResolvedValue({ checkedAt: '2024-01-01', releaseVersion: 'v1.42.0' });
-      sut.onWebsocketConnection({ userId: '42' });
+    it('should also send a new release notification', async () => {
+      given({ checkedAt: '2024-01-01', releaseVersion: 'v1.42.0' });
+      await sut.onWebsocketConnection({ userId: '42' });
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_server_version', '42', {
+        major: 3,
+        minor: 0,
+        patch: 0,
+        prerelease: null,
+      });
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_new_release', '42', expect.any(Object));
+    });
+
+    it('should not send a release notification when the version check is disabled', async () => {
+      given({ checkedAt: '2024-01-01', releaseVersion: 'v1.42.0' }, { newVersionCheck: { enabled: false } });
+      await sut.onWebsocketConnection({ userId: '42' });
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_server_version', '42', {
         major: 3,
         minor: 0,
@@ -101,17 +304,65 @@ describe(VersionService.name, () => {
       });
       expect(mocks.websocket.clientSend).not.toHaveBeenCalledWith('on_new_release', '42', expect.any(Object));
     });
+  });
 
-    it('should not send a release notification when the version check is disabled', () => {
-      mocks.systemMetadata.get.mockResolvedValueOnce({ newVersionCheck: { enabled: false } });
-      sut.onWebsocketConnection({ userId: '42' });
-      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_server_version', '42', {
-        major: 3,
-        minor: 0,
-        patch: 0,
-        prerelease: null,
+  describe('checkNow (About → Check for updates)', () => {
+    it('answers from the stored state when the last check was under a minute ago', async () => {
+      given({ checkedAt: DateTime.utc().minus({ seconds: 20 }).toISO(), releaseVersion: 'v100.0.0' });
+
+      await expect(sut.checkNow()).resolves.toEqual(expect.objectContaining({ isAvailable: true }));
+      expect(mocks.serverInfo.getLatestRelease).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+    });
+
+    it('checks again once the stored state is older than a minute, sharing one lookup', async () => {
+      given({ checkedAt: DateTime.utc().minus({ seconds: 90 }).toISO(), releaseVersion: 'v3.0.0' });
+      mocks.serverInfo.getLatestRelease.mockResolvedValue(mockVersionResponse('v3.0.0'));
+
+      await Promise.all([sut.checkNow(), sut.checkNow()]);
+      expect(mocks.serverInfo.getLatestRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it('logs the cause of a failed check', async () => {
+      given(null);
+      mocks.serverInfo.getLatestRelease.mockRejectedValue(
+        new Error('Failed to fetch latest release', { cause: new Error('Release lookup failed with status 403') }),
+      );
+      await expect(sut.checkNow()).rejects.toThrow();
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('status 403'));
+    });
+
+    it('asks the release feed even when automatic checks are off, and reports a newer version', async () => {
+      given(null, { newVersionCheck: { enabled: false, channel: ReleaseChannel.Stable } });
+      mocks.serverInfo.getLatestRelease.mockResolvedValue(mockVersionResponse('v100.0.0'));
+
+      await expect(sut.checkNow()).resolves.toEqual(
+        expect.objectContaining({
+          isAvailable: true,
+          releaseVersion: { major: 100, minor: 0, patch: 0, prerelease: null },
+          type: 'major',
+        }),
+      );
+      expect(mocks.serverInfo.getLatestRelease).toHaveBeenCalledWith(ReleaseChannel.Stable, expect.any(String));
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.VersionCheckState, {
+        checkedAt: expect.any(String),
+        releaseVersion: 'v100.0.0',
+        rolloutSeed: expect.stringMatching(/^[a-f0-9]{32}$/),
       });
-      expect(mocks.websocket.clientSend).not.toHaveBeenCalledWith('on_new_release', '42', expect.any(Object));
+    });
+
+    it('reports the running version as current', async () => {
+      given(null);
+      mocks.serverInfo.getLatestRelease.mockResolvedValue(mockVersionResponse('v3.0.0'));
+      await expect(sut.checkNow()).resolves.toEqual(expect.objectContaining({ isAvailable: false }));
+      expect(mocks.websocket.clientBroadcast).not.toHaveBeenCalled();
+    });
+
+    it('passes a release feed failure to the caller', async () => {
+      given(null);
+      mocks.serverInfo.getLatestRelease.mockRejectedValue(new Error('Failed to fetch latest release'));
+      await expect(sut.checkNow()).rejects.toThrow('Failed to fetch latest release');
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
     });
   });
 });

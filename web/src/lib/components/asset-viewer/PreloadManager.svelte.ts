@@ -1,4 +1,4 @@
-import type { AssetResponseDto, SharedLinkResponseDto } from '@immich/sdk';
+import type { AssetResponseDto, SharedLinkResponseDto } from '@frameleaf/sdk';
 import { loadImage } from '$lib/actions/image-loader.svelte';
 import { getAssetUrls } from '$lib/utils';
 import { AdaptiveImageLoader, type QualityList } from '$lib/utils/adaptive-image-loader.svelte';
@@ -10,6 +10,7 @@ type AssetCursor = {
 };
 
 export class PreloadManager {
+  private currentPreloader: AdaptiveImageLoader | undefined;
   private nextPreloader: AdaptiveImageLoader | undefined;
   private previousPreloader: AdaptiveImageLoader | undefined;
 
@@ -67,26 +68,29 @@ export class PreloadManager {
   updateAfterNavigation(oldCursor: AssetCursor, newCursor: AssetCursor, sharedlink: SharedLinkResponseDto | undefined) {
     const movedForward = newCursor.current.id === oldCursor.nextAsset?.id;
     const movedBackward = newCursor.current.id === oldCursor.previousAsset?.id;
-
-    if (!movedBackward) {
-      this.destroyPreviousPreloader();
-    }
-
-    if (!movedForward) {
-      this.destroyNextPreloader();
-    }
+    this.currentPreloader?.destroy();
+    this.currentPreloader = undefined;
 
     if (movedForward) {
+      this.currentPreloader = this.nextPreloader;
+      this.nextPreloader = undefined;
+      this.destroyPreviousPreloader();
       this.nextPreloader = this.startPreloader(newCursor.nextAsset, sharedlink);
     } else if (movedBackward) {
+      this.currentPreloader = this.previousPreloader;
+      this.previousPreloader = undefined;
+      this.destroyNextPreloader();
       this.previousPreloader = this.startPreloader(newCursor.previousAsset, sharedlink);
     } else {
+      this.destroyPreviousPreloader();
+      this.destroyNextPreloader();
       this.previousPreloader = this.startPreloader(newCursor.previousAsset, sharedlink);
       this.nextPreloader = this.startPreloader(newCursor.nextAsset, sharedlink);
     }
   }
 
   initializePreloads(cursor: AssetCursor, sharedlink: SharedLinkResponseDto | undefined) {
+    this.destroy();
     if (cursor.nextAsset) {
       this.nextPreloader = this.startPreloader(cursor.nextAsset, sharedlink);
     }
@@ -96,6 +100,8 @@ export class PreloadManager {
   }
 
   destroy() {
+    this.currentPreloader?.destroy();
+    this.currentPreloader = undefined;
     this.destroyNextPreloader();
     this.destroyPreviousPreloader();
   }

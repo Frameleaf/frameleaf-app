@@ -1,22 +1,15 @@
 import { Mocked, vitest } from 'vitest';
 import type { RepositoryInterface } from 'src/types.js';
-import { DatabaseExtension, ImmichEnvironment, ImmichWorker, LogFormat } from 'src/enum.js';
+import { DatabaseExtension, FrameleafEnvironment, FrameleafWorker, LogFormat } from 'src/enum.js';
 import { ConfigRepository, EnvData } from 'src/repositories/config.repository.js';
 
 export const envData: EnvData = {
   port: 2283,
-  environment: ImmichEnvironment.Production,
+  shutdown: { graceMs: 5000, deadlineMs: 9000, workerDeadlineMs: 8000 },
+  environment: FrameleafEnvironment.Production,
   logFormat: LogFormat.Console,
 
   buildMetadata: {},
-  bull: {
-    config: {
-      connection: {},
-      prefix: 'immich_bull',
-    },
-    queues: [{ name: 'queue-1' }],
-  },
-
   cls: {
     config: {},
   },
@@ -24,37 +17,27 @@ export const envData: EnvData = {
   database: {
     config: {
       connectionType: 'parts',
-      database: 'immich',
+      database: 'frameleaf',
       host: 'database',
       port: 5432,
       username: 'postgres',
       password: 'postgres',
     },
     skipMigrations: false,
-    vectorExtension: DatabaseExtension.VectorChord,
+    vectorExtension: DatabaseExtension.Vector,
   },
 
   helmet: {
     config: {},
   },
 
-  licensePublicKey: {
-    client: 'client-public-key',
-    server: 'server-public-key',
-  },
-
   versionCheck: {
-    url: 'https://version.immich.cloud/version',
+    url: 'https://api.frameleaf.cloud/v1/releases/latest',
+    fallbackUrl: 'https://api.github.com/repos/Frameleaf/frameleaf-app/releases',
   },
 
   network: {
     trustedProxies: [],
-  },
-
-  redis: {
-    host: 'redis',
-    port: 6379,
-    db: 0,
   },
 
   resourcePaths: {
@@ -65,6 +48,8 @@ export const envData: EnvData = {
       admin2: '/build/geodata/admin2Codes.txt',
       cities500: '/build/geodata/cities500.txt',
       naturalEarthCountriesPath: 'build/ne_10m_admin_0_countries.geojson',
+      landmarks: 'build/landmarks.ndjson.gz',
+      landmarkIcons: 'build/landmark-icons',
     },
     web: {
       root: '/build/www',
@@ -79,6 +64,7 @@ export const envData: EnvData = {
 
   storage: {
     ignoreMountCheckErrors: false,
+    importRoots: [],
   },
 
   telemetry: {
@@ -87,7 +73,7 @@ export const envData: EnvData = {
     metrics: new Set(),
   },
 
-  workers: [ImmichWorker.Api, ImmichWorker.Microservices],
+  workers: [FrameleafWorker.Api, FrameleafWorker.Microservices],
 
   plugins: {
     external: {
@@ -96,14 +82,28 @@ export const envData: EnvData = {
     },
   },
 
+  appReleases: {},
+  studioWorker: { enabled: true, trustDir: '/run/frameleaf/studio-worker' },
+  frameleafCloud: {
+    url: null,
+    pushUrl: null,
+    identityDir: null,
+    linkToken: null,
+    edge: { port: 2443, bind: '0.0.0.0', secret: null, acmeDirectoryUrl: null },
+    localUrl: null,
+    trustedLanCidrs: [],
+    licenseExtraJwksFile: null,
+  },
+
   noColor: false,
+  deprecatedEnv: [],
 };
 
 export const mockEnvData = (config: Partial<EnvData>) => ({ ...envData, ...config });
 export const newConfigRepositoryMock = (): Mocked<RepositoryInterface<ConfigRepository>> => {
   return {
     getEnv: vitest.fn().mockReturnValue(mockEnvData({})),
-    getWorker: vitest.fn().mockReturnValue(ImmichWorker.Api),
+    getWorker: vitest.fn().mockReturnValue(FrameleafWorker.Api),
     isDev: vitest.fn().mockReturnValue(false),
     isProduction: vitest.fn().mockReturnValue(true),
   };

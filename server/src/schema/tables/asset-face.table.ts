@@ -7,8 +7,8 @@ import {
   PrimaryGeneratedColumn,
   Table,
   UpdateDateColumn,
-} from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { SourceType } from 'src/enum.js';
 import { asset_face_source_type } from 'src/schema/enums.js';
@@ -73,6 +73,22 @@ export class AssetFaceTable {
 
   @Column({ default: SourceType.MachineLearning, enum: asset_face_source_type })
   sourceType!: Generated<SourceType>;
+
+  /**
+   * Frameleaf FL-57: stamped whenever a human moves this face between people
+   * (`PersonRepository.reassignFace`), distinct from `sourceType` (which only
+   * distinguishes how the face was *detected*, not whether its *assignment* was
+   * later corrected by a person). Never touched by the facial-recognition job,
+   * so reprocessing a face's embedding or re-running clustering cannot silently
+   * erase a manual correction. Backs the person detail "correction history" view.
+   *
+   * `Generated<>` (with a DB-side `DEFAULT NULL`, like `sourceType` above) so
+   * every existing insert path — `createFace`, the facial-recognition job, test
+   * factories — keeps compiling without knowing this column exists; only the
+   * explicit reassignment path sets it.
+   */
+  @Column({ type: 'timestamp with time zone', nullable: true, default: null, index: true })
+  correctedAt!: Generated<Timestamp | null>;
 
   @DeleteDateColumn()
   deletedAt!: Timestamp | null;

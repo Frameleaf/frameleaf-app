@@ -1,0 +1,472 @@
+--- a/src/features/export/utils/embedded-subtitle-export.test.ts
++++ b/src/features/export/utils/embedded-subtitle-export.test.ts
+@@ -1,10 +1,12 @@
+ // @vitest-environment node
+
+ import { describe, expect, it } from 'vite-plus/test'
++import { serializeSrt } from '@/shared/utils/subtitles'
+ import type { CompositionInputProps } from '@/types/export'
+ import type { SubtitleSegmentItem, TimelineTrack } from '@/types/timeline'
+
+ import {
++  buildTranscriptSubtitleCues,
+   buildTranscriptSubtitleWebVtt,
+   omitTranscriptSubtitleItemsForSoftSubtitleExport,
+   resolveSubtitleExportPlan,
+@@ -171,3 +173,48 @@
+     })
+   })
+ })
++
++describe('imported caption export modes', () => {
++  const imported = {
++    id: 'imported-text', type: 'text' as const, textRole: 'caption' as const,
++    trackId: 'track-1', from: 30, durationInFrames: 30, text: 'Imported SRT', color: '#ffffff',
++    captionSource: { type: 'subtitle-import' as const, clipId: '', mediaId: '', fileName: 'captions.srt', format: 'srt' as const, importedAt: 1 },
++  }
++  const segment = makeTranscriptSubtitle({
++    id: 'imported-segment', from: 72, durationInFrames: 48,
++    source: { type: 'subtitle-import', fileName: 'captions.vtt', format: 'vtt', importedAt: 2 },
++    cues: [{ id: 'imported-cue', startSeconds: 0, endSeconds: 2, text: 'Imported VTT' }],
++  })
++  const title = { ...imported, id: 'ordinary-title', textRole: undefined, captionSource: undefined, text: 'Title' }
++  const composition = { ...makeComposition([imported, segment, title]), fps: 24, durationInFrames: 84 }
++
++  it('collects frame-derived imported text and segment cues within export bounds without changing provenance', () => {
++    const vtt = buildTranscriptSubtitleWebVtt(composition)
++    expect(vtt).toContain('00:00:01.250 --> 00:00:02.500\nImported SRT')
++    expect(vtt).toContain('00:00:03.000 --> 00:00:03.500\nImported VTT')
++    expect(vtt).not.toContain('Title')
++    const srt = serializeSrt(buildTranscriptSubtitleCues(composition))
++    expect(srt).toContain('00:00:01,250 --> 00:00:02,500\nImported SRT')
++    expect(srt).toContain('00:00:03,000 --> 00:00:03,500\nImported VTT')
++    expect(imported.captionSource.type).toBe('subtitle-import')
++    expect(segment.source.type).toBe('subtitle-import')
++    expect(buildTranscriptSubtitleWebVtt({ ...composition, tracks: [{ ...composition.tracks[0]!, visible: false }] })).toBeNull()
++  })
++
++  it.each(['off', 'burn', 'sidecar', 'embedded'] as const)('honors %s mode while preserving ordinary titles', (subtitleMode) => {
++    const vtt = buildTranscriptSubtitleWebVtt(composition)
++    const plan = resolveSubtitleExportPlan({ subtitleMode, container: 'webm', supportsWebVttSubtitles: true, hasTranscriptVtt: vtt !== null })
++    const rendered = plan.burnInSubtitles ? composition : omitTranscriptSubtitleItemsForSoftSubtitleExport(composition)
++    expect(rendered.tracks[0]!.items!.map((item) => item.id)).toEqual(
++      subtitleMode === 'burn' ? ['imported-text', 'imported-segment', 'ordinary-title'] : ['ordinary-title'],
++    )
++    expect(plan.embedTranscriptSubtitles).toBe(subtitleMode === 'embedded')
++    expect(composition.tracks[0]!.items).toHaveLength(3)
++  })
++
++  it('retains the existing warned burn-in fallback when imported captions cannot be embedded', () => {
++    expect(resolveSubtitleExportPlan({ subtitleMode: 'embedded', container: 'mp4', supportsWebVttSubtitles: true, hasTranscriptVtt: true })).toEqual({
++      embedTranscriptSubtitles: false, burnInSubtitles: true, fallbackToBurnIn: true,
++    })
++  })
++})
+--- a/src/features/export/utils/embedded-subtitle-export.ts
++++ b/src/features/export/utils/embedded-subtitle-export.ts
+@@ -1,5 +1,5 @@
+ import type { CompositionInputProps, SubtitleExportMode } from '@/types/export'
+-import type { SubtitleSegmentItem, TimelineItem, TimelineTrack } from '@/types/timeline'
++import type { SubtitleSegmentItem, TextItem, TimelineItem, TimelineTrack } from '@/types/timeline'
+ import { serializeVtt, type SubtitleCue } from '@/shared/utils/subtitles'
+
+ export interface SubtitleExportPlan {
+@@ -42,14 +42,21 @@
+   return { embedTranscriptSubtitles, burnInSubtitles, fallbackToBurnIn }
+ }
+
+-function isTranscriptSubtitleItem(item: TimelineItem): item is SubtitleSegmentItem {
+-  return item.type === 'subtitle' && item.source.type === 'transcript'
++// Keep the existing helper contract, including transcript behavior, while admitting imported cues.
++function isTranscriptSubtitleItem(item: TimelineItem): item is SubtitleSegmentItem | TextItem {
++  return (
++    (item.type === 'subtitle' &&
++      (item.source.type === 'transcript' || item.source.type === 'subtitle-import')) ||
++    (item.type === 'text' &&
++      item.textRole === 'caption' &&
++      item.captionSource?.type === 'subtitle-import')
++  )
+ }
+
+ /**
+- * Collect transcript subtitle cues from the (export-trimmed) composition,
++ * Collect transcript and imported subtitle cues from the (export-trimmed) composition,
+  * offset to the export timeline and clamped to its duration. Returns [] when
+- * there are none. Shared by the soft-embed (VTT) and sidecar (SRT) paths.
++ * there are none. Imported source provenance remains unchanged. Shared by the soft-embed (VTT) and sidecar (SRT) paths.
+  */
+ export function buildTranscriptSubtitleCues(composition: CompositionInputProps): SubtitleCue[] {
+   const fps = composition.fps
+@@ -67,7 +74,10 @@
+       const itemStartSeconds = item.from / fps
+       const itemEndSeconds = (item.from + item.durationInFrames) / fps
+
+-      for (const cue of item.cues) {
++      const itemCues = item.type === 'text'
++        ? [{ id: item.id, startSeconds: 0, endSeconds: item.durationInFrames / fps, text: item.text }]
++        : item.cues
++      for (const cue of itemCues) {
+         const startSeconds = Math.max(0, itemStartSeconds + cue.startSeconds)
+         const endSeconds = Math.min(
+           durationSeconds,
+--- a/src/features/media-library/components/media-library.tsx
++++ b/src/features/media-library/components/media-library.tsx
+@@ -91,6 +91,7 @@
+   useCompositionNavigationStore,
+ } from '@/features/media-library/deps/timeline-stores'
+ import { useProjectStore } from '@/features/media-library/deps/projects'
++import { showSubtitleImport } from '../services/subtitle-import-service'
+ import { proxyService } from '../services/proxy-service'
+ import { frameInterpolationService } from '../services/frame-interpolation-service'
+ import { upscaleService } from '../services/upscale-service'
+@@ -395,6 +396,25 @@
+     deleteMediaBatch,
+   })
+
++  const subtitleImport = useRef<AbortController | null>(null)
++  useEffect(() => () => subtitleImport.current?.abort(), [])
++  const handleSubtitleImport = async () => {
++    if (!currentProjectId) return
++    subtitleImport.current?.abort()
++    const controller = new AbortController()
++    subtitleImport.current = controller
++    try {
++      await showSubtitleImport(currentProjectId, controller.signal)
++    } catch (error) {
++      if (!controller.signal.aborted) {
++        showNotification({
++          type: 'error',
++          message: error instanceof Error ? error.message : String(error),
++        })
++      }
++    }
++  }
++
+   // Import files by copying them into the workspace-backed media store.
+   const handleImport = async () => {
+     try {
+@@ -672,6 +692,10 @@
+                   <DropdownMenuItem onSelect={handleImport}>
+                     <FolderOpen className="w-4 h-4 mr-2" />
+                     {t('media.library.importCopyToWorkspace')}
++                  </DropdownMenuItem>
++                  <DropdownMenuItem onSelect={() => void handleSubtitleImport()}>
++                    <FileText className="w-4 h-4 mr-2" />
++                    {t('media.library.importSubtitles', { defaultValue: 'Import subtitles (SRT/VTT)' })}
+                   </DropdownMenuItem>
+                   <DropdownMenuItem onSelect={handleLinkImport}>
+                     <Link className="w-4 h-4 mr-2" />
+--- a/src/features/media-library/deps/timeline-actions-contract.ts
++++ b/src/features/media-library/deps/timeline-actions-contract.ts
+@@ -5,6 +5,7 @@
+ import { useKeyframesStore } from '@/features/timeline/stores/keyframes-store'
+ import { getSynchronizedLinkedItems } from '@/features/timeline/utils/linked-items'
+ import {
++  addItemsOnNewTracks,
+   deleteCompoundClips,
+   getCompoundClipDeletionImpact,
+   getMediaDeletionImpact,
+@@ -48,6 +49,7 @@
+ }
+
+ export {
++  addItemsOnNewTracks,
+   deleteCompoundClips,
+   getCompoundClipDeletionImpact,
+   getMediaDeletionImpact,
+--- a/src/features/media-library/deps/timeline-stores-contract.ts
++++ b/src/features/media-library/deps/timeline-stores-contract.ts
+@@ -6,3 +6,5 @@
+   type SubComposition,
+ } from '@/features/timeline/stores/compositions-store'
+ export { wouldCreateCompositionCycle } from '@/features/timeline/utils/composition-graph'
++
++export { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
+--- /dev/null
++++ b/src/features/media-library/services/subtitle-import-service.test.ts
+@@ -0,0 +1,164 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import { fireEvent } from '@testing-library/react'
++import type { Project } from '@/types/project'
++import { useProjectStore } from '../deps/projects'
++import { useItemsStore } from '@/features/timeline/stores/items-store'
++import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
++import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
++import { useCompositionNavigationStore } from '../deps/timeline-stores'
++import { resetTimelineCompositionTestState } from '@/features/timeline/test-helpers'
++import { buildTimelineFromStores, hydrateTimelineStoresFromProject } from '@/features/timeline/stores/timeline-persistence'
++import { showSubtitleImport } from './subtitle-import-service'
++
++const project: Project = {
++  id: 'subtitle-project', name: 'Subtitles', description: '', createdAt: 1, updatedAt: 1,
++  duration: 10, metadata: { width: 1920, height: 1080, fps: 24 },
++  timeline: { tracks: [], items: [] },
++}
++const srt = '1\n00:00:01,250 --> 00:00:02,500\nHello\n\n2\n00:00:03,000 --> 00:00:04,000\nWorld'
++const vtt = 'WEBVTT\n\n00:00:01.250 --> 00:00:02.500\nHello\n\n00:00:03.000 --> 00:00:04.000\nWorld'
++
++function choose(text: string, name = 'captions.srt') {
++  vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
++    expect(this.accept).toBe('.srt,.vtt')
++    const bytes = new TextEncoder().encode(text)
++    const file = new File([bytes], name)
++    Object.defineProperty(file, 'arrayBuffer', { value: async () => bytes.buffer })
++    fireEvent.change(this, { target: { files: [file] } })
++  })
++}
++
++beforeEach(() => {
++  resetTimelineCompositionTestState()
++  useProjectStore.setState({ currentProject: project })
++  useTimelineSettingsStore.setState({ fps: 24, isTimelineLoading: false, isDirty: false })
++})
++afterEach(() => {
++  vi.restoreAllMocks()
++  resetTimelineCompositionTestState()
++  useProjectStore.setState({ currentProject: null })
++})
++
++describe('portable subtitle import', () => {
++  it.each([['srt', srt], ['vtt', vtt]])('imports %s as editable captions with truthful provenance', async (format, text) => {
++    choose(text, `captions.${format}`)
++    expect(await showSubtitleImport(project.id)).toBe(2)
++    const { items, tracks } = useItemsStore.getState()
++    expect(tracks).toHaveLength(1)
++    expect(items[0]).toMatchObject({
++      type: 'text', textRole: 'caption', text: 'Hello', from: 30, durationInFrames: 30,
++      captionSource: { type: 'subtitle-import', fileName: `captions.${format}`, format },
++      fontFamily: 'Inter', trackId: tracks[0]!.id,
++    })
++    expect(useTimelineSettingsStore.getState().isDirty).toBe(true)
++    useTimelineCommandStore.getState().undo()
++    expect(useItemsStore.getState()).toMatchObject({ tracks: [], items: [] })
++    useTimelineCommandStore.getState().redo()
++    expect(useItemsStore.getState().items).toEqual(items)
++    expect(useItemsStore.getState().tracks).toEqual(tracks)
++    const saved = JSON.parse(JSON.stringify(buildTimelineFromStores()))
++    resetTimelineCompositionTestState()
++    await hydrateTimelineStoresFromProject({ ...project, timeline: saved })
++    expect(useItemsStore.getState().items).toEqual(items)
++    expect(useItemsStore.getState().tracks).toEqual(tracks)
++  })
++
++  it.each(['srt', 'vtt'])('preserves arrow dialogue in a valid %s cue', async (format) => {
++    const header = format === 'vtt' ? 'WEBVTT\n\n' : '1\n'
++    const timing = format === 'vtt'
++      ? '00:00:01.000 --> 00:00:02.000'
++      : '00:00:01,000 --> 00:00:02,000'
++    choose(`${header}${timing}\n60 --> 61\n00:00:61,000 --> 00:01:03,000`, `captions.${format}`)
++    expect(await showSubtitleImport(project.id)).toBe(1)
++    expect(useItemsStore.getState().items[0]).toMatchObject({
++      text: '60 --> 61\n00:00:61,000 --> 00:01:03,000',
++      captionSource: { type: 'subtitle-import', format },
++    })
++  })
++
++  it.each([
++    ['srt', '00:00:61,000 --> 00:01:03,000'],
++    ['srt', '00:59:59,000 --> 00:60:03,000'],
++    ['vtt', '00:00:61.000 --> 00:01:03.000'],
++    ['vtt', '59:59.000 --> 60:03.000'],
++  ])('refuses a mixed valid/overflow %s file atomically', async (format, timing) => {
++    const valid = format === 'srt' ? srt : vtt
++    choose(`${valid}\n\n3\n${timing}\nInvalid overflow`, `captions.${format}`)
++    await expect(showSubtitleImport(project.id)).rejects.toThrow('between 0 and 59')
++    expect(useItemsStore.getState()).toMatchObject({ tracks: [], items: [] })
++    expect(useTimelineCommandStore.getState().canUndo).toBe(false)
++    expect(useTimelineSettingsStore.getState().isDirty).toBe(false)
++  })
++
++  it.each(['', '1\ninvalid --> timing\nHello', `${srt}\n\n3\nbroken block`, '1\n00:00:01,000 --> 00:00:01,000\nEmpty'])('refuses empty or malformed files atomically', async (text) => {
++    choose(text)
++    await expect(showSubtitleImport(project.id)).rejects.toThrow('empty or malformed')
++    expect(useItemsStore.getState()).toMatchObject({ tracks: [], items: [] })
++    expect(useTimelineCommandStore.getState().canUndo).toBe(false)
++  })
++
++  it.each([
++    ['captions.vtt', '00:00:01.000 --> 00:00:02.000\nMissing header'],
++    ['captions.srt', `${srt}\u0000`],
++    ['captions.txt', srt],
++  ])('refuses invalid file input %s before creating a track', async (name, text) => {
++    choose(text, name)
++    await expect(showSubtitleImport(project.id)).rejects.toThrow()
++    expect(useItemsStore.getState()).toMatchObject({ tracks: [], items: [] })
++    expect(useTimelineCommandStore.getState().canUndo).toBe(false)
++  })
++
++  it('refuses non-UTF-8 bytes before mutating the timeline', async () => {
++    vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
++      const bytes = new Uint8Array([0xff, 0xfe, 0x00])
++      const file = new File([bytes], 'captions.srt')
++      Object.defineProperty(file, 'arrayBuffer', { value: async () => bytes.buffer })
++      fireEvent.change(this, { target: { files: [file] } })
++    })
++    await expect(showSubtitleImport(project.id)).rejects.toThrow()
++    expect(useItemsStore.getState()).toMatchObject({ tracks: [], items: [] })
++  })
++
++  it('refuses stale media-library project authority without opening the picker', async () => {
++    const click = vi.spyOn(HTMLInputElement.prototype, 'click')
++    expect(await showSubtitleImport('another-project')).toBe(0)
++    expect(click).not.toHaveBeenCalled()
++    expect(useItemsStore.getState()).toMatchObject({ tracks: [], items: [] })
++  })
++
++  it('leaves no history after file selection is cancelled', async () => {
++    vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
++      fireEvent(this, new Event('cancel'))
++    })
++    expect(await showSubtitleImport(project.id)).toBe(0)
++    expect(useItemsStore.getState().items).toEqual([])
++    expect(useTimelineCommandStore.getState().canUndo).toBe(false)
++  })
++
++  it.each(['project', 'composition', 'loading', 'unmount'])('refuses a result after %s changes while reading', async (change) => {
++    let finish!: (value: ArrayBuffer) => void
++    const bytes = new TextEncoder().encode(srt)
++    const reading = new Promise<ArrayBuffer>((resolve) => { finish = resolve })
++    const started = vi.fn()
++    vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
++      const file = new File([bytes], 'captions.srt')
++      Object.defineProperty(file, 'arrayBuffer', { value: () => { started(); return reading } })
++      fireEvent.change(this, { target: { files: [file] } })
++    })
++    const controller = new AbortController()
++    const imported = showSubtitleImport(project.id, controller.signal)
++    await vi.waitFor(() => expect(started).toHaveBeenCalledOnce())
++    if (change === 'project') useProjectStore.setState({ currentProject: { ...project, id: 'another-project' } })
++    if (change === 'composition') useCompositionNavigationStore.setState({ activeCompositionId: 'another-composition' })
++    if (change === 'loading') useTimelineSettingsStore.setState({ isTimelineLoading: true })
++    if (change === 'unmount') controller.abort()
++    // Navigating away and back must not revive a pending read.
++    if (change === 'project') useProjectStore.setState({ currentProject: project })
++    if (change === 'composition') useCompositionNavigationStore.setState({ activeCompositionId: null })
++    if (change === 'loading') useTimelineSettingsStore.setState({ isTimelineLoading: false })
++    finish(bytes.buffer)
++    expect(await imported).toBe(0)
++    expect(useItemsStore.getState()).toMatchObject({ tracks: [], items: [] })
++    expect(useTimelineCommandStore.getState().canUndo).toBe(false)
++  })
++})
+--- /dev/null
++++ b/src/features/media-library/services/subtitle-import-service.ts
+@@ -0,0 +1,118 @@
++import { useProjectStore } from '../deps/projects'
++import {
++  useCompositionsStore,
++  useCompositionNavigationStore,
++  useTimelineStore,
++} from '../deps/timeline-stores'
++import { addItemsOnNewTracks } from '../deps/timeline-actions-contract'
++import { useTimelineSettingsStore } from '../deps/timeline-stores-contract'
++import { buildCaptionTrack, buildSubtitleTextItems } from '../utils/caption-items'
++import { inferSubtitleFormat, parseSrt, parseVtt } from '@/shared/utils/subtitles'
++
++/** Import inline, editable captions through the timeline's single undoable mutation. */
++export async function showSubtitleImport(projectId: string, signal?: AbortSignal): Promise<number> {
++  const project = useProjectStore.getState().currentProject
++  const settings = useTimelineSettingsStore.getState()
++  if (!project || project.id !== projectId || settings.isTimelineLoading || signal?.aborted) return 0
++  const compositionId = useCompositionNavigationStore.getState().activeCompositionId
++  const scope = new AbortController()
++  const cancel = () => scope.abort()
++  signal?.addEventListener('abort', cancel, { once: true })
++  const unsubscribe = [
++    useProjectStore.subscribe((state) => {
++      if (state.currentProject?.id !== project.id) cancel()
++    }),
++    useCompositionNavigationStore.subscribe((state) => {
++      if (state.activeCompositionId !== compositionId) cancel()
++    }),
++    useTimelineSettingsStore.subscribe((state) => {
++      if (state.isTimelineLoading || state.fps !== settings.fps) cancel()
++    }),
++  ]
++  try {
++    const input = document.createElement('input')
++    input.type = 'file'
++    input.accept = '.srt,.vtt'
++    const file = await new Promise<File | undefined>((resolve, reject) => {
++      const finish = (selected?: File) => {
++        input.onchange = null
++        input.oncancel = null
++        scope.signal.removeEventListener('abort', abort)
++        input.remove()
++        resolve(selected)
++      }
++      const abort = () => finish()
++      input.onchange = () => finish(input.files?.[0])
++      input.oncancel = abort
++      scope.signal.addEventListener('abort', abort, { once: true })
++      try {
++        input.click()
++      } catch (error) {
++        reject(error)
++        finish()
++      }
++    })
++    if (!file || scope.signal.aborted) return 0
++    const format = inferSubtitleFormat(file.name)
++    if (!format || file.size > 4 * 1024 * 1024) {
++      throw new Error('Choose an SRT or VTT subtitle file no larger than 4 MB.')
++    }
++    const bytes = await file.arrayBuffer()
++    if (scope.signal.aborted) return 0
++    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
++    if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) {
++      throw new Error('Subtitle files must contain UTF-8 text without control characters.')
++    }
++    if (format === 'vtt' && !/^\uFEFF?WEBVTT(?:[ \t].*)?(?:\r?\n|$)/.test(text)) {
++      throw new Error('VTT subtitle files must begin with WEBVTT.')
++    }
++    // The reused parser converts fields arithmetically; reject overflow before any cue is imported.
++    const invalidTimestampFields = text.replace(/\r\n?/g, '\n').split(/\n{2,}/)
++      .map((block) => block.split('\n').find((line) => line.includes('-->')))
++      .some((line) => {
++        if (!line) return false
++        const timestamps = line.split('-->').slice(0, 2)
++          .map((part) => part.trim().split(/\s+/)[0] ?? '')
++        // Leave dialogue and malformed syntax to the parser; inspect supported timestamp pairs only.
++        if (timestamps.length !== 2 || !timestamps.every((timestamp) =>
++          /^(?:\d{1,2}:)?\d{1,2}:\d{2}[,.]\d{1,3}$/.test(timestamp))) return false
++        return timestamps.some((timestamp) => {
++          const fields = (timestamp.split(/[,.]/)[0] ?? '').split(':')
++          return fields.slice(-2).some((field) => Number(field) > 59)
++        })
++      })
++    if (invalidTimestampFields) {
++      throw new Error('Subtitle timestamp minutes and seconds must be between 0 and 59.')
++    }
++    const parsed = format === 'srt' ? parseSrt(text) : parseVtt(text)
++    // Overlapping cues are valid; skipped malformed blocks must never produce a partial import.
++    if (parsed.cues.length === 0 || parsed.warnings.some((warning) => warning.startsWith('Skipped'))) {
++      throw new Error('The subtitle file contains empty or malformed cues.')
++    }
++    if (scope.signal.aborted || signal?.aborted) return 0
++    const timeline = useTimelineStore.getState()
++    const composition = compositionId
++      ? useCompositionsStore.getState().compositionById[compositionId]
++      : null
++    if (compositionId && !composition) return 0
++    const track = buildCaptionTrack(timeline.tracks)
++    const items = buildSubtitleTextItems({
++      trackId: track.id,
++      cues: parsed.cues,
++      timelineFps: timeline.fps,
++      canvasWidth: composition?.width ?? project.metadata.width,
++      canvasHeight: composition?.height ?? project.metadata.height,
++      fileName: file.name,
++      format,
++    })
++    addItemsOnNewTracks(items, [...timeline.tracks, track])
++    return items.length
++  } catch (error) {
++    if (scope.signal.aborted || signal?.aborted) return 0
++    throw error
++  } finally {
++    cancel()
++    unsubscribe.forEach((stop) => stop())
++    signal?.removeEventListener('abort', cancel)
++  }
++}

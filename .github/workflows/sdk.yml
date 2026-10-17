@@ -1,6 +1,6 @@
-# Publishing the upstream @immich/sdk namespace is disabled; internal SDK generation remains required CI.
+# Publishing the upstream SDK namespace is disabled; internal SDK generation remains required CI.
 # No scheduled/event-driven mutations or foreign credentials are retained.
-name: Update Immich SDK
+name: Retired SDK publication
 'on':
   workflow_dispatch: null
 permissions: {}
@@ -13,5 +13,5 @@ jobs:
     steps:
       - name: Explain the retired automation
         run:
-          printf '%s\n' 'Publishing the upstream @immich/sdk namespace is disabled; internal SDK generation remains required
+          printf '%s\n' 'Publishing the upstream SDK namespace is disabled; internal SDK generation remains required
           CI.' 'No external action was taken. Configure an owned replacement in a reviewed change before enabling automation.'

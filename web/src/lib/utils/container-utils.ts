@@ -57,30 +57,11 @@ export const scaleToFit = (dimensions: Size, container: Size): Size => {
   };
 };
 
-const getElementSize = (element: HTMLImageElement | HTMLVideoElement): Size => {
-  if (element instanceof HTMLVideoElement) {
-    return { width: element.clientWidth, height: element.clientHeight };
-  }
-  return { width: element.width, height: element.height };
-};
-
 export const getNaturalSize = (element: HTMLImageElement | HTMLVideoElement): Size => {
   if (element instanceof HTMLVideoElement) {
     return { width: element.videoWidth, height: element.videoHeight };
   }
   return { width: element.naturalWidth, height: element.naturalHeight };
-};
-
-export const getContentMetrics = (element: HTMLImageElement | HTMLVideoElement): ContentMetrics => {
-  const natural = getNaturalSize(element);
-  const client = getElementSize(element);
-  const { width: contentWidth, height: contentHeight } = scaleToFit(natural, client);
-  return {
-    contentWidth,
-    contentHeight,
-    offsetX: (client.width - contentWidth) / 2,
-    offsetY: (client.height - contentHeight) / 2,
-  };
 };
 
 export function mapNormalizedToContent(point: Point, sizeOrMetrics: Size | ContentMetrics): Point {
@@ -108,12 +89,25 @@ export function mapNormalizedRectToContent(
   bottomRight: Point,
   sizeOrMetrics: Size | ContentMetrics,
 ): Rect {
-  const tl = mapNormalizedToContent(topLeft, sizeOrMetrics);
-  const br = mapNormalizedToContent(bottomRight, sizeOrMetrics);
+  let left: number;
+  let top: number;
+  let right: number;
+  let bottom: number;
+  if ('contentWidth' in sizeOrMetrics) {
+    left = topLeft.x * sizeOrMetrics.contentWidth + sizeOrMetrics.offsetX;
+    top = topLeft.y * sizeOrMetrics.contentHeight + sizeOrMetrics.offsetY;
+    right = bottomRight.x * sizeOrMetrics.contentWidth + sizeOrMetrics.offsetX;
+    bottom = bottomRight.y * sizeOrMetrics.contentHeight + sizeOrMetrics.offsetY;
+  } else {
+    left = topLeft.x * sizeOrMetrics.width;
+    top = topLeft.y * sizeOrMetrics.height;
+    right = bottomRight.x * sizeOrMetrics.width;
+    bottom = bottomRight.y * sizeOrMetrics.height;
+  }
   return {
-    top: tl.y,
-    left: tl.x,
-    width: br.x - tl.x,
-    height: br.y - tl.y,
+    top,
+    left,
+    width: right - left,
+    height: bottom - top,
   };
 }

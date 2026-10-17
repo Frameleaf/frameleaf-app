@@ -20,7 +20,7 @@ import type {
   UpdateAlbumDto,
   UpdateAssetDto,
   UserAdminResponseDto,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { createReadStream } from 'node:fs';
 
 export class MigrateHttpError extends Error {
@@ -69,7 +69,7 @@ const buildQuery = (params: Record<string, string | number | boolean | undefined
 };
 
 /**
- * A minimal, self-contained API client for one Immich server. Unlike `@immich/sdk`
+ * A minimal, self-contained API client for one Frameleaf server. Unlike `@frameleaf/sdk`
  * (which keeps a single global `defaults`), each instance is fully independent, so
  * SERVER A and SERVER B can be driven concurrently. Uses the SDK only for types.
  */
@@ -92,6 +92,12 @@ export class ServerClient {
       // no well-known endpoint; use the URL as given
     }
     const client = new ServerClient(baseUrl, key);
+    const config = await client.json<{ frameleaf?: { cloudConfigured?: unknown } } | null>('GET', '/server/config');
+    if (typeof config?.frameleaf?.cloudConfigured !== 'boolean') {
+      throw new TypeError(
+        'API transfer requires Frameleaf servers. Use the offline import-immich administration command with a fresh Frameleaf database to import a supported external library.',
+      );
+    }
     const user = await client.getMyUser();
     return { client, user };
   }
@@ -165,6 +171,7 @@ export class ServerClient {
   // --- dedup / download ---
   checkBulkUpload = (assets: Array<{ id: string; checksum: string }>) =>
     this.json<AssetBulkUploadCheckResponseDto>('POST', '/assets/bulk-upload-check', { assets });
+  getAssetInfo = (id: string) => this.json<AssetResponseDto>('GET', `/assets/${id}`);
 
   /** Streamed original bytes. Caller pipes `response.body` to disk. */
   downloadOriginal = (id: string) => this.request('GET', `/assets/${id}/original`);
@@ -174,7 +181,7 @@ export class ServerClient {
     filepath: string;
     size: number;
     filename: string;
-    checksum: string; // base64 SHA-256 -> x-immich-checksum
+    checksum: string; // base64 SHA-256 for the canonical Frameleaf destination
     fileCreatedAt: string;
     fileModifiedAt: string;
     isFavorite: boolean;

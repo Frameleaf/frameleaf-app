@@ -12,10 +12,10 @@
 
 <script lang="ts" generics="T">
   import { clickOutside } from '$lib/actions/click-outside';
-  import { Button, Icon, Text } from '@immich/ui';
+  import { motionFly } from '$lib/frameleaf/motion';
+  import { Button, Icon, Text } from '@frameleaf/ui';
   import { mdiCheck } from '@mdi/js';
   import { isEqual } from 'lodash-es';
-  import { fly } from 'svelte/transition';
 
   interface Props {
     class?: string;
@@ -106,14 +106,14 @@
   <!-- DROP DOWN MENU -->
   {#if showMenu}
     <div
-      transition:fly={{ y: -30, duration: 250 }}
-      class="absolute z-1 flex max-h-[70vh] min-w-75 immich-scrollbar flex-col overflow-y-auto rounded-2xl bg-gray-100 py-2 text-sm font-medium text-black shadow-lg dark:bg-gray-700 dark:text-white {className} {getAlignClass(
+      transition:motionFly={{ y: -30, duration: 250 }}
+      class="absolute z-1 flex max-h-[70vh] min-w-75 immich-scrollbar flex-col overflow-y-auto rounded-xl border border-(--fl-border) bg-(--fl-panel) py-2 text-sm font-medium text-(--fl-text) shadow-(--fl-shadow-2) {className} {getAlignClass(
         position,
       )}"
     >
       {#each options as option (option)}
         {@const renderedOption = renderOption(option)}
-        {@const buttonStyle = renderedOption.disabled ? '' : 'transition-all hover:bg-gray-300 dark:hover:bg-gray-800'}
+        {@const buttonStyle = renderedOption.disabled ? '' : 'transition-colors hover:bg-(--fl-raised)'}
         <button
           type="button"
           class="grid grid-cols-[36px_1fr] place-items-center p-2 disabled:opacity-40 {buttonStyle}"

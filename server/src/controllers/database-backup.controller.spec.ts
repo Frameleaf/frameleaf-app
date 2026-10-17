@@ -1,6 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import request from 'supertest';
 import { DatabaseBackupController } from 'src/controllers/database-backup.controller.js';
+import { Permission } from 'src/enum.js';
+import { BackupSequenceService } from 'src/services/backup-sequence.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { errorDto } from 'test/medium/responses.js';
@@ -10,11 +12,13 @@ describe(DatabaseBackupController.name, () => {
   let ctx: ControllerContext;
   const service = automock(DatabaseBackupService, { args: [{ setContext: () => {} }], strict: false });
   const maintenanceService = mockBaseService(MaintenanceService);
+  const sequenceService = { getSchedule: vi.fn() };
 
   beforeAll(async () => {
     ctx = await controllerSetup(DatabaseBackupController, [
       { provide: DatabaseBackupService, useValue: service },
       { provide: MaintenanceService, useValue: maintenanceService },
+      { provide: BackupSequenceService, useValue: sequenceService },
     ]);
     return () => ctx.close();
   });
@@ -25,24 +29,82 @@ describe(DatabaseBackupController.name, () => {
     ctx.reset();
   });
 
+  describe('GET /admin/database-backups/schedule', () => {
+    it('is the one backup schedule, not a backup named "schedule"', async () => {
+      sequenceService.getSchedule.mockResolvedValue({ cronExpression: '0 2 * * *' });
+
+      const { status, body } = await request(ctx.getHttpServer()).get('/admin/database-backups/schedule');
+
+      expect(status).toBe(200);
+      expect(body).toEqual({ cronExpression: '0 2 * * *' });
+      expect(ctx.authenticate).toHaveBeenCalled();
+      expect(service.downloadBackup).not.toHaveBeenCalled();
+    });
+  });
+
   describe('POST /admin/database-backups/start-restore', () => {
     it('should not be an authenticated route', async () => {
       maintenanceService.startRestoreFlow.mockResolvedValue({ jwt: 'jwt' });
 
-      await request(ctx.getHttpServer()).post('/admin/database-backups/start-restore').send();
+      await request(ctx.getHttpServer()).post('/admin/database-backups/start-restore');
 
       expect(ctx.authenticate).not.toHaveBeenCalled();
       expect(ctx.requireSetupAvailable).toHaveBeenCalled();
     });
 
+    it('asks maintenance to restore without a setup code', async () => {
+      maintenanceService.startRestoreFlow.mockResolvedValue({ jwt: 'jwt' });
+      const { status } = await request(ctx.getHttpServer()).post('/admin/database-backups/start-restore');
+      expect(status).toBe(201);
+      expect(maintenanceService.startRestoreFlow).toHaveBeenCalledWith(
+        expect.objectContaining({ ip: expect.any(String) }),
+      );
+    });
+
     it('should not start a restore when setup is unavailable', async () => {
       ctx.requireSetupAvailable.mockRejectedValue(new BadRequestException('Admin setup is not available'));
 
-      const { status, body } = await request(ctx.getHttpServer()).post('/admin/database-backups/start-restore').send();
+      const { status, body } = await request(ctx.getHttpServer()).post('/admin/database-backups/start-restore');
 
       expect(status).toEqual(400);
       expect(body).toEqual(errorDto.badRequest('Admin setup is not available'));
       expect(maintenanceService.startRestoreFlow).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('restore verification (FL-71 CC-9)', () => {
+    it('reads it for an administrator with maintenance, ahead of the filename route', async () => {
+      service.getRestoreVerification.mockResolvedValue({
+        metadataVerifiedAt: null,
+        originalsVerifiedAt: null,
+        verifiedBy: null,
+        overdue: true,
+        dueAt: null,
+        intervalDays: 90,
+      });
+
+      const { status } = await request(ctx.getHttpServer()).get('/admin/database-backups/restore-verification');
+
+      expect(status).toBe(200);
+      expect(service.getRestoreVerification).toHaveBeenCalled();
+      expect(service.downloadBackup).not.toHaveBeenCalled();
+      expect(ctx.authenticate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ adminRoute: true, permission: Permission.Maintenance }),
+        }),
+      );
+    });
+
+    it('records a test of at least one part', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/admin/database-backups/restore-verification')
+        .send({ metadata: false, originals: false });
+      expect(status).toBe(400);
+
+      await request(ctx.getHttpServer())
+        .post('/admin/database-backups/restore-verification')
+        .send({ metadata: true, originals: true });
+      expect(service.recordRestoreVerification).toHaveBeenCalledWith(undefined, { metadata: true, originals: true });
     });
   });
 });

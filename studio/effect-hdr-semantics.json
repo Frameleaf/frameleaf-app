@@ -1,0 +1,672 @@
+{
+  "description": "Current SDR behavior is pinned to Freecut. Linear display-referred BT.709 HDR uses straight alpha and 1.0 = 203 cd/m². Unmigrated operators throw HdrRenderUnavailableError; refusal is regression coverage, not HDR rendering qualification.",
+  "workingSpace": {
+    "sdr": "sRGB-encoded BT.709; pinned upstream parameters and clamps",
+    "hdr": "linear display-referred BT.709, straight alpha, 1.0 = 203 cd/m²"
+  },
+  "effects": {
+    "gpu-ascii": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-block-glitch": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-blocks": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-box-blur": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR filters linear display-light BT.709 (1.0 = 203 cd/m²) with the pinned spatial kernel and bounded parameters. Bilinear taps accumulate premultiplied RGB and alpha; the result returns straight alpha, zero RGB for zero coverage, signed binary16 RGB limits, and unclipped headroom. SDR retains pinned encoded straight-RGBA hardware sampling and averaging."
+    },
+    "gpu-brightness": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR adds amount in linear display-light BT.709 reference-white units (1.0 = 203 cd/m²), clamps RGB only to the signed binary16 range, and preserves straight alpha. SDR retains its pinned encoded addition and [0, 1] clamp."
+    },
+    "gpu-bulge": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "SDR retains pinned geometry and hardware straight-RGBA sampling. HDR retains the same coordinates, bilinearly samples premultiplied linear light, and returns signed straight RGB with binary16 coverage; zero stored coverage clears RGB."
+    },
+    "gpu-chroma-key": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-color-glitch": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-color-wheels": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-contrast": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR uses (linear RGB - 0.5) * amount + 0.5 around a fixed 0.5 reference-white pivot (101.5 cd/m² at 203 cd/m²), dimensionless gain bounded to [0, 3], signed binary16 RGB limits and unchanged straight alpha. SDR retains its pinned encoded 0.5 pivot and [0, 1] RGB clamp."
+    },
+    "gpu-crt": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-curves": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-dither": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-droste": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-edge-detect": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-exposure": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR multiplies linear RGB by 2^exposure (EV [-3, 3]), adds offset [-0.5, 0.5] in reference-white units ([-101.5, 101.5] cd/m² at 203 cd/m²), then applies sign(x)*abs(x)^(1/gamma), gamma [0.2, 3], about unit reference white. This artistic signed power is not a transfer-function conversion. Signed binary16 RGB limits and straight alpha are retained. SDR keeps encoded gain/offset, unsigned gamma and [0, 1] RGB clamp."
+    },
+    "gpu-fluted-glass": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-gaussian-blur": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR filters linear display-light BT.709 (1.0 = 203 cd/m²) with the pinned spatial kernel and bounded parameters. Bilinear taps accumulate premultiplied RGB and alpha; the result returns straight alpha, zero RGB for zero coverage, signed binary16 RGB limits, and unclipped headroom. SDR retains pinned encoded straight-RGBA hardware sampling and averaging."
+    },
+    "gpu-glass-mosaic": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-glow": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-gradient-map": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-grain": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-grayscale": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "Preserves pinned artistic affine coefficients and SDR behavior; HDR applies the same coefficients in managed linear BT.709 and limits finite RGB to binary16 range, preserving alpha."
+    },
+    "gpu-halftone": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-hue-shift": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-ink": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-invert": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "Preserves pinned artistic affine coefficients and SDR behavior; HDR applies the same coefficients in managed linear BT.709 and limits finite RGB to binary16 range, preserving alpha."
+    },
+    "gpu-kaleidoscope": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-levels": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-lut": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-mirror": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-motion-blur": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR filters linear display-light BT.709 (1.0 = 203 cd/m²) with the pinned spatial kernel and bounded parameters. Bilinear taps accumulate premultiplied RGB and alpha; the result returns straight alpha, zero RGB for zero coverage, signed binary16 RGB limits, and unclipped headroom. SDR retains pinned encoded straight-RGBA hardware sampling and averaging."
+    },
+    "gpu-pixel-sort": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-pixel-sort-hq": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-pixelate": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR retains pinned block-center coordinates and bounded size, samples premultiplied linear display-light BT.709, returns straight alpha with zero RGB at zero coverage, and preserves signed binary16 headroom. SDR retains pinned encoded straight-RGBA hardware sampling."
+    },
+    "gpu-posterize": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-power-window": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-radial-blur": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-rgb-split": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-ripple-glass": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-saturation": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR computes artistic gray dot(linear BT.709 RGB, [0.299, 0.587, 0.114]) then gray + (RGB-gray)*amount, dimensionless amount [0, 3], reference white 203 cd/m². These retained 601-style artistic weights are not physical BT.709 luminance. Signed binary16 RGB limits and straight alpha are unchanged. SDR retains the same weights on encoded RGB and [0, 1] clamp."
+    },
+    "gpu-scanlines": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-secondary-qualifier": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-sepia": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "Preserves pinned artistic affine coefficients and SDR behavior; HDR applies the same coefficients in managed linear BT.709 and limits finite RGB to binary16 range, preserving alpha."
+    },
+    "gpu-sharpen": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-temperature": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "Existing additive temperature/tint offsets in linear BT.709 project units; signed RGB and headroom preserved to the finite half-float limit, alpha unchanged. SDR retains its pinned clamp and equations."
+    },
+    "gpu-threshold": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-trigger-wave": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-twirl": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "SDR retains pinned geometry and hardware straight-RGBA sampling. HDR retains the same coordinates, bilinearly samples premultiplied linear light, and returns signed straight RGB with binary16 coverage; zero stored coverage clears RGB."
+    },
+    "gpu-vhs": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-vibrance": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "SDR retains pinned vibrance. HDR weights linear BT.709 chroma by bounded saturation using absolute channel magnitude, with a 1e-6 black floor. Preserve signed channels, alpha and headroom; clamp only to binary16 storage range."
+    },
+    "gpu-vignette": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-wave": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "SDR retains pinned geometry and hardware straight-RGBA sampling. HDR retains the same coordinates, bilinearly samples premultiplied linear light, and returns signed straight RGB with binary16 coverage; zero stored coverage clears RGB."
+    },
+    "gpu-zoom-blur": {
+      "sdrParity": true,
+      "sdrClamped": false,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    }
+  },
+  "historicalEncodedHdr": {
+    "commit": "24d509f1346e344bb356f92cd0fbed2a59b74ca8",
+    "path": "studio/effect-hdr-semantics.json",
+    "sha256": "469f07d593f54c14f56c59eab57ea4d77ae1f2927381b07b3d95484eadf712c3",
+    "acceptance": "Historical extended sRGB-encoded contract only; cannot qualify current linear HDR.",
+    "contract": {
+      "description": "FL-97 HDR parameter semantics for every registered GPU effect. SDR projects keep Freecut reference behaviour (sdrClamped effects clamp to [0, 1] as upstream). In HDR projects the rgba16float route works in extended-range sRGB encoding with BT.709 primaries, 1.0 = reference white (203 cd/m² by default), negative values carrying wide gamut. hdr: extended = no clamp beyond the rgba16float finite limit; bounded = output within [0, 1] by design; palette = maps onto authored SDR colours. Verified by tools/effects-matrix.browser.mjs.",
+      "workingSpace": {
+        "sdr": "sRGB-encoded BT.709 in [0, 1]",
+        "hdr": "extended-range sRGB encoding, BT.709 primaries, 1.0 = referenceWhiteNits"
+      },
+      "effects": {
+        "gpu-ascii": {
+          "hdr": "bounded",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Stylised glyph rendering with SDR ink/background colours; output is bounded to [0, 1] by design."
+        },
+        "gpu-block-glitch": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Block displacement of working values."
+        },
+        "gpu-blocks": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Block shading multiplies working values; no clamp in HDR."
+        },
+        "gpu-box-blur": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Weighted average of working values; linear, so range and sign are preserved."
+        },
+        "gpu-brightness": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Adds the amount in working units; 1.0 is reference white, so +0.1 lifts by 10% of reference white at every level, highlights included."
+        },
+        "gpu-bulge": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Resamples working values at displaced coordinates; range and sign are preserved."
+        },
+        "gpu-chroma-key": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Key distance uses CbCr of the working value; keyed alpha is bounded coverage, colour keeps its range, and spill suppression is additive."
+        },
+        "gpu-color-glitch": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Channel offsets of working values."
+        },
+        "gpu-color-wheels": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Lift/gamma/gain, exposure, contrast and hue act on working values with a sign-preserving gamma; no clamp in HDR."
+        },
+        "gpu-contrast": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Scales around the 0.5 encoded pivot; values above reference white keep scaling rather than clipping."
+        },
+        "gpu-crt": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Curvature, scanlines and vignette multiply working values."
+        },
+        "gpu-curves": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "The curve is defined on [0, 1]; values outside it take the curve end value plus their out-of-domain offset, so highlights keep their separation."
+        },
+        "gpu-dither": {
+          "hdr": "bounded",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Ordered/diffusion dither to an SDR palette; output is bounded to [0, 1] by design."
+        },
+        "gpu-droste": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Resamples working values at displaced coordinates; range and sign are preserved."
+        },
+        "gpu-edge-detect": {
+          "hdr": "bounded",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Edge magnitude as a [0, 1] mask colour; output is bounded by design."
+        },
+        "gpu-exposure": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Multiplies by 2^stops, adds the offset, then applies a sign-preserving gamma, so negative wide-gamut values keep their sign."
+        },
+        "gpu-fluted-glass": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Refraction resamples working values; highlight/shadow shading is additive and unclamped in HDR."
+        },
+        "gpu-gaussian-blur": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Weighted average of working values; linear, so range and sign are preserved."
+        },
+        "gpu-glass-mosaic": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Refraction resamples working values; highlight/shadow shading is additive and unclamped in HDR."
+        },
+        "gpu-glow": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Adds a thresholded bloom of working values; bright light blooms brighter in HDR."
+        },
+        "gpu-gradient-map": {
+          "hdr": "palette",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Maps Rec.601 luma clamped to [0, 1] onto the authored gradient colours; the gradient is an SDR palette. Mix keeps the unmapped source share unchanged."
+        },
+        "gpu-grain": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Additive noise scaled by amount; highlights keep their level plus grain."
+        },
+        "gpu-grayscale": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Luma of the working value; highlights stay above 1."
+        },
+        "gpu-halftone": {
+          "hdr": "bounded",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Halftone dots in authored SDR ink colours; output is bounded to [0, 1] by design."
+        },
+        "gpu-hue-shift": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "HSV rotation of the working value; V may exceed 1."
+        },
+        "gpu-ink": {
+          "hdr": "bounded",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Ink hatch in authored SDR colours; output is bounded to [0, 1] by design."
+        },
+        "gpu-invert": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Reflects about reference white (1 - x); light above reference white becomes negative, which is kept."
+        },
+        "gpu-kaleidoscope": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Resamples working values at displaced coordinates; range and sign are preserved."
+        },
+        "gpu-levels": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Input black/white set the reference segment; light past input white continues past output white on the same slope. A collapsed input range is a hard threshold."
+        },
+        "gpu-lut": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "The 3D LUT is defined on [0, 1]; values outside it take the LUT result plus their out-of-domain offset. No LUT is assumed to be an HDR transform."
+        },
+        "gpu-mirror": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Resamples working values at displaced coordinates; range and sign are preserved."
+        },
+        "gpu-motion-blur": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Weighted average of working values; linear, so range and sign are preserved."
+        },
+        "gpu-pixel-sort": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Reorders working values by the sort key; values are moved, not changed."
+        },
+        "gpu-pixel-sort-hq": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Reorders working values by the sort key; values are moved, not changed."
+        },
+        "gpu-pixelate": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Resamples working values at displaced coordinates; range and sign are preserved."
+        },
+        "gpu-posterize": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Quantises working values in 1/levels steps across the whole range."
+        },
+        "gpu-power-window": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Window mask is geometric; the correction applies to extended values without clipping them."
+        },
+        "gpu-radial-blur": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Weighted average of working values; linear, so range and sign are preserved."
+        },
+        "gpu-rgb-split": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Resamples working values at displaced coordinates; range and sign are preserved."
+        },
+        "gpu-ripple-glass": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Refraction resamples working values; highlight/shadow shading is additive and unclamped in HDR."
+        },
+        "gpu-saturation": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Mixes with Rec.601 luma of the working value; extended values stay extended."
+        },
+        "gpu-scanlines": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Multiplies working values by the scanline pattern."
+        },
+        "gpu-secondary-qualifier": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "The qualifier mask is computed from HSL with a [0, 1] mask; the correction applies to extended values without clipping them."
+        },
+        "gpu-sepia": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Fixed sepia matrix applied to the working value; bright input gives bright sepia."
+        },
+        "gpu-sharpen": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Unsharp mask on working values; overshoot above reference white and below zero is kept in HDR."
+        },
+        "gpu-temperature": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Additive warm/cool and tint offsets in working units; no clamp in HDR."
+        },
+        "gpu-threshold": {
+          "hdr": "bounded",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Binary threshold of luma to 0 or 1 (reference white); output is bounded by design."
+        },
+        "gpu-trigger-wave": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Displacement plus an additive glow band over working values; unclamped in HDR."
+        },
+        "gpu-twirl": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Resamples working values at displaced coordinates; range and sign are preserved."
+        },
+        "gpu-vhs": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Tape distortion, bleed, scanlines and noise over working values; no clamp in HDR."
+        },
+        "gpu-vibrance": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": true,
+          "semantics": "Saturation weighted by current saturation; extended values stay extended."
+        },
+        "gpu-vignette": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Multiplies working values by the vignette falloff."
+        },
+        "gpu-wave": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Resamples working values at displaced coordinates; range and sign are preserved."
+        },
+        "gpu-zoom-blur": {
+          "hdr": "extended",
+          "sdrParity": true,
+          "sdrClamped": false,
+          "semantics": "Weighted average of working values; linear, so range and sign are preserved."
+        }
+      }
+    }
+  }
+}

@@ -1,14 +1,17 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { JobRunIdParamDto, JobRunItemPageDto, JobRunPageDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
 import { JobCreateDto } from 'src/dtos/job.dto.js';
 import { QueueResponseLegacyDto, QueuesResponseLegacyDto } from 'src/dtos/queue-legacy.dto.js';
 import { QueueCommandDto, QueueNameParamDto } from 'src/dtos/queue.dto.js';
+import { RunningJobsResponseDto } from 'src/dtos/running-job.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { JobService } from 'src/services/job.service.js';
 import { QueueService } from 'src/services/queue.service.js';
+import { RunningJobService } from 'src/services/running-job.service.js';
 
 @ApiTags(ApiTag.Jobs)
 @Controller('jobs')
@@ -16,7 +19,22 @@ export class JobController {
   constructor(
     private service: JobService,
     private queueService: QueueService,
+    private runningJobService: RunningJobService,
   ) {}
+
+  @Get('runs')
+  @Authenticated({ permission: Permission.JobRead, admin: true })
+  @Endpoint({ summary: 'List durable job runs', history: new HistoryBuilder().added('v3').alpha('v3') })
+  getJobRuns(@Query() dto: JobRunSearchDto): Promise<JobRunPageDto> {
+    return this.service.getRuns(dto);
+  }
+
+  @Get('runs/:id/items')
+  @Authenticated({ permission: Permission.JobRead, admin: true })
+  @Endpoint({ summary: 'Inspect selected job run items', history: new HistoryBuilder().added('v3').alpha('v3') })
+  getJobRunItems(@Param() { id }: JobRunIdParamDto, @Query() dto: JobRunSearchDto): Promise<JobRunItemPageDto> {
+    return this.service.getRunItems(id, dto);
+  }
 
   @Get()
   @Authenticated({ permission: Permission.JobRead, admin: true })
@@ -27,6 +45,20 @@ export class JobController {
   })
   getQueuesLegacy(@Auth() auth: AuthDto): Promise<QueuesResponseLegacyDto> {
     return this.queueService.getAllLegacy(auth);
+  }
+
+  // FL-104 / FL-72: the one summary the notifications panel polls. Owner-scoped for everybody;
+  // the queue counts in it are for administrators only, decided by the service.
+  @Get('running')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Get running jobs',
+    description:
+      'Everything running in the background that the signed-in account may see, in one answer: its own unfinished media operations (paused ones included) and highlight exports, and for administrators every server job queue that has work, with the progress of its current run. Non-administrators always receive an empty queue list.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  getRunningJobs(@Auth() auth: AuthDto): Promise<RunningJobsResponseDto> {
+    return this.runningJobService.getRunning(auth);
   }
 
   @Post()

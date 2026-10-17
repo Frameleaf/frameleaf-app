@@ -1,5 +1,5 @@
-import { Check, Column, CreateDateColumn, ForeignKeyColumn, Table } from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+import { Check, Column, CreateDateColumn, ForeignKeyColumn, Table } from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { SmartAlbumTable } from 'src/schema/tables/smart-album.table.js';
 

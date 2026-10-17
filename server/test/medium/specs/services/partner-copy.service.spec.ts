@@ -1,0 +1,1652 @@
+import { ModuleRef, Reflector } from '@nestjs/core';
+import { Kysely, sql } from 'kysely';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  AlbumUserRole,
+  AssetFileType,
+  AssetLockReason,
+  AssetStatus,
+  AssetVisibility,
+  FrameleafWorker,
+  JobName,
+  Permission,
+  UserMetadataKey,
+} from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
+import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ClassificationRepository } from 'src/repositories/classification.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MapRepository } from 'src/repositories/map.repository.js';
+import { OcrRepository } from 'src/repositories/ocr.repository.js';
+import {
+  AlbumOriginField,
+  AssetOriginField,
+  PartnerBackfillState,
+  PartnerOriginRepository,
+} from 'src/repositories/partner-origin.repository.js';
+import { PartnerRepository } from 'src/repositories/partner.repository.js';
+import { PersonRepository } from 'src/repositories/person.repository.js';
+import {
+  PhysicalFileRepository,
+  countPathReferences,
+  lockFilePath,
+} from 'src/repositories/physical-file.repository.js';
+import { SearchRepository } from 'src/repositories/search.repository.js';
+import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
+import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
+import { StackRepository } from 'src/repositories/stack.repository.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { TagRepository } from 'src/repositories/tag.repository.js';
+import { TrashRepository } from 'src/repositories/trash.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
+import { DB } from 'src/schema/index.js';
+import { AlbumService } from 'src/services/album.service.js';
+import { AssetService } from 'src/services/asset.service.js';
+import { BaseService } from 'src/services/base.service.js';
+import { PartnerCopyService, recordAssetEdit } from 'src/services/partner-copy.service.js';
+import { PartnerService } from 'src/services/partner.service.js';
+import { TagService } from 'src/services/tag.service.js';
+import { checkAccess } from 'src/utils/access.js';
+import { newMediumService } from 'test/medium.factory.js';
+import { factory } from 'test/small.factory.js';
+import { getKyselyDB } from 'test/utils.js';
+
+/** FL-326 (spec §4.3, §4.7): partner copies are the recipient's own rows linked to the same file. */
+let db: Kysely<DB>;
+beforeAll(async () => {
+  db = await getKyselyDB();
+});
+afterAll(async () => {
+  await db?.destroy();
+});
+
+const real = [
+  AccessRepository,
+  AlbumRepository,
+  AssetRepository,
+  ConfigRepository,
+  PartnerOriginRepository,
+  PartnerRepository,
+  PersonRepository,
+  PhysicalFileRepository,
+  SearchRepository,
+  SystemMetadataRepository,
+  TagRepository,
+  UserRepository,
+];
+
+const setup = () => {
+  const { sut, ctx } = newMediumService(PartnerCopyService, {
+    database: db,
+    real,
+    mock: [EventRepository, JobRepository, LoggingRepository, WebsocketRepository],
+  });
+  ctx.getMock(JobRepository).queue.mockResolvedValue();
+  ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+  // tag edits made through the fixture's TagService emit AssetTag events
+  ctx.getMock(EventRepository).emit.mockResolvedValue();
+  return { sut, ctx, origins: ctx.get(PartnerOriginRepository) };
+};
+
+type Ctx = ReturnType<typeof setup>['ctx'];
+
+/** AssetService over the same database; its queued jobs are drained with the copy service's. */
+const assetService = () => {
+  const { sut, ctx } = newMediumService(AssetService, {
+    database: db,
+    real: [
+      ...real,
+      AssetEditRepository,
+      AssetJobRepository,
+      DuplicateRepository,
+      MapRepository,
+      PersonRepository,
+      SharedLinkAssetRepository,
+      StackRepository,
+      TrashRepository,
+    ],
+    mock: [EventRepository, JobRepository, LoggingRepository, OcrRepository, StorageRepository, WebsocketRepository],
+  });
+  ctx.getMock(EventRepository).emit.mockResolvedValue();
+  ctx.getMock(WebsocketRepository).clientSend.mockReturnValue();
+  ctx.getMock(JobRepository).queue.mockResolvedValue();
+  ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+  return { assets: sut, assetCtx: ctx };
+};
+
+/** AlbumService over the same database; its queued jobs are drained with the copy service's. */
+const albumService = () => {
+  const { sut, ctx } = newMediumService(AlbumService, {
+    database: db,
+    real: [...real, AlbumUserRepository, ClassificationRepository, MapRepository, SmartAlbumRepository],
+    mock: [EventRepository, JobRepository, LoggingRepository],
+  });
+  ctx.getMock(EventRepository).emit.mockResolvedValue();
+  ctx.getMock(JobRepository).queue.mockResolvedValue();
+  ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+  return { albums: sut, albumCtx: ctx };
+};
+
+const albumAssetIds = async (albumId: string) =>
+  (await db.selectFrom('album_asset').select('assetId').where('albumId', '=', albumId).execute())
+    .map(({ assetId }) => assetId)
+    .toSorted();
+
+const PARTNER_JOBS = new Set<string>([
+  JobName.PartnerCopyAlbum,
+  JobName.PartnerCopyAsset,
+  JobName.PartnerPropagate,
+  JobName.PartnerBackfill,
+]);
+
+/** Run every queued partner job, and the jobs they queue, until none is left; returns the rounds taken. */
+const drain = async (sut: PartnerCopyService, contexts: { getMock: Ctx['getMock'] }[]) => {
+  for (let round = 0; round < 25; round++) {
+    const items = contexts.flatMap((ctx) => {
+      const mock = ctx.getMock(JobRepository);
+      const queued = [
+        ...mock.queue.mock.calls.map(([item]) => item),
+        ...mock.queueAll.mock.calls.flatMap(([items]) => items),
+      ];
+      mock.queue.mockClear();
+      mock.queueAll.mockClear();
+      return queued;
+    });
+    const jobs = items.filter((item) => PARTNER_JOBS.has(item.name));
+    if (jobs.length === 0) {
+      return round;
+    }
+    for (const job of jobs) {
+      switch (job.name) {
+        case JobName.PartnerCopyAsset: {
+          await sut.handleCopyAsset(job.data);
+          break;
+        }
+        case JobName.PartnerPropagate: {
+          await sut.handlePropagate(job.data);
+          break;
+        }
+        case JobName.PartnerBackfill: {
+          await sut.handleBackfill(job.data);
+          break;
+        }
+        case JobName.PartnerCopyAlbum: {
+          await sut.handleCopyAlbum(job.data);
+          break;
+        }
+        default: {
+          break;
+        }
+      }
+    }
+  }
+  throw new Error('partner jobs did not settle');
+};
+
+const exifOf = (assetId: string) =>
+  db.selectFrom('asset_exif').selectAll().where('assetId', '=', assetId).executeTakeFirstOrThrow();
+
+const newSourceAsset = async (ctx: Ctx, ownerId: string, size = 1234) => {
+  // a path of its own: assets on one path share that file, and its primary stays its first owner (FL-412)
+  const { asset } = await ctx.newAsset({ ownerId, originalPath: `/data/upload/${ownerId}/${randomUUID()}.jpg` });
+  await ctx.newExif({ assetId: asset.id, fileSizeInByte: size, description: 'at the lake', city: 'Calgary' });
+  return asset;
+};
+
+describe(PartnerCopyService.name, () => {
+  it.each([FrameleafWorker.Api, FrameleafWorker.Microservices])(
+    'leaves imported media and partnerships intact on %s bootstrap',
+    async (worker) => {
+      const media = await mkdtemp(join(tmpdir(), 'frameleaf-import-bootstrap-'));
+      try {
+        const sourcePath = join(media, 'source-original.jpg');
+        const destinationPath = join(media, 'frameleaf-copy.jpg');
+        const bytes = Buffer.from('independently copied imported original');
+        await writeFile(sourcePath, bytes);
+        await writeFile(destinationPath, bytes);
+        expect((await stat(sourcePath)).ino).not.toBe((await stat(destinationPath)).ino);
+        const { sut, ctx, origins } = setup();
+        const { user: alice } = await ctx.newUser();
+        const { user: bob } = await ctx.newUser();
+        await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+        const { asset } = await ctx.newAsset({
+          ownerId: alice.id,
+          originalPath: destinationPath,
+          checksum: createHash('sha1').update(bytes).digest(),
+        });
+        await ctx.newExif({ assetId: asset.id, fileSizeInByte: bytes.length });
+        const original = await ctx.get(PhysicalFileRepository).ensureOriginalPhysicalFile(asset.id);
+        const beforeAsset = await db
+          .selectFrom('asset')
+          .selectAll()
+          .where('id', '=', asset.id)
+          .executeTakeFirstOrThrow();
+        const beforePhysical = await ctx.get(PhysicalFileRepository).getPhysicalFile(original!.id);
+        const reflector = new Reflector();
+        const events = new EventRepository(
+          { get: (token: unknown) => (token === Reflector ? reflector : sut) } as unknown as ModuleRef,
+          { getWorker: () => worker } as unknown as ConfigRepository,
+          ctx.getMock(LoggingRepository),
+        );
+        events.setup({ services: [PartnerCopyService] });
+        await events.emit('AppBootstrap');
+        await events.emit('AppBootstrap');
+
+        expect(ctx.getMock(JobRepository).queue).not.toHaveBeenCalled();
+        expect(ctx.getMock(JobRepository).queueAll).not.toHaveBeenCalled();
+        expect(await origins.getBackfill(alice.id, bob.id)).toBeUndefined();
+        expect(await db.selectFrom('asset').selectAll().where('id', '=', asset.id).executeTakeFirstOrThrow()).toEqual(
+          beforeAsset,
+        );
+        expect(await ctx.get(PhysicalFileRepository).getPhysicalFile(original!.id)).toEqual(beforePhysical);
+        expect(await db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute()).toEqual([]);
+        expect(await readFile(sourcePath)).toEqual(bytes);
+        expect(await readFile(destinationPath)).toEqual(bytes);
+        expect(
+          (
+            await sql<{ id: string }>`SELECT id FROM public.physical_file_trash
+              WHERE path = ANY(${[sourcePath, destinationPath]}::text[])`.execute(db)
+          ).rows,
+        ).toEqual([]);
+      } finally {
+        await rm(media, { recursive: true, force: true });
+      }
+    },
+  );
+
+  describe('copyAsset', () => {
+    it('repairs thumbnail admission on replay of a copy made before source derivatives were published', async () => {
+      const { sut, ctx, origins } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      const jobs = ctx.getMock(JobRepository);
+      jobs.queue.mockRejectedValueOnce(new Error('Admission interrupted'));
+
+      await expect(sut.copyAsset(source.id, bob.id, alice.id)).rejects.toThrow('Admission interrupted');
+      const copyId = (await origins.getCopyId('asset', source.id, bob.id))!;
+      expect(copyId).toBeDefined();
+      const copy = await ctx.get(AssetRepository).getById(copyId, { files: true });
+      const original = await ctx.get(AssetRepository).getById(source.id, { files: true });
+      expect(copy).toMatchObject({
+        ownerId: bob.id,
+        originalPath: original!.originalPath,
+        physicalOriginalFileId: original!.physicalOriginalFileId,
+        files: [],
+      });
+      expect(jobs.queue.mock.calls).toEqual([[{ name: JobName.AssetGenerateThumbnails, data: { id: copyId } }]]);
+
+      jobs.queue.mockClear();
+      await expect(sut.copyAsset(source.id, bob.id, alice.id)).resolves.toBe(copyId);
+      expect(jobs.queue.mock.calls).toEqual([[{ name: JobName.AssetGenerateThumbnails, data: { id: copyId } }]]);
+
+      // A partial publication still needs the existing thumbnail job; a complete one does not.
+      await ctx.newAssetFile({ assetId: copyId, type: AssetFileType.Preview, path: '/thumbs/recipient.jpeg' });
+      jobs.queue.mockClear();
+      await sut.copyAsset(source.id, bob.id, alice.id);
+      expect(jobs.queue.mock.calls).toEqual([[{ name: JobName.AssetGenerateThumbnails, data: { id: copyId } }]]);
+      await ctx.newAssetFile({ assetId: copyId, type: AssetFileType.Thumbnail, path: '/thumbs/recipient.webp' });
+      jobs.queue.mockClear();
+      await sut.copyAsset(source.id, bob.id, alice.id);
+      expect(jobs.queue).not.toHaveBeenCalled();
+      expect(jobs.queueAll).not.toHaveBeenCalled();
+      await expect(
+        ctx.get(AssetRepository).getForThumbnail(copyId, AssetFileType.Preview, false),
+      ).resolves.toMatchObject({
+        path: '/thumbs/recipient.jpeg',
+      });
+      await expect(ctx.get(AssetRepository).getById(source.id, { files: true })).resolves.toEqual(original);
+      expect(await db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute()).toEqual([
+        { id: copyId },
+      ]);
+    });
+
+    it('creates the recipient their own asset linked to the same stored files, with no analysis queued', async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser({ quotaSizeInBytes: 1, quotaUsageInBytes: 10 });
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      await ctx.newAssetFile({ assetId: source.id, type: AssetFileType.Thumbnail, path: '/thumbs/a.webp' });
+      await ctx.newAssetFile({ assetId: source.id, type: AssetFileType.Preview, path: '/thumbs/a.jpeg' });
+      await ctx.newJobStatus({ assetId: source.id, metadataExtractedAt: new Date() });
+      const tag = await ctx.newTag({ userId: alice.id, value: 'trips' });
+      await ctx.newTagAsset({ tagIds: [tag.tag.id], assetIds: [source.id] });
+      const { tag: bobTrips } = await ctx.newTag({ userId: bob.id, value: 'trips' });
+
+      const copyId = await sut.copyAsset(source.id, bob.id, alice.id);
+
+      expect(copyId).toBeDefined();
+      const copy = await db.selectFrom('asset').selectAll().where('id', '=', copyId!).executeTakeFirstOrThrow();
+      const sourceRow = await db.selectFrom('asset').selectAll().where('id', '=', source.id).executeTakeFirstOrThrow();
+      expect(copy).toMatchObject({
+        ownerId: bob.id,
+        checksum: sourceRow.checksum,
+        originalPath: sourceRow.originalPath,
+        physicalOriginalFileId: sourceRow.physicalOriginalFileId,
+        isFavorite: false,
+        deletedAt: null,
+      });
+      expect(sourceRow.physicalOriginalFileId).not.toBeNull();
+
+      const exif = await db.selectFrom('asset_exif').selectAll().where('assetId', '=', copyId!).executeTakeFirst();
+      expect(exif).toMatchObject({ description: 'at the lake', city: 'Calgary', fileSizeInByte: 1234 });
+      const files = await db
+        .selectFrom('asset_file')
+        .select(['type', 'path'])
+        .where('assetId', '=', copyId!)
+        .orderBy('type')
+        .execute();
+      expect(files).toEqual([
+        { type: AssetFileType.Preview, path: '/thumbs/a.jpeg' },
+        { type: AssetFileType.Thumbnail, path: '/thumbs/a.webp' },
+      ]);
+      await expect(
+        db.selectFrom('asset_job_status').select('assetId').where('assetId', '=', copyId!).executeTakeFirst(),
+      ).resolves.toBeDefined();
+
+      // the library's own tag of that name is reused
+      const tags = await db.selectFrom('tag_asset').select('tagId').where('assetId', '=', copyId!).execute();
+      expect(tags).toEqual([{ tagId: bobTrips.id }]);
+
+      // quota is charged in full and never blocks the copy
+      const bobRow = await db
+        .selectFrom('user')
+        .select('quotaUsageInBytes')
+        .where('id', '=', bob.id)
+        .executeTakeFirstOrThrow();
+      expect(Number(bobRow.quotaUsageInBytes)).toBe(10 + 1234);
+
+      await expect(ctx.get(PartnerOriginRepository).getOrigin('asset', copyId!)).resolves.toEqual({
+        id: copyId,
+        sourceId: source.id,
+        ownerId: bob.id,
+        rootOwnerId: alice.id,
+        partnerSharedById: alice.id,
+        overriddenFields: [],
+        following: true,
+      });
+      expect(ctx.getMock(JobRepository).queue).not.toHaveBeenCalled();
+      expect(ctx.getMock(JobRepository).queueAll).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['live', null],
+      ['trashed', new Date()],
+    ])('skips content the library already holds (%s)', async (_label, deletedAt) => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const source = await newSourceAsset(ctx, alice.id);
+      await ctx.newAsset({ ownerId: bob.id, checksum: source.checksum, deletedAt });
+
+      await expect(sut.copyAsset(source.id, bob.id, alice.id)).resolves.toBeUndefined();
+    });
+
+    it.each(['trashed', 'inactive', 'offline', 'external'] as const)(
+      'refuses a source that becomes %s after copy preflight and before insertion',
+      async (state) => {
+        const { sut, ctx, origins } = setup();
+        const { user: alice } = await ctx.newUser();
+        const { user: bob } = await ctx.newUser();
+        await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+        const source = await newSourceAsset(ctx, alice.id);
+        const insert = origins.insertAssetCopy.bind(origins);
+        vi.spyOn(origins, 'insertAssetCopy').mockImplementationOnce(async (input) => {
+          const patch =
+            state === 'trashed'
+              ? { deletedAt: new Date() }
+              : state === 'inactive'
+                ? { status: AssetStatus.Trashed }
+                : state === 'offline'
+                  ? { isOffline: true }
+                  : { isExternal: true };
+          await db.updateTable('asset').set(patch).where('id', '=', source.id).execute();
+          return insert(input);
+        });
+
+        await expect(sut.copyAsset(source.id, bob.id, alice.id)).resolves.toBeUndefined();
+        expect(await db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute()).toEqual([]);
+        await expect(origins.getCopyId('asset', source.id, bob.id)).resolves.toBeUndefined();
+        await expect(ctx.get(AssetRepository).getById(source.id)).resolves.toBeDefined();
+      },
+    );
+
+    it('copies once, however often it is asked', async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const source = await newSourceAsset(ctx, alice.id);
+
+      const results = await Promise.all([
+        sut.copyAsset(source.id, bob.id, alice.id),
+        sut.copyAsset(source.id, bob.id, alice.id),
+      ]);
+      expect(results.filter(Boolean)).toHaveLength(1);
+      const copies = await db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute();
+      expect(copies).toHaveLength(1);
+    });
+
+    it('never copies an item back to its original owner, through any partner', async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const { user: carol } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      await ctx.newPartner({ sharedById: bob.id, sharedWithId: carol.id });
+      await ctx.newPartner({ sharedById: carol.id, sharedWithId: alice.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      const bobCopy = await sut.copyAsset(source.id, bob.id, alice.id);
+      const carolCopy = await sut.copyAsset(bobCopy!, carol.id, bob.id);
+
+      // C's copy of B's copy still names A as its original owner
+      await expect(ctx.get(PartnerOriginRepository).getOrigin('asset', carolCopy!)).resolves.toMatchObject({
+        sourceId: bobCopy,
+        rootOwnerId: alice.id,
+        partnerSharedById: bob.id,
+      });
+      // alice's library holds it anyway; even after she trashes and purges it, it is never sent back
+      await db.deleteFrom('asset').where('id', '=', source.id).execute();
+      await expect(sut.copyAsset(carolCopy!, alice.id, carol.id)).resolves.toBeUndefined();
+    });
+
+    it("copies Locked and sensitive items locked behind the recipient's own PIN (FL-326 Task 13)", async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const marked = await newSourceAsset(ctx, alice.id);
+      await db
+        .insertInto('asset_lock')
+        .values({ assetId: marked.id, reason: AssetLockReason.Detected, lockedBy: null })
+        .execute();
+      const sensitive = await newSourceAsset(ctx, alice.id);
+      await db.updateTable('asset').set({ is_nsfw: true }).where('id', '=', sensitive.id).execute();
+
+      const markedCopy = await sut.copyAsset(marked.id, bob.id, alice.id);
+      const sensitiveCopy = await sut.copyAsset(sensitive.id, bob.id, alice.id);
+      expect(markedCopy).toBeDefined();
+      expect(sensitiveCopy).toBeDefined();
+
+      await expect(ctx.get(AssetRepository).getLockReasons([markedCopy!, sensitiveCopy!])).resolves.toEqual([
+        expect.objectContaining({ assetId: markedCopy, reason: AssetLockReason.Detected }),
+      ]);
+      const copy = await db
+        .selectFrom('asset')
+        .select('is_nsfw')
+        .where('id', '=', sensitiveCopy!)
+        .executeTakeFirstOrThrow();
+      expect(copy.is_nsfw).toBe(true);
+
+      // only Bob's own elevated session reads the locked copy
+      const ordinary = factory.auth({ user: bob });
+      const elevated = { ...ordinary, session: { id: 'session', hasElevatedPermission: true } } as typeof ordinary;
+      const access = ctx.get(AccessRepository);
+      const readable = (auth: typeof ordinary) =>
+        checkAccess(access, { auth, permission: Permission.AssetRead, ids: new Set([markedCopy!]) });
+      await expect(readable(ordinary)).resolves.toEqual(new Set());
+      await expect(readable(elevated)).resolves.toEqual(new Set([markedCopy]));
+      // Bob has no PIN: the one-time notice is flagged
+      const metadata = await ctx.get(UserRepository).getMetadata(bob.id);
+      expect(metadata.map(({ key }) => key)).toContain(UserMetadataKey.PartnerLockedNotice);
+    });
+
+    it("copies an item the partner's Locked rules hide already locked, even when a later copy step fails", async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      const { tag } = await ctx.newTag({ userId: alice.id, value: 'Private' });
+      await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [source.id] });
+      await db
+        .insertInto('user_metadata')
+        .values({
+          userId: alice.id,
+          key: UserMetadataKey.Preferences,
+          value: { privacy: { suppression: { tagIds: [tag.id], scope: 'visible' } } },
+        })
+        .execute();
+      const copyFaces = vi
+        .spyOn(sut as unknown as { copyFaces: () => Promise<void> }, 'copyFaces')
+        .mockRejectedValueOnce(new Error('face copy failed'));
+
+      await expect(sut.copyAsset(source.id, bob.id, alice.id)).rejects.toThrow('face copy failed');
+
+      const copies = await db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute();
+      expect(copies).toHaveLength(1);
+      const copyId = copies[0].id;
+      const ordinary = factory.auth({ user: bob });
+      const readable = () =>
+        checkAccess(ctx.get(AccessRepository), {
+          auth: ordinary,
+          permission: Permission.AssetRead,
+          ids: new Set([copyId]),
+        });
+      await expect(ctx.get(AssetRepository).getLockReasons([copyId])).resolves.toEqual([
+        expect.objectContaining({ assetId: copyId, reason: AssetLockReason.Marked }),
+      ]);
+      await expect(readable()).resolves.toEqual(new Set());
+
+      // a retry finds the copy (one-copy rule) and re-runs the lock mirror, so a copy left unlocked heals
+      await db.deleteFrom('asset_lock').where('assetId', '=', copyId).execute();
+      copyFaces.mockRestore();
+      await expect(sut.copyAsset(source.id, bob.id, alice.id)).resolves.toBe(copyId);
+      await expect(ctx.get(AssetRepository).getLockReasons([copyId])).resolves.toEqual([
+        expect.objectContaining({ assetId: copyId, reason: AssetLockReason.Marked }),
+      ]);
+      await expect(readable()).resolves.toEqual(new Set());
+    });
+
+    it("copies a photo's faces and maps its people into the recipient's library (FL-326 Task 12)", async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      const { person: emma } = await ctx.newPerson({ ownerId: alice.id, name: 'Emma' });
+      await ctx.newAssetFace({ assetId: source.id, personGroupId: emma.personGroupId });
+
+      const copyId = await sut.copyAsset(source.id, bob.id, alice.id);
+
+      const faces = await db.selectFrom('asset_face').selectAll().where('assetId', '=', copyId!).execute();
+      expect(faces).toHaveLength(1);
+      const mapping = await ctx.get(PartnerOriginRepository).getPersonMapping(bob.id, emma.personGroupId);
+      expect(faces[0].personGroupId).toBe(mapping?.personGroupId);
+      await expect(
+        ctx.get(PersonRepository).getByGroupId({ ownerId: bob.id, personGroupId: mapping!.personGroupId }),
+      ).resolves.toMatchObject({ name: 'Emma' });
+    });
+
+    it('never links an external-library item', async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const source = await newSourceAsset(ctx, alice.id);
+      await db.updateTable('asset').set({ isExternal: true }).where('id', '=', source.id).execute();
+
+      await expect(sut.copyAsset(source.id, bob.id, alice.id)).resolves.toBeUndefined();
+    });
+
+    it('reuses the primary derivative before its physical registration exists', async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      await db
+        .insertInto('asset_file')
+        .values({
+          assetId: source.id,
+          type: AssetFileType.Thumbnail,
+          path: '/legacy/thumbnail.webp',
+          physicalFileId: null,
+        })
+        .execute();
+      const copyId = (await sut.copyAsset(source.id, bob.id, alice.id))!;
+      await expect(
+        ctx.get(PhysicalFileRepository).getCanonicalGeneratedFile(copyId, AssetFileType.Thumbnail),
+      ).resolves.toEqual({ id: null, path: '/legacy/thumbnail.webp', canonicalAssetId: source.id });
+    });
+
+    it('replays motion pairing, tags, faces and onward admission after partial copy failures', async () => {
+      const { sut, ctx, origins } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const { user: carol } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      await ctx.newPartner({ sharedById: bob.id, sharedWithId: carol.id });
+      const { asset: motion } = await ctx.newAsset({ ownerId: alice.id, visibility: AssetVisibility.Hidden });
+      await ctx.newExif({ assetId: motion.id, fileSizeInByte: 999 });
+      const still = await newSourceAsset(ctx, alice.id);
+      await db.updateTable('asset').set({ livePhotoVideoId: motion.id }).where('id', '=', still.id).execute();
+      const { tag } = await ctx.newTag({ userId: alice.id, value: 'Trips' });
+      await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [still.id] });
+      const pairing = vi.spyOn(ctx.get(AssetRepository), 'update').mockRejectedValueOnce(new Error('pairing failed'));
+      const job = { sourceAssetId: still.id, targetOwnerId: bob.id, partnerSharedById: alice.id };
+      await expect(sut.handleCopyAsset(job)).rejects.toThrow('pairing failed');
+      pairing.mockRestore();
+      const copyId = (await origins.getCopyId('asset', still.id, bob.id))!;
+      const motionId = (await origins.getCopyId('asset', motion.id, bob.id))!;
+      const faces = vi
+        .spyOn(sut as unknown as { copyFaces: () => Promise<void> }, 'copyFaces')
+        .mockRejectedValueOnce(new Error('faces failed'));
+      await expect(sut.handleCopyAsset(job)).rejects.toThrow('faces failed');
+      faces.mockRestore();
+      ctx.getMock(JobRepository).queueAll.mockRejectedValueOnce(new Error('onward failed'));
+      await expect(sut.handleCopyAsset(job)).rejects.toThrow('onward failed');
+      ctx.getMock(JobRepository).queueAll.mockClear();
+      await sut.handleCopyAsset(job);
+      await drain(sut, [ctx]);
+      expect((await ctx.get(AssetRepository).getById(copyId))?.livePhotoVideoId).toBe(motionId);
+      const tags = await ctx.get(AssetRepository).getById(copyId, { tags: true });
+      expect(tags?.tags?.map((tag) => tag.value)).toEqual(['Trips']);
+      expect(await origins.getCopyId('asset', copyId, carol.id)).toBeDefined();
+      expect(await db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute()).toHaveLength(2);
+    });
+
+    it('snapshots photo versions and uses recipient-owned stacks and duplicate groups', async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const primary = await newSourceAsset(ctx, alice.id);
+      const sibling = await newSourceAsset(ctx, alice.id);
+      const group = await db
+        .insertInto('stack')
+        .values({ ownerId: alice.id, primaryAssetId: primary.id })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await db
+        .updateTable('asset')
+        .set({ stackId: group.id, duplicateId: group.id })
+        .where('id', 'in', [primary.id, sibling.id])
+        .execute();
+      await db
+        .insertInto('asset_edit')
+        .values({ assetId: primary.id, action: 'rotate' as never, parameters: { angle: 90 } as never, sequence: 0 })
+        .execute();
+      await sql`INSERT INTO public.asset_develop_revision ("assetId", "ownerId", revision, "recipeVersion", recipe,
+        status, progress, "isCurrent", "masterPath", "previewPath")
+        VALUES (${primary.id}::uuid, ${alice.id}::uuid, 1, 1, '{}'::jsonb, 'rendered', 100, true,
+          '/versions/master.jpg', '/versions/preview.jpg')`.execute(db);
+      const artifactId = 'a'.repeat(64);
+      await sql`INSERT INTO public.asset_develop_artifact ("assetId", "ownerId", id, kind, path, bytes, width, height)
+        VALUES (${primary.id}::uuid, ${alice.id}::uuid, ${artifactId}, 'mask', '/versions/mask.png', 100, 10, 10)`.execute(
+        db,
+      );
+      await db
+        .insertInto('asset_file')
+        .values({
+          assetId: primary.id,
+          type: AssetFileType.Preview,
+          path: '/versions/current.jpg',
+          isEdited: true,
+        })
+        .execute();
+      // A secondary can arrive before its primary; the primary later gathers it into the copied stack.
+      const siblingCopy = (await sut.copyAsset(sibling.id, bob.id, alice.id))!;
+      const primaryCopy = (await sut.copyAsset(primary.id, bob.id, alice.id))!;
+      const rows = await db
+        .selectFrom('asset')
+        .select(['id', 'stackId', 'duplicateId', 'isEdited'])
+        .where('id', 'in', [siblingCopy, primaryCopy])
+        .execute();
+      expect(new Set(rows.map((row) => row.stackId)).size).toBe(1);
+      expect(rows[0].stackId).toBeTruthy();
+      expect(rows[0].stackId).not.toBe(group.id);
+      expect(new Set(rows.map((row) => row.duplicateId)).size).toBe(1);
+      expect(rows[0].duplicateId).not.toBe(group.id);
+      expect(rows.find((row) => row.id === primaryCopy)?.isEdited).toBe(true);
+      const stack = await db
+        .selectFrom('stack')
+        .selectAll()
+        .where('id', '=', rows[0].stackId!)
+        .executeTakeFirstOrThrow();
+      expect(stack).toMatchObject({ ownerId: bob.id, primaryAssetId: primaryCopy });
+      const { rows: revisions } = await sql<{ ownerId: string; masterPath: string }>`
+        SELECT "ownerId", "masterPath" FROM public.asset_develop_revision WHERE "assetId" = ${primaryCopy}::uuid`.execute(
+        db,
+      );
+      expect(revisions).toEqual([{ ownerId: bob.id, masterPath: '/versions/master.jpg' }]);
+      const { rows: artifacts } = await sql<{ ownerId: string; id: string; path: string }>`
+        SELECT "ownerId", id, path FROM public.asset_develop_artifact WHERE "assetId" = ${primaryCopy}::uuid`.execute(
+        db,
+      );
+      expect(artifacts).toEqual([{ ownerId: bob.id, id: artifactId, path: '/versions/mask.png' }]);
+      expect(
+        Number(
+          (await db.selectFrom('user').select('quotaUsageInBytes').where('id', '=', bob.id).executeTakeFirstOrThrow())
+            .quotaUsageInBytes,
+        ),
+      ).toBe(1234 * 2 + 100);
+      expect(
+        await db
+          .selectFrom('asset_file')
+          .select(['path', 'isEdited'])
+          .where('assetId', '=', primaryCopy)
+          .where('isEdited', '=', true)
+          .execute(),
+      ).toEqual([{ path: '/versions/current.jpg', isEdited: true }]);
+      await sql`DELETE FROM public.asset_develop_revision WHERE "assetId" = ${primary.id}::uuid`.execute(db);
+      await sql`DELETE FROM public.asset_develop_artifact WHERE "assetId" = ${primary.id}::uuid`.execute(db);
+      for (const path of ['/versions/master.jpg', '/versions/mask.png']) {
+        expect(
+          await db.transaction().execute(async (trx) => {
+            await lockFilePath(trx, path);
+            return countPathReferences(trx, path);
+          }),
+        ).toBe(1);
+      }
+      // Recipient changes are not reapplied by copy retries.
+      await db.deleteFrom('asset_edit').where('assetId', '=', primaryCopy).execute();
+      await db.updateTable('asset').set({ stackId: null, duplicateId: null }).where('id', '=', primaryCopy).execute();
+      await sut.copyAsset(primary.id, bob.id, alice.id);
+      expect(await db.selectFrom('asset_edit').selectAll().where('assetId', '=', primaryCopy).execute()).toEqual([]);
+      expect(
+        await db
+          .selectFrom('asset')
+          .select(['stackId', 'duplicateId'])
+          .where('id', '=', primaryCopy)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({ stackId: null, duplicateId: null });
+    });
+
+    it('copies a Live Photo with its motion part, paired and linked to the same stored file', async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const { asset: motion } = await ctx.newAsset({ ownerId: alice.id, visibility: AssetVisibility.Hidden });
+      await ctx.newExif({ assetId: motion.id, fileSizeInByte: 999 });
+      const still = await newSourceAsset(ctx, alice.id);
+      await db.updateTable('asset').set({ livePhotoVideoId: motion.id }).where('id', '=', still.id).execute();
+
+      const copyId = await sut.copyAsset(still.id, bob.id, alice.id);
+
+      const copy = await db.selectFrom('asset').selectAll().where('id', '=', copyId!).executeTakeFirstOrThrow();
+      expect(copy.livePhotoVideoId).toBeTruthy();
+      const motionCopy = await db
+        .selectFrom('asset')
+        .selectAll()
+        .where('id', '=', copy.livePhotoVideoId!)
+        .executeTakeFirstOrThrow();
+      expect(motionCopy).toMatchObject({
+        ownerId: bob.id,
+        visibility: AssetVisibility.Hidden,
+        checksum: motion.checksum,
+        originalPath: motion.originalPath,
+      });
+      // the Hidden motion part is never copied on its own
+      await expect(sut.copyAsset(motion.id, bob.id, alice.id)).resolves.toBeUndefined();
+    });
+  });
+
+  describe('backfill', () => {
+    it('copies a library in batches and resumes from its cursor', async () => {
+      const { sut, ctx, origins } = setup();
+      (sut as unknown as { backfillBatchSize: number }).backfillBatchSize = 2;
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      for (let index = 0; index < 3; index++) {
+        await newSourceAsset(ctx, alice.id);
+      }
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      await origins.startBackfill(alice.id, bob.id, 3);
+
+      await sut.handleBackfill({ sharedById: alice.id, sharedWithId: bob.id });
+      await expect(origins.getBackfill(alice.id, bob.id)).resolves.toMatchObject({
+        state: PartnerBackfillState.Running,
+        done: 2,
+        total: 3,
+      });
+      expect(ctx.getMock(JobRepository).queue).toHaveBeenCalledWith({
+        name: JobName.PartnerBackfill,
+        data: { sharedById: alice.id, sharedWithId: bob.id },
+      });
+      const afterFirst = await db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute();
+      expect(afterFirst).toHaveLength(2);
+
+      // a restart replays the job: it picks up after the cursor
+      await sut.handleBackfill({ sharedById: alice.id, sharedWithId: bob.id });
+      await expect(origins.getBackfill(alice.id, bob.id)).resolves.toMatchObject({
+        state: PartnerBackfillState.Done,
+        done: 3,
+      });
+      const afterSecond = await db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute();
+      expect(afterSecond).toHaveLength(3);
+    });
+
+    it('stops following when the partnership ends; the partner keeps every copy', async () => {
+      const { sut, ctx, origins } = setup();
+      const { sut: partners, ctx: partnerCtx } = newMediumService(PartnerService, {
+        database: db,
+        real,
+        mock: [EventRepository, JobRepository, LoggingRepository, WebsocketRepository],
+      });
+      partnerCtx.getMock(EventRepository).emit.mockResolvedValue();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const source = await newSourceAsset(ctx, alice.id);
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const copyId = await sut.copyAsset(source.id, bob.id, alice.id);
+
+      await partners.remove(factory.auth({ user: alice }), bob.id);
+
+      await expect(origins.getOrigin('asset', copyId!)).resolves.toMatchObject({ following: false });
+      await expect(
+        db.selectFrom('asset').select('id').where('id', '=', copyId!).executeTakeFirst(),
+      ).resolves.toBeDefined();
+      await expect(
+        sut.handleCopyAsset({ sourceAssetId: source.id, targetOwnerId: bob.id, partnerSharedById: alice.id }),
+      ).resolves.toBe('skipped');
+    });
+
+    it('copies nothing more once the partnership ends, even from a batch already running', async () => {
+      const { sut, ctx } = setup();
+      const { sut: partners, ctx: partnerCtx } = newMediumService(PartnerService, {
+        database: db,
+        real,
+        mock: [EventRepository, JobRepository, LoggingRepository, WebsocketRepository],
+      });
+      partnerCtx.getMock(EventRepository).emit.mockResolvedValue();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const source = await newSourceAsset(ctx, alice.id);
+      const { album } = await ctx.newAlbum({ ownerId: alice.id, albumName: 'Lake' }, [source.id]);
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+
+      // the batch read the partnership before it ended, then copies after `remove` ran
+      await partners.remove(factory.auth({ user: alice }), bob.id);
+      await expect(sut.copyAsset(source.id, bob.id, alice.id)).resolves.toBeUndefined();
+      // and an album copy whose partnership ends between the first check and recording its origin
+      vi.spyOn(ctx.get(PartnerRepository), 'get').mockResolvedValueOnce({} as never);
+      await expect(sut.copyAlbum(album.id, bob.id, alice.id)).resolves.toBeUndefined();
+
+      await expect(db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute()).resolves.toEqual([]);
+      await expect(
+        db.selectFrom('album_user').select('albumId').where('userId', '=', bob.id).execute(),
+      ).resolves.toEqual([]);
+    });
+  });
+
+  describe('propagation', () => {
+    const tagEditFixture = async (removing: boolean) => {
+      const { sut, ctx, origins } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      const copyId = (await sut.copyAsset(source.id, bob.id, alice.id))!;
+      const { tag } = await ctx.newTag({ userId: bob.id, value: 'Choice' });
+      if (removing) {
+        const { tag: originalTag } = await ctx.newTag({ userId: alice.id, value: 'Choice' });
+        await ctx.newTagAsset({ tagIds: [originalTag.id], assetIds: [source.id] });
+        await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [copyId] });
+      }
+      return { sut, ctx, origins, bob, source, copyId, tag, tags: BaseService.create(TagService, sut) };
+    };
+
+    it.each([AssetOriginField.Faces, AssetOriginField.Visibility])(
+      'keeps a recipient %s override completed after replay reads its origin',
+      async (field) => {
+        const { sut, ctx, origins, bob, source, copyId } = await tagEditFixture(true);
+        if (field === AssetOriginField.Faces) {
+          await ctx.newAssetFace({ assetId: source.id, personGroupId: null, boundingBoxX1: 40 });
+        } else {
+          await ctx.get(AssetRepository).lock([source.id], AssetLockReason.Marked, source.ownerId);
+          await ctx.get(AssetRepository).lock([copyId], AssetLockReason.Marked, bob.id);
+        }
+        const getOrigin = origins.getOrigin.bind(origins);
+        let edited = false;
+        const snapshot = vi.spyOn(origins, 'getOrigin').mockImplementation(async (kind, id) => {
+          const origin = await getOrigin(kind, id);
+          if (kind === 'asset' && id === copyId && !edited) {
+            edited = true;
+            if (field === AssetOriginField.Faces) {
+              await ctx.newAssetFace({ assetId: copyId, personGroupId: null, boundingBoxX1: 10 });
+            } else {
+              await ctx.get(AssetRepository).unlock([copyId]);
+            }
+            await origins.markOverridden('asset', [copyId], [field], bob.id);
+          }
+          return origin;
+        });
+        try {
+          await expect(sut.copyAsset(source.id, bob.id, source.ownerId)).resolves.toBe(copyId);
+        } finally {
+          snapshot.mockRestore();
+        }
+        expect(edited).toBe(true);
+        if (field === AssetOriginField.Faces) {
+          expect(
+            await db.selectFrom('asset_face').select('boundingBoxX1').where('assetId', '=', copyId).execute(),
+          ).toEqual([{ boundingBoxX1: 10 }]);
+        } else {
+          expect(await ctx.get(AssetRepository).getLockReasons([copyId])).toEqual([]);
+        }
+        expect((await origins.getOrigin('asset', copyId))?.overriddenFields).toContain(field);
+      },
+    );
+
+    it('keeps a tag rename completed after a replay reads its origin', async () => {
+      const { sut, origins, bob, source, copyId, tag, tags } = await tagEditFixture(true);
+      const getOrigin = origins.getOrigin.bind(origins);
+      let renamed = false;
+      const snapshot = vi.spyOn(origins, 'getOrigin').mockImplementation(async (kind, id) => {
+        const origin = await getOrigin(kind, id);
+        if (kind === 'asset' && id === copyId && !renamed) {
+          renamed = true;
+          await tags.update(factory.auth({ user: bob }), tag.id, { name: 'Recipient choice' });
+        }
+        return origin;
+      });
+      try {
+        await expect(sut.copyAsset(source.id, bob.id, source.ownerId)).resolves.toBe(copyId);
+      } finally {
+        snapshot.mockRestore();
+      }
+      expect(renamed).toBe(true);
+      expect(await db.selectFrom('tag_asset').select('tagId').where('assetId', '=', copyId).execute()).toEqual([
+        { tagId: tag.id },
+      ]);
+      expect((await origins.getOrigin('asset', copyId))?.overriddenFields).toContain(AssetOriginField.Tags);
+    });
+
+    it.each(['add', 'remove', 'bulk-add'] as const)(
+      'rolls %s tags and EXIF back when the override marker fails',
+      async (action) => {
+        const { ctx, origins, bob, copyId, tag, tags } = await tagEditFixture(action === 'remove');
+        const before = await db.selectFrom('tag_asset').selectAll().where('assetId', '=', copyId).execute();
+        const exif = await db
+          .selectFrom('asset_exif')
+          .select('tags')
+          .where('assetId', '=', copyId)
+          .executeTakeFirstOrThrow();
+        const marker = vi.spyOn(origins, 'markOverridden').mockRejectedValueOnce(new Error('override unavailable'));
+        ctx.getMock(EventRepository).emit.mockClear();
+        try {
+          await expect(
+            action === 'bulk-add'
+              ? tags.bulkTagAssets(factory.auth({ user: bob }), { tagIds: [tag.id], assetIds: [copyId] })
+              : action === 'add'
+                ? tags.addAssets(factory.auth({ user: bob }), tag.id, { ids: [copyId] })
+                : tags.removeAssets(factory.auth({ user: bob }), tag.id, { ids: [copyId] }),
+          ).rejects.toThrow('override unavailable');
+        } finally {
+          marker.mockRestore();
+        }
+        expect(await db.selectFrom('tag_asset').selectAll().where('assetId', '=', copyId).execute()).toEqual(before);
+        expect(
+          await db.selectFrom('asset_exif').select('tags').where('assetId', '=', copyId).executeTakeFirstOrThrow(),
+        ).toEqual(exif);
+        expect((await origins.getOrigin('asset', copyId))?.overriddenFields).not.toContain(AssetOriginField.Tags);
+        expect(ctx.getMock(EventRepository).emit).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['add', 'remove', 'bulk-add'] as const)(
+      'preserves %s tags when propagation starts before the override commits',
+      async (action) => {
+        const { sut, origins, bob, source, copyId, tag, tags } = await tagEditFixture(action === 'remove');
+        const markOverridden = origins.markOverridden.bind(origins);
+        const { promise: written, resolve: ready } = Promise.withResolvers<void>();
+        const { promise: held, resolve: release } = Promise.withResolvers<void>();
+        const marker = vi.spyOn(origins, 'markOverridden').mockImplementationOnce(async (...args) => {
+          ready();
+          await held;
+          return markOverridden(...args);
+        });
+        const getFollowers = origins.getFollowers.bind(origins);
+        const { promise: selected, resolve: selectedNow } = Promise.withResolvers<void>();
+        const selection = vi.spyOn(origins, 'getFollowers').mockImplementationOnce(async (...args) => {
+          const followers = await getFollowers(...args);
+          expect(followers.map((row) => row.id)).toContain(copyId);
+          selectedNow();
+          return followers;
+        });
+        const editing =
+          action === 'bulk-add'
+            ? tags.bulkTagAssets(factory.auth({ user: bob }), { tagIds: [tag.id], assetIds: [copyId] })
+            : action === 'add'
+              ? tags.addAssets(factory.auth({ user: bob }), tag.id, { ids: [copyId] })
+              : tags.removeAssets(factory.auth({ user: bob }), tag.id, { ids: [copyId] });
+        try {
+          await written;
+          const propagating = sut.handlePropagate({
+            kind: 'asset',
+            sourceId: source.id,
+            fields: [AssetOriginField.Tags],
+          });
+          await selected;
+          release();
+          await Promise.all([editing, propagating]);
+        } finally {
+          release();
+          await editing;
+          marker.mockRestore();
+          selection.mockRestore();
+        }
+        expect(
+          (await db.selectFrom('tag_asset').select('tagId').where('assetId', '=', copyId).execute()).map(
+            (row) => row.tagId,
+          ),
+        ).toEqual(action === 'remove' ? [] : [tag.id]);
+        expect((await origins.getOrigin('asset', copyId))?.overriddenFields).toContain(AssetOriginField.Tags);
+      },
+    );
+
+    it.each(['recipient-edit', 'stop-following'] as const)(
+      'preserves the recipient description when %s completes after follower selection',
+      async (change) => {
+        const { sut, ctx, origins } = setup();
+        const { assets } = assetService();
+        const { user: alice } = await ctx.newUser();
+        const { user: bob } = await ctx.newUser();
+        await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+        const source = await newSourceAsset(ctx, alice.id);
+        const copyId = (await sut.copyAsset(source.id, bob.id, alice.id))!;
+        await db
+          .updateTable('asset_exif')
+          .set({ description: 'new source' })
+          .where('assetId', '=', source.id)
+          .execute();
+        const getFollowers = origins.getFollowers.bind(origins);
+        const selection = vi.spyOn(origins, 'getFollowers').mockImplementationOnce(async (kind, id) => {
+          const followers = await getFollowers(kind, id);
+          expect(followers.map((row) => row.id)).toContain(copyId);
+          if (change === 'recipient-edit') {
+            await assets.update(factory.auth({ user: bob }), copyId, { description: 'recipient choice' });
+          } else {
+            await origins.stopFollowing(alice.id, bob.id);
+          }
+          return followers;
+        });
+        try {
+          await sut.handlePropagate({ kind: 'asset', sourceId: source.id, fields: [AssetOriginField.Description] });
+        } finally {
+          selection.mockRestore();
+        }
+        expect((await exifOf(copyId)).description).toBe(
+          change === 'recipient-edit' ? 'recipient choice' : 'at the lake',
+        );
+        expect((await exifOf(source.id)).description).toBe('new source');
+      },
+    );
+
+    it("pushes the source's edits to every following copy, onward through the partner's partners", async () => {
+      const { sut, ctx } = setup();
+      const { assets, assetCtx } = assetService();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const { user: carol } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      await ctx.newPartner({ sharedById: bob.id, sharedWithId: carol.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      const bobCopy = await sut.copyAsset(source.id, bob.id, alice.id);
+      const carolCopy = await sut.copyAsset(bobCopy!, carol.id, bob.id);
+
+      await assets.update(factory.auth({ user: alice }), source.id, { description: 'sunset', rating: 4 });
+      await drain(sut, [ctx, assetCtx]);
+
+      await expect(exifOf(bobCopy!)).resolves.toMatchObject({ description: 'sunset', rating: 4 });
+      await expect(exifOf(carolCopy!)).resolves.toMatchObject({ description: 'sunset', rating: 4 });
+    });
+
+    it("stops following a field the copy's owner changed, and keeps following the rest", async () => {
+      const { sut, ctx } = setup();
+      const { assets, assetCtx } = assetService();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      const bobCopy = await sut.copyAsset(source.id, bob.id, alice.id);
+
+      await assets.update(factory.auth({ user: bob }), bobCopy!, { description: 'mine' });
+      await expect(ctx.get(PartnerOriginRepository).getOrigin('asset', bobCopy!)).resolves.toMatchObject({
+        overriddenFields: [AssetOriginField.Description],
+      });
+      // B's edit never reaches A
+      await expect(exifOf(source.id)).resolves.toMatchObject({ description: 'at the lake' });
+
+      await assets.update(factory.auth({ user: alice }), source.id, {
+        description: 'hers',
+        latitude: 51.05,
+        longitude: -114.07,
+      });
+      await drain(sut, [ctx, assetCtx]);
+
+      const exif = await exifOf(bobCopy!);
+      expect(exif.description).toBe('mine');
+      expect(exif.latitude).toBeCloseTo(51.05);
+      expect(exif.longitude).toBeCloseTo(-114.07);
+    });
+
+    it("re-copies the source's faces to a following copy until its owner edits the copy's faces", async () => {
+      const { sut, ctx, origins } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      const bobCopy = await sut.copyAsset(source.id, bob.id, alice.id);
+      const facesOf = (assetId: string) =>
+        db.selectFrom('asset_face').select('boundingBoxX1').where('assetId', '=', assetId).execute();
+      expect(await facesOf(bobCopy!)).toHaveLength(0);
+
+      await ctx.newAssetFace({ assetId: source.id, boundingBoxX1: 10 });
+      await sut.handlePropagate({ kind: 'asset', sourceId: source.id, fields: [AssetOriginField.Faces] });
+      expect(await facesOf(bobCopy!)).toEqual([{ boundingBoxX1: 10 }]);
+
+      await origins.markOverridden('asset', [bobCopy!], [AssetOriginField.Faces], bob.id);
+      await ctx.newAssetFace({ assetId: source.id, boundingBoxX1: 20 });
+      await sut.handlePropagate({ kind: 'asset', sourceId: source.id, fields: [AssetOriginField.Faces] });
+      expect(await facesOf(bobCopy!)).toEqual([{ boundingBoxX1: 10 }]);
+    });
+
+    it('carries a lock and unlock to a followed copy until its owner changes it (FL-326 Task 13)', async () => {
+      const { sut, ctx } = setup();
+      const { assets, assetCtx } = assetService();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      const other = await newSourceAsset(ctx, alice.id);
+      const bobCopy = await sut.copyAsset(source.id, bob.id, alice.id);
+      const bobOther = await sut.copyAsset(other.id, bob.id, alice.id);
+      const byId = (left: string, right: string) => left.localeCompare(right);
+      const lockedIds = async () =>
+        (await ctx.get(AssetRepository).getLockReasons([bobCopy!, bobOther!]))
+          .map(({ assetId }) => assetId)
+          .toSorted(byId);
+      const unlockAs = async (ownerId: string, ids: string[]) => {
+        // as `POST /assets/unlock` does: remove the lock, then record the owner's visibility edit
+        await ctx.get(AssetRepository).unlock(ids);
+        await recordAssetEdit(
+          { partnerOrigin: ctx.get(PartnerOriginRepository), job: ctx.getMock(JobRepository) },
+          ownerId,
+          ids,
+          [AssetOriginField.Visibility],
+        );
+      };
+
+      await assets.lock(factory.auth({ user: alice }), { ids: [source.id, other.id] });
+      await drain(sut, [ctx, assetCtx]);
+      await expect(lockedIds()).resolves.toEqual([bobCopy!, bobOther!].toSorted(byId));
+
+      // Bob unlocks one copy himself: that copy's visibility is his from now on
+      await unlockAs(bob.id, [bobOther!]);
+      await drain(sut, [ctx, assetCtx]);
+
+      // Alice unlocks both and locks `other` again: the followed copy unlocks, Bob's own choice stands
+      await unlockAs(alice.id, [source.id, other.id]);
+      await assets.lock(factory.auth({ user: alice }), { ids: [other.id] });
+      await drain(sut, [ctx, assetCtx]);
+      await expect(lockedIds()).resolves.toEqual([]);
+    });
+
+    it.each([AssetOriginField.Tags, AssetOriginField.Faces])(
+      "locks a followed copy when a %s edit brings the source under the sharer's Locked rules",
+      async (field) => {
+        const { sut, ctx } = setup();
+        const { user: alice } = await ctx.newUser();
+        const { user: bob } = await ctx.newUser();
+        await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+        const source = await newSourceAsset(ctx, alice.id);
+        const bobCopy = await sut.copyAsset(source.id, bob.id, alice.id);
+        const { tag } = await ctx.newTag({ userId: alice.id, value: 'Private' });
+        const { person } = await ctx.newPerson({ ownerId: alice.id, name: 'Secret' });
+        await db
+          .insertInto('user_metadata')
+          .values({
+            userId: alice.id,
+            key: UserMetadataKey.Preferences,
+            value: {
+              privacy: { suppression: { tagIds: [tag.id], personIds: [person.personGroupId], scope: 'visible' } },
+            },
+          })
+          .execute();
+        await expect(ctx.get(AssetRepository).getLockReasons([bobCopy!])).resolves.toEqual([]);
+
+        if (field === AssetOriginField.Tags) {
+          await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [source.id] });
+        } else {
+          await ctx.newAssetFace({ assetId: source.id, personGroupId: person.personGroupId });
+        }
+        await sut.handlePropagate({ kind: 'asset', sourceId: source.id, fields: [field] });
+
+        await expect(ctx.get(AssetRepository).getLockReasons([bobCopy!])).resolves.toEqual([
+          expect.objectContaining({ assetId: bobCopy, reason: AssetLockReason.Marked }),
+        ]);
+      },
+    );
+
+    it('never propagates favorites or trash', async () => {
+      const { sut, ctx } = setup();
+      const { assets, assetCtx } = assetService();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      const bobCopy = await sut.copyAsset(source.id, bob.id, alice.id);
+
+      await assets.update(factory.auth({ user: alice }), source.id, { isFavorite: true });
+      await assets.deleteAll(factory.auth({ user: alice }), { ids: [source.id] });
+      expect(await drain(sut, [ctx, assetCtx])).toBe(0);
+
+      await expect(
+        db.selectFrom('asset').selectAll().where('id', '=', source.id).executeTakeFirstOrThrow(),
+      ).resolves.toMatchObject({
+        ownerId: alice.id,
+        isFavorite: true,
+        status: AssetStatus.Trashed,
+        deletedAt: expect.any(Date),
+      });
+      const copy = await db.selectFrom('asset').selectAll().where('id', '=', bobCopy!).executeTakeFirstOrThrow();
+      expect(copy).toMatchObject({ ownerId: bob.id, isFavorite: false, status: AssetStatus.Active, deletedAt: null });
+    });
+
+    it("copies a sharing user's new item to every partner, onward", async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const { user: carol } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      await ctx.newPartner({ sharedById: bob.id, sharedWithId: carol.id });
+      const source = await newSourceAsset(ctx, alice.id);
+
+      await sut.onAssetMetadataExtracted({ assetId: source.id, userId: alice.id });
+      await drain(sut, [ctx]);
+
+      for (const owner of [bob, carol]) {
+        const copies = await db.selectFrom('asset').select('id').where('ownerId', '=', owner.id).execute();
+        expect(copies).toHaveLength(1);
+      }
+    });
+
+    it('never re-creates a copy the recipient purged when the source is read again', async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      await sut.onAssetMetadataExtracted({ assetId: source.id, userId: alice.id });
+      await drain(sut, [ctx]);
+      const [copy] = await db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute();
+      expect(copy).toBeDefined();
+
+      // Bob trashes and permanently deletes his copy; Alice's item is re-extracted (refresh metadata)
+      await db.deleteFrom('asset').where('id', '=', copy.id).execute();
+      await sut.onAssetMetadataExtracted({ assetId: source.id, userId: alice.id });
+      await drain(sut, [ctx]);
+
+      await expect(db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute()).resolves.toEqual([]);
+      await expect(sut.copyAsset(source.id, bob.id, alice.id)).resolves.toBeUndefined();
+    });
+
+    it('keeps one copy per library across a sharing loop and settles (A↔B, B→C, C→A)', async () => {
+      const { sut, ctx } = setup();
+      const { assets, assetCtx } = assetService();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const { user: carol } = await ctx.newUser();
+      for (const [sharedById, sharedWithId] of [
+        [alice.id, bob.id],
+        [bob.id, alice.id],
+        [bob.id, carol.id],
+        [carol.id, alice.id],
+      ]) {
+        await ctx.newPartner({ sharedById, sharedWithId });
+      }
+      const source = await newSourceAsset(ctx, alice.id);
+      // C uploaded the same photo independently
+      const { asset: carolOwn } = await ctx.newAsset({ ownerId: carol.id, checksum: source.checksum });
+      await ctx.newExif({ assetId: carolOwn.id, fileSizeInByte: 1234 });
+      const carolOther = await newSourceAsset(ctx, carol.id, 99);
+
+      await sut.onAssetMetadataExtracted({ assetId: source.id, userId: alice.id });
+      await sut.onAssetMetadataExtracted({ assetId: carolOwn.id, userId: carol.id });
+      await sut.onAssetMetadataExtracted({ assetId: carolOther.id, userId: carol.id });
+      await drain(sut, [ctx]);
+      await assets.update(factory.auth({ user: alice }), source.id, { description: 'loop' });
+      await drain(sut, [ctx, assetCtx]);
+
+      for (const owner of [alice, bob, carol]) {
+        const rows = await db.selectFrom('asset').select('checksum').where('ownerId', '=', owner.id).execute();
+        const checksums = rows.map(({ checksum }) => Buffer.from(checksum).toString('hex'));
+        expect(new Set(checksums).size).toBe(checksums.length);
+        expect(checksums).toHaveLength(2);
+      }
+    });
+  });
+
+  describe('albums and partner access (spec §4.4, §4.8)', () => {
+    const shareWithAlbum = async () => {
+      const { sut, ctx } = setup();
+      const { albums, albumCtx } = albumService();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const first = await newSourceAsset(ctx, alice.id);
+      const second = await newSourceAsset(ctx, alice.id);
+      const third = await newSourceAsset(ctx, alice.id);
+      const { album } = await ctx.newAlbum({ ownerId: alice.id, albumName: 'Lake' }, [first.id, second.id]);
+      await ctx.get(PartnerOriginRepository).startBackfill(alice.id, bob.id, 3);
+      await sut.handleBackfill({ sharedById: alice.id, sharedWithId: bob.id });
+      await drain(sut, [ctx]);
+      const origins = ctx.get(PartnerOriginRepository);
+      const copyOf = async (assetId: string) => (await origins.getCopyId('asset', assetId, bob.id))!;
+      const albumCopy = (await origins.getCopyId('album', album.id, bob.id))!;
+      return { sut, ctx, albums, albumCtx, alice, bob, album, first, second, third, copyOf, albumCopy, origins };
+    };
+
+    it.each(['add', 'remove', 'bulk-add'] as const)(
+      'rolls %s membership back when its override marker fails',
+      async (action) => {
+        const { albums, albumCtx, bob, first, third, copyOf, albumCopy, origins } = await shareWithAlbum();
+        const assetId = await copyOf(action === 'remove' ? first.id : third.id);
+        const before = await albumAssetIds(albumCopy);
+        const marker = vi
+          .spyOn(albumCtx.get(PartnerOriginRepository), 'markOverridden')
+          .mockRejectedValueOnce(new Error('override unavailable'));
+        try {
+          await expect(
+            action === 'bulk-add'
+              ? albums.addAssetsToAlbums(factory.auth({ user: bob }), { albumIds: [albumCopy], assetIds: [assetId] })
+              : action === 'add'
+                ? albums.addAssets(factory.auth({ user: bob }), albumCopy, { ids: [assetId] })
+                : albums.removeAssets(factory.auth({ user: bob }), albumCopy, { ids: [assetId] }),
+          ).rejects.toThrow('override unavailable');
+        } finally {
+          marker.mockRestore();
+        }
+        expect(await albumAssetIds(albumCopy)).toEqual(before);
+        expect((await origins.getOrigin('album', albumCopy))?.overriddenFields).not.toContain(
+          AlbumOriginField.Membership,
+        );
+      },
+    );
+
+    it.each(['add', 'remove', 'bulk-add'] as const)(
+      'preserves %s membership when propagation starts before the override commits',
+      async (action) => {
+        const { sut, albums, albumCtx, bob, album, first, third, copyOf, albumCopy, origins } = await shareWithAlbum();
+        const assetId = await copyOf(action === 'remove' ? first.id : third.id);
+        const recipientOrigins = albumCtx.get(PartnerOriginRepository);
+        const markOverridden = recipientOrigins.markOverridden.bind(recipientOrigins);
+        const { promise: written, resolve: ready } = Promise.withResolvers<void>();
+        const { promise: held, resolve: release } = Promise.withResolvers<void>();
+        const marker = vi.spyOn(recipientOrigins, 'markOverridden').mockImplementationOnce(async (...args) => {
+          ready();
+          await held;
+          return markOverridden(...args);
+        });
+        const getFollowers = origins.getFollowers.bind(origins);
+        const { promise: selected, resolve: selectedNow } = Promise.withResolvers<void>();
+        const selection = vi.spyOn(origins, 'getFollowers').mockImplementationOnce(async (...args) => {
+          const followers = await getFollowers(...args);
+          expect(followers.map((row) => row.id)).toContain(albumCopy);
+          selectedNow();
+          return followers;
+        });
+        const editing =
+          action === 'bulk-add'
+            ? albums.addAssetsToAlbums(factory.auth({ user: bob }), { albumIds: [albumCopy], assetIds: [assetId] })
+            : action === 'add'
+              ? albums.addAssets(factory.auth({ user: bob }), albumCopy, { ids: [assetId] })
+              : albums.removeAssets(factory.auth({ user: bob }), albumCopy, { ids: [assetId] });
+        try {
+          await written;
+          const propagating = sut.handlePropagate({
+            kind: 'album',
+            sourceId: album.id,
+            fields: [AlbumOriginField.Membership],
+          });
+          await selected;
+          release();
+          await Promise.all([editing, propagating]);
+        } finally {
+          release();
+          await editing;
+          marker.mockRestore();
+          selection.mockRestore();
+        }
+        expect((await albumAssetIds(albumCopy)).includes(assetId)).toBe(action !== 'remove');
+        expect((await origins.getOrigin('album', albumCopy))?.overriddenFields).toContain(AlbumOriginField.Membership);
+      },
+    );
+
+    it('keeps an album title edit and its override marker in the same transaction', async () => {
+      const { albums, albumCtx, bob, albumCopy } = await shareWithAlbum();
+      const marker = vi
+        .spyOn(albumCtx.get(PartnerOriginRepository), 'markOverridden')
+        .mockRejectedValueOnce(new Error('override unavailable'));
+      try {
+        await expect(
+          albums.update(factory.auth({ user: bob }), albumCopy, { albumName: 'recipient choice' }),
+        ).rejects.toThrow('override unavailable');
+      } finally {
+        marker.mockRestore();
+      }
+      const copy = await db
+        .selectFrom('album')
+        .select('albumName')
+        .where('id', '=', albumCopy)
+        .executeTakeFirstOrThrow();
+      expect(copy.albumName).toBe('Lake');
+      expect((await albumCtx.get(PartnerOriginRepository).getOrigin('album', albumCopy))?.overriddenFields).toEqual([]);
+    });
+
+    it('preserves an album title edit when propagation selects the follower before the edit commits', async () => {
+      const { sut, albums, albumCtx, alice, bob, album, albumCopy, origins } = await shareWithAlbum();
+      await db.updateTable('album').set({ albumName: 'new source' }).where('id', '=', album.id).execute();
+      const repository = albumCtx.get(AlbumRepository);
+      const update = repository.update.bind(repository);
+      const { promise: written, resolve: ready } = Promise.withResolvers<void>();
+      const { promise: held, resolve: release } = Promise.withResolvers<void>();
+      const writing = vi.spyOn(repository, 'update').mockImplementationOnce(async (...args) => {
+        const result = await update(...args);
+        ready();
+        await held;
+        return result;
+      });
+      const getFollowers = origins.getFollowers.bind(origins);
+      const { promise: selected, resolve: selectedNow } = Promise.withResolvers<void>();
+      const selection = vi.spyOn(origins, 'getFollowers').mockImplementationOnce(async (...args) => {
+        const followers = await getFollowers(...args);
+        expect(followers.map((row) => row.id)).toContain(albumCopy);
+        selectedNow();
+        return followers;
+      });
+      const editing = albums.update(factory.auth({ user: bob }), albumCopy, { albumName: 'recipient choice' });
+      try {
+        await written;
+        const propagating = sut.handlePropagate({
+          kind: 'album',
+          sourceId: album.id,
+          fields: [AlbumOriginField.Title],
+        });
+        await selected;
+        release();
+        await Promise.all([editing, propagating]);
+      } finally {
+        release();
+        await editing;
+        writing.mockRestore();
+        selection.mockRestore();
+      }
+      const copy = await db
+        .selectFrom('album')
+        .select('albumName')
+        .where('id', '=', albumCopy)
+        .executeTakeFirstOrThrow();
+      expect(copy.albumName).toBe('recipient choice');
+      expect((await origins.getOrigin('album', albumCopy))?.overriddenFields).toContain(AlbumOriginField.Title);
+      expect((await origins.getAlbumForCopy(album.id))?.ownerId).toBe(alice.id);
+    });
+
+    it.each(['recipient-edit', 'stop-following'] as const)(
+      'preserves the recipient album title when %s completes after follower selection',
+      async (change) => {
+        const { sut, albums, alice, bob, album, albumCopy, origins } = await shareWithAlbum();
+        await db.updateTable('album').set({ albumName: 'new source' }).where('id', '=', album.id).execute();
+        const getFollowers = origins.getFollowers.bind(origins);
+        const selection = vi.spyOn(origins, 'getFollowers').mockImplementationOnce(async (kind, id) => {
+          const followers = await getFollowers(kind, id);
+          expect(followers.map((row) => row.id)).toContain(albumCopy);
+          if (change === 'recipient-edit') {
+            await albums.update(factory.auth({ user: bob }), albumCopy, { albumName: 'recipient choice' });
+          } else {
+            await origins.stopFollowing(alice.id, bob.id);
+          }
+          return followers;
+        });
+        try {
+          await sut.handlePropagate({ kind: 'album', sourceId: album.id, fields: [AlbumOriginField.Title] });
+        } finally {
+          selection.mockRestore();
+        }
+        const copy = await db
+          .selectFrom('album')
+          .select('albumName')
+          .where('id', '=', albumCopy)
+          .executeTakeFirstOrThrow();
+        expect(copy.albumName).toBe(change === 'recipient-edit' ? 'recipient choice' : 'Lake');
+        expect(
+          (await db.selectFrom('album').select('albumName').where('id', '=', album.id).executeTakeFirstOrThrow())
+            .albumName,
+        ).toBe('new source');
+      },
+    );
+
+    it("copies an album the partner owns, holding the recipient's copies, and mirrors its membership", async () => {
+      const { sut, ctx, albums, albumCtx, alice, bob, album, first, second, third, copyOf, albumCopy } =
+        await shareWithAlbum();
+
+      expect(albumCopy).toBeDefined();
+      const copy = await db.selectFrom('album').selectAll().where('id', '=', albumCopy).executeTakeFirstOrThrow();
+      expect(copy.albumName).toBe('Lake');
+      const owner = await db
+        .selectFrom('album_user')
+        .select(['userId', 'role'])
+        .where('albumId', '=', albumCopy)
+        .execute();
+      expect(owner).toEqual([{ userId: bob.id, role: AlbumUserRole.Owner }]);
+      await expect(albumAssetIds(albumCopy)).resolves.toEqual(
+        [await copyOf(first.id), await copyOf(second.id)].toSorted(),
+      );
+
+      await albums.addAssets(factory.auth({ user: alice }), album.id, { ids: [third.id] });
+      await albums.removeAssets(factory.auth({ user: alice }), album.id, { ids: [first.id] });
+      await albums.update(factory.auth({ user: alice }), album.id, { albumName: 'Lake trip' });
+      await drain(sut, [ctx, albumCtx]);
+
+      await expect(albumAssetIds(albumCopy)).resolves.toEqual(
+        [await copyOf(second.id), await copyOf(third.id)].toSorted(),
+      );
+      await expect(
+        db.selectFrom('album').select('albumName').where('id', '=', albumCopy).executeTakeFirstOrThrow(),
+      ).resolves.toEqual({ albumName: 'Lake trip' });
+    });
+
+    it("stops mirroring membership once the recipient changes their album's items", async () => {
+      const { sut, ctx, albums, albumCtx, alice, bob, album, first, third, copyOf, albumCopy, origins } =
+        await shareWithAlbum();
+
+      await albums.removeAssets(factory.auth({ user: bob }), albumCopy, { ids: [await copyOf(first.id)] });
+      await expect(origins.getOrigin('album', albumCopy)).resolves.toMatchObject({
+        overriddenFields: [AlbumOriginField.Membership],
+      });
+
+      await albums.addAssets(factory.auth({ user: alice }), album.id, { ids: [third.id] });
+      await drain(sut, [ctx, albumCtx]);
+      expect(await albumAssetIds(albumCopy)).not.toContain(await copyOf(third.id));
+      // the source album is untouched by the recipient's edit
+      expect(await albumAssetIds(album.id)).toContain(first.id);
+    });
+
+    it('adds a later direct photo to an album that arrived through the other side of a diamond', async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const { user: carol } = await ctx.newUser();
+      for (const [sharedById, sharedWithId] of [
+        [alice.id, bob.id],
+        [alice.id, carol.id],
+        [bob.id, carol.id],
+      ]) {
+        await ctx.newPartner({ sharedById, sharedWithId });
+      }
+      const photo = await newSourceAsset(ctx, alice.id);
+      const { album } = await ctx.newAlbum({ ownerId: alice.id }, [photo.id]);
+      await sut.copyAsset(photo.id, bob.id, alice.id);
+      const bobAlbum = (await sut.copyAlbum(album.id, bob.id, alice.id))!;
+      const carolAlbum = (await sut.copyAlbum(bobAlbum, carol.id, bob.id))!;
+      expect(await albumAssetIds(carolAlbum)).toEqual([]);
+      const directPhoto = (await sut.copyAsset(photo.id, carol.id, alice.id))!;
+      expect(await albumAssetIds(carolAlbum)).toEqual([directPhoto]);
+    });
+
+    it('rolls album creation back with its origin when the transaction fails', async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const { album } = await ctx.newAlbum({ ownerId: alice.id });
+      vi.spyOn(ctx.get(PartnerOriginRepository), 'createOrigin').mockRejectedValueOnce(new Error('origin failed'));
+      await expect(sut.copyAlbum(album.id, bob.id, alice.id)).rejects.toThrow('origin failed');
+      expect(await db.selectFrom('album_user').select('albumId').where('userId', '=', bob.id).execute()).toEqual([]);
+    });
+
+    it('never copies an album the recipient already sees as a member', async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const asset = await newSourceAsset(ctx, alice.id);
+      const { album } = await ctx.newAlbum({ ownerId: alice.id }, [asset.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: bob.id, role: AlbumUserRole.Editor });
+
+      await expect(sut.copyAlbum(album.id, bob.id, alice.id)).resolves.toBeUndefined();
+    });
+
+    it('gives a library one copy of an album however many partners pass it on (A→B, A→C, B→C)', async () => {
+      const { sut, ctx } = setup();
+      const origins = ctx.get(PartnerOriginRepository);
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const { user: carol } = await ctx.newUser();
+      for (const [sharedById, sharedWithId] of [
+        [alice.id, bob.id],
+        [alice.id, carol.id],
+        [bob.id, carol.id],
+      ]) {
+        await ctx.newPartner({ sharedById, sharedWithId });
+      }
+      const photo = await newSourceAsset(ctx, alice.id);
+      const { album } = await ctx.newAlbum({ ownerId: alice.id, albumName: 'Lake' }, [photo.id]);
+      // Carol receives the photo straight from Alice, then the album by way of Bob first
+      const carolPhoto = await sut.copyAsset(photo.id, carol.id, alice.id);
+
+      for (const sharedWithId of [bob.id, carol.id]) {
+        await origins.startBackfill(alice.id, sharedWithId, 1);
+        await sut.handleBackfill({ sharedById: alice.id, sharedWithId });
+        await drain(sut, [ctx]);
+      }
+
+      const carolAlbums = await db.selectFrom('album_user').select('albumId').where('userId', '=', carol.id).execute();
+      expect(carolAlbums).toHaveLength(1);
+      // and the copy holds Carol's copy of the photo, though it came from Alice and the album from Bob
+      await expect(albumAssetIds(carolAlbums[0].albumId)).resolves.toEqual([carolPhoto]);
+      expect(album.id).not.toBe(carolAlbums[0].albumId);
+    });
+
+    it("never lets a partner read the sharer's own rows: only their copies", async () => {
+      const { ctx, bob, first, copyOf } = await shareWithAlbum();
+      const access = ctx.get(AccessRepository);
+      const auth = factory.auth({ user: bob });
+      const copyId = await copyOf(first.id);
+
+      for (const permission of [Permission.AssetRead, Permission.AssetView, Permission.AssetDownload]) {
+        await expect(checkAccess(access, { auth, permission, ids: new Set([first.id]) })).resolves.toEqual(new Set());
+        await expect(checkAccess(access, { auth, permission, ids: new Set([copyId]) })).resolves.toEqual(
+          new Set([copyId]),
+        );
+      }
+    });
+  });
+});

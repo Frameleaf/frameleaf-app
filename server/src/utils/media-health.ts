@@ -31,5 +31,5 @@ export const classifyImageDecodeFailure = (
     return options.isRaw ? MediaHealthStatus.CorruptSuspect : MediaHealthStatus.CorruptConfirmed;
   }
 
-  return options.isRaw ? MediaHealthStatus.CorruptSuspect : MediaHealthStatus.CorruptSuspect;
+  return MediaHealthStatus.CorruptSuspect;
 };

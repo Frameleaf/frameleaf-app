@@ -6,15 +6,19 @@ const PiB = Math.pow(1024, 5);
 
 export const HumanReadableSize = { KiB, MiB, GiB, TiB, PiB };
 
-export function asHumanReadable(bytes: number, precision = 1): string {
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB'];
+/** D5: the GB a person types or reads (1 GB = 1,000,000,000 bytes), for quotas and download sizes. */
+export const DecimalSize = { KB: 1000, MB: 1000 ** 2, GB: 1000 ** 3, TB: 1000 ** 4 };
 
+// D5 (owner, 2026-10-16): sizes people read are always decimal (KB, MB, GB), never KiB
+const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB'];
+
+export function asHumanReadable(bytes: number, precision = 1): string {
   let magnitude = 0;
   let remainder = bytes;
-  while (remainder >= 1024) {
+  while (remainder >= 1000) {
     if (magnitude + 1 < units.length) {
       magnitude++;
-      remainder /= 1024;
+      remainder /= 1000;
     } else {
       break;
     }

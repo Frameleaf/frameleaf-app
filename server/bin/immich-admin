@@ -1,3 +1,4 @@
 #!/usr/bin/env sh
+# Deprecated alias of frameleaf-admin (FL-294), kept so existing scripts keep working.
 
-start.sh immich-admin "$@"
+exec "$(dirname "$0")/frameleaf-admin" "$@"

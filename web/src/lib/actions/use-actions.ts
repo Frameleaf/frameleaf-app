@@ -25,45 +25,82 @@ export type SVGActionArray = SVGActionEntry[];
 export type ActionArray = HTMLActionArray | SVGActionArray;
 
 export function useActions(node: HTMLElement | SVGElement, actions: ActionArray) {
-  const actionReturns: SvelteActionReturnType<unknown>[] = [];
+  const handlers: SvelteActionReturnType<unknown>[] = [];
+  let stopped = false;
+  let cleaning = false;
 
-  if (actions) {
-    for (const actionEntry of actions) {
-      const action = Array.isArray(actionEntry) ? actionEntry[0] : actionEntry;
-      if (Array.isArray(actionEntry) && actionEntry.length > 1) {
-        actionReturns.push(action(node as HTMLElement & SVGElement, actionEntry[1]));
-      } else {
-        actionReturns.push(action(node as HTMLElement & SVGElement));
-      }
+  const release = () => {
+    if (cleaning) {
+      return;
     }
+    stopped = true;
+    cleaning = true;
+    const failures: unknown[] = [];
+    try {
+      for (let index = 0; index < handlers.length; index++) {
+        const handler = handlers[index];
+        handlers[index] = undefined;
+        try {
+          handler?.destroy?.();
+        } catch (error) {
+          handlers[index] = handler;
+          failures.push(error);
+        }
+      }
+    } finally {
+      cleaning = false;
+    }
+    if (failures.length > 0) {
+      throw failures[0];
+    }
+    handlers.length = 0;
+  };
+
+  try {
+    for (const entry of actions ?? []) {
+      const action = Array.isArray(entry) ? entry[0] : entry;
+      handlers.push(
+        Array.isArray(entry) && entry.length > 1
+          ? action(node as HTMLElement & SVGElement, entry[1])
+          : action(node as HTMLElement & SVGElement),
+      );
+    }
+  } catch (error) {
+    const failures = [error];
+    try {
+      release();
+    } catch (cleanupError) {
+      failures.push(cleanupError);
+    }
+    if (failures.length > 1) {
+      throw new AggregateError(failures, 'Action setup failed and cleanup did not finish.', { cause: error });
+    }
+    throw error;
   }
 
   return {
-    update(actions: ActionArray) {
-      if ((actions?.length || 0) !== actionReturns.length) {
+    update(nextActions: ActionArray) {
+      if (stopped) {
+        return;
+      }
+      if ((nextActions?.length ?? 0) !== handlers.length) {
         throw new Error('You must not change the length of an actions array.');
       }
-
-      if (actions) {
-        for (const [i, returnEntry] of actionReturns.entries()) {
-          if (!(returnEntry && returnEntry.update)) {
-            continue;
-          }
-
-          const actionEntry = actions[i];
-          if (Array.isArray(actionEntry) && actionEntry.length > 1) {
-            returnEntry.update(actionEntry[1]);
-          } else {
-            returnEntry.update();
-          }
+      for (let index = 0; index < handlers.length && !stopped; index++) {
+        const handler = handlers[index];
+        if (!handler?.update) {
+          continue;
+        }
+        const entry = nextActions[index];
+        if (Array.isArray(entry) && entry.length > 1) {
+          handler.update(entry[1]);
+        } else {
+          handler.update();
         }
       }
     },
-
     destroy() {
-      for (const returnEntry of actionReturns) {
-        returnEntry?.destroy?.();
-      }
+      release();
     },
   };
 }

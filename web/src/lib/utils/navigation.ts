@@ -1,6 +1,8 @@
-import { goto } from '$app/navigation';
+import { isHttpError } from '@frameleaf/sdk';
+import { goto, type GotoOptions } from '$app/navigation';
 import { page } from '$app/state';
 import type { RouteId } from '$app/types';
+import { COMMAND_CENTER_PATH } from '$lib/frameleaf/settings-areas';
 import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
 import { Route } from '$lib/route';
 
@@ -25,7 +27,35 @@ export function getAssetInfoFromParam({ assetId, slug, key }: { assetId?: string
   return assetId ? assetCacheManager.getAsset({ id: assetId, slug, key }, false) : undefined;
 }
 
+/**
+ * FL-33: the page a deep link to `assetId` opens over, without the item (`/photos/<id>` → `/photos`,
+ * `/albums/<a>/photos/<id>` → `/albums/<a>`), keeping the page's own query. Used when the linked
+ * item is gone or no longer readable, so the library opens instead of an error page.
+ */
+export const libraryUrlWithoutAsset = (url: URL, assetId: string): string => {
+  const suffixes = [`/photos/${assetId}`, `/${assetId}`];
+  const suffix = suffixes.find((candidate) => url.pathname.endsWith(candidate));
+  const pathname = suffix ? url.pathname.slice(0, -suffix.length) || Route.photos() : url.pathname;
+  return `${pathname === '/' ? Route.photos() : pathname}${url.search}`;
+};
+
+/** An item that is gone or that the session may no longer read: not found, forbidden or refused. */
+export const isInaccessibleAssetError = (error: unknown) =>
+  isHttpError(error) && [400, 403, 404].includes(error.status);
+
+/**
+ * Pages that open an item over themselves with `?assetId=`: the Command Center (FL-71), for utilities
+ * and Trash alike, and Sharing, for the items shared with you one by one (FL-83 AL-30b).
+ */
+const QUERY_VIEWER_PATHS = new Set([COMMAND_CENTER_PATH, '/sharing']);
+const isCommandCenter = () => QUERY_VIEWER_PATHS.has(page.url.pathname);
+
 function currentUrlWithoutAsset() {
+  if (isCommandCenter()) {
+    const params = new URLSearchParams(page.url.search);
+    params.delete('assetId');
+    return `${page.url.pathname}?${params}`;
+  }
   // This contains special casing for the /photos/:assetId route, which hangs directly
   // off / instead of a subpath, unlike every other asset-containing route.
   if (isPhotosRoute(page.route.id)) {
@@ -41,6 +71,11 @@ function currentUrlWithoutAsset() {
 
 export function currentUrlReplaceAssetId(assetId: string) {
   const params = new URLSearchParams(page.url.search);
+  if (isCommandCenter()) {
+    params.delete('at');
+    params.set('assetId', assetId);
+    return `${page.url.pathname}?${params}`;
+  }
   // always remove the assetGridScrollTargetParams
   params.delete('at');
   const paramsString = params.toString();
@@ -59,7 +94,7 @@ export function currentUrlReplaceAssetId(assetId: string) {
 }
 
 function replaceScrollTarget(url: string, searchParams?: AssetGridRouteSearchParams | null) {
-  const parsed = new URL(url, page.url);
+  const parsed = new URL(url, page.url.href);
 
   const { at: assetId } = searchParams || { at: null };
 
@@ -98,15 +133,72 @@ interface AssetGridRoute extends Route {
 
 type ImmichRoute = AssetRoute | AssetGridRoute;
 
-type NavOptions = {
-  /* navigate even if url is the same */
-  forceNavigate?: boolean | undefined;
-  replaceState?: boolean | undefined;
-  noScroll?: boolean | undefined;
-  keepFocus?: boolean | undefined;
-  invalidateAll?: boolean | undefined;
-  state?: App.PageState | undefined;
-};
+type NavOptions = GotoOptions & { forceNavigate?: boolean };
+
+/** Retain independent scroll/focus handling for the five callers that need only one reset. */
+export async function gotoWithFocusAndScroll(
+  href: string | URL,
+  { keepFocus = false, noScroll = false, ...options }: GotoOptions & { keepFocus?: boolean; noScroll?: boolean } = {},
+) {
+  if (keepFocus === noScroll) {
+    return goto(href, { ...options, reset: !keepFocus });
+  }
+  const target = new URL(href, page.url.href);
+  if (!keepFocus && document.activeElement instanceof HTMLElement && document.activeElement !== document.body) {
+    document.activeElement.blur();
+  }
+  const activeElement = document.activeElement;
+  await goto(href, { ...options, reset: false });
+  const fragment = target.hash
+    ? document.querySelector<HTMLElement>(`#${CSS.escape(decodeURIComponent(target.hash.slice(1)))}`)
+    : null;
+  if (!noScroll) {
+    if (fragment) {
+      fragment.scrollIntoView();
+    } else {
+      scrollTo(0, 0);
+    }
+  }
+  // As in Kit, preserve focus explicitly moved by the destination while it rendered.
+  if (!keepFocus && (document.activeElement === activeElement || document.activeElement === document.body)) {
+    const autofocus = document.querySelector<HTMLElement>('[autofocus]');
+    if (autofocus) {
+      autofocus.focus({ preventScroll: true });
+    } else {
+      const element = fragment ?? document.body;
+      const tabindex = element.getAttribute('tabindex');
+      element.setAttribute('tabindex', '-1');
+      element.focus({ preventScroll: true, focusVisible: false });
+      if (tabindex === null) {
+        element.toggleAttribute('tabindex', false);
+      } else {
+        element.setAttribute('tabindex', tabindex);
+      }
+      const selection = getSelection();
+      const ranges = selection
+        ? Array.from({ length: selection.rangeCount }, (_, i) => selection.getRangeAt(i).cloneRange())
+        : [];
+      setTimeout(() => {
+        if (!selection || selection.rangeCount !== ranges.length) {
+          return;
+        }
+        if (
+          ranges.every((range, i) => {
+            const current = selection.getRangeAt(i);
+            return (
+              range.startContainer === current.startContainer &&
+              range.endContainer === current.endContainer &&
+              range.startOffset === current.startOffset &&
+              range.endOffset === current.endOffset
+            );
+          })
+        ) {
+          selection.removeAllRanges();
+        }
+      }, 0);
+    }
+  }
+}
 
 function isAssetRoute(route: Route): route is AssetRoute {
   return route.targetRoute === 'current' && 'assetId' in route;
@@ -145,19 +237,3 @@ export function navigate(change: ImmichRoute, options?: NavOptions): Promise<voi
   // future navigation requests here
   throw `Invalid navigation: ${JSON.stringify(change)}`;
 }
-
-export const clearQueryParam = async (queryParam: string, url: URL) => {
-  if (!url.searchParams.has(queryParam)) {
-    return;
-  }
-
-  url.searchParams.delete(queryParam);
-  await goto(url, { keepFocus: true });
-};
-
-export const setQueryValue = async (queryKey: string, queryValue: string) => {
-  const url = location.href;
-  const urlObject = new URL(url);
-  urlObject.searchParams.set(queryKey, queryValue);
-  await goto(urlObject, { keepFocus: true });
-};

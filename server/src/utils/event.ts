@@ -1,23 +1,41 @@
 import type { ArgOf, EmitEvent } from 'src/repositories/event.repository.js';
 
 export class PendingEvents<T extends { [T in EmitEvent]: ArgOf<T> extends { error?: string } ? T : never }[EmitEvent]> {
-  private pending = new Map<string, { completers: PromiseWithResolvers<ArgOf<T>>[]; timeout: NodeJS.Timeout }>();
+  private pending = new Map<string, PromiseWithResolvers<ArgOf<T>> & { timeout: NodeJS.Timeout }>();
   private timeoutMs: number;
 
   constructor({ timeoutMs }: { timeoutMs: number }) {
     this.timeoutMs = timeoutMs;
   }
 
-  wait(key: string): Promise<ArgOf<T>> {
-    const completer = Promise.withResolvers<ArgOf<T>>();
+  wait(key: string, request?: (isPending: () => boolean) => void | Promise<void>): Promise<ArgOf<T>> {
     const existing = this.pending.get(key);
     if (existing) {
-      existing.completers.push(completer);
-      return completer.promise;
+      return existing.promise;
     }
 
+    const completer = Promise.withResolvers<ArgOf<T>>();
     const timeout = setTimeout(() => this.complete(key, { error: 'Request timed out' }), this.timeoutMs);
-    this.pending.set(key, { completers: [completer], timeout });
+    const pending = { ...completer, timeout };
+    this.pending.set(key, pending);
+    if (request) {
+      const isPending = () => this.pending.get(key) === pending;
+      const reject = (error: unknown) => {
+        if (isPending()) {
+          clearTimeout(timeout);
+          this.pending.delete(key);
+          pending.reject(error);
+        }
+      };
+      try {
+        const started = request(isPending);
+        if (started) {
+          void started.catch(reject);
+        }
+      } catch (error) {
+        reject(error);
+      }
+    }
     return completer.promise;
   }
 
@@ -29,14 +47,9 @@ export class PendingEvents<T extends { [T in EmitEvent]: ArgOf<T> extends { erro
     clearTimeout(pending.timeout);
     this.pending.delete(key);
     if ('error' in value) {
-      const error = new Error(value.error);
-      for (const completer of pending.completers) {
-        completer.reject(error);
-      }
+      pending.reject(new Error(value.error));
     } else {
-      for (const completer of pending.completers) {
-        completer.resolve(value);
-      }
+      pending.resolve(value);
     }
   }
 

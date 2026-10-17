@@ -1,4 +1,4 @@
-import { AssetOrder, SuppressionScope, type UserPreferencesResponseDto } from '@immich/sdk';
+import { AssetOrder, SuppressionScope, type UserPreferencesResponseDto } from '@frameleaf/sdk';
 import { Sync } from 'factory.ts';
 
 export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
@@ -6,11 +6,13 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
     defaultAssetOrder: AssetOrder.Desc,
   },
   cast: {
+    adminDisabled: false,
     gCastEnabled: false,
   },
   download: {
     archiveSize: 0,
     includeEmbeddedVideos: false,
+    includeSidecar: true,
   },
   emailNotifications: {
     albumInvite: false,
@@ -29,10 +31,15 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
   people: {
     enabled: false,
     sidebarWeb: false,
+    suggestInSpaces: false,
+  },
+  search: {
+    includeArchived: false,
   },
   privacy: {
     suppression: {
       personIds: [],
+      petIds: [],
       scope: SuppressionScope.Owned,
       tagIds: [],
     },
@@ -55,4 +62,6 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
   recentlyAdded: {
     sidebarWeb: false,
   },
+  revision: 'revision-1',
+  lockedRulesRevealed: true,
 });

@@ -1,4 +1,4 @@
-import { LoginResponseDto, Permission, createApiKey } from '@immich/sdk';
+import { LoginResponseDto, Permission, createApiKey } from '@frameleaf/sdk';
 import { createUserDto } from 'src/fixtures.js';
 import { errorDto } from 'src/responses.js';
 import { app, asBearerAuth, utils } from 'src/utils.js';
@@ -147,6 +147,73 @@ describe('/api-keys', () => {
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
       });
+    });
+  });
+
+  describe('POST /api-keys/:id/rotate', () => {
+    // FL-67: rotating a key reveals a new secret and the previous secret stops working at once
+    it('should invalidate the old secret and accept the new one', async () => {
+      const { id, secret: oldSecret } = await create(user.accessToken, [Permission.All]);
+      const before = await request(app).get('/users/me').set('x-api-key', oldSecret);
+      expect(before.status).toBe(200);
+
+      const { status, body } = await request(app)
+        .post(`/api-keys/${id}/rotate`)
+        .set('Authorization', `Bearer ${user.accessToken}`);
+      expect(status).toBe(201);
+      expect(body).toMatchObject({ id, secret: expect.any(String) });
+      expect(body.secret).not.toBe(oldSecret);
+
+      const oldResponse = await request(app).get('/users/me').set('x-api-key', oldSecret);
+      expect(oldResponse.status).toBe(401);
+      expect(oldResponse.body).toEqual(errorDto.unauthorized('Invalid API key'));
+
+      const newResponse = await request(app).get('/users/me').set('x-api-key', body.secret);
+      expect(newResponse.status).toBe(200);
+      expect(newResponse.body).toMatchObject({ id: user.userId });
+    });
+    // FL-67: a key is rotated only by its owner, and never by a key holding fewer permissions
+    it("should refuse to rotate another account's key", async () => {
+      const { id, secret } = await create(admin.accessToken, [Permission.All]);
+      const { status, body } = await request(app)
+        .post(`/api-keys/${id}/rotate`)
+        .set('Authorization', `Bearer ${user.accessToken}`);
+      expect(status).toBe(400);
+      expect(body).toEqual(errorDto.badRequest('API Key not found'));
+      expect(JSON.stringify(body)).not.toContain(secret);
+
+      const stillWorks = await request(app).get('/users/me').set('x-api-key', secret);
+      expect(stillWorks.status).toBe(200);
+    });
+
+    it('should refuse a rotation by a key with fewer permissions', async () => {
+      const { id, secret } = await create(user.accessToken, [Permission.All]);
+      const { secret: narrow } = await create(user.accessToken, [Permission.ApiKeyRotate]);
+      const { status, body } = await request(app).post(`/api-keys/${id}/rotate`).set('x-api-key', narrow);
+      expect(status).toBe(400);
+      expect(body).toEqual(errorDto.badRequest('Cannot rotate an API Key with permissions you do not have'));
+
+      const stillWorks = await request(app).get('/users/me').set('x-api-key', secret);
+      expect(stillWorks.status).toBe(200);
+    });
+
+    it('should refuse a rotation by a key without the rotate permission', async () => {
+      const { id } = await create(user.accessToken, [Permission.ApiKeyRead]);
+      const { secret: readOnly } = await create(user.accessToken, [Permission.ApiKeyRead]);
+      const { status } = await request(app).post(`/api-keys/${id}/rotate`).set('x-api-key', readOnly);
+      expect(status).toBe(403);
+    });
+
+    // FL-67: after creation or rotation the secret is never returned again
+    it('should never return a secret when listing or reading keys', async () => {
+      const { id, secret } = await create(user.accessToken, [Permission.All]);
+      const list = await request(app).get('/api-keys').set('Authorization', `Bearer ${user.accessToken}`);
+      const one = await request(app).get(`/api-keys/${id}`).set('Authorization', `Bearer ${user.accessToken}`);
+      for (const { status, body } of [list, one]) {
+        expect(status).toBe(200);
+        expect(JSON.stringify(body)).not.toContain(secret);
+        expect(JSON.stringify(body)).not.toContain('"secret"');
+      }
     });
   });
 

@@ -1,49 +1,30 @@
 <script lang="ts">
-  import PersonAvatar from './PersonAvatar.svelte';
-  import type { PersonResponseDto } from '@immich/sdk';
+  import SearchChip from './SearchChip.svelte';
+  import type { PersonResponseDto } from '@frameleaf/sdk';
+  /**
+   * An active-filter chip (prototype `App.jsx` `.active-filter-bar .chip`). The label opens the
+   * filter panel at the chip's own section when `onOpen` is given; the × removes the condition.
+   * It is the same chip as the search palette and the search results page (SearchChip).
+   */
   let {
     label,
     removeLabel,
     onRemove,
+    onOpen,
+    icon,
     person,
     onUnavailable,
   }: {
     label: string;
     removeLabel: string;
     onRemove: () => void;
+    /** Open the filter panel at this chip's section (prototype `.chip-label`). */
+    onOpen?: () => void;
+    /** A leading icon, such as the magnifier on the search-text chip. */
+    icon?: string;
     person?: PersonResponseDto;
     onUnavailable?: () => void;
   } = $props();
 </script>
 
-<span class="chip">
-  <PersonAvatar {person} {onUnavailable} />
-  <span class="label">{label}</span>
-  <button type="button" aria-label={removeLabel} onclick={onRemove}>×</button>
-</span>
-
-<style>
-  .chip {
-    display: inline-flex;
-    max-width: 100%;
-    align-items: center;
-    gap: 0.375rem;
-    padding-inline-start: 0.5rem;
-    border: 1px solid var(--fl-accent);
-    border-radius: var(--fl-radius);
-    background: var(--fl-raised);
-    color: var(--fl-text);
-  }
-  .label {
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
-  button {
-    flex-shrink: 0;
-    background: transparent;
-    color: inherit;
-    border: 0;
-    min-width: 44px;
-    border-radius: var(--fl-radius);
-  }
-</style>
+<SearchChip {label} {removeLabel} {onRemove} {onOpen} {icon} {person} {onUnavailable} />

@@ -1,8 +1,8 @@
-import { AssetFileType, AssetVisibility, ImmichWorker, JobName, JobStatus } from 'src/enum.js';
+import { AssetFileType, AssetVisibility, FrameleafWorker, JobName, JobStatus } from 'src/enum.js';
 import { OcrService } from 'src/services/ocr.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
-import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 describe(OcrService.name, () => {
   let sut: OcrService;
@@ -11,7 +11,7 @@ describe(OcrService.name, () => {
   beforeEach(() => {
     ({ sut, mocks } = newTestService(OcrService));
 
-    mocks.config.getWorker.mockReturnValue(ImmichWorker.Microservices);
+    mocks.config.getWorker.mockReturnValue(FrameleafWorker.Microservices);
     mocks.assetJob.getForOcr.mockResolvedValue({
       visibility: AssetVisibility.Timeline,
       previewFile: '/uploads/user-id/thumbs/path.jpg',
@@ -35,29 +35,37 @@ describe(OcrService.name, () => {
     it('should do nothing if machine learning is disabled', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.machineLearningDisabled);
 
-      await sut.handleQueueOcr({ force: false });
+      await expect(sut.handleQueueOcr({ force: false })).resolves.toBe(JobStatus.Skipped);
 
-      expect(mocks.database.setDimensionSize).not.toHaveBeenCalled();
+      expect(mocks.assetJob.selectionForOcrJob).not.toHaveBeenCalled();
+      expect(mocks.job.queueSelection).not.toHaveBeenCalled();
     });
 
     it('should queue the assets without ocr', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForOcrJob.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForOcrJob.mockReturnValue({ selected: [asset] } as never);
 
       await sut.handleQueueOcr({ force: false });
 
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.Ocr, data: { id: asset.id } }]);
-      expect(mocks.assetJob.streamForOcrJob).toHaveBeenCalledWith(false);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.Ocr,
+        mocks.assetJob.selectionForOcrJob.mock.results[0].value,
+      );
+      expect(mocks.assetJob.selectionForOcrJob).toHaveBeenCalledWith(false);
     });
 
     it('should queue all the assets', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForOcrJob.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForOcrJob.mockReturnValue({ selected: [asset] } as never);
 
       await sut.handleQueueOcr({ force: true });
 
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.Ocr, data: { id: asset.id } }]);
-      expect(mocks.assetJob.streamForOcrJob).toHaveBeenCalledWith(true);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.Ocr,
+        mocks.assetJob.selectionForOcrJob.mock.results[0].value,
+      );
+      expect(mocks.assetJob.selectionForOcrJob).toHaveBeenCalledWith(true);
+      expect(mocks.ocr.deleteAll).not.toHaveBeenCalled();
     });
   });
 
@@ -67,8 +75,9 @@ describe(OcrService.name, () => {
 
       expect(await sut.handleOcr({ id: '123' })).toEqual(JobStatus.Skipped);
 
-      expect(mocks.asset.getByIds).not.toHaveBeenCalled();
-      expect(mocks.machineLearning.encodeImage).not.toHaveBeenCalled();
+      expect(mocks.assetJob.getForOcr).not.toHaveBeenCalled();
+      expect(mocks.machineLearning.ocr).not.toHaveBeenCalled();
+      expect(mocks.ocr.upsert).not.toHaveBeenCalled();
     });
 
     it('should skip assets without a resize path', async () => {
@@ -93,6 +102,7 @@ describe(OcrService.name, () => {
       expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Success);
 
       expect(mocks.machineLearning.ocr).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
         '/uploads/user-id/thumbs/path.jpg',
         expect.objectContaining({
           modelName: 'PP-OCRv5_mobile',
@@ -137,6 +147,33 @@ describe(OcrService.name, () => {
       );
     });
 
+    it('keeps text a crop removed hidden and out of search when the photo is read again', async () => {
+      const asset = AssetFactory.create();
+      mocks.asset.getForOcr.mockResolvedValue({
+        edits: [{ action: 'crop', parameters: { x: 0, y: 0, width: 100, height: 100 } }],
+        exifImageWidth: 200,
+        exifImageHeight: 200,
+        orientation: null,
+      } as never);
+      mocks.machineLearning.ocr.mockResolvedValue({
+        box: [0.05, 0.05, 0.4, 0.05, 0.4, 0.1, 0.05, 0.1, 0.6, 0.8, 0.9, 0.8, 0.9, 0.85, 0.6, 0.85],
+        boxScore: [0.9, 0.9],
+        text: ['Kept', 'Cropped'],
+        textScore: [0.9, 0.9],
+      });
+
+      expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Success);
+
+      expect(mocks.ocr.upsert).toHaveBeenCalledWith(
+        asset.id,
+        [
+          expect.objectContaining({ text: 'Kept', isVisible: true }),
+          expect.objectContaining({ text: 'Cropped', isVisible: false }),
+        ],
+        'Kept',
+      );
+    });
+
     it('should apply config settings', async () => {
       const asset = AssetFactory.create();
       mocks.systemMetadata.get.mockResolvedValue({
@@ -156,6 +193,7 @@ describe(OcrService.name, () => {
       expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Success);
 
       expect(mocks.machineLearning.ocr).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
         '/uploads/user-id/thumbs/path.jpg',
         expect.objectContaining({
           modelName: 'PP-OCRv5_server',

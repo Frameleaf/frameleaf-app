@@ -2,7 +2,7 @@ import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nes
 import { Response } from 'express';
 import { of } from 'rxjs';
 import { AssetMediaResponseDto, AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
-import { ImmichHeader } from 'src/enum.js';
+import { RequestHeader } from 'src/enum.js';
 import { AuthenticatedRequest } from 'src/middleware/auth.guard.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { fromMaybeArray } from 'src/utils/request.js';
@@ -15,7 +15,7 @@ export class AssetUploadInterceptor implements NestInterceptor {
     const req = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const res = context.switchToHttp().getResponse<Response<AssetMediaResponseDto>>();
 
-    const checksum = fromMaybeArray(req.headers[ImmichHeader.Checksum]);
+    const checksum = fromMaybeArray(req.headers[RequestHeader.Checksum]);
     const response = await this.service.getUploadAssetIdByChecksum(req.user, checksum);
     if (response) {
       res.status(200);

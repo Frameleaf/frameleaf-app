@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 import { ChokidarOptions, watch as chokidarWatch } from 'chokidar';
 import fastGlob from 'fast-glob';
 import {
@@ -18,6 +18,7 @@ import { PassThrough, Readable, Writable } from 'node:stream';
 import { createGunzip, createGzip } from 'node:zlib';
 import { CrawlOptionsDto, WalkOptionsDto } from 'src/dtos/library.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { LibraryWalkOptions, walkLibraryPaths } from 'src/utils/library-walk.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 export interface WatchEvents {
@@ -28,14 +29,14 @@ export interface WatchEvents {
   onError(error: Error): void;
 }
 
-export interface ImmichReadStream {
+export interface ReadStreamResponse {
   stream: Readable;
   type?: string;
   disposition?: string | string[];
   length?: number;
 }
 
-export interface ImmichZipStream extends ImmichReadStream {
+export interface ZipDownloadStream extends ReadStreamResponse {
   addFile: (inputPath: string, filename: string) => void;
   finalize: () => Promise<void>;
 }
@@ -78,8 +79,8 @@ export class StorageRepository {
     return fs.writeFile(filepath, buffer, { flag: 'wx' });
   }
 
-  createWriteStream(filepath: string): Writable {
-    return createWriteStream(filepath, { flags: 'w', flush: true });
+  createWriteStream(filepath: string, options: { flags?: 'w' | 'wx'; mode?: number } = {}): Writable {
+    return createWriteStream(filepath, { flags: 'w', flush: true, ...options });
   }
 
   createOrOverwriteFile(filepath: string, buffer: Buffer) {
@@ -98,8 +99,8 @@ export class StorageRepository {
     return fs.utimes(filepath, atime, mtime);
   }
 
-  createZipStream(): ImmichZipStream {
-    const archive = archiver('zip', { store: true });
+  createZipStream(): ZipDownloadStream {
+    const archive = new ZipArchive({ store: true });
 
     const addFile = (input: string, filename: string) => {
       archive.file(input, { name: filename, mode: 0o644 });
@@ -122,7 +123,7 @@ export class StorageRepository {
     return createReadStream(filepath);
   }
 
-  async createReadStream(filepath: string, mimeType?: string | null): Promise<ImmichReadStream> {
+  async createReadStream(filepath: string, mimeType?: string | null): Promise<ReadStreamResponse> {
     const { size } = await fs.stat(filepath);
     await fs.access(filepath, constants.R_OK);
     return {
@@ -146,6 +147,39 @@ export class StorageRepository {
 
     // read everything
     return fs.readFile(filepath);
+  }
+
+  /**
+   * Positional reads from one open file, for formats read from the end first (a ZIP's central
+   * directory). Each read returns exactly the bytes that exist, never a zero-filled tail. The caller
+   * closes the handle.
+   */
+  async openForRandomRead(filepath: string): Promise<{
+    size: number;
+    read: (position: number, length: number) => Promise<Buffer>;
+    close: () => Promise<void>;
+  }> {
+    const handle = await fs.open(filepath, 'r');
+    try {
+      const { size } = await handle.stat();
+      return {
+        size,
+        read: async (position: number, length: number) => {
+          const buffer = Buffer.alloc(Math.max(0, length));
+          try {
+            const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+            return buffer.subarray(0, bytesRead);
+          } catch (error) {
+            buffer.fill(0);
+            throw error;
+          }
+        },
+        close: () => handle.close(),
+      };
+    } catch (error) {
+      await handle.close();
+      throw error;
+    }
   }
 
   async readJsonFile<T>(filepath: string): Promise<T> {
@@ -180,13 +214,28 @@ export class StorageRepository {
 
   async removeEmptyDirs(directory: string, self: boolean = false) {
     // lstat does not follow symlinks (in contrast to stat)
-    const stats = await fs.lstat(directory);
+    const stats = await fs.lstat(directory, { bigint: true });
     if (!stats.isDirectory()) {
       return;
     }
 
-    const files = await fs.readdir(directory);
-    await Promise.all(files.map((file) => this.removeEmptyDirs(path.join(directory, file), true)));
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    // Do not traverse a replacement reached through the path while its entries were read.
+    const current = await fs.lstat(directory, { bigint: true }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') {
+        throw error;
+      }
+    });
+    if (!current?.isDirectory() || current.dev !== stats.dev || current.ino !== stats.ino) {
+      return;
+    }
+    const children: Promise<void>[] = [];
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        children.push(this.removeEmptyDirs(path.join(directory, entry.name), true));
+      }
+    }
+    await Promise.all(children);
 
     if (self) {
       const updated = await fs.readdir(directory);
@@ -221,6 +270,91 @@ export class StorageRepository {
     };
   }
 
+  /**
+   * The bytes of every regular file under a folder, symbolic links not followed (FL-79: the
+   * nightly analytics collector's generated-file sizes). A missing folder is empty.
+   */
+  async getFolderBytes(folder: string, concurrency = 16): Promise<number> {
+    const sizeOf = async (file: string) => {
+      try {
+        return (await fs.lstat(file)).size;
+      } catch (error: any) {
+        // a file removed while the folder is read no longer counts
+        if (error?.code === 'ENOENT') {
+          return 0;
+        }
+        throw error;
+      }
+    };
+    let total = 0;
+    const pending = [folder];
+    while (pending.length > 0) {
+      const directory = pending.pop()!;
+      let entries: Dirent[];
+      try {
+        entries = await fs.readdir(directory, { withFileTypes: true });
+      } catch (error: any) {
+        if (error?.code === 'ENOENT') {
+          continue;
+        }
+        throw error;
+      }
+      const files: string[] = [];
+      for (const entry of entries) {
+        const entryPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          pending.push(entryPath);
+        } else if (entry.isFile()) {
+          files.push(entryPath);
+        }
+      }
+      // a small, bounded number of lstat calls at once
+      for (let index = 0; index < files.length; index += concurrency) {
+        const sizes = await Promise.all(files.slice(index, index + concurrency).map((file) => sizeOf(file)));
+        total += sizes.reduce((sum, size) => sum + size, 0);
+      }
+    }
+    return total;
+  }
+
+  /**
+   * Every non-directory entry under `folder`, depth first, symbolic links listed but never followed
+   * (FL-44: user deletion checks each file's references before removing it). A missing folder is
+   * empty. Matching is exact — unlike `walk`, no glob and no case folding reaches a sibling folder.
+   */
+  async *walkFiles(folder: string): AsyncGenerator<string> {
+    const pending = [folder];
+    while (pending.length > 0) {
+      const directory = pending.pop()!;
+      let entries: Dirent[];
+      try {
+        entries = await fs.readdir(directory, { withFileTypes: true });
+      } catch (error: any) {
+        if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') {
+          continue;
+        }
+        throw error;
+      }
+      for (const entry of entries) {
+        const entryPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          pending.push(entryPath);
+        } else {
+          yield entryPath;
+        }
+      }
+    }
+  }
+
+  /** The device a path lives on (`stat.dev`), or null when it cannot be read. */
+  async getDevice(filepath: string): Promise<number | null> {
+    try {
+      return (await fs.stat(filepath)).dev;
+    } catch {
+      return null;
+    }
+  }
+
   crawl(crawlOptions: CrawlOptionsDto): Promise<string[]> {
     const { pathsToCrawl, exclusionPatterns, includeHidden } = crawlOptions;
     if (pathsToCrawl.length === 0) {
@@ -242,8 +376,7 @@ export class StorageRepository {
   async *walk(walkOptions: WalkOptionsDto): AsyncGenerator<string[]> {
     const { pathsToCrawl, exclusionPatterns, includeHidden } = walkOptions;
     if (pathsToCrawl.length === 0) {
-      async function* emptyGenerator() {}
-      return emptyGenerator();
+      return;
     }
 
     const globbedPaths = pathsToCrawl.map((path) => this.asGlob(path));
@@ -269,6 +402,11 @@ export class StorageRepository {
     if (batch.length > 0) {
       yield batch;
     }
+  }
+
+  /** External-library-only pull traversal; generic glob contracts remain unchanged. */
+  walkLibrary(options: LibraryWalkOptions) {
+    return walkLibraryPaths(options);
   }
 
   /** Resume a sorted depth-first traversal. The caller persists the mutated cursor between batches. */

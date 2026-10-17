@@ -1,0 +1,10 @@
+{
+  "instanceId": "0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53",
+  "name": "Basement NAS",
+  "version": "3.1.0",
+  "platform": "linux/amd64",
+  "jwk": { "kty": "OKP", "crv": "Ed25519", "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo", "kid": "kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k" },
+  "bootId": "5f0c7a52-3a1e-4c89-9a3e-0f2d8b6c1a44",
+  "capabilities": ["heartbeat", "commands", "license", "oidc"],
+  "permissions": { "allowRemoteEnable": false, "allowBackupTrigger": true, "allowEntitlementRefresh": true }
+}

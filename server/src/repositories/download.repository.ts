@@ -2,11 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { type Kysely } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
-import { AssetVisibility } from 'src/enum.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
+import { AssetFileType, AssetVisibility } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
-import { anyUuid, withHiddenContentFilter } from 'src/utils/database.js';
+import { anyUuid, withAlbumVisibility, withHiddenContentFilter, withLockedOwnerScope } from 'src/utils/database.js';
 
-type DownloadPrivacyOptions = HiddenContentQueryOptions;
+type DownloadPrivacyOptions = HiddenContentQueryOptions & LockedVisibilityOptions;
 
 const builder = (db: Kysely<DB>, options: DownloadPrivacyOptions = {}) =>
   db
@@ -28,17 +29,35 @@ export class DownloadRepository {
     return builder(this.db, options).select(['asset.originalPath']).where('asset.id', '=', anyUuid(ids)).stream();
   }
 
+  /** An album download holds the same media the album shows this viewer (see `withAlbumVisibility`). */
   downloadAlbumId(albumId: string, options?: DownloadPrivacyOptions) {
     return builder(this.db, options)
       .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
       .where('album_asset.albumId', '=', albumId)
+      .$call((qb) => withAlbumVisibility(qb, options?.lockedOwnerId))
       .stream();
   }
 
+  /**
+   * ACCOUNT-P5: the details file (XMP sidecar) of each of these assets that has one; the original's own
+   * sidecar first when an asset also has an edited one.
+   */
+  getSidecars(ids: string[]) {
+    return this.db
+      .selectFrom('asset_file')
+      .select(['asset_file.assetId', 'asset_file.path'])
+      .where('asset_file.assetId', '=', anyUuid(ids))
+      .where('asset_file.type', '=', AssetFileType.Sidecar)
+      .orderBy('asset_file.isEdited', 'asc')
+      .execute();
+  }
+
+  /** A whole-library download holds the owner's Locked media only for their elevated session (FL-34). */
   downloadUserId(userId: string, options?: DownloadPrivacyOptions) {
     return builder(this.db, options)
       .where('asset.ownerId', '=', userId)
       .where('asset.visibility', '!=', AssetVisibility.Hidden)
+      .$call((qb) => withLockedOwnerScope(qb, options?.lockedOwnerId))
       .stream();
   }
 }

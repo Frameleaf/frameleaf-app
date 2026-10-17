@@ -1,3 +1,4 @@
+import { SingleBar } from 'cli-progress';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -11,7 +12,7 @@ import {
   checkBulkUpload,
   defaults,
   getSupportedMediaTypes,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import createFetchMock from 'vitest-fetch-mock';
 
 import {
@@ -24,7 +25,7 @@ import {
   UploadOptionsDto,
 } from 'src/commands/asset';
 
-vi.mock('@immich/sdk');
+vi.mock('@frameleaf/sdk');
 
 describe('getAlbumName', () => {
   it('should return a non-undefined value', () => {
@@ -78,6 +79,23 @@ describe('uploadFiles', () => {
         id: 'fc5621b1-86f6-44a1-9905-403e607df9f5',
       },
     ]);
+  });
+
+  it.each(['created', 'duplicate'])('advances progress for completed %s uploads', async (status) => {
+    const progress = vi.spyOn(SingleBar.prototype, 'update').mockImplementation(() => {});
+    fetchMocker.doMockIf(new RegExp(`${baseUrl}/assets$`), () => ({
+      status: 200,
+      body: JSON.stringify({ id: 'uploaded', status }),
+    }));
+    try {
+      await uploadFiles([testFilePath], { concurrency: 1, progress: true });
+      expect(progress).toHaveBeenCalledWith(
+        testFileData.length,
+        expect.objectContaining({ value_formatted: expect.anything() }),
+      );
+    } finally {
+      progress.mockRestore();
+    }
   });
 
   it('returns new assets when upload file retry is successful', async () => {
@@ -510,5 +528,37 @@ describe('deleteFiles', () => {
 
     expect(fs.existsSync(testFilePath)).toBe(true);
     expect(fs.existsSync(sidecarPath)).toBe(true);
+  });
+
+  it('deletes a path once when uploaded and duplicate lists overlap', async () => {
+    const asset = { id: 'test-id', filepath: testFilePath };
+    await expect(
+      deleteFiles([asset], [asset], { delete: true, deleteDuplicates: true, concurrency: 1 }),
+    ).resolves.toBeUndefined();
+    expect(fs.existsSync(testFilePath)).toBe(false);
+  });
+
+  it('deletes a shared sidecar once after its selected originals', async () => {
+    const raw = path.join(testDir, 'test.nef');
+    const sidecar = path.join(testDir, 'test.xmp');
+    fs.writeFileSync(raw, 'raw');
+    fs.writeFileSync(sidecar, 'metadata');
+    await deleteFiles(
+      [
+        { id: 'jpeg', filepath: testFilePath },
+        { id: 'raw', filepath: raw },
+      ],
+      [],
+      { delete: true, concurrency: 2 },
+    );
+    expect([testFilePath, raw, sidecar].map((file) => fs.existsSync(file))).toEqual([false, false, false]);
+  });
+
+  it('keeps originals and shared sidecars during dry runs', async () => {
+    const sidecar = path.join(testDir, 'test.xmp');
+    fs.writeFileSync(sidecar, 'metadata');
+    await deleteFiles([{ id: 'jpeg', filepath: testFilePath }], [], { delete: true, dryRun: true, concurrency: 2 });
+    expect(fs.existsSync(testFilePath)).toBe(true);
+    expect(fs.existsSync(sidecar)).toBe(true);
   });
 });

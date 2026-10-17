@@ -100,52 +100,6 @@ where
   "sharedWithId" = $1
   and "sharedById" = $2
 
--- PartnerRepository.update
-update "partner"
-set
-  "inTimeline" = $1
-where
-  "sharedWithId" = $2
-  and "sharedById" = $3
-returning
-  *,
-  (
-    select
-      to_json(obj)
-    from
-      (
-        select
-          "id",
-          "name",
-          "email",
-          "avatarColor",
-          "profileImagePath",
-          "profileChangedAt"
-        from
-          "user" as "sharedBy"
-        where
-          "sharedBy"."id" = "partner"."sharedById"
-      ) as obj
-  ) as "sharedBy",
-  (
-    select
-      to_json(obj)
-    from
-      (
-        select
-          "id",
-          "name",
-          "email",
-          "avatarColor",
-          "profileImagePath",
-          "profileChangedAt"
-        from
-          "user" as "sharedWith"
-        where
-          "sharedWith"."id" = "partner"."sharedWithId"
-      ) as obj
-  ) as "sharedWith"
-
 -- PartnerRepository.remove
 delete from "partner"
 where

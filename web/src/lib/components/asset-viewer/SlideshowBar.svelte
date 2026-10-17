@@ -1,106 +1,105 @@
 <script lang="ts">
+  import { isForwardKey } from '$lib/frameleaf/reading-direction';
+  /**
+   * The slideshow's engine (FL-36, V-18, VIEWER-P1). The slideshow plays inside the viewer and keeps
+   * its chrome, as in the template (MediaViewer.jsx:1008-1298, 1704-1820): the frosted header with the
+   * name and "n of N", the side arrows, and the footer, whose Play turns into a green Pause. Play,
+   * pause and the settings live in the footer (V-13), which drives the same state
+   * (`slideshowStore.slideshowState`, `slideshowStore.toggleSettings`); the header's back arrow and
+   * Escape close the viewer. This draws only the thin accent progress line under the header
+   * (media-viewer.css:425-450), and adds the S, Space and arrow keys, the wake lock and Media Session.
+   *
+   * The viewer's chrome (header, footer, arrows) is one state, `chromeHidden`, shared with the viewer's
+   * own tap-to-hide. During a slideshow a tap on the photo toggles it and a swipe down shows it again
+   * (MediaViewer.jsx:559-583, `.chrome-hidden`, apple-style.css:393-404); it never hides by itself.
+   * While the settings panel is open the slideshow holds: the progress stops and a video pauses,
+   * without changing play or pause (MediaViewer.jsx:422-460).
+   */
   import { shortcuts, type ShortcutOptions } from '$lib/actions/shortcut';
   import ProgressBar from '$lib/components/shared-components/progress-bar/ProgressBar.svelte';
   import { ProgressBarStatus } from '$lib/constants';
-  import { languageManager } from '$lib/managers/language-manager.svelte';
-  import SlideshowSettingsModal from '$lib/modals/SlideshowSettingsModal.svelte';
+  import { bindMediaSession, MEDIA_SESSION_ARTIST } from '$lib/frameleaf/media-session';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { locale } from '$lib/stores/preferences.store';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
-  import { AssetTypeEnum } from '@immich/sdk';
-  import { IconButton, modalManager } from '@immich/ui';
-  import { mdiChevronLeft, mdiChevronRight, mdiClose, mdiCog, mdiFullscreen, mdiPause, mdiPlay } from '@mdi/js';
+  import { getAssetMediaUrl } from '$lib/utils';
+  import { fromISODateTimeUTC } from '$lib/utils/timeline-util';
+  import { acquireWakeLock, releaseWakeLock } from '$lib/utils/wakelock.svelte';
+  import { AssetMediaSize, AssetTypeEnum, AssetVisibility, type AssetResponseDto } from '@frameleaf/sdk';
+  import { DateTime } from 'luxon';
   import { onDestroy, onMount } from 'svelte';
-  import { useSwipe } from 'svelte-gestures';
-  import { t } from 'svelte-i18n';
-  import { fly } from 'svelte/transition';
 
   interface Props {
-    isFullScreen: boolean;
+    /** The viewer's shared chrome state (header, footer and arrows). */
+    chromeHidden?: boolean;
     assetType: AssetTypeEnum;
+    /** The item on screen, for the lock screen and media keys (Media Session). */
+    asset?: AssetResponseDto;
+    /** The collection being played, such as the album's name. */
+    title?: string;
     onNext?: () => void;
     onPrevious?: () => void;
-    onClose?: () => void;
-    onSetToFullScreen?: () => void;
   }
 
   let {
-    isFullScreen,
+    chromeHidden = $bindable(false),
     assetType,
+    asset,
+    title,
     onNext = () => {},
     onPrevious = () => {},
-    onClose = () => {},
-    onSetToFullScreen = () => {},
   }: Props = $props();
 
-  const { restartProgress, stopProgress, slideshowDelay, showProgressBar, slideshowNavigation, slideshowState } =
-    slideshowStore;
+  const {
+    restartProgress,
+    stopProgress,
+    slideshowDelay,
+    showProgressBar,
+    slideshowNavigation,
+    slideshowState,
+    settingsOpen,
+    closeSettings,
+  } = slideshowStore;
 
-  let progressBarStatus: ProgressBarStatus | undefined = $state();
   let progressBar = $state<ReturnType<typeof ProgressBar>>();
-  let showControls = $state(true);
-  let timer: NodeJS.Timeout;
-  let isOverControls = $state(false);
+  let progressBarStatus: ProgressBarStatus | undefined = $state();
   const isVideoSlide = $derived(assetType === AssetTypeEnum.Video);
-
-  let unsubscribeRestart: () => void;
-  let unsubscribeStop: () => void;
-
-  const setCursorStyle = (style: string) => {
-    document.body.style.cursor = style;
-  };
-
-  const stopControlsHideTimer = () => {
-    clearTimeout(timer);
-    setCursorStyle('');
-  };
-
-  const showControlBar = () => {
-    showControls = true;
-    stopControlsHideTimer();
-    hideControlsAfterDelay();
-  };
-
-  const hideControlsAfterDelay = () => {
-    timer = setTimeout(() => {
-      if (isOverControls) {
-        return;
-      }
-
-      showControls = false;
-      setCursorStyle('none');
-    }, 2500);
-  };
+  const playing = $derived($slideshowState === SlideshowState.PlaySlideshow);
 
   onMount(() => {
-    hideControlsAfterDelay();
-    unsubscribeRestart = restartProgress.subscribe((value) => {
+    const unsubscribeRestart = restartProgress.subscribe((value) => {
       if (value) {
         progressBar?.restart();
       }
     });
-
-    unsubscribeStop = stopProgress.subscribe((value) => {
-      if (!value) {
-        return;
+    const unsubscribeStop = stopProgress.subscribe((value) => {
+      if (value) {
+        progressBar?.restart();
       }
-
-      progressBar?.restart();
-      stopControlsHideTimer();
     });
+    return () => {
+      unsubscribeRestart();
+      unsubscribeStop();
+    };
   });
 
-  onDestroy(() => {
-    setCursorStyle('');
-    if (unsubscribeRestart) {
-      unsubscribeRestart();
-    }
-
-    if (unsubscribeStop) {
-      unsubscribeStop();
-    }
+  let alive = true;
+  let advanceOwner: object | undefined;
+  $effect.pre(() => {
+    advanceOwner = { assetId: asset?.id, assetType, state: $slideshowState, settingsOpen: $settingsOpen };
   });
 
   const handleDone = async () => {
-    await progressBar?.resetProgress();
+    if (!alive || !advancing) {
+      return;
+    }
+    const owner = advanceOwner;
+    const bar = progressBar;
+    const isCurrentSession = authManager.captureSession();
+    await bar?.resetProgress();
+    if (!alive || !isCurrentSession() || owner !== advanceOwner || bar !== progressBar || !advancing) {
+      return;
+    }
 
     if ($slideshowNavigation === SlideshowNavigation.AscendingOrder) {
       onPrevious();
@@ -109,146 +108,171 @@
     onNext();
   };
 
-  const onShowSettings = async () => {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
+  // Play and pause are the slideshow state; the progress line follows it, whoever changed it
+  // (the viewer footer, the More menu, Space, S or the media keys).
+  const play = () => ($slideshowState = SlideshowState.PlaySlideshow);
+  const pause = () => ($slideshowState = SlideshowState.PauseSlideshow);
+  const togglePause = () => (playing ? pause() : play());
+  // MediaViewer.jsx:422-460: the open settings panel holds the advance without pausing the slideshow.
+  const advancing = $derived(playing && !$settingsOpen);
+  $effect(() => {
+    const bar = progressBar;
+    if (!bar) {
+      return;
     }
-    await modalManager.show(SlideshowSettingsModal);
-  };
-
-  onMount(() => {
-    function exitFullscreenHandler() {
-      const doc = document as Document & {
-        webkitIsFullScreen?: boolean;
-      };
-
-      if (!document.fullscreenElement && !doc.webkitIsFullScreen) {
-        onClose();
-      }
+    if (advancing && progressBarStatus === ProgressBarStatus.Paused) {
+      void bar.play();
+    } else if (!advancing && progressBarStatus !== ProgressBarStatus.Paused) {
+      void bar.pause();
     }
-
-    document.addEventListener('fullscreenchange', exitFullscreenHandler);
-    document.addEventListener('webkitfullscreenchange', exitFullscreenHandler);
-
-    return () => {
-      document.removeEventListener('fullscreenchange', exitFullscreenHandler);
-      document.removeEventListener('webkitfullscreenchange', exitFullscreenHandler);
-    };
   });
 
-  const { swipe, onswipe, onswipedown } = useSwipe(
-    () => {},
-    () => ({ touchAction: 'pan-x' }),
-    { onswipedown: showControlBar },
-    true,
-  );
-
-  const togglePause = () => {
-    if (progressBarStatus === ProgressBarStatus.Paused) {
-      $slideshowState = SlideshowState.PlaySlideshow;
-      progressBar?.play();
-    } else {
-      $slideshowState = SlideshowState.PauseSlideshow;
-      progressBar?.pause();
+  // A tap on the photo toggles the chrome and a swipe down shows it (MediaViewer.jsx:559-583).
+  const CHROME = '[data-viewer-chrome]';
+  const inChrome = (node: EventTarget | Element | null) => node instanceof Element && !!node.closest(CHROME);
+  // the state at pointerdown decides the toggle, so a swipe-down reveal in between cannot undo it
+  let tap: { x: number; y: number; time: number; hidden: boolean } | undefined;
+  const onPointerDown = (event: PointerEvent) => {
+    const target = event.target as Element | null;
+    tap =
+      target?.closest?.('[data-viewer-content]') && !inChrome(target)
+        ? { x: event.clientX, y: event.clientY, time: performance.now(), hidden: chromeHidden }
+        : undefined;
+  };
+  const onPointerUp = (event: PointerEvent) => {
+    const start = tap;
+    tap = undefined;
+    if (!start) {
+      return;
     }
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    // a swipe down reveals the chrome (source behaviour)
+    if (dy > 50 && Math.abs(dx) < dy) {
+      chromeHidden = false;
+      return;
+    }
+    if (!(Math.hypot(dx, dy) < 6) || performance.now() - start.time >= 280) {
+      return;
+    }
+    chromeHidden = !start.hidden;
   };
 
+  // the settings panel keeps the chrome on screen
+  $effect(() => {
+    if ($settingsOpen) {
+      chromeHidden = false;
+    }
+  });
+
+  // The settings panel is the viewer's (SlideshowSettingsPanel); ending the slideshow closes it.
+  onDestroy(() => {
+    void closeSettings({ restoreFocus: false });
+  });
+
+  // FL-36 (MediaViewer.jsx:863-885): keep the screen awake while the slideshow plays, and while
+  // its settings are open over it.
+  $effect(() => {
+    if (playing || $settingsOpen) {
+      void acquireWakeLock('slideshow');
+    } else {
+      releaseWakeLock('slideshow').catch(() => {});
+    }
+  });
+  onDestroy(() => {
+    alive = false;
+    releaseWakeLock('slideshow').catch(() => {});
+  });
+
+  // FL-36 (MediaViewer.jsx:886-923): the lock screen, headphones and media keys see the item on
+  // screen and can play, pause and move through the slideshow.
+  $effect(() => {
+    if (!asset) {
+      return;
+    }
+    const date = fromISODateTimeUTC(asset.localDateTime);
+    return bindMediaSession({
+      // a Locked item never reaches the lock screen or the OS media controls
+      locked: asset.visibility === AssetVisibility.Locked,
+      title: asset.originalFileName,
+      artist: title || MEDIA_SESSION_ARTIST,
+      album: [date.isValid ? date.toLocaleString(DateTime.DATE_MED, { locale: $locale }) : '', asset.exifInfo?.city]
+        .filter(Boolean)
+        .join(' · '),
+      artwork: getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash }),
+      playing: isVideoSlide ? undefined : playing,
+      controls: { play, pause, previous: onPrevious, next: onNext },
+    });
+  });
+
   const shortcutBindings = $derived.by((): ShortcutOptions[] => {
+    // MediaViewer.jsx:733-747: Escape closes the settings first; with them open, the arrow keys
+    // stay with their controls. Otherwise Escape is the header's Close viewer.
+    if ($settingsOpen) {
+      return [{ shortcut: { key: 'Escape' }, onShortcut: () => void closeSettings() }];
+    }
     const bindings: ShortcutOptions[] = [
-      { shortcut: { key: 'Escape' }, onShortcut: onClose },
-      { shortcut: { key: 'ArrowLeft' }, onShortcut: onPrevious },
-      { shortcut: { key: 'ArrowRight' }, onShortcut: onNext },
+      { shortcut: { key: 'ArrowLeft' }, onShortcut: () => (isForwardKey('ArrowLeft') ? onNext() : onPrevious()) },
+      { shortcut: { key: 'ArrowRight' }, onShortcut: () => (isForwardKey('ArrowRight') ? onNext() : onPrevious()) },
+      { shortcut: { key: 's' }, onShortcut: togglePause, preventDefault: true },
     ];
 
     // For videos, allow the native HTML5 element to handle space for play/pause
     if (!isVideoSlide) {
-      bindings.push({
-        shortcut: { key: ' ' },
-        onShortcut: togglePause,
-        preventDefault: true,
-      });
+      bindings.push({ shortcut: { key: ' ' }, onShortcut: togglePause, preventDefault: true });
     }
 
     return bindings;
   });
 </script>
 
-<svelte:document onmousemove={showControlBar} use:shortcuts={shortcutBindings} />
+<svelte:document use:shortcuts={shortcutBindings} onpointerdown={onPointerDown} onpointerup={onPointerUp} />
 
-{/* @ts-expect-error https://github.com/Rezi/svelte-gestures/issues/38#issuecomment-3315953573 */ null}
-<svelte:body {@attach swipe} {onswipe} {onswipedown} />
-
-{#if showControls}
+<!-- media-viewer.css:425-450: the thin accent line along the top of the canvas, under the header -->
+{#if !isVideoSlide}
   <div
-    class="dark m-4 flex gap-2 rounded-3xl bg-black/40 px-2 backdrop-blur-sm"
-    onmouseenter={() => (isOverControls = true)}
-    onmouseleave={() => (isOverControls = false)}
-    transition:fly={{ duration: 150 }}
-    role="navigation"
+    class="frameleaf slideshow-progress"
+    data-theme="dark"
+    data-testid="slideshow-progress"
+    class:hidden={!$showProgressBar}
+    class:chrome-hidden={chromeHidden}
+    aria-hidden="true"
   >
-    <IconButton
-      variant="ghost"
-      shape="round"
-      color="secondary"
-      icon={mdiClose}
-      onclick={onClose}
-      aria-label={$t('exit_slideshow')}
+    <ProgressBar
+      autoplay={playing}
+      hidden={!$showProgressBar}
+      duration={$slideshowDelay}
+      bind:this={progressBar}
+      bind:status={progressBarStatus}
+      onDone={handleDone}
     />
-
-    {#if !isVideoSlide}
-      <IconButton
-        variant="ghost"
-        shape="round"
-        color="secondary"
-        icon={progressBarStatus === ProgressBarStatus.Paused ? mdiPlay : mdiPause}
-        onclick={togglePause}
-        aria-label={progressBarStatus === ProgressBarStatus.Paused ? $t('play') : $t('pause')}
-      />
-    {/if}
-    <IconButton
-      variant="ghost"
-      shape="round"
-      color="secondary"
-      icon={languageManager.rtl ? mdiChevronRight : mdiChevronLeft}
-      onclick={onPrevious}
-      aria-label={$t('previous')}
-    />
-    <IconButton
-      variant="ghost"
-      shape="round"
-      color="secondary"
-      icon={languageManager.rtl ? mdiChevronLeft : mdiChevronRight}
-      onclick={onNext}
-      aria-label={$t('next')}
-    />
-    <IconButton
-      variant="ghost"
-      shape="round"
-      color="secondary"
-      icon={mdiCog}
-      onclick={onShowSettings}
-      aria-label={$t('slideshow_settings')}
-    />
-    {#if !isFullScreen}
-      <IconButton
-        variant="ghost"
-        shape="round"
-        color="secondary"
-        icon={mdiFullscreen}
-        onclick={onSetToFullScreen}
-        aria-label={$t('set_slideshow_to_fullscreen')}
-      />
-    {/if}
   </div>
 {/if}
 
-{#if !isVideoSlide}
-  <ProgressBar
-    autoplay={$slideshowState === SlideshowState.PlaySlideshow}
-    hidden={!$showProgressBar}
-    duration={$slideshowDelay}
-    bind:this={progressBar}
-    bind:status={progressBarStatus}
-    onDone={handleDone}
-  />
-{/if}
+<style>
+  /* media-viewer.css:425-434: the canvas's top edge, which is the bottom of the 64px header. */
+  .slideshow-progress {
+    position: fixed;
+    top: calc(max(8px, env(safe-area-inset-top)) + 56px);
+    left: 0;
+    right: 0;
+    z-index: 3;
+    height: 3px;
+    background: var(--fl-viewer-border);
+    pointer-events: none;
+    transition: top var(--fl-motion) var(--fl-ease);
+  }
+  /* With the chrome tucked away the line runs along the top of the screen. */
+  .slideshow-progress.chrome-hidden {
+    top: 0;
+  }
+  .slideshow-progress :global(span) {
+    top: 0;
+    background: var(--fl-accent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .slideshow-progress {
+      transition: none;
+    }
+  }
+</style>

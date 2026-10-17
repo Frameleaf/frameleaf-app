@@ -1,0 +1,346 @@
+Subject: Preserve scoped media source guards through feature contracts
+
+Upstream Freecut remains MIT licensed. The immutable vendor snapshot is unchanged.
+
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/lottie-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/lottie-section.tsx
+--- a/src/features/editor/components/properties-sidebar/clip-panel/lottie-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/lottie-section.tsx
+@@ -37,10 +37,10 @@
+ } from '@/infrastructure/lottie/lottie-metadata'
+ import {
+   peekScopedMedia,
++  resolveMediaUrl,
+   scopedMediaEpoch,
+   subscribeScopedMedia,
+-} from '@/features/media-library/utils/scoped-media-resolution'
+-import { resolveMediaUrl } from '@/features/editor/deps/media-library'
++} from '@/features/editor/deps/media-library'
+ import { useGizmoStore } from '@/features/editor/deps/preview'
+ import { PropertySection, PropertyRow, NumberInput, ColorPicker } from '../components'
+ import { getMixedValue } from '../utils'
+diff --git a/src/features/editor/deps/media-library-contract.ts b/src/features/editor/deps/media-library-contract.ts
+--- a/src/features/editor/deps/media-library-contract.ts
++++ b/src/features/editor/deps/media-library-contract.ts
+@@ -24,3 +24,9 @@
+   import('@/features/media-library/components/embedded-subtitle-track-picker-host')
+ export const importSubtitleScanProgressDialog = () =>
+   import('@/features/media-library/components/subtitle-scan-progress-dialog')
++
++export {
++  peekScopedMedia,
++  scopedMediaEpoch,
++  subscribeScopedMedia,
++} from '@/features/media-library/utils/scoped-media-resolution'
+diff --git a/src/features/export/deps/media-library-contract.ts b/src/features/export/deps/media-library-contract.ts
+--- a/src/features/export/deps/media-library-contract.ts
++++ b/src/features/export/deps/media-library-contract.ts
+@@ -47,3 +47,10 @@
+ export function useBrokenMediaIds(): string[] {
+   return useMediaLibraryStore((state) => state.brokenMediaIds)
+ }
++
++export {
++  peekScopedMedia,
++  scopedMediaEpoch,
++  subscribeScopedMedia,
++  resolveScopedMedia,
++} from '@/features/media-library/utils/scoped-media-resolution'
+diff --git a/src/features/export/utils/canvas-audio.test.ts b/src/features/export/utils/canvas-audio.test.ts
+--- a/src/features/export/utils/canvas-audio.test.ts
++++ b/src/features/export/utils/canvas-audio.test.ts
+@@ -3,7 +3,7 @@
+ import type { CompositionInputProps } from '@/types/export'
+ import type { AudioItem, CompositionItem, TimelineTrack, VideoItem } from '@/types/timeline'
+ import type { Transition } from '@/types/transition'
+-import { useCompositionsStore } from '@/features/export/deps/timeline-compositions'
++import { useCompositionsStore, type SubComposition } from '@/features/export/deps/timeline-compositions'
+ import * as mediaLibrary from '@/features/export/deps/media-library'
+ import { usePlaybackStore } from '@/shared/state/playback'
+ 
+@@ -1940,7 +1940,7 @@
+  clearAudioDecodeCache()
+  const points=[{id:'start',frame:12,gainDb:-20},{id:'end',frame:60,gainDb:0}]
+  const leaf=makeAudioItem({id:'signed-leaf',trackId:'child-a',src:'blob:ramp',from:12,durationInFrames:48,sourceStart:0,sourceEnd:48,sourceFps:24,volume:-3,isReversed:leafReversed,audioFadeIn:0.4,audioFadeOut:0.7,audioFadeInCurve:0.6,audioFadeOutCurve:-0.7,audioFadeInCurveX:0.2,audioFadeOutCurveX:0.8})
+- const child:import('@/features/timeline/stores/compositions-store').SubComposition={id:'signed-child',name:'child',fps:24,width:1920,height:1080,durationInFrames:60,transitions:[],keyframes:[{itemId:leaf.id,properties:[{property:'volume',keyframes:[{id:'a',frame:0,value:-3,easing:'linear'},{id:'b',frame:48,value:-9,easing:'linear'}]}]}],items:[leaf],tracks:[{...makeTrack({id:'child-a',order:0,kind:'audio'}),gainEnvelope:points}]}
++ const child:SubComposition={id:'signed-child',name:'child',fps:24,width:1920,height:1080,durationInFrames:60,transitions:[],keyframes:[{itemId:leaf.id,properties:[{property:'volume',keyframes:[{id:'a',frame:0,value:-3,easing:'linear'},{id:'b',frame:48,value:-9,easing:'linear'}]}]}],items:[leaf],tracks:[{...makeTrack({id:'child-a',order:0,kind:'audio'}),gainEnvelope:points}]}
+  useCompositionsStore.setState({compositions:[child],compositionById:{[child.id]:child},mediaDependencyIds:[],mediaDependencyVersion:0})
+  const lower=clipped?20:12, upper=clipped?52:60, duration=(upper-lower)/0.8
+  const wrapper={id:'signed-wrapper',type:'composition',trackId:'parent',compositionId:child.id,from:30,durationInFrames:duration,sourceStart:lower,sourceEnd:upper,sourceFps:24,isReversed:true} as CompositionItem
+@@ -1974,9 +1974,9 @@
+ it.each([0,30])('0092 double reversed wrappers cancel media direction; independent original owner clocks agree in full/window at absolute origin %s',async(origin)=>{
+  clearAudioDecodeCache()
+  const leaf=makeAudioItem({id:'double-leaf',trackId:'leaf-a',src:'blob:packet-ramp',from:0,durationInFrames:60,sourceStart:1,sourceEnd:61,sourceFps:30,volume:-3,audioFadeIn:0.2,audioFadeOut:0.6,audioFadeInCurve:0.7,audioFadeOutCurve:-0.5})
+- const inner:import('@/features/timeline/stores/compositions-store').SubComposition={id:'inner',name:'inner',fps:30,width:1920,height:1080,durationInFrames:60,items:[leaf],tracks:[{...makeTrack({id:'leaf-a',order:0,kind:'audio'}),gainEnvelope:[{id:'l0',frame:0,gainDb:0},{id:'l1',frame:60,gainDb:-20}]}],transitions:[],keyframes:[]}
++ const inner:SubComposition={id:'inner',name:'inner',fps:30,width:1920,height:1080,durationInFrames:60,items:[leaf],tracks:[{...makeTrack({id:'leaf-a',order:0,kind:'audio'}),gainEnvelope:[{id:'l0',frame:0,gainDb:0},{id:'l1',frame:60,gainDb:-20}]}],transitions:[],keyframes:[]}
+  const nested={id:'nested-reverse',type:'composition',trackId:'middle-a',compositionId:'inner',from:0,durationInFrames:60,sourceStart:0,sourceEnd:60,sourceFps:30,isReversed:true} as CompositionItem
+- const middle:import('@/features/timeline/stores/compositions-store').SubComposition={id:'middle',name:'middle',fps:30,width:1920,height:1080,durationInFrames:60,items:[nested],tracks:[{...makeTrack({id:'middle-a',order:0,kind:'audio'}),gainEnvelope:[{id:'m0',frame:0,gainDb:0},{id:'m1',frame:60,gainDb:-12}]}],transitions:[],keyframes:[]}
++ const middle:SubComposition={id:'middle',name:'middle',fps:30,width:1920,height:1080,durationInFrames:60,items:[nested],tracks:[{...makeTrack({id:'middle-a',order:0,kind:'audio'}),gainEnvelope:[{id:'m0',frame:0,gainDb:0},{id:'m1',frame:60,gainDb:-12}]}],transitions:[],keyframes:[]}
+  useCompositionsStore.setState({compositions:[inner,middle],compositionById:{inner,middle},mediaDependencyIds:[],mediaDependencyVersion:0})
+  const wrapper={id:'outer',type:'composition',trackId:'root-a',compositionId:'middle',from:0,durationInFrames:60,sourceStart:0,sourceEnd:60,sourceFps:30,isReversed:true} as CompositionItem
+  const composition:CompositionInputProps={fps:30,durationInFrames:60,masterOriginFrame:origin,masterBusDb:-6,tracks:[makeTrack({id:'root-a',order:0,kind:'audio',items:[wrapper]})],transitions:[],keyframes:[]}
+@@ -1986,7 +1986,7 @@
+  for(const frame of [0,3,15,30,45,59]){const i=frame*1600;const fade=getAudioFadeMultiplier({frame,durationInFrames:60,fadeInFrames:6,fadeOutFrames:18,fadeInCurve:0.7,fadeOutCurve:-0.5});const db=-3-6-frame/3-(60-frame)/5;const expected=(1600+i)/1_000_000*fade*10**(db/20);expect(full!.samples[0]![i]).toBeCloseTo(expected,7);expect(windowPlane[i]).toBeCloseTo(expected,7)}
+ })
+ it('0092 reversed wrapper reuses original ownership and exclusive leaf media upper bound without rewriting definitions or mute routing',async()=>{
+- const child:import('@/features/timeline/stores/compositions-store').SubComposition={id:'upper-child',name:'upper',fps:30,width:1920,height:1080,durationInFrames:60,transitions:[],keyframes:[],items:[makeAudioItem({id:'upper-leaf',trackId:'child-a',src:'blob:packet-ramp',from:12,durationInFrames:48,sourceStart:10,sourceEnd:70,sourceFps:30,isReversed:true,audioDucking:{targetTrackIds:['root-a'],duckOthersDb:-12}})],tracks:[{...makeTrack({id:'child-a',order:0,kind:'audio'}),gainEnvelope:[{id:'gain',frame:0,gainDb:-6}]}]}
++ const child:SubComposition={id:'upper-child',name:'upper',fps:30,width:1920,height:1080,durationInFrames:60,transitions:[],keyframes:[],items:[makeAudioItem({id:'upper-leaf',trackId:'child-a',src:'blob:packet-ramp',from:12,durationInFrames:48,sourceStart:10,sourceEnd:70,sourceFps:30,isReversed:true,audioDucking:{targetTrackIds:['root-a'],duckOthersDb:-12}})],tracks:[{...makeTrack({id:'child-a',order:0,kind:'audio'}),gainEnvelope:[{id:'gain',frame:0,gainDb:-6}]}]}
+  useCompositionsStore.setState({compositions:[child],compositionById:{[child.id]:child},mediaDependencyIds:[],mediaDependencyVersion:0})
+  const wrapper={id:'upper-w',type:'composition',trackId:'root-a',compositionId:child.id,from:30,durationInFrames:24,sourceStart:20,sourceEnd:44,sourceFps:30,isReversed:true} as CompositionItem
+  const comp:CompositionInputProps={fps:30,durationInFrames:150,tracks:[makeTrack({id:'root-a',order:0,kind:'audio',items:[wrapper,{...wrapper,id:'reuse',from:90}]})],transitions:[],keyframes:[]}
+@@ -2000,7 +2000,7 @@
+ 
+ it.each([1,2,6,8])('0092 normal-speed reversed wrapper preserves %s authored PCM planes and uniform track/master stages',async(channels)=>{
+  clearAudioDecodeCache()
+- const child:import('@/features/timeline/stores/compositions-store').SubComposition={id:'layout',name:'layout',fps:30,width:1920,height:1080,durationInFrames:24,transitions:[],keyframes:[],items:[makeAudioItem({id:'layout-leaf',trackId:'child-a',src:`blob:ramp-planes-${channels}`,from:0,durationInFrames:24,sourceStart:0,sourceEnd:24,sourceFps:30})],tracks:[{...makeTrack({id:'child-a',order:0,kind:'audio'}),gainEnvelope:[{id:'p',frame:0,gainDb:-6}]}]}
++ const child:SubComposition={id:'layout',name:'layout',fps:30,width:1920,height:1080,durationInFrames:24,transitions:[],keyframes:[],items:[makeAudioItem({id:'layout-leaf',trackId:'child-a',src:`blob:ramp-planes-${channels}`,from:0,durationInFrames:24,sourceStart:0,sourceEnd:24,sourceFps:30})],tracks:[{...makeTrack({id:'child-a',order:0,kind:'audio'}),gainEnvelope:[{id:'p',frame:0,gainDb:-6}]}]}
+  useCompositionsStore.setState({compositions:[child],compositionById:{layout:child},mediaDependencyIds:[],mediaDependencyVersion:0})
+  const wrapper={id:'layout-wrapper',type:'audio',src:'',compositionId:child.id,trackId:'root-a',from:0,durationInFrames:24,sourceStart:0,sourceEnd:24,sourceFps:30,isReversed:true} as AudioItem&{compositionId:string}
+  const composition:CompositionInputProps={fps:30,durationInFrames:24,masterBusDb:-3,tracks:[makeTrack({id:'root-a',order:0,kind:'audio',items:[wrapper]})],transitions:[],keyframes:[]}
+@@ -2010,7 +2010,7 @@
+ })
+ it('0092 nested reversed speed2 uses actual full PCM stretch and original owner gain; window predicate stays closed',async()=>{
+  clearAudioDecodeCache()
+- const child:import('@/features/timeline/stores/compositions-store').SubComposition={id:'speed-child',name:'speed',fps:30,width:1920,height:1080,durationInFrames:180,transitions:[],keyframes:[],items:[makeAudioItem({id:'speed-leaf',trackId:'child-a',src:'blob:ramp',from:0,durationInFrames:180,sourceStart:0,sourceEnd:180,sourceFps:30})],tracks:[makeTrack({id:'child-a',order:0,kind:'audio'})]}
++ const child:SubComposition={id:'speed-child',name:'speed',fps:30,width:1920,height:1080,durationInFrames:180,transitions:[],keyframes:[],items:[makeAudioItem({id:'speed-leaf',trackId:'child-a',src:'blob:ramp',from:0,durationInFrames:180,sourceStart:0,sourceEnd:180,sourceFps:30})],tracks:[makeTrack({id:'child-a',order:0,kind:'audio'})]}
+  useCompositionsStore.setState({compositions:[child],compositionById:{[child.id]:child},mediaDependencyIds:[],mediaDependencyVersion:0})
+  const wrapper={id:'speed-wrapper',type:'composition',trackId:'root-a',compositionId:child.id,from:0,durationInFrames:90,sourceStart:0,sourceEnd:180,sourceFps:30,speed:2,isReversed:true} as CompositionItem
+  const comp:CompositionInputProps={fps:30,durationInFrames:90,tracks:[makeTrack({id:'root-a',order:0,kind:'audio',items:[wrapper]})],transitions:[],keyframes:[]}
+@@ -2024,9 +2024,9 @@
+ })
+ it('0092 nested omitted sourceFps uses each original child definition cadence instead of inheriting root cadence',()=>{
+  const leaf=makeAudioItem({id:'default-fps-leaf',trackId:'leaf-a',from:0,durationInFrames:48,sourceStart:0,sourceEnd:48,src:'blob:ramp'})
+- const inner:import('@/features/timeline/stores/compositions-store').SubComposition={id:'fps-inner',name:'inner',fps:24,width:1920,height:1080,durationInFrames:48,items:[leaf],tracks:[makeTrack({id:'leaf-a',order:0,kind:'audio'})],transitions:[],keyframes:[]}
++ const inner:SubComposition={id:'fps-inner',name:'inner',fps:24,width:1920,height:1080,durationInFrames:48,items:[leaf],tracks:[makeTrack({id:'leaf-a',order:0,kind:'audio'})],transitions:[],keyframes:[]}
+  const nested={id:'fps-nested',type:'composition',trackId:'middle-a',compositionId:inner.id,from:0,durationInFrames:60,sourceStart:0,sourceEnd:48,isReversed:true} as CompositionItem
+- const middle:import('@/features/timeline/stores/compositions-store').SubComposition={id:'fps-middle',name:'middle',fps:30,width:1920,height:1080,durationInFrames:60,items:[nested],tracks:[makeTrack({id:'middle-a',order:0,kind:'audio'})],transitions:[],keyframes:[]}
++ const middle:SubComposition={id:'fps-middle',name:'middle',fps:30,width:1920,height:1080,durationInFrames:60,items:[nested],tracks:[makeTrack({id:'middle-a',order:0,kind:'audio'})],transitions:[],keyframes:[]}
+  useCompositionsStore.setState({compositions:[inner,middle],compositionById:{[inner.id]:inner,[middle.id]:middle},mediaDependencyIds:[],mediaDependencyVersion:0})
+  const wrapper={id:'fps-outer',type:'composition',trackId:'root-a',compositionId:middle.id,from:30,durationInFrames:60,sourceStart:0,sourceEnd:60,isReversed:true} as CompositionItem
+  const comp:CompositionInputProps={fps:30,durationInFrames:90,tracks:[makeTrack({id:'root-a',order:0,kind:'audio',items:[wrapper]})],transitions:[],keyframes:[]}
+diff --git a/src/features/export/utils/client-render-engine.ts b/src/features/export/utils/client-render-engine.ts
+--- a/src/features/export/utils/client-render-engine.ts
++++ b/src/features/export/utils/client-render-engine.ts
+@@ -27,7 +27,6 @@
+   isRenderableLottieSrc,
+ } from '@/infrastructure/lottie/lottie-frame-provider'
+ import { resolveLottieRenderSpec } from '@/infrastructure/lottie/lottie-text'
+-import { resolveScopedMedia, scopedMediaEpoch, subscribeScopedMedia, peekScopedMedia } from '@/features/media-library/utils/scoped-media-resolution'
+ import type { ItemKeyframes } from '@/types/keyframe'
+ import type { ItemEffect } from '@/types/effects'
+ import type { ResolvedTransform } from '@/types/transform'
+@@ -35,6 +34,10 @@
+ import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
+ import {
+   getMediaMetadataById,
++  resolveScopedMedia,
++  scopedMediaEpoch,
++  subscribeScopedMedia,
++  peekScopedMedia,
+   resolveMediaUrl,
+   resolveProxyUrl,
+ } from '@/features/export/deps/media-library'
+@@ -1133,7 +1136,7 @@
+     checkLottieSource(sourceEpoch)
+     const item = liveLottieItem(baseItem)
+     const signature = lottieOverrideSignature(item)
+-    const checkCurrent = (src?: string) => {
++    const checkCurrent = (src: string | null) => {
+       checkLottieSource(sourceEpoch)
+       if (item.mediaId) {
+         const scoped = peekScopedMedia(item.mediaId, true)
+diff --git a/src/features/preview/deps/media-library-contract.ts b/src/features/preview/deps/media-library-contract.ts
+--- a/src/features/preview/deps/media-library-contract.ts
++++ b/src/features/preview/deps/media-library-contract.ts
+@@ -21,3 +21,9 @@
+   getMediaDragData,
+   clearMediaDragData,
+ } from '@/features/media-library/utils/drag-data-cache'
++
++export {
++  peekScopedMedia,
++  scopedMediaEpoch,
++  subscribeScopedMedia,
++} from '@/features/media-library/utils/scoped-media-resolution'
+diff --git a/src/features/preview/hooks/use-preview-media-resolution.ts b/src/features/preview/hooks/use-preview-media-resolution.ts
+--- a/src/features/preview/hooks/use-preview-media-resolution.ts
++++ b/src/features/preview/hooks/use-preview-media-resolution.ts
+@@ -7,14 +7,15 @@
+   type MutableRefObject,
+ } from 'react'
+ import {
++  proxyService,
++  useMediaLibraryStore,
+   scopedMediaEpoch,
+   subscribeScopedMedia,
+   peekScopedMedia,
+-} from '@/features/media-library/utils/scoped-media-resolution'
++} from '@/features/preview/deps/media-library'
+ import { usePlaybackStore } from '@/shared/state/playback'
+ import { useMediaDependencyStore } from '@/features/preview/deps/timeline-store'
+ import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
+-import { proxyService, useMediaLibraryStore } from '@/features/preview/deps/media-library'
+ import { createLogger } from '@/shared/logging/logger'
+ import { resolveMediaUrl } from '../utils/media-resolver'
+ import { getPreviewRuntimeSnapshotFromPlaybackState } from '../utils/preview-state-coordinator'
+diff --git a/src/test/scoped-media-contract.test.ts b/src/test/scoped-media-contract.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/test/scoped-media-contract.test.ts
+@@ -0,0 +1,157 @@
++import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
++import * as editorMedia from '@/features/editor/deps/media-library'
++import * as exportMedia from '@/features/export/deps/media-library'
++import * as previewMedia from '@/features/preview/deps/media-library'
++import * as scopedMedia from '@/features/media-library/utils/scoped-media-resolution'
++import { createCompositionRenderer } from '@/features/export/utils/client-render-engine'
++import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
++import type { LottieItem } from '@/types/timeline'
++
++describe('consumer media contracts preserve scoped authority', () => {
++  it.each([editorMedia, exportMedia, previewMedia])(
++    'shares the installed resolver and hides scope mutation',
++    (contract) => {
++      for (const name of ['peekScopedMedia', 'scopedMediaEpoch', 'subscribeScopedMedia'] as const)
++        expect(contract).toHaveProperty(name, scopedMedia[name])
++      expect(contract).not.toHaveProperty('installScopedMediaResolver')
++      expect(contract).not.toHaveProperty('notifyScopedMedia')
++    },
++  )
++  it('exports resolution only to the renderer that needs it', () => {
++    expect(exportMedia).toHaveProperty('resolveScopedMedia', scopedMedia.resolveScopedMedia)
++    expect(editorMedia).not.toHaveProperty('resolveScopedMedia')
++    expect(previewMedia).not.toHaveProperty('resolveScopedMedia')
++  })
++})
++
++const source = vi.hoisted(() => ({ resolve: vi.fn<() => Promise<string>>() }))
++vi.mock('@/features/media-library/utils/media-resolver', async (importOriginal) => ({
++  ...(await importOriginal<typeof import('@/features/media-library/utils/media-resolver')>()),
++  resolveMediaUrl: source.resolve,
++}))
++
++const item: LottieItem = {
++  id: 'lottie',
++  type: 'lottie',
++  trackId: 'track',
++  from: 0,
++  durationInFrames: 24,
++  label: 'Lottie',
++  mediaId: 'missing',
++  src: '',
++  frameRate: 24,
++  totalFrames: 24,
++}
++const rendererFor = async (src = '') => {
++  const canvas = new OffscreenCanvas(1, 1)
++  const ctx = canvas.getContext('2d')
++  if (!ctx) throw new Error('Missing test canvas context')
++  return createCompositionRenderer(
++    {
++      width: 1,
++      height: 1,
++      fps: 24,
++      durationInFrames: 24,
++      tracks: [
++        {
++          id: 'track',
++          name: 'track',
++          order: 0,
++          height: 64,
++          locked: false,
++          visible: true,
++          muted: false,
++          solo: false,
++          items: [{ ...item, src }],
++        },
++      ],
++    },
++    canvas,
++    ctx,
++    { strictLottie: true },
++  )
++}
++
++afterEach(() => {
++  vi.restoreAllMocks()
++  vi.unstubAllGlobals()
++  source.resolve.mockReset()
++})
++const setup = () => {
++  vi.stubGlobal(
++    'OffscreenCanvas',
++    class {
++      constructor(
++        public width: number,
++        public height: number,
++      ) {}
++      getContext() {
++        return { canvas: this, clearRect: vi.fn() }
++      }
++    },
++  )
++  vi.stubGlobal('fetch', vi.fn())
++}
++
++describe('renderer nullable Lottie source guards', () => {
++  it('skips unavailable unscoped media without fetching or loading Lottie', async () => {
++    setup()
++    source.resolve.mockResolvedValue('')
++    const renderer = await rendererFor()
++    try {
++      await expect(renderer.preload()).resolves.toBeUndefined()
++      expect(source.resolve).toHaveBeenCalledTimes(1)
++      expect(fetch).not.toHaveBeenCalled()
++    } finally {
++      renderer.dispose()
++    }
++  })
++  it('refuses installed handled-empty scope before stale source or blob fallback', async () => {
++    setup()
++    const blob = vi.spyOn(blobUrlManager, 'get').mockReturnValue('blob:stale-cache')
++    const uninstall = scopedMedia.installScopedMediaResolver({
++      peek: () => ({ handled: true, url: '' }),
++      resolve: async () => ({ handled: true, url: '' }),
++    })
++    const renderer = await rendererFor('blob:stale-item')
++    try {
++      await expect(renderer.preload()).rejects.toThrow('LOTTIE_LOAD_OR_EDIT_FAILED')
++      expect(blob).not.toHaveBeenCalled()
++      expect(source.resolve).not.toHaveBeenCalled()
++      expect(fetch).not.toHaveBeenCalled()
++    } finally {
++      renderer.dispose()
++      uninstall()
++    }
++  })
++  it.each(['epoch', 'cancel'] as const)(
++    'checks %s before returning an awaited null source',
++    async (change) => {
++      setup()
++      let finish!: (value: string) => void, started!: () => void
++      const waiting = new Promise<void>((resolve) => {
++        started = resolve
++      })
++      source.resolve.mockImplementation(() => {
++        started()
++        return new Promise<string>((resolve) => {
++          finish = resolve
++        })
++      })
++      const renderer = await rendererFor(),
++        controller = new AbortController()
++      try {
++        const pending = renderer.preload({ signal: controller.signal })
++        const rejected = expect(pending).rejects.toThrow()
++        await waiting
++        if (change === 'epoch') scopedMedia.notifyScopedMedia()
++        else controller.abort()
++        finish('')
++        await rejected
++        expect(fetch).not.toHaveBeenCalled()
++      } finally {
++        renderer.dispose()
++      }
++    },
++  )
++})

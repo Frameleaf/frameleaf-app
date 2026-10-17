@@ -17,8 +17,9 @@ import {
   ValidateAccessTokenResponseDto,
 } from 'src/dtos/auth.dto.js';
 import { UserAdminResponseDto } from 'src/dtos/user.dto.js';
-import { ApiTag, AuthType, ImmichCookie, Permission } from 'src/enum.js';
-import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
+import { ApiTag, AuthCookie, AuthType, Permission } from 'src/enum.js';
+import { Auth, Authenticated, GetLoginDetails, RemoteSignInExempt } from 'src/middleware/auth.guard.js';
+import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { AuthService, type LoginDetails } from 'src/services/auth.service.js';
 import { respondWithCookie, respondWithoutCookie } from 'src/utils/response.js';
 
@@ -34,6 +35,7 @@ export class AuthController {
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   @Authenticated({ public: true })
+  @RateLimited(RATE_LIMITS.login)
   async login(
     @Res({ passthrough: true }) res: Response,
     @Body() loginCredential: LoginCredentialDto,
@@ -42,10 +44,11 @@ export class AuthController {
     const body = await this.service.login(loginCredential, loginDetails);
     return respondWithCookie(res, body, {
       isSecure: loginDetails.isSecure,
+      rememberMe: loginCredential.rememberMe,
       values: [
-        { key: ImmichCookie.AccessToken, value: body.accessToken },
-        { key: ImmichCookie.AuthType, value: AuthType.Password },
-        { key: ImmichCookie.IsAuthenticated, value: 'true' },
+        { key: AuthCookie.AccessToken, value: body.accessToken },
+        { key: AuthCookie.AuthType, value: AuthType.Password },
+        { key: AuthCookie.IsAuthenticated, value: 'true' },
       ],
     });
   }
@@ -57,8 +60,9 @@ export class AuthController {
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   @Authenticated({ public: true, setup: true })
-  signUpAdmin(@Body() dto: SignUpDto): Promise<UserAdminResponseDto> {
-    return this.service.adminSignUp(dto);
+  @RateLimited(RATE_LIMITS.frameleafSetup)
+  signUpAdmin(@Body() dto: SignUpDto, @GetLoginDetails() details: LoginDetails): Promise<UserAdminResponseDto> {
+    return this.service.adminSignUp(dto, { ip: details.clientIp, via: details.via ?? null });
   }
 
   @Post('validateToken')
@@ -87,6 +91,8 @@ export class AuthController {
 
   @Post('logout')
   @Authenticated()
+  // FL-161: a session that is not a Frameleaf sign-in can still sign out through remote access
+  @RemoteSignInExempt()
   @HttpCode(HttpStatus.OK)
   @Endpoint({
     summary: 'Logout',
@@ -98,18 +104,15 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
     @Auth() auth: AuthDto,
   ): Promise<LogoutResponseDto> {
-    const authType = (request.cookies || {})[ImmichCookie.AuthType];
+    const authType = (request.cookies || {})[AuthCookie.AuthType];
 
     const body = await this.service.logout(auth, authType);
-    return respondWithoutCookie(res, body, [
-      ImmichCookie.AccessToken,
-      ImmichCookie.AuthType,
-      ImmichCookie.IsAuthenticated,
-    ]);
+    return respondWithoutCookie(res, body, [AuthCookie.AccessToken, AuthCookie.AuthType, AuthCookie.IsAuthenticated]);
   }
 
   @Get('status')
-  @Authenticated()
+  // FL-34: reporting the session's state is not activity; it never extends an unlocked session
+  @Authenticated({ refreshElevation: false })
   @Endpoint({
     summary: 'Retrieve auth status',
     description:
@@ -133,6 +136,7 @@ export class AuthController {
   }
 
   @Put('pin-code')
+  @RateLimited(RATE_LIMITS.login)
   @Authenticated({ permission: Permission.PinCodeUpdate })
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({
@@ -145,6 +149,7 @@ export class AuthController {
   }
 
   @Delete('pin-code')
+  @RateLimited(RATE_LIMITS.login)
   @Authenticated({ permission: Permission.PinCodeDelete })
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({

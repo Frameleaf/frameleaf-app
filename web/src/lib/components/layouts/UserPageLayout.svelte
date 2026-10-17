@@ -10,8 +10,8 @@
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import type { HeaderButtonActionItem } from '$lib/types';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
-  import { Button, ContextMenuButton, HStack, isMenuItemType, type MenuItemType } from '@immich/ui';
-  import type { Snippet } from 'svelte';
+  import { Button, ContextMenuButton, HStack, isMenuItemType, type MenuItemType } from '@frameleaf/ui';
+  import { onDestroy, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -22,6 +22,17 @@
     use?: ActionArray;
     actions?: Array<HeaderButtonActionItem | MenuItemType>;
     sidebar?: Snippet;
+    /**
+     * Show the library rail. Studio has none, as in the prototype, where the rail belongs to the
+     * library workspace and the Studio screen gives the whole width to its own work.
+     */
+    rail?: boolean;
+    /**
+     * A full-height workspace (Studio, Photography) fills the page body edge to edge: no inset,
+     * and the body is a flex column that does not scroll, so the child sets `flex: 1` and scrolls
+     * its own panes. The phone tab bar's space is still kept clear.
+     */
+    fill?: boolean;
     buttons?: Snippet;
     children?: Snippet;
   }
@@ -34,6 +45,8 @@
     use = [],
     actions = [],
     sidebar,
+    rail = true,
+    fill = false,
     buttons,
     children,
   }: Props = $props();
@@ -46,11 +59,18 @@
 
   let scrollbarClass = $derived(scrollbar ? 'immich-scrollbar' : 'scrollbar-hidden');
   let hasTitleClass = $derived(title ? 'top-16 h-[calc(100%-(--spacing(16)))]' : 'top-0 h-full');
+  // Everything below the Frameleaf top bar (FL-30), which is 56px, or two rows on phones.
+  const heightClass = $derived(
+    hideNavbar
+      ? 'h-dvh'
+      : 'h-[calc(100dvh-var(--fl-topbar-height))] max-md:h-[calc(100dvh-var(--fl-topbar-height-phone))]',
+  );
 
   const MIN_SIDEBAR_WIDTH = 200;
   const MAX_SIDEBAR_WIDTH = 500;
-  // Collapsed rail width must fit a single icon (ps-5 padding + ~1.375em icon).
-  const COLLAPSED_WIDTH = '4.5rem';
+  // `.sidebar.rail-collapsed` (styles.css:1703): 60px. The icon-only rows centre their icon
+  // (LibraryRail `.fl-icon-only .fl-link`), so no start padding has to fit.
+  const COLLAPSED_WIDTH = '3.75rem';
   const clampWidth = (value: number) => Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, value));
   // Clamp the persisted value too: a stale/edited localStorage entry could be out of range.
   const effectiveWidth = $derived(clampWidth($sidebarWidth));
@@ -66,12 +86,16 @@
     $sidebarWidth = Math.round(clampWidth(clientX - left));
   };
 
+  let stopResize: (() => void) | undefined;
+  onDestroy(() => stopResize?.());
+
   const startResize = (event: PointerEvent) => {
+    stopResize?.();
     event.preventDefault();
     sidebarStore.isResizing = true;
     const controller = new AbortController();
     const { signal } = controller;
-    const stopResize = () => {
+    stopResize = () => {
       sidebarStore.isResizing = false;
       controller.abort();
     };
@@ -93,26 +117,32 @@
 
 <header>
   {#if !hideNavbar}
-    <NavigationBar onUploadClick={() => openFileUploadDialog()} />
+    <NavigationBar onUploadClick={() => openFileUploadDialog()} hasRail={rail} />
   {/if}
 </header>
 <div
   bind:this={container}
   tabindex="-1"
   style="--sidebar-width: {railWidth}"
-  class="relative z-0 grid grid-cols-[--spacing(0)_auto] overflow-hidden sidebar:grid-cols-[var(--sidebar-width)_auto]
-    {sidebarStore.isResizing ? '' : 'transition-[grid-template-columns] duration-200'}
-    {hideNavbar ? 'h-dvh' : 'h-[calc(100dvh-var(--navbar-height))] max-md:h-[calc(100dvh-var(--navbar-height-md))]'}
+  class="relative z-0 grid overflow-hidden
+    {rail ? 'grid-cols-[--spacing(0)_auto] sidebar:grid-cols-[var(--sidebar-width)_auto]' : 'grid-cols-1'}
+    {sidebarStore.isResizing
+    ? ''
+    : 'transition-[grid-template-columns] duration-(--fl-duration) ease-(--fl-snappy) motion-reduce:transition-none'}
+    {heightClass}
     {hideNavbar ? 'pt-(--navbar-height)' : ''}
     {hideNavbar ? 'max-md:pt-(--navbar-height-md)' : ''}"
 >
-  {#if sidebar}
-    {@render sidebar()}
-  {:else}
-    <UserSidebar />
+  <!-- Without the rail the grid has one column and the content takes the whole width. -->
+  {#if rail}
+    {#if sidebar}
+      {@render sidebar()}
+    {:else}
+      <UserSidebar />
+    {/if}
   {/if}
 
-  {#if !$sidebarCollapsed}
+  {#if rail && !$sidebarCollapsed}
     <!-- Drag handle to resize the sidebar; sits on the sidebar/content boundary (desktop only). -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
     <div
@@ -131,18 +161,35 @@
   {/if}
 
   <main class="relative">
-    <div class="{scrollbarClass} absolute {hasTitleClass} w-full overflow-y-auto p-2" use:useActions={use}>
+    <!-- On phones the frosted tab bar floats over the foot of the page (TabBar.svelte). -->
+    <!--
+      `fl-scope` (tokens.css, base.css): the Frameleaf baseline classes and primitives work in page
+      content without a local wrapper, and no element already on these pages is restyled.
+    -->
+    <div
+      class="fl-scope absolute {hasTitleClass} w-full {fill
+        ? 'flex flex-col overflow-hidden'
+        : `${scrollbarClass} overflow-y-auto p-2`}"
+      style:padding-bottom={fill ? 'var(--fl-tabbar-space, 0px)' : 'max(0.5rem, var(--fl-tabbar-space, 0px))'}
+      data-fill={fill || undefined}
+      use:useActions={use}
+    >
       {@render children?.()}
     </div>
 
     {#if title || buttons}
-      <div class="absolute flex h-16 w-full place-items-center justify-between border-b p-2 text-dark">
-        <div class="flex items-center gap-2">
+      <!--
+        The prototype's one-row collection header (styles.css `.collection-header`, `h1 small`): the
+        title with its note beside it, the page's controls at the end. A page that draws its own
+        heading passes no `title`, so the name is on screen once.
+      -->
+      <div class="fl-page-header absolute flex h-16 w-full items-center justify-between gap-3 px-4 md:px-6">
+        <div class="fl-page-heading">
           {#if title}
-            <div class="pe-8 outline-none" tabindex="-1" id={headerId}>{title}</div>
+            <div class="fl-page-title outline-none" tabindex="-1" id={headerId}>{title}</div>
           {/if}
           {#if description}
-            <p class="text-sm text-gray-400 dark:text-gray-600">{description}</p>
+            <p class="fl-page-note">{description}</p>
           {/if}
         </div>
 
@@ -172,3 +219,38 @@
     {/if}
   </main>
 </div>
+
+<style>
+  .fl-page-header {
+    border-bottom: 1px solid var(--fl-border);
+    color: var(--fl-text);
+  }
+  .fl-page-heading {
+    display: flex;
+    /* A note that does not fit beside the title goes under it; the 64px bar holds both lines. */
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 var(--fl-space-4);
+    min-width: 0;
+  }
+  .fl-page-title,
+  .fl-page-note {
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .fl-page-title {
+    flex: none;
+    font-size: var(--fl-font-title);
+    font-weight: 600;
+    letter-spacing: -0.5px;
+    line-height: 1.3;
+  }
+  .fl-page-note {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--fl-font-small);
+    color: var(--fl-muted);
+  }
+</style>

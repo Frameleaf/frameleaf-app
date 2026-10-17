@@ -3,7 +3,7 @@ import { VersionService } from 'src/services/version.service.js';
 
 @Command({
   name: 'version',
-  description: 'Print Immich version',
+  description: 'Print Frameleaf version',
 })
 export class VersionCommand extends CommandRunner {
   constructor(private service: VersionService) {

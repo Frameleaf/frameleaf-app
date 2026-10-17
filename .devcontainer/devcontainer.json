@@ -1,12 +1,11 @@
 {
   "name": "Immich - Backend, Frontend and ML",
-  "service": "immich-server",
+  "service": "frameleaf-server",
   "runServices": [
     "immich-init",
-    "immich-server",
-    "redis",
+    "frameleaf-server",
     "database",
-    "immich-machine-learning"
+    "frameleaf-machine-learning"
   ],
   "dockerComposeFile": [
     "../docker/docker-compose.dev.yml",
@@ -35,7 +34,7 @@
             {
               "label": "Immich API Server (Nest)",
               "type": "shell",
-              "command": "[ -f /immich-devcontainer/container-start-backend.sh ] && /immich-devcontainer/container-start-backend.sh || exit 0",
+              "command": "if [ -f /immich-devcontainer/container-start-backend.sh ]; then exec /immich-devcontainer/container-start-backend.sh; fi",
               "isBackground": true,
               "presentation": {
                 "echo": true,
@@ -55,7 +54,7 @@
             {
               "label": "Immich Web Server (Vite)",
               "type": "shell",
-              "command": "[ -f /immich-devcontainer/container-start-frontend.sh ] && /immich-devcontainer/container-start-frontend.sh || exit 0",
+              "command": "if [ -f /immich-devcontainer/container-start-frontend.sh ]; then exec /immich-devcontainer/container-start-frontend.sh; fi",
               "isBackground": true,
               "presentation": {
                 "echo": true,
@@ -75,7 +74,7 @@
             {
               "label": "Build Immich CLI",
               "type": "shell",
-              "command": "pnpm --filter @immich/cli build:dev"
+              "command": "pnpm --filter @frameleaf/cli build:dev"
             }
           ]
         }
@@ -121,6 +120,6 @@
     //  The database username
     "DB_USERNAME": "${localEnv:DB_USERNAME:postgres}",
     //  The database name
-    "DB_DATABASE_NAME": "${localEnv:DB_DATABASE_NAME:immich}"
+    "DB_DATABASE_NAME": "${localEnv:DB_DATABASE_NAME:frameleaf}"
   }
 }

@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { UserAvatarColor, UserStatus, type UserAdminResponseDto } from '@immich/sdk';
+import { UserAvatarColor, UserStatus, type UserAdminResponseDto, type UserLicense } from '@frameleaf/sdk';
 import { Sync } from 'factory.ts';
 
 export const userAdminFactory = Sync.makeFactory<UserAdminResponseDto>({
@@ -20,8 +20,8 @@ export const userAdminFactory = Sync.makeFactory<UserAdminResponseDto>({
   status: UserStatus.Active,
   storageLabel: null,
   license: {
-    licenseKey: 'IMCL-license-key',
-    activationKey: 'activation-key',
+    kind: 'individual' as UserLicense['kind'],
+    keyHint: 'KEY1',
     activatedAt: new Date().toISOString(),
   },
   profileChangedAt: Sync.each(() => faker.date.recent().toISOString()),

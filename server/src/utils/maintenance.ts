@@ -6,13 +6,23 @@ import { MaintenanceAuthDto, MaintenanceDetectInstallResponseDto } from 'src/dto
 import { StorageFolder } from 'src/enum.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 
+/**
+ * The maintenance login address. FL-190: without a public address (`baseUrl` undefined) it is a path
+ * to open on the server's own address, never another project's host.
+ */
 export async function createMaintenanceLoginUrl(
-  baseUrl: string,
+  baseUrl: string | undefined,
   auth: MaintenanceAuthDto,
   secret: string,
 ): Promise<string> {
-  return `${baseUrl}/maintenance?token=${await signMaintenanceJwt(secret, auth)}`;
+  return `${baseUrl ?? ''}/maintenance?token=${await signMaintenanceJwt(secret, auth)}`;
 }
+
+/** How to use a maintenance login address: a full URL, or a path to open on the server's address. */
+export const maintenanceLoginHint = (url: string) =>
+  url.startsWith('/')
+    ? 'Log in by opening this path on your server (no external domain is set)'
+    : 'Log in using the following URL';
 
 export async function signMaintenanceJwt(secret: string, data: MaintenanceAuthDto): Promise<string> {
   const alg = 'HS256';
@@ -36,7 +46,8 @@ export async function detectPriorInstall(
       Object.values(StorageFolder).map(async (folder) => {
         const path = StorageCore.getBaseFolder(folder);
         const files = await storageRepository.readdir(path);
-        const filename = join(StorageCore.getBaseFolder(folder), '.immich');
+        const marker = files.includes('.frameleaf') ? '.frameleaf' : '.immich';
+        const filename = join(path, marker);
 
         let isReadable = false,
           isWritable = false;
@@ -55,7 +66,7 @@ export async function detectPriorInstall(
           folder,
           readable: isReadable,
           writable: isWritable,
-          files: files.filter((fn) => fn !== '.immich').length,
+          files: files.filter((fn) => fn !== '.frameleaf' && fn !== '.immich').length,
         };
       }),
     ),

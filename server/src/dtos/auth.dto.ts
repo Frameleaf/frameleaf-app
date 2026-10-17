@@ -2,19 +2,22 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { AuthApiKey, AuthSession, AuthSharedLink, AuthUser, UserAdmin } from 'src/database.js';
-import { ImmichCookie, UserMetadataKey } from 'src/enum.js';
+import { AuthCookie, UserMetadataKey } from 'src/enum.js';
 import { UserMetadataItem } from 'src/types.js';
 import { toEmail } from 'src/validation.js';
 
 export type CookieResponse = {
   isSecure: boolean;
-  values: Array<{ key: ImmichCookie; value: string | null }>;
+  rememberMe?: boolean;
+  values: Array<{ key: AuthCookie; value: string | null }>;
 };
 
 export const pinCodeRegex = /^\d{6}$/;
 
 export type AuthDto = {
   user: AuthUser;
+  /** Internal durable worker authority; never populated from a request. */
+  system?: true;
   apiKey?: AuthApiKey;
   sharedLink?: AuthSharedLink;
   session?: AuthSession;
@@ -27,6 +30,10 @@ const LoginCredentialSchema = z
   .object({
     email: toEmail.describe('User email').meta({ example: 'testuser@email.com' }),
     password: z.string().describe('User password').meta({ example: 'password' }),
+    rememberMe: z
+      .boolean()
+      .optional()
+      .describe('Persist authentication cookies across browser sessions (default true)'),
   })
   .meta({ id: 'LoginCredentialDto' });
 
@@ -67,9 +74,11 @@ const LogoutResponseSchema = z
   })
   .meta({ id: 'LogoutResponseDto' });
 
-const SignUpSchema = LoginCredentialSchema.extend({
-  name: z.string().describe('User name').meta({ example: 'Admin' }),
-}).meta({ id: 'SignUpDto' });
+const SignUpSchema = LoginCredentialSchema.omit({ rememberMe: true })
+  .extend({
+    name: z.string().describe('User name').meta({ example: 'Admin' }),
+  })
+  .meta({ id: 'SignUpDto' });
 
 const ChangePasswordSchema = z
   .object({
@@ -106,9 +115,13 @@ const ValidateAccessTokenResponseSchema = z
   })
   .meta({ id: 'ValidateAccessTokenResponseDto' });
 
-const OAuthCallbackSchema = z
+export const OAuthCallbackSchema = z
   .object({
     url: z.string().min(1).describe('OAuth callback URL'),
+    rememberMe: z
+      .boolean()
+      .optional()
+      .describe('Persist authentication cookies across browser sessions (default true)'),
     state: z.string().optional().describe('OAuth state parameter'),
     codeVerifier: z.string().optional().describe('OAuth code verifier (PKCE)'),
   })

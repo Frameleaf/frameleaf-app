@@ -1,4 +1,4 @@
-import { getMyUser, Permission } from '@immich/sdk';
+import { getMyUser, Permission } from '@frameleaf/sdk';
 import { existsSync } from 'node:fs';
 import { mkdir, unlink } from 'node:fs/promises';
 import {
@@ -27,14 +27,7 @@ export const login = async (url: string, key: string, options: BaseOptions) => {
 
   console.log(`Logged in as ${user.email}`);
 
-  if (!existsSync(configDir)) {
-    // Create config folder if it doesn't exist
-    const created = await mkdir(configDir, { recursive: true });
-    if (!created) {
-      console.log(`Failed to create config folder: ${configDir}`);
-      return;
-    }
-  }
+  await mkdir(configDir, { recursive: true });
 
   await writeAuthFile(configDir, { url, key });
 

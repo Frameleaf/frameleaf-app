@@ -1,4 +1,4 @@
-import { ForeignKeyColumn, Table } from '@immich/sql-tools';
+import { ForeignKeyColumn, Table } from '@frameleaf/sql-tools';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { SmartAlbumTable } from 'src/schema/tables/smart-album.table.js';
 

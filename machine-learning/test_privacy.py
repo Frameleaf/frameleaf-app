@@ -6,10 +6,10 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from immich_ml.privacy import disable_telemetry
+from frameleaf_ml.privacy import disable_telemetry
 
 
-@pytest.mark.parametrize("entrypoint", ["immich_ml", "immich_ml.main", "immich_ml.models.image_description"])
+@pytest.mark.parametrize("entrypoint", ["frameleaf_ml", "frameleaf_ml.main", "frameleaf_ml.models.image_description"])
 @pytest.mark.parametrize("offline_flag", [None, "HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"])
 def test_entrypoints_override_telemetry_opt_ins(entrypoint: str, offline_flag: str | None) -> None:
     # A fresh interpreter catches import-order regressions that in-process tests
@@ -126,8 +126,8 @@ def test_openvino_blocks_opted_in_and_forced_reporting() -> None:
 
 
 def test_hub_downloads_remain_available(tmp_path: Path) -> None:
-    import httpx
     from huggingface_hub import hf_hub_download, set_client_factory
+    from huggingface_hub.utils import httpx
 
     requests: list[httpx.Request] = []
 
@@ -141,14 +141,14 @@ def test_hub_downloads_remain_available(tmp_path: Path) -> None:
                 "ETag": '"test-etag"',
                 "Content-Length": "2",
                 "X-Xet-Hash": "b" * 64,
-                "X-Xet-Refresh-Route": "https://huggingface.co/api/models/immich-app/test-model/xet-read-token/main",
+                "X-Xet-Refresh-Route": "https://huggingface.co/api/models/frameleaf/test-model/xet-read-token/main",
             },
             content=b"{}" if request.method == "GET" else b"",
         )
 
     set_client_factory(lambda: httpx.Client(transport=httpx.MockTransport(respond)))
     try:
-        path = hf_hub_download("immich-app/test-model", "config.json", cache_dir=tmp_path, token="download-token")
+        path = hf_hub_download("frameleaf/test-model", "config.json", cache_dir=tmp_path, token="download-token")
         assert Path(path).read_bytes() == b"{}"
         assert [request.method for request in requests] == ["HEAD", "GET"]
         assert all(request.headers["authorization"] == "Bearer download-token" for request in requests)
@@ -156,3 +156,52 @@ def test_hub_downloads_remain_available(tmp_path: Path) -> None:
         from huggingface_hub.utils._http import default_client_factory
 
         set_client_factory(default_client_factory)
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_token"),
+    [
+        ("https://huggingface.co", False),
+        ("https://models.frameleaf.cloud", False),
+        ("https://hub-mirror.example.com", False),
+        ("https://huggingface.co.example.com", False),
+    ],
+)
+def test_hugging_face_token_only_goes_to_hugging_face(
+    source: str, expected_token: bool | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from frameleaf_ml.config import settings
+    from frameleaf_ml.models.clip.textual import OpenClipTextualEncoder
+
+    monkeypatch.setenv("HF_TOKEN", "hugging-face-token-must-stay-home")
+    monkeypatch.delenv("HF_ENDPOINT", raising=False)
+    monkeypatch.setattr(settings, "model_source_url", source)
+    monkeypatch.setattr(settings, "model_source_token", None)
+    with patch("frameleaf_ml.models.base.snapshot_download") as download:
+        OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="/path/to/cache").download()
+
+    assert download.call_args.kwargs["token"] is expected_token
+
+
+def test_disabled_token_sends_no_authorization(monkeypatch: pytest.MonkeyPatch) -> None:
+    from huggingface_hub.utils import build_hf_headers
+
+    monkeypatch.setenv("HF_TOKEN", "hugging-face-token-must-stay-home")
+    assert "authorization" not in {key.lower() for key in build_hf_headers(token=False)}
+
+
+def test_model_source_token_goes_only_to_its_source_and_is_never_shown(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pydantic import SecretStr
+
+    from frameleaf_ml.config import settings
+    from frameleaf_ml.models.clip.textual import OpenClipTextualEncoder
+
+    monkeypatch.setenv("HF_TOKEN", "hugging-face-token-must-stay-home")
+    monkeypatch.setattr(settings, "model_source_url", "https://hub-mirror.example.com")
+    monkeypatch.setattr(settings, "model_source_token", SecretStr("mirror-token"))
+    with patch("frameleaf_ml.models.base.snapshot_download") as download:
+        OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="/path/to/cache").download()
+
+    assert download.call_args.kwargs["token"] == "mirror-token"
+    assert "mirror-token" not in repr(settings)
+    assert "mirror-token" not in str(settings)

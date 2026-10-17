@@ -1,7 +1,7 @@
 <script lang="ts">
   import BrokenAsset from '$lib/components/assets/BrokenAsset.svelte';
   import Image from '$lib/components/Image.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiEyeOffOutline } from '@mdi/js';
   import type { ClassValue } from 'svelte/elements';
 
@@ -43,16 +43,19 @@
     preload = true,
   }: Props = $props();
 
-  let loaded = $state(false);
-  let errored = $state(false);
+  let phase = $state<'loading' | 'loaded' | 'error'>('loading');
+  $effect(() => {
+    void url;
+    phase = 'loading';
+  });
 
   const setLoaded = () => {
-    loaded = true;
+    phase = 'loaded';
     onComplete?.(false);
   };
 
   const setErrored = () => {
-    errored = true;
+    phase = 'error';
     onComplete?.(true);
   };
 
@@ -70,7 +73,7 @@
   let style = $derived(`width: ${widthStyle}; height: ${heightStyle ?? ''};`);
 </script>
 
-{#if errored}
+{#if phase === 'error'}
   <BrokenAsset class={[sharedClasses, brokenAssetClass]} width={widthStyle} height={heightStyle} />
 {:else}
   <Image
@@ -79,7 +82,7 @@
     onError={setErrored}
     class={['bg-gray-300 object-cover dark:bg-gray-700', sharedClasses, imageClass]}
     {style}
-    alt={loaded || errored ? altText : ''}
+    alt={phase === 'loaded' ? altText : ''}
     draggable={false}
     title={title ?? undefined}
     loading={preload ? 'eager' : 'lazy'}

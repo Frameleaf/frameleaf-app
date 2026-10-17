@@ -62,16 +62,24 @@
       animationInProgress.cancel();
       animationInProgress = undefined;
     }
-    if (!viewer || !viewer.state.textureData || !viewer.getPlugin(MarkersPlugin)) {
+    if (!viewer || !viewer.state.textureData) {
       return;
     }
     const markersPlugin = viewer.getPlugin<MarkersPlugin>(MarkersPlugin);
+    if (!markersPlugin) {
+      return;
+    }
 
     // croppedWidth is the size of the texture, which might be cropped to be less than 360/180 degrees.
     // This is what we want because the facial recognition is done on the image, not the sphere.
     const currentTextureWidth = viewer.state.textureData.panoData.croppedWidth;
 
-    markersPlugin.clearMarkers();
+    markersPlugin.removeMarkers(
+      markersPlugin
+        .getMarkers()
+        .filter((marker) => /^face_\d+$/.test(marker.id))
+        .map((marker) => marker.id),
+    );
     for (const [index, face] of faces.entries()) {
       const { boundingBoxX1: x1, boundingBoxY1: y1, boundingBoxX2: x2, boundingBoxY2: y2 } = face;
       const ratio = currentTextureWidth / face.imageWidth;
@@ -110,16 +118,23 @@
 
   /** Use updateOnly=true on zoom, pan, or resize. */
   const updateOcrBoxes = (showOverlay: boolean, ocrData: OcrBoundingBox[], updateOnly = false) => {
-    if (!viewer || !viewer.state.textureData || !viewer.getPlugin(MarkersPlugin)) {
+    if (!viewer || !viewer.state.textureData) {
       return;
     }
     const markersPlugin = viewer.getPlugin<MarkersPlugin>(MarkersPlugin);
-    if (!showOverlay) {
-      markersPlugin.clearMarkers();
+    if (!markersPlugin) {
       return;
     }
-    if (!updateOnly) {
-      markersPlugin.clearMarkers();
+    if (!showOverlay || !updateOnly) {
+      markersPlugin.removeMarkers(
+        markersPlugin
+          .getMarkers()
+          .filter((marker) => /^box_\d+$/.test(marker.id))
+          .map((marker) => marker.id),
+      );
+    }
+    if (!showOverlay) {
+      return;
     }
 
     const boxes = getOcrBoundingBoxes(ocrData, {
@@ -222,17 +237,30 @@
     }
 
     const onReadyHandler = () => updateOcrBoxes(ocrManager.showOverlay, ocrManager.data, false);
-    const updateHandler = () => updateOcrBoxes(ocrManager.showOverlay, ocrManager.data, true);
+    let ocrUpdatePending = false;
+    const updateHandler = () => {
+      ocrUpdatePending = true;
+    };
+    // Project once against the rendered camera after a burst of view changes.
+    const renderHandler = () => {
+      if (!ocrUpdatePending) {
+        return;
+      }
+      ocrUpdatePending = false;
+      updateOcrBoxes(ocrManager.showOverlay, ocrManager.data, true);
+    };
     viewer.addEventListener(events.ReadyEvent.type, onReadyHandler);
     viewer.addEventListener(events.PositionUpdatedEvent.type, updateHandler);
     viewer.addEventListener(events.SizeUpdatedEvent.type, updateHandler);
     viewer.addEventListener(events.ZoomUpdatedEvent.type, updateHandler, { passive: true });
+    viewer.addEventListener(events.RenderEvent.type, renderHandler);
 
     return () => {
       viewer.removeEventListener(events.ReadyEvent.type, onReadyHandler);
       viewer.removeEventListener(events.PositionUpdatedEvent.type, updateHandler);
       viewer.removeEventListener(events.SizeUpdatedEvent.type, updateHandler);
       viewer.removeEventListener(events.ZoomUpdatedEvent.type, updateHandler);
+      viewer.removeEventListener(events.RenderEvent.type, renderHandler);
       viewer.removeEventListener(events.ZoomUpdatedEvent.type, zoomHandler);
     };
   });

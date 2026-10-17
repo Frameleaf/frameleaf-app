@@ -4,7 +4,7 @@ sidebar_position: 2
 
 # Quick start
 
-Here is a quick, no-choices path to install Immich and take it for a test drive.
+Here is a quick, no-choices path to install Frameleaf and take it for a test drive.
 Once you've tried it, you might use one of the many other ways
 to install and use it.
 
@@ -31,9 +31,7 @@ import RegisterAdminUser from '/docs/partials/_register-admin.md';
 
 <RegisterAdminUser />
 
-Try uploading a picture from your browser.
-
-<img src={require('./img/upload-button.webp').default} title="Upload button" />
+Try uploading a picture from your browser: select **Upload** and choose a file.
 
 ---
 
@@ -63,15 +61,13 @@ The backup time differs depending on how many photos are on your mobile device. 
 take quite a while.
 To quickly get going, you can selectively upload few photos first, by following this [guide](/features/mobile-app#sync-only-selected-photos).
 
-You can select the **Job Queues** tab to see Immich processing your photos.
-
-<img src={require('/docs/guides/img/jobs-tab.webp').default} title="Job Queues tab" width={300} />
+To see Frameleaf processing your photos, select **Settings** in the sidebar to open the Command Center, then open **Compute & jobs**.
 
 ---
 
 ## Review the database backup and restore process
 
-Immich has built-in database backups. You can refer to the
+Frameleaf has built-in database backups. You can refer to the
 [database backup](/administration/backup-and-restore) for more information.
 
 :::danger
@@ -84,7 +80,7 @@ The database only contains metadata and user information. You must setup manual 
 
 You may decide you'd like to install the server a different way; the Install category on the left menu provides many options.
 
-You may decide you'd like to add the _rest_ of your photos from Google Photos, even those not on your mobile device, via Google Takeout. You can use [immich-go](https://github.com/simulot/immich-go) for this.
+You may decide you'd like to add the _rest_ of your photos from Google Photos, even those not on your mobile device, via Google Takeout. Use [Import Google Photos](/features/google-photos-import) for this.
 
 You may want to [upload photos from your own archive](/features/command-line-interface).
 

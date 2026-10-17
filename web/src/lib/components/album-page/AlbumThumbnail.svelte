@@ -1,8 +1,8 @@
 <script lang="ts">
   import AlbumCover from '$lib/components/album-page/AlbumCover.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { getAlbumInfo } from '@immich/sdk';
-  import { IconButton, Text, LoadingSpinner } from '@immich/ui';
+  import { getAlbumInfo } from '@frameleaf/sdk';
+  import { IconButton, Text, LoadingSpinner } from '@frameleaf/ui';
   import { mdiTrashCanOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

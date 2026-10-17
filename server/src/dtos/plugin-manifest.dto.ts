@@ -7,9 +7,7 @@ const pluginNameRegex = /^[a-z0-9-]+[a-z0-9]$/;
 const semverRegex =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 
-export const PluginManifestMethodSchemaSchema = JsonSchemaSchema.nullable()
-  .optional()
-  .transform((value) => (value && Object.keys(value).length === 0 ? null : value));
+export const PluginManifestMethodSchemaSchema = JsonSchemaSchema.nullable().optional();
 
 const PluginManifestMethodSchema = z
   .object({

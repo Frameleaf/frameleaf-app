@@ -11,8 +11,9 @@ import {
   OAuthConfigDto,
 } from 'src/dtos/auth.dto.js';
 import { UserAdminResponseDto } from 'src/dtos/user.dto.js';
-import { ApiTag, AuthType, ImmichCookie } from 'src/enum.js';
+import { ApiTag, AuthCookie, AuthType } from 'src/enum.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
+import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { AuthService, type LoginDetails } from 'src/services/auth.service.js';
 import { respondWithCookie } from 'src/utils/response.js';
 
@@ -37,6 +38,22 @@ export class OAuthController {
     };
   }
 
+  @Get('frameleaf-mobile-redirect')
+  @Authenticated({ public: true })
+  @Redirect()
+  @Endpoint({
+    summary: 'Redirect OAuth to the Frameleaf mobile app',
+    description:
+      'Requests to this URL are automatically forwarded to the Frameleaf mobile app (frameleaf-auth:///oauth-callback), and is used when an identity provider only accepts HTTP callbacks.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  redirectOAuthToFrameleafMobile(@Req() request: Request) {
+    return {
+      url: this.service.getFrameleafMobileRedirect(request.url),
+      statusCode: HttpStatus.TEMPORARY_REDIRECT,
+    };
+  }
+
   @Post('authorize')
   @Authenticated({ public: true })
   @Endpoint({
@@ -56,8 +73,8 @@ export class OAuthController {
       {
         isSecure: loginDetails.isSecure,
         values: [
-          { key: ImmichCookie.OAuthState, value: state },
-          { key: ImmichCookie.OAuthCodeVerifier, value: codeVerifier },
+          { key: AuthCookie.OAuthState, value: state },
+          { key: AuthCookie.OAuthCodeVerifier, value: codeVerifier },
         ],
       },
     );
@@ -65,6 +82,7 @@ export class OAuthController {
 
   @Post('callback')
   @Authenticated({ public: true })
+  @RateLimited(RATE_LIMITS.oauthCallback)
   @Endpoint({
     summary: 'Finish OAuth',
     description: 'Complete the OAuth authorization process by exchanging the authorization code for a session token.',
@@ -77,20 +95,22 @@ export class OAuthController {
     @GetLoginDetails() loginDetails: LoginDetails,
   ): Promise<LoginResponseDto> {
     const body = await this.service.callback(dto, request.headers, loginDetails);
-    res.clearCookie(ImmichCookie.OAuthState);
-    res.clearCookie(ImmichCookie.OAuthCodeVerifier);
+    res.clearCookie(AuthCookie.OAuthState);
+    res.clearCookie(AuthCookie.OAuthCodeVerifier);
     return respondWithCookie(res, body, {
       isSecure: loginDetails.isSecure,
+      rememberMe: dto.rememberMe,
       values: [
-        { key: ImmichCookie.AccessToken, value: body.accessToken },
-        { key: ImmichCookie.AuthType, value: AuthType.OAuth },
-        { key: ImmichCookie.IsAuthenticated, value: 'true' },
+        { key: AuthCookie.AccessToken, value: body.accessToken },
+        { key: AuthCookie.AuthType, value: AuthType.OAuth },
+        { key: AuthCookie.IsAuthenticated, value: 'true' },
       ],
     });
   }
 
   @Post('link')
   @Authenticated()
+  @RateLimited(RATE_LIMITS.oauthCallback)
   @HttpCode(HttpStatus.OK)
   @Endpoint({
     summary: 'Link OAuth account',

@@ -15,7 +15,7 @@ import picomatch from 'picomatch';
 import { CLIP_MODEL_INFO, JOBS_ASSET_PAGINATION_SIZE, endpointTags, serverVersion } from 'src/constants.js';
 import { extraModels } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
-import { ApiCustomExtension, ImmichCookie, ImmichHeader, MetadataKey } from 'src/enum.js';
+import { ApiCustomExtension, AuthCookie, MetadataKey, RequestHeader } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 
 type OperationObject = NonNullable<OpenAPIObject['paths'][string]['get']>;
@@ -23,8 +23,9 @@ type ReferenceOrSchemaObject = Extract<ApiBodyOptions, { schema: unknown }>['sch
 type ReferenceObject = Extract<ReferenceOrSchemaObject, { $ref: unknown }>;
 type SchemaObject = Exclude<ReferenceOrSchemaObject, ReferenceObject>;
 
-export class ImmichStartupError extends Error {}
-export const isStartUpError = (error: unknown): error is ImmichStartupError => error instanceof ImmichStartupError;
+export class FrameleafStartupError extends Error {}
+export const isStartUpError = (error: unknown): error is FrameleafStartupError =>
+  error instanceof FrameleafStartupError;
 
 export const getKeyByValue = (object: Record<string, unknown>, value: unknown) =>
   Object.keys(object).find((key) => object[key] === value);
@@ -49,32 +50,52 @@ export const getMethodNames = (instance: any) => {
   return methods;
 };
 
-export const getExternalDomain = (server: SystemConfig['server'], defaultDomain = 'https://my.immich.app') =>
-  server.externalDomain || defaultDomain;
+/** The configured external domain, else the caller's fallback (FL-190: never another project's host). */
+export const getExternalDomain = (server: SystemConfig['server'], defaultDomain?: string): string | undefined =>
+  server.externalDomain || defaultDomain || undefined;
 
 /**
  * @returns a list of strings representing the keys of the object in dot notation
  */
-export const getKeysDeep = (target: unknown, path: string[] = []) => {
+export const getKeysDeep = (target: unknown, path: string[] = []): string[] => {
   if (!target || typeof target !== 'object') {
     return [];
   }
 
-  const obj = target as object;
-
   const properties: string[] = [];
-  for (const key of Object.keys(obj as object)) {
-    const value = obj[key as keyof object];
+  const object = target as Record<string, unknown>;
+  const stack = [{ object, keys: Object.keys(object), index: 0, prefix: path.length > 0 ? `${path.join('.')}.` : '' }];
+  const ancestors = new WeakSet<object>([object]);
+
+  while (stack.length > 0) {
+    const frame = stack.at(-1)!;
+    if (frame.index === frame.keys.length) {
+      ancestors.delete(frame.object);
+      stack.pop();
+      continue;
+    }
+
+    const key = frame.keys[frame.index++];
+    const value = frame.object[key];
     if (value === undefined) {
       continue;
     }
 
+    const property = `${frame.prefix}${key}`;
     if (isObject(value) && !isArray(value) && !isDate(value)) {
-      properties.push(...getKeysDeep(value, [...path, key]));
+      if (typeof value === 'function') {
+        continue;
+      }
+      if (ancestors.has(value)) {
+        throw new RangeError('Cannot list keys of a circular object');
+      }
+      ancestors.add(value);
+      const nested = value as Record<string, unknown>;
+      stack.push({ object: nested, keys: Object.keys(nested), index: 0, prefix: `${property}.` });
       continue;
     }
 
-    properties.push([...path, key].join('.'));
+    properties.push(property);
   }
 
   return properties;
@@ -93,7 +114,7 @@ export const unsetDeep = (object: unknown, key: string) => {
   return isEmpty(object) ? undefined : object;
 };
 
-const isMachineLearningEnabled = (machineLearning: SystemConfig['machineLearning']) => machineLearning.enabled;
+export const isMachineLearningEnabled = (machineLearning: SystemConfig['machineLearning']) => machineLearning.enabled;
 export const isSmartSearchEnabled = (machineLearning: SystemConfig['machineLearning']) =>
   isMachineLearningEnabled(machineLearning) && machineLearning.clip.enabled;
 export const isOcrEnabled = (machineLearning: SystemConfig['machineLearning']) =>
@@ -124,12 +145,15 @@ export const findOrFail = async <T>(find: () => Promise<T>, entity: string): Pro
 };
 
 export async function* batched<T>(items: AsyncIterable<T>, size = JOBS_ASSET_PAGINATION_SIZE): AsyncGenerator<T[]> {
+  if (!Number.isSafeInteger(size) || size < 1) {
+    throw new RangeError('Batch size must be a positive safe integer');
+  }
   let batch: T[] = [];
 
   for await (const item of items) {
     batch.push(item);
 
-    if (batch.length >= size) {
+    if (batch.length === size) {
       yield batch;
       batch = [];
     }
@@ -169,12 +193,8 @@ function sortKeys<T>(target: T): T {
     return target;
   }
 
-  const result: Partial<T> = {};
   const keys = Object.keys(target).toSorted() as Array<keyof T>;
-  for (const key of keys) {
-    result[key] = sortKeys(target[key]);
-  }
-  return result as T;
+  return Object.fromEntries(keys.map((key) => [key, sortKeys(target[key])])) as T;
 }
 
 export const routeToErrorMessage = (methodName: string) =>
@@ -184,28 +204,46 @@ const isSchema = (schema: string | ReferenceObject | SchemaObject): schema is Sc
   return !(typeof schema === 'string' || '$ref' in schema);
 };
 
+/** Removes or rewrites JSON Schema 2020-12 keywords that OpenAPI 3.0 (this spec's version) does not allow. */
+export const removeOpenApi30IncompatibleKeys = (target: unknown): void => {
+  if (!target || typeof target !== 'object') {
+    return;
+  }
+
+  if (Array.isArray(target)) {
+    for (const item of target) {
+      removeOpenApi30IncompatibleKeys(item);
+    }
+    return;
+  }
+
+  const object = target as Record<string, unknown>;
+  // Zod literals emit JSON Schema `const`; OpenAPI 3.0 expresses the same restriction as an enum.
+  // Require a schema type so a property map containing a field named `const` is left intact.
+  if (typeof object.type === 'string' && Object.hasOwn(object, 'const')) {
+    object.enum = object.nullable === true && object.const !== null ? [object.const, null] : [object.const];
+    delete object.const;
+  }
+  delete object.propertyNames;
+  delete object.contentEncoding;
+  // A tuple (JSON Schema `prefixItems`) is not OpenAPI 3.0: generators such as openapi-generator reject it. Describe
+  // it as an array of its item schema (the first one when they differ); request validation stays the tuple's and the
+  // schema's description says its shape. No minItems/maxItems are added: the published document never had them, and
+  // adding them reads as a breaking request change to the compatibility check.
+  if (Array.isArray(object.prefixItems)) {
+    const prefixItems = object.prefixItems as unknown[];
+    if ((object.items ?? false) === false) {
+      object.items = prefixItems[0];
+    }
+    delete object.prefixItems;
+  }
+
+  for (const value of Object.values(object)) {
+    removeOpenApi30IncompatibleKeys(value);
+  }
+};
+
 const patchOpenAPI = (document: OpenAPIObject) => {
-  const removeOpenApi30IncompatibleKeys = (target: unknown) => {
-    if (!target || typeof target !== 'object') {
-      return;
-    }
-
-    if (Array.isArray(target)) {
-      for (const item of target) {
-        removeOpenApi30IncompatibleKeys(item);
-      }
-      return;
-    }
-
-    const object = target as Record<string, unknown>;
-    delete object.propertyNames;
-    delete object.contentEncoding;
-
-    for (const value of Object.values(object)) {
-      removeOpenApi30IncompatibleKeys(value);
-    }
-  };
-
   document.paths = sortKeys(document.paths);
   // Allowed in OpenAPI v3.1 (JSON Schema 2020-12), but not in OpenAPI v3.0 (current spec).
   removeOpenApi30IncompatibleKeys(document);
@@ -321,20 +359,19 @@ const patchOpenAPI = (document: OpenAPIObject) => {
 
 export const useSwagger = (app: INestApplication, { write }: { write: boolean }) => {
   const builder = new DocumentBuilder()
-    .setTitle('Immich')
-    .setDescription('Immich API')
+    .setTitle('Frameleaf')
+    .setDescription('Frameleaf API')
     .setVersion(serverVersion.toString())
     .addBearerAuth({
       type: 'http',
-      scheme: 'Bearer',
-      in: 'header',
+      scheme: 'bearer',
     })
-    .addCookieAuth(ImmichCookie.AccessToken)
+    .addCookieAuth(AuthCookie.AccessToken)
     .addApiKey(
       {
         type: 'apiKey',
         in: 'header',
-        name: ImmichHeader.ApiKey,
+        name: RequestHeader.ApiKey,
       },
       MetadataKey.ApiKeySecurity,
     )
@@ -360,7 +397,7 @@ export const useSwagger = (app: INestApplication, { write }: { write: boolean })
     },
     jsonDocumentUrl: '/api/spec.json',
     yamlDocumentUrl: '/api/spec.yaml',
-    customSiteTitle: 'Immich API Documentation',
+    customSiteTitle: 'Frameleaf API documentation',
   };
 
   SwaggerModule.setup('doc', app, openApiDoc, customOptions);

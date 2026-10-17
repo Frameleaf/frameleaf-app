@@ -55,13 +55,14 @@
   import DelayedLoadingSpinner from '$lib/components/DelayedLoadingSpinner.svelte';
   import ImageLayer from '$lib/components/ImageLayer.svelte';
   import Thumbhash from '$lib/components/Thumbhash.svelte';
+  import { playbackCacheKey } from '$lib/frameleaf/playback-revision.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { getAssetUrls } from '$lib/utils';
   import { AdaptiveImageLoader, type QualityList } from '$lib/utils/adaptive-image-loader.svelte';
   import { scaleToCover, scaleToFit, type Size } from '$lib/utils/container-utils';
   import { getAltText } from '$lib/utils/thumbnail-util';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import type { AssetResponseDto, SharedLinkResponseDto } from '@immich/sdk';
+  import type { AssetResponseDto, SharedLinkResponseDto } from '@frameleaf/sdk';
   import { untrack, type Snippet } from 'svelte';
   import { languageManager } from '$lib/managers/language-manager.svelte';
 
@@ -69,10 +70,17 @@
     asset: AssetResponseDto;
     sharedLink?: SharedLinkResponseDto;
     objectFit?: 'contain' | 'cover';
+    dynamicRange?: 'auto' | 'sdr';
     container: Size;
     onUrlChange?: (url: string) => void;
     onImageReady?: () => void;
     onError?: () => void;
+    /**
+     * Holds the preview and full-size requests until the caller knows their address is final. The
+     * thumbhash and thumbnail show meanwhile, since they never depend on it. The requests start
+     * when this turns false, with whatever address the photo has by then.
+     */
+    holdFullSize?: boolean;
     ref?: HTMLDivElement;
     imgRef?: HTMLImageElement;
     backdrop?: Snippet;
@@ -86,15 +94,17 @@
     asset,
     sharedLink,
     objectFit = 'contain',
+    dynamicRange,
     container,
     onUrlChange,
     onImageReady,
     onError,
+    holdFullSize = false,
     backdrop,
     overlays,
   }: Props = $props();
 
-  const afterThumbnail = (loader: AdaptiveImageLoader) => {
+  const requestFullSize = (loader: AdaptiveImageLoader) => {
     if (assetViewerManager.zoom > 1) {
       loader.trigger('original');
     } else {
@@ -102,8 +112,18 @@
     }
   };
 
-  const buildQualityList = () => {
-    const assetUrls = getAssetUrls(asset, sharedLink);
+  // The loader whose thumbnail settled while the full-size requests were held. Not reactive on purpose.
+  let heldLoader: AdaptiveImageLoader | undefined;
+  const afterThumbnail = (loader: AdaptiveImageLoader) => {
+    if (holdFullSize) {
+      heldLoader = loader;
+      return;
+    }
+    requestFullSize(loader);
+  };
+
+  const buildQualityList = (range: typeof dynamicRange) => {
+    const assetUrls = getAssetUrls(asset, sharedLink, range);
     const qualityList: QualityList = [
       {
         quality: 'thumbnail',
@@ -121,24 +141,44 @@
     return qualityList;
   };
 
-  const loaderKey = $derived(`${asset.id}:${asset.thumbhash}:${sharedLink?.id}`);
+  // FL-115: the playback cache key changes when the owner's playback choice does, so the loader rebuilds.
+  const loaderKey = $derived(`${asset.id}:${playbackCacheKey(asset)}:${sharedLink?.id}`);
 
+  // Read through a derived value so the loader is rebuilt only when the range itself changes, not
+  // whenever another prop of this component does.
+  const loaderRange = $derived(dynamicRange);
+
+  let lastReady = $state<{ key: string; range: typeof dynamicRange; url: string }>();
   const adaptiveImageLoader = $derived.by(() => {
     void loaderKey;
+    const range = loaderRange;
+    const key = loaderKey;
 
     return untrack(
       () =>
-        new AdaptiveImageLoader(buildQualityList(), {
+        new AdaptiveImageLoader(buildQualityList(range), {
           onImageReady,
           onError,
-          onUrlChange,
+          onUrlChange: (url) => {
+            // Retain the focused image until the replacement baseline/HDR preview is ready.
+            const thumbnail = getAssetUrls(asset, sharedLink, range).thumbnail;
+            if (!range || !lastReady || lastReady.key !== key || lastReady.range === range || url !== thumbnail) {
+              lastReady = { key, range, url };
+            }
+            onUrlChange?.(url);
+          },
         }),
     );
   });
 
+  let previousLoaderKey: string | undefined;
   $effect.pre(() => {
     const loader = adaptiveImageLoader;
-    untrack(() => assetViewerManager.resetZoomState());
+    const key = loaderKey;
+    if (key !== previousLoaderKey) {
+      untrack(() => assetViewerManager.resetZoomState());
+    }
+    previousLoaderKey = key;
     return () => loader.destroy();
   });
 
@@ -200,7 +240,24 @@
     assetViewerManager.imageLoaderStatus = status;
   });
 
+  // The hold is released: the loader that was waiting carries on. A loader built since (the address
+  // changed) asks for itself once its thumbnail settles.
   $effect(() => {
+    const loader = adaptiveImageLoader;
+    if (holdFullSize || heldLoader === undefined) {
+      return;
+    }
+    const waiting = heldLoader;
+    heldLoader = undefined;
+    if (waiting === loader) {
+      untrack(() => requestFullSize(loader));
+    }
+  });
+
+  $effect(() => {
+    if (holdFullSize) {
+      return;
+    }
     if (assetViewerManager.zoom > 1 && status.quality.original !== 'success') {
       untrack(() => void adaptiveImageLoader.trigger('original'));
     }
@@ -222,8 +279,10 @@
 <div class="relative size-full overflow-hidden" bind:this={ref}>
   {@render backdrop?.()}
 
+  <!-- FL-35: the fitted photo is what the thumbnail zoom pairs with its tile ($lib/frameleaf/viewer-zoom). -->
   <div
     class="pointer-events-none absolute overflow-hidden"
+    data-viewer-hero
     style:inset-inline-start={insetInlineStart}
     style:top
     style:width={displayWidth}
@@ -235,6 +294,7 @@
       style:transform="scale({rasterScale})"
       style:transform-origin={languageManager.rtl ? 'right top' : 'left top'}
       style:will-change={maxRasterPixels > 0 ? 'transform' : undefined}
+      style:dynamic-range-limit={dynamicRange === 'sdr' ? 'standard' : 'no-limit'}
     >
       {#if show.alphaBackground}
         <AlphaBackground />
@@ -284,6 +344,9 @@
           src={status.urls.original}
           bind:ref={originalElement}
         />
+      {/if}
+      {#if dynamicRange && lastReady?.key === loaderKey && lastReady.range !== dynamicRange && status.quality.preview !== 'success' && status.quality.original !== 'success'}
+        <img src={lastReady.url} alt="" aria-hidden="true" class="pointer-events-none absolute inset-0 size-full" />
       {/if}
     </div>
 

@@ -1,15 +1,10 @@
+import { redirect } from '@sveltejs/kit';
+import { Route } from '$lib/route';
 import { authenticate } from '$lib/utils/auth';
-import { getFormatter } from '$lib/utils/i18n';
 import type { PageLoad } from './$types';
 
-export const load = (async ({ url }) => {
+/** FL-71: accounts are managed in Users → People with server access; this address only redirects. */
+export const load = (async ({ params, url }) => {
   await authenticate(url, { admin: true });
-
-  const $t = await getFormatter();
-
-  return {
-    meta: {
-      title: $t('admin.user_details'),
-    },
-  };
+  redirect(307, Route.editUser({ id: params.id }));
 }) satisfies PageLoad;

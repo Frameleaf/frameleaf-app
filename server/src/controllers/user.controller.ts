@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Inject,
   Next,
   Param,
   Patch,
@@ -20,15 +21,24 @@ import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { CalendarHeatmapDto, CalendarHeatmapResponseDto } from 'src/dtos/calendar-heatmap.dto.js';
-import { LicenseKeyDto, LicenseResponseDto } from 'src/dtos/license.dto.js';
+import { LicenseActivateDto } from 'src/dtos/frameleaf-license.dto.js';
+import { LicenseResponseDto } from 'src/dtos/license.dto.js';
 import { OnboardingDto, OnboardingResponseDto } from 'src/dtos/onboarding.dto.js';
-import { UserPreferencesResponseDto, UserPreferencesUpdateDto } from 'src/dtos/user-preferences.dto.js';
+import { PinnedCollectionsResponseDto, PinnedCollectionsUpdateDto } from 'src/dtos/pinned-collection.dto.js';
+import {
+  UserPreferenceHistoryResponseDto,
+  UserPreferencesResponseDto,
+  UserPreferencesUpdateDto,
+} from 'src/dtos/user-preferences.dto.js';
 import { CreateProfileImageDto, CreateProfileImageResponseDto } from 'src/dtos/user-profile.dto.js';
-import { UserAdminResponseDto, UserResponseDto, UserUpdateMeDto } from 'src/dtos/user.dto.js';
+import { UserAdminResponseDto, UserMeResponseDto, UserResponseDto, UserUpdateMeDto } from 'src/dtos/user.dto.js';
 import { ApiTag, Permission, RouteKey } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { FileUploadInterceptor } from 'src/middleware/file-upload.interceptor.js';
+import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { FrameleafLicenseService } from 'src/services/frameleaf-license.service.js';
+import { PinnedCollectionService } from 'src/services/pinned-collection.service.js';
 import { UserService } from 'src/services/user.service.js';
 import { sendFile } from 'src/utils/file.js';
 import { UUIDParamDto } from 'src/validation.js';
@@ -36,8 +46,39 @@ import { UUIDParamDto } from 'src/validation.js';
 @ApiTags(ApiTag.Users)
 @Controller(RouteKey.User)
 export class UserController {
+  @Inject(PinnedCollectionService)
+  private pins!: PinnedCollectionService;
+
+  @Get('me/pins')
+  @Authenticated({ permission: Permission.UserPreferenceRead })
+  @Endpoint({
+    summary: 'Get my pinned collections',
+    description:
+      'Complete ordered snapshot of current access-filtered titles, counts and covers. Unavailable pins disclose only their opaque pin ID and kind. Requires a user session.',
+    history: new HistoryBuilder().added('v3.2.0'),
+  })
+  getMyPinnedCollections(@Auth() auth: AuthDto): Promise<PinnedCollectionsResponseDto> {
+    return this.pins.get(auth);
+  }
+
+  @Put('me/pins')
+  @Authenticated({ permission: Permission.UserPreferenceUpdate })
+  @Endpoint({
+    summary: 'Replace my pinned collections',
+    description:
+      'Add, remove or reorder by replacing the complete ordered list against expectedRevision. Stale writes return 409. Retain unavailable pins using their opaque ID, kind and null targetId. Requires a user session.',
+    history: new HistoryBuilder().added('v3.2.0'),
+  })
+  setMyPinnedCollections(
+    @Auth() auth: AuthDto,
+    @Body() dto: PinnedCollectionsUpdateDto,
+  ): Promise<PinnedCollectionsResponseDto> {
+    return this.pins.set(auth, dto);
+  }
+
   constructor(
     private service: UserService,
+    private licenseService: FrameleafLicenseService,
     private logger: LoggingRepository,
   ) {}
 
@@ -56,10 +97,11 @@ export class UserController {
   @Authenticated({ permission: Permission.UserRead })
   @Endpoint({
     summary: 'Get current user',
-    description: 'Retrieve information about the user making the API request.',
+    description:
+      'Retrieve information about the user making the API request, with their role on this server (`serverRole`) and whether they may upload here (`canUpload`), so an app can label the server and show backup only where it is allowed. `owner` (the administrator whose Frameleaf account owns this server) and `admin` administer it; `user` has their own library, as does everyone Frameleaf Cloud invited to this server.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  getMyUser(@Auth() auth: AuthDto): Promise<UserAdminResponseDto> {
+  getMyUser(@Auth() auth: AuthDto): Promise<UserMeResponseDto> {
     return this.service.getMe(auth);
   }
 
@@ -107,6 +149,18 @@ export class UserController {
     return this.service.getMyPreferences(auth);
   }
 
+  @Get('me/preferences/history')
+  @Authenticated({ permission: Permission.UserPreferenceRead })
+  @Endpoint({
+    summary: 'Get my preference history',
+    description:
+      'The newest changes to the current user’s own preferences, with the device that saved each. Locked-content rules appear only as changed.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  getMyPreferenceHistory(@Auth() auth: AuthDto): Promise<UserPreferenceHistoryResponseDto> {
+    return this.service.getMyPreferenceHistory(auth);
+  }
+
   @Put('me/preferences')
   @Authenticated({ permission: Permission.UserPreferenceUpdate })
   @Endpoint({
@@ -138,35 +192,38 @@ export class UserController {
   @Get('me/license')
   @Authenticated({ permission: Permission.UserLicenseRead })
   @Endpoint({
-    summary: 'Retrieve user product key',
-    description: 'Retrieve information about whether the current user has a registered product key.',
+    summary: 'Get your supporter key',
+    description:
+      'Your own Frameleaf supporter key (FL-I…), as its last four symbols and activation date. The key itself is never returned.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   getUserLicense(@Auth() auth: AuthDto): Promise<LicenseResponseDto> {
-    return this.service.getLicense(auth);
+    return this.licenseService.getUserSupporter(auth);
   }
 
   @Put('me/license')
   @Authenticated({ permission: Permission.UserLicenseUpdate })
+  @RateLimited(RATE_LIMITS.licenseActivation)
   @Endpoint({
-    summary: 'Set user product key',
-    description: 'Register a product key for the current user.',
+    summary: 'Activate your supporter key',
+    description:
+      'Activate a personal Frameleaf supporter key (FL-IXXX-XXXX-XXXX) for your account with Frameleaf Cloud. The key travels only in this request body.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  async setUserLicense(@Auth() auth: AuthDto, @Body() license: LicenseKeyDto): Promise<LicenseResponseDto> {
-    return this.service.setLicense(auth, license);
+  async setUserLicense(@Auth() auth: AuthDto, @Body() dto: LicenseActivateDto): Promise<LicenseResponseDto> {
+    return this.licenseService.activateUserSupporter(auth, dto);
   }
 
   @Delete('me/license')
   @Authenticated({ permission: Permission.UserLicenseDelete })
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({
-    summary: 'Delete user product key',
-    description: 'Delete the registered product key for the current user.',
+    summary: 'Remove your supporter key',
+    description: 'Remove your supporter key from this server. The key stays yours to activate again.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   async deleteUserLicense(@Auth() auth: AuthDto): Promise<void> {
-    await this.service.deleteLicense(auth);
+    await this.licenseService.removeUserSupporter(auth);
   }
 
   @Get('me/onboarding')
@@ -227,8 +284,9 @@ export class UserController {
   createProfileImage(
     @Auth() auth: AuthDto,
     @UploadedFile() fileInfo: Express.Multer.File,
+    @Body() dto: CreateProfileImageDto,
   ): Promise<CreateProfileImageResponseDto> {
-    return this.service.createProfileImage(auth, fileInfo);
+    return this.service.createProfileImage(auth, fileInfo, dto);
   }
 
   @Delete('profile-image')

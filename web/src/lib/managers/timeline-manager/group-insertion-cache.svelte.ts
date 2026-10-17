@@ -1,4 +1,4 @@
-import { AssetOrder } from '@immich/sdk';
+import { AssetOrder } from '@frameleaf/sdk';
 import { setDifference, type TimelineDate } from '$lib/utils/timeline-util';
 import type { TimelineDay } from './timeline-day.svelte';
 import type { TimelineMonth } from './timeline-month.svelte';
@@ -9,9 +9,7 @@ export class GroupInsertionCache {
     [year: number]: { [month: number]: { [day: number]: TimelineDay } };
   } = {};
   unprocessedAssets: TimelineAsset[] = [];
-  // eslint-disable-next-line svelte/prefer-svelte-reactivity
   changedTimelineDays = new Set<TimelineDay>();
-  // eslint-disable-next-line svelte/prefer-svelte-reactivity
   newTimelineDays = new Set<TimelineDay>();
 
   getTimelineDay({ year, month, day }: TimelineDate): TimelineDay | undefined {
@@ -33,7 +31,6 @@ export class GroupInsertionCache {
   }
 
   get updatedBuckets() {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const updated = new Set<TimelineMonth>();
     for (const group of this.changedTimelineDays) {
       updated.add(group.timelineMonth);
@@ -42,7 +39,6 @@ export class GroupInsertionCache {
   }
 
   get bucketsWithNewTimelineDays() {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const updated = new Set<TimelineMonth>();
     for (const group of this.newTimelineDays) {
       updated.add(group.timelineMonth);

@@ -7,7 +7,9 @@ import {
   TagBulkAssetsDto,
   TagBulkAssetsResponseDto,
   TagCreateDto,
+  TagMergeDto,
   TagResponseDto,
+  TagStatisticsResponseDto,
   TagUpdateDto,
   TagUpsertDto,
 } from 'src/dtos/tag.dto.js';
@@ -41,6 +43,18 @@ export class TagController {
   })
   getAllTags(@Auth() auth: AuthDto): Promise<TagResponseDto[]> {
     return this.service.getAll(auth);
+  }
+
+  @Get('statistics')
+  @Authenticated({ permission: Permission.TagRead })
+  @Endpoint({
+    summary: 'Retrieve tag statistics',
+    description:
+      'Count the Timeline items that carry each tag: exactly that tag, and that tag or any tag nested under it. Archived, Locked and hidden items are never counted, and tags the session may not see are left out.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getTagStatistics(@Auth() auth: AuthDto): Promise<TagStatisticsResponseDto[]> {
+    return this.service.getStatistics(auth);
   }
 
   @Put()
@@ -108,6 +122,19 @@ export class TagController {
   })
   deleteTag(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
     return this.service.remove(auth, id);
+  }
+
+  @Post(':id/merge')
+  @Authenticated({ permission: Permission.TagDelete })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Merge a tag into another',
+    description:
+      'Merge the tag in the path into the target tag and answer the target. Every item the merged tag is on carries the target afterwards, including archived, trashed and Locked items; the tags nested under it move under the target, and one that meets a tag of the same name there is merged into it the same way. The merged tag is then deleted. The target keeps its name, colour and place. A tag cannot be merged into itself or a tag nested under it. An API key also needs the permission to update tags.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  mergeTag(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto, @Body() dto: TagMergeDto): Promise<TagResponseDto> {
+    return this.service.merge(auth, id, dto);
   }
 
   @Put(':id/assets')

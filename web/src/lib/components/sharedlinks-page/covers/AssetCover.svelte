@@ -12,6 +12,12 @@
   let { alt, preload = false, src, class: className }: Props = $props();
 
   let isBroken = $state(false);
+
+  $effect.pre(() => {
+    // A new cover URL gets its own load attempt.
+    void src;
+    isBroken = false;
+  });
 </script>
 
 {#if isBroken}

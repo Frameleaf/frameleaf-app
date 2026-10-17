@@ -2,30 +2,35 @@
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
 
   import { AssetAction } from '$lib/constants';
-  import { removeAssetFromStack, type AssetResponseDto, type StackResponseDto } from '@immich/sdk';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { removeAssetFromStack, type AssetResponseDto, type StackResponseDto } from '@frameleaf/sdk';
   import { mdiImageMinusOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { OnAction } from './action';
 
   interface Props {
+    /** The menu's wording; the viewer's More menu passes the template's label (FL-35, V-11). */
+    text?: string;
     asset: AssetResponseDto;
     stack: StackResponseDto;
     onAction: OnAction;
   }
 
-  let { asset, stack, onAction }: Props = $props();
+  let { asset, stack, onAction, text }: Props = $props();
 
   const handleRemoveFromStack = async () => {
-    await removeAssetFromStack({
-      id: stack.id,
-      assetId: asset.id,
-    });
+    const target = asset;
+    const handleAction = onAction;
+    const isCurrentSession = authManager.captureSession();
     const updatedStack = {
       ...stack,
-      assets: stack.assets.filter((a) => a.id !== asset.id),
+      assets: stack.assets.filter((member) => member.id !== target.id),
     };
-    onAction({ type: AssetAction.REMOVE_ASSET_FROM_STACK, stack: updatedStack, asset });
+    await removeAssetFromStack({ id: updatedStack.id, assetId: target.id });
+    if (isCurrentSession()) {
+      handleAction({ type: AssetAction.REMOVE_ASSET_FROM_STACK, stack: updatedStack, asset: target });
+    }
   };
 </script>
 
-<MenuOption icon={mdiImageMinusOutline} onClick={handleRemoveFromStack} text={$t('viewer_remove_from_stack')} />
+<MenuOption icon={mdiImageMinusOutline} onClick={handleRemoveFromStack} text={text ?? $t('viewer_remove_from_stack')} />

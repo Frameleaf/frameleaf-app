@@ -100,46 +100,24 @@ where
           where
             hidden_content_asset.id = "tag_asset"."assetId"
             and (
-              case
-                when "hidden_content_asset"."id" is null then false
-                when coalesce(
-                  (
-                    select
-                      phase
-                    from
-                      immich_fork.state
-                    where
-                      id = 1
-                  ),
-                  'inactive'
-                ) in ('legacy', 'dual-write', 'ready') then exists (
-                  select
-                    1
-                  from
-                    asset as nsfw_asset
-                  where
-                    nsfw_asset.id = "hidden_content_asset"."id"
-                    and nsfw_asset.is_nsfw = true
-                )
-                when (
-                  select
-                    phase
-                  from
-                    immich_fork.state
-                  where
-                    id = 1
-                ) = 'active' then not exists (
-                  select
-                    1
-                  from
-                    immich_fork.asset_privacy as privacy_asset
-                  where
-                    privacy_asset."assetId" = "hidden_content_asset"."id"
-                    and privacy_asset."isNsfw" = false
-                )
-                else false
-              end
+              exists (
+                select
+                  1
+                from
+                  public.asset as nsfw_asset
+                where
+                  nsfw_asset.id = "hidden_content_asset"."id"
+                  and nsfw_asset.is_nsfw = true
+              )
             )
+        )
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "tag_asset"."assetId"
         )
     )
   )
@@ -181,31 +159,71 @@ from
 -- TagRepository.update
 begin
 select
-  "value"
+  "id"
+from
+  "tag"
+where
+  "userId" = (
+    select
+      "moved"."userId"
+    from
+      "tag" as "moved"
+    where
+      "moved"."id" = $1
+  )
+order by
+  "id"
+for update
+select
+  "userId",
+  "value",
+  "parentId"
 from
   "tag"
 where
   "id" = $1
-update "tag"
-set
-  "value" = $1,
-  "color" = $2
-where
-  "id" = $3
-returning
-  *
 rollback
 
 -- TagRepository.delete
+begin
+select
+  "id"
+from
+  "tag"
+where
+  "userId" = (
+    select
+      "moved"."userId"
+    from
+      "tag" as "moved"
+    where
+      "moved"."id" = $1
+  )
+order by
+  "id"
+for update
+select distinct
+  "tag_asset"."assetId"
+from
+  "tag_asset"
+  inner join "tag_closure" on "tag_closure"."id_descendant" = "tag_asset"."tagId"
+where
+  "tag_closure"."id_ancestor" = $1
 delete from "tag"
 where
   "id" = $1
+commit
 
 -- TagRepository.addAssetIds
+begin
 insert into
   "tag_asset" ("tagId", "assetId")
 values
   ($1, $2)
+on conflict do nothing
+returning
+  *
+rollback
 
 -- TagRepository.removeAssetIds
 delete from "tag_asset"
@@ -214,6 +232,7 @@ where
   and "assetId" in ($2)
 
 -- TagRepository.upsertAssetIds
+begin
 insert into
   "tag_asset" ("assetId", "tagIds")
 values
@@ -221,6 +240,21 @@ values
 on conflict do nothing
 returning
   *
+rollback
+
+-- TagRepository.removeAssetTagValues
+delete from "tag_asset"
+where
+  "assetId" = $1
+  and "tagId" in (
+    select
+      "tag"."id"
+    from
+      "tag"
+    where
+      "tag"."userId" = $2
+      and "tag"."value" in ($3)
+  )
 
 -- TagRepository.replaceAssetTags
 begin
@@ -228,9 +262,15 @@ delete from "tag_asset"
 where
   "assetId" = $1
 insert into
-  "tag_asset" ("tagId", "assetId")
-values
-  ($1, $2)
+  "tag_asset" ("assetId", "tagId")
+select
+  $1::uuid as "assetId",
+  unnest($2::uuid[]) as "tagId"
+from
+  (
+    select
+      1
+  ) as "dummy"
 on conflict do nothing
 returning
   *

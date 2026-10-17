@@ -1,0 +1,7 @@
+{
+  "code": "region-mismatch",
+  "message": "This server's account belongs to another Frameleaf Cloud region.",
+  "retryable": false,
+  "refusal": "destination-unhealthy",
+  "requestId": "req_01J8ZK3M4N5P6Q7T"
+}

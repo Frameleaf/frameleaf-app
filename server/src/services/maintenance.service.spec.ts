@@ -14,6 +14,25 @@ describe(MaintenanceService.name, () => {
     expect(sut).toBeDefined();
   });
 
+  it('does not exit until the restart acknowledgement is committed', async () => {
+    let committed!: () => void;
+    mocks.websocket.acknowledgeRestart.mockImplementation(() => new Promise<void>((resolve) => (committed = resolve)));
+    const ack = vi.fn();
+    const restart = sut.onRestart({ isMaintenanceMode: true }, ack);
+    expect(mocks.websocket.acknowledgeRestart).toHaveBeenCalledWith(ack);
+    expect(mocks.app.exitApp).not.toHaveBeenCalled();
+    committed();
+    await restart;
+    expect(mocks.app.exitApp).toHaveBeenCalledOnce();
+  });
+
+  it('reports an acknowledgement publication failure without exiting', async () => {
+    const error = new Error('ack failed');
+    mocks.websocket.acknowledgeRestart.mockRejectedValueOnce(error);
+    await expect(sut.onRestart({ isMaintenanceMode: false }, vi.fn())).rejects.toBe(error);
+    expect(mocks.app.exitApp).not.toHaveBeenCalled();
+  });
+
   describe('getMaintenanceMode', () => {
     it('should return false if state unknown', async () => {
       mocks.systemMetadata.get.mockResolvedValue(null);
@@ -56,7 +75,7 @@ describe(MaintenanceService.name, () => {
 
   describe('integrityCheck', () => {
     it('generate integrity report', async () => {
-      mocks.storage.readdir.mockResolvedValue(['.immich', 'file1', 'file2']);
+      mocks.storage.readdir.mockResolvedValue(['.frameleaf', 'file1', 'file2']);
       mocks.storage.readFile.mockResolvedValue(undefined as never);
       mocks.storage.overwriteFile.mockRejectedValue(undefined as never);
 
@@ -99,6 +118,12 @@ describe(MaintenanceService.name, () => {
               "readable": true,
               "writable": false,
             },
+            {
+              "files": 2,
+              "folder": "exports",
+              "readable": true,
+              "writable": false,
+            },
           ],
         }
       `);
@@ -135,10 +160,24 @@ describe(MaintenanceService.name, () => {
   });
 
   describe('startRestoreFlow', () => {
+    it('refuses restore from outside the home network before starting maintenance', async () => {
+      mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
+      mocks.user.getAdmin.mockResolvedValue(undefined);
+      await expect(sut.startRestoreFlow({ ip: '203.0.113.9', via: null })).rejects.toMatchObject({
+        response: { code: 'setup_lan_only' },
+      });
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+      expect(mocks.app.exitApp).not.toHaveBeenCalled();
+    });
+
     it('should start maintenance mode and return a jwt', async () => {
       mocks.systemMetadata.get.mockResolvedValue({ isMaintenanceMode: false });
 
-      await expect(sut.startRestoreFlow()).resolves.toMatchObject({ jwt: expect.any(String) });
+      mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
+      mocks.user.getAdmin.mockResolvedValue(undefined);
+      await expect(sut.startRestoreFlow({ ip: '192.168.1.2', via: null })).resolves.toMatchObject({
+        jwt: expect.any(String),
+      });
 
       expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.MaintenanceMode, {
         isMaintenanceMode: true,
@@ -161,7 +200,7 @@ describe(MaintenanceService.name, () => {
       ).rejects.toThrowError('Not in maintenance mode');
     });
 
-    it('should generate a login url with JWT', async () => {
+    it('should generate a login path with JWT when the server has no public address (FL-190)', async () => {
       mocks.systemMetadata.get.mockResolvedValue({
         isMaintenanceMode: true,
         secret: 'secret',
@@ -175,12 +214,23 @@ describe(MaintenanceService.name, () => {
           username: '',
         }),
       ).resolves.toEqual(
-        expect.stringMatching(
-          /^https:\/\/my.immich.app\/maintenance\?token=[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*$/,
-        ),
+        expect.stringMatching(/^\/maintenance\?token=[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*$/),
       );
 
       expect(mocks.systemMetadata.get).toHaveBeenCalledTimes(2);
+    });
+
+    it('should generate a login url on the external domain', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        server: { externalDomain: 'https://photos.example.com' },
+        isMaintenanceMode: true,
+        secret: 'secret',
+        action: { action: MaintenanceAction.Start },
+      });
+
+      await expect(sut.createLoginUrl({ username: '' })).resolves.toEqual(
+        expect.stringMatching(/^https:\/\/photos\.example\.com\/maintenance\?token=[\w-]+\.[\w-]+\.[\w-]+$/),
+      );
     });
 
     it('should use the given secret', async () => {

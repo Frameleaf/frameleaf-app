@@ -1,16 +1,7 @@
-import {
-  changePassword,
-  lockAuthSession,
-  resetPinCode,
-  type ChangePasswordDto,
-  type PinCodeResetDto,
-} from '@immich/sdk';
-import { toastManager, type ActionItem } from '@immich/ui';
+import type { ActionItem } from '@frameleaf/ui';
 import { mdiLockOutline } from '@mdi/js';
 import type { MessageFormatter } from 'svelte-i18n';
-import { eventManager } from '$lib/managers/event-manager.svelte';
-import { handleError } from '$lib/utils/handle-error';
-import { getFormatter } from '$lib/utils/i18n';
+import { requestSessionLock } from '$lib/frameleaf/session-lock';
 
 export const getUserActions = ($t: MessageFormatter) => {
   const LockSession: ActionItem = {
@@ -23,38 +14,6 @@ export const getUserActions = ($t: MessageFormatter) => {
   return { LockSession };
 };
 
-const handleLockSession = async () => {
-  const $t = await getFormatter();
-
-  try {
-    await lockAuthSession();
-    eventManager.emit('SessionLocked');
-  } catch (error) {
-    handleError(error, $t('errors.something_went_wrong'));
-  }
-};
-
-export const handleResetPinCode = async (dto: PinCodeResetDto) => {
-  const $t = await getFormatter();
-
-  try {
-    await resetPinCode({ pinCodeResetDto: dto });
-    toastManager.primary($t('pin_code_reset_successfully'));
-    eventManager.emit('UserPinCodeReset');
-    return true;
-  } catch (error) {
-    handleError(error, $t('errors.failed_to_reset_pin_code'));
-  }
-};
-
-export const handleChangePassword = async (dto: ChangePasswordDto) => {
-  const $t = await getFormatter();
-
-  try {
-    await changePassword({ changePasswordDto: dto });
-    toastManager.primary($t('updated_password'));
-    return true;
-  } catch (error) {
-    handleError(error, $t('errors.unable_to_change_password'));
-  }
-};
+// FL-83: every lock is the one local lock operation: it waits for pending PIN unlocks, keeps the root
+// shield up (with Retry, across reloads) until the server confirms, and closes private dialogs first.
+const handleLockSession = () => requestSessionLock();

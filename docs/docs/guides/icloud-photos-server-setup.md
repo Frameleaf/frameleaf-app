@@ -6,22 +6,22 @@ The feature requires a fork build containing iCloud sync, its database migration
 
 ## Deploy the bridge
 
-Use the [Compose overlay](https://github.com/adamtaylor152/immich/blob/fork/main/deployment/icloud-sync.compose.yml) with the Compose file for your installed fork release. The bridge imports Rclone **v1.75.1**, commit `687d264b689b8c49a67e2e52a8a5e0caa01c04ce`; its Go modules and container base images are pinned. The original Rclone MIT copyright and permission notice is included at `icloud-bridge/licenses/rclone/COPYING` in the checkout and `/usr/share/licenses/icloud-bridge/rclone/COPYING` in the runtime image. The [protocol reference](https://github.com/adamtaylor152/immich/blob/fork/main/icloud-bridge/api.md) records the transport contract and limitations.
+Use the [Compose overlay](https://github.com/Frameleaf/frameleaf-app/blob/main/deployment/icloud-sync.compose.yml) with the Compose file for your installed fork release. The bridge imports Rclone **v1.75.1**, commit `687d264b689b8c49a67e2e52a8a5e0caa01c04ce`; its Go modules and container base images are pinned. The original Rclone MIT copyright and permission notice is included at `icloud-bridge/licenses/rclone/COPYING` in the checkout and `/usr/share/licenses/icloud-bridge/rclone/COPYING` in the runtime image. The [protocol reference](https://github.com/Frameleaf/frameleaf-app/blob/main/icloud-bridge/api.md) records the transport contract and limitations.
 
 Prepare absolute paths in your deployment environment:
 
 ```dotenv
-IMMICH_SOURCE_ROOT=/opt/immich
-IMMICH_FORK_IMAGE=your-registry/immich-server:your-tested-fork-release
-IMMICH_UID=1000
-IMMICH_GID=1000
-ICLOUD_SECRETS_DIR=/srv/immich-icloud/secrets
-ICLOUD_STAGING_DIR=/srv/immich-icloud/staging
+FRAMELEAF_SOURCE_ROOT=/opt/frameleaf-app
+FRAMELEAF_IMAGE=your-registry/frameleaf-server:your-tested-fork-release
+FRAMELEAF_UID=1000
+FRAMELEAF_GID=1000
+ICLOUD_SECRETS_DIR=/srv/frameleaf-icloud/secrets
+ICLOUD_STAGING_DIR=/srv/frameleaf-icloud/staging
 ```
 
-Set the UID/GID to the non-root identity that owns this installation's Immich media files. Both services use that identity. Existing media directories must already be writable by it; this overlay does not recursively change their ownership. Do not set either ID to zero.
+Set the UID/GID to the non-root identity that owns this installation's Frameleaf media files. Both services use that identity. Existing media directories must already be writable by it; this overlay does not recursively change their ownership. Do not set either ID to zero.
 
-Staging must be a private directory disjoint from Immich's upload, library, thumbnail, profile, backup, and every external-library root. Do not place it inside a monitored media tree or expose it through a web server or file share. It holds partial downloads and verified recovery copies. Check available disk space as well as the configured staging byte limit.
+Staging must be a private directory disjoint from Frameleaf's upload, library, thumbnail, profile, backup, and every external-library root. Do not place it inside a monitored media tree or expose it through a web server or file share. It holds partial downloads, verified recovery copies and private scheduled validation inputs. Check available disk space as well as the configured staging byte limit.
 
 Generate secrets on the deployment host without printing their values:
 
@@ -31,7 +31,7 @@ mkdir -p "$ICLOUD_SECRETS_DIR" "$ICLOUD_STAGING_DIR"
 openssl rand -hex 32 > "$ICLOUD_SECRETS_DIR/bridge-token"
 openssl rand -base64 32 > "$ICLOUD_SECRETS_DIR/encryption-key"
 openssl req -x509 -newkey rsa:3072 -nodes -days 3650 \
-  -subj '/CN=Immich iCloud private CA' \
+  -subj '/CN=Frameleaf iCloud private CA' \
   -keyout "$ICLOUD_SECRETS_DIR/ca.key" -out "$ICLOUD_SECRETS_DIR/ca.crt"
 openssl req -newkey rsa:3072 -nodes -subj '/CN=icloud-bridge' \
   -keyout "$ICLOUD_SECRETS_DIR/bridge.key" -out "$ICLOUD_SECRETS_DIR/bridge.csr"
@@ -39,7 +39,7 @@ printf 'subjectAltName=DNS:icloud-bridge\nextendedKeyUsage=serverAuth\nbasicCons
 openssl x509 -req -days 365 -in "$ICLOUD_SECRETS_DIR/bridge.csr" \
   -CA "$ICLOUD_SECRETS_DIR/ca.crt" -CAkey "$ICLOUD_SECRETS_DIR/ca.key" -CAcreateserial \
   -extfile "$ICLOUD_SECRETS_DIR/bridge.ext" -out "$ICLOUD_SECRETS_DIR/bridge.crt"
-sudo chown -R "$IMMICH_UID:$IMMICH_GID" "$ICLOUD_SECRETS_DIR" "$ICLOUD_STAGING_DIR"
+sudo chown -R "$FRAMELEAF_UID:$FRAMELEAF_GID" "$ICLOUD_SECRETS_DIR" "$ICLOUD_STAGING_DIR"
 chmod 700 "$ICLOUD_SECRETS_DIR" "$ICLOUD_STAGING_DIR"
 chmod 600 "$ICLOUD_SECRETS_DIR"/*
 ```
@@ -51,28 +51,34 @@ Compose file-backed secrets are bind mounts on many installations; host ownershi
 Validate and start from the checkout, using your release's base Compose path:
 
 ```sh
-docker compose --env-file /absolute/path/to/immich.env \
+docker compose --env-file /absolute/path/to/frameleaf.env \
   -f /absolute/path/to/docker-compose.yml \
-  -f "$IMMICH_SOURCE_ROOT/deployment/icloud-sync.compose.yml" config --quiet
-docker compose --env-file /absolute/path/to/immich.env \
+  -f "$FRAMELEAF_SOURCE_ROOT/deployment/icloud-sync.compose.yml" config --quiet
+docker compose --env-file /absolute/path/to/frameleaf.env \
   -f /absolute/path/to/docker-compose.yml \
-  -f "$IMMICH_SOURCE_ROOT/deployment/icloud-sync.compose.yml" up -d --build
+  -f "$FRAMELEAF_SOURCE_ROOT/deployment/icloud-sync.compose.yml" up -d --build
 ```
 
-The bridge has no published port or media mount. Its private Docker network permits outbound Apple HTTPS traffic. Do not add host networking or a public reverse-proxy route. The Immich web application itself must be served over HTTPS for account authentication.
+The bridge has no published port or media mount. Its private Docker network permits outbound Apple HTTPS traffic. Do not add host networking or a public reverse-proxy route. The Frameleaf web application itself must be served over HTTPS for account authentication.
 
-The server configuration paths are `IMMICH_ICLOUD_BRIDGE_URL`, `IMMICH_ICLOUD_BRIDGE_TOKEN_FILE`, `IMMICH_ICLOUD_KEY_FILE`, `IMMICH_ICLOUD_CA_FILE`, and `IMMICH_ICLOUD_STAGING_PATH`. They are set by the overlay. For split API/worker deployments, give each process the same transport/key configuration and consistent access to the private staging directory.
+The server configuration paths are `FRAMELEAF_ICLOUD_BRIDGE_URL`, `FRAMELEAF_ICLOUD_BRIDGE_TOKEN_FILE`, `FRAMELEAF_ICLOUD_KEY_FILE`, `FRAMELEAF_ICLOUD_CA_FILE`, and `FRAMELEAF_ICLOUD_STAGING_PATH`. They are set by the overlay. For split API/worker deployments, give each process the same transport/key configuration and consistent access to the private staging directory.
+
+The first start after upgrading to iCloud source identities builds an index over the sync's inventory. On a very large iCloud library that start takes longer.
+
+`FRAMELEAF_ICLOUD_IDENTITY_MATCHING=false` switches off iCloud source identity matching between the sync and the Frameleaf app. Then only photos with the same SHA-256 are treated as the same. See [iCloud Photos Sync and the Frameleaf app](icloud-photos-sync.md#with-the-app).
+
+Identity adoption before a cloud download and scheduled weekly audits are separately disabled by default. Keep `FRAMELEAF_ICLOUD_IDENTITY_ADOPTION` and `FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION` off until the live Apple-account identity/fingerprint spike and the mandatory weekly audit worker/provider/schedule are qualified. The source includes owner-scoped weekly grants, a frozen 1% sample cohort, production through the existing sync scheduler, and a scheduled worker. Grants bind the connection configuration and privacy settings; protected audits additionally require explicit protected-media authority and the current PIN binding. Adoption rechecks weekly grant authority and also requires matching to remain enabled. Configuration or consent alone establishes no qualification. The bounded adoption path accepts only unprotected original, Live Photo motion and RAW-alternative resources with current exact source evidence and freshly verified managed bytes. It records the actual decision but does not mark those skipped cloud bytes audit-verified. Edited resources and unsupported evidence retain the ordinary download/hash path; retired authority or unsettled validation retries without publishing a decision. Before any separately authorized activation, verify old-worker drain and qualify the combined validation-input lifecycle and release guards. Unknown restart-work recovery and complete decoder-transient peak accounting remain separate requirements; this source does not authorize activation.
 
 ### Check readiness and the pinned version
 
 From the server container, verify the bridge's HTTPS certificate and health response using Node's built-in client. Prefix `exec` with the same Compose files and environment used above:
 
 ```sh
-docker compose exec immich-server node --input-type=module -e '
+docker compose exec frameleaf-server node --input-type=module -e '
 import https from "node:https";
 import fs from "node:fs";
-https.get(new URL("/health", process.env.IMMICH_ICLOUD_BRIDGE_URL), {
-  ca: fs.readFileSync(process.env.IMMICH_ICLOUD_CA_FILE)
+https.get(new URL("/health", process.env.FRAMELEAF_ICLOUD_BRIDGE_URL), {
+  ca: fs.readFileSync(process.env.FRAMELEAF_ICLOUD_CA_FILE)
 }, response => {
   if (response.statusCode !== 200) process.exitCode = 1;
   response.pipe(process.stdout);
@@ -88,39 +94,64 @@ The staging directory must be owned by the server user and have mode `0700`. It 
 
 Per-connection controls are limited to 1–4 concurrent downloads. The worker also applies server-wide limits:
 
-| Environment variable              | Default                  | Purpose                                                    |
-| --------------------------------- | ------------------------ | ---------------------------------------------------------- |
-| `IMMICH_ICLOUD_MAX_CONCURRENCY`   | `4`                      | Maximum active resource leases across connections          |
-| `IMMICH_ICLOUD_MAX_STAGING_BYTES` | `107374182400` (100 GiB) | Total reserved staging budget                              |
-| `IMMICH_ICLOUD_FREE_SPACE_BYTES`  | `1073741824` (1 GiB)     | Free disk space to retain in addition to the next download |
+| Environment variable                 | Default                  | Purpose                                                    |
+| ------------------------------------ | ------------------------ | ---------------------------------------------------------- |
+| `FRAMELEAF_ICLOUD_MAX_CONCURRENCY`   | `4`                      | Maximum active resource leases across connections          |
+| `FRAMELEAF_ICLOUD_MAX_STAGING_BYTES` | `107374182400` (100 GiB) | Total reserved staging budget                              |
+| `FRAMELEAF_ICLOUD_FREE_SPACE_BYTES`  | `1073741824` (1 GiB)     | Free disk space to retain in addition to the next download |
 
 Set these on the workers that run sync. Increasing a reservation limit does not create disk space. Retained copies outside a user's current selection still consume their reservation; `staging_retained_capacity` requires reselection/recovery or additional capacity. Do not clear database reservations or empty staging to bypass it. Committed cleanup remains eligible when the budget is full.
 
+### Scheduled validation inputs and upgrades
+
+Scheduled weekly validation reserves a full expected-size input in addition to its staged source
+and any recovery copy, before creating or copying the input or starting the decoder. For a
+10-byte resource, source plus input reserves 20 bytes; source plus recovery plus destination input
+reserves 30 bytes. Input disposal refunds only its own 10 bytes. The existing connection/global
+limits and free-space watermark still apply; this adds no setting.
+
+A timeout, cancellation, disconnect or restart does not free that input's reservation. Actual
+decoder and readonly work, including handle closes, must settle before authenticated disposal.
+Normal success must dispose the input before publication. Unknown, pending, malformed or
+unsupported ownership evidence remains private and fully charged. Housekeeping can discover
+source-only inputs without a recovery copy or live Apple credentials; it cannot infer that unknown
+work has stopped. Do not delete retained files, clear database charges or edit receipt JSON to
+recover capacity. Preserve the matching staging and database checkpoint for reviewed recovery.
+
+History retains one current input and one previous disposed receipt with a persistent exact
+generation mark. This does not impose a lifetime attempt limit or change scheduled pause, resume
+or deferral behavior. Existing manual/non-scheduled behavior remains unchanged when no input
+ledger exists; unknown scheduled legacy work still requires settlement evidence.
+
+Before enabling scheduled execution after an upgrade, drain every old worker that can create or
+clean private copies and verify its in-flight decoder/readonly work has actually settled. A pause,
+timeout, restart or disabled admission flag alone does not prove drain. Preserve unknown legacy
+work rather than treating a missing new receipt as permission to remove it. Keep adoption and
+weekly execution disabled until this drain and final-candidate service/restart/release qualification,
+required review/checks and the existing live Apple/provider gates are satisfied. See the
+[private-copy disposition contract](../developer/icloud-private-disposition.md#qualification-and-upgrade-gates).
+
+The full input charge does not cover every RAW render, image buffer or native decoder scratch
+allocation. Those transients can exceed the reservation; complete peak resource accounting and
+native/device acceptance remain separate qualification work.
+
 ### Media validation timeout
 
-The server environment variable `IMMICH_MEDIA_VALIDATION_TIMEOUT_MS` controls the integrity validator's timeout, including full video decoding. Its default is **120000 ms (two minutes)**; finite values are clamped to **10000–86400000 ms** and invalid values use the default. Set it on each server/worker that performs validation, for example in an additional Compose override:
+The server environment variable `FRAMELEAF_MEDIA_VALIDATION_TIMEOUT_MS` controls the integrity validator's timeout, including full video decoding. Its default is **120000 ms (two minutes)**; finite values are clamped to **10000–86400000 ms** and invalid values use the default. Set it on each server/worker that performs validation, for example in an additional Compose override:
 
 ```yaml
 services:
-  immich-server:
+  frameleaf-server:
     environment:
-      IMMICH_MEDIA_VALIDATION_TIMEOUT_MS: '600000'
+      FRAMELEAF_MEDIA_VALIDATION_TIMEOUT_MS: '600000'
 ```
 
 A timeout is unresolved validation, not proof of corruption or successful repair. Raising the timeout can permit long videos to finish; it does not add decoder support. Native operations keep their concurrency slot until they actually finish after a timeout, preventing timed-out work from creating unbounded parallel decoding.
 
 ## Disconnect, backup, and restore
 
-**Disconnect account** removes its saved Apple session and stops new work. Existing imported Immich assets remain. It does not delete the Apple account's photos or turn the connector into a mirror. Do not manually empty staging while a run is active or while it contains the only verified recovery copy.
+**Disconnect account** removes its saved Apple session and stops new work. Existing imported Frameleaf assets remain. It does not delete the Apple account's photos or turn the connector into a mirror. Do not manually empty staging while a run is active or while it contains the only verified recovery copy.
 
-Back up the Immich database, managed media, retained source resources, private staging state, and encryption key as one consistent checkpoint. Restrict backup access as tightly as production secrets. Stop/pause workers before taking an application-consistent snapshot. Keep the bearer token and TLS material separately recoverable; restore permissions before starting services. Restoring a database without its matching encryption key requires Apple reauthentication. Never attach session values, tokens, signed URLs, passwords, or keys to support reports.
+Back up the Frameleaf database, managed media, retained source resources, private staging state, and encryption key as one consistent checkpoint. Restrict backup access as tightly as production secrets. Stop/pause workers before taking an application-consistent snapshot. Keep the bearer token and TLS material separately recoverable; restore permissions before starting services. Restoring a database without its matching encryption key requires Apple reauthentication. Never attach session values, tokens, signed URLs, passwords, or keys to support reports.
 
-All connector tables live in `immich_fork`. During a certified official-Immich handoff they remain dormant. On return, missing public asset/album mappings are archived and cleared, source records remain, and deleted owners' connections are disabled. Follow the existing [fork/official switching procedure](../features/switching-between-fork-and-official.md); deploying an arbitrary official image is not a compatibility check.
-
-## Verify before a large import
-
-Use a small selected album first. Check sign-in and device approval, a photo and Live Photo, an available Apple edit, a repeated run, and a pause/resume. Confirm that originals remain accessible and edited versions appear in their Stack. Test recovery using disposable synthetic media, not a valuable original.
-
-Local fixtures and database tests cover recovery and restart boundaries, but live Apple-account compatibility has not yet been verified for this implementation. The [user guide](icloud-photos-sync.md#supported-media-and-limits) lists the supported scope. An HTTPS health response alone does not prove an Apple sync succeeded.
-
-For missing files, count differences, and orphan reports, see [Recover missing or corrupt media](media-recovery.md).
+All connector state is in the canonical `public` schema. Back up the database together with the original connector encryption key and matching media files. A one-time offline Immich import uses a separate read-only source and never shares this database with another server implementation. See [Backup and restore](../administration/backup-and-restore.md).

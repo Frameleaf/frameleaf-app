@@ -1,5 +1,6 @@
 import { Command, CommandRunner, InquirerService, Question, QuestionSet } from 'nest-commander';
 import { CliService } from 'src/services/cli.service.js';
+import { readAliasedEnv } from 'src/utils/env-aliases.js';
 
 @Command({
   name: 'change-media-location',
@@ -54,11 +55,11 @@ export class ChangeMediaLocationCommand extends CommandRunner {
 
       const successMessage = `Matching database file paths were updated successfully! 🎉
 
-  You may now set IMMICH_MEDIA_LOCATION=${newValue} and restart!
+  You may now set FRAMELEAF_MEDIA_LOCATION=${newValue} and restart!
 
   (please remember to update applicable volume mounts e.g
     services:
-      immich-server:
+      frameleaf-server:
         ...
         volumes:
           - \${UPLOAD_LOCATION}:/data
@@ -75,10 +76,10 @@ export class ChangeMediaLocationCommand extends CommandRunner {
   }
 }
 
-const currentValue = process.env.IMMICH_MEDIA_LOCATION || '';
+const currentValue = readAliasedEnv('FRAMELEAF_MEDIA_LOCATION') || '';
 
 const makePrompt = (which: string) => {
-  return `Enter the ${which} value of IMMICH_MEDIA_LOCATION:${currentValue ? ` [${currentValue}]` : ''}`;
+  return `Enter the ${which} value of FRAMELEAF_MEDIA_LOCATION:${currentValue ? ` [${currentValue}]` : ''}`;
 };
 
 @QuestionSet({ name: 'prompt-media-location' })

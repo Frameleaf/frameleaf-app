@@ -1,10 +1,11 @@
 <script lang="ts">
+  import { hasTransparentPixels } from './profile-image';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { createProfileImage, type AssetResponseDto } from '@immich/sdk';
-  import { FormModal, toastManager } from '@immich/ui';
+  import { createProfileImage, type AssetResponseDto } from '@frameleaf/sdk';
+  import { FormModal, toastManager } from '@frameleaf/ui';
   import domtoimage from 'dom-to-image';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import PhotoViewer from '../components/asset-viewer/PhotoViewer.svelte';
 
@@ -14,6 +15,9 @@
   }
 
   let { asset, onClose }: Props = $props();
+
+  let destroyed = false;
+  onDestroy(() => (destroyed = true));
 
   let imgElement: HTMLDivElement | undefined = $state();
 
@@ -25,36 +29,14 @@
     imgElement.style.width = '100%';
   });
 
-  const hasTransparentPixels = async (blob: Blob) => {
-    const img = new Image();
-    img.src = URL.createObjectURL(blob);
-    await img.decode();
-    const canvas = document.createElement('canvas');
-    canvas.width = img.width;
-    canvas.height = img.height;
-    const context = canvas.getContext('2d');
-    if (!context) {
-      throw new Error('Could not get canvas context.');
-    }
-    context.drawImage(img, 0, 0);
-    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData?.data;
-    if (!data) {
-      throw new Error('Could not get image data.');
-    }
-    for (let index = 0; index < data.length; index += 4) {
-      if (data[index + 3] < 255) {
-        return true;
-      }
-    }
-    return false;
-  };
-
   const onSubmit = async () => {
     if (!imgElement) {
       return;
     }
 
+    const assetId = asset.id;
+    const isCurrentSession = authManager.captureSession();
+    const isCurrent = () => !destroyed && asset.id === assetId && isCurrentSession();
     try {
       const imgElementHeight = imgElement.offsetHeight;
       const imgElementWidth = imgElement.offsetWidth;
@@ -63,19 +45,34 @@
         height: imgElementHeight,
       });
 
-      if (await hasTransparentPixels(blob)) {
+      if (!isCurrent()) {
+        return;
+      }
+      const transparent = await hasTransparentPixels(blob);
+      if (!isCurrent()) {
+        return;
+      }
+      if (transparent) {
         toastManager.danger($t('errors.profile_picture_transparent_pixels'));
         return;
       }
       const file = new File([blob], 'profile-picture.png', { type: 'image/png' });
-      await createProfileImage({ createProfileImageDto: { file } });
+      // the photo is recorded so the picture is replaced if the photo is later Locked
+      await createProfileImage({ createProfileImageDto: { file, assetId } });
+      if (!isCurrent()) {
+        return;
+      }
       toastManager.primary($t('profile_picture_set'));
 
       await authManager.refresh();
 
-      onClose();
+      if (isCurrent()) {
+        onClose();
+      }
     } catch (error) {
-      handleError(error, $t('errors.unable_to_set_profile_picture'));
+      if (isCurrent()) {
+        handleError(error, $t('errors.unable_to_set_profile_picture'));
+      }
     }
   };
 </script>

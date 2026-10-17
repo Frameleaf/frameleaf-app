@@ -27,12 +27,12 @@ import (
 	"github.com/rclone/rclone/fs"
 )
 
-const revision = "687d264b689b8c49a67e2e52a8a5e0caa01c04ce"
+const revision = "be8d6044eacb843b74d335db0c5fbe09222031fe"
 const maxBody = 2 << 20
 const maxMetadata = 16 << 20
 
 var capabilities = map[string]any{
-	"protocolVersion": 1, "rcloneVersion": "v1.75.1", "rcloneCommit": revision,
+	"protocolVersion": 1, "rcloneVersion": fs.VersionTag, "rcloneCommit": revision,
 	"rawRecords": true, "pagedInventory": true, "originals": true, "livePhotos": true, "rawAlternatives": true, "renderedEdits": true,
 	"sharedLibraries": true, "sharedAlbums": false, "adjustmentRendering": false, "editedLivePhotoPairing": false, "smsTwoFactor": false, "cloudWrites": false,
 	"fingerprintAlgorithm": "sha256-descriptor-v1",

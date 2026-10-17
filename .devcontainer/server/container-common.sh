@@ -1,5 +1,5 @@
 #!/bin/bash
-export IMMICH_PORT="${DEV_SERVER_PORT:-2283}"
+export FRAMELEAF_PORT="${DEV_SERVER_PORT:-2283}"
 export DEV_PORT="${DEV_PORT:-3000}"
 
 IMMICH_DEVCONTAINER_LOG="$HOME/immich-devcontainer.log"

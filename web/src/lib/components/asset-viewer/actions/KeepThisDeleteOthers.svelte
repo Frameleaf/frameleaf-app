@@ -1,38 +1,50 @@
 <script lang="ts">
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
   import { AssetAction } from '$lib/constants';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { keepThisDeleteOthers } from '$lib/utils/asset-utils';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import type { AssetResponseDto, StackResponseDto } from '@immich/sdk';
-  import { modalManager } from '@immich/ui';
+  import type { AssetResponseDto, StackResponseDto } from '@frameleaf/sdk';
+  import { modalManager } from '@frameleaf/ui';
   import { mdiPinOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { OnAction } from './action';
 
   interface Props {
+    /** The menu's wording; the viewer's More menu passes the template's label (FL-35, V-11). */
+    text?: string;
     stack: StackResponseDto;
     asset: AssetResponseDto;
     onAction: OnAction;
   }
 
-  let { stack, asset, onAction }: Props = $props();
+  let { stack, asset, onAction, text }: Props = $props();
 
   const handleKeepThisDeleteOthers = async () => {
+    const target = asset;
+    const targetStack = stack;
+    const handleAction = onAction;
+    const isCurrentSession = authManager.captureSession();
     const isConfirmed = await modalManager.showDialog({
-      title: $t('keep_this_delete_others'),
+      // The template's wording (media-viewer.mjs "Keep this, remove the rest"); the rest go to the trash.
+      title: $t('frameleaf_viewer_menu_keep_this'),
       prompt: $t('confirm_keep_this_delete_others'),
       confirmText: $t('delete_others'),
     });
 
-    if (!isConfirmed) {
+    if (!isConfirmed || !isCurrentSession()) {
       return;
     }
 
-    const keptAsset = await keepThisDeleteOthers(asset, stack);
-    if (keptAsset) {
-      onAction({ type: AssetAction.UNSTACK, assets: [toTimelineAsset(keptAsset)] });
+    const keptAsset = await keepThisDeleteOthers(target, targetStack);
+    if (keptAsset && isCurrentSession()) {
+      handleAction({ type: AssetAction.UNSTACK, assets: [toTimelineAsset(keptAsset)] });
     }
   };
 </script>
 
-<MenuOption icon={mdiPinOutline} onClick={handleKeepThisDeleteOthers} text={$t('keep_this_delete_others')} />
+<MenuOption
+  icon={mdiPinOutline}
+  onClick={handleKeepThisDeleteOthers}
+  text={text ?? $t('frameleaf_viewer_menu_keep_this')}
+/>

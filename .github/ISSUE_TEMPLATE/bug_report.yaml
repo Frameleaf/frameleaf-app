@@ -1,5 +1,5 @@
-name: Report an issue with Immich
-description: Report an issue with Immich
+name: Report an issue with Frameleaf
+description: Report an issue with Frameleaf
 body:
   - type: checkboxes
     attributes:
@@ -12,9 +12,7 @@ body:
       value: |
         This issue form is for reporting bugs only!
 
-        If you have a feature or enhancement request, please use the [feature request][fr] section of our [GitHub Discussions][fr].
-
-        [fr]: https://github.com/immich-app/immich/discussions/new?category=feature-request
+        If you have a feature or enhancement request, please open a separate issue that describes it instead.
 
   - type: textarea
     validations:
@@ -36,7 +34,7 @@ body:
     validations:
       required: true
     attributes:
-      label: The OS that Immich Server is running on
+      label: The OS that the Frameleaf server is running on
       placeholder: Ubuntu 22.10, Debian, Arch...etc
 
   - type: input
@@ -44,25 +42,28 @@ body:
     validations:
       required: true
     attributes:
-      label: Version of Immich Server
-      placeholder: v1.0.0
+      label: Frameleaf server version
+      placeholder: v3.2.0
+
+  - type: dropdown
+    id: client
+    validations:
+      required: true
+    attributes:
+      label: Where you see the issue
+      options:
+        - Server (no client involved)
+        - Web app in a browser
+        - Frameleaf native app (iOS or Android)
+        - Frameleaf CLI
+        - Another app connected to the server
 
   - type: input
-    validations:
-      required: true
+    id: client-version
     attributes:
-      label: Version of Immich Mobile App
-      placeholder: v1.0.0
-
-  - type: checkboxes
-    validations:
-      required: true
-    attributes:
-      label: Platform with the issue
-      options:
-        - label: Server
-        - label: Web
-        - label: Mobile
+      label: Client version, browser or app
+      description: For the web app, the browser and its version; for an app, its name and version.
+      placeholder: Firefox 143, or Frameleaf for iOS 1.0.0
 
   - type: input
     attributes:

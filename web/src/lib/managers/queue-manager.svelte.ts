@@ -1,11 +1,14 @@
-import { getQueues, type QueueResponseDto } from '@immich/sdk';
+import { getQueues, type QueueResponseDto } from '@frameleaf/sdk';
 import { DateTime } from 'luxon';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import type { QueueSnapshot } from '$lib/types';
 
 export class QueueManager {
   #snapshots = $state<QueueSnapshot[]>([]);
-  #queues: QueueResponseDto[] = $derived(this.#snapshots.at(-1)?.snapshot ?? []);
+  /** The last answer the server gave: a failed or skipped poll keeps the page's queues on screen. */
+  #queues: QueueResponseDto[] = $derived(this.#snapshots.findLast((entry) => entry.snapshot)?.snapshot ?? []);
+  /** The newest poll failed; `queues` still holds the answer before it. */
+  #failed = $derived(this.#snapshots.length > 0 && this.#snapshots.at(-1)?.snapshot === undefined);
 
   #interval?: ReturnType<typeof setInterval>;
   #listenerCount = 0;
@@ -16,6 +19,10 @@ export class QueueManager {
 
   get queues() {
     return this.#queues;
+  }
+
+  get failed() {
+    return this.#failed;
   }
 
   constructor() {
@@ -32,7 +39,17 @@ export class QueueManager {
     this.#listenerCount++;
     void this.refresh();
 
-    return () => this.#listenerCount--;
+    let listening = true;
+    return () => {
+      if (!listening) {
+        return;
+      }
+      listening = false;
+      if (--this.#listenerCount === 0) {
+        clearInterval(this.#interval);
+        this.#interval = undefined;
+      }
+    };
   }
 
   async refresh(tick = false) {

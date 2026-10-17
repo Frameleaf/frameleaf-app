@@ -38,3 +38,13 @@ where
   and "deletedAt" is null
 order by
   "createdAt" desc
+
+-- NotificationRepository.findRecentByDedupeKey
+select
+  "id"
+from
+  "notification"
+where
+  "userId" = $1
+  and "data" ->> 'dedupeKey' = $2
+  and "createdAt" > $3

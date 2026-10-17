@@ -1,5 +1,12 @@
-import { Column, CreateDateColumn, ForeignKeyColumn, PrimaryColumn, Table, UpdateDateColumn } from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+import {
+  Column,
+  CreateDateColumn,
+  ForeignKeyColumn,
+  PrimaryColumn,
+  Table,
+  UpdateDateColumn,
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { SyncEntityType } from 'src/enum.js';
 import { SessionTable } from 'src/schema/tables/session.table.js';

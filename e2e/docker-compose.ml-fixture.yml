@@ -1,0 +1,24 @@
+services:
+  frameleaf-machine-learning-fixture:
+    image: ${FRAMELEAF_CI_NODE_IMAGE:-node:26.11.1-trixie-slim@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0}
+    command: node /fixture/ml-text-fixture.mjs
+    volumes:
+      - ./src/fixtures/ml-text-fixture.mjs:/fixture/ml-text-fixture.mjs:ro
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3003/ping').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+
+  frameleaf-server:
+    environment:
+      FRAMELEAF_MACHINE_LEARNING_URL: http://frameleaf-machine-learning-fixture:3003
+    depends_on:
+      frameleaf-machine-learning-fixture:
+        condition: service_healthy

@@ -1,0 +1,72 @@
+# Build cache for the Test workflow's server image (FL-380).
+#
+# The end-to-end and medium jobs in test.yml build server/Dockerfile on every pull request. Without a
+# cache that matches the integration branch each of them compiles the image's media libraries from
+# source, about twenty minutes per job. This workflow builds the same image, with the same Compose
+# build definition the end-to-end jobs use, on every push to master/frameleaf-implementation and
+# writes the build cache under ci-<platform> tags. Pull request runs only read it.
+#
+# It never runs pull request code, pushes no image, and never writes the release pipeline's cache
+# tags (linux-<arch>-cpu-prod, written by Deploy on main).
+name: End-to-End Build Cache
+
+on:
+  push:
+    branches: [master/frameleaf-implementation]
+
+# A running export always finishes; a newer push replaces any queued run.
+concurrency:
+  group: e2e-build-cache
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  publish:
+    name: Write the ${{ matrix.platform }} build cache
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/master/frameleaf-implementation' && github.event_name == 'push'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    env:
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0
+      FRAMELEAF_CI_STUDIO_NODE_IMAGE: mirror.gcr.io/library/node@sha256:f1233c415b41ffcf237c717b3dea92e9d4ea006e0e4c71edcb790605d74f5404
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux-arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Configure public Docker Hub mirror
+        run: bash scripts/configure-dockerhub-mirror.sh
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit@sha256:b059f8d7226d0b326bc871af489a5dddf65e36af4d20d14251b072974d9ee87c
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build the end-to-end server image and write its cache
+        working-directory: ./e2e
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CACHE_REF: ghcr.io/frameleaf/frameleaf-server-build-cache:ci-${{ matrix.platform }}
+        run: |
+          # The build context is the repository root, one level above this Compose file; Bake refuses
+          # to read outside its own directory unless that is allowed.
+          docker buildx bake --allow=fs.read=.. -f docker-compose.yml frameleaf-server \
+            --set "frameleaf-server.cache-to=type=registry,ref=${CACHE_REF},mode=max,compression=zstd" \
+            --set frameleaf-server.output=type=cacheonly

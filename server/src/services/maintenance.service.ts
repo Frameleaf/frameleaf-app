@@ -10,13 +10,15 @@ import {
 } from 'src/dtos/maintenance.dto.js';
 import { MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { buddyMaintenancePath } from 'src/utils/buddy-backup-maintenance.js';
+import { writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
+import { type SetupClient, whileClaimable } from 'src/utils/frameleaf-setup-gate.js';
 import {
   createMaintenanceLoginUrl,
   detectPriorInstall,
   generateMaintenanceSecret,
   signMaintenanceJwt,
 } from 'src/utils/maintenance.js';
-import { getExternalDomain } from 'src/utils/misc.js';
 
 /**
  * This service is available outside of maintenance mode to manage maintenance mode
@@ -43,6 +45,12 @@ export class MaintenanceService extends BaseService {
 
   async startMaintenance(action: SetMaintenanceModeDto, username: string): Promise<{ jwt: string }> {
     const secret = generateMaintenanceSecret();
+    if (action.buddyRecoveryId) {
+      await writeBuddyFile(
+        buddyMaintenancePath(this.configRepository),
+        JSON.stringify({ isMaintenanceMode: true, secret, action }),
+      );
+    }
     await this.systemMetadataRepository.set(SystemMetadataKey.MaintenanceMode, {
       isMaintenanceMode: true,
       secret,
@@ -58,26 +66,28 @@ export class MaintenanceService extends BaseService {
     };
   }
 
-  async startRestoreFlow(): Promise<{ jwt: string }> {
-    return this.startMaintenance(
-      {
-        action: MaintenanceAction.SelectDatabaseRestore,
-      },
-      'admin',
+  async startRestoreFlow(client: SetupClient): Promise<{ jwt: string }> {
+    return whileClaimable(this.setupGate, client, () =>
+      this.startMaintenance(
+        {
+          action: MaintenanceAction.SelectDatabaseRestore,
+        },
+        'admin',
+      ),
     );
   }
 
-  @OnEvent({ name: 'AppRestart', server: true })
-  onRestart(event: ArgOf<'AppRestart'>, ack?: (ok: 'ok') => void): void {
+  @OnEvent({ name: 'AppRestart', server: true, priority: 100 })
+  async onRestart(event: ArgOf<'AppRestart'>, ack?: (ok: 'ok') => void): Promise<void> {
     this.logger.log(`Restarting due to event... ${JSON.stringify(event)}`);
 
-    ack?.('ok');
+    await this.websocketRepository.acknowledgeRestart(ack);
     this.appRepository.exitApp();
   }
 
   async createLoginUrl(auth: MaintenanceAuthDto, secret?: string): Promise<string> {
     const { server } = await this.getConfig({ withCache: true });
-    const baseUrl = getExternalDomain(server);
+    const baseUrl = await this.getPublicUrl(server);
 
     if (!secret) {
       const state = await this.getMaintenanceMode();

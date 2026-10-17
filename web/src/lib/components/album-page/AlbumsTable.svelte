@@ -9,11 +9,11 @@
     type AlbumGroup,
   } from '$lib/utils/album-utils';
   import type { ContextMenuPosition } from '$lib/utils/context-menu';
-  import type { AlbumResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import type { AlbumResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight } from '@mdi/js';
   import { t } from 'svelte-i18n';
-  import { slide } from 'svelte/transition';
+  import { motionSlide } from '$lib/frameleaf/motion';
 
   interface Props {
     groupedAlbums: AlbumGroup[];
@@ -68,7 +68,7 @@
       {#if !isCollapsed}
         <tbody
           class="mt-4 block w-full overflow-y-auto rounded-md border dark:border-immich-dark-gray dark:text-immich-dark-fg"
-          transition:slide={{ duration: 300 }}
+          transition:motionSlide={{ duration: 300 }}
         >
           {#each albumGroup.albums as album (album.id)}
             <AlbumTableRow {album} {onShowContextMenu} />

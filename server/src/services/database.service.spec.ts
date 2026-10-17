@@ -1,459 +1,69 @@
-import type { VectorExtension } from 'src/types.js';
-import { EXTENSION_NAMES } from 'src/constants.js';
-import { DatabaseExtension, VectorIndex } from 'src/enum.js';
+import { DatabaseExtension, DatabaseLock, VectorIndex } from 'src/enum.js';
 import { DatabaseService } from 'src/services/database.service.js';
-import { envData, mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 describe(DatabaseService.name, () => {
   let sut: DatabaseService;
   let mocks: ServiceMocks;
-
-  let extensionRange: string;
-  let versionBelowRange: string;
-  let minVersionInRange: string;
-  let updateInRange: string;
-  let versionAboveRange: string;
-
   beforeEach(() => {
     ({ sut, mocks } = newTestService(DatabaseService));
-
-    extensionRange = '0.2.x';
-    mocks.database.getVectorExtension.mockResolvedValue(DatabaseExtension.VectorChord);
-    mocks.database.getExtensionVersionRange.mockReturnValue(extensionRange);
-    mocks.database.getSchemaDrift.mockResolvedValue({
-      items: [],
-      asSql: () => [],
-      asHuman: () => [],
-    });
-    mocks.database.detectMigrationMode.mockResolvedValue('legacy');
-
-    versionBelowRange = '0.1.0';
-    minVersionInRange = '0.2.0';
-    updateInRange = '0.2.1';
-    versionAboveRange = '0.3.0';
+    mocks.database.getPostgresVersion.mockResolvedValue('19beta4 (Debian)');
+    mocks.database.getPostgresVersionRange.mockReturnValue('>=19.0.0 <20.0.0');
+    mocks.database.getExtensionVersionRange.mockReturnValue('>=0.8.7 <0.9.0');
     mocks.database.getExtensionVersions.mockResolvedValue([
-      {
-        name: DatabaseExtension.VectorChord,
-        installedVersion: null,
-        availableVersion: minVersionInRange,
-      },
+      { name: DatabaseExtension.Vector, installedVersion: '0.8.7', availableVersion: '0.8.7' },
     ]);
   });
 
-  it('should work', () => {
-    expect(sut).toBeDefined();
+  it.each(['18.4', '20.0', 'unknown'])('rejects unsupported PostgreSQL %s before mutating it', async (version) => {
+    mocks.database.getPostgresVersion.mockResolvedValue(version);
+    await expect(sut.onBootstrap()).rejects.toThrow('Frameleaf requires PostgreSQL 19');
+    expect(mocks.database.runMigrations).not.toHaveBeenCalled();
+    expect(mocks.database.createExtension).not.toHaveBeenCalled();
   });
 
-  describe('onBootstrap', () => {
-    it('should throw an error if PostgreSQL version is below minimum supported version', async () => {
-      mocks.database.getPostgresVersion.mockResolvedValueOnce('13.10.0');
-
-      await expect(sut.onBootstrap()).rejects.toThrow('Invalid PostgreSQL version. Found 13.10.0');
-
-      expect(mocks.database.getPostgresVersion).toHaveBeenCalledTimes(1);
-    });
-
-    describe.each(<Array<{ extension: VectorExtension; extensionName: string }>>[
-      { extension: DatabaseExtension.Vector, extensionName: EXTENSION_NAMES[DatabaseExtension.Vector] },
-      { extension: DatabaseExtension.VectorChord, extensionName: EXTENSION_NAMES[DatabaseExtension.VectorChord] },
-    ])('should work with $extensionName', ({ extension, extensionName }) => {
-      beforeEach(() => {
-        mocks.database.getExtensionVersions.mockResolvedValue([
-          {
-            name: extension,
-            installedVersion: minVersionInRange,
-            availableVersion: minVersionInRange,
-          },
-        ]);
-        mocks.database.getVectorExtension.mockResolvedValue(extension);
-        mocks.config.getEnv.mockReturnValue(
-          mockEnvData({ database: { ...envData.database, vectorExtension: extension } }),
-        );
-      });
-
-      it(`should start up successfully with ${extension}`, async () => {
-        mocks.database.getPostgresVersion.mockResolvedValue('14.0.0');
-        mocks.database.getExtensionVersions.mockResolvedValue([
-          {
-            name: extension,
-            installedVersion: null,
-            availableVersion: minVersionInRange,
-          },
-        ]);
-
-        await expect(sut.onBootstrap()).resolves.toBeUndefined();
-
-        expect(mocks.database.getPostgresVersion).toHaveBeenCalled();
-        expect(mocks.database.createExtension).toHaveBeenCalledWith(extension);
-        expect(mocks.database.createExtension).toHaveBeenCalledTimes(1);
-        expect(mocks.database.getExtensionVersions).toHaveBeenCalled();
-        expect(mocks.database.runMigrations).toHaveBeenCalledTimes(1);
-        expect(mocks.logger.fatal).not.toHaveBeenCalled();
-      });
-
-      it(`should throw an error if the ${extension} extension is not installed`, async () => {
-        mocks.database.getExtensionVersions.mockResolvedValue([]);
-        const message = `The ${extensionName} extension is not available in this Postgres instance.
-    If using a container image, ensure the image has the extension installed.`;
-        await expect(sut.onBootstrap()).rejects.toThrow(message);
-
-        expect(mocks.database.createExtension).not.toHaveBeenCalled();
-        expect(mocks.database.runMigrations).not.toHaveBeenCalled();
-      });
-
-      it(`should throw an error if the ${extension} extension version is below minimum supported version`, async () => {
-        mocks.database.getExtensionVersions.mockResolvedValue([
-          {
-            name: extension,
-            installedVersion: versionBelowRange,
-            availableVersion: versionBelowRange,
-          },
-        ]);
-
-        await expect(sut.onBootstrap()).rejects.toThrow(
-          `The ${extensionName} extension version is ${versionBelowRange}, but Immich only supports ${extensionRange}`,
-        );
-
-        expect(mocks.database.runMigrations).not.toHaveBeenCalled();
-      });
-
-      it(`should throw an error if ${extension} extension version is a nightly`, async () => {
-        mocks.database.getExtensionVersions.mockResolvedValue([
-          {
-            name: extension,
-            installedVersion: '0.0.0',
-            availableVersion: '0.0.0',
-          },
-        ]);
-
-        await expect(sut.onBootstrap()).rejects.toThrow(
-          `The ${extensionName} extension version is 0.0.0, which means it is a nightly release.`,
-        );
-
-        expect(mocks.database.createExtension).not.toHaveBeenCalled();
-        expect(mocks.database.updateVectorExtension).not.toHaveBeenCalled();
-        expect(mocks.database.runMigrations).not.toHaveBeenCalled();
-      });
-
-      it(`should do in-range update for ${extension} extension`, async () => {
-        mocks.database.getExtensionVersions.mockResolvedValue([
-          {
-            name: extension,
-            availableVersion: updateInRange,
-            installedVersion: minVersionInRange,
-          },
-        ]);
-
-        await expect(sut.onBootstrap()).resolves.toBeUndefined();
-
-        expect(mocks.database.updateVectorExtension).toHaveBeenCalledWith(extension, updateInRange);
-        expect(mocks.database.updateVectorExtension).toHaveBeenCalledTimes(1);
-        expect(mocks.database.getExtensionVersions).toHaveBeenCalled();
-        expect(mocks.database.runMigrations).toHaveBeenCalledTimes(1);
-        expect(mocks.logger.fatal).not.toHaveBeenCalled();
-      });
-
-      it(`should not upgrade ${extension} if same version`, async () => {
-        mocks.database.getExtensionVersions.mockResolvedValue([
-          {
-            name: extension,
-            availableVersion: minVersionInRange,
-            installedVersion: minVersionInRange,
-          },
-        ]);
-
-        await expect(sut.onBootstrap()).resolves.toBeUndefined();
-
-        expect(mocks.database.updateVectorExtension).not.toHaveBeenCalled();
-        expect(mocks.database.runMigrations).toHaveBeenCalledTimes(1);
-        expect(mocks.logger.fatal).not.toHaveBeenCalled();
-      });
-
-      it(`should throw error if ${extension} available version is below range`, async () => {
-        mocks.database.getExtensionVersions.mockResolvedValue([
-          {
-            name: extension,
-            availableVersion: versionBelowRange,
-            installedVersion: null,
-          },
-        ]);
-
-        await expect(sut.onBootstrap()).rejects.toThrow();
-
-        expect(mocks.database.createExtension).not.toHaveBeenCalled();
-        expect(mocks.database.updateVectorExtension).not.toHaveBeenCalled();
-        expect(mocks.database.runMigrations).not.toHaveBeenCalled();
-        expect(mocks.logger.fatal).not.toHaveBeenCalled();
-      });
-
-      it(`should throw error if ${extension} available version is above range`, async () => {
-        mocks.database.getExtensionVersions.mockResolvedValue([
-          {
-            name: extension,
-            availableVersion: versionAboveRange,
-            installedVersion: minVersionInRange,
-          },
-        ]);
-
-        await expect(sut.onBootstrap()).rejects.toThrow();
-
-        expect(mocks.database.createExtension).not.toHaveBeenCalled();
-        expect(mocks.database.updateVectorExtension).not.toHaveBeenCalled();
-        expect(mocks.database.runMigrations).not.toHaveBeenCalled();
-        expect(mocks.logger.fatal).not.toHaveBeenCalled();
-      });
-
-      it('should throw error if available version is below installed version', async () => {
-        mocks.database.getExtensionVersions.mockResolvedValue([
-          {
-            name: extension,
-            availableVersion: minVersionInRange,
-            installedVersion: updateInRange,
-          },
-        ]);
-
-        await expect(sut.onBootstrap()).rejects.toThrow(
-          `The database currently has ${extensionName} ${updateInRange} activated, but the Postgres instance only has ${minVersionInRange} available.`,
-        );
-
-        expect(mocks.database.updateVectorExtension).not.toHaveBeenCalled();
-        expect(mocks.database.runMigrations).not.toHaveBeenCalled();
-        expect(mocks.logger.fatal).not.toHaveBeenCalled();
-      });
-
-      it('should throw error if installed version is not in version range', async () => {
-        mocks.database.getExtensionVersions.mockResolvedValue([
-          {
-            name: extension,
-            availableVersion: minVersionInRange,
-            installedVersion: versionAboveRange,
-          },
-        ]);
-
-        await expect(sut.onBootstrap()).rejects.toThrow(
-          `The ${extensionName} extension version is ${versionAboveRange}, but Immich only supports`,
-        );
-
-        expect(mocks.database.updateVectorExtension).not.toHaveBeenCalled();
-        expect(mocks.database.runMigrations).not.toHaveBeenCalled();
-        expect(mocks.logger.fatal).not.toHaveBeenCalled();
-      });
-
-      it(`should raise error if ${extension} extension upgrade failed`, async () => {
-        mocks.database.getExtensionVersions.mockResolvedValue([
-          {
-            name: extension,
-            availableVersion: updateInRange,
-            installedVersion: minVersionInRange,
-          },
-        ]);
-        mocks.database.updateVectorExtension.mockRejectedValue(new Error('Failed to update extension'));
-
-        await expect(sut.onBootstrap()).rejects.toThrow('Failed to update extension');
-
-        expect(mocks.logger.warn.mock.calls).toEqual(
-          expect.arrayContaining([
-            expect.arrayContaining([
-              expect.stringContaining(`The ${extensionName} extension can be updated to ${updateInRange}.`),
-            ]),
-          ]),
-        );
-        expect(mocks.logger.fatal).not.toHaveBeenCalled();
-        expect(mocks.database.updateVectorExtension).toHaveBeenCalledWith(extension, updateInRange);
-        expect(mocks.database.runMigrations).not.toHaveBeenCalled();
-      });
-
-      it(`should reindex ${extension} indices if needed`, async () => {
-        await expect(sut.onBootstrap()).resolves.toBeUndefined();
-
-        expect(mocks.database.reindexVectorsIfNeeded).toHaveBeenCalledExactlyOnceWith([
-          VectorIndex.Clip,
-          VectorIndex.Face,
-        ]);
-        expect(mocks.database.reindexVectorsIfNeeded).toHaveBeenCalledTimes(1);
-        expect(mocks.database.runMigrations).toHaveBeenCalledTimes(1);
-        expect(mocks.logger.fatal).not.toHaveBeenCalled();
-      });
-
-      it(`should throw an error if reindexing fails`, async () => {
-        mocks.database.reindexVectorsIfNeeded.mockRejectedValue(new Error('Error reindexing'));
-
-        await expect(sut.onBootstrap()).rejects.toBeDefined();
-
-        expect(mocks.database.reindexVectorsIfNeeded).toHaveBeenCalledExactlyOnceWith([
-          VectorIndex.Clip,
-          VectorIndex.Face,
-        ]);
-        expect(mocks.database.runMigrations).not.toHaveBeenCalled();
-        expect(mocks.logger.fatal).not.toHaveBeenCalled();
-        expect(mocks.logger.warn).toHaveBeenCalledWith(
-          expect.stringContaining('Could not run vector reindexing checks.'),
-        );
-      });
-    });
-
-    it('should skip migrations if DB_SKIP_MIGRATIONS=true', async () => {
-      mocks.config.getEnv.mockReturnValue(mockEnvData({ database: { ...envData.database, skipMigrations: true } }));
-
-      await expect(sut.onBootstrap()).resolves.toBeUndefined();
-
-      expect(mocks.database.runMigrations).not.toHaveBeenCalled();
-    });
-
-    it.each(['legacy', 'fresh'] as const)('runs combined then fork migrations in %s mode', async (mode) => {
-      const migrationOrder: string[] = [];
-      mocks.database.detectMigrationMode.mockResolvedValue(mode);
-      mocks.database.runMigrations.mockImplementation(() => {
-        migrationOrder.push('combined');
-        return Promise.resolve();
-      });
-      mocks.database.runForkMigrations.mockImplementation(() => {
-        migrationOrder.push('fork');
-        return Promise.resolve();
-      });
-
-      await expect(sut.onBootstrap()).resolves.toBeUndefined();
-
-      expect(migrationOrder).toEqual(['combined', 'fork']);
-      expect(mocks.database.runOfficialMigrations).not.toHaveBeenCalled();
-    });
-
-    it.each(['isolated', 'official-origin'] as const)('runs official then fork migrations in %s mode', async (mode) => {
-      const migrationOrder: string[] = [];
-      mocks.database.detectMigrationMode.mockResolvedValue(mode);
-      mocks.database.runOfficialMigrations.mockImplementation(() => {
-        migrationOrder.push('official');
-        return Promise.resolve();
-      });
-      mocks.database.runForkMigrations.mockImplementation(() => {
-        migrationOrder.push('fork');
-        return Promise.resolve();
-      });
-
-      await expect(sut.onBootstrap()).resolves.toBeUndefined();
-
-      expect(migrationOrder).toEqual(['official', 'fork']);
-      expect(mocks.database.runMigrations).not.toHaveBeenCalled();
-    });
-
-    it('guards an inactive schema version 2 return before either migration provider runs', async () => {
-      mocks.database.detectMigrationMode.mockResolvedValue('isolated');
-      mocks.database.isCertifiedReturnStartup.mockResolvedValue(true);
-      mocks.database.assertCertifiedReturnLedger.mockRejectedValue(new Error('certified v3.0.3 ledger rejected'));
-
-      await expect(sut.onBootstrap()).rejects.toThrow('certified v3.0.3 ledger rejected');
-
-      expect(mocks.database.assertCertifiedReturnLedger).toHaveBeenCalledOnce();
-      expect(mocks.database.assertCertifiedReturnLedger.mock.invocationCallOrder[0]).toBeLessThan(
-        mocks.database.detectMigrationMode.mock.invocationCallOrder[0] ?? Infinity,
-      );
-      expect(mocks.database.runOfficialMigrations).not.toHaveBeenCalled();
-      expect(mocks.database.runForkMigrations).not.toHaveBeenCalled();
-    });
-
-    it.each(['fresh', 'legacy'] as const)('does not apply the return guard to %s startup', async (mode) => {
-      mocks.database.detectMigrationMode.mockResolvedValue(mode);
-      mocks.database.isCertifiedReturnStartup.mockResolvedValue(false);
-
-      await expect(sut.onBootstrap()).resolves.toBeUndefined();
-
-      expect(mocks.database.assertCertifiedReturnLedger).not.toHaveBeenCalled();
-    });
-
-    it('refuses unknown migration names before running a migrator', async () => {
-      mocks.database.detectMigrationMode.mockRejectedValue(
-        new Error('Unknown migration in kysely_migrations: 9999999999999-CustomPatch'),
-      );
-
-      await expect(sut.onBootstrap()).rejects.toThrow(
-        'Unknown migration in kysely_migrations: 9999999999999-CustomPatch',
-      );
-
-      expect(mocks.database.runMigrations).not.toHaveBeenCalled();
-      expect(mocks.database.runOfficialMigrations).not.toHaveBeenCalled();
-      expect(mocks.database.runForkMigrations).not.toHaveBeenCalled();
-    });
-
-    it(`should throw error if extension could not be created`, async () => {
-      mocks.database.createExtension.mockRejectedValue(new Error('Failed to create extension'));
-
-      await expect(sut.onBootstrap()).rejects.toThrow('Failed to create extension');
-
-      expect(mocks.logger.fatal).toHaveBeenCalledTimes(1);
-      expect(mocks.logger.fatal.mock.calls[0][0]).toContain('CREATE EXTENSION IF NOT EXISTS vchord CASCADE');
-      expect(mocks.database.createExtension).toHaveBeenCalledTimes(1);
-      expect(mocks.database.updateVectorExtension).not.toHaveBeenCalled();
-      expect(mocks.database.runMigrations).not.toHaveBeenCalled();
-    });
-
-    it(`should drop unused extension`, async () => {
-      mocks.config.getEnv.mockReturnValue(
-        mockEnvData({ database: { ...envData.database, vectorExtension: DatabaseExtension.Vector } }),
-      );
-      mocks.database.getVectorExtension.mockResolvedValue(DatabaseExtension.Vector);
-      mocks.database.getExtensionVersions.mockResolvedValue([
-        {
-          name: DatabaseExtension.Vector,
-          installedVersion: minVersionInRange,
-          availableVersion: minVersionInRange,
-        },
-        {
-          name: DatabaseExtension.VectorChord,
-          installedVersion: minVersionInRange,
-          availableVersion: minVersionInRange,
-        },
-      ]);
-
-      await expect(sut.onBootstrap()).resolves.toBeUndefined();
-
-      expect(mocks.database.dropExtension).toHaveBeenCalledExactlyOnceWith(DatabaseExtension.VectorChord);
-    });
-
-    it(`should warn if unused extension could not be dropped`, async () => {
-      mocks.config.getEnv.mockReturnValue(
-        mockEnvData({ database: { ...envData.database, vectorExtension: DatabaseExtension.Vector } }),
-      );
-      mocks.database.getVectorExtension.mockResolvedValue(DatabaseExtension.Vector);
-      mocks.database.getExtensionVersions.mockResolvedValue([
-        {
-          name: DatabaseExtension.Vector,
-          installedVersion: minVersionInRange,
-          availableVersion: minVersionInRange,
-        },
-        {
-          name: DatabaseExtension.VectorChord,
-          installedVersion: minVersionInRange,
-          availableVersion: minVersionInRange,
-        },
-      ]);
-      mocks.database.dropExtension.mockRejectedValue(new Error('Failed to drop extension'));
-
-      await expect(sut.onBootstrap()).resolves.toBeUndefined();
-
-      expect(mocks.database.dropExtension).toHaveBeenCalledExactlyOnceWith(DatabaseExtension.VectorChord);
-      expect(mocks.logger.warn).toHaveBeenCalledTimes(1);
-      expect(mocks.logger.warn.mock.calls[0][0]).toContain('DROP EXTENSION vchord');
-    });
-
-    it(`should not try to drop pgvector when using vectorchord`, async () => {
-      mocks.database.getExtensionVersions.mockResolvedValue([
-        {
-          name: DatabaseExtension.Vector,
-          installedVersion: minVersionInRange,
-          availableVersion: minVersionInRange,
-        },
-        {
-          name: DatabaseExtension.VectorChord,
-          installedVersion: minVersionInRange,
-          availableVersion: minVersionInRange,
-        },
-      ]);
-      mocks.database.dropExtension.mockRejectedValue(new Error('Failed to drop extension'));
-
-      await expect(sut.onBootstrap()).resolves.toBeUndefined();
-
-      expect(mocks.database.dropExtension).not.toHaveBeenCalled();
-    });
+  it('boots PostgreSQL 19 prerelease with one migration chain and HNSW indexes', async () => {
+    await sut.onBootstrap();
+    expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.Migrations, expect.any(Function));
+    expect(mocks.database.assertFrameleafDatabase).toHaveBeenCalledOnce();
+    expect(mocks.database.runMigrations).toHaveBeenCalledOnce();
+    expect(mocks.database.assertImportActivated).toHaveBeenCalledOnce();
+    expect(mocks.database.reindexVectorsIfNeeded).toHaveBeenCalledWith([
+      VectorIndex.Clip,
+      VectorIndex.Face,
+      VectorIndex.VideoMomentFrame,
+    ]);
+  });
+
+  it('rejects a populated source before extension or migration writes', async () => {
+    mocks.database.assertFrameleafDatabase.mockRejectedValue(new Error('fresh destination required'));
+    await expect(sut.onBootstrap()).rejects.toThrow('fresh destination required');
+    expect(mocks.database.createExtension).not.toHaveBeenCalled();
+    expect(mocks.database.runMigrations).not.toHaveBeenCalled();
+  });
+
+  it('creates the required pgvector extension only when absent', async () => {
+    mocks.database.getExtensionVersions.mockResolvedValue([
+      { name: DatabaseExtension.Vector, installedVersion: null, availableVersion: '0.8.7' },
+    ]);
+    await sut.onBootstrap();
+    expect(mocks.database.createExtension).toHaveBeenCalledWith(DatabaseExtension.Vector);
+  });
+
+  it('keeps an unfinished import offline while the administration command can resume it', async () => {
+    mocks.database.assertImportActivated.mockRejectedValue(new Error('DESTINATION_IMPORT_NOT_ACTIVATED'));
+    await expect(sut.onBootstrap()).rejects.toThrow('DESTINATION_IMPORT_NOT_ACTIVATED');
+    expect(mocks.database.reindexVectorsIfNeeded).not.toHaveBeenCalled();
+    mocks.database.assertImportActivated.mockClear();
+    await sut.initialize({ allowInactiveImport: true });
+    expect(mocks.database.assertImportActivated).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unsupported installed vector version without replacing data', async () => {
+    mocks.database.getExtensionVersions.mockResolvedValue([
+      { name: DatabaseExtension.Vector, installedVersion: '0.7.0', availableVersion: '0.8.7' },
+    ]);
+    await expect(sut.onBootstrap()).rejects.toThrow('Installed pgvector');
+    expect(mocks.database.runMigrations).not.toHaveBeenCalled();
   });
 });

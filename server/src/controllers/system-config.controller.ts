@@ -1,17 +1,21 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, HttpStatus, Post, Put, Query } from '@nestjs/common';
 import { ApiBody, ApiResponse, ApiTags } from '@nestjs/swagger';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { AdminConfigDto, ConfigTemplateStorageOptionDto } from 'src/dtos/config.dto.js';
 import {
+  ConfigFileActivationResponseDto,
+  ConfigFileReloadDto,
   ImageDescriptionRequeueEstimateDto,
   ImageDescriptionRequeueResponseDto,
+  MachineLearningHardwareQueryDto,
   MachineLearningHardwareResponseDto,
   SmartAlbumReevaluateEstimateDto,
   SmartAlbumReevaluateRequestDto,
   SmartAlbumReevaluateResponseDto,
 } from 'src/dtos/system-config.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Authenticated } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
 
@@ -38,6 +42,28 @@ export class SystemConfigController {
     return this.service.getAdminConfig();
   }
 
+  @Get('config-file/activation')
+  @Header('Cache-Control', 'private, no-store')
+  @Authenticated({ permission: Permission.SystemConfigRead, admin: true, refreshElevation: false })
+  @Endpoint({
+    summary: 'Get activated file configuration epoch',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getConfigFileActivation(@Auth() auth: AuthDto): Promise<ConfigFileActivationResponseDto> {
+    return this.service.getConfigFileActivation(auth);
+  }
+
+  @Post('config-file/reload')
+  @Header('Cache-Control', 'private, no-store')
+  @Authenticated({ permission: Permission.SystemConfigUpdate, admin: true })
+  @Endpoint({
+    summary: 'Activate the configured server file',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  reloadConfigFile(@Auth() auth: AuthDto, @Body() dto: ConfigFileReloadDto): Promise<ConfigFileActivationResponseDto> {
+    return this.service.reloadConfigFile(auth, dto);
+  }
+
   @Get('defaults')
   @Authenticated({ permission: Permission.SystemConfigRead, admin: true })
   @Endpoint({
@@ -57,11 +83,14 @@ export class SystemConfigController {
   @Authenticated({ permission: Permission.SystemConfigRead, admin: true })
   @Endpoint({
     summary: 'Get machine learning hardware',
-    description: 'Retrieve available hardware acceleration providers from the machine learning service.',
+    description:
+      'Retrieve available hardware acceleration providers from one machine learning destination. Without `destinationId` the first enabled local destination is probed; a cloud destination is never chosen implicitly.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  getMachineLearningHardware(): Promise<MachineLearningHardwareResponseDto> {
-    return this.service.getMachineLearningHardware();
+  getMachineLearningHardware(
+    @Query() { destinationId }: MachineLearningHardwareQueryDto,
+  ): Promise<MachineLearningHardwareResponseDto> {
+    return this.service.getMachineLearningHardware(destinationId);
   }
 
   @Put()
@@ -75,8 +104,8 @@ export class SystemConfigController {
       .stable('v2')
       .deprecated('v3.2.0', { replacementId: 'updateAdminConfig' }),
   })
-  updateConfig(@Body() dto: AdminConfigDto): Promise<AdminConfigDto> {
-    return this.service.updateAdminConfig(dto);
+  updateConfig(@Auth() auth: AuthDto, @Body() dto: AdminConfigDto): Promise<AdminConfigDto> {
+    return this.service.updateAdminConfig(dto, auth);
   }
 
   @Get('storage-template-options')
@@ -146,7 +175,7 @@ export class SystemConfigController {
   @Endpoint({
     summary: 'Trigger smart-album re-evaluate',
     description:
-      'Enqueues a bulk re-evaluation of all described image assets against the smart-album tag rules. Pass an optional `kind` body field to scope the re-evaluation to a single built-in kind. Idempotent via BullMQ deduplication (kind-scoped dispatches use their own dedup namespace).',
+      'Enqueues a bulk re-evaluation of all described image assets against the smart-album tag rules. Pass an optional `kind` body field to scope the re-evaluation to a single built-in kind. Idempotent via durable job deduplication (kind-scoped dispatches use their own dedup namespace).',
     history: new HistoryBuilder().added('v1').beta('v1'),
   })
   @ApiResponse({ status: 400, description: 'Smart albums are not enabled, or invalid kind.' })

@@ -1,7 +1,14 @@
-import mockfs from 'mock-fs';
 import { readFileSync } from 'node:fs';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { platform, tmpdir } from 'node:os';
+import { dirname, isAbsolute, join, relative } from 'node:path';
 import { Batcher, CrawlOptions, crawl } from 'src/utils.js';
 import { Mock } from 'vitest';
+
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>();
+  return { ...actual, platform: vi.fn(actual.platform) };
+});
 
 interface Test {
   test: string;
@@ -60,7 +67,7 @@ const tests: Test[] = [
       '/photo"s/image2.jpg': true,
       '/photo`s/image3.jpg': true,
     },
-    skipOnWin32: true, // single quote interferes with mockfs root on Windows
+    skipOnWin32: true, // double quotes are invalid in Windows filenames
   },
   {
     test: 'should crawl a single file',
@@ -191,15 +198,15 @@ const tests: Test[] = [
       pathsToCrawl: ['/photos/'],
     },
     files: {
-      '/photos/image.jpg': true,
-      '/photos/image.Jpg': true,
-      '/photos/image.jpG': true,
-      '/photos/image.JPG': true,
-      '/photos/image.jpEg': true,
-      '/photos/image.TIFF': true,
-      '/photos/image.tif': true,
-      '/photos/image.dng': true,
-      '/photos/image.NEF': true,
+      '/photos/image1.jpg': true,
+      '/photos/image2.Jpg': true,
+      '/photos/image3.jpG': true,
+      '/photos/image4.JPG': true,
+      '/photos/image5.jpEg': true,
+      '/photos/image6.TIFF': true,
+      '/photos/image7.tif': true,
+      '/photos/image8.dng': true,
+      '/photos/image9.NEF': true,
     },
   },
   {
@@ -279,8 +286,46 @@ const tests: Test[] = [
 ];
 
 describe('crawl', () => {
-  afterEach(() => {
-    mockfs.restore();
+  let directory: string;
+  beforeEach(async () => {
+    directory = await mkdtemp(join(tmpdir(), 'frameleaf-cli-crawl-'));
+  });
+  afterEach(async () => {
+    vi.mocked(platform).mockReset();
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  it.each(['images/**', 'images/*.{jpg,png}', 'images/image[12].jpg'])(
+    'should support Windows separators in absolute ignore glob %s',
+    async (pattern) => {
+      await mkdir(join(directory, 'images'));
+      await writeFile(join(directory, 'images', 'image1.jpg'), 'ignored');
+      await writeFile(join(directory, 'image3.jpg'), 'included');
+      vi.mocked(platform).mockReturnValue('win32');
+
+      const actual = await crawl({
+        pathsToCrawl: [directory],
+        exclusionPattern: `${directory.replaceAll('/', '\\')}\\${pattern}`,
+        recursive: true,
+        extensions,
+      });
+
+      expect(actual.map((path) => readContent(path))).toEqual(['included']);
+    },
+  );
+
+  it('should preserve escaped glob characters in Windows ignore patterns', async () => {
+    await writeFile(join(directory, 'image[1].jpg'), 'ignored');
+    await writeFile(join(directory, 'image1.jpg'), 'included');
+    vi.mocked(platform).mockReturnValue('win32');
+
+    const actual = await crawl({
+      pathsToCrawl: [directory],
+      exclusionPattern: String.raw`**/image\[1\].jpg`,
+      extensions,
+    });
+
+    expect(actual.map((path) => readContent(path))).toEqual(['included']);
   });
 
   describe('crawl', () => {
@@ -291,9 +336,24 @@ describe('crawl', () => {
       }
       it(name, async () => {
         // The file contents is the same as the path.
-        mockfs(Object.fromEntries(Object.keys(files).map((file) => [file, file])));
+        for (const file of Object.keys(files)) {
+          const path = file.startsWith(`${cwd}/`)
+            ? join(directory, 'cwd', file.slice(cwd.length))
+            : join(directory, file);
+          await mkdir(dirname(path), { recursive: true });
+          await writeFile(path, file);
+        }
 
-        const actual = await crawl({ ...options, extensions });
+        const actual = await crawl({
+          ...options,
+          pathsToCrawl: options.pathsToCrawl.map((path) =>
+            isAbsolute(path) ? `${directory}${path}` : relative(cwd, join(directory, 'cwd', path)),
+          ),
+          exclusionPattern: options.exclusionPattern?.startsWith('/')
+            ? `${directory}${options.exclusionPattern}`
+            : options.exclusionPattern,
+          extensions,
+        });
         const expected = Object.entries(files)
           .filter((entry) => entry[1])
           .map(([file]) => file);
@@ -313,6 +373,56 @@ describe('Batcher', () => {
     batcher = new Batcher({ batchSize: 2, onBatch });
   });
 
+  it('preserves an item added synchronously by its batch callback', async () => {
+    const seen: unknown[][] = [];
+    batcher = new Batcher({
+      batchSize: 2,
+      onBatch: async (items) => {
+        seen.push(items);
+        if (seen.length === 1) {
+          batcher.add('later');
+        }
+      },
+    });
+    batcher.add('first');
+    await batcher.flush();
+    await batcher.flush();
+    expect(seen).toEqual([['first'], ['later']]);
+  });
+
+  it('allows callers to await completion and observe a callback failure', async () => {
+    const gate = Promise.withResolvers<void>();
+    batcher = new Batcher({ batchSize: 2, onBatch: () => gate.promise });
+    batcher.add('first');
+    const pending = batcher.flush();
+    expect(pending).toBeInstanceOf(Promise);
+    const failure = new Error('upload failed');
+    const observed = expect(pending).rejects.toBe(failure);
+    gate.reject(failure);
+    await observed;
+  });
+
+  it.each([undefined, 100])('reports an automatic batch failure with debounce %s', async (debounceTimeMs) => {
+    vi.useFakeTimers();
+    const report = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const failure = new Error('upload failed');
+    try {
+      batcher = new Batcher({
+        batchSize: debounceTimeMs ? 2 : 1,
+        debounceTimeMs,
+        onBatch: async () => {
+          throw failure;
+        },
+      });
+      batcher.add('first');
+      await vi.runAllTimersAsync();
+      expect(report).toHaveBeenCalledExactlyOnceWith('Batch failed:', failure);
+    } finally {
+      report.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it('should trigger onBatch() when a batch limit is reached', async () => {
     batcher.add('a');
     batcher.add('b');
@@ -323,7 +433,7 @@ describe('Batcher', () => {
 
   it('should trigger onBatch() when flush() is called', async () => {
     batcher.add('a');
-    batcher.flush();
+    await batcher.flush();
     expect(onBatch).toHaveBeenCalledOnce();
     expect(onBatch).toHaveBeenCalledWith(['a']);
   });

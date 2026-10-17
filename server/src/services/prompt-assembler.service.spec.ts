@@ -251,6 +251,27 @@ describe('ImageDescriptionPromptAssembler', () => {
   });
 
   describe('advanced mode', () => {
+    it('substitutes only original template placeholders, retaining literal names and vocabulary', () => {
+      const name = "Ada {names} {schema} {style_hint} {vocabulary} $& $$ $` $'";
+      const vocabulary = '{names} {schema} {style_hint} {vocabulary} $&';
+      const { prompt } = assembler.build({
+        config: baseConfig({
+          customVocabulary: [vocabulary],
+          advanced: {
+            enabled: true,
+            rawPromptTemplate: '{names}\n{names}\n{schema}\n{style_hint}\n{vocabulary}\n{unknown}',
+            placeholderValidation: 'strict',
+          },
+        }),
+        knownPersons: [{ name, faceConfidence: 1, boxCenter: [0.5, 0.5] }],
+      });
+      expect(prompt.split(`- ${name} (center)`)).toHaveLength(3);
+      expect(prompt).toContain(`Prefer these tag values when applicable: ${vocabulary}.`);
+      expect(prompt.match(/Return valid JSON with this schema:/g)).toHaveLength(1);
+      expect(prompt).toContain('Write 3 factual sentences');
+      expect(prompt).toContain('{unknown}');
+    });
+
     it('uses raw prompt template verbatim with placeholders substituted', () => {
       const { prompt } = assembler.build({
         config: baseConfig({

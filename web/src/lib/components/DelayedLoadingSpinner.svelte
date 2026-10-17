@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { LoadingSpinner } from '@immich/ui';
+  import { LoadingSpinner } from '@frameleaf/ui';
 </script>
 
 <div class="delayed-spinner absolute flex h-full items-center justify-center">

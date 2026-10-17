@@ -1,342 +1,130 @@
-import { Kysely, sql } from 'kysely';
-import { createHash, randomUUID } from 'node:crypto';
+import { Kysely } from 'kysely';
+import { randomUUID } from 'node:crypto';
 import { AssetMetadataKey } from 'src/enum.js';
-import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils.js';
+import { getKyselyDB } from 'test/utils.js';
 
-let defaultDatabase: Kysely<DB>;
-
-const setup = (db?: Kysely<DB>) => {
-  const { ctx } = newMediumService(BaseService, {
-    database: db || defaultDatabase,
-    real: [],
-    mock: [LoggingRepository],
-  });
-  return { ctx, sut: new ForkEnrichmentRepository(db || defaultDatabase) };
-};
-
-const setPhase = (phase: string, active: boolean) =>
-  sql`UPDATE immich_fork.state SET phase = ${phase}, active = ${active} WHERE id = 1`.execute(defaultDatabase);
-
-const newEnrichedAsset = async (ctx: ReturnType<typeof setup>['ctx']) => {
-  const { user } = await ctx.newUser();
-  const { asset } = await ctx.newAsset({ ownerId: user.id });
-  return { user, asset };
+let database: Kysely<DB>;
+const key = AssetMetadataKey.MlEnrichment;
+const setup = () => {
+  const { ctx } = newMediumService(BaseService, { database, real: [], mock: [LoggingRepository] });
+  return { ctx, sut: new AssetRepository(database) };
 };
 
 beforeAll(async () => {
-  defaultDatabase = await getKyselyDB();
+  database = await getKyselyDB();
 });
+afterAll(async () => database?.destroy());
 
-afterEach(async () => {
-  await setPhase('active', true);
-});
-
-describe(ForkEnrichmentRepository.name, () => {
-  describe('initialize', () => {
-    it('should create a default sidecar row for an existing asset only', async () => {
-      const { ctx, sut } = setup();
-      const { asset } = await newEnrichedAsset(ctx);
-      const missing = randomUUID();
-
-      await sut.initialize([asset.id, missing]);
-
-      await expect(sut.get(asset.id)).resolves.toEqual({
-        assetId: asset.id,
-        provenance: {},
-        userDescription: '',
-        generatedDescription: null,
-        generatedTags: [],
-        requiresReview: false,
-      });
-      await expect(sut.get(missing)).resolves.toBeUndefined();
-    });
-
-    it('should not overwrite an existing sidecar row', async () => {
-      const { ctx, sut } = setup();
-      const { asset } = await newEnrichedAsset(ctx);
-      const provenance = { description: { status: 'success', result: { description: 'kept' } } };
-      await sut.save(asset.id, provenance);
-
-      await sut.initialize([asset.id]);
-
-      await expect(sut.get(asset.id)).resolves.toMatchObject({ provenance, generatedDescription: 'kept' });
-    });
-
-    it('should do nothing when fork writes are disabled', async () => {
-      const { ctx, sut } = setup();
-      const { asset } = await newEnrichedAsset(ctx);
-      await sut.delete([asset.id]);
-      await setPhase('legacy', false);
-
-      await sut.initialize([asset.id]);
-
-      await setPhase('active', true);
-      await expect(sut.get(asset.id)).resolves.toBeUndefined();
-    });
+describe('canonical enrichment metadata', () => {
+  it('stores generated provenance separately from manual EXIF text and tags', async () => {
+    const { ctx, sut } = setup();
+    await expectCanonicalTables(database, ['asset', 'asset_metadata', 'asset_exif']);
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    await ctx.newExif({ assetId: asset.id, description: 'My own words' });
+    const { tag } = await ctx.newTag({ userId: user.id, value: 'my-tag' });
+    await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [asset.id] });
+    const value = {
+      description: {
+        status: 'success',
+        result: { description: 'A generated scene', tags: ['generated-tag'] },
+        appliedTagValues: ['previously-applied'],
+        provenance: { destinationId: 'local-model' },
+      },
+    };
+    await sut.upsertMetadata(asset.id, [{ key, value }]);
+    await expect(sut.getMetadataByKey(asset.id, key)).resolves.toMatchObject({ key, value });
+    await expect(
+      database.selectFrom('asset_exif').select('description').where('assetId', '=', asset.id).executeTakeFirst(),
+    ).resolves.toEqual({ description: 'My own words' });
+    await expect(
+      database.selectFrom('tag_asset').select('tagId').where('assetId', '=', asset.id).execute(),
+    ).resolves.toEqual([{ tagId: tag.id }]);
   });
 
-  describe('save', () => {
-    it('should extract generated fields from the provenance document', async () => {
-      const { ctx, sut } = setup();
-      const { asset } = await newEnrichedAsset(ctx);
-      const provenance = {
-        description: { status: 'success', result: { description: 'a scene', tags: ['fallback'] } },
-      };
-
-      await sut.save(asset.id, provenance);
-
-      await expect(sut.get(asset.id)).resolves.toEqual({
-        assetId: asset.id,
-        provenance,
-        userDescription: '',
-        generatedDescription: 'a scene',
-        generatedTags: ['fallback'],
-        requiresReview: false,
-      });
-    });
-
-    it('should preserve the user description and review flag on upsert', async () => {
-      const { ctx, sut } = setup();
-      const { asset } = await newEnrichedAsset(ctx);
-      await sut.save(asset.id, { description: { status: 'success', result: { description: 'old' } } });
-      await sql`UPDATE immich_fork.asset_enrichment SET "userDescription" = 'mine', "requiresReview" = true
-        WHERE "assetId" = ${asset.id}::uuid`.execute(defaultDatabase);
-      const provenance = {
-        description: { status: 'success', result: { description: 'new' }, appliedTagValues: ['applied'] },
-      };
-
-      await sut.save(asset.id, provenance);
-
-      await expect(sut.get(asset.id)).resolves.toEqual({
-        assetId: asset.id,
-        provenance,
-        userDescription: 'mine',
-        generatedDescription: 'new',
-        generatedTags: ['applied'],
-        requiresReview: true,
-      });
-    });
-
-    it('should do nothing when fork writes are disabled', async () => {
-      const { ctx, sut } = setup();
-      const { asset } = await newEnrichedAsset(ctx);
-      await sut.delete([asset.id]);
-      await setPhase('legacy', false);
-
-      await sut.save(asset.id, { description: { status: 'success', result: { description: 'ignored' } } });
-
-      await setPhase('active', true);
-      await expect(sut.get(asset.id)).resolves.toBeUndefined();
-    });
+  it('updates only the requested asset and metadata key without creating duplicate rows', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { user: other } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: foreign } = await ctx.newAsset({ ownerId: other.id });
+    await sut.upsertMetadata(asset.id, [
+      { key: 'owner-note', value: { text: 'kept' } },
+      { key, value: { version: 1 } },
+    ]);
+    await sut.upsertMetadata(foreign.id, [{ key, value: { version: 7 } }]);
+    await sut.upsertMetadata(asset.id, [{ key, value: { version: 2 } }]);
+    await expect(sut.getMetadataByKey(asset.id, key)).resolves.toMatchObject({ value: { version: 2 } });
+    await expect(sut.getMetadataByKey(asset.id, 'owner-note')).resolves.toMatchObject({ value: { text: 'kept' } });
+    await expect(sut.getMetadataByKey(foreign.id, key)).resolves.toMatchObject({ value: { version: 7 } });
+    expect((await sut.getMetadata(asset.id)).filter((row) => row.key === key)).toHaveLength(1);
   });
 
-  describe('delete', () => {
-    it('should remove sidecar rows when fork writes are enabled', async () => {
-      const { ctx, sut } = setup();
-      const { asset } = await newEnrichedAsset(ctx);
-      await sut.initialize([asset.id]);
-
-      await sut.delete([asset.id]);
-
-      await expect(sut.get(asset.id)).resolves.toBeUndefined();
-    });
-
-    it('should keep sidecar rows when fork writes are disabled', async () => {
-      const { ctx, sut } = setup();
-      const { asset } = await newEnrichedAsset(ctx);
-      await sut.initialize([asset.id]);
-      await setPhase('legacy', false);
-
-      await sut.delete([asset.id]);
-
-      await setPhase('active', true);
-      await expect(sut.get(asset.id)).resolves.toBeDefined();
-    });
+  it('persists the manual privacy review and applies it ahead of the model result', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    const value = { nsfwDetection: { status: 'success', result: { isNsfw: true }, review: { isNsfw: false } } };
+    await sut.upsertMetadata(asset.id, [{ key, value }]);
+    await expect(sut.getMetadataByKey(asset.id, key)).resolves.toMatchObject({ value });
+    await expect(
+      database.selectFrom('asset').select('is_nsfw').where('id', '=', asset.id).executeTakeFirst(),
+    ).resolves.toEqual({ is_nsfw: false });
   });
 
-  describe('shouldReadSidecar', () => {
-    it.each([
-      ['active', true],
-      ['dual-write', false],
-      ['ready', false],
-      ['legacy', false],
-    ] as const)('should report %s as authoritative=%s', async (phase, expected) => {
-      const { sut } = setup();
-      await setPhase(phase, phase === 'active');
-
-      await expect(sut.shouldReadSidecar()).resolves.toBe(expected);
-    });
+  it('rolls back provenance and its privacy projection together', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    const original = { description: { status: 'success', result: { description: 'kept' } } };
+    await sut.upsertMetadata(asset.id, [{ key, value: original }]);
+    await expect(
+      database.transaction().execute(async (tx) => {
+        await sut.upsertMetadata(
+          asset.id,
+          [{ key, value: { nsfwDetection: { status: 'success', result: { isNsfw: true } } } }],
+          tx,
+        );
+        expect(await tx.selectFrom('asset').select('is_nsfw').where('id', '=', asset.id).executeTakeFirst()).toEqual({
+          is_nsfw: true,
+        });
+        throw new Error('rollback fixture');
+      }),
+    ).rejects.toThrow('rollback fixture');
+    await expect(sut.getMetadataByKey(asset.id, key)).resolves.toMatchObject({ value: original });
+    await expect(
+      database.selectFrom('asset').select('is_nsfw').where('id', '=', asset.id).executeTakeFirst(),
+    ).resolves.toEqual({ is_nsfw: false });
   });
 
-  describe('mirrorFromLegacy', () => {
-    it('should mirror the legacy exif description into the sidecar', async () => {
-      const { ctx, sut } = setup();
-      const { asset } = await newEnrichedAsset(ctx);
-      await ctx.newExif({ assetId: asset.id, description: 'legacy text' });
-
-      await sut.mirrorFromLegacy(asset.id);
-
-      await expect(sut.get(asset.id)).resolves.toMatchObject({
-        userDescription: 'legacy text',
-        generatedDescription: null,
-        requiresReview: false,
-      });
-    });
-
-    it('should do nothing when fork writes are disabled', async () => {
-      const { ctx, sut } = setup();
-      const { asset } = await newEnrichedAsset(ctx);
-      await ctx.newExif({ assetId: asset.id, description: 'legacy text' });
-      await sut.delete([asset.id]);
-      await setPhase('legacy', false);
-
-      await sut.mirrorFromLegacy(asset.id);
-
-      await setPhase('active', true);
-      await expect(sut.get(asset.id)).resolves.toBeUndefined();
-    });
+  it('deletes enrichment and clears its projection while retaining unrelated metadata', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    await sut.upsertMetadata(asset.id, [
+      { key, value: { nsfwDetection: { status: 'success', result: { isNsfw: true } } } },
+      { key: 'owner-note', value: { text: 'kept' } },
+    ]);
+    await sut.deleteMetadataByKey(asset.id, key);
+    await expect(sut.getMetadataByKey(asset.id, key)).resolves.toBeUndefined();
+    await expect(sut.getMetadataByKey(asset.id, 'owner-note')).resolves.toMatchObject({ value: { text: 'kept' } });
+    await expect(
+      database.selectFrom('asset').select('is_nsfw').where('id', '=', asset.id).executeTakeFirst(),
+    ).resolves.toEqual({ is_nsfw: false });
   });
 
-  describe('backfillEnrichment', () => {
-    it('should return a stable digest for the empty batch', async () => {
-      const { sut } = setup();
-
-      const first = await sut.backfillEnrichment([]);
-      const second = await sut.backfillEnrichment([]);
-
-      expect(first.count).toBe(0);
-      expect(first.digest).toMatch(/^[0-9a-f]{64}$/);
-      expect(second).toEqual(first);
+  it('rejects orphan enrichment rather than retaining a detached sidecar', async () => {
+    const { sut } = setup();
+    const missing = randomUUID();
+    await expect(sut.upsertMetadata(missing, [{ key, value: { source: 'missing' } }])).rejects.toMatchObject({
+      code: '23503',
     });
-
-    it('should keep a plain user description without requiring review', async () => {
-      const { ctx, sut } = setup();
-      const { asset } = await newEnrichedAsset(ctx);
-      await ctx.newExif({ assetId: asset.id, description: 'just my words' });
-
-      const result = await sut.backfillEnrichment([asset.id]);
-
-      expect(result.count).toBe(1);
-      await expect(sut.get(asset.id)).resolves.toEqual({
-        assetId: asset.id,
-        provenance: {},
-        userDescription: 'just my words',
-        generatedDescription: null,
-        generatedTags: [],
-        requiresReview: false,
-      });
-    });
-
-    it('should remove proven applied tags from the legacy tag table', async () => {
-      const { ctx, sut } = setup();
-      const { user, asset } = await newEnrichedAsset(ctx);
-      const { tag: applied } = await ctx.newTag({ userId: user.id, value: 'generated-tag' });
-      const { tag: kept } = await ctx.newTag({ userId: user.id, value: 'my-tag' });
-      await ctx.newTagAsset({ tagIds: [applied.id, kept.id], assetIds: [asset.id] });
-      await ctx.newMetadata({
-        assetId: asset.id,
-        key: AssetMetadataKey.MlEnrichment,
-        value: {
-          description: {
-            status: 'success',
-            result: { tags: ['generated-tag'] },
-            appliedTagValues: ['generated-tag'],
-            appliedTagHash: createHash('sha256')
-              .update(JSON.stringify(['generated-tag']))
-              .digest('hex'),
-          },
-        },
-      });
-
-      await sut.backfillEnrichment([asset.id]);
-
-      await expect(sut.get(asset.id)).resolves.toMatchObject({
-        generatedTags: ['generated-tag'],
-        requiresReview: false,
-      });
-      const remaining = await defaultDatabase
-        .selectFrom('tag_asset')
-        .select('tagId')
-        .where('assetId', '=', asset.id)
-        .execute();
-      expect(remaining).toEqual([{ tagId: kept.id }]);
-    });
-
-    it('should flag generated tags for review when the applied hash does not match', async () => {
-      const { ctx, sut } = setup();
-      const { user, asset } = await newEnrichedAsset(ctx);
-      const { tag } = await ctx.newTag({ userId: user.id, value: 'generated-tag' });
-      await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [asset.id] });
-      await ctx.newMetadata({
-        assetId: asset.id,
-        key: AssetMetadataKey.MlEnrichment,
-        value: {
-          description: {
-            status: 'success',
-            result: { tags: ['generated-tag'] },
-            appliedTagValues: ['generated-tag'],
-            appliedTagHash: 'wrong',
-          },
-        },
-      });
-
-      await sut.backfillEnrichment([asset.id]);
-
-      await expect(sut.get(asset.id)).resolves.toMatchObject({ requiresReview: true });
-      await expect(
-        defaultDatabase.selectFrom('tag_asset').select('tagId').where('assetId', '=', asset.id).execute(),
-      ).resolves.toEqual([{ tagId: tag.id }]);
-    });
-
-    it('should strip a proven generated description and repair the legacy exif row', async () => {
-      const { ctx, sut } = setup();
-      const { asset } = await newEnrichedAsset(ctx);
-      const generated = 'A generated scene';
-      await ctx.newExif({ assetId: asset.id, description: `my words\n\nAI description: ${generated}` });
-      await ctx.newMetadata({
-        assetId: asset.id,
-        key: AssetMetadataKey.MlEnrichment,
-        value: {
-          description: {
-            status: 'success',
-            result: { description: generated },
-            appliedDescriptionHash: createHash('sha256').update(JSON.stringify(generated)).digest('hex'),
-          },
-        },
-      });
-
-      await sut.backfillEnrichment([asset.id]);
-
-      await expect(sut.get(asset.id)).resolves.toMatchObject({
-        userDescription: 'my words',
-        generatedDescription: generated,
-        requiresReview: false,
-      });
-      await expect(
-        defaultDatabase
-          .selectFrom('asset_exif')
-          .select('description')
-          .where('assetId', '=', asset.id)
-          .executeTakeFirst(),
-      ).resolves.toEqual({ description: 'my words' });
-    });
-
-    it('should delete stale sidecar rows for ids that no longer resolve to assets', async () => {
-      const { ctx, sut } = setup();
-      const { asset } = await newEnrichedAsset(ctx);
-      await sut.initialize([asset.id]);
-      const stale = randomUUID();
-      await sql`INSERT INTO immich_fork.asset_enrichment ("assetId") VALUES (${stale}::uuid)`.execute(defaultDatabase);
-
-      await sut.backfillEnrichment([asset.id, stale]);
-
-      await expect(sut.get(stale)).resolves.toBeUndefined();
-      await expect(sut.get(asset.id)).resolves.toBeDefined();
-    });
+    await expect(sut.getMetadataByKey(missing, key)).resolves.toBeUndefined();
   });
 });

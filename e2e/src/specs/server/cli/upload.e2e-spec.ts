@@ -1,7 +1,8 @@
-import { LoginResponseDto, getAllAlbums, getAssetStatistics } from '@immich/sdk';
+import { LoginResponseDto, getAllAlbums, getAssetStatistics } from '@frameleaf/sdk';
 import { cpSync, readFileSync } from 'node:fs';
-import { mkdir, readdir, rm, symlink } from 'node:fs/promises';
-import { asKeyAuth, immichCli, specialCharStrings, testAssetDir, utils } from 'src/utils.js';
+import { mkdir, mkdtemp, readdir, rm, symlink } from 'node:fs/promises';
+import { join } from 'node:path';
+import { asKeyAuth, immichCli, specialCharStrings, tempDir, testAssetDir, utils } from 'src/utils.js';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 interface Test {
@@ -116,29 +117,28 @@ describe(`immich upload`, () => {
     describe(`should accept special cases`, () => {
       for (const { test, paths, files } of tests) {
         it(test, async () => {
-          const baseDir = `/tmp/upload/`;
+          const baseDir = await mkdtemp(join(tempDir, 'immich-upload-'));
+          try {
+            const testPaths = Object.keys(files).map((filePath) => `${baseDir}/${filePath}`);
+            for (const filePath of testPaths) {
+              utils.createImageFile(filePath);
+            }
 
-          const testPaths = Object.keys(files).map((filePath) => `${baseDir}/${filePath}`);
-          for (const filePath of testPaths) {
-            utils.createImageFile(filePath);
-          }
+            const commandLine = paths.map((argument) => `${baseDir}/${argument}`);
 
-          const commandLine = paths.map((argument) => `${baseDir}/${argument}`);
+            const expectedCount = Object.entries(files).filter((entry) => entry[1]).length;
 
-          const expectedCount = Object.entries(files).filter((entry) => entry[1]).length;
+            const { stderr, stdout, exitCode } = await immichCli(['upload', ...commandLine]);
+            expect(stderr).toContain('{message}');
+            expect(stdout.split('\n')).toEqual(
+              expect.arrayContaining([expect.stringContaining(`Successfully uploaded ${expectedCount} new asset`)]),
+            );
+            expect(exitCode).toBe(0);
 
-          const { stderr, stdout, exitCode } = await immichCli(['upload', ...commandLine]);
-          expect(stderr).toContain('{message}');
-          expect(stdout.split('\n')).toEqual(
-            expect.arrayContaining([expect.stringContaining(`Successfully uploaded ${expectedCount} new asset`)]),
-          );
-          expect(exitCode).toBe(0);
-
-          const assets = await getAssetStatistics({}, { headers: asKeyAuth(key) });
-          expect(assets.total).toBe(expectedCount);
-
-          for (const filePath of testPaths) {
-            utils.removeImageFile(filePath);
+            const assets = await getAssetStatistics({}, { headers: asKeyAuth(key) });
+            expect(assets.total).toBe(expectedCount);
+          } finally {
+            await rm(baseDir, { recursive: true, force: true });
           }
         });
       }

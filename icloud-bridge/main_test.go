@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"os"
 	"strings"
 	"testing"
 
@@ -20,6 +21,37 @@ type transportFunc func(*http.Request) (*http.Response, error)
 func (f transportFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 const testToken = "01234567890123456789012345678901"
+
+func TestDependencyProvenance(t *testing.T) {
+	version := capabilities["rcloneVersion"].(string)
+	for file, expected := range map[string][]string{
+		"go.mod":                    {"github.com/rclone/rclone " + version + "\n"},
+		"licenses/rclone/NOTICE.md": {version, revision},
+		"api.md":                    {version, revision},
+	} {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, value := range expected {
+			if !bytes.Contains(body, []byte(value)) {
+				t.Errorf("%s does not match reported Rclone provenance: %s", file, value)
+			}
+		}
+	}
+	b := newBridge([]byte(testToken))
+	w := httptest.NewRecorder()
+	b.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/health", nil))
+	var health struct {
+		Commit string `json:"rcloneCommit"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &health); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != http.StatusOK || health.Commit != revision {
+		t.Fatal("health response does not match reported Rclone provenance")
+	}
+}
 
 func testSession(t *testing.T) json.RawMessage {
 	t.Helper()

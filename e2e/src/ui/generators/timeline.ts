@@ -16,6 +16,7 @@ export {
   getAsset,
   getTimeBucket,
   getTimeBuckets,
+  getTimelineHighlights,
   toAssetResponseDto,
   toColumnarFormat,
 } from './timeline/rest-response';
@@ -26,7 +27,6 @@ export { randomImage, randomImageFromString, randomPreview, randomThumbnail } fr
 
 export {
   SeededRandom,
-  getMockAsset,
   parseTimeBucketKey,
   selectRandom,
   selectRandomDays,

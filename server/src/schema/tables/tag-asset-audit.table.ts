@@ -1,0 +1,21 @@
+import { Column, CreateDateColumn, Table } from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
+
+@Table('tag_asset_audit')
+export class TagAssetAuditTable {
+  @PrimaryGeneratedUuidV7Column()
+  id!: Generated<string>;
+
+  @Column({ type: 'uuid', index: true })
+  tagId!: string;
+
+  @Column({ type: 'uuid', index: true })
+  assetId!: string;
+
+  @Column({ type: 'uuid', index: true })
+  userId!: string;
+
+  @CreateDateColumn({ default: () => 'clock_timestamp()', index: true })
+  deletedAt!: Generated<Timestamp>;
+}

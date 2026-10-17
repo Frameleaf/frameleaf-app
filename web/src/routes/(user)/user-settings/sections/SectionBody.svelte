@@ -1,0 +1,78 @@
+<script lang="ts">
+  /**
+   * Draws a Command Center section that is a page of its own rather than a settings form (FL-71):
+   * the old administration pages (deduplication, Compute & jobs, Maintenance, Users), the account's
+   * Trash and repair queues, and the account settings (`UserSettingsList`).
+   */
+  import CloudAccountSection from '$lib/components/frameleaf/cloud/CloudAccountSection.svelte';
+  import CloudMlSection from '$lib/components/frameleaf/cloud/CloudMlSection.svelte';
+  import WhereWorkRuns from '$lib/components/frameleaf/computers/WhereWorkRuns.svelte';
+  import FrameleafSignInSection from '$lib/components/frameleaf/cloud/FrameleafSignInSection.svelte';
+  import HardwareSection from '$lib/components/frameleaf/cloud/HardwareSection.svelte';
+  import LicenseSection from '$lib/components/frameleaf/cloud/LicenseSection.svelte';
+  import PlanSection from '$lib/components/frameleaf/cloud/PlanSection.svelte';
+  import RemoteAccessSection from '$lib/components/frameleaf/cloud/RemoteAccessSection.svelte';
+  import CareProgress from '$lib/components/frameleaf/settings/care/CareProgress.svelte';
+  import FileChecks from '$lib/components/frameleaf/settings/care/FileChecks.svelte';
+  import ThingsToFix from '$lib/components/frameleaf/settings/care/ThingsToFix.svelte';
+  import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
+  import UserSettingsList from '../UserSettingsList.svelte';
+  import DeduplicationSection from './DeduplicationSection.svelte';
+  import Loader from './Loader.svelte';
+  import ComputersSection from './ComputersSection.svelte';
+  import { loadComputers } from './loaders';
+  import MaintenanceSection from './MaintenanceSection.svelte';
+  import QueuesSection from './QueuesSection.svelte';
+  import TrashSection from './TrashSection.svelte';
+  import UsersSection from './UsersSection.svelte';
+
+  let { section }: { section: SettingsHostSection } = $props();
+
+  // 'backups' is drawn by the Backup area (FL-362); 'integrity' is File checks (FL-366).
+  const MAINTENANCE = ['mode'] as const;
+  const maintenanceSection = $derived(MAINTENANCE.find((key) => key === section.key));
+</script>
+
+{#if section.admin}
+  {#if section.key === 'deduplication'}
+    <DeduplicationSection />
+  {:else if section.key === 'computers'}
+    <Loader load={loadComputers}>
+      {#snippet children(data)}
+        <ComputersSection {data} />
+      {/snippet}
+    </Loader>
+  {:else if section.key === 'routing'}
+    <WhereWorkRuns />
+  {:else if section.key === 'queues'}
+    <QueuesSection />
+  {:else if section.key === 'cloud-processing'}
+    <CloudMlSection />
+  {:else if section.key === 'hardware'}
+    <HardwareSection />
+  {:else if section.key === 'cloud-account'}
+    <CloudAccountSection />
+  {:else if section.key === 'cloud-plan'}
+    <PlanSection />
+  {:else if section.key === 'cloud-license'}
+    <LicenseSection />
+  {:else if section.key === 'cloud-remote'}
+    <RemoteAccessSection />
+  {:else if section.key === 'frameleaf-signin'}
+    <FrameleafSignInSection />
+  {:else if section.key === 'integrity'}
+    <FileChecks />
+  {:else if maintenanceSection}
+    <MaintenanceSection section={maintenanceSection} />
+  {:else if section.key === 'accounts'}
+    <UsersSection />
+  {:else if section.key === 'enrichment-care'}
+    <CareProgress />
+  {/if}
+{:else if section.key === 'repair'}
+  <ThingsToFix />
+{:else if section.key === 'contents'}
+  <TrashSection />
+{:else}
+  <UserSettingsList section={section.key} />
+{/if}

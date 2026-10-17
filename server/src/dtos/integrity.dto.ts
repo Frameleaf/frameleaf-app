@@ -10,15 +10,26 @@ const IntegrityReportSummaryResponseSchema = z
   })
   .meta({ id: 'IntegrityReportSummaryResponseDto' });
 
+/** FL-81 (CC-21, `Maintenance.jsx` 467): when each check last completed a full run; null when none is recorded. */
+const lastRunAt = z.string().meta({ format: 'date-time' }).nullable();
+const IntegrityCheckRunsResponseSchema = z
+  .object({
+    [IntegrityReport.ChecksumFail]: lastRunAt.describe('When the checksum check last completed a full pass'),
+    [IntegrityReport.MissingFile]: lastRunAt.describe('When the missing-file check last completed'),
+    [IntegrityReport.UntrackedFile]: lastRunAt.describe('When the untracked-file check last completed'),
+  })
+  .meta({ id: 'IntegrityCheckRunsResponseDto' });
+
 const IntegrityGetReportSchema = z
   .object({
     type: IntegrityReportSchema,
     cursor: z.string().optional().describe('Cursor for pagination'),
-    limit: z.int().positive().default(500).optional().describe('Number of items per page'),
+    // D2: a query string value is text, so coerce it (`?limit=50`) as the other query DTOs do.
+    limit: z.coerce.number().int().positive().default(500).optional().describe('Number of items per page'),
   })
   .meta({ id: 'IntegrityGetReportDto' });
 
-const IntegrityDeleteReportSchema = z.object({ type: IntegrityReport }).meta({ id: 'IntegrityDeleteReportDto' });
+const IntegrityDeleteReportSchema = z.object({ type: IntegrityReportSchema }).meta({ id: 'IntegrityDeleteReportDto' });
 
 const IntegrityReportResponseItemSchema = z.object({
   id: z.uuidv4().describe('Integrity report item id'),
@@ -35,7 +46,14 @@ const IntegrityReportResponseSchema = z
 
 const IntegrityReportParamSchema = z.object({ type: IntegrityReportSchema }).meta({ id: 'IntegrityReportDto' });
 
+/** FL-366: how many findings "Clear this list" forgot. */
+const IntegrityReportClearResponseSchema = z
+  .object({ cleared: z.int().nonnegative().describe('Findings removed from the list; no file or photo was changed') })
+  .meta({ id: 'IntegrityReportClearResponseDto' });
+
+export class IntegrityReportClearResponseDto extends createZodDto(IntegrityReportClearResponseSchema) {}
 export class IntegrityReportSummaryResponseDto extends createZodDto(IntegrityReportSummaryResponseSchema) {}
+export class IntegrityCheckRunsResponseDto extends createZodDto(IntegrityCheckRunsResponseSchema) {}
 export class IntegrityGetReportDto extends createZodDto(IntegrityGetReportSchema) {}
 export class IntegrityDeleteReportDto extends createZodDto(IntegrityDeleteReportSchema) {}
 export class IntegrityReportResponseDto extends createZodDto(IntegrityReportResponseSchema) {}

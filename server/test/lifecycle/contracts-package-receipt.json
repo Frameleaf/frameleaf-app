@@ -1,0 +1,9 @@
+{
+  "name": "@frameleaf/cloud-contracts",
+  "version": "0.0.5",
+  "sourceCommit": "8684077eeeb7e22876f9833de861b47b7a197937",
+  "bytes": 461829,
+  "sha256": "05d3c934afd32d726650f7eb0abbbff1b185ad3749443063c803dd602a1ca4cc",
+  "integrity": "sha512-4WdS6XX1lENdtJTmhdw6Y21dJ4i+P8qE+EiutTsB4K/QYcnE0sFBjG3jAZfVQMFS4galajLlzSCjqVmgYN12hQ==",
+  "testingExport": "./dist/testing/index.js"
+}

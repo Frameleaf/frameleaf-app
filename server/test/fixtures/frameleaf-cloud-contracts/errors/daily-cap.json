@@ -1,0 +1,13 @@
+{
+  "code": "daily-cap",
+  "message": "This job would go over your AI Wallet daily spending cap.",
+  "retryable": false,
+  "refusal": "budget-exceeded",
+  "detail": null,
+  "data": {
+    "dailyCapUsd": 20,
+    "spentTodayUsd": 18.5,
+    "requiredUsd": 2.431
+  },
+  "requestId": "req_01J8ZK3M4N5P6Q7S"
+}
