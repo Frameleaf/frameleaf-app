@@ -105,6 +105,41 @@ describe('linked-server tour (FL-196)', () => {
     });
   });
 
+  it('gives a Server licence without a plan its direct address, but not backup or an own domain (FL-437)', () => {
+    const licensed = (patch: Partial<CloudTourFacts> = {}) =>
+      facts({
+        license: {
+          entitlements: {
+            cloudBackup: false,
+            cloudMl: false,
+            frameleafCloud: false,
+            remoteAccess: false,
+            supporter: true,
+          },
+          plan: null,
+          key: { state: 'active' as never, kind: 'server' as never },
+        },
+        ...patch,
+      });
+    expect(cloudTourStatus('remote', licensed(), NOW)).toMatchObject({
+      key: 'frameleaf_cloud_tour_status_ready_to_turn_on',
+    });
+    expect(cloudTourStatus('remote', licensed({ remoteAccessEnabled: true }), NOW)).toMatchObject({
+      key: 'frameleaf_cloud_tour_status_on',
+    });
+    expect(
+      cloudTourStatus('address', licensed({ remoteAccessEnabled: true, customHostnameVerified: true }), NOW),
+    ).toMatchObject({ key: 'frameleaf_cloud_tour_status_frameleaf_address_ready' });
+    expect(cloudTourStatus('backup', licensed(), NOW)).toMatchObject({
+      key: 'frameleaf_cloud_tour_status_needs_plan',
+    });
+    const individual = licensed();
+    individual.license.key = { state: 'active' as never, kind: 'individual' as never };
+    expect(cloudTourStatus('address', individual, NOW)).toMatchObject({
+      key: 'frameleaf_cloud_tour_status_needs_plan',
+    });
+  });
+
   it('reads remote access, the address and backup from this server once a plan includes them', () => {
     expect(cloudTourStatus('remote', planned(), NOW)).toMatchObject({
       key: 'frameleaf_cloud_tour_status_ready_to_turn_on',

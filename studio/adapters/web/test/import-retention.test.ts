@@ -79,7 +79,7 @@ describe('explicit completion retention', () => {
     expect(await state.retention.complete(upload)).toEqual(imported)
     expect(state.send).toHaveBeenCalledWith(upload)
     expect(state.send.mock.calls[0]?.[0]?.processingProvenance.output.fps).toBe(30000 / 1001)
-    expect(upload.processingProvenance).not.toHaveProperty('modelBinding')
+    expect(state.send.mock.calls[0]?.[0]?.processingProvenance).not.toHaveProperty('modelBinding')
     expect(state.kept).toHaveBeenCalledWith(id)
     state.retention.dispose()
     state.workspace.dispose()

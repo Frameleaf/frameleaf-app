@@ -135,7 +135,7 @@
       "4": "sheets and dialogs"
     }
   },
-  "extends": "design/frameleaf/tokens.json is a byte-for-byte copy of this file (tokens.spec.ts); edit here, copy there, then regenerate the brand asset inventory. Values follow the prototype in design/frameleaf/template.",
+  "extends": "design/frameleaf/tokens.json is a byte-for-byte copy of this file (tokens.spec.ts); edit here, copy there, then regenerate the brand asset inventory. Values follow the prototype in the Frameleaf/frameleaf-prototype repository.",
   "focus": {
     "inset": -2,
     "nonTextContrast": 3,

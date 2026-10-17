@@ -23,7 +23,7 @@ and `python3 scripts/frameleaf-brand-assets.py --check`.
 
 ## 1. The design system
 
-Frameleaf's web app follows the prototype in `design/frameleaf/template`: an Apple-style photo
+Frameleaf's web app follows the prototype (the Frameleaf/frameleaf-prototype repository): an Apple-style photo
 library with quiet, compact chrome, one green accent for the one thing to do next, neutral surfaces
 behind every photograph, and frosted materials for floating bars and sheets. The brand mark is the
 brand kit's own artwork and is never redrawn, recoloured or animated beyond a fade.
@@ -44,7 +44,7 @@ Principles:
 ## 2. Values at a glance
 
 - **Surfaces** are the prototype's: canvas, panel, raised and border per theme
-  (`design/frameleaf/template/src/reference/tokens.css`). The viewer is dark in both themes.
+  (`src/reference/tokens.css` in the prototype repository). The viewer is dark in both themes.
 - **Accent** is Leaf Green, `#22c55e` dark and `#157b40` light, with a Display P3 twin.
 - **Radii** follow the prototype scale: 9px controls, 12px cards, 16px floating capsules, 22px
   sheets; 4px and 6px for badges and thumbnails.

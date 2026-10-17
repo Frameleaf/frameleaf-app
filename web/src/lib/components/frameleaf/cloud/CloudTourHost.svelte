@@ -114,6 +114,7 @@
         supporter: false,
       },
       plan: license?.plan ?? null,
+      key: license?.key ?? null,
     },
     remoteAccessEnabled: !!status?.remoteAccessEnabled,
     customHostnameVerified: !!tour?.customHostnameVerified,

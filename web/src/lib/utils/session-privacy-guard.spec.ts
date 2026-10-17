@@ -102,17 +102,21 @@ describe('watchSessionPrivacy', () => {
     sessionStorage.setItem('frameleaf:session:elevated-tab', '1');
     sessionStorage.setItem('frameleaf:library:tab:v1:user-1', '{"selection":["locked-asset"]}');
     sessionStorage.setItem('frameleaf.editor.continuity.locked-asset', '{"draft":"private"}');
+    // what the private tab state was when the view was released (the guard swallows a throw in the gate)
+    let atRelease: Array<string | null> | undefined;
     const gate = vi.fn((state: string) => {
-      if (state !== 'ready') {
-        return;
+      if (state === 'ready') {
+        atRelease = [
+          sessionStorage.getItem('frameleaf:library:tab:v1:user-1'),
+          sessionStorage.getItem('frameleaf.editor.continuity.locked-asset'),
+        ];
       }
-      expect(sessionStorage.getItem('frameleaf:library:tab:v1:user-1')).toBeNull();
-      expect(sessionStorage.getItem('frameleaf.editor.continuity.locked-asset')).toBeNull();
     });
     vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
     guard = watchSessionPrivacy(() => true, gate);
     await vi.advanceTimersByTimeAsync(0);
     expect(gate).toHaveBeenLastCalledWith('ready');
+    expect(atRelease).toEqual([null, null]);
     expect(sessionStorage.getItem('frameleaf:session:elevated-tab')).toBeNull();
   });
 

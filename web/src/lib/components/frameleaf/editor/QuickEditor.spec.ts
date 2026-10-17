@@ -144,8 +144,15 @@ describe('QuickEditor', () => {
       expect(screen.getByRole('button', { name: `frameleaf_editor_group_${group}` })).toBeInTheDocument();
     }
     await waitFor(() => expect(getAssetDevelop).toHaveBeenCalledWith({ id: photo.id }));
-    // Untouched recipe: nothing to render, so no preview round trip.
-    expect(previewAssetDevelop).not.toHaveBeenCalled();
+    await ready();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      // past the preview debounce: an untouched recipe has nothing to render, so no preview round trip
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(previewAssetDevelop).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('requests a server preview after an adjustment and says while it is rendering', async () => {

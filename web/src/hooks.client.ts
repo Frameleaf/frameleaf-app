@@ -1,7 +1,7 @@
 import { isHttpError, type ApiHttpError } from '@frameleaf/sdk';
 import type { HandleClientError } from '@sveltejs/kit/hooks';
 
-const DEFAULT_MESSAGE = 'Hmm, not sure about that. Check the logs or open a ticket?';
+const DEFAULT_MESSAGE = 'Something went wrong. Try again in a moment.';
 
 const reasonOf = (data: unknown) => {
   const reason = (data as { reason?: unknown } | undefined)?.reason;
