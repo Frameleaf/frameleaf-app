@@ -151,7 +151,7 @@
   });
 </script>
 
-<main class="raw-care">
+<div class="raw-care">
   <header class="raw-care-header">
     <div>
       <p class="raw-eyebrow">{$t('frameleaf_raw_support_eyebrow')}</p>
@@ -413,7 +413,7 @@
       </section>
     </div>
   {/if}
-</main>
+</div>
 
 {#if dialog === 'repair'}
   <Dialog

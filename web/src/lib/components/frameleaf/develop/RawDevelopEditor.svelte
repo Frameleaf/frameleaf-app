@@ -391,7 +391,7 @@
   onblur={() => (tools.compare = false)}
 />
 
-<main class="rde-workspace" aria-label={$t('frameleaf_develop_editor')}>
+<section class="rde-workspace" aria-label={$t('frameleaf_develop_editor')}>
   <header class="rde-header">
     <button type="button" class="rde-button rde-back" onclick={() => leave('back')}
       ><Icon icon={mdiArrowLeft} size="16" aria-hidden={true} />{shoot
@@ -822,7 +822,7 @@
       >
     </div>
   </aside>
-</main>
+</section>
 
 {#if message}<div class="rde-toast" role="status">{message}</div>{/if}
 
