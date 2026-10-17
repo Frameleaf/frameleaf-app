@@ -5,7 +5,9 @@ import {
   type HiddenContentFilter,
   emptyHiddenContentFilter,
   emptySuppressionPreferences,
+  everyOwnersRules,
   getHiddenContentQueryOptions,
+  getOthersRulesQueryOptions,
   getPrivacyQueryOptions,
   getSuppressedOnlyQueryOptions,
   hasHiddenContentFilter,
@@ -88,6 +90,27 @@ describe('hidden content utils', () => {
 
     it('returns no query options when hidden browsing is disabled', () => {
       expect(getHiddenContentQueryOptions({ user } as AuthDto)).toEqual({});
+    });
+  });
+
+  describe('owner Locked rules (FL-446)', () => {
+    it('names the viewer, whose own media is left to their own filter, for every kind of session', () => {
+      expect(getOthersRulesQueryOptions({ user } as AuthDto)).toEqual({ othersRulesViewerId: user.id });
+      expect(getOthersRulesQueryOptions({ user, hiddenContent } as AuthDto)).toEqual({ othersRulesViewerId: user.id });
+      expect(getOthersRulesQueryOptions({ user, session: { hasElevatedPermission: true } } as AuthDto)).toEqual({
+        othersRulesViewerId: user.id,
+      });
+    });
+
+    it('spares nobody for a read every member sees alike', () => {
+      expect(everyOwnersRules).toEqual({ othersRulesViewerId: null });
+    });
+
+    it('is never part of the ordinary session options, which only read the viewer’s own media', () => {
+      expect(getHiddenContentQueryOptions({ user, hiddenContent } as AuthDto)).not.toHaveProperty(
+        'othersRulesViewerId',
+      );
+      expect(getHiddenContentQueryOptions({ user } as AuthDto)).not.toHaveProperty('othersRulesViewerId');
     });
   });
 

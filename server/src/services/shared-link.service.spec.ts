@@ -99,7 +99,9 @@ describe(SharedLinkService.name, () => {
       await expect(sut.getMine(authDto, [])).resolves.toEqual(
         mapSharedLink(getForSharedLink(sharedLink), { stripAssetMetadata: false }),
       );
-      expect(mocks.sharedLink.get).toHaveBeenCalledWith(authDto.user.id, authDto.sharedLink?.id);
+      expect(mocks.sharedLink.get).toHaveBeenCalledWith(authDto.user.id, authDto.sharedLink?.id, {
+        othersRulesViewerId: null,
+      });
     });
 
     it('should not return metadata', async () => {
@@ -119,14 +121,18 @@ describe(SharedLinkService.name, () => {
       );
       const response = await sut.getMine(authDto, []);
       expect(response.assets[0]).toMatchObject({ hasMetadata: false });
-      expect(mocks.sharedLink.get).toHaveBeenCalledWith(authDto.user.id, authDto.sharedLink?.id);
+      expect(mocks.sharedLink.get).toHaveBeenCalledWith(authDto.user.id, authDto.sharedLink?.id, {
+        othersRulesViewerId: null,
+      });
     });
 
     it('should throw an error for a request without a shared link auth token', async () => {
       const authDto = authStub.adminSharedLink;
       mocks.sharedLink.get.mockResolvedValue(sharedLinkStub.passwordRequired);
       await expect(sut.getMine(authDto, [])).rejects.toBeInstanceOf(UnauthorizedException);
-      expect(mocks.sharedLink.get).toHaveBeenCalledWith(authDto.user.id, authDto.sharedLink?.id);
+      expect(mocks.sharedLink.get).toHaveBeenCalledWith(authDto.user.id, authDto.sharedLink?.id, {
+        othersRulesViewerId: null,
+      });
     });
 
     it('should accept a valid shared link auth token', async () => {
@@ -138,6 +144,7 @@ describe(SharedLinkService.name, () => {
       expect(mocks.sharedLink.get).toHaveBeenCalledWith(
         authStub.adminSharedLink.user.id,
         authStub.adminSharedLink.sharedLink?.id,
+        { othersRulesViewerId: null },
       );
     });
   });

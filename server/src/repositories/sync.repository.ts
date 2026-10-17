@@ -9,8 +9,17 @@ import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserRole, AssetMetadataKey, ChecksumAlgorithm } from 'src/enum.js';
 import { TagSync } from 'src/repositories/tag-sync.repository.js';
 import { DB } from 'src/schema/index.js';
-import { getHiddenContentFilter, hiddenContentAssetIdExists, withHiddenContentFilter } from 'src/utils/database.js';
-import { type HiddenContentQueryOptions, getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import {
+  getHiddenContentFilter,
+  hiddenAssetIdExists,
+  hiddenContentAssetIdExists,
+  withHiddenContentFilter,
+} from 'src/utils/database.js';
+import {
+  type HiddenContentQueryOptions,
+  getHiddenContentQueryOptions,
+  getOthersRulesQueryOptions,
+} from 'src/utils/hidden-content.js';
 import {
   effectiveVisibility,
   getLockedOwnerId,
@@ -54,11 +63,12 @@ const dummyQueryOptions = {
   },
   excludeNsfw: true,
 };
+// FL-446: a cover another member owns is also withheld when it matches that owner's Locked rules
 const albumThumbnailAssetId = (options: HiddenContentQueryOptions) => {
-  const hiddenContent = getHiddenContentFilter(options);
-  return hiddenContent
+  const hidden = hiddenAssetIdExists(sql.ref('album.albumThumbnailAssetId'), options);
+  return hidden
     ? sql<string | null>`case
-        when ${hiddenContentAssetIdExists(sql.ref('album.albumThumbnailAssetId'), hiddenContent)} then null
+        when ${hidden} then null
         else album."albumThumbnailAssetId"
       end`.as('thumbnailAssetId')
     : sql<string | null>`album."albumThumbnailAssetId"`.as('thumbnailAssetId');
@@ -358,7 +368,7 @@ class AlbumSync extends BaseSync {
 }
 class AlbumAssetSync extends BaseSync {
   getCurrent(auth: AuthDto, key?: string) {
-    const options = getHiddenContentQueryOptions(auth);
+    const options = { ...getHiddenContentQueryOptions(auth), ...getOthersRulesQueryOptions(auth) };
     return this.db
       .selectFrom('album_asset')
       .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')

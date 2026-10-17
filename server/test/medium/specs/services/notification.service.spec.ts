@@ -296,7 +296,9 @@ describe('queued album delivery current authority (FL-137)', () => {
     expect(ctx.getMock(EmailRepository).sendEmail).not.toHaveBeenCalled();
   });
 
-  it('keeps the owner rule-only explicit album share eligible for delivery', async () => {
+  // FL-446 (owner decision, October 17, 2026): an owner's Locked-rule match reaches partners only, so a
+  // member's album mail still goes out, but never with that item as its picture
+  it("sends album mail without a cover that matches the owner's Locked rules", async () => {
     const { sut, ctx } = setup();
     await enableAlbumMailFixture(ctx);
     const { album, recipient, owner, asset } = await newAlbumWithThumbnail(ctx, { isNsfw: false });
@@ -313,7 +315,7 @@ describe('queued album delivery current authority (FL-137)', () => {
     await expect(sut.handleAlbumUpdate({ id: album.id, recipientId: recipient.id })).resolves.toBe(JobStatus.Success);
     await expect(sut.handleSendEmail(getQueuedSendMail(ctx))).resolves.toBe(JobStatus.Success);
     expect(ctx.getMock(EmailRepository).sendEmail).toHaveBeenCalledWith(
-      expect.objectContaining({ imageAttachments: [expect.objectContaining({ cid: 'album-thumbnail' })] }),
+      expect.objectContaining({ imageAttachments: undefined }),
     );
   });
 

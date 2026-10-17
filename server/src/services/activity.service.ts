@@ -14,7 +14,7 @@ import {
 } from 'src/dtos/activity.dto.js';
 import { Permission, SharedSpaceEventType } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
-import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getHiddenContentQueryOptions, getOthersRulesQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isSharedSpace, requireSpaceMember } from 'src/utils/shared-space.js';
 
@@ -29,6 +29,8 @@ export class ActivityService extends BaseService {
       isLiked: dto.type && dto.type === ReactionType.LIKE,
       ...this.nsfwOptions(auth),
       ...getLockedVisibilityOptions(auth),
+      // FL-446: nothing about another member's item that matches its owner's Locked rules
+      ...getOthersRulesQueryOptions(auth),
     });
 
     return activities.map((activity) => mapActivity(activity));
@@ -41,6 +43,7 @@ export class ActivityService extends BaseService {
       assetId: dto.assetId,
       ...this.nsfwOptions(auth),
       ...getLockedVisibilityOptions(auth),
+      ...getOthersRulesQueryOptions(auth),
     });
   }
 

@@ -31,7 +31,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
 import { asDateString, asDateTimeString } from 'src/utils/date.js';
 import { FileDownloadResponse, getFilenameExtension } from 'src/utils/file.js';
-import { isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
+import { everyOwnersRules, getOthersRulesQueryOptions, isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import {
@@ -72,9 +72,10 @@ import { getSupporters } from 'src/utils/supporter.js';
  * used as somebody's face, or announced as "new" to anybody else, and it does
  * not shift a number either. Every query these options are handed is also
  * confined to the space's own assets, so nothing outside the space can reach a
- * panel in the first place.
+ * panel in the first place. FL-446: likewise an item matching its owner's Locked rules (people, pets
+ * and tags marked Locked) is left out of every panel, for every member; such items reach partners only.
  */
-const SPACE_CONTENT_OPTIONS: HiddenContentQueryOptions = { excludeNsfw: true };
+const SPACE_CONTENT_OPTIONS: HiddenContentQueryOptions = { excludeNsfw: true, ...everyOwnersRules };
 
 /** How many "new since your last visit" ids the client is given to filter a timeline with. */
 const NEW_ASSET_LIMIT = 500;
@@ -95,10 +96,13 @@ const MILLISECOND_EVENT_LIMIT = 1000;
  * stricter reading: media marked sensitive is excluded even for a member who
  * has turned that off for their own library, exactly as the other panels do
  * with `SPACE_CONTENT_OPTIONS`. Locked media is excluded by the default
- * visibility filter the same queries apply.
+ * visibility filter the same queries apply, and another member's item that matches its owner's
+ * Locked rules is never shown to them (FL-446).
  */
 const spaceViewerOptions = (auth: AuthDto): HiddenContentQueryOptions =>
-  auth.hiddenContent ? { hiddenContent: { ...auth.hiddenContent, includeNsfw: true } } : SPACE_CONTENT_OPTIONS;
+  auth.hiddenContent
+    ? { hiddenContent: { ...auth.hiddenContent, includeNsfw: true }, ...getOthersRulesQueryOptions(auth) }
+    : { ...SPACE_CONTENT_OPTIONS, ...getOthersRulesQueryOptions(auth) };
 
 /** A comment with no thread row: top level, and no replies the caller can see. */
 const TOP_LEVEL: CommentThreadInfo = { parentId: null, replyCount: 0 };
@@ -1134,7 +1138,7 @@ export class SharedSpaceService extends BaseService {
       return null;
     }
 
-    const [metadata] = await this.albumRepository.getMetadataForIds([id], { excludeNsfw: true });
+    const [metadata] = await this.albumRepository.getMetadataForIds([id], SPACE_CONTENT_OPTIONS);
     const invitedBy = invite?.invitedById ? ((await this.userRepository.get(invite.invitedById, {})) ?? null) : null;
 
     return {

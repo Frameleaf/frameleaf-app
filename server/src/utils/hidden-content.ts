@@ -27,6 +27,15 @@ export type HiddenContentQueryOptions = {
    * never set for a shared link or an ordinary session, and it never reveals anyone else's media.
    */
   revealLockedOwnerId?: string;
+  /**
+   * FL-446 (owner decision, October 17, 2026): the viewer. Media someone else owns that matches its
+   * owner's Locked rules (people, pets and tags marked Locked) is hidden from them, whatever their own
+   * session allows: such items reach partners only, as locked copies (FL-326), never through albums,
+   * shared spaces, links, item shares or Studio. The viewer's own media is left to their own filter
+   * (`hiddenContent`). Server derived (`getOthersRulesQueryOptions`). `null` exempts nobody, for a read
+   * every member sees alike (a shared space's panels, `everyOwnersRules`).
+   */
+  othersRulesViewerId?: string | null;
 };
 
 export const emptySuppressionPreferences = (): SuppressionPreferences => ({
@@ -57,6 +66,18 @@ export const getRevealQueryOptions = (auth: AuthDto): Pick<HiddenContentQueryOpt
   const revealLockedOwnerId = getLockedOwnerId(auth);
   return revealLockedOwnerId ? { revealLockedOwnerId } : {};
 };
+
+/**
+ * FL-446: other owners' Locked-rule matches are hidden from this viewer (`othersRulesViewerId`). Every
+ * read that can return media someone else owns — an album, a shared space, an album timeline, search
+ * or map within an album, an album download, album activity, the sync streams — adds these options.
+ */
+export const getOthersRulesQueryOptions = (auth: AuthDto): Pick<HiddenContentQueryOptions, 'othersRulesViewerId'> => ({
+  othersRulesViewerId: auth.user.id,
+});
+
+/** FL-446: every owner's Locked-rule matches are hidden, the viewer's own included. */
+export const everyOwnersRules: Pick<HiddenContentQueryOptions, 'othersRulesViewerId'> = { othersRulesViewerId: null };
 
 export const getHiddenContentQueryOptions = (auth: AuthDto): HiddenContentQueryOptions => {
   if (auth.hiddenContent) {
