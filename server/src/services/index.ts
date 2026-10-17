@@ -108,6 +108,7 @@ import { PreservationWorkerService } from 'src/services/preservation-worker.serv
 import { PreservationService } from 'src/services/preservation.service.js';
 import { PushService } from 'src/services/push.service.js';
 import { QueueService } from 'src/services/queue.service.js';
+import { RawSupportService } from 'src/services/raw-support.service.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { RestorationWorkerService } from 'src/services/restoration-worker.service.js';
 import { RunningJobService } from 'src/services/running-job.service.js';
@@ -236,6 +237,7 @@ export const services = [
   MapService,
   MediaHealthOperationService,
   MediaHealthService,
+  RawSupportService,
   MediaOperationService,
   MediaOperationEventService,
   MediaOperationSweepService,

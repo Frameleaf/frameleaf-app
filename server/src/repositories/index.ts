@@ -90,6 +90,7 @@ import { PreservationRepository } from 'src/repositories/preservation.repository
 import { ProcessRepository } from 'src/repositories/process.repository.js';
 import { PushDeviceRepository } from 'src/repositories/push-device.repository.js';
 import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
+import { RawSupportRepository } from 'src/repositories/raw-support.repository.js';
 import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { ServerInfoRepository } from 'src/repositories/server-info.repository.js';
@@ -209,6 +210,7 @@ export const repositories = [
   PhysicalFileRepository,
   PhysicalFileTrashRepository,
   RateLimitRepository,
+  RawSupportRepository,
   PluginRepository,
   PreservationFileRepository,
   PreservationRepository,

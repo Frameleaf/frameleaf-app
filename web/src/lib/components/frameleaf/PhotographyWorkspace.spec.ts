@@ -86,6 +86,34 @@ describe('PhotographyWorkspace', () => {
     expect(screen.queryByText(/project/i)).toBeNull();
   });
 
+  it("opens the shoot's RAW photos in the RAW editor, the chosen ones once some are chosen (FL-420)", async () => {
+    vi.mocked(loadPhotos).mockResolvedValue({
+      photos: [photo('one'), photo('two'), { ...photo('three'), fileName: 'three.JPG' }],
+      nextCursor: null,
+    });
+    const thumbnail = await open();
+    expect(screen.getByRole('link', { name: /RAW compatibility/ })).toHaveAttribute('href', '/raw-support');
+    expect(await screen.findByRole('link', { name: 'Open in RAW editor' })).toHaveAttribute(
+      'href',
+      '/photography/develop?shoot=shoot',
+    );
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Select two.CR3' }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Select three.JPG' }));
+    // the JPEG is chosen too, but only RAW photos open in the RAW editor
+    const chosen = screen.getByRole('link', { name: 'Open in RAW editor (1)' }).getAttribute('href');
+    expect(chosen).toMatch(/^\/photography\/develop\?shoot=shoot(&photo=one)?&only=two$/);
+    await fireEvent.click(thumbnail);
+    expect(screen.getByRole('link', { name: /^Open in RAW editor \(\d\)$/ }).getAttribute('href')).toContain(
+      'photo=one',
+    );
+  });
+
+  it('opens the shoot it is given, at its galleries for Proof', async () => {
+    render(PhotographyWorkspace, { initialShoot: 'shoot', initialSection: 'galleries' });
+    expect(await screen.findByRole('heading', { level: 1, name: 'Galleries' })).toBeInTheDocument();
+    expect(await screen.findByRole('combobox', { name: 'Current shoot' })).toHaveValue('shoot');
+  });
+
   it('shows what each shoot needs next and opens the shoot at that section', async () => {
     vi.mocked(loadWorkflowSummaries).mockResolvedValue({
       galleries: [
