@@ -6,6 +6,7 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
+import { SearchRepository } from 'src/repositories/search.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -780,6 +781,208 @@ describe(TimelineService.name, () => {
       await expect(sut.getTimeBuckets(auth, { tagId: japan.id, withChildTags: false })).resolves.toEqual([
         { timeBucket: '1970-02-01', count: 1 },
       ]);
+    });
+  });
+
+  describe('the Filters panel’s search filter (FL-425)', () => {
+    const library = async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { person: alice } = await ctx.newPerson({ ownerId: user.id });
+      const { person: bob } = await ctx.newPerson({ ownerId: user.id });
+      const { tag } = await ctx.newTag({ userId: user.id, value: 'Hikes' });
+      const newItem = async (
+        at: string,
+        exif: { make?: string; city?: string; rating?: number; latitude?: number; longitude?: number },
+        {
+          people = [],
+          ownerId = user.id,
+          ...asset
+        }: { people?: string[]; ownerId?: string; type?: AssetType; visibility?: AssetVisibility } = {},
+      ) => {
+        const date = new Date(at);
+        const { asset: item } = await ctx.newAsset({
+          ownerId,
+          fileCreatedAt: date,
+          localDateTime: new Date(`${at.slice(0, 10)}T00:00:00.000Z`),
+          ...asset,
+        });
+        await ctx.newExif({ assetId: item.id, ...exif });
+        for (const personGroupId of people) {
+          await ctx.newAssetFace({ assetId: item.id, personGroupId });
+        }
+        return item;
+      };
+      const banffMorning = await newItem(
+        '1970-02-10T08:00:00.000Z',
+        { make: 'Canon', city: 'Banff', rating: 5, latitude: 51.178, longitude: -115.571 },
+        { people: [alice.personGroupId, bob.personGroupId] },
+      );
+      const banffEvening = await newItem('1970-02-10T18:00:00.000Z', { make: 'Canon', city: 'Banff', rating: 1 });
+      const paris = await newItem(
+        '1970-02-20T12:00:00.000Z',
+        { make: 'Canon', city: 'Paris', rating: 2, latitude: 48.857, longitude: 2.352 },
+        { people: [alice.personGroupId] },
+      );
+      const video = await newItem(
+        '1970-03-05T12:00:00.000Z',
+        { make: 'Nikon', city: 'Banff', rating: 4 },
+        { people: [alice.personGroupId, bob.personGroupId], type: AssetType.Video },
+      );
+      const archived = await newItem(
+        '1970-02-11T12:00:00.000Z',
+        { make: 'Canon', city: 'Banff', rating: 5 },
+        { people: [alice.personGroupId, bob.personGroupId], visibility: AssetVisibility.Archive },
+      );
+      const locked = await newItem(
+        '1970-02-12T12:00:00.000Z',
+        { make: 'Canon', city: 'Banff', rating: 5 },
+        { people: [alice.personGroupId, bob.personGroupId], visibility: AssetVisibility.Locked },
+      );
+      const othersCanon = await newItem('1970-02-13T12:00:00.000Z', { make: 'Canon' }, { ownerId: other.id });
+      await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [banffMorning.id, video.id] });
+      const auth = factory.auth({ user: { id: user.id } });
+      return {
+        sut,
+        ctx,
+        user,
+        auth,
+        alice,
+        bob,
+        tag,
+        items: { banffMorning, banffEvening, paris, video, archived, locked, othersCanon },
+      };
+    };
+    const asQuery = (filter: object) => TimeBucketDto.schema.parse({ filter: JSON.stringify(filter) });
+    const bucketIds = async (
+      sut: TimelineService,
+      auth: ReturnType<typeof factory.auth>,
+      dto: TimeBucketDto,
+      timeBucket: string,
+    ) => JSON.parse(await sut.getTimeBucket(auth, { ...dto, timeBucket })).id as string[];
+    const sorted = (ids: string[]) => ids.toSorted();
+
+    it('narrows the buckets, their contents, the ordered page and the highlights alike', async () => {
+      const { sut, auth, items } = await library();
+      const dto = { ...asQuery({ make: { eq: 'Canon' } }), visibility: AssetVisibility.Timeline, withStacked: true };
+
+      await expect(sut.getTimeBuckets(auth, dto)).resolves.toEqual([{ timeBucket: '1970-02-01', count: 3 }]);
+      // the timeline's own order holds: newest first, within a day by the capture time
+      expect(await bucketIds(sut, auth, dto, '1970-02-01')).toEqual([
+        items.paris.id,
+        items.banffEvening.id,
+        items.banffMorning.id,
+      ]);
+      expect(JSON.parse(await sut.getTimelineOrdered(auth, { ...dto, sort: 'rating', skip: 0, take: 10 })).id).toEqual([
+        items.banffMorning.id,
+        items.paris.id,
+        items.banffEvening.id,
+      ]);
+      await expect(sut.getTimelineHighlights(auth, { ...dto, grouping: 'month' })).resolves.toEqual([
+        expect.objectContaining({ timeBucket: '1970-02-01', count: 3, keyAssetId: items.banffMorning.id }),
+      ]);
+    });
+
+    it('means for several people what search means: all of them, any of them, none of them', async () => {
+      const { sut, ctx, user, auth, alice, bob, items } = await library();
+      const search = ctx.get(SearchRepository);
+      const scope = { userIds: [user.id], lockedOwnerId: user.id, viewingUserId: user.id };
+      const timeline = { visibility: AssetVisibility.Timeline };
+      for (const personIds of [
+        { all: [alice.personGroupId, bob.personGroupId] },
+        { any: [alice.personGroupId, bob.personGroupId] },
+        { none: [bob.personGroupId] },
+        { all: [alice.personGroupId], none: [bob.personGroupId] },
+      ]) {
+        const dto = { ...asQuery({ personIds }), ...timeline };
+        const shown = [
+          ...(await bucketIds(sut, auth, dto, '1970-02-01')),
+          ...(await bucketIds(sut, auth, dto, '1970-03-01')),
+        ];
+        const found = await search.searchMetadataV3(
+          { take: 100 },
+          { filter: { personIds, visibility: { eq: AssetVisibility.Timeline } }, userIds: [user.id] },
+          scope,
+        );
+        expect(sorted(shown)).toEqual(sorted(found.items.map(({ id }) => id)));
+        expect(shown).not.toContain(items.archived.id);
+        expect(shown).not.toContain(items.locked.id);
+      }
+      const both = { ...asQuery({ personIds: { all: [alice.personGroupId, bob.personGroupId] } }), ...timeline };
+      await expect(sut.getTimeBuckets(auth, both)).resolves.toEqual([
+        { timeBucket: '1970-03-01', count: 1 },
+        { timeBucket: '1970-02-01', count: 1 },
+      ]);
+    });
+
+    it('applies dates, places, rating, tags, media type, favourites and either-or branches', async () => {
+      const { sut, auth, tag, items } = await library();
+      const timeline = { visibility: AssetVisibility.Timeline };
+      const cases: Array<[object, string[]]> = [
+        [{ takenAt: { gte: '1970-02-15T00:00:00.000Z', lt: '1970-03-01T00:00:00.000Z' } }, [items.paris.id]],
+        [{ city: { eq: 'Banff' } }, [items.banffMorning.id, items.banffEvening.id, items.video.id]],
+        [{ rating: { gte: 4 } }, [items.banffMorning.id, items.video.id]],
+        [{ tagIds: { any: [tag.id] } }, [items.banffMorning.id, items.video.id]],
+        [{ type: { eq: AssetType.Video } }, [items.video.id]],
+        [{ isFavorite: { eq: true } }, []],
+        [{ make: { like: 'nik' } }, [items.video.id]],
+        [
+          { make: { eq: 'Canon' }, or: [{ city: { eq: 'Paris' } }, { rating: { gte: 5 } }] },
+          [items.paris.id, items.banffMorning.id],
+        ],
+      ];
+      for (const [filter, expected] of cases) {
+        const dto = { ...asQuery(filter), ...timeline };
+        const shown = [
+          ...(await bucketIds(sut, auth, dto, '1970-02-01')),
+          ...(await bucketIds(sut, auth, dto, '1970-03-01')),
+        ];
+        expect(sorted(shown), JSON.stringify(filter)).toEqual(sorted(expected));
+        const counted = (await sut.getTimeBuckets(auth, dto)).reduce((total, { count }) => total + count, 0);
+        expect(counted, JSON.stringify(filter)).toBe(expected.length);
+      }
+    });
+
+    it('keeps the view’s own rules: the archive, the Locked view, the owner, a map area', async () => {
+      const { sut, auth, user, items } = await library();
+      const canon = asQuery({ make: { eq: 'Canon' }, city: { eq: 'Banff' } });
+
+      expect(await bucketIds(sut, auth, { ...canon, visibility: AssetVisibility.Archive }, '1970-02-01')).toEqual([
+        items.archived.id,
+      ]);
+      await expect(sut.getTimeBuckets(auth, { ...canon, visibility: AssetVisibility.Locked })).rejects.toThrow(
+        'Elevated permission',
+      );
+      const elevated = factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: true } });
+      expect(await bucketIds(sut, elevated, { ...canon, visibility: AssetVisibility.Locked }, '1970-02-01')).toEqual([
+        items.locked.id,
+      ]);
+      // a map area and the filter share one EXIF join
+      const banff = { west: -116, south: 51, east: -115, north: 51.5 };
+      const inArea = { ...asQuery({ make: { eq: 'Canon' } }), visibility: AssetVisibility.Timeline, bbox: banff };
+      await expect(sut.getTimeBuckets(auth, inArea)).resolves.toEqual([{ timeBucket: '1970-02-01', count: 1 }]);
+      expect(await bucketIds(sut, auth, inArea, '1970-02-01')).toEqual([items.banffMorning.id]);
+    });
+
+    it('needs access to the albums the filter names, and applies the enrichment state as search does', async () => {
+      const { sut, ctx, user, auth, items } = await library();
+      const { user: stranger } = await ctx.newUser();
+      const { album: theirs } = await ctx.newAlbum({ ownerId: stranger.id });
+      const { album: mine } = await ctx.newAlbum({ ownerId: user.id }, [items.paris.id]);
+
+      await expect(sut.getTimeBuckets(auth, asQuery({ albumIds: { any: [theirs.id] } }))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      const inMine = { ...asQuery({ albumIds: { any: [mine.id] } }), visibility: AssetVisibility.Timeline };
+      expect(await bucketIds(sut, auth, inMine, '1970-02-01')).toEqual([items.paris.id]);
+
+      const undescribed = TimeBucketDto.schema.parse({
+        imageEnrichment: 'missing-image-description',
+        visibility: AssetVisibility.Timeline,
+      });
+      // enrichment states describe stills only, as in search
+      await expect(sut.getTimeBuckets(auth, undescribed)).resolves.toEqual([{ timeBucket: '1970-02-01', count: 3 }]);
     });
   });
 });
