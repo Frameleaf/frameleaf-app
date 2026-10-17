@@ -149,12 +149,12 @@ const BUDDY_PROBLEMS: Partial<Record<Translations, Translations>> = {
 };
 
 /**
- * Buddy Backup as the server reports it. `linked` and `entitled` are the availability rules the app
- * already applies (the server is linked to Frameleaf Cloud, and its plan includes backup).
+ * Buddy Backup as the server reports it. `linked` is the availability rule the app already applies (the
+ * server is linked to Frameleaf Cloud); an existing pairing needs no plan (FL-434).
  */
 export const buddyPlaceState = (
   status: BuddyStatusDto | null,
-  access: { linked: boolean; entitled: boolean },
+  access: { linked: boolean },
   now: Date,
   behindAfterMs = BEHIND_AFTER_MS,
 ): BackupPlaceState => {
@@ -163,7 +163,7 @@ export const buddyPlaceState = (
   }
   const lastAt = parse(status.lastCompleteAt);
   const base = { id: 'buddy' as const, on: true, lastAt, running: false };
-  const { outgoing } = buddyBackupPresentation(status, access.linked, access.entitled, now.getTime());
+  const { outgoing } = buddyBackupPresentation(status, access.linked, now.getTime());
   const problem = BUDDY_PROBLEMS[outgoing];
   if (problem) {
     return { ...base, tone: 'warn', status: { key: problem }, current: false };
