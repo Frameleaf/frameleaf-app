@@ -546,6 +546,9 @@
       editSuperseded: $t('frameleaf_studio_edit_superseded'),
       // The adapter fills these in; the host keeps them as markers.
       importNotKept: $t('frameleaf_studio_import_not_kept', { values: { file: '{file}', reason: '{reason}' } }),
+      importCancelUnknown: $t('frameleaf_studio_import_cancel_unknown'),
+      relinkReload: $t('frameleaf_studio_relink_reload'),
+      relinkSaved: $t('frameleaf_studio_relink_saved'),
     },
   });
 

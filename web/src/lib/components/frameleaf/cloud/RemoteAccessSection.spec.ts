@@ -650,7 +650,9 @@ describe('RemoteAccessSection relay use this month (FL-166)', () => {
     );
     render(RemoteAccessSection);
 
-    await screen.findByText('Who can connect');
+    // the remote access answer has arrived (its reason is on screen) before checking what was asked
+    expect(await screen.findByText('Link this server to a Frameleaf account first.')).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sdkMock.getRemoteAccessUsage).not.toHaveBeenCalled();
     expect(screen.queryByRole('meter', { name: 'Relay use this month' })).toBeNull();
   });

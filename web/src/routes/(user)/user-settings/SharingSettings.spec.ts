@@ -156,7 +156,9 @@ describe('SharingSettings: People & sharing in plain words (FL-368)', () => {
 
     expect(screen.getByRole('heading', { name: 'Share your library with a partner' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Choose someone on this server' })).toHaveValue('sam');
-    expect(screen.getByText(/including Locked items, which stay behind their own PIN/, { selector: 'dialog p' }));
+    expect(
+      screen.getByText(/including Locked items, which stay behind their own PIN/, { selector: 'dialog p' }),
+    ).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Share my library with Sam' }));
 
     await waitFor(() =>

@@ -158,8 +158,10 @@ describe('viewerHeadline', () => {
 
   it('joins the parts with a middle dot', () => {
     expect(
-      viewerHeadlineText(still({ exifInfo: { make: 'Fujifilm', model: 'X-T5' }, width: null, height: null })),
-    ).toBe('Fujifilm X-T5');
+      viewerHeadlineText(
+        still({ exifInfo: { make: 'Fujifilm', model: 'X-T5', lensModel: 'XF 23mm F1.4' }, width: null, height: null }),
+      ),
+    ).toBe('Fujifilm X-T5 · XF 23mm F1.4');
   });
 });
 

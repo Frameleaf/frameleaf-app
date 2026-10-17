@@ -86,6 +86,7 @@
       {@const label = itemLabel({ date, count: day.count })}
       <div
         class="cell {itemColors(day.count)}"
+        role="img"
         style:grid-row-start={idx === 0 ? padding + 1 : undefined}
         title={label}
         aria-label={label}

@@ -29,6 +29,6 @@ it('keeps unexpected errors at 500 with the existing fallback', async () => {
   expect(result).toEqual({
     code: 500,
     status: 500,
-    message: 'Hmm, not sure about that. Check the logs or open a ticket?',
+    message: 'Something went wrong. Try again in a moment.',
   });
 });

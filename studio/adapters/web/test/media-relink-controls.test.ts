@@ -45,8 +45,10 @@ const setup = () => {
     Object.defineProperty(this, 'files', { value: [selected] })
     this.dispatchEvent(new Event('change'))
   })
+  // what the picker handed back, checked by the test itself (the store swallows a throw in here)
+  const picks: Array<File | undefined> = []
   const selectedFile = vi.fn(async () => {
-    expect(await selectRelinkFile(new AbortController().signal)).toBe(selected)
+    picks.push(await selectRelinkFile(new AbortController().signal))
     return true
   })
   unregister = registerMediaFileRelink(selectedFile)
@@ -64,7 +66,7 @@ const setup = () => {
     showMissingMediaDialog: true,
     isLoading: false,
   })
-  return { media, selectedFile }
+  return { media, selectedFile, picks, selected }
 }
 describe('production relink controls with filesystem APIs hidden', () => {
   it('routes the missing-media Restore button to selectedFile', async () => {
@@ -74,6 +76,7 @@ describe('production relink controls with filesystem APIs hidden', () => {
     expect(restore).toBeDefined()
     await act(async () => restore.click())
     expect(f.selectedFile).toHaveBeenCalledWith('A')
+    await vi.waitFor(() => expect(f.picks).toEqual([f.selected]))
     expect(window.showOpenFilePicker).toBeUndefined()
   })
   it('routes the media-card Relink File action to selectedFile', async () => {
@@ -91,6 +94,7 @@ describe('production relink controls with filesystem APIs hidden', () => {
     expect(relink).toBeDefined()
     await act(async () => relink.click())
     expect(f.selectedFile).toHaveBeenCalledWith('A')
+    await vi.waitFor(() => expect(f.picks).toEqual([f.selected]))
     expect(window.showOpenFilePicker).toBeUndefined()
   })
 })

@@ -339,7 +339,13 @@ export type StudioAdapterString =
    * A file imported or recorded in the editor could not be kept with the project (FL-103 / FL-105).
    * `{file}` is its name and `{reason}` the server's answer.
    */
-  | 'importNotKept';
+  | 'importNotKept'
+  /** An upscaled file's cancel could not be confirmed: it may still be kept with the project. */
+  | 'importCancelUnknown'
+  /** A relinked file is saved, but this editor must be reloaded before more edits. */
+  | 'relinkReload'
+  /** A missing file was relinked and the project saved. */
+  | 'relinkSaved';
 
 export type StudioWorkspaceMode = 'basic' | 'advanced';
 

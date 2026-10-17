@@ -58,9 +58,8 @@ it('lays a year out in week columns of square cells with the month names underne
   const weeks = Number(root.style.getPropertyValue('--weeks'));
   expect(weeks).toBeGreaterThanOrEqual(53);
   expect(weeks).toBeLessThanOrEqual(54);
-  for (const cell of root.querySelectorAll(':scope .heat > .cell')) {
-    expect(cell).toHaveClass('cell');
-  }
+  // One square per day of the series.
+  expect(root.querySelectorAll(':scope .heat > .cell')).toHaveLength(series.length);
   // Twelve month names, from the first full month to this one, each under the week it starts in.
   const months = [...root.querySelectorAll<HTMLElement>(':scope .months span')];
   expect(months.map((month) => month.textContent)).toEqual([

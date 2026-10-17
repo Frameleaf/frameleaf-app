@@ -196,7 +196,10 @@ describe('Command Center measured Overview', () => {
     sdk.getAnalyticsReport.mockResolvedValue(analyticsReportFixture({ scope: 'account:alex', scopeLabel: 'Alex' }));
     await screen.findAllByText(/Alex/);
     resolveOld(analyticsReportFixture({ scopeLabel: 'Obsolete account' }));
-    await waitFor(() => expect(screen.queryByText('Obsolete account')).not.toBeInTheDocument());
+    // let the late answer settle before checking that it was dropped
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText('Obsolete account')).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Alex/).length).toBeGreaterThan(0);
     expect(sdk.getAnalyticsReport).toHaveBeenLastCalledWith({ scope: 'account:alex', range: 'year' });
   });
   it('shows a failed report and can retry the requested scope', async () => {

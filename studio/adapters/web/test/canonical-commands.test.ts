@@ -185,6 +185,16 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
     expect(before.project).toEqual(keyed.project)
   })
 
+  it('refuses to add a clip to a locked track or its sound to a locked audio track', async () => {
+    for (const trackId of ['v1', 'a1']) {
+      const locked = project()
+      locked.timeline!.tracks.find((track) => track.id === trackId)!.locked = true
+      await expect(
+        applyCanonicalCommands(locked, [envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(0) })], media),
+      ).resolves.toMatchObject({ status: 'rejected', reason: 'failed' })
+    }
+  })
+
   it('routes canonical clip pitch and EQ into the existing preview and export stages and clears them on reopen', async () => {
     const start = await applied(project(), [envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(0) })])
     const audio = itemsOf(start.project).find((item) => item.type === 'audio')!
