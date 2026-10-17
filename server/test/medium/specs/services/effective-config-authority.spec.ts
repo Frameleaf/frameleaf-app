@@ -30,6 +30,7 @@ import { StorageTemplateService } from 'src/services/storage-template.service.js
 import { SystemConfigService } from 'src/services/system-config.service.js';
 import {
   clearConfigCache,
+  initializeEffectiveConfig,
   readConfig,
   updateConfig,
   withEffectiveConfigRead,
@@ -309,6 +310,33 @@ describe('effective configuration transaction authority', () => {
     await expect(
       db.transaction().execute((tx) => withEffectiveConfigRead(repos, tx, () => Promise.resolve('must not publish'))),
     ).rejects.toThrow('effective_config_unavailable');
+  });
+
+  it('bootstrap re-publishes a database epoch whose digest changed with new defaults, but refuses a source change', async () => {
+    const { ctx } = setup();
+    const repos = {
+      metadataRepo: ctx.get(SystemMetadataRepository),
+      configRepo: ctx.getMock(ConfigRepository) as unknown as ConfigRepository,
+      logger: ctx.getMock(LoggingRepository) as unknown as LoggingRepository,
+    };
+    const stale = { format: 1, epoch: 30, sourceKind: 'database', digest: 'a'.repeat(64), trashEnabled: true } as const;
+    await withEffectiveConfigWrite(repos, (bound) => bound.metadataRepo.set(EPOCH_KEY, stale));
+
+    await initializeEffectiveConfig(repos);
+    const bumped = (await repos.metadataRepo.getEffectiveConfigEpoch())!;
+    expect(bumped).toMatchObject({ epoch: 31, sourceKind: 'database' });
+    expect(bumped.digest).not.toBe(stale.digest);
+
+    await initializeEffectiveConfig(repos);
+    expect((await repos.metadataRepo.getEffectiveConfigEpoch())!.epoch).toBe(31);
+    await expect(
+      db.transaction().execute((tx) => withEffectiveConfigRead(repos, tx, () => Promise.resolve('ok'))),
+    ).resolves.toBe('ok');
+
+    await withEffectiveConfigWrite(repos, (bound) =>
+      bound.metadataRepo.set(EPOCH_KEY, { ...bumped, sourceKind: 'file' }),
+    );
+    await expect(initializeEffectiveConfig(repos)).rejects.toThrow('effective_config_source_changed');
   });
 
   it('a fresh worker refuses pending changed bytes and follows the durable reload even without a ConfigUpdate event', async () => {
