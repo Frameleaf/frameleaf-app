@@ -1,4 +1,11 @@
-import { mdiArchiveLockOutline, mdiDeleteOutline, mdiImport, mdiTools, mdiTwoFactorAuthentication } from '@mdi/js';
+import {
+  mdiArchiveLockOutline,
+  mdiCloudOutline,
+  mdiDeleteOutline,
+  mdiImport,
+  mdiTools,
+  mdiTwoFactorAuthentication,
+} from '@mdi/js';
 import type { MessageFormatter, Translations } from 'svelte-i18n';
 import { USER_SETTINGS_AREAS } from '$lib/frameleaf/command-index';
 import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
@@ -50,6 +57,13 @@ export const personalSections = (
     title: $t('frameleaf_preservation_section_title'),
     subtitle: $t('frameleaf_preservation_section_description'),
     icon: mdiArchiveLockOutline,
+  },
+  // FL-362: every account chooses what Cloud Backup keeps of its own library.
+  {
+    key: 'cloud-backup-choice',
+    title: $t('frameleaf_backup_keeps_title'),
+    subtitle: $t('frameleaf_backup_keeps_subtitle'),
+    icon: mdiCloudOutline,
   },
   // Library care lists each repair tool once, in its Tools group. This page holds only the
   // suggestion switches, which are server settings, so it is offered to administrators alone

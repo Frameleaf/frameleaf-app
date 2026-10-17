@@ -36,6 +36,7 @@
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
+    CloudBackupCoverageState,
     CloudBackupKeyMode,
     CloudBackupLastRunStatus,
     CloudBackupRunState,
@@ -217,6 +218,23 @@
             : $t('frameleaf_cloud_backup_own_bucket'),
       },
     ];
+  });
+
+  /**
+   * FL-362: when the newest run's numbers have not reached Frameleaf Cloud. Publishing them never holds up
+   * a backup; it is tried again on its own.
+   */
+  const coverageNote = $derived.by(() => {
+    const coverage = status?.coverage;
+    if (!coverage || status?.target !== CloudBackupTargetSetting.Managed) {
+      return '';
+    }
+    if (coverage.state === CloudBackupCoverageState.Pending) {
+      return $t('frameleaf_cloud_backup_coverage_pending');
+    }
+    return coverage.state === CloudBackupCoverageState.NotReported
+      ? $t('frameleaf_cloud_backup_coverage_not_reported')
+      : '';
   });
 
   /** What went wrong with the last run, when something did. */
@@ -475,6 +493,9 @@
       >
         {lastRunNote}
       </p>
+    {/if}
+    {#if coverageNote}
+      <p class="fc-muted under">{coverageNote}</p>
     {/if}
     {#if active}
       <div class="under">
