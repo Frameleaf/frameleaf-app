@@ -55,13 +55,15 @@
         all.push(...page.photos);
         cursor = page.nextCursor;
       } while (cursor && all.length < MAX_PHOTOS);
-      photos = all.filter(develops).map((photo) => ({
-        id: photo.id,
-        fileName: photo.fileName,
-        rating: photo.rating === -1 ? null : photo.rating,
-        canRate: photo.canRate,
-        edited: !!photo.currentRevisionId,
-      }));
+      photos = all
+        .filter((photo) => develops(photo))
+        .map((photo) => ({
+          id: photo.id,
+          fileName: photo.fileName,
+          rating: photo.rating === -1 ? null : photo.rating,
+          canRate: photo.canRate,
+          edited: !!photo.currentRevisionId,
+        }));
       phase = 'ready';
     } catch {
       phase = 'failed';

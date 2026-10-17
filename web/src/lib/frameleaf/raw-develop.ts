@@ -15,6 +15,7 @@ import type { NativeSyncField } from '$lib/frameleaf/native-sync';
 export const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const round = (value: number, places = 3) => Math.round(value * 10 ** places) / 10 ** places;
 /** A plain copy of a recipe, also of a reactive (proxied) one, which structuredClone refuses. */
+// eslint-disable-next-line unicorn/prefer-structured-clone -- structuredClone throws on Svelte state proxies
 export const plain = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const clone = plain;
 
@@ -173,9 +174,9 @@ export const turn = (rotation: NativeRecipe['rotation'], by: 90 | -90) =>
 /* Masks ------------------------------------------------------------------ */
 
 export type MaskKind = NativeMask['kind'];
-export const isPainted = (kind: MaskKind) =>
-  kind === 'brush' || kind === 'subject' || kind === 'sky' || kind === 'background';
-export const isSuggested = (kind: MaskKind) => kind === 'subject' || kind === 'sky' || kind === 'background';
+const SUGGESTED_KINDS: readonly MaskKind[] = ['subject', 'sky', 'background'];
+export const isSuggested = (kind: MaskKind) => SUGGESTED_KINDS.includes(kind);
+export const isPainted = (kind: MaskKind) => kind === 'brush' || isSuggested(kind);
 export const isPlaced = (kind: MaskKind) => kind === 'radial' || kind === 'linear';
 
 /** A new mask as the prototype makes one (`makeMask`); a brush stays off until its first stroke. */
@@ -248,7 +249,7 @@ export const originalFraming = (recipe: NativeRecipe): NativeRecipe =>
 
 /* Looks ------------------------------------------------------------------ */
 
-type LookValues = Pick<NativeRecipe, 'exposureEV' | 'contrast' | 'saturation' | 'shadows' | 'highlights'> & {
+type LookValues = Partial<Pick<NativeRecipe, 'exposureEV' | 'contrast' | 'saturation' | 'shadows' | 'highlights'>> & {
   temperature?: number;
   tint?: number;
   curve?: readonly number[];
@@ -288,7 +289,7 @@ export const LOOKS: readonly { id: string; values: LookValues; swatch: string }[
  * multipliers scale; exposure, shadows and highlights add; the curve blends toward the look's.
  */
 export function applyLook(base: NativeRecipe, lookId: string, strength: number): NativeRecipe {
-  const look = LOOKS.find((item) => item.id === lookId)?.values ?? {};
+  const look: LookValues = LOOKS.find((item) => item.id === lookId)?.values ?? {};
   const s = clamp(strength, 0, 100) / 100;
   const next = clone(base);
   const scale = (value: number | undefined, target: number | undefined, min: number, max: number) =>

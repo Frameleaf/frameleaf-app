@@ -139,11 +139,13 @@
       aria-label={$t('frameleaf_develop_mask_enable', { values: { name: mask.name ?? '' } })}
       checked={mask.enabled}
       disabled={mask.kind === 'brush' && !mask.strokes?.length}
-      onchange={(event) =>
+      onchange={(event) => {
+        const enabled = event.currentTarget.checked;
         session.change(id, {
           ...recipe,
-          masks: masks.map((item) => (item.id === mask.id ? { ...item, enabled: event.currentTarget.checked } : item)),
-        })}
+          masks: masks.map((item) => (item.id === mask.id ? { ...item, enabled } : item)),
+        });
+      }}
     />
     <button
       type="button"

@@ -86,6 +86,8 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
       'All albums',
       'Shared links',
       'Photography',
+      // FL-420: LibraryRail.jsx lists RAW support right under Photography.
+      'RAW support',
       'Workflows',
       'Trash',
       'Library Care',

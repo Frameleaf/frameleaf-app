@@ -133,10 +133,10 @@
 
 <div class="rde-version-history">
   <span>{$t('frameleaf_develop_undo_steps', { values: { count: record.undo.length } })}</span>
-  <button type="button" class="rde-button" disabled={!record.undo.length} onclick={() => session.undo(id)}
+  <button type="button" class="rde-button" disabled={record.undo.length === 0} onclick={() => session.undo(id)}
     ><Icon icon={mdiUndo} size="15" aria-hidden={true} />{$t('undo')}</button
   >
-  <button type="button" class="rde-button" disabled={!record.redo.length} onclick={() => session.redo(id)}
+  <button type="button" class="rde-button" disabled={record.redo.length === 0} onclick={() => session.redo(id)}
     ><Icon icon={mdiRedo} size="15" aria-hidden={true} />{$t('frameleaf_editor_redo')}</button
   >
 </div>
