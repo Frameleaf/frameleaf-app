@@ -79,6 +79,13 @@ import {
   CloudBackupManifestTable,
   CloudBackupObjectTable,
 } from 'src/schema/tables/cloud-backup.table.js';
+import {
+  CloudBackupCoverageReportTable,
+  CloudBackupDecisionAccountTable,
+  CloudBackupDecisionAssetTable,
+  CloudBackupDecisionRunTable,
+  CloudBackupSelectionTable,
+} from 'src/schema/tables/cloud-backup-selection.table.js';
 import { ClusterGroupRequestTable } from 'src/schema/tables/cluster-group-request.table.js';
 import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
 import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
@@ -269,6 +276,11 @@ export class ImmichDatabase {
     CloudBackupManifestEntryTable,
     CloudBackupManifestOriginalTable,
     CloudBackupObjectVerificationTable,
+    CloudBackupSelectionTable,
+    CloudBackupDecisionRunTable,
+    CloudBackupDecisionAccountTable,
+    CloudBackupDecisionAssetTable,
+    CloudBackupCoverageReportTable,
     AssetIntegrityVerificationTable,
     ClusterGroupTable,
     ClusterGroupRequestTable,
@@ -524,6 +536,11 @@ export interface DB extends QueueDatabase {
   cloud_backup_manifest: CloudBackupManifestTable;
   cloud_backup_manifest_entry: CloudBackupManifestEntryTable;
   cloud_backup_object: CloudBackupObjectTable;
+  cloud_backup_selection: CloudBackupSelectionTable;
+  cloud_backup_decision_run: CloudBackupDecisionRunTable;
+  cloud_backup_decision_account: CloudBackupDecisionAccountTable;
+  cloud_backup_decision_asset: CloudBackupDecisionAssetTable;
+  cloud_backup_coverage_report: CloudBackupCoverageReportTable;
   cluster_group: ClusterGroupTable;
   cluster_group_request: ClusterGroupRequestTable;
 
