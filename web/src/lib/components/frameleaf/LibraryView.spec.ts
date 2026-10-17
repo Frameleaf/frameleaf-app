@@ -223,11 +223,19 @@ describe('LibraryView', () => {
       { ...query, queryAssetId: 'similar' },
       { ...query, spaceId: 'space' },
       { ...query, filter: { ...query.filter, albumIds: { any: ['other-album'] } } },
-      { ...query, filter: { ...query.filter, city: { eq: 'Banff' } } },
     ]) {
       expect(applyFilterQuery(unsupported)).toBe(false);
       expect(librarySession.query).toEqual(query);
     }
+    // FL-425: a place, like every other filter condition, narrows the album in place.
+    const banff = { ...query, filter: { ...query.filter, city: { eq: 'Banff' } } };
+    expect(applyFilterQuery(banff)).toBe(true);
+    expect(librarySession.query).toEqual(banff);
+    await waitFor(() =>
+      expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(
+        expect.objectContaining({ albumId: 'album-1', filter: JSON.stringify({ city: { eq: 'Banff' } }) }),
+      ),
+    );
     librarySession.clearSelection();
     librarySession.close();
     librarySession.setQuery(emptyDiscoveryQuery());
@@ -531,7 +539,8 @@ describe('LibraryView', () => {
       librarySession.patchView({ query: emptyDiscoveryQuery() });
     });
 
-    it('drops a condition the grid cannot apply instead of showing a chip for it (M3)', async () => {
+    it('applies every filter condition to the grid and drops only search text (M3, FL-425)', async () => {
+      sdkMock.getTimeBuckets.mockClear();
       render(LibraryView, { options: {}, destination: { kind: 'library' }, syncUrl: false });
       await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
       librarySession.patchView({
@@ -541,8 +550,13 @@ describe('LibraryView', () => {
           filter: { city: { eq: 'Halifax' }, tagIds: { any: ['t1'] } },
         } as never,
       });
-      await waitFor(() => expect(librarySession.query.filter).toEqual({ tagIds: { any: ['t1'] } }));
-      expect(librarySession.query.text).toBe('');
+      await waitFor(() => expect(librarySession.query.text).toBe(''));
+      expect(librarySession.query.filter).toEqual({ city: { eq: 'Halifax' }, tagIds: { any: ['t1'] } });
+      await waitFor(() =>
+        expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(
+          expect.objectContaining({ tagId: 't1', filter: JSON.stringify({ city: { eq: 'Halifax' } }) }),
+        ),
+      );
       librarySession.patchView({ query: emptyDiscoveryQuery() });
     });
 
@@ -807,6 +821,41 @@ describe('LibraryView', () => {
         await waitFor(() => expect(screen.queryByTestId('library-filter-panel')).not.toBeInTheDocument());
       } finally {
         removeEventListener('frameleaf:open-filters', palette);
+        vi.unstubAllGlobals();
+      }
+    });
+
+    // FL-425: a choice the old buckets could not apply (here a capture date) narrows the grid in place too.
+    it('narrows the grid in place for a capture date, without leaving for Search', async () => {
+      Element.prototype.scrollIntoView ??= () => {};
+      vi.stubGlobal('ResizeObserver', getResizeObserverMock());
+      vi.stubGlobal('visualViewport', null);
+      navigation.goto.mockClear();
+      try {
+        renderWithTooltips(LibraryView, {
+          options: { visibility: AssetVisibility.Timeline },
+          destination: { kind: 'library' },
+          syncUrl: false,
+          title: 'Library',
+        });
+        await fireEvent.click(await screen.findByRole('button', { name: 'filter' }));
+        const panel = await screen.findByTestId('library-filter-panel');
+        await fireEvent.input(within(panel).getByLabelText('frameleaf_search_captured_from'), {
+          target: { value: '2024-03-01' },
+        });
+        await waitFor(() =>
+          expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+              visibility: AssetVisibility.Timeline,
+              filter: JSON.stringify({ localDateTime: { gte: '2024-03-01T00:00:00.000Z' } }),
+            }),
+          ),
+        );
+        expect(librarySession.query.filter).toEqual({ localDateTime: { gte: '2024-03-01' } });
+        expect(navigation.goto).not.toHaveBeenCalled();
+        expect(screen.getByTestId('library-filter-panel')).toBeInTheDocument();
+      } finally {
+        librarySession.patchView({ query: emptyDiscoveryQuery() });
         vi.unstubAllGlobals();
       }
     });

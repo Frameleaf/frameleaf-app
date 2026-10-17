@@ -48694,6 +48694,25 @@
             }
           },
           {
+            "name": "filter",
+            "required": false,
+            "in": "query",
+            "description": "A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link",
+            "schema": {
+              "maxLength": 16384,
+              "example": "{\"make\":{\"eq\":\"Canon\"},\"rating\":{\"gte\":4}}",
+              "type": "string"
+            }
+          },
+          {
+            "name": "imageEnrichment",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ImageEnrichmentFilter"
+            }
+          },
+          {
             "name": "isFavorite",
             "required": false,
             "in": "query",
@@ -48959,6 +48978,25 @@
             }
           },
           {
+            "name": "filter",
+            "required": false,
+            "in": "query",
+            "description": "A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link",
+            "schema": {
+              "maxLength": 16384,
+              "example": "{\"make\":{\"eq\":\"Canon\"},\"rating\":{\"gte\":4}}",
+              "type": "string"
+            }
+          },
+          {
+            "name": "imageEnrichment",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ImageEnrichmentFilter"
+            }
+          },
+          {
             "name": "isFavorite",
             "required": false,
             "in": "query",
@@ -49217,6 +49255,17 @@
             }
           },
           {
+            "name": "filter",
+            "required": false,
+            "in": "query",
+            "description": "A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link",
+            "schema": {
+              "maxLength": 16384,
+              "example": "{\"make\":{\"eq\":\"Canon\"},\"rating\":{\"gte\":4}}",
+              "type": "string"
+            }
+          },
+          {
             "name": "grouping",
             "required": false,
             "in": "query",
@@ -49233,6 +49282,14 @@
               "minimum": 0,
               "maximum": 12,
               "type": "integer"
+            }
+          },
+          {
+            "name": "imageEnrichment",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ImageEnrichmentFilter"
             }
           },
           {
@@ -49511,6 +49568,25 @@
             "description": "Date source for timeline bucket grouping. Defaults to taken date.",
             "schema": {
               "$ref": "#/components/schemas/TimeBucketDateType"
+            }
+          },
+          {
+            "name": "filter",
+            "required": false,
+            "in": "query",
+            "description": "A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link",
+            "schema": {
+              "maxLength": 16384,
+              "example": "{\"make\":{\"eq\":\"Canon\"},\"rating\":{\"gte\":4}}",
+              "type": "string"
+            }
+          },
+          {
+            "name": "imageEnrichment",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ImageEnrichmentFilter"
             }
           },
           {
@@ -126232,6 +126308,15 @@
             "$ref": "#/components/schemas/TimeBucketDateType",
             "description": "Date source for timeline bucket grouping. Defaults to taken date."
           },
+          "filter": {
+            "description": "A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link",
+            "example": "{\"make\":{\"eq\":\"Canon\"},\"rating\":{\"gte\":4}}",
+            "maxLength": 16384,
+            "type": "string"
+          },
+          "imageEnrichment": {
+            "$ref": "#/components/schemas/ImageEnrichmentFilter"
+          },
           "isFavorite": {
             "description": "Filter by favorite status (true for favorites only, false for non-favorites only)",
             "type": "boolean"
@@ -126606,6 +126691,15 @@
             "$ref": "#/components/schemas/TimeBucketDateType",
             "description": "Date source for timeline bucket grouping. Defaults to taken date."
           },
+          "filter": {
+            "description": "A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link",
+            "example": "{\"make\":{\"eq\":\"Canon\"},\"rating\":{\"gte\":4}}",
+            "maxLength": 16384,
+            "type": "string"
+          },
+          "imageEnrichment": {
+            "$ref": "#/components/schemas/ImageEnrichmentFilter"
+          },
           "isFavorite": {
             "description": "Filter by favorite status (true for favorites only, false for non-favorites only)",
             "type": "boolean"
@@ -126786,6 +126880,12 @@
             "$ref": "#/components/schemas/TimeBucketDateType",
             "description": "Date source for timeline bucket grouping. Defaults to taken date."
           },
+          "filter": {
+            "description": "A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link",
+            "example": "{\"make\":{\"eq\":\"Canon\"},\"rating\":{\"gte\":4}}",
+            "maxLength": 16384,
+            "type": "string"
+          },
           "grouping": {
             "$ref": "#/components/schemas/TimelineHighlightGrouping"
           },
@@ -126794,6 +126894,9 @@
             "maximum": 12,
             "minimum": 0,
             "type": "integer"
+          },
+          "imageEnrichment": {
+            "$ref": "#/components/schemas/ImageEnrichmentFilter"
           },
           "isFavorite": {
             "description": "Filter by favorite status (true for favorites only, false for non-favorites only)",
@@ -126912,6 +127015,15 @@
           "dateType": {
             "$ref": "#/components/schemas/TimeBucketDateType",
             "description": "Date source for timeline bucket grouping. Defaults to taken date."
+          },
+          "filter": {
+            "description": "A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link",
+            "example": "{\"make\":{\"eq\":\"Canon\"},\"rating\":{\"gte\":4}}",
+            "maxLength": 16384,
+            "type": "string"
+          },
+          "imageEnrichment": {
+            "$ref": "#/components/schemas/ImageEnrichmentFilter"
           },
           "isFavorite": {
             "description": "Filter by favorite status (true for favorites only, false for non-favorites only)",

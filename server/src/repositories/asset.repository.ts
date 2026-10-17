@@ -17,6 +17,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { SearchFilter } from 'src/dtos/search.dto.js';
 import type { CameraIdentification } from 'src/utils/camera-identification.js';
 import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
@@ -34,6 +35,7 @@ import {
   AssetType,
   AssetVisibility,
   CalendarHeatmapType,
+  ImageEnrichmentFilter,
   TimeBucketDateType,
 } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
@@ -61,6 +63,7 @@ import {
   inSharedAlbum,
   isMotionOfLockedStill,
   removeUndefinedKeys,
+  searchFilterPredicate,
   truncatedDate,
   unnest,
   withAlbumVisibility,
@@ -73,6 +76,7 @@ import {
   withFiles,
   withHiddenContentFilter,
   withHiddenContentOnly,
+  withImageEnrichmentFilter,
   withLibrary,
   withLockedOwnerScope,
   withNsfwAssets,
@@ -284,7 +288,25 @@ export interface TimeBucketOptions extends AssetBuilderOptions {
   withChildTags?: boolean;
   /** LIB-P3: only this owner's own Best Photos; set by the service for the caller only */
   bestPhotos?: TimelineBestPhotos;
+  /**
+   * FL-425: the Filters panel's structured search filter. It only narrows what the timeline may show
+   * (`searchFilterPredicate`, as search matches it); the owner, album, visibility and Locked rules
+   * above still decide what that is.
+   */
+  filter?: SearchFilter;
+  /** FL-425: the search's enrichment state condition (`withImageEnrichmentFilter`) */
+  imageEnrichment?: ImageEnrichmentFilter;
 }
+/** FL-425: a timeline narrowed by the Filters panel, for the generated SQL */
+const timelineFilterExample: TimeBucketOptions = {
+  filter: {
+    make: { like: DummyValue.STRING },
+    personIds: { all: [DummyValue.UUID, DummyValue.UUID_1] },
+    takenAt: { gte: DummyValue.DATE },
+    or: [{ city: { eq: DummyValue.STRING } }, { rating: { gte: 4 } }],
+  },
+  imageEnrichment: ImageEnrichmentFilter.MissingImageDescription,
+};
 /**
  * FL-30 (S-15): the flat Browse/Work orders the time buckets cannot give. LIB-P3: `quality` is the
  * viewer's own Best Photos score, highest first; an asset without a score of theirs sorts last.
@@ -2255,18 +2277,28 @@ export class AssetRepository {
         .select(timeBucketDate.as('timeBucket'))
         .$if(!!options.isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
         .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
-        .$if(!!options.bbox, (qb) => {
-          const bbox = options.bbox!;
+        // A map area and the search filter (FL-425) both read the asset's EXIF row. The join is inner,
+        // as the bucket's own query joins it, so a count never includes an asset its bucket cannot list.
+        .$if(!!options.bbox || !!options.filter, (qb) => {
+          const withExifRow = qb.innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId');
+          const filtered = options.filter
+            ? withExifRow.where((eb) =>
+                searchFilterPredicate(eb, options.filter!, auth?.user.id, options.revealLockedOwnerId),
+              )
+            : withExifRow;
+          if (!options.bbox) {
+            return filtered;
+          }
+          const bbox = options.bbox;
           const circle = getBoundingCircle(bbox);
-          const withBoundingCircle = qb
-            .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
-            .where(
-              sql`earth_box(ll_to_earth_public(${circle.centerLatitude}, ${circle.centerLongitude}), ${circle.radius})`,
-              '@>',
-              sql`ll_to_earth_public(asset_exif.latitude, asset_exif.longitude)`,
-            );
+          const withBoundingCircle = filtered.where(
+            sql`earth_box(ll_to_earth_public(${circle.centerLatitude}, ${circle.centerLongitude}), ${circle.radius})`,
+            '@>',
+            sql`ll_to_earth_public(asset_exif.latitude, asset_exif.longitude)`,
+          );
           return withBoundingBox(withBoundingCircle, bbox);
         })
+        .$if(!!options.imageEnrichment, (qb) => withImageEnrichmentFilter(qb, options.imageEnrichment!))
         .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
         .$if(!!options.visibility, (qb) => qb.where(timelineVisibility(options)))
         .$if(options.visibility === AssetVisibility.Locked && !!options.lockReasons, (qb) =>
@@ -2313,7 +2345,17 @@ export class AssetRepository {
       ? sql<Date>`date_trunc(${sql.lit(size)}, asset."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`
       : sql<Date>`date_trunc(${sql.lit(size)}, "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
   }
-  @GenerateSql({ params: [{}, { user: { id: DummyValue.UUID } }] })
+  @GenerateSql(
+    { params: [{}, { user: { id: DummyValue.UUID } }] },
+    { name: 'search filter', params: [timelineFilterExample, { user: { id: DummyValue.UUID } }] },
+    {
+      name: 'search filter in a map area',
+      params: [
+        { ...timelineFilterExample, bbox: { west: 11.07, south: 49.41, east: 11.11, north: 49.45 } },
+        { user: { id: DummyValue.UUID } },
+      ],
+    },
+  )
   async getTimeBuckets(options: TimeBucketOptions, auth?: AuthDto): Promise<TimeBucketItem[]> {
     return this.db
       .with('asset', () => this.timelineAssets(options, auth, this.timelineBucketDate(options)))
@@ -2413,9 +2455,17 @@ export class AssetRepository {
       places: row.places ?? [],
     }));
   }
-  @GenerateSql({
-    params: [DummyValue.TIME_BUCKET, { withStacked: true }, { user: { id: DummyValue.UUID } }],
-  })
+  @GenerateSql(
+    { params: [DummyValue.TIME_BUCKET, { withStacked: true }, { user: { id: DummyValue.UUID } }] },
+    {
+      name: 'search filter',
+      params: [
+        DummyValue.TIME_BUCKET,
+        { withStacked: true, ...timelineFilterExample },
+        { user: { id: DummyValue.UUID } },
+      ],
+    },
+  )
   getTimeBucket(timeBucket: string, options: TimeBucketOptions, auth: AuthDto) {
     return this.timelineAssetColumns(options, auth, { timeBucket });
   }
@@ -2546,6 +2596,11 @@ export class AssetRepository {
             qb.where((eb) => eb.not(isMotionOfLockedStill(eb))),
           )
           .$call((qb) => withHiddenContentFilter(qb, options))
+          // FL-425: the Filters panel's search filter, as search matches it
+          .$if(!!options.filter, (qb) =>
+            qb.where((eb) => searchFilterPredicate(eb, options.filter!, auth.user.id, options.revealLockedOwnerId)),
+          )
+          .$if(!!options.imageEnrichment, (qb) => withImageEnrichmentFilter(qb, options.imageEnrichment!))
           .$if(!!options.bbox, (qb) => {
             const bbox = options.bbox!;
             const circle = getBoundingCircle(bbox);

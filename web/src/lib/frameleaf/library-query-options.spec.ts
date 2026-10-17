@@ -1,4 +1,4 @@
-import { AssetTypeEnum, AssetVisibility } from '@frameleaf/sdk';
+import { AssetTypeEnum, AssetVisibility, ImageEnrichmentFilter } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { emptyDiscoveryQuery, type DiscoveryQuery } from '$lib/components/discovery/query';
 import { searchQueryForTimeline, timelineQueryOptions, viewInLibraryHref } from './library-query-options';
@@ -20,6 +20,7 @@ describe('timelineQueryOptions (FL-30, M3)', () => {
       });
       expect(timelineQueryOptions(query({ type: { eq: assetType } }), { ...base, assetType }).unapplied).toEqual([]);
     }
+    // FL-425: any other media type condition rides in the buckets' search filter, beside the page type
     for (const type of [
       { ne: AssetTypeEnum.Video },
       { eq: AssetTypeEnum.Audio },
@@ -28,8 +29,8 @@ describe('timelineQueryOptions (FL-30, M3)', () => {
       { eq: AssetTypeEnum.Video },
     ]) {
       expect(timelineQueryOptions(query({ type }), { ...base, assetType: AssetTypeEnum.Image })).toEqual({
-        options: { ...base, assetType: AssetTypeEnum.Image },
-        unapplied: ['type'],
+        options: { ...base, assetType: AssetTypeEnum.Image, filter: JSON.stringify({ type }) },
+        unapplied: [],
       });
     }
   });
@@ -52,20 +53,61 @@ describe('timelineQueryOptions (FL-30, M3)', () => {
     expect(viewInLibraryHref(query({ isFavorite: { eq: true } })).startsWith('/photos?')).toBe(true);
   });
 
-  it('reports what the buckets cannot express instead of pretending to apply it', () => {
-    const result = timelineQueryOptions(
-      query({ tagIds: { any: ['t1', 't2'] }, originalPath: { startsWith: '/photos' } }, 'beach'),
-      base,
-    );
-    expect(result.options).toEqual(base);
-    expect([...result.unapplied].sort()).toEqual(['originalPath', 'tagIds', 'text']);
-    expect(timelineQueryOptions(query({ tagIds: { none: ['t1'] } }), base).unapplied).toEqual(['tagIds']);
+  it('sends every other condition to the buckets as the search filter, and reports only search text', () => {
+    const conditions = {
+      tagIds: { any: ['t1', 't2'] },
+      originalPath: { startsWith: '/photos' },
+      takenAt: { gte: '2024-01-01T00:00:00.000Z' },
+      city: { eq: 'Banff' },
+      make: { like: 'Canon' },
+      rating: { gte: 4 },
+      personIds: { all: ['p1', 'p2'] },
+      or: [{ country: { eq: 'Canada' } }, { isMotion: { eq: true } }],
+    } as DiscoveryQuery['filter'];
+    const result = timelineQueryOptions(query(conditions, 'beach'), base);
+    expect(result.unapplied).toEqual(['text']);
+    expect(result.options).toEqual({ ...base, filter: expect.any(String) });
+    expect(JSON.parse(result.options.filter!)).toEqual(conditions);
+    expect(timelineQueryOptions(query({ tagIds: { none: ['t1'] } }), base)).toEqual({
+      options: { ...base, filter: JSON.stringify({ tagIds: { none: ['t1'] } }) },
+      unapplied: [],
+    });
   });
 
-  it('never replaces the page’s own person with another one', () => {
+  it('keeps the bucket options it can name and sends the rest in the filter', () => {
+    const result = timelineQueryOptions(query({ tagIds: { any: ['t1'] }, make: { eq: 'Canon' } }), base);
+    expect(result.options).toEqual({ ...base, tagId: 't1', filter: JSON.stringify({ make: { eq: 'Canon' } }) });
+    expect(timelineQueryOptions(query({}), base).options).toEqual(base);
+  });
+
+  it('sends the panel’s calendar days as the datetime bounds search takes', () => {
+    const days = query({ localDateTime: { gte: '2024-01-01', lte: '2024-01-31' } });
+    expect(JSON.parse(timelineQueryOptions(days, base).options.filter!)).toEqual({
+      localDateTime: { gte: '2024-01-01T00:00:00.000Z', lt: '2024-02-01T00:00:00.000Z' },
+    });
+    // the session keeps the days the panel shows
+    expect(days.filter.localDateTime).toEqual({ gte: '2024-01-01', lte: '2024-01-31' });
+  });
+
+  it('applies the enrichment state beside the filter', () => {
+    const result = timelineQueryOptions(
+      { ...query({}), imageEnrichment: ImageEnrichmentFilter.MissingImageDescription },
+      base,
+    );
+    expect(result).toEqual({
+      options: { ...base, imageEnrichment: ImageEnrichmentFilter.MissingImageDescription },
+      unapplied: [],
+    });
+  });
+
+  it('never replaces the page’s own person with another one: the other narrows it further', () => {
     const result = timelineQueryOptions(query({ personIds: { any: ['other'] } }), { ...base, personId: 'p1' });
-    expect(result.options.personId).toBe('p1');
-    expect(result.unapplied).toEqual(['personIds']);
+    expect(result.options).toEqual({
+      ...base,
+      personId: 'p1',
+      filter: JSON.stringify({ personIds: { any: ['other'] } }),
+    });
+    expect(result.unapplied).toEqual([]);
   });
 });
 
@@ -107,15 +149,18 @@ describe('viewInLibraryHref (M3)', () => {
     expect(readLibraryView(new URL(href, 'http://localhost'))?.query.filter).toEqual({ tagIds: { any: ['t1'] } });
   });
 
-  it('opens the search results for a folder path, several tags or search text', () => {
-    for (const unsupported of [
-      query({ originalPath: { startsWith: '/photos/2024' } }),
-      query({ tagIds: { any: ['t1', 't2'] } }),
-      query({}, 'beach'),
-    ]) {
-      const href = viewInLibraryHref(unsupported);
-      expect(href.startsWith('/search?dq=')).toBe(true);
-      expect(JSON.parse(new URL(href, 'http://localhost').searchParams.get('dq')!)).toEqual(unsupported);
+  it('opens the Photos page for a folder path or several tags too (FL-425)', () => {
+    for (const filter of [{ originalPath: { startsWith: '/photos/2024' } }, { tagIds: { any: ['t1', 't2'] } }]) {
+      const href = viewInLibraryHref(query(filter));
+      expect(href.startsWith('/photos?')).toBe(true);
+      expect(readLibraryView(new URL(href, 'http://localhost'))?.query.filter).toEqual(filter);
     }
+  });
+
+  it('opens the search results for search text', () => {
+    const text = query({ tagIds: { any: ['t1'] } }, 'beach');
+    const href = viewInLibraryHref(text);
+    expect(href.startsWith('/search?dq=')).toBe(true);
+    expect(JSON.parse(new URL(href, 'http://localhost').searchParams.get('dq')!)).toEqual(text);
   });
 });
