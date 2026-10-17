@@ -1,9 +1,9 @@
-import type { ExifResponseDto } from 'src/dtos/exif.dto.js';
 import type { PersonResponseDto } from 'src/dtos/person.dto.js';
 import type { TagResponseDto } from 'src/dtos/tag.dto.js';
 import { AssetDetails, assetDetailsXmp } from 'src/utils/asset-details-xmp.js';
 
-const exif = (values: Partial<ExifResponseDto>) => values as ExifResponseDto;
+type Exif = NonNullable<AssetDetails['exifInfo']>;
+const exif = (values: Partial<Exif>) => values as Exif;
 const tag = (value: string) => ({ value, name: value.split('/').at(-1) }) as TagResponseDto;
 const person = (name: string, isHidden = false) => ({ name, isHidden }) as PersonResponseDto;
 
