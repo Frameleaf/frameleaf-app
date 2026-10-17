@@ -8,6 +8,7 @@
 // headless render core, and the three runtime packages those import (playwright, playwright-core,
 // zod). Nothing else from the engine's development dependencies is shipped.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,11 +21,40 @@ export const WORKER_MODULES = [
   'bundled-worker-client.mjs',
   'bundled-worker-executor.mjs',
   'bundled-worker-formats.mjs',
+  'bundled-worker-fonts.mjs',
+  'render-worker-font-inputs.mjs',
   'bundled-worker-recipe.mjs',
   'bundled-worker-renderer.mjs',
 ];
 export const RUNTIME_MODULES = ['subtitle-sidecar.mjs'];
 export const ENGINE_RUNTIME_PACKAGES = ['playwright', 'playwright-core', 'zod'];
+
+export async function stageAdmissionFont(destination) {
+  const { studioBundledFonts } = await import('../../server/src/utils/studio-fonts.generated.ts');
+  const face = studioBundledFonts
+    .find((family) => family.family === 'Inter')
+    ?.files.find(
+      (file) =>
+        file.file === 'inter-latin-400-normal.ttf' &&
+        file.format === 'ttf' &&
+        file.weight === 400 &&
+        file.style === 'normal' &&
+        file.subset === 'latin',
+    );
+  assert.ok(face, 'The admission font must be in the source font catalog');
+  const bytes = await readFile(new URL('../../server/resources/studio-fonts/' + face.file, import.meta.url));
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), face.sha256, 'Admission font identity changed');
+  const target = path.join(path.resolve(destination), 'studio/runtime');
+  await mkdir(target, { recursive: true });
+  await writeFile(path.join(target, 'admission-font.ttf'), bytes, {
+    flag: 'wx',
+  });
+  await writeFile(
+    path.join(target, 'admission-font.json'),
+    JSON.stringify({ schemaVersion: 1, sourceFile: face.file, sha256: face.sha256 }, null, 2) + '\n',
+    { flag: 'wx' },
+  );
+}
 
 export async function packageWorker(destination) {
   const target = path.resolve(destination);
@@ -35,12 +65,15 @@ export async function packageWorker(destination) {
   await cp(path.join(studio, 'engine-build.json'), path.join(target, 'studio', 'engine-build.json'));
   // FL-105: the caption producer the server seals sidecar and embedded captions with.
   await mkdir(path.join(target, 'studio', 'runtime'), { recursive: true });
-  for (const file of RUNTIME_MODULES) await cp(path.join(studio, 'runtime', file), path.join(target, 'studio', 'runtime', file));
+  for (const file of RUNTIME_MODULES)
+    await cp(path.join(studio, 'runtime', file), path.join(target, 'studio', 'runtime', file));
   await cp(path.join(studio, 'notices'), path.join(target, 'studio', 'notices'), { recursive: true });
 
   const manifest = JSON.parse(await readFile(path.join(engine, 'package.json'), 'utf8'));
   for (const entry of ['dist', 'headless', 'LICENSE']) {
-    await cp(path.join(engine, entry), path.join(runtime, entry), { recursive: true });
+    await cp(path.join(engine, entry), path.join(runtime, entry), {
+      recursive: true,
+    });
   }
   assert.ok((await readFile(path.join(runtime, 'dist', 'headless.html'))).length > 0, 'Build the engine harness first');
   await writeFile(
