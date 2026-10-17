@@ -29,7 +29,7 @@ export function appCallback(overrideEnabled: boolean, mobileRedirectUri: string)
   if (url.pathname.replace(/\/$/, '').endsWith(FRAMELEAF_MOBILE_REDIRECT_PATH)) {
     // already the forwarder
   } else if (LEGACY_MOBILE_REDIRECT_PATH.test(url.pathname)) {
-    url.pathname = url.pathname.replace(LEGACY_MOBILE_REDIRECT_PATH, FRAMELEAF_MOBILE_REDIRECT_PATH);
+    url.pathname = url.pathname.replace(LEGACY_MOBILE_REDIRECT_PATH, () => FRAMELEAF_MOBILE_REDIRECT_PATH);
   } else {
     return undefined;
   }
