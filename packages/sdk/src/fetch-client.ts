@@ -1216,6 +1216,14 @@ export type AdminConfigBackupsDto = {
     database: AdminConfigDatabaseBackupDto;
     schedule: AdminConfigBackupScheduleDto;
 };
+export type AdminConfigEditingRestorationDto = {
+    style: RestorationStyle;
+};
+export type AdminConfigEditingDto = {
+    restoration: AdminConfigEditingRestorationDto;
+    /** How a trim that names no mode is cut, and where the video editor starts a new trim. Fast stream-copies only when the trim is the only change */
+    trimMode: VideoTrimMode;
+};
 export type AdminConfigFFmpegRealtimeDto = {
     /** Enable real-time HLS transcoding (alpha) */
     enabled: boolean;
@@ -1858,6 +1866,7 @@ export type AdminConfigUserDto = {
 export type AdminConfigDto = {
     analytics?: AdminConfigAnalyticsDto;
     backup: AdminConfigBackupsDto;
+    editing?: AdminConfigEditingDto;
     ffmpeg: AdminConfigFFmpegDto;
     frameleafCloud?: AdminConfigFrameleafCloudDto;
     image: AdminConfigImageDto;
@@ -5863,6 +5872,14 @@ export type ClusterGroupRequestCreateDto = {
     /** User to invite into the cluster group */
     userId: string;
 };
+export type UserConfigEditingRestorationDto = {
+    style: RestorationStyle;
+};
+export type UserConfigEditingDto = {
+    restoration: UserConfigEditingRestorationDto;
+    /** How a trim that names no mode is cut, and where the video editor starts a new trim. Fast stream-copies only when the trim is the only change */
+    trimMode: VideoTrimMode;
+};
 export type UserConfigFFmpegRealtimeDto = {
     /** Enable real-time HLS transcoding (alpha) */
     enabled: boolean;
@@ -5981,6 +5998,7 @@ export type UserConfigUserDto = {
     deleteDelay: number;
 };
 export type UserConfigDto = {
+    editing: UserConfigEditingDto;
     ffmpeg: UserConfigFFmpegDto;
     frameleafCloud: UserConfigFrameleafCloudDto;
     image: UserConfigImageDto;
@@ -30663,6 +30681,14 @@ export enum CloudTourEnding {
     OpenedSettings = "opened-settings",
     Setup = "setup"
 }
+export enum RestorationStyle {
+    Faithful = "faithful",
+    Creative = "creative"
+}
+export enum VideoTrimMode {
+    Precise = "precise",
+    Fast = "fast"
+}
 export enum TranscodeHWAccel {
     Nvenc = "nvenc",
     Qsv = "qsv",
@@ -31656,10 +31682,6 @@ export enum AssetEditAction {
 export enum MirrorAxis {
     Horizontal = "horizontal",
     Vertical = "vertical"
-}
-export enum VideoTrimMode {
-    Precise = "precise",
-    Fast = "fast"
 }
 export enum VideoAdjustModel {
     Develop = "develop"

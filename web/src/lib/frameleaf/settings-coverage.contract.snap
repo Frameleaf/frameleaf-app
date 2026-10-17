@@ -21,6 +21,20 @@
   "backup.schedule.cronExpression": {
     "type": "unknown"
   },
+  "editing.restoration.style": {
+    "type": "string",
+    "enum": [
+      "faithful",
+      "creative"
+    ]
+  },
+  "editing.trimMode": {
+    "type": "string",
+    "enum": [
+      "precise",
+      "fast"
+    ]
+  },
   "ffmpeg.accel": {
     "type": "string",
     "enum": [

@@ -5,6 +5,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import type { DeepPartial } from 'src/types.js';
 import { CloudBackupKeyModeSchema, CloudBackupTargetSettingSchema } from 'src/dtos/cloud-backup.dto.js';
+import { VideoTrimMode, VideoTrimModeSchema } from 'src/dtos/editing.dto.js';
 import {
   RemoteAccessModeSchema,
   RemoteAccessPublicUrlSchema,
@@ -265,6 +266,33 @@ const libraryCareDefaults = {
   duplicateReview: true,
   incrementalEnrichment: true,
   manualMetadata: true,
+};
+
+/**
+ * FL-422: the restoration style a new restoration starts on (settings-catalog.mjs `restorationMode`).
+ * The same values as the Faithful and Creative restoration modes; Smooth motion is its own step.
+ */
+export enum RestorationStyle {
+  Faithful = 'faithful',
+  Creative = 'creative',
+}
+
+const RestorationStyleSchema = z
+  .enum(RestorationStyle)
+  .describe(
+    'The restoration style a new restoration starts on. Faithful removes noise without inventing detail; creative rebuilds detail',
+  )
+  .meta({ id: 'RestorationStyle', visibility: User });
+
+/**
+ * Editing & playback › Edited masters and AI restoration (FL-422, settings-catalog.mjs:740-822). Only
+ * the choices the server honours: how a trim that names no mode is cut, and the style a restoration
+ * starts on. Both defaults are what the server did before the settings existed. Size, colour and
+ * audio are guarantees of the edited-master policy (`media-policy.ts`), not settings.
+ */
+const editingDefaults = {
+  trimMode: VideoTrimMode.Precise,
+  restoration: { style: RestorationStyle.Faithful },
 };
 
 const smartAlbumRulesDefaults = {
@@ -778,6 +806,16 @@ const AdminConfigLibraryCareSchema = z
   })
   .meta({ id: 'AdminConfigLibraryCareDto' });
 
+// FL-422: visible to every signed-in app, so the video editor and the restoration panels start on them.
+const AdminConfigEditingSchema = z
+  .object({
+    trimMode: VideoTrimModeSchema.describe(
+      'How a trim that names no mode is cut, and where the video editor starts a new trim. Fast stream-copies only when the trim is the only change',
+    ).meta({ visibility: User }),
+    restoration: z.object({ style: RestorationStyleSchema }).meta({ id: 'AdminConfigEditingRestorationDto' }),
+  })
+  .meta({ id: 'AdminConfigEditingDto' });
+
 const AdminConfigGeneratedImageSchema = z
   .object({
     format: ImageFormatSchema,
@@ -1199,6 +1237,7 @@ const AdminConfigSchemaWithVisibility = z
     smartAlbums: AdminConfigSmartAlbumsSchema.default(smartAlbumsDefaults),
     frameleafCloud: AdminConfigFrameleafCloudSchema.default(frameleafCloudDefaults),
     libraryCare: AdminConfigLibraryCareSchema.default(libraryCareDefaults),
+    editing: AdminConfigEditingSchema.default(editingDefaults),
   })
   .describe('Configuration properties that are visible to the admin')
   .meta({ id: 'AdminConfigDto' });
@@ -1711,4 +1750,5 @@ export const defaults = Object.freeze<SystemConfig>({
   smartAlbums: smartAlbumsDefaults,
   frameleafCloud: frameleafCloudDefaults,
   libraryCare: libraryCareDefaults,
+  editing: editingDefaults,
 });

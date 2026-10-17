@@ -63,7 +63,7 @@ export enum VideoTrimMode {
   Fast = 'fast',
 }
 
-const VideoTrimModeSchema = z
+export const VideoTrimModeSchema = z
   .enum(VideoTrimMode)
   .describe(
     'Precise cuts are frame accurate and re-encode; fast cuts snap to keyframes and copy the streams when nothing else in the recipe needs a re-encode',

@@ -53969,6 +53969,15 @@
           "backup": {
             "$ref": "#/components/schemas/AdminConfigBackupsDto"
           },
+          "editing": {
+            "$ref": "#/components/schemas/AdminConfigEditingDto",
+            "default": {
+              "restoration": {
+                "style": "faithful"
+              },
+              "trimMode": "precise"
+            }
+          },
           "ffmpeg": {
             "$ref": "#/components/schemas/AdminConfigFFmpegDto"
           },
@@ -54129,6 +54138,38 @@
           "enhancedVideo",
           "maxDistance",
           "preferOriginalFormat"
+        ],
+        "type": "object"
+      },
+      "AdminConfigEditingDto": {
+        "properties": {
+          "restoration": {
+            "$ref": "#/components/schemas/AdminConfigEditingRestorationDto"
+          },
+          "trimMode": {
+            "$ref": "#/components/schemas/VideoTrimMode",
+            "description": "How a trim that names no mode is cut, and where the video editor starts a new trim. Fast stream-copies only when the trim is the only change",
+            "enum": [
+              "precise",
+              "fast"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "restoration",
+          "trimMode"
+        ],
+        "type": "object"
+      },
+      "AdminConfigEditingRestorationDto": {
+        "properties": {
+          "style": {
+            "$ref": "#/components/schemas/RestorationStyle"
+          }
+        },
+        "required": [
+          "style"
         ],
         "type": "object"
       },
@@ -111986,6 +112027,14 @@
         ],
         "type": "string"
       },
+      "RestorationStyle": {
+        "description": "The restoration style a new restoration starts on. Faithful removes noise without inventing detail; creative rebuilds detail",
+        "enum": [
+          "faithful",
+          "creative"
+        ],
+        "type": "string"
+      },
       "RetainedProcessingProvenance": {
         "additionalProperties": false,
         "properties": {
@@ -128784,6 +128833,9 @@
       "UserConfigDto": {
         "description": "Configuration properties that are visible to a logged user",
         "properties": {
+          "editing": {
+            "$ref": "#/components/schemas/UserConfigEditingDto"
+          },
           "ffmpeg": {
             "$ref": "#/components/schemas/UserConfigFFmpegDto"
           },
@@ -128822,6 +128874,7 @@
           }
         },
         "required": [
+          "editing",
           "ffmpeg",
           "frameleafCloud",
           "image",
@@ -128846,6 +128899,38 @@
         },
         "required": [
           "enabled"
+        ],
+        "type": "object"
+      },
+      "UserConfigEditingDto": {
+        "properties": {
+          "restoration": {
+            "$ref": "#/components/schemas/UserConfigEditingRestorationDto"
+          },
+          "trimMode": {
+            "$ref": "#/components/schemas/VideoTrimMode",
+            "description": "How a trim that names no mode is cut, and where the video editor starts a new trim. Fast stream-copies only when the trim is the only change",
+            "enum": [
+              "precise",
+              "fast"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "restoration",
+          "trimMode"
+        ],
+        "type": "object"
+      },
+      "UserConfigEditingRestorationDto": {
+        "properties": {
+          "style": {
+            "$ref": "#/components/schemas/RestorationStyle"
+          }
+        },
+        "required": [
+          "style"
         ],
         "type": "object"
       },

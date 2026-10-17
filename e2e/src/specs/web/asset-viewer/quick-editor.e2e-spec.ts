@@ -280,7 +280,7 @@ test.describe('Video quick editor', () => {
     const { edits } = request.postDataJSON();
     expect(edits).toEqual(
       expect.arrayContaining([
-        { action: 'trim', parameters: { startMs: 2000, endMs: 24_000 } },
+        { action: 'trim', parameters: { startMs: 2000, endMs: 24_000, mode: 'precise' } },
         { action: 'speed', parameters: { rate: 2 } },
         expect.objectContaining({
           action: 'textOverlay',

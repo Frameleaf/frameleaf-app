@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { cloneDeep, get } from 'lodash-es';
-import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
+import { RestorationStyle, SystemConfig, defaults } from 'src/dtos/config.dto.js';
+import { VideoTrimMode } from 'src/dtos/editing.dto.js';
 import { mapConfig } from 'src/dtos/system-config.dto.js';
 import {
   AudioCodec,
@@ -471,6 +472,10 @@ const updatedConfig = Object.freeze<SystemConfig>({
     duplicateReview: true,
     incrementalEnrichment: true,
     manualMetadata: true,
+  },
+  editing: {
+    trimMode: VideoTrimMode.Precise,
+    restoration: { style: RestorationStyle.Faithful },
   },
 });
 

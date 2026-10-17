@@ -406,6 +406,11 @@ export const adminConfigDefaults = {
     incrementalEnrichment: true,
     manualMetadata: true,
   },
+  // FL-422: Edited masters and AI restoration.
+  editing: {
+    trimMode: 'precise',
+    restoration: { style: 'faithful' },
+  },
   // FL-159: Frameleaf Cloud processing replaced the previous GPU provider settings.
   frameleafCloud: {
     cloudMl: {
