@@ -27,24 +27,25 @@ Each file below is an unmodified licence or notice text. `studio/dependency-attr
 (`artifactNotices`) pins its SHA-256 and names the component it covers, and the engine build
 copies them into its `attribution/` artifact directory.
 
-| File                                 | Covers                                             |
-| ------------------------------------ | -------------------------------------------------- |
-| `freecut.txt`                        | Freecut (MIT)                                      |
-| `soundtouch.txt`                     | SoundTouch JS 0.2.3 (LGPL-2.1)                     |
-| `soundtouch-copyright.txt`           | SoundTouch JS copyright and licence declaration    |
-| `anime4k-websr.txt`                  | Anime4K / WebSR weights                            |
-| `anime4k-license.txt`                | Anime4K                                            |
-| `websr-license.txt`                  | WebSR                                              |
-| `ffmpeg-lgpl.txt`                    | FFmpeg (LGPL-2.1)                                  |
-| `lame-license.txt`                   | LAME                                               |
-| `turbores-license.txt`               | TurboRes                                           |
-| `mediabunny-mpl.txt`                 | Mediabunny and its codec wrappers 1.50.8 (MPL-2.0) |
-| `moss-tokenizer.txt`                 | MOSS bundled tokenizer dependencies                |
-| `moss-ort.txt`                       | MOSS ONNX Runtime Web bundled JS/WASM              |
-| `radix-primitives-license.txt`       | Radix UI primitives                                |
-| `react-hotkeys-hook-license.txt`     | react-hotkeys-hook                                 |
-| `react-resizable-panels-license.txt` | react-resizable-panels                             |
-| `onnx-common-*-license.txt`          | onnxruntime-common package sources                 |
+| File                                 | Covers                                                                 |
+| ------------------------------------ | ---------------------------------------------------------------------- |
+| `freecut.txt`                        | Freecut (MIT)                                                          |
+| `soundtouch.txt`                     | SoundTouch JS 0.2.3 (LGPL-2.1)                                         |
+| `soundtouch-copyright.txt`           | SoundTouch JS copyright and licence declaration                        |
+| `anime4k-websr.txt`                  | Anime4K / WebSR weights                                                |
+| `anime4k-license.txt`                | Anime4K                                                                |
+| `websr-license.txt`                  | WebSR                                                                  |
+| `ffmpeg-lgpl.txt`                    | FFmpeg (LGPL-2.1)                                                      |
+| `lame-license.txt`                   | LAME                                                                   |
+| `turbores-license.txt`               | TurboRes                                                               |
+| `mediabunny-mpl.txt`                 | Mediabunny and its codec wrappers (MPL-2.0; text recorded from 1.50.8) |
+| `moss-tokenizer.txt`                 | MOSS bundled tokenizer dependencies                                    |
+| `moss-ort.txt`                       | MOSS ONNX Runtime Web bundled JS/WASM                                  |
+| `radix-primitives-license.txt`       | Radix UI primitives                                                    |
+| `react-hotkeys-hook-license.txt`     | react-hotkeys-hook                                                     |
+| `react-resizable-panels-license.txt` | react-resizable-panels                                                 |
+| `onnx-common-*-license.txt`          | onnxruntime-common package sources                                     |
+| `rollup-core-license.txt`            | Rollup 4.62.1 native binary (`@rollup/rollup-linux-x64-gnu`)           |
 
 Package notices recovered from the engine lockfile are recorded under
 `studio/package-notice-evidence/`. None of these records is a completed redistribution approval;

@@ -18,7 +18,7 @@ The `ghcr.io/frameleaf/frameleaf-server` container image comes preinstalled with
 | `version`                  | Print Frameleaf version                                       |
 | `change-media-location`    | Change database file paths to align with a new media location |
 | `schema-check`             | Verify database migrations and check for schema drift         |
-| `import-immich`            | One-time offline import from an Immich server (see below)     |
+| `import-immich`            | One-time offline import of an existing library (see below)    |
 | `cloud-backup restore`     | Restore this server from its Frameleaf Cloud backup bucket    |
 
 ## How to run a command

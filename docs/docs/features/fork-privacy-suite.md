@@ -2,7 +2,7 @@
 
 This page explains what is different in Frameleaf compared with the upstream project, and how to roll it out safely in a home lab.
 
-Frameleaf independently maintains the privacy and image-enrichment features described here. Immich 2.0 and later installations are a frozen, read-only source for a one-time offline content import into a fresh Frameleaf database.
+Frameleaf independently maintains the privacy and image-enrichment features described here. Supported Immich installations are a frozen, read-only source for a one-time offline content import into a fresh Frameleaf database.
 
 ## Who Frameleaf is for
 
@@ -43,7 +43,7 @@ variables. This applies to every machine-learning image built from Frameleaf.
   no global offline mode or network block is imposed.
 
 Photo uploads, sharing, model downloads, configured remote ML, OAuth, email,
-and map tiles remain functional. Nothing is fetched from Immich- or FUTO-hosted services. Where each download
+and map tiles remain functional. Nothing is fetched from upstream-hosted services. Where each download
 comes from:
 
 - Map styles and tiles: `tiles.frameleaf.cloud`.
@@ -94,7 +94,7 @@ Admins can review each result, rerun detection, mark an asset safe, mark an asse
 
 ### PIN-Gated Hiding
 
-Sensitive marks, detections (when **Hide flagged photos until unlocked** is on) and items from an imported Immich Locked folder are one lock per asset; see [Locked](./locked.md). Locked assets are hidden from normal browsing until the current session is unlocked with the PIN, and **Locked** lists them all.
+Sensitive marks, detections (when **Hide flagged photos until unlocked** is on) and items from an imported Locked folder are one lock per asset; see [Locked](./locked.md). Locked assets are hidden from normal browsing until the current session is unlocked with the PIN, and **Locked** lists them all.
 
 Hidden assets are filtered from timelines, search, albums, map markers, downloads, shared-link payloads, sync streams, people, tags, memories, duplicate groups, stacks, and related derived views. Album membership is preserved; the asset is hidden from responses, not removed from the album.
 
@@ -132,8 +132,8 @@ Frameleaf automatically stores one physical copy of an exact file when several a
 Start slowly. Do not enable automatic hiding until you have reviewed classifier behavior on your own library.
 
 1. Make a backup and confirm your normal Frameleaf backup plan works. DO NOT SKIP THIS.
-2. Deploy Frameleaf using Frameleaf's server, web, and machine-learning images or build outputs. Do not mix Immich containers with Frameleaf server or web code.
-3. Create a fresh canonical PostgreSQL 19 database. If you have an existing Immich library, follow the [offline import](../administration/import-immich.md), then open **Settings → Search & intelligence**.
+2. Deploy Frameleaf using Frameleaf's server, web, and machine-learning images or build outputs. Do not mix upstream containers with Frameleaf server or web code.
+3. Create a fresh canonical PostgreSQL 19 database. If you have an existing library to import, follow the [offline import](../administration/import-immich.md), then open **Settings → Search & intelligence**.
 4. On **Descriptions & tags**, under **Advanced: caption model and hardware**, choose the **Kind of graphics card** that matches your server:
    - **Automatic** for most users;
    - **Intel (OpenVINO)** for Intel integrated graphics;
