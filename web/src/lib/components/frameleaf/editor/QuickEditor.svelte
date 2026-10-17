@@ -259,6 +259,19 @@
   let saving = $state(false);
   let stopFollowing: (() => void) | undefined;
   let saveChangedCurrent = false;
+  /**
+   * FL-431: the current version this edit started from, sent as the save precondition so a save
+   * never silently replaces a version another device made current meanwhile. Only this editor's
+   * own versions (saved, re-rendered, imported or made current here) move it; undefined until loaded.
+   */
+  let baseCurrentRevisionId: string | null | undefined;
+  const ownRevisionIds = new Set<string>();
+  $effect(() => {
+    const current = develop?.currentRevisionId;
+    if (current && ownRevisionIds.has(current)) {
+      baseCurrentRevisionId = current;
+    }
+  });
 
   const revisions = $derived(develop?.revisions ?? []);
   const busyRevision = $derived(revisions.find((revision) => isRevisionBusy(revision.status)));
@@ -297,6 +310,7 @@
     }
     try {
       develop = await getAssetDevelop({ id: asset.id });
+      baseCurrentRevisionId = develop.currentRevisionId ?? null;
       sourceRevisionId = develop.currentRevisionId ?? undefined;
       const start = openingRecipe(
         develop,
@@ -641,6 +655,7 @@
         };
   };
   const onImported = (revision: AssetDevelopRevisionResponseDto) => {
+    ownRevisionIds.add(revision.id);
     develop = {
       assetId: asset.id,
       currentRevisionId: develop?.currentRevisionId ?? null,
@@ -757,6 +772,7 @@
           render: true,
           replaceRecipe: true,
           ...(sourceRevisionId && { sourceRevisionId }),
+          ...(baseCurrentRevisionId !== undefined && { expectedCurrentRevisionId: baseCurrentRevisionId }),
         },
       };
       let saveOnly = false;
@@ -778,6 +794,7 @@
         });
         saveOnly = true;
       }
+      ownRevisionIds.add(revision.id);
       develop = {
         assetId: asset.id,
         currentRevisionId: develop?.currentRevisionId ?? null,
@@ -802,9 +819,27 @@
       }
       onClose(saveChangedCurrent);
     } catch (error) {
+      if (
+        isHttpError(error) &&
+        error.status === 409 &&
+        (error.data as { code?: unknown } | undefined)?.code === 'develop_current_revision_changed'
+      ) {
+        await reloadAfterConflict();
+        return;
+      }
       handleError(error, $t('frameleaf_editor_save_error'));
     } finally {
       saving = false;
+    }
+  };
+  /** FL-431 409: another device moved the current version. Show what the server holds now; keep the draft. */
+  const reloadAfterConflict = async () => {
+    toastManager.warning($t('frameleaf_editor_version_conflict'));
+    try {
+      develop = await getAssetDevelop({ id: asset.id });
+      baseCurrentRevisionId = develop.currentRevisionId ?? null;
+    } catch (error) {
+      handleError(error, $t('frameleaf_editor_versions_error'));
     }
   };
   /**
@@ -927,6 +962,7 @@
   const renderRevision = async (revision: AssetDevelopRevisionResponseDto) => {
     try {
       const updated = await renderAssetDevelopRevision({ id: asset.id, revisionId: revision.id });
+      ownRevisionIds.add(updated.id);
       replaceRevision(updated);
       follow();
     } catch (error) {
@@ -936,6 +972,7 @@
   const makeCurrent = async (revision: AssetDevelopRevisionResponseDto | null) => {
     try {
       develop = await revertAssetDevelop({ id: asset.id, assetDevelopRevertDto: { revisionId: revision?.id } });
+      baseCurrentRevisionId = develop.currentRevisionId ?? null;
       saveChangedCurrent = true;
       toastManager.primary(
         revision
