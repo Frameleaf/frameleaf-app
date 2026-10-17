@@ -161,7 +161,7 @@
 
   const emails = $derived(settingsDraft.draft.templates.email);
   /** FL-426: the invitation's first line in plain words; the server keeps codes such as `{recipientName}`. */
-  const firstLine = $derived(toWords(emails.invitationFirstLine, FIRST_LINE, tr));
+  const firstLine = $derived(toWords(emails.invitationFirstLine ?? '', FIRST_LINE, tr));
   const setFirstLine = (words: string) => {
     settingsDraft.draft.templates.email.invitationFirstLine = toTemplate(words, FIRST_LINE, tr);
   };
@@ -622,7 +622,7 @@
       <Row label={$t('frameleaf_notify_branding')} help={$t('frameleaf_notify_branding_help')}>
         <Switch
           label={$t('frameleaf_notify_branding')}
-          checked={emails.showBranding}
+          checked={emails.showBranding ?? true}
           held={disabled}
           onChange={(value) => (settingsDraft.draft.templates.email.showBranding = value)}
         />
@@ -635,7 +635,7 @@
       wording={editing}
       words={toWords(settingsDraft.draft.templates.email[editing.key], editing, tr)}
       {firstLine}
-      showBranding={emails.showBranding}
+      showBranding={emails.showBranding ?? true}
       onUse={(words) => editing && useWording(editing, words)}
       onClose={() => (editing = undefined)}
     />

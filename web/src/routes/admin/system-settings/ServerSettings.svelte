@@ -114,7 +114,7 @@
           <div class="zone">
             <Select
               label={$t('frameleaf_server_identity_zone')}
-              value={server.timeZone}
+              value={server.timeZone ?? ''}
               options={zoneOptions}
               {disabled}
               onChange={(value) => (settingsDraft.draft.server.timeZone = value)}
@@ -125,7 +125,7 @@
           <Row label={$t('frameleaf_server_identity_format')} help={$t('frameleaf_server_identity_format_help')}>
             <SegmentedControl
               label={$t('frameleaf_server_identity_format')}
-              value={server.loginPageMessageFormat}
+              value={server.loginPageMessageFormat ?? 'plain'}
               options={formats}
               {disabled}
               onChange={(value) =>
@@ -171,7 +171,7 @@
           <strong>{$t('frameleaf_auth_welcome_title')}</strong>
           {#if server.loginPageMessage.trim()}
             <div class="message">
-              <WelcomeMessage message={server.loginPageMessage} format={server.loginPageMessageFormat} />
+              <WelcomeMessage message={server.loginPageMessage} format={server.loginPageMessageFormat ?? 'plain'} />
             </div>
           {:else}
             <p class="hint">{$t('frameleaf_server_identity_preview_no_message')}</p>

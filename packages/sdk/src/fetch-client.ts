@@ -54,6 +54,67 @@ export type ActivityStatisticsResponseDto = {
     /** Number of likes */
     likes: number;
 };
+export type AttentionCheckDto = {
+    kind: AttentionKind;
+    state: AttentionCheckState;
+};
+export type AttentionBackupDto = {
+    /** Whole days since it last finished, when it is behind */
+    days: number | null;
+    /** When this place last finished a backup */
+    lastSuccessAt: string | null;
+    /** The place the finding is about; null when there is none */
+    place: (AttentionBackupPlace) | null;
+};
+export type AttentionStorageDto = {
+    /** Space left on the drive the library is on */
+    availableBytes: number;
+    /** Size of that drive */
+    totalBytes: number;
+    /** How full the drive is */
+    usedPercent: number;
+};
+export type AttentionVersionDto = {
+    /** The newest version offered */
+    available: string;
+    /** The version this server runs */
+    current: string;
+};
+export type AttentionWorkQueueDto = {
+    count: number;
+    name: QueueName;
+};
+export type AttentionWorkDto = {
+    /** Items that failed, or that wait behind a pause, across these kinds of work */
+    count: number;
+    /** Each kind of work involved, most items first */
+    queues: AttentionWorkQueueDto[];
+};
+export type AttentionItemDto = {
+    /** The place, for a backup item */
+    backup: (AttentionBackupDto) | null;
+    /** Stable for the same finding across reads, for example backup:cloud */
+    id: string;
+    kind: AttentionKind;
+    level: AttentionLevel;
+    reason: AttentionReason;
+    /** When it started, when the server knows */
+    since: string | null;
+    /** The drive, for a storage item */
+    storage: (AttentionStorageDto) | null;
+    /** The versions, for a version item */
+    version: (AttentionVersionDto) | null;
+    /** The kinds of work, for a work item */
+    work: (AttentionWorkDto) | null;
+};
+export type AttentionResponseDto = {
+    /** When the checks were made */
+    checkedAt: string;
+    /** How each kind of check came out, in a fixed order */
+    checks: AttentionCheckDto[];
+    /** What needs attention, the most urgent first */
+    items: AttentionItemDto[];
+};
 export type BackupDeviceDto = {
     appVersion: string;
     deviceKey: string;
@@ -74,6 +135,7 @@ export type BackupDeviceListDto = {
 };
 export type BuddyStatusDto = {
     availableBytes: number | null;
+    canConfirm?: boolean;
     capacityUpdatedAt: string | null;
     configured: boolean;
     connection: string | null;
@@ -1721,13 +1783,13 @@ export type AdminConfigServerDto = {
     lanDiscovery: boolean;
     /** Login page message */
     loginPageMessage: string;
-    loginPageMessageFormat: LoginPageMessageFormat;
+    loginPageMessageFormat?: LoginPageMessageFormat;
     /** Server name shown in settings; empty uses the host name */
     name: string;
     /** Public users */
     publicUsers: boolean;
     /** Time zone the server's schedules and calendar day follow, as an IANA name such as America/Edmonton; empty uses the time zone of the computer the server runs on */
-    timeZone: string;
+    timeZone?: string;
 };
 export type AdminConfigSmartAlbumKindDto = {
     /** CLIP query phrases used when no tag trigger matches */
@@ -1775,9 +1837,9 @@ export type AdminConfigTemplateEmailsDto = {
     /** Album update template */
     albumUpdateTemplate: string;
     /** First line of an invitation email (an album or items shared with someone), shown as plain text in place of the standard greeting. {recipientName} and {senderName} are replaced; empty keeps the standard greeting. An album invitation with its own albumInviteTemplate is sent as that template says. */
-    invitationFirstLine: string;
+    invitationFirstLine?: string;
     /** Show the Frameleaf name and logo at the top of every email */
-    showBranding: boolean;
+    showBranding?: boolean;
     /** Welcome template */
     welcomeTemplate: string;
 };
@@ -4695,6 +4757,8 @@ export type AssetDevelopResponseDto = {
     revisions: AssetDevelopRevisionResponseDto[];
 };
 export type AssetDevelopSaveDto = {
+    /** Optimistic precondition: the currentRevisionId the client last read. null expects the original to be current (no current revision). When it no longer matches, the save is refused with 409 code develop_current_revision_changed and the actual currentRevisionId. Omit to save unconditionally */
+    expectedCurrentRevisionId?: string | null;
     /** Optional name for the saved version */
     label?: string;
     recipe: AssetDevelopRecipeDto;
@@ -5904,7 +5968,7 @@ export type UserConfigServerDto = {
     externalDomain: string;
     /** Login page message */
     loginPageMessage: string;
-    loginPageMessageFormat: LoginPageMessageFormat;
+    loginPageMessageFormat?: LoginPageMessageFormat;
     /** Server name shown in settings; empty uses the host name */
     name: string;
     /** Public users */
@@ -11631,7 +11695,7 @@ export type PublicConfigPasswordLoginDto = {
 export type PublicConfigServerDto = {
     /** Login page message */
     loginPageMessage: string;
-    loginPageMessageFormat: LoginPageMessageFormat;
+    loginPageMessageFormat?: LoginPageMessageFormat;
     /** Server name shown in settings; empty uses the host name */
     name: string;
 };
@@ -17375,6 +17439,17 @@ export function deleteActivity({ id }: {
     }));
 }
 /**
+ * Get what needs attention
+ */
+export function getAttention(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AttentionResponseDto;
+    }>("/admin/attention", {
+        ...opts
+    }));
+}
+/**
  * Unlink all OAuth accounts
  */
 export function unlinkAllOAuthAccountsAdmin(opts?: Oazapfts.RequestOpts) {
@@ -20484,6 +20559,8 @@ export function saveAssetDevelop({ id, assetDevelopSaveDto }: {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: AssetDevelopRevisionResponseDto;
+    } | {
+        status: 409;
     }>(`/assets/${encodeURIComponent(id)}/develop`, oazapfts.json({
         ...opts,
         method: "PUT",
@@ -30131,6 +30208,64 @@ export enum UserAvatarColor {
     Gray = "gray",
     Amber = "amber"
 }
+export enum AttentionKind {
+    Backup = "backup",
+    Storage = "storage",
+    Work = "work",
+    Version = "version"
+}
+export enum AttentionCheckState {
+    Ok = "ok",
+    Attention = "attention",
+    Off = "off",
+    Unknown = "unknown"
+}
+export enum AttentionBackupPlace {
+    Cloud = "cloud",
+    Buddy = "buddy",
+    Local = "local"
+}
+export enum AttentionLevel {
+    Now = "now",
+    Soon = "soon"
+}
+export enum AttentionReason {
+    NotBackedUp = "not-backed-up",
+    BackupFailed = "backup-failed",
+    BackupBehind = "backup-behind",
+    NearlyFull = "nearly-full",
+    OutOfSpace = "out-of-space",
+    WorkFailed = "work-failed",
+    WorkPaused = "work-paused",
+    NewVersion = "new-version"
+}
+export enum QueueName {
+    ThumbnailGeneration = "thumbnailGeneration",
+    MetadataExtraction = "metadataExtraction",
+    VideoConversion = "videoConversion",
+    FaceDetection = "faceDetection",
+    FacialRecognition = "facialRecognition",
+    SmartSearch = "smartSearch",
+    DuplicateDetection = "duplicateDetection",
+    VideoDuplicateDetection = "videoDuplicateDetection",
+    BackgroundTask = "backgroundTask",
+    StorageTemplateMigration = "storageTemplateMigration",
+    Migration = "migration",
+    Search = "search",
+    Sidecar = "sidecar",
+    Library = "library",
+    Notifications = "notifications",
+    BackupDatabase = "backupDatabase",
+    Ocr = "ocr",
+    ImageEnrichment = "imageEnrichment",
+    ImageDescription = "imageDescription",
+    NsfwDetection = "nsfwDetection",
+    MediaHealth = "mediaHealth",
+    Workflow = "workflow",
+    IntegrityCheck = "integrityCheck",
+    Editor = "editor",
+    PetRecognition = "petRecognition"
+}
 export enum State {
     Pending = "pending",
     Active = "active",
@@ -31006,33 +31141,6 @@ export enum MlWorkerReadiness {
 export enum WorkerInventorySource {
     MlDestination = "ml-destination",
     RenderWorker = "render-worker"
-}
-export enum QueueName {
-    ThumbnailGeneration = "thumbnailGeneration",
-    MetadataExtraction = "metadataExtraction",
-    VideoConversion = "videoConversion",
-    FaceDetection = "faceDetection",
-    FacialRecognition = "facialRecognition",
-    SmartSearch = "smartSearch",
-    DuplicateDetection = "duplicateDetection",
-    VideoDuplicateDetection = "videoDuplicateDetection",
-    BackgroundTask = "backgroundTask",
-    StorageTemplateMigration = "storageTemplateMigration",
-    Migration = "migration",
-    Search = "search",
-    Sidecar = "sidecar",
-    Library = "library",
-    Notifications = "notifications",
-    BackupDatabase = "backupDatabase",
-    Ocr = "ocr",
-    ImageEnrichment = "imageEnrichment",
-    ImageDescription = "imageDescription",
-    NsfwDetection = "nsfwDetection",
-    MediaHealth = "mediaHealth",
-    Workflow = "workflow",
-    IntegrityCheck = "integrityCheck",
-    Editor = "editor",
-    PetRecognition = "petRecognition"
 }
 export enum AlbumSourceKind {
     IosPhotos = "ios-photos",

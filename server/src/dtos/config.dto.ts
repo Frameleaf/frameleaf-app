@@ -91,12 +91,12 @@ export enum LoginPageMessageFormat {
 
 /**
  * FL-426: one schema for the setting and the server config the apps read, so both name the same enum.
- * Everyone may read it: the sign-in page needs it before anyone signs in.
+ * Its visibility (everyone: the sign-in page needs it before anyone signs in) is set on the setting.
  */
 export const LoginPageMessageFormatSchema = z
   .enum(LoginPageMessageFormat)
   .describe('How the welcome message is shown: as typed (plain) or as cleaned web formatting (html)')
-  .meta({ id: 'LoginPageMessageFormat', visibility: Public });
+  .meta({ id: 'LoginPageMessageFormat' });
 
 const AdminConfigIntegrityJobSchema = z
   .object({
@@ -1186,15 +1186,21 @@ const AdminConfigSchemaWithVisibility = z
             albumInviteTemplate: z.string().describe('Album invite template'),
             albumUpdateTemplate: z.string().describe('Album update template'),
             // FL-426: "First line of an invitation" and "Show the Frameleaf name and logo"
-            // (settings-v2/server/notifications.jsx, The emails themselves).
+            // (settings-v2/server/notifications.jsx, The emails themselves). Defaulted, so a stored
+            // configuration, a config file or an older client that does not name them keeps the
+            // standard greeting and the branding.
             invitationFirstLine: z
               .string()
               .trim()
               .max(200)
+              .default('')
               .describe(
                 'First line of an invitation email (an album or items shared with someone), shown as plain text in place of the standard greeting. {recipientName} and {senderName} are replaced; empty keeps the standard greeting. An album invitation with its own albumInviteTemplate is sent as that template says.',
               ),
-            showBranding: configBool.describe('Show the Frameleaf name and logo at the top of every email'),
+            showBranding: z
+              .boolean()
+              .default(true)
+              .describe('Show the Frameleaf name and logo at the top of every email'),
           })
           .meta({ id: 'AdminConfigTemplateEmailsDto' }),
       })
@@ -1213,12 +1219,17 @@ const AdminConfigSchemaWithVisibility = z
           .meta({ visibility: User }),
         loginPageMessage: z.string().describe('Login page message').meta({ visibility: Public }),
         // FL-426: plain text unless web formatting is chosen; formatted text is cleaned where it is shown.
-        loginPageMessageFormat: LoginPageMessageFormatSchema,
+        // Defaulted (like timeZone), so a stored configuration or an older client that does not name it
+        // keeps a plain message and the computer's own time zone.
+        loginPageMessageFormat: LoginPageMessageFormatSchema.default(LoginPageMessageFormat.Plain).meta({
+          visibility: Public,
+        }),
         // FL-426: the zone schedules and the server's calendar day follow; empty is the computer's own.
         timeZone: z
           .string()
           .trim()
           .refine(isServerTimeZone, 'Time zone must be empty or a time zone name such as America/Edmonton')
+          .default('')
           .describe(
             "Time zone the server's schedules and calendar day follow, as an IANA name such as America/Edmonton; empty uses the time zone of the computer the server runs on",
           )

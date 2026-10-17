@@ -238,7 +238,12 @@ describe('config controllers', () => {
 
       expect(status).toBe(200);
       // FL-71 (CC-4): the server name is shown to everyone, like the login page message.
-      expect(body.server).toEqual({ name: defaults.server.name, loginPageMessage: defaults.server.loginPageMessage });
+      // FL-426: and how the sign-in page shows that message.
+      expect(body.server).toEqual({
+        name: defaults.server.name,
+        loginPageMessage: defaults.server.loginPageMessage,
+        loginPageMessageFormat: defaults.server.loginPageMessageFormat,
+      });
       expect(body.oauth).toEqual({
         autoLaunch: defaults.oauth.autoLaunch,
         buttonText: defaults.oauth.buttonText,

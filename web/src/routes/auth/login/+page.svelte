@@ -387,7 +387,7 @@
     <div class="auth-info">
       <WelcomeMessage
         message={publicConfig.server.loginPageMessage}
-        format={publicConfig.server.loginPageMessageFormat}
+        format={publicConfig.server.loginPageMessageFormat ?? 'plain'}
       />
     </div>
   {/if}

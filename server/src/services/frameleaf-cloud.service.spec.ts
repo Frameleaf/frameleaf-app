@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { type KeyObject, createPublicKey, generateKeyPairSync, verify } from 'node:crypto';
-import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { arch, platform, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -968,6 +968,164 @@ describe(FrameleafCloudService.name, () => {
       await sut.onBootstrap();
       expect(cloud.requests).toHaveLength(0);
     });
+
+    describe('a start that stops before the link is saved (FL-433)', () => {
+      /** Frameleaf Cloud's single-use rule: a token it accepted once is refused with 401 from then on. */
+      let spent: Set<string>;
+      /** What the server had saved when Frameleaf Cloud received the registration. */
+      let atSend: FrameleafCloudLink | undefined;
+      const registrations = () => cloud.requests.filter(({ path }) => path === '/api/v1/instances');
+      /** The process died: only what was saved at that moment survives into the next start. */
+      const crashTo = (saved: FrameleafCloudLink | undefined) => {
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, structuredClone(saved));
+        cloud.requests.length = 0;
+      };
+
+      beforeEach(() => {
+        serveLinking(() => ({ status: 400, body: { error: 'authorization_pending' } }));
+        spent = new Set();
+        atSend = undefined;
+        const register = cloud.routes.get('POST /api/v1/instances')!;
+        cloud.on('POST /api/v1/instances', (request) => {
+          atSend = structuredClone(storedLink());
+          const token = request.headers['x-frameleaf-link-token'] as string;
+          if (spent.has(token)) {
+            return { status: 401, body: { code: 'invalid_token', message: 'already used', retryable: false } };
+          }
+          spent.add(token);
+          return register(request);
+        });
+        cloud.on('DELETE /api/v1/instance', () => ({ status: 204, body: {} }));
+        linkToken = 'fll_headless_token_crash';
+      });
+
+      it('sends the same token again when the start stopped before Frameleaf Cloud took it', async () => {
+        // Frameleaf Cloud never saw it (the e2e-fork receipt: used_at NULL, no instance row)
+        cloud.on('POST /api/v1/instances', () => {
+          atSend = structuredClone(storedLink());
+          return { status: 503, body: { code: 'unavailable', message: 'down', retryable: true } };
+        });
+        await sut.onBootstrap();
+        crashTo(atSend);
+        serveLinking(() => ({ status: 400, body: { error: 'authorization_pending' } }));
+
+        await sut.onBootstrap();
+        expect(registrations().map(({ headers }) => headers['x-frameleaf-link-token'])).toEqual([
+          'fll_headless_token_crash',
+        ]);
+        expect(storedLink()).toMatchObject({ status: 'linked', accountId: 'account-1' });
+        expect(storedLink()?.pendingLinkToken).toBeUndefined();
+        expect(JSON.stringify(storedLink())).not.toContain('fll_headless_token_crash');
+        // spent only now: a later start never sends it again
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...storedLink()!, status: 'unlinked' });
+        cloud.requests.length = 0;
+        await sut.onBootstrap();
+        expect(registrations()).toHaveLength(0);
+      });
+
+      it('keeps the token when the registration got no answer, and links with it at the next start', async () => {
+        const requestJson = vi.spyOn(FrameleafCloudRepository.prototype, 'requestJson');
+        requestJson.mockRejectedValueOnce(new TypeError('fetch failed'));
+        await sut.onBootstrap();
+        requestJson.mockRestore();
+        expect(storedLink()).toMatchObject({ status: 'unlinked', lastError: expect.stringContaining('next start') });
+        expect(storedLink()?.usedLinkTokens ?? []).toHaveLength(0);
+
+        await sut.onBootstrap();
+        expect(storedLink()).toMatchObject({ status: 'linked', accountId: 'account-1' });
+      });
+
+      it('recognises its own link when Frameleaf Cloud accepted it but the start stopped before saving it', async () => {
+        await sut.onBootstrap();
+        expect(storedLink()?.status).toBe('linked');
+        // the server died after Frameleaf Cloud answered and before the link was saved
+        crashTo(atSend);
+        expect(storedLink()).toMatchObject({ status: 'unlinked', pendingLinkToken: { hash: expect.any(String) } });
+
+        await sut.onBootstrap();
+        // the same token once more, refused as used; this server's own key proves the link is its own,
+        // so the unfinished link is undone in Frameleaf Cloud and a new token links it again
+        expect(registrations()).toHaveLength(1);
+        expect(pathsCalled()).toContain('DELETE /api/v1/instance');
+        expect(storedLink()).toMatchObject({
+          status: 'unlinked',
+          lastError: expect.stringContaining('stopped before it saved the link'),
+        });
+        expect(storedLink()?.usedLinkTokens).toHaveLength(1);
+        expect(storedLink()?.pendingLinkToken).toBeUndefined();
+        expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('Create a new link token'));
+
+        cloud.requests.length = 0;
+        await sut.onBootstrap();
+        expect(cloud.requests).toHaveLength(0);
+      });
+
+      it('links with the original answer when Frameleaf Cloud replays an exact repeat registration', async () => {
+        // frameleaf-cloud aj/instance-register-replay: the same token, instance id and key get the original answer
+        const original = cloud.routes.get('POST /api/v1/instances')!;
+        const answers = new Map<string, { identity: string; answer: FakeCloudAnswer }>();
+        cloud.on('POST /api/v1/instances', async (request) => {
+          const token = request.headers['x-frameleaf-link-token'] as string;
+          const identity = `${request.json().instanceId}:${request.dpop?.jkt}`;
+          const replay = answers.get(token);
+          if (replay) {
+            atSend = structuredClone(storedLink());
+            return replay.identity === identity
+              ? replay.answer
+              : { status: 401, body: { code: 'invalid_token', message: 'already used', retryable: false } };
+          }
+          const answer = await original(request);
+          answers.set(token, { identity, answer });
+          return answer;
+        });
+        await sut.onBootstrap();
+        const first = cloud.requests.find(({ path }) => path === '/api/v1/instances')!;
+        crashTo(atSend);
+
+        await sut.onBootstrap();
+        // the same registration again first (same token, instance id and key), and nothing undone
+        const [again] = registrations();
+        expect(again.headers['x-frameleaf-link-token']).toBe('fll_headless_token_crash');
+        expect(again.json().instanceId).toBe(first.json().instanceId);
+        expect(again.dpop!.jkt).toBe(first.dpop!.jkt);
+        expect(pathsCalled()).not.toContain('DELETE /api/v1/instance');
+        expect(storedLink()).toMatchObject({
+          status: 'linked',
+          instanceId: localInstanceId(),
+          accountId: 'account-1',
+        });
+        expect(storedLink()?.usedLinkTokens).toHaveLength(1);
+        expect(storedLink()?.pendingLinkToken).toBeUndefined();
+      });
+
+      it('records a token that someone else used without touching any link', async () => {
+        spent.add('fll_headless_token_crash');
+        cloud.on('POST /id/token', () => ({ status: 401, body: { error: 'invalid_client' } }));
+        // an earlier start sent it and stopped
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, {
+          status: 'unlinked',
+          cloudUrl: cloud.url,
+          pendingLinkToken: { hash: 'other' },
+        });
+        await sut.onBootstrap();
+        expect(pathsCalled()).not.toContain('DELETE /api/v1/instance');
+        expect(storedLink()).toMatchObject({ status: 'unlinked', lastError: expect.stringContaining('link token') });
+        expect(storedLink()?.usedLinkTokens).toHaveLength(1);
+      });
+
+      it('lets the Frameleaf app retry its token after a start that stopped before Frameleaf Cloud took it', async () => {
+        mocks.user.getAdmin.mockResolvedValue(void 0);
+        const phone = { ip: '192.168.1.40', via: null };
+        const requestJson = vi.spyOn(FrameleafCloudRepository.prototype, 'requestJson');
+        requestJson.mockRejectedValueOnce(new TypeError('fetch failed'));
+        await expect(sut.claimNewServer({ linkToken: 'fll_app_token_crash' }, phone)).rejects.toBeDefined();
+        requestJson.mockRestore();
+        expect(storedLink()?.usedLinkTokens ?? []).toHaveLength(0);
+        await expect(sut.claimNewServer({ linkToken: 'fll_app_token_crash' }, phone)).resolves.toMatchObject({
+          instanceId: localInstanceId(),
+        });
+      });
+    });
   });
 
   describe('heartbeat (FL-155)', () => {
@@ -1018,6 +1176,75 @@ describe(FrameleafCloudService.name, () => {
       const config = metadata.get(SystemMetadataKey.SystemConfig) as Record<string, unknown> | undefined;
       metadata.set(SystemMetadataKey.SystemConfig, { ...config, server: { lanDiscovery: false } });
       clearConfigCache();
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(lastBeat().endpoints).toEqual([]);
+    });
+
+    it('publishes the owner’s own HTTPS address for a Buddy pairing without a plan (FL-434)', async () => {
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      const lastBeat = () => cloud.requests.findLast(({ path }) => path === '/api/v1/instance/heartbeat')!.json();
+      const setExternalDomain = (externalDomain: string) => {
+        const config = metadata.get(SystemMetadataKey.SystemConfig) as Record<string, unknown> | undefined;
+        metadata.set(SystemMetadataKey.SystemConfig, { ...config, server: { lanDiscovery: false, externalDomain } });
+        clearConfigCache();
+      };
+      const self = storedLink()!.instanceId!;
+      const peer = '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e52';
+      const key = { kty: 'OKP', crv: 'Ed25519', x: 'a'.repeat(43) };
+      const vault = {
+        vaultId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e54',
+        sourceInstanceId: peer,
+        destinationInstanceId: self,
+        sourceKey: key,
+        destinationKey: key,
+        quotaBytes: 10 * 1024 ** 3,
+        retention: { days: 30, monthly: 12 },
+      };
+      const writePairing = async (state: 'pending' | 'active') => {
+        await mkdir(join(identityDir, 'buddy'), { recursive: true });
+        await writeFile(
+          join(identityDir, 'buddy', 'state.json'),
+          JSON.stringify({
+            version: 1,
+            settings: { directory: '/buddy-host', quotaBytes: 10 * 1024 ** 3 },
+            pairing: {
+              version: 1,
+              pairId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53',
+              state,
+              readUntil: null,
+              vaults: [
+                vault,
+                {
+                  ...vault,
+                  vaultId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e55',
+                  sourceInstanceId: self,
+                  destinationInstanceId: peer,
+                },
+              ],
+            },
+          }),
+        );
+      };
+
+      setExternalDomain('https://photos.example.com');
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(lastBeat().endpoints).toEqual([]);
+
+      await writePairing('pending');
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(lastBeat().endpoints).toEqual([]);
+
+      await writePairing('active');
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(lastBeat().endpoints).toEqual([{ kind: 'custom', url: 'https://photos.example.com' }]);
+      expect(lastBeat().remoteAccess).toMatchObject({ enabled: false, relayConnected: false });
+
+      // a plain-HTTP address is never offered to a buddy
+      setExternalDomain('http://192.168.1.20:2283');
       makeDue();
       await sut.handleHeartbeat();
       expect(lastBeat().endpoints).toEqual([]);

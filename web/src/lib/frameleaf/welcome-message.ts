@@ -37,7 +37,7 @@ let purifier: Purifier | undefined;
 
 const cleaner = (): Purifier => {
   if (!purifier) {
-    purifier = DOMPurify(window);
+    purifier = DOMPurify(globalThis);
     purifier.addHook('afterSanitizeAttributes', (node) => {
       if (node.tagName === 'A' && node.hasAttribute('href')) {
         node.setAttribute('target', '_blank');

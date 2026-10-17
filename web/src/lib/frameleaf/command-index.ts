@@ -298,6 +298,8 @@ export const SETTINGS_SECTION_KEYWORDS: Readonly<Record<string, readonly Transla
   'cloud-remote': ['frameleaf_remote_public_url_title', 'frameleaf_remote_domain_title', 'frameleaf_remote_hostname'],
   // FL-426: the server's time zone is chosen on Server name & welcome.
   server: ['frameleaf_server_identity_zone'],
+  // FL-421: the prototype finds "What needs your attention" by its alerts.
+  signals: ['frameleaf_attention_search_keywords'],
 });
 
 /** Server settings section keys declared by `user-settings/SystemSettings.svelte`. */

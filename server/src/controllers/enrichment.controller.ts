@@ -128,7 +128,8 @@ export class EnrichmentController {
   }
 
   @Get('frames/:id')
-  @FileResponse()
+  // FL-436: moment frames are always cut as JPEG
+  @FileResponse('image/jpeg')
   @Authenticated({ permission: Permission.AssetRead })
   @Endpoint({
     summary: 'Get a video moment frame',

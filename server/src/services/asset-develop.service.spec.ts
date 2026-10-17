@@ -509,6 +509,31 @@ describe(AssetDevelopService.name, () => {
       expect(response.hasMaster).toBe(false);
     });
 
+    it('hands the FL-431 current-version precondition to the locked insert, and nothing when omitted', async () => {
+      const expected = '7d4b6d0e-3c1f-4c7a-9c55-2f1f0b8f2a10';
+      developRepository.create.mockResolvedValue(revisionStub({ assetId: asset.id }));
+      await sut.save(authStub.user1, asset.id, {
+        recipe: defaultDevelopRecipe(),
+        render: false,
+        expectedCurrentRevisionId: expected,
+      });
+      expect(developRepository.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({ expectedCurrentRevisionId: expected }),
+      );
+
+      await sut.save(authStub.user1, asset.id, {
+        recipe: defaultDevelopRecipe(),
+        render: false,
+        expectedCurrentRevisionId: null,
+      });
+      expect(developRepository.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({ expectedCurrentRevisionId: null }),
+      );
+
+      await sut.save(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), render: false });
+      expect(developRepository.create.mock.lastCall?.[0].expectedCurrentRevisionId).toBeUndefined();
+    });
+
     it('can store a recipe without rendering', async () => {
       developRepository.create.mockResolvedValue(revisionStub({ assetId: asset.id }));
       const response = await sut.save(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), render: false });

@@ -46,7 +46,8 @@ export class StudioMediaController {
   }
 
   @Get(':id/filmstrip/sprite')
-  @FileResponse()
+  // FL-436: the sprite format the filmstrip index names
+  @FileResponse('image/jpeg', 'image/webp')
   @Authenticated({ permission: Permission.AssetView, sharedLink: true })
   @Endpoint({
     summary: 'View video filmstrip sprite',
