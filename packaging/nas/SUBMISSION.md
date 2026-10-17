@@ -87,13 +87,27 @@ identical to its container path. Map only approved storage roots.
 
 For a catalog submission, use the generated direct-stack app source and the
 [TrueNAS apps contribution guide](https://github.com/truenas/apps/blob/master/CONTRIBUTIONS.md).
-Check the live guide for the target repository/branch and required format before
-opening the PR: TrueNAS' general documentation also describes a feature-request
-route through its Community repository. New applications belong in the community
-train. Retain the pinned catalog-library renderer, test with ML enabled and
-disabled, and satisfy the catalog's current lint, render and metadata checks.
-Submit the app files and installation notes with signed-release evidence; record
-the external PR and accepted listing URL separately.
+The current catalog target is `truenas/apps`, branch `master`, under
+`ix-dev/community/frameleaf`. Check for existing issues/PRs, then open a draft
+catalog PR with the generated app files, installation notes and image evidence.
+Use the catalog's required TrueNAS maintainer metadata. Attach the Frameleaf icon
+and screenshots so the reviewer can supply TrueNAS CDN URLs.
+
+The current catalog library is 2.3.17; this repository deliberately pins and tests
+2.3.4. Update and qualify the submission copy against the catalog's current
+library before requesting catalog review. Keep this package's pinned renderer
+unchanged until its replacement has passed both ML modes. In the catalog checkout:
+
+```sh
+devbox run copy-lib
+./.github/scripts/port_validation.py
+./.github/scripts/ci.py --app frameleaf --train community --test-file basic-values.yaml --render-only=true
+./.github/scripts/ci.py --app frameleaf --train community --test-file basic-values.yaml
+```
+
+Use disposable storage for the deployment test. Record the external PR and
+accepted listing URL separately. The Manager Custom App can be installed without
+a catalog submission.
 
 ## Synology Package Center
 
