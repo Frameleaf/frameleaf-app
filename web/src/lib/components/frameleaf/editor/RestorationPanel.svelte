@@ -167,7 +167,7 @@
   type SmoothMotionFactor = (typeof SMOOTH_MOTION_FACTORS)[number];
 
   /* Choices ------------------------------------------------------------- */
-  let mode = $state<AssetRestorationMode>(isVideo ? editingDefaults.restorationMode : AssetRestorationMode.Faithful);
+  let mode = $state<AssetRestorationMode>(editingDefaults.restorationMode);
   let upscale = $state<RestorationUpscale>(2);
   let keepGrain = $state(false);
   let destinationId = $state<string | null>(null);
