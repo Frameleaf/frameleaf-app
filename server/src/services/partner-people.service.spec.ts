@@ -143,6 +143,8 @@ describe(PartnerPeopleService.name, () => {
         return Promise.resolve([]);
       });
       await sut.copyFaces(copyInput);
+      expect(mocks.person.copyFacesToAsset).toHaveBeenCalled();
+      expect(thumbnailSelection.execute).toHaveBeenCalled();
     });
 
     it.each([AssetOriginField.Faces, AssetOriginField.Visibility, null])(
@@ -337,7 +339,6 @@ describe(PartnerPeopleService.name, () => {
           correctionId: 'correction-1',
         },
       ]);
-      expect(mocks.partnerOrigin.createPersonCopy).not.toHaveBeenCalled();
       expect(mocks.partnerOrigin.createPersonCopy).not.toHaveBeenCalled();
     });
 
@@ -542,6 +543,7 @@ describe(PartnerPeopleService.name, () => {
         return Promise.resolve(mergedFaceIds);
       });
       await sut.undoPartnerMerge(authStub.user1, entry);
+      expect(mocks.person.getPartnerMergedFaceIds).toHaveBeenCalled();
     });
 
     it("moves the merged faces to a new person of the partner's person, with an origin", async () => {

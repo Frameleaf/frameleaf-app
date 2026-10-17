@@ -1032,6 +1032,39 @@ describe(MediaOperationRepository.name, () => {
       expect(checkpoints[0].state).toBe('complete');
     });
 
+    it('only lets the current claim invalidate chunks, and never revives one it invalidated', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+      const claim = await sut.claimNext({
+        kinds: [MediaOperationKind.StudioExport],
+        workerId: 'worker-a',
+        leaseMs: LEASE_MS,
+      });
+      await sut.upsertCheckpoint(operation.id, claim!.claimToken, chunk(0) as never);
+      await sut.upsertCheckpoint(operation.id, claim!.claimToken, chunk(1) as never);
+
+      // a stale worker's token changes nothing
+      await expect(
+        sut.invalidateCheckpointsFrom(operation.id, '0195e2a0-0000-7000-8000-0000000000bb', 1),
+      ).resolves.toBe(false);
+      expect((await sut.getCheckpoints(operation.id)).map(({ state }) => state)).toEqual(['pending', 'pending']);
+
+      await expect(sut.invalidateCheckpointsFrom(operation.id, claim!.claimToken, 1)).resolves.toBe(true);
+      expect((await sut.getCheckpoints(operation.id)).map(({ state }) => state)).toEqual(['pending', 'invalid']);
+
+      await expect(
+        sut.completeCheckpoint(operation.id, claim!.claimToken, {
+          sequence: 1,
+          chunkKey: 'chunk-1',
+          outputPath: '/chunks/1.mkv',
+          outputChecksum: Buffer.from('checksum'),
+          sizeInBytes: 2048,
+        }),
+      ).resolves.toBe(false);
+      expect((await sut.getCheckpoints(operation.id))[1].state).toBe('invalid');
+    });
+
     it.each(['expired', 'paused', 'cancelled'] as const)(
       'guards verified artifact transitions atomically for a %s lease while retaining legacy defaults',
       async (condition) => {

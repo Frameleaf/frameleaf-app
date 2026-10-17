@@ -231,7 +231,7 @@ describe(RestorationWorkerService.name, () => {
       recoverExpiredClaims: vi.fn().mockResolvedValue({ requeued: 0, retried: 0, failed: 0, abandonedCancels: 0 }),
       upsertCheckpoint: vi.fn().mockResolvedValue(true),
       completeCheckpoint: vi.fn().mockResolvedValue(true),
-      invalidateCheckpointsFrom: vi.fn().mockResolvedValue(undefined),
+      invalidateCheckpointsFrom: vi.fn().mockResolvedValue(true),
     });
 
     mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));

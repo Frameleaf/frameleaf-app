@@ -1437,20 +1437,28 @@ describe(FrameleafAuthService.name, () => {
         const { held } = shareAuthorityFence();
         idClaims.frameleaf_role = 'admin';
         const { confirmToken } = await sut.link(auth, { ...callbackDto, preview: true }, {});
+        // recorded and asserted after the call: some of these writes are best effort, and a throw
+        // inside them would be logged and swallowed instead of failing the test
+        const outsideLock: string[] = [];
+        const checkLock = (write: string) => {
+          if (!held.getStore()?.includes(DatabaseLock.FrameleafLinkAuthority)) {
+            outsideLock.push(write);
+          }
+        };
         mocks.frameleafAccount.upsertLink.mockImplementation((row) => {
-          expect(held.getStore()).toContain(DatabaseLock.FrameleafLinkAuthority);
+          checkLock('upsertLink');
           return Promise.resolve({ ...row, access: row.access ?? null, linkedAt: new Date(), lastSignInAt: null });
         });
         mocks.user.update.mockImplementation((id, change) => {
-          expect(held.getStore()).toContain(DatabaseLock.FrameleafLinkAuthority);
+          checkLock('user.update');
           return Promise.resolve({ ...user, ...change, id } as never);
         });
         mocks.adminAudit.create.mockImplementation(() => {
-          expect(held.getStore()).toContain(DatabaseLock.FrameleafLinkAuthority);
+          checkLock('adminAudit.create');
           return Promise.resolve(undefined as never);
         });
         mocks.notification.create.mockImplementation((value) => {
-          expect(held.getStore()).toContain(DatabaseLock.FrameleafLinkAuthority);
+          checkLock('notification.create');
           return Promise.resolve({
             id: 'notification-1',
             createdAt: new Date(),
@@ -1460,7 +1468,7 @@ describe(FrameleafAuthService.name, () => {
           } as never);
         });
         mocks.websocket.clientSend.mockImplementation(() => {
-          expect(held.getStore()).toContain(DatabaseLock.FrameleafLinkAuthority);
+          checkLock('websocket.clientSend');
         });
 
         await expect(sut.confirmLink(auth, { confirmToken: confirmToken! })).resolves.toMatchObject({
@@ -1470,6 +1478,7 @@ describe(FrameleafAuthService.name, () => {
         expect(mocks.user.update).toHaveBeenCalledWith(user.id, { isAdmin: true });
         expect(mocks.adminAudit.create).toHaveBeenCalled();
         expect(mocks.notification.create).toHaveBeenCalled();
+        expect(outsideLock).toEqual([]);
         expect(mocks.websocket.clientSend).toHaveBeenCalled();
       });
 

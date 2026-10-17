@@ -1280,6 +1280,7 @@ describe(AuthService.name, () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthWithMobileOverride);
 
       await sut.authorize({ redirectUri: 'https://demo.immich.app' });
+      expect(mocks.oauth.authorize).toHaveBeenCalledOnce();
     });
 
     it('sends each app its own callback when the mobile redirect override is on (FL-131)', async () => {

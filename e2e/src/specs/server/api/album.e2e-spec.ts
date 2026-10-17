@@ -54,7 +54,7 @@ describe('/albums', () => {
     [user1Asset1, user1Asset2, user4Asset1] = await Promise.all([
       utils.createAsset(user1.accessToken, { isFavorite: true }),
       utils.createAsset(user1.accessToken),
-      utils.createAsset(user1.accessToken),
+      utils.createAsset(user4.accessToken),
     ]);
 
     [user1Albums, user2Albums, deletedAssetAlbum] = await Promise.all([
@@ -125,7 +125,7 @@ describe('/albums', () => {
     [user2Albums[0]] = await Promise.all([
       getAlbumInfo({ id: user2Albums[0].id }, { headers: asBearerAuth(user2.accessToken) }),
       deleteUserAdmin({ id: user3.userId, userAdminDeleteDto: {} }, { headers: asBearerAuth(admin.accessToken) }),
-      utils.deleteAssets(user1.accessToken, [user4Asset1.id]),
+      utils.deleteAssets(user4.accessToken, [user4Asset1.id]),
     ]);
   });
 
