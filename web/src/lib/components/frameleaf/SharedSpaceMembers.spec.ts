@@ -87,6 +87,8 @@ beforeEach(() => {
   addMessages('dev', en);
   vi.mocked(searchUsers).mockResolvedValue([]);
   vi.mocked(getRecipientGroups).mockResolvedValue([]);
+  vi.mocked(removeSharedSpaceInvitation).mockResolvedValue(undefined as never);
+  vi.mocked(removeUserFromAlbum).mockResolvedValue(undefined as never);
 });
 
 describe('SharedSpaceMembers', () => {
