@@ -58,6 +58,30 @@ const validateAlbumProgressAck = (type: SyncEntityType, ack: string) => {
 };
 
 type CheckpointMap = Partial<Record<SyncEntityType, SyncAck>>;
+/**
+ * FL-447: the private checkpoint under which a session keeps the fingerprint of the album items withheld
+ * from it (`SyncRepository.albumToAsset.getWithheldFingerprint`), as `<type>|<nowId>|<md5>`. It is not a
+ * sync type: devices never see it (`getAcks`) and cannot write it (`setAcks` accepts sync types only).
+ */
+const WITHHELD_ALBUM_ASSETS = 'FrameleafWithheldAlbumAssetsV1' as SyncEntityType;
+/** md5 of the empty set: nothing withheld. */
+const NOTHING_WITHHELD = 'd41d8cd98f00b204e9800998ecf8427e';
+/** The cursor streams that carry other members' album items; AlbumAssetAccessV1 reconciles per item. */
+const LEGACY_ALBUM_ASSET_REQUESTS = new Set([
+  SyncRequestType.AlbumToAssetsV1,
+  SyncRequestType.AlbumAssetsV2,
+  SyncRequestType.AlbumAssetExifsV1,
+]);
+const LEGACY_ALBUM_ASSET_CHECKPOINTS = [
+  SyncEntityType.AlbumToAssetV1,
+  SyncEntityType.AlbumToAssetBackfillV1,
+  SyncEntityType.AlbumAssetCreateV2,
+  SyncEntityType.AlbumAssetUpdateV2,
+  SyncEntityType.AlbumAssetBackfillV2,
+  SyncEntityType.AlbumAssetExifCreateV1,
+  SyncEntityType.AlbumAssetExifUpdateV1,
+  SyncEntityType.AlbumAssetExifBackfillV1,
+];
 const COMPLETE_ID = 'complete';
 const MAX_DAYS = 30;
 const MAX_DURATION = Duration.fromObject({ days: MAX_DAYS });
@@ -144,13 +168,14 @@ export class SyncService extends BaseService {
   @Inject(PinnedCollectionService)
   private pins!: PinnedCollectionService;
 
-  getAcks(auth: AuthDto) {
+  async getAcks(auth: AuthDto) {
     const sessionId = auth.session?.id;
     if (!sessionId) {
       return throwSessionRequired();
     }
 
-    return this.syncCheckpointRepository.getAll(sessionId);
+    const checkpoints = await this.syncCheckpointRepository.getAll(sessionId);
+    return checkpoints.filter(({ type }) => type !== WITHHELD_ALBUM_ASSETS);
   }
 
   async setAcks(auth: AuthDto, dto: SyncAckSetDto) {
@@ -292,6 +317,12 @@ export class SyncService extends BaseService {
       ...getOthersRulesQueryOptions(auth),
     };
 
+    if (await this.hasWithheldAlbumAssetsChanged(auth.user.id, session.id, dto.types, checkpointMap, nowId)) {
+      await send(response, { type: SyncEntityType.SyncResetV1, ids: ['reset'], data: {} });
+      response.end();
+      return;
+    }
+
     const handlers: Record<SyncRequestType, () => Promise<void>> = {
       [SyncRequestType.AlbumAssetAccessV1]: () => this.syncTags(auth, response, 'albumAsset'),
       // FL-326 (spec §4.8): partners receive their own copies through their own asset streams; the
@@ -390,6 +421,55 @@ export class SyncService extends BaseService {
     await this.syncRepository.user.cleanupAuditTable(pruneThreshold);
     await this.syncRepository.userMetadata.cleanupAuditTable(pruneThreshold);
     await this.syncRepository.assetOcr.cleanupAuditTable(pruneThreshold);
+  }
+
+  /**
+   * FL-447 (owner rule, October 17, 2026: items hidden by the owner's Locked rules reach partners only).
+   * The cursor album streams (AlbumToAssetsV1, AlbumAssetsV2, AlbumAssetExifsV1) leave out another
+   * member's item that matches its owner's Locked rules, but a cursor cannot take back an item a device
+   * already received before the item matched, nor send one again once it stops matching. So the session
+   * keeps a fingerprint of the album items withheld from it; when the set of items it could already have
+   * changed — the owner made or lifted a rule, or tagged, named or confirmed something into or out of
+   * one, or a Studio export's source did — the device is reset and syncs again under the rules as they
+   * stand, as the owner's own devices are when their rules change (FL-218). A device that synced before
+   * this check existed and has something withheld from it is reset once. AlbumAssetAccessV1 reconciles
+   * per item and needs none of this; partners receive locked copies through their own streams.
+   */
+  private async hasWithheldAlbumAssetsChanged(
+    userId: string,
+    sessionId: string,
+    types: SyncRequestType[],
+    checkpointMap: CheckpointMap,
+    nowId: string,
+  ) {
+    if (!types.some((type) => LEGACY_ALBUM_ASSET_REQUESTS.has(type))) {
+      return false;
+    }
+
+    const withheld = this.syncRepository.albumToAsset;
+    const stored = checkpointMap[WITHHELD_ALBUM_ASSETS];
+    const current = await withheld.getWithheldFingerprint(userId);
+    if (stored?.updateId && stored.extraId) {
+      // the items that existed then, judged now; the same set as then needs no second look
+      if (
+        current !== stored.extraId &&
+        (await withheld.getWithheldFingerprint(userId, stored.updateId)) !== stored.extraId
+      ) {
+        return true;
+      }
+    } else if (current !== NOTHING_WITHHELD && LEGACY_ALBUM_ASSET_CHECKPOINTS.some((type) => checkpointMap[type])) {
+      return true;
+    }
+
+    // moved forward on every request, so items added since are judged from now on
+    await this.syncCheckpointRepository.upsertAll([
+      {
+        sessionId,
+        type: WITHHELD_ALBUM_ASSETS,
+        ack: toAck({ type: WITHHELD_ALBUM_ASSETS, updateId: nowId, extraId: current }),
+      },
+    ]);
+    return false;
   }
 
   private needsFullSync(checkpointMap: CheckpointMap) {

@@ -56,7 +56,27 @@ describe('owner Locked rules (FL-446)', () => {
       // a rejected pet observation or another owner's pet never matches
       expect(query.sql).toContain(`pet_observation.state = 'confirmed'`);
       expect(query.sql).toContain(`pet."ownerId" = "asset"."ownerId"`);
-      expect(query.sql).toContain(`not ("asset"."ownerId" != $1::uuid and exists (`);
+      expect(query.sql).toContain(`not ("asset"."ownerId" != $1::uuid and (exists (`);
+      expect(query.parameters).toEqual([viewerId]);
+    });
+  });
+
+  it("hides a Studio export whose source, at any depth, matches the source owner's rules (FL-447)", async () => {
+    await withScripted((db) => {
+      const query = db
+        .selectFrom('asset')
+        .select('asset.id')
+        .$call((qb) => withHiddenContentFilter(qb, { othersRulesViewerId: viewerId }))
+        .compile();
+      // the export's provenance, walked at read time through exports of exports
+      expect(query.sql).toContain('with recursive owner_rules_lineage ("assetId") as (');
+      expect(query.sql).toContain(`owner_rules_export."resultAssetId" = "asset"."id"`);
+      expect(query.sql).toContain(`owner_rules_export."resultAssetId" = owner_rules_lineage."assetId"`);
+      expect(query.sql).toContain(`owner_rules_export.state = 'published'`);
+      // judged by each source's own owner's rules, not the export owner's
+      expect(query.sql).toContain(`owner_rules."userId" = "owner_rules_lineage_asset"."ownerId"`);
+      expect(query.sql).toContain(`tag_asset."assetId" = "owner_rules_lineage_asset"."id"`);
+      expect(query.sql).toContain(`pet."ownerId" = "owner_rules_lineage_asset"."ownerId"`);
       expect(query.parameters).toEqual([viewerId]);
     });
   });

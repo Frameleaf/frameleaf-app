@@ -46,6 +46,7 @@ import {
   ImageEnrichmentFilter,
   PetObservationState,
   SearchOrderField,
+  StudioExportVersionState,
   UserMetadataKey,
 } from 'src/enum.js';
 import {
@@ -1565,31 +1566,28 @@ export const hiddenContentAssetIdExists = (assetId: Expression<unknown>, filter:
 const ownerRuleIds = (key: 'tagIds' | 'personIds' | 'petIds') =>
   sql`(select (jsonb_path_query(owner_rules.value, ${sql.lit(`$.privacy.suppression.${key}[*]`)}) #>> '{}')::uuid)`;
 /**
- * FL-446 (owner decision, October 17, 2026: "hidden items are only shared with partner sharing,
- * they're never shared any other way"): true when the asset under `assetAlias` matches one of its
- * OWNER's Locked rules — a person, pet or tag the owner marked Locked (`privacy.suppression`), the
- * same matches `hiddenContentAssetExists` makes for the owner's own session. The rules are read from
- * the owner's stored preferences, so this works for any number of owners in one read (an album with
- * several contributors). Partners receive such items only as locked copies (FL-326); every other
- * sharing path leaves them out with `hiddenFromOthers`.
+ * True when the asset `assetId`, owned by `ownerId`, matches one of that owner's Locked rules — a
+ * person, pet or tag the owner marked Locked (`privacy.suppression`), the same matches
+ * `hiddenContentAssetExists` makes for the owner's own session — read from the owner's stored
+ * preferences.
  */
-export const hiddenByOwnerRules = (assetAlias = 'asset') => sql<boolean>`exists (
+const matchesOwnerRules = (assetId: Expression<unknown>, ownerId: Expression<unknown>) => sql<boolean>`exists (
     select 1
     from user_metadata as owner_rules
-    where owner_rules."userId" = ${sql.ref(`${assetAlias}.ownerId`)}
+    where owner_rules."userId" = ${ownerId}
       and owner_rules.key = ${sql.lit(UserMetadataKey.Preferences)}
       and (
         exists (
           select 1
           from tag_asset
           inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
-          where tag_asset."assetId" = ${sql.ref(`${assetAlias}.id`)}
+          where tag_asset."assetId" = ${assetId}
             and tag_closure.id_ancestor in ${ownerRuleIds('tagIds')}
         )
         or exists (
           select 1
           from asset_face
-          where asset_face."assetId" = ${sql.ref(`${assetAlias}.id`)}
+          where asset_face."assetId" = ${assetId}
             and asset_face."personGroupId" in ${ownerRuleIds('personIds')}
             and asset_face."deletedAt" is null
             and asset_face."isVisible" is true
@@ -1598,13 +1596,54 @@ export const hiddenByOwnerRules = (assetAlias = 'asset') => sql<boolean>`exists 
           select 1
           from pet_observation
           inner join pet on pet.id = pet_observation."petId"
-          where pet_observation."assetId" = ${sql.ref(`${assetAlias}.id`)}
+          where pet_observation."assetId" = ${assetId}
             and pet_observation."petId" in ${ownerRuleIds('petIds')}
             and pet_observation.state = ${sql.lit(PetObservationState.Confirmed)}
-            and pet."ownerId" = ${sql.ref(`${assetAlias}.ownerId`)}
+            and pet."ownerId" = ${ownerId}
         )
       )
   )`;
+/**
+ * FL-447: true when the asset under `assetAlias` is a published Studio export (`resultAssetId`) made,
+ * directly or through earlier exports, from a source that matches ITS owner's Locked rules. The
+ * lineage is `studio_export_version_source`, the provenance a lock follows to the export
+ * (`lockDerivedResults`); it is walked at read time, so the export follows the source owner's current
+ * rules and current tags, faces and pets, and shows again once no source matches. An asset that is
+ * no export costs one probe of `studio_export_version_resultAssetId_idx`.
+ */
+const exportOfOwnerRulesMatch = (assetAlias: string) => sql<boolean>`exists (
+    with recursive owner_rules_lineage ("assetId") as (
+      select owner_rules_source."assetId"
+      from studio_export_version as owner_rules_export
+      inner join studio_export_version_source as owner_rules_source on owner_rules_source."versionId" = owner_rules_export.id
+      where owner_rules_export."resultAssetId" = ${sql.ref(`${assetAlias}.id`)}
+        and owner_rules_export.state = ${sql.lit(StudioExportVersionState.Published)}
+        and owner_rules_source."assetId" is not null
+      union
+      select owner_rules_source."assetId"
+      from owner_rules_lineage
+      inner join studio_export_version as owner_rules_export on owner_rules_export."resultAssetId" = owner_rules_lineage."assetId"
+      inner join studio_export_version_source as owner_rules_source on owner_rules_source."versionId" = owner_rules_export.id
+      where owner_rules_export.state = ${sql.lit(StudioExportVersionState.Published)}
+        and owner_rules_source."assetId" is not null
+    )
+    select 1
+    from owner_rules_lineage
+    inner join asset as owner_rules_lineage_asset on owner_rules_lineage_asset.id = owner_rules_lineage."assetId"
+    where ${matchesOwnerRules(sql.ref('owner_rules_lineage_asset.id'), sql.ref('owner_rules_lineage_asset.ownerId'))}
+  )`;
+/**
+ * FL-446 (owner decision, October 17, 2026: "hidden items are only shared with partner sharing,
+ * they're never shared any other way"): true when the asset under `assetAlias` matches one of its
+ * OWNER's Locked rules (`matchesOwnerRules`), or is a Studio export made from a source that matches
+ * its own owner's (`exportOfOwnerRulesMatch`, FL-447) — an export is hidden wherever its source is,
+ * as a lock carries to it. The rules are read from each owner's stored preferences, so this works
+ * for any number of owners in one read (an album with several contributors). Partners receive such
+ * items only as locked copies (FL-326); every other sharing path leaves them out with
+ * `hiddenFromOthers`.
+ */
+export const hiddenByOwnerRules = (assetAlias = 'asset') =>
+  sql<boolean>`(${matchesOwnerRules(sql.ref(`${assetAlias}.id`), sql.ref(`${assetAlias}.ownerId`))} or ${exportOfOwnerRulesMatch(assetAlias)})`;
 /**
  * FL-446: true when the asset under `assetAlias` belongs to someone other than `viewerId` and matches
  * its owner's Locked rules (`hiddenByOwnerRules`). The viewer's own media is left to their own

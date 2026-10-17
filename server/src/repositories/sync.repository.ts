@@ -6,13 +6,14 @@ import type { SyncAck } from 'src/types.js';
 import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AlbumUserRole, AssetMetadataKey, ChecksumAlgorithm } from 'src/enum.js';
+import { AlbumUserRole, AssetMetadataKey, ChecksumAlgorithm, UserMetadataKey } from 'src/enum.js';
 import { TagSync } from 'src/repositories/tag-sync.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
   getHiddenContentFilter,
   hiddenAssetIdExists,
   hiddenContentAssetIdExists,
+  hiddenFromOthers,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
 import {
@@ -539,6 +540,44 @@ class AlbumToAssetSync extends BaseSync {
   }
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('album_asset_audit', daysAgo);
+  }
+  /**
+   * FL-447: a fingerprint (md5) of the album items withheld from `userId` because they match another
+   * owner's Locked rules (`hiddenFromOthers`, Studio exports of such items included): every
+   * `albumId:assetId` pair in the albums and shared spaces the user is a member of. With `before`, only
+   * the pairs whose album item and membership already existed before that id count — the set as it
+   * stood then, as the rules stand now — so an item or album added since is never a change. While no
+   * account has a Locked rule the condition is a one-time filter and nothing is scanned.
+   */
+  async getWithheldFingerprint(userId: string, before?: string): Promise<string> {
+    const row = await this.db
+      .selectFrom('album_asset')
+      .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
+      .innerJoin('album', 'album.id', 'album_asset.albumId')
+      .innerJoin('asset', 'asset.id', 'album_asset.assetId')
+      .where('album_user.userId', '=', userId)
+      .where('album.deletedAt', 'is', null)
+      .where(
+        sql<boolean>`exists (
+          select 1
+          from user_metadata as rules_owner
+          where rules_owner.key = ${sql.lit(UserMetadataKey.Preferences)}
+            and (
+              jsonb_path_exists(rules_owner.value, '$.privacy.suppression.tagIds[*]')
+              or jsonb_path_exists(rules_owner.value, '$.privacy.suppression.personIds[*]')
+              or jsonb_path_exists(rules_owner.value, '$.privacy.suppression.petIds[*]')
+            )
+        )`,
+      )
+      .where(hiddenFromOthers(userId, 'asset'))
+      .$if(!!before, (qb) => qb.where('album_asset.updateId', '<', before!).where('album_user.createId', '<', before!))
+      .select(
+        sql<string>`md5(coalesce(string_agg(album_asset."albumId"::text || ':' || album_asset."assetId"::text, ',' order by album_asset."albumId", album_asset."assetId"), ''))`.as(
+          'fingerprint',
+        ),
+      )
+      .executeTakeFirstOrThrow();
+    return row.fingerprint;
   }
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {

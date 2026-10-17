@@ -1,5 +1,11 @@
 import { Kysely, sql } from 'kysely';
-import { AlbumUserRole, PetObservationState, UserMetadataKey } from 'src/enum.js';
+import {
+  AlbumUserRole,
+  MediaOperationDestination,
+  PetObservationState,
+  StudioExportVersionState,
+  UserMetadataKey,
+} from 'src/enum.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -94,6 +100,43 @@ const sharedAlbum = async (ctx: Context) => {
   return { owner, member, album, items, tag };
 };
 
+/** A published Studio library export: `resultAssetId` made from `sources` (FL-106 provenance). */
+const exportOf = async (
+  ownerId: string,
+  resultAssetId: string,
+  sources: Array<{ assetId: string; ownerId: string }>,
+  state = StudioExportVersionState.Published,
+) => {
+  const version = await db
+    .insertInto('studio_export_version')
+    .values({
+      ownerId,
+      revision: 1,
+      revisionDigest: 'digest',
+      state,
+      destination: MediaOperationDestination.Local,
+      settings: {},
+      resultAssetId,
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+  await db
+    .insertInto('studio_export_version_source')
+    .values(
+      sources.map((source, index) => ({
+        versionId: version.id,
+        key: `source-${index}`,
+        kind: 'asset',
+        resourceId: source.assetId,
+        assetId: source.assetId,
+        ownerId: source.ownerId,
+        checksum: null,
+        sourceAccess: 'owner',
+      })),
+    )
+    .execute();
+};
+
 const visibleTo = async (viewerId: string | undefined, ids: string[]) => {
   const rows = await db
     .selectFrom('asset')
@@ -119,6 +162,49 @@ describe('owner Locked rules across sharing (FL-446)', () => {
     );
     // the owner's own media is left to their own session filter
     await expect(visibleTo(owner.id, ids)).resolves.toEqual(new Set(ids));
+  });
+
+  it('hides a Studio export of a matching source wherever the source is hidden, through exports of exports (FL-447)', async () => {
+    const { ctx } = setup();
+    const { owner, member, items } = await sharedAlbum(ctx);
+    const asset = async () => (await ctx.newAsset({ ownerId: owner.id })).asset.id;
+    const fromTagged = await asset();
+    const fromThatExport = await asset();
+    const fromPlain = await asset();
+    const unpublished = await asset();
+    await exportOf(owner.id, fromTagged, [
+      { assetId: items.plain, ownerId: owner.id },
+      { assetId: items.tagged, ownerId: owner.id },
+    ]);
+    await exportOf(owner.id, fromThatExport, [{ assetId: fromTagged, ownerId: owner.id }]);
+    await exportOf(owner.id, fromPlain, [{ assetId: items.plain, ownerId: owner.id }]);
+    await exportOf(
+      owner.id,
+      unpublished,
+      [{ assetId: items.tagged, ownerId: owner.id }],
+      StudioExportVersionState.Staged,
+    );
+    const exports = [fromTagged, fromThatExport, fromPlain, unpublished];
+
+    await expect(visibleTo(member.id, exports)).resolves.toEqual(new Set([fromPlain, unpublished]));
+    await expect(visibleTo(undefined, exports)).resolves.toEqual(new Set([fromPlain, unpublished]));
+    await expect(visibleTo(owner.id, exports)).resolves.toEqual(new Set(exports));
+
+    // the lineage is read with the rules as they stand: lifting the rule shows the exports again
+    await setLockedRules(owner.id, {});
+    await expect(visibleTo(member.id, exports)).resolves.toEqual(new Set(exports));
+  });
+
+  it("judges an export by its source owner's rules, whoever made the export (FL-447)", async () => {
+    const { ctx } = setup();
+    const { owner, member, items } = await sharedAlbum(ctx);
+    const { user: maker } = await ctx.newUser();
+    const { asset: made } = await ctx.newAsset({ ownerId: maker.id });
+    await exportOf(maker.id, made.id, [{ assetId: items.faced, ownerId: owner.id }]);
+
+    await expect(visibleTo(member.id, [made.id])).resolves.toEqual(new Set());
+    // the maker's own media is left to the maker's own session
+    await expect(visibleTo(maker.id, [made.id])).resolves.toEqual(new Set([made.id]));
   });
 
   it("follows the owner's current rules: lifting one shows its items again", async () => {
