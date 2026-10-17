@@ -1,6 +1,7 @@
 import {
   mdiAccountOutline,
   mdiCameraIris,
+  mdiCameraOutline,
   mdiArchiveOutline,
   mdiClockOutline,
   mdiCogOutline,
@@ -199,6 +200,7 @@ export type RailDestinationId =
   | 'folders'
   | 'documents'
   | 'photography'
+  | 'rawSupport'
   | 'workflows'
   | 'trash'
   | 'libraryCare'
@@ -323,6 +325,8 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
       labelKey: 'frameleaf_tools',
       destinations: [
         destination('photography', 'frameleaf_photography', mdiCameraIris, Route.photography()),
+        // FL-420: LibraryRail.jsx lists RAW support right under Photography.
+        destination('rawSupport', 'frameleaf_raw_support_nav', mdiCameraOutline, Route.rawSupport()),
         destination('workflows', 'workflows', mdiTuneVariant, Route.workflows()),
         ...keep(capabilities.trash, destination('trash', 'trash', mdiDeleteOutline, Route.trash())),
       ],

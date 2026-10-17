@@ -115,6 +115,7 @@ describe('Frameleaf rail destinations', () => {
       'documents',
       'allAlbums',
       'photography',
+      'rawSupport',
       'workflows',
       'libraryCare',
       'settings',
@@ -166,11 +167,17 @@ describe('Frameleaf rail destinations', () => {
     expect(isDestinationCurrent(Route.viewAlbum({ id: 'album-id' }), allAlbums)).toBe(false);
   });
 
-  it('keeps Studio and Activity out of the rail; Tools holds only Workflows and Trash', () => {
+  it('keeps Studio and Activity out of the rail; Tools holds Photography, RAW support, Workflows and Trash', () => {
     const tools = buildRailSections(allCapabilities()).find((section) => section.id === 'tools');
     const hrefs = flatten(allCapabilities()).map((destination) => destination.href);
 
-    expect(tools?.destinations.map((destination) => destination.id)).toEqual(['photography', 'workflows', 'trash']);
+    expect(tools?.destinations.map((destination) => destination.id)).toEqual([
+      'photography',
+      'rawSupport',
+      'workflows',
+      'trash',
+    ]);
+    expect(find(allCapabilities(), 'rawSupport')?.href).toBe(Route.rawSupport());
     expect(hrefs).not.toContain(Route.studioProjects());
     expect(hrefs).not.toContain(Route.studio());
     expect(hrefs).not.toContain(Route.activity());

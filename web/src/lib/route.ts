@@ -40,7 +40,16 @@ export const fromQueueSlug = (slug: string): QueueName | undefined => {
 };
 
 export const Route = {
-  photography: () => '/photography',
+  /** `shoot` opens that shoot; `section: 'galleries'` opens its galleries (the editor's Proof, FL-420). */
+  photography: (params?: { shoot?: string; section?: 'galleries' }) => '/photography' + asQueryString(params),
+  /**
+   * The RAW develop editor for a shoot (FL-420, PhotographyEditor.jsx): `photo` is the one to open
+   * first, `only` a comma-separated choice of photos (else every RAW photo of the shoot).
+   */
+  photographyDevelop: (params: { shoot: string; photo?: string; only?: string }) =>
+    '/photography/develop' + asQueryString(params),
+  /** Universal RAW support under Library Care (FL-420, RawLibraryCare.jsx). */
+  rawSupport: () => '/raw-support',
 
   // activity
   /** The durable job feed (FL-104). Renders, restorations, transfers and bulk operations. */
