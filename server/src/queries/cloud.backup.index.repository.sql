@@ -328,7 +328,7 @@ delete from "cloud_backup_manifest_entry"
 where
   "manifestId" = $1
 
--- CloudBackupIndexRepository.countAssets
+-- CloudBackupIndexRepository.countAssets (everything)
 select
   count(*) as "count"
 from
@@ -336,6 +336,25 @@ from
 where
   "status" in ($1, $2)
   and "isExternal" = $3
+
+-- CloudBackupIndexRepository.countAssets (with decision)
+select
+  count(*) as "count"
+from
+  "asset"
+where
+  "status" in ($1, $2)
+  and "isExternal" = $3
+  and exists (
+    select
+      "decision"."assetId"
+    from
+      "cloud_backup_decision_asset" as "decision"
+    where
+      "decision"."assetId" = "asset"."id"
+      and "decision"."runId" = $4
+      and "decision"."reason" = $5
+  )
 
 -- CloudBackupIndexRepository.listAssets
 select

@@ -333,6 +333,12 @@ export type CloudBackupActiveRunDto = {
     task: CloudBackupTask;
     uploaded: number;
 };
+export type CloudBackupCoverageStatusDto = {
+    attempts: number;
+    inventoryAt: string;
+    runId: string;
+    state: CloudBackupCoverageState;
+};
 export type CloudBackupEscrowStatusDto = {
     /** Server key mode and a linked server: escrow can be turned on */
     available: boolean;
@@ -425,6 +431,8 @@ export type CloudBackupStatusResponseDto = {
     claimedAt: string | null;
     /** A bucket is claimed and cloud backup is on */
     configured: boolean;
+    /** The newest run's coverage report (FL-362) */
+    coverage: (CloudBackupCoverageStatusDto) | null;
     endpoint: string | null;
     escrow: CloudBackupEscrowStatusDto;
     instanceId: string | null;
@@ -471,6 +479,22 @@ export type CloudBackupCheckResponseDto = {
     /** The bucket can be claimed for this server */
     ok: boolean;
     state: CloudBackupBucketState;
+};
+export type CloudBackupCoverageAccountDto = {
+    email: string;
+    /** null: not known for this run */
+    includedOriginals: number | null;
+    licenceEligible: boolean;
+    name: string;
+    selectedOriginals: number;
+    totalOriginals: number;
+    userId: string;
+};
+export type CloudBackupCoverageResponseDto = {
+    accounts: CloudBackupCoverageAccountDto[];
+    inventoryAt: string | null;
+    runId: string | null;
+    state: CloudBackupCoverageReportState;
 };
 export type CloudBackupEscrowDto = {
     /** Wraps the bucket key before it is sent; never stored and never sent to Frameleaf Cloud */
@@ -525,6 +549,31 @@ export type CloudBackupManifestAlbumsResponseDto = {
     /** The backup records albums; false for a backup made before they were recorded */
     hasDetails: boolean;
     manifestKey: string;
+};
+export type CloudBackupExclusionsDto = {
+    /** The backup run’s manifest in the bucket */
+    manifestKey: string;
+};
+export type CloudBackupAccountExclusionsDto = {
+    licence: number;
+    name: string;
+    notCommitted: number;
+    selection: number;
+    "unknown": number;
+    userId: string;
+};
+export type CloudBackupExclusionCountsDto = {
+    licence: number;
+    notCommitted: number;
+    selection: number;
+    "unknown": number;
+};
+export type CloudBackupExclusionsResponseDto = {
+    accounts: CloudBackupAccountExclusionsDto[];
+    /** This database holds the decision of the run that wrote the backup */
+    decisionKnown: boolean;
+    manifestKey: string;
+    totals: CloudBackupExclusionCountsDto;
 };
 export type CloudBackupManifestItemsDto = {
     filter?: CloudBackupItemFilter;
@@ -15158,6 +15207,17 @@ export type OwnerBackupsResponseDto = {
     }[];
     nextOffset: number | null;
 };
+export type OwnerBackupExclusionDto = {
+    assetId: string;
+    name: string;
+    reason: CloudBackupExclusionReason;
+};
+export type OwnerBackupExclusionsResponseDto = {
+    decisionKnown: boolean;
+    items: OwnerBackupExclusionDto[];
+    manifestKey: string;
+    nextAfterId: string | null;
+};
 export type OwnerBackupHistoryResponseDto = {
     items: {
         assetId: string;
@@ -15184,6 +15244,45 @@ export type OwnerBackupRestoreDto = {
 export type OwnerBackupRestoreResponseDto = {
     operationId: string;
     status: string;
+};
+export type CloudBackupDateRangeDto = {
+    /** between: the first day */
+    "from"?: string;
+    kind: CloudBackupDateRangeKind;
+    /** recent: how many months back from each backup */
+    months?: number;
+    /** between: the last day */
+    to?: string;
+};
+export type CloudBackupSelectionResponseDto = {
+    albumIds?: string[];
+    /** A collection chooses the albums it holds */
+    collectionIds?: string[];
+    dateRanges?: CloudBackupDateRangeDto[];
+    favorites?: boolean;
+    /** Folders as the Folders view names them; a folder also chooses the folders inside it */
+    folders?: string[];
+    mode: CloudBackupSelectionMode;
+    personIds?: string[];
+    /** Of those, the ones your choice keeps now */
+    selectedOriginals: number;
+    /** A tag also chooses the tags inside it */
+    tagIds?: string[];
+    /** Photos and videos of yours that Cloud Backup can keep */
+    totalOriginals: number;
+};
+export type CloudBackupSelectionUpdateDto = {
+    albumIds?: string[];
+    /** A collection chooses the albums it holds */
+    collectionIds?: string[];
+    dateRanges?: CloudBackupDateRangeDto[];
+    favorites?: boolean;
+    /** Folders as the Folders view names them; a folder also chooses the folders inside it */
+    folders?: string[];
+    mode: CloudBackupSelectionMode;
+    personIds?: string[];
+    /** A tag also chooses the tags inside it */
+    tagIds?: string[];
 };
 export type CloudBackupOwnerSetupResponseDto = {
     /** A bucket holds this server’s Frameleaf claim */
@@ -16180,6 +16279,12 @@ export type NotificationSearchDto = {
     "type"?: NotificationType;
     /** Filter by unread status */
     unread?: boolean;
+};
+export type OwnerBackupExclusionsDto = {
+    afterId?: string;
+    limit?: number;
+    /** The backup run’s manifest in the bucket */
+    manifestKey: string;
 };
 export type OwnerBackupHistoryDto = {
     limit?: number;
@@ -17694,6 +17799,17 @@ export function checkCloudBackupBucket({ cloudBackupCheckDto }: {
     })));
 }
 /**
+ * Who is backed up
+ */
+export function getCloudBackupCoverage(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupCoverageResponseDto;
+    }>("/admin/cloud/backup/coverage", {
+        ...opts
+    }));
+}
+/**
  * Remove the key copy from Frameleaf Cloud
  */
 export function removeCloudBackupEscrow(opts?: Oazapfts.RequestOpts) {
@@ -17771,6 +17887,21 @@ export function listCloudBackupManifestAlbums({ cloudBackupManifestAlbumsDto }: 
         ...opts,
         method: "POST",
         body: cloudBackupManifestAlbumsDto
+    })));
+}
+/**
+ * Count the items a backup holds no original of, and why
+ */
+export function getCloudBackupManifestExclusions({ cloudBackupExclusionsDto }: {
+    cloudBackupExclusionsDto: CloudBackupExclusionsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupExclusionsResponseDto;
+    }>("/admin/cloud/backup/manifests/exclusions", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudBackupExclusionsDto
     })));
 }
 /**
@@ -29632,6 +29763,25 @@ export function listOwnKeptBackups({ limit, offset }: {
     }));
 }
 /**
+ * List your items a kept backup holds no original of, and why
+ */
+export function listOwnBackupExclusions({ afterId, limit, manifestKey }: {
+    afterId?: string;
+    limit?: number;
+    manifestKey: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OwnerBackupExclusionsResponseDto;
+    }>(`/users/me/cloud-backup/exclusions${QS.query(QS.explode({
+        afterId,
+        limit,
+        manifestKey
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Search own deleted history in one kept backup
  */
 export function getOwnBackupHistory({ limit, manifestKey, offset, query }: {
@@ -29687,6 +29837,32 @@ export function restoreOwnBackupItems({ ownerBackupRestoreDto }: {
         ...opts,
         method: "POST",
         body: ownerBackupRestoreDto
+    })));
+}
+/**
+ * Get what Cloud Backup keeps of your library
+ */
+export function getOwnCloudBackupSelection(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupSelectionResponseDto;
+    }>("/users/me/cloud-backup/selection", {
+        ...opts
+    }));
+}
+/**
+ * Choose what Cloud Backup keeps of your library
+ */
+export function setOwnCloudBackupSelection({ cloudBackupSelectionUpdateDto }: {
+    cloudBackupSelectionUpdateDto: CloudBackupSelectionUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupSelectionResponseDto;
+    }>("/users/me/cloud-backup/selection", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: cloudBackupSelectionUpdateDto
     })));
 }
 /**
@@ -30212,6 +30388,12 @@ export enum CloudBackupTask {
     Verify = "verify",
     Prune = "prune"
 }
+export enum CloudBackupCoverageState {
+    Published = "published",
+    Pending = "pending",
+    NotReported = "not-reported",
+    Local = "local"
+}
 export enum CloudBackupKeyMode {
     Server = "server",
     OwnStored = "own-stored",
@@ -30247,6 +30429,13 @@ export enum CloudBackupBucketState {
     Empty = "empty",
     Claimed = "claimed",
     NotEmpty = "not-empty"
+}
+export enum CloudBackupCoverageReportState {
+    Published = "published",
+    Pending = "pending",
+    NotReported = "not-reported",
+    Local = "local",
+    Unknown = "unknown"
 }
 export enum CloudBackupManifestStatus {
     Complete = "complete",
@@ -33611,6 +33800,12 @@ export enum OwnerBackupKeptStatus {
     Complete = "complete",
     Degraded = "degraded"
 }
+export enum CloudBackupExclusionReason {
+    Selection = "selection",
+    Licence = "licence",
+    NotCommitted = "not-committed",
+    Unknown = "unknown"
+}
 export enum OwnerBackupDeletionDateState {
     Available = "available",
     Unavailable = "unavailable"
@@ -33618,6 +33813,14 @@ export enum OwnerBackupDeletionDateState {
 export enum OwnerBackupItemState {
     Trashed = "trashed",
     Deleted = "deleted"
+}
+export enum CloudBackupDateRangeKind {
+    Between = "between",
+    Recent = "recent"
+}
+export enum CloudBackupSelectionMode {
+    Everything = "everything",
+    Chosen = "chosen"
 }
 export enum CloudBackupOwnerSetupEntitlement {
     NotApplicable = "not-applicable",

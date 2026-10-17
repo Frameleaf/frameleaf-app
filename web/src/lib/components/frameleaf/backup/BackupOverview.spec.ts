@@ -38,6 +38,12 @@ describe('Backup › Overview (FL-362)', () => {
     sdkMock.listDatabaseBackups.mockResolvedValue({ backups: [] });
     sdkMock.getBuddyBackupStatus.mockResolvedValue({ enabled: false, pairing: null, settings: null } as never);
     sdkMock.getCloudBackupStatus.mockResolvedValue({ configured: false } as never);
+    sdkMock.getCloudBackupCoverage.mockResolvedValue({
+      runId: null,
+      inventoryAt: null,
+      state: 'unknown',
+      accounts: [],
+    } as never);
   });
 
   it('says there is no backup away from home and offers the two ways to start', async () => {

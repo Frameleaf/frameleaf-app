@@ -126,6 +126,7 @@ export const cloudBackupStatus = (mock: CloudBackupMockState) => ({
   keyFingerprint: mock.configured ? GENERATED_KEY.fingerprint : null,
   keyLoaded: mock.configured,
   lastRun: null,
+  coverage: null,
   lastSuccessAt: null,
   lastManifestKey: null,
   usage: mock.configured ? { objects: 0, bytes: 0 } : null,
@@ -210,6 +211,24 @@ export const setupCloudBackupMockApiRoutes = async (context: BrowserContext, moc
           (filter === 'all' || (filter === 'deleted' ? item.state === 'deleted' : item.state !== 'deleted')),
       );
       return route.fulfill({ status: 200, json: { manifestKey: MANIFESTS[0].key, total: items.length, items } });
+    }
+    if (method === 'POST' && path === 'admin/cloud/backup/manifests/exclusions') {
+      // FL-362: every item of the mocked library has its original in the backup
+      return route.fulfill({
+        status: 200,
+        json: {
+          manifestKey: MANIFESTS[0].key,
+          decisionKnown: true,
+          totals: { selection: 0, licence: 0, notCommitted: 0, unknown: 0 },
+          accounts: [],
+        },
+      });
+    }
+    if (method === 'GET' && path === 'admin/cloud/backup/coverage') {
+      return route.fulfill({
+        status: 200,
+        json: { runId: null, inventoryAt: null, state: 'unknown', accounts: [] },
+      });
     }
     if (method === 'POST' && path === 'admin/cloud/backup/manifests/albums') {
       return route.fulfill({

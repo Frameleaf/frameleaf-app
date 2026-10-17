@@ -1678,6 +1678,53 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/backup/coverage": {
+      "get": {
+        "description": "FL-362: each account’s numbers in the newest run’s coverage report (originals, the ones its choice keeps, licence eligibility, the ones in the backup) and whether the report reached Frameleaf Cloud. Never what an account chose.",
+        "operationId": "getCloudBackupCoverage",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupCoverageResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Who is backed up",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/backup/escrow": {
       "delete": {
         "description": "Deletes the wrapped key Frameleaf Cloud keeps for this server.",
@@ -1970,6 +2017,63 @@
           }
         ],
         "summary": "List the albums a backup can bring back",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/backup/manifests/exclusions": {
+      "post": {
+        "description": "FL-362: per account, the items this server holds whose original is not in one kept backup, by reason (left out by the account’s choice, no licence, not backed up yet, unknown), from that backup’s own decision. Counts only: never what an account chose. Reads the backup’s manifest from the bucket.",
+        "operationId": "getCloudBackupManifestExclusions",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudBackupExclusionsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupExclusionsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Count the items a backup holds no original of, and why",
         "tags": [
           "Frameleaf Cloud backup (admin)"
         ],
@@ -51171,6 +51275,84 @@
         "x-immich-permission": "asset.read"
       }
     },
+    "/users/me/cloud-backup/exclusions": {
+      "get": {
+        "description": "FL-362: from that backup’s own decision: left out by your selection, no licence for your account, not backed up yet, or unknown for a backup made before choices were recorded. A Locked item is never named.",
+        "operationId": "listOwnBackupExclusions",
+        "parameters": [
+          {
+            "name": "afterId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 100,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "manifestKey",
+            "required": true,
+            "in": "query",
+            "description": "The backup run’s manifest in the bucket",
+            "schema": {
+              "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerBackupExclusionsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List your items a kept backup holds no original of, and why",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/users/me/cloud-backup/history": {
       "get": {
         "description": "Caller-owned trashed/deleted entries from a chosen kept manifest. Unknown physical deletion dates are explicit; file modification and backup dates are never deletion dates. Historical missing owner/privacy evidence is excluded. Does not restore items.",
@@ -51399,6 +51581,106 @@
           }
         ],
         "x-immich-permission": "asset.update"
+      }
+    },
+    "/users/me/cloud-backup/selection": {
+      "get": {
+        "description": "FL-362: Everything (the default) or only what you choose: albums, collections, people, tags, folders, favorites and dates. A photo is kept when it matches any choice. With how many of your photos and videos it keeps now. Your choice stays on this server.",
+        "operationId": "getOwnCloudBackupSelection",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupSelectionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get what Cloud Backup keeps of your library",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.read",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "FL-362: only your own albums (or ones shared with you), collections, people and tags can be chosen. The next backup takes it; library data is always backed up in full.",
+        "operationId": "setOwnCloudBackupSelection",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudBackupSelectionUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupSelectionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Choose what Cloud Backup keeps of your library",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
       }
     },
     "/users/me/cloud-backup/setup": {
@@ -67138,6 +67420,47 @@
         ],
         "type": "object"
       },
+      "CloudBackupAccountExclusionsDto": {
+        "properties": {
+          "licence": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notCommitted": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "selection": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "unknown": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "userId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "licence",
+          "name",
+          "notCommitted",
+          "selection",
+          "unknown",
+          "userId"
+        ],
+        "type": "object"
+      },
       "CloudBackupActiveRestoreDto": {
         "properties": {
           "bytes": {
@@ -67291,6 +67614,163 @@
         ],
         "type": "object"
       },
+      "CloudBackupCoverageAccountDto": {
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "includedOriginals": {
+            "description": "null: not known for this run",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "licenceEligible": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "selectedOriginals": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "totalOriginals": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "userId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "includedOriginals",
+          "licenceEligible",
+          "name",
+          "selectedOriginals",
+          "totalOriginals",
+          "userId"
+        ],
+        "type": "object"
+      },
+      "CloudBackupCoverageReportState": {
+        "description": "unknown: no run has taken an inventory yet",
+        "enum": [
+          "published",
+          "pending",
+          "not-reported",
+          "local",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "CloudBackupCoverageResponseDto": {
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/CloudBackupCoverageAccountDto"
+            },
+            "type": "array"
+          },
+          "inventoryAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "runId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CloudBackupCoverageReportState"
+          }
+        },
+        "required": [
+          "accounts",
+          "inventoryAt",
+          "runId",
+          "state"
+        ],
+        "type": "object"
+      },
+      "CloudBackupCoverageState": {
+        "description": "local: your own bucket, kept on this server; not-reported: refused or expired",
+        "enum": [
+          "published",
+          "pending",
+          "not-reported",
+          "local"
+        ],
+        "type": "string"
+      },
+      "CloudBackupCoverageStatusDto": {
+        "properties": {
+          "attempts": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "inventoryAt": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CloudBackupCoverageState"
+          }
+        },
+        "required": [
+          "attempts",
+          "inventoryAt",
+          "runId",
+          "state"
+        ],
+        "type": "object"
+      },
+      "CloudBackupDateRangeDto": {
+        "properties": {
+          "from": {
+            "description": "between: the first day",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CloudBackupDateRangeKind"
+          },
+          "months": {
+            "description": "recent: how many months back from each backup",
+            "maximum": 1200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "to": {
+            "description": "between: the last day",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "CloudBackupDateRangeKind": {
+        "enum": [
+          "between",
+          "recent"
+        ],
+        "type": "string"
+      },
       "CloudBackupEscrowDto": {
         "properties": {
           "passphrase": {
@@ -67323,6 +67803,87 @@
           "available",
           "stored",
           "storedAt"
+        ],
+        "type": "object"
+      },
+      "CloudBackupExclusionCountsDto": {
+        "properties": {
+          "licence": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "notCommitted": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "selection": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "unknown": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "licence",
+          "notCommitted",
+          "selection",
+          "unknown"
+        ],
+        "type": "object"
+      },
+      "CloudBackupExclusionReason": {
+        "description": "selection: left out by the account’s choice; licence: the licence did not cover the account; not-committed: chosen but not in this backup yet; unknown: the backup holds no decision",
+        "enum": [
+          "selection",
+          "licence",
+          "not-committed",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "CloudBackupExclusionsDto": {
+        "properties": {
+          "manifestKey": {
+            "description": "The backup run’s manifest in the bucket",
+            "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "manifestKey"
+        ],
+        "type": "object"
+      },
+      "CloudBackupExclusionsResponseDto": {
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/CloudBackupAccountExclusionsDto"
+            },
+            "type": "array"
+          },
+          "decisionKnown": {
+            "description": "This database holds the decision of the run that wrote the backup",
+            "type": "boolean"
+          },
+          "manifestKey": {
+            "type": "string"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/CloudBackupExclusionCountsDto"
+          }
+        },
+        "required": [
+          "accounts",
+          "decisionKnown",
+          "manifestKey",
+          "totals"
         ],
         "type": "object"
       },
@@ -68190,6 +68751,180 @@
         ],
         "type": "object"
       },
+      "CloudBackupSelectionMode": {
+        "description": "everything: the whole library (the default); chosen: what matches any choice",
+        "enum": [
+          "everything",
+          "chosen"
+        ],
+        "type": "string"
+      },
+      "CloudBackupSelectionResponseDto": {
+        "properties": {
+          "albumIds": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "collectionIds": {
+            "default": [],
+            "description": "A collection chooses the albums it holds",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "dateRanges": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CloudBackupDateRangeDto"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "favorites": {
+            "default": false,
+            "type": "boolean"
+          },
+          "folders": {
+            "default": [],
+            "description": "Folders as the Folders view names them; a folder also chooses the folders inside it",
+            "items": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/CloudBackupSelectionMode"
+          },
+          "personIds": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "selectedOriginals": {
+            "description": "Of those, the ones your choice keeps now",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "tagIds": {
+            "default": [],
+            "description": "A tag also chooses the tags inside it",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "totalOriginals": {
+            "description": "Photos and videos of yours that Cloud Backup can keep",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mode",
+          "selectedOriginals",
+          "totalOriginals"
+        ],
+        "type": "object"
+      },
+      "CloudBackupSelectionUpdateDto": {
+        "properties": {
+          "albumIds": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "collectionIds": {
+            "default": [],
+            "description": "A collection chooses the albums it holds",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "dateRanges": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CloudBackupDateRangeDto"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "favorites": {
+            "default": false,
+            "type": "boolean"
+          },
+          "folders": {
+            "default": [],
+            "description": "Folders as the Folders view names them; a folder also chooses the folders inside it",
+            "items": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/CloudBackupSelectionMode"
+          },
+          "personIds": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "tagIds": {
+            "default": [],
+            "description": "A tag also chooses the tags inside it",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
       "CloudBackupSetupDto": {
         "properties": {
           "acknowledgement": {
@@ -68249,6 +68984,15 @@
           "configured": {
             "description": "A bucket is claimed and cloud backup is on",
             "type": "boolean"
+          },
+          "coverage": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudBackupCoverageStatusDto"
+              }
+            ],
+            "description": "The newest run's coverage report (FL-362)",
+            "nullable": true
           },
           "endpoint": {
             "nullable": true,
@@ -68365,6 +69109,7 @@
           "bucket",
           "claimedAt",
           "configured",
+          "coverage",
           "endpoint",
           "escrow",
           "instanceId",
@@ -88088,6 +88833,80 @@
           "unavailable"
         ],
         "type": "string"
+      },
+      "OwnerBackupExclusionDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/CloudBackupExclusionReason"
+          }
+        },
+        "required": [
+          "assetId",
+          "name",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "OwnerBackupExclusionsDto": {
+        "properties": {
+          "afterId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "manifestKey": {
+            "description": "The backup run’s manifest in the bucket",
+            "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "manifestKey"
+        ],
+        "type": "object"
+      },
+      "OwnerBackupExclusionsResponseDto": {
+        "properties": {
+          "decisionKnown": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerBackupExclusionDto"
+            },
+            "type": "array"
+          },
+          "manifestKey": {
+            "type": "string"
+          },
+          "nextAfterId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decisionKnown",
+          "items",
+          "manifestKey",
+          "nextAfterId"
+        ],
+        "type": "object"
       },
       "OwnerBackupHistoryDto": {
         "properties": {
