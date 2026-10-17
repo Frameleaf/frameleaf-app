@@ -174,8 +174,8 @@ export const turn = (rotation: NativeRecipe['rotation'], by: 90 | -90) =>
 /* Masks ------------------------------------------------------------------ */
 
 export type MaskKind = NativeMask['kind'];
-const SUGGESTED_KINDS: readonly MaskKind[] = ['subject', 'sky', 'background'];
-export const isSuggested = (kind: MaskKind) => SUGGESTED_KINDS.includes(kind);
+const SUGGESTED_KINDS: ReadonlySet<MaskKind> = new Set(['subject', 'sky', 'background']);
+export const isSuggested = (kind: MaskKind) => SUGGESTED_KINDS.has(kind);
 export const isPainted = (kind: MaskKind) => kind === 'brush' || isSuggested(kind);
 export const isPlaced = (kind: MaskKind) => kind === 'radial' || kind === 'linear';
 

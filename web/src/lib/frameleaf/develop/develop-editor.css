@@ -141,7 +141,7 @@
 }
 .rde-save-status {
   min-width: 124px;
-  text-align: right;
+  text-align: end;
 }
 .rde-save-status.warning {
   color: var(--fl-warning);
@@ -156,7 +156,7 @@
   scrollbar-width: thin;
 }
 .rde-left {
-  border-right: 1px solid var(--fl-border);
+  border-inline-end: 1px solid var(--fl-border);
   display: flex;
   flex-direction: column;
 }
@@ -244,7 +244,7 @@
   padding: 5px;
   border: 1px solid transparent;
   color: var(--fl-text);
-  text-align: left;
+  text-align: start;
   border-radius: var(--fl-radius-sm);
   background: transparent;
 }
@@ -635,7 +635,7 @@
 
 /* Inspector */
 .rde-inspector {
-  border-left: 1px solid var(--fl-border);
+  border-inline-start: 1px solid var(--fl-border);
   display: grid;
   grid-template-rows: 43px minmax(0, 1fr) 34px;
   overflow: hidden;
@@ -838,7 +838,7 @@
 }
 .rde-mask-row > button:first-child {
   flex: 1;
-  text-align: left;
+  text-align: start;
   min-width: 0;
   font-size: 10px;
 }
@@ -891,7 +891,7 @@
   background: var(--fl-canvas);
   color: var(--fl-text);
   padding: 0;
-  text-align: left;
+  text-align: start;
 }
 .rde-presets > button[aria-pressed='true'] {
   outline: 1px solid var(--fl-accent);
@@ -968,7 +968,7 @@
 }
 .rde-saved-presets button:first-child {
   flex: 1;
-  text-align: left;
+  text-align: start;
 }
 .rde-version {
   margin-top: 12px;
@@ -985,7 +985,7 @@
   background: transparent;
   color: var(--fl-text);
   padding: 7px;
-  text-align: left;
+  text-align: start;
 }
 .rde-version .rde-thumb {
   width: 47px;
@@ -1086,8 +1086,8 @@
 }
 .rde-export-status {
   color: var(--fl-muted);
-  border-left: 2px solid var(--fl-accent);
-  padding-left: 10px;
+  border-inline-start: 2px solid var(--fl-accent);
+  padding-inline-start: 10px;
 }
 
 @media (pointer: coarse) {
