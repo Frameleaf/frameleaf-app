@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
 import { ApiNotFoundResponse, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
@@ -10,6 +10,9 @@ import {
   ServerAppReleasesResponseDto,
   ServerConfigDto,
   ServerFeaturesDto,
+  ServerIdentityChallengeDto,
+  ServerIdentityChallengeResponseDto,
+  ServerIdentityResponseDto,
   ServerMediaTypesResponseDto,
   ServerPingResponse,
   ServerStatsResponseDto,
@@ -20,10 +23,12 @@ import {
 import { VersionCheckStateResponseDto } from 'src/dtos/system-metadata.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Authenticated } from 'src/middleware/auth.guard.js';
-import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
+import { type FrameleafRequest, requestVia } from 'src/middleware/frameleaf-via.middleware.js';
+import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { ServerService } from 'src/services/server.service.js';
 import { SystemMetadataService } from 'src/services/system-metadata.service.js';
 import { VersionService } from 'src/services/version.service.js';
+import { identityRequestOrigin } from 'src/utils/frameleaf-server-identity-proof.js';
 
 @ApiTags(ApiTag.Server)
 @Controller('server')
@@ -102,6 +107,40 @@ export class ServerController {
   })
   pingServer(): Promise<ServerPingResponse> {
     return this.service.ping();
+  }
+
+  @Get('identity')
+  @Authenticated({ public: true })
+  @Endpoint({
+    summary: 'Get server identity keys',
+    description:
+      "This server's Ed25519 identity keys as `identityKeys: [{kid, jwk}]` (the same shape Frameleaf Cloud lists per instance). Public, but an app pins them only when it read them over a trusted path (https with a verified certificate, the relay, or Frameleaf Cloud) - see `POST /server/identity/challenge`.",
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getServerIdentity(): Promise<ServerIdentityResponseDto> {
+    return this.service.getIdentity();
+  }
+
+  @Post('identity/challenge')
+  @Authenticated({ public: true })
+  @RateLimited(RATE_LIMITS.serverIdentityChallenge)
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Prove server identity',
+    description:
+      'Signs the app nonce, this server id and the origin the request arrived on with the identity key, so an app can confirm a plain-http home-network address is the server it pinned before it sends a session token. Proves key possession only, not channel binding: prefer https or the relay when available.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  serverIdentityChallenge(
+    @Req() request: Request,
+    @Body() dto: ServerIdentityChallengeDto,
+  ): Promise<ServerIdentityChallengeResponseDto> {
+    const origin = identityRequestOrigin({
+      protocol: request.protocol,
+      host: request.get('host'),
+      forwarded: (request as FrameleafRequest).frameleafForwarded ?? null,
+    });
+    return this.service.identityChallenge(dto.nonce, origin);
   }
 
   @Get('version')
