@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { SystemMetadataKey } from 'src/enum.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
@@ -113,7 +114,7 @@ describe('FL310 C1 recovery authority and settings policy on canonical PG', () =
               files: mode === 'file' && choice === 'replace' ? [{ path: filename, ...evidence }] : [],
               manifest: {
                 version: 1,
-                frameleafVersion: '2.6.0',
+                frameleafVersion: serverVersion.toString(),
                 storageRoot: directory,
                 storageRoots: [directory],
                 library: {},

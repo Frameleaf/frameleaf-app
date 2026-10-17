@@ -32,6 +32,16 @@ test("version preparation updates the application together, preserves import his
     setVersion(root, "1.0.0");
     setVersion(root, "1.0.0", true);
     assert.equal(
+      fs
+        .readFileSync(
+          path.join(root, "open-api/immich-openapi-specs.json"),
+          "utf8",
+        )
+        .endsWith("\n"),
+      false,
+      "OpenAPI bytes must match the server generator",
+    );
+    assert.equal(
       JSON.parse(fs.readFileSync(path.join(root, "server/package.json")))
         .version,
       "1.0.0",

@@ -45,7 +45,7 @@ function versionFiles(root, version) {
   const document = JSON.parse(body);
   assert.equal(document.info.title, "Frameleaf");
   document.info.version = version;
-  files.set(spec, JSON.stringify(document, null, 2) + "\n");
+  files.set(spec, JSON.stringify(document, null, 2));
   const sdk = "packages/sdk/src/fetch-client.ts";
   const client = fs.readFileSync(path.join(root, sdk), "utf8");
   assert.match(client, / \* Frameleaf\n \* [^\n]+\n/);
