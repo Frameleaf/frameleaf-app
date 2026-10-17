@@ -114,7 +114,7 @@
       }
       await navigate(
         { targetRoute: 'current', assetId: null, assetGridRouteSearchParams: assetViewerManager.gridScrollTarget },
-        { forceNavigate: true, replaceState: true },
+        { forceNavigate: true, replaceState: true, invalidateAll: true },
       );
     } catch (error) {
       if (!isCurrent()) {
