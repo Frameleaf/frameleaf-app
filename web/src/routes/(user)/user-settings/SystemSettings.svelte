@@ -35,6 +35,9 @@
   import SmartAlbums from '$lib/components/frameleaf/settings/intelligence/SmartAlbums.svelte';
   import TextInPhotos from '$lib/components/frameleaf/settings/intelligence/TextInPhotos.svelte';
   import VisualSearch from '$lib/components/frameleaf/settings/intelligence/VisualSearch.svelte';
+  import AiRestoration from '$lib/components/frameleaf/settings/editing/AiRestoration.svelte';
+  import EditedMasters from '$lib/components/frameleaf/settings/editing/EditedMasters.svelte';
+  import StudioStatus from '$lib/components/frameleaf/settings/editing/StudioStatus.svelte';
   import LibrariesArea from '$lib/components/frameleaf/LibrariesArea.svelte';
   import ConfigurationTransferSection from '$lib/components/frameleaf/settings/ConfigurationTransferSection.svelte';
   import SettingsHost from '$lib/components/frameleaf/settings/SettingsHost.svelte';
@@ -90,10 +93,12 @@
     mdiFileCheckOutline,
     mdiFileDocumentOutline,
     mdiFolderOutline,
+    mdiImageEditOutline,
     mdiImageMultipleOutline,
     mdiImageOutline,
     mdiLockOutline,
     mdiMapMarkerOutline,
+    mdiMovieEditOutline,
     mdiPaletteOutline,
     mdiRobotOutline,
     mdiServerOutline,
@@ -374,6 +379,31 @@
       subtitle: $t('frameleaf_cc_section_playback_description'),
       key: 'video-transcoding',
       icon: mdiVideoOutline,
+    },
+    // FL-422: Editing & playback's Editing group (settings-catalog.mjs:740-822).
+    {
+      admin: true,
+      component: EditedMasters,
+      title: $t('frameleaf_cc_section_masters'),
+      subtitle: $t('frameleaf_cc_section_masters_description'),
+      key: 'masters',
+      icon: mdiImageEditOutline,
+    },
+    {
+      admin: true,
+      component: AiRestoration,
+      title: $t('frameleaf_cc_section_restoration'),
+      subtitle: $t('frameleaf_cc_section_restoration_description'),
+      key: 'restoration',
+      icon: mdiAutoFix,
+    },
+    {
+      admin: true,
+      component: StudioStatus,
+      title: $t('frameleaf_cc_section_studio'),
+      subtitle: $t('frameleaf_cc_section_studio_description'),
+      key: 'studio',
+      icon: mdiMovieEditOutline,
     },
     {
       // The template's Server & updates → "Configuration transfer" (`ConfigurationTransfer.jsx`).

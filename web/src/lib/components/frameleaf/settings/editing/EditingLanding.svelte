@@ -5,10 +5,8 @@
    * that decide how (preview quality and which videos get a playback copy), then one row for each
    * page.
    *
-   * ADMIN-P5: the prototype's Editing group. The app has no settings of its own for these yet, so
-   * each row opens the page where that work is decided today: AI restoration opens Where work runs,
-   * and Studio & Dolby Vision opens Graphics card check, which says whether Studio exports can be
-   * made. Edited masters has nothing in the app to set, so it is left out.
+   * The prototype's Editing group (ADMIN-P5, FL-422) opens the area's own Edited masters, AI
+   * restoration and Studio & Dolby Vision pages.
    *
    * "Ready" is read from the preview and video conversion work still waiting. Left for later (server
    * work): the space the copies take beside the originals, how many videos have a copy, and the
@@ -25,6 +23,7 @@
   import { getQueue, QueueName, TranscodePolicy } from '@frameleaf/sdk';
   import {
     mdiAutoFix,
+    mdiImageEditOutline,
     mdiImageMultipleOutline,
     mdiMovieEditOutline,
     mdiPlayBoxMultipleOutline,
@@ -103,32 +102,25 @@
       : [],
   );
 
-  const rows = $derived(
-    sections.map((section): LinkRow => {
-      const page = PAGES[section.key];
-      return {
-        icon: page?.icon ?? section.icon,
-        title: page ? $t(page.title) : section.title,
-        body: page ? $t(page.body) : section.subtitle,
-        href: commandCenterUrl('editing', section.key),
-      };
-    }),
-  );
+  /** The Editing group's pages (FL-422), after Viewing's. */
+  const EDITING_PAGES: Record<string, string> = {
+    masters: mdiImageEditOutline,
+    restoration: mdiAutoFix,
+    studio: mdiMovieEditOutline,
+  };
 
-  const editingRows = $derived<LinkRow[]>([
-    {
-      icon: mdiAutoFix,
-      title: $t('frameleaf_play_editing_restoration'),
-      body: $t('frameleaf_play_editing_restoration_row'),
-      href: commandCenterUrl('processing', 'routing'),
-    },
-    {
-      icon: mdiMovieEditOutline,
-      title: $t('frameleaf_play_editing_studio'),
-      body: $t('frameleaf_play_editing_studio_row'),
-      href: commandCenterUrl('processing', 'hardware'),
-    },
-  ]);
+  const linkTo = (section: SettingsHostSection): LinkRow => {
+    const page = PAGES[section.key];
+    return {
+      icon: page?.icon ?? EDITING_PAGES[section.key] ?? section.icon,
+      title: page ? $t(page.title) : section.title,
+      body: page ? $t(page.body) : section.subtitle,
+      href: commandCenterUrl('editing', section.key),
+    };
+  };
+
+  const rows = $derived(sections.filter((section) => !Object.hasOwn(EDITING_PAGES, section.key)).map(linkTo));
+  const editingRows = $derived(sections.filter((section) => Object.hasOwn(EDITING_PAGES, section.key)).map(linkTo));
 </script>
 
 <KitPage>
@@ -150,7 +142,9 @@
     <Links {rows} />
   </Section>
 
-  <Section title={$t('frameleaf_play_landing_editing')}>
-    <Links rows={editingRows} />
-  </Section>
+  {#if editingRows.length > 0}
+    <Section title={$t('frameleaf_play_landing_editing')}>
+      <Links rows={editingRows} />
+    </Section>
+  {/if}
 </KitPage>
