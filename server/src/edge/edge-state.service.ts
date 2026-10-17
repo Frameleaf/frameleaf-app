@@ -453,6 +453,8 @@ export class EdgeStateService {
         port: this.listenPort(),
         mapping: settings.portMapping ? null : { externalPort: settings.directPort, method: 'manual' as const },
         cgnatSuspected: false,
+        // the mode actually served: Buddy-only and licence-only (FL-437) serve direct whatever the saved mode
+        allowWan: settings.mode === 'relay-and-direct',
       },
       candidates: [],
     };

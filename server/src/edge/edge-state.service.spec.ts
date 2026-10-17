@@ -816,6 +816,8 @@ describe(EdgeStateService.name, () => {
           reason: NO_PLAN,
           names: { label: 'u225vlzhsdlhwh4l' },
           relay: { connected: false, needsPlan: true },
+          // the heartbeat reports direct connections from this, not from the saved mode
+          direct: { listening: true, allowWan: true },
         });
         const candidates = remoteState()!.candidates;
         expect(candidates.some((candidate) => candidate.relay)).toBe(false);

@@ -1444,6 +1444,11 @@ export type FrameleafRemoteAccess = {
     port: number;
     mapping?: { externalPort: number; method: 'manual' | 'upnp' | 'nat-pmp' } | null;
     cgnatSuspected: boolean;
+    /**
+     * FL-437: the listener takes connections from the internet (the mode actually served). Buddy-only and
+     * licence-only (no plan) servers serve direct whatever the saved connection mode says.
+     */
+    allowWan?: boolean;
     /** FL-167: the router's public address (automatic mapping) or the check-in's (manual port). */
     externalIp?: string | null;
     /** FL-167: why the router did not open the port. */
