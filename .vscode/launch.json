@@ -6,7 +6,7 @@
       "request": "attach",
       "restart": true,
       "port": 9231,
-      "name": "Immich API Server",
+      "name": "Frameleaf API Server",
       "remoteRoot": "/usr/src/app/server",
       "localRoot": "${workspaceFolder}/server"
     },
@@ -15,14 +15,14 @@
       "request": "attach",
       "restart": true,
       "port": 9230,
-      "name": "Immich Workers",
+      "name": "Frameleaf Workers",
       "remoteRoot": "/usr/src/app/server",
       "localRoot": "${workspaceFolder}/server"
     },
     {
       "type": "node",
       "request": "launch",
-      "name": "Immich CLI",
+      "name": "Frameleaf CLI",
       "program": "${workspaceFolder}/packages/cli/dist/index.js",
       "args": ["upload", "--help"],
       "runtimeArgs": ["--enable-source-maps"],

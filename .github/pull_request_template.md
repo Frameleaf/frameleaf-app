@@ -48,7 +48,7 @@ The `/api/something` endpoint is now `/api/something-else`
 - [ ] I have written tests for new code (if applicable)
 - [ ] I have followed naming conventions/patterns in the surrounding code
 - [ ] All code in `src/services/` uses repositories implementations for database calls, filesystem operations, etc.
-- [ ] All code in `src/repositories/` is pretty basic/simple and does not have any immich specific logic (that belongs in `src/services/`)
+- [ ] All code in `src/repositories/` is pretty basic/simple and does not have any Frameleaf-specific logic (that belongs in `src/services/`)
 
 ## Please describe to which degree, if any, an LLM was used in creating this pull request.
 

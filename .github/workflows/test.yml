@@ -698,17 +698,17 @@ jobs:
         id: docker
         run: docker compose up -d --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
         if: ${{ !cancelled() }}
-      - name: Wait for Immich server readiness
+      - name: Wait for Frameleaf server readiness
         id: server-ready
         env:
           SERVER_PING_URL: http://127.0.0.1:2285/api/server/ping
         run: |
           if timeout 120s bash -c 'until curl --fail --silent --max-time 2 "$SERVER_PING_URL" > /dev/null; do sleep 2; done'; then
-            echo "Immich server is ready"
+            echo "Frameleaf server is ready"
             exit 0
           fi
 
-          echo "::error::Immich server did not become ready within 120 seconds"
+          echo "::error::Frameleaf server did not become ready within 120 seconds"
           docker compose ps
           docker compose logs --no-color --tail 200 frameleaf-server
           exit 1
