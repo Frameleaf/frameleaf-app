@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { type Insertable, type Kysely, type Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { type HiddenContentQueryOptions, everyOwnersRules } from 'src/utils/hidden-content.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserRole, SharedSpaceEventType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
@@ -12,6 +11,7 @@ import { SharedSpaceEventTable } from 'src/schema/tables/shared-space-event.tabl
 import { SharedSpaceInviteTable } from 'src/schema/tables/shared-space-invite.table.js';
 import { SharedSpacePersonTable } from 'src/schema/tables/shared-space-person.table.js';
 import { withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database.js';
+import { type HiddenContentQueryOptions, everyOwnersRules } from 'src/utils/hidden-content.js';
 
 export type AlbumPermissionId = {
   albumId: string;
