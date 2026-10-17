@@ -34,23 +34,24 @@ const paired = (): BuddyStatusDto => ({
 });
 
 describe('Buddy backup controls and recovery presentation', () => {
-  it('keeps recovery after a subscription expires or the write kill switch turns off', () => {
+  it('keeps a direct pairing sending without a plan; only the write kill switch leaves recovery (FL-434)', () => {
     const status = paired();
-    expect(buddyBackupPresentation(status, true, false)).toMatchObject({
+    expect(buddyBackupPresentation(status, true)).toMatchObject({ write: true, read: true });
+    expect(buddyBackupPresentation(status, true).outgoing).not.toBe('frameleaf_backup_recovery_only');
+    status.enabled = false;
+    expect(buddyBackupPresentation(status, true)).toMatchObject({
       outgoing: 'frameleaf_backup_recovery_only',
       incoming: 'frameleaf_backup_recovery_only',
       write: false,
       send: false,
       read: true,
     });
-    status.enabled = false;
-    expect(buddyBackupPresentation(status, true, true)).toMatchObject({ write: false, send: false, read: true });
   });
 
   it('never reopens a blocked pairing after its key is verified', () => {
     const status = paired();
     status.pairing!.state = BuddyPairingState.Blocked;
-    expect(buddyBackupPresentation(status, true, true)).toMatchObject({
+    expect(buddyBackupPresentation(status, true)).toMatchObject({
       outgoing: 'frameleaf_backup_blocked',
       incoming: 'frameleaf_backup_blocked',
       write: false,
@@ -62,12 +63,12 @@ describe('Buddy backup controls and recovery presentation', () => {
     const status = paired();
     status.pairing!.state = BuddyPairingState.Ended;
     status.pairing!.readUntil = '2026-11-01T00:00:00Z';
-    expect(buddyBackupPresentation(status, true, false, Date.parse('2026-10-31T23:59:59Z'))).toMatchObject({
+    expect(buddyBackupPresentation(status, true, Date.parse('2026-10-31T23:59:59Z'))).toMatchObject({
       send: false,
       write: false,
       read: true,
     });
-    expect(buddyBackupPresentation(status, true, true, Date.parse(status.pairing!.readUntil))).toMatchObject({
+    expect(buddyBackupPresentation(status, true, Date.parse(status.pairing!.readUntil))).toMatchObject({
       send: false,
       write: false,
       read: false,
@@ -76,9 +77,9 @@ describe('Buddy backup controls and recovery presentation', () => {
 
   it('requires Cloud authorization and the source key without hiding incoming storage', () => {
     const status = paired();
-    expect(buddyBackupPresentation(status, false, true)).toMatchObject({ send: false, write: false, read: false });
+    expect(buddyBackupPresentation(status, false)).toMatchObject({ send: false, write: false, read: false });
     status.keyFingerprint = null;
-    expect(buddyBackupPresentation(status, true, true)).toMatchObject({
+    expect(buddyBackupPresentation(status, true)).toMatchObject({
       outgoing: 'frameleaf_backup_key_required',
       incoming: 'frameleaf_buddy_ready_to_receive',
       send: false,
@@ -90,20 +91,20 @@ describe('Buddy backup controls and recovery presentation', () => {
   it('keeps sending and receiving pause labels independent', () => {
     const status = paired();
     status.settings!.pausedSending = true;
-    expect(buddyBackupPresentation(status, true, true)).toMatchObject({
+    expect(buddyBackupPresentation(status, true)).toMatchObject({
       outgoing: 'frameleaf_backup_paused',
       incoming: 'frameleaf_buddy_ready_to_receive',
       send: true,
     });
     status.settings!.pausedReceiving = true;
-    expect(buddyBackupPresentation(status, true, true).incoming).toBe('frameleaf_buddy_receiving_paused');
+    expect(buddyBackupPresentation(status, true).incoming).toBe('frameleaf_buddy_receiving_paused');
   });
 
   it('keeps replacement recovery available without offering to receive into an unconfigured host', () => {
     const status = paired();
     status.configured = false;
     status.settings = null;
-    expect(buddyBackupPresentation(status, true, true)).toMatchObject({
+    expect(buddyBackupPresentation(status, true)).toMatchObject({
       incoming: 'frameleaf_buddy_not_configured',
       read: true,
       send: false,
@@ -112,9 +113,9 @@ describe('Buddy backup controls and recovery presentation', () => {
   });
 
   it('offers no transfers or restores before pairing is authorized', () => {
-    expect(buddyBackupPresentation(null, true, true)).toMatchObject({ write: false, send: false, read: false });
+    expect(buddyBackupPresentation(null, true)).toMatchObject({ write: false, send: false, read: false });
     const status = paired();
     status.pairing!.state = BuddyPairingState.Pending;
-    expect(buddyBackupPresentation(status, true, true)).toMatchObject({ write: false, send: false, read: false });
+    expect(buddyBackupPresentation(status, true)).toMatchObject({ write: false, send: false, read: false });
   });
 });

@@ -60,6 +60,8 @@ export type BuddyState = {
   run: BuddyRun | null;
   transfer?: { connection: string | null; mbps: number; at: string };
   peerUsage?: { vaultId: string; committedBytes: number; reservedBytes: number; at: string };
+  /** The pairing this server joined by accepting an invitation: only the inviter confirms it (FL-434). */
+  acceptedPairId?: string | null;
 };
 const emptyState = (): BuddyState => ({
   version: 1,

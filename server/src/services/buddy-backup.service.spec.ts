@@ -710,3 +710,63 @@ describe('Buddy production run controls and checkpoints', () => {
     }
   });
 });
+
+describe('Buddy pairing confirmation (FL-434)', () => {
+  let directory: string;
+
+  beforeEach(async () => {
+    vi.stubEnv('FRAMELEAF_BUDDY_BACKUP', 'true');
+    directory = await mkdtemp(join(tmpdir(), 'buddy-confirm-'));
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  const pendingFixture = async () => {
+    const fixture = await createRunFixture(directory);
+    const { service, repository } = fixture;
+    vi.mocked(service.status).mockRestore();
+    const state = await repository.update((current) => ({
+      ...current,
+      pairing: { ...current.pairing!, state: 'pending' as const },
+    }));
+    await mkdir(state.settings!.directory, { recursive: true });
+    const cloud = vi.mocked(service.peer.cloud);
+    vi.mocked(service.peer.pairing).mockImplementation(async () => (await repository.state()).pairing);
+    const instanceId = (await service.peer.identity()).instanceId;
+    return { ...fixture, pending: state.pairing!, cloud, instanceId };
+  };
+
+  it('never asks Cloud to confirm from the invitee: only the inviter confirms', async () => {
+    const { service, pending, cloud, instanceId } = await pendingFixture();
+    cloud.mockResolvedValue(pending);
+    await service.accept({
+      version: 1,
+      token: 'a'.repeat(43),
+      instanceId,
+      quotaBytes: 10 * 1024 ** 3,
+      retention: { days: 30, monthly: 12 },
+    });
+    await expect(service.status()).resolves.toMatchObject({ canConfirm: false });
+    cloud.mockClear();
+
+    await expect(service.relationship('confirm')).rejects.toThrow('Your buddy confirms this pairing');
+    expect(cloud).not.toHaveBeenCalled();
+  });
+
+  it('confirms through Cloud on the inviter’s server', async () => {
+    const { service, pending, cloud } = await pendingFixture();
+    await expect(service.status()).resolves.toMatchObject({ canConfirm: true });
+    cloud.mockResolvedValue({ ...pending, state: 'active' });
+
+    await expect(service.relationship('confirm')).resolves.toMatchObject({
+      canConfirm: false,
+      pairing: { state: 'active' },
+    });
+    expect(cloud).toHaveBeenCalledWith(expect.anything(), `pairings/${pending.pairId}/confirm`, { version: 1 });
+  });
+});
