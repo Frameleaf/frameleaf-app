@@ -33,7 +33,8 @@ test("development diagnostics are read-only and dispatchable through existing Te
   assert.deepEqual(definition.permissions, { contents: "read" });
   const job = definition.jobs.development;
   assert.match(job.if, /Frameleaf\/frameleaf-app/);
-  assert.match(job.if, /refs\/heads\/aj\/FL-333-pg19/);
+  assert.match(job.if, /refs\/heads\/main/);
+  assert.doesNotMatch(job.if, /master\/frameleaf-implementation|aj\/FL-333-pg19/);
   assert.deepEqual(job.permissions, { contents: "read" });
   const checkout = job.steps.find(({ uses }) =>
     uses?.startsWith("actions/checkout@"),

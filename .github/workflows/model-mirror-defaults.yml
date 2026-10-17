@@ -5,7 +5,6 @@ name: Model Mirror Defaults
   pull_request:
     branches:
       - main
-      - master/frameleaf-implementation
     paths:
       - server/src/dtos/config.dto.ts
       - machine-learning/frameleaf_ml/config.py

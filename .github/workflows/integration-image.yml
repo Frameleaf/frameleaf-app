@@ -1,7 +1,7 @@
 # Pre-release integration image for the Frameleaf Cloud cross-repository e2e.
 #
 # Builds the server image (API, microservices and the edge worker) from the tip of
-# master/frameleaf-implementation with the same Dockerfile, target, build arguments and native
+# main with the same Dockerfile, target, build arguments and native
 # per-architecture runners as Deploy (docker.yml -> local-multi-runner-build.yml), and pushes it
 # to ghcr.io/frameleaf/frameleaf-server under integration-<sha> tags only, together with the database image
 # built from docker/postgres, pushed as ghcr.io/frameleaf/frameleaf-postgres:integration-<sha> after the same
@@ -18,14 +18,13 @@
 # (scripts/frameleaf-workflows.test.mjs enforces both).
 name: Integration Image
 
-# A workflow that is not on the default branch (main) cannot be dispatched, so pushes to
-# master/frameleaf-implementation build it. One run at a time: a running build always finishes (the
-# branch moves every few minutes, faster than a build), and a newer push replaces any queued run, so
-# the next build is always the latest head. The manual dispatch stays for when this file reaches the
-# default branch. The guard below still refuses any other branch or repository.
+# Every push to main builds it; a manual dispatch on main rebuilds the current head. One run at a
+# time: a running build always finishes (main can move faster than a build), and a newer push
+# replaces any queued run, so the next build is always the latest head. The guard below refuses any
+# other branch or repository.
 on:
   push:
-    branches: [master/frameleaf-implementation]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -40,11 +39,11 @@ env:
 
 jobs:
   guard:
-    name: Refuse anything but master/frameleaf-implementation
+    name: Refuse anything but main
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
-      - name: Require the Frameleaf repository, the integration branch and a push or manual dispatch
+      - name: Require the Frameleaf repository, main and a push or manual dispatch
         env:
           REPOSITORY: ${{ github.repository }}
           REF: ${{ github.ref }}
@@ -53,14 +52,14 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$REPOSITORY" == Frameleaf/frameleaf-app ]] || { echo "::error::Wrong repository: $REPOSITORY"; exit 1; }
-          [[ "$REF" == refs/heads/master/frameleaf-implementation ]] || { echo "::error::Integration images build only from master/frameleaf-implementation, not $REF"; exit 1; }
+          [[ "$REF" == refs/heads/main ]] || { echo "::error::Integration images build only from main, not $REF"; exit 1; }
           [[ "$EVENT" == push || "$EVENT" == workflow_dispatch ]] || { echo "::error::Push or manual dispatch only, not $EVENT"; exit 1; }
           [[ "$SHA" =~ ^[a-f0-9]{40}$ ]] || { echo "::error::Invalid source SHA"; exit 1; }
 
   build:
     name: Build ${{ matrix.platform }}
     needs: guard
-    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/master/frameleaf-implementation' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     permissions:
@@ -108,7 +107,7 @@ jobs:
             org.opencontainers.image.description=Pre-release integration build, not a release
             org.frameleaf.build.variant=cpu
             org.frameleaf.build.channel=integration
-          # Read the integration branch's cache (e2e-build-cache.yml) and the Deploy build cache; never write either.
+          # Read main's end-to-end cache (e2e-build-cache.yml) and the Deploy build cache; never write either.
           cache-from: |
             type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:ci-linux-${{ matrix.architecture }}
             type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:${{ matrix.cache }}
@@ -188,7 +187,7 @@ jobs:
   deploy-test:
     name: Deployment test ${{ matrix.architecture }}
     needs: build
-    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/master/frameleaf-implementation' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
@@ -240,7 +239,7 @@ jobs:
   publish:
     name: Push the tested images and tag integration-<sha>
     needs: deploy-test
-    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/master/frameleaf-implementation' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     permissions:
       contents: read

@@ -10,13 +10,13 @@ Integration image and native RAW checks exercise the owned runtime. Releases ret
 
 ## Manual development artifacts
 
-On `aj/FL-333-pg19` or `master/frameleaf-implementation`, dispatch the existing **Test** workflow with `development_validation=true`. This calls `development-validation.yml` from the same commit and selects development diagnostics instead of the full suite. The reusable workflow can also be dispatched directly once GitHub exposes its workflow definition.
+On `main`, dispatch the existing **Test** workflow with `development_validation=true`. This calls `development-validation.yml` from the same commit and selects development diagnostics instead of the full suite. The reusable workflow can also be dispatched directly once GitHub exposes its workflow definition.
 
 The Linux job generates `pnpm-lock.yaml` with `--lockfile-only --ignore-scripts`, installs that lock, reports server types and lint, builds generators, starts a fresh owned PostgreSQL 19 container, applies the canonical baseline, and regenerates OpenAPI, the TypeScript API client, SQL queries and the schema catalog. Vendored SQL tools require no build step.
 
 The `frameleaf-development-<commit>` artifact contains the source commit, generated files, a binary Git patch, per-step logs and outcomes. Generation continues after independent failures so diagnostics survive; the final job fails unless every required check and generator succeeded. A file copied into an artifact may be unchanged input after a failed generator: consult `step-outcomes.json` before using it.
 
-Review and apply the generated patch in the implementation branch, then run the ordinary full Test workflow without the development flag. This workflow does not push, publish or promote artifacts. Record hosted run conclusions for the exact commit separately from deployment and runtime acceptance.
+Review and apply the generated patch on a branch for a PR to `main`, then run the ordinary full Test workflow without the development flag. This workflow does not push, publish or promote artifacts. Record hosted run conclusions for the exact commit separately from deployment and runtime acceptance.
 
 ## Frozen media fixtures
 
