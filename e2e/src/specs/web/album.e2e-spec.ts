@@ -203,16 +203,17 @@ test.describe('Album', () => {
     const photoTile = page.locator(`[data-asset-id="${photo.id}"]`);
     const tiles = page.getByTestId('frameleaf-library').locator('[data-asset-id]');
     await expect(page.locator(`[data-asset-id="${video.id}"]`)).toBeVisible();
+    // LIB-P1: Filter docks the Filters panel, and the album narrows beside it as a choice is made.
     await page.getByRole('button', { name: 'Filter', exact: true }).click();
-    const filters = page.getByRole('dialog', { name: 'Search your library' });
+    const filters = page.getByRole('complementary', { name: 'Library filters' });
     await filters
       .getByRole('group', { name: 'Media type' })
       .getByRole('button', { name: /^Photos/ })
       .click();
-    await filters.getByRole('button', { name: /^Show .*results?$/ }).click();
+    await expect(page.locator(`[data-asset-id="${video.id}"]`)).toHaveCount(0);
+    await filters.getByRole('button', { name: 'Close filters' }).click();
     await expect(filters).toBeHidden();
     await expect(page).toHaveURL(new RegExp(String.raw`/albums/${album.id}(?:\?|$)`));
-    await expect(page.locator(`[data-asset-id="${video.id}"]`)).toHaveCount(0);
     await page.getByRole('combobox', { name: 'Sort by' }).selectOption('filename');
     await expect(tiles).toHaveCount(2);
     await expect(tiles.first()).toHaveAttribute('data-asset-id', photo.id);
