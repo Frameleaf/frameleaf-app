@@ -1611,7 +1611,7 @@ export const hiddenByOwnerRules = (assetAlias = 'asset') => sql<boolean>`exists 
  * session filter (`hiddenContent`), which an unlocked session lifts. Without a viewer (a read on
  * nobody's behalf, such as a shared link's) every owner's rules apply.
  */
-export const hiddenFromOthers = (viewerId: string | undefined, assetAlias = 'asset') =>
+export const hiddenFromOthers = (viewerId: string | null | undefined, assetAlias = 'asset') =>
   viewerId
     ? sql<boolean>`(${sql.ref(`${assetAlias}.ownerId`)} != ${asUuid(viewerId)} and ${hiddenByOwnerRules(assetAlias)})`
     : hiddenByOwnerRules(assetAlias);
@@ -1626,7 +1626,7 @@ export const hiddenContentOrOthersRules = (options: HiddenContentQueryOptions = 
     predicates.push(hiddenContentAssetExists(filter, assetAlias));
   }
   if (options.othersRulesViewerId !== undefined) {
-    predicates.push(hiddenFromOthers(options.othersRulesViewerId ?? undefined, assetAlias));
+    predicates.push(hiddenFromOthers(options.othersRulesViewerId, assetAlias));
   }
   if (predicates.length === 0) {
     return undefined;
@@ -1656,7 +1656,7 @@ export const hiddenFromSession = (options: HiddenContentQueryOptions = {}, asset
     predicates.push(hiddenContentAssetExists(filter, assetAlias));
   }
   if (options.othersRulesViewerId !== undefined) {
-    predicates.push(hiddenFromOthers(options.othersRulesViewerId ?? undefined, assetAlias));
+    predicates.push(hiddenFromOthers(options.othersRulesViewerId, assetAlias));
   }
   return predicates.length === 1 ? notRevealed : sql<boolean>`(${sql.join(predicates, sql` or `)})`;
 };
@@ -1701,7 +1701,7 @@ export function withHiddenContentFilter<QDB, TB extends keyof QDB, O>(
   const scoped =
     othersRulesViewerId === undefined
       ? qb
-      : qb.where(sql<boolean>`not ${hiddenFromOthers(othersRulesViewerId ?? undefined, assetAlias)}`);
+      : qb.where(sql<boolean>`not ${hiddenFromOthers(othersRulesViewerId, assetAlias)}`);
   const filter = getHiddenContentFilter(options);
   if (!filter) {
     return scoped;
