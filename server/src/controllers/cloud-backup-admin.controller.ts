@@ -3,6 +3,11 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  CloudBackupCoverageResponseDto,
+  CloudBackupExclusionsDto,
+  CloudBackupExclusionsResponseDto,
+} from 'src/dtos/cloud-backup-selection.dto.js';
+import {
   CloudBackupCheckDto,
   CloudBackupCheckResponseDto,
   CloudBackupEscrowDto,
@@ -234,6 +239,33 @@ export class CloudBackupAdminController {
   })
   listManifestAlbums(@Body() dto: CloudBackupManifestAlbumsDto): Promise<CloudBackupManifestAlbumsResponseDto> {
     return this.service.listManifestAlbums(dto);
+  }
+
+  @Post('manifests/exclusions')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AdminCloudBackupRead, admin: true })
+  @Endpoint({
+    operationId: 'getCloudBackupManifestExclusions',
+    summary: 'Count the items a backup holds no original of, and why',
+    description:
+      'FL-362: per account, the items this server holds whose original is not in one kept backup, by reason (left out by the account’s choice, no licence, not backed up yet, unknown), from that backup’s own decision. Counts only: never what an account chose. Reads the backup’s manifest from the bucket.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getManifestExclusions(@Body() dto: CloudBackupExclusionsDto): Promise<CloudBackupExclusionsResponseDto> {
+    return this.service.listManifestExclusions(dto);
+  }
+
+  @Get('coverage')
+  @Authenticated({ permission: Permission.AdminCloudBackupRead, admin: true })
+  @Endpoint({
+    operationId: 'getCloudBackupCoverage',
+    summary: 'Who is backed up',
+    description:
+      'FL-362: each account’s numbers in the newest run’s coverage report (originals, the ones its choice keeps, licence eligibility, the ones in the backup) and whether the report reached Frameleaf Cloud. Never what an account chose.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getCoverage(): Promise<CloudBackupCoverageResponseDto> {
+    return this.service.getCoverage();
   }
 
   @Post('restore')

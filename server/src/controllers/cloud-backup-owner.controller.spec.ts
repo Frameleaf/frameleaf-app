@@ -39,6 +39,46 @@ describe('owner backup route scopes', () => {
     );
   });
 
+  it('lets every account read and change only its own Cloud Backup choice (FL-362)', async () => {
+    expect(
+      getAuthenticatedOptions(reflector, CloudBackupOwnerController.prototype.getOwnCloudBackupSelection),
+    ).toMatchObject({ permission: Permission.UserPreferenceRead });
+    expect(
+      getAuthenticatedOptions(reflector, CloudBackupOwnerController.prototype.setOwnCloudBackupSelection),
+    ).toMatchObject({ permission: Permission.UserPreferenceUpdate });
+    for (const method of ['getOwnCloudBackupSelection', 'setOwnCloudBackupSelection'] as const) {
+      expect(getAuthenticatedOptions(reflector, CloudBackupOwnerController.prototype[method])).not.toMatchObject({
+        admin: true,
+      });
+    }
+    const service = { getOwnSelection: vi.fn().mockResolvedValue({ mode: 'everything' }) };
+    const controller = new CloudBackupOwnerController(service as never, {} as never);
+    await controller.getOwnCloudBackupSelection(authStub.user1);
+    expect(service.getOwnSelection).toHaveBeenCalledWith(authStub.user1);
+  });
+
+  it('reauthenticates the own exclusions list after reading the backup (FL-362)', async () => {
+    expect(
+      getAuthenticatedOptions(reflector, CloudBackupOwnerController.prototype.listOwnBackupExclusions),
+    ).toMatchObject({ permission: Permission.AssetRead, refreshElevation: false });
+    const authenticate = vi.fn().mockResolvedValue(authStub.user1);
+    const service = {
+      listOwnExclusions: vi.fn(async (_auth, _dto, refresh: () => Promise<unknown>) => {
+        await refresh();
+        return { items: [] };
+      }),
+    };
+    const controller = new CloudBackupOwnerController(service as never, { authenticate } as never);
+    await controller.listOwnBackupExclusions(authStub.user1, { manifestKey: 'm/20261016T120000Z.json.gz', limit: 10 }, {
+      headers: {},
+      query: {},
+      path: '/users/me/cloud-backup/exclusions',
+    } as never);
+    expect(authenticate).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ permission: Permission.AssetRead }) }),
+    );
+  });
+
   it('uses media-view permission for binary thumbnails, not metadata-only read', () => {
     expect(
       getAuthenticatedOptions(reflector, CloudBackupOwnerController.prototype.getOwnBackupThumbnail),

@@ -32,6 +32,15 @@ import type {
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
+  CloudBackupCoverageResponseDto,
+  CloudBackupExclusionsDto,
+  CloudBackupExclusionsResponseDto,
+  CloudBackupSelectionResponseDto,
+  CloudBackupSelectionUpdateDto,
+  OwnerBackupExclusionsDto,
+  OwnerBackupExclusionsResponseDto,
+} from 'src/dtos/cloud-backup-selection.dto.js';
+import {
   CloudBackupCheckDto,
   CloudBackupCheckResponseDto,
   CloudBackupEscrowDto,
@@ -80,6 +89,7 @@ import {
   CloudBackupLibraryAsset,
 } from 'src/repositories/cloud-backup-index.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
+import { CloudBackupSelectionRepository } from 'src/repositories/cloud-backup-selection.repository.js';
 import {
   CloudBackupClaimError,
   CloudBackupConnection,
@@ -110,6 +120,8 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
+import { CloudBackupChoices } from 'src/services/cloud-backup-choices.js';
+import { CloudBackupCoverage, type RunReportOutcome } from 'src/services/cloud-backup-coverage.js';
 import { CloudBackupDetailsService } from 'src/services/cloud-backup-details.service.js';
 import {
   CloudBackupBucket,
@@ -163,6 +175,7 @@ import {
   writeBackupHistory,
 } from 'src/utils/cloud-backup-recovery.js';
 import { manifestTime, readManifest, verificationDue } from 'src/utils/cloud-backup-retention.js';
+import { type BackupLicenceScope, backupUserFingerprint, isLicenceEligible } from 'src/utils/cloud-backup-selection.js';
 import {
   type BackupTransferJournal,
   backupTransferSchema,
@@ -208,9 +221,11 @@ import {
   executionSignal,
   reportExecutionProgress,
 } from 'src/utils/execution-signal.js';
+import { type BackupCoverageSnapshot, LEGACY_MANIFEST_KEY } from 'src/utils/frameleaf-cloud-backup-coverage.js';
 import {
   BackupGrantResponse,
   BackupOperation,
+  type BackupRunReport,
   MANAGED_ENTITLEMENT_MISSING_REFUSAL,
   backupGrantProblem,
   managedBackupRefusal,
@@ -418,6 +433,10 @@ export class CloudBackupService {
   private manifestCache?: { bucketRef: string; key: string; binding: string; manifest: CloudBackupManifest };
   private readonly maintenance: CloudBackupMaintenance;
   private readonly restorer: CloudBackupRestorer;
+  /** FL-362: each run's numeric coverage, published to Frameleaf Cloud. */
+  private readonly coverage: CloudBackupCoverage;
+  /** FL-362: each account's choice, and why a backup holds no original of an item. */
+  private readonly choices: CloudBackupChoices;
 
   constructor(
     private logger: LoggingRepository,
@@ -441,6 +460,7 @@ export class CloudBackupService {
     private cronRepository: CronRepository,
     private jobRepository: JobRepository,
     private details: CloudBackupDetailsService,
+    private selection: CloudBackupSelectionRepository,
   ) {
     this.logger.setContext(CloudBackupService.name);
     this.keyChannel = new CloudBackupKeyChannel(this.workerId, () =>
@@ -448,6 +468,14 @@ export class CloudBackupService {
     );
     this.maintenance = new CloudBackupMaintenance(store, index, logger);
     this.restorer = new CloudBackupRestorer(store, storageRepository, cryptoRepository, logger);
+    this.coverage = new CloudBackupCoverage(
+      selection,
+      cloudBackup,
+      logger,
+      () => this.managedApi(),
+      () => this.linkedInstanceId(),
+    );
+    this.choices = new CloudBackupChoices(selection);
   }
 
   /* ------------------------------------------------------------------ */
@@ -482,6 +510,7 @@ export class CloudBackupService {
       keyFingerprint: metadata?.keyFingerprint ?? null,
       keyLoaded: metadata ? !!(await this.loadKeyOrAsk(metadata).catch(() => null)) : false,
       lastRun: metadata?.lastRun ? this.mapLastRun(metadata.lastRun) : null,
+      coverage: metadata ? await this.coverage.state().catch(() => null) : null,
       lastSuccessAt: metadata?.lastSuccessAt ?? null,
       lastManifestKey: metadata?.lastManifestKey ?? null,
       usage: usage
@@ -1357,6 +1386,10 @@ export class CloudBackupService {
     if (!metadata || !settings.enabled || settings.target === 'off') {
       return JobStatus.Skipped;
     }
+    // FL-362: coverage that could not be reported yet is tried again every hour; it never holds the bucket
+    if (metadata.target === 'managed') {
+      await this.coverage.publishDue();
+    }
     const now = new Date();
     // a check that failed waits a day before the next try, whichever kind it was
     const lastVerify = metadata.lastVerify;
@@ -1651,6 +1684,9 @@ export class CloudBackupService {
       if (outcome === 'failed') {
         await this.endManifest(progress.result, 'failed');
         await this.recordRun(operation, progress.result, 'failed', message);
+        // FL-362: Frameleaf Cloud hears of the failed run too, and of its coverage with nothing committed
+        const reported = await this.reportManagedRun(operation, progress.result, 'failed');
+        await this.publishCoverage(operation, progress.result, false, reported);
         this.notify({
           level: NotificationLevel.Error,
           title: 'Cloud backup failed',
@@ -1693,6 +1729,8 @@ export class CloudBackupService {
       progress,
       uploadedNow: new Set(),
       clientKeys: opened.clientKeys,
+      eligibleOwners: null,
+      decided: false,
     };
 
     const running = await this.operations.reportProgress(id, claimToken, {
@@ -1717,6 +1755,7 @@ export class CloudBackupService {
       );
     await this.openManifest(run);
     await this.recordRun(operation, progress.result, 'running');
+    await this.decide(run, opened.licence);
 
     // A pause after the database checkpoint can leave its completed receipt/source for this claim.
     if (progress.result.phase !== 'database' && progress.result.database?.key.startsWith('db/v1/')) {
@@ -1799,12 +1838,15 @@ export class CloudBackupService {
     let connection: CloudBackupConnection;
     let readOnly = false;
     let current = metadata;
+    // FL-362: who the licence covers, from the grant rotated for this operation; your own bucket has no gate
+    let licence: BackupLicenceScope = { scope: 'own-bucket' };
     if (metadata.target === 'managed') {
       const opened = await this.openManaged(metadata, operation, claimToken);
       if (!opened) {
         return null;
       }
       connection = opened.connection;
+      licence = opened.coverage;
       readOnly = opened.managed.readOnly;
       // FL-301: the grant just issued decides the read-only state and its wording, not the one last saved
       current = { ...metadata, managed: opened.managed };
@@ -1835,7 +1877,16 @@ export class CloudBackupService {
     }
     connection.recoveryKeys = clientKeys?.keys;
     await this.attachClientHistory(connection, metadata, importedHistory);
-    return { bucketRef: metadata.bucketRef, metadata: current, settings, connection, bucketKey, readOnly, clientKeys };
+    return {
+      bucketRef: metadata.bucketRef,
+      metadata: current,
+      settings,
+      connection,
+      bucketKey,
+      readOnly,
+      clientKeys,
+      licence,
+    };
   }
 
   /** Your own bucket, as the settings name it; it must still be the bucket this server claimed. */
@@ -1874,7 +1925,11 @@ export class CloudBackupService {
     metadata: FrameleafCloudBackup,
     operation: MediaOperation,
     claimToken: string,
-  ): Promise<{ connection: CloudBackupConnection; managed: FrameleafCloudBackupManaged } | null> {
+  ): Promise<{
+    connection: CloudBackupConnection;
+    managed: FrameleafCloudBackupManaged;
+    coverage: BackupGrantResponse['coverage'];
+  } | null> {
     let grant: BackupGrantResponse;
     try {
       grant = await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudBackup, async () =>
@@ -1930,7 +1985,7 @@ export class CloudBackupService {
       throw new Error(
         `Frameleaf-managed storage is read-only for this server${readOnlyReason({ ...metadata, managed })}, so backups are paused. Your library is untouched and restores keep working.`,
       );
-    return { connection, managed };
+    return { connection, managed, coverage: grant.coverage };
   }
 
   private backupOperation(operation: MediaOperation): BackupOperation {
@@ -2054,31 +2109,149 @@ export class CloudBackupService {
     }
   }
 
-  /** FL-164: a managed run's telemetry (counts, bytes, times), never a path; a failure is only logged. */
+  /**
+   * FL-164: a managed run's telemetry (counts, bytes, times), never a path; a failure is only logged. FL-362:
+   * a legacy run names its manifest (`m/<basic ISO>.json.gz`) so coverage can bind to it; an older Frameleaf
+   * Cloud refuses that key, and then hears of the run once more without it. Answers what was reported.
+   */
   private async reportManagedRun(
     operation: MediaOperation,
     result: CloudBackupRunResult,
     status: 'succeeded' | 'failed' | 'cancelled',
-  ) {
+  ): Promise<{ outcome: RunReportOutcome; report: BackupRunReport | null }> {
     const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
     if (metadata?.target !== 'managed') {
-      return;
+      return { outcome: 'not-reported', report: null };
     }
+    const report: BackupRunReport = {
+      runId: operation.id,
+      status,
+      startedAt: asIso(operation.createdAt) ?? new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      bytesUploaded: result.bytesUploaded,
+      objectsUploaded: result.uploaded,
+      objectsSkipped: result.skipped,
+      // a client-encrypted manifest is named by its signed snapshot receipt, never here
+      manifestKey:
+        status === 'succeeded' && result.manifestKey && LEGACY_MANIFEST_KEY.test(result.manifestKey)
+          ? result.manifestKey
+          : null,
+      errorCode: status === 'failed' ? 'cloud_backup_failed' : null,
+    };
     try {
-      await this.cloudBackup.reportRun(await this.managedApi(), {
-        runId: operation.id,
-        status,
-        startedAt: asIso(operation.createdAt) ?? new Date().toISOString(),
-        finishedAt: new Date().toISOString(),
-        bytesUploaded: result.bytesUploaded,
-        objectsUploaded: result.uploaded,
-        objectsSkipped: result.skipped,
-        // the contract takes `m/<extended ISO>.json.gz`; this server names manifests in the basic format
-        manifestKey: null,
-        errorCode: status === 'failed' ? 'cloud_backup_failed' : null,
-      });
+      const api = await this.managedApi();
+      try {
+        await this.cloudBackup.reportRun(api, report);
+        return { outcome: 'reported', report };
+      } catch (error) {
+        const refused = error instanceof FrameleafCloudError && (error.status === 400 || error.status === 422);
+        if (!report.manifestKey || !refused) {
+          throw error;
+        }
+        const withoutKey = { ...report, manifestKey: null };
+        await this.cloudBackup.reportRun(api, withoutKey);
+        return { outcome: 'reported-without-key', report: withoutKey };
+      }
     } catch (error) {
       this.logger.warn(`Could not report the cloud backup run to Frameleaf Cloud: ${errorMessage(error)}`);
+      return { outcome: 'not-reported', report };
+    }
+  }
+
+  /**
+   * FL-362: a run's coverage, written once from its inventory and published to Frameleaf Cloud (managed
+   * storage only; your own bucket keeps it here). Inclusion is claimed only against a committed manifest
+   * Frameleaf Cloud can bind: the signed snapshot receipt of a client-encrypted run, or the reported key of
+   * a legacy one. Never fails or holds up the backup.
+   */
+  private async publishCoverage(
+    operation: MediaOperation,
+    result: CloudBackupRunResult,
+    committed: boolean,
+    reported: { outcome: RunReportOutcome; report: BackupRunReport | null },
+  ) {
+    try {
+      const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+      if (!metadata) {
+        return;
+      }
+      const managed = metadata.target === 'managed';
+      let snapshot: BackupCoverageSnapshot = null;
+      if (committed && result.manifestKey) {
+        if (result.manifestKey.startsWith('m/v1/')) {
+          snapshot = await this.receiptReference(metadata, result.manifestId);
+        } else if (LEGACY_MANIFEST_KEY.test(result.manifestKey) && reported.outcome !== 'reported-without-key') {
+          snapshot = { kind: 'legacy', manifestKey: result.manifestKey };
+        }
+      }
+      const written = await this.coverage.write({
+        runId: operation.id,
+        managed,
+        instanceId: managed ? await this.linkedInstanceId() : null,
+        snapshot,
+        runReport: managed ? reported.report : null,
+      });
+      if (written && managed) {
+        await this.coverage.publish(operation.id);
+        await this.coverage.publishDue();
+      }
+    } catch (error) {
+      this.logger.warn(`Could not record the cloud backup coverage of run ${operation.id}: ${errorMessage(error)}`);
+    }
+  }
+
+  /** FL-362: the accepted signed receipt of a client-encrypted run's manifest, as coverage names it. */
+  private async receiptReference(
+    metadata: FrameleafCloudBackup,
+    manifestId: string | null,
+  ): Promise<BackupCoverageSnapshot> {
+    const history = mergeBackupHistory(
+      await readBackupHistory(this.clientHistoryPath(metadata.bucketRef)),
+      this.importedHistory.get(metadata.keyFingerprint),
+    );
+    const record = history?.snapshots.find(({ descriptor }) => descriptor.snapshotId === manifestId);
+    return record
+      ? {
+          kind: 'receipt',
+          vaultId: record.descriptor.vaultId,
+          snapshotId: record.descriptor.snapshotId,
+          digest: record.digest,
+        }
+      : null;
+  }
+
+  /** FL-362: the Frameleaf Cloud instance this server is linked as, or null. */
+  private async linkedInstanceId(): Promise<string | null> {
+    const { linked, link } = await readCloudLink(this.gatewayDeps());
+    return linked && link?.instanceId ? link.instanceId : null;
+  }
+
+  /**
+   * FL-362: the run's inventory, before its database copy, so that copy carries it: every account, each
+   * owned original's decision under the account's choice and the licence of the grant rotated for this
+   * run. A run that already holds one keeps it; one whose database copy was taken before FL-362 has none,
+   * and walks everything the licence covers, as before.
+   */
+  private async decide(run: Run, licence: BackupLicenceScope) {
+    if (
+      !(await this.selection.getDecisionRun(run.id)) &&
+      run.progress.result.phase === 'database' &&
+      !run.progress.result.database
+    ) {
+      const identity = await loadInstanceIdentity(this.gatewayDeps());
+      await this.selection.captureInventory({
+        runId: run.id,
+        manifestKey: run.progress.result.manifestKey!,
+        instanceId: identity.instanceId,
+        licence,
+      });
+    }
+    if (await this.selection.getDecisionRun(run.id)) {
+      run.decided = true;
+      run.eligibleOwners = await this.selection.getEligibleOwners(run.id);
+    } else {
+      run.decided = false;
+      run.eligibleOwners = await this.eligibleOwners(licence);
     }
   }
 
@@ -2201,7 +2374,11 @@ export class CloudBackupService {
       this.logger.log(`Cloud backup run ${run.id}: ${found} objects already in the bucket`);
     }
     await this.adoptManifests(run);
-    run.progress.result = { ...run.progress.result, phase: 'assets', total: await this.index.countAssets() };
+    run.progress.result = {
+      ...run.progress.result,
+      phase: 'assets',
+      total: await this.index.countAssets(run.decided ? run.id : undefined),
+    };
     return this.checkpoint(run);
   }
 
@@ -2253,6 +2430,8 @@ export class CloudBackupService {
       limit: CLOUD_BACKUP_BATCH,
       includeThumbs: settings.include.thumbs,
       includeEncodedVideo: settings.include.encodedVideo,
+      // FL-362: only what the run's inventory decided to keep
+      ...(run.decided && { decisionRunId: run.id }),
     });
     if (page.length === 0) {
       run.progress.result = { ...run.progress.result, phase: 'profiles' };
@@ -2261,7 +2440,8 @@ export class CloudBackupService {
 
     await this.backUpFiles(
       run,
-      page.flatMap((asset) => this.filesOf(asset)),
+      // FL-362: an account the licence does not cover keeps its library here; none of it is uploaded
+      page.filter((asset) => this.mayUpload(run, asset.ownerId)).flatMap((asset) => this.filesOf(asset)),
     );
     run.progress.result = {
       ...run.progress.result,
@@ -2270,6 +2450,32 @@ export class CloudBackupService {
       total: Math.max(run.progress.result.total ?? 0, run.progress.result.assets + page.length),
     };
     return this.checkpoint(run);
+  }
+
+  /**
+   * FL-362: the accounts a run may upload for, from the licence coverage of the grant rotated for it. A
+   * Server licence (or your own bucket) covers everyone; Individual licences cover the accounts they are
+   * bound to (`fingerprint.user`); none covers nobody. Null: every account.
+   */
+  private async eligibleOwners(licence: BackupLicenceScope): Promise<Set<string> | null> {
+    if (licence.scope === 'all' || licence.scope === 'own-bucket') {
+      return null;
+    }
+    if (licence.scope === 'none') {
+      return new Set();
+    }
+    const identity = await loadInstanceIdentity(this.gatewayDeps());
+    const users = await this.userRepository.getList({ withDeleted: true });
+    return new Set(
+      users
+        .map(({ id }) => id)
+        .filter((id) => isLicenceEligible(licence, backupUserFingerprint(identity.instanceId, id))),
+    );
+  }
+
+  /** FL-362: whether this run uploads an account's files. */
+  private mayUpload(run: Run, ownerId: string | null) {
+    return !run.eligibleOwners || (!!ownerId && run.eligibleOwners.has(ownerId));
   }
 
   private filesOf(asset: CloudBackupAsset): FileToBackUp[] {
@@ -2302,14 +2508,16 @@ export class CloudBackupService {
     const profiles = await this.index.listProfileImages();
     await this.backUpFiles(
       run,
-      profiles.map(({ userId, path }) => ({
-        fileKey: `profile:${userId}`,
-        assetId: null,
-        ownerId: userId,
-        role: 'profile',
-        path,
-        recorded: null,
-      })),
+      profiles
+        .filter(({ userId }) => this.mayUpload(run, userId))
+        .map(({ userId, path }) => ({
+          fileKey: `profile:${userId}`,
+          assetId: null,
+          ownerId: userId,
+          role: 'profile',
+          path,
+          recorded: null,
+        })),
     );
     run.progress.result = { ...run.progress.result, phase: 'manifest' };
     return this.checkpoint(run);
@@ -2635,8 +2843,12 @@ export class CloudBackupService {
     assertExecutionActive();
     const { id, claimToken, operation } = run;
     const { result } = run.progress;
-    // The manifest is in the bucket and the `done` checkpoint saved: its recorded files can go now.
+    // The manifest is in the bucket and the `done` checkpoint saved: its recorded files can go now, once
+    // each account's committed originals are counted from them (FL-362).
     if (result.manifestId) {
+      if (await this.selection.getDecisionRun(id)) {
+        await this.selection.recordIncluded(id, result.manifestId);
+      }
       await this.index.deleteEntries(result.manifestId);
     }
     // The manifest is in the bucket: the backup is complete, even when a cancel arrived after it.
@@ -2661,7 +2873,8 @@ export class CloudBackupService {
     if (firstBackup) {
       await this.announceActivation({ completed: true });
     }
-    await this.reportManagedRun(operation, result, 'succeeded');
+    const reported = await this.reportManagedRun(operation, result, 'succeeded');
+    await this.publishCoverage(operation, result, true, reported);
     // FL-164: a scheduled run is followed by the clean-up of runs past retention, once it has finished
     if ((operation.snapshot as { scheduled?: boolean }).scheduled) {
       await this.createOperation(operation.ownerId, run.metadata, 'prune', { scheduled: true, dryRun: false });
@@ -2699,7 +2912,12 @@ export class CloudBackupService {
       if (await this.operations.acknowledgeCancel(id, claimToken, { released: false })) {
         await this.endManifest(result, 'cancelled');
         await this.recordRun(operation, result, 'cancelled');
-        await this.reportManagedRun(operation, result, 'cancelled');
+        await this.publishCoverage(
+          operation,
+          result,
+          false,
+          await this.reportManagedRun(operation, result, 'cancelled'),
+        );
         this.logger.log(`Cloud backup run ${id} cancelled`);
       }
       return false;
@@ -2714,7 +2932,12 @@ export class CloudBackupService {
         if (await this.operations.acknowledgeCancel(id, claimToken, { released: false })) {
           await this.endManifest(result, 'cancelled');
           await this.recordRun(operation, result, 'cancelled');
-          await this.reportManagedRun(operation, result, 'cancelled');
+          await this.publishCoverage(
+            operation,
+            result,
+            false,
+            await this.reportManagedRun(operation, result, 'cancelled'),
+          );
         }
         return false;
       }
@@ -3548,6 +3771,46 @@ export class CloudBackupService {
     };
   }
 
+  /* ------------------------------------------------------------------ */
+  /* FL-362: what each account's Cloud Backup keeps                       */
+  /* ------------------------------------------------------------------ */
+
+  /** The signed-in account's own choice, with how much of its library it keeps now. */
+  getOwnSelection(auth: AuthDto): Promise<CloudBackupSelectionResponseDto> {
+    return this.choices.get(auth.user.id);
+  }
+
+  /** Save the signed-in account's own choice; the next run takes it. */
+  setOwnSelection(auth: AuthDto, dto: CloudBackupSelectionUpdateDto): Promise<CloudBackupSelectionResponseDto> {
+    return this.choices.set(auth.user.id, dto);
+  }
+
+  /** Who's backed up: each account's numbers in the newest run's coverage, never what it chose. */
+  async getCoverage(): Promise<CloudBackupCoverageResponseDto> {
+    const identity = await loadInstanceIdentity(this.gatewayDeps());
+    return this.choices.coverage(identity.instanceId);
+  }
+
+  /** Why the items this database holds have no original in a kept backup, counted per account. */
+  async listManifestExclusions(dto: CloudBackupExclusionsDto): Promise<CloudBackupExclusionsResponseDto> {
+    const metadata = await this.requireClaim();
+    const manifest = await this.readManifestForRequest(metadata, dto.manifestKey);
+    return this.choices.exclusions(manifest, dto.manifestKey);
+  }
+
+  /** The signed-in account's own items without an original in a kept backup, with why. */
+  async listOwnExclusions(
+    auth: AuthDto,
+    dto: OwnerBackupExclusionsDto,
+    refresh: () => Promise<AuthDto>,
+  ): Promise<OwnerBackupExclusionsResponseDto> {
+    await this.ownerBackupAuth(auth.user.id, refresh);
+    const metadata = await this.ownerBackupClaim();
+    const manifest = await this.readManifestForRequest(metadata, dto.manifestKey);
+    const finalAuth = await this.ownerBackupAuth(auth.user.id, refresh);
+    return this.choices.ownerExclusions(finalAuth.user.id, manifest, dto);
+  }
+
   private ownerRestoreHash(asset: CloudBackupManifest['assets'][string], manifest: CloudBackupManifest): string {
     return ownerRestoreHash(asset, manifest);
   }
@@ -4069,6 +4332,14 @@ export class CloudBackupService {
         report(`Database ${action}: ${Math.round(progress * 100)}%`),
       );
       databaseRestored = true;
+      // FL-362: the restored database is this backup's own, with the decision it was made by
+      try {
+        for (const line of exclusionLines(await this.choices.exclusions(manifest, manifestKey))) {
+          report(line);
+        }
+      } catch (error) {
+        report(`Could not say why some items have no original in this backup: ${errorMessage(error)}`);
+      }
     }
     return { ...result, manifestKey, databaseRestored };
   }
@@ -4804,6 +5075,8 @@ type OpenedBucket = CloudBackupBucket & {
   metadata: FrameleafCloudBackup;
   settings: SystemConfig['frameleafCloud']['cloudBackup'];
   readOnly: boolean;
+  /** FL-362: the accounts the licence lets this operation back up. */
+  licence: BackupLicenceScope;
 };
 
 /** FL-164: what a restore's Activity row counts: files, and progress by bytes. */
@@ -4838,6 +5111,30 @@ const readRecord = (asset: CloudBackupManifest['assets'][string]): CloudBackupAs
         duration: asset.duration ?? null,
       }
     : null;
+
+/**
+ * FL-362: what a restore says about the items it brought back without an original, by reason and per
+ * account (counts only). A deliberate exclusion is never an error.
+ */
+const exclusionLines = (exclusions: CloudBackupExclusionsResponseDto): string[] => {
+  const { totals } = exclusions;
+  if (totals.selection + totals.licence + totals.notCommitted + totals.unknown === 0) {
+    return ['Every item in the restored library has its original in this backup.'];
+  }
+  const describe = (counts: CloudBackupExclusionsResponseDto['totals']) =>
+    [
+      counts.selection > 0 && `${counts.selection} not backed up by the account's selection`,
+      counts.licence > 0 && `${counts.licence} not backed up: no licence for the account`,
+      counts.notCommitted > 0 && `${counts.notCommitted} not backed up yet`,
+      counts.unknown > 0 && `${counts.unknown} not in this backup, reason unknown`,
+    ]
+      .filter(Boolean)
+      .join(', ');
+  return [
+    `Items restored without an original: ${describe(totals)}.${exclusions.decisionKnown ? '' : ' This backup was made before backups recorded their choices.'}`,
+    ...exclusions.accounts.map((account) => `  ${account.name || account.userId}: ${describe(account)}.`),
+  ];
+};
 
 /** FL-164: a restore's Activity label. Never an item's name, which a Locked item must not show. */
 const RESTORE_LABEL: Record<CloudBackupRestoreSnapshot['scope'], string> = {
@@ -4882,4 +5179,8 @@ type Run = {
   progress: { result: CloudBackupRunResult };
   /** Hashes this claim uploaded, so a second file with the same content in this run is never uploaded. */
   uploadedNow: Set<string>;
+  /** FL-362: the accounts whose originals and profile images this run uploads; null: every account. */
+  eligibleOwners: Set<string> | null;
+  /** FL-362: the run holds an inventory; its walk is the inventory's kept originals. */
+  decided: boolean;
 };

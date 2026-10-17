@@ -13,6 +13,7 @@
    */
   import './frameleaf-cloud.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import CloudBackupExclusions from '$lib/components/frameleaf/cloud/CloudBackupExclusions.svelte';
   import CloudBackupRestoreDialog from '$lib/components/frameleaf/cloud/CloudBackupRestoreDialog.svelte';
   import CloudBanner from '$lib/components/frameleaf/cloud/CloudBanner.svelte';
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
@@ -421,6 +422,10 @@
         {/if}
         <p class="fc-note">{$t('frameleaf_cloud_restore_albums_note')}</p>
       {:else}
+        {#if chosen && !needsKey}
+          <!-- FL-362: what this backup brings back without an original, and why -->
+          <CloudBackupExclusions manifestKey={chosen.key} />
+        {/if}
         <CloudBanner tone="warning" title={$t('frameleaf_cloud_restore_library_banner_title')}>
           {$t('frameleaf_cloud_restore_library_banner_body', {
             values: { when: chosen ? formatWhen(chosen.createdAt) : '—' },

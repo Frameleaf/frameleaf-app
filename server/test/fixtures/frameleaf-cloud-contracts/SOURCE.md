@@ -241,6 +241,15 @@ quarterly rotation, native/store or complete product acceptance.
   `Frameleaf/frameleaf-cloud:packages/contracts/fixtures/backup/`. They retain
   their synthetic values verbatim. Existing v2 fixtures remain unchanged.
 
+- FL-362 / FC-149 run coverage: `backup/run-coverage-client.json` is byte-identical to the independently
+  authored, synthetic Apache-2.0 client fixture `apps/api/test/fixtures/backup/run-coverage-client.json` on
+  `Frameleaf/frameleaf-cloud` `origin/main` at `022a9585d3d09d6b542ed5a9d4c8817cd4d32c1e` (last changed in
+  `77f47916a306be17a432247919bea159fe6f6ee4`, PR #395; blob `897ec50d7a296ad34422a28ad70336a3a0023383`, SHA-256
+  `5746d013eca0c9bcf868d907ce4f2ff037091ad647639f71294f1556f1d2a5ea`). Its cases (empty inventory, a partial
+  selection, 33 accounts over two pages, a failed run without a committed snapshot) are parsed by
+  `server/src/utils/frameleaf-cloud-backup-coverage.ts`, re-declared from `packages/contracts/src/backup/run-coverage.ts`
+  blob `36d71a27f93c5202a176ca49d04f039e5fb46ade`; the server's page builder reproduces every published page.
+
 ## FL-379 mail sign-in broker fixtures
 
 `mail/` (every file, 18) is byte-identical to `packages/contracts/fixtures/mail/` on
