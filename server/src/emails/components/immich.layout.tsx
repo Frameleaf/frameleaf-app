@@ -1,10 +1,20 @@
-import { Body, Container, Font, Head, Hr, Html, Img, Preview, Section, Tailwind, Text } from '@react-email/components';
-import { createRequire } from 'node:module';
 import * as React from 'react';
+import {
+  Body,
+  Container,
+  Font,
+  Head,
+  Hr,
+  Html,
+  Img,
+  Preview,
+  Section,
+  Tailwind,
+  Text,
+  pixelBasedPreset,
+} from 'react-email';
 import { ImmichFooter } from 'src/emails/components/footer.template.js';
 import { getFrameleafEmailLogoUrl } from 'src/emails/components/frameleaf-logo.js';
-
-const emailPreset = createRequire(import.meta.url)('tailwindcss-preset-email');
 
 interface ImmichLayoutProps {
   children: React.ReactNode;
@@ -16,7 +26,7 @@ export const ImmichLayout = ({ children, preview, baseUrl }: ImmichLayoutProps) 
   <Html>
     <Tailwind
       config={{
-        presets: [emailPreset],
+        presets: [pixelBasedPreset],
         theme: {
           extend: {
             colors: {

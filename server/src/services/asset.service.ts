@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { isNumber, isUndefined, omitBy } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -51,22 +51,15 @@ import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.service.js';
-import { requireElevatedPermission } from 'src/utils/access.js';
-import {
-  getAssetFiles,
-  getDimensions,
-  isPanorama,
-  onAfterUnlink,
-  onBeforeLink,
-  onBeforeUnlink,
-} from 'src/utils/asset.util.js';
+import { requireAccess, requireElevatedPermission } from 'src/utils/access.js';
+import { getAssetFiles, getDimensions, getLivePhotoMotion, isPanorama } from 'src/utils/asset.util.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { extractTimeZone } from 'src/utils/date.js';
 import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit } from 'src/utils/edit-operation.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { getLockedOwnerId } from 'src/utils/locked.js';
+import { getLockedOwnerId, isLockedRow } from 'src/utils/locked.js';
 import { DecodeSupport, qualifySourceDecode } from 'src/utils/media-decode.js';
 import { EditedMasterColorPolicy, MediaPolicyError, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
@@ -221,40 +214,65 @@ export class AssetService extends BaseService {
 
     const { description, dateTimeOriginal, latitude, longitude, rating, visibility, city, state, country, ...rest } =
       dto;
-    const repos = { asset: this.assetRepository, event: this.eventRepository };
-
-    let previousMotion: { id: string } | null = null;
-    if (rest.livePhotoVideoId) {
-      await onBeforeLink(repos, { userId: auth.user.id, livePhotoVideoId: rest.livePhotoVideoId });
-    } else if (rest.livePhotoVideoId === null) {
-      const asset = await this.findOrFail(id);
-      if (asset.livePhotoVideoId) {
-        previousMotion = await onBeforeUnlink(repos, { livePhotoVideoId: asset.livePhotoVideoId });
+    const locking = visibility === AssetVisibility.Locked;
+    const originIds = locking
+      ? await this.assetRepository.findLockGroupIds([id, ...(rest.livePhotoVideoId ? [rest.livePhotoVideoId] : [])])
+      : [id];
+    const admitted = new Set(originIds);
+    const result = await this.partnerOriginRepository.withOriginEdit('asset', originIds, [], async () => {
+      let result: Awaited<ReturnType<AssetService['updateLivePhoto']>>;
+      if (rest.livePhotoVideoId !== undefined) {
+        result = await this.updateLivePhoto(auth, id, { ...dto, livePhotoVideoId: rest.livePhotoVideoId });
+      } else {
+        const sidecarIds = await this.updateExif({
+          id,
+          description,
+          dateTimeOriginal,
+          latitude,
+          longitude,
+          rating,
+          city,
+          state,
+          country,
+        });
+        const locked =
+          visibility === AssetVisibility.Locked
+            ? await this.assetRepository.lock([id], AssetLockReason.Marked, auth.user.id)
+            : [];
+        const asset = await this.assetRepository.update({
+          id,
+          ...getAssetDateTimeUpdates(dateTimeOriginal),
+          ...rest,
+          ...(visibility && visibility !== AssetVisibility.Locked && { visibility }),
+        });
+        if (!asset) throw new BadRequestException('Asset not found');
+        result = { asset, sidecarIds, locked, hiddenId: undefined, shownId: undefined, lockIds: locking ? [id] : [] };
       }
-    }
-
-    await this.updateExif({ id, description, dateTimeOriginal, latitude, longitude, rating, city, state, country });
-
-    const storedVisibility = await this.applyLockedVisibility(auth, [id], visibility);
-    const asset = await this.assetRepository.update({
-      id,
-      ...getAssetDateTimeUpdates(dateTimeOriginal),
-      ...rest,
-      ...(storedVisibility && { visibility: storedVisibility }),
+      const visibilityIds = locking ? await this.assetRepository.findLockGroupIds(result.lockIds) : [];
+      if (visibilityIds.some((id) => !admitted.has(id)))
+        throw new ConflictException('Lock group changed; retry the update');
+      await this.partnerOriginRepository.markOverridden('asset', [id], getAssetEditFields(dto), auth.user.id);
+      if (visibilityIds.length > 0)
+        await this.partnerOriginRepository.markOverridden(
+          'asset',
+          visibilityIds,
+          [AssetOriginField.Visibility],
+          auth.user.id,
+        );
+      return { ...result, visibilityIds };
     });
-
-    if (previousMotion && asset) {
-      await onAfterUnlink(repos, {
-        userId: auth.user.id,
-        livePhotoVideoId: previousMotion.id,
-        visibility: asset.visibility,
-      });
+    const { asset } = result;
+    for (const id of result.sidecarIds) await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
+    if (result.locked.length > 0) {
+      await this.afterAssetsLocked(result.locked);
+      await this.notifyAssetsUpdated(
+        result.locked.filter((assetId) => assetId !== id),
+        auth.user.id,
+      );
     }
-
-    if (!asset) {
-      throw new BadRequestException('Asset not found');
-    }
-
+    if (result.hiddenId)
+      await this.eventRepository.emit('AssetHide', { assetId: result.hiddenId, userId: auth.user.id });
+    if (result.shownId) await this.eventRepository.emit('AssetShow', { assetId: result.shownId, userId: auth.user.id });
     // FL-326: an edited field of a partner copy is the owner's from now on; copies of this item follow it
     await recordAssetEdit(
       { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
@@ -262,6 +280,15 @@ export class AssetService extends BaseService {
       [id],
       getAssetEditFields(dto),
     );
+
+    const siblingVisibilityIds = result.visibilityIds.filter((assetId) => assetId !== id);
+    if (siblingVisibilityIds.length > 0)
+      await recordAssetEdit(
+        { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+        auth.user.id,
+        siblingVisibilityIds,
+        [AssetOriginField.Visibility],
+      );
 
     // A visibility change that locks or unlocks a whole stack also changes the siblings `id` never
     // mentions (FL-34, FL-53); push the same real-time update to `id` and to every one of them, so every
@@ -280,6 +307,134 @@ export class AssetService extends BaseService {
     return this.get(auth, id) as Promise<AssetResponseDto>;
   }
 
+  /** Import metadata fills are decided under the write locks, never from an earlier worker snapshot. */
+  async fillMissingMetadata(
+    auth: AuthDto,
+    id: string,
+    dto: Pick<UpdateAssetDto, 'description' | 'latitude' | 'longitude' | 'isFavorite' | 'visibility'>,
+  ): Promise<boolean> {
+    const result = await this.partnerOriginRepository.withOriginEdit('asset', [id], [], () =>
+      this.assetRepository.withMetadataUpdate(id, async (assets, access, tx) => {
+        const current = await assets.getById(id, { exifInfo: true });
+        if (!current || current.ownerId !== auth.user.id || current.deletedAt)
+          throw new BadRequestException('Asset not found');
+        if (isLockedRow(current)) return false;
+        await requireAccess(access, { auth, permission: Permission.AssetUpdate, ids: [id] });
+        const update: UpdateAssetDto = {};
+        if (dto.description && !current.exifInfo?.description) update.description = dto.description;
+        if (
+          dto.latitude !== null &&
+          dto.latitude !== undefined &&
+          dto.longitude !== null &&
+          dto.longitude !== undefined &&
+          (current.exifInfo?.latitude === null ||
+            current.exifInfo?.latitude === undefined ||
+            current.exifInfo?.longitude === null ||
+            current.exifInfo?.longitude === undefined)
+        ) {
+          update.latitude = dto.latitude;
+          update.longitude = dto.longitude;
+        }
+        if (dto.isFavorite && !current.isFavorite) update.isFavorite = true;
+        if (dto.visibility === AssetVisibility.Archive && current.visibility === AssetVisibility.Timeline)
+          update.visibility = AssetVisibility.Archive;
+        if (Object.keys(update).length === 0) return true;
+        const { isFavorite, visibility, ...exif } = update;
+        const sidecarIds = await this.updateExif({ id, ...exif }, assets);
+        const asset = await assets.update({ id, ...omitBy({ isFavorite, visibility }, isUndefined) });
+        if (!asset) throw new BadRequestException('Asset not found');
+        const fields = getAssetEditFields(update);
+        if (fields.length > 0) {
+          await this.partnerOriginRepository.markOverridden('asset', [id], fields, auth.user.id, tx);
+          for (const sourceId of await this.partnerOriginRepository.getIdsWithFollowers('asset', [id])) {
+            await this.jobRepository.queueInTransaction(tx, {
+              name: JobName.PartnerPropagate,
+              data: { kind: 'asset', sourceId, fields },
+            });
+          }
+        }
+        for (const id of sidecarIds)
+          await this.jobRepository.queueInTransaction(tx, { name: JobName.SidecarWrite, data: { id } });
+        return { asset, update };
+      }),
+    );
+    if (typeof result === 'boolean') return result;
+    if (result.update.visibility !== undefined) {
+      const siblingIds = result.asset.stackId ? ((await this.assetRepository.getStackSiblingIds([id])) ?? []) : [];
+      await this.notifyAssetsUpdated([id, ...siblingIds], auth.user.id);
+    }
+    return true;
+  }
+
+  private async updateLivePhoto(auth: AuthDto, id: string, dto: UpdateAssetDto & { livePhotoVideoId: string | null }) {
+    const { description, dateTimeOriginal, latitude, longitude, rating, visibility, city, state, country, ...rest } =
+      dto;
+    const result = await this.assetRepository.withLivePhotoUpdate(id, dto.livePhotoVideoId, async (assets, access) => {
+      await requireAccess(access, { auth, permission: Permission.AssetUpdate, ids: [id] });
+      const photo = await assets.getById(id);
+      if (!photo || photo.ownerId !== auth.user.id) throw new BadRequestException('Asset not found');
+      const locking = visibility === AssetVisibility.Locked;
+      const motion = dto.livePhotoVideoId
+        ? await getLivePhotoMotion(assets, auth.user.id, dto.livePhotoVideoId)
+        : undefined;
+      if (motion) {
+        if (photo.type !== AssetType.Image || photo.deletedAt || motion.deletedAt) {
+          throw new BadRequestException('A live photo must be an existing image paired with a video');
+        }
+        if (
+          !locking &&
+          ((isLockedRow(motion) && getLockedOwnerId(auth) !== auth.user.id) ||
+            isLockedRow(photo) !== isLockedRow(motion))
+        ) {
+          throw new BadRequestException(
+            'A Locked item can only be paired with another Locked item in an elevated session',
+          );
+        }
+      }
+      const previous = photo.livePhotoVideoId ? await assets.getById(photo.livePhotoVideoId) : undefined;
+      const ownedPrevious =
+        previous?.ownerId === auth.user.id && previous.type === AssetType.Video ? previous : undefined;
+      if (ownedPrevious && ownedPrevious.id !== dto.livePhotoVideoId) {
+        if (StorageCore.isAndroidMotionPath(ownedPrevious.originalPath))
+          throw new BadRequestException('Cannot unlink Android motion photos');
+        if (!locking && isLockedRow(ownedPrevious) && getLockedOwnerId(auth) !== auth.user.id) {
+          throw new BadRequestException('Live photo video not found');
+        }
+      }
+      const motionIds = [...new Set([ownedPrevious?.id, motion?.id].filter((id): id is string => !!id))];
+      if (locking) {
+        const group = await assets.getByIds(await assets.findLockGroupIds([id, ...motionIds]));
+        if (group.some((asset) => asset.ownerId !== auth.user.id)) throw new BadRequestException('Asset not found');
+      }
+      const sidecarIds = await this.updateExif(
+        { id, description, dateTimeOriginal, latitude, longitude, rating, city, state, country },
+        assets,
+        motionIds,
+      );
+      const asset = await assets.update({
+        id,
+        ...getAssetDateTimeUpdates(dateTimeOriginal),
+        ...rest,
+        ...(visibility && !locking && { visibility }),
+      });
+      if (!asset) throw new BadRequestException('Asset not found');
+      const hiddenId = motion?.visibility === AssetVisibility.Timeline ? motion.id : undefined;
+      if (hiddenId) await assets.update({ id: hiddenId, visibility: AssetVisibility.Hidden });
+      let shownId: string | undefined;
+      if (
+        ownedPrevious &&
+        ownedPrevious.id !== dto.livePhotoVideoId &&
+        (await assets.getLivePhotoCount(ownedPrevious.id)) < 1
+      ) {
+        await assets.update({ id: ownedPrevious.id, visibility: asset.visibility });
+        shownId = ownedPrevious.id;
+      }
+      const locked = locking ? await assets.lock([id, ...motionIds], AssetLockReason.Marked, auth.user.id) : [];
+      return { asset, sidecarIds, hiddenId, shownId, locked, lockIds: locking ? [id, ...motionIds] : [] };
+    });
+    return result;
+  }
+
   async updateAll(auth: AuthDto, dto: AssetBulkUpdateDto): Promise<void> {
     const {
       ids,
@@ -296,52 +451,94 @@ export class AssetService extends BaseService {
     } = dto;
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
 
-    const storedVisibility = await this.applyLockedVisibility(auth, ids, visibility);
-    const assetDto = omitBy(
-      { isFavorite, visibility: storedVisibility, duplicateId, ...getAssetDateTimeUpdates(dateTimeOriginal) },
-      isUndefined,
-    );
-    // FL-51: null coordinates remove the location (the geolocation utility's "Remove location")
-    const clearLocation = latitude === null && longitude === null;
-    const exifDto = omitBy(
-      {
-        latitude: clearLocation ? undefined : (latitude ?? undefined),
-        longitude: clearLocation ? undefined : (longitude ?? undefined),
-        rating,
-        description,
-        dateTimeOriginal,
+    const originIds = visibility === AssetVisibility.Locked ? await this.assetRepository.findLockGroupIds(ids) : ids;
+    const admitted = new Set(originIds);
+    const { locationVideoIds, locked, visibilityIds } = await this.partnerOriginRepository.withOriginEdit(
+      'asset',
+      originIds,
+      [],
+      async () => {
+        const locked =
+          visibility === AssetVisibility.Locked
+            ? await this.assetRepository.lock(ids, AssetLockReason.Marked, auth.user.id)
+            : [];
+        const visibilityIds =
+          visibility === AssetVisibility.Locked ? await this.assetRepository.findLockGroupIds(ids) : [];
+        if (visibilityIds.some((id) => !admitted.has(id)))
+          throw new ConflictException('Lock group changed; retry the update');
+        const storedVisibility = visibility === AssetVisibility.Locked ? undefined : visibility;
+        const assetDto = omitBy(
+          { isFavorite, visibility: storedVisibility, duplicateId, ...getAssetDateTimeUpdates(dateTimeOriginal) },
+          isUndefined,
+        );
+        // FL-51: null coordinates remove the location (the geolocation utility's "Remove location")
+        const clearLocation = latitude === null && longitude === null;
+        const exifDto = omitBy(
+          {
+            latitude: clearLocation ? undefined : (latitude ?? undefined),
+            longitude: clearLocation ? undefined : (longitude ?? undefined),
+            rating,
+            description,
+            dateTimeOriginal,
+          },
+          isUndefined,
+        );
+
+        // FL-36 (V-24): moving items releases their typed place names, as a single edit does
+        // (`updateExif`), so reverse geocoding names the new spot instead of keeping the old place.
+        const moved = !clearLocation && (isNumber(latitude) || isNumber(longitude));
+        if (Object.keys(exifDto).length > 0) {
+          await this.assetRepository.updateAllExif(ids, exifDto, moved ? [...placeProperties] : []);
+        }
+
+        // FL-51: a Live Photo's paired video carries the same location, so it goes with the photo's
+        const locationVideoIds = clearLocation ? await this.getLivePhotoVideoIds(ids) : [];
+        if (clearLocation) {
+          await this.assetRepository.clearLocation([...ids, ...locationVideoIds]);
+        }
+
+        const extractedTimeZone = extractTimeZone(dateTimeOriginal);
+
+        const updatedDateTimes =
+          (dateTimeRelative !== undefined && dateTimeRelative !== 0) ||
+          timeZone !== undefined ||
+          extractedTimeZone?.type === 'fixed'
+            ? await this.assetRepository.updateDateTimeOriginal(
+                ids,
+                dateTimeRelative,
+                timeZone ?? extractedTimeZone?.name,
+              )
+            : [];
+
+        for (const { assetId, dateTimeOriginal } of updatedDateTimes) {
+          await this.assetRepository.update({
+            id: assetId,
+            ...getAssetDateTimeUpdates(dateTimeOriginal?.toISOString()),
+          });
+        }
+
+        if (Object.keys(assetDto).length > 0) {
+          await this.assetRepository.updateAll(ids, assetDto);
+        }
+
+        await this.partnerOriginRepository.markOverridden('asset', ids, getAssetEditFields(dto), auth.user.id);
+        if (visibilityIds.length > 0)
+          await this.partnerOriginRepository.markOverridden(
+            'asset',
+            visibilityIds,
+            [AssetOriginField.Visibility],
+            auth.user.id,
+          );
+        return { locationVideoIds, locked, visibilityIds };
       },
-      isUndefined,
     );
-
-    // FL-36 (V-24): moving items releases their typed place names, as a single edit does
-    // (`updateExif`), so reverse geocoding names the new spot instead of keeping the old place.
-    const moved = !clearLocation && (isNumber(latitude) || isNumber(longitude));
-    if (Object.keys(exifDto).length > 0) {
-      await this.assetRepository.updateAllExif(ids, exifDto, moved ? [...placeProperties] : []);
-    }
-
-    // FL-51: a Live Photo's paired video carries the same location, so it goes with the photo's
-    const locationVideoIds = clearLocation ? await this.getLivePhotoVideoIds(ids) : [];
-    if (clearLocation) {
-      await this.assetRepository.clearLocation([...ids, ...locationVideoIds]);
-    }
-
-    const extractedTimeZone = extractTimeZone(dateTimeOriginal);
-
-    const updatedDateTimes =
-      (dateTimeRelative !== undefined && dateTimeRelative !== 0) ||
-      timeZone !== undefined ||
-      extractedTimeZone?.type === 'fixed'
-        ? await this.assetRepository.updateDateTimeOriginal(ids, dateTimeRelative, timeZone ?? extractedTimeZone?.name)
-        : [];
-
-    for (const { assetId, dateTimeOriginal } of updatedDateTimes) {
-      await this.assetRepository.update({ id: assetId, ...getAssetDateTimeUpdates(dateTimeOriginal?.toISOString()) });
-    }
-
-    if (Object.keys(assetDto).length > 0) {
-      await this.assetRepository.updateAll(ids, assetDto);
+    if (locked.length > 0) {
+      await this.afterAssetsLocked(locked);
+      const pushed = new Set(ids);
+      await this.notifyAssetsUpdated(
+        locked.filter((id) => !pushed.has(id)),
+        auth.user.id,
+      );
     }
 
     // FL-326: edited fields of partner copies are the owner's from now on; copies of these items follow
@@ -351,6 +548,16 @@ export class AssetService extends BaseService {
       ids,
       getAssetEditFields(dto),
     );
+
+    const requested = new Set(ids);
+    const siblingVisibilityIds = visibilityIds.filter((id) => !requested.has(id));
+    if (siblingVisibilityIds.length > 0)
+      await recordAssetEdit(
+        { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+        auth.user.id,
+        siblingVisibilityIds,
+        [AssetOriginField.Visibility],
+      );
 
     // A lock or unlock carries whole stacks along (FL-34, FL-53), including siblings `ids` never names;
     // push the same real-time update to `ids` and to every one of them, so every open session reflects
@@ -390,6 +597,13 @@ export class AssetService extends BaseService {
     await this.notifyAssetsUpdated(assetIds, userId);
   }
 
+  @OnEvent({ name: 'AssetLocalEffects', priority: -1 })
+  async onAssetLocalEffects({ lockedCascade, ownerId }: ArgOf<'AssetLocalEffects'>): Promise<void> {
+    if (!lockedCascade) return;
+    await this.afterAssetsLocked(lockedCascade.assetIds, true);
+    await this.notifyAssetsUpdated(lockedCascade.assetIds, ownerId);
+  }
+
   /**
    * Push assets whose visibility a transactional archive changed outside `updateAll` (FL-32), with
    * their stack siblings, to the owner's open sessions, the same real-time update `updateAll` sends.
@@ -407,66 +621,37 @@ export class AssetService extends BaseService {
    */
   async lock(auth: AuthDto, dto: BulkIdsDto): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: dto.ids });
-    await this.lockAssets(auth, dto.ids, AssetLockReason.Marked);
+    const originIds = await this.assetRepository.findLockGroupIds(dto.ids);
+    const admitted = new Set(originIds);
+    const { locked, visibilityIds } = await this.partnerOriginRepository.withOriginEdit(
+      'asset',
+      originIds,
+      [],
+      async () => {
+        const locked = await this.assetRepository.lock(dto.ids, AssetLockReason.Marked, auth.user.id);
+        const visibilityIds = await this.assetRepository.findLockGroupIds(dto.ids);
+        if (visibilityIds.some((id) => !admitted.has(id)))
+          throw new ConflictException('Lock group changed; retry the update');
+        await this.partnerOriginRepository.markOverridden(
+          'asset',
+          visibilityIds,
+          [AssetOriginField.Visibility],
+          auth.user.id,
+        );
+        return { locked, visibilityIds };
+      },
+    );
+    if (locked.length > 0) {
+      await this.afterAssetsLocked(locked);
+      await this.notifyAssetsUpdated(locked, auth.user.id);
+    }
     // FL-326: locking a partner copy makes its visibility the owner's; copies of these items follow it
     await recordAssetEdit(
       { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
       auth.user.id,
-      dto.ids,
+      visibilityIds,
       [AssetOriginField.Visibility],
     );
-  }
-
-  /**
-   * `visibility: locked` in a request (older clients, the upstream "Move to Locked folder") is a lock
-   * record, never a stored visibility (FL-34). Any other visibility is stored as asked and never unlocks:
-   * a locked asset stays locked, whatever its stored visibility, until its owner unlocks it through
-   * `POST /assets/unlock` from an unlocked session. Returns the visibility to store, if any.
-   */
-  private async applyLockedVisibility(
-    auth: AuthDto,
-    ids: string[],
-    visibility?: AssetVisibility,
-  ): Promise<AssetVisibility | undefined> {
-    if (visibility === undefined) {
-      return undefined;
-    }
-
-    if (visibility === AssetVisibility.Locked) {
-      // `update` and `updateAll` push the final state of `ids` (and their stacks) once they are done
-      await this.lockAssets(auth, ids, AssetLockReason.Marked, { pushedByCaller: ids });
-      return undefined;
-    }
-
-    // Never an unlock (FL-34): only `POST /assets/unlock` removes a lock, from an unlocked session,
-    // recording the owner's review. Any other visibility is stored and the lock, if any, stays.
-    return visibility;
-  }
-
-  /**
-   * Locks and follows up (FL-34, FL-53): every cover, featured photo and face thumbnail the newly locked
-   * assets were is released in the lock's transaction; the people whose featured face moved get a new
-   * thumbnail, and a profile picture copied from one of the photos is replaced.
-   */
-  private async lockAssets(
-    auth: AuthDto,
-    ids: string[],
-    reason: AssetLockReason,
-    { pushedByCaller = [] }: { pushedByCaller?: string[] } = {},
-  ): Promise<void> {
-    if (ids.length === 0) {
-      return;
-    }
-    const locked = await this.assetRepository.lock(ids, reason, auth.user.id);
-    if (locked.length > 0) {
-      await this.afterAssetsLocked(locked);
-      // everything the lock carried along (stack siblings, live photo parts), not what the caller pushes
-      const pushed = new Set(pushedByCaller);
-      await this.notifyAssetsUpdated(
-        locked.filter((id) => !pushed.has(id)),
-        auth.user.id,
-      );
-    }
   }
 
   /**
@@ -474,7 +659,11 @@ export class AssetService extends BaseService {
    * (FL-34): an owner's review marking it sensitive is their lock (`marked`); a detection result locks
    * it as `detected` when "hide sensitive detections" is on. Nothing is ever unlocked here.
    */
-  private async lockSensitiveMetadata(auth: AuthDto, items: { assetId: string; key: string; value: unknown }[]) {
+  private async lockSensitiveMetadata<T>(
+    auth: AuthDto,
+    items: { assetId: string; key: string; value: unknown }[],
+    write: () => Promise<T>,
+  ): Promise<T> {
     const marked: string[] = [];
     const detected: string[] = [];
     for (const { assetId, key, value } of items) {
@@ -485,21 +674,60 @@ export class AssetService extends BaseService {
       const review = (value as { nsfwDetection?: { review?: { isNsfw?: unknown } } }).nsfwDetection?.review;
       if (review?.isNsfw === true) {
         marked.push(assetId);
-      } else if (!review) {
+      } else {
         detected.push(assetId);
       }
     }
 
-    await this.lockAssets(auth, marked, AssetLockReason.Marked);
-    if (detected.length > 0) {
-      const { machineLearning } = await this.getConfig({ withCache: true });
-      if (isNsfwHidingEnabled(machineLearning)) {
-        const locked = await this.assetRepository.lock(detected, AssetLockReason.Detected, null);
-        if (locked.length > 0) {
-          await this.afterAssetsLocked(locked);
-        }
-      }
+    const hideDetections =
+      detected.length > 0 && isNsfwHidingEnabled((await this.getConfig({ withCache: true })).machineLearning);
+    const lockIds = [...marked, ...(hideDetections ? detected : [])];
+    if (lockIds.length === 0) return write();
+    const originIds = [
+      ...new Set([...items.map(({ assetId }) => assetId), ...(await this.assetRepository.findLockGroupIds(lockIds))]),
+    ];
+    const admitted = new Set(originIds);
+    const { result, markedLocked, detectedLocked, visibilityIds } = await this.partnerOriginRepository.withOriginEdit(
+      'asset',
+      originIds,
+      [],
+      () =>
+        this.databaseRepository.withAssetMetadataLocks(originIds, async (trx) => {
+          await this.assetRepository.lockGroupRows(lockIds, trx);
+          const currentGroup = await this.assetRepository.findLockGroupIds(lockIds);
+          if (currentGroup.some((id) => !admitted.has(id)))
+            throw new ConflictException('Lock group changed; retry the update');
+          const visibilityIds = marked.length > 0 ? await this.assetRepository.findLockGroupIds(marked) : [];
+          const result = await write();
+          const markedLocked =
+            marked.length > 0 ? await this.assetRepository.lock(marked, AssetLockReason.Marked, auth.user.id) : [];
+          const detectedLocked = hideDetections
+            ? await this.assetRepository.lock(detected, AssetLockReason.Detected, null)
+            : [];
+          if (visibilityIds.length > 0)
+            await this.partnerOriginRepository.markOverridden(
+              'asset',
+              visibilityIds,
+              [AssetOriginField.Visibility],
+              auth.user.id,
+              trx,
+            );
+          return { result, markedLocked, detectedLocked, visibilityIds };
+        }),
+    );
+    if (markedLocked.length > 0) {
+      await this.afterAssetsLocked(markedLocked);
+      await this.notifyAssetsUpdated(markedLocked, auth.user.id);
     }
+    if (detectedLocked.length > 0) await this.afterAssetsLocked(detectedLocked);
+    if (visibilityIds.length > 0)
+      await recordAssetEdit(
+        { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+        auth.user.id,
+        visibilityIds,
+        [AssetOriginField.Visibility],
+      );
+    return result;
   }
 
   /**
@@ -858,7 +1086,8 @@ export class AssetService extends BaseService {
       },
     );
     if (sequenced.length > 0) await this.trashRepository.enqueueLocalEffects();
-    const ordinary = (changed ?? []).filter((id) => !sequenced.includes(id));
+    const sequencedIds = new Set(sequenced);
+    const ordinary = (changed ?? []).filter((id) => !sequencedIds.has(id));
     if (ordinary.length > 0)
       await this.eventRepository.emit('AssetTrashAll', { assetIds: ordinary, userId: auth.user.id });
   }
@@ -903,9 +1132,7 @@ export class AssetService extends BaseService {
     // 'ml-enrichment' items, so a malicious or curious user who writes
     // 'ml-enrichment' here cannot leave the boolean column out of sync with
     // the JSONB. See AssetRepository.syncIsNsfwForItems.
-    const result = await this.assetRepository.upsertBulkMetadata(dto.items);
-    await this.lockSensitiveMetadata(auth, dto.items);
-    return result;
+    return this.lockSensitiveMetadata(auth, dto.items, () => this.assetRepository.upsertBulkMetadata(dto.items));
   }
 
   async upsertMetadata(auth: AuthDto, id: string, dto: AssetMetadataUpsertDto): Promise<AssetMetadataResponseDto[]> {
@@ -922,12 +1149,11 @@ export class AssetService extends BaseService {
 
     // See `upsertBulkMetadata` — the repository handles the asset.is_nsfw
     // sync for any 'ml-enrichment' items in the payload.
-    const result = await this.assetRepository.upsertMetadata(id, dto.items);
-    await this.lockSensitiveMetadata(
+    return this.lockSensitiveMetadata(
       auth,
       dto.items.map((item) => ({ assetId: id, ...item })),
+      () => this.assetRepository.upsertMetadata(id, dto.items),
     );
-    return result;
   }
 
   async getMetadataByKey(auth: AuthDto, id: string, key: string): Promise<AssetMetadataResponseDto> {
@@ -993,17 +1219,22 @@ export class AssetService extends BaseService {
     return findOrFail(() => this.assetRepository.getById(id), 'Asset');
   }
 
-  private async updateExif(dto: {
-    id: string;
-    description?: string;
-    dateTimeOriginal?: string;
-    latitude?: number | null;
-    longitude?: number | null;
-    rating?: number | null;
-    city?: string | null;
-    state?: string | null;
-    country?: string | null;
-  }) {
+  private async updateExif(
+    dto: {
+      id: string;
+      description?: string;
+      dateTimeOriginal?: string;
+      latitude?: number | null;
+      longitude?: number | null;
+      rating?: number | null;
+      city?: string | null;
+      state?: string | null;
+      country?: string | null;
+    },
+    assets = this.assetRepository,
+    motionIds?: string[],
+  ) {
+    const sidecarIds: string[] = [];
     const { id, description, dateTimeOriginal, latitude, longitude, rating } = dto;
     // FL-51: null coordinates remove the location, and with it any typed place names
     const clearLocation = latitude === null && longitude === null;
@@ -1034,31 +1265,32 @@ export class AssetService extends BaseService {
 
     const moved = !clearLocation && (isNumber(latitude) || isNumber(longitude));
     if (moved && Object.keys(place).length === 0) {
-      await this.assetRepository.unlockProperties(id, [...placeProperties]);
+      await assets.unlockProperties(id, [...placeProperties]);
     }
 
     if (clearLocation) {
       // FL-51: the Live Photo's paired video loses its location with the photo
-      const videoIds = await this.getLivePhotoVideoIds([id]);
-      await this.assetRepository.clearLocation([id, ...videoIds]);
+      const videoIds = motionIds ?? (await this.getLivePhotoVideoIds([id]));
+      await assets.clearLocation([id, ...videoIds]);
       if (Object.keys(writes).length === 0) {
-        await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
+        sidecarIds.push(id);
       }
       for (const videoId of videoIds) {
-        await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id: videoId } });
+        sidecarIds.push(videoId);
       }
     }
 
     if (Object.keys(writes).length > 0) {
-      await this.assetRepository.upsertExif({
+      await assets.upsertExif({
         exif: updateLockedColumns({
           assetId: id,
           ...writes,
         }),
         lockedPropertiesBehavior: 'append',
       });
-      await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
+      sidecarIds.push(id);
     }
+    return sidecarIds;
   }
 
   private placeName(value: string | null | undefined): string | null | undefined {

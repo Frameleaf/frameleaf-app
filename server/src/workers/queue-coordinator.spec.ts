@@ -64,6 +64,34 @@ describe('coordinator capacity admission', () => {
     vi.useRealTimers();
   });
 
+  it.each(['manifest', 'claim'])(
+    'starts no further claims after shutdown during a pending %s request',
+    async (stage) => {
+      vi.useFakeTimers();
+      await coordinate(coordinatorData);
+      fixture.store.feedManifest.mockClear();
+      fixture.store.claim.mockClear();
+      fixture.store.queuesWithUnfinishedWork.mockResolvedValue(['deep', 'thumbnail']);
+      const held = Promise.withResolvers<unknown[]>();
+      if (stage === 'manifest') fixture.store.feedManifest.mockImplementationOnce(() => held.promise);
+      else fixture.store.claim.mockImplementationOnce(() => held.promise);
+      fixture.wake!();
+      await vi.advanceTimersByTimeAsync(0);
+      fixture.port!.emit('message', { type: 'stop' });
+      const admitted = { id: 'late-claim', queue: 'deep', deadlineMs: 60_000 };
+      held.resolve(stage === 'claim' ? [admitted] : []);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fixture.store.feedManifest.mock.calls).toEqual([['deep']]);
+      expect(fixture.store.claim.mock.calls).toEqual(
+        stage === 'claim' ? [['deep', 'worker', QUEUE_EXECUTION_CAPACITY]] : [],
+      );
+      // Already acquired claims reach the executor's pre-handler deferral guard.
+      expect(vi.mocked(fixture.port!.postMessage).mock.calls).toEqual(
+        stage === 'claim' ? [[{ type: 'execute', claim: admitted }]] : [],
+      );
+    },
+  );
+
   it('claims only free capacity and rotates queues as slots settle without claiming waiting work', async () => {
     const dispatched: QueueClaim[] = [];
     fixture.port!.postMessage = (message) => {

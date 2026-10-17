@@ -820,7 +820,7 @@
       ]
     },
     {
-      "basis": "Bundled from the lockfile-pinned package and served from the engine build (owner decision 2026-09-29: no runtime CDN); the WebAssembly each loader uses is pinned by byte digest. Awaits owner re-approval of this changed row.",
+      "basis": "Bundled JS/WASM pairs from their exact lockfile-pinned runtime packages, served from the engine build without runtime CDN. Root stable ORT 1.30.0 and latest Transformers upstream-constrained ORT pair are separate; calibrated Whisper/Kokoro 3.8.1 pair is unchanged. New byte digests are a local inventory, not rights, model, GPU or hosted qualification. Existing approval row digest is stale; owner re-approval remains required.",
       "decisions": {
         "hostedUse": "blocked",
         "localRuntime": "blocked",
@@ -830,27 +830,11 @@
       "files": [
         {
           "path": "onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs",
-          "sha256": "18e4399d2c6998ed06bce49c4b7476984e77be43205f758607bc779344a804a6"
+          "sha256": "709853412fd1ffc34247af1e73569227b5b79629c5ca3f59cc39cf7e500e4947"
         },
         {
           "path": "onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.wasm",
-          "sha256": "12017c384fc3f11f9fcbac694c373e31f62a87c37d14a823fe884b40b8392706"
-        },
-        {
-          "path": "onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.mjs",
-          "sha256": "718f08970456a0843a1281be041fa4520e4df67ba09f0264f72818b2ca987590"
-        },
-        {
-          "path": "onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm",
-          "sha256": "1d6ee4ff60d7f0e6b6efa34469157d3bdcbe2f3b0dbcea2a645bb41361a85973"
-        },
-        {
-          "path": "onnxruntime-web/dist/ort-wasm-simd-threaded.mjs",
-          "sha256": "f1e8f64a690e67e2c37ff49967b847a9efeb1bb73ab39138d2d722f9be911bf3"
-        },
-        {
-          "path": "onnxruntime-web/dist/ort-wasm-simd-threaded.wasm",
-          "sha256": "d84922f85dda684adc8f2afd7a5e954676b28afc8db48528677a4db7f256b213"
+          "sha256": "3ad23231b5bd6d9dda55a7f84606315e0bf35b6750c28ee993c987c54cacab0f"
         },
         {
           "path": "kokoro-js/node_modules/@huggingface/transformers/dist/ort-wasm-simd-threaded.jsep.mjs",
@@ -859,13 +843,29 @@
         {
           "path": "kokoro-js/node_modules/@huggingface/transformers/dist/ort-wasm-simd-threaded.jsep.wasm",
           "sha256": "c46655e8a94afc45338d4cb2b840475f88e5012d524509916e505079c00bfa39"
+        },
+        {
+          "path": "@huggingface/transformers/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.mjs",
+          "sha256": "0966b6105cd936744498aa60df7a22cbd47af3374dbc64a9ab561c08a71e3611"
+        },
+        {
+          "path": "@huggingface/transformers/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm",
+          "sha256": "49871f5a4409519797e127440868a6d1923339d9185907f301a5b2a1d90af082"
+        },
+        {
+          "path": "@huggingface/transformers/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs",
+          "sha256": "c57ca56328877353a575e51bbca6f18450027d6c9bf2307a2cb2c41363b4de9f"
+        },
+        {
+          "path": "@huggingface/transformers/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm",
+          "sha256": "06ba057753da3847e4c24f02d91ab133455b0817c69a44993a9a53a2146df9e3"
         }
       ],
       "id": "runtime:onnx-cdn",
       "kind": "runtime-code",
       "licenseDeclared": "MIT",
-      "locator": "npm:onnxruntime-web@1.26.0-dev.20260410-5e55544225 (bundled in the engine build)",
-      "revision": "1.26.0-dev.20260410-5e55544225",
+      "locator": "npm:onnxruntime-web@1.30.0; Transformers 4.3.1 uses its upstream-constrained 1.31.0-dev.20260914-8d85527a0 pair; calibrated Transformers 3.8.1 remains isolated (all bundled in the engine build)",
+      "revision": "1.30.0",
       "sourceRefs": [
         "src/shared/utils/local-ort-assets.ts",
         "src/shared/utils/ort-runtime.ts"
@@ -5477,298 +5477,22 @@
   "packageNoticeEvidence": [
     {
       "location": "node_modules/@img/sharp-libvips-darwin-arm64",
-      "version": "1.2.4",
-      "integrity": "sha512-zqjjo7RatFfFoP0MkQ51jfuFZBnVE2pRiaydKJ1G/rHZvnsrHAOcQALIi9sA5co5xenQdTugCvtb1cuf78Vf4g==",
-      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-darwin-arm64/-/sharp-libvips-darwin-arm64-1.2.4.tgz",
-      "sourceRevision": "20b5e899954907a3039d6e3d4c200aaa0ec52c4c",
+      "version": "1.3.4",
+      "integrity": "sha512-5R89nBYiRdUlSWJxPhO+GVtaXzXSxKnRu/xqMn3KTA3L9EB9Oy/P+Nn2f2vlhPuUdy/Zusb2DarbyTpGCfEDuw==",
+      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-darwin-arm64/-/sharp-libvips-darwin-arm64-1.3.4.tgz",
+      "sourceRevision": "ebb95f8add54eee8bed840e3fb587e4cbec857d7",
       "noticeIds": [],
       "unresolved": "Native libvips and linked constituent license/NOTICE inventory is incomplete. Exact source repository LICENSE is Apache-2.0 build tooling, not the LGPL-3.0-or-later native payload license; it is not substituted.",
       "evidence": [
         {
-          "path": "package-notice-evidence/@img--sharp-libvips-darwin-arm64-1.2.4.json",
-          "sha256": "619ded5292a20b2e0be1df7b6899616ae48a2323856b503de9a6cbffc39d7b2e",
-          "sourceUrl": "https://registry.npmjs.org/@img/sharp-libvips-darwin-arm64/1.2.4"
+          "path": "package-notice-evidence/@img--sharp-libvips-darwin-arm64-1.3.4.json",
+          "sha256": "37386f3a91996d622deb24fec04bd1d18d76e414855ece2b7e86b83b22e0395b",
+          "sourceUrl": "https://registry.npmjs.org/%40img%2Fsharp-libvips-darwin-arm64/1.3.4"
         },
         {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/@img/sharp-libvips-darwin-arm64/-/sharp-libvips-darwin-arm64-1.2.4.tgz"
-        }
-      ]
-    },
-    {
-      "location": "node_modules/@radix-ui/number",
-      "version": "1.1.1",
-      "integrity": "sha512-MkKCwxlXTgz6CFoJx3pCwn07GKp36+aZyu/u2Ln2VrA5DcdyCZkASEDBTd8x5whTQQL5CiYf4prXKLcgQdv29g==",
-      "resolved": "https://registry.npmjs.org/@radix-ui/number/-/number-1.1.1.tgz",
-      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
-      "noticeIds": [
-        "radix-primitives-license"
-      ],
-      "unresolved": null,
-      "evidence": [
-        {
-          "path": "package-notice-evidence/@radix-ui--number-1.1.1.json",
-          "sha256": "e875c8bb712400f19455d1091c9899a9dd3432c9e26b2e1c49a5713830b45724",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/number/1.1.1"
-        },
-        {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/number/-/number-1.1.1.tgz"
-        }
-      ]
-    },
-    {
-      "location": "node_modules/@radix-ui/react-compose-refs",
-      "version": "1.1.2",
-      "integrity": "sha512-z4eqJvfiNnFMHIIvXP3CY57y2WJs5g2v3X0zm9mEJkrkNv4rDxu+sg9Jh8EkXyeqBkB7SOcboo9dMVqhyrACIg==",
-      "resolved": "https://registry.npmjs.org/@radix-ui/react-compose-refs/-/react-compose-refs-1.1.2.tgz",
-      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
-      "noticeIds": [
-        "radix-primitives-license"
-      ],
-      "unresolved": null,
-      "evidence": [
-        {
-          "path": "package-notice-evidence/@radix-ui--react-compose-refs-1.1.2.json",
-          "sha256": "a2446f7b24a5ea03f100d759c2daefe2379e4178e5415e860289272e28934e1a",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-compose-refs/1.1.2"
-        },
-        {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-compose-refs/-/react-compose-refs-1.1.2.tgz"
-        }
-      ]
-    },
-    {
-      "location": "node_modules/@radix-ui/react-context",
-      "version": "1.1.2",
-      "integrity": "sha512-jCi/QKUM2r1Ju5a3J64TH2A5SpKAgh0LpknyqdQ4m6DCV0xJ2HG1xARRwNGPQfi1SLdLWZ1OJz6F4OMBBNiGJA==",
-      "resolved": "https://registry.npmjs.org/@radix-ui/react-context/-/react-context-1.1.2.tgz",
-      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
-      "noticeIds": [
-        "radix-primitives-license"
-      ],
-      "unresolved": null,
-      "evidence": [
-        {
-          "path": "package-notice-evidence/@radix-ui--react-context-1.1.2.json",
-          "sha256": "6fd61b601379b5524b15412f969e15ee0f417adb1309066f7d08e0de1a604991",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-context/1.1.2"
-        },
-        {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-context/-/react-context-1.1.2.tgz"
-        }
-      ]
-    },
-    {
-      "location": "node_modules/@radix-ui/react-direction",
-      "version": "1.1.1",
-      "integrity": "sha512-1UEWRX6jnOA2y4H5WczZ44gOOjTEmlqv1uNW4GAJEO5+bauCBhv8snY65Iw5/VOS/ghKN9gr2KjnLKxrsvoMVw==",
-      "resolved": "https://registry.npmjs.org/@radix-ui/react-direction/-/react-direction-1.1.1.tgz",
-      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
-      "noticeIds": [
-        "radix-primitives-license"
-      ],
-      "unresolved": null,
-      "evidence": [
-        {
-          "path": "package-notice-evidence/@radix-ui--react-direction-1.1.1.json",
-          "sha256": "312575db7a0feb75ab28b4d3b32ca125c532c93647b45e5a1b00ea4774e0c617",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-direction/1.1.1"
-        },
-        {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-direction/-/react-direction-1.1.1.tgz"
-        }
-      ]
-    },
-    {
-      "location": "node_modules/@radix-ui/react-id",
-      "version": "1.1.1",
-      "integrity": "sha512-kGkGegYIdQsOb4XjsfM97rXsiHaBwco+hFI66oO4s9LU+PLAC5oJ7khdOVFxkhsmlbpUqDAvXw11CluXP+jkHg==",
-      "resolved": "https://registry.npmjs.org/@radix-ui/react-id/-/react-id-1.1.1.tgz",
-      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
-      "noticeIds": [
-        "radix-primitives-license"
-      ],
-      "unresolved": null,
-      "evidence": [
-        {
-          "path": "package-notice-evidence/@radix-ui--react-id-1.1.1.json",
-          "sha256": "742d8093c9e3e95a97a3316b3deb560999385ccf284bd76da89d146b924aaefb",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-id/1.1.1"
-        },
-        {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-id/-/react-id-1.1.1.tgz"
-        }
-      ]
-    },
-    {
-      "location": "node_modules/@radix-ui/react-use-callback-ref",
-      "version": "1.1.1",
-      "integrity": "sha512-FkBMwD+qbGQeMu1cOHnuGB6x4yzPjho8ap5WtbEJ26umhgqVXbhekKUQO+hZEL1vU92a3wHwdp0HAcqAUF5iDg==",
-      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-callback-ref/-/react-use-callback-ref-1.1.1.tgz",
-      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
-      "noticeIds": [
-        "radix-primitives-license"
-      ],
-      "unresolved": null,
-      "evidence": [
-        {
-          "path": "package-notice-evidence/@radix-ui--react-use-callback-ref-1.1.1.json",
-          "sha256": "0a546529f2c55f3ab884ab2be3bdb6fbd3c3d8ce34a5551662f5da484603731c",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-callback-ref/1.1.1"
-        },
-        {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-callback-ref/-/react-use-callback-ref-1.1.1.tgz"
-        }
-      ]
-    },
-    {
-      "location": "node_modules/@radix-ui/react-use-escape-keydown",
-      "version": "1.1.1",
-      "integrity": "sha512-Il0+boE7w/XebUHyBjroE+DbByORGR9KKmITzbR7MyQ4akpORYP/ZmbhAr0DG7RmmBqoOnZdy2QlvajJ2QA59g==",
-      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-escape-keydown/-/react-use-escape-keydown-1.1.1.tgz",
-      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
-      "noticeIds": [
-        "radix-primitives-license"
-      ],
-      "unresolved": null,
-      "evidence": [
-        {
-          "path": "package-notice-evidence/@radix-ui--react-use-escape-keydown-1.1.1.json",
-          "sha256": "c95cb6d978674c6b5f2fb21773f52a0875bcc89d7ba0b88251ad99d0c1d36593",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-escape-keydown/1.1.1"
-        },
-        {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-escape-keydown/-/react-use-escape-keydown-1.1.1.tgz"
-        }
-      ]
-    },
-    {
-      "location": "node_modules/@radix-ui/react-use-layout-effect",
-      "version": "1.1.1",
-      "integrity": "sha512-RbJRS4UWQFkzHTTwVymMTUv8EqYhOp8dOOviLj2ugtTiXRaRQS7GLGxZTLL1jWhMeoSCf5zmcZkqTl9IiYfXcQ==",
-      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-layout-effect/-/react-use-layout-effect-1.1.1.tgz",
-      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
-      "noticeIds": [
-        "radix-primitives-license"
-      ],
-      "unresolved": null,
-      "evidence": [
-        {
-          "path": "package-notice-evidence/@radix-ui--react-use-layout-effect-1.1.1.json",
-          "sha256": "680e00911e47a18faae7cf93c18675483730ed86a56d89c586764617d3ef904d",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-layout-effect/1.1.1"
-        },
-        {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-layout-effect/-/react-use-layout-effect-1.1.1.tgz"
-        }
-      ]
-    },
-    {
-      "location": "node_modules/@radix-ui/react-use-previous",
-      "version": "1.1.1",
-      "integrity": "sha512-2dHfToCj/pzca2Ck724OZ5L0EVrr3eHRNsG/b3xQJLA2hZpVCS99bLAX+hm1IHXDEnzU6by5z/5MIY794/a8NQ==",
-      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-previous/-/react-use-previous-1.1.1.tgz",
-      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
-      "noticeIds": [
-        "radix-primitives-license"
-      ],
-      "unresolved": null,
-      "evidence": [
-        {
-          "path": "package-notice-evidence/@radix-ui--react-use-previous-1.1.1.json",
-          "sha256": "67f4e86a54423adaa295e8322b339df4128c8fc55efd407f99f61698c9f414e4",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-previous/1.1.1"
-        },
-        {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-previous/-/react-use-previous-1.1.1.tgz"
-        }
-      ]
-    },
-    {
-      "location": "node_modules/@radix-ui/react-use-rect",
-      "version": "1.1.1",
-      "integrity": "sha512-QTYuDesS0VtuHNNvMh+CjlKJ4LJickCMUAqjlE3+j8w+RlRpwyX3apEQKGFzbZGdo7XNG1tXa+bQqIE7HIXT2w==",
-      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-rect/-/react-use-rect-1.1.1.tgz",
-      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
-      "noticeIds": [
-        "radix-primitives-license"
-      ],
-      "unresolved": null,
-      "evidence": [
-        {
-          "path": "package-notice-evidence/@radix-ui--react-use-rect-1.1.1.json",
-          "sha256": "e8c550260e1317bc3d072180702bdad3628edb538bdfa70f7ec0b5dc4b603345",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-rect/1.1.1"
-        },
-        {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-rect/-/react-use-rect-1.1.1.tgz"
-        }
-      ]
-    },
-    {
-      "location": "node_modules/@radix-ui/react-use-size",
-      "version": "1.1.1",
-      "integrity": "sha512-ewrXRDTAqAXlkl6t/fkXWNAhFX9I+CkKlw6zjEwk86RSPKwZr3xpBRso655aqYafwtnbpHLj6toFzmd6xdVptQ==",
-      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-size/-/react-use-size-1.1.1.tgz",
-      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
-      "noticeIds": [
-        "radix-primitives-license"
-      ],
-      "unresolved": null,
-      "evidence": [
-        {
-          "path": "package-notice-evidence/@radix-ui--react-use-size-1.1.1.json",
-          "sha256": "f04bb6982b6f50a527edc9276e8dc5efe0658ff8870f979548a9dbc40d66d8b0",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-size/1.1.1"
-        },
-        {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-size/-/react-use-size-1.1.1.tgz"
-        }
-      ]
-    },
-    {
-      "location": "node_modules/@radix-ui/rect",
-      "version": "1.1.1",
-      "integrity": "sha512-HPwpGIzkl28mWyZqG52jiqDJ12waP11Pa1lGoiyUkIEuMLBP0oeK/C89esbXrxsky5we7dfd8U58nm0SgAWpVw==",
-      "resolved": "https://registry.npmjs.org/@radix-ui/rect/-/rect-1.1.1.tgz",
-      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
-      "noticeIds": [
-        "radix-primitives-license"
-      ],
-      "unresolved": null,
-      "evidence": [
-        {
-          "path": "package-notice-evidence/@radix-ui--rect-1.1.1.json",
-          "sha256": "7d27c80b1fa7214073631efb6690bba9da859446362573cb9b40845c7e0a7c3e",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/rect/1.1.1"
-        },
-        {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/@radix-ui/rect/-/rect-1.1.1.tgz"
+          "path": "package-notice-evidence/latest-dependencies-2026-10-13.json",
+          "sha256": "e9afc28692614a165697c13f2992f816760d051d9ab43452d86cbc53fc816199",
+          "sourceUrl": "https://registry.npmjs.org/@img/sharp-libvips-darwin-arm64/-/sharp-libvips-darwin-arm64-1.3.4.tgz"
         }
       ]
     },
@@ -5800,32 +5524,6 @@
           "path": "package-notice-evidence/guid-repository.json",
           "sha256": "62c5ce55ffb93f107bd79e8f02e85f938ac02f0340a08d944dfd848811420cdf",
           "sourceUrl": "https://api.github.com/repos/NicolasDeveloper/guid-typescript"
-        }
-      ]
-    },
-    {
-      "location": "node_modules/html-parse-stringify",
-      "version": "3.0.1",
-      "integrity": "sha512-KknJ50kTInJ7qIScF3jeaFRpMpE8/lfiTdzf/twXyPBLAGrLRTmkz3AdTnKeh40X8k9L2fdYwEp/42WGXIRGcg==",
-      "resolved": "https://registry.npmjs.org/html-parse-stringify/-/html-parse-stringify-3.0.1.tgz",
-      "sourceRevision": "ce46022f537ef9b050fac592f9fcc30bf838e5ba",
-      "noticeIds": [],
-      "unresolved": "Integrity-verified published archive and exact gitHead source archive contain no full license/NOTICE text; README supplies only an MIT label.",
-      "evidence": [
-        {
-          "path": "package-notice-evidence/html-parse-stringify-3.0.1.json",
-          "sha256": "02983650726c4881367a3034c1c8bd58ef7b8b40b7f60f0ea3e9e29b63575284",
-          "sourceUrl": "https://registry.npmjs.org/html-parse-stringify/3.0.1"
-        },
-        {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/html-parse-stringify/-/html-parse-stringify-3.0.1.tgz"
-        },
-        {
-          "path": "package-notice-evidence/onnx-stable-source-bindings.json",
-          "sha256": "7af37336ccd55dd7a9633b564bda90b3361f2ceca3e7f140a9f9cd0f32c7bcc7",
-          "sourceUrl": "https://registry.npmjs.org/html-parse-stringify/-/html-parse-stringify-3.0.1.tgz"
         }
       ]
     },
@@ -5939,127 +5637,64 @@
     },
     {
       "location": "node_modules/onnxruntime-common",
-      "version": "1.24.3",
-      "integrity": "sha512-GeuPZO6U/LBJXvwdaqHbuUmoXiEdeCjWi/EG7Y1HNnDwJYuk6WUbNXpF6luSUY8yASul3cmUlLGrCCL1ZgVXqA==",
-      "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.24.3.tgz",
-      "sourceRevision": "3a728b75062256951b6e19ce718907cf1a1d4cf0",
-      "noticeIds": [
-        "onnx-common-1-24-3-license"
-      ],
-      "unresolved": null,
+      "version": "1.30.0",
+      "integrity": "sha512-7fdVWjAID1dVhH/G8qK3APARunV4VkBFoCQAP7qp4Wkab0mrorvmc+sqiT+mKXOzDqdjN5j+/Z9nb4gzNPWcyA==",
+      "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.30.0.tgz",
+      "sourceRevision": null,
+      "noticeIds": [],
+      "unresolved": "Current package ships no root notice; exact source notice and payload-to-source mapping remain unqualified.",
       "evidence": [
         {
-          "path": "package-notice-evidence/onnxruntime-common-1.24.3.json",
-          "sha256": "c01c20a0aa0878f74b6eca4b108a013a0f40858c7ed66261b9bb104f61c5ba74",
-          "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/1.24.3"
+          "path": "package-notice-evidence/onnxruntime-common-1.30.0.json",
+          "sha256": "cd582c06b885f7faf77116f8a2902732addb7cc1d27f89eb181a4f7bc14c29f6",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/1.30.0"
         },
         {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.24.3.tgz"
-        },
-        {
-          "path": "package-notice-evidence/onnx-1.24.3-ref.json",
-          "sha256": "a7161f54e7d681ce946e8443c27365a2e7b3530c8abc1b7f57fd011a131e0e58",
-          "sourceUrl": "https://api.github.com/repos/microsoft/onnxruntime/git/ref/tags/v1.24.3"
-        },
-        {
-          "path": "package-notice-evidence/onnx-stable-source-bindings.json",
-          "sha256": "7af37336ccd55dd7a9633b564bda90b3361f2ceca3e7f140a9f9cd0f32c7bcc7",
-          "sourceUrl": "https://github.com/microsoft/onnxruntime/tree/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common"
+          "path": "package-notice-evidence/latest-dependencies-2026-10-13.json",
+          "sha256": "e9afc28692614a165697c13f2992f816760d051d9ab43452d86cbc53fc816199",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.30.0.tgz"
         }
       ]
     },
     {
       "location": "node_modules/onnxruntime-node",
-      "version": "1.24.3",
-      "integrity": "sha512-JH7+czbc8ALA819vlTgcV+Q214/+VjGeBHDjX81+ZCD0PCVCIFGFNtT0V4sXG/1JXypKPgScQcB3ij/hk3YnTg==",
-      "resolved": "https://registry.npmjs.org/onnxruntime-node/-/onnxruntime-node-1.24.3.tgz",
+      "version": "1.30.0",
+      "integrity": "sha512-twhs1C2C/BFkz1yc5OY0KIU2GUq6DURO7hD4bx5Q2Qy3nAMJwRXW8xU3NVczE29VA9lolLOYepoD8fjTGOfIqw==",
+      "resolved": "https://registry.npmjs.org/onnxruntime-node/-/onnxruntime-node-1.30.0.tgz",
       "sourceRevision": null,
       "noticeIds": [],
       "unresolved": "Native/WASM bundled constituent license/NOTICE text and exact binary-to-source mapping remain unqualified. A top-level Microsoft MIT text alone cannot clear this package payload.",
       "evidence": [
         {
-          "path": "package-notice-evidence/onnxruntime-node-1.24.3.json",
-          "sha256": "771348db521486078884bc9567db571cd53a803b7db237e8af12aacc2eb8fb72",
-          "sourceUrl": "https://registry.npmjs.org/onnxruntime-node/1.24.3"
+          "path": "package-notice-evidence/onnxruntime-node-1.30.0.json",
+          "sha256": "4c00a3e687de8d8bd01b58bf75b5256f1d00cc5c67fdc20385776f8da26122e4",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-node/1.30.0"
         },
         {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/onnxruntime-node/-/onnxruntime-node-1.24.3.tgz"
+          "path": "package-notice-evidence/latest-dependencies-2026-10-13.json",
+          "sha256": "e9afc28692614a165697c13f2992f816760d051d9ab43452d86cbc53fc816199",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-node/-/onnxruntime-node-1.30.0.tgz"
         }
       ]
     },
     {
       "location": "node_modules/onnxruntime-web",
-      "version": "1.26.0-dev.20260410-5e55544225",
-      "integrity": "sha512-hHd9n8DzIfGSAjM4Dvslesc8i6h9HEEcl8qt7X3LfhUxMgls6FBJ32j2xrDtJjKJFEehFeJmyB/pvad1I8KS8w==",
-      "resolved": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.26.0-dev.20260410-5e55544225.tgz",
+      "version": "1.30.0",
+      "integrity": "sha512-q0y+JrrtukXSzsBWEMccVfqX25LRmosXHF+CaRJmg8pZClzcV7svNc4rKY3jL02Vb7QmRMDs1SigqR4CXAfKYQ==",
+      "resolved": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.30.0.tgz",
       "sourceRevision": null,
       "noticeIds": [],
       "unresolved": "Native/WASM bundled constituent license/NOTICE text and exact binary-to-source mapping remain unqualified. A top-level Microsoft MIT text alone cannot clear this package payload.",
       "evidence": [
         {
-          "path": "package-notice-evidence/onnxruntime-web-1.26.0-dev.20260410-5e55544225.json",
-          "sha256": "5ee2131060be8181a4b72d7053fcc27ed3a89caa68265e901fecdac6ce242485",
-          "sourceUrl": "https://registry.npmjs.org/onnxruntime-web/1.26.0-dev.20260410-5e55544225"
+          "path": "package-notice-evidence/onnxruntime-web-1.30.0.json",
+          "sha256": "65c3977c8d081b56001a6a797ed1212acffe3a561bfc852f63e999e1acc5d127",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-web/1.30.0"
         },
         {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.26.0-dev.20260410-5e55544225.tgz"
-        }
-      ]
-    },
-    {
-      "location": "node_modules/onnxruntime-web/node_modules/onnxruntime-common",
-      "version": "1.24.0-dev.20251116-b39e144322",
-      "integrity": "sha512-BOoomdHYmNRL5r4iQ4bMvsl2t0/hzVQ3OM3PHD0gxeXu1PmggqBv3puZicEUVOA3AtHHYmqZtjMj9FOfGrATTw==",
-      "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.24.0-dev.20251116-b39e144322.tgz",
-      "sourceRevision": "b39e14432259d5f579f34c3e338f1f70aa368f01",
-      "noticeIds": [
-        "onnx-common-b39e144322-license"
-      ],
-      "unresolved": null,
-      "evidence": [
-        {
-          "path": "package-notice-evidence/onnxruntime-common-1.24.0-dev.20251116-b39e144322.json",
-          "sha256": "7fdcf29a8d48cdae809c00b6306b7472dd391af916c347248303bf5d13490f2d",
-          "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/1.24.0-dev.20251116-b39e144322"
-        },
-        {
-          "path": "package-notice-evidence/onnxruntime-common-1.24.0-dev.20251116-b39e144322-commit.txt",
-          "sha256": "812b5aa4aff9efd28801eaead7bc3fc2b0ed743501969385c17bb1f57686d091",
-          "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.24.0-dev.20251116-b39e144322.tgz#package/__commit.txt"
-        },
-        {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.24.0-dev.20251116-b39e144322.tgz"
-        }
-      ]
-    },
-    {
-      "location": "node_modules/react-hotkeys-hook",
-      "version": "5.2.4",
-      "integrity": "sha512-BgKg+A1+TawkYluh5Bo4cTmcgMN5L29uhJbDUQdHwPX+qgXRjIPYU5kIDHyxnAwCkCBiu9V5OpB2mpyeluVF2A==",
-      "resolved": "https://registry.npmjs.org/react-hotkeys-hook/-/react-hotkeys-hook-5.2.4.tgz",
-      "sourceRevision": "f2006c7ba118175c7cd673c13296ebfb618bbd7a",
-      "noticeIds": [
-        "react-hotkeys-hook-license"
-      ],
-      "unresolved": null,
-      "evidence": [
-        {
-          "path": "package-notice-evidence/react-hotkeys-hook-5.2.4.json",
-          "sha256": "a8dfca839f9acb0ac8199ef1bd0150241c26d4c297b6271a7e9aafd2d5d6aaa7",
-          "sourceUrl": "https://registry.npmjs.org/react-hotkeys-hook/5.2.4"
-        },
-        {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/react-hotkeys-hook/-/react-hotkeys-hook-5.2.4.tgz"
+          "path": "package-notice-evidence/latest-dependencies-2026-10-13.json",
+          "sha256": "e9afc28692614a165697c13f2992f816760d051d9ab43452d86cbc53fc816199",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.30.0.tgz"
         }
       ]
     },
@@ -6095,29 +5730,6 @@
       ]
     },
     {
-      "location": "node_modules/react-resizable-panels",
-      "version": "3.0.6",
-      "integrity": "sha512-b3qKHQ3MLqOgSS+FRYKapNkJZf5EQzuf6+RLiq1/IlTHw99YrZ2NJZLk4hQIzTnnIkRg2LUqyVinu6YWWpUYew==",
-      "resolved": "https://registry.npmjs.org/react-resizable-panels/-/react-resizable-panels-3.0.6.tgz",
-      "sourceRevision": "43a071df6bb96d54e8b81a6be0e2d453af45cc4b",
-      "noticeIds": [
-        "react-resizable-panels-license"
-      ],
-      "unresolved": null,
-      "evidence": [
-        {
-          "path": "package-notice-evidence/react-resizable-panels-3.0.6.json",
-          "sha256": "a2637b5a52addc2707a8c5b8646503d424227626d94fe1ba0a561cae5a8e3031",
-          "sourceUrl": "https://registry.npmjs.org/react-resizable-panels/3.0.6"
-        },
-        {
-          "path": "package-notice-evidence/source-receipt.json",
-          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
-          "sourceUrl": "https://registry.npmjs.org/react-resizable-panels/-/react-resizable-panels-3.0.6.tgz"
-        }
-      ]
-    },
-    {
       "location": "node_modules/@rollup/rollup-linux-x64-gnu",
       "version": "4.62.1",
       "integrity": "sha512-nVQGk/jStQc2V4rrkI+vPD2J+85boKqS4R4nOdPhc3eWw0kyW/b+AYRGoH8qo057XSVqaTx13AliH5qPeLTtgQ==",
@@ -6137,6 +5749,48 @@
           "path": "package-notice-evidence/rollup-linux-x64-gnu-source-receipt.json",
           "sha256": "7f996358bc9029492d3021061ed7b17eab6829997032f8184d1470150f62c11d",
           "sourceUrl": "https://codeload.github.com/rollup/rollup/tar.gz/caacf701b89e5be4a94b3ffdbf70b51e5cfa3a1a"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@huggingface/transformers/node_modules/onnxruntime-common",
+      "version": "1.31.0-dev.20260911-2a43ec07e",
+      "integrity": "sha512-gBuF6U32YErKIAt+yD7DeGBpjRxhJ1uJwako6ygjokSZULDU6Pd+KWComX8Tumk1hYVHRxjPj7mdMnD0ryAPOw==",
+      "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.31.0-dev.20260911-2a43ec07e.tgz",
+      "sourceRevision": null,
+      "noticeIds": [],
+      "unresolved": "Latest Transformers constrains this prerelease ORT payload. Full constituent notices and exact binary-to-source mapping remain unqualified; no top-level notice is substituted.",
+      "evidence": [
+        {
+          "path": "package-notice-evidence/onnxruntime-common-1.31.0-dev.20260911-2a43ec07e.json",
+          "sha256": "ac33fa3d640836805d70dbc6f35e4da97fc5b87dd26d07c7a1e7331f627d4a0a",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/1.31.0-dev.20260911-2a43ec07e"
+        },
+        {
+          "path": "package-notice-evidence/latest-dependencies-2026-10-13.json",
+          "sha256": "e9afc28692614a165697c13f2992f816760d051d9ab43452d86cbc53fc816199",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.31.0-dev.20260911-2a43ec07e.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@huggingface/transformers/node_modules/onnxruntime-web",
+      "version": "1.31.0-dev.20260914-8d85527a0",
+      "integrity": "sha512-Iy7rtadoBgxS/LLvDr3QW38DB1PNXRnr0GJMcL0TAt7c9qjgVQl83UlGCVyeAnK2InpmW8Uc3PL8XIuqtDeF6g==",
+      "resolved": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.31.0-dev.20260914-8d85527a0.tgz",
+      "sourceRevision": null,
+      "noticeIds": [],
+      "unresolved": "Latest Transformers constrains this prerelease ORT payload. Full constituent notices and exact binary-to-source mapping remain unqualified; no top-level notice is substituted.",
+      "evidence": [
+        {
+          "path": "package-notice-evidence/onnxruntime-web-1.31.0-dev.20260914-8d85527a0.json",
+          "sha256": "9379ebb08c3e40a926c3c60ee8aa7f09ae5cee9870944ac1345c0b0a927c5e71",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-web/1.31.0-dev.20260914-8d85527a0"
+        },
+        {
+          "path": "package-notice-evidence/latest-dependencies-2026-10-13.json",
+          "sha256": "e9afc28692614a165697c13f2992f816760d051d9ab43452d86cbc53fc816199",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.31.0-dev.20260914-8d85527a0.tgz"
         }
       ]
     }

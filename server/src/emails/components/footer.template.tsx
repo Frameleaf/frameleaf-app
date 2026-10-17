@@ -1,5 +1,5 @@
-import { Text } from '@react-email/components';
 import * as React from 'react';
+import { Text } from 'react-email';
 
 // FL-135: Frameleaf native apps are not published in the app stores yet, so the footer shows no
 // store badges and links to no third-party site; it only carries the licence notice.

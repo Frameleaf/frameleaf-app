@@ -11,7 +11,7 @@ import { MlWorkload, MlWorkloadSchema } from 'src/enum.js';
  * Restoration worker contract (FL-114).
  *
  * One restoration inference is one request and one result between the server and a
- * restoration worker (`machine-learning/immich_ml/video_restoration`). The request travels as
+ * restoration worker (`machine-learning/frameleaf_ml/video_restoration`). The request travels as
  * the `request` form field of `POST /restoration/restore` beside the `media` file; the result
  * comes back base64url-encoded in the `x-restoration-result` header while the body streams the
  * restored file (MP4 for a video, PNG for a still). A failure answers with a
@@ -22,7 +22,7 @@ import { MlWorkload, MlWorkloadSchema } from 'src/enum.js';
  * `MachineLearningRepository.restore`, which implements `RestorationInference` from
  * `src/utils/restoration.ts`. The mode is FL-115's `AssetRestorationMode`.
  *
- * Public contract — KEEP IN SYNC WITH `machine-learning/immich_ml/video_restoration/schemas.py`.
+ * Public contract — KEEP IN SYNC WITH `machine-learning/frameleaf_ml/video_restoration/schemas.py`.
  */
 
 export const RESTORATION_PROTOCOL = 'restoration-v1';

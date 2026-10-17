@@ -145,6 +145,10 @@ describe('studio resource registry', () => {
     expect(generated.resources.map((row) => row.kind)).toEqual(studioResourceKinds);
   });
 
+  it.each(['__proto__', 'constructor', 'toString'])('refuses inherited preset family %s without throwing', (family) => {
+    expect(isKnownStudioPreset(family, 'alpine')).toBe(false);
+  });
+
   it('knows the prototype presets and nothing else', () => {
     expect(isKnownStudioPreset('transition', 'Cross dissolve')).toBe(true);
     expect(isKnownStudioPreset('look', 'alpine')).toBe(true);

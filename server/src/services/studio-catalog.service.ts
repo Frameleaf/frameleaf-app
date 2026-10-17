@@ -14,10 +14,10 @@ import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { parseDurationSeconds } from 'src/services/asset-restoration.service.js';
 import { requireAccess } from 'src/utils/access.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { parseSourcePixelLayout } from 'src/utils/media-decode.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
-import { type Rational, rational } from 'src/utils/rational-time.js';
+import { rational } from 'src/utils/rational-time.js';
 import {
   STUDIO_FONT_MEDIA_TYPES,
   findStudioBundledFont,
@@ -25,23 +25,10 @@ import {
   studioBundledFontPath,
 } from 'src/utils/studio-fonts.js';
 import { buildStudioAuthorizedInventory } from 'src/utils/studio-inventory.js';
+import { cadenceFromDecimal } from 'src/utils/studio-timing.js';
 
 /** An integer frame rate, or an NTSC n/1001 one, read back from a stored float (graph protocol 3.2). */
-export const exactFrameRateOf = (fps: number | null | undefined): Rational | null => {
-  if (typeof fps !== 'number' || !Number.isFinite(fps) || fps <= 0) {
-    return null;
-  }
-  if (Number.isSafeInteger(fps)) {
-    return rational(fps, 1);
-  }
-  for (const num of [24_000, 30_000, 48_000, 60_000, 120_000]) {
-    const ntsc = num / 1001;
-    if (Math.abs(fps - ntsc) < 1e-9 || Math.round(ntsc * 1000) / 1000 === fps) {
-      return rational(num, 1001);
-    }
-  }
-  return null;
-};
+export const exactFrameRateOf = cadenceFromDecimal;
 
 type StudioMediaColor = Pick<
   StudioMediaFactsDto,
@@ -145,7 +132,7 @@ export class StudioCatalogService {
    * One bundled font file by its content hash. Only a hash the catalogue lists resolves, and the
    * path is built from the catalogue entry, so a request cannot name a file.
    */
-  async getFontFile(sha256: string): Promise<ImmichFileResponse> {
+  async getFontFile(sha256: string): Promise<FileDownloadResponse> {
     const found = findStudioBundledFont(sha256);
     if (!found) {
       throw new NotFoundException('Font not found');
@@ -155,7 +142,7 @@ export class StudioCatalogService {
       this.logger.error(`Bundled Studio font ${found.file.file} of ${found.family.package} is missing`);
       throw new NotFoundException('Font not found');
     }
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path,
       contentType: STUDIO_FONT_MEDIA_TYPES[found.file.format],
       // The controller sets the immutable Cache-Control: the URL is the content hash.

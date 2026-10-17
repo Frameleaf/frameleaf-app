@@ -82,10 +82,10 @@ import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.s
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { RenderWorkerOrigin, isBundledRenderWorker, isInternalWorkerOrigin } from 'src/utils/bundled-render-worker.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import {
   GpuMemoryBytesSchema,
-  GpuWorkingBudgetApproval,
+  type GpuWorkingBudgetApproval,
   evaluateApprovedRenderSession,
 } from 'src/utils/gpu-working-budget-policy.js';
 import {
@@ -1610,7 +1610,7 @@ export class RenderWorkerService {
    * the claim is served even while the grant is unexpired. Locked is not "lost access": a
    * background task reads every asset the owner's job names (owner decision, September 22, 2026).
    */
-  async readInput(sessionToken: string | undefined, operationId: string, grant: string): Promise<ImmichFileResponse> {
+  async readInput(sessionToken: string | undefined, operationId: string, grant: string): Promise<FileDownloadResponse> {
     const { worker, session } = await this.authenticate(sessionToken);
 
     const operation = (await this.repository.getClaimedByWorker(operationId, worker.id)) as unknown as
@@ -1632,7 +1632,7 @@ export class RenderWorkerService {
       ? await this.studioInputPath(operation, worker.id, session.id, decision.payload)
       : await this.assetInputPath(operation, session.id, decision.payload);
 
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path,
       contentType: mimeTypes.lookup(path),
       cacheControl: CacheControl.PrivateWithoutCache,
@@ -1838,7 +1838,10 @@ export class RenderWorkerService {
     }
 
     const { grant } = verification;
+    const studio = studioContextOf(operation);
     if (
+      !studio ||
+      grant.revision !== studio.revision ||
       grant.scope !== 'render' ||
       grant.projectId !== operation.projectId ||
       grant.key !== payload.inputId ||
@@ -1847,17 +1850,12 @@ export class RenderWorkerService {
       throw new ForbiddenException('Input grant invalid');
     }
 
-    if (verification.path) {
-      return verification.path;
-    }
-
-    // Project-owned and deployment-owned files: FL-90 bound their access at resolve time; the path
-    // comes from a fresh resolution so a re-declared or removed resource is not served from memory.
+    // Even a live resource grant must belong to this operation's current resource set.
     const resolved = await this.resolveManifest(operation, workerSessionId);
     const granted = resolved.complete ? (resolved.studio?.entries ?? []).filter((item) => item.grant === 'render') : [];
     const entry = granted.find((candidate) => candidate.key === payload.inputId);
     if (entry?.path) {
-      return entry.path;
+      return verification.path || entry.path;
     }
     // A file of a font family: the id is compared whole against the ids this resolution issues.
     for (const candidate of granted) {

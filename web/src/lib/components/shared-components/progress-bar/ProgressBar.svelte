@@ -2,7 +2,7 @@
   import { ProgressBarStatus } from '$lib/constants';
   import { handlePromiseError } from '$lib/utils';
 
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { tweened } from 'svelte/motion';
 
   interface Props {
@@ -32,62 +32,80 @@
     onPaused = () => {},
   }: Props = $props();
 
-  const onChange = async (progressDuration: number) => {
-    progress = setDuration(progressDuration);
-    await play();
-  };
-
-  let progress = setDuration(duration);
+  let progressDuration = duration;
+  let destroyed = false;
+  const progress = tweened<number>(0, {
+    duration: (from: number, to: number) => progressDuration * 1000 * (to - from),
+  });
 
   $effect(() => {
-    handlePromiseError(onChange(duration));
+    const nextDuration = duration;
+    untrack(() => {
+      if (nextDuration === progressDuration) {
+        return;
+      }
+      progressDuration = nextDuration;
+      void progress.set(0, { duration: 0 });
+      if (status === ProgressBarStatus.Playing) {
+        handlePromiseError(play());
+      }
+    });
   });
 
   $effect(() => {
     if ($progress === 1) {
-      onDone();
+      untrack(() => onDone());
     }
   });
 
-  onMount(async () => {
+  onMount(() => {
     if (autoplay) {
-      status = ProgressBarStatus.Playing;
-      await play();
+      handlePromiseError(play());
     } else {
       status = ProgressBarStatus.Paused;
-      await progress.set(0);
     }
+  });
+
+  onDestroy(() => {
+    destroyed = true;
+    void progress.set(0, { duration: 0 });
   });
 
   export const play = async () => {
+    if (destroyed) {
+      return;
+    }
     status = ProgressBarStatus.Playing;
     onPlaying();
-    await progress.set(1);
+    if (!destroyed && status === ProgressBarStatus.Playing) {
+      await progress.set(1);
+    }
   };
 
   export const pause = async () => {
+    if (destroyed) {
+      return;
+    }
     status = ProgressBarStatus.Paused;
     onPaused();
-    await progress.set($progress);
+    if (!destroyed && status === ProgressBarStatus.Paused) {
+      await progress.set($progress, { duration: 0 });
+    }
   };
 
   export const restart = async () => {
-    await progress.set(0);
+    await resetProgress();
 
-    if (status !== ProgressBarStatus.Paused) {
+    if (!destroyed && status !== ProgressBarStatus.Paused) {
       await play();
     }
   };
 
   export const resetProgress = async () => {
-    await progress.set(0);
+    if (!destroyed) {
+      await progress.set(0, { duration: 0 });
+    }
   };
-
-  function setDuration(newDuration: number) {
-    return tweened<number>(0, {
-      duration: (from: number, to: number) => (to ? newDuration * 1000 * (to - from) : 0),
-    });
-  }
 </script>
 
 {#if !hidden}

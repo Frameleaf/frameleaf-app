@@ -30,8 +30,7 @@ export class AssetEditFactory {
   }
 
   asset(dto: AssetLike = {}, builder?: FactoryBuilder<AssetFactory>) {
-    const asset = build(AssetFactory.from(dto), builder);
-    this.value.assetId = asset.build().id;
+    this.value.assetId = dto.id && !builder ? dto.id : build(AssetFactory.from(dto), builder).build().id;
     return this;
   }
 

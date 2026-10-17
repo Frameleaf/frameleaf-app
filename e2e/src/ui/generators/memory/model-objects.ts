@@ -82,7 +82,7 @@ export function generateMemoriesFromTimeline(
     );
   }
 
-  memories.sort((a, b) => new Date(b.memoryAt).getMilliseconds() - new Date(a.memoryAt).getMilliseconds());
+  memories.sort((a, b) => new Date(b.memoryAt).getTime() - new Date(a.memoryAt).getTime());
 
   return memories;
 }

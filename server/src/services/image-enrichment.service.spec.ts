@@ -58,6 +58,7 @@ describe(ImageEnrichmentService.name, () => {
       Promise.resolve(ids.map((id) => ({ id, ownerId, isLocked: false }))),
     );
     mocks.asset.findLockGroupIds.mockImplementation((ids) => Promise.resolve(ids));
+    mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
   });
 
   it('should store NSFW results and apply visible NSFW tags when only NSFW detection is enabled', async () => {
@@ -810,6 +811,100 @@ describe(ImageEnrichmentService.name, () => {
   });
 
   describe('the sensitive mark is the lock (FL-34)', () => {
+    it.each([AssetImageEnrichmentAction.MarkNsfw, AssetImageEnrichmentAction.AcceptNsfwResult])(
+      'admits manual %s before metadata writes',
+      async (action) => {
+        mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+        await expect(sut.updateAssetEnrichment(authStub.admin, assetId, { action })).rejects.toThrow('origin busy');
+        expect(mocks.database.withAssetMetadataLock).not.toHaveBeenCalled();
+        expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
+        expect(mocks.asset.lock).not.toHaveBeenCalled();
+      },
+    );
+
+    it('pins the whole sensitive group before commit even when it is already locked', async () => {
+      const ids = [assetId, newUuid()];
+      const trx = { isTransaction: true } as never;
+      mocks.asset.findLockGroupIds.mockResolvedValue(ids);
+      mocks.asset.lock.mockResolvedValue([]);
+      mocks.database.withAssetMetadataLock.mockImplementation((_id, write) => write(trx));
+      let committed = false;
+      mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, admitted, _fields, write) => {
+        expect(admitted).toEqual(ids);
+        const result = await write();
+        expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+          'asset',
+          ids,
+          ['visibility'],
+          authStub.admin.user.id,
+          trx,
+        );
+        committed = true;
+        return result;
+      });
+      mocks.job.queue.mockImplementation(() => {
+        expect(committed).toBe(true);
+        return Promise.resolve(undefined as never);
+      });
+      await sut.updateAssetEnrichment(authStub.admin, assetId, { action: AssetImageEnrichmentAction.MarkNsfw });
+      expect(committed).toBe(true);
+    });
+
+    it('refuses a sensitive group that expanded beyond origin admission', async () => {
+      const trx = { isTransaction: true } as never;
+      mocks.database.withAssetMetadataLock.mockImplementation((_id, write) => write(trx));
+      mocks.asset.findLockGroupIds.mockResolvedValueOnce([assetId]).mockResolvedValue([assetId, newUuid()]);
+      await expect(
+        sut.updateAssetEnrichment(authStub.admin, assetId, { action: AssetImageEnrichmentAction.MarkNsfw }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+      expect(mocks.partnerOrigin.markOverridden).not.toHaveBeenCalled();
+    });
+
+    it.each(['unlock', 'safe'] as const)('admits the %s origin edit before metadata locking', async (action) => {
+      mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+      const auth = authStub.adminWithElevatedPermission;
+      const edit =
+        action === 'unlock'
+          ? sut.unlockAssets(auth, { ids: [assetId] })
+          : sut.updateAssetEnrichment(auth, assetId, { action: AssetImageEnrichmentAction.MarkSafe });
+      await expect(edit).rejects.toThrow('origin busy');
+      expect(mocks.database.withAssetMetadataLocks).not.toHaveBeenCalled();
+      expect(mocks.asset.unlock).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
+    });
+
+    it.each(['unlock', 'safe'] as const)(
+      'records the %s override in the metadata transaction before commit',
+      async (action) => {
+        const transaction = { isTransaction: true } as never;
+        const auth = authStub.adminWithElevatedPermission;
+        mocks.asset.unlock.mockResolvedValue([{ assetId, reason: AssetLockReason.Marked }]);
+        mocks.database.withAssetMetadataLocks.mockImplementation((_ids, write) => write(transaction));
+        let committed = false;
+        mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => {
+          const result = await write();
+          expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+            'asset',
+            [assetId],
+            ['visibility'],
+            auth.user.id,
+            transaction,
+          );
+          committed = true;
+          return result;
+        });
+        mocks.event.emit.mockImplementation(() => {
+          expect(committed).toBe(true);
+          return Promise.resolve(undefined as never);
+        });
+        if (action === 'unlock') await sut.unlockAssets(auth, { ids: [assetId] });
+        else await sut.updateAssetEnrichment(auth, assetId, { action: AssetImageEnrichmentAction.MarkSafe });
+        expect(committed).toBe(true);
+      },
+    );
+
     const detectedMetadata = {
       key: AssetMetadataKey.MlEnrichment,
       updatedAt: new Date(),
@@ -1579,6 +1674,49 @@ describe(ImageEnrichmentService.name, () => {
     expect(saved.description).not.toHaveProperty('appliedTagHash');
     expect(saved.description).not.toHaveProperty('appliedTagValues');
     expect(mocks.job.queue).not.toHaveBeenCalledWith({ name: JobName.SidecarWrite, data: { id: assetId } });
+  });
+
+  it('removes previous generated tags when a description rerun returns no tags', async () => {
+    mocks.systemMetadata.get.mockResolvedValue({
+      machineLearning: { nsfwDetection: { enabled: false }, imageDescription: { enabled: true } },
+    });
+    mocks.asset.getMetadataByKey.mockImplementation(() =>
+      Promise.resolve({
+        key: AssetMetadataKey.MlEnrichment,
+        updatedAt: new Date(),
+        value: {
+          description: {
+            status: 'success',
+            modelName: 'previous-model',
+            updatedAt: '2026-05-05T00:00:00.000Z',
+            appliedTagHash: 'previous-hash',
+            appliedTagValues: ['beach'],
+            result: { description: 'A beach.', tags: ['beach'] },
+          },
+        },
+      }),
+    );
+    mocks.machineLearning.describeImage.mockResolvedValue({
+      description: 'An empty room.',
+      people: [],
+      environment: 'indoors',
+      objects: [],
+      visible_text: [],
+      context: '',
+      tags: [],
+    });
+    mocks.tag.getByValue.mockResolvedValue({ id: 'beach-id', value: 'beach' } as never);
+    mocks.asset.getForUpdateTags.mockResolvedValue({ tags: [{ value: 'manual' }] });
+
+    await expect(sut.handleImageDescription({ id: assetId })).resolves.toBe(JobStatus.Success);
+
+    expect(mocks.tag.getByValue).toHaveBeenCalledExactlyOnceWith(ownerId, 'beach');
+    expect(mocks.tag.removeAssetIds).toHaveBeenCalledExactlyOnceWith('beach-id', [assetId]);
+    expect(mocks.tag.upsertAssetIds).not.toHaveBeenCalled();
+    expect(mocks.asset.upsertExif).toHaveBeenCalledWith({
+      exif: expect.objectContaining({ assetId, tags: ['manual'] }),
+      lockedPropertiesBehavior: 'append',
+    });
   });
 
   describe('identity injection — face data wiring', () => {

@@ -1,0 +1,11 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -126,6 +126,7 @@
+     "jsdom": "30.1.2",
+     "playwright": "1.64.0",
+     "tailwindcss": "4.3.3",
++    "tsx": "4.23.15",
+     "typescript": "7.0.2",
+     "vite-plus": "1.1.0"
+   },

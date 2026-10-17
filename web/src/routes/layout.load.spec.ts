@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
-vi.mock('$lib/utils/server', () => ({ init: mocks.init }));
+vi.mock('$lib/utils/server-client', () => ({ init: mocks.init }));
 vi.mock('$lib/managers/language-manager.svelte', () => ({ languageManager: { init: vi.fn() } }));
 vi.mock('$lib/managers/server-config-manager.svelte', () => ({
   serverConfigManager: { value: { maintenanceMode: false } },

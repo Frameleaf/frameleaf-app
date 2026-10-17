@@ -7,7 +7,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
-import { AssetVisibility, ImmichWorker, MediaOperationKind, MediaOperationStatus, StorageFolder } from 'src/enum.js';
+import { AssetVisibility, FrameleafWorker, MediaOperationKind, MediaOperationStatus, StorageFolder } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
@@ -113,6 +113,7 @@ type TakeoutRun = {
   lastWrite: number;
   result: ImportResult;
   albums: Map<string, string>;
+  heartbeat?: Promise<void>;
 };
 
 const isFile = (name: string) => {
@@ -181,7 +182,7 @@ export class TakeoutWorkerService {
     this.logger.setContext(TakeoutWorkerService.name);
   }
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.stopping = false;
     this.tickHandle ??= setInterval(() => this.tick(), TAKEOUT_TICK_MS);
@@ -229,6 +230,10 @@ export class TakeoutWorkerService {
   /** Carry out one claimed step, from wherever the import's rows say it has got to. */
   async run(operation: MediaOperation, claimToken: string): Promise<void> {
     const { id } = operation;
+    if (this.stopping) {
+      await this.operations.requeue(id, claimToken, { delayMs: 0, returnAttempt: true });
+      return;
+    }
     const snapshot = (operation.snapshot ?? {}) as Record<string, unknown>;
     const importId = typeof snapshot.importId === 'string' ? snapshot.importId : undefined;
     const action = snapshot.action === 'scan' || snapshot.action === 'import' ? snapshot.action : undefined;
@@ -270,6 +275,10 @@ export class TakeoutWorkerService {
     }
 
     const auth = await this.authFor(operation.ownerId);
+    if (this.stopping) {
+      await this.operations.requeue(id, claimToken, { delayMs: 0, returnAttempt: true });
+      return;
+    }
     if (!auth) {
       await this.operations.fail(id, claimToken, {
         error: 'The account that started this import no longer exists',
@@ -296,7 +305,12 @@ export class TakeoutWorkerService {
 
     // Keeps the lease while a long step runs, and notices a pause or cancel asked for meanwhile.
     const heartbeat = setInterval(() => {
-      void this.pulse(run).catch(() => {});
+      if (run.heartbeat) return;
+      run.heartbeat = this.pulse(run)
+        .catch(() => controller.abort(new Error('The import claim could not be renewed')))
+        .finally(() => {
+          run.heartbeat = undefined;
+        });
     }, TAKEOUT_HEARTBEAT_MS);
 
     try {
@@ -311,6 +325,7 @@ export class TakeoutWorkerService {
         return;
       }
 
+      this.throwIfStopped(run);
       await (action === 'scan' ? this.scan(run) : this.importItems(run));
     } catch (error) {
       if (error instanceof TakeoutStop) {
@@ -334,6 +349,7 @@ export class TakeoutWorkerService {
       await this.operations.fail(id, claimToken, { error: errorMessage(error), errorCode: code });
     } finally {
       clearInterval(heartbeat);
+      await run.heartbeat;
       if (this.running === controller) {
         this.running = undefined;
       }
@@ -554,7 +570,9 @@ export class TakeoutWorkerService {
       (file): file is TakeoutFile & { metadata: NonNullable<TakeoutFile['metadata']> } =>
         file.kind === 'sidecar' && file.metadata !== null,
     );
-    const invalid = new Set(files.filter((file) => file.kind === 'sidecar' && !file.metadata).map((file) => file.name));
+    const invalid = files
+      .filter((file) => file.kind === 'sidecar' && !file.metadata)
+      .map((file) => file.name.toLowerCase());
     const byId = new Map(sidecars.map((file) => [file.id, file]));
     const match = createTakeoutSidecarIndex(sidecars.map(({ id, name, metadata }) => ({ id, name, metadata })));
 
@@ -569,7 +587,8 @@ export class TakeoutWorkerService {
         path: byId.get(sidecar.id)!.relativePath,
         metadata: sidecar.metadata,
       }));
-      const invalidSidecar = [...invalid].some((name) => name.toLowerCase().startsWith(file.name.toLowerCase() + '.'));
+      const sidecarPrefix = file.name.toLowerCase() + '.';
+      const invalidSidecar = invalid.some((name) => name.startsWith(sidecarPrefix));
       const scanned = takeoutScannedItem({ name: file.name, folder, candidates, invalidSidecar });
       await this.repository.recordItem({
         id: file.id,
@@ -581,7 +600,9 @@ export class TakeoutWorkerService {
 
       const index = file.kind === 'image' ? photos : videos;
       const key = takeoutLivePhotoKey(file.name);
-      index.set(key, [...(index.get(key) ?? []), file]);
+      const group = index.get(key);
+      if (group) group.push(file);
+      else index.set(key, [file]);
     }
 
     for (const [key, stills] of photos) {
@@ -742,7 +763,7 @@ export class TakeoutWorkerService {
     // A photo that is Locked in the library, or goes into Locked from Google's Locked Folder, is not
     // changed further and joins no album: Google keeps Locked Folder photos out of albums, and an
     // album shared with others must never gain one.
-    const skipAlbums = item.locked || asset.locked;
+    let skipAlbums = item.locked || asset.locked;
     const patch: TakeoutAssetPatch =
       resultKind === 'created'
         ? takeoutCreatedPatch(item.metadata, options)
@@ -761,7 +782,11 @@ export class TakeoutWorkerService {
             );
     const update = this.toUpdate(patch, asset.visibility);
     if (Object.keys(update).length > 0) {
-      await this.assets.update(auth, asset.id, update);
+      if (resultKind === 'created') {
+        await this.assets.update(auth, asset.id, update);
+      } else if (!(await this.assets.fillMissingMetadata(auth, asset.id, update))) {
+        skipAlbums = true;
+      }
     }
 
     for (const folder of skipAlbums ? [] : item.albums) {
@@ -816,12 +841,14 @@ export class TakeoutWorkerService {
     const { auth, row } = run;
     const extension = path.extname(item.name).toLowerCase();
     const destination = StorageCore.getNestedPath(StorageFolder.Upload, row.ownerId, `${randomUUID()}${extension}`);
-    await this.repository.itemCreating(item.id, destination);
     const digest = await this.staging
-      .copyToLibrary(item.path, item.size, destination, run.controller.signal)
+      .copyToLibrary(item.path, item.size, destination, run.controller.signal, () =>
+        this.repository.itemCreating(item.id, destination),
+      )
       .catch((error) => {
         throw error instanceof TakeoutStagingError ? new TakeoutItemError(error.message) : error;
       });
+    this.throwIfStopped(run);
     if (!digest.checksum.equals(item.checksum)) {
       await this.staging.remove(destination);
       throw new TakeoutItemError('The staged file changed after it was scanned');
@@ -964,7 +991,9 @@ export class TakeoutWorkerService {
       return;
     }
     // Resumed again before the pause landed: hand the job back so the next claim carries on.
-    await this.operations.requeue(id, run.claimToken, { delayMs: 0, returnAttempt: true });
+    if (!(await this.operations.requeue(id, run.claimToken, { delayMs: 0, returnAttempt: true }))) {
+      await this.operations.acknowledgeCancel(id, run.claimToken, { released: false });
+    }
   }
 
   /**
@@ -972,6 +1001,9 @@ export class TakeoutWorkerService {
    * Stops the run (`TakeoutStop`) when the claim is gone, or after settling a cancel or a pause.
    */
   private async checkpoint(run: TakeoutRun, force = false): Promise<void> {
+    this.throwIfStopped(run);
+    await run.heartbeat;
+    this.throwIfStopped(run);
     const now = Date.now();
     if (!force && now - run.lastWrite < TAKEOUT_PROGRESS_INTERVAL_MS) {
       return;
@@ -985,6 +1017,7 @@ export class TakeoutWorkerService {
       progress: mediaOperationProgress(run.processed, Math.max(total, run.processed)) ?? 0,
       leaseMs: TAKEOUT_LEASE_MS,
     });
+    this.throwIfStopped(run);
     await this.proceed(run, written);
   }
 
@@ -999,9 +1032,16 @@ export class TakeoutWorkerService {
       this.logger.log(`Google Photos import job ${id} cancelled by its owner`);
       throw new TakeoutStop('cancelled');
     }
-    if (written.pauseRequestedAt && (await this.operations.settlePause(id, run.claimToken))) {
-      this.logger.log(`Google Photos import job ${id} paused by its owner`);
-      throw new TakeoutStop('paused');
+    if (written.pauseRequestedAt) {
+      if (await this.operations.settlePause(id, run.claimToken)) {
+        this.logger.log(`Google Photos import job ${id} paused by its owner`);
+        throw new TakeoutStop('paused');
+      }
+      // A withdrawn pause can continue; cancellation or claim loss cannot.
+      if (!(await this.operations.heartbeat(id, run.claimToken, TAKEOUT_LEASE_MS, { requireActiveClaim: true }))) {
+        await this.operations.acknowledgeCancel(id, run.claimToken, { released: false });
+        throw new TakeoutStop('claim no longer active');
+      }
     }
   }
 

@@ -16,7 +16,7 @@ import {
   FrameleafTokenExchangeDto,
   FrameleafTokenExchangeErrorDto,
 } from 'src/dtos/frameleaf-auth.dto.js';
-import { ApiTag, AuthType, ImmichCookie, Permission } from 'src/enum.js';
+import { ApiTag, AuthCookie, AuthType, Permission } from 'src/enum.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { FrameleafAuthService } from 'src/services/frameleaf-auth.service.js';
@@ -53,8 +53,8 @@ export class FrameleafAuthController {
       {
         isSecure: loginDetails.isSecure,
         values: [
-          { key: ImmichCookie.OAuthState, value: state },
-          { key: ImmichCookie.OAuthCodeVerifier, value: codeVerifier },
+          { key: AuthCookie.OAuthState, value: state },
+          { key: AuthCookie.OAuthCodeVerifier, value: codeVerifier },
         ],
       },
     );
@@ -77,8 +77,8 @@ export class FrameleafAuthController {
     @GetLoginDetails() loginDetails: LoginDetails,
   ): Promise<LoginResponseDto> {
     const body = await this.service.callback(dto, request.headers, loginDetails);
-    res.clearCookie(ImmichCookie.OAuthState);
-    res.clearCookie(ImmichCookie.OAuthCodeVerifier);
+    res.clearCookie(AuthCookie.OAuthState);
+    res.clearCookie(AuthCookie.OAuthCodeVerifier);
     return this.signedIn(res, body, loginDetails, dto.rememberMe);
   }
 
@@ -217,10 +217,10 @@ export class FrameleafAuthController {
       isSecure: loginDetails.isSecure,
       rememberMe,
       values: [
-        { key: ImmichCookie.AccessToken, value: body.accessToken },
+        { key: AuthCookie.AccessToken, value: body.accessToken },
         // not AuthType.OAuth: signing out must never send a Frameleaf session to the other provider
-        { key: ImmichCookie.AuthType, value: AuthType.Password },
-        { key: ImmichCookie.IsAuthenticated, value: 'true' },
+        { key: AuthCookie.AuthType, value: AuthType.Password },
+        { key: AuthCookie.IsAuthenticated, value: 'true' },
       ],
     });
   }

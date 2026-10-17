@@ -4,7 +4,8 @@
  * While it is up, requests that can change the library (any method other than GET, HEAD and
  * OPTIONS) are refused with 503, except signing in and out, sync and search (database reads and
  * receipts, never media) and the move's own pause endpoints. Write requests already admitted are
- * counted until their response closes, so the move only proceeds once none are in flight.
+ * counted until their response closes and their handler settles, so the move only proceeds once
+ * none are in flight.
  *
  * The check and the count happen in the same synchronous step, so no request can slip past a fence
  * raised between them.

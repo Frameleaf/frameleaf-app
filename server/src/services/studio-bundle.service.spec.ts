@@ -8,6 +8,7 @@ import {
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
+import { finished } from 'node:stream/promises';
 import { crc32 } from 'node:zlib';
 import type { RetainedProcessingProvenance } from 'src/utils/studio-import-provenance.js';
 import type { RetentionUpload } from 'src/utils/studio-import-publication.js';
@@ -1996,6 +1997,55 @@ describe(StudioBundleService.name, () => {
   });
 
   describe('run', () => {
+    it.each(['add-file', 'finalize'] as const)('closes ZIP output before cleanup after %s failure', async (phase) => {
+      const project = { id: newUuidV7(), ownerId: owner.user.id, name: 'Lake trip', deletedAt: null };
+      const digest = studioEnvelopeDigest(envelope);
+      projects.getById.mockResolvedValue(project);
+      projects.getRevision.mockResolvedValue({ revision: 4, digest, envelope });
+      const job = operationOf({
+        kind: MediaOperationKind.StudioBundleExport,
+        snapshot: { kind: 'studio-bundle-export', projectId: project.id, revision: 4, digest, embed: [] },
+      });
+      const failure = new Error(`archive ${phase} failed`);
+      const archive = new PassThrough();
+      const output = new Writable({
+        write(_chunk, _encoding, callback) {
+          callback();
+        },
+        destroy(error, callback) {
+          setImmediate(() => callback(error));
+        },
+      });
+      fs.storage.createZipStream.mockReturnValueOnce({
+        stream: archive,
+        addFile: () => {
+          if (phase === 'add-file') throw failure;
+        },
+        finalize: () => Promise.reject(failure),
+      });
+      fs.storage.createWriteStream.mockReturnValueOnce(output);
+      const cleanupClosed: boolean[] = [];
+      fs.storage.unlinkDir.mockImplementation(() => {
+        cleanupClosed.push(output.closed);
+        return Promise.resolve();
+      });
+      try {
+        await sut.run({ operation: job, claimToken: 'token' });
+        expect(archive.destroyed).toBe(true);
+        expect(output.closed).toBe(true);
+        expect(cleanupClosed).toEqual([true, true]);
+        expect(operations.fail).toHaveBeenCalledWith(job.id, 'token', {
+          error: failure.message,
+          errorCode: 'bundle_failed',
+        });
+        expect(operations.complete).not.toHaveBeenCalled();
+      } finally {
+        archive.destroy();
+        output.destroy();
+        await finished(output).catch(() => {});
+      }
+    });
+
     it('retries a failed job once through the shared retry, and fails it when the retry is spent', async () => {
       projects.getById.mockResolvedValue(undefined);
       const job = operationOf({

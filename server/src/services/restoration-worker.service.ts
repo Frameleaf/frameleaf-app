@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { sql } from 'kysely';
 import { hostname } from 'node:os';
 import path from 'node:path';
 import type { SystemConfig } from 'src/dtos/config.dto.js';
@@ -8,8 +9,8 @@ import { OnEvent } from 'src/decorators.js';
 import { AssetRestorationSourceType, AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
 import {
   Colorspace,
+  FrameleafWorker,
   ImageFormat,
-  ImmichWorker,
   JobName,
   MediaOperationKind,
   MediaOperationStatus,
@@ -19,10 +20,15 @@ import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
-import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import {
+  MediaOperation,
+  type MediaOperationCheckpoint,
+  MediaOperationRepository,
+} from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -58,7 +64,6 @@ import {
   stageOfKind,
 } from 'src/utils/restoration.js';
 import { ALL_LIBRARY_ANALYSIS_QUEUES, libraryAnalysisBacklog, readQueueBacklogs } from 'src/utils/worker-inventory.js';
-
 /** How often an idle worker asks for the next restoration job. */
 export const RESTORATION_POLL_MS = 2000;
 /** How often alignment and retention run. */
@@ -148,7 +153,9 @@ export class RestorationWorkerService {
   private pollTimer?: ReturnType<typeof setInterval>;
   private sweepTimer?: ReturnType<typeof setInterval>;
   private activeController?: AbortController;
-  private busy = false;
+  private active?: Promise<boolean>;
+  private sweeping?: Promise<{ aligned: { preview: number; full: number }; removed: number }>;
+  private stopping = false;
   private readonly workerId = `restoration:${hostname()}:${process.pid}`;
   private backlogReading?: { at: number; value: number };
 
@@ -165,22 +172,25 @@ export class RestorationWorkerService {
     private storageRepository: StorageRepository,
     private cryptoRepository: CryptoRepository,
     private jobRepository: JobRepository,
+    private databaseRepository: DatabaseRepository,
   ) {
     this.logger.setContext(RestorationWorkerService.name);
   }
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.start();
   }
 
   @OnEvent({ name: 'AppShutdown' })
-  onShutdown() {
+  async onShutdown() {
     this.stop();
+    await Promise.all([this.active, this.sweeping]);
   }
 
   start() {
     this.stop();
+    this.stopping = false;
     this.pollTimer = setInterval(() => {
       void this.tick().catch((error) => this.logger.warn(`Restoration poll failed: ${error}`));
     }, RESTORATION_POLL_MS);
@@ -191,6 +201,7 @@ export class RestorationWorkerService {
   }
 
   stop() {
+    this.stopping = true;
     this.activeController?.abort(new RestorationInterrupted());
     if (this.pollTimer) {
       clearInterval(this.pollTimer);
@@ -203,27 +214,32 @@ export class RestorationWorkerService {
   }
 
   /** Claim and run at most one job. One at a time per process: restoration is heavy work. */
-  async tick(): Promise<boolean> {
-    if (this.busy) {
+  tick(): Promise<boolean> {
+    if (this.active || this.stopping) return Promise.resolve(false);
+    this.active = this.takeNext().finally(() => {
+      this.active = undefined;
+    });
+    return this.active;
+  }
+
+  private async takeNext(): Promise<boolean> {
+    const holdBack = await this.destinationsWaitingForLibraryAnalysis();
+    if (this.stopping) return false;
+    const claim = await this.operationRepository.claimNext({
+      kinds: RESTORATION_OPERATION_KINDS,
+      workerId: this.workerId,
+      leaseMs: RESTORATION_LEASE_MS,
+      ...(holdBack.length > 0 && { holdBack: { kinds: [MediaOperationKind.Restoration], destinationIds: holdBack } }),
+    });
+    if (!claim) {
       return false;
     }
-    this.busy = true;
-    try {
-      const holdBack = await this.destinationsWaitingForLibraryAnalysis();
-      const claim = await this.operationRepository.claimNext({
-        kinds: RESTORATION_OPERATION_KINDS,
-        workerId: this.workerId,
-        leaseMs: RESTORATION_LEASE_MS,
-        ...(holdBack.length > 0 && { holdBack: { kinds: [MediaOperationKind.Restoration], destinationIds: holdBack } }),
-      });
-      if (!claim) {
-        return false;
-      }
-      await this.run(claim.operation, claim.claimToken);
-      return true;
-    } finally {
-      this.busy = false;
+    if (this.stopping) {
+      await this.operationRepository.requeue(claim.operation.id, claim.claimToken, { delayMs: 0, returnAttempt: true });
+      return false;
     }
+    await this.run(claim.operation, claim.claimToken);
+    return true;
   }
 
   /**
@@ -256,7 +272,13 @@ export class RestorationWorkerService {
    * retry. Retention removes preview files past their date and marks a never-reviewed preview
    * expired; the row itself stays as history.
    */
-  async sweep() {
+  sweep() {
+    return (this.sweeping ??= this.sweepExpired().finally(() => {
+      this.sweeping = undefined;
+    }));
+  }
+
+  private async sweepExpired() {
     const now = new Date();
     const aligned = await this.restorationRepository.alignWithOperations(resultExpiryAfterAbandon(now));
     if (aligned.preview || aligned.full) {
@@ -267,40 +289,37 @@ export class RestorationWorkerService {
 
     let removed = 0;
     for (const row of await this.restorationRepository.listExpiredPreviews(now, RETENTION_BATCH)) {
-      const files = [row.previewBeforePath, row.previewAfterPath].filter((file): file is string => !!file);
-      const unreviewed = row.status === AssetRestorationStatus.PreviewReady;
-      await this.restorationRepository.update(row.id, {
-        previewBeforePath: null,
-        previewAfterPath: null,
-        previewExpiresAt: null,
-        ...(unreviewed && { status: AssetRestorationStatus.Expired }),
+      removed += await this.databaseRepository.withAssetMetadataLock(row.assetId, async (trx) => {
+        const cleared = await this.restorationRepository.clearExpiredPreview(
+          row.id,
+          row.status as AssetRestorationStatus,
+          now,
+          trx,
+        );
+        if (!cleared) return 0;
+        const files = [row.previewBeforePath, row.previewAfterPath].filter((file): file is string => !!file);
+        // Finish deleting reusable paths before another worker can admit or publish this asset.
+        for (const file of files) await this.storageRepository.unlink(file);
+        return files.length;
       });
-      if (files.length > 0) {
-        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
-        removed += files.length;
-      }
     }
     // A failed or cancelled full render keeps its chunk checkpoints for a while so a retry can
     // resume; past that date the work folder goes. The row stays, still retryable from scratch.
     for (const row of await this.restorationRepository.listExpiredResults(now, RETENTION_BATCH)) {
-      // Re-check the status in the write: a retry started since the read owns the folder now.
-      const cleared = await this.restorationRepository.clearExpiredResult(
-        row.id,
-        row.status as AssetRestorationStatus,
-        now,
-      );
-      if (!cleared) {
-        continue;
-      }
-      const files = [row.resultPath, row.resultPreviewPath].filter((file): file is string => !!file);
-      if (files.length > 0) {
-        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
-        removed += files.length;
-      }
-      const base = StorageCore.getNestedFolder(StorageFolder.Thumbnails, row.ownerId, row.assetId);
-      await this.storageRepository
-        .unlinkDir(restorationWorkDir(base, row.id), { recursive: true, force: true })
-        .catch((error) => this.logger.warn(`Could not remove the work folder of restoration ${row.id}: ${error}`));
+      removed += await this.databaseRepository.withAssetMetadataLock(row.assetId, async (trx) => {
+        const cleared = await this.restorationRepository.clearExpiredResult(
+          row.id,
+          row.status as AssetRestorationStatus,
+          now,
+          trx,
+        );
+        if (!cleared) return 0;
+        const files = [row.resultPath, row.resultPreviewPath].filter((file): file is string => !!file);
+        for (const file of files) await this.storageRepository.unlink(file);
+        const base = StorageCore.getNestedFolder(StorageFolder.Thumbnails, row.ownerId, row.assetId);
+        await this.storageRepository.unlinkDir(restorationWorkDir(base, row.id), { recursive: true, force: true });
+        return files.length;
+      });
     }
     if (removed > 0) {
       this.logger.log(`Restoration retention removed ${removed} expired files`);
@@ -333,11 +352,16 @@ export class RestorationWorkerService {
       return;
     }
     const status = restoration.status as AssetRestorationStatus;
-    if (!canRunStage(stage, status)) {
+    const previousOperationId =
+      (stage === 'preview' ? restoration.previewOperationId : restoration.fullOperationId) ?? null;
+    const ownsStage = [null, operation.id, operation.retryOfId].includes(previousOperationId);
+    if (!canRunStage(stage, status) || !ownsStage) {
       // A retry of a preview over an accepted restoration, or of a full render over a rejected
       // one, must do nothing. The row already says what the owner decided.
       await this.operationRepository.fail(operation.id, claimToken, {
-        error: `A ${stage} render cannot run while the restoration is ${status}`,
+        error: ownsStage
+          ? `A ${stage} render cannot run while the restoration is ${status}`
+          : 'Another operation owns this restoration stage',
         errorCode: RestorationErrorCode.StageNotRunnable,
       });
       return;
@@ -345,16 +369,32 @@ export class RestorationWorkerService {
 
     const statuses = STAGE_STATUSES[stage];
     // Bind this job to the row (a retry is a new job id) and mark the stage running.
-    await this.restorationRepository.update(restoration.id, {
-      status: statuses.running,
-      error: null,
-      // A retry takes the leftovers back from retention (FL-115).
-      ...(stage === 'preview'
-        ? { previewOperationId: operation.id }
-        : { fullOperationId: operation.id, resultExpiresAt: null }),
-    });
+    const bound = await this.databaseRepository.withAssetMetadataLock(snapshot.assetId, (trx) =>
+      this.restorationRepository.transition(
+        restoration.id,
+        [status],
+        {
+          status: statuses.running,
+          error: null,
+          // A retry takes the leftovers back from retention (FL-115).
+          ...(stage === 'preview'
+            ? { previewOperationId: operation.id }
+            : { fullOperationId: operation.id, resultExpiresAt: null }),
+        },
+        trx,
+        { stage, id: previousOperationId },
+      ),
+    );
+    if (!bound) {
+      await this.operationRepository.fail(operation.id, claimToken, {
+        error: 'The restoration changed before this render could start',
+        errorCode: RestorationErrorCode.StageNotRunnable,
+      });
+      return;
+    }
 
     const controller = new AbortController();
+    if (this.stopping) controller.abort(new RestorationInterrupted());
     this.activeController = controller;
     let renewing: Promise<void> | undefined;
     const watch = setInterval(() => {
@@ -388,7 +428,7 @@ export class RestorationWorkerService {
       claimToken,
       snapshot,
       stage,
-      restoration: { ...restoration, status: statuses.running },
+      restoration: bound,
       signal: controller.signal,
       workDir,
       scratch: [],
@@ -693,14 +733,16 @@ export class RestorationWorkerService {
     // Checkpoints of this job and of the job it retries: a retry is a new row with the same
     // snapshot, so its predecessor's completed chunks describe exactly this work.
     const stored: StoredChunk[] = [];
+    const checkpoints = new Map<number, MediaOperationCheckpoint>();
     for (const id of [operation.id, operation.retryOfId]) {
       if (!id) {
         continue;
       }
       for (const checkpoint of await this.operationRepository.getCheckpoints(id)) {
-        if (stored.some((existing) => existing.sequence === checkpoint.sequence)) {
+        if (checkpoints.has(checkpoint.sequence)) {
           continue;
         }
+        checkpoints.set(checkpoint.sequence, checkpoint);
         stored.push({
           sequence: checkpoint.sequence,
           state: checkpoint.state,
@@ -720,10 +762,23 @@ export class RestorationWorkerService {
     const resume = planChunkResume(stored, planned);
     const reusable = new Map<number, string>();
     for (const chunk of resume.reusable) {
-      const outputPath = stored.find((existing) => existing.sequence === chunk.sequence)?.outputPath;
-      if (outputPath && (await this.storageRepository.checkFileExists(outputPath))) {
-        reusable.set(chunk.sequence, outputPath);
-      }
+      const checkpoint = checkpoints.get(chunk.sequence)!;
+      const size = Number(checkpoint.sizeInBytes);
+      if (
+        !checkpoint.outputPath ||
+        !Buffer.isBuffer(checkpoint.outputChecksum) ||
+        checkpoint.outputChecksum.length !== 32 ||
+        !Number.isSafeInteger(size) ||
+        size <= 0
+      )
+        break;
+      const stat = await this.storageRepository.stat(checkpoint.outputPath).catch(() => null);
+      this.check(ctx);
+      if (stat?.size !== size) break;
+      const digest = await this.cryptoRepository.hashFile(checkpoint.outputPath, 'sha256').catch(() => null);
+      this.check(ctx);
+      if (!digest?.equals(checkpoint.outputChecksum)) break;
+      reusable.set(chunk.sequence, checkpoint.outputPath);
     }
     // A chunk after a missing one cannot be reused either; the resume plan already ends at the
     // first break, and a missing file is such a break.
@@ -934,21 +989,13 @@ export class RestorationWorkerService {
     };
 
     const columns: Partial<Record<PublishedFile['column'], string>> = {};
+    for (const file of output.files) columns[file.column] = file.final;
     const placed: string[] = [];
     let outcome: Awaited<ReturnType<MediaOperationRepository['publishValidated']>>;
     try {
       outcome = await this.operationRepository.publishValidated(operation.id, claimToken, async (trx) => {
-        for (const file of output.files) {
-          this.storageRepository.mkdirSync(path.dirname(file.final));
-          await this.storageRepository.rename(file.tmp, file.final);
-          placed.push(file.final);
-          const index = ctx.scratch.indexOf(file.tmp);
-          if (index !== -1) {
-            ctx.scratch.splice(index, 1);
-          }
-          columns[file.column] = file.final;
-        }
-
+        // Share retention's asset lock without opening a second transaction inside publication.
+        await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${snapshot.assetId})::int)`.execute(trx);
         const updated = await this.restorationRepository.transition(
           restoration.id,
           [statuses.running],
@@ -964,8 +1011,17 @@ export class RestorationWorkerService {
               : { restoredAt: now, outputWidth: output.width, outputHeight: output.height }),
           },
           trx,
+          { stage, id: operation.id },
         );
-        return !!updated;
+        if (!updated) return false;
+        for (const file of output.files) {
+          this.storageRepository.mkdirSync(path.dirname(file.final));
+          await this.storageRepository.rename(file.tmp, file.final);
+          placed.push(file.final);
+          const index = ctx.scratch.indexOf(file.tmp);
+          if (index !== -1) ctx.scratch.splice(index, 1);
+        }
+        return true;
       });
     } catch (error) {
       // Nothing was recorded; the files this attempt moved into place belong to no row.
@@ -1010,14 +1066,21 @@ export class RestorationWorkerService {
     statuses: (typeof STAGE_STATUSES)[RestorationStage],
   ): Promise<void> {
     const { operation, claimToken, restoration } = ctx;
+    const stage = statuses.running === AssetRestorationStatus.PreviewRendering ? 'preview' : 'full';
     if (error instanceof RestorationInterrupted || ctx.signal.aborted) {
       const current = await this.operationRepository.getForOwner(operation.id, operation.ownerId);
       if (current?.status === MediaOperationStatus.Cancelling) {
         await this.operationRepository.acknowledgeCancel(operation.id, claimToken, { released: true });
-        await this.restorationRepository.transition(restoration.id, [statuses.running], {
-          status: statuses.cancelled,
-          ...this.abandonedRetention(statuses),
-        });
+        await this.restorationRepository.transition(
+          restoration.id,
+          [statuses.running],
+          {
+            status: statuses.cancelled,
+            ...this.abandonedRetention(statuses),
+          },
+          undefined,
+          { stage, id: operation.id },
+        );
         this.logger.log(`Restoration ${restoration.id} cancelled by its owner`);
       } else if (current?.pauseRequestedAt && (await this.operationRepository.settlePause(operation.id, claimToken))) {
         // The owner paused it (FL-104). The restoration row stays running: resuming requeues the
@@ -1042,11 +1105,17 @@ export class RestorationWorkerService {
     this.logger.error(`Restoration ${restoration.id} failed (${code}): ${message}`);
     const outcome = await this.operationRepository.fail(operation.id, claimToken, { error: message, errorCode: code });
     if (outcome === 'failed') {
-      await this.restorationRepository.transition(restoration.id, [statuses.running], {
-        status: statuses.failed,
-        error: message,
-        ...this.abandonedRetention(statuses),
-      });
+      await this.restorationRepository.transition(
+        restoration.id,
+        [statuses.running],
+        {
+          status: statuses.failed,
+          error: message,
+          ...this.abandonedRetention(statuses),
+        },
+        undefined,
+        { stage, id: operation.id },
+      );
     } else if (outcome === 'retrying') {
       // Every job gets one automatic retry before a failure is reported (FL-104, owner decision
       // September 22, 2026). The row stays running: the stage is runnable from there, and the next

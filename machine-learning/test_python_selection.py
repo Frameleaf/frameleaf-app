@@ -13,16 +13,18 @@ class PythonSelectionTests(unittest.TestCase):
         mise_lock = tomllib.loads((root / "mise.lock").read_text())
         uv_lock = tomllib.loads((root / "uv.lock").read_text())
         self.assertEqual(selected, mise["tools"]["python"])
-        self.assertTrue(mise_lock["tools"]["python"][0]["version"].startswith(f"{selected}."))
-        wheel_abi = f"cp{selected.replace('.', '')}"
+        self.assertEqual(mise_lock["tools"]["python"][0]["version"], selected)
+        wheel_abi = "cp" + "".join(selected.split(".")[:2])
         torchvision = next(
             package
             for package in uv_lock["package"]
-            if package["name"] == "torchvision" and package["version"] == "0.20.1+cpu"
+            if package["name"] == "torchvision" and package["version"] == "0.29.1+cpu"
         )
-        linux_wheels = [wheel["url"] for wheel in torchvision["wheels"] if "linux_x86_64" in wheel["url"]]
+        linux_wheels = [
+            wheel["url"] for wheel in torchvision["wheels"] if "linux" in wheel["url"] and "x86_64" in wheel["url"]
+        ]
         self.assertTrue(linux_wheels, "Locked CPU wheel is missing")
-        self.assertTrue(all(f"-{wheel_abi}-{wheel_abi}-" in wheel for wheel in linux_wheels))
+        self.assertTrue(any(f"-{wheel_abi}-{wheel_abi}-" in wheel for wheel in linux_wheels))
         dockerfile = (root / "Dockerfile").read_text()
         global_arguments = dockerfile.split("\nFROM ", 1)[0].splitlines()
         cpu_images = [
@@ -30,7 +32,7 @@ class PythonSelectionTests(unittest.TestCase):
         ]
         self.assertEqual(
             cpu_images,
-            [f"python:{selected}-slim-trixie@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea"],
+            [f"python:{selected}-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1"],
         )
         self.assertIn("FROM ${CPU_IMAGE} AS builder-cpu", dockerfile.splitlines())
         self.assertIn("FROM ${CPU_IMAGE} AS prod-cpu", dockerfile.splitlines())

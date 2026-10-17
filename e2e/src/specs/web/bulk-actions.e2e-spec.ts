@@ -255,14 +255,13 @@ test.describe('Everything matching', () => {
     await page.goto('/photos');
     await expect(page.locator(`[data-asset-id="${other.id}"]`)).toBeVisible();
 
-    // Filter opens the search palette's filters; its results page carries the filtered query.
+    // LIB-P1: Filter docks the Filters panel, and the library narrows beside it as a choice is made.
     await page.getByTestId('frameleaf-results-toolbar').getByRole('button', { name: 'Filter', exact: true }).click();
     const favoritesFilter = page.getByRole('combobox', { name: 'Favorites' });
     await favoritesFilter.click();
     await page.getByRole('option', { name: 'Yes', exact: true }).click({ force: true });
-    await page.getByRole('button', { name: 'Show 2 results' }).click();
-    await expect(page.locator(`[data-asset-id="${favorites[0].id}"]`)).toBeVisible();
     await expect(page.locator(`[data-asset-id="${other.id}"]`)).toHaveCount(0);
+    await expect(page.locator(`[data-asset-id="${favorites[0].id}"]`)).toBeVisible();
 
     await select(page, favorites[0].id);
     const bar = page.getByRole('region', { name: 'Selected items' });

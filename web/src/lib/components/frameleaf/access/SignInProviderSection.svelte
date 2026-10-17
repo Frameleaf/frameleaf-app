@@ -16,9 +16,16 @@
   import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
   import { toastManager } from '@frameleaf/ui';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import './access.css';
+
+  let alive = true;
+  const isCurrentSession = authManager.captureSession();
+  const isCurrent = () => alive && isCurrentSession();
+  onDestroy(() => {
+    alive = false;
+  });
 
   let linking = $state(false);
   let working = $state(false);
@@ -34,23 +41,37 @@
 
     linking = true;
     try {
-      authManager.setUser(await oauth.link(location));
+      const updated = await oauth.link(location);
+      if (!isCurrent()) {
+        return;
+      }
+      authManager.setUser(updated);
       toastManager.primary($t('frameleaf_access_provider_connected'));
     } catch (error_) {
+      if (!isCurrent()) {
+        return;
+      }
       error = getServerErrorMessage(error_) ?? $t('frameleaf_access_provider_connect_failed');
     } finally {
       linking = false;
-      await goto('?open=oauth', { replaceState: true });
+      if (isCurrent()) {
+        await goto('?open=oauth', { replaceState: true });
+      }
     }
   });
 
   const connect = async () => {
+    if (!isCurrent()) {
+      return;
+    }
     error = '';
     working = true;
     try {
-      await oauth.authorize(location);
+      await oauth.authorize(location, isCurrent);
     } finally {
-      working = false;
+      if (isCurrent()) {
+        working = false;
+      }
     }
   };
 
@@ -63,19 +84,28 @@
       confirmText: $t('frameleaf_access_provider_disconnect'),
       danger: true,
     });
-    if (!confirmed) {
+    if (!confirmed || !isCurrent()) {
       return;
     }
 
     working = true;
     error = '';
     try {
-      authManager.setUser(await oauth.unlink());
+      const updated = await oauth.unlink();
+      if (!isCurrent()) {
+        return;
+      }
+      authManager.setUser(updated);
       toastManager.primary($t('frameleaf_access_provider_disconnected'));
     } catch (error_) {
+      if (!isCurrent()) {
+        return;
+      }
       handleError(error_, $t('errors.unable_to_unlink_account'));
     } finally {
-      working = false;
+      if (isCurrent()) {
+        working = false;
+      }
     }
   };
 </script>

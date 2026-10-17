@@ -1,6 +1,39 @@
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 describe('mimeTypes', () => {
+  it('classifies supported extensions consistently across filename forms', () => {
+    const animated = new Set(['.avif', '.gif', '.heic', '.heif', '.jxl', '.png', '.webp']);
+    const heif = new Set(['.avif', '.heic', '.heif', '.hif']);
+    for (const extension of [...mimeTypes.getSupportedFileExtensions(), '.xmp', '.unknown']) {
+      for (const filename of [extension, `photo${extension.toUpperCase()}`, `/media.with.dots/photo${extension}`]) {
+        expect(mimeTypes.isAsset(filename)).toBe(
+          Object.hasOwn(mimeTypes.image, extension) || Object.hasOwn(mimeTypes.video, extension),
+        );
+        expect(mimeTypes.isPossiblyAnimatedImage(filename)).toBe(animated.has(extension));
+        expect(mimeTypes.isHeifImage(filename)).toBe(heif.has(extension));
+      }
+    }
+    for (const filename of ['', 'photo', 'photo.', '/media.jpg/photo', '/media.jpg/.hidden']) {
+      expect(mimeTypes.isAsset(filename)).toBe(false);
+      expect(mimeTypes.isPossiblyAnimatedImage(filename)).toBe(false);
+      expect(mimeTypes.isHeifImage(filename)).toBe(false);
+    }
+  });
+
+  it('keeps asset checks live while metadata categories remain fixed', () => {
+    mimeTypes.image['.frameleaf-test-image'] = ['image/frameleaf-test'];
+    mimeTypes.video['.frameleaf-test-video'] = ['video/frameleaf-test'];
+    try {
+      expect(mimeTypes.isAsset('photo.FRAMELEAF-TEST-IMAGE')).toBe(true);
+      expect(mimeTypes.isAsset('movie.FRAMELEAF-TEST-VIDEO')).toBe(true);
+      expect(mimeTypes.isPossiblyAnimatedImage('photo.frameleaf-test-image')).toBe(false);
+      expect(mimeTypes.isHeifImage('photo.frameleaf-test-image')).toBe(false);
+    } finally {
+      delete mimeTypes.image['.frameleaf-test-image'];
+      delete mimeTypes.video['.frameleaf-test-video'];
+    }
+  });
+
   for (const { mimetype, extension } of [
     // Please ensure this list is sorted.
     { mimetype: 'image/3fr', extension: '.3fr' },
@@ -103,20 +136,6 @@ describe('mimeTypes', () => {
       expect({ ...mimeTypes.image, ...mimeTypes.video }[extension]).toContain(mimetype);
     });
   }
-
-  describe('toExtension', () => {
-    it('should get an extension for a png file', () => {
-      expect(mimeTypes.toExtension('image/png')).toEqual('.png');
-    });
-
-    it('should get an extension for a jpeg file', () => {
-      expect(mimeTypes.toExtension('image/jpeg')).toEqual('.jpg');
-    });
-
-    it('should get an extension from a webp file', () => {
-      expect(mimeTypes.toExtension('image/webp')).toEqual('.webp');
-    });
-  });
 
   describe('profile', () => {
     it('should contain only lowercase mime types', () => {
@@ -264,7 +283,7 @@ describe('mimeTypes', () => {
       expect(values).toEqual(values.map((mimeType) => mimeType.toLowerCase()));
     });
 
-    for (const [extension, v] of Object.entries(mimeTypes.video)) {
+    for (const [extension, v] of Object.entries(mimeTypes.raw)) {
       it(`should lookup ${extension}`, () => {
         expect(mimeTypes.lookup(`test.${extension}`)).toEqual(v[0]);
       });

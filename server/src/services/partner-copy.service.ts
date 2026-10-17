@@ -15,7 +15,7 @@ import {
   AssetLockReason,
   AssetStatus,
   AssetVisibility,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   QueueName,
@@ -31,7 +31,7 @@ import {
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { PartnerLockService } from 'src/services/partner-lock.service.js';
-import { PartnerPeopleService } from 'src/services/partner-people.service.js';
+import { type PartnerFaceCopyInput, PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { upsertTags } from 'src/utils/tag.js';
 
 /** Assets copied per backfill batch before the job re-queues itself (and records its cursor). */
@@ -288,21 +288,32 @@ export class PartnerCopyService extends BaseService {
         await this.assetRepository.update({ id: copyId, livePhotoVideoId: motionId });
       }
     }
-    if (!overriddenFields.includes(AssetOriginField.Tags)) {
-      await this.copyTags(source.id, copyId, targetOwnerId);
-    }
-    if (!overriddenFields.includes(AssetOriginField.Faces)) {
-      await this.copyFaces({ sourceAssetId: source.id, targetAssetId: copyId, targetOwnerId, partnerSharedById });
-    }
-    // the source may have been locked or unlocked meanwhile
-    if (!overriddenFields.includes(AssetOriginField.Visibility)) {
-      await locks.mirrorLockedState({
-        sourceAssetId: source.id,
-        sourceOwnerId: source.ownerId,
-        targetAssetId: copyId,
-        targetOwnerId,
-      });
-    }
+    const maxDistance = !overriddenFields.includes(AssetOriginField.Faces)
+      ? (await this.getConfig({ withCache: true })).machineLearning.facialRecognition.maxDistance
+      : undefined;
+    await this.partnerOriginRepository.withFollowingOrigin('asset', source.id, copyId, async (origin) => {
+      if (!origin.overriddenFields.includes(AssetOriginField.Tags)) {
+        await this.copyTags(source.id, copyId, targetOwnerId);
+      }
+      if (!origin.overriddenFields.includes(AssetOriginField.Faces)) {
+        await this.copyFaces({
+          sourceAssetId: source.id,
+          targetAssetId: copyId,
+          targetOwnerId,
+          partnerSharedById,
+          maxDistance,
+        });
+      }
+      // A recipient's lock/unlock completed after the replay snapshot remains their choice.
+      if (!origin.overriddenFields.includes(AssetOriginField.Visibility)) {
+        await locks.mirrorLockedState({
+          sourceAssetId: source.id,
+          sourceOwnerId: source.ownerId,
+          targetAssetId: copyId,
+          targetOwnerId,
+        });
+      }
+    });
     // spec §4.4: an album copy whose membership still follows its source gains the new copy
     for (const albumId of await this.partnerOriginRepository.getFollowingAlbumCopiesHolding(source.id, targetOwnerId)) {
       await this.albumRepository.addAssetIds(albumId, [copyId]);
@@ -381,12 +392,7 @@ export class PartnerCopyService extends BaseService {
    * Spec §4.5: the source's faces (exact boxes, `face_search` embeddings, no ML re-run), mapped to the
    * target library's people: auto-merged into a matching person of theirs, or a new person that follows.
    */
-  protected async copyFaces(input: {
-    sourceAssetId: string;
-    targetAssetId: string;
-    targetOwnerId: string;
-    partnerSharedById: string;
-  }): Promise<void> {
+  protected async copyFaces(input: PartnerFaceCopyInput): Promise<void> {
     await BaseService.create(PartnerPeopleService, this).copyFaces(input);
   }
 
@@ -536,7 +542,7 @@ export class PartnerCopyService extends BaseService {
   }
 
   /** Spec §4.6: a new item of a sharing user's is copied to every partner, once its metadata is read. */
-  @OnEvent({ name: 'AssetMetadataExtracted', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AssetMetadataExtracted', workers: [FrameleafWorker.Microservices] })
   async onAssetMetadataExtracted({ assetId, userId }: ArgOf<'AssetMetadataExtracted'>) {
     await this.queueOnward(userId, [assetId]);
   }
@@ -552,39 +558,49 @@ export class PartnerCopyService extends BaseService {
       return this.propagateAlbum(sourceId, fields);
     }
     const followers = await this.partnerOriginRepository.getFollowers('asset', sourceId);
+    const maxDistance =
+      fields.includes(AssetOriginField.Faces) &&
+      followers.some((follower) => !follower.overriddenFields.includes(AssetOriginField.Faces))
+        ? (await this.getConfig({ withCache: true })).machineLearning.facialRecognition.maxDistance
+        : undefined;
     const onward: JobItem[] = [];
-    for (const follower of followers) {
-      const apply = fields.filter((field) => !follower.overriddenFields.includes(field));
-      if (apply.length === 0) {
-        continue;
-      }
-      await this.partnerOriginRepository.applyAssetFields(sourceId, follower.id, apply);
-      if (apply.includes(AssetOriginField.Tags)) {
-        await this.copyTags(sourceId, follower.id, follower.ownerId);
-      }
-      if (apply.includes(AssetOriginField.Faces)) {
-        await this.personRepository.deleteFacesOfAsset(follower.id);
-        await this.copyFaces({
-          sourceAssetId: sourceId,
-          targetAssetId: follower.id,
-          targetOwnerId: follower.ownerId,
-          partnerSharedById: follower.partnerSharedById,
-        });
-      }
-      // spec §4.9: a lock or unlock carries over while the copy's visibility is followed, including one a
-      // tag or face edit causes by bringing the source under (or out of) the sharer's Locked rules
-      if (
-        !follower.overriddenFields.includes(AssetOriginField.Visibility) &&
-        LOCK_RELEVANT_FIELDS.some((field) => apply.includes(field))
-      ) {
-        await BaseService.create(PartnerLockService, this).mirrorLockedState({
-          sourceAssetId: sourceId,
-          sourceOwnerId: follower.partnerSharedById,
-          targetAssetId: follower.id,
-          targetOwnerId: follower.ownerId,
-        });
-      }
-      onward.push({ name: JobName.PartnerPropagate, data: { kind, sourceId: follower.id, fields: apply } });
+    for (const selected of followers) {
+      await this.partnerOriginRepository.withFollowingOrigin('asset', sourceId, selected.id, async (follower) => {
+        const apply = fields.filter((field) => !follower.overriddenFields.includes(field));
+        if (apply.length === 0) {
+          return;
+        }
+        await this.partnerOriginRepository.applyAssetFields(sourceId, follower.id, apply);
+        if (apply.includes(AssetOriginField.Tags)) {
+          await this.copyTags(sourceId, follower.id, follower.ownerId);
+        }
+        if (apply.includes(AssetOriginField.Faces)) {
+          await this.personRepository.withMergeWrite(async () => {
+            await this.personRepository.deleteFacesOfAsset(follower.id);
+            await this.copyFaces({
+              sourceAssetId: sourceId,
+              targetAssetId: follower.id,
+              targetOwnerId: follower.ownerId,
+              partnerSharedById: follower.partnerSharedById,
+              maxDistance,
+            });
+          }, follower.ownerId);
+        }
+        // spec §4.9: a lock or unlock carries over while the copy's visibility is followed, including one a
+        // tag or face edit causes by bringing the source under (or out of) the sharer's Locked rules
+        if (
+          !follower.overriddenFields.includes(AssetOriginField.Visibility) &&
+          LOCK_RELEVANT_FIELDS.some((field) => apply.includes(field))
+        ) {
+          await BaseService.create(PartnerLockService, this).mirrorLockedState({
+            sourceAssetId: sourceId,
+            sourceOwnerId: follower.partnerSharedById,
+            targetAssetId: follower.id,
+            targetOwnerId: follower.ownerId,
+          });
+        }
+        onward.push({ name: JobName.PartnerPropagate, data: { kind, sourceId: follower.id, fields: apply } });
+      });
     }
     if (onward.length > 0) {
       await this.jobRepository.queueAll(onward);
@@ -603,27 +619,29 @@ export class PartnerCopyService extends BaseService {
       return JobStatus.Skipped;
     }
     const onward: JobItem[] = [];
-    for (const follower of followers) {
-      const apply = fields.filter((field) => !follower.overriddenFields.includes(field));
-      if (apply.length === 0) {
-        continue;
-      }
-      if (apply.includes(AlbumOriginField.Membership)) {
-        await this.syncAlbumMembership(sourceId, follower.id, follower.ownerId);
-      }
-      const cover =
-        apply.includes(AlbumOriginField.Cover) && source.albumThumbnailAssetId
-          ? await this.partnerOriginRepository.getCopyId('asset', source.albumThumbnailAssetId, follower.ownerId)
-          : undefined;
-      const update = {
-        ...(apply.includes(AlbumOriginField.Title) && { albumName: source.albumName }),
-        ...(apply.includes(AlbumOriginField.Description) && { description: source.description }),
-        ...(cover && { albumThumbnailAssetId: cover }),
-      };
-      if (Object.keys(update).length > 0) {
-        await this.albumRepository.update(follower.id, { id: follower.id, ...update }, follower.ownerId);
-      }
-      onward.push({ name: JobName.PartnerPropagate, data: { kind: 'album', sourceId: follower.id, fields: apply } });
+    for (const selected of followers) {
+      await this.partnerOriginRepository.withFollowingOrigin('album', sourceId, selected.id, async (follower) => {
+        const apply = fields.filter((field) => !follower.overriddenFields.includes(field));
+        if (apply.length === 0) {
+          return;
+        }
+        if (apply.includes(AlbumOriginField.Membership)) {
+          await this.syncAlbumMembership(sourceId, follower.id, follower.ownerId);
+        }
+        const cover =
+          apply.includes(AlbumOriginField.Cover) && source.albumThumbnailAssetId
+            ? await this.partnerOriginRepository.getCopyId('asset', source.albumThumbnailAssetId, follower.ownerId)
+            : undefined;
+        const update = {
+          ...(apply.includes(AlbumOriginField.Title) && { albumName: source.albumName }),
+          ...(apply.includes(AlbumOriginField.Description) && { description: source.description }),
+          ...(cover && { albumThumbnailAssetId: cover }),
+        };
+        if (Object.keys(update).length > 0) {
+          await this.albumRepository.update(follower.id, { id: follower.id, ...update }, follower.ownerId);
+        }
+        onward.push({ name: JobName.PartnerPropagate, data: { kind: 'album', sourceId: follower.id, fields: apply } });
+      });
     }
     if (onward.length > 0) {
       await this.jobRepository.queueAll(onward);

@@ -7,6 +7,7 @@
    * done in any order. Done marks the account onboarded; the account menu reopens it.
    */
   import { goto } from '$app/navigation';
+  // The setup screens are always dark: the brand kit's logo for dark backgrounds, unmodified.
   import logoDarkUrl from '$lib/assets/frameleaf/frameleaf-logo-dark.svg?url';
   import symbolUrl from '$lib/assets/frameleaf/frameleaf-symbol.svg?url';
   import FrameleafAccountSection from '$lib/components/frameleaf/access/FrameleafAccountSection.svelte';

@@ -1,8 +1,9 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import AsyncLock from 'async-lock';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { lookup } from 'node:dns';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { link, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { request } from 'node:https';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -80,6 +81,10 @@ import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getMocks } from 'test/utils.js';
 
 vi.mock('src/utils/backup-location-selection.js', () => ({ selectBackupLocation: vi.fn() }));
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const original = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...original, link: vi.fn(original.link) };
+});
 vi.mock('src/utils/cloud-backup-key-channel.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/utils/cloud-backup-key-channel.js')>()),
   loadBackupWorkerIdentity: vi.fn(),
@@ -459,6 +464,187 @@ describe(CloudBackupService.name, () => {
   });
   afterEach(() => sut.onShutdown());
 
+  describe('metadata update races', () => {
+    const internal = () =>
+      sut as unknown as {
+        updateMetadata: (change: (current: FrameleafCloudBackup) => FrameleafCloudBackup) => Promise<void>;
+        refreshManagedUsage: (current: FrameleafCloudBackup, linked: boolean) => Promise<FrameleafCloudBackup>;
+        managedApi: () => Promise<{ api: string; token: string }>;
+      };
+
+    it('checks active operations under the bucket lock before turning backup off', async () => {
+      const held = new Set<DatabaseLock>();
+      const lock = new AsyncLock();
+      mocks.database.withLock.mockImplementation((key, callback) =>
+        lock.acquire(String(key), async () => {
+          held.add(key);
+          try {
+            return await callback();
+          } finally {
+            held.delete(key);
+          }
+        }),
+      );
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
+      const set = mocks.systemMetadata.set.getMockImplementation()!;
+      mocks.systemMetadata.set.mockImplementation((name, value, overwrite) => {
+        if (name === SystemMetadataKey.SystemConfig) expect(held.has(DatabaseLock.FrameleafCloudBackup)).toBe(true);
+        return set(name, value, overwrite);
+      });
+      mocks.event.emit.mockImplementation(() => {
+        expect(held.has(DatabaseLock.FrameleafCloudBackup)).toBe(false);
+        return Promise.resolve();
+      });
+      operations.getActiveOfKind.mockImplementationOnce(() => {
+        expect(held.has(DatabaseLock.FrameleafCloudBackup)).toBe(true);
+        return Promise.resolve(undefined);
+      });
+      await sut.turnOff(authStub.admin);
+      expect((await savedConfig()).frameleafCloud.cloudBackup.enabled).toBe(false);
+    });
+
+    it('preserves fields from simultaneous metadata updates under the existing bucket lock', async () => {
+      const lock = new AsyncLock();
+      mocks.database.withLock.mockImplementation((key, callback) => lock.acquire(String(key), callback));
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+      await Promise.all([
+        internal().updateMetadata((current) => ({ ...current, lastCheckAt: 'check' })),
+        internal().updateMetadata((current) => ({ ...current, lastFullVerifyAt: 'verify' })),
+      ]);
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
+        lastCheckAt: 'check',
+        lastFullVerifyAt: 'verify',
+      });
+    });
+
+    it.each([
+      ['bucket', { bucketRef: 'replacement' }],
+      ['key', { keyFingerprint: 'replacement' }],
+      ['target', { target: 'byo-s3' as const }],
+      ['instance', { instanceId: 'replacement' }],
+      ['bucket name', { bucket: 'replacement' }],
+      ['region', { region: 'replacement' }],
+      ['storage ID', { managed: { storageId: 'replacement' } }],
+      ['location', { managed: { location: { locationId: 'replacement' } } }],
+    ] as const)('ignores a delayed usage response after setup changes the %s', async (_changed, patch) => {
+      const before = claim({ target: 'managed' });
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = before;
+      vi.spyOn(internal(), 'managedApi').mockResolvedValue({ api: 'https://cloud.test', token: 'synthetic' });
+      const { promise, resolve } = Promise.withResolvers<unknown>();
+      cloudBackup.usage.mockReturnValue(promise);
+      const refresh = internal().refreshManagedUsage(before, true);
+      await vi.waitFor(() => expect(cloudBackup.usage).toHaveBeenCalledOnce());
+      const replacement = { ...before, ...patch };
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = replacement;
+      resolve({
+        includedBytes: 10,
+        readOnly: false,
+        readOnlyReason: null,
+        measuredAt: 'now',
+        bytesCurrent: 2,
+        objects: 1,
+        allowanceBytes: 10,
+        extraBlocks: 0,
+      });
+      await refresh;
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toEqual(replacement);
+    });
+
+    it('merges usage into the latest managed state without losing a newer refusal', async () => {
+      const before = claim({
+        target: 'managed',
+        managed: { checkedAt: '2000-01-01', readOnly: false, readOnlyReason: null, quotaBytes: 1 },
+      });
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = before;
+      vi.spyOn(internal(), 'managedApi').mockResolvedValue({ api: 'https://cloud.test', token: 'synthetic' });
+      cloudBackup.usage.mockImplementation(() => {
+        metadata[SystemMetadataKey.FrameleafCloudBackup] = {
+          ...before,
+          managed: { ...before.managed, refusal: 'new refusal' },
+        };
+        return Promise.resolve({
+          includedBytes: 10,
+          readOnly: false,
+          readOnlyReason: null,
+          measuredAt: 'now',
+          bytesCurrent: 2,
+          objects: 1,
+          allowanceBytes: 10,
+          extraBlocks: 0,
+        });
+      });
+      await internal().refreshManagedUsage(before, true);
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
+        managed: { refusal: 'new refusal', quotaBytes: 10, usage: { bytesCurrent: 2 } },
+      });
+    });
+  });
+
+  describe('ordinary checkpoint claim authority', () => {
+    it.each(
+      ['run', 'task'].flatMap((mode) => ['cancelled', 'claim-lost', 'resumed'].map((state) => ({ mode, state }))),
+    )('rechecks authority after a failed pause: $mode / $state', async ({ mode, state }) => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+      const operation = operationOf(mode === 'task' ? { snapshot: { task: 'verify' } } : {});
+      const result = { ...emptyRunResult(), manifestId: 'manifest-1' };
+      const written = { ...running, pauseRequestedAt: new Date() };
+      operations.setBulkResult.mockResolvedValue(written);
+      operations.settlePause.mockResolvedValue(false);
+      operations.heartbeat.mockResolvedValue(state === 'resumed');
+      operations.acknowledgeCancel.mockResolvedValue(state === 'cancelled');
+
+      const answer =
+        mode === 'run'
+          ? await sut['proceed'](operation.id, 'claim-1', written, operation, result)
+          : await sut['checkpointTask'](operation, 'claim-1', result, { processed: 1, total: 2, progress: 50 });
+
+      expect(operations.heartbeat).toHaveBeenCalledWith(operation.id, 'claim-1', expect.any(Number), {
+        requireActiveClaim: true,
+      });
+      if (state === 'resumed') {
+        expect(answer).toBe(mode === 'run' ? true : 'continue');
+        expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
+      } else {
+        expect(answer).toBe(mode === 'run' ? false : state === 'cancelled' ? 'cancelled' : 'stopped');
+        expect(operations.acknowledgeCancel).toHaveBeenCalledWith(operation.id, 'claim-1', { released: false });
+      }
+      if (mode === 'run' && state === 'cancelled') {
+        expect(index.finishManifest).toHaveBeenCalledWith('manifest-1', { status: 'cancelled' });
+        expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({ lastRun: { status: 'cancelled' } });
+      } else {
+        expect(index.finishManifest).not.toHaveBeenCalled();
+        expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+      }
+    });
+
+    it.each(['run', 'task'].flatMap((mode) => [false, true].map((acknowledged) => ({ mode, acknowledged }))))(
+      'only records cancellation after acknowledgement: $mode / $acknowledged',
+      async ({ mode, acknowledged }) => {
+        metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+        const operation = operationOf(mode === 'task' ? { snapshot: { task: 'verify' } } : {});
+        const result = { ...emptyRunResult(), manifestId: 'manifest-1' };
+        const written = { ...running, cancelRequestedAt: new Date() };
+        operations.setBulkResult.mockResolvedValue(written);
+        operations.acknowledgeCancel.mockResolvedValue(acknowledged);
+
+        const answer =
+          mode === 'run'
+            ? await sut['proceed'](operation.id, 'claim-1', written, operation, result)
+            : await sut['checkpointTask'](operation, 'claim-1', result, { processed: 1, total: 2, progress: 50 });
+
+        expect(answer).toBe(mode === 'run' ? false : acknowledged ? 'cancelled' : 'stopped');
+        if (mode === 'run' && acknowledged) {
+          expect(index.finishManifest).toHaveBeenCalledWith('manifest-1', { status: 'cancelled' });
+          expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({ lastRun: { status: 'cancelled' } });
+        } else {
+          expect(index.finishManifest).not.toHaveBeenCalled();
+          expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+        }
+      },
+    );
+  });
+
   describe('task checkpoint progress', () => {
     beforeEach(() => vi.useFakeTimers());
     afterEach(() => vi.useRealTimers());
@@ -596,7 +782,7 @@ describe(CloudBackupService.name, () => {
       expect(store.claim).not.toHaveBeenCalled();
     });
 
-    it('refuses a bucket the claim refuses, and stores nothing', async () => {
+    it('refuses a bucket the claim refuses, retaining the stored key without activating backup', async () => {
       store.claim.mockRejectedValue(
         new CloudBackupClaimError(
           'claimed-by-another-server',
@@ -605,11 +791,29 @@ describe(CloudBackupService.name, () => {
       );
 
       await expect(setup()).rejects.toThrow(ConflictException);
-      // the key file this setup created goes again
-      expect(keys.remove).toHaveBeenCalledWith('/identity', fingerprint);
+      expect(keys.write).toHaveBeenCalledOnce();
+      expect(keys.remove).not.toHaveBeenCalled();
       expect(configWrites()).toHaveLength(0);
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toBeUndefined();
     });
+
+    it.each(['server', 'own-stored'])(
+      'retains the %s key when the provider accepts the claim but its response is lost',
+      async (keyMode) => {
+        let claimed = false;
+        store.claim.mockImplementation(() => {
+          claimed = true;
+          return Promise.reject(new Error('claim response lost'));
+        });
+
+        await expect(setup({ keyMode })).rejects.toThrow();
+        expect(claimed).toBe(true);
+        expect(keys.write).toHaveBeenCalledOnce();
+        expect(keys.remove).not.toHaveBeenCalled();
+        expect(configWrites()).toHaveLength(0);
+        expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toBeUndefined();
+      },
+    );
 
     it('keeps a key file that was already there when the claim fails', async () => {
       keys.write.mockResolvedValue({ path: '/identity/cloud-backup.key', created: false });
@@ -669,7 +873,7 @@ describe(CloudBackupService.name, () => {
     });
 
     it('refuses an HTTP storage address and a key that is not 256 bits', async () => {
-      // eslint-disable-next-line unicorn/prefer-https -- an HTTP storage address is what is being refused
+      // an HTTP storage address is what is being refused
       await expect(setup({ s3: { ...s3, endpoint: 'http://s3.example.test' } })).rejects.toThrow('HTTPS');
       await expect(setup({ key: 'not-a-key' })).rejects.toBeInstanceOf(BadRequestException);
       expect(store.claim).not.toHaveBeenCalled();
@@ -2067,7 +2271,7 @@ describe(CloudBackupService.name, () => {
         'storage address and a bucket name',
       );
       expect(() =>
-        // eslint-disable-next-line unicorn/prefer-https -- an HTTP storage address is what is being refused
+        // an HTTP storage address is what is being refused
         sut.onConfigValidate({ newConfig: config({ endpoint: 'http://s3.example.test' }), oldConfig: config({}) }),
       ).toThrow('HTTPS');
       expect(() => sut.onConfigValidate({ newConfig: config({}), oldConfig: config({}) })).not.toThrow();
@@ -3403,6 +3607,7 @@ describe(CloudBackupService.name, () => {
       });
 
     beforeEach(() => {
+      vi.mocked(link).mockResolvedValue(undefined);
       metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
       metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
       keys.read.mockResolvedValue(keyFileOf());
@@ -3413,6 +3618,8 @@ describe(CloudBackupService.name, () => {
         Promise.resolve({ size: sha256 === SHA_SIDECAR ? 5 : 100, sha256 }),
       );
     });
+
+    afterEach(() => vi.mocked(link).mockReset());
 
     it('queues a restore under the bucket lock, named without the item, only from a kept backup', async () => {
       await expect(
@@ -3454,11 +3661,11 @@ describe(CloudBackupService.name, () => {
         expect.objectContaining({ bucket: s3.bucket }),
         `o/${SHA_A}`,
         key,
-        // downloaded beside the target, published by a rename only once its size and hash match
+        // Downloaded beside the target, then published exclusively after its size and hash match.
         expect.stringMatching(/frameleaf\/restore\/restore-1\/asset-1\/\.cloud-restore-[\da-f-]+\.tmp$/),
         SHA_A,
       );
-      expect(mocks.storage.rename).toHaveBeenCalledWith(
+      expect(link).toHaveBeenCalledWith(
         vi.mocked(store.download).mock.calls[0][3],
         expect.stringMatching(/frameleaf\/restore\/restore-1\/asset-1\/original-IMG_1\.jpg$/),
       );

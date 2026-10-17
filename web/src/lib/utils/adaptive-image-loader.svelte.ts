@@ -32,7 +32,8 @@ export type QualityList = [
 ];
 
 export class AdaptiveImageLoader {
-  private destroyFunctions: (() => void)[] = [];
+  private activeLoads = new Map<ImageQuality, { destroy?: () => void }>();
+  private preloadStarted = false;
   private qualityConfigs: Record<ImageQuality, QualityConfig>;
   private highestLoadedQualityIndex = -1;
   private destroyed = false;
@@ -58,18 +59,46 @@ export class AdaptiveImageLoader {
   }
 
   start() {
+    if (this.destroyed || this.preloadStarted) {
+      return;
+    }
     if (!this.imageLoader) {
       throw new Error('Start requires imageLoader to be specified');
     }
+    this.preloadStarted = true;
+    this.loadQuality('thumbnail');
+  }
 
-    this.destroyFunctions.push(
-      this.imageLoader(
-        this.qualityList[0].url,
-        () => this.onLoad('thumbnail'),
-        () => this.onError('thumbnail'),
-        () => this.onStart('thumbnail'),
-      ),
+  private loadQuality(quality: ImageQuality) {
+    if (!this.imageLoader) {
+      return;
+    }
+    const request: { destroy?: () => void } = {};
+    this.activeLoads.set(quality, request);
+    const finish = (callback: () => void) => {
+      if (this.destroyed || this.activeLoads.get(quality) !== request) {
+        return;
+      }
+      this.activeLoads.delete(quality);
+      request.destroy?.();
+      callback();
+    };
+    const destroy = this.imageLoader(
+      this.qualityConfigs[quality].url,
+      () => finish(() => this.onLoad(quality)),
+      () => finish(() => this.onError(quality)),
+      () => {
+        if (this.activeLoads.get(quality) === request) {
+          this.onStart(quality);
+        }
+      },
     );
+    // A synchronous callback may have completed the request or destroyed the loader.
+    if (this.activeLoads.get(quality) === request) {
+      request.destroy = destroy;
+    } else {
+      destroy();
+    }
   }
 
   onStart(_: ImageQuality) {
@@ -98,10 +127,14 @@ export class AdaptiveImageLoader {
 
     this.highestLoadedQualityIndex = index;
     this.status.quality[quality] = 'success';
-    this.callbacks?.onUrlChange?.(this.qualityConfigs[quality].url);
+    this.callbacks?.onUrlChange?.(config.url);
+    if (this.destroyed) {
+      return;
+    }
     this.callbacks?.onImageReady?.();
-
-    config.onAfterLoad?.(this);
+    if (!this.destroyed) {
+      config.onAfterLoad?.(this);
+    }
   }
 
   onError(quality: ImageQuality) {
@@ -116,7 +149,9 @@ export class AdaptiveImageLoader {
     this.status.urls[quality] = undefined;
     this.callbacks?.onError?.();
 
-    config.onAfterError?.(this);
+    if (!this.destroyed) {
+      config.onAfterError?.(this);
+    }
   }
 
   trigger(quality: ImageQuality) {
@@ -136,25 +171,22 @@ export class AdaptiveImageLoader {
     }
 
     this.status.hasError = false;
+    this.status.quality[quality] = 'unloaded';
     this.status.urls[quality] = url;
-    if (this.imageLoader) {
-      this.destroyFunctions.push(
-        this.imageLoader(
-          url,
-          () => this.onLoad(quality),
-          () => this.onError(quality),
-          () => this.onStart(quality),
-        ),
-      );
-    }
+    this.loadQuality(quality);
     return false;
   }
 
   destroy() {
+    if (this.destroyed) {
+      return;
+    }
     this.destroyed = true;
     if (this.imageLoader) {
-      for (const destroy of this.destroyFunctions) {
-        destroy();
+      const requests = [...this.activeLoads.values()];
+      this.activeLoads.clear();
+      for (const request of requests) {
+        request.destroy?.();
       }
       return;
     }

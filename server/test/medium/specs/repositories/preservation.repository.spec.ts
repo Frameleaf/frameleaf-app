@@ -259,6 +259,32 @@ describe(PreservationRepository.name, () => {
       expect(await read()).toEqual(before);
     });
 
+    it.each(['expired', 'cancelled'] as const)(
+      'rolls back item and package writes when the final claim is %s',
+      async (change) => {
+        const { sut, operationId, claimToken, write, read } = await claimedExport();
+        const before = await read();
+        await expect(
+          sut.withExportClaim(operationId, claimToken, async (repository) => {
+            await write(repository);
+            // Inject authority loss on this same connection after the tentative writes.
+            const tx = (repository as unknown as { db: Kysely<DB> }).db;
+            await tx
+              .updateTable('media_operation')
+              .set(
+                change === 'expired'
+                  ? { claimExpiresAt: sql<Date>`clock_timestamp() - interval '1 second'` }
+                  : { cancelRequestedAt: new Date() },
+              )
+              .where('id', '=', operationId)
+              .execute();
+            return 'tentative';
+          }),
+        ).rejects.toBeInstanceOf(OperationClaimLostError);
+        expect(await read()).toEqual(before);
+      },
+    );
+
     it('rechecks the token after waiting for a concurrent claim replacement', async () => {
       const { sut, operationId, claimToken, write, read } = await claimedExport();
       const before = await read();

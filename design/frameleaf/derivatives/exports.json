@@ -24,6 +24,13 @@
       "sha256": "1ab00db27ed39ea9e3de7374bf324c88a097fc684b25ecfeb7695a504b92be45"
     },
     {
+      "path": "web/src/lib/assets/frameleaf/frameleaf-logo-on-light.svg",
+      "source": "design/frameleaf/derivatives/frameleaf-logo-light.svg",
+      "sourceSha256": "6f20367286b92d9603cce849bade81bb82a18ed73bf8b366492e931746f5d2ee",
+      "note": "byte-for-byte copy",
+      "sha256": "6f20367286b92d9603cce849bade81bb82a18ed73bf8b366492e931746f5d2ee"
+    },
+    {
       "path": "web/static/favicon.svg",
       "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
       "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2",

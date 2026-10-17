@@ -1,5 +1,5 @@
 import { getMySharedLink, isHttpError } from '@frameleaf/sdk';
-import { getAssetMediaUrl, getSharedLink as getCachedSharedLink, setSharedLink } from '$lib/utils';
+import { captureSharedLinkRequest, getAssetMediaUrl, getSharedLink as getCachedSharedLink } from '$lib/utils';
 import { authenticate } from '$lib/utils/auth';
 import { getFormatter } from '$lib/utils/i18n';
 import { getAssetInfoFromParam } from '$lib/utils/navigation';
@@ -24,6 +24,7 @@ export const loadSharedLink = async ({
   url: URL;
   params: { key?: string; slug?: string; assetId?: string };
 }) => {
+  const publish = captureSharedLinkRequest();
   const { key, slug } = params;
   await authenticate(url, { public: true });
 
@@ -32,7 +33,8 @@ export const loadSharedLink = async ({
 
   const cachedSharedLink = getCachedSharedLink();
   const sharedLinkPromise =
-    cachedSharedLink && (key === cachedSharedLink.key || slug === cachedSharedLink.slug)
+    cachedSharedLink &&
+    ((key !== undefined && key === cachedSharedLink.key) || (slug !== undefined && slug === cachedSharedLink.slug))
       ? Promise.resolve(cachedSharedLink)
       : getMySharedLink({ key, slug });
 
@@ -40,7 +42,7 @@ export const loadSharedLink = async ({
     // The link answers first: a password gate or a gone link wins over whatever the item request says.
     const sharedLink = await sharedLinkPromise;
     const asset = await getAssetInfoFromParam(params);
-    setSharedLink(sharedLink);
+    publish(sharedLink);
     const assetCount = sharedLink.assets.length;
     const assetId = sharedLink.album?.albumThumbnailAssetId || sharedLink.assets[0]?.id;
     const assetPath = assetId ? getAssetMediaUrl({ id: assetId }) : '/feature-panel.png';

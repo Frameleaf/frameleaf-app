@@ -1,9 +1,8 @@
 <script lang="ts">
-  import DurableRuns from '$lib/components/frameleaf/jobs/DurableRuns.svelte';
   import type { Translations } from 'svelte-i18n';
   import { goto } from '$app/navigation';
+  import BackgroundWorkRows from '$lib/components/frameleaf/BackgroundWorkRows.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import CloudWorkRows from '$lib/components/frameleaf/CloudWorkRows.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import {
     ACTIVITY_FILTERS,
@@ -22,9 +21,11 @@
     type ActivityItem,
   } from '$lib/frameleaf/activity';
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
+  import { buildBackgroundWorkCards } from '$lib/frameleaf/background-work';
   import { cloudWorkRows } from '$lib/frameleaf/cloud-backup';
   import { cloudCostFacts } from '$lib/frameleaf/cloud-jobs';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
+  import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
   import '$lib/frameleaf/tokens.css';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { downloadManager } from '$lib/managers/download-manager.svelte';
@@ -132,8 +133,16 @@
   /* FL-162, prototype Activity.jsx: In progress, grouped by stage in the order jobs run, then Recent. */
   const inProgress = $derived(visible.filter((item) => isProgressStage(item.stage)));
   const recent = $derived(visible.filter((item) => !isProgressStage(item.stage)));
+  /**
+   * SHARING-P1: the server's busy kinds of work, one card each (prototype `BackgroundRow`). The
+   * server sends queues and runs to administrators only. The notifications panel no longer lists
+   * them (SHELL-P1), so this page watches the running-jobs summary itself.
+   */
+  const serverWork = $derived(buildBackgroundWorkCards(runningJobsSession.summary));
+  const busyServer = $derived(serverWork.length + cloudWork.length);
   /** Background work belongs to In progress, so it shows under All and In progress (the `running` filter). */
-  const background = $derived(filter === 'all' || filter === 'running' ? cloudWork : []);
+  const showBackground = $derived(filter === 'all' || filter === 'running');
+  const backgroundCount = $derived(showBackground ? busyServer : 0);
   const hasFinished = $derived(items.some((item) => item.source === 'job' && item.finished));
   /** The prototype's summary: only the counts that are not zero, or "nothing" when idle. */
   const summary = $derived(
@@ -141,12 +150,14 @@
       counts.running ? $t('frameleaf_activity_summary_running', { values: { count: counts.running } }) : null,
       counts.done ? $t('frameleaf_activity_summary_done', { values: { count: counts.done } }) : null,
       counts.failed ? $t('frameleaf_activity_summary_failed', { values: { count: counts.failed } }) : null,
+      busyServer ? $t('frameleaf_activity_summary_background', { values: { count: busyServer } }) : null,
     ]
       .filter(Boolean)
       .join(' · ') || $t('frameleaf_activity_summary_idle'),
   );
 
   onMount(() => activitySession.watch());
+  onMount(() => runningJobsSession.watch());
 
   /**
    * Announce a job that finishes by itself while the page is open (`Activity.jsx`: "Export of
@@ -225,9 +236,8 @@
     filter = next;
     // Keep the URL honest so the view can be linked to and reloaded onto the same filter.
     void goto(Route.activity(next === 'all' ? undefined : { filter: next }), {
-      replaceState: true,
-      keepFocus: true,
-      noScroll: true,
+      replace: true,
+      reset: false,
     });
   };
 
@@ -347,9 +357,10 @@
   <p class="sr-only" role="status" aria-live="polite">{announcement}</p>
 
   <header class="fla-head">
-    <div>
+    <div class="fla-head-text">
       <p class="eyebrow">{$t('frameleaf_activity_eyebrow')}</p>
       <h1 id="fl-activity-title">{$t('frameleaf_activity_title')}</h1>
+      <p class="fla-intro">{$t('frameleaf_activity_intro')}</p>
       <p class="fla-summary">{summary}</p>
     </div>
 
@@ -390,11 +401,9 @@
     </div>
   {/if}
 
-  {#if isAdmin}<DurableRuns {filter} />{/if}
-
   {#if activitySession.loading && items.length === 0}
     <p class="fla-empty" role="status" aria-busy="true">{$t('loading')}</p>
-  {:else if visible.length === 0 && background.length === 0}
+  {:else if visible.length === 0 && backgroundCount === 0}
     <div class="fla-empty">
       <Icon icon={filter === 'failed' ? mdiCheckCircleOutline : mdiProgressClock} size="2.25rem" aria-hidden={true} />
       <h2>{$t(`frameleaf_activity_empty_${filter}`)}</h2>
@@ -519,8 +528,8 @@
             <Icon icon={mdiPlay} size="1.125rem" aria-hidden={true} />{$t('resume')}
           </Button>
         {:else if item.pauseBlockedKey && item.source === 'job'}
-          <!-- Shown disabled with its reason rather than hidden, like the notifications panel's
-               Running now rows (RunningJobsSection); focusable so the reason can be read aloud. -->
+          <!-- Shown disabled with its reason rather than hidden; focusable so the reason can be
+               read aloud. -->
           <button
             type="button"
             class="fla-disabled"
@@ -580,11 +589,11 @@
     </article>
   {/snippet}
 
-  {#if inProgress.length + background.length > 0}
+  {#if inProgress.length + backgroundCount > 0}
     <section class="fla-section" aria-labelledby="{rowIdPrefix}-in-progress">
       <h2 id="{rowIdPrefix}-in-progress" class="fla-section-title">
         {$t('frameleaf_activity_section_in_progress')}
-        <span class="fla-count">{inProgress.length + background.length}</span>
+        <span class="fla-count">{inProgress.length + backgroundCount}</span>
       </h2>
       {#each ACTIVITY_PROGRESS_STAGES as stage (stage)}
         {@const group = inProgress.filter((item) => item.stage === stage)}
@@ -603,8 +612,8 @@
           </div>
         {/if}
       {/each}
-      {#if background.length > 0}
-        <CloudWorkRows status={cloudBackupStatus} />
+      {#if backgroundCount > 0}
+        <BackgroundWorkRows cards={serverWork} cloudStatus={isAdmin ? cloudBackupStatus : null} />
       {/if}
     </section>
   {/if}
@@ -658,6 +667,18 @@
     font-weight: 600;
     letter-spacing: -0.6px;
     line-height: 1.3;
+  }
+  .fla-head-text {
+    min-width: 0;
+    flex: 1 1 320px;
+  }
+  /* activity.css `.fla-intro`: what the page is for, above the counts. */
+  .fla-intro {
+    margin: 0 0 6px;
+    max-width: 560px;
+    font-size: var(--fl-font-callout);
+    line-height: 1.5;
+    color: var(--fl-text);
   }
   .fla-summary {
     color: var(--fl-muted);
@@ -863,7 +884,7 @@
       opacity: 0.3;
     }
   }
-  /* A disabled control that still explains itself (RunningJobsSection's pattern). */
+  /* A disabled control that still explains itself. */
   .fla-disabled {
     display: inline-flex;
     align-items: center;

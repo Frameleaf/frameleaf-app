@@ -35,7 +35,7 @@ const SCHEMA_VERSION = '2026-05-22';
 const ROLE_LINE =
   'You are generating a concise searchable image record from computer vision outputs.\n\nUse only visible evidence from the image. If estimating age, use broad apparent age groups only, such as baby, child, teenager, young adult, adult, older adult, or unknown.';
 
-// KEEP IN SYNC WITH: machine-learning/immich_ml/models/image_description.py
+// KEEP IN SYNC WITH: machine-learning/frameleaf_ml/models/image_description.py
 // (the JSON schema portion of IMAGE_DESCRIPTION_PROMPT)
 const JSON_SCHEMA_BLOCK = `Return valid JSON with this schema:
 
@@ -229,11 +229,13 @@ export class ImageDescriptionPromptAssembler {
     const styleHint = this.styleHint(config);
     const vocabulary = config.customVocabulary.length > 0 ? this.vocabularyHint(config.customVocabulary) : '';
 
-    let prompt = template
-      .replaceAll('{names}', () => names)
-      .replaceAll('{schema}', () => JSON_SCHEMA_BLOCK)
-      .replaceAll('{style_hint}', () => styleHint)
-      .replaceAll('{vocabulary}', () => vocabulary);
+    const replacements: Record<string, string> = {
+      '{names}': names,
+      '{schema}': JSON_SCHEMA_BLOCK,
+      '{style_hint}': styleHint,
+      '{vocabulary}': vocabulary,
+    };
+    let prompt = template.replaceAll(/{(?:names|schema|style_hint|vocabulary)}/g, (key) => replacements[key]);
 
     if (videoContext) {
       prompt = `${videoContextHint(videoContext)}\n\n${prompt}`;

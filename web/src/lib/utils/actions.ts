@@ -8,7 +8,7 @@ import type { StackResponse } from '$lib/utils/asset-utils';
 import { handleError } from './handle-error';
 
 export type OnDelete = (assetIds: string[]) => void;
-export type OnUndoDelete = (assets: TimelineAsset[]) => void;
+export type OnUndoDelete = (assets: TimelineAsset[]) => void | Promise<void>;
 
 export const deleteAssets = async (
   force: boolean,
@@ -44,7 +44,7 @@ const undoDeleteAssets = async (onUndoDelete: OnUndoDelete, assets: TimelineAsse
   try {
     const ids = assets.map((a) => a.id);
     await restoreAssets({ bulkIdsDto: { ids } });
-    onUndoDelete?.(assets);
+    await onUndoDelete(assets);
   } catch (error) {
     handleError(error, $t('errors.unable_to_restore_assets'));
   }

@@ -67,4 +67,13 @@ describe(RateLimitRepository.name, () => {
     expect(cleanup).toHaveLength(2);
     expect(fixture.close).toHaveBeenCalledOnce();
   });
+
+  it('binds refunds to the exact database window without losing timestamp precision', async () => {
+    const window = '2030-01-01 00:00:00.000123+00';
+    await sut.release('key', window);
+    expect(fixture.query).toHaveBeenCalledWith(expect.stringContaining('expires_at = $2::timestamptz'), [
+      'key',
+      window,
+    ]);
+  });
 });

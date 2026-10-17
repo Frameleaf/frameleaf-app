@@ -3,7 +3,7 @@ import type { SystemConfig } from 'src/config.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { BootstrapEventPriority, ImmichWorker, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
+import { BootstrapEventPriority, FrameleafWorker, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
 import { deferJobAdoption, publishJobResult, queueExecution } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -88,7 +88,7 @@ export class SmartAlbumService extends BaseService {
   @OnEvent({
     name: 'AppBootstrap',
     priority: BootstrapEventPriority.SystemConfig + 1,
-    workers: [ImmichWorker.Api],
+    workers: [FrameleafWorker.Api],
   })
   async onBootstrap(): Promise<void> {
     const { smartAlbums } = await this.getConfig({ withCache: true });
@@ -309,7 +309,8 @@ export class SmartAlbumService extends BaseService {
       .then((selection) => this.machineLearningRepository.encodeText(selection, query, { modelName: clip.modelName }))
       .then((raw) => {
         const parsed = parseEmbedding(raw);
-        return parsed ? l2Normalize(parsed) : undefined;
+        if (!parsed || parsed.every((value) => value === 0)) throw new Error('Invalid smart-album query embedding');
+        return l2Normalize(parsed);
       })
       .catch((error) => {
         // Drop the failed promise so the next evaluation retries.
@@ -327,7 +328,7 @@ export class SmartAlbumService extends BaseService {
    */
   // workers: [Api] only — backfillAllUsers writes album rows for every user,
   // which we don't want to multiply by replica count in multi-node deployments.
-  @OnEvent({ name: 'ConfigUpdate', server: true, workers: [ImmichWorker.Api] })
+  @OnEvent({ name: 'ConfigUpdate', server: true, workers: [FrameleafWorker.Api] })
   async onConfigUpdate({ newConfig, oldConfig }: ArgOf<'ConfigUpdate'>): Promise<void> {
     const wasDisabled = !oldConfig.smartAlbums.enabled;
     const isNowEnabled = newConfig.smartAlbums.enabled;

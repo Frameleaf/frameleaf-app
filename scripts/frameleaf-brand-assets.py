@@ -42,8 +42,8 @@ REFERENCE_SPECS = (
 COMPATIBILITY_SENTINELS = (
     ("packages/sdk/package.json", "json-name", "@frameleaf/sdk"),
     ("server/package.json", "json-name", "frameleaf"),
-    ("machine-learning/pyproject.toml", "toml-project-name", "immich-ml"),
-    ("machine-learning/pyproject.toml", "toml-build-includes", "immich_ml"),
+    ("machine-learning/pyproject.toml", "toml-project-name", "frameleaf-ml"),
+    ("machine-learning/pyproject.toml", "toml-build-includes", "frameleaf_ml"),
     ("web/src/routes/+layout.svelte", "svelte-import", "@frameleaf/sdk"),
 )
 
@@ -105,9 +105,16 @@ def compatibility_value(root, path_text, parser):
         active = strip_line_comments(text)
         sections = {}
         section = ""
+        tables = Counter()
         for line in active.splitlines():
             line = line.strip()
             if not line:
+                continue
+            # Each [[name]] array-of-tables entry is its own table; its keys may repeat across entries.
+            match = re.fullmatch(r"\[\[([^]]+)\]\]", line)
+            if match:
+                tables[match.group(1)] += 1
+                section = f"{match.group(1)}[{tables[match.group(1)]}]"
                 continue
             match = re.fullmatch(r"\[([^]]+)\]", line)
             if match:

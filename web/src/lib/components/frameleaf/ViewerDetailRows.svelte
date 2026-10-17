@@ -16,7 +16,7 @@
   import { getAssetActions } from '$lib/services/asset.service';
   import { copyToClipboard, isEnabled } from '$lib/utils';
   import type { AssetResponseDto } from '@frameleaf/sdk';
-  import { Icon, Text } from '@frameleaf/ui';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAspectRatio,
     mdiCameraIris,
@@ -71,9 +71,9 @@
 </script>
 
 {#if rows.length > 0}
-  <section class="px-4 pt-4" data-testid="frameleaf-info-details">
-    <div class="flex h-10 w-full items-center text-sm">
-      <Text color="muted">{$t('frameleaf_info_details')}</Text>
+  <section data-testid="frameleaf-info-details">
+    <div class="fl-info-heading-row">
+      <h3 class="fl-info-heading">{$t('frameleaf_info_details')}</h3>
     </div>
 
     <dl class="flex flex-col gap-3 text-sm">

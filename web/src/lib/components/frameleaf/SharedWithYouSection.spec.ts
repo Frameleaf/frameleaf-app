@@ -87,7 +87,7 @@ describe('SharedWithYouSection', () => {
 
     await waitFor(() => expect(screen.queryByRole('button', { name: 'beach.jpg' })).toBeNull());
     expect(close).toHaveBeenCalledWith(false);
-    expect(goto).toHaveBeenCalledWith('/sharing', { noScroll: true, keepFocus: true });
+    expect(goto).toHaveBeenCalledWith('/sharing', { reset: false });
   });
 
   it('says so when nothing was shared with you', async () => {
@@ -169,7 +169,7 @@ describe('SharedWithYouSection', () => {
     }
     await waitFor(() => expect(screen.queryByRole('button', { name: 'beach.jpg' })).toBeNull());
     expect(close).toHaveBeenCalledWith(false);
-    expect(goto).toHaveBeenCalledWith('/sharing', { noScroll: true, keepFocus: true });
+    expect(goto).toHaveBeenCalledWith('/sharing', { reset: false });
 
     finishRefresh({
       link: null,

@@ -29,7 +29,7 @@ import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { AuthService } from 'src/services/auth.service.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { mediumFactory, newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { controllerSetup, getKyselyDB } from 'test/utils.js';
@@ -388,11 +388,11 @@ describe(AssetService.name, () => {
             const type = dynamicRange === 'sdr' ? sdrType : hdrType;
             for (const auth of [owner, shared]) {
               const response = await sut.viewThumbnail(auth, asset.id, { ...dto });
-              expect(response).toBeInstanceOf(ImmichFileResponse);
+              expect(response).toBeInstanceOf(FileDownloadResponse);
               expect(response).toMatchObject({ path: join(directory, `${type}.jpg`), contentType: 'image/jpeg' });
               if (dynamicRange !== 'sdr')
                 expect(response).toMatchObject({ cacheControl: CacheControl.PrivateWithoutCache });
-              if (auth.sharedLink) expect((response as ImmichFileResponse).fileName).toBe(`${asset.id}_${type}.jpg`);
+              if (auth.sharedLink) expect((response as FileDownloadResponse).fileName).toBe(`${asset.id}_${type}.jpg`);
             }
             for (const headers of [ownerHeaders, shareHeaders]) {
               const response = await request(http.getHttpServer())
@@ -433,7 +433,7 @@ describe(AssetService.name, () => {
                 asset.id,
                 { ...dto },
               ),
-            ).resolves.toBeInstanceOf(ImmichFileResponse);
+            ).resolves.toBeInstanceOf(FileDownloadResponse);
             await defaultDatabase.deleteFrom('asset_lock').where('assetId', '=', asset.id).execute();
           }
           const deniedOriginal = await request(http.getHttpServer())
@@ -491,8 +491,8 @@ describe(AssetService.name, () => {
       const auth = factory.auth({ user: { id: user.id } });
       const result = await sut.viewThumbnail(auth, asset.id, { size: AssetMediaSize.PREVIEW });
 
-      expect(result).toBeInstanceOf(ImmichFileResponse);
-      expect((result as ImmichFileResponse).path).toBe('/original/preview.jpg');
+      expect(result).toBeInstanceOf(FileDownloadResponse);
+      expect((result as FileDownloadResponse).path).toBe('/original/preview.jpg');
     });
 
     it('should return edited thumbnail when edited=true', async () => {
@@ -518,8 +518,8 @@ describe(AssetService.name, () => {
       const auth = factory.auth({ user: { id: user.id } });
       const result = await sut.viewThumbnail(auth, asset.id, { size: AssetMediaSize.PREVIEW, edited: true });
 
-      expect(result).toBeInstanceOf(ImmichFileResponse);
-      expect((result as ImmichFileResponse).path).toBe('/edited/preview.jpg');
+      expect(result).toBeInstanceOf(FileDownloadResponse);
+      expect((result as FileDownloadResponse).path).toBe('/edited/preview.jpg');
     });
 
     it('should return original thumbnail when edited=false', async () => {
@@ -545,8 +545,8 @@ describe(AssetService.name, () => {
       const auth = factory.auth({ user: { id: user.id } });
       const result = await sut.viewThumbnail(auth, asset.id, { size: AssetMediaSize.PREVIEW, edited: false });
 
-      expect(result).toBeInstanceOf(ImmichFileResponse);
-      expect((result as ImmichFileResponse).path).toBe('/original/preview.jpg');
+      expect(result).toBeInstanceOf(FileDownloadResponse);
+      expect((result as FileDownloadResponse).path).toBe('/original/preview.jpg');
     });
 
     it('should return original thumbnail when only original exists and edited=false', async () => {
@@ -566,8 +566,8 @@ describe(AssetService.name, () => {
       const auth = factory.auth({ user: { id: user.id } });
       const result = await sut.viewThumbnail(auth, asset.id, { size: AssetMediaSize.PREVIEW, edited: false });
 
-      expect(result).toBeInstanceOf(ImmichFileResponse);
-      expect((result as ImmichFileResponse).path).toBe('/original/preview.jpg');
+      expect(result).toBeInstanceOf(FileDownloadResponse);
+      expect((result as FileDownloadResponse).path).toBe('/original/preview.jpg');
     });
 
     it('should return original thumbnail when only original exists and edited=true', async () => {
@@ -587,8 +587,8 @@ describe(AssetService.name, () => {
       const auth = factory.auth({ user: { id: user.id } });
       const result = await sut.viewThumbnail(auth, asset.id, { size: AssetMediaSize.PREVIEW, edited: true });
 
-      expect(result).toBeInstanceOf(ImmichFileResponse);
-      expect((result as ImmichFileResponse).path).toBe('/original/preview.jpg');
+      expect(result).toBeInstanceOf(FileDownloadResponse);
+      expect((result as FileDownloadResponse).path).toBe('/original/preview.jpg');
     });
 
     it('should work with thumbnail size', async () => {
@@ -615,13 +615,13 @@ describe(AssetService.name, () => {
 
       // Test default (should get original)
       const resultDefault = await sut.viewThumbnail(auth, asset.id, { size: AssetMediaSize.THUMBNAIL });
-      expect(resultDefault).toBeInstanceOf(ImmichFileResponse);
-      expect((resultDefault as ImmichFileResponse).path).toBe('/original/thumbnail.jpg');
+      expect(resultDefault).toBeInstanceOf(FileDownloadResponse);
+      expect((resultDefault as FileDownloadResponse).path).toBe('/original/thumbnail.jpg');
 
       // Test edited=true (should get edited)
       const resultEdited = await sut.viewThumbnail(auth, asset.id, { size: AssetMediaSize.THUMBNAIL, edited: true });
-      expect(resultEdited).toBeInstanceOf(ImmichFileResponse);
-      expect((resultEdited as ImmichFileResponse).path).toBe('/edited/thumbnail.jpg');
+      expect(resultEdited).toBeInstanceOf(FileDownloadResponse);
+      expect((resultEdited as FileDownloadResponse).path).toBe('/edited/thumbnail.jpg');
     });
   });
 
@@ -635,9 +635,9 @@ describe(AssetService.name, () => {
       await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: '/owner/preview.jpg' });
       const auth = factory.auth({ user: { id: admin.id, isAdmin: true }, session: { hasElevatedPermission: true } });
 
-      await expect(sut.downloadOriginal(auth, asset.id, {})).rejects.toThrow();
-      await expect(sut.viewThumbnail(auth, asset.id, { size: AssetMediaSize.PREVIEW })).rejects.toThrow();
-      await expect(sut.playbackVideo(auth, asset.id)).rejects.toThrow();
+      await expect(sut.downloadOriginal(auth, asset.id, {})).rejects.toThrow('access');
+      await expect(sut.viewThumbnail(auth, asset.id, { size: AssetMediaSize.PREVIEW })).rejects.toThrow('access');
+      await expect(sut.playbackVideo(auth, asset.id)).rejects.toThrow('access');
     });
   });
 });

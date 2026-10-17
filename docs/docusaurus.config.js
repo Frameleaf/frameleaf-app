@@ -41,9 +41,7 @@ const config = {
       return {
         name: 'docusaurus-tailwindcss',
         configurePostCss(postcssOptions) {
-          // Appends TailwindCSS and AutoPrefixer.
-          postcssOptions.plugins.push(require('tailwindcss'));
-          postcssOptions.plugins.push(require('autoprefixer'));
+          postcssOptions.plugins.push(require('@tailwindcss/postcss'));
           return postcssOptions;
         },
       };
@@ -101,7 +99,7 @@ const config = {
             type: 'html',
             position: 'right',
             value:
-              '<a href="/overview/support-the-project" class="no-underline hover:no-underline"><button class="buy-button bg-immich-primary dark:bg-immich-dark-primary text-white dark:text-black rounded-xl">Support Frameleaf</button></a>',
+              '<a href="/overview/support-the-project" class="no-underline hover:no-underline"><button class="buy-button bg-frameleaf-primary dark:bg-frameleaf-dark-primary text-white dark:text-black rounded-xl">Support Frameleaf</button></a>',
           },
         ],
       },

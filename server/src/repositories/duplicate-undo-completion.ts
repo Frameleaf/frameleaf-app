@@ -142,14 +142,14 @@ export async function restoreDuplicateUndoMetadata(
         now.latitude === left.latitude &&
         now.longitude === left.longitude &&
         (was.latitude !== left.latitude || was.longitude !== left.longitude) &&
-        was.latitude !== null &&
-        was.longitude !== null;
+        (was.latitude === null) === (was.longitude === null);
       if (moved) {
         exif.latitude = was.latitude;
         exif.longitude = was.longitude;
         fields.push(AssetOriginField.Location);
       }
       if (Object.keys(exif).length > 0) await assets.updateAllExif([id], exif, moved ? [...placeProperties] : []);
+      if (moved && was.latitude === null) await assets.clearLocation([id]);
       if (Object.keys(asset).length > 0) await assets.updateAll([id], asset);
       for (const albumId of left.albumIds) {
         if (was.albumIds.includes(albumId) || !now.albumIds.includes(albumId)) continue;

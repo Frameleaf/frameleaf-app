@@ -181,7 +181,8 @@ test.describe('Buddy Backup production Command Center (FL-310)', () => {
       await expect(dialog).toBeVisible();
       await expect(dialog).toHaveAttribute('data-theme', screen.theme);
       await expect(dialog.getByLabel('Dedicated hosting directory', { exact: true })).toHaveValue('');
-      await expect(dialog.getByLabel('Storage to offer (GiB)', { exact: true })).toHaveValue('500');
+      // D5: the offer is typed in decimal GB
+      await expect(dialog.getByLabel('Storage to offer (GB)', { exact: true })).toHaveValue('500');
       await expect(dialog.getByLabel('Upload limit (Mbit/s)', { exact: true })).toHaveValue('20');
       await expect(dialog.getByLabel('Download limit (Mbit/s)', { exact: true })).toHaveValue('20');
       await expect(dialog.getByRole('combobox', { name: 'Schedule', exact: true })).toHaveValue('0 2 * * *');

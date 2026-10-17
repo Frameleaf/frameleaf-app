@@ -133,9 +133,11 @@ describe(PhysicalDeduplicationService.name, () => {
       mockConfig(mocks, { enabled: true, masterUserId: 'master-user' });
       mocks.user.get.mockResolvedValue(undefined as never);
 
-      await expect(sut.handleDryRun({})).resolves.toBe(JobStatus.Skipped);
+      await expect(sut.handleDryRun({ masterUserId: 'master-user' })).resolves.toBe(JobStatus.Skipped);
 
+      expect(mocks.user.get).toHaveBeenCalledWith('master-user', {});
       expect(mocks.physicalFile.getMigrationCandidates).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
     });
 
     it('records share decisions with checksum evidence and reference counts before and after', async () => {
@@ -751,10 +753,7 @@ describe(PhysicalDeduplicationService.name, () => {
 
       await sut.applyPlanItem(snapshot, item);
 
-      expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalledWith(
-        '/upload/jamie/copy.jpg',
-        expect.anything(),
-      );
+      expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
     });
 
     it('keeps a file some other asset still names', async () => {

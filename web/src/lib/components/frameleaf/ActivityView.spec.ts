@@ -2,7 +2,9 @@ import {
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
+  QueueName,
   type MediaOperationDto,
+  type QueueRunDto,
 } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
@@ -11,6 +13,7 @@ import { goto } from '$app/navigation';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import ActivityView from '$lib/components/frameleaf/ActivityView.svelte';
 import { activitySession } from '$lib/frameleaf/activity-session.svelte';
+import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
 import { downloadManager } from '$lib/managers/download-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { uploadAssetsStore } from '$lib/stores/upload';
@@ -182,7 +185,7 @@ describe('Frameleaf Activity page', () => {
 
   it('shows a job queued elsewhere as soon as the server says it changed (FL-43)', async () => {
     await mount([]);
-    await screen.findByRole('heading', { name: 'Nothing processing' });
+    await screen.findByRole('heading', { name: 'Nothing in progress' });
 
     sdkMock.searchMediaOperations.mockResolvedValue({
       items: [
@@ -262,7 +265,7 @@ describe('Frameleaf Activity page', () => {
     expect(card?.querySelector(':scope .fla-chip .fla-dot')).not.toBeNull();
     // The prototype's summary names only what is not zero.
     expect(container.querySelector('.fla-summary')?.textContent).toBe('1 running');
-    expect(screen.getByRole('button', { name: /^running/i }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: /^in progress/i }).getAttribute('aria-pressed')).toBe('false');
     expect(screen.getByRole('button', { name: /^all/i }).getAttribute('aria-pressed')).toBe('true');
   });
 
@@ -305,11 +308,55 @@ describe('Frameleaf Activity page', () => {
     await mount([]);
 
     // The prototype's words (Activity.jsx).
-    await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Nothing processing' })).toBeInTheDocument());
+    await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Nothing in progress' })).toBeInTheDocument());
     expect(screen.getByText('Nothing running')).toBeInTheDocument();
     const filters = screen.getByRole('group', { name: 'Filter jobs' });
     expect(filters.querySelectorAll('button')).toHaveLength(4);
     expect(screen.getByRole('button', { name: 'Failed' })).toBeInTheDocument();
+  });
+
+  it('shows busy server work as one simple card per kind, never with the empty state (SHARING-P1)', async () => {
+    const queue = (name: QueueName, overrides: Partial<QueueRunDto> = {}): QueueRunDto => ({
+      name,
+      isPaused: false,
+      canPause: true,
+      active: 0,
+      waiting: 0,
+      processed: 0,
+      total: 0,
+      startedAt: '2026-10-16T06:21:07.685Z',
+      unavailable: false,
+      ...overrides,
+    });
+    sdkMock.getRunningJobs.mockResolvedValue({
+      operations: [],
+      memoryExports: [],
+      canManageQueues: true,
+      canReadJobRuns: true,
+      queues: [
+        queue(QueueName.ThumbnailGeneration, { active: 2, waiting: 18, processed: 30, total: 50 }),
+        queue(QueueName.FaceDetection, { isPaused: true, waiting: 52, total: 52 }),
+        queue(QueueName.Ocr),
+      ],
+      durableRuns: [],
+    });
+    try {
+      await mount([]);
+
+      const group = await screen.findByRole('group', { name: /background work/i });
+      const cards = within(group).getAllByRole('link', { name: /open background work/i });
+      // The idle queue makes no card.
+      expect(cards).toHaveLength(2);
+      expect(cards[0]).toHaveAccessibleName(
+        'Thumbnails: Running · 18 waiting · 2 running · 60% · This server. Open Background work.',
+      );
+      expect(cards[1]).toHaveAccessibleName('Face detection: Paused · 52 waiting · This server. Open Background work.');
+      expect(screen.getByText('2 background tasks busy')).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Nothing in progress' })).not.toBeInTheDocument();
+      expect(screen.queryByText(/stage|prerequisite/i)).not.toBeInTheDocument();
+    } finally {
+      runningJobsSession.summary = { operations: [], memoryExports: [], queues: [], canManageQueues: false };
+    }
   });
 
   it('declares its own theme scope so the Frameleaf colours resolve', async () => {

@@ -307,27 +307,44 @@ export class TakeoutRepository {
   withImport<T>(
     ownerId: string,
     id: string,
-    fn: (tx: Transaction<DB>, row: TakeoutImport, operation: TakeoutOperation | undefined) => Promise<T>,
+    fn: (
+      tx: Transaction<DB>,
+      row: TakeoutImport,
+      operation: TakeoutOperation | undefined,
+      quota: { quotaSizeInBytes: number | null; quotaUsageInBytes: number },
+    ) => Promise<T>,
   ): Promise<T> {
     // FL-44: every change made through `fn` is a write, so the whole transaction takes the guard.
-    return this.db.transaction().execute(async (tx) => {
-      const { rows } = await sql<Record<string, unknown>>`
+    return this.db
+      .transaction()
+      .setIsolationLevel('read committed')
+      .execute(async (tx) => {
+        // Serialize account admission before import locks; waiters must see the preceding admission.
+        const quota = await tx
+          .selectFrom('user')
+          .select(['quotaSizeInBytes', 'quotaUsageInBytes'])
+          .where('id', '=', ownerId)
+          .forNoKeyUpdate()
+          .executeTakeFirst();
+        if (!quota) throw new TakeoutNotFound('Import not found');
+        const { rows } = await sql<Record<string, unknown>>`
         select * from takeout_import where id = ${id}::uuid and "ownerId" = ${ownerId}::uuid for update
       `.execute(tx);
-      if (!rows[0]) {
-        throw new TakeoutNotFound('Import not found');
-      }
-      const row = mapImport(rows[0]);
-      const operations = await this.latestOperationsIn(tx, ownerId, [id]);
-      return fn(
-        tx,
-        row,
-        takeoutOperationFor(
-          row.phase,
-          operations.map(({ operation }) => operation),
-        ),
-      );
-    });
+        if (!rows[0]) {
+          throw new TakeoutNotFound('Import not found');
+        }
+        const row = mapImport(rows[0]);
+        const operations = await this.latestOperationsIn(tx, ownerId, [id]);
+        return fn(
+          tx,
+          row,
+          takeoutOperationFor(
+            row.phase,
+            operations.map(({ operation }) => operation),
+          ),
+          quota,
+        );
+      });
   }
   async setOptions(tx: Transaction<DB>, id: string, options: TakeoutOptions): Promise<void> {
     await sql`update takeout_import set options = ${json(options)}, "updatedAt" = now() where id = ${id}::uuid`.execute(
@@ -588,8 +605,8 @@ export class TakeoutRepository {
     // since. Only an item still waiting (in review, where the scan's own pick is not a decision, or
     // without a chosen sidecar) is updated, and only when this scan found more candidates for it: a
     // sidecar that arrived in an archive added after the first scan.
-    await this.write((db) =>
-      sql`
+    await this.write(async (db) => {
+      await sql`
       insert into takeout_item (id, "importId", state, metadata, "sidecarId", candidates, albums, warnings, locked)
       values (${item.id}::uuid, ${item.importId}::uuid, ${item.state}, ${json(item.metadata)}, ${item.sidecarId}::uuid,
               ${json(item.candidates)}, ${json(item.albums)}, ${json(item.warnings)}, ${item.locked})
@@ -604,8 +621,18 @@ export class TakeoutRepository {
       where takeout_item.state in ('ready', 'review')
         and (takeout_item.state = 'review' or takeout_item."sidecarId" is null)
         and jsonb_array_length(takeout_item.candidates) < jsonb_array_length(excluded.candidates)
-    `.execute(db),
-    );
+    `.execute(db);
+      // A private candidate upgrades pending items even when their chosen metadata is retained.
+      if (item.locked) {
+        await sql`
+          update takeout_item set locked = true,
+            warnings = case when warnings @> '["locked"]'::jsonb then warnings else warnings || '["locked"]'::jsonb end,
+            "updatedAt" = now()
+          where id = ${item.id}::uuid and "importId" = ${item.importId}::uuid
+            and state in ('ready', 'review', 'skipped') and "assetId" is null and not locked
+        `.execute(db);
+      }
+    });
   }
   private itemSelect(db: Kysely<DB>, where: ReturnType<typeof sql>, tail: ReturnType<typeof sql> = sql``) {
     return sql<Record<string, unknown>>`

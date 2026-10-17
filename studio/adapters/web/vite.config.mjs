@@ -18,6 +18,7 @@ import { cpSync, readFileSync, writeFileSync } from 'node:fs'
 // The engine's own chunking rules: they exist to keep production builds free of circular-chunk
 // initialisation errors, so the adapter build must split the engine exactly the same way.
 import engineConfig, { stableAssetSourcemapsPlugin } from '../../engine/vite.config.ts'
+import { stableFileUrlSourcemapsPlugin } from '../../tools/stable-file-url-sourcemaps.mjs'
 // The manifest speaks the host's protocol version, so a stale build is refused rather than downgraded.
 import { STUDIO_FRAME_PROTOCOL_VERSION } from '../../../web/src/lib/frameleaf/studio/frame-protocol.ts'
 
@@ -142,11 +143,14 @@ const plugins = async () => {
     frameManifest(),
     // The engine's fix for asset handles in sourcemaps, so the shipped build reproduces too.
     stableAssetSourcemapsPlugin(),
+    stableFileUrlSourcemapsPlugin(),
   ]
 }
 
 export default async () => ({
   root: here,
+  // Host helpers compile in the engine context too; the web app's Kit tsconfig requires a web install.
+  tsconfig: path.join(engine, 'tsconfig.json'),
   base: '/studio-engine/',
   // Nothing from the engine's public folder ships: its landing images are not Studio, and its
   // bundled TTS model is rights-blocked (FL-86).
@@ -195,6 +199,7 @@ export default async () => ({
     // push one past the default 5 s on a busy runner. A hang still fails.
     testTimeout: 30_000,
     environment: 'jsdom',
+    execArgv: ['--no-experimental-webstorage'],
     setupFiles: [path.join(engine, 'src/test/setup.ts')],
     include: ['adapters/web/test/**/*.test.ts', ...upstreamSuites],
   },

@@ -253,22 +253,5 @@ it('keeps a newer write dirty when an earlier draft is acknowledged', async () =
   expect(dirty).toHaveBeenCalledWith(true);
 });
 
-it('Best Photos does not append overlapping or repeated page assets', async () => {
-  const assets = [{ id: 'a' }];
-  const load = closure(
-    '../../../routes/(user)/best-photos/[[photos=photos]]/[[assetId=id]]/+page',
-    'export const loadNextPage =',
-    '\n  };',
-    'loadNextPage',
-    {
-      page: 2,
-      isLoading: false,
-      total: 3,
-      loadFailed: false,
-      assets,
-      getBestPhotos: async () => ({ items: [{ id: 'a' }, { id: 'b' }, { id: 'b' }], total: 2, nextPage: null }),
-    },
-  );
-  await load();
-  expect(assets.map(({ id }) => id)).toEqual(['a', 'b']);
-});
+// Best Photos no longer pages `GET /best-photos` into a list of its own (LIB-P3): it is the library
+// view over the `bestPhotos` time buckets, which load each month once (LibraryView.spec.ts).

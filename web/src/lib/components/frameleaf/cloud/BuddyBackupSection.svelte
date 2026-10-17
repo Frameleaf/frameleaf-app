@@ -69,7 +69,11 @@
   let step = $state(0);
   let settingsOpen = $state(false);
   let directory = $state('');
-  let quotaGiB = $state(500);
+  // D5: storage to offer is typed in decimal GB (1 GB = 1,000,000,000 bytes)
+  const GB = 1000 ** 3;
+  /** The Buddy protocol's smallest offer is 10 binary GB (10 × 1024³ bytes), just over 10.7 GB. */
+  const MIN_OFFER_GB = 11;
+  let quotaGb = $state(500);
   let upload = $state(20);
   let download = $state(20);
   let schedule = $state('0 2 * * *');
@@ -122,7 +126,7 @@
     const s = status?.settings;
     if (s) {
       directory = s.directory;
-      quotaGiB = s.quotaBytes / 1024 ** 3;
+      quotaGb = Math.round((s.quotaBytes / GB) * 100) / 100;
       upload = s.uploadMbps ?? 20;
       download = s.downloadMbps ?? 20;
       schedule = s.schedule ?? '0 2 * * *';
@@ -167,7 +171,7 @@
       }
       const buddySettingsDto: BuddySettingsDto = {
         directory,
-        quotaBytes: Math.floor(quotaGiB * 1024 ** 3),
+        quotaBytes: Math.floor(quotaGb * GB),
         uploadMbps: upload,
         downloadMbps: download,
         schedule,
@@ -719,9 +723,9 @@
     <label
       >{$t('frameleaf_buddy_storage_to_offer_gib')}<input
         type="number"
-        min="10"
-        max="8388608"
-        bind:value={quotaGiB}
+        min={MIN_OFFER_GB}
+        max="9007199"
+        bind:value={quotaGb}
         required
       /></label
     >
@@ -781,7 +785,7 @@
           await checkCoverage();
         })}>{$t('frameleaf_buddy_check_coverage')}</Button
     >
-    <Button variant="primary" disabled={busy || !directory || !quotaGiB} onclick={saveSettings}
+    <Button variant="primary" disabled={busy || !directory || !quotaGb} onclick={saveSettings}
       >{$t('frameleaf_buddy_save_hosting_settings')}</Button
     >
   </div>

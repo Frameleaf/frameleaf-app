@@ -204,6 +204,48 @@ describe(EditOperationTracker.name, () => {
       await expect(sut.execute('op-1', work)).resolves.toBe(JobStatus.Skipped);
       expect(work).not.toHaveBeenCalled();
     });
+
+    it.each([
+      { cancelRequestedAt: null, claimToken: 'token-1' },
+      { cancelRequestedAt: null, claimToken: 'recovered-token' },
+      { cancelRequestedAt: new Date(), claimToken: 'recovered-token' },
+    ])('does not start rendering when its initial operation update is refused (%j)', async (row) => {
+      operations.reportProgress.mockResolvedValue(false);
+      operations.getForWorker.mockResolvedValue(row);
+      const work = vi.fn().mockResolvedValue(JobStatus.Success);
+      const onCancelled = vi.fn();
+
+      await expect(sut.execute('op-1', work, { onCancelled })).resolves.toBe(JobStatus.Skipped);
+
+      expect(work).not.toHaveBeenCalled();
+      expect(onCancelled).not.toHaveBeenCalled();
+      expect(operations.beginValidation).not.toHaveBeenCalled();
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
+    });
+
+    it.each([true, false])('settles cancellation before rendering; acknowledgment=%s', async (acknowledged) => {
+      operations.reportProgress.mockResolvedValue(false);
+      operations.getForWorker.mockResolvedValue({ cancelRequestedAt: new Date(), claimToken: 'token-1' });
+      operations.acknowledgeCancel.mockResolvedValue(acknowledged);
+      const work = vi.fn().mockResolvedValue(JobStatus.Success);
+      const onCancelled = vi.fn().mockResolvedValue(undefined);
+
+      await expect(sut.execute('op-1', work, { onCancelled })).resolves.toBe(JobStatus.Skipped);
+
+      expect(work).not.toHaveBeenCalled();
+      expect(operations.acknowledgeCancel).toHaveBeenCalledExactlyOnceWith('op-1', 'token-1', { released: true });
+      expect(onCancelled).toHaveBeenCalledTimes(acknowledged ? 1 : 0);
+      if (acknowledged) {
+        expect(operations.acknowledgeCancel.mock.invocationCallOrder[0]).toBeLessThan(
+          onCancelled.mock.invocationCallOrder[0],
+        );
+      }
+      expect(operations.beginValidation).not.toHaveBeenCalled();
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(operations.fail).not.toHaveBeenCalled();
+    });
   });
 
   describe('a run', () => {

@@ -24,6 +24,103 @@ beforeAll(async () => {
 });
 
 describe(PersonRepository.name, () => {
+  it('updates only selected face visibilities atomically, with hidden IDs taking precedence', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    const { person } = await ctx.newPerson({ ownerId: user.id });
+    const inputs = { assetId: asset.id, personGroupId: person.personGroupId };
+    const { assetFace: visible } = await ctx.newAssetFace({ ...inputs, isVisible: false });
+    const { assetFace: hidden } = await ctx.newAssetFace({ ...inputs, isVisible: true });
+    const { assetFace: overlap } = await ctx.newAssetFace({ ...inputs, isVisible: true });
+    const { assetFace: untouched } = await ctx.newAssetFace({ ...inputs, isVisible: true });
+
+    await sut.updateVisibility([visible, overlap], [hidden, overlap]);
+
+    const rows = await ctx.database
+      .selectFrom('asset_face')
+      .select(['id', 'isVisible'])
+      .where('assetId', '=', asset.id)
+      .execute();
+    expect(Object.fromEntries(rows.map(({ id, isVisible }) => [id, isVisible]))).toEqual({
+      [visible.id]: true,
+      [hidden.id]: false,
+      [overlap.id]: false,
+      [untouched.id]: true,
+    });
+    await sut.updateVisibility([], [visible]);
+    await sut.updateVisibility([hidden], []);
+    expect(
+      await ctx.database
+        .selectFrom('asset_face')
+        .select(['id', 'isVisible'])
+        .where('id', 'in', [visible.id, hidden.id])
+        .orderBy('id')
+        .execute(),
+    ).toEqual(
+      [
+        { id: visible.id, isVisible: false },
+        { id: hidden.id, isVisible: true },
+      ].toSorted((a, b) => a.id.localeCompare(b.id)),
+    );
+  });
+
+  it('returns only requested photo/person pairs and retains all live faces belonging to each pair', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { asset: first } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: second } = await ctx.newAsset({ ownerId: user.id });
+    const { person: alice } = await ctx.newPerson({ ownerId: user.id });
+    const { person: bob } = await ctx.newPerson({ ownerId: user.id });
+    const { assetFace: firstAlice } = await ctx.newAssetFace({ assetId: first.id, personGroupId: alice.personGroupId });
+    const { assetFace: anotherAlice } = await ctx.newAssetFace({
+      assetId: first.id,
+      personGroupId: alice.personGroupId,
+    });
+    const { assetFace: secondBob } = await ctx.newAssetFace({ assetId: second.id, personGroupId: bob.personGroupId });
+    await ctx.newAssetFace({ assetId: first.id, personGroupId: bob.personGroupId });
+    await ctx.newAssetFace({ assetId: second.id, personGroupId: alice.personGroupId });
+    await ctx.newAssetFace({ assetId: first.id, personGroupId: alice.personGroupId, deletedAt: new Date() });
+
+    const faces = await sut.getFacesByIds(
+      [
+        { assetId: first.id, personGroupId: alice.personGroupId },
+        { assetId: second.id, personGroupId: bob.personGroupId },
+      ],
+      { viewingUserId: user.id },
+    );
+    expect(faces.map(({ id }) => id).toSorted()).toEqual([firstAlice.id, anotherAlice.id, secondBob.id].toSorted());
+    expect(faces.every(({ person }) => person?.ownerId === user.id)).toBe(true);
+  });
+
+  it('splits a shared person group even when neither owner has faces', async () => {
+    const { ctx, sut } = setup(await getKyselyDB());
+    const { user: remaining } = await ctx.newUser();
+    const { user: moving } = await ctx.newUser();
+    await ctx.database
+      .updateTable('user')
+      .set({ clusterGroupId: remaining.clusterGroupId })
+      .where('id', '=', moving.id)
+      .execute();
+    const { person: shared } = await ctx.newPerson({ ownerId: remaining.id, name: 'Remaining' });
+    await ctx.newPerson({ ownerId: moving.id, personGroupId: shared.personGroupId, name: 'Moving' });
+
+    await sut.reassignCluster({ userId: moving.id, newClusterId: moving.clusterGroupId });
+
+    const moved = await ctx.database
+      .selectFrom('person')
+      .innerJoin('person_group', 'person_group.id', 'person.personGroupId')
+      .select(['person.name', 'person.personGroupId', 'person_group.clusterGroupId'])
+      .where('person.ownerId', '=', moving.id)
+      .executeTakeFirstOrThrow();
+    expect(moved.name).toBe('Moving');
+    expect(moved.personGroupId).not.toBe(shared.personGroupId);
+    expect(moved.clusterGroupId).toBe(moving.clusterGroupId);
+    await expect(
+      sut.getByGroupId({ ownerId: remaining.id, personGroupId: shared.personGroupId }),
+    ).resolves.toMatchObject({ name: 'Remaining' });
+  });
+
   describe('createAll', () => {
     it('should create people in the groups they were given', async () => {
       const { ctx, sut } = setup();
@@ -610,16 +707,21 @@ describe(PersonRepository.name, () => {
     it('should not suggest a hidden person', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
-      const { person: hidden } = await ctx.newPerson({ ownerId: user.id, isHidden: true });
-      const { person: visible } = await ctx.newPerson({ ownerId: user.id });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      // every feature face shares one embedding, so only the hidden filter can keep a pair out
+      const embedding = newEmbedding();
+      const newPersonWithFace = async (isHidden: boolean) => {
+        const { assetFace } = await ctx.newAssetFace({ assetId: asset.id });
+        await ctx.database.insertInto('face_search').values({ faceId: assetFace.id, embedding }).execute();
+        const { person } = await ctx.newPerson({ ownerId: user.id, faceAssetId: assetFace.id, isHidden });
+        return person.personGroupId!;
+      };
+      const hidden = await newPersonWithFace(true);
+      const [a, b] = [await newPersonWithFace(false), await newPersonWithFace(false)].toSorted();
 
-      const suggestions = await sut.getMergeSuggestions(user.id, { maxDistance: 1, limit: 20 });
-      expect(
-        suggestions.some((row) => row.personId === hidden.personGroupId || row.suggestionId === hidden.personGroupId),
-      ).toBe(false);
-      // Without face_search embeddings for either person's feature face, no pair can be
-      // formed at all — this only asserts the hidden-person filter shape, not distance math.
-      expect(suggestions.some((row) => row.personId === visible.personGroupId)).toBe(false);
+      const suggestions = await sut.getMergeSuggestions(user.id, { maxDistance: 0.5, limit: 20 });
+      expect(suggestions.map(({ personId, suggestionId }) => `${personId}:${suggestionId}`)).toEqual([`${a}:${b}`]);
+      expect(suggestions.some((row) => row.personId === hidden || row.suggestionId === hidden)).toBe(false);
     });
 
     it('should leave out pairs answered "different", and "later" ones for 30 days (FL-57)', async () => {

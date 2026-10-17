@@ -46,6 +46,7 @@ import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-ope
 import { operationExecution } from 'src/utils/execution-signal.js';
 import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { PersonFactory } from 'test/factories/person.factory.js';
 import { probeStub, videoInfoStub } from 'test/fixtures/media.stub.js';
@@ -2225,6 +2226,65 @@ describe(MediaService.name, () => {
       mocks.media.getImageMetadata.mockResolvedValue({ width: 100, height: 100, isTransparent: false });
     });
 
+    it.each([true, false])('publishes original face and OCR rows for crop=%s', async (cropped) => {
+      const builder = AssetFactory.from().exif({ exifImageWidth: 1000, exifImageHeight: 1000 });
+      if (cropped) {
+        builder.edit({ action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 500, height: 500 } });
+      } else {
+        builder.file({ type: AssetFileType.Preview, isEdited: true });
+      }
+      const asset = builder.build();
+      const faces = [
+        AssetFaceFactory.create({
+          assetId: asset.id,
+          imageWidth: 1000,
+          imageHeight: 1000,
+          boundingBoxX1: 600,
+          boundingBoxX2: 700,
+        }),
+        AssetFaceFactory.create({ assetId: asset.id, imageWidth: 1000, imageHeight: 1000, isVisible: false }),
+        AssetFaceFactory.create({ assetId: asset.id, imageWidth: 1000, imageHeight: 1000 }),
+      ].map((face) => ({ ...face, person: null }));
+      const ocrs = faces.map((face) => ({
+        id: newUuid(),
+        assetId: asset.id,
+        isVisible: face.isVisible,
+        text: 'Retained text',
+        updatedAt: new Date(),
+        updateId: newUuid(),
+        boxScore: 0.9,
+        textScore: 0.8,
+        x1: face.boundingBoxX1 / 1000,
+        y1: 0.1,
+        x2: face.boundingBoxX2 / 1000,
+        y2: 0.1,
+        x3: face.boundingBoxX2 / 1000,
+        y3: 0.2,
+        x4: face.boundingBoxX1 / 1000,
+        y4: 0.2,
+      }));
+      const originalFaces = structuredClone(faces);
+      const originalOcrs = structuredClone(ocrs);
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.person.getFaces.mockResolvedValue(faces);
+      mocks.ocr.getByAssetId.mockResolvedValue(ocrs);
+      mocks.media.generateThumbhash.mockResolvedValue(factory.buffer());
+
+      await expect(sut.handleAssetEditThumbnailGeneration({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      const visibleFaces = cropped ? [faces[1], faces[2]] : [faces[1]];
+      const hiddenFaces = cropped ? [faces[0]] : [];
+      const visibleOcrs = cropped ? [ocrs[1], ocrs[2]] : [ocrs[1]];
+      const hiddenOcrs = cropped ? [ocrs[0]] : [];
+      expect(mocks.person.getFaces).toHaveBeenCalledWith(asset.id, { viewingUserId: asset.ownerId });
+      expect(mocks.person.updateVisibility).toHaveBeenCalledWith(visibleFaces, hiddenFaces);
+      expect(mocks.ocr.updateOcrVisibilities).toHaveBeenCalledWith(asset.id, visibleOcrs, hiddenOcrs);
+      expect(mocks.person.updateVisibility.mock.calls[0][0][0]).toBe(faces[1]);
+      expect(mocks.ocr.updateOcrVisibilities.mock.calls[0][1][0]).toBe(ocrs[1]);
+      expect(faces).toEqual(originalFaces);
+      expect(ocrs).toEqual(originalOcrs);
+    });
+
     describe('as a job in Activity (FL-43)', () => {
       const edited = () =>
         AssetFactory.from()
@@ -3374,7 +3434,7 @@ describe(MediaService.name, () => {
       expect(plan.command.inputOptions).not.toEqual(expect.arrayContaining(['-init_hw_device']));
       expect(plan.command.outputOptions).toEqual(
         // FL-39: the edited master is never encoded below the master quality cap, whatever the playback crf
-        expect.arrayContaining(['-c:v', 'h264', '-preset', 'ultrafast', '-crf', String(EDITED_MASTER_MAX_CRF)]),
+        expect.arrayContaining(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', String(EDITED_MASTER_MAX_CRF)]),
       );
       expect(getFilterOption(plan.command.outputOptions)).toBe('crop=300:200:2:4');
     });
@@ -3498,7 +3558,7 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.not.arrayContaining(['-hwaccel', '-init_hw_device']),
-          outputOptions: expect.arrayContaining(['-c:v', 'h264']),
+          outputOptions: expect.arrayContaining(['-c:v', 'libx264']),
         }),
       );
       expect(mocks.asset.upsertFiles).toHaveBeenCalledWith(
@@ -3624,7 +3684,7 @@ describe(MediaService.name, () => {
         expect(outputOptions[outputOptions.indexOf('-color_trc') + 1]).toBe('smpte2084');
         expect(outputOptions[outputOptions.indexOf('-color_primaries') + 1]).toBe('bt2020');
         // A 10-bit source keeps 10 bits: the H.264 playback codec is promoted rather than flattening it.
-        expect(outputOptions[outputOptions.indexOf('-c:v') + 1]).toBe(VideoCodec.Hevc);
+        expect(outputOptions[outputOptions.indexOf('-c:v') + 1]).toBe('libx265');
         expect(getFilterOption(outputOptions)).toContain('format=yuv420p10le');
       });
 
@@ -4387,7 +4447,7 @@ describe(MediaService.name, () => {
       [true, false, 'invalid-master'].flatMap((accepted) =>
         [false, true].flatMap((copy) =>
           [
-            [TranscodeHardwareAcceleration.Disabled, 'h264'],
+            [TranscodeHardwareAcceleration.Disabled, 'libx264'],
             [TranscodeHardwareAcceleration.Nvenc, 'h264_nvenc'],
             [TranscodeHardwareAcceleration.Qsv, 'h264_qsv'],
             [TranscodeHardwareAcceleration.Vaapi, 'h264_vaapi'],
@@ -4972,7 +5032,7 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.any(Array),
-          outputOptions: expect.arrayContaining(['-c:v', 'h264', '-c:a', 'copy']),
+          outputOptions: expect.arrayContaining(['-c:v', 'libx264', '-c:a', 'copy']),
           twoPass: false,
         }),
       );
@@ -5046,7 +5106,7 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.any(Array),
-          outputOptions: expect.arrayContaining(['-c:v', 'h264', '-maxrate', '4500k', '-bufsize', '9000k']),
+          outputOptions: expect.arrayContaining(['-c:v', 'libx264', '-maxrate', '4500k', '-bufsize', '9000k']),
           twoPass: false,
         }),
       );
@@ -5061,7 +5121,7 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.any(Array),
-          outputOptions: expect.arrayContaining(['-c:v', 'h264', '-maxrate', '4500k', '-bufsize', '9000k']),
+          outputOptions: expect.arrayContaining(['-c:v', 'libx264', '-maxrate', '4500k', '-bufsize', '9000k']),
           twoPass: false,
         }),
       );
@@ -5078,7 +5138,7 @@ describe(MediaService.name, () => {
           inputOptions: expect.any(Array),
           outputOptions: expect.arrayContaining([
             '-c:v',
-            'h264',
+            'libx264',
             '-b:v',
             '3104k',
             '-minrate',
@@ -5100,7 +5160,7 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.any(Array),
-          outputOptions: expect.arrayContaining(['-c:v', 'h264', '-c:a', 'copy']),
+          outputOptions: expect.arrayContaining(['-c:v', 'libx264', '-c:a', 'copy']),
           twoPass: false,
         }),
       );
@@ -5234,7 +5294,7 @@ describe(MediaService.name, () => {
           inputOptions: expect.any(Array),
           outputOptions: expect.arrayContaining([
             '-c:v',
-            'hevc',
+            'libx265',
             '-threads',
             '1',
             '-x265-params',
@@ -6208,7 +6268,7 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.any(Array),
-          outputOptions: expect.arrayContaining(['-c:v', 'h264']),
+          outputOptions: expect.arrayContaining(['-c:v', 'libx264']),
           twoPass: false,
         }),
       );
@@ -6227,7 +6287,7 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.any(Array),
-          outputOptions: expect.arrayContaining(['-c:v', 'h264']),
+          outputOptions: expect.arrayContaining(['-c:v', 'libx264']),
           twoPass: false,
         }),
       );
@@ -6483,7 +6543,7 @@ describe(MediaService.name, () => {
           inputOptions: expect.any(Array),
           outputOptions: expect.arrayContaining([
             '-c:v',
-            'h264',
+            'libx264',
             '-c:a',
             'copy',
             '-vf',
@@ -6505,7 +6565,7 @@ describe(MediaService.name, () => {
           inputOptions: expect.any(Array),
           outputOptions: expect.arrayContaining([
             '-c:v',
-            'h264',
+            'libx264',
             '-c:a',
             'copy',
             '-vf',
@@ -6525,7 +6585,7 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.any(Array),
-          outputOptions: expect.arrayContaining(['-c:v', 'h264', '-c:a', 'copy', '-vf', 'format=yuv420p']),
+          outputOptions: expect.arrayContaining(['-c:v', 'libx264', '-c:a', 'copy', '-vf', 'format=yuv420p']),
           twoPass: false,
         }),
       );
@@ -6542,7 +6602,7 @@ describe(MediaService.name, () => {
           inputOptions: expect.any(Array),
           outputOptions: expect.arrayContaining([
             '-c:v',
-            'h264',
+            'libx264',
             '-c:a',
             'copy',
             '-vf',

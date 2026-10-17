@@ -1,5 +1,7 @@
 <script lang="ts">
   import { positionInTimeline } from '$lib/frameleaf/viewer-position';
+  import { FILMSTRIP_REACH, filmstripWindow } from '$lib/frameleaf/viewer-filmstrip';
+  import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
   import type { Action } from '$lib/components/asset-viewer/actions/action';
   import type { AssetCursor } from '$lib/components/asset-viewer/AssetViewer.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
@@ -74,6 +76,7 @@
   });
 
   let cursorVersion = 0;
+  let destroyed = false;
   const loadCloseAssets = async (currentAsset: AssetResponseDto) => {
     const version = ++cursorVersion;
     const [nextAsset, previousAsset] = await Promise.all([getNextAsset(currentAsset), getPreviousAsset(currentAsset)]);
@@ -101,16 +104,29 @@
   });
 
   /**
-   * FL-35: the filmstrip shows the loaded month around the open asset. It reads only what
-   * the timeline manager already holds — it never loads a bucket of its own — so an empty
-   * or not-yet-loaded month simply means no filmstrip.
+   * FL-35 / VIEWER-P4: the filmstrip runs through the timeline around the open asset, across month
+   * edges (`filmstripWindow`). The months it reaches are loaded through the timeline manager, the same
+   * way stepping to the next item loads them. While the strip is hidden it only needs one neighbour on
+   * each side, so its button knows there is something to show.
    */
-  const filmstripAssets = $derived.by<TimelineAsset[]>(() => {
+  const filmstrip = $derived.by(() => {
     const current = assetCursor.current;
-    if (!current) {
-      return [];
+    const month = current ? timelineManager.getTimelineMonthByAssetId(current.id) : undefined;
+    if (!current || !month) {
+      return { assets: [] as TimelineAsset[], toLoad: [] };
     }
-    return timelineManager.getTimelineMonthByAssetId(current.id)?.getAssets() ?? [];
+    return filmstripWindow(
+      timelineManager.months,
+      timelineManager.months.indexOf(month),
+      current.id,
+      $showFilmstrip ? FILMSTRIP_REACH : 1,
+    );
+  });
+  const filmstripAssets = $derived(filmstrip.assets);
+  $effect(() => {
+    for (const month of filmstrip.toLoad) {
+      handlePromiseError(timelineManager.loadTimelineMonth(month.yearMonth, { cancelable: false }));
+    }
   });
 
   // V-12: "n of N" through the whole timeline, from the month counts it already holds.
@@ -118,14 +134,44 @@
     assetCursor.current ? positionInTimeline(timelineManager.months, assetCursor.current.id) : null,
   );
 
+  const randomAssetId = $derived(assetViewerManager.asset?.id);
+  let randomView: object | undefined;
+  $effect.pre(() => {
+    randomView = { timelineManager, id: randomAssetId };
+  });
+  const randomSession = authManager.captureSession();
   const handleRandom = async () => {
-    const randomAsset = await timelineManager.getRandomAsset();
-    if (!randomAsset) {
+    const manager = timelineManager;
+    const view = randomView;
+    const current = () =>
+      !destroyed &&
+      randomSession() &&
+      assetViewerManager.isViewing &&
+      manager === timelineManager &&
+      view === randomView;
+    if (!current()) {
       return;
     }
-
-    await navigate({ targetRoute: 'current', assetId: randomAsset.id });
-    return { id: randomAsset.id };
+    try {
+      const randomAsset = await manager.getRandomAsset();
+      if (!current() || !randomAsset) {
+        return;
+      }
+      await navigate({ targetRoute: 'current', assetId: randomAsset.id });
+      if (
+        !destroyed &&
+        randomSession() &&
+        manager === timelineManager &&
+        assetViewerManager.isViewing &&
+        assetViewerManager.asset?.id === randomAsset.id
+      ) {
+        return { id: randomAsset.id };
+      }
+    } catch (error) {
+      if (current()) {
+        throw error;
+      }
+    }
   };
 
   const handleClose = async (assetId: string) => {
@@ -268,6 +314,13 @@
     }
   };
   const handleUndoDelete = async (assets: TimelineAsset[]) => {
+    if (destroyed) {
+      return;
+    }
+    const owner = cursorVersion;
+    const viewedId = assetViewerManager.asset?.id;
+    const wasViewing = assetViewerManager.isViewing;
+    const isCurrentSession = authManager.captureSession();
     timelineManager.upsertAssets(assets);
     if (assets.length === 0) {
       return;
@@ -275,6 +328,15 @@
 
     const restoredAsset = assets[0];
     const asset = await getAssetInfo({ ...authManager.params, id: restoredAsset.id });
+    if (
+      destroyed ||
+      owner !== cursorVersion ||
+      !isCurrentSession() ||
+      assetViewerManager.asset?.id !== viewedId ||
+      assetViewerManager.isViewing !== wasViewing
+    ) {
+      return;
+    }
     assetViewerManager.setAsset(asset);
     await navigate({ targetRoute: 'current', assetId: restoredAsset.id });
   };
@@ -298,6 +360,7 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
     cursorVersion++;
     assetCacheManager.invalidate();
   });

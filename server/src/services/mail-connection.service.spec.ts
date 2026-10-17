@@ -415,6 +415,28 @@ describe(MailConnectionService.name, () => {
       expect(useTransport).not.toHaveBeenCalled();
     });
 
+    it('keeps a replacement account when the original disconnect waits for provider revocation', async () => {
+      connect();
+      const revoking = Promise.withResolvers<void>();
+      const released = Promise.withResolvers<void>();
+      cloud.on('POST /api/v1/instance/mail/revoke', async () => {
+        revoking.resolve();
+        await released.promise;
+        return { status: 200, body: { status: 'revoked' } };
+      });
+      const disconnect = sut.disconnect(authStub.admin);
+      const refusal = expect(disconnect).rejects.toThrow('The connected mail account changed');
+      try {
+        await revoking.promise;
+        connect({ id: 'replacement-connection', email: 'replacement@example.com' });
+      } finally {
+        released.resolve();
+      }
+      await refusal;
+      expect(connection()).toMatchObject({ id: 'replacement-connection', email: 'replacement@example.com' });
+      expect(useTransport).not.toHaveBeenCalled();
+    });
+
     it('refuses when nothing is connected', async () => {
       await expect(sut.disconnect(authStub.admin)).rejects.toThrow('No mail account is connected');
     });

@@ -4,7 +4,7 @@ import { type ClientAuth } from 'openid-client';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { OAuthConfig, OAuthProfile } from 'src/repositories/oauth.repository.js';
 import type { FrameleafCloudLink } from 'src/types.js';
-import { ImmichHeader, OAuthTokenEndpointAuthMethod } from 'src/enum.js';
+import { OAuthTokenEndpointAuthMethod, RequestHeader } from 'src/enum.js';
 import { CloudGatewayDeps, loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { cloudAddressProblem } from 'src/utils/frameleaf-cloud.js';
 
@@ -245,8 +245,8 @@ const header = (headers: IncomingHttpHeaders, name: string) => {
  * client-supplied header, is an arrival the server cannot vouch for (`null`).
  */
 export const frameleafVia = (headers: IncomingHttpHeaders, edgeSecret: string | null): FrameleafVia | null => {
-  const via = header(headers, ImmichHeader.FrameleafVia);
-  const auth = header(headers, ImmichHeader.FrameleafViaAuth);
+  const via = header(headers, RequestHeader.FrameleafVia);
+  const auth = header(headers, RequestHeader.FrameleafViaAuth);
   if (!edgeSecret || !via || !auth || !VIAS.has(via as FrameleafVia)) {
     return null;
   }
@@ -260,8 +260,8 @@ export const frameleafVia = (headers: IncomingHttpHeaders, edgeSecret: string | 
  * secret is refused, never treated as a request from home.
  */
 export const claimsFrameleafVia = (headers: IncomingHttpHeaders): boolean =>
-  header(headers, ImmichHeader.FrameleafVia) !== undefined ||
-  header(headers, ImmichHeader.FrameleafViaAuth) !== undefined;
+  header(headers, RequestHeader.FrameleafVia) !== undefined ||
+  header(headers, RequestHeader.FrameleafViaAuth) !== undefined;
 
 /** Whether an address is on the home network: private ranges plus FRAMELEAF_TRUSTED_LAN_CIDRS. */
 export const isHomeAddress = (address: string | undefined, trustedLanCidrs: string[]): boolean => {

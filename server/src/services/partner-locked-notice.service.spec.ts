@@ -18,6 +18,14 @@ describe(PartnerLockedNoticeService.name, () => {
       userMetadata = [...userMetadata.filter(({ key }) => key !== item.key), item as never];
       return Promise.resolve();
     });
+    mocks.user.insertPartnerLockedNotice.mockImplementation(() => {
+      if (userMetadata.some(({ key }) => key === UserMetadataKey.PartnerLockedNotice)) return Promise.resolve(false);
+      userMetadata.push({
+        key: UserMetadataKey.PartnerLockedNotice,
+        value: { flaggedAt: new Date().toISOString(), dismissedAt: null },
+      });
+      return Promise.resolve(true);
+    });
     mocks.user.hasPinCode.mockImplementation(() => Promise.resolve(hasPin));
   });
 
@@ -33,17 +41,15 @@ describe(PartnerLockedNoticeService.name, () => {
 
     // a second locked copy keeps the first record
     await expect(sut.noteLockedCopy(authStub.user1.user.id)).resolves.toBe(false);
-    expect(mocks.user.upsertMetadata).toHaveBeenCalledTimes(1);
-    expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(authStub.user1.user.id, {
-      key: UserMetadataKey.PartnerLockedNotice,
-      value: { flaggedAt: first.flaggedAt, dismissedAt: null },
-    });
+    expect(mocks.user.insertPartnerLockedNotice).toHaveBeenCalledTimes(1);
+    expect(mocks.user.insertPartnerLockedNotice).toHaveBeenCalledWith(authStub.user1.user.id);
   });
 
   it('never flags an account that already has a PIN', async () => {
     hasPin = true;
     await expect(sut.noteLockedCopy(authStub.user1.user.id)).resolves.toBe(false);
     expect(mocks.user.upsertMetadata).not.toHaveBeenCalled();
+    expect(mocks.user.insertPartnerLockedNotice).not.toHaveBeenCalled();
     await expect(sut.getNotice(authStub.user1)).resolves.toEqual({ show: false, flaggedAt: null });
   });
 
@@ -63,5 +69,36 @@ describe(PartnerLockedNoticeService.name, () => {
   it('dismissing without a flag records nothing', async () => {
     await expect(sut.dismiss(authStub.user1)).resolves.toEqual({ show: false, flaggedAt: null });
     expect(mocks.user.upsertMetadata).not.toHaveBeenCalled();
+  });
+
+  it('keeps dismissal final when an earlier copy resumes after another copy was dismissed', async () => {
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    mocks.user.hasPinCode.mockImplementationOnce(async () => {
+      entered.resolve();
+      await resume.promise;
+      return false;
+    });
+    const delayed = sut.noteLockedCopy(authStub.user1.user.id);
+    try {
+      await entered.promise;
+      expect(await sut.noteLockedCopy(authStub.user1.user.id)).toBe(true);
+      const first = await sut.getNotice(authStub.user1);
+      await sut.dismiss(authStub.user1);
+      resume.resolve();
+      await delayed;
+      expect(await sut.getNotice(authStub.user1)).toEqual({ show: false, flaggedAt: first.flaggedAt });
+    } finally {
+      resume.resolve();
+      await delayed;
+    }
+  });
+
+  it('reports only one newly flagged notice for concurrent first copies', async () => {
+    const results = await Promise.all([
+      sut.noteLockedCopy(authStub.user1.user.id),
+      sut.noteLockedCopy(authStub.user1.user.id),
+    ]);
+    expect(results.sort()).toEqual([false, true]);
   });
 });

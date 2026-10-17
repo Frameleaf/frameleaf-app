@@ -1,5 +1,4 @@
 import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
-import { CancellableTask } from '$lib/utils/cancellable-task';
 
 export type OcrBoundingBox = {
   id: string;
@@ -31,24 +30,33 @@ class OcrManager {
   #data = $state<OcrBoundingBox[]>([]);
   showOverlay = $state(false);
   #hasOcrData = $derived(this.#data.length > 0);
-  #ocrLoader = new CancellableTask();
-  #cleared = false;
+  #loading: Promise<void> | undefined;
+  #generation = 0;
   #document = $state<OcrDocumentText | null>(null);
   #highlight = $state<OcrBoundingBox | null>(null);
 
   /** The recognized boxes with the owner's corrections applied and their dismissed lines left out. */
   #effective = $derived.by(() => {
     const document = this.#document;
+    const data = this.#data;
     if (!document) {
-      return this.#data;
+      return data;
     }
 
-    return this.#data
-      .filter((box) => box.assetId !== document.assetId || document.overrides.get(box.id) !== null)
-      .map((box) => {
-        const text = box.assetId === document.assetId ? document.overrides.get(box.id) : undefined;
-        return typeof text === 'string' ? { ...box, text } : box;
-      });
+    const effective: OcrBoundingBox[] = [];
+    const length = data.length;
+    for (let index = 0; index < length; index++) {
+      // Match the prior array filtering when a caller leaves a sparse array.
+      if (!Reflect.has(data, index)) {
+        continue;
+      }
+      const box = data[index];
+      const text = box.assetId === document.assetId ? document.overrides.get(box.id) : undefined;
+      if (text !== null) {
+        effective.push(typeof text === 'string' ? { ...box, text } : box);
+      }
+    }
+    return effective;
   });
 
   get data() {
@@ -64,18 +72,40 @@ class OcrManager {
     return this.#highlight;
   }
 
-  async getAssetOcr(id: string) {
-    if (this.#cleared) {
-      await this.#ocrLoader.reset();
-      this.#cleared = false;
+  /** Refresh after invalidating the shared cache when a new recognition replaces the boxes. */
+  async getAssetOcr(id: string, refresh = false) {
+    if (refresh) {
+      this.#generation++;
+      this.#loading = undefined;
+      this.#data = [];
     }
-    await this.#ocrLoader.execute(async () => {
-      this.#data = await assetCacheManager.getAssetOcr(id);
-    }, false);
+    if (this.#loading) {
+      await this.#loading;
+      return;
+    }
+    const generation = this.#generation;
+    let resolve!: () => void;
+    const pending = new Promise<void>((done) => {
+      resolve = done;
+    });
+    this.#loading = pending;
+    try {
+      const boxes = await assetCacheManager.getAssetOcr(id);
+      if (generation === this.#generation && this.#loading === pending) {
+        this.#data = boxes;
+      }
+    } catch {
+      if (generation === this.#generation && this.#loading === pending) {
+        this.#loading = undefined;
+      }
+    } finally {
+      resolve();
+    }
   }
 
   clear() {
-    this.#cleared = true;
+    this.#generation++;
+    this.#loading = undefined;
     this.#data = [];
     this.showOverlay = false;
     this.#highlight = null;

@@ -141,7 +141,7 @@ export class NotificationAdminService extends BaseService {
             recipientName: 'Jane Doe',
             cid: undefined,
           },
-          customTemplate: customTemplate || templates.email.albumInviteTemplate,
+          customTemplate: customTemplate || templates.email.albumUpdateTemplate,
         });
         templateResponse = _updateAlbumHtml;
         break;

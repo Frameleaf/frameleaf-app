@@ -1,6 +1,6 @@
 import z from 'zod';
 // eslint-disable-next-line no-restricted-imports -- The schema loads under plain Node before the application alias graph.
-import { ImmichEnvironmentSchema, LogFormatSchema, LogLevelSchema } from './environment-values.ts';
+import { FrameleafEnvironmentSchema, LogFormatSchema, LogLevelSchema } from './environment-values.ts';
 // eslint-disable-next-line no-restricted-imports -- The schema loads under plain Node before the application alias graph.
 import { IsIPRange } from './ip-range.ts';
 // eslint-disable-next-line no-restricted-imports -- The schema loads under plain Node before the application alias graph.
@@ -53,7 +53,7 @@ export const EnvSchema = z
     FRAMELEAF_BUILD_IMAGE_URL: z.string().optional(),
     FRAMELEAF_CONFIG_FILE: z.string().optional(),
     FRAMELEAF_HELMET_FILE: z.string().optional(),
-    FRAMELEAF_ENV: ImmichEnvironmentSchema.optional(),
+    FRAMELEAF_ENV: FrameleafEnvironmentSchema.optional(),
     FRAMELEAF_HOST: z.string().optional(),
     FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS: stringBool.optional(),
     /**

@@ -1,5 +1,6 @@
 import {
   AssetTypeEnum,
+  AssetVisibility,
   ClassificationMediaType,
   ImageEnrichmentFilter,
   type ClassificationRuleCreateDto,
@@ -953,9 +954,29 @@ export const readPaletteState = (query: DiscoveryQuery): PaletteState => {
   return { input, mode, base };
 };
 
-/** The request body every palette count, facet and histogram shares: the results page's own. */
-export const paletteSearchBody = (query: DiscoveryQuery): DiscoverySearchDto =>
-  structuredSearchRequest(toSearchDto(query));
+/**
+ * ACCOUNT-P3, Search › "Include archived items" (`preferences.search.includeArchived`, off by default).
+ * A search that says nothing about visibility means the timeline (`withSearchDefaults`); with the
+ * preference on it means the timeline and the archive. Only the search palette and the results page
+ * apply it: a query that already names a visibility (the "In archive" chip, any branch's own
+ * condition) is left as it is, and every other caller (the library's Filter panel, Explore and Places
+ * counts, Pets, the geolocation tool, select-all) keeps the timeline default. Neither value can match
+ * Locked, so a locked session is never asked to unlock.
+ */
+export const withArchivePreference = <T extends { filter?: SearchFilter }>(dto: T, includeArchived: boolean): T => {
+  const filter = dto.filter ?? {};
+  if (!includeArchived || filter.visibility !== undefined || filter.or?.some((branch) => branch.visibility)) {
+    return dto;
+  }
+  return { ...dto, filter: { ...filter, visibility: { in: [AssetVisibility.Timeline, AssetVisibility.Archive] } } };
+};
+
+/**
+ * The request body every palette count, facet and histogram shares: the results page's own. The search
+ * palette passes the account's `includeArchived`; the library's Filter panel leaves it off.
+ */
+export const paletteSearchBody = (query: DiscoveryQuery, includeArchived = false): DiscoverySearchDto =>
+  structuredSearchRequest(withArchivePreference(toSearchDto(query), includeArchived));
 
 /** A body for the statistics, facets and histogram endpoints: only what they accept. */
 export const paletteStatisticsBody = (body: DiscoverySearchDto) => ({

@@ -1059,36 +1059,20 @@ describe(SystemConfigService.name, () => {
             ...defaults.machineLearning,
             imageDescription: {
               ...baselineDescription,
-              // Client sends an empty/null pendingRequeueAt; server must
-              // overwrite with the stored value (null in defaults).
               lastConfigChangeAt: initialLastChange,
             },
           },
           ffmpeg: { ...defaults.ffmpeg, crf: 42 },
         };
 
-        const before = Date.now();
         await sut.updateAdminConfig(newConfig);
 
-        // The persisted partial config should NOT include a new
-        // imageDescription.lastConfigChangeAt different from the stored one
-        // (updateConfig diffs against defaults, so the existing 2024 value
-        // would be persisted only if it differs from null — which it does).
         const persisted = configWrites().at(-1);
         const partial = persisted! as {
           machineLearning?: { imageDescription?: { lastConfigChangeAt?: string | null } };
         };
         const lastChange = partial.machineLearning?.imageDescription?.lastConfigChangeAt;
-        // The stored value must NOT have moved forward in time. The persisted
-        // partial must either omit the field (filtered out by updateConfig's
-        // diff because it equals the default) or carry the exact original
-        // ISO string — never a fresh "now" timestamp.
-        if (lastChange === undefined || lastChange === null) {
-          // Field was filtered out — no fresh bump persisted. Pass.
-        } else {
-          expect(lastChange).toBe(initialLastChange);
-          expect(Date.parse(lastChange)).toBeLessThan(before);
-        }
+        expect(lastChange).toBe(initialLastChange);
       });
 
       it('should NOT ratchet on bare timestamp-only diffs (pendingRequeueAt/lastConfigChangeAt are ignored in the compare)', async () => {
@@ -1120,7 +1104,6 @@ describe(SystemConfigService.name, () => {
           },
         };
 
-        const before = Date.now();
         await sut.updateAdminConfig(newConfig);
 
         const persisted = configWrites().at(-1);
@@ -1129,24 +1112,8 @@ describe(SystemConfigService.name, () => {
             imageDescription?: { lastConfigChangeAt?: string | null; pendingRequeueAt?: string | null };
           };
         };
-        // The pre-existing stored timestamps must be preserved (server is the
-        // source of truth for these two fields). The persisted partial must
-        // either omit the field (filtered out by updateConfig diff) or carry
-        // the exact original ISO string — never a fresh "now" timestamp.
-        const persistedLastChange = partial.machineLearning?.imageDescription?.lastConfigChangeAt;
-        if (persistedLastChange === undefined || persistedLastChange === null) {
-          // Filtered out — no fresh bump persisted. Pass.
-        } else {
-          expect(persistedLastChange).toBe(initialLastChange);
-          expect(Date.parse(persistedLastChange)).toBeLessThan(before);
-        }
-        const persistedPendingRequeue = partial.machineLearning?.imageDescription?.pendingRequeueAt;
-        if (persistedPendingRequeue === undefined || persistedPendingRequeue === null) {
-          // Filtered out — no fresh ratchet persisted. Pass.
-        } else {
-          expect(persistedPendingRequeue).toBe(initialPendingRequeue);
-          expect(Date.parse(persistedPendingRequeue)).toBeLessThan(before);
-        }
+        expect(partial.machineLearning?.imageDescription?.lastConfigChangeAt).toBe(initialLastChange);
+        expect(partial.machineLearning?.imageDescription?.pendingRequeueAt).toBe(initialPendingRequeue);
       });
     });
   });

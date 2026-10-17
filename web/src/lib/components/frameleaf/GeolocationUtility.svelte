@@ -193,8 +193,15 @@
           : { latitude: frozen.latitude, longitude: frozen.longitude },
       );
       if (result) {
-        const refreshed = await Promise.all(result.succeeded.map((id) => getAssetInfo({ ...authManager.params, id })));
-        const byId = new Map(refreshed.map((asset) => [asset.id, asset]));
+        // The write landed; an item that cannot be read back keeps its old row until the next load.
+        const refreshed = await Promise.allSettled(
+          result.succeeded.map((id) => getAssetInfo({ ...authManager.params, id })),
+        );
+        const byId = new Map(
+          refreshed
+            .filter((outcome): outcome is PromiseFulfilledResult<AssetResponseDto> => outcome.status === 'fulfilled')
+            .map(({ value: asset }) => [asset.id, asset]),
+        );
         assets = assets.map((asset) => byId.get(asset.id) ?? asset);
         const succeeded = new Set(result.succeeded);
         selected = selected.filter((id) => !succeeded.has(id));

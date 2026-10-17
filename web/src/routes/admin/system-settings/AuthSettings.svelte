@@ -227,8 +227,8 @@
 
               <SettingField
                 inputType={SettingInputFieldType.NUMBER}
-                label={$t('admin.oauth_storage_quota_default')}
-                description={$t('admin.oauth_storage_quota_default_description')}
+                label={$t('frameleaf_oauth_storage_quota_default')}
+                description={$t('frameleaf_oauth_storage_quota_default_description')}
                 bind:value={configToEdit.oauth.defaultStorageQuota}
                 required={false}
                 disabled={disabled || !configToEdit.oauth.enabled}

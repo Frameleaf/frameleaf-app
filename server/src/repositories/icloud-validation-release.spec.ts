@@ -25,6 +25,10 @@ function fixture(rows: (query: string) => object[]) {
   return { db, queries };
 }
 
+// Staging and audit writes prepare session cryptography before their locks; these doubles need no key.
+const transport = { withSessionCrypto: <T>(action: () => Promise<T>) => action() };
+const withCryptography = <T>(action: () => Promise<T>) => action();
+
 const resource = {
   id: '00000000-0000-4000-8000-000000000001',
   ownerId: '00000000-0000-4000-8000-000000000002',
@@ -47,7 +51,7 @@ describe('validation input release boundaries', () => {
       verification: { auditValidationInputs: { payload: { current: { payload: { state: 'disposed' } } } } },
     };
     const f = fixture(() => [current]);
-    const sut = new ICloudScheduledStagingRepository(f.db, {} as never);
+    const sut = new ICloudScheduledStagingRepository(f.db, transport as never);
     try {
       expect(
         await sut.deferDisposedValidationInput({
@@ -69,7 +73,7 @@ describe('validation input release boundaries', () => {
 
   it('refuses direct terminal release when the input cannot authenticate as disposed', async () => {
     const f = fixture(() => [resource]);
-    const sut = new ICloudScheduledStagingRepository(f.db, {} as never);
+    const sut = new ICloudScheduledStagingRepository(f.db, transport as never);
     vi.spyOn(sut, 'authenticateDisposedValidationInputs').mockResolvedValue(false);
     try {
       await sut.releaseRefusedBytes({
@@ -151,7 +155,7 @@ describe('validation input release boundaries', () => {
           ]
         : [current],
     );
-    const staging = { authenticateDisposedValidationInputs: vi.fn().mockResolvedValue(false) };
+    const staging = { authenticateDisposedValidationInputs: vi.fn().mockResolvedValue(false), withCryptography };
     const cleanup = vi.fn();
     try {
       await new ICloudAuditRepository(f.db, staging as never).housekeeping(cleanup);
@@ -171,7 +175,7 @@ describe('validation input release boundaries', () => {
         return [{ ...resource, stagingPath: null }];
       return [];
     });
-    const staging = { authenticateDisposedValidationInputs: vi.fn().mockResolvedValue(false) };
+    const staging = { authenticateDisposedValidationInputs: vi.fn().mockResolvedValue(false), withCryptography };
     const sut = new ICloudSyncRepository(f.db, staging as never);
     const cleanup = vi.fn();
     try {

@@ -34,7 +34,7 @@
             {
               "label": "Immich API Server (Nest)",
               "type": "shell",
-              "command": "[ -f /immich-devcontainer/container-start-backend.sh ] && /immich-devcontainer/container-start-backend.sh || exit 0",
+              "command": "if [ -f /immich-devcontainer/container-start-backend.sh ]; then exec /immich-devcontainer/container-start-backend.sh; fi",
               "isBackground": true,
               "presentation": {
                 "echo": true,
@@ -54,7 +54,7 @@
             {
               "label": "Immich Web Server (Vite)",
               "type": "shell",
-              "command": "[ -f /immich-devcontainer/container-start-frontend.sh ] && /immich-devcontainer/container-start-frontend.sh || exit 0",
+              "command": "if [ -f /immich-devcontainer/container-start-frontend.sh ]; then exec /immich-devcontainer/container-start-frontend.sh; fi",
               "isBackground": true,
               "presentation": {
                 "echo": true,

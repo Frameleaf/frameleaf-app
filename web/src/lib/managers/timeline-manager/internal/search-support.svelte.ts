@@ -1,5 +1,4 @@
 import { AssetOrder, TimeBucketDateType, type AssetResponseDto } from '@frameleaf/sdk';
-import { DateTime } from 'luxon';
 import { getOrderingDate, plainDateTimeCompare, type TimelineYearMonth } from '$lib/utils/timeline-util';
 import { TimelineManager } from '../timeline-manager.svelte';
 import type { TimelineMonth } from '../timeline-month.svelte';
@@ -79,6 +78,8 @@ async function getAssetByDayOffset(
   timelineMonth: TimelineMonth,
   direction: Direction,
 ) {
+  const dateType = timelineManager.getDateType();
+  const startDate = getOrderingDate(asset, dateType);
   const timelineDay = timelineMonth.findTimelineDayForAsset(asset);
   for await (const targetAsset of timelineManager.assetsIterator({
     startTimelineMonth: timelineMonth,
@@ -86,7 +87,12 @@ async function getAssetByDayOffset(
     startAsset: asset,
     direction,
   })) {
-    if (targetAsset.localDateTime.day !== asset.localDateTime.day) {
+    const targetDate = getOrderingDate(targetAsset, dateType);
+    if (
+      targetDate.year !== startDate.year ||
+      targetDate.month !== startDate.month ||
+      targetDate.day !== startDate.day
+    ) {
       return targetAsset;
     }
   }
@@ -94,7 +100,7 @@ async function getAssetByDayOffset(
 
 async function getAssetByMonthOffset(timelineManager: TimelineManager, month: TimelineMonth, direction: Direction) {
   for (const targetMonth of timelineManager.timelineMonthIterator({ startTimelineMonth: month, direction })) {
-    if (targetMonth.yearMonth.month !== month.yearMonth.month) {
+    if (targetMonth.yearMonth.year !== month.yearMonth.year || targetMonth.yearMonth.month !== month.yearMonth.month) {
       const { value, done } = await timelineManager
         .assetsIterator({ startTimelineMonth: targetMonth, direction })
         .next();
@@ -187,32 +193,4 @@ export async function retrieveRange(
     }
   }
   return range;
-}
-
-export function findTimelineMonthForDate(timelineManager: TimelineManager, targetYearMonth: TimelineYearMonth) {
-  for (const month of timelineManager.months) {
-    const { year, month: monthNum } = month.yearMonth;
-    if (monthNum === targetYearMonth.month && year === targetYearMonth.year) {
-      return month;
-    }
-  }
-}
-
-export function findClosestTimelineMonthForDate(months: TimelineMonth[], targetYearMonth: TimelineYearMonth) {
-  const targetDate = DateTime.fromObject({ year: targetYearMonth.year, month: targetYearMonth.month });
-
-  let closestMonth: TimelineMonth | undefined;
-  let minDifference = Number.MAX_SAFE_INTEGER;
-
-  for (const month of months) {
-    const monthDate = DateTime.fromObject({ year: month.yearMonth.year, month: month.yearMonth.month });
-    const totalDiff = Math.abs(monthDate.diff(targetDate, 'months').months);
-
-    if (totalDiff < minDifference) {
-      minDifference = totalDiff;
-      closestMonth = month;
-    }
-  }
-
-  return closestMonth;
 }

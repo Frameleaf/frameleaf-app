@@ -26,7 +26,7 @@ export type StudioResourceRights = {
   restrictions: Readonly<Partial<Record<StudioRightsUseName, string>>>;
 };
 
-export const STUDIO_RIGHTS_SOURCE_SHA256 = '678002261331578acdcf8977795aeacdab5b2fae97dab734f5da890af7ff4e35';
+export const STUDIO_RIGHTS_SOURCE_SHA256 = 'bb73b1bfe8e8f58cd3c356da93903cbcca55d31fbf0fd788f99a6b4dad1a7d7c';
 
 /** The owner approval the allowed rows come from, or null when there is none. */
 export const STUDIO_RIGHTS_APPROVAL = {
@@ -1298,10 +1298,10 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
   'runtime:onnx-cdn': {
     kind: 'runtime-code',
     license: 'MIT',
-    redistribution: 'allowed',
-    localRuntime: 'allowed',
-    hostedUse: 'allowed',
-    approvedOn: '2026-09-29',
+    redistribution: 'blocked',
+    localRuntime: 'blocked',
+    hostedUse: 'blocked',
+    approvedOn: null,
     restrictions: {},
   },
   'runtime:whisper-transformers': {

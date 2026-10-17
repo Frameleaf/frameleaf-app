@@ -60,7 +60,7 @@ const LIVE_JOB_STATUSES = ['queued', 'preparing', 'rendering', 'validating', 'ca
 export const ENDED_UNFINISHED_JOB_STATUSES: readonly string[] = ['cancelled', 'failed'];
 /** What one item of a batch answered, for the bulk worker to report. */
 export type ArchiveItemAnswer =
-  'archived' | 'undone' | 'skipped' | 'not-archived' | 'conflict' | 'cancelled' | 'missing';
+  'archived' | 'undone' | 'skipped' | 'not-archived' | 'conflict' | 'cancelled' | 'missing' | 'locked';
 /** How the bulk worker reports one archive-operation answer. */
 export const archiveAnswerOutcome = (
   answer: ArchiveItemAnswer,
@@ -84,6 +84,9 @@ export const archiveAnswerOutcome = (
     }
     case 'missing': {
       return { status: 'skipped', reasonKey: 'frameleaf_bulk_reason_not_found' };
+    }
+    case 'locked': {
+      return { status: 'skipped', reasonKey: 'frameleaf_bulk_reason_locked' };
     }
     default: {
       return { status: 'skipped', reasonKey: 'frameleaf_bulk_reason_archive_moved' };
@@ -521,7 +524,7 @@ export class ArchiveOperationRepository {
    * One archive batch of the bulk job, in one transaction. The job must be the operation's own
    * (`ownsJob`: linked when it was started, or a retry of that job). Returns what each id answered.
    */
-  async publish(ownerId: string, operationId: string, jobId: string, ids: string[]) {
+  async publish(ownerId: string, operationId: string, jobId: string, ids: string[], elevated = false) {
     return this.db.transaction().execute(async (tx) => {
       const answers = new Map<string, ArchiveItemAnswer>(ids.map((id) => [id, 'missing']));
       const operation = await this.lockOwned(tx, ownerId, operationId);
@@ -530,20 +533,11 @@ export class ArchiveOperationRepository {
       }
       const items = await this.lockItems(tx, operationId, ids);
       const pending = items.filter(({ status }) => status === 'pending').map(({ assetId }) => assetId);
-      const eligible =
-        pending.length === 0
-          ? []
-          : (
-              await sql<{
-                id: string;
-              }>`
-                SELECT id FROM asset
-                WHERE id = ANY(${pending}::uuid[]) AND "ownerId" = ${ownerId}::uuid AND "deletedAt" IS NULL
-                  AND visibility = ${AssetVisibility.Timeline}::asset_visibility_enum
-                ORDER BY id
-                FOR UPDATE
-              `.execute(tx)
-            ).rows.map(({ id }) => id);
+      const assets = await this.lockAssets(tx, ownerId, pending);
+      const locked = new Set(assets.filter((asset) => !elevated && asset.isLocked).map(({ id }) => id));
+      const eligible = assets
+        .filter((asset) => asset.visibility === AssetVisibility.Timeline && !locked.has(asset.id))
+        .map(({ id }) => id);
       const published =
         eligible.length === 0
           ? []
@@ -572,7 +566,10 @@ export class ArchiveOperationRepository {
         await this.setStatus(tx, operationId, left, 'skipped');
       }
       for (const { assetId, status } of items) {
-        answers.set(assetId, status === 'archived' || archived.has(assetId) ? 'archived' : 'skipped');
+        answers.set(
+          assetId,
+          locked.has(assetId) ? 'locked' : status === 'archived' || archived.has(assetId) ? 'archived' : 'skipped',
+        );
       }
       return answers;
     });
@@ -582,7 +579,7 @@ export class ArchiveOperationRepository {
    * archived with the `updateId` this operation published; an item the archive has not reached is
    * marked skipped so the archive never reaches it afterwards.
    */
-  async restore(ownerId: string, operationId: string, jobId: string, ids: string[]) {
+  async restore(ownerId: string, operationId: string, jobId: string, ids: string[], elevated = false) {
     return this.db.transaction().execute(async (tx) => {
       const answers = new Map<string, ArchiveItemAnswer>(ids.map((id) => [id, 'missing']));
       const operation = await this.lockOwned(tx, ownerId, operationId);
@@ -595,8 +592,11 @@ export class ArchiveOperationRepository {
         await this.setStatus(tx, operationId, unreached, 'skipped');
       }
       const archived = items.filter(({ status }) => status === 'archived').map(({ assetId }) => assetId);
+      const assets = await this.lockAssets(tx, ownerId, archived);
+      const locked = new Set(assets.filter((asset) => !elevated && asset.isLocked).map(({ id }) => id));
+      const eligible = archived.filter((id) => !locked.has(id));
       const restored =
-        archived.length === 0
+        eligible.length === 0
           ? new Set<string>()
           : new Set(
               (
@@ -606,7 +606,7 @@ export class ArchiveOperationRepository {
                   UPDATE asset SET visibility = item."previousVisibility"::asset_visibility_enum
                   FROM public.archive_operation_item item
                   WHERE item."operationId" = ${operationId}::uuid AND item."assetId" = asset.id
-                    AND asset.id = ANY(${archived}::uuid[]) AND asset."ownerId" = ${ownerId}::uuid
+                    AND asset.id = ANY(${eligible}::uuid[]) AND asset."ownerId" = ${ownerId}::uuid
                     AND asset."deletedAt" IS NULL
                     AND asset.visibility = ${AssetVisibility.Archive}::asset_visibility_enum
                     AND asset."updateId" = item."publishedUpdateId"
@@ -618,12 +618,14 @@ export class ArchiveOperationRepository {
       if (restored.size > 0) {
         await this.setStatus(tx, operationId, [...restored], 'undone');
       }
-      const changed = archived.filter((id) => !restored.has(id));
+      const changed = eligible.filter((id) => !restored.has(id));
       if (changed.length > 0) {
         await this.setStatus(tx, operationId, changed, 'conflict');
       }
       for (const { assetId, status } of items) {
-        if (restored.has(assetId) || status === 'undone') {
+        if (locked.has(assetId)) {
+          answers.set(assetId, 'locked');
+        } else if (restored.has(assetId) || status === 'undone') {
           answers.set(assetId, 'undone');
         } else if (status === 'conflict' || changed.includes(assetId)) {
           answers.set(assetId, 'conflict');
@@ -635,6 +637,29 @@ export class ArchiveOperationRepository {
       }
       return answers;
     });
+  }
+  private async lockAssets(tx: Transaction<DB>, ownerId: string, ids: string[]) {
+    if (ids.length === 0) return [];
+    const rows = await tx
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.id', 'in', ids)
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset.deletedAt', 'is', null)
+      .orderBy('asset.id')
+      .forUpdate()
+      .execute();
+    if (rows.length === 0) return [];
+    // A lock writer may have committed while the row-lock statement waited: read its records afterwards.
+    return tx
+      .selectFrom('asset')
+      .select(['asset.id', 'asset.visibility', isLocked('asset').as('isLocked')])
+      .where(
+        'asset.id',
+        'in',
+        rows.map(({ id }) => id),
+      )
+      .execute();
   }
   private async lockItems(tx: Transaction<DB>, operationId: string, ids: string[]) {
     const { rows } = await sql<{

@@ -60,43 +60,49 @@ describe('/trash', () => {
       expect(body).toEqual({ count: 1 });
 
       await utils.waitForWebsocketEvent({ event: 'assetDelete', id: assetId });
+      await utils.waitForQueueFinish(admin.accessToken, 'backgroundTask');
 
       const after = await getAssetStatistics({ isTrashed: true }, { headers: asBearerAuth(admin.accessToken) });
       expect(after.total).toBe(0);
 
-      expect(existsSync(before.originalPath)).toBe(false);
+      // originalPath is a server-container path, so the host's existsSync would always say false
+      expect(await onDisk(before.originalPath)).toBe(false);
     });
 
-    it('should empty the trash with archived assets', async () => {
-      const { id: assetId } = await utils.createAsset(admin.accessToken);
-      await utils.waitForAllQueuesFinish(admin.accessToken);
-      await utils.archiveAssets(admin.accessToken, [assetId]);
-      await utils.deleteAssets(admin.accessToken, [assetId]);
+    it(
+      'should empty the trash with archived assets',
+      { timeout: process.env.CI ? 210_000 : 50_000 },
+      async ({ signal }) => {
+        const { id: assetId } = await utils.createAsset(admin.accessToken, undefined, { signal });
+        await utils.waitForAllQueuesFinish(admin.accessToken, signal);
+        await utils.archiveAssets(admin.accessToken, [assetId]);
+        await utils.deleteAssets(admin.accessToken, [assetId]);
 
-      const before = await getAssetInfo({ id: assetId }, { headers: asBearerAuth(admin.accessToken) });
-      expect(before).toStrictEqual(expect.objectContaining({ id: assetId, isTrashed: true, isArchived: true }));
+        const before = await getAssetInfo({ id: assetId }, { headers: asBearerAuth(admin.accessToken) });
+        expect(before).toStrictEqual(expect.objectContaining({ id: assetId, isTrashed: true, isArchived: true }));
 
-      const { status, body } = await request(app)
-        .post('/trash/empty')
-        .set('Authorization', `Bearer ${admin.accessToken}`);
-      expect(status).toBe(200);
-      expect(body).toEqual({ count: 1 });
+        const { status, body } = await request(app)
+          .post('/trash/empty')
+          .set('Authorization', `Bearer ${admin.accessToken}`);
+        expect(status).toBe(200);
+        expect(body).toEqual({ count: 1 });
 
-      await utils.waitForWebsocketEvent({ event: 'assetDelete', id: assetId });
+        // The deletion event is emitted by queued file cleanup, after the asset-removal jobs.
+        await utils.waitForQueueFinish(admin.accessToken, 'backgroundTask', undefined, signal);
+        await utils.waitForWebsocketEvent({ event: 'assetDelete', id: assetId, signal });
 
-      const after = await getAssetStatistics({ isTrashed: true }, { headers: asBearerAuth(admin.accessToken) });
-      expect(after.total).toBe(0);
+        const after = await getAssetStatistics({ isTrashed: true }, { headers: asBearerAuth(admin.accessToken) });
+        expect(after.total).toBe(0);
 
-      expect(existsSync(before.originalPath)).toBe(false);
-    });
+        expect(await onDisk(before.originalPath)).toBe(false);
+      },
+    );
 
-    // The background queue can hold an earlier test's retry for 30 s: a Best Photos score that raced its
-    // asset into the trash fails publication and is retried after the queue's 30 s backoff. Waiting for
-    // the queue therefore needs more than the default 15 s, like the other offline-library tests here.
-    it('should remove offline assets', { timeout: process.env.CI ? 150_000 : 50_000 }, async ({ signal }) => {
-      // a fixture folder of its own, so a retry never collides with an earlier attempt's library
+    // Earlier Best Photos publication can retry after30s; allow the background queue to drain.
+    it('should remove offline assets', { timeout: process.env.CI ? 210_000 : 70_000 }, async ({ signal }) => {
       const fixtureFolder = `temp/trash-empty-${randomUUID()}`;
       utils.createImageFile(`${testAssetDir}/${fixtureFolder}/offline/offline.png`);
+
       try {
         const library = await utils.createLibrary(admin.accessToken, {
           ownerId: admin.userId,

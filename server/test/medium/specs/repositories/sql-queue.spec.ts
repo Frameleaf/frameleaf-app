@@ -611,10 +611,22 @@ describe('PostgreSQL queue', () => {
       const [claim] = await store.claim(queue, workerA);
       await executor['execute'](claim, new AbortController());
       const {
-        rows: [job],
-      } = await sql<{ state: string; attempt: number; base: number; reason: string }>`select state, attempt,
-        "retryBaseAttempt" base, "dependencyReason" reason from job where id = ${claim.id}::uuid`.execute(db);
+        rows: [{ wait, ...job }],
+      } = await sql<{
+        state: string;
+        attempt: number;
+        base: number;
+        reason: string;
+        wait: number;
+      }>`select state, attempt,
+        "retryBaseAttempt" base, "dependencyReason" reason,
+        extract(epoch from "availableAt" - clock_timestamp())::float8 wait from job where id = ${claim.id}::uuid`.execute(
+        db,
+      );
       expect(job).toEqual({ state: 'pending', attempt: index + 1, base: index + 1, reason: 'destination-unavailable' });
+      // An unavailable destination backs off (30s, 1m, 2m) instead of re-running every 30 seconds forever.
+      expect(wait).toBeGreaterThan(30 * 2 ** index - 5);
+      expect(wait).toBeLessThanOrEqual(30 * 2 ** index);
       expect(await store.defer(claim, 'destination-unavailable')).toBe(false); // stale credit cannot be refunded twice
       await sql`update job set "availableAt" = now() where id = ${claim.id}::uuid`.execute(db);
     }
@@ -930,6 +942,32 @@ describe('PostgreSQL queue', () => {
         (await sql`select "finishedAt" is not null finished from job_run where id = ${runId}::uuid`.execute(db)).rows,
       ).toEqual([{ finished: true }]);
     }
+  });
+
+  it('retries eligible failures beyond a full page of deduplication keys with live jobs', async () => {
+    await sql`insert into job(id,queue,name,data,state,"dedupKey","safeToRetry","deadlineMs")
+      select gen_random_uuid(),${queue},'thumbnail','{}'::jsonb,state,
+        'blocked/'||lpad(i::text,4,'0'),true,60000
+      from generate_series(1,1000) i cross join (values ('failed'),('pending')) states(state)`.execute(db);
+    const {
+      rows: [eligible],
+    } = await sql<{ id: string }>`insert into job(id,queue,name,data,state,"dedupKey","safeToRetry","deadlineMs")
+      values (gen_random_uuid(),${queue},'thumbnail','{}'::jsonb,'failed','zz/eligible',true,60000) returning id`.execute(
+      db,
+    );
+    expect(await store.retryFailed(queue)).toBe(1);
+    expect((await sql`select state from job where id=${eligible.id}::uuid`.execute(db)).rows).toEqual([
+      { state: 'pending' },
+    ]);
+    expect(
+      (
+        await sql`select state,count(*)::int count from job where queue=${queue} and "dedupKey" like 'blocked/%'
+      group by state order by state`.execute(db)
+      ).rows,
+    ).toEqual([
+      { state: 'failed', count: 1000 },
+      { state: 'pending', count: 1000 },
+    ]);
   });
 
   it('never replays an ambiguous external effect and keeps sensitive payloads out of failed history', async () => {

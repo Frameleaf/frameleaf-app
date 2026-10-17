@@ -8,8 +8,8 @@ name: Model Mirror Defaults
       - master/frameleaf-implementation
     paths:
       - server/src/dtos/config.dto.ts
-      - machine-learning/immich_ml/config.py
-      - machine-learning/immich_ml/models/base.py
+      - machine-learning/frameleaf_ml/config.py
+      - machine-learning/frameleaf_ml/models/base.py
       - server/test/model-mirror/**
       - server/test/vitest.config.model-mirror.mjs
       - .github/workflows/model-mirror-defaults.yml
@@ -35,11 +35,12 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Mise
-        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
         with:
+          persist_github_token: true
           github_token: ${{ github.token }}
           install_args: --locked
-          version: 2026.7.12
+          version: 2026.10.8
       - name: Install server and build the plugin SDK
         run: |-
           mise run //server:install

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { gzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { Mocked } from 'vitest';
 import { CloudBackupStoreError, CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.repository.js';
 import { CloudBackupBucket, CloudBackupMaintenance, emptyVerifyResult } from 'src/services/cloud-backup-maintenance.js';
@@ -269,14 +269,30 @@ describe(CloudBackupMaintenance.name, () => {
       expect(store.delete).not.toHaveBeenCalled();
     });
 
+    it.each(['assets', 'profiles'])(
+      'removes nothing when a kept manifest has an array as its %s record',
+      async (field) => {
+        objects = nightlyBucket(5);
+        const key = 'm/20260926T030000Z.json.gz';
+        const malformed = JSON.parse(gunzipSync(objects.get(key)!).toString('utf8'));
+        malformed[field] = [];
+        objects.set(key, gzipSync(JSON.stringify(malformed)));
+        await expect(sut.prune(bucket, retention, false, carryOn)).rejects.toThrow();
+        expect(store.delete).not.toHaveBeenCalled();
+        expect(index.forget).not.toHaveBeenCalled();
+      },
+    );
+
     it('never removes a file whose name is not a manifest’s, an object’s or a dump’s', async () => {
       objects = nightlyBucket(5);
       objects.set('m/notes.txt', Buffer.from('x'));
+      objects.set('m/20260230T030000Z.json.gz', Buffer.from('not a manifest'));
       objects.set('o/readme', Buffer.from('x'));
 
       await sut.prune(bucket, retention, false, carryOn);
 
       expect(objects.has('m/notes.txt')).toBe(true);
+      expect(objects.has('m/20260230T030000Z.json.gz')).toBe(true);
       expect(objects.has('o/readme')).toBe(true);
     });
 

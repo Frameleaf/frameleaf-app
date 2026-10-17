@@ -15,9 +15,20 @@ export function createEventEmitter<
     ev: Ev,
     listener: ReservedOrUserListener<ReservedEvents, ListenEvents, Ev>,
   ) {
-    socket.on(ev, listener);
+    const owned = Object.assign(
+      function (this: unknown, ...args: unknown[]) {
+        return Reflect.apply(listener, this, args);
+      },
+      // Socket.IO uses fn to support removal by the original callback.
+      { fn: listener },
+    ) as typeof listener;
+    socket.on(ev, owned);
+    let active = true;
     return () => {
-      socket.off(ev, listener);
+      if (active) {
+        socket.off(ev, owned);
+        active = false;
+      }
     };
   }
 

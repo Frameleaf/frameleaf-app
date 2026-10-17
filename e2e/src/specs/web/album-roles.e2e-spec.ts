@@ -86,9 +86,9 @@ test.describe('Album roles', () => {
       // Invite is the owner's; everyone else sees who is in the album.
       await expect(page.getByRole('button', { name: 'Share', exact: true })).toHaveCount(row.share ? 1 : 0);
       await expect(page.getByRole('button', { name: 'Members', exact: true })).toHaveCount(row.share ? 0 : 1);
-      await expect(page.getByRole('button', { name: 'Shared links' })).toHaveCount(row.links ? 1 : 0);
+      await expect(page.getByRole('button', { name: 'Links', exact: true })).toHaveCount(row.links ? 1 : 0);
       // Likes and comments are offered to every role.
-      await expect(page.getByRole('button', { name: /^Likes & comments/ })).toBeVisible();
+      await expect(page.getByRole('button', { name: /^Comments/ })).toBeVisible();
 
       const more = await openMore(page);
       await expect(more.getByRole('menuitem', { name: 'Edit details' })).toHaveCount(row.edit ? 1 : 0);
@@ -120,7 +120,7 @@ test.describe('Album roles', () => {
 
     await utils.setAuthCookies(context, viewer.accessToken);
     await page.goto(`/albums/${album.id}`);
-    await page.getByRole('button', { name: /^Likes & comments/ }).click();
+    await page.getByRole('button', { name: /^Comments/ }).click();
     await expect(page.getByText(/Likes and comments are turned off here/)).toBeVisible();
     await expect(page.getByText('Earlier conversation', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Like', exact: true })).toBeDisabled();

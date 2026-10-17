@@ -3478,7 +3478,7 @@ with
     select
       $7::text as field,
       case
-        when e.rating between 1 and 5  then e.rating::text
+        when e.rating between 1 and 5 then e.rating::text
         else 'unrated'
       end as value,
       null::text as label,
@@ -3786,7 +3786,7 @@ with
     select
       $9::text as field,
       case
-        when e.rating between 1 and 5  then e.rating::text
+        when e.rating between 1 and 5 then e.rating::text
         else 'unrated'
       end as value,
       null::text as label,

@@ -298,6 +298,9 @@
         help={length === 'custom'
           ? $t('frameleaf_intel_captions_length_custom_help', { values: { count: prompt.sentenceCountTarget ?? 0 } })
           : $t(`frameleaf_intel_captions_length_${length}_help` as Translations)}
+        lead={length === 'custom'
+          ? $t('frameleaf_intel_custom')
+          : $t(`frameleaf_intel_captions_length_${length}` as Translations)}
       >
         <SegmentedControl
           label={$t('frameleaf_intel_captions_length')}
@@ -402,6 +405,9 @@
         help={tags === 'custom'
           ? $t('frameleaf_intel_tags_amount_custom_help', { values: { count: zeroShot.maxTags } })
           : $t(`frameleaf_intel_tags_amount_${tags}_help` as Translations)}
+        lead={tags === 'custom'
+          ? $t('frameleaf_intel_custom')
+          : $t(`frameleaf_intel_tags_amount_${tags}` as Translations)}
       >
         <SegmentedControl
           label={$t('frameleaf_intel_tags_amount')}

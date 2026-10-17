@@ -37,30 +37,36 @@ const asyncLock = new AsyncLock();
 type Epoch = import('src/types.js').SystemMetadata[SystemMetadataKey.EffectiveConfigEpoch];
 const fileSnapshots = new WeakMap<ConfigRepository, { epoch: number; digest: string; config: SystemConfig }>();
 let config: SystemConfig | null = null;
-let lastUpdated: number | null = null;
+let configVersion = 0;
 
 export const clearConfigCache = () => {
   config = null;
-  lastUpdated = null;
+  configVersion++;
 };
 
 export const getConfig = async (repos: RepoDeps, { withCache }: { withCache: boolean }): Promise<SystemConfig> => {
   // A missed ConfigUpdate must not keep a previous activated file epoch authoritative.
   if (repos.configRepo.getEnv().configFile) return readConfig(repos);
   if ((await repos.metadataRepo.getEffectiveConfigEpoch())?.recoveryMlBinding) return readConfig(repos);
-  if (!withCache || !config) {
-    const timestamp = lastUpdated;
-    await asyncLock.acquire(DatabaseLock[DatabaseLock.GetSystemConfig], async () => {
-      if (timestamp !== lastUpdated) {
-        return;
-      }
-
-      config = await readConfig(repos);
-      lastUpdated = Date.now();
-    });
+  if (withCache && config) {
+    return config;
   }
-
-  return config!;
+  const requestedVersion = configVersion;
+  return asyncLock.acquire(DatabaseLock[DatabaseLock.GetSystemConfig], async () => {
+    if (requestedVersion !== configVersion && config) {
+      return config;
+    }
+    while (true) {
+      const version = configVersion;
+      const loaded = await readConfig(repos);
+      if (version !== configVersion) {
+        continue;
+      }
+      config = loaded;
+      configVersion++;
+      return loaded;
+    }
+  });
 };
 
 /**

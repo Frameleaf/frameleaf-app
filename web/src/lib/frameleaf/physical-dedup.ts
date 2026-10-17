@@ -10,6 +10,7 @@ import {
   type PhysicalDeduplicationReviewResponseDto,
   type PhysicalDeduplicationVerificationItemDto,
 } from '@frameleaf/sdk';
+import { getByteUnitString } from '$lib/utils/byte-units';
 
 /**
  * Pure helpers for physical deduplication (FL-71, FL-73), ported from the design template's
@@ -434,20 +435,8 @@ export const applyBlockedReason = ({
 export const blocksReview = (reason: DedupApplyBlockedReason | null) =>
   ['running', 'applying', 'applied', 'no-shares'].includes(reason ?? '');
 
-export const formatBytes = (value: number, locale?: string) => {
-  const format = (amount: number, digits: number) =>
-    amount.toLocaleString(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits });
-  if (value >= 1024 ** 3) {
-    return `${format(value / 1024 ** 3, 2)} GiB`;
-  }
-  if (value >= 1024 ** 2) {
-    return `${format(value / 1024 ** 2, 1)} MiB`;
-  }
-  if (value >= 1024) {
-    return `${format(value / 1024, 0)} KiB`;
-  }
-  return `${format(value, 0)} B`;
-};
+/** A size in decimal units, as everywhere in Frameleaf (D5): "697 KB", "1.2 GB". */
+export const formatBytes = (value: number, locale?: string) => getByteUnitString(value, locale);
 
 /** The checksum a row carries: SHA-1 for older uploads, SHA-256 for newer ones. */
 export const checksumAlgorithmKey = (checksum: string) =>

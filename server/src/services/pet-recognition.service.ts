@@ -4,7 +4,7 @@ import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   AssetVisibility,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   MlAdmissionRefusal,
@@ -373,7 +373,7 @@ export class PetRecognitionService {
    * An original was replaced or changed (FL-58 source checksums): drawn regions made on the old one
    * are flagged for review. The model side is replaced when smart search re-encodes the photo.
    */
-  @OnEvent({ name: 'AssetMetadataExtracted', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AssetMetadataExtracted', workers: [FrameleafWorker.Microservices] })
   async onAssetMetadataExtracted({ assetId }: ArgOf<'AssetMetadataExtracted'>) {
     const flagged = await this.petRepository.flagStaleRegions(assetId);
     if (flagged > 0) {

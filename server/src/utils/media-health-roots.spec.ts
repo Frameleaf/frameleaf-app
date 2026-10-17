@@ -36,6 +36,10 @@ describe('media-health-roots (FL-69)', () => {
   });
 
   describe('root identity', () => {
+    it.each(['..photo.jpg', '..folder/photo.jpg'])('accepts the ordinary contained name %s', (name) => {
+      expect(isPathWithin('/mnt/backup', join('/mnt/backup', name))).toBe(true);
+    });
+
     it('names a recovery location by its path, not its position', () => {
       expect(recoveryRootId('/mnt/backup/photos')).toBe(recoveryRootId('/mnt/backup/photos/'));
       expect(recoveryRootId('/mnt/backup/photos')).not.toBe(recoveryRootId('/mnt/backup/other'));

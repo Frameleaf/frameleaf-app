@@ -5,6 +5,12 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import AlbumCreateDialog from './AlbumCreateDialog.svelte';
 
+vi.mock('$lib/frameleaf/icon-catalogue', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/frameleaf/icon-catalogue')>()),
+  // The static icon asset is served by Vite, which this component fixture does not start.
+  loadIconPaths: async () => ({}),
+}));
+
 describe('AlbumCreateDialog smart album', () => {
   beforeAll(async () => {
     await init({ fallbackLocale: 'en-US' });

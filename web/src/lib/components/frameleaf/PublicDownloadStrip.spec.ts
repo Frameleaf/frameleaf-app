@@ -54,7 +54,7 @@ describe('PublicDownloadStrip', () => {
 
     render(PublicDownloadStrip);
 
-    expect(screen.getByText('Archive ready · 2 files · 2 KiB')).toBeInTheDocument();
+    expect(screen.getByText('Archive ready · 2 files · 2 KB')).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_public_save_archive }));
     expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), 'a.zip');
     expect(downloadManager.assets.size).toBe(0);

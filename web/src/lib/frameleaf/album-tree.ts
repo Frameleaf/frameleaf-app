@@ -20,7 +20,7 @@ export type FrameleafAlbumKind = 'album' | 'collection' | 'space';
 export interface FrameleafAlbumNode {
   id: string;
   name: string;
-  /** Stored album icon key, or null for the default. Resolve with `albumIconPath`. */
+  /** Stored MDI name or legacy key, or null for the default. Render with `AlbumIcon`. */
   icon: string | null;
   kind: FrameleafAlbumKind;
   assetCount: number;

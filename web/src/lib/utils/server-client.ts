@@ -1,0 +1,31 @@
+import { setFetch } from '@frameleaf/sdk';
+import { authManager } from '$lib/managers/auth-manager.svelte';
+import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
+import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
+import { initLanguage } from '$lib/utils';
+
+type Fetch = typeof fetch;
+
+async function _init(fetch: Fetch) {
+  // set event.fetch on the fetch-client used by @frameleaf/sdk
+  // https://kit.svelte.dev/docs/load#making-fetch-requests
+  // https://github.com/oazapfts/oazapfts/blob/main/README.md#fetch-options
+  setFetch(fetch);
+  await initLanguage();
+  await serverConfigManager.init();
+  await authManager.load();
+
+  if (!serverConfigManager.value.maintenanceMode) {
+    await featureFlagsManager.init();
+  }
+}
+
+let initialization: Promise<void> | undefined;
+
+export const init = (fetch: Fetch) => {
+  initialization ??= _init(fetch).catch((error: unknown) => {
+    initialization = undefined;
+    throw error;
+  });
+  return initialization;
+};

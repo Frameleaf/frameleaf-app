@@ -32,6 +32,16 @@ export class FrameleafUserLicenseRepository {
     `.execute(this.db);
     return result.rows[0];
   }
+  /** Supporter option (b): which of these accounts hold their own supporter key on this server. */
+  async getUserIds(userIds: string[]): Promise<string[]> {
+    if (userIds.length === 0) {
+      return [];
+    }
+    const result = await sql<{ userId: string }>`
+      SELECT "userId" FROM public.frameleaf_user_license WHERE "userId" = ANY(${userIds}::uuid[])
+    `.execute(this.db);
+    return result.rows.map(({ userId }) => userId);
+  }
   /** The account a key is active for on this server, if any. */
   @GenerateSql({ params: [DummyValue.STRING] })
   async getByKeyHash(keySha256: string): Promise<FrameleafUserLicenseRow | undefined> {

@@ -18,6 +18,28 @@ const stored = (value: Record<string, unknown>) =>
   [{ key: UserMetadataKey.Preferences, value }] as unknown as UserMetadataItem[];
 
 describe('preferences (FL-77 admin casting permission)', () => {
+  it('stores false, zero and changed arrays while dropping empty/default/unknown values without mutation', () => {
+    const preferences = getPreferences([]);
+    preferences.memories.duration = 0;
+    preferences.emailNotifications.albumInvite = false;
+    preferences.privacy.suppression.personIds = ['fixture-person'];
+    Object.assign(preferences.folders, { sidebarWeb: undefined });
+    Object.assign(preferences.tags, { enabled: null });
+    preferences.notifications = { locale: '' };
+    Object.assign(preferences, { unknownPreference: { enabled: true } });
+    const before = structuredClone(preferences);
+
+    const partial = getPreferencesPartial(preferences);
+
+    expect(partial).toEqual({
+      memories: { duration: 0 },
+      emailNotifications: { albumInvite: false },
+      privacy: { suppression: { personIds: ['fixture-person'] } },
+    });
+    expect(partial.privacy?.suppression?.personIds).toBe(preferences.privacy.suppression.personIds);
+    expect(preferences).toEqual(before);
+  });
+
   describe('getPreferences', () => {
     it('defaults to casting allowed by the administrator and off for the user', () => {
       expect(getPreferences([]).cast).toEqual({ gCastEnabled: false, adminDisabled: false });
@@ -28,6 +50,22 @@ describe('preferences (FL-77 admin casting permission)', () => {
         gCastEnabled: true,
         adminDisabled: true,
       });
+    });
+
+    it('turns star ratings on for an account that never chose (D6), and keeps a stored choice', () => {
+      expect(getPreferences([]).ratings.enabled).toBe(true);
+      expect(getPreferences(stored({ ratings: { enabled: false } })).ratings.enabled).toBe(false);
+      expect(getPreferences(stored({ ratings: { enabled: true } })).ratings.enabled).toBe(true);
+
+      const off = mergePreferences(getPreferences([]), { ratings: { enabled: false } }, 'user');
+      expect(getPreferencesPartial(off)).toEqual({ ratings: { enabled: false } });
+    });
+
+    it('splits downloads at a decimal 4 GB by default (D5), and keeps a stored size exactly', () => {
+      expect(getPreferences([]).download.archiveSize).toBe(4_000_000_000);
+      expect(getPreferences(stored({ download: { archiveSize: 4 * 1024 ** 3 } })).download.archiveSize).toBe(
+        4_294_967_296,
+      );
     });
   });
 
@@ -71,9 +109,9 @@ describe('preferences (FL-77 admin casting permission)', () => {
 
     it("keeps the user's stored choice when a save sends casting as off while it is turned off", () => {
       const current = getPreferences(stored({ cast: { gCastEnabled: true, adminDisabled: true } }));
-      const merged = mergePreferences(current, { cast: { gCastEnabled: false }, ratings: { enabled: true } }, 'user');
+      const merged = mergePreferences(current, { cast: { gCastEnabled: false }, ratings: { enabled: false } }, 'user');
       expect(merged.cast).toEqual({ gCastEnabled: true, adminDisabled: true });
-      expect(merged.ratings.enabled).toBe(true);
+      expect(merged.ratings.enabled).toBe(false);
     });
 
     it('passes updates without a cast group through untouched', () => {
@@ -109,8 +147,8 @@ describe('preferences (FL-77 admin casting permission)', () => {
 
   describe('getPreferencesRevision (FL-77 stale-save rejection)', () => {
     it('is the same for equal stored preferences whatever their key order', () => {
-      const first = getPreferences(stored({ memories: { enabled: false, duration: 9 }, ratings: { enabled: true } }));
-      const second = getPreferences(stored({ ratings: { enabled: true }, memories: { duration: 9, enabled: false } }));
+      const first = getPreferences(stored({ memories: { enabled: false, duration: 9 }, ratings: { enabled: false } }));
+      const second = getPreferences(stored({ ratings: { enabled: false }, memories: { duration: 9, enabled: false } }));
       expect(getPreferencesRevision(first)).toBe(getPreferencesRevision(second));
     });
 
@@ -149,13 +187,13 @@ describe('preferences (FL-77 admin casting permission)', () => {
 
   describe('mergePreferences with expectedRevision', () => {
     it('applies an update made against the current revision and never stores the revision', () => {
-      const current = getPreferences(stored({ ratings: { enabled: true } }));
+      const current = getPreferences(stored({ ratings: { enabled: false } }));
       const expectedRevision = getPreferencesRevision(current);
       const merged = mergePreferences(current, { expectedRevision, memories: { duration: 7 } }, 'admin');
       expect(merged.memories.duration).toBe(7);
-      expect(merged.ratings.enabled).toBe(true);
+      expect(merged.ratings.enabled).toBe(false);
       expect(merged).not.toHaveProperty('expectedRevision');
-      expect(getPreferencesPartial(merged)).toEqual({ memories: { duration: 7 }, ratings: { enabled: true } });
+      expect(getPreferencesPartial(merged)).toEqual({ memories: { duration: 7 }, ratings: { enabled: false } });
     });
 
     it('rejects an update made against an older revision without changing anything', () => {
@@ -199,12 +237,12 @@ describe('preferences (FL-77 admin casting permission)', () => {
       const current = getPreferences(stored({ privacy: { suppression: { personIds: [personId] } } }));
       const merged = mergePreferences(
         current,
-        { privacy: { suppression: { personIds: [], tagIds: [tagId] } }, ratings: { enabled: true } },
+        { privacy: { suppression: { personIds: [], tagIds: [tagId] } }, ratings: { enabled: false } },
         'admin',
       );
       expect(merged.privacy.suppression.personIds).toEqual([personId]);
       expect(merged.privacy.suppression.tagIds).toEqual([]);
-      expect(merged.ratings.enabled).toBe(true);
+      expect(merged.ratings.enabled).toBe(false);
     });
 
     it('still lets the account change its own Locked choices', () => {
@@ -234,14 +272,14 @@ describe('preferences (FL-77 admin casting permission)', () => {
 
     it('leaves Locked ids out of a stored preferences value and keeps the rest', () => {
       const value = {
-        ratings: { enabled: true },
+        ratings: { enabled: false },
         privacy: { suppression: { personIds: [personId], scope: 'visible' } },
       };
       expect(withoutStoredLockedRuleIds(value)).toEqual({
-        ratings: { enabled: true },
+        ratings: { enabled: false },
         privacy: { suppression: { scope: 'visible' } },
       });
-      expect(withoutStoredLockedRuleIds({ ratings: { enabled: true } })).toEqual({ ratings: { enabled: true } });
+      expect(withoutStoredLockedRuleIds({ ratings: { enabled: false } })).toEqual({ ratings: { enabled: false } });
       expect(withoutStoredLockedRuleIds(null)).toBeNull();
     });
 
@@ -249,7 +287,7 @@ describe('preferences (FL-77 admin casting permission)', () => {
       expect(changesLockedRules({})).toBe(false);
       expect(changesLockedRules({ privacy: {} })).toBe(false);
       expect(changesLockedRules({ privacy: { suppression: {} } })).toBe(false);
-      expect(changesLockedRules({ ratings: { enabled: true } })).toBe(false);
+      expect(changesLockedRules({ ratings: { enabled: false } })).toBe(false);
     });
   });
 

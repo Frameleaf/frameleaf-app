@@ -212,6 +212,7 @@ export class MetadataRepository {
     // batch-cluster requires a process to be allowed to live at least as long as one task
     maxProcAgeMillis: 2 * LOCATION_TASK_TIMEOUT_MS,
     geolocation: false,
+    useMWG: false,
   });
   private locationFree = new Map<string, LocationFreeEntry>();
   private locationFreeSweep?: NodeJS.Timeout;
@@ -291,7 +292,7 @@ export class MetadataRepository {
    * error means it may have stopped early, so the file is not vouched for.
    */
   async inspectLocation(path: string): Promise<LocationInspection> {
-    const tags = await this.locationTool.readRaw(path, { readArgs: LOCATION_READ_ARGS, useMWG: false });
+    const tags = await this.locationTool.readRaw(path, { readArgs: LOCATION_READ_ARGS });
     const inspection: LocationInspection = { locationTags: [], problems: [], samsungTrailer: false };
 
     for (const [key, value] of Object.entries(tags)) {

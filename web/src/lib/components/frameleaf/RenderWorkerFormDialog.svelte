@@ -95,7 +95,7 @@
       case 'wallClockMinutes': {
         return $t('frameleaf_render_workers_error_wall_clock');
       }
-      case 'outputGiB': {
+      case 'outputGB': {
         return $t('frameleaf_render_workers_error_output');
       }
     }
@@ -292,8 +292,8 @@
             type="number"
             min="0"
             step="any"
-            bind:value={form.outputGiB}
-            aria-invalid={error === 'outputGiB'}
+            bind:value={form.outputGB}
+            aria-invalid={error === 'outputGB'}
           />
         </label>
       </div>

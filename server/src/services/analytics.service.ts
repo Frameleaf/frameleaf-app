@@ -514,7 +514,8 @@ export class AnalyticsService {
       try {
         const path = StorageCore.getBaseFolder(folder);
         const device = await this.storageRepository.getDevice(path);
-        const elsewhere = device !== null && libraryDevice !== null && device !== libraryDevice;
+        if (device === null || libraryDevice === null) continue;
+        const elsewhere = device !== libraryDevice;
         add(
           { kind: AnalyticsScopeKind.Host },
           elsewhere ? otherDisk : onVolume,

@@ -1,4 +1,5 @@
 import { Kysely } from 'kysely';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { SyncEntityType, SyncRequestType } from 'src/enum.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -430,6 +431,58 @@ describe(SyncEntityType.AssetOcrDeleteV1, () => {
         type: 'AssetOcrDeleteV1',
       },
       expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+  });
+});
+
+describe('OCR sync hidden-content boundary', () => {
+  it.each(['nsfw', 'suppression'] as const)('filters %s content in upserts and deletes', async (kind) => {
+    const { auth, user, ctx } = await setup();
+    const { user: other } = await ctx.newUser();
+    const { asset: visible } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: hidden } = await ctx.newAsset({ ownerId: user.id, is_nsfw: true });
+    const { asset: unrelated } = await ctx.newAsset({ ownerId: other.id });
+    for (const asset of [visible, hidden, unrelated]) {
+      await defaultDatabase
+        .insertInto('asset_ocr')
+        .values(factory.assetOcr({ assetId: asset.id }))
+        .execute();
+    }
+    const restricted =
+      kind === 'nsfw'
+        ? { ...auth, hideNsfwAssets: true }
+        : {
+            ...auth,
+            hiddenContent: {
+              userId: user.id,
+              includeNsfw: true,
+              tagIds: [],
+              personIds: [],
+              petIds: [],
+              scope: 'owned' as const,
+            },
+          };
+    const rows = async (viewer: AuthDto = restricted) =>
+      (await ctx.syncStream(viewer, [SyncRequestType.AssetOcrV1])).filter(
+        ({ type }) => type !== SyncEntityType.SyncCompleteV1,
+      );
+    expect(await rows(auth)).toHaveLength(2);
+    expect(await rows()).toEqual([
+      expect.objectContaining({
+        type: SyncEntityType.AssetOcrV1,
+        data: expect.objectContaining({ assetId: visible.id }),
+      }),
+    ]);
+    await defaultDatabase
+      .deleteFrom('asset_ocr')
+      .where('assetId', 'in', [visible.id, hidden.id, unrelated.id])
+      .execute();
+    expect(await rows(auth)).toHaveLength(2);
+    expect(await rows()).toEqual([
+      expect.objectContaining({
+        type: SyncEntityType.AssetOcrDeleteV1,
+        data: expect.objectContaining({ assetId: visible.id }),
+      }),
     ]);
   });
 });

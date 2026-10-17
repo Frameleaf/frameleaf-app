@@ -20,12 +20,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { getUserAdminActions } from '$lib/services/user-admin.service';
-  import {
-    getMyPreferences,
-    getUserPreferencesAdmin,
-    updateUserPreferencesAdmin,
-    type UserAdminResponseDto,
-  } from '@frameleaf/sdk';
+  import { getUserPreferencesAdmin, updateUserPreferencesAdmin, type UserAdminResponseDto } from '@frameleaf/sdk';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { CommandPaletteDefaultProvider, Icon, toastManager } from '@frameleaf/ui';
   import { mdiClose } from '@mdi/js';
@@ -83,12 +78,8 @@
     toastManager.primary($t('frameleaf_account_prefs_saved_toast', { values: { name: user.name } }));
     // Saving their own account applies to this session at once. The admin response leaves out
     // Locked choices, so the session reloads its own full preferences instead of using it.
-    if (user.id === authManager.user.id) {
-      try {
-        authManager.setPreferences(await getMyPreferences());
-      } catch {
-        // The saved values still apply on the next load.
-      }
+    if (authManager.authenticated && user.id === authManager.user.id) {
+      await authManager.refreshPreferences();
     }
   };
 

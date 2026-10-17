@@ -48,7 +48,11 @@ export type DetailChanges = {
   edits?: CloudBackupAssetDetails['edits'];
 };
 
-const sameSet = (a: string[], b: string[]) => a.length === b.length && new Set([...a, ...b]).size === a.length;
+const sameSet = (a: string[], b: string[]) => {
+  const left = new Set(a);
+  const right = new Set(b);
+  return left.size === right.size && left.isSubsetOf(right);
+};
 
 const hasLocation = (details: CloudBackupAssetDetails) => details.latitude !== null && details.longitude !== null;
 

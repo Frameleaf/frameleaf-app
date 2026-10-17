@@ -15,6 +15,10 @@ const navigation = vi.hoisted(() => ({
   invalidateAll: vi.fn(),
 }));
 vi.mock('$app/navigation', () => navigation);
+vi.mock('$app/state', async (original) => {
+  const state = await original<typeof import('$app/state')>();
+  return { ...state, page: { ...state.page, url: new URL('http://localhost/folders') } };
+});
 const assetUtils = vi.hoisted(() => ({ navigateToAsset: vi.fn() }));
 vi.mock('$lib/utils/asset-utils', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -52,7 +56,7 @@ const tree = buildFolderTree([
   {
     path: '/photos/2026',
     count: 2,
-    size: 3 * 1024 * 1024,
+    size: 3_000_000,
     coverAssetIds: ['own-1', 'own-2'],
     startDate: day('2026-09-01'),
     endDate: day('2026-09-03'),
@@ -98,7 +102,7 @@ const files = [
     id: 'b',
     originalFileName: 'IMG_10.jpg',
     localDateTime: '2026-09-01T10:00:00.000Z',
-    exifInfo: { fileSizeInByte: 2 * 1024 * 1024 },
+    exifInfo: { fileSizeInByte: 2_000_000 },
   }),
   file({
     id: 'a',
@@ -157,7 +161,7 @@ describe('FolderBrowser', () => {
     it('is titled Folders, says what the page is, and draws no path', () => {
       renderBrowser('/', { assets: [] });
       expect(screen.getByRole('heading', { level: 1, name: 'Folders' })).toBeInTheDocument();
-      expect(screen.getByText('Browse originals the way they are stored on disk.')).toBeInTheDocument();
+      expect(screen.getByText('Your originals, the way they are stored on disk.')).toBeInTheDocument();
       expect(screen.queryByRole('navigation', { name: 'Folder path' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Copy path' })).toBeNull();
     });
@@ -237,9 +241,8 @@ describe('FolderBrowser', () => {
       expect(options[1]).toHaveAttribute('aria-checked', 'true');
       await fireEvent.click(options[0]);
       expect(navigation.goto).toHaveBeenCalledWith('/folders?path=%2Fphotos%2F2025', {
-        keepFocus: true,
-        noScroll: true,
-        replaceState: false,
+        reset: false,
+        replace: false,
       });
     });
 
@@ -541,7 +544,7 @@ describe('FolderBrowser', () => {
       const row = screen.getByRole('option', { name: /trip/ });
       await fireEvent.keyDown(row, { key: 'Enter' });
       expect(get(foldersView).view).toBe('grid');
-      expect(navigation.goto).toHaveBeenCalledWith('/folders?path=%2Fphotos%2F2026%2Ftrip', { keepFocus: true });
+      expect(navigation.goto).toHaveBeenCalledWith('/folders?path=%2Fphotos%2F2026%2Ftrip', { reset: false });
     });
 
     it('steps through the columns without leaving a trail of history entries', async () => {
@@ -549,16 +552,14 @@ describe('FolderBrowser', () => {
       renderBrowser('/photos/2026', { assets: [] });
       await fireEvent.keyDown(screen.getByRole('option', { name: /2026/ }), { key: 'ArrowUp' });
       expect(navigation.goto).toHaveBeenCalledWith('/folders?path=%2Fphotos%2F2025', {
-        keepFocus: true,
-        noScroll: true,
-        replaceState: true,
+        reset: false,
+        replace: true,
       });
       // a click is a place to come back to
       await fireEvent.click(screen.getByRole('option', { name: /trip/ }));
       expect(navigation.goto).toHaveBeenLastCalledWith('/folders?path=%2Fphotos%2F2026%2Ftrip', {
-        keepFocus: true,
-        noScroll: true,
-        replaceState: false,
+        reset: false,
+        replace: false,
       });
     });
   });

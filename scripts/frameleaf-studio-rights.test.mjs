@@ -128,7 +128,7 @@ test("an approved use is carried through exactly as reviewed", () => {
   assert.match(text, /STUDIO_DISTRIBUTION_APPROVAL = false;/);
 });
 
-test("the owner approved every one of the 210 reviewed resources on 2026-09-25, each bound to its row", async () => {
+test("historical approvals stay bound to their rows and the changed ONNX runtime remains blocked", async () => {
   const manifest = JSON.parse(await read(ATTRIBUTION_PATH));
   const approval = JSON.parse(await read(APPROVAL_PATH));
   assert.equal(approval.approvedOn, "2026-09-25");
@@ -138,12 +138,24 @@ test("the owner approved every one of the 210 reviewed resources on 2026-09-25, 
     manifest.resources.map((resource) => [resource.id, resource]),
   );
   for (const entry of approval.resources) {
+    if (entry.id === "runtime:onnx-cdn") {
+      assert.equal(
+        entry.sha256,
+        "e46c32b80331937527fc42f80fb7add893b00288eca421ec29f384288ba3bae4",
+      );
+      assert.notEqual(entry.sha256, approvalRowDigest(byId.get(entry.id)));
+      continue;
+    }
     assert.equal(entry.sha256, approvalRowDigest(byId.get(entry.id)), entry.id);
   }
   const mirror = await read(SERVER_MIRROR_PATH);
-  assert.equal((mirror.match(/localRuntime: 'allowed'/g) ?? []).length, 210);
+  assert.equal((mirror.match(/localRuntime: 'allowed'/g) ?? []).length, 209);
+  assert.match(
+    mirror,
+    /'runtime:onnx-cdn': \{[^}]*redistribution: 'blocked',[^}]*localRuntime: 'blocked',[^}]*hostedUse: 'blocked',[^}]*approvedOn: null/s,
+  );
   // FL-146 comment 34944: MusicGen-small (CC-BY-NC-4.0) is withheld from hosted use only.
-  assert.equal((mirror.match(/hostedUse: 'allowed'/g) ?? []).length, 209);
+  assert.equal((mirror.match(/hostedUse: 'allowed'/g) ?? []).length, 208);
   assert.match(
     mirror,
     /'model:Xenova\/musicgen-small': \{[^}]*localRuntime: 'allowed',\n {4}hostedUse: 'blocked',[^}]*hostedUse:\n {8}'CC-BY-NC-4\.0/s,
@@ -183,7 +195,7 @@ test("the owner approved every one of the 210 reviewed resources on 2026-09-25, 
   );
   assert.equal(
     (mirror.match(/approvedOn: '2026-09-29'/g) ?? []).length,
-    2 + 65,
+    1 + 65,
   );
   assert.equal((mirror.match(/approvedOn: '2026-10-03'/g) ?? []).length, 1);
   assert.match(
@@ -351,4 +363,50 @@ test("an approved row may withhold a use, with its reason, and the withheld use 
       ),
     /must give the reason hostedUse is excluded/,
   );
+});
+
+for (const use of ["redistribution", "localRuntime", "hostedUse"]) {
+  test(`an owner exclusion of ${use} overrides a reviewed allowance`, () => {
+    const resource = row("model:M", {
+      redistribution: "allowed",
+      localRuntime: "allowed",
+      hostedUse: "allowed",
+    });
+    const text = buildServerMirror(
+      minimal([resource]),
+      JSON.stringify({
+        schemaVersion: 1,
+        approvedBy: "Owner",
+        approvedOn: "2026-09-25",
+        source: "Explicit owner restriction",
+        uses: ["redistribution", "localRuntime", "hostedUse"],
+        resources: [
+          {
+            id: resource.id,
+            sha256: approvalRowDigest(resource),
+            excludedUses: { [use]: "Withheld by owner" },
+          },
+        ],
+      }),
+    );
+    assert.match(text, new RegExp(`${use}: 'blocked'`));
+    assert.match(text, new RegExp(`${use}: 'Withheld by owner'`));
+  });
+}
+
+/** The CI gate must run, not silently exit 0, from a checkout path that URL-encodes (a space). */
+test("running the generator directly checks the mirror from a path with a space", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { copyFile, mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const directory = await mkdtemp(path.join(tmpdir(), "studio rights "));
+  try {
+    const script = path.join(directory, "frameleaf-studio-rights.mjs");
+    await copyFile(fileURLToPath(new URL("frameleaf-studio-rights.mjs", import.meta.url)), script);
+    // An empty working directory has no bill of materials: a check that really runs must fail.
+    const result = spawnSync(process.execPath, [script], { cwd: directory, encoding: "utf8" });
+    assert.notEqual(result.status, 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

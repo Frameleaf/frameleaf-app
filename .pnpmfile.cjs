@@ -1,22 +1,19 @@
 module.exports = {
   hooks: {
     readPackage: (pkg) => {
-      if (!pkg.name) {
+      if (pkg.name !== "exiftool-vendored") {
         return pkg;
       }
-      // make exiftool-vendored.pl a regular dependency since Docker prod
-      // images build with --no-optional to reduce image size
-      if (pkg.name === "exiftool-vendored") {
-        const binaryPackage =
-          process.platform === "win32"
-            ? "exiftool-vendored.exe"
-            : "exiftool-vendored.pl";
-
-        if (pkg.optionalDependencies[binaryPackage]) {
-          pkg.dependencies[binaryPackage] =
-            pkg.optionalDependencies[binaryPackage];
-          delete pkg.optionalDependencies[binaryPackage];
-        }
+      // Production images omit optional dependencies, but still need the platform binary.
+      const binaryPackage =
+        process.platform === "win32"
+          ? "exiftool-vendored.exe"
+          : "exiftool-vendored.pl";
+      const version = pkg.optionalDependencies?.[binaryPackage];
+      if (version) {
+        pkg.dependencies ??= {};
+        pkg.dependencies[binaryPackage] = version;
+        delete pkg.optionalDependencies[binaryPackage];
       }
       return pkg;
     },

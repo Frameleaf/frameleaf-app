@@ -26,6 +26,7 @@ describe(PartnerLockService.name, () => {
     mocks.user.getMetadata.mockResolvedValue([]);
     mocks.user.hasPinCode.mockResolvedValue(true);
     mocks.user.upsertMetadata.mockResolvedValue();
+    mocks.user.insertPartnerLockedNotice.mockResolvedValue(true);
   });
 
   it("locks the copy of a partner's locked item with the same reason, behind the recipient's own PIN", async () => {
@@ -35,7 +36,7 @@ describe(PartnerLockService.name, () => {
 
     expect(mocks.asset.lock).toHaveBeenCalledWith([TARGET], AssetLockReason.Detected, null);
     // the recipient has a PIN: no notice
-    expect(mocks.user.upsertMetadata).not.toHaveBeenCalled();
+    expect(mocks.user.insertPartnerLockedNotice).not.toHaveBeenCalled();
   });
 
   it('flags the one-time notice when the recipient has no PIN', async () => {
@@ -44,10 +45,7 @@ describe(PartnerLockService.name, () => {
 
     await sut.mirrorLockedState(input);
 
-    expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(B, {
-      key: UserMetadataKey.PartnerLockedNotice,
-      value: { flaggedAt: expect.any(String), dismissedAt: null },
-    });
+    expect(mocks.user.insertPartnerLockedNotice).toHaveBeenCalledWith(B);
   });
 
   it("locks the copy of an item the partner's Locked rules hide", async () => {

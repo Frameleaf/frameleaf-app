@@ -44,6 +44,9 @@ export const createLandmarkAlbum = async (visit: {
     view: 'grid',
   };
   const taken = await resolveMatchingIds(state as LibraryViewState, { gateway: { searchAssets, searchSmart } });
+  if (taken.truncated) {
+    throw new Error('The complete landmark visit could not be collected');
+  }
   const ids = [...new Set([...taken.ids, ...(visit.assetIds ?? [])])];
   if (ids.length === 0) {
     return null;

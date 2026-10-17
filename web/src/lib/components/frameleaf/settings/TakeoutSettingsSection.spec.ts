@@ -52,24 +52,37 @@ describe('TakeoutSettingsSection', () => {
     sdkMock.listTakeoutImports.mockResolvedValue([takeout('import-1', 'Family export')]);
   });
 
-  it('opens the import workflow in place from its action', async () => {
+  it('opens the import workflow in place from the status answer when nothing was imported yet', async () => {
+    sdkMock.listTakeoutImports.mockResolvedValue([]);
     render(TakeoutSettingsSection);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(sdkMock.listTakeoutImports).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole('button', { name: en.frameleaf_takeout_settings_action }));
+    const status = await screen.findByRole('region', { name: en.frameleaf_takeout_settings_title });
+    expect(within(status).getByRole('heading')).toHaveTextContent(en.frameleaf_takeout_page_none_title);
+    await userEvent.click(within(status).getByRole('button', { name: en.frameleaf_takeout_settings_action }));
     expect(state.goto).toHaveBeenCalledWith(
       '/user-settings?area=backup&section=takeout&workflow=import',
-      expect.objectContaining({ noScroll: true }),
+      expect.objectContaining({ reset: false }),
     );
   });
 
-  it('shows the workflow dialog with the server’s imports when the address opens it', async () => {
-    at('area=backup&section=takeout&workflow=import');
+  it('ACCOUNT-P6: lists the imports on the page with Open, and keeps the start dialog to the steps', async () => {
     render(TakeoutSettingsSection);
+    expect(await screen.findByText('Family export')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: en.frameleaf_takeout_page_before })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Open Family export' }));
+    expect(state.goto).toHaveBeenCalledWith(
+      '/user-settings?area=backup&section=takeout&workflow=import&import=import-1',
+      expect.objectContaining({ reset: false }),
+    );
+
+    at('area=backup&section=takeout&workflow=import');
+    const { unmount } = render(TakeoutSettingsSection);
     const dialog = screen.getByRole('dialog', { name: en.frameleaf_takeout_title });
-    expect(await within(dialog).findByRole('link', { name: /Family export/ })).toBeInTheDocument();
-    expect(within(dialog).getByRole('heading', { name: en.frameleaf_takeout_previous_heading })).toBeInTheDocument();
+    expect(await within(dialog).findByText(en.frameleaf_takeout_all_files_title)).toBeInTheDocument();
+    // no imports list or folder import in the start dialog any more
+    expect(within(dialog).queryByRole('heading', { name: en.frameleaf_takeout_previous_heading })).toBeNull();
     expect(sdkMock.getTakeoutImport).not.toHaveBeenCalled();
+    unmount();
   });
 
   it('opens one import from a deep link', async () => {
@@ -89,7 +102,7 @@ describe('TakeoutSettingsSection', () => {
     await userEvent.click(await within(dialog).findByRole('button', { name: en.frameleaf_takeout_cancel }));
     expect(state.goto).toHaveBeenCalledWith(
       '/user-settings?area=backup&section=takeout&scope=all',
-      expect.objectContaining({ noScroll: true }),
+      expect.objectContaining({ reset: false }),
     );
   });
 });

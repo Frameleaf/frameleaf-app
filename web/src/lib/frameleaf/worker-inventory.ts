@@ -42,7 +42,7 @@ export const normalizeWorkerUrl = (value: unknown): string | null => {
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
       return null;
     }
-    return url.href.replace(/\/$/, '');
+    return url.href.replace(/\/+$/, '');
   } catch {
     return null;
   }
@@ -329,12 +329,16 @@ export const workerTypeLabelKey = (entry: Pick<WorkerInventoryEntryDto, 'source'
   return 'admin.frameleaf_workers_type_ml';
 };
 
-/** GPU memory in GiB with one decimal, or null when it is not known. */
+/**
+ * GPU memory with one decimal, or null when it is not known. Labelled "GB" as everywhere (D5, never
+ * "GiB"), but counted the way the card is sold: a 24 GB card has 24 × 1024³ bytes, and a decimal
+ * count would show it as "25.8 GB".
+ */
 export const formatGpuMemory = (bytes: number | null, locale: string | undefined): string | null => {
   if (bytes === null || !Number.isFinite(bytes) || bytes <= 0) {
     return null;
   }
-  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(bytes / 1024 ** 3)} GiB`;
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(bytes / 1024 ** 3)} GB`;
 };
 
 /** Whether a snapshot is older than two refresh intervals, i.e. refreshing has stopped working. */

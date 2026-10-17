@@ -7,6 +7,7 @@ import sharp from 'sharp';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import {
+  AssetLockReason,
   AssetStatus,
   AssetType,
   ChecksumAlgorithm,
@@ -550,6 +551,56 @@ describe(MediaRecoveryRepository.name, () => {
         assetId: result.assetId,
         verification: { outcome: 'imported', matchedExternalAssetId: context.assetId },
       });
+    });
+
+    it('inherits a lock committed while recovery waits for the external source row', async () => {
+      const { context, candidate } = await external();
+      const reservation = await sut.reserve({
+        ...context.reserveInput,
+        candidate: undefined,
+        outcome: 'imported',
+        matchedExternalAssetId: candidate.id,
+      });
+      assert.isDefined(reservation);
+      const { promise: entered, resolve: signalEntered } = Promise.withResolvers<void>();
+      const { promise: held, resolve: release } = Promise.withResolvers<void>();
+      let blockerPid = 0;
+      const locking = db.transaction().execute(async (trx) => {
+        blockerPid = (await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(trx)).rows[0].pid;
+        await trx.selectFrom('asset').select('id').where('id', '=', candidate.id).forUpdate().executeTakeFirstOrThrow();
+        signalEntered();
+        await held;
+        await trx
+          .insertInto('asset_lock')
+          .values({ assetId: candidate.id, reason: AssetLockReason.Detected })
+          .execute();
+        await trx.updateTable('asset').set({ updatedAt: new Date() }).where('id', '=', candidate.id).execute();
+      });
+      let publishing: ReturnType<MediaRecoveryRepository['commit']> | undefined;
+      try {
+        await Promise.race([entered, locking]);
+        publishing = sut.commit({ ...context.commitInput, reservation });
+        await vi.waitFor(
+          async () => {
+            const { rows } = await sql<{ waiting: number }>`
+              SELECT count(*)::int AS waiting FROM pg_stat_activity
+              WHERE datname=current_database() AND ${blockerPid}=ANY(pg_blocking_pids(pid))
+            `.execute(db);
+            expect(rows[0].waiting).toBeGreaterThan(0);
+          },
+          { timeout: 5000 },
+        );
+        release();
+        await locking;
+        const result = await publishing;
+        expect(result.outcome).toBe('imported');
+        expect(
+          await db.selectFrom('asset_lock').select('reason').where('assetId', '=', result.assetId!).execute(),
+        ).toEqual([{ reason: 'detected' }]);
+      } finally {
+        release();
+        await Promise.allSettled([locking, ...(publishing ? [publishing] : [])]);
+      }
     });
 
     it('asks for consent before importing a copy of a Locked external original', async () => {

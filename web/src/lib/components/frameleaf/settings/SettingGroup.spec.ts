@@ -31,6 +31,6 @@ describe('settings group navigation', () => {
   it('retains explicit collapse navigation and unrelated query state', async () => {
     render(SettingGroup, { key: 'library-watch', title: 'Watch library' });
     await userEvent.click(screen.getByRole('button', { name: 'Watch library' }));
-    expect(state.goto).toHaveBeenCalledWith('?area=libraries', { replaceState: true, noScroll: true, keepFocus: true });
+    expect(state.goto).toHaveBeenCalledWith('?area=libraries', { replace: true, reset: false });
   });
 });

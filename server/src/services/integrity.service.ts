@@ -28,7 +28,7 @@ import {
   CacheControl,
   ChecksumAlgorithm,
   DatabaseLock,
-  ImmichWorker,
+  FrameleafWorker,
   IntegrityReport,
   JobName,
   JobStatus,
@@ -38,7 +38,7 @@ import {
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { batched, handlePromiseError } from 'src/utils/misc.js';
 
 /**
@@ -79,7 +79,7 @@ export class IntegrityService extends BaseService {
     return enabled && config.libraryCare.integrityAudit;
   }
 
-  @OnEvent({ name: 'ConfigInit', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
   async onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
     const {
       integrityChecks: { untrackedFiles, missingFiles, checksumFiles },
@@ -218,10 +218,10 @@ export class IntegrityService extends BaseService {
     return Readable.from(generator());
   }
 
-  async getIntegrityReportFile(id: string): Promise<ImmichFileResponse> {
+  async getIntegrityReportFile(id: string): Promise<FileDownloadResponse> {
     const { path } = await this.integrityRepository.getById(id);
 
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path,
       fileName: basename(path),
       contentType: 'application/octet-stream',
@@ -447,12 +447,7 @@ export class IntegrityService extends BaseService {
           return reportId;
         }
 
-        try {
-          await this.storageRepository.stat(path);
-          return;
-        } catch {
-          return reportId;
-        }
+        return (await this.pathExists(path)) ? undefined : reportId;
       }),
     );
 
@@ -526,38 +521,37 @@ export class IntegrityService extends BaseService {
     return status;
   }
 
+  private async pathExists(path: string): Promise<boolean> {
+    try {
+      await this.storageRepository.stat(path);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        throw error;
+      }
+      return false;
+    }
+  }
+
   private async checkMissingFiles({ items }: Omit<IIntegrityMissingFilesJob, 'runId'>): Promise<JobStatus> {
     this.logger.log(`Processing batch of ${items.length} files to check if they are missing.`);
 
-    const results = await Promise.all(
-      items.map(async (item) => {
-        try {
-          await this.storageRepository.stat(item.path);
-          return { ...item, exists: true };
-        } catch {
-          return { ...item, exists: false };
-        }
-      }),
-    );
+    const exists = await Promise.all(items.map(({ path }) => this.pathExists(path)));
 
-    const outdatedReports = results
-      .filter(({ exists, reportId }) => exists && reportId)
-      .map(({ reportId }) => reportId!);
-
+    const outdatedReports: string[] = [];
+    const missingFiles = [];
+    for (const [index, { reportId, path, assetId, fileAssetId }] of items.entries()) {
+      if (!exists[index]) {
+        missingFiles.push({ type: IntegrityReport.MissingFile, path, assetId, fileAssetId });
+      } else if (reportId) {
+        outdatedReports.push(reportId);
+      }
+    }
     if (outdatedReports.length > 0) {
       await this.integrityRepository.deleteByIds(outdatedReports);
     }
-
-    const missingFiles = results.filter(({ exists }) => !exists);
     if (missingFiles.length > 0) {
-      await this.integrityRepository.create(
-        missingFiles.map(({ path, assetId, fileAssetId }) => ({
-          type: IntegrityReport.MissingFile,
-          path,
-          assetId,
-          fileAssetId,
-        })),
-      );
+      await this.integrityRepository.create(missingFiles);
     }
 
     this.logger.log(`Processed ${items.length} and found ${missingFiles.length} missing file(s).`);
@@ -570,12 +564,7 @@ export class IntegrityService extends BaseService {
 
     const results = await Promise.all(
       paths.map(async ({ reportId, path }) => {
-        try {
-          await this.storageRepository.stat(path);
-          return reportId;
-        } catch {
-          return;
-        }
+        return (await this.pathExists(path)) ? reportId : undefined;
       }),
     );
 
@@ -812,9 +801,10 @@ export class IntegrityService extends BaseService {
             }),
           ]);
         } catch (error) {
-          if ((error as { code?: string }).code === 'ENOENT') {
+          if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
             return reportId;
           }
+          throw error;
         }
 
         if (Buffer.from(checksum, 'hex').equals(hash.digest())) {

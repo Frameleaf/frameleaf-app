@@ -1,8 +1,13 @@
 import { ConflictException } from '@nestjs/common';
 import type { FaceCorrection, PartnerPersonLink } from 'src/repositories/person.repository.js';
-import { JobName } from 'src/enum.js';
+import { AssetLockReason, JobName } from 'src/enum.js';
+import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
+import { BaseService } from 'src/services/base.service.js';
+import { PartnerCopyService } from 'src/services/partner-copy.service.js';
 import { PartnerPeopleService } from 'src/services/partner-people.service.js';
+import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { getForAsset } from 'test/mappers.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -43,6 +48,17 @@ describe(PartnerPeopleService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(PartnerPeopleService));
+    mocks.person.withMergeWrite.mockImplementation(async (write) => write());
+    mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (ownerId, personGroupId, write) =>
+      write({
+        ownerId,
+        personGroupId,
+        sourceOwnerId: A,
+        sourcePersonGroupId: PG_A,
+        following: true,
+        overriddenFields: personGroupId === 'pg-c' ? ['name'] : [],
+      } as never),
+    );
     thumbnailSelection.where.mockReset().mockReturnValue(thumbnailSelection);
     thumbnailSelection.execute.mockReset().mockResolvedValue([]);
     mocks.person.selectionForThumbnails.mockReturnValue(thumbnailSelection as never);
@@ -102,6 +118,185 @@ describe(PartnerPeopleService.name, () => {
   });
 
   describe('copyFaces', () => {
+    it('holds recipient mapping admission through face insertion and dispatches portraits afterward', async () => {
+      let held = false;
+      const link = mocks.person.getPartnerPersonLink.getMockImplementation()!;
+      mocks.person.withMergeWrite.mockImplementation(async (write, ownerId) => {
+        expect(ownerId).toBe(B);
+        held = true;
+        try {
+          return await write();
+        } finally {
+          held = false;
+        }
+      });
+      mocks.person.getPartnerPersonLink.mockImplementation((...args) => {
+        expect(held).toBe(true);
+        return link(...args);
+      });
+      mocks.person.copyFacesToAsset.mockImplementation((_id, faces) => {
+        expect(held).toBe(true);
+        return Promise.resolve(faces.length);
+      });
+      thumbnailSelection.execute.mockImplementation(() => {
+        expect(held).toBe(false);
+        return Promise.resolve([]);
+      });
+      await sut.copyFaces(copyInput);
+    });
+
+    it.each([AssetOriginField.Faces, AssetOriginField.Visibility, null])(
+      'uses current replay override %s and prepares matching outside the origin transaction',
+      async (field) => {
+        const copy = BaseService.create(PartnerCopyService, sut);
+        const source = AssetFactory.create({ id: SOURCE_ASSET, ownerId: A, livePhotoVideoId: null });
+        const target = AssetFactory.create({ id: TARGET_ASSET, ownerId: B });
+        mocks.asset.getById.mockImplementation((id) =>
+          Promise.resolve(getForAsset(id === SOURCE_ASSET ? source : target)),
+        );
+        const snapshot = {
+          id: TARGET_ASSET,
+          sourceId: SOURCE_ASSET,
+          ownerId: B,
+          rootOwnerId: A,
+          partnerSharedById: A,
+          overriddenFields: [],
+          following: true,
+        };
+        mocks.partnerOrigin.getOrigin.mockImplementation((_kind, id) =>
+          Promise.resolve(id === TARGET_ASSET ? snapshot : undefined),
+        );
+        mocks.partnerOrigin.libraryHasChecksum.mockResolvedValue(true);
+        mocks.partnerOrigin.getCopyId.mockResolvedValue(TARGET_ASSET);
+        mocks.partnerOrigin.getFollowingAlbumCopiesHolding.mockResolvedValue([]);
+        mocks.asset.getLockReasons.mockResolvedValue([
+          { assetId: SOURCE_ASSET, reason: AssetLockReason.Marked, lockedAt: new Date() },
+        ]);
+        mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set());
+        mocks.user.getMetadata.mockResolvedValue([]);
+        let held = false;
+        mocks.partnerOrigin.withFollowingOrigin.mockImplementation(async (_kind, _sourceId, _id, apply) => {
+          held = true;
+          try {
+            return await apply({ ...snapshot, overriddenFields: field ? [field] : [] });
+          } finally {
+            held = false;
+          }
+        });
+        const getConfig = BaseService.prototype.getConfig;
+        const config = vi.spyOn(BaseService.prototype, 'getConfig').mockImplementation(function (
+          this: BaseService,
+          options,
+        ) {
+          if (held) throw new Error('configuration read inside replay transaction');
+          return getConfig.call(this, options);
+        });
+        try {
+          await expect(copy.copyAsset(SOURCE_ASSET, B, A)).resolves.toBe(TARGET_ASSET);
+          if (field === AssetOriginField.Faces) expect(mocks.person.getFacesForPartnerCopy).not.toHaveBeenCalled();
+          else expect(mocks.person.getFacesForPartnerCopy).toHaveBeenCalledWith(SOURCE_ASSET);
+          if (field === AssetOriginField.Visibility) expect(mocks.asset.lock).not.toHaveBeenCalled();
+          else expect(mocks.asset.lock).toHaveBeenCalledWith([TARGET_ASSET], AssetLockReason.Marked, null);
+        } finally {
+          config.mockRestore();
+        }
+      },
+    );
+
+    it.each([0, 0.25])('uses prepared face matching distance %s without loading configuration', async (maxDistance) => {
+      const config = vi.spyOn(sut, 'getConfig').mockRejectedValue(new Error('configuration read inside transaction'));
+      try {
+        await expect(sut.copyFaces({ ...copyInput, maxDistance })).resolves.toBe(2);
+        expect(mocks.search.searchFaces).toHaveBeenCalledWith(expect.objectContaining({ maxDistance }));
+        expect(config).not.toHaveBeenCalled();
+      } finally {
+        config.mockRestore();
+      }
+    });
+
+    it('loads face configuration before acquiring the propagation origin transaction', async () => {
+      const copy = BaseService.create(PartnerCopyService, sut);
+      const follower = {
+        id: TARGET_ASSET,
+        sourceId: SOURCE_ASSET,
+        ownerId: B,
+        rootOwnerId: A,
+        partnerSharedById: A,
+        overriddenFields: [],
+        following: true,
+      };
+      mocks.partnerOrigin.getFollowers.mockResolvedValue([follower]);
+      let held = false;
+      mocks.partnerOrigin.withFollowingOrigin.mockImplementation(async (_kind, _sourceId, _id, apply) => {
+        held = true;
+        try {
+          return await apply(follower);
+        } finally {
+          held = false;
+        }
+      });
+      mocks.asset.getLockReasons.mockResolvedValue([]);
+      mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set());
+      mocks.user.getMetadata.mockResolvedValue([]);
+      const getConfig = BaseService.prototype.getConfig;
+      let mappingHeld = false;
+      mocks.person.withMergeWrite.mockImplementation(async (write) => {
+        mappingHeld = true;
+        try {
+          return await write();
+        } finally {
+          mappingHeld = false;
+        }
+      });
+      mocks.person.deleteFacesOfAsset.mockImplementation(() => {
+        expect(mappingHeld).toBe(true);
+        return Promise.resolve(undefined as never);
+      });
+      const config = vi.spyOn(BaseService.prototype, 'getConfig').mockImplementation(function (
+        this: BaseService,
+        options,
+      ) {
+        if (held) throw new Error('configuration read inside transaction');
+        return getConfig.call(this, options);
+      });
+      try {
+        await copy.handlePropagate({ kind: 'asset', sourceId: SOURCE_ASSET, fields: [AssetOriginField.Faces] });
+        expect(config).toHaveBeenCalledTimes(1);
+        expect(mocks.search.searchFaces).toHaveBeenCalledWith(expect.objectContaining({ maxDistance: 0.5 }));
+      } finally {
+        config.mockRestore();
+      }
+    });
+
+    it.each([false, true])(
+      'skips face configuration when no follower needs it (overridden follower: %s)',
+      async (hasFollower) => {
+        const copy = BaseService.create(PartnerCopyService, sut);
+        const follower = {
+          id: TARGET_ASSET,
+          sourceId: SOURCE_ASSET,
+          ownerId: B,
+          rootOwnerId: A,
+          partnerSharedById: A,
+          overriddenFields: [AssetOriginField.Faces],
+          following: true,
+        };
+        mocks.partnerOrigin.getFollowers.mockResolvedValue(hasFollower ? [follower] : []);
+        mocks.partnerOrigin.withFollowingOrigin.mockImplementation(async (_kind, _sourceId, _id, apply) =>
+          apply(follower),
+        );
+        const config = vi.spyOn(copy, 'getConfig').mockRejectedValue(new Error('unnecessary configuration load'));
+        try {
+          await copy.handlePropagate({ kind: 'asset', sourceId: SOURCE_ASSET, fields: [AssetOriginField.Faces] });
+          expect(config).not.toHaveBeenCalled();
+          expect(mocks.person.getFacesForPartnerCopy).not.toHaveBeenCalled();
+          expect(mocks.person.deleteFacesOfAsset).not.toHaveBeenCalled();
+        } finally {
+          config.mockRestore();
+        }
+      },
+    );
+
     it("auto-merges a partner's person into the recipient's matching person and logs it with undo", async () => {
       people.set(`${B}/${PG_B}`, person(B, PG_B, { name: 'Emma R.' }));
       mocks.search.searchFaces.mockResolvedValue([{ id: newUuid(), personGroupId: PG_B, distance: 0.2 }]);
@@ -331,6 +526,24 @@ describe(PartnerPeopleService.name, () => {
       mocks.person.getPartnerMergedFaceIds.mockResolvedValue(mergedFaceIds);
     });
 
+    it('selects the current mapping and affected faces within recipient mapping admission', async () => {
+      let held = false;
+      mocks.person.withMergeWrite.mockImplementation(async (write, ownerId) => {
+        expect(ownerId).toBe(B);
+        held = true;
+        try {
+          return await write();
+        } finally {
+          held = false;
+        }
+      });
+      mocks.person.getPartnerMergedFaceIds.mockImplementation(() => {
+        expect(held).toBe(true);
+        return Promise.resolve(mergedFaceIds);
+      });
+      await sut.undoPartnerMerge(authStub.user1, entry);
+    });
+
     it("moves the merged faces to a new person of the partner's person, with an origin", async () => {
       const createCopy = mocks.partnerOrigin.createPersonCopy.getMockImplementation()!;
       mocks.partnerOrigin.createPersonCopy.mockImplementation((value, undo) => {
@@ -377,6 +590,14 @@ describe(PartnerPeopleService.name, () => {
       await expect(sut.undoPartnerMerge(authStub.user1, entry)).rejects.toBeInstanceOf(ConflictException);
     });
 
+    it('keeps the already-undone reason when a queued undo observes the consumed mapping', async () => {
+      mocks.person.getPartnerPersonLinkByCorrection.mockResolvedValue(undefined);
+      mocks.person.getFaceCorrection.mockResolvedValue({ ...entry, undoneAt: new Date() });
+      await expect(sut.undoPartnerMerge(authStub.user1, entry)).rejects.toMatchObject({
+        response: expect.objectContaining({ reason: 'already-undone' }),
+      });
+    });
+
     it('reports a lost race as already undone', async () => {
       mocks.partnerOrigin.createPersonCopy.mockResolvedValue({ conflict: 'already-undone' });
       await expect(sut.undoPartnerMerge(authStub.user1, entry)).rejects.toBeInstanceOf(ConflictException);
@@ -386,6 +607,43 @@ describe(PartnerPeopleService.name, () => {
   });
 
   describe('propagatePerson', () => {
+    it.each(['owner override', 'stopped following', 'changed source', 'source refreshed'] as const)(
+      'rechecks %s after origin admission',
+      async (change) => {
+        mocks.partnerOrigin.getPersonFollowers.mockImplementation((ownerId) =>
+          Promise.resolve(
+            ownerId === A ? ([{ ownerId: B, personGroupId: NEW_PG, overriddenFields: [] }] as never) : [],
+          ),
+        );
+        mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (_owner, _group, apply) => {
+          people.set(`${A}/${PG_A}`, person(A, PG_A, { name: 'Latest name' }));
+          return apply({
+            ownerId: B,
+            personGroupId: NEW_PG,
+            sourceOwnerId: A,
+            rootOwnerId: A,
+            partnerSharedById: A,
+            sourcePersonGroupId: change === 'changed source' ? newUuid() : PG_A,
+            following: change !== 'stopped following',
+            overriddenFields: change === 'owner override' ? ['name'] : [],
+          });
+        });
+        await sut.propagatePerson(A, PG_A);
+        if (change === 'stopped following' || change === 'changed source') {
+          expect(mocks.person.update).not.toHaveBeenCalled();
+          expect(mocks.partnerOrigin.getPersonFollowers).toHaveBeenCalledOnce();
+        } else {
+          expect(mocks.person.update).toHaveBeenCalledWith({
+            ownerId: B,
+            personGroupId: NEW_PG,
+            birthDate: null,
+            isHidden: false,
+            ...(change === 'source refreshed' && { name: 'Latest name' }),
+          });
+        }
+      },
+    );
+
     it("follows the source's name and birth date into copies that left them alone", async () => {
       people.set(`${A}/${PG_A}`, person(A, PG_A, { name: 'Emma Rose', birthDate: '2015-04-01', isFavorite: true }));
       people.set(`${B}/${NEW_PG}`, person(B, NEW_PG, { name: 'Emma' }));

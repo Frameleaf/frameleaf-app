@@ -332,7 +332,7 @@ const hostSchema = z.object({
   root: z.boolean(),
 });
 
-/** FL-159: what the container reached for AI work (`machine-learning/immich_ml/hardware_report.py`). */
+/** FL-159: what the container reached for AI work (`machine-learning/frameleaf_ml/hardware_report.py`). */
 const mlContainerSchema = z.object({
   image: z.string().max(40),
   backend: z.string().max(40),
@@ -414,7 +414,7 @@ const transcriptWordSchema = z.object({
   text: z.string().max(512),
 });
 
-/** One line of a worker's `/transcribe` stream (machine-learning/immich_ml/main.py). */
+/** One line of a worker's `/transcribe` stream (machine-learning/frameleaf_ml/main.py). */
 export const transcriptStreamItemSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('info'),
@@ -696,6 +696,7 @@ export class MachineLearningRepository implements RestorationInference {
       let pending = Buffer.alloc(0);
       let finished = false;
       const handle = (line: Buffer) => {
+        if (line.length > TRANSCRIPT_LINE_BYTES) throw new Error('A transcript line is too long');
         if (line.length === 0) {
           return;
         }

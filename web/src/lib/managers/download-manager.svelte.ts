@@ -202,6 +202,7 @@ class DownloadManager {
   #waiters = new Map<string, Waiter[]>();
   /** Bytes promised to files still being fetched into the tab, by row. */
   #reserved = new Map<string, number>();
+  #reservedTotal = 0;
 
   /** The rows of the Downloads panel (rows without a group). */
   panelRows = $derived([...this.assets.entries()].filter(([, download]) => !download.group));
@@ -233,13 +234,7 @@ class DownloadManager {
 
   /** Bytes reserved for files being fetched, leaving out one row's own reservation. */
   reservedBytes(except?: string) {
-    let reserved = 0;
-    for (const [key, bytes] of this.#reserved) {
-      if (key !== except) {
-        reserved += bytes;
-      }
-    }
-    return reserved;
+    return this.#reservedTotal - (except === undefined ? 0 : (this.#reserved.get(except) ?? 0));
   }
 
   /**
@@ -249,14 +244,21 @@ class DownloadManager {
    */
   reserve(key: string, bytes: number) {
     // A removed row's request may still be finishing; it must not take room back.
-    if (!this.assets.has(key) || bytes > bufferLimit() - this.heldBytes() - this.reservedBytes(key)) {
+    if (!Number.isSafeInteger(bytes) || bytes < 0 || !this.assets.has(key)) {
       return false;
     }
-    this.#reserved.set(key, Math.max(this.#reserved.get(key) ?? 0, bytes));
+    const previous = this.#reserved.get(key) ?? 0;
+    const reserved = Math.max(previous, bytes);
+    if (reserved > bufferLimit() - this.heldBytes() - this.reservedBytes(key)) {
+      return false;
+    }
+    this.#reserved.set(key, reserved);
+    this.#reservedTotal += reserved - previous;
     return true;
   }
 
   release(key: string) {
+    this.#reservedTotal -= this.#reserved.get(key) ?? 0;
     this.#reserved.delete(key);
   }
 
@@ -330,7 +332,7 @@ class DownloadManager {
     this.#controllers.delete(key);
     this.#tasks.delete(key);
     this.#files.delete(key);
-    this.#reserved.delete(key);
+    this.release(key);
     this.assets.delete(key);
     this.#settle(key, abortError());
   }
@@ -347,6 +349,8 @@ class DownloadManager {
     this.#controllers.clear();
     this.#tasks.clear();
     this.#files.clear();
+    this.#reserved.clear();
+    this.#reservedTotal = 0;
   }
 
   /** Removes the rows of one surface that are no longer running (the panel's Close while idle). */
@@ -465,7 +469,7 @@ class DownloadManager {
       if (this.#controllers.get(key) === controller) {
         this.#controllers.delete(key);
         // A ready file now counts as held; a failed or streamed one holds nothing.
-        this.#reserved.delete(key);
+        this.release(key);
       }
     }
   }

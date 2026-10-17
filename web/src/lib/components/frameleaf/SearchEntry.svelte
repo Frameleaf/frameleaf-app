@@ -13,9 +13,13 @@
     loadCommandCatalogue,
     type CommandCatalogue,
   } from '$lib/frameleaf/command-index';
-  import { buildCommandIndex, type CommandItem } from '$lib/frameleaf/command-palette';
+  import ShortcutsHelp from '$lib/components/frameleaf/ShortcutsHelp.svelte';
+  import { buildCommandIndex, type CommandInput, type CommandItem } from '$lib/frameleaf/command-palette';
+  import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { isSettingsRoute } from '$lib/frameleaf/navigation';
   import { searchContextFor } from '$lib/frameleaf/search-context';
+  import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
+  import { openAboutDialog, openSupportDialog } from '$lib/frameleaf/system-dialogs';
   import {
     announceFilterPanel,
     FILTER_PANEL_CLOSE_EVENT,
@@ -27,9 +31,23 @@
   import '$lib/frameleaf/tokens.css';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { Icon, themeManager, ThemePreference } from '@frameleaf/ui';
+  import { Route } from '$lib/route';
+  import { Icon, Theme, themeManager } from '@frameleaf/ui';
   import { handlePromiseError } from '$lib/utils';
-  import { mdiMagnify, mdiThemeLightDark } from '@mdi/js';
+  import { openFileUploadDialog } from '$lib/utils/file-uploader';
+  import { isAlbumsRoute, isLockedFolderRoute } from '$lib/utils/navigation';
+  import {
+    mdiFolderPlusOutline,
+    mdiInformationOutline,
+    mdiKeyboardOutline,
+    mdiLifebuoy,
+    mdiLogoutVariant,
+    mdiMagnify,
+    mdiMoonWaningCrescent,
+    mdiShieldLockOutline,
+    mdiUpload,
+    mdiWhiteBalanceSunny,
+  } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -52,7 +70,9 @@
     /** Deep-links the palette's Advanced filters into a section, for the results toolbar's Filter control. */
     section,
     onOpen,
-  }: { section?: DiscoveryFilterSection; onOpen?: () => void } = $props();
+    /** The top bar's Locked toggle, offered as the palette's Unlock / Hide Locked content action. */
+    onToggleLocked,
+  }: { section?: DiscoveryFilterSection; onOpen?: () => void; onToggleLocked?: () => void } = $props();
 
   let showSearch = $state(false);
   /** The section the results toolbar's Filter control asked for, while the palette it opened is up. */
@@ -83,26 +103,66 @@
     },
   });
 
+  // The Upload button's own defaults (TopBar.svelte): on an album page uploads join that album, and
+  // uploads made from the Locked area stay locked.
+  const uploadAlbumId = $derived(isAlbumsRoute(page.route?.id) ? page.params.albumId : undefined);
+  const uploadIsLocked = $derived(isLockedFolderRoute(page.route?.id));
+  const isDark = $derived(themeManager.value === Theme.Dark);
+  let shortcutsOpen = $state(false);
+
   /**
-   * Actions are real side effects on production managers, not navigation. They are kept short
-   * on purpose: an action that needs a confirmation or a server write belongs to the surface
-   * that owns it, and the palette links to that surface instead.
+   * The prototype's actions (App.jsx `buildCommandIndex` actions, SHELL-P3), in its order, so an
+   * empty ">" suggests them before the pages. They are real side effects on production managers or
+   * links to the surface that owns them; nothing here writes to the server or skips a confirmation.
+   * Locked is the top bar's own control, so the action exists only where the bar hands it over.
    */
-  const actions = $derived([
+  const actions = $derived<CommandInput[]>([
+    {
+      id: 'upload',
+      title: $t('frameleaf_search_command_upload_photos'),
+      icon: mdiUpload,
+      run: async () => {
+        await openFileUploadDialog({ albumId: uploadAlbumId, isLockedAssets: uploadIsLocked });
+      },
+    },
+    {
+      id: 'new-album',
+      title: $t('frameleaf_albums_create_album'),
+      icon: mdiFolderPlusOutline,
+      href: Route.newAlbum({ kind: 'album' }),
+    },
+    {
+      id: 'shortcuts',
+      title: $t('keyboard_shortcuts'),
+      icon: mdiKeyboardOutline,
+      shortcut: '?',
+      run: () => {
+        shortcutsOpen = true;
+      },
+    },
     {
       id: 'toggle-theme',
-      title: $t('theme'),
-      subtitle: $t('toggle_theme_description'),
-      icon: mdiThemeLightDark,
+      title: isDark ? $t('light_theme') : $t('dark_theme'),
+      icon: isDark ? mdiWhiteBalanceSunny : mdiMoonWaningCrescent,
       shortcut: 'shift+t',
+      keywords: [$t('theme')],
       run: () => themeManager.toggle(),
     },
-    {
-      id: 'system-theme',
-      title: $t('system_theme'),
-      icon: mdiThemeLightDark,
-      run: () => themeManager.setPreference(ThemePreference.System),
-    },
+    ...(onToggleLocked
+      ? [
+          {
+            id: 'locked',
+            title: sessionAccess.isElevated
+              ? $t('frameleaf_locked_hide_content')
+              : $t('frameleaf_locked_unlock_content'),
+            icon: mdiShieldLockOutline,
+            run: onToggleLocked,
+          },
+        ]
+      : []),
+    { id: 'help', title: $t('support_and_feedback'), icon: mdiLifebuoy, run: openSupportDialog },
+    { id: 'about', title: $t('frameleaf_about_menu_item'), icon: mdiInformationOutline, run: openAboutDialog },
+    { id: 'sign-out', title: $t('sign_out'), icon: mdiLogoutVariant, href: Route.logout() },
   ]);
 
   const commandIndex = $derived<CommandItem[]>(
@@ -121,7 +181,7 @@
    * The query the palette opens on: the search the page already shows, or the scope it stands for,
    * together with its session's filters (FL-48). Nothing the page is narrowed by is reset.
    */
-  const currentContext = $derived(searchContextFor(page.url));
+  const currentContext = $derived(searchContextFor(new URL(page.url.href)));
   const currentQuery = $derived(currentContext.query);
 
   /**
@@ -199,7 +259,20 @@
     void command.run?.();
   };
 
-  onDestroy(() => catalogueController?.abort());
+  // People, albums and places were answered for the earlier access: none of them may outlive a
+  // lock or an account change, and an open palette asks again under the new access.
+  const stopAccess = onLibraryAccessChange(() => {
+    catalogueController?.abort();
+    catalogue = emptyCommandCatalogue();
+    if (showSearch || paletteQuery !== null) {
+      refreshCatalogue('');
+    }
+  });
+
+  onDestroy(() => {
+    stopAccess();
+    catalogueController?.abort();
+  });
 
   // Ctrl/Cmd+K and "/" arrive through the root layout's capture listener (search-shortcuts.ts),
   // which keeps them from the upstream command palette.
@@ -273,6 +346,10 @@
 
 {#if paletteQuery !== null}
   <CommandPalette index={paletteIndex} initialQuery={paletteQuery} onRun={runCommand} onClose={closeAll} />
+{/if}
+
+{#if shortcutsOpen}
+  <ShortcutsHelp onClose={() => (shortcutsOpen = false)} />
 {/if}
 
 <style>

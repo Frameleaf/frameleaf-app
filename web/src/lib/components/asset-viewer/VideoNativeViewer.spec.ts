@@ -376,6 +376,69 @@ describe('VideoNativeViewer component', () => {
     fetchMock.mockRestore();
     vi.mocked(mediaCapabilitiesManager.efficientLevels).mockRestore();
   });
+  it.each(['before manifest', 'after manifest'] as const)(
+    'releases HLS with its original shared-link credentials when they change %s',
+    async (change) => {
+      featureFlagsManager.value.realtimeTranscoding = true;
+      const params = vi
+        .spyOn(authManager, 'params', 'get')
+        .mockReturnValue({ key: 'original-key', slug: 'original-slug' });
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response());
+      const capabilities = vi.spyOn(mediaCapabilitiesManager, 'efficientLevels').mockResolvedValue(new Set([0]));
+      const viewer = renderViewer(videoProps());
+      try {
+        await waitFor(() => expect(hlsMocks.instances[0]?.on).toHaveBeenCalled());
+        const api = hlsMocks.instances[0];
+        const manifestHandler = api.on.mock.calls.find(([event]) => event === Hls.Events.MANIFEST_PARSED)![1];
+        if (change === 'before manifest') {
+          params.mockReturnValue({ key: 'replacement-key', slug: 'replacement-slug' });
+        }
+        await manifestHandler();
+        params.mockReturnValue({ key: 'replacement-key', slug: 'replacement-slug' });
+        dispatchEvent(new Event('pagehide'));
+        expect(fetchMock).toHaveBeenCalledOnce();
+        const url = new URL(String(fetchMock.mock.calls[0][0]), 'http://test');
+        expect(url.searchParams.get('key')).toBe('original-key');
+        expect(url.searchParams.get('slug')).toBe('original-slug');
+        expect(fetchMock.mock.calls[0][1]).toEqual({ method: 'DELETE' });
+      } finally {
+        viewer.unmount();
+        params.mockRestore();
+        fetchMock.mockRestore();
+        capabilities.mockRestore();
+      }
+    },
+  );
+
+  it('does not log shared-link credentials when HLS cleanup fails', async () => {
+    featureFlagsManager.value.realtimeTranscoding = true;
+    const params = vi.spyOn(authManager, 'params', 'get').mockReturnValue({ key: 'private-key', slug: 'private-slug' });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Offline'));
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const capabilities = vi.spyOn(mediaCapabilitiesManager, 'efficientLevels').mockResolvedValue(new Set([0]));
+    const props = videoProps();
+    const viewer = renderViewer(props);
+    try {
+      await waitFor(() => expect(hlsMocks.instances[0]?.on).toHaveBeenCalled());
+      const api = hlsMocks.instances[0];
+      await api.on.mock.calls.find(([event]) => event === Hls.Events.MANIFEST_PARSED)![1]();
+      dispatchEvent(new Event('pagehide'));
+      await waitFor(() =>
+        expect(warning).toHaveBeenCalledWith('Failed to release HLS session', {
+          assetId: props.assetId,
+          id: '11111111-1111-1111-1111-111111111111',
+        }),
+      );
+      expect(fetchMock).toHaveBeenCalledOnce();
+    } finally {
+      viewer.unmount();
+      params.mockRestore();
+      fetchMock.mockRestore();
+      warning.mockRestore();
+      capabilities.mockRestore();
+    }
+  });
+
   it('ignores a pending play completion after the same video element changes assets', async () => {
     let finishPlay!: () => void;
     const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(

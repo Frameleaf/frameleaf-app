@@ -10,6 +10,7 @@ import {
   type DiscoveryQueryProblem,
 } from '$lib/components/discovery/query';
 import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
+import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
 
 /**
  * The one library session every Frameleaf view shares.
@@ -33,7 +34,12 @@ import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
  */
 export type LibraryLayout = 'timeline' | 'browse' | 'work';
 export type LibraryView = 'grid' | 'list' | 'detail' | 'compare' | 'map' | 'moments';
-export type LibrarySort = 'captured-desc' | 'captured-asc' | 'imported-desc' | 'modified-desc' | 'filename' | 'rating';
+/**
+ * `quality` (LIB-P3) is Best Photos' own ranking: the page offers and keeps it itself, so it is not
+ * one of the portable `LIBRARY_SORTS` a link or the session carries.
+ */
+export type LibrarySort =
+  'captured-desc' | 'captured-asc' | 'imported-desc' | 'modified-desc' | 'filename' | 'rating' | 'quality';
 export type LibraryGrouping = 'all' | 'days' | 'months' | 'years';
 export type LibraryScope = { kind: 'library' | 'album' | 'space'; id?: string };
 
@@ -84,6 +90,8 @@ export type BulkOperationRecord = {
   requestId: string;
   action: BulkActionId;
   scope: LibraryViewState;
+  /** What the action was submitted with (an album, tags, a date), so a retry runs the same action. */
+  payload?: BulkPayload;
   status: BulkOperationStatus;
   /** The matching count shown to the user when they submitted, before anything ran. */
   submittedTotal: number | null;
@@ -169,6 +177,7 @@ export type LibrarySessionAction =
       action: BulkActionId;
       /** Omitted for a selected-id operation, which is bound by its ids rather than a scope. */
       scope?: LibraryViewState;
+      payload?: BulkPayload;
       submittedTotal?: number | null;
     }
   | {
@@ -466,6 +475,7 @@ export const reduceLibrarySession = (session: LibrarySession, action: LibrarySes
         requestId: action.requestId,
         action: action.action,
         scope: structuredClone(action.scope ?? session.state),
+        ...(action.payload && { payload: structuredClone(action.payload) }),
         status: 'resolving',
         submittedTotal: action.submittedTotal ?? null,
         processed: 0,

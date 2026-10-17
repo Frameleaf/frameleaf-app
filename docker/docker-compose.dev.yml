@@ -151,7 +151,7 @@ services:
     ports:
       - 3003:3003
     volumes:
-      - ../machine-learning/immich_ml:/usr/src/immich_ml
+      - ../machine-learning/frameleaf_ml:/usr/src/frameleaf_ml
       - model_cache:/cache
       - studio_worker:/run/frameleaf/studio-worker:ro
     # Keep server credentials out of the inference worker.

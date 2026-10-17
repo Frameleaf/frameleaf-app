@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
  *
  * - the name ("Immich", "IMMICH") in shipped code, outside comments and specs: web/src, server/src
  *   (including its log and error strings and the email templates), packages/cli/src and the machine
- *   learning service (machine-learning/immich_ml, whose package name is an identifier);
+ *   learning service (machine-learning/frameleaf_ml, whose package name is an identifier);
  * - the name in every documentation page and the docs config, README.md, CONTRIBUTING.md,
  *   install.sh, the PWA manifest and security.txt;
  * - any spelling of it in a translation value (i18n/*.json, every locale);
@@ -102,8 +102,7 @@ export const ALLOWLIST = [
     reason:
       "FL-333: one-way offline source import; exact approved wording only",
     files: /^docs\/docs\/administration\/import-immich\.md$/,
-    allow:
-      "Supported sources are stable Immich 3.x through 3.2.4; prereleases and later versions are rejected.",
+    allow: "Supported sources are Immich 2.0.0 or later.",
   },
   {
     reason:
@@ -123,6 +122,26 @@ export const ALLOWLIST = [
       "FL-333: one-way offline source import; exact approved wording only",
     files: /^docs\/docs\/administration\/backup-and-restore\.md$/,
     allow: "## Immich sources",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/administration\/import-immich\.md$/,
+    allow:
+      "Older releases are converted as they are read, with the same data fixes later Immich upgrades apply.",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/administration\/import-immich\.md$/,
+    allow: "Upgrade Immich 1.x to 2.0 or later before importing.",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/install\/upgrading\.md$/,
+    allow:
+      "The importer reads Immich 2.0 or later, preserves content and access controls, and requires verification before activation.",
   },
   {
     reason:
@@ -206,7 +225,7 @@ export const ALLOWLIST = [
       "FL-333: one-way offline source import; exact approved wording only",
     files: /^docs\/docs\/developer\/fork-integration\.md$/,
     allow:
-      "Immich stable 3.x through 3.2.4 is a frozen, read-only source for the one-time [offline importer](../administration/import-immich.md).",
+      "Immich 2.0 or later is a read-only source for the one-time [offline importer](../administration/import-immich.md).",
   },
   {
     reason:
@@ -495,7 +514,7 @@ export function findViolations() {
     "web/src",
     "server/src",
     "packages/cli/src",
-    "machine-learning/immich_ml",
+    "machine-learning/frameleaf_ml",
   ).filter((file) => CODE.test(file) && !NOT_SHIPPED.test(file));
   const text = [
     ...tracked("docs/docs", "docs/src").filter((file) => DOC_PAGE.test(file)),

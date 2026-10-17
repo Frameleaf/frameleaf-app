@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "experimentalDecorators": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "paths": { "src/*": ["stubs/src/*"] },
+    "target": "es2022"
+  }
+}

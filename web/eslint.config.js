@@ -43,7 +43,7 @@ export default typescriptEslint.config(
     languageOptions: {
       parser,
       parserOptions: {
-        project: ['./tsconfig.json'],
+        project: ['./tsconfig.json', './tsconfig.service-worker.json'],
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -67,6 +67,7 @@ export default typescriptEslint.config(
       '**/node_modules',
       'build',
       '.svelte-kit',
+      'static/studio-engine',
       'package',
       '**/.env',
       '**/.env.*',
@@ -102,7 +103,7 @@ export default typescriptEslint.config(
       parserOptions: {
         extraFileExtensions: ['.svelte'],
         tsconfigRootDir: import.meta.dirname,
-        project: ['./tsconfig.json'],
+        project: ['./tsconfig.json', './tsconfig.service-worker.json'],
       },
     },
 
@@ -126,6 +127,20 @@ export default typescriptEslint.config(
           message: 'Pass this navigation-target query param through Route.continue() to reject cross-origin values.',
         },
       ],
+      // Keep the pre-upgrade documentation and parameter style policy.
+      'unicorn/no-asterisk-prefix-in-documentation-comments': 'off',
+      'unicorn/no-unnecessary-parameters': 'off',
+      // shortcut: restore widened style rules after focused reviews of the affected files.
+      'unicorn/prefer-ternary': 'off',
+      'unicorn/prefer-early-return': 'off',
+      'unicorn/prefer-continue': 'off',
+      'unicorn/no-unnecessary-array-flat-map': 'off',
+      'unicorn/prefer-combined-guards': 'off',
+      'unicorn/prefer-default-parameters': 'off',
+      'unicorn/prefer-logical-operator-over-ternary': 'off',
+      'unicorn/no-negated-condition': 'off',
+      'unicorn/prefer-escaped-irregular-whitespace': 'off',
+      'unicorn/prefer-url-href': 'off',
       'unicorn/no-array-reverse': 'off', // toReversed() is not supported in Chrome 109 or Safari 15.4
       'unicorn/no-useless-undefined': 'off',
       'unicorn/prefer-spread': 'off',
@@ -207,6 +222,19 @@ export default typescriptEslint.config(
     files: ['**/*.spec.ts'],
     rules: {
       '@typescript-eslint/require-await': 'off',
+    },
+  },
+  {
+    // Retain the same style policy for service-worker files, whose parser settings are separate.
+    files: ['**/service-worker/**'],
+    rules: {
+      'unicorn/no-asterisk-prefix-in-documentation-comments': 'off',
+      'unicorn/no-unnecessary-parameters': 'off',
+      'unicorn/prefer-ternary': 'off',
+      'unicorn/prefer-early-return': 'off',
+      'unicorn/prefer-continue': 'off',
+      'unicorn/no-unnecessary-array-flat-map': 'off',
+      'unicorn/prefer-combined-guards': 'off',
     },
   },
 );

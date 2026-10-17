@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { browser } from '$app/environment';
+  import { browser } from '$app/env';
   import { afterNavigate, beforeNavigate, goto, invalidate, onNavigate } from '$app/navigation';
   import { navigating } from '$app/state';
   import { scrollMemoryClearer } from '$lib/actions/scroll-memory';
@@ -114,6 +114,9 @@
 
   const currentUserId = $derived(authManager.user.id);
   const albumId = $derived(album.id);
+  let alive = true;
+  const albumView = $derived({ albumId, isCurrentSession: authManager.captureSession() });
+  const isCurrentView = (view: typeof albumView) => alive && view === albumView && view.isCurrentSession();
   const isCollection = $derived(album.kind === AlbumKind.Collection);
   // FL-55: a shared space has one comment system, the threaded one, here as on the space's own page.
   const isSpace = $derived(album.kind === AlbumKind.Space);
@@ -309,31 +312,61 @@
   /* ------------------------------------------------------------------ */
   let albumRefreshRequest = 0;
   const refreshAlbum = async () => {
+    const view = albumView;
+    if (!isCurrentView(view)) {
+      return;
+    }
     const request = ++albumRefreshRequest;
     const requestedAlbum = album;
     const refreshedAlbum = await getAlbumInfo({ id: requestedAlbum.id });
     // Navigation or a newer server event already replaced this album snapshot.
-    if (request === albumRefreshRequest && album === requestedAlbum) {
+    if (isCurrentView(view) && request === albumRefreshRequest && album === requestedAlbum) {
       album = refreshedAlbum;
     }
   };
 
-  const refreshEverything = async () => {
+  const refreshEverything = async (view = albumView) => {
+    const manager = timelineManager;
+    if (!isCurrentView(view)) {
+      return;
+    }
     await refreshAlbum();
+    if (!isCurrentView(view) || manager !== timelineManager) {
+      return;
+    }
     await invalidate('album:data');
-    await timelineManager?.refresh();
+    if (isCurrentView(view) && manager === timelineManager) {
+      await manager?.refresh();
+    }
   };
 
-  const handleStartSlideshow = async () => {
-    const asset =
-      $slideshowNavigation === SlideshowNavigation.Shuffle
-        ? await timelineManager?.getRandomAsset()
-        : timelineManager?.months[0]?.timelineDays[0]?.viewerAssets[0]?.asset;
-    const first = asset ?? (collectionAssets[0] ? toTimelineAsset(collectionAssets[0]) : undefined);
-    if (first) {
-      handlePromiseError(
-        assetViewerManager.setAssetId(first.id).then(() => ($slideshowState = SlideshowState.PlaySlideshow)),
-      );
+  let slideshowRequest = 0;
+  const handleStartSlideshow = async (view = albumView) => {
+    const request = ++slideshowRequest;
+    const manager = timelineManager;
+    const isCurrent = () => isCurrentView(view) && request === slideshowRequest && manager === timelineManager;
+    if (!isCurrent()) {
+      return;
+    }
+    try {
+      const asset =
+        $slideshowNavigation === SlideshowNavigation.Shuffle
+          ? await manager?.getRandomAsset()
+          : manager?.months[0]?.timelineDays[0]?.viewerAssets[0]?.asset;
+      if (!isCurrent()) {
+        return;
+      }
+      const first = asset ?? (collectionAssets[0] ? toTimelineAsset(collectionAssets[0]) : undefined);
+      if (first) {
+        await assetViewerManager.setAssetId(first.id, {
+          isCurrent,
+          onSet: () => ($slideshowState = SlideshowState.PlaySlideshow),
+        });
+      }
+    } catch (error) {
+      if (isCurrent()) {
+        throw error;
+      }
     }
   };
 
@@ -394,6 +427,7 @@
   });
 
   onDestroy(() => {
+    alive = false;
     collectionRequest++;
     activityManager.reset();
   });
@@ -499,7 +533,7 @@
   {onAlbumDelete}
   {onAlbumAddAssets}
   {onAlbumRemoveAssets}
-  onAlbumShare={refreshEverything}
+  onAlbumShare={() => refreshEverything()}
   {onAlbumUserUpdate}
   {onAlbumUserDelete}
   {onAlbumUpdate}
@@ -508,114 +542,115 @@
 <CommandPaletteDefaultProvider name={$t('album')} actions={[Upload, Cast, Close]} />
 
 {#snippet header()}
-  <AlbumHeader
-    {album}
-    {childAlbums}
-    {parent}
-    collections={editableCollections}
-    likeCount={activityManager.likeCount}
-    commentCount={activityManager.commentCount}
-    {activityOpen}
-    canShowOwnerBadges={containsEditors}
-    ownerBadges={showAlbumUsers}
-    {assetCount}
-    onAlbumChange={(next) => (album = next)}
-    onRefresh={refreshEverything}
-    onAddPhotos={() => handlePromiseError(addPhotosFromLibrary())}
-    onSlideshow={() => handlePromiseError(handleStartSlideshow())}
-    onToggleActivity={() => (activityOpen = !activityOpen)}
-    onToggleOwnerBadges={() => timelineManager?.toggleShowAssetOwners()}
-  />
+  {#key albumId}
+    {@const view = albumView}
+    <AlbumHeader
+      {album}
+      {childAlbums}
+      {parent}
+      collections={editableCollections}
+      likeCount={activityManager.likeCount}
+      commentCount={activityManager.commentCount}
+      {activityOpen}
+      canShowOwnerBadges={containsEditors}
+      ownerBadges={showAlbumUsers}
+      {assetCount}
+      onAlbumChange={(next) => (album = next)}
+      onRefresh={() => refreshEverything(view)}
+      onAddPhotos={() => handlePromiseError(addPhotosFromLibrary())}
+      onSlideshow={() => handlePromiseError(handleStartSlideshow(view))}
+      onToggleActivity={() => (activityOpen = !activityOpen)}
+      onToggleOwnerBadges={() => timelineManager?.toggleShowAssetOwners()}
+    />
+  {/key}
 {/snippet}
 
 <!--
   The album page sits in the Frameleaf shell (top bar and library rail) like every other library
   screen; the legacy ControlAppBar is gone (AL-17). The breadcrumb in the header, Escape and the
-  command palette's Go back lead out of it.
+  command palette's Go back lead out of it. An album's LibraryView is the page area's own child, as on
+  Photos, a person and a tag, so it carries the page gutter inside its scroller and the frosted
+  toolbar band spans the page (LIB-P4). The comments sheet is fixed over the right edge (SHARING-P2).
 -->
-<UserPageLayout scrollbar={false}>
-  <div class="flex h-full overflow-hidden" use:scrollMemoryClearer={{ routeStartsWith: Route.albums() }}>
-    <div class="relative w-full shrink">
-      <div class="relative h-full overflow-hidden md:px-4">
-        {#if isCollection}
-          <Theme theme={appTheme}>
-            <div class="h-full overflow-y-auto">
-              <!-- On phones the header keeps the 16px gutter the library view gives an album's header. -->
-              <section class="pt-2 max-md:px-2">{@render header()}</section>
-              <ResultsView
-                assets={collectionTimelineAssets}
-                {bulkContext}
-                downloadFileName={albumDownloadFileName}
-                {tagOptions}
-                onEndReached={loadMoreCollectionAssets}
-                onRemoved={handleMutated}
-                onSelectAll={selectEverythingInCollection}
-                onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
-              />
-            </div>
-          </Theme>
-        {:else}
-          <LibraryView
-            enableRouting
-            selectAll={isSpace ? 'matching' : 'loaded'}
-            bind:timelineManager
-            {options}
-            destination={{ kind: 'album', id: albumId }}
-            headerHasSlideshow
+<UserPageLayout scrollbar={false} use={[[scrollMemoryClearer, { routeStartsWith: Route.albums() }]]}>
+  {#if isCollection}
+    <div class="relative h-full overflow-hidden md:px-4">
+      <Theme theme={appTheme}>
+        <div class="h-full overflow-y-auto">
+          <!-- On phones the header keeps the 16px gutter the library view gives an album's header. -->
+          <section class="pt-2 max-md:px-2">{@render header()}</section>
+          <ResultsView
+            assets={collectionTimelineAssets}
             {bulkContext}
             downloadFileName={albumDownloadFileName}
             {tagOptions}
-            onMutated={handleMutated}
-            sidePanelOpen={activityOpen}
+            onEndReached={loadMoreCollectionAssets}
+            onRemoved={handleMutated}
+            onSelectAll={selectEverythingInCollection}
             onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
-          >
-            <Theme theme={appTheme}>
-              <section class="pt-2">{@render header()}</section>
-            </Theme>
-
-            {#snippet viewer()}
-              <Portal target="body">
-                {#if assetViewerManager.isViewing}
-                  <TimelineAssetViewer
-                    bind:invisible={viewerInvisible}
-                    {timelineManager}
-                    {album}
-                    {isShared}
-                    withStacked
-                    activityPanel={isSpace ? spaceAssetComments : undefined}
-                  />
-                {/if}
-              </Portal>
-            {/snippet}
-          </LibraryView>
-        {/if}
-      </div>
-    </div>
-
-    {#if activityOpen && authManager.authenticated && !assetViewerManager.isViewing}
-      <Theme theme={appTheme}>
-        <div class="fl-album-activity">
-          {#if isSpace}
-            <!-- FL-55: the conversation on the space itself, threaded, with the space's own like. -->
-            <div class="fl-album-activity-space h-full w-[min(22rem,100vw)] border-s border-(--fl-border)">
-              <SpaceMediaComments
-                spaceId={album.id}
-                canComment={album.isActivityEnabled}
-                likes={{
-                  count: activityManager.likeCount,
-                  liked: !!activityManager.isLiked,
-                  onToggle: toggleSpaceLike,
-                }}
-                onClose={() => (activityOpen = false)}
-              />
-            </div>
-          {:else}
-            <ActivityPanel {album} onClose={() => (activityOpen = false)} />
-          {/if}
+          />
         </div>
       </Theme>
-    {/if}
-  </div>
+    </div>
+  {:else}
+    <LibraryView
+      enableRouting
+      selectAll={isSpace ? 'matching' : 'loaded'}
+      bind:timelineManager
+      {options}
+      destination={{ kind: 'album', id: albumId }}
+      headerHasSlideshow
+      {bulkContext}
+      downloadFileName={albumDownloadFileName}
+      {tagOptions}
+      onMutated={handleMutated}
+      sidePanelOpen={activityOpen}
+      onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
+    >
+      <Theme theme={appTheme}>
+        <section class="pt-2">{@render header()}</section>
+      </Theme>
+
+      {#snippet viewer()}
+        <Portal target="body">
+          {#if assetViewerManager.isViewing}
+            <TimelineAssetViewer
+              bind:invisible={viewerInvisible}
+              {timelineManager}
+              {album}
+              {isShared}
+              withStacked
+              activityPanel={isSpace ? spaceAssetComments : undefined}
+            />
+          {/if}
+        </Portal>
+      {/snippet}
+    </LibraryView>
+  {/if}
+
+  {#if activityOpen && authManager.authenticated && !assetViewerManager.isViewing}
+    <Theme theme={appTheme}>
+      <div class="fl-album-activity">
+        {#if isSpace}
+          <!-- FL-55: the conversation on the space itself, threaded, with the space's own like. -->
+          <div class="fl-album-activity-space h-full w-[min(22rem,100vw)] border-s border-(--fl-border)">
+            <SpaceMediaComments
+              spaceId={album.id}
+              canComment={album.isActivityEnabled}
+              likes={{
+                count: activityManager.likeCount,
+                liked: !!activityManager.isLiked,
+                onToggle: toggleSpaceLike,
+              }}
+              onClose={() => (activityOpen = false)}
+            />
+          </div>
+        {:else}
+          <ActivityPanel {album} onClose={() => (activityOpen = false)} />
+        {/if}
+      </div>
+    </Theme>
+  {/if}
 </UserPageLayout>
 
 {#if isCollection}
@@ -643,24 +678,17 @@
 
 <style>
   /*
-   * The prototype's .activity-panel (collections.css:1503, 1708-1716, 1823-1832): beside the album on
-   * a wide window, over it below 1000px, and a sheet from the bottom on phones, where a panel beside
-   * the album left the album a strip a few pixels wide.
+   * The prototype's .activity-panel (collections.css:1503, 1708-1716, 1823-1832). SHARING-P2: a
+   * full-height side sheet over the right edge at every width above a phone, so opening it never
+   * squeezes the grid or wraps the header's buttons; a sheet from the bottom on phones.
    */
   .fl-album-activity {
-    block-size: 100%;
+    position: fixed;
+    inset-block: var(--fl-topbar-height) 0;
+    inset-inline-end: 0;
+    z-index: 40;
     background: var(--fl-panel);
-  }
-
-  @media (max-width: 1000px) {
-    .fl-album-activity {
-      position: fixed;
-      inset-block: var(--fl-topbar-height) 0;
-      inset-inline-end: 0;
-      z-index: 40;
-      block-size: auto;
-      box-shadow: var(--fl-shadow-2);
-    }
+    box-shadow: var(--fl-shadow-2);
   }
 
   @media (max-width: 700px) {

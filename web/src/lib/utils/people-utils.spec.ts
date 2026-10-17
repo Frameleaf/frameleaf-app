@@ -67,4 +67,70 @@ describe('getBoundingBox', () => {
     expect(boxes).toHaveLength(2);
     expect(boxes[0].left).toBeLessThan(boxes[1].left);
   });
+
+  it('uses each face model resolution independently', () => {
+    const faces = [
+      makeFace(),
+      makeFace({
+        id: 'second',
+        imageWidth: 800,
+        imageHeight: 600,
+        boundingBoxX1: 200,
+        boundingBoxY1: 150,
+        boundingBoxX2: 400,
+        boundingBoxY2: 300,
+      }),
+    ];
+    expect(getBoundingBox(faces, { width: 800, height: 600 })).toEqual([
+      { id: 'face-1', top: 150, left: 200, width: 200, height: 150 },
+      { id: 'second', top: 150, left: 200, width: 200, height: 150 },
+    ]);
+  });
+
+  it('preserves input order and duplicate ids without changing frozen face data', () => {
+    const faces = [makeFace({ id: 'same' }), makeFace({ id: 'same', boundingBoxX1: 0 })];
+    const before = structuredClone(faces);
+    for (const face of faces) {
+      Object.freeze(face);
+    }
+    Object.freeze(faces);
+    const size = Object.freeze({ width: 800, height: 600 });
+    expect(getBoundingBox(faces, size)).toEqual([
+      { id: 'same', top: 150, left: 200, width: 200, height: 150 },
+      { id: 'same', top: 150, left: 0, width: 400, height: 150 },
+    ]);
+    expect(faces).toEqual(before);
+  });
+
+  it('uses the current display size on every call', () => {
+    const faces = [makeFace()];
+    expect(getBoundingBox(faces, { width: 800, height: 600 })[0]).toEqual({
+      id: 'face-1',
+      top: 150,
+      left: 200,
+      width: 200,
+      height: 150,
+    });
+    expect(getBoundingBox(faces, { width: 400, height: 300 })[0]).toEqual({
+      id: 'face-1',
+      top: 75,
+      left: 100,
+      width: 100,
+      height: 75,
+    });
+  });
+
+  it('retains signed geometry outside the model bounds without clamping or reversing endpoints', () => {
+    const face = makeFace({
+      imageWidth: 100,
+      imageHeight: 100,
+      boundingBoxX1: -10,
+      boundingBoxY1: -20,
+      boundingBoxX2: -20,
+      boundingBoxY2: 120,
+    });
+    expect(getBoundingBox([face], { width: 200, height: 100 })).toEqual([
+      { id: 'face-1', top: -20, left: -20, width: -20, height: 140 },
+    ]);
+  });
 });

@@ -441,6 +441,42 @@ describe(ClassificationService.name, () => {
   });
 
   describe('review rules', () => {
+    it.each(['archive consent', 'tag', 'rule deletion'] as const)(
+      'refuses a stale acceptance after changing $0',
+      async (change) => {
+        const { sut, ctx } = setup();
+        const { user, auth } = await newOwner(ctx);
+        const lake = await tagOf(ctx, user.id, 'lake');
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        await tagAsset(ctx, lake.id, asset.id);
+        const created = await sut.createRule(auth, {
+          ...baseRule,
+          albumName: 'Lake review',
+          tagIds: [lake.id],
+          action: ClassificationRuleAction.Review,
+          tagName: 'Reviewed lake',
+          archive: true,
+          archiveConsent: true,
+        });
+        await reevaluate(sut, auth, created.id);
+        const repo = ctx.get(ClassificationRepository);
+        const stale = await repo.getRule(created.id);
+        expect(stale).toBeDefined();
+        if (change === 'rule deletion') await sut.deleteRule(auth, created.id);
+        else await sut.updateRule(auth, created.id, change === 'tag' ? { tagName: 'New tag' } : { archive: false });
+
+        await expect(repo.decide(stale!, [asset.id], ClassificationMatchDecision.Accepted)).rejects.toThrow(
+          'Classification rule changed while reviewing',
+        );
+        expect(await albumAssetIds(ctx, created.albumId)).toEqual([]);
+        expect(await tagIdsOf(ctx, asset.id)).toEqual([lake.id]);
+        expect(await visibilityOf(ctx, asset.id)).toBe(AssetVisibility.Timeline);
+        expect(await decisionOf(ctx, created.id, asset.id)).toBe(
+          change === 'rule deletion' ? undefined : ClassificationMatchDecision.Suggested,
+        );
+      },
+    );
+
     it('suggests without changing anything until the owner accepts or rejects', async () => {
       const { sut, ctx } = setup();
       const { user, auth } = await newOwner(ctx);

@@ -1,5 +1,6 @@
 import { getAlbumInfo, getPerson, getPet, getTagById, getVisitedLandmarks } from '@frameleaf/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import {
   forgetEntityNames,
   resetFilterEntityNameCache,
@@ -48,11 +49,53 @@ const tag = (overrides: Partial<{ value: string }> = {}) => ({
 });
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   resetFilterEntityNameCache();
 });
 
 describe('resolveEntityName', () => {
+  it.each(['AuthLogout', 'SessionLocked', 'SessionDelete', 'UserPinCodeReset'] as const)(
+    'reads names again after %s',
+    async (event) => {
+      vi.mocked(getPerson)
+        .mockResolvedValueOnce(person() as never)
+        .mockRejectedValueOnce(new Error('403'));
+      expect(await resolveEntityName('person', 'person-1')).toBe('Ada');
+      eventManager.emit(event);
+      await expect(resolveEntityName('person', 'person-1')).resolves.toBeNull();
+      expect(getPerson).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('keeps names for a routine profile refresh but rereads them for another account', async () => {
+    eventManager.emit('AuthUserLoaded', { id: 'first' } as never);
+    vi.mocked(getPerson)
+      .mockResolvedValueOnce(person() as never)
+      .mockRejectedValueOnce(new Error('403'));
+    expect(await resolveEntityName('person', 'person-1')).toBe('Ada');
+    eventManager.emit('AuthUserLoaded', { id: 'first' } as never);
+    expect(await resolveEntityName('person', 'person-1')).toBe('Ada');
+    expect(getPerson).toHaveBeenCalledTimes(1);
+    eventManager.emit('AuthUserLoaded', { id: 'second' } as never);
+    await expect(resolveEntityName('person', 'person-1')).resolves.toBeNull();
+    expect(getPerson).toHaveBeenCalledTimes(2);
+  });
+
+  it('discards an invalidated lookup that finishes after a newer lookup', async () => {
+    let finish!: (value: Awaited<ReturnType<typeof getPerson>>) => void;
+    vi.mocked(getPerson)
+      .mockReturnValueOnce(new Promise((resolve) => (finish = resolve)))
+      .mockResolvedValueOnce(person({ name: 'Current' }) as never);
+    const pending = resolveEntityName('person', 'person-1');
+    eventManager.emit('SessionAccessChanged', { isElevated: false });
+    const next = resolveEntityName('person', 'person-1');
+    finish(person() as never);
+    await expect(pending).resolves.toBeNull();
+    await expect(next).resolves.toBe('Current');
+    await expect(resolveEntityName('person', 'person-1')).resolves.toBe('Current');
+    expect(getPerson).toHaveBeenCalledTimes(2);
+  });
+
   it('resolves an album to its name and an unnamed or unreadable album to null (FL-49 chips)', async () => {
     vi.mocked(getAlbumInfo).mockResolvedValueOnce({ id: 'album-1', albumName: 'Rockies 2024' } as never);
     expect(await resolveEntityName('album', 'album-1')).toBe('Rockies 2024');

@@ -29,12 +29,7 @@ import { PetRecognitionService } from 'src/services/pet-recognition.service.js';
 import { requireAccess } from 'src/utils/access.js';
 import { getHiddenContentQueryOptions, isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import {
-  filterReviewedCandidates,
-  normalizePetName,
-  planObservationMerge,
-  sortCandidatesForReview,
-} from 'src/utils/pets.js';
+import { filterReviewedCandidates, normalizePetName, sortCandidatesForReview } from 'src/utils/pets.js';
 
 @Injectable()
 export class PetService {
@@ -131,17 +126,9 @@ export class PetService {
     }
 
     for (const source of sources) {
-      const [sourceObservations, targetObservations] = await Promise.all([
-        // a merge moves every observation, Locked ones included; nothing here is returned
-        this.petRepository.getObservations(auth.user.id, source.id, { withLocked: true }),
-        this.petRepository.getObservations(auth.user.id, target.id, { withLocked: true }),
-      ]);
-
-      const plan = planObservationMerge(sourceObservations, targetObservations);
       await this.petRepository.mergeInto(auth.user.id, {
         sourceId: source.id,
         targetId: target.id,
-        ...plan,
       });
     }
 

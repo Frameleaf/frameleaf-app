@@ -19,6 +19,9 @@ import { canonicalJson } from 'src/utils/studio-project.js';
 async function fixture(disposedCopy = false) {
   const seals = new Map<string, { scope: string; payload: string }>();
   const transport = {
+    withSessionCrypto<T>(action: () => Promise<T>) {
+      return action();
+    },
     encodeSession: (scope: string, payload: unknown) => {
       const seal = randomUUID();
       seals.set(seal, { scope, payload: canonicalJson(payload) });

@@ -145,12 +145,14 @@
       <div class="phd-fields">
         {#each [['webWatermarkPresetId', $t('frameleaf_photography_web_previews')], ['proofWatermarkPresetId', $t('frameleaf_photography_selection_proofs')], ['exportWatermarkPresetId', $t('frameleaf_photography_final_exports')]] as [key, label] (key)}<label
             >{label}<select
-              value={draft.brand[key as 'webWatermarkPresetId']}
+              value={draft.brand[key as 'webWatermarkPresetId'] ?? ''}
+              disabled={busy || !draft.brand.watermarkPresets?.length}
               onchange={(event) => (draft!.brand[key as 'webWatermarkPresetId'] = event.currentTarget.value || null)}
-              ><option value=""
+              ><!-- Without a preset, exports stay clean and proofs and web previews use the Branding mark. --><option
+                value=""
                 >{key === 'exportWatermarkPresetId'
-                  ? $t('frameleaf_photography_clean_edit_note')
-                  : $t('frameleaf_photography_collection_default')}</option
+                  ? $t('frameleaf_photography_no_watermark')
+                  : $t('frameleaf_photography_branding_mark')}</option
               >{#each draft.brand.watermarkPresets ?? [] as item (item.id)}<option value={item.id}
                   >{item.name} · v{item.version}</option
                 >{/each}</select

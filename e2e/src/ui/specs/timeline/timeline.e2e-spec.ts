@@ -577,24 +577,29 @@ test.describe('Timeline', () => {
       await expect(page.getByTestId('library-status-bar')).toHaveCount(0);
     });
 
-    test('on a phone the library header is one row with a single view menu', async ({ page }) => {
+    test('on a phone the layouts sit beside the title and the toolbar has two rows (LIB-P5)', async ({ page }) => {
       await page.setViewportSize({ width: 390, height: 844 });
       await pageUtils.openPhotosPage(page);
       const toolbar = page.getByTestId('frameleaf-results-toolbar');
-      await expect(toolbar.getByTestId('frameleaf-result-count')).toBeVisible();
-      // The layout switch, Sort, Grid / List and Slideshow are in the menu, not stacked above the photos.
-      await expect(page.getByRole('group', { name: 'Layout' })).toHaveCount(0);
-      await expect(toolbar.getByRole('combobox', { name: 'Sort by' })).toHaveCount(0);
-      const [count, menuButton] = await Promise.all([
-        toolbar.getByTestId('frameleaf-result-count').boundingBox(),
-        toolbar.getByRole('button', { name: 'View options' }).boundingBox(),
+      const count = toolbar.getByTestId('frameleaf-result-count');
+      await expect(count).toBeVisible();
+      // Timeline, Browse and Work beside the title, as the template does; no separate view menu.
+      await expect(page.getByRole('group', { name: 'Layout' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'View options' })).toHaveCount(0);
+      // Row one: the count, Filter, Slideshow and more. Row two: Sort across, then Grid and List.
+      const sort = toolbar.getByRole('combobox', { name: 'Sort by' });
+      await expect(sort).toBeVisible();
+      const [countBox, moreBox, sortBox, listBox] = await Promise.all([
+        count.boundingBox(),
+        toolbar.getByRole('button', { name: 'More library actions' }).boundingBox(),
+        sort.boundingBox(),
+        toolbar.getByRole('button', { name: 'List view' }).boundingBox(),
       ]);
-      expect(Math.abs(count!.y + count!.height / 2 - (menuButton!.y + menuButton!.height / 2))).toBeLessThanOrEqual(12);
+      expect(Math.abs(middle(countBox) - middle(moreBox))).toBeLessThanOrEqual(12);
+      expect(sortBox!.y).toBeGreaterThanOrEqual(countBox!.y + countBox!.height);
+      expect(Math.abs(middle(sortBox) - middle(listBox))).toBeLessThanOrEqual(12);
 
-      await toolbar.getByRole('button', { name: 'View options' }).click();
-      const menu = page.getByRole('menu', { name: 'View options' });
-      await expect(menu.getByRole('menuitemcheckbox', { name: 'Browse' })).toHaveAttribute('aria-checked', 'true');
-      await menu.getByRole('menuitemcheckbox', { name: 'Timeline' }).click();
+      await timelineUtils.setLayout(page, 'Timeline');
       await expect(page.getByTestId('frameleaf-library')).toHaveAttribute('data-layout', 'timeline');
     });
 
@@ -680,7 +685,12 @@ test.describe('Timeline', () => {
       await timelineUtils.setLayout(page, 'Timeline');
       // Filename is offered but not choosable here: check the option's own `disabled` property directly.
       await expect(toolbar.getByRole('option', { name: 'Filename' })).toHaveJSProperty('disabled', true);
-      await expect(toolbar.getByRole('button', { name: 'List view' })).toHaveCount(0);
+      // LIB-P7: Grid and List are in every layout. The Timeline is a grid of dated rows, and List
+      // there opens the rows in Browse.
+      await expect(toolbar.getByRole('button', { name: 'Grid view' })).toHaveAttribute('aria-pressed', 'true');
+      await toolbar.getByRole('button', { name: 'List view' }).click();
+      await expect(page.getByTestId('frameleaf-library')).toHaveAttribute('data-layout', 'browse');
+      await expect(page.locator('[data-testid="frameleaf-asset-tile"]').first()).toHaveAttribute('data-layout', 'list');
     });
 
     test('? opens the Frameleaf shortcuts sheet, closed with Done', async ({ page }) => {
@@ -1510,6 +1520,9 @@ const tileWidth = async (page: Page, assetId: string) => {
   const box = await tileBox(page, assetId);
   return box.width;
 };
+
+/** The vertical middle of an element's box. */
+const middle = (box: { y: number; height: number } | null) => box!.y + box!.height / 2;
 
 /** The library in the Timeline layout, grouped by day as it opens. */
 const openTimeline = async (page: Page) => {

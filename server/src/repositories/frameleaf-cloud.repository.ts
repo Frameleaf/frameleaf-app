@@ -483,6 +483,13 @@ export class FrameleafCloudRepository {
         }
         chunks.push(value);
       }
+    } catch (error) {
+      if (error instanceof FrameleafCloudError) throw error;
+      throw new FrameleafCloudError(
+        MlAdmissionRefusal.CloudUnavailable,
+        null,
+        'Frameleaf Cloud response could not be read',
+      );
     } finally {
       await reader.cancel().catch(() => {});
     }

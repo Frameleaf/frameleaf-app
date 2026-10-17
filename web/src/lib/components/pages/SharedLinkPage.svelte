@@ -20,7 +20,7 @@
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiAlertCircleOutline, mdiEyeOffOutline, mdiEyeOutline, mdiLockOutline } from '@mdi/js';
-  import { onDestroy, onMount, tick } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -41,24 +41,67 @@
 
   const { data }: Props = $props();
 
-  let { sharedLink, passwordRequired, key, slug, meta } = $state(data);
-  let { title, description } = $state(meta);
+  // Initialize server rendering too; the effect below follows later route data.
+  const initialData = untrack(() => data);
+  let sharedLink = $state(initialData.sharedLink);
+  let passwordRequired = $state(initialData.passwordRequired ?? false);
+  const key = $derived(data.key);
+  const slug = $derived(data.slug);
+  let title = $state(initialData.meta.title);
+  let description = $state(initialData.meta.description);
   let isOwned = $derived(authManager.authenticated && authManager.user.id === sharedLink?.userId);
   let password = $state('');
   let showPassword = $state(false);
   /** The prototype's inline wrong-password message (`PublicViewer.jsx`), shown instead of a toast. */
   let passwordError = $state('');
 
-  if (passwordRequired) {
-    assetViewerManager.showAssetViewer(false);
-  }
+  let alive = true;
+  let routeGeneration = 0;
+  let loginRequest = 0;
+  let previousKey: string | undefined;
+  let previousSlug: string | undefined;
+  $effect.pre(() => {
+    const initial = data;
+    loginRequest++;
+    if (initial.key !== previousKey || initial.slug !== previousSlug) {
+      routeGeneration++;
+      previousKey = initial.key;
+      previousSlug = initial.slug;
+    }
+    sharedLink = initial.sharedLink;
+    passwordRequired = initial.passwordRequired ?? false;
+    title = initial.meta.title;
+    description = initial.meta.description;
+    password = '';
+    passwordError = '';
+    showPassword = false;
+    if (initial.passwordRequired) {
+      untrack(() => assetViewerManager.showAssetViewer(false));
+    }
+  });
+  const captureRoute = () => {
+    const owner = routeGeneration;
+    const isCurrentSession = authManager.captureSession();
+    return () => alive && owner === routeGeneration && isCurrentSession();
+  };
 
   const handlePasswordSubmit = async () => {
+    const request = ++loginRequest;
+    const isCurrentRoute = captureRoute();
+    const isCurrent = () => request === loginRequest && isCurrentRoute();
+    const login = { key, slug, sharedLinkLoginDto: { password } };
     // Cleared first so a repeated wrong password is announced again.
     passwordError = '';
     await tick();
+    if (!isCurrent()) {
+      return;
+    }
     try {
-      sharedLink = await sharedLinkLogin({ key, slug, sharedLinkLoginDto: { password } });
+      const result = await sharedLinkLogin(login);
+      if (!isCurrent()) {
+        return;
+      }
+      sharedLink = result;
       setSharedLink(sharedLink);
       passwordRequired = false;
       title = (sharedLink.album ? sharedLink.album.albumName : $t('public_share')) + ' - Frameleaf';
@@ -66,11 +109,17 @@
         sharedLink.description ||
         $t('shared_photos_and_videos_count', { values: { assetCount: sharedLink.assets.length } });
       await tick();
+      if (!isCurrent()) {
+        return;
+      }
       await navigate(
         { targetRoute: 'current', assetId: null, assetGridRouteSearchParams: assetViewerManager.gridScrollTarget },
         { forceNavigate: true, replaceState: true },
       );
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       if (isHttpError(error) && error.status === 401) {
         // Only the service's own answer is a wrong password; any other 401 means the link itself
         // expired or was revoked meanwhile, so reload into the unavailable state.
@@ -94,10 +143,17 @@
   // reloads the route; the fresh link lookup fails and the unavailable state replaces the content.
   // A reload that finds the link still valid means the 401 had another cause: it is shown as usual.
   const onUnauthorized = async (showError: () => void) => {
+    const isCurrent = captureRoute();
     setSharedLink(undefined);
-    await invalidateAll();
-    if (!page.error && page.data.sharedLink) {
-      showError();
+    try {
+      await invalidateAll();
+      if (isCurrent() && !page.error && page.data.sharedLink) {
+        showError();
+      }
+    } catch {
+      if (isCurrent()) {
+        showError();
+      }
     }
   };
 
@@ -106,6 +162,7 @@
   });
 
   onDestroy(() => {
+    alive = false;
     setUnauthorizedHandler(undefined);
     setSharedLink(undefined);
   });
@@ -152,14 +209,16 @@
   </PublicShellFrame>
 {/if}
 
-{#if !passwordRequired && sharedLink?.type === SharedLinkType.Album}
-  <AlbumViewer {sharedLink} />
-{/if}
-{#if !passwordRequired && sharedLink?.type === SharedLinkType.Individual}
-  <div class="immich-scrollbar">
-    <IndividualSharedViewer {sharedLink} {isOwned} />
-  </div>
-{/if}
+{#key key ?? slug ?? sharedLink?.id}
+  {#if !passwordRequired && sharedLink?.type === SharedLinkType.Album}
+    <AlbumViewer {sharedLink} />
+  {/if}
+  {#if !passwordRequired && sharedLink?.type === SharedLinkType.Individual}
+    <div class="immich-scrollbar">
+      <IndividualSharedViewer {sharedLink} {isOwned} />
+    </div>
+  {/if}
+{/key}
 
 <style>
   .pv-password-card {

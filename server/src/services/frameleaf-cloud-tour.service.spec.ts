@@ -32,8 +32,13 @@ describe(FrameleafCloudTourService.name, () => {
     );
     mocks.user.getMetadata.mockImplementation(() => Promise.resolve(userMetadata as never));
     mocks.user.upsertMetadata.mockImplementation((_userId, item) => {
-      userMetadata.push(item as never);
+      userMetadata = [...userMetadata.filter(({ key }) => key !== item.key), item as never];
       return Promise.resolve();
+    });
+    mocks.user.insertMetadataIfAbsent.mockImplementation((_userId, key, value) => {
+      if (userMetadata.some((item) => item.key === key)) return Promise.resolve(false);
+      userMetadata.push({ key, value });
+      return Promise.resolve(true);
     });
   });
 
@@ -61,13 +66,17 @@ describe(FrameleafCloudTourService.name, () => {
     const first = await sut.markSeen(authStub.admin, { ending: 'skipped' });
     expect(first).toMatchObject({ seen: true, ending: 'skipped', offer: false });
     expect(first.seenAt).toEqual(expect.any(String));
-    expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(authStub.admin.user.id, {
-      key: UserMetadataKey.FrameleafCloudTour,
-      value: { seenAt: expect.any(String), ending: 'skipped' },
-    });
+    expect(mocks.user.insertMetadataIfAbsent).toHaveBeenCalledWith(
+      authStub.admin.user.id,
+      UserMetadataKey.FrameleafCloudTour,
+      {
+        seenAt: expect.any(String),
+        ending: 'skipped',
+      },
+    );
 
     await expect(sut.markSeen(authStub.admin, { ending: 'finished' })).resolves.toMatchObject({ ending: 'skipped' });
-    expect(mocks.user.upsertMetadata).toHaveBeenCalledTimes(1);
+    expect(mocks.user.insertMetadataIfAbsent).toHaveBeenCalledTimes(1);
   });
 
   it('records setup as the ending when the server was linked during first-run setup', async () => {
@@ -77,6 +86,28 @@ describe(FrameleafCloudTourService.name, () => {
     });
     linked();
     await expect(sut.getTour(authStub.admin)).resolves.toMatchObject({ offer: false });
+  });
+
+  it('keeps the first committed ending when another browser resumes a stale absence read', async () => {
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    mocks.user.getMetadata.mockImplementationOnce(async () => {
+      const before = [...userMetadata];
+      entered.resolve();
+      await resume.promise;
+      return before as never;
+    });
+    const delayed = sut.markSeen(authStub.admin, { ending: 'finished' });
+    try {
+      await entered.promise;
+      const first = await sut.markSeen(authStub.admin, { ending: 'skipped' });
+      resume.resolve();
+      await delayed;
+      expect(await sut.getTour(authStub.admin)).toMatchObject({ ending: 'skipped', seenAt: first.seenAt });
+    } finally {
+      resume.resolve();
+      await delayed;
+    }
   });
 
   it('reads the status chips from this server only', async () => {

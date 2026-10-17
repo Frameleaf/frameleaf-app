@@ -6,12 +6,12 @@ import { ReleaseChannel, type ServerVersionResponseDto } from '@frameleaf/sdk';
  * release candidate; any other is a stable build. Unknown until the server reports its version.
  */
 export const installedReleaseChannel = (
-  version: Pick<ServerVersionResponseDto, 'prerelease'> | undefined | null,
+  version: Pick<ServerVersionResponseDto, 'prerelease' | 'prereleaseName'> | undefined | null,
 ): ReleaseChannel | undefined => {
   if (!version) {
     return undefined;
   }
-  return version.prerelease === null || version.prerelease === undefined
+  return !version.prereleaseName && (version.prerelease === null || version.prerelease === undefined)
     ? ReleaseChannel.Stable
     : ReleaseChannel.ReleaseCandidate;
 };

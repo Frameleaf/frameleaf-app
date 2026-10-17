@@ -63,20 +63,27 @@ const assertNoApiKey = (headerKey: string) => {
   }
 };
 
+const isJsonMediaType = (value: string) =>
+  /^[^/\s]+\/(?:json|[^/\s]+\+json)$/i.test(value.split(';', 1)[0].trim());
+
 export const jsonOnly =
   (impl?: typeof fetch): typeof fetch =>
   async (input, options) => {
     const response = await (impl ?? fetch)(input, options);
+    if (response.status === 204) {
+      return response;
+    }
 
-    const expectsJson = new Headers(options?.headers)
-      .get('accept')
-      ?.includes('json');
-    if (!expectsJson || response.status === 204) {
+    const headers =
+      options?.headers ??
+      (input instanceof Request ? input.headers : undefined);
+    const accept = new Headers(headers).get('accept');
+    if (!accept?.split(',').some(isJsonMediaType)) {
       return response;
     }
 
     const contentType = response.headers.get('content-type');
-    if (!contentType?.includes('json')) {
+    if (!contentType || !isJsonMediaType(contentType)) {
       throw new MalformedResponseError(
         'Expected a JSON response',
         response.url,

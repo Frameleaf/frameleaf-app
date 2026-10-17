@@ -32,7 +32,12 @@ export const loadIconCatalogue = (): Promise<AlbumIconCatalogueResponseDto> => {
 
 export const loadIconPaths = (): Promise<IconPaths> => {
   pathsPromise ??= fetch('/mdi-icon-paths.json')
-    .then((response) => response.json() as Promise<IconPaths>)
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`Failed to load icon paths (HTTP ${response.status})`);
+      }
+      return response.json() as Promise<IconPaths>;
+    })
     .catch((error: unknown) => {
       pathsPromise = undefined;
       throw error;

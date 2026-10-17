@@ -99,6 +99,19 @@ describe('SharedSpaceMembers', () => {
     expect(screen.getByText(en.frameleaf_spaces_member_pending)).toBeInTheDocument();
   });
 
+  it('tags the members the server says are supporters, pending invitees included (supporter option b)', () => {
+    render(SharedSpaceMembers, {
+      space,
+      members: members.map((member) => ({ ...member, supporter: member.user.id !== ada.id })),
+      onChanged: vi.fn(),
+    });
+
+    const row = (name: string) => screen.getByText(name).closest('li')!;
+    expect(row('Ada')).not.toHaveTextContent('Supporter');
+    expect(row('Bo')).toHaveTextContent('Supporter');
+    expect(row('Cy')).toHaveTextContent('Supporter');
+  });
+
   it('gives the owner the invite control and a role menu for everyone but themselves', () => {
     render(SharedSpaceMembers, { space, members, onChanged: vi.fn() });
 
@@ -134,6 +147,20 @@ describe('SharedSpaceMembers', () => {
       }),
     );
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it('shows the role the member still has when a role change is refused', async () => {
+    vi.mocked(updateAlbumUser).mockRejectedValue(new Error('403'));
+    const onChanged = vi.fn();
+    render(SharedSpaceMembers, { space, members, onChanged });
+    const select = screen.getByRole('combobox', { name: 'Role for Bo' });
+
+    await fireEvent.change(select, { target: { value: AlbumUserRole.Viewer } });
+
+    await waitFor(() => expect(updateAlbumUser).toHaveBeenCalled());
+    await waitFor(() => expect(select).not.toBeDisabled());
+    expect(select).toHaveValue(AlbumUserRole.Editor);
+    expect(onChanged).not.toHaveBeenCalled();
   });
 
   it('withdraws an invitation through its own endpoint, never the remove-member one', async () => {

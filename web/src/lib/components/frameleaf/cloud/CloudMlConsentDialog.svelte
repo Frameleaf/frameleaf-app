@@ -53,6 +53,10 @@
    * time the choices change. Only these are accepted: their version and the digest of their text.
    */
   let terms = $state<CloudMlConsentTermsDto | null>(null);
+  /** The features the shown terms were read for: a changed choice waits for its own terms. */
+  let termsFor = $state<string | null>(null);
+  const featureKey = (names: boolean, medical: boolean) => `${names}:${medical}`;
+  const termsCurrent = $derived(!!terms && termsFor === featureKey(identityNames, medicalSignals));
   let termsChanged = $state(false);
   let termsTurn = 0;
 
@@ -74,9 +78,11 @@
         read = false;
       }
       terms = next;
+      termsFor = featureKey(names, medical);
     } catch (error) {
       if (turn === termsTurn) {
         terms = null;
+        termsFor = null;
         handleError(error, $t('admin.frameleaf_cloud_ml_consent_error'));
       }
     }
@@ -92,6 +98,7 @@
       medicalSignals = consent.features.medicalSignals;
       read = false;
       terms = null;
+      termsFor = null;
       termsChanged = false;
     });
   });
@@ -107,7 +114,7 @@
   });
 
   const accept = async () => {
-    if (!read || !terms) {
+    if (!read || !terms || !termsCurrent) {
       return;
     }
     saving = true;
@@ -201,7 +208,7 @@
   </div>
   {#snippet actions()}
     <Button onclick={() => (open = false)} disabled={saving}>{$t('admin.frameleaf_cloud_ml_consent_not_now')}</Button>
-    <Button variant="primary" onclick={accept} disabled={!read || !terms || saving}>
+    <Button variant="primary" onclick={accept} disabled={!read || !termsCurrent || saving}>
       {$t('admin.frameleaf_cloud_ml_consent_accept')}
     </Button>
   {/snippet}

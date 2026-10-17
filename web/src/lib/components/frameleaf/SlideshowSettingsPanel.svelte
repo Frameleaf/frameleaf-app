@@ -1,18 +1,15 @@
 <script lang="ts">
   /**
-   * Slideshow settings (FL-36), the template's `SlideshowSettings` (MediaViewer.jsx:2086-2182,
-   * media-viewer.css:822-893): a non-modal panel over the bottom-left of the running slideshow,
-   * so the photo stays in view and a new transition shows on the next item. Photo duration,
-   * image fit, caption, order, transition, repeat and the progress bar, with the prototype's
-   * copy, built from the Frameleaf settings rows (SettingSelect, SettingToggle). Changes apply at
-   * once. Escape or the close button hands focus back to the caller (`onClose`).
+   * Slideshow settings (FL-36, VIEWER-P2), the template's `SlideshowSettings` (MediaViewer.jsx:2097-2194,
+   * media-viewer.css:822-893): a small non-modal popover above the footer's left end, so the photo
+   * stays in view and a new transition shows on the next item. Each row puts its label on the left and
+   * its choice on the right: photo duration, image fit, caption, order and transition, then the Repeat
+   * and progress-bar checkboxes and one line about videos. Changes apply at once. Escape or the close
+   * button hands focus back to the caller (`onClose`).
    *
-   * Autoplay is not in the prototype; its row is kept because production has always had the
-   * preference (source behaviour retained, recorded in the conformance audit).
+   * Play always plays (VIEWER-P1), so the old Autoplay switch is gone, as in the template.
    */
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
-  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
-  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import {
     DEFAULT_SLIDESHOW_TRANSITION,
     parseSlideshowTransition,
@@ -34,7 +31,7 @@
   let { onClose }: { onClose: () => void } = $props();
 
   // Closing the viewer (or ending the slideshow) with the panel open leaves it closed next time.
-  // MediaViewer.jsx:499-502: opening the panel puts focus on Photo duration.
+  // MediaViewer.jsx:510-513: opening the panel puts focus on Photo duration.
   const focusFirstControl = (panel: HTMLElement) => {
     panel.querySelector<HTMLElement>('select')?.focus();
   };
@@ -55,11 +52,10 @@
     slideshowNavigation,
     slideshowTransition,
     slideshowRepeat,
-    slideshowAutoplay,
     showProgressBar,
   } = slideshowStore;
 
-  /** MediaViewer.jsx:2103 */
+  /** MediaViewer.jsx:2117 */
   const DURATIONS = [2, 3, 5, 10, 15, 30];
 
   const durationOptions = $derived(
@@ -67,7 +63,7 @@
       .filter((seconds) => Number.isFinite(seconds) && seconds > 0)
       .sort((a, b) => a - b)
       .map((seconds) => ({
-        value: seconds,
+        value: String(seconds),
         text: $t('frameleaf_slideshow_duration_seconds', { values: { count: seconds } }),
       })),
   );
@@ -91,7 +87,7 @@
     { value: 'description', text: $t('frameleaf_slideshow_caption_description') },
     { value: 'details', text: $t('frameleaf_slideshow_caption_details') },
   ]);
-  const setCaption = (value: string | number) => {
+  const setCaption = (value: string) => {
     $slideshowShowMetadataOverlay = value !== 'off';
     if (value === 'description') {
       $slideshowMetadataOverlayMode = SlideshowMetadataOverlayMode.DescriptionOnly;
@@ -117,7 +113,7 @@
     SLIDESHOW_TRANSITIONS.map((transition) => {
       const name = $t(TRANSITION_LABEL[transition]);
       return {
-        value: transition,
+        value: transition as string,
         text:
           transition === DEFAULT_SLIDESHOW_TRANSITION
             ? $t('frameleaf_slideshow_transition_default', { values: { name } })
@@ -125,6 +121,40 @@
       };
     }),
   );
+
+  type Row = {
+    label: string;
+    value: string;
+    options: { value: string; text: string }[];
+    onChange: (value: string) => void;
+  };
+  const rows = $derived<Row[]>([
+    {
+      label: $t('frameleaf_slideshow_duration'),
+      value: String($slideshowDelay),
+      options: durationOptions,
+      onChange: (value) => ($slideshowDelay = Number(value)),
+    },
+    {
+      label: $t('frameleaf_slideshow_fit'),
+      value: $slideshowLook,
+      options: fitOptions,
+      onChange: (value) => ($slideshowLook = value as SlideshowLook),
+    },
+    { label: $t('frameleaf_slideshow_caption'), value: caption, options: captionOptions, onChange: setCaption },
+    {
+      label: $t('frameleaf_slideshow_order'),
+      value: $slideshowNavigation,
+      options: orderOptions,
+      onChange: (value) => ($slideshowNavigation = value as SlideshowNavigation),
+    },
+    {
+      label: $t('frameleaf_slideshow_transition'),
+      value: $slideshowTransition,
+      options: transitionOptions,
+      onChange: (value) => ($slideshowTransition = parseSlideshowTransition(value)),
+    },
+  ]);
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -149,70 +179,50 @@
       <Icon icon={mdiClose} size="1.125rem" />
     </IconButton>
   </header>
-  <SettingSelect
-    label={$t('frameleaf_slideshow_duration')}
-    value={$slideshowDelay}
-    options={durationOptions}
-    number
-    onSelect={(value) => ($slideshowDelay = Number(value))}
-  />
-  <SettingSelect
-    label={$t('frameleaf_slideshow_fit')}
-    value={$slideshowLook}
-    options={fitOptions}
-    onSelect={(value) => ($slideshowLook = value as SlideshowLook)}
-  />
-  <SettingSelect
-    label={$t('frameleaf_slideshow_caption')}
-    value={caption}
-    options={captionOptions}
-    onSelect={setCaption}
-  />
-  <SettingSelect
-    label={$t('frameleaf_slideshow_order')}
-    value={$slideshowNavigation}
-    options={orderOptions}
-    onSelect={(value) => ($slideshowNavigation = value as SlideshowNavigation)}
-  />
-  <SettingSelect
-    label={$t('frameleaf_slideshow_transition')}
-    value={$slideshowTransition}
-    options={transitionOptions}
-    onSelect={(value) => ($slideshowTransition = parseSlideshowTransition(value))}
-  />
-  <SettingToggle
-    title={$t('frameleaf_slideshow_repeat')}
-    checked={$slideshowRepeat}
-    onToggle={(checked) => ($slideshowRepeat = checked)}
-  />
-  <SettingToggle
-    title={$t('autoplay_slideshow')}
-    checked={$slideshowAutoplay}
-    onToggle={(checked) => ($slideshowAutoplay = checked)}
-  />
-  <SettingToggle
-    title={$t('frameleaf_slideshow_progress')}
-    checked={$showProgressBar}
-    onToggle={(checked) => ($showProgressBar = checked)}
-  />
+  {#each rows as row (row.label)}
+    <label class="slideshow-settings-row">
+      <span>{row.label}</span>
+      <select value={row.value} onchange={(event) => row.onChange(event.currentTarget.value)}>
+        {#each row.options as option (option.value)}
+          <option value={option.value}>{option.text}</option>
+        {/each}
+      </select>
+    </label>
+  {/each}
+  <label class="slideshow-settings-check">
+    <input
+      type="checkbox"
+      checked={$slideshowRepeat}
+      onchange={(event) => ($slideshowRepeat = event.currentTarget.checked)}
+    />
+    <span>{$t('frameleaf_slideshow_repeat')}</span>
+  </label>
+  <label class="slideshow-settings-check">
+    <input
+      type="checkbox"
+      checked={$showProgressBar}
+      onchange={(event) => ($showProgressBar = event.currentTarget.checked)}
+    />
+    <span>{$t('frameleaf_slideshow_progress')}</span>
+  </label>
   <p class="slideshow-settings-help">{$t('frameleaf_slideshow_help')}</p>
 </section>
 
 <style>
-  /* media-viewer.css:822-893 */
+  /* media-viewer.css:822-837: above the footer's left end (and above the phone toolbar). */
   .slideshow-settings {
     position: fixed;
     z-index: 5;
-    bottom: 68px;
-    left: 18px;
-    display: flex;
-    flex-direction: column;
+    bottom: calc(var(--fl-viewer-toolbar-offset, 60px) + var(--fl-space-2));
+    left: max(18px, env(safe-area-inset-left));
     width: 340px;
     max-width: calc(100% - 36px);
     max-height: calc(100dvh - 152px);
     overflow-y: auto;
-    padding: 16px 18px;
+    padding: var(--fl-space-4) 18px;
     color: var(--fl-viewer-text);
+    /* The viewer is dark in both themes; the native lists and checkboxes follow it. */
+    color-scheme: dark;
     background: var(--fl-viewer-raised);
     border: 1px solid var(--fl-viewer-border);
     border-radius: var(--fl-radius-card);
@@ -224,24 +234,84 @@
       border-radius: calc(var(--fl-radius-card) * 1.8);
     }
   }
+  /* media-viewer.css:838-851 */
   .slideshow-settings header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 4px;
+    gap: var(--fl-space-3);
+    margin-bottom: var(--fl-space-1);
   }
   .slideshow-settings h2 {
     margin: 0;
     font-size: 15px;
     font-weight: 550;
   }
-  /* MediaViewer.jsx:2179 / media-viewer.css:888-893 */
+  /* media-viewer.css:852-874: label on the left, its choice on the right. */
+  .slideshow-settings-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-4);
+    margin: 10px 0;
+    font-size: var(--fl-font-small);
+  }
+  .slideshow-settings-row select {
+    appearance: auto;
+    min-width: 156px;
+    max-width: 190px;
+    min-height: 34px;
+    padding: 6px var(--fl-space-2);
+    color: var(--fl-viewer-text);
+    background: var(--fl-viewer-panel);
+    border: 1px solid var(--fl-viewer-border);
+    border-radius: var(--fl-radius-control);
+    font: inherit;
+    font-size: var(--fl-font-small);
+    cursor: pointer;
+  }
+  .slideshow-settings-row select:focus-visible,
+  .slideshow-settings-check input:focus-visible {
+    outline: 2px solid var(--fl-viewer-focus);
+    outline-offset: var(--fl-focus-offset);
+  }
+  /* media-viewer.css:875-887 */
+  .slideshow-settings-check {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-height: 34px;
+    font-size: var(--fl-font-small);
+    cursor: pointer;
+  }
+  .slideshow-settings-check input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--fl-accent);
+    cursor: pointer;
+  }
+  /* MediaViewer.jsx:2191 / media-viewer.css:888-893 */
   .slideshow-settings-help {
     margin: 14px 0 0;
     color: var(--fl-viewer-muted);
     font-size: var(--fl-font-micro);
     line-height: 1.5;
+  }
+  /* Touch keeps the 44px targets. */
+  @media (pointer: coarse) {
+    .slideshow-settings-row select,
+    .slideshow-settings-check {
+      min-height: var(--fl-control-height);
+    }
+  }
+  /* media-viewer.css:2083-2087 */
+  @media (max-width: 700px) {
+    .slideshow-settings {
+      left: max(10px, env(safe-area-inset-left));
+      max-width: calc(100% - 20px);
+    }
   }
   /* media-viewer.css:193-202 (mv-pop) */
   @keyframes fl-slideshow-settings-pop {

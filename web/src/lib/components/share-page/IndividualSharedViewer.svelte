@@ -9,7 +9,7 @@
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
-  import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
+  import { getDropUploadContext } from '$lib/stores/drag-and-drop-files.store';
   import { handlePromiseError } from '$lib/utils';
   import { downloadArchive, ignoreCancelledDownload, navigateToAsset } from '$lib/utils/asset-utils';
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
@@ -52,19 +52,38 @@
     namedArchiveName(sharedLink.description, $t('frameleaf_archive_name_shared')),
   );
 
-  // Ends with the page: a subscription left behind would take files dropped on the next share into
-  // this one (FL-56, a link session's data goes with it).
-  const stopDropUploads = dragAndDropFilesStore.subscribe((value) => {
-    if (!(value.isDragging && value.files.length > 0)) {
+  let alive = true;
+  let generation = 0;
+  let previousLinkId: string | undefined;
+  $effect.pre(() => {
+    if (sharedLink.id === previousLinkId) {
       return;
     }
-    // Only a link that allows uploads takes dropped files; the server refuses the rest anyway.
-    if (sharedLink.allowUpload) {
-      handlePromiseError(handleUploadAssets(value.files));
-    }
-    dragAndDropFilesStore.set({ isDragging: false, files: [] });
+    previousLinkId = sharedLink.id;
+    generation++;
+    selectMode = false;
   });
-  onDestroy(stopDropUploads);
+  const captureView = () => {
+    const owner = generation;
+    const params = { ...authManager.params };
+    const isCurrentSession = authManager.captureSession();
+    return () =>
+      alive &&
+      owner === generation &&
+      isCurrentSession() &&
+      params.key === authManager.params.key &&
+      params.slug === authManager.params.slug;
+  };
+
+  const stopDropUploads = getDropUploadContext()?.register((files) => {
+    if (sharedLink.allowUpload) {
+      handlePromiseError(handleUploadAssets(files));
+    }
+  });
+  onDestroy(() => {
+    alive = false;
+    stopDropUploads?.();
+  });
 
   // A cancelled download is the user's choice, not an error to log.
   const download = (assetIds: string[]) =>
@@ -75,16 +94,24 @@
    * so the link is read again to show the new items, and the count is announced.
    */
   const handleUploadAssets = async (files: File[] = []) => {
+    const params = { ...authManager.params };
+    const isCurrent = captureView();
     try {
       const uploaded = await (files.length === 0 ? openFileUploadDialog() : fileUploadHandler({ files }));
       const count = uploaded.filter(Boolean).length;
-      if (count === 0) {
+      if (count === 0 || !isCurrent()) {
         return;
       }
-      sharedLink = await getMySharedLink({ ...authManager.params });
+      const updated = await getMySharedLink(params);
+      if (!isCurrent()) {
+        return;
+      }
+      sharedLink = updated;
       toastManager.success($t('frameleaf_public_added', { values: { count } }));
     } catch (error) {
-      handleError(error, $t('errors.unable_to_add_assets_to_shared_link'));
+      if (isCurrent()) {
+        handleError(error, $t('errors.unable_to_add_assets_to_shared_link'));
+      }
     }
   };
 

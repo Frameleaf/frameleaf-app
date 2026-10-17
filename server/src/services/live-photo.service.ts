@@ -7,7 +7,6 @@ import {
   LivePhotoRelinkResponseDto,
 } from 'src/dtos/live-photo.dto.js';
 import { AssetType, AssetVisibility } from 'src/enum.js';
-import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -31,7 +30,6 @@ export class LivePhotoService {
   constructor(
     private logger: LoggingRepository,
     private assetRepository: AssetRepository,
-    private albumRepository: AlbumRepository,
     private eventRepository: EventRepository,
     private livePhotoRepository: LivePhotoRepository,
     private configRepository: ConfigRepository,
@@ -89,15 +87,8 @@ export class LivePhotoService {
   }
 
   async relink(auth: AuthDto, dto: LivePhotoRelinkDto): Promise<LivePhotoRelinkResponseDto> {
-    const ownerId = auth.user.id;
-    const assetIds = [...new Set(dto.pairs.flatMap(({ photoId, videoId }) => [photoId, videoId]))];
-    const assets = await this.assetRepository.getByIds(assetIds);
-    const assetById = new Map(assets.map((asset) => [asset.id, asset]));
-
     const results: LivePhotoRelinkResponseDto['results'] = [];
-    // `assetById` is a single snapshot, so guard against a request that reuses the
-    // same photo or video across pairs — otherwise a later pair would validate
-    // against stale state and overwrite an already-applied link.
+    // Keep successful pairs when a later pair is rejected, and refuse same-request reuse.
     const linkedPhotos = new Set<string>();
     const linkedVideos = new Set<string>();
     for (const { photoId, videoId } of dto.pairs) {
@@ -106,27 +97,12 @@ export class LivePhotoService {
         continue;
       }
 
-      const error = await this.validatePair(
-        ownerId,
-        videoId,
-        assetById.get(photoId),
-        assetById.get(videoId),
-        !!auth.session?.hasElevatedPermission,
-      );
-      if (error) {
-        results.push({ photoId, videoId, success: false, error });
-        continue;
+      const result = await this.relinkOne(auth, photoId, videoId);
+      if (result.success) {
+        linkedPhotos.add(photoId);
+        linkedVideos.add(videoId);
       }
-
-      // Re-validated above: photo is owned, unlinked, and the video is a
-      // standalone motion asset owned by the same user.
-      await linkLivePhotoAssets(
-        { asset: this.assetRepository, album: this.albumRepository, event: this.eventRepository },
-        { photoAssetId: photoId, motionAssetId: videoId, motionOwnerId: ownerId },
-      );
-      linkedPhotos.add(photoId);
-      linkedVideos.add(videoId);
-      results.push({ photoId, videoId, success: true });
+      results.push({ photoId, videoId, ...result });
     }
 
     return { results };
@@ -136,29 +112,29 @@ export class LivePhotoService {
    * Validate and link a single still + video pair (FL-70). Used by the durable bulk-operation
    * worker (`relink-live-photo`), which applies its frozen set of stills one item at a time and
    * does its own cross-item deduplication and access accounting for the batch; `relink` above
-   * keeps its own single-request bulk fetch and same-request reuse guard unchanged.
+   * keeps its same-request reuse guard.
    */
   async relinkOne(auth: AuthDto, photoId: string, videoId: string): Promise<{ success: boolean; error?: string }> {
     const ownerId = auth.user.id;
-    const assets = await this.assetRepository.getByIds([photoId, videoId]);
-    const assetById = new Map(assets.map((asset) => [asset.id, asset]));
-
-    const error = await this.validatePair(
-      ownerId,
-      videoId,
-      assetById.get(photoId),
-      assetById.get(videoId),
-      !!auth.session?.hasElevatedPermission,
-    );
-    if (error) {
-      return { success: false, error };
+    const result = await this.livePhotoRepository.withRelinkTransaction(photoId, videoId, async (assets, albums) => {
+      const rows = await assets.getByIds([photoId, videoId]);
+      const assetById = new Map(rows.map((asset) => [asset.id, asset]));
+      const error = await this.validatePair(
+        assets,
+        ownerId,
+        videoId,
+        assetById.get(photoId),
+        assetById.get(videoId),
+        !!auth.session?.hasElevatedPermission,
+      );
+      if (error) return { success: false, error };
+      await linkLivePhotoAssets({ asset: assets, album: albums }, { photoAssetId: photoId, motionAssetId: videoId });
+      return { success: true };
+    });
+    if (result.success) {
+      await this.eventRepository.emit('AssetHide', { assetId: videoId, userId: ownerId });
     }
-
-    await linkLivePhotoAssets(
-      { asset: this.assetRepository, album: this.albumRepository, event: this.eventRepository },
-      { photoAssetId: photoId, motionAssetId: videoId, motionOwnerId: ownerId },
-    );
-    return { success: true };
+    return result;
   }
 
   /**
@@ -167,6 +143,7 @@ export class LivePhotoService {
    * belong to the user, and are still eligible for relinking.
    */
   private async validatePair(
+    assetRepository: AssetRepository,
     ownerId: string,
     videoId: string,
     photo:
@@ -181,7 +158,7 @@ export class LivePhotoService {
     video:
       | { ownerId: string; type: AssetType; deletedAt: Date | null; visibility: AssetVisibility; isLocked?: boolean }
       | undefined,
-    elevated = false,
+    elevated: boolean,
   ): Promise<string | undefined> {
     if (!photo || !video) {
       return 'Asset not found';
@@ -210,7 +187,7 @@ export class LivePhotoService {
     if (video.visibility === AssetVisibility.Hidden) {
       return 'Video is already part of a live photo';
     }
-    const existingLinks = await this.assetRepository.getLivePhotoCount(videoId);
+    const existingLinks = await assetRepository.getLivePhotoCount(videoId);
     if (existingLinks > 0) {
       return 'Video is already linked to another image';
     }

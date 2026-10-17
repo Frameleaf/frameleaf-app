@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import {
   ExpressionBuilder,
   Insertable,
@@ -9,12 +9,12 @@ import {
   Selectable,
   ShallowDehydrateObject,
   Transaction,
-  UpdateResult,
   sql,
 } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { isEmpty, isUndefined, omitBy } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
+import { randomUUID } from 'node:crypto';
 import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { CameraIdentification } from 'src/utils/camera-identification.js';
@@ -37,6 +37,7 @@ import {
   TimeBucketDateType,
 } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
 import { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
@@ -47,6 +48,7 @@ import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { getLivePhotoMotion } from 'src/utils/asset.util.js';
 import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import {
   anyUuid,
@@ -80,10 +82,12 @@ import {
   withTags,
 } from 'src/utils/database.js';
 import { lockDerivedResults, releaseDerivedResults } from 'src/utils/derivative-locks.js';
+import { normalizeImportPath } from 'src/utils/library-paths.js';
 import { lockAssetRowsInOrder, onStacksJoined, otherStackMembers } from 'src/utils/locked-stacks.js';
 import {
   effectiveVisibility,
   isLocked,
+  isLockedRow,
   isNotLocked,
   isOnTimelineWhateverLock,
   isTimelineVisible,
@@ -94,6 +98,7 @@ import {
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
 import { globToPostgresRegex } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
+import { escapeLikeTerm } from 'src/utils/trash-review.js';
 
 export type AssetStats = Record<AssetType, number>;
 /** FL-97: what became of a Studio HDR intermediate's original. */
@@ -266,13 +271,25 @@ interface AssetBuilderOptions extends HiddenContentQueryOptions {
    */
   lockedRuleMatches?: HiddenContentFilter;
 }
+/** LIB-P3: a timeline narrowed to one owner's Best Photos (see `isBestPhotoOf`). */
+export interface TimelineBestPhotos {
+  ownerId: string;
+  minScore: number;
+}
 export interface TimeBucketOptions extends AssetBuilderOptions {
   dateType?: TimeBucketDateType;
   orderBy?: AssetOrderBy;
   order?: AssetOrder;
+  /** DISCOVERY-P4: with `tagId`, false matches only that tag itself, not the tags inside it */
+  withChildTags?: boolean;
+  /** LIB-P3: only this owner's own Best Photos; set by the service for the caller only */
+  bestPhotos?: TimelineBestPhotos;
 }
-/** FL-30 (S-15): the flat Browse/Work orders the time buckets cannot give. */
-export type TimelineOrderedSort = 'filename' | 'rating';
+/**
+ * FL-30 (S-15): the flat Browse/Work orders the time buckets cannot give. LIB-P3: `quality` is the
+ * viewer's own Best Photos score, highest first; an asset without a score of theirs sorts last.
+ */
+export type TimelineOrderedSort = 'filename' | 'rating' | 'quality';
 export interface TimelineOrderedPage {
   sort: TimelineOrderedSort;
   cursor?: { key: string | number; date: string; id: string };
@@ -387,6 +404,24 @@ const timelineVisibility = (options: AssetBuilderOptions) => {
   const ruleMatch = hiddenContentAssetIdExists(sql.ref('asset.id'), options.lockedRuleMatches);
   return sql<boolean>`(${visibility} or (${listed} and ${ruleMatch}))`;
 };
+/**
+ * LIB-P3: the owner's own Best Photos, scoped as `BestPhotosRepository.getBestPhotos` scopes them: their
+ * own images and videos with a score row of theirs at `minScore` or higher. The owner test stands on its
+ * own, so no widening of the owner scope (a person's shared-album media) can bring in someone else's.
+ */
+const isBestPhotoOf = (eb: ExpressionBuilder<DB, 'asset'>, { ownerId, minScore }: TimelineBestPhotos) =>
+  eb.and([
+    eb('asset.ownerId', '=', asUuid(ownerId)),
+    eb('asset.type', 'in', [AssetType.Image, AssetType.Video]),
+    eb.exists(
+      eb
+        .selectFrom('asset_best_photo_score')
+        .select(sql.lit(1).as('exists'))
+        .whereRef('asset_best_photo_score.assetId', '=', 'asset.id')
+        .where('asset_best_photo_score.ownerId', '=', asUuid(ownerId))
+        .where('asset_best_photo_score.score', '>=', minScore),
+    ),
+  ]);
 @Injectable()
 export class AssetRepository {
   private readonly smartAlbums: SmartAlbumRepository;
@@ -405,18 +440,13 @@ export class AssetRepository {
       },
     ],
   })
-  async upsertExif({
-    exif,
-    audio,
-    video,
-    keyframes,
-    lockedPropertiesBehavior,
-    expectedUpdateId,
-    cameraEvidence,
-  }: UpsertExifOptions): Promise<void> {
-    let query = this.db;
+  async upsertExif(
+    { exif, audio, video, keyframes, lockedPropertiesBehavior, expectedUpdateId, cameraEvidence }: UpsertExifOptions,
+    kysely?: Transaction<DB>,
+  ): Promise<void> {
+    let query: Kysely<DB> = kysely ?? this.db;
     if (audio) {
-      (query as any) = this.db.with('audio', (qb) =>
+      (query as any) = query.with('audio', (qb) =>
         qb
           .insertInto('asset_audio')
           .values(audio)
@@ -972,9 +1002,10 @@ export class AssetRepository {
                   ])
                   .as('year'),
               )
-              .select((eb) => eb.fn('make_date', [sql`year::int`, sql`${month}::int`, sql`${day}::int`]).as('date')),
+              .select(sql<Date>`make_date(year::int, ${month}::int, 1) + (${day}::int - 1)`.as('date')),
           )
           .selectFrom('today')
+          .where(sql`date_part('month', today.date)`, '=', month)
           .innerJoinLateral(
             (qb) =>
               qb
@@ -1586,6 +1617,111 @@ export class AssetRepository {
       return updated;
     });
   }
+  async createLivePhotoUpload(asset: Insertable<AssetTable>, lock?: Parameters<AssetRepository['create']>[1]) {
+    const motionId = asset.livePhotoVideoId;
+    if (!motionId || asset.type !== AssetType.Image)
+      throw new BadRequestException('A live photo must be an image paired with a video');
+    const id = asset.id ?? randomUUID();
+    return this.withLivePhotoGroup([id, motionId], async (assets) => {
+      const motion = await getLivePhotoMotion(assets, asset.ownerId, motionId);
+      if (motion.deletedAt || (isLockedRow(motion) && !lock))
+        throw new BadRequestException('Live photo video not found');
+      if (lock) {
+        const group = await assets.getByIds(await assets.findLockGroupIds([motionId]));
+        if (group.some((asset) => asset.ownerId !== motion.ownerId)) throw new BadRequestException('Asset not found');
+      }
+      const created = await assets.create({ ...asset, id });
+      const hiddenId = motion.visibility === AssetVisibility.Timeline ? motion.id : undefined;
+      if (hiddenId) await assets.update({ id: hiddenId, visibility: AssetVisibility.Hidden });
+      const lockedIds = lock ? await assets.lock([id], lock.reason, lock.lockedBy) : [];
+      return { asset: created, hiddenId, lockedIds };
+    });
+  }
+
+  async withMetadataUpdate<T>(
+    id: string,
+    write: (assets: AssetRepository, access: AccessRepository, tx: Transaction<DB>) => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await this.inTransaction(async (tx) => {
+        await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${id.toLowerCase()})::int)`.execute(tx);
+        // Pin missing EXIF inserts through their parent FK; refuse existing writer lock inversions.
+        await tx
+          .selectFrom('asset')
+          .select('id')
+          .where('id', '=', asUuid(id))
+          .forUpdate()
+          .noWait()
+          .executeTakeFirstOrThrow(() => new BadRequestException('Asset not found'));
+        await tx
+          .selectFrom('asset_exif')
+          .select('assetId')
+          .where('assetId', '=', asUuid(id))
+          .forUpdate()
+          .noWait()
+          .execute();
+        return write(new AssetRepository(tx), new AccessRepository(tx), tx as Transaction<DB>);
+      });
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && (error.code === '55P03' || error.code === '40P01')) {
+        throw new ConflictException('The asset metadata is changing; retry the update.');
+      }
+      throw error;
+    }
+  }
+
+  async withLivePhotoUpdate<T>(
+    id: string,
+    motionId: string | null,
+    write: (assets: AssetRepository, access: AccessRepository) => Promise<T>,
+  ): Promise<T> {
+    const initial = await this.getById(id);
+    if (!initial) throw new BadRequestException('Asset not found');
+    const roots = [id, initial.livePhotoVideoId, motionId].filter((id): id is string => !!id);
+    return this.withLivePhotoGroup(roots, async (assets, access) => {
+      const current = await assets.getById(id);
+      if (!current || current.livePhotoVideoId !== initial.livePhotoVideoId) {
+        throw new ConflictException('The Live Photo or its stack is changing; retry the update.');
+      }
+      return write(assets, access);
+    });
+  }
+
+  private async withLivePhotoGroup<T>(
+    roots: string[],
+    write: (assets: AssetRepository, access: AccessRepository) => Promise<T>,
+  ): Promise<T> {
+    const lockedSet = new Set([...roots, ...(await this.findLockGroupIds(roots))].map((id) => id.toLowerCase()));
+    const lockedIds = [...lockedSet].sort();
+    try {
+      return await this.inTransaction(async (tx) => {
+        for (const id of lockedIds) {
+          await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${id})::int)`.execute(tx);
+        }
+        // Group writers may hold rows before metadata locks; refuse contention rather than invert their order.
+        await tx
+          .selectFrom('asset')
+          .select('id')
+          .where('id', 'in', lockedIds)
+          .orderBy('id')
+          .forUpdate()
+          .noWait()
+          .execute();
+        const assets = new AssetRepository(tx);
+        const group = await assets.findLockGroupIds(roots);
+        if (group.some((id) => !lockedSet.has(id.toLowerCase()))) {
+          throw new ConflictException('The Live Photo or its stack is changing; retry the update.');
+        }
+        return write(assets, new AccessRepository(tx));
+      });
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && (error.code === '55P03' || error.code === '40P01')) {
+        throw new ConflictException('The Live Photo or its stack is changing; retry the update.');
+      }
+      throw error;
+    }
+  }
+
   /** Runs `callback` in a transaction, joining the current one when this repository is bound to it. */
   private inTransaction<T>(callback: (tx: Kysely<DB>) => Promise<T>): Promise<T> {
     return this.db.isTransaction ? callback(this.db) : this.db.transaction().execute(callback);
@@ -2168,7 +2304,8 @@ export class AssetRepository {
         .$if(options.isDuplicate !== undefined, (qb) =>
           qb.where('asset.duplicateId', options.isDuplicate ? 'is not' : 'is', null),
         )
-        .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!))
+        .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!, options.withChildTags))
+        .$if(!!options.bestPhotos, (qb) => qb.where((eb) => isBestPhotoOf(eb, options.bestPhotos!)))
     );
   }
   private timelineBucketDate(options: TimeBucketOptions, size: 'MONTH' | 'YEAR' = 'MONTH') {
@@ -2309,10 +2446,13 @@ export class AssetRepository {
         },
   ) {
     const { timeBucket, page } = target;
-    const sortKey =
-      page?.sort === 'filename'
-        ? sql`asset."originalFileName" collate "und-x-icu"`
-        : sql`coalesce(asset_exif.rating, 0)`;
+    const sortKeys: Record<TimelineOrderedSort, RawBuilder<unknown>> = {
+      filename: sql`asset."originalFileName" collate "und-x-icu"`,
+      rating: sql`coalesce(asset_exif.rating, 0)`,
+      // LIB-P3: never null, so the keyset seek holds; scores are 0 to 1, so -1 puts the unscored last
+      quality: sql`coalesce(best_photo_score.score, -1)`,
+    };
+    const sortKey = sortKeys[page?.sort ?? 'rating'];
     const keyAscending = page?.sort === 'filename';
     const reverse = !!page?.reverse;
     const order = options.order ?? 'desc';
@@ -2342,6 +2482,14 @@ export class AssetRepository {
         qb
           .selectFrom('asset')
           .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+          // LIB-P3: the viewer's own score only (one row per asset), so the order never ranks by another's
+          .$if(page?.sort === 'quality', (qb) =>
+            qb.leftJoin('asset_best_photo_score as best_photo_score', (join) =>
+              join
+                .onRef('best_photo_score.assetId', '=', 'asset.id')
+                .on('best_photo_score.ownerId', '=', asUuid(auth.user.id)),
+            ),
+          )
           .select((eb) => [
             'asset.duration',
             'asset.id',
@@ -2464,7 +2612,8 @@ export class AssetRepository {
             qb.where('asset.duplicateId', options.isDuplicate ? 'is not' : 'is', null),
           )
           .$if(!!options.isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
-          .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!))
+          .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!, options.withChildTags))
+          .$if(!!options.bestPhotos, (qb) => qb.where((eb) => isBestPhotoOf(eb, options.bestPhotos!)))
           .$if(!page, (qb) =>
             qb.orderBy(orderDate, order).orderBy(orderTimestamp, order).orderBy('asset.originalFileName', order),
           )
@@ -2606,7 +2755,7 @@ export class AssetRepository {
     return { fieldName: 'createdAt', items };
   }
   @GenerateSql({ params: [[DummyValue.UUID]] })
-  @ChunkedArray()
+  @ChunkedSet()
   async getNsfwAssetIds(ids: string[]): Promise<Set<string>> {
     if (ids.length === 0) {
       return new Set();
@@ -2686,32 +2835,7 @@ export class AssetRepository {
       .where('id', '=', anyUuid(files.map((file) => file.id)))
       .execute();
   }
-  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.STRING], [DummyValue.STRING]] })
-  async detectOfflineExternalAssets(
-    libraryId: string,
-    importPaths: string[],
-    exclusionPatterns: string[],
-  ): Promise<UpdateResult> {
-    const paths = importPaths.map((importPath) => `${importPath}%`);
-    const exclusions = exclusionPatterns.map((pattern) => globToPostgresRegex(pattern));
-    return this.db
-      .updateTable('asset')
-      .set({
-        isOffline: true,
-        deletedAt: new Date(),
-      })
-      .where('isOffline', '=', false)
-      .where('isExternal', '=', true)
-      .where('libraryId', '=', asUuid(libraryId))
-      .where((eb) =>
-        eb.or([
-          eb.not(eb.or(paths.map((path) => eb('originalPath', 'like', path)))),
-          eb.or(exclusions.map((pattern) => eb('originalPath', '~', pattern))),
-        ]),
-      )
-      .executeTakeFirstOrThrow();
-  }
-  /** Same exclusion semantics as detectOfflineExternalAssets, restricted to one accepted library page. */
+  /** Excluded assets in one accepted library page, using literal import-folder boundaries. */
   async getExcludedExternalAssetIds(
     libraryId: string,
     ids: string[],
@@ -2720,7 +2844,7 @@ export class AssetRepository {
   ): Promise<string[]> {
     if (ids.length > 250) throw new Error('Library exclusion checks are limited to 250 assets');
     if (ids.length === 0) return [];
-    const paths = importPaths.map((importPath) => `${importPath}%`);
+    const paths = importPaths.map((path) => normalizeImportPath(path));
     const exclusions = exclusionPatterns.map((pattern) => globToPostgresRegex(pattern));
     const rows = await this.db
       .selectFrom('asset')
@@ -2731,7 +2855,16 @@ export class AssetRepository {
       .where('isExternal', '=', true)
       .where((eb) =>
         eb.or([
-          eb.not(eb.or(paths.map((path) => eb('originalPath', 'like', path)))),
+          eb.not(
+            eb.or(
+              paths.map((path) =>
+                eb.or([
+                  eb('originalPath', '=', path),
+                  eb('originalPath', 'like', `${escapeLikeTerm(path === '/' ? '/' : `${path}/`)}%`),
+                ]),
+              ),
+            ),
+          ),
           eb.or(exclusions.map((pattern) => eb('originalPath', '~', pattern))),
         ]),
       )
@@ -2839,6 +2972,28 @@ export class AssetRepository {
       LIMIT 1
     `.execute(this.db);
     return rows[0];
+  }
+  /** The current develop version of each of these assets that has one, for a download of them as shown. */
+  async getCurrentDevelops(ids: string[]) {
+    if (ids.length === 0) {
+      return [];
+    }
+    const { rows } = await sql<{
+      assetId: string;
+      ownerId: string;
+      status: AssetDevelopRevisionStatus;
+      previewPath: string | null;
+      masterPath: string | null;
+      hdrMasterPath?: string | null;
+      hdrPreviewPath?: string | null;
+      hdrRenditionChecksum?: Buffer | null;
+      renderedAt?: Date | null;
+    }>`
+      SELECT "assetId", "ownerId", status, "previewPath", "masterPath", "hdrMasterPath", "hdrPreviewPath", "hdrRenditionChecksum", "renderedAt"
+      FROM public.asset_develop_revision
+      WHERE "assetId" = ANY(${ids}::uuid[]) AND "isCurrent"
+    `.execute(this.db);
+    return rows;
   }
   /**
    * FL-97: what is known about the Studio HDR intermediates in `public.studio_hdr_intermediate` for these videos.

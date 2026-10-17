@@ -498,6 +498,50 @@ describe(StudioPreviewStreamService.name, () => {
   });
 
   describe('close', () => {
+    it('reports recorded close intent when the cancellation write fails', async () => {
+      const { id } = await sut.open(auth(), openDto());
+      await workerOffers(id);
+      operations.requestCancel.mockRejectedValue(new Error('cancellation write unavailable'));
+      await sut.closeOwned(auth(), id);
+      expect(await sut.get(auth(), id)).toMatchObject({ state: 'closed', closeReason: 'closed', offer: null });
+    });
+
+    it('tells the worker to stop from recorded close intent when cancellation fails', async () => {
+      const { id } = await sut.open(auth(), openDto());
+      await workerOffers(id);
+      operations.requestCancel.mockRejectedValue(new Error('cancellation write unavailable'));
+      await sut.revokeForProjects([PROJECT]);
+      expect(await sut.workerSignal((await operations.getForWorker(id))!)).toMatchObject({
+        close: true,
+        closeReason: 'revoked',
+        offerNeeded: false,
+        answer: null,
+      });
+    });
+
+    it('refuses answers and reconnects after recorded close intent despite cancellation failure', async () => {
+      const { id } = await sut.open(auth(), openDto());
+      await workerOffers(id);
+      operations.requestCancel.mockRejectedValue(new Error('cancellation write unavailable'));
+      await sut.closeOwned(auth(), id);
+      await expect(sut.answer(auth(), id, { negotiation: 0, sdp: ANSWER })).rejects.toBeInstanceOf(GoneException);
+      await expect(sut.reconnect(auth(), id)).rejects.toBeInstanceOf(GoneException);
+    });
+
+    it('refuses worker offers after recorded close intent despite cancellation failure', async () => {
+      const { id } = await sut.open(auth(), openDto());
+      const claimed = operations.claim(id);
+      operations.requestCancel.mockRejectedValue(new Error('cancellation write unavailable'));
+      await sut.closeOwned(auth(), id);
+      expect(
+        await sut.workerOffer((await operations.getForWorker(id))!, {
+          claimToken: claimed.claimToken!,
+          negotiation: 0,
+          sdp: OFFER,
+        }),
+      ).toEqual({ accepted: false });
+    });
+
     it('ends an unclaimed session at once and a claimed one through its worker', async () => {
       const queued = await sut.open(auth(), openDto());
       expect(await sut.closeOwned(auth(), queued.id)).toMatchObject({ state: 'closed', closeReason: 'closed' });

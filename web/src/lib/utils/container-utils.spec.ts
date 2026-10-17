@@ -1,8 +1,9 @@
 import {
-  getContentMetrics,
+  type ContentMetrics,
   getNaturalSize,
   mapNormalizedRectToContent,
   mapNormalizedToContent,
+  type Size,
   scaleToCover,
   scaleToFit,
 } from '$lib/utils/container-utils';
@@ -46,45 +47,6 @@ describe('scaleToFit', () => {
 
   it('should handle square images in portrait container', () => {
     expect(scaleToFit({ width: 500, height: 500 }, { width: 400, height: 600 })).toEqual({ width: 400, height: 400 });
-  });
-});
-
-describe('getContentMetrics', () => {
-  it('should compute zero offsets when aspect ratios match', () => {
-    const img = mockImage({ naturalWidth: 1600, naturalHeight: 900, width: 800, height: 450 });
-    expect(getContentMetrics(img)).toEqual({
-      contentWidth: 800,
-      contentHeight: 450,
-      offsetX: 0,
-      offsetY: 0,
-    });
-  });
-
-  it('should compute horizontal letterbox offsets for tall image', () => {
-    const img = mockImage({ naturalWidth: 1000, naturalHeight: 2000, width: 800, height: 600 });
-    const metrics = getContentMetrics(img);
-    expect(metrics.contentWidth).toBe(300);
-    expect(metrics.contentHeight).toBe(600);
-    expect(metrics.offsetX).toBe(250);
-    expect(metrics.offsetY).toBe(0);
-  });
-
-  it('should compute vertical letterbox offsets for wide image', () => {
-    const img = mockImage({ naturalWidth: 2000, naturalHeight: 1000, width: 800, height: 600 });
-    const metrics = getContentMetrics(img);
-    expect(metrics.contentWidth).toBe(800);
-    expect(metrics.contentHeight).toBe(400);
-    expect(metrics.offsetX).toBe(0);
-    expect(metrics.offsetY).toBe(100);
-  });
-
-  it('should use clientWidth/clientHeight for video elements', () => {
-    const video = mockVideo({ videoWidth: 1920, videoHeight: 1080, clientWidth: 800, clientHeight: 600 });
-    const metrics = getContentMetrics(video);
-    expect(metrics.contentWidth).toBe(800);
-    expect(metrics.contentHeight).toBe(450);
-    expect(metrics.offsetX).toBe(0);
-    expect(metrics.offsetY).toBe(75);
   });
 });
 
@@ -175,5 +137,91 @@ describe('mapNormalizedRectToContent', () => {
     const size = { width: 800, height: 400 };
     const rect = mapNormalizedRectToContent({ x: 0.25, y: 0.25 }, { x: 0.75, y: 0.75 }, size);
     expect(rect).toEqual({ left: 200, top: 100, width: 400, height: 200 });
+  });
+});
+
+describe('coordinate invariants', () => {
+  it('preserves endpoint rounding before subtracting offsets', () => {
+    const metrics = { contentWidth: 1, contentHeight: 1, offsetX: 2 ** 53, offsetY: -(2 ** 53) };
+    expect(mapNormalizedRectToContent({ x: 0, y: 0 }, { x: 1, y: 1 }, metrics)).toEqual({
+      left: 2 ** 53,
+      top: -(2 ** 53),
+      width: 0,
+      height: 1,
+    });
+  });
+
+  it('preserves signed zero, non-finite values, reversed points and inherited metrics without mutation', () => {
+    const values = [-0, 0, -1, 1, Number.MIN_VALUE, Number.MAX_VALUE, NaN, Infinity, -Infinity];
+    const inherited: ContentMetrics = Object.freeze(
+      Object.create({
+        contentWidth: 800,
+        contentHeight: 600,
+        offsetX: 250,
+        offsetY: 100,
+      }),
+    );
+    const sizes: (Size | ContentMetrics)[] = [
+      Object.freeze({ width: 800, height: 600 }),
+      Object.freeze({ width: -0, height: -0 }),
+      Object.freeze({ contentWidth: Infinity, contentHeight: 0, offsetX: -Infinity, offsetY: -0 }),
+      inherited,
+    ];
+    for (const size of sizes) {
+      for (const x of values) {
+        for (const y of values) {
+          const topLeft = Object.freeze({ x, y });
+          const bottomRight = Object.freeze({ x: y, y: x });
+          const tl = mapNormalizedToContent(topLeft, size);
+          const br = mapNormalizedToContent(bottomRight, size);
+          const result = mapNormalizedRectToContent(topLeft, bottomRight, size);
+          expect(result.top).toBe(tl.y);
+          expect(result.left).toBe(tl.x);
+          expect(result.width).toBe(br.x - tl.x);
+          expect(result.height).toBe(br.y - tl.y);
+        }
+      }
+    }
+  });
+
+  it('matches independent point mapping across seeded finite rectangles', () => {
+    let seed = 0x5e_43_06_39;
+    const random = () => {
+      seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0;
+      return seed / 2 ** 32;
+    };
+    for (let i = 0; i < 256; i++) {
+      const topLeft = Object.freeze({ x: random() * 4 - 2, y: random() * 4 - 2 });
+      const bottomRight = Object.freeze({ x: random() * 4 - 2, y: random() * 4 - 2 });
+      const size = Object.freeze({ width: random() * 8000, height: random() * 8000 });
+      const metrics = Object.freeze({
+        contentWidth: size.width,
+        contentHeight: size.height,
+        offsetX: random() * 4000,
+        offsetY: random() * 4000,
+      });
+      for (const dimensions of [size, metrics]) {
+        const tl = mapNormalizedToContent(topLeft, dimensions);
+        const br = mapNormalizedToContent(bottomRight, dimensions);
+        expect(mapNormalizedRectToContent(topLeft, bottomRight, dimensions)).toEqual({
+          top: tl.y,
+          left: tl.x,
+          width: br.x - tl.x,
+          height: br.y - tl.y,
+        });
+      }
+    }
+  });
+
+  it('reads new image and video dimensions after a resize or source change', () => {
+    const image = mockImage({ naturalWidth: 2000, naturalHeight: 1000, width: 800, height: 600 });
+    const video = mockVideo({ videoWidth: 2000, videoHeight: 1000, clientWidth: 800, clientHeight: 600 });
+    expect(getNaturalSize(image)).toEqual(getNaturalSize(video));
+    Object.assign(image, { naturalWidth: 1000, naturalHeight: 2000, width: 400, height: 300 });
+    Object.assign(video, { videoWidth: 1000, videoHeight: 2000, clientWidth: 400, clientHeight: 300 });
+    expect(getNaturalSize(image)).toEqual({ width: 1000, height: 2000 });
+    expect(getNaturalSize(video)).toEqual(getNaturalSize(image));
+    expect(scaleToFit(getNaturalSize(image), { width: 400, height: 300 })).toEqual({ width: 150, height: 300 });
+    expect(scaleToFit(getNaturalSize(video), { width: 400, height: 300 })).toEqual({ width: 150, height: 300 });
   });
 });

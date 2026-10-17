@@ -73,7 +73,9 @@ const wrap = (gateway: Gateway, method: MappingGateway['method']): MappingGatewa
  */
 @Injectable()
 export class EdgePortMappingService {
+  private generation = 0;
   private gateway: MappingGateway | null = null;
+  private inFlight: MappingGateway | null = null;
   private mapped: { key: string; internalPort: number; refreshAt: number } | null = null;
   private retryAt = 0;
   private current: PortMappingStatus = IDLE;
@@ -108,6 +110,7 @@ export class EdgePortMappingService {
     externalPort: number;
     now?: number;
   }): Promise<PortMappingStatus> {
+    let generation = this.generation;
     const now = input.now ?? Date.now();
     const key = `${input.internalHost}:${input.internalPort}>${input.externalPort}`;
     if (this.mapped?.key === key && now < this.mapped.refreshAt) {
@@ -115,6 +118,8 @@ export class EdgePortMappingService {
     }
     if (this.mapped && this.mapped.key !== key) {
       await this.release();
+      if (this.generation !== generation + 1) return this.current;
+      generation++;
     }
     if (!this.mapped && now < this.retryAt) {
       return this.current;
@@ -127,10 +132,19 @@ export class EdgePortMappingService {
     let lastError: string | null = null;
     let answered = false;
     for (const next of candidates) {
+      if (generation !== this.generation) return this.current;
       const gateway = await next();
+      if (generation !== this.generation) {
+        if (gateway && !renewing) await this.closeGateway(gateway);
+        return this.current;
+      }
       if (!gateway) {
         continue;
       }
+      const confirmedPort = gateway === this.gateway ? this.mapped?.internalPort : undefined;
+      this.inFlight = gateway;
+      let opened = false;
+      let adopted = false;
       try {
         const externalPort = await gateway.map(
           input.internalPort,
@@ -138,11 +152,12 @@ export class EdgePortMappingService {
           input.externalPort,
           MAPPING_LEASE_SEC,
         );
+        opened = true;
+        if (generation !== this.generation) return this.current;
         answered = true;
         const externalIp = await gateway.externalIp().catch(() => null);
-        if (this.gateway && this.gateway !== gateway) {
-          await this.gateway.stop().catch(() => {});
-        }
+        if (generation !== this.generation) return this.current;
+        adopted = true;
         this.gateway = gateway;
         this.mapped = { key, internalPort: input.internalPort, refreshAt: now + MAPPING_REFRESH_MS };
         this.retryAt = 0;
@@ -159,16 +174,22 @@ export class EdgePortMappingService {
         }
         return this.current;
       } catch (error) {
+        if (generation !== this.generation) return this.current;
         // a router that answered discovery but refused the mapping still counts as a router
         answered ||= gateway.method === 'upnp';
         lastError = `${gateway.method === 'upnp' ? 'UPnP' : 'NAT-PMP'}: ${message(error)}`;
-        await gateway.stop().catch(() => {});
         if (gateway === this.gateway) {
           this.gateway = null;
+          this.mapped = null;
         }
+      } finally {
+        // Release leaves the transport alive until this request can remove its last confirmed lease.
+        if (!adopted) await this.closeGateway(gateway, opened ? input.internalPort : confirmedPort);
+        this.inFlight = null;
       }
     }
 
+    if (generation !== this.generation) return this.current;
     this.mapped = null;
     this.retryAt = now + MAPPING_RETRY_MS;
     this.current = { ...IDLE, error: lastError ?? 'No router answered UPnP or NAT-PMP.', noGateway: !answered };
@@ -178,17 +199,22 @@ export class EdgePortMappingService {
 
   /** Remove the mapping (remote access or direct connections off, unlinked, or shutting down). */
   async release(): Promise<void> {
+    this.generation++;
     const { gateway, mapped } = this;
     this.gateway = null;
     this.mapped = null;
     this.retryAt = 0;
     this.current = IDLE;
-    if (!gateway) {
+    if (!gateway || gateway === this.inFlight) {
       return;
     }
+    await this.closeGateway(gateway, mapped?.internalPort);
+  }
+
+  private async closeGateway(gateway: MappingGateway, internalPort?: number): Promise<void> {
     try {
-      if (mapped) {
-        await gateway.unmap(mapped.internalPort);
+      if (internalPort !== undefined) {
+        await gateway.unmap(internalPort);
         this.logger.log('The router no longer forwards the direct port');
       }
     } catch (error) {

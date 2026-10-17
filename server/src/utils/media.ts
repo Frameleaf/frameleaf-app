@@ -418,7 +418,18 @@ export class BaseConfig implements VideoCodecSWConfig {
   }
 
   getVideoCodec(): string {
-    return this.config.targetVideoCodec;
+    // Generic H.264/HEVC names can resolve to hardware encoders even with acceleration disabled.
+    switch (this.config.targetVideoCodec) {
+      case VideoCodec.H264: {
+        return 'libx264';
+      }
+      case VideoCodec.Hevc: {
+        return 'libx265';
+      }
+      default: {
+        return this.config.targetVideoCodec;
+      }
+    }
   }
 
   getBFrames() {

@@ -499,6 +499,36 @@ describe(AnalyticsService.name, () => {
   describe('handleCollect', () => {
     const written = () => analyticsRepository.upsertSamples.mock.calls[0][0] as AnalyticsSampleInsert[];
 
+    it.each(['library', 'thumbs', 'encoded-video'])(
+      'leaves generated measurements absent when the %s device is unknown',
+      async (unavailable) => {
+        storageRepository.getDevice.mockImplementation((path: string) =>
+          Promise.resolve(path.endsWith(unavailable) ? null : 1),
+        );
+        storageRepository.getFolderBytes.mockResolvedValue(700);
+        await expect(sut.handleCollect()).resolves.toBe(JobStatus.Success);
+        const samples = written();
+        const measured = ['thumbs', 'encoded-video'].filter(
+          (folder) => unavailable !== 'library' && unavailable !== folder,
+        );
+        expect(storageRepository.getFolderBytes.mock.calls.map(([path]) => path)).toEqual(
+          measured.map((folder) => `/data/${folder}`),
+        );
+        expect(
+          samples.filter((row) =>
+            [
+              AnalyticsSeriesId.HostThumbnailBytes,
+              AnalyticsSeriesId.HostThumbnailOtherDiskBytes,
+              AnalyticsSeriesId.HostEncodedVideoBytes,
+              AnalyticsSeriesId.HostEncodedVideoOtherDiskBytes,
+            ].includes(row.series),
+          ),
+        ).toHaveLength(measured.length);
+        expect(samples.some((row) => row.series === AnalyticsSeriesId.LibraryItems)).toBe(true);
+        expect(samples.find((row) => row.series === AnalyticsSeriesId.HostVolumeUsedBytes)?.value).toBe(600_000);
+      },
+    );
+
     it('keeps one generated folder when the other cannot be read', async () => {
       storageRepository.getFolderBytes.mockImplementation((folder: string) =>
         folder.endsWith('thumbs') ? Promise.reject(new Error('EACCES')) : Promise.resolve(700),

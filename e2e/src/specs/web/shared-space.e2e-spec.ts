@@ -8,6 +8,7 @@ import {
   removeUserFromAlbum,
   setUserOnboarding,
   updateAlbumUser,
+  updateMyPreferences,
 } from '@frameleaf/sdk';
 import { expect, test } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
@@ -52,14 +53,15 @@ test.describe('Shared spaces', () => {
     const space = await newSpace('Downgrade space');
     await utils.setAuthCookies(context, editor.accessToken);
     await page.goto(`/sharing/${space.id}`);
-    await expect(page.getByRole('heading', { name: 'Add everything matching' })).toBeVisible();
+    // SHARING-P5: "Add everything matching" waits behind the Photos tab's button.
+    await expect(page.getByRole('button', { name: 'Add matching…' })).toBeVisible();
 
     await updateAlbumUser(
       { id: space.id, userId: editor.userId, updateAlbumUserDto: { role: AlbumUserRole.Viewer } },
       { headers: asBearerAuth(owner.accessToken) },
     );
 
-    await expect(page.getByRole('heading', { name: 'Add everything matching' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Add matching…' })).toHaveCount(0);
   });
 
   test('takes a removed contributor out of the space at once', async ({ context, page }) => {
@@ -89,12 +91,20 @@ test.describe('Shared spaces', () => {
 
     await utils.setAuthCookies(context, editor.accessToken);
     await page.goto(`/sharing/${space.id}`);
-    const section = page.getByRole('region', { name: 'Add everything matching' });
-    // The count is asked for once the page is interactive; a click before hydration does nothing.
-    // The whole library is the source, so the count includes the editor's items from earlier cases.
-    const counted = section.getByText(/^\d+ items will be added\.$/);
+    // SHARING-P5: the choice is a dialog the Photos tab's button opens; progress stays on the tab.
+    const dialog = page.getByRole('dialog', { name: 'Add everything matching' });
+    // The Photos tab's strip. The (closed, see-through) selection bar further down carries the same
+    // session operations, so it is the first of two.
+    const section = page.getByRole('region', { name: 'Bulk operations' }).first();
+    // The button works once the page is interactive; a click before hydration does nothing.
     await expect(async () => {
-      await section.getByRole('button', { name: 'Check the count' }).click();
+      await page.getByRole('button', { name: 'Add matching…' }).click();
+      await expect(dialog).toBeVisible({ timeout: 2000 });
+    }).toPass();
+    // The whole library is the source, so the count includes the editor's items from earlier cases.
+    const counted = dialog.getByText(/^\d+ items will be added\.$/);
+    await expect(async () => {
+      await dialog.getByRole('button', { name: 'Check the count' }).click();
       await expect(counted).toBeVisible({ timeout: 2000 });
     }).toPass();
     const countText = await counted.textContent();
@@ -109,7 +119,8 @@ test.describe('Shared spaces', () => {
       await route.fallback();
     });
 
-    await section.getByRole('button', { name: `Add ${total} items` }).click();
+    await dialog.getByRole('button', { name: `Add ${total} items` }).click();
+    await expect(dialog).toBeHidden();
     await expect(section.getByText(/Working out what matches/)).toBeVisible();
     await section.getByRole('button', { name: 'Cancel' }).click();
     gate.release?.();
@@ -139,6 +150,11 @@ test.describe('Shared spaces', () => {
     await utils.createFace({ assetId: editorAsset.id, personGroupId: nana.id });
 
     const name = async (accessToken: string, personName: string, spaceName: string) => {
+      // ACCOUNT-P2: a space suggests your own people only once you turn that on (off by default).
+      await updateMyPreferences(
+        { userPreferencesUpdateDto: { people: { suggestInSpaces: true } } },
+        { headers: asBearerAuth(accessToken) },
+      );
       const context = await browser.newContext();
       await utils.setAuthCookies(context, accessToken);
       const page = await context.newPage();

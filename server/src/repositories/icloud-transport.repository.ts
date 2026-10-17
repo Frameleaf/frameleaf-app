@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { readFile } from 'node:fs/promises';
 import { request } from 'node:https';
 import type { IncomingMessage } from 'node:http';
@@ -23,6 +24,27 @@ export class ICloudTransportError extends Error {
 
 @Injectable()
 export class ICloudTransportRepository {
+  private readonly sessionCrypto = new AsyncLocalStorage<{ key: Buffer } | { error: unknown }>();
+
+  /** Capture configuration before locks; retain failure only if this operation actually needs crypto. */
+  async withSessionCrypto<T>(action: () => Promise<T>): Promise<T> {
+    if (this.sessionCrypto.getStore()) return action();
+    let prepared: { key: Buffer } | { error: unknown };
+    try {
+      prepared = { key: (await this.configuration()).key };
+    } catch (error) {
+      prepared = { error };
+    }
+    return this.sessionCrypto.run(prepared, action);
+  }
+
+  private async sessionKey(): Promise<Buffer> {
+    const prepared = this.sessionCrypto.getStore();
+    if (!prepared) return (await this.configuration()).key;
+    if ('error' in prepared) throw prepared.error;
+    return prepared.key;
+  }
+
   enabled(): boolean {
     return !!readAliasedEnv('FRAMELEAF_ICLOUD_BRIDGE_URL');
   }
@@ -54,14 +76,14 @@ export class ICloudTransportRepository {
   }
 
   async encodeSession(connectionId: string, session: unknown): Promise<string> {
-    return encryptICloudSession(await this.configuration().then((result) => result.key), connectionId, session);
+    return encryptICloudSession(await this.sessionKey(), connectionId, session);
   }
 
   async decodeSession(connectionId: string, encrypted: string | null): Promise<unknown> {
     if (!encrypted) {
       throw new ICloudTransportError('reauthentication_required');
     }
-    return decryptICloudSession(await this.configuration().then((result) => result.key), connectionId, encrypted);
+    return decryptICloudSession(await this.sessionKey(), connectionId, encrypted);
   }
 
   private async send(

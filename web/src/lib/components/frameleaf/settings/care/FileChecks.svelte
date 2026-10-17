@@ -423,13 +423,18 @@
   };
 
   const report = $derived(Object.values(IntegrityReport).find((type) => type === page.url.searchParams.get('report')));
-  const reportUrl = (type: IntegrityReport) => commandCenterUrl('care', 'integrity-checks', { report: type });
+  // A list opens on the page it was asked for from (Library care, or Maintenance's address for the
+  // same page), so its "‹ File checks" goes back to where the person came from (ADMIN-P9).
+  const reportUrl = (type: IntegrityReport) =>
+    page.url.searchParams.get('area') === 'maintenance'
+      ? commandCenterUrl('maintenance', 'integrity', { report: type })
+      : commandCenterUrl('care', 'integrity-checks', { report: type });
 </script>
 
 <OnEvents {onIntegrityReportDeleted} />
 
 {#if report}
-  <IntegrityReportSection type={report} backHref={commandCenterUrl('care', 'integrity-checks')} />
+  <IntegrityReportSection type={report} />
 {:else}
   <KitPage>
     <Hero

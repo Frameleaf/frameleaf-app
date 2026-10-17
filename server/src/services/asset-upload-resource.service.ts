@@ -18,7 +18,7 @@ import { OnEvent } from 'src/decorators.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
 import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
 import { LivePhotoUploadCommitDto } from 'src/dtos/asset-upload-resource.dto.js';
-import { ImmichWorker, Permission, StorageFolder } from 'src/enum.js';
+import { FrameleafWorker, Permission, StorageFolder } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import {
   type AssetUploadResource,
@@ -649,7 +649,7 @@ export class AssetUploadResourceService {
     });
   }
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.timer ??= setInterval(() => this.tick(), 30_000);
     this.tick();

@@ -28,6 +28,11 @@
     /** The space the timeline manager reserves above the rows; the header fills exactly this. */
     headerHeight?: number;
     /**
+     * The header's width when the day has a row of its own (the Frameleaf Timeline's `dayRows`): the
+     * timeline's, so a day of one or two photos still shows its whole date. By default, the rows'.
+     */
+    headerWidth?: number;
+    /**
      * Month, year or "all" grouping: the day's tiles are part of its month's single flow, drawn
      * under the month's group header, so the day draws no header and names no region of its own.
      */
@@ -75,6 +80,7 @@
     selecting,
     showHeader = true,
     headerHeight = 48,
+    headerWidth,
     grouped = false,
     layout = 'timeline',
     captionHeight = 0,
@@ -139,7 +145,7 @@
       count={dayIds.length}
       {state}
       {selecting}
-      width={timelineDay.width}
+      width={Math.max(timelineDay.width, headerWidth ?? 0)}
       height={headerHeight}
       onSelect={(checked) => onSelectGroup?.(dayIds, checked)}
     />

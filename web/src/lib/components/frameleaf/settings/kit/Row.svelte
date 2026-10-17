@@ -2,6 +2,10 @@
   /**
    * A setting: what it is on the left, the control on the right. Stacks on a narrow page. `link`
    * is drawn after the help, for the page or the outside guide the help points to.
+   *
+   * `lead` is the choice the help says back ("Balanced: good results…"): when the help starts with
+   * it, the choice and its colon are drawn bold, as the prototype's `saidBack` does. Help that does
+   * not start with it is drawn as it is.
    */
   import TextLink from '$lib/components/frameleaf/settings/kit/TextLink.svelte';
   import type { Snippet } from 'svelte';
@@ -10,6 +14,7 @@
     label,
     help,
     helpId,
+    lead,
     link,
     children,
   }: {
@@ -17,15 +22,31 @@
     help?: string;
     /** Give the help an id so the control can point at it with `aria-describedby`. */
     helpId?: string;
+    /** The chosen value the help starts with, drawn bold. */
+    lead?: string;
     link?: { text: string; href: string; external?: boolean };
     children?: Snippet;
   } = $props();
+
+  const saidBack = $derived.by(() => {
+    if (!help || !lead || !help.startsWith(lead)) {
+      return;
+    }
+    const colon = /^\s*[:：]/.exec(help.slice(lead.length));
+    return colon
+      ? { lead: help.slice(0, lead.length + colon[0].length), rest: help.slice(lead.length + colon[0].length) }
+      : undefined;
+  });
 </script>
 
 <div class="kit-row">
   <div class="copy">
     <strong>{label}</strong>
-    {#if help}<p id={helpId}>{help}</p>{/if}
+    {#if saidBack}
+      <p id={helpId}><b>{saidBack.lead}</b>{saidBack.rest}</p>
+    {:else if help}
+      <p id={helpId}>{help}</p>
+    {/if}
     {#if link}
       <span class="link"><TextLink href={link.href} external={link.external}>{link.text}</TextLink></span>
     {/if}
@@ -56,6 +77,9 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
     line-height: 1.5;
+  }
+  b {
+    font-weight: 600;
   }
   .link {
     display: block;

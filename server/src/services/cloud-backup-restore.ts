@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { link } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -431,9 +432,10 @@ export class CloudBackupRestorer {
         throw new Error('Restore staging size or checksum mismatch');
       }
       if (present !== null) {
-        await this.moveAside(file.target, options.mediaLocation, options.operationId);
+        await this.moveAside(file.target, options.mediaLocation, join(options.operationId, randomUUID()));
       }
-      await this.storage.rename(staged, file.target);
+      // Staging is beside the target: link publishes atomically without replacing a new occupant.
+      await link(staged, file.target);
     } catch (error) {
       if (error instanceof CloudBackupStoreError && error.status === 404) {
         throw new Error(`The backup copy of ${key} is missing from the bucket. The restore stopped before it.`, {

@@ -104,6 +104,28 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
     expect(screen.queryByRole('group', { name: 'Add AI credit' })).not.toBeInTheDocument();
   });
 
+  it('D1: lists what each licence gives and says a plan or AI credit needs one first', async () => {
+    render(BuyScreen);
+
+    expect(await screen.findByText(/A plan or AI credit needs a licence first/)).toBeInTheDocument();
+    expect(screen.getByText('Supporter badge for every account')).toBeInTheDocument();
+    expect(screen.getByText('Buddy Backup to another home server')).toBeInTheDocument();
+    expect(screen.getByText('Cloud Backup for every account, with a plan')).toBeInTheDocument();
+    expect(screen.getByText('7% off Frameleaf Cloud plans')).toBeInTheDocument();
+    expect(screen.getByText('Supporter badge for your account')).toBeInTheDocument();
+    expect(screen.getByText('5% off Frameleaf Cloud plans')).toBeInTheDocument();
+    expect(screen.getByText(/Buddy Backup needs a Server licence on both servers/)).toBeInTheDocument();
+    expect(screen.queryByText(/unlocks nothing/)).not.toBeInTheDocument();
+  });
+
+  it('D1: drops the licence-first note once this person is licensed', async () => {
+    flags.value = { supporter: true, frameleafCloud: false };
+    render(BuyScreen);
+
+    expect(await screen.findByText(/This server is licensed, so plan prices are 7% lower/)).toBeInTheDocument();
+    expect(screen.queryByText(/needs a licence first/)).not.toBeInTheDocument();
+  });
+
   it('opens the configured store in a new tab after the checkout note', async () => {
     const open = vi.spyOn(globalThis, 'open').mockReturnValue(null);
     render(BuyScreen);

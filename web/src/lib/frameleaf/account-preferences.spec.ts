@@ -1,14 +1,16 @@
 import { AssetOrder, SuppressionScope } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
-  archiveSizeToGib,
+  archiveSizeToGb,
   createDefaultDraft,
   createDraftState,
   draftFromPreferences,
   followLatestPreferences,
-  GIB,
-  gibToArchiveSize,
+  GB,
+  gbToArchiveSize,
+  isArchiveSizePreset,
   isDraftDirty,
+  LEGACY_GIB,
   preferencesPatch,
   REMINDER_ALLOWED_NOW,
   reminderDateFromInput,
@@ -103,17 +105,26 @@ describe('account preferences (FL-77)', () => {
   });
 
   describe('exact-byte archive sizes', () => {
-    it('shows any stored byte count in GiB and turns it back into the same bytes', () => {
-      for (const bytes of [1, 1_234_567, 4 * GIB, 7 * GIB + 3, Number.MAX_SAFE_INTEGER - 1]) {
-        expect(gibToArchiveSize(archiveSizeToGib(bytes))).toBe(bytes);
+    it('shows a stored byte count in decimal GB and turns it back into the same bytes (D5)', () => {
+      for (const bytes of [1, 1_234_567, 4 * GB, 7 * GB + 3, 4 * LEGACY_GIB, 123_456_789_012_345]) {
+        expect(gbToArchiveSize(archiveSizeToGb(bytes))).toBe(bytes);
       }
+      expect(archiveSizeToGb(4 * GB)).toBe(4);
     });
 
     it('rounds a typed size to a whole number of bytes', () => {
-      expect(gibToArchiveSize(0.5)).toBe(GIB / 2);
-      expect(gibToArchiveSize(1e-9)).toBe(1);
-      expect(gibToArchiveSize(null)).toBeNull();
-      expect(gibToArchiveSize(NaN)).toBeNull();
+      expect(gbToArchiveSize(0.5)).toBe(GB / 2);
+      expect(gbToArchiveSize(1e-9)).toBe(1);
+      expect(gbToArchiveSize(null)).toBeNull();
+      expect(gbToArchiveSize(NaN)).toBeNull();
+    });
+
+    it('reads a split preset in decimal GB or in the binary bytes saved before D5', () => {
+      expect(isArchiveSizePreset(4 * GB, 4)).toBe(true);
+      expect(isArchiveSizePreset(4 * LEGACY_GIB, 4)).toBe(true);
+      expect(isArchiveSizePreset(4 * GB + 1, 4)).toBe(false);
+      expect(isArchiveSizePreset(null, 4)).toBe(false);
+      expect(createDefaultDraft()['download.archiveSize']).toBe(4_000_000_000);
     });
 
     it('never re-sends an unchanged arbitrary size', () => {
@@ -191,7 +202,10 @@ describe('account preferences (FL-77)', () => {
       ] as const) {
         expect(draft[key], key).toBe(true);
       }
-      expect(draft['ratings.enabled']).toBe(false);
+    });
+
+    it('turns star ratings on, like the server (D6)', () => {
+      expect(createDefaultDraft()['ratings.enabled']).toBe(true);
     });
   });
 

@@ -225,7 +225,7 @@ test("retrieval pins the same immutable archive as the consumer integrity manife
       "utf8",
     ),
   );
-  assert.equal(dependencies.dependencies.zod, "4.6.5");
-  assert.equal(lock.packages["node_modules/zod"].version, "4.6.5");
+  assert.equal(dependencies.dependencies.zod, "4.6.7");
+  assert.equal(lock.packages["node_modules/zod"].version, "4.6.7");
   assert.match(lock.packages["node_modules/zod"].integrity, /^sha512-/);
 });

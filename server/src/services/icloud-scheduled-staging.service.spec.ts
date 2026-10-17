@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, open, readdir, rm, rmdir, stat, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, open, readdir, realpath, rm, rmdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AssetType } from 'src/enum.js';
@@ -16,6 +16,74 @@ import { canonicalJson } from 'src/utils/studio-project.js';
 vi.mock('node:fs/promises', { spy: true });
 
 describe('scheduled publication handle closure', () => {
+  it('refuses publication before readonly work when private-work registration is refused', async () => {
+    const repository = {
+      beginPrivateWork: vi.fn().mockResolvedValue(undefined),
+      finishPrivateWork: vi.fn(),
+    };
+    const sut = new ICloudScheduledStagingService(repository as never, {} as never, {} as never, {} as never);
+    const admission = sut as unknown as { directory: () => Promise<unknown> };
+    const directory = vi.spyOn(admission, 'directory').mockRejectedValue(new Error('unexpected readonly work'));
+    try {
+      await expect(sut.holdPublicationFiles({} as never)).rejects.toThrow('scheduled_audit_unavailable');
+      expect(directory).not.toHaveBeenCalled();
+      expect(repository.finishPrivateWork).not.toHaveBeenCalled();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it.each([false, true])(
+    'settles a refused acquisition only after its unadopted handle closes (close failure: %s)',
+    async (failedClose) => {
+      const entered = Promise.withResolvers<void>();
+      const releaseClose = Promise.withResolvers<void>();
+      const handle = {
+        close: vi.fn(async () => {
+          entered.resolve();
+          await releaseClose.promise;
+          if (failedClose) throw new Error('controlled unadopted handle close failure');
+        }),
+      };
+      const repository = {
+        beginPrivateWork: vi.fn().mockResolvedValue('owned-work'),
+        authenticateDeepValidation: vi.fn().mockResolvedValue(true),
+        finishPrivateWork: vi.fn(),
+      };
+      const sut = new ICloudScheduledStagingService(repository as never, {} as never, {} as never, {} as never);
+      const admission = sut as unknown as {
+        directory: () => Promise<unknown>;
+        cached: () => Promise<unknown>;
+        checkpoint: () => Promise<unknown>;
+      };
+      vi.spyOn(admission, 'directory').mockResolvedValue({ path: '/fresh' });
+      vi.spyOn(admission, 'cached').mockResolvedValue({ payload: { identity: {} } });
+      vi.spyOn(admission, 'checkpoint')
+        .mockResolvedValueOnce({
+          guarded: {
+            bindings: { receipt: { snapshot: { fileIdentity: {} } }, original: { originalPath: '/original' } },
+          },
+          resource: { verification: { auditDeepValidation: { payload: { path: '/fresh' } } } },
+        })
+        .mockRejectedValue(new Error('authority withdrawn after open'));
+      vi.mocked(open).mockResolvedValueOnce(handle as never);
+      const pending = sut.holdPublicationFiles({} as never).catch((error: unknown) => error);
+      try {
+        await entered.promise;
+        expect(repository.finishPrivateWork).not.toHaveBeenCalled();
+        releaseClose.resolve();
+        expect(await pending).toBeInstanceOf(Error);
+        expect(handle.close).toHaveBeenCalledTimes(1);
+        if (failedClose) expect(repository.finishPrivateWork).not.toHaveBeenCalled();
+        else expect(repository.finishPrivateWork).toHaveBeenCalledWith({}, 'owned-work');
+      } finally {
+        releaseClose.resolve();
+        await pending;
+        vi.restoreAllMocks();
+      }
+    },
+  );
+
   it.each([false, true])('settles every owned close before release (close failure: %s)', async (failedClose) => {
     const directory = await mkdtemp(join(tmpdir(), 'scheduled-close-'));
     const path = join(directory, 'fresh');
@@ -100,10 +168,10 @@ describe('scheduled publication handle closure', () => {
   });
 });
 
-// These causal regressions remain RED until the approved Tasks 4/5 service integration.
+// Reservation, decoder settlement and owned-input cleanup stay separate gates.
 describe('validation input accounting baseline', () => {
   async function fixture(destinationValidation = false) {
-    const directory = await mkdtemp(join(tmpdir(), 'validation-input-'));
+    const directory = await realpath(await mkdtemp(join(tmpdir(), 'validation-input-')));
     const path = join(directory, 'complete');
     await writeFile(path, 'fresh', { mode: 0o600 });
     const destination = destinationValidation ? join(directory, 'recovery') : undefined;

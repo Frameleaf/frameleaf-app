@@ -224,11 +224,12 @@ export class StorageTemplateService extends BaseService {
     await this.moveRepository.cleanMoveHistory();
 
     const assets = this.assetJobRepository.streamForStorageTemplateJob();
-    const users = await this.userRepository.getList();
+    const storageLabels = new Map(
+      (await this.userRepository.getList()).map(({ id, storageLabel }) => [id, storageLabel || null]),
+    );
 
     for await (const asset of assets) {
-      const user = users.find((user) => user.id === asset.ownerId);
-      const storageLabel = user?.storageLabel || null;
+      const storageLabel = storageLabels.get(asset.ownerId) ?? null;
       const filename = asset.originalFileName || asset.id;
       await this.moveAsset(asset, { storageLabel, filename });
 
@@ -471,7 +472,12 @@ export class StorageTemplateService extends BaseService {
       const fullPath = path.normalize(path.join(rootPath, storagePath));
       let destination = `${fullPath}.${extension}`;
 
-      if (!fullPath.startsWith(rootPath)) {
+      const relativeDestination = path.relative(rootPath, destination);
+      if (
+        relativeDestination === '..' ||
+        relativeDestination.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(relativeDestination)
+      ) {
         this.logger.warn(`Skipped attempt to access an invalid path: ${fullPath}. Path should start with ${rootPath}`);
         return source;
       }
@@ -547,15 +553,15 @@ export class StorageTemplateService extends BaseService {
     };
 
     const dt = DateTime.fromJSDate(asset.fileCreatedAt);
+    const albumStartTime = albumName && albumStartDate ? DateTime.fromJSDate(albumStartDate) : undefined;
+    const albumEndTime = albumName && albumEndDate ? DateTime.fromJSDate(albumEndDate) : undefined;
 
     for (const token of Object.values(storageTokens).flat()) {
       substitutions[token] = dt.toFormat(token);
       if (albumName) {
         // Album date tokens are rendered in the server time zone to match storage template datetime behavior.
-        substitutions['album-startDate-' + token] = albumStartDate
-          ? DateTime.fromJSDate(albumStartDate).toFormat(token)
-          : '';
-        substitutions['album-endDate-' + token] = albumEndDate ? DateTime.fromJSDate(albumEndDate).toFormat(token) : '';
+        substitutions['album-startDate-' + token] = albumStartTime?.toFormat(token) ?? '';
+        substitutions['album-endDate-' + token] = albumEndTime?.toFormat(token) ?? '';
       }
     }
 

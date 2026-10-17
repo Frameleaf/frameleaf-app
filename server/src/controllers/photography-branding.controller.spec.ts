@@ -7,7 +7,7 @@ import { PhotographyWorkspaceController } from 'src/controllers/photography-work
 import { CacheControl } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { factory, newUuid } from 'test/small.factory.js';
 
 it('retains private no-store through the actual Express/shared-file send path', async () => {
@@ -19,7 +19,7 @@ it('retains private no-store through the actual Express/shared-file send path', 
     const id = newUuid();
     const service = {
       logoThumbnail: vi.fn().mockResolvedValue(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: file,
           contentType: 'image/webp',
           fileName: 'studio-logo',

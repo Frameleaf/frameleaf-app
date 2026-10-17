@@ -16,6 +16,15 @@ const space = albumFactory.build({ id: 'space-1', albumName: 'Family Space', kin
 const album = albumFactory.build({ id: 'album-1', albumName: 'Reunion', kind: AlbumKind.Album });
 const collection = albumFactory.build({ id: 'collection-1', albumName: 'Trips', kind: AlbumKind.Collection });
 
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+    this.open = false;
+  };
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   addMessages('dev', en);
@@ -34,7 +43,12 @@ const controllerStub = () => {
 
 describe('SharedSpaceAddMatching', () => {
   it('offers plain albums as a source, never the space itself or a collection', () => {
-    render(SharedSpaceAddMatching, { space, albums: [album, collection, space], controller: controllerStub() });
+    render(SharedSpaceAddMatching, {
+      space,
+      albums: [album, collection, space],
+      controller: controllerStub(),
+      open: true,
+    });
 
     const options = [...screen.getByRole('combobox').querySelectorAll('option')].map((option) => option.textContent);
     expect(options).toEqual([en.frameleaf_spaces_add_matching_source_library, 'Reunion']);
@@ -42,7 +56,7 @@ describe('SharedSpaceAddMatching', () => {
 
   it('shows the count for the chosen source before anything runs', async () => {
     const controller = controllerStub();
-    render(SharedSpaceAddMatching, { space, albums: [album], controller });
+    render(SharedSpaceAddMatching, { space, albums: [album], controller, open: true });
 
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_spaces_add_matching_preview }));
 
@@ -54,7 +68,7 @@ describe('SharedSpaceAddMatching', () => {
 
   it('runs add-to-album against the frozen source scope, with the space as the destination', async () => {
     const controller = controllerStub();
-    render(SharedSpaceAddMatching, { space, albums: [album], controller });
+    render(SharedSpaceAddMatching, { space, albums: [album], controller, open: true });
 
     await userEvent.selectOptions(screen.getByRole('combobox'), 'album-1');
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_spaces_add_matching_preview }));
@@ -72,14 +86,14 @@ describe('SharedSpaceAddMatching', () => {
   });
 
   it('cannot be started before a count has been checked', () => {
-    render(SharedSpaceAddMatching, { space, albums: [album], controller: controllerStub() });
+    render(SharedSpaceAddMatching, { space, albums: [album], controller: controllerStub(), open: true });
 
     expect(screen.getByRole('button', { name: /Add/ })).toBeDisabled();
   });
 
   it('clears a stale count when the source changes', async () => {
     const controller = controllerStub();
-    render(SharedSpaceAddMatching, { space, albums: [album], controller });
+    render(SharedSpaceAddMatching, { space, albums: [album], controller, open: true });
 
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_spaces_add_matching_preview }));
     expect(await screen.findByText('7 items will be added.')).toBeInTheDocument();
@@ -87,5 +101,38 @@ describe('SharedSpaceAddMatching', () => {
     await fireEvent.change(screen.getByRole('combobox'), { target: { value: 'album-1' } });
 
     await waitFor(() => expect(screen.queryByText('7 items will be added.')).toBeNull());
+  });
+
+  it('keeps the choice in a closed dialog, and closes it once the work starts (SHARING-P5)', async () => {
+    const controller = controllerStub();
+    const { container, rerender } = render(SharedSpaceAddMatching, { space, albums: [album], controller });
+
+    const dialog = container.ownerDocument.querySelector('dialog')!;
+    expect(dialog.open).toBe(false);
+
+    await rerender({ open: true });
+    await waitFor(() => expect(dialog.open).toBe(true));
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_spaces_add_matching_preview }));
+    await fireEvent.click(await screen.findByRole('button', { name: /Add 7 items/ }));
+
+    await waitFor(() => expect(controller.runMatching).toHaveBeenCalled());
+    await waitFor(() => expect(dialog.open).toBe(false));
+  });
+
+  it('never shows a count that arrives for a source no longer chosen', async () => {
+    const controller = controllerStub();
+    let resolveLibrary!: (count: number) => void;
+    controller.count.mockReturnValueOnce(new Promise<number>((resolve) => (resolveLibrary = resolve)));
+    render(SharedSpaceAddMatching, { space, albums: [album], controller, open: true });
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_spaces_add_matching_preview }));
+    await waitFor(() => expect(controller.count).toHaveBeenCalledOnce());
+    await fireEvent.change(screen.getByRole('combobox'), { target: { value: 'album-1' } });
+    resolveLibrary(900);
+    // The count has settled once Preview is offered again.
+    await screen.findByRole('button', { name: en.frameleaf_spaces_add_matching_preview });
+
+    expect(screen.queryByText('900 items will be added.')).toBeNull();
+    expect(screen.getByRole('button', { name: /Add/ })).toBeDisabled();
   });
 });

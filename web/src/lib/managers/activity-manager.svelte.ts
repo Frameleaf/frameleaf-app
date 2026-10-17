@@ -11,6 +11,7 @@ import {
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { handlePromiseError } from '$lib/utils';
 import { handleError } from '$lib/utils/handle-error';
 
@@ -33,6 +34,33 @@ class ActivityManager {
   #cache = new Map<CacheKey, ActivityCache>();
 
   isLoading = $state(false);
+  #viewVersion = 0;
+  #refreshVersion = 0;
+  #cacheIsCurrent: (() => boolean) | undefined;
+
+  constructor() {
+    eventManager.on({
+      AuthLogout: () => {
+        this.reset();
+        this.#cache.clear();
+        this.#cacheIsCurrent = undefined;
+      },
+    });
+  }
+
+  #prepareSession() {
+    if (!this.#cacheIsCurrent?.()) {
+      this.reset();
+      this.#cache.clear();
+      this.#cacheIsCurrent = authManager.captureSession();
+    }
+  }
+
+  #captureView() {
+    const version = this.#viewVersion;
+    const isSessionCurrent = authManager.captureSession();
+    return () => version === this.#viewVersion && isSessionCurrent();
+  }
 
   get assetId() {
     return this.#assetId;
@@ -59,16 +87,21 @@ class ActivityManager {
   }
 
   async init(albumId: string, assetId?: string) {
-    if (assetId && assetId === this.#assetId) {
+    this.#prepareSession();
+    if (albumId === this.#albumId && assetId && assetId === this.#assetId) {
       return;
     }
 
+    this.#viewVersion++;
     this.#albumId = albumId;
     this.#assetId = assetId;
+    const isCurrent = this.#captureView();
     try {
-      await activityManager.refreshActivities(albumId, assetId);
+      await this.refreshActivities(albumId, assetId);
     } catch (error) {
-      handleError(error, get(t)('errors.unable_to_get_comments_number'));
+      if (isCurrent()) {
+        handleError(error, get(t)('errors.unable_to_get_comments_number'));
+      }
     }
   }
 
@@ -78,11 +111,26 @@ class ActivityManager {
   }
 
   async addActivity(dto: ActivityCreateDto) {
+    this.#prepareSession();
     if (this.#albumId === undefined) {
       return;
     }
 
-    const activity = await createActivity({ activityCreateDto: dto });
+    const albumId = this.#albumId;
+    const assetId = this.#assetId;
+    const isSessionCurrent = authManager.captureSession();
+    const isCurrent = this.#captureView();
+    const activity = await createActivity({ activityCreateDto: dto }).catch((error: unknown) => {
+      if (isCurrent()) {
+        throw error;
+      }
+    });
+    if (activity && isSessionCurrent()) {
+      this.#invalidateCache(albumId, assetId);
+    }
+    if (!activity || !isCurrent()) {
+      return;
+    }
     this.#activities = [...this.#activities, activity];
 
     if (activity.type === ReactionType.Comment) {
@@ -93,91 +141,114 @@ class ActivityManager {
       this.#likeCount++;
     }
 
-    this.#invalidateCache(this.#albumId, this.#assetId);
     handlePromiseError(this.refreshActivities(this.#albumId, this.#assetId));
     return activity;
   }
 
-  async deleteActivity(activity: ActivityResponseDto, index?: number) {
+  async deleteActivity(activity: ActivityResponseDto, _?: number) {
+    this.#prepareSession();
     if (!this.#albumId) {
       return;
     }
-
+    const albumId = this.#albumId;
+    const assetId = this.#assetId;
+    const isSessionCurrent = authManager.captureSession();
+    const isCurrent = this.#captureView();
+    try {
+      await deleteActivity({ id: activity.id });
+    } catch (error) {
+      if (isCurrent()) {
+        throw error;
+      }
+      return;
+    }
+    if (isSessionCurrent()) {
+      this.#invalidateCache(albumId, assetId);
+    }
+    if (!isCurrent()) {
+      return;
+    }
+    this.#activities = this.#activities.filter(({ id }) => id !== activity.id);
     if (activity.type === ReactionType.Comment) {
       this.#commentCount--;
     }
-
     if (activity.type === ReactionType.Like) {
       this.#likeCount--;
     }
-
-    this.#activities = index
-      ? this.#activities.splice(index, 1)
-      : this.#activities.filter(({ id }) => id !== activity.id);
-
-    await deleteActivity({ id: activity.id });
-    this.#invalidateCache(this.#albumId, this.#assetId);
     handlePromiseError(this.refreshActivities(this.#albumId, this.#assetId));
   }
 
   async toggleLike() {
+    this.#prepareSession();
     if (!this.#albumId) {
       return;
     }
-
+    const isCurrent = this.#captureView();
     if (this.#isLiked) {
       await this.deleteActivity(this.#isLiked);
-      this.#isLiked = null;
+      if (isCurrent()) {
+        this.#isLiked = null;
+      }
     } else {
-      this.#isLiked = (await this.addActivity({
+      const activity = await this.addActivity({
         albumId: this.#albumId,
         assetId: this.#assetId,
         type: ReactionType.Like,
-      }))!;
+      });
+      if (isCurrent()) {
+        this.#isLiked = activity ?? null;
+      }
     }
   }
 
   async refreshActivities(albumId: string, assetId?: string) {
+    this.#prepareSession();
+    const version = ++this.#refreshVersion;
+    const isViewCurrent = this.#captureView();
+    const isCurrent = () => version === this.#refreshVersion && isViewCurrent();
     this.isLoading = true;
-
-    const cacheKey = this.#getCacheKey(albumId, assetId);
-
-    if (this.#cache.has(cacheKey)) {
-      const cached = this.#cache.get(cacheKey)!;
+    try {
+      const cacheKey = this.#getCacheKey(albumId, assetId);
+      let cached = this.#cache.get(cacheKey);
+      if (!cached) {
+        const userId = authManager.user.id;
+        const [activities, [liked], { comments, likes }] = await Promise.all([
+          getActivities({ albumId, assetId }),
+          getActivities({
+            albumId,
+            assetId,
+            userId,
+            $type: ReactionType.Like,
+            level: assetId ? undefined : ReactionLevel.Album,
+          }),
+          getActivityStatistics({ albumId, assetId }),
+        ]);
+        if (!isCurrent()) {
+          return;
+        }
+        cached = { activities, commentCount: comments, likeCount: likes, isLiked: liked ?? null };
+        this.#cache.set(cacheKey, cached);
+      }
       this.#activities = cached.activities;
       this.#commentCount = cached.commentCount;
       this.#likeCount = cached.likeCount;
-      this.#isLiked = cached.isLiked ?? null;
-      this.isLoading = false;
-      return;
+      this.#isLiked = cached.isLiked;
+    } catch (error) {
+      if (isCurrent()) {
+        throw error;
+      }
+    } finally {
+      if (isCurrent()) {
+        this.isLoading = false;
+      }
     }
-
-    this.#activities = await getActivities({ albumId, assetId });
-
-    const [liked] = await getActivities({
-      albumId,
-      assetId,
-      userId: authManager.user.id,
-      $type: ReactionType.Like,
-      level: assetId ? undefined : ReactionLevel.Album,
-    });
-    this.#isLiked = liked ?? null;
-
-    const { comments, likes } = await getActivityStatistics({ albumId, assetId });
-    this.#commentCount = comments;
-    this.#likeCount = likes;
-
-    this.#cache.set(cacheKey, {
-      activities: this.#activities,
-      commentCount: this.#commentCount,
-      likeCount: this.#likeCount,
-      isLiked: this.#isLiked,
-    });
-
-    this.isLoading = false;
   }
 
   reset() {
+    this.#viewVersion++;
+    this.#refreshVersion++;
+    this.isLoading = false;
+    this.#isLiked = null;
     this.#albumId = undefined;
     this.#assetId = undefined;
     this.#activities = [];

@@ -354,38 +354,55 @@ export class CloudBackupIndexRepository {
     result: CloudBackupVerificationResult;
   }): Promise<void> {
     const { claimToken, ...proof } = input;
-    await this.db
-      .insertInto('cloud_backup_object_verification')
-      .columns(['bucket', 'sha256', 'operationId', 'method', 'result'])
-      .expression(
-        this.db
-          .selectFrom('media_operation')
-          .select([
-            sql<string>`${proof.bucket}`.as('bucket'),
-            sql<string>`${proof.sha256}`.as('sha256'),
-            'id as operationId',
-            sql<CloudBackupVerificationMethod>`${proof.method}`.as('method'),
-            sql<CloudBackupVerificationResult>`${proof.result}`.as('result'),
-          ])
-          .where('id', '=', proof.operationId)
-          .where('claimToken', '=', claimToken)
-          .where('kind', '=', MediaOperationKind.CloudBackup)
-          .where('status', 'not in', FINISHED_OPERATIONS)
-          .where(sql<string>`snapshot ->> 'bucketRef'`, '=', proof.bucket)
-          .where(sql<string>`snapshot ->> 'task'`, '=', 'verify')
-          .where(
-            sql<string>`COALESCE(snapshot ->> 'depth', 'sample')`,
-            '=',
-            proof.method === 'size-head' ? 'full' : 'sample',
-          )
-          .forShare(),
-      )
-      .onConflict((oc) =>
-        oc
-          .columns(['bucket', 'sha256', 'operationId'])
-          .doUpdateSet({ method: proof.method, result: proof.result, checkedAt: sql<Date>`clock_timestamp()` }),
-      )
-      .execute();
+    const write = async (trx: Kysely<DB>) => {
+      await trx
+        .selectFrom('media_operation')
+        .select('id')
+        .where('id', '=', proof.operationId)
+        .where('claimToken', '=', claimToken)
+        .forShare()
+        .execute();
+      // Recheck the clock and control requests after any operation-row lock wait.
+      await trx
+        .insertInto('cloud_backup_object_verification')
+        .columns(['bucket', 'sha256', 'operationId', 'method', 'result'])
+        .expression(
+          trx
+            .selectFrom('media_operation')
+            .select([
+              sql<string>`${proof.bucket}`.as('bucket'),
+              sql<string>`${proof.sha256}`.as('sha256'),
+              'id as operationId',
+              sql<CloudBackupVerificationMethod>`${proof.method}`.as('method'),
+              sql<CloudBackupVerificationResult>`${proof.result}`.as('result'),
+            ])
+            .where('id', '=', proof.operationId)
+            .where('claimToken', '=', claimToken)
+            .where('kind', '=', MediaOperationKind.CloudBackup)
+            .where('status', 'in', [
+              MediaOperationStatus.Preparing,
+              MediaOperationStatus.Rendering,
+              MediaOperationStatus.Validating,
+            ])
+            .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+            .where('cancelRequestedAt', 'is', null)
+            .where('pauseRequestedAt', 'is', null)
+            .where(sql<string>`snapshot ->> 'bucketRef'`, '=', proof.bucket)
+            .where(sql<string>`snapshot ->> 'task'`, '=', 'verify')
+            .where(
+              sql<string>`COALESCE(snapshot ->> 'depth', 'sample')`,
+              '=',
+              proof.method === 'size-head' ? 'full' : 'sample',
+            ),
+        )
+        .onConflict((oc) =>
+          oc
+            .columns(['bucket', 'sha256', 'operationId'])
+            .doUpdateSet({ method: proof.method, result: proof.result, checkedAt: sql<Date>`clock_timestamp()` }),
+        )
+        .execute();
+    };
+    return this.db.isTransaction ? write(this.db) : this.db.transaction().execute(write);
   }
   /** Internal facts only: completion qualifies the run, not current asset access or backup eligibility. */
   @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })

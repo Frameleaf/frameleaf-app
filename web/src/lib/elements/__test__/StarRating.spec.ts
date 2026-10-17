@@ -1,4 +1,4 @@
-import { render } from '@testing-library/svelte';
+import { fireEvent, render } from '@testing-library/svelte';
 import StarRating from '$lib/elements/StarRating.svelte';
 
 describe('StarRating component', () => {
@@ -35,9 +35,9 @@ describe('StarRating component', () => {
       expect(radioButton.className).toBe('sr-only');
     }
 
-    // Check the label attributes
-    for (const label of labels) {
-      expect(label.className).toBe('cursor-pointer');
+    // Check the label attributes: the set stars carry `filled` (the viewer's warm star colour).
+    for (const [index, label] of labels.entries()) {
+      expect(label.className).toBe(index < 2 ? 'cursor-pointer filled' : 'cursor-pointer');
       expect(label.tabIndex).toBe(-1);
     }
   });
@@ -68,8 +68,22 @@ describe('StarRating component', () => {
     }
 
     // Check the label attributes
-    for (const label of labels) {
-      expect(label.className).toBe('');
+    for (const [index, label] of labels.entries()) {
+      expect(label.className).toBe(index < 2 ? 'filled' : '');
     }
   });
+});
+
+it('cancels a pending rating when the control is removed', async () => {
+  vi.useFakeTimers();
+  const onRating = vi.fn();
+  const component = render(StarRating, { rating: 2, onRating });
+  try {
+    await fireEvent.change(component.getAllByRole('radio')[3], { target: { checked: true } });
+    component.unmount();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(onRating).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
 });

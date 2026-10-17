@@ -3,7 +3,7 @@ import { goto } from '$app/navigation';
 import { languageManager } from '$lib/managers/language-manager.svelte';
 import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
 import { maintenanceCreateUrl, maintenanceReturnUrl, maintenanceShouldRedirect } from '$lib/utils/maintenance';
-import { init } from '$lib/utils/server';
+import { init } from '$lib/utils/server-client';
 import type { LayoutLoad } from './$types';
 
 export const ssr = false;

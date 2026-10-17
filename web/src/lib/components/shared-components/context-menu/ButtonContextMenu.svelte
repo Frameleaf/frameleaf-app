@@ -3,7 +3,7 @@
   import { shortcuts } from '$lib/actions/shortcut';
   import ContextMenu from '$lib/components/shared-components/context-menu/ContextMenu.svelte';
   import { languageManager } from '$lib/managers/language-manager.svelte';
-  import { optionClickCallbackStore, selectedIdStore } from '$lib/stores/context-menu.store';
+  import { createContextMenu } from '$lib/stores/context-menu.store';
   import {
     getContextMenuPositionFromBoundingRect,
     getContextMenuPositionFromEvent,
@@ -71,7 +71,7 @@
   const buttonId = `context-menu-button-${id}`;
   const menuId = `context-menu-${id}`;
 
-  const openDropdown = (event: KeyboardEvent | MouseEvent) => {
+  const layoutAlign = $derived.by(() => {
     let layoutAlign = align;
     if (languageManager.rtl) {
       if (align.includes('left')) {
@@ -80,9 +80,18 @@
         layoutAlign = align.replace('right', 'left') as Align;
       }
     }
+    return layoutAlign;
+  });
+
+  $effect(() => {
+    if (isOpen && menuContainer) {
+      menuContainer.focus();
+    }
+  });
+
+  const openDropdown = (event: KeyboardEvent | MouseEvent) => {
     contextMenuPosition = getContextMenuPositionFromEvent(event, layoutAlign);
     isOpen = true;
-    menuContainer?.focus();
   };
 
   const handleClick = (event: MouseEvent) => {
@@ -106,7 +115,7 @@
       return;
     }
 
-    contextMenuPosition = getContextMenuPositionFromBoundingRect(buttonContainer.getBoundingClientRect(), align);
+    contextMenuPosition = getContextMenuPositionFromBoundingRect(buttonContainer.getBoundingClientRect(), layoutAlign);
   };
 
   const closeDropdown = () => {
@@ -118,9 +127,7 @@
     $selectedIdStore = undefined;
   };
 
-  const handleOptionClick = () => {
-    closeDropdown();
-  };
+  const { selectedId: selectedIdStore } = createContextMenu(closeDropdown);
 
   const handleDocumentClick = (event: MouseEvent) => {
     if (!isOpen) {
@@ -139,12 +146,6 @@
     const button = buttonContainer?.querySelector(`#${buttonId}`) as HTMLButtonElement | null;
     button?.focus();
   };
-
-  $effect(() => {
-    if (isOpen) {
-      $optionClickCallbackStore = handleOptionClick;
-    }
-  });
 </script>
 
 <svelte:window onresize={onResize} />

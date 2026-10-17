@@ -10,13 +10,8 @@ import { getKyselyDB } from 'test/utils.js';
 
 let database: Kysely<DB>;
 
-// The fixtures in test/fixtures/media.stub.ts are byte-equal snapshots of
-// jellyfin-ffmpeg 7.1.3-6 output (pinned in mise.toml). Other ffmpeg builds
-// produce deterministically different packet-duration accounting, which is
-// expected: ffmpeg 8.x rounds MP4 packet durations differently for certain
-// VFR/B-frame patterns. Skip the whole suite with a clear message rather
-// than fail loudly on the wrong binary.
-const EXPECTED_FFMPEG_VERSION_RE = /version (?:n)?7\.1\.3/;
+// Metadata fixtures are measured with the Jellyfin FFmpeg version pinned in mise.toml.
+const EXPECTED_FFMPEG_VERSION_RE = /version (?:n)?8\.1\.3/;
 const ffprobeVersion = (() => {
   try {
     return execFileSync('ffprobe', ['-version'], { encoding: 'utf8' });
@@ -26,7 +21,7 @@ const ffprobeVersion = (() => {
 })();
 const wrongFfmpegSkipReason = EXPECTED_FFMPEG_VERSION_RE.test(ffprobeVersion)
   ? null
-  : `requires jellyfin-ffmpeg 7.1.3 (see mise.toml). Detected: ${
+  : `requires jellyfin-ffmpeg 8.1.3 (see mise.toml). Detected: ${
       ffprobeVersion.split('\n', 1)[0] || '(ffprobe not found)'
     }. Install via mise or run \`mise run ci-medium\`.`;
 

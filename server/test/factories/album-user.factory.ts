@@ -3,7 +3,7 @@ import { AlbumUserRole } from 'src/enum.js';
 import { AlbumUserTable } from 'src/schema/tables/album-user.table.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { build } from 'test/factories/builder.factory.js';
-import { AlbumUserLike, FactoryBuilder, UserLike } from 'test/factories/types.js';
+import { AlbumLike, AlbumUserLike, FactoryBuilder, UserLike } from 'test/factories/types.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { newDate, newUuid, newUuidV7 } from 'test/small.factory.js';
 
@@ -32,9 +32,8 @@ export class AlbumUserFactory {
     });
   }
 
-  album(dto: AlbumUserLike = {}, builder?: FactoryBuilder<AlbumFactory>) {
-    const album = build(AlbumFactory.from(dto), builder);
-    this.value.albumId = album.build().id;
+  album(dto: AlbumLike = {}, builder?: FactoryBuilder<AlbumFactory>) {
+    this.value.albumId = dto.id && !builder ? dto.id : build(AlbumFactory.from(dto), builder).build().id;
     return this;
   }
 

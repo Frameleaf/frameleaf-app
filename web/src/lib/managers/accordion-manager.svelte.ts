@@ -6,7 +6,7 @@ import { handlePromiseError } from '$lib/utils';
 
 class AccordionManager {
   // needs to be derived since `page.url.searchParams` isn't actually initialized by the time this class gets instantiated.
-  #searchParams = $derived(new SvelteURLSearchParams(page.url.searchParams));
+  #searchParams = $derived(new SvelteURLSearchParams(page.url.searchParams.toString()));
   #state = $derived(
     new SvelteSet(
       this.#searchParams
@@ -27,9 +27,7 @@ class AccordionManager {
       this.#searchParams.set(QueryParameter.IS_OPEN, [...this.#state].join(' '));
     }
 
-    handlePromiseError(
-      goto(`?${this.#searchParams.toString()}`, { replaceState: true, noScroll: true, keepFocus: true }),
-    );
+    handlePromiseError(goto(`?${this.#searchParams.toString()}`, { replace: true, reset: false }));
   }
 
   open(key: string) {

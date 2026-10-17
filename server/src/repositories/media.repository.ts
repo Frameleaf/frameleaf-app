@@ -47,12 +47,12 @@ import { mimeTypes } from 'src/utils/mime-types.js';
 import { tryParseRational } from 'src/utils/rational-time.js';
 import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 
-const probe = (input: string, options: string[]): Promise<FfprobeData> => {
-  executionSignal()?.throwIfAborted();
+const probe = (input: string, options: string[], signal = executionSignal()): Promise<FfprobeData> => {
+  signal?.throwIfAborted();
   const child = spawn('ffprobe', ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', ...options, input], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  const lifetime = superviseMediaProcess(child, { signal: executionSignal() });
+  const lifetime = superviseMediaProcess(child, { signal });
   const chunks: Buffer[] = [];
   let bytes = 0;
   let stderr = '';
@@ -360,7 +360,7 @@ export class MediaRepository {
   }
 
   async probe(input: string, options?: ProbeOptions): Promise<VideoInfo> {
-    const results = await probe(input, options?.countFrames ? ['-count_packets'] : []); // gets frame count quickly: https://stackoverflow.com/a/28376817
+    const results = await probe(input, options?.countFrames ? ['-count_packets'] : [], options?.signal); // gets frame count quickly: https://stackoverflow.com/a/28376817
     return {
       format: {
         formatName: results.format.format_name,
@@ -484,11 +484,16 @@ export class MediaRepository {
    * Needed for accurate segments, especially when remuxing, seeking and/or VFR is involved.
    * Scanning packets for keyframes in JS is much faster than -skip_frame nokey since it avoids decoding the video.
    */
-  probePackets(input: string, streamIndex: number, options?: { maxPackets?: number }): Promise<VideoPacketInfo | null> {
+  probePackets(
+    input: string,
+    streamIndex: number,
+    options?: { maxPackets?: number; signal?: AbortSignal },
+  ): Promise<VideoPacketInfo | null> {
     if (options?.maxPackets !== undefined && (!Number.isSafeInteger(options.maxPackets) || options.maxPackets <= 0)) {
       throw new Error('Invalid media packet probe limit');
     }
-    executionSignal()?.throwIfAborted();
+    const signal = options?.signal ?? executionSignal();
+    signal?.throwIfAborted();
     const ffprobe = spawn(
       'ffprobe',
       [
@@ -504,7 +509,7 @@ export class MediaRepository {
       ],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
-    const lifetime = superviseMediaProcess(ffprobe, { signal: executionSignal() });
+    const lifetime = superviseMediaProcess(ffprobe, { signal });
 
     let scannedPackets = 0;
     let totalDuration = 0;
@@ -521,12 +526,14 @@ export class MediaRepository {
     let firstDuration: number | null = null;
     let variableFrameRate = false;
     let presentationValid = true;
+    let failure: Error | undefined;
     const parseLine = (line: string) => {
       if (!line) {
         return;
       }
       if (++scannedPackets > (options?.maxPackets ?? Infinity)) {
-        lifetime.stop(new Error('Media packet probe exceeds its resource limit'));
+        failure = new Error('Media packet probe exceeds its resource limit');
+        lifetime.stop(failure);
         return;
       }
       const [ptsStr, durationStr, flags] = line.split(',', 3);
@@ -588,7 +595,6 @@ export class MediaRepository {
     });
 
     return new Promise<VideoPacketInfo | null>((resolve, reject) => {
-      let failure: Error | undefined;
       ffprobe.on('error', (error) => {
         failure = error;
       });
@@ -598,6 +604,7 @@ export class MediaRepository {
           return reject(new Error(`ffprobe exited with code ${code}: ${stderr.trim()}`));
         }
         parseLine(remainder);
+        if (failure) return reject(failure);
         if (postDiscard.length === 0) {
           return resolve(null);
         }

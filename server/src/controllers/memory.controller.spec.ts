@@ -84,11 +84,10 @@ describe(MemoryController.name, () => {
 
   describe('PUT /memories/:id', () => {
     it('should require a valid id', async () => {
-      const { status, body } = await request(ctx.getHttpServer()).put(`/memories/invalid`);
+      const { status, body } = await request(ctx.getHttpServer()).put(`/memories/invalid`).send({ isSaved: true });
       expect(status).toBe(400);
-      expect(body).toEqual(
-        errorDto.validationError([{ path: [], message: 'Invalid input: expected object, received undefined' }]),
-      );
+      expect(body).toEqual(errorDto.validationError([{ path: ['id'], message: 'Invalid UUID' }]));
+      expect(service.update).not.toHaveBeenCalled();
     });
 
     it('should require at least one field', async () => {

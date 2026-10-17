@@ -10,8 +10,12 @@
    * members, accept, decline, cancel) and starting face recognition again. That last action erases
    * every name, so it sits behind "Advanced", says so where it sits, and needs a tick before it runs.
    *
-   * Left out because the app cannot do it yet: the partner timeline switch (gone since FL-326),
-   * removing someone else from a recognition group, and "suggest matching people in shared Spaces".
+   * ACCOUNT-P2 added the prototype's "Suggest matching people in shared Spaces" (an account
+   * preference, with the Save bar) and, once a partner shares with you, the line saying their photos
+   * arrive as your own copies. There is no partner timeline switch: partner sharing v2 (FL-326)
+   * retired it, as what a partner shares is in your own library.
+   *
+   * Left out because the app cannot do it yet: removing someone else from a recognition group.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -28,9 +32,11 @@
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
+  import OwnPreferencesForm from '$lib/components/frameleaf/settings/OwnPreferencesForm.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
+  import { createOwnPreferencesDraft } from '$lib/frameleaf/own-preferences-draft';
   import { backfillProgress } from '$lib/frameleaf/partner-sharing';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -60,14 +66,16 @@
     type RecipientGroupResponseDto,
     type UserResponseDto,
   } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAccountGroupOutline,
     mdiAccountHeartOutline,
     mdiAccountMultipleOutline,
+    mdiAccountPlusOutline,
     mdiImageMultipleOutline,
     mdiLinkVariant,
   } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { locale, t, type Translations } from 'svelte-i18n';
 
   type PartnerSharing = {
@@ -78,6 +86,13 @@
     backfill?: PartnerResponseDto['backfill'];
   };
 
+  let alive = true;
+  const isCurrentSession = authManager.captureSession();
+  const isCurrentView = () => alive && isCurrentSession();
+  onDestroy(() => {
+    alive = false;
+    dialogGeneration++;
+  });
   let clusterGroupId: string = $state('');
   let members: UserResponseDto[] = $state([]);
   let sentRequests: ClusterGroupRequestResponseDto[] = $state([]);
@@ -92,6 +107,9 @@
 
   const me = $derived(authManager.user.id);
   const canLeave = $derived(members.length > 1);
+
+  // ACCOUNT-P2: the page's account switch, saved with the Save bar.
+  const sharingPreferences = createOwnPreferencesDraft(['people.suggestInSpaces']);
 
   const inviteChoices = $derived(
     accounts.filter(
@@ -113,12 +131,18 @@
   let dialog = $state<DialogState | null>(null);
   let dialogOpen = $state(false);
   let working = $state(false);
+  let dialogGeneration = 0;
   $effect(() => {
     if (!dialogOpen) {
       dialog = null;
+      dialogGeneration++;
     }
   });
   const openDialog = (next: DialogState) => {
+    if (!isCurrentView()) {
+      return;
+    }
+    dialogGeneration++;
     dialog = next;
     dialogOpen = true;
   };
@@ -131,11 +155,22 @@
   // The account's sharing groups: a shortcut for picking people, managed in their own dialog.
   let groups = $state<RecipientGroupResponseDto[] | null>(null);
   let groupsOpen = $state(false);
+  let groupsRequest = 0;
   const loadGroups = async () => {
+    if (!isCurrentView()) {
+      return;
+    }
+    const request = ++groupsRequest;
+    const current = () => isCurrentView() && request === groupsRequest;
     try {
-      groups = await getRecipientGroups();
+      const result = await getRecipientGroups();
+      if (current()) {
+        groups = result;
+      }
     } catch (error) {
-      handleError(error, $t('frameleaf_sharing_groups_error'));
+      if (current()) {
+        handleError(error, $t('frameleaf_sharing_groups_error'));
+      }
     }
   };
 
@@ -192,21 +227,40 @@
     };
   });
 
+  let accountsRequest = 0;
   const loadAccounts = async () => {
+    if (!isCurrentView()) {
+      return;
+    }
+    const request = ++accountsRequest;
+    const current = () => isCurrentView() && request === accountsRequest;
     accountsStatus = 'loading';
     try {
-      accounts = await searchUsers();
-      accountsStatus = 'loaded';
+      const result = await searchUsers();
+      if (current()) {
+        accounts = result;
+        accountsStatus = 'loaded';
+      }
     } catch (error) {
-      accountsStatus = 'error';
-      handleError(error, $t('frameleaf_people_sharing.accounts_error'));
+      if (current()) {
+        accountsStatus = 'error';
+        handleError(error, $t('frameleaf_people_sharing.accounts_error'));
+      }
     }
   };
 
+  let groupRefreshRequest = 0;
   const refresh = async () => {
+    if (!isCurrentView()) {
+      return;
+    }
+    const request = ++groupRefreshRequest;
+    const current = () => isCurrentView() && request === groupRefreshRequest;
     try {
       const { clusterGroupId: id } = await getMyUser();
-      clusterGroupId = id;
+      if (!current()) {
+        return;
+      }
 
       const [groupUsers, sent, received] = await Promise.all([
         getClusterGroupUsers({ id }),
@@ -214,15 +268,26 @@
         getClusterGroupRequests(),
       ]);
 
-      members = groupUsers;
-      sentRequests = sent;
-      receivedRequests = received;
+      if (current()) {
+        clusterGroupId = id;
+        members = groupUsers;
+        sentRequests = sent;
+        receivedRequests = received;
+      }
     } catch (error) {
-      handleError(error, $t('errors.unable_to_load_cluster_group'));
+      if (current()) {
+        handleError(error, $t('errors.unable_to_load_cluster_group'));
+      }
     }
   };
 
+  let partnerRefreshRequest = 0;
   const refreshPartners = async () => {
+    if (!isCurrentView()) {
+      return;
+    }
+    const request = ++partnerRefreshRequest;
+    const current = () => isCurrentView() && request === partnerRefreshRequest;
     let sharedBy: PartnerResponseDto[];
     let sharedWith: PartnerResponseDto[];
     try {
@@ -231,7 +296,12 @@
         getPartners({ direction: PartnerDirection.SharedWith }),
       ]);
     } catch (error) {
-      handleError(error, $t('frameleaf_people_sharing.partners_error'));
+      if (current()) {
+        handleError(error, $t('frameleaf_people_sharing.partners_error'));
+      }
+      return;
+    }
+    if (!current()) {
       return;
     }
 
@@ -253,31 +323,45 @@
   };
 
   const run = async (action: () => Promise<unknown>, done: string, errorKey: Translations) => {
+    if (!isCurrentView() || working) {
+      return false;
+    }
     working = true;
     try {
       await action();
-      notice = done;
+      if (!isCurrentSession()) {
+        return false;
+      }
+      if (alive) {
+        notice = done;
+      }
       return true;
     } catch (error) {
-      handleError(error, $t(errorKey));
+      if (isCurrentView()) {
+        handleError(error, $t(errorKey));
+      }
       return false;
     } finally {
-      working = false;
+      if (isCurrentView()) {
+        working = false;
+      }
     }
   };
 
   const confirmDialog = async () => {
-    if (!dialog) {
+    if (!dialog || !isCurrentView() || working) {
       return;
     }
     const current = dialog;
+    const generation = dialogGeneration;
+    const groupId = clusterGroupId;
     let ok: boolean;
     switch (current.kind) {
       case 'invite': {
         ok = await run(
           () =>
             createClusterGroupRequest({
-              id: clusterGroupId,
+              id: groupId,
               clusterGroupRequestCreateDto: { userId: current.userId },
             }),
           $t('frameleaf_people_sharing.invitation_sent'),
@@ -297,7 +381,7 @@
       }
       case 'erase': {
         ok = await run(
-          () => clusterGroupRegeneratePeople({ id: clusterGroupId }),
+          () => clusterGroupRegeneratePeople({ id: groupId }),
           $t('frameleaf_sharing_erase_started'),
           'errors.something_went_wrong',
         );
@@ -312,20 +396,31 @@
         await refresh();
       }
     }
-    if (ok) {
+    if (ok && isCurrentView() && generation === dialogGeneration) {
       dialogOpen = false;
     }
   };
 
   const reviewInvitation = async (request: ClusterGroupRequestResponseDto) => {
     openDialog({ kind: 'review', request });
+    const generation = dialogGeneration;
+    if (!isCurrentView()) {
+      return;
+    }
     try {
       const groupMembers = await getClusterGroupUsers({ id: request.clusterGroupId });
-      if (dialog?.kind === 'review' && dialog.request.id === request.id) {
+      if (
+        isCurrentView() &&
+        generation === dialogGeneration &&
+        dialog?.kind === 'review' &&
+        dialog.request.id === request.id
+      ) {
         dialog = { ...dialog, members: groupMembers };
       }
     } catch (error) {
-      handleError(error, $t('errors.unable_to_load_cluster_group'));
+      if (isCurrentView() && generation === dialogGeneration) {
+        handleError(error, $t('errors.unable_to_load_cluster_group'));
+      }
     }
   };
 
@@ -335,15 +430,16 @@
   };
 
   const leave = async () => {
+    const groupId = clusterGroupId;
     const confirmed = await confirmFrameleaf({
       title: $t('frameleaf_sharing_leave_title'),
       prompt: $t('frameleaf_sharing_leave_prompt'),
       confirmText: $t('frameleaf_people_sharing.leave_action'),
       danger: true,
     });
-    if (confirmed) {
+    if (confirmed && isCurrentView() && groupId === clusterGroupId) {
       await run(
-        () => leaveClusterGroup({ id: clusterGroupId }),
+        () => leaveClusterGroup({ id: groupId }),
         $t('frameleaf_people_sharing.left'),
         'errors.unable_to_leave_cluster_group',
       );
@@ -352,21 +448,23 @@
   };
 
   const stopSharing = async (partner: PartnerSharing) => {
+    const userId = me;
+    const partnerId = partner.user.id;
     const confirmed = await confirmFrameleaf({
       title: $t('frameleaf_sharing_stop_title', { values: { name: partner.user.name } }),
       prompt: $t('frameleaf_people_sharing.stop_prompt', { values: { name: partner.user.name } }),
       confirmText: $t('frameleaf_people_sharing.stop_action'),
       danger: true,
     });
-    if (confirmed) {
+    if (confirmed && isCurrentView()) {
       const stopped = await run(
-        () => removePartner({ id: partner.user.id }),
+        () => removePartner({ id: partnerId }),
         $t('frameleaf_people_sharing.stopped'),
         'errors.unable_to_remove_partner',
       );
       if (stopped) {
         // FL-54: this tab's open pages drop the partner at once, as the server tells other tabs.
-        eventManager.emit('PartnerRevoke', { sharedById: authManager.user.id, sharedWithId: partner.user.id });
+        eventManager.emit('PartnerRevoke', { sharedById: userId, sharedWithId: partnerId });
       }
       await refreshPartners();
     }
@@ -441,6 +539,7 @@
         disabled={blocked || partnerChoices.length === 0}
         onclick={() => openDialog({ kind: 'partner-add', userId: partnerChoices[0]?.id ?? '' })}
       >
+        <Icon icon={mdiAccountPlusOutline} size="18" aria-hidden={true} />
         {$t('frameleaf_sharing_partner_add')}
       </Button>
     {/snippet}
@@ -508,6 +607,11 @@
     {:else}
       <p class="hint">{$t('frameleaf_sharing_partners_empty')}</p>
     {/if}
+    <!-- ACCOUNT-P2: once someone shares with you, where their photos go (partner sharing v2, FL-326:
+         your own copies, so there is no timeline switch). As the prototype's partner card. -->
+    {#if theirs.length > 0}
+      <p class="hint">{$t('frameleaf_sharing_partner_copies_note')}</p>
+    {/if}
   </Section>
 
   <Section title={$t('frameleaf_sharing_family_title')} description={$t('frameleaf_sharing_family_description')}>
@@ -516,6 +620,7 @@
         disabled={blocked || inviteChoices.length === 0}
         onclick={() => openDialog({ kind: 'invite', userId: inviteChoices[0]?.id ?? '' })}
       >
+        <Icon icon={mdiAccountPlusOutline} size="18" aria-hidden={true} />
         {$t('frameleaf_sharing_invite')}
       </Button>
     {/snippet}
@@ -571,6 +676,13 @@
         </Item>
       {/each}
     </ItemList>
+    <Row label={$t('frameleaf_sharing_suggest_spaces')} help={$t('frameleaf_sharing_suggest_spaces_help')}>
+      <Switch
+        label={$t('frameleaf_sharing_suggest_spaces')}
+        checked={sharingPreferences.draft['people.suggestInSpaces']}
+        onChange={(value) => sharingPreferences.set('people.suggestInSpaces', value)}
+      />
+    </Row>
     <Advanced>
       <Row
         label={$t('frameleaf_sharing_erase_label')}
@@ -648,6 +760,9 @@
     </Section>
   {/if}
 </KitPage>
+
+<!-- ACCOUNT-P2: the Save bar for the page's account switch; it sets the draft directly. -->
+<OwnPreferencesForm store={sharingPreferences} />
 
 {#if groups}
   <RecipientGroupsDialog

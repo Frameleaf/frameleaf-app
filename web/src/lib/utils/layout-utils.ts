@@ -116,11 +116,15 @@ class Adapter {
 }
 
 export function justifiedLayout(assets: (TimelineAsset | AssetResponseDto)[], options: CommonLayoutOptions) {
-  const adapter = {
+  if (assets.length === 0) {
+    return new Adapter({ containerHeight: 0, widowCount: 0, boxes: [] });
+  }
+
+  const adapter: Parameters<typeof createJustifiedLayout>[1] = {
     targetRowHeight: options.rowHeight,
     containerWidth: options.rowWidth,
     boxSpacing: options.spacing,
-    targetRowHeightTolerange: options.heightTolerance,
+    targetRowHeightTolerance: options.heightTolerance,
     containerPadding: 0,
   };
 

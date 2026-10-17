@@ -7,7 +7,19 @@ import en from '../../../../../i18n/en.json';
 /** CC-26: the template's Items and "Storage used / quota" columns (`AccountsLibraries.jsx` 143-196, 948-1000). */
 const GiB = 1024 ** 3;
 
+const flags = vi.hoisted(() => ({ value: { supporter: false } }));
+vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
+  featureFlagsManager: {
+    get value() {
+      return flags.value;
+    },
+  },
+}));
+
 beforeAll(() => addMessages('dev', en));
+beforeEach(() => {
+  flags.value = { supporter: false };
+});
 
 describe('AccountTable (FL-76 CC-26)', () => {
   it("shows each account's items and its storage against its quota", () => {
@@ -70,5 +82,22 @@ describe('AccountTable (FL-76 CC-26)', () => {
     render(AccountTable, { users: [user] });
 
     expect(screen.getByText('Over the limit · new uploads wait until there’s more space')).toBeInTheDocument();
+  });
+
+  it('supporter option (b): tags people with their own licence, and everyone on a licensed server', () => {
+    // the factory's account holds its own Individual licence
+    const ada = userAdminFactory.build({ id: 'ada', name: 'Ada', deletedAt: null });
+    const grace = userAdminFactory.build({ id: 'grace', name: 'Grace', deletedAt: null, license: null });
+    const { unmount } = render(AccountTable, { users: [ada, grace] });
+
+    const [, first, second] = within(screen.getByRole('table')).getAllByRole('row');
+    expect(within(first).getByText('Supporter')).toBeInTheDocument();
+    expect(within(second).queryByText('Supporter')).toBeNull();
+    unmount();
+
+    // a Server licence covers every account
+    flags.value = { supporter: true };
+    render(AccountTable, { users: [ada, grace] });
+    expect(within(screen.getByRole('table')).getAllByText('Supporter')).toHaveLength(2);
   });
 });

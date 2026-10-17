@@ -44,15 +44,14 @@ export const getTimes = (isoDateTimeUtc: string, localUtcOffsetHours: number) =>
   const utcDateTime = fromISODateTimeUTC(isoDateTimeUtc);
   const fileCreatedAt = (utcDateTime as DateTime<true>).toObject();
 
-  // Apply the offset to get the local time
-  // Note: offset is in hours (may be fractional), positive for east of UTC, negative for west
-  const luxonLocalDateTime = utcDateTime.plus({ hours: localUtcOffsetHours });
-  // Return as plain object (keeping the local time but in UTC zone context)
-  const localDateTime = (luxonLocalDateTime.setZone('UTC', { keepLocalTime: true }) as DateTime<true>).toObject();
+  // UTC offsets are elapsed hours; avoid calendar-duration arithmetic for finite offsets.
+  const shiftedDateTime = Number.isFinite(localUtcOffsetHours)
+    ? DateTime.fromMillis(utcDateTime.toMillis() + localUtcOffsetHours * 3_600_000, { zone: 'UTC' })
+    : utcDateTime.plus({ hours: localUtcOffsetHours });
 
   return {
     fileCreatedAt,
-    localDateTime,
+    localDateTime: (shiftedDateTime as DateTime<true>).toObject(),
   };
 };
 
@@ -89,6 +88,18 @@ export function formatTimelineMonthTitle(_date: DateTime): string {
     },
     { locale: get(locale) },
   );
+}
+
+/**
+ * A month as the library's headings write it, "October 2026": the loading placeholder's title, so
+ * it reads in the same long form as the loaded day headings ("Saturday, October 10, 2026").
+ */
+export function formatTimelineMonthHeading(_date: DateTime): string {
+  if (!_date.isValid) {
+    return _date.toString();
+  }
+  const date = _date as DateTime<true>;
+  return date.toLocaleString({ month: 'long', year: 'numeric' }, { locale: get(locale) });
 }
 
 export function formatGroupTitle(_date: DateTime): string {
@@ -189,7 +200,8 @@ export const isTimelineAssets = (assets: AssetResponseDto[] | TimelineAsset[]): 
   assets.length === 0 || 'ratio' in assets[0];
 
 export const plainDateTimeCompare = (ascending: boolean, a: TimelineDateTime, b: TimelineDateTime) => {
-  const [aDateTime, bDateTime] = ascending ? [a, b] : [b, a];
+  const aDateTime = ascending ? a : b;
+  const bDateTime = ascending ? b : a;
 
   if (aDateTime.year !== bDateTime.year) {
     return aDateTime.year - bDateTime.year;

@@ -146,7 +146,7 @@ class BrandAssetContractTests(unittest.TestCase):
 
         def toml_decoy(root):
             path = root / "machine-learning/pyproject.toml"
-            path.write_text(path.read_text().replace('name = "immich-ml"', '# name = "immich-ml"\nname = "frameleaf-ml"', 1))
+            path.write_text(path.read_text().replace('name = "frameleaf-ml"', '# name = "frameleaf-ml"\nname = "invalid-ml"', 1))
 
         def svelte_decoy(root):
             path = root / "web/src/routes/+layout.svelte"
@@ -175,6 +175,16 @@ class BrandAssetContractTests(unittest.TestCase):
 
         self.assert_invalid(coherent_manifest_mutation)
         self.assert_invalid(false_claim)
+
+    def test_toml_array_tables_are_separate_sections(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            body = '[project]\nname = "frameleaf-ml"\n\n[[tool.uv.index]]\nname = "a"\n\n[[tool.uv.index]]\nname = "b"\n'
+            (root / "pyproject.toml").write_text(body)
+            self.assertEqual(brand_assets.compatibility_value(root, "pyproject.toml", "toml-project-name"), "frameleaf-ml")
+            (root / "pyproject.toml").write_text(body + 'name = "c"\n')
+            with self.assertRaises(ValueError):
+                brand_assets.compatibility_value(root, "pyproject.toml", "toml-project-name")
 
 
 if __name__ == "__main__":

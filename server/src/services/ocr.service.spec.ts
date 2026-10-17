@@ -1,4 +1,4 @@
-import { AssetFileType, AssetVisibility, ImmichWorker, JobName, JobStatus } from 'src/enum.js';
+import { AssetFileType, AssetVisibility, FrameleafWorker, JobName, JobStatus } from 'src/enum.js';
 import { OcrService } from 'src/services/ocr.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
@@ -11,7 +11,7 @@ describe(OcrService.name, () => {
   beforeEach(() => {
     ({ sut, mocks } = newTestService(OcrService));
 
-    mocks.config.getWorker.mockReturnValue(ImmichWorker.Microservices);
+    mocks.config.getWorker.mockReturnValue(FrameleafWorker.Microservices);
     mocks.assetJob.getForOcr.mockResolvedValue({
       visibility: AssetVisibility.Timeline,
       previewFile: '/uploads/user-id/thumbs/path.jpg',
@@ -35,9 +35,10 @@ describe(OcrService.name, () => {
     it('should do nothing if machine learning is disabled', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.machineLearningDisabled);
 
-      await sut.handleQueueOcr({ force: false });
+      await expect(sut.handleQueueOcr({ force: false })).resolves.toBe(JobStatus.Skipped);
 
-      expect(mocks.database.setDimensionSize).not.toHaveBeenCalled();
+      expect(mocks.assetJob.selectionForOcrJob).not.toHaveBeenCalled();
+      expect(mocks.job.queueSelection).not.toHaveBeenCalled();
     });
 
     it('should queue the assets without ocr', async () => {
@@ -74,8 +75,9 @@ describe(OcrService.name, () => {
 
       expect(await sut.handleOcr({ id: '123' })).toEqual(JobStatus.Skipped);
 
-      expect(mocks.asset.getByIds).not.toHaveBeenCalled();
-      expect(mocks.machineLearning.encodeImage).not.toHaveBeenCalled();
+      expect(mocks.assetJob.getForOcr).not.toHaveBeenCalled();
+      expect(mocks.machineLearning.ocr).not.toHaveBeenCalled();
+      expect(mocks.ocr.upsert).not.toHaveBeenCalled();
     });
 
     it('should skip assets without a resize path', async () => {

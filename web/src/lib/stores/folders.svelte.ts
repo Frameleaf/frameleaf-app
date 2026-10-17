@@ -1,11 +1,4 @@
-import {
-  getAssetsByOriginalPath,
-  getFolderSummary,
-  /**
-   * TODO: Incorrect type
-   */
-  type AssetResponseDto,
-} from '@frameleaf/sdk';
+import { getAssetsByOriginalPath, getFolderSummary, type AssetResponseDto } from '@frameleaf/sdk';
 import { persisted } from 'svelte-persisted-store';
 import { MediaQuery } from 'svelte/reactivity';
 import { get } from 'svelte/store';
@@ -16,7 +9,7 @@ import {
   type FoldersView,
   type FolderTree,
 } from '$lib/frameleaf/folder-tree';
-import { eventManager } from '$lib/managers/event-manager.svelte';
+import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
 
 /**
  * The Folders browser's view (grid or columns) and whether file names show under the tiles. A
@@ -43,14 +36,13 @@ type AssetCache = {
 class FoldersStore {
   folders = $state.raw<FolderTree | null>(null);
   private assets = $state<AssetCache>({});
+  private assetLoads = new Map<string, Promise<AssetResponseDto[]>>();
   private pending: Promise<FolderTree> | null = null;
-  // Bumped on logout, so a response for the previous account never lands in the cleared store.
+  // Library access changes retire every response from the preceding access state.
   private generation = 0;
 
   constructor() {
-    eventManager.on({
-      AuthLogout: () => this.clearCache(),
-    });
+    onLibraryAccessChange(() => this.clearCache());
   }
 
   /** The cached tree, or a fresh one when there is none yet or `refresh` asks for it. */
@@ -61,7 +53,13 @@ class FoldersStore {
     // Concurrent loads share one request, so every caller gets the same tree.
     if (!this.pending) {
       const generation = this.generation;
-      const pending: Promise<FolderTree> = getFolderSummary()
+      const pending: Promise<FolderTree> = Promise.resolve(generation)
+        .then((owner) => {
+          if (owner !== this.generation) {
+            throw new DOMException('Folder tree read retired', 'AbortError');
+          }
+          return getFolderSummary();
+        })
         .then((rows) => {
           const tree = buildFolderTree(rows);
           if (generation === this.generation) {
@@ -81,25 +79,45 @@ class FoldersStore {
 
   bustAssetCache() {
     this.assets = {};
+    this.assetLoads.clear();
   }
 
-  async refreshAssetsByPath(path: string) {
-    const generation = this.generation;
-    const assets = await getAssetsByOriginalPath({ path });
-    if (generation === this.generation) {
-      this.assets[path] = assets;
-    }
-    return assets;
+  refreshAssetsByPath(path: string): Promise<AssetResponseDto[]> {
+    const cache = this.assets;
+    const pending = Promise.resolve({ path })
+      .then((request) => {
+        if (cache !== this.assets) {
+          throw new DOMException('Folder file read retired', 'AbortError');
+        }
+        return getAssetsByOriginalPath(request);
+      })
+      .then((assets) => {
+        if (cache === this.assets && this.assetLoads.get(path) === pending) {
+          // Prefix keys so reserved object names stay data, using ordinary assignment for deep Svelte reactivity.
+          cache[`:${path}`] = assets;
+        }
+        return assets;
+      })
+      .finally(() => {
+        if (this.assetLoads.get(path) === pending) {
+          this.assetLoads.delete(path);
+        }
+      });
+    this.assetLoads.set(path, pending);
+    return pending;
   }
 
   fetchAssetsByPath(path: string): Promise<AssetResponseDto[]> {
-    const cached = this.assets[path];
-    return cached ? Promise.resolve(cached) : this.refreshAssetsByPath(path);
+    const key = `:${path}`;
+    if (Object.hasOwn(this.assets, key)) {
+      return Promise.resolve(this.assets[key]);
+    }
+    return this.assetLoads.get(path) ?? this.refreshAssetsByPath(path);
   }
 
   clearCache() {
     this.generation++;
-    this.assets = {};
+    this.bustAssetCache();
     this.folders = null;
     this.pending = null;
   }

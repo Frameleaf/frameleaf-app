@@ -246,6 +246,17 @@ describe('owned strict dotLottie archives', () => {
     ).rejects.toThrow();
   });
 
+  it('refuses unreported central records that hide an unknown file from validation', async () => {
+    const archive = ownedLottieArchive('2', {
+      extra: [{ name: 'unknown/payload', data: Buffer.from('unvalidated') }],
+    });
+    await expect(readLottieArchive(archive)).rejects.toThrow('Lottie archive refused');
+    const understated = Buffer.from(archive);
+    understated.writeUInt16LE(3, understated.length - 22 + 8);
+    understated.writeUInt16LE(3, understated.length - 22 + 10);
+    await expect(readLottieArchive(understated)).rejects.toThrow('Lottie archive refused');
+  });
+
   it('refuses encrypted/unsupported/expanded entries and unproved active theme/resource branches', async () => {
     for (const declare of [{ flags: 1 }, { method: 12 }, { uncompressedSize: 17 * 1024 * 1024 }])
       await expect(

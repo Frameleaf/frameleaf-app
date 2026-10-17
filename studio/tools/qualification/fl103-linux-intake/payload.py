@@ -16,8 +16,8 @@ def identities(root):
  return files
 def acquire(config,out):
  node=Path(config['node']);npm=str(Path(config['npm']))
- assert run([str(node),'--version'])=='v24.21.0';assert run([str(node),npm,'--version'])=='11.8.0'
- lock=Path(config['input'])/'studio/engine-package-lock.json';assert sha(lock)=='5efddf7c35a2600f0228f0b973991838af8996fba8d5591dd7460dc3690a36dc'
+ assert run([str(node),'--version'])=='v26.11.1';assert run([str(node),npm,'--version'])=='11.8.0'
+ lock=Path(config['input'])/'studio/engine-package-lock.json';assert sha(lock)=='8b117f02224f297ba7511ac47f15a29532a38e9a59fa910d55c2aa9236f437f0'
  data=json.loads(lock.read_text());assert all(p.get('integrity') and p.get('resolved','').startswith('https://registry.npmjs.org/') for k,p in data['packages'].items() if k and not p.get('link'));(out/'package-lock.json').write_bytes(lock.read_bytes())
  (out/'package.json').write_text(json.dumps(data['packages']['']))
  archive=out/'freecut-4d62e8082c5eb387a96275bcbd323d28f6e41a62.tar.gz'
@@ -46,7 +46,7 @@ def acquire(config,out):
  deps=identities(out/'node_modules');resources=identities(executable.parent)
  (out/'dependencies.json').write_text(json.dumps(deps))
  (out/'browser-resources.json').write_text(json.dumps(resources))
- emit(out,'acquired.json',{'nodeVersion':'24.21.0','nodeSha256':sha(node),'npmVersion':'11.8.0','npmSha256':sha(npm),'playwrightVersion':json.loads((out/'node_modules/playwright/package.json').read_text())['version'],'browserRevision':1223,'browserVersion':shell['browserVersion'],'browserExecutableSha256':sha(executable),'dependencyFiles':len(deps),'dependencyManifestSha256':sha(out/'dependencies.json'),'browserManifestSha256':sha(out/'browser-resources.json'),'archiveSha256':sha(archive),'kernel':platform.release(),'python':sys.version,'pythonExecutableSha256':sha(sys.executable),'zlibCompile':zlib.ZLIB_VERSION,'zlibRuntime':zlib.ZLIB_RUNTIME_VERSION,'audioOrBrowserLaunched':False,'npmLifecycleScriptsExecuted':False})
+ emit(out,'acquired.json',{'nodeVersion':'26.11.1','nodeSha256':sha(node),'npmVersion':'11.8.0','npmSha256':sha(npm),'playwrightVersion':json.loads((out/'node_modules/playwright/package.json').read_text())['version'],'browserRevision':1223,'browserVersion':shell['browserVersion'],'browserExecutableSha256':sha(executable),'dependencyFiles':len(deps),'dependencyManifestSha256':sha(out/'dependencies.json'),'browserManifestSha256':sha(out/'browser-resources.json'),'archiveSha256':sha(archive),'kernel':platform.release(),'python':sys.version,'pythonExecutableSha256':sha(sys.executable),'zlibCompile':zlib.ZLIB_VERSION,'zlibRuntime':zlib.ZLIB_RUNTIME_VERSION,'audioOrBrowserLaunched':False,'npmLifecycleScriptsExecuted':False})
 class InvalidMigrationSetup(AssertionError):pass
 def target_identity(path):
  try:

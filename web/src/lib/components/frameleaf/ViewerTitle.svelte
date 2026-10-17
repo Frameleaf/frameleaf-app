@@ -4,19 +4,25 @@
    *
    * The data is the metadata the detail panel already receives on `AssetResponseDto`;
    * this is layout only, matching `mv-title` in the approved template. The line collapses
-   * to nothing when the asset carries no metadata, and is hidden below `md` so the narrow
-   * navbar keeps room for the actions.
+   * to nothing when the asset carries no metadata. It shows at every width, as in the template:
+   * on phones the actions move to the bottom toolbar, so the header has room for it.
+   *
+   * VIEWER-P8 (MediaViewer.jsx:1019-1031, media-viewer.css:74-80): "3 of 19" sits beside the name,
+   * then the kind (Video, Live, Panorama). Phones leave the position to the footer
+   * (media-viewer.css:2039-2041).
    */
   import { viewerHeadlineText } from '$lib/frameleaf/viewer-headline';
   import { isLivePhoto, isPanorama, isVideoAsset } from '$lib/frameleaf/viewer-media';
+  import type { ViewerPosition } from '$lib/frameleaf/viewer-position';
   import type { AssetResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   type Props = {
     asset: AssetResponseDto;
+    position?: ViewerPosition | null;
   };
 
-  let { asset }: Props = $props();
+  let { asset, position = null }: Props = $props();
 
   const headline = $derived(viewerHeadlineText(asset));
   const kind = $derived.by(() => {
@@ -33,13 +39,22 @@
   });
 </script>
 
-<div class="dark hidden min-w-0 flex-col justify-center ps-1 text-white md:flex" data-testid="viewer-title">
+<div class="dark flex min-w-0 flex-col justify-center ps-1 text-white" data-testid="viewer-title">
   <div class="flex min-w-0 items-baseline gap-2">
-    <strong class="truncate text-sm font-medium" title={asset.originalFileName}>
+    <strong class="truncate text-sm font-semibold" title={asset.originalFileName}>
       {asset.originalFileName}
     </strong>
-    {#if kind}
-      <small class="shrink-0 text-xs text-white/70">{kind}</small>
+    {#if position || kind}
+      <small class="fl-title-meta shrink-0 text-xs text-white/70">
+        {#if position}
+          <span class="fl-title-position" data-testid="viewer-title-position">
+            {$t('frameleaf_viewer_position', { values: { index: position.index + 1, total: position.total } })}
+          </span>
+        {/if}
+        {#if kind}
+          <span class="fl-title-kind">{kind}</span>
+        {/if}
+      </small>
     {/if}
   </div>
   {#if headline}
@@ -48,3 +63,23 @@
     </span>
   {/if}
 </div>
+
+<style>
+  .fl-title-meta {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .fl-title-position + .fl-title-kind::before {
+    content: '· ';
+  }
+
+  @media (max-width: 700px) {
+    .fl-title-position {
+      display: none;
+    }
+
+    .fl-title-position + .fl-title-kind::before {
+      content: none;
+    }
+  }
+</style>

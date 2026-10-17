@@ -14,8 +14,6 @@ beforeAll(() => addMessages('dev', en));
 const now = new Date('2026-09-25T15:00:00.000Z');
 const base = {
   onRetry: vi.fn(),
-  onConfigure: vi.fn(),
-  configureLabel: 'Configure processing',
   ownName: 'Ada',
   now,
   pageTitle: ({ area, section }: { area: string; section?: string }) => [area, section].filter(Boolean).join(' › '),
@@ -41,7 +39,8 @@ describe('SettingsChangeHistory', () => {
           createdAt: '2026-09-23T10:00:00.000Z',
           deviceLabel: 'macOS · Web',
           changes: [
-            { path: 'download.archiveSize', before: String(4 * 1024 ** 3), after: String(10 * 1024 ** 3) },
+            // D5: sizes are decimal (1 GB = 1,000,000,000 bytes).
+            { path: 'download.archiveSize', before: String(4 * 1000 ** 3), after: String(10 * 1000 ** 3) },
             { path: 'cast.gCastEnabled', before: 'false', after: 'true' },
           ],
           omittedChanges: 0,
@@ -161,20 +160,19 @@ describe('SettingsChangeHistory', () => {
     expect(screen.queryByText('An administrator')).not.toBeInTheDocument();
   });
 
-  it('offers the account its preferences when it has no history yet', async () => {
-    const onConfigure = vi.fn();
-    render(SettingsChangeHistory, {
-      ...base,
-      onConfigure,
-      configureLabel: 'Open your preferences',
-      entries: undefined,
-      preferences: [],
-    });
+  it('says there is no history yet and offers nothing else to do (ADMIN-P8)', () => {
+    render(SettingsChangeHistory, { ...base, entries: undefined, preferences: [] });
 
     expect(screen.getByRole('heading', { name: 'No changes yet' })).toBeInTheDocument();
     expect(screen.getByText(en.frameleaf_words_history_empty_own)).toBeInTheDocument();
-    await fireEvent.click(screen.getByRole('button', { name: 'Open your preferences' }));
-    expect(onConfigure).toHaveBeenCalled();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('gives an administrator no shortcut away from an empty history either', () => {
+    render(SettingsChangeHistory, { ...base, entries: [], preferences: [] });
+
+    expect(screen.getByText(en.frameleaf_words_history_empty_body)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Configure processing' })).not.toBeInTheDocument();
   });
 
   it('waits for both histories before drawing the timeline', () => {

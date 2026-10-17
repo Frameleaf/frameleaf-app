@@ -10,6 +10,9 @@ interface Options {
 
 export function focusTrap(container: HTMLElement, options?: Options) {
   const triggerElement = document.activeElement;
+  let active = options?.active ?? true;
+  let destroyed = false;
+  let focusGeneration = 0;
 
   // Create sentinel nodes
   const startSentinel = document.createElement('div');
@@ -21,12 +24,6 @@ export function focusTrap(container: HTMLElement, options?: Options) {
 
   const endSentinel = document.createElement('div');
   endSentinel.dataset.focusTrap = 'end';
-
-  const withDefaults = (options?: Options) => {
-    return {
-      active: options?.active ?? true,
-    };
-  };
 
   /**
    * The start and end sentinels catch focus on its way out of an active trap and hand it back in at
@@ -43,7 +40,7 @@ export function focusTrap(container: HTMLElement, options?: Options) {
   };
   startSentinel.style.outline = 'none';
   endSentinel.style.outline = 'none';
-  setCatching(withDefaults(options).active);
+  setCatching(active);
 
   // Insert sentinel nodes into the container
   container.insertBefore(startSentinel, container.firstChild);
@@ -51,8 +48,12 @@ export function focusTrap(container: HTMLElement, options?: Options) {
   container.append(endSentinel);
 
   const setInitialFocus = async () => {
+    const generation = ++focusGeneration;
     // Use tick() to ensure focus trap works correctly inside <Portal />
     await tick();
+    if (destroyed || !active || generation !== focusGeneration) {
+      return;
+    }
 
     // Get focusable elements, excluding our sentinel nodes
     const allTabbable = getTabbable(container, false);
@@ -67,7 +68,7 @@ export function focusTrap(container: HTMLElement, options?: Options) {
     }
   };
 
-  if (withDefaults(options).active) {
+  if (active) {
     void setInitialFocus();
   }
 
@@ -84,7 +85,7 @@ export function focusTrap(container: HTMLElement, options?: Options) {
 
   // Add focus event listeners to sentinel nodes
   const handleStartFocus = () => {
-    if (!withDefaults(options).active) {
+    if (!active) {
       return;
     }
 
@@ -99,7 +100,7 @@ export function focusTrap(container: HTMLElement, options?: Options) {
 
   const handleBackupFocus = () => {
     // Backup sentinel keeps focus when there are no other focusable elements
-    if (!withDefaults(options).active) {
+    if (!active) {
       return;
     }
 
@@ -112,7 +113,7 @@ export function focusTrap(container: HTMLElement, options?: Options) {
   };
 
   const handleEndFocus = () => {
-    if (!withDefaults(options).active) {
+    if (!active) {
       return;
     }
 
@@ -131,13 +132,14 @@ export function focusTrap(container: HTMLElement, options?: Options) {
 
   return {
     update(newOptions?: Options) {
-      options = newOptions;
-      setCatching(withDefaults(options).active);
-      if (withDefaults(options).active) {
+      active = newOptions?.active ?? true;
+      setCatching(active);
+      if (active) {
         void setInitialFocus();
       }
     },
     destroy() {
+      destroyed = true;
       // Remove event listeners
       startSentinel.removeEventListener('focus', handleStartFocus);
       backupSentinel.removeEventListener('focus', handleBackupFocus);

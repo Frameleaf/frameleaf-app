@@ -2,14 +2,14 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { AuthApiKey, AuthSession, AuthSharedLink, AuthUser, UserAdmin } from 'src/database.js';
-import { ImmichCookie, UserMetadataKey } from 'src/enum.js';
+import { AuthCookie, UserMetadataKey } from 'src/enum.js';
 import { UserMetadataItem } from 'src/types.js';
 import { toEmail } from 'src/validation.js';
 
 export type CookieResponse = {
   isSecure: boolean;
   rememberMe?: boolean;
-  values: Array<{ key: ImmichCookie; value: string | null }>;
+  values: Array<{ key: AuthCookie; value: string | null }>;
 };
 
 export const pinCodeRegex = /^\d{6}$/;

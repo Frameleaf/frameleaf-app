@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import type { IncomingHttpHeaders } from 'node:http';
-import { ImmichHeader } from 'src/enum.js';
+import { RequestHeader } from 'src/enum.js';
 import { type FrameleafVia, claimsFrameleafVia, frameleafVia } from 'src/utils/frameleaf-sign-in.js';
 
 /**
@@ -29,7 +29,7 @@ export const FRAMELEAF_VIA_UNVERIFIED = 'frameleaf_via_unverified';
  * Headers in the `X-Frameleaf-` namespace that clients legitimately send: credentials this server
  * issued itself, checked where they are used, never arrival claims. Everything else is dropped.
  */
-const CLIENT_CREDENTIAL_HEADERS = new Set<string>([ImmichHeader.RenderWorkerSession]);
+const CLIENT_CREDENTIAL_HEADERS = new Set<string>([RequestHeader.RenderWorkerSession]);
 
 export type FrameleafForwarded = {
   /** The visitor's address as the edge worker reported it. */

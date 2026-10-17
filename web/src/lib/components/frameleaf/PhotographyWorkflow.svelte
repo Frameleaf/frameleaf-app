@@ -1,18 +1,30 @@
 <script lang="ts">
+  /**
+   * One shoot's client work: the shoot strip (cover, counts, Client preview), the tabs for its
+   * sections, and the section itself. `publishing` is the Galleries section, which shows the strip
+   * without the tabs.
+   */
   import { onMount, onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import { AssetMediaSize, getAssetDevelop } from '@frameleaf/sdk';
-  import Button from './Button.svelte';
-  import PhotographyWatermarkEditor from './PhotographyWatermarkEditor.svelte';
+  import { Icon } from '@frameleaf/ui';
   import {
-    photographyErrorKey,
-    photographyLabelKey,
-    shootSectionKeys,
-    shootTypeKeys,
-    type PhotographyLabel,
-  } from './PhotographyStatus.svelte';
+    mdiCameraOutline,
+    mdiCartOutline,
+    mdiCheck,
+    mdiEyeOutline,
+    mdiHeartOutline,
+    mdiImageCheckOutline,
+    mdiShieldLockOutline,
+  } from '@mdi/js';
+  import Button from './Button.svelte';
+  import PhotographyShootTabs, { type ShootTab } from './PhotographyShootTabs.svelte';
+  import PhotographyThumb from './PhotographyThumb.svelte';
+  import PhotographyWatermarkEditor from './PhotographyWatermarkEditor.svelte';
+  import { photographyErrorKey, photographyLabelKey, type PhotographyLabel } from './PhotographyStatus.svelte';
   import { loadBrand, type Shoot, type Branding } from '$lib/frameleaf/photography/api';
   import {
+    galleryPreviewSession,
     workflowRequest,
     studioPresetsRequest,
     type Workflow,
@@ -30,7 +42,37 @@
   let {
     shoot,
     panel = 'intake',
-  }: { shoot: Shoot; panel?: 'intake' | 'workflow' | 'orders' | 'presentation' | 'publishing' } = $props();
+    onSection,
+    onGalleries,
+  }: {
+    shoot: Shoot;
+    panel?: Exclude<ShootTab, 'photos'> | 'publishing';
+    /** Another tab under the strip; without it the tabs are not shown. */
+    onSection?: (tab: ShootTab) => void;
+    /** The Galleries section, where invitations, passwords and expiry live. */
+    onGalleries?: () => void;
+  } = $props();
+  /** The three ways of working a client gallery, as cards (PhotographyWorkflow.jsx WORKFLOW_MODES). */
+  const journeys = [
+    {
+      mode: 'edited-delivery',
+      icon: mdiImageCheckOutline,
+      name: 'frameleaf_photography_mode_edited',
+      detail: 'frameleaf_photography_mode_edited_detail',
+    },
+    {
+      mode: 'select-before-editing',
+      icon: mdiHeartOutline,
+      name: 'frameleaf_photography_mode_select',
+      detail: 'frameleaf_photography_mode_select_detail',
+    },
+    {
+      mode: 'sell-by-photo',
+      icon: mdiCartOutline,
+      name: 'frameleaf_photography_mode_sell',
+      detail: 'frameleaf_photography_mode_sell_detail',
+    },
+  ] as const;
   let stored = $state<Workflow | null>(null);
   let draft = $state<Workflow | null>(null);
   let brand = $state<Branding | null>(null);
@@ -59,6 +101,7 @@
   let pinnedChoices = $state<Record<string, string>>({});
   let outputVersions = $state<Record<string, Record<string, string>>>({});
   let clientApproval = $state(true);
+  let previewing = $state(false);
   let requestGeneration = 0;
   let disposed = false;
   const eligible = $derived(draft?.captures.filter((capture) => capture.eligible && !capture.withheld) ?? []);
@@ -442,6 +485,51 @@
       error = $t('frameleaf_photography_invitation_copy_failed');
     }
   }
+  /**
+   * Opens the published gallery in a new tab exactly as the client sees it, with a short preview
+   * session the server keeps from changing anything. The tab opens at once, so the browser keeps
+   * it as the click's own window, and goes to the gallery once the session arrives.
+   */
+  async function clientPreview() {
+    if (previewing || !stored) {
+      return;
+    }
+    if (!stored.publication) {
+      // Nothing is published yet, so the client would see an empty gallery: say what to do instead.
+      error = '';
+      message = $t('frameleaf_photography_client_preview_unpublished');
+      return;
+    }
+    const tab = window.open('about:blank', '_blank');
+    if (tab) {
+      tab.opener = null;
+    }
+    previewing = true;
+    error = '';
+    try {
+      const { session, expiresAt } = await galleryPreviewSession(shoot.id);
+      const url = new URL(`/photography/gallery/${shoot.id}`, location.origin);
+      url.hash = new URLSearchParams({ preview: session, expires: expiresAt }).toString();
+      if (tab && !tab.closed) {
+        tab.location.href = url.href;
+      } else if (!disposed) {
+        location.assign(url.href);
+      }
+    } catch (error_) {
+      tab?.close();
+      if (disposed) {
+        return;
+      }
+      // 409: the server has nothing published to show yet, the same as the check above.
+      if ((error_ as { status?: number })?.status === 409) {
+        message = $t('frameleaf_photography_client_preview_unpublished');
+      } else {
+        error = describe(error_);
+      }
+    } finally {
+      previewing = false;
+    }
+  }
   const recipient = (id: string) =>
     stored?.recipients.find((row) => row.id === id)?.name ?? $t('frameleaf_photography_recipient');
   const canSettle = (order: Order) => order.status === 'accepted';
@@ -457,12 +545,34 @@
 </script>
 
 <div class="phd" aria-busy={busy}>
-  <div class="phd-toolbar">
-    <div>
-      <span class="phd-eyebrow">{$t(shootTypeKeys[shoot.type])} · {shoot.client}</span>
-      <h2>{$t(shootSectionKeys[panel])}</h2>
+  <div class="phx-shoot-head">
+    <div class="phx-project-context">
+      <span class="phx-project-cover"
+        >{#if shoot.coverAssetId && !shoot.unavailable}<PhotographyThumb
+            src={getAssetMediaUrl({ id: shoot.coverAssetId, size: AssetMediaSize.Thumbnail })}
+            loading="eager"
+          />{:else}<Icon icon={mdiCameraOutline} size="1.4rem" aria-hidden={true} />{/if}</span
+      >
+      <span class="phx-project-text"
+        ><strong>{shoot.name}</strong><small
+          >{[
+            shoot.client,
+            ...(draft
+              ? [
+                  $t('frameleaf_photography_capture_count', { values: { count: draft.captures.length } }),
+                  $t('frameleaf_photography_eligible_proof_count', { values: { count: eligible.length } }),
+                ]
+              : []),
+          ].join(' · ')}</small
+        ></span
+      >
+      <Button disabled={previewing || !stored} onclick={clientPreview}
+        ><Icon icon={mdiEyeOutline} size="1.1rem" aria-hidden={true} />{$t(
+          'frameleaf_photography_client_preview',
+        )}</Button
+      >
     </div>
-    <Button disabled={busy} onclick={reload}>{$t('frameleaf_photography_refresh')}</Button>
+    {#if onSection && panel !== 'publishing'}<PhotographyShootTabs current={panel} {onSection} />{/if}
   </div>
   {#if error}<div class="phw-notice" role="alert">
       {error}<Button disabled={busy} onclick={reload}>{$t('frameleaf_photography_reload')}</Button>
@@ -475,16 +585,6 @@
       {$t('frameleaf_photography_album_unavailable_short')}
     </div>
   {:else}
-    <div class="phd-metrics">
-      <div><strong>{draft.captures.length}</strong><span>{$t('frameleaf_photography_metric_captures')}</span></div>
-      <div><strong>{eligible.length}</strong><span>{$t('frameleaf_photography_metric_proofs')}</span></div>
-      <div><strong>{draft.rounds.length}</strong><span>{$t('frameleaf_photography_selection_rounds')}</span></div>
-      <div>
-        <strong>{draft.orders.filter((order) => order.status === 'settled').length}</strong><span
-          >{$t('frameleaf_photography_metric_paid')}</span
-        >
-      </div>
-    </div>
     {#if panel === 'intake'}
       <section class="phd-card">
         <div class="phd-row">
@@ -621,10 +721,9 @@
       <div class="phd-captures">
         {#each filtered.slice(0, limit) as capture (capture.id)}<article class="phd-capture">
             <div class="phd-capture-image">
-              {#if photoUrl(capture)}<img
+              {#if photoUrl(capture)}<PhotographyThumb
                   src={photoUrl(capture)}
                   alt={capture.fileName ?? $t('frameleaf_photography_client_photograph')}
-                  loading="lazy"
                 />{:else}<span
                   >{capture.exclusion
                     ? named('exclusion', capture.exclusion)
@@ -716,114 +815,139 @@
           >{$t('frameleaf_photography_show_more_captures')}</Button
         >{/if}
     {:else if panel === 'workflow'}
+      <!-- PhotographyWorkflow.jsx: pick a way of working first, then the package and the protection. -->
       <section class="phd-card">
-        <h3>{$t('frameleaf_photography_presets_title')}</h3>
-        <p>
-          {$t('frameleaf_photography_presets_body')}
-        </p>
-        <div class="phd-row">
-          <label>{$t('frameleaf_photography_preset_name')}<input maxlength="100" bind:value={presetName} /></label
-          ><Button
-            disabled={busy || !presetName.trim() || (draft.studioPresets?.presets.length ?? 0) >= 30}
-            onclick={() => saveStudioPreset()}>{$t('frameleaf_photography_save_preset')}</Button
-          >
+        <span class="phx-eyebrow">{$t('frameleaf_photography_journey_eyebrow')}</span>
+        <h3>{$t('frameleaf_photography_journey_heading')}</h3>
+        <p>{$t('frameleaf_photography_journey_lead')}</p>
+        <div class="phx-mode-grid" role="group" aria-label={$t('frameleaf_photography_journey_eyebrow')}>
+          {#each journeys as journey (journey.mode)}<button
+              type="button"
+              aria-pressed={draft.config.mode === journey.mode}
+              disabled={busy}
+              onclick={() => (draft!.config.mode = journey.mode)}
+              ><Icon icon={journey.icon} size="1.45rem" aria-hidden={true} /><strong>{$t(journey.name)}</strong><span
+                >{$t(journey.detail)}</span
+              >{#if draft.config.mode === journey.mode}<small
+                  ><Icon icon={mdiCheck} size="0.875rem" aria-hidden={true} />{$t(
+                    'frameleaf_photography_journey_chosen',
+                  )}</small
+                >{/if}</button
+            >{/each}
         </div>
-        {#each draft.studioPresets?.presets ?? [] as preset (preset.id)}<div class="phd-row phd-order">
-            <span>{preset.name}</span>
-            <div class="phd-actions">
-              <Button
-                disabled={busy}
-                onclick={() =>
-                  mutate(`/studio-presets/${preset.id}/apply`, 'POST', {
-                    expectedPresetRevision: draft!.studioPresets!.revision,
-                  })}>{$t('frameleaf_photography_preset_apply')}</Button
-              ><Button disabled={busy || !presetName.trim()} onclick={() => saveStudioPreset(preset.id)}
-                >{$t('frameleaf_photography_preset_replace')}</Button
-              >
-            </div>
-          </div>{:else}<p>{$t('frameleaf_photography_presets_none')}</p>{/each}
-        <details>
-          <summary>{$t('frameleaf_photography_snapshots')}</summary><Button
-            disabled={busy || !presetName.trim() || draft.presets.length >= 30}
-            onclick={() => mutate('/presets', 'POST', { id: null, name: presetName.trim(), config: draft!.config })}
-            >{$t('frameleaf_photography_snapshot_save')}</Button
-          >{#each draft.presets as preset (preset.id)}<div class="phd-row">
-              <span>{preset.name}</span><Button disabled={busy} onclick={() => mutate(`/presets/${preset.id}/apply`)}
-                >{$t('frameleaf_photography_snapshot_restore')}</Button
+      </section>
+      <div class="phx-two-column">
+        <section class="phd-card">
+          <h3>{$t('frameleaf_photography_package_title')}</h3>
+          <div class="phd-fields">
+            <label
+              >{$t('frameleaf_photography_collection_title')}<input
+                maxlength="200"
+                bind:value={draft.config.title}
+              /></label
+            ><label
+              >{$t('frameleaf_photography_payment')}<select bind:value={draft.config.paymentTiming}
+                ><option value="before-editing">{$t('frameleaf_photography_payment_before')}</option><option
+                  value="after-approval">{$t('frameleaf_photography_payment_after')}</option
+                ></select
+              ></label
+            ><label
+              >{$t('frameleaf_photography_currency')}<input maxlength="3" bind:value={draft.config.currency} /></label
+            ><label
+              >{$t('frameleaf_photography_included_photographs')}<input
+                type="number"
+                min="0"
+                step="1"
+                bind:value={draft.config.includedCount}
+              /></label
+            ><label
+              >{$t('frameleaf_photography_additional_price')}<input
+                type="number"
+                min="0"
+                step="0.01"
+                value={draft.config.additionalPrice / 100}
+                onchange={(event) => {
+                  draft!.config.additionalPrice = Math.round(event.currentTarget.valueAsNumber * 100);
+                }}
+              /></label
+            ><label
+              >{$t('frameleaf_photography_collection_price')}<input
+                type="number"
+                min="0"
+                step="0.01"
+                value={draft.config.collectionPrice === null ? '' : draft.config.collectionPrice / 100}
+                onchange={(event) => {
+                  draft!.config.collectionPrice =
+                    event.currentTarget.value === '' ? null : Math.round(event.currentTarget.valueAsNumber * 100);
+                }}
+                placeholder={$t('frameleaf_photography_not_offered')}
+              /></label
+            ><label
+              >{$t('frameleaf_photography_turnaround')}<input
+                type="number"
+                min="0"
+                max="365"
+                step="1"
+                bind:value={draft.config.turnaroundDays}
+              /></label
+            ><label
+              >{$t('frameleaf_photography_selection_deadline')}<input
+                type="date"
+                value={draft.config.selectionDeadline?.slice(0, 10) ?? ''}
+                onchange={(event) => {
+                  draft!.config.selectionDeadline = event.currentTarget.value
+                    ? new Date(`${event.currentTarget.value}T23:59:59`).toISOString()
+                    : null;
+                }}
+              /></label
+            >
+          </div>
+          <p>
+            {$t('frameleaf_photography_additional_price_note', {
+              values: { price: money(draft.config.additionalPrice) },
+            })}
+          </p>
+          <label
+            >{$t('frameleaf_photography_client_terms')}<textarea
+              maxlength="4000"
+              rows="4"
+              bind:value={draft.config.terms}></textarea></label
+          >
+          <div class="phd-row">
+            <h4>{$t('frameleaf_photography_bundles')}</h4>
+            <Button
+              disabled={busy || draft.config.bundles.length >= 20}
+              onclick={() => {
+                draft!.config.bundles.push({ count: 5, price: 0 });
+              }}>{$t('frameleaf_photography_add_bundle')}</Button
+            >
+          </div>
+          {#each draft.config.bundles as bundle, index (index)}<div class="phd-fields">
+              <label
+                >{$t('frameleaf_photography_client_photographs')}<input
+                  type="number"
+                  min="1"
+                  step="1"
+                  bind:value={bundle.count}
+                /></label
+              ><label
+                >{$t('frameleaf_photography_bundle_price')}<input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={bundle.price / 100}
+                  onchange={(event) => {
+                    bundle.price = Math.round(event.currentTarget.valueAsNumber * 100);
+                  }}
+                /></label
+              ><Button onclick={() => draft!.config.bundles.splice(index, 1)}
+                >{$t('frameleaf_photography_remove_bundle')}</Button
               >
             </div>{/each}
-        </details>
-      </section>
-      <section class="phd-card">
-        <h3>{$t('frameleaf_photography_journey_title')}</h3>
-        <div class="phd-fields">
+        </section>
+        <section class="phd-card phx-protection">
+          <h3>{$t('frameleaf_photography_protection_title')}</h3>
           <label
-            >{$t('frameleaf_photography_collection_title')}<input
-              maxlength="200"
-              bind:value={draft.config.title}
-            /></label
-          ><label
-            >{$t('frameleaf_photography_workflow')}<select bind:value={draft.config.mode}
-              ><option value="edited-delivery">{$t('frameleaf_photography_mode_edited')}</option><option
-                value="select-before-editing">{$t('frameleaf_photography_mode_select')}</option
-              ><option value="sell-by-photo">{$t('frameleaf_photography_mode_sell')}</option></select
-            ></label
-          ><label
-            >{$t('frameleaf_photography_payment')}<select bind:value={draft.config.paymentTiming}
-              ><option value="before-editing">{$t('frameleaf_photography_payment_before')}</option><option
-                value="after-approval">{$t('frameleaf_photography_payment_after')}</option
-              ></select
-            ></label
-          ><label
-            >{$t('frameleaf_photography_currency')}<input maxlength="3" bind:value={draft.config.currency} /></label
-          ><label
-            >{$t('frameleaf_photography_included_photographs')}<input
-              type="number"
-              min="0"
-              step="1"
-              bind:value={draft.config.includedCount}
-            /></label
-          ><label
-            >{$t('frameleaf_photography_additional_price')}<input
-              type="number"
-              min="0"
-              step="0.01"
-              value={draft.config.additionalPrice / 100}
-              onchange={(event) => {
-                draft!.config.additionalPrice = Math.round(event.currentTarget.valueAsNumber * 100);
-              }}
-            /></label
-          ><label
-            >{$t('frameleaf_photography_collection_price')}<input
-              type="number"
-              min="0"
-              step="0.01"
-              value={draft.config.collectionPrice === null ? '' : draft.config.collectionPrice / 100}
-              onchange={(event) => {
-                draft!.config.collectionPrice =
-                  event.currentTarget.value === '' ? null : Math.round(event.currentTarget.valueAsNumber * 100);
-              }}
-              placeholder={$t('frameleaf_photography_not_offered')}
-            /></label
-          ><label
-            >{$t('frameleaf_photography_turnaround')}<input
-              type="number"
-              min="0"
-              max="365"
-              step="1"
-              bind:value={draft.config.turnaroundDays}
-            /></label
-          ><label
-            >{$t('frameleaf_photography_selection_deadline')}<input
-              type="date"
-              value={draft.config.selectionDeadline?.slice(0, 10) ?? ''}
-              onchange={(event) => {
-                draft!.config.selectionDeadline = event.currentTarget.value
-                  ? new Date(`${event.currentTarget.value}T23:59:59`).toISOString()
-                  : null;
-              }}
-            /></label
-          ><label
             >{$t('frameleaf_photography_gallery_expiry')}<input
               type="date"
               value={draft.config.expiresAt?.slice(0, 10) ?? ''}
@@ -834,88 +958,51 @@
               }}
             /></label
           >
-        </div>
-        <p>
-          {$t('frameleaf_photography_additional_price_note', {
-            values: { price: money(draft.config.additionalPrice) },
-          })}
-        </p>
-        <label
-          >{$t('frameleaf_photography_client_terms')}<textarea maxlength="4000" rows="4" bind:value={draft.config.terms}
-          ></textarea></label
-        >
-        <div class="phd-row">
-          <h4>{$t('frameleaf_photography_bundles')}</h4>
-          <Button
-            disabled={busy || draft.config.bundles.length >= 20}
-            onclick={() => {
-              draft!.config.bundles.push({ count: 5, price: 0 });
-            }}>{$t('frameleaf_photography_add_bundle')}</Button
-          >
-        </div>
-        {#each draft.config.bundles as bundle, index (index)}<div class="phd-fields">
+          <div class="phx-protection-part">
+            <h4>{$t('frameleaf_photography_proof_protection')}</h4>
+            <p>{$t('frameleaf_photography_proof_protection_body')}</p>
+            <details>
+              <summary>{$t('frameleaf_photography_adjust_watermark')}</summary>
+              <PhotographyWatermarkEditor bind:value={draft.config.proofWatermark} disabled={busy} />
+            </details>
+          </div>
+          <div class="phx-protection-part">
+            <h4>{$t('frameleaf_photography_web_previews')}</h4>
             <label
-              >{$t('frameleaf_photography_client_photographs')}<input
-                type="number"
-                min="1"
-                step="1"
-                bind:value={bundle.count}
-              /></label
-            ><label
-              >{$t('frameleaf_photography_bundle_price')}<input
-                type="number"
-                min="0"
-                step="0.01"
-                value={bundle.price / 100}
-                onchange={(event) => {
-                  bundle.price = Math.round(event.currentTarget.valueAsNumber * 100);
-                }}
-              /></label
-            ><Button onclick={() => draft!.config.bundles.splice(index, 1)}
-              >{$t('frameleaf_photography_remove_bundle')}</Button
-            >
-          </div>{/each}
-      </section>
-      <section class="phd-card">
-        <h3>{$t('frameleaf_photography_proof_protection')}</h3>
-        <p>{$t('frameleaf_photography_proof_protection_body')}</p>
-        <PhotographyWatermarkEditor bind:value={draft.config.proofWatermark} disabled={busy} />
-      </section>
-      <section class="phd-card">
-        <h3>{$t('frameleaf_photography_web_previews')}</h3>
-        <label
-          ><input
-            type="checkbox"
-            checked={draft.config.webWatermark !== null}
-            onchange={(event) =>
-              (draft!.config.webWatermark = event.currentTarget.checked
-                ? structuredClone($state.snapshot(draft!.config.proofWatermark))
-                : null)}
-          />{$t('frameleaf_photography_web_watermark_toggle')}</label
-        >{#if draft.config.webWatermark}<PhotographyWatermarkEditor
-            bind:value={draft.config.webWatermark}
-            disabled={busy}
-          />{/if}
-      </section>
-      <section class="phd-card">
-        <h3>{$t('frameleaf_photography_final_downloads')}</h3>
-        <p>
-          {$t('frameleaf_photography_final_downloads_body')}
-        </p>
-        <label
-          ><input
-            type="checkbox"
-            checked={draft.config.downloadWatermark !== null}
-            onchange={(event) =>
-              (draft!.config.downloadWatermark = event.currentTarget.checked
-                ? structuredClone($state.snapshot(draft!.config.proofWatermark))
-                : null)}
-          />{$t('frameleaf_photography_watermark_exports')}</label
-        >{#if draft.config.downloadWatermark}<PhotographyWatermarkEditor
-            bind:value={draft.config.downloadWatermark}
-            disabled={busy}
-          />{/if}
-      </section>
+              ><input
+                type="checkbox"
+                checked={draft.config.webWatermark !== null}
+                onchange={(event) =>
+                  (draft!.config.webWatermark = event.currentTarget.checked
+                    ? structuredClone($state.snapshot(draft!.config.proofWatermark))
+                    : null)}
+              />{$t('frameleaf_photography_web_watermark_toggle')}</label
+            >{#if draft.config.webWatermark}<details>
+                <summary>{$t('frameleaf_photography_adjust_watermark')}</summary>
+                <PhotographyWatermarkEditor bind:value={draft.config.webWatermark} disabled={busy} />
+              </details>{/if}
+          </div>
+          <div class="phx-protection-part">
+            <h4>{$t('frameleaf_photography_final_downloads')}</h4>
+            <p>
+              {$t('frameleaf_photography_final_downloads_body')}
+            </p>
+            <label
+              ><input
+                type="checkbox"
+                checked={draft.config.downloadWatermark !== null}
+                onchange={(event) =>
+                  (draft!.config.downloadWatermark = event.currentTarget.checked
+                    ? structuredClone($state.snapshot(draft!.config.proofWatermark))
+                    : null)}
+              />{$t('frameleaf_photography_watermark_exports')}</label
+            >{#if draft.config.downloadWatermark}<details>
+                <summary>{$t('frameleaf_photography_adjust_watermark')}</summary>
+                <PhotographyWatermarkEditor bind:value={draft.config.downloadWatermark} disabled={busy} />
+              </details>{/if}
+          </div>
+        </section>
+      </div>
       <section class="phd-card">
         <h3>{$t('frameleaf_photography_outputs_title')}</h3>
         <p>
@@ -1011,9 +1098,53 @@
               </div>
             </div>{/each}
         </section>{/if}
-      <Button variant="primary" disabled={busy} onclick={() => mutate('/config', 'PUT', { config: draft!.config })}
-        >{$t('frameleaf_photography_save_workflow')}</Button
-      >
+      <div class="phd-actions">
+        <Button variant="primary" disabled={busy} onclick={() => mutate('/config', 'PUT', { config: draft!.config })}
+          >{$t('frameleaf_photography_save_workflow')}</Button
+        >{#if onGalleries}<Button onclick={onGalleries}
+            ><Icon icon={mdiShieldLockOutline} size="1.1rem" aria-hidden={true} />{$t(
+              'frameleaf_photography_invitations_link',
+            )}</Button
+          >{/if}
+      </div>
+      <section class="phd-card">
+        <h3>{$t('frameleaf_photography_presets_title')}</h3>
+        <p>
+          {$t('frameleaf_photography_presets_body')}
+        </p>
+        <div class="phd-row">
+          <label>{$t('frameleaf_photography_preset_name')}<input maxlength="100" bind:value={presetName} /></label
+          ><Button
+            disabled={busy || !presetName.trim() || (draft.studioPresets?.presets.length ?? 0) >= 30}
+            onclick={() => saveStudioPreset()}>{$t('frameleaf_photography_save_preset')}</Button
+          >
+        </div>
+        {#each draft.studioPresets?.presets ?? [] as preset (preset.id)}<div class="phd-row phd-order">
+            <span>{preset.name}</span>
+            <div class="phd-actions">
+              <Button
+                disabled={busy}
+                onclick={() =>
+                  mutate(`/studio-presets/${preset.id}/apply`, 'POST', {
+                    expectedPresetRevision: draft!.studioPresets!.revision,
+                  })}>{$t('frameleaf_photography_preset_apply')}</Button
+              ><Button disabled={busy || !presetName.trim()} onclick={() => saveStudioPreset(preset.id)}
+                >{$t('frameleaf_photography_preset_replace')}</Button
+              >
+            </div>
+          </div>{:else}<p>{$t('frameleaf_photography_presets_none')}</p>{/each}
+        <details>
+          <summary>{$t('frameleaf_photography_snapshots')}</summary><Button
+            disabled={busy || !presetName.trim() || draft.presets.length >= 30}
+            onclick={() => mutate('/presets', 'POST', { id: null, name: presetName.trim(), config: draft!.config })}
+            >{$t('frameleaf_photography_snapshot_save')}</Button
+          >{#each draft.presets as preset (preset.id)}<div class="phd-row">
+              <span>{preset.name}</span><Button disabled={busy} onclick={() => mutate(`/presets/${preset.id}/apply`)}
+                >{$t('frameleaf_photography_snapshot_restore')}</Button
+              >
+            </div>{/each}
+        </details>
+      </section>
     {:else if panel === 'presentation'}
       <section class="phd-card">
         <h3>{$t('frameleaf_photography_presentation_title')}</h3>

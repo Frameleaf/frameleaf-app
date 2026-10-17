@@ -295,4 +295,26 @@ describe('EnrichmentWorkbench', () => {
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
     expect(lastPlan('user-1')).toBe(RETRY_ID);
   });
+
+  it('stops reading the plan once the dialog is gone, even with a read on its way', async () => {
+    vi.useFakeTimers();
+    localStorage.setItem('frameleaf.enrichment.lastPlan.user-1', PLAN_ID);
+    let answer: (value: EnrichmentPlanResponseDto) => void = () => {};
+    sdkMock.getEnrichmentPlan
+      .mockResolvedValueOnce(plan(MediaOperationStatus.Rendering, EnrichmentItemState.Running))
+      .mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)) as never)
+      .mockResolvedValue(plan(MediaOperationStatus.Rendering, EnrichmentItemState.Running));
+    const { unmount } = renderWorkbench();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sdkMock.getEnrichmentPlan).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(sdkMock.getEnrichmentPlan).toHaveBeenCalledTimes(2);
+
+    unmount();
+    answer(plan(MediaOperationStatus.Rendering, EnrichmentItemState.Running));
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(sdkMock.getEnrichmentPlan).toHaveBeenCalledTimes(2);
+  });
 });

@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import z from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { BEST_PHOTOS_MIN_SCORE } from 'src/dtos/best-photos.dto.js';
 import {
   TIMELINE_HIGHLIGHT_DEFAULT,
   TimeBucketAssetDto,
@@ -47,13 +48,15 @@ export class TimelineService extends BaseService {
       if (after !== undefined && before !== undefined) {
         throw new BadRequestException('Use either after or before, not both');
       }
+      const cursorKeys = {
+        filename: z.string().max(4096),
+        rating: z.number().int().min(-1).max(5),
+        // LIB-P3: the score itself (0 to 1), or -1 for an asset without one
+        quality: z.number().min(-1).max(1),
+      };
       try {
         const [key, date, id] = z
-          .tuple([
-            sort === 'filename' ? z.string().max(4096) : z.number().int().min(-1).max(5),
-            z.iso.datetime({ offset: true }),
-            z.uuid(),
-          ])
+          .tuple([cursorKeys[sort], z.iso.datetime({ offset: true }), z.uuid()])
           .parse(JSON.parse(after ?? before!));
         cursor = { key, date, id };
       } catch {
@@ -92,7 +95,7 @@ export class TimelineService extends BaseService {
   }
 
   private buildTimeBucketOptions(auth: AuthDto, dto: TimeBucketDto): TimeBucketOptions {
-    const { userId, suppressedOnly, lockReason, ...options } = dto;
+    const { userId, suppressedOnly, lockReason, bestPhotos, ...options } = dto;
     let userIds: string[] | undefined;
 
     // FL-326 (spec §4.8): a timeline holds only its owner's rows; what partners share arrives as copies
@@ -111,6 +114,8 @@ export class TimelineService extends BaseService {
       ...(dto.albumId && getLockedVisibilityOptions(auth)),
       userIds,
       ...(lockReason && { lockReasons: [lockReason] }),
+      // LIB-P3: the caller's own Best Photos, at the Best Photos page's threshold (checked in timeBucketChecks)
+      ...(bestPhotos && { bestPhotos: { ownerId: auth.user.id, minScore: BEST_PHOTOS_MIN_SCORE } }),
       // FL-34: the Locked view also lists what the owner's Locked rules hide (the prototype's
       // `classifyLocked`); the checks above only let the owner's elevated session ask for it
       ...(dto.visibility === AssetVisibility.Locked &&
@@ -134,6 +139,21 @@ export class TimelineService extends BaseService {
       }
       // Locked media is owner-private: whatever else narrows the request (an album, a person), only
       // the caller's own Locked items may come back, so the owner scope is always the caller.
+      dto.userId = auth.user.id;
+    }
+
+    // LIB-P3: Best Photos are the caller's own, as on the Best Photos page: never a partner's, an album
+    // member's or a shared link owner's, and never the Locked view
+    if (dto.bestPhotos) {
+      if (auth.sharedLink) {
+        throw new BadRequestException('bestPhotos is not available through a shared link');
+      }
+      if (dto.visibility === AssetVisibility.Locked) {
+        throw new BadRequestException('bestPhotos is not supported with visibility LOCKED');
+      }
+      if (dto.userId && dto.userId !== auth.user.id) {
+        throw new BadRequestException("You may not access another user's Best Photos");
+      }
       dto.userId = auth.user.id;
     }
 

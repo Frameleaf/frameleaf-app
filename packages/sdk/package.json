@@ -22,10 +22,10 @@
   },
   "license": "GNU Affero General Public License version 3",
   "dependencies": {
-    "@oazapfts/runtime": "^1.0.2"
+    "@oazapfts/runtime": "^1.2.0"
   },
   "devDependencies": {
-    "@types/node": "^24.13.4",
-    "typescript": "^7.0.0"
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
   }
 }

@@ -3,7 +3,7 @@ import { Request, Response } from 'express';
 import { ClsService } from 'nestjs-cls';
 import { ZodSerializationException, ZodValidationException } from 'nestjs-zod';
 import { ZodError } from 'zod';
-import { ImmichHeader } from 'src/enum.js';
+import { RequestHeader } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { isHttpException, onRouteError } from 'src/utils/logger.js';
 import { serverErrorDisplay } from 'src/utils/server-error-display.js';
@@ -32,7 +32,7 @@ export class GlobalExceptionFilter implements ExceptionFilter<Error> {
 
     res
       .header({
-        [ImmichHeader.CorrelationId]: this.cls.getId(),
+        [RequestHeader.CorrelationId]: this.cls.getId(),
         'Content-Type': 'application/json',
         'Cache-Control':
           /^\/(?:api\/)?(?:icloud-sync\/edits\/evidence|system-config\/config-file\/(?:activation|reload))\/?$/i.test(

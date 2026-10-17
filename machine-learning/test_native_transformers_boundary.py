@@ -14,7 +14,7 @@ from unittest.mock import Mock, call, patch
 
 
 def loader_method(filename: str, name: str, namespace: dict[str, Any]) -> Callable[..., Any]:
-    path = Path(__file__).parent / "immich_ml/models" / filename
+    path = Path(__file__).parent / "frameleaf_ml/models" / filename
     source = ast.parse(path.read_text(), filename=str(path))
     owner = next(node for node in source.body if isinstance(node, ast.ClassDef))
     method = next(node for node in owner.body if isinstance(node, ast.FunctionDef) and node.name == name)
@@ -126,7 +126,7 @@ class NativeTransformersBoundaryTests(unittest.TestCase):
         self.vendor.Sam2Model.from_pretrained.return_value.to.assert_called_once_with("cpu")
 
     def test_semantic_constructor_uses_worker_setting_unless_explicitly_overridden(self) -> None:
-        source_path = Path(__file__).parent / "immich_ml/models/semantic_mask.py"
+        source_path = Path(__file__).parent / "frameleaf_ml/models/semantic_mask.py"
         source = ast.parse(source_path.read_text())
         owner = next(node for node in source.body if isinstance(node, ast.ClassDef))
         settings = SimpleNamespace(semantic_mask_device="cpu")

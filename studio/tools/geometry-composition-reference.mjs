@@ -64,10 +64,14 @@ export function compositionSourcesFor(sourceSha256) {
   if (
     sourceSha256 === 'fbff0121cec558d07244fa17d2959b148a5ac2c840ae3b7185c7f5ca9809c578' ||
     sourceSha256 === '1acc086ce7d5ae97e50f010b7de4c8f540af195c506fb73573e66aacbad9ae80' ||
-    // Reviewed microphone/Whisper patches leave all composition producers unchanged.
+    sourceSha256 === '3aed97c3a3e98844f1d742d1d53acc6094a6b92e478c4db1bd27ac972c7a66ce' ||
+    sourceSha256 === 'f4fce3ae0293ca9ab3587ef12e014d384ef6b0aa4d043e3f4b3492402014d20c' ||
+    // Microphone/Whisper changes retain the same composition producers.
     sourceSha256 === 'de67658c3f4c3eb30aaa5afdcea62c79993d8375c1923931a9dd36316b550db6' ||
     sourceSha256 === 'e2821a958f1da55ac5f03b641b9e2f18fe82d0e283ef63e5149cb1b31045215b' ||
-    sourceSha256 === '11c977ef51aaf616ae0a0e7be1ff1ecf33ba0ebac8e155d3fc2e2454223a5a0d'
+    sourceSha256 === '0c69a72edaca2861c5d4fad86b6b3e4ba9bb088bb65ffceace32d7b046fa5164' ||
+    sourceSha256 === '11c977ef51aaf616ae0a0e7be1ff1ecf33ba0ebac8e155d3fc2e2454223a5a0d' ||
+    sourceSha256 === 'e3f7e88e3e38e6ace377a230b47ec41f9197db373cbb5932024dd94b9b67c7e9'
   )
     return {
       ...COMPOSITION_SOURCES,

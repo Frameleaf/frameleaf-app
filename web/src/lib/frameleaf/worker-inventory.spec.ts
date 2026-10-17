@@ -98,6 +98,25 @@ describe('the machine-learning URL list (prototype worker-settings rules)', () =
     expect(urls).toEqual(['https://a.lan:3003', 'https://b.lan:3003']);
   });
 
+  it.each(['', '/models'])('normalizes all trailing slashes on a base URL with path %s', (path) => {
+    const url = `https://gpu.lan${path}`;
+    const repeated = `${url}///`;
+    expect(normalizeWorkerUrl(repeated)).toBe(url);
+    expect(problemOf(() => applyWorkerUrlChange([url], { kind: 'add', url: repeated }))).toBe('duplicate');
+    expect(
+      problemOf(() =>
+        applyWorkerUrlChange([url, 'https://other.lan'], {
+          kind: 'edit',
+          original: 'https://other.lan',
+          url: repeated,
+        }),
+      ),
+    ).toBe('duplicate');
+    const sections = inventorySections({ configuredUrls: [repeated], entries: [entry({ url })] });
+    expect(sections.endpoints[0].entry?.id).toBe('local');
+    expect(sections.libraryWorkers).toEqual([]);
+  });
+
   it('refuses a change to an endpoint that changed elsewhere', () => {
     expect(problemOf(() => applyWorkerUrlChange(urls, { kind: 'remove', original: 'https://gone.lan:3003' }))).toBe(
       'changed-elsewhere',
@@ -228,7 +247,8 @@ describe('labels (FL-72)', () => {
   });
 
   it('formats GPU memory and says nothing when it is unknown', () => {
-    expect(formatGpuMemory(17_179_869_184, 'en')).toBe('16 GiB');
+    // Labelled GB, counted as the card is sold (D5).
+    expect(formatGpuMemory(17_179_869_184, 'en')).toBe('16 GB');
     expect(formatGpuMemory(null, 'en')).toBeNull();
     expect(formatGpuMemory(0, 'en')).toBeNull();
   });

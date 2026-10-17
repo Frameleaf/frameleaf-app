@@ -248,7 +248,11 @@ export class SharedLinkRepository {
         'shared_link.allowDownload',
         'shared_link.password',
         jsonObjectFrom(
-          eb.selectFrom('user').select(columns.authUser).whereRef('user.id', '=', 'shared_link.userId'),
+          eb
+            .selectFrom('user')
+            .select(columns.authUser)
+            .whereRef('user.id', '=', 'shared_link.userId')
+            .where('user.deletedAt', 'is', null),
         ).as('user'),
       ])
       .where((eb) => eb.or([eb('shared_link.type', '=', SharedLinkType.Individual), eb('album.id', 'is not', null)]));

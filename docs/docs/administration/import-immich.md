@@ -1,6 +1,6 @@
 # One-time offline Immich import
 
-The importer copies content from a stopped Immich installation into a fresh canonical Frameleaf PostgreSQL 19 database. Supported sources are stable Immich 3.x through 3.2.4; prereleases and later versions are rejected. This is a one-way data import. Keep the original source database and media as a recovery point.
+The importer copies content from a stopped Immich installation into a fresh canonical Frameleaf PostgreSQL 19 database. Supported sources are Immich 2.0.0 or later. Older releases are converted as they are read, with the same data fixes later Immich upgrades apply. Releases after 3.2.4 are accepted when every column the importer reads is unchanged; person sharing added in 3.3 is not imported. Upgrade Immich 1.x to 2.0 or later before importing. This is a one-way data import. Keep the original source database and media as a recovery point.
 
 ## Prepare the source and destination
 

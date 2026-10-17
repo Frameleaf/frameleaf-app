@@ -54,12 +54,12 @@ export const parseMapArea = (value: string | null | undefined): MapArea | null =
   if (!value) {
     return null;
   }
-  const parts = value.split(',').map(Number);
+  const parts = value.split(',').map((part) => (part.trim() ? Number(part) : NaN));
   if (parts.length !== 4 || parts.some((part) => !Number.isFinite(part))) {
     return null;
   }
   const [west, south, east, north] = parts;
-  if (south > north || south < -90 || north > 90 || west < -180 || east > 180) {
+  if (south > north || south < -90 || north > 90 || west < -180 || west > 180 || east < -180 || east > 180) {
     return null;
   }
   return { west, south, east, north };

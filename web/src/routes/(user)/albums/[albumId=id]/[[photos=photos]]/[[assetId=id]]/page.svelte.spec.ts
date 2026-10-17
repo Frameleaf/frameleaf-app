@@ -1,13 +1,26 @@
 import { AlbumKind, AlbumUserRole, getAlbumInfo, type AlbumResponseDto } from '@frameleaf/sdk';
 import { render, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { get } from 'svelte/store';
+import { invalidate } from '$app/navigation';
 import { libraryTransientKey } from '$lib/frameleaf/library-session';
 import { librarySession } from '$lib/frameleaf/library-session.svelte';
+import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
+import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { getAlbumAssetsActions } from '$lib/services/album.service';
+import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
+import { albumLibraryFixture } from '@test-data/components/album-library-fixture';
+import { deferredPromise } from '@test-data/deferred';
 import { albumFactory } from '@test-data/factories/album-factory';
+import { assetFactory } from '@test-data/factories/asset-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import AlbumPage from './+page.svelte';
+
+const owners = vi.hoisted(() => ({
+  current: true,
+  header: undefined as { onRefresh: () => Promise<void>; onSlideshow: () => Promise<void> } | undefined,
+}));
 
 vi.mock('$app/navigation', () => ({
   afterNavigate: vi.fn(),
@@ -23,9 +36,11 @@ vi.mock('@frameleaf/sdk', async (original) => ({
   getAllTags: vi.fn().mockResolvedValue([]),
 }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
-  authManager: { authenticated: true, user: { id: 'owner' } },
+  authManager: { authenticated: true, user: { id: 'owner' }, captureSession: () => () => owners.current },
 }));
-vi.mock('$lib/managers/asset-viewer-manager.svelte', () => ({ assetViewerManager: { isViewing: false } }));
+vi.mock('$lib/managers/asset-viewer-manager.svelte', () => ({
+  assetViewerManager: { isViewing: false, setAssetId: vi.fn().mockResolvedValue(undefined) },
+}));
 vi.mock('$lib/managers/activity-manager.svelte', () => ({
   activityManager: { init: vi.fn().mockResolvedValue(undefined), reset: vi.fn(), commentCount: 0 },
 }));
@@ -37,14 +52,32 @@ vi.mock('$lib/services/album.service', () => ({
 vi.mock('$lib/services/app.service', () => ({ getGlobalActions: () => ({}) }));
 vi.mock('$lib/utils', () => ({ handlePromiseError: (promise: Promise<unknown>) => promise }));
 vi.mock('$lib/utils/navigation', () => ({ isAlbumsRoute: () => true, navigate: vi.fn() }));
-vi.mock('$lib/components/layouts/UserPageLayout.svelte', () => ({ default: () => {} }));
+vi.mock(
+  '$lib/components/layouts/UserPageLayout.svelte',
+  async () => import('@test-data/mocks/UserPageLayout.mock.svelte'),
+);
 vi.mock('$lib/components/frameleaf/ActivityPanel.svelte', () => ({ default: () => {} }));
-vi.mock('$lib/components/frameleaf/AlbumHeader.svelte', () => ({ default: () => {} }));
-vi.mock('$lib/components/frameleaf/LibraryView.svelte', () => ({ default: () => {} }));
+vi.mock('$lib/components/frameleaf/AlbumHeader.svelte', () => ({
+  default: (_anchor: unknown, props: NonNullable<typeof owners.header>) => {
+    owners.header = props;
+  },
+}));
+vi.mock(
+  '$lib/components/frameleaf/LibraryView.svelte',
+  async () => import('@test-data/components/AlbumLibraryFixture.svelte'),
+);
 vi.mock('$lib/components/frameleaf/ResultsAssetViewer.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/frameleaf/ResultsView.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/frameleaf/SpaceMediaComments.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/timeline/TimelineAssetViewer.svelte', () => ({ default: () => {} }));
+
+beforeEach(() => {
+  owners.current = true;
+  owners.header = undefined;
+  albumLibraryFixture.manager = { refresh: vi.fn().mockResolvedValue(undefined), getRandomAsset: vi.fn() };
+  slideshowStore.slideshowNavigation.set(SlideshowNavigation.Shuffle);
+  slideshowStore.slideshowState.set(SlideshowState.None);
+});
 
 const data = (value: AlbumResponseDto) => ({ album: value, tree: { collections: [], albums: [], spaces: [] } });
 
@@ -143,4 +176,125 @@ it('keeps a newer role change when an earlier album refresh finishes late (FL-40
   await tick();
   resolveLatest({ ...currentAlbum(), assetCount: 3 });
   await waitFor(() => expect(currentAlbum().assetCount).toBe(3));
+});
+
+it.each(['replacement', 'session', 'close'] as const)(
+  'does not invalidate or refresh after %s during album readback',
+  async (change) => {
+    const pending = deferredPromise<AlbumResponseDto>();
+    const original = albumFactory.build({ id: 'old-album', kind: AlbumKind.Album });
+    vi.mocked(getAlbumInfo).mockReturnValueOnce(pending.promise);
+    vi.mocked(invalidate).mockClear();
+    const manager = albumLibraryFixture.manager as { refresh: ReturnType<typeof vi.fn> };
+    const view = render(AlbumPage, { data: data(original) as never });
+    const done = owners.header!.onRefresh();
+    if (change === 'replacement') {
+      await view.rerender({ data: data(albumFactory.build({ id: 'new-album', kind: AlbumKind.Album })) as never });
+    } else if (change === 'session') {
+      owners.current = false;
+    } else {
+      view.unmount();
+    }
+    pending.resolve({ ...original, assetCount: original.assetCount + 1 });
+    await done;
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(manager.refresh).not.toHaveBeenCalled();
+  },
+);
+
+it('does not refresh a replacement timeline after invalidation', async () => {
+  const pending = deferredPromise<void>();
+  const original = albumFactory.build({ id: 'old-invalidation', kind: AlbumKind.Album });
+  vi.mocked(getAlbumInfo).mockResolvedValueOnce(original);
+  vi.mocked(invalidate).mockReturnValueOnce(pending.promise);
+  const manager = albumLibraryFixture.manager as { refresh: ReturnType<typeof vi.fn> };
+  const view = render(AlbumPage, { data: data(original) as never });
+  const done = owners.header!.onRefresh();
+  await waitFor(() => expect(invalidate).toHaveBeenCalled());
+  await view.rerender({ data: data(albumFactory.build({ id: 'after-invalidation', kind: AlbumKind.Album })) as never });
+  pending.resolve();
+  await done;
+  expect(manager.refresh).not.toHaveBeenCalled();
+});
+
+it.each(['replacement', 'session', 'close'] as const)(
+  'does not open a shuffled slide after %s during month loading',
+  async (change) => {
+    const pending = deferredPromise<TimelineAsset>();
+    const manager = albumLibraryFixture.manager as { getRandomAsset: ReturnType<typeof vi.fn> };
+    manager.getRandomAsset.mockReturnValueOnce(pending.promise);
+    vi.mocked(assetViewerManager.setAssetId).mockClear();
+    const view = render(AlbumPage, {
+      data: data(albumFactory.build({ id: 'shuffle-original', kind: AlbumKind.Album })) as never,
+    });
+    const done = owners.header!.onSlideshow();
+    if (change === 'replacement') {
+      await view.rerender({ data: data(albumFactory.build({ id: 'shuffle-next', kind: AlbumKind.Album })) as never });
+    } else if (change === 'session') {
+      owners.current = false;
+    } else {
+      view.unmount();
+    }
+    pending.resolve(assetFactory.build() as unknown as TimelineAsset);
+    await done;
+    expect(assetViewerManager.setAssetId).not.toHaveBeenCalled();
+    expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.None);
+  },
+);
+
+it('refreshes the same album and its original timeline after readback and invalidation', async () => {
+  const original = albumFactory.build({ id: 'current-album', kind: AlbumKind.Album });
+  vi.mocked(getAlbumInfo).mockResolvedValueOnce({ ...original, assetCount: original.assetCount + 1 });
+  vi.mocked(invalidate).mockResolvedValueOnce();
+  const manager = albumLibraryFixture.manager as { refresh: ReturnType<typeof vi.fn> };
+  render(AlbumPage, { data: data(original) as never });
+  await owners.header!.onRefresh();
+  expect(manager.refresh).toHaveBeenCalledOnce();
+});
+
+it.each(['none', 'close', 'session'] as const)(
+  'starts playback only when the album still owns the asset publication (%s)',
+  async (change) => {
+    const pending = deferredPromise<void>();
+    const asset = assetFactory.build();
+    const manager = albumLibraryFixture.manager as { getRandomAsset: ReturnType<typeof vi.fn> };
+    manager.getRandomAsset.mockResolvedValueOnce(asset);
+    vi.mocked(assetViewerManager.setAssetId).mockImplementationOnce(async (_id, options) => {
+      await pending.promise;
+      if (options?.isCurrent?.()) {
+        options.onSet?.();
+      }
+      return asset;
+    });
+    const view = render(AlbumPage, {
+      data: data(albumFactory.build({ id: 'publish-album', kind: AlbumKind.Album })) as never,
+    });
+    const done = owners.header!.onSlideshow();
+    await tick();
+    if (change === 'close') {
+      view.unmount();
+    } else if (change === 'session') {
+      owners.current = false;
+    }
+    pending.resolve();
+    await done;
+    expect(get(slideshowStore.slideshowState)).toBe(
+      change === 'none' ? SlideshowState.PlaySlideshow : SlideshowState.None,
+    );
+  },
+);
+
+it('ignores a retired header callback after switching albums', async () => {
+  vi.mocked(getAlbumInfo).mockClear();
+  vi.mocked(assetViewerManager.setAssetId).mockClear();
+  const view = render(AlbumPage, {
+    data: data(albumFactory.build({ id: 'old-header', kind: AlbumKind.Album })) as never,
+  });
+  const oldRefresh = owners.header!.onRefresh;
+  const oldSlideshow = owners.header!.onSlideshow;
+  await view.rerender({ data: data(albumFactory.build({ id: 'new-header', kind: AlbumKind.Album })) as never });
+  await oldRefresh();
+  await oldSlideshow();
+  expect(getAlbumInfo).not.toHaveBeenCalled();
+  expect(assetViewerManager.setAssetId).not.toHaveBeenCalled();
 });

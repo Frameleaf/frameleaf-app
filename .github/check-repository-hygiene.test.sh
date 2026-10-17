@@ -2,7 +2,8 @@
 set -euo pipefail
 repo=$(cd "$(dirname "$0")/.." && pwd)
 scratch=$(mktemp -d)
-trap 'rm -rf "$scratch"' EXIT
+# Cleanup must never decide the result: a late git process can still be writing objects (seen in CI).
+trap 'rm -rf "$scratch" 2>/dev/null || { sleep 1; rm -rf "$scratch" 2>/dev/null; } || true' EXIT
 cp "$repo/.gitignore" "$scratch/.gitignore"
 mkdir "$scratch/design"
 cp "$repo/design/.gitignore" "$scratch/design/.gitignore"
@@ -11,6 +12,9 @@ cd "$scratch"
 git init -q
 git config user.name 'Hygiene test'
 git config user.email 'hygiene-test@example.invalid'
+# No background gc or maintenance in the throwaway repository: they race the cleanup above.
+git config gc.auto 0
+git config maintenance.auto false
 printf '%s\n' '# Product documentation' > README.md
 git add .gitignore design/.gitignore check.sh README.md
 git commit -qm baseline

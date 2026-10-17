@@ -8,17 +8,18 @@ const program = new Command('plugin-sdk');
 program
   .command('prepareBuild')
   .description('Generate .d.ts file required for extism')
-  .argument(
-    '[manifest]',
-    "Path to the plugins's manifest file",
-    'manifest.json',
+  .argument('[manifest]', "Path to the plugin's manifest file", 'manifest.json')
+  .option(
+    '-o, --output <file>',
+    'Output file for generated types',
+    'dist/index.d.ts',
   )
-  .option('-o --output', 'Output file for generated types', 'dist/index.d.ts')
-  .action((manifest: string, { output }) => {
+  .action((manifest: string, { output }: { output: string }) => {
     const content = readFileSync(manifest, { encoding: 'utf-8' });
-    const methods = (
-      JSON.parse(content) as { methods: { name: string }[] }
-    ).methods.map(({ name }) => name);
+    const { methods: manifestMethods = [] } = JSON.parse(content) as {
+      methods?: { name: string }[];
+    };
+    const methods = manifestMethods.map(({ name }) => name);
     mkdirSync(dirname(output), { recursive: true });
 
     writeFileSync(

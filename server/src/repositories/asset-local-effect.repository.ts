@@ -28,7 +28,7 @@ export type LockedCascade = {
 };
 export type LocalEffectIntent = {
   lockedCascade?: LockedCascade;
-  origin: { kind: 'publication' | 'trash' | 'restore' | 'stack'; decisionId?: string };
+  origin: { kind: 'publication' | 'trash' | 'restore' | 'stack' | 'lock'; decisionId?: string };
   assets: { assetId: string; status: AssetStatus.Active | AssetStatus.Trashed; revoke: boolean }[];
   stacks: { stackId: string; primaryAssetId: string; memberAssetIds: string[] }[];
 };
@@ -191,15 +191,18 @@ export class AssetLocalEffectRepository {
       return bundle;
     }
     // No config/item/asset/stack lock is acquired here: callers supply their complete locked proof set.
-    const found = await tx
-      .selectFrom('asset')
-      .select(['id', 'ownerId', 'status', 'deletedAt'])
-      .where(
-        'id',
-        'in',
-        assets.map((a) => a.assetId),
-      )
-      .execute();
+    const found =
+      assets.length === 0
+        ? []
+        : await tx
+            .selectFrom('asset')
+            .select(['id', 'ownerId', 'status', 'deletedAt'])
+            .where(
+              'id',
+              'in',
+              assets.map((a) => a.assetId),
+            )
+            .execute();
     if (
       assets.some(
         (a) =>

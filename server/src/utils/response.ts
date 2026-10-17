@@ -1,8 +1,10 @@
 import { CookieOptions, Response } from 'express';
-import { Duration } from 'luxon';
 import { Writable } from 'node:stream';
 import { CookieResponse } from 'src/dtos/auth.dto.js';
-import { ImmichCookie } from 'src/enum.js';
+import { AuthCookie } from 'src/enum.js';
+
+const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000;
+const AUTH_COOKIE_MAX_AGE = 400 * DAY_IN_MILLISECONDS;
 
 export class ClientDisconnectedError extends Error {}
 
@@ -11,6 +13,7 @@ export const waitForDrain = (response: Writable) =>
     const cleanup = () => {
       response.off('drain', onDrain);
       response.off('close', onClose);
+      response.off('finish', onClose);
       response.off('error', onError);
     };
 
@@ -31,10 +34,11 @@ export const waitForDrain = (response: Writable) =>
 
     response.once('drain', onDrain);
     response.once('close', onClose);
+    response.once('finish', onClose);
     response.once('error', onError);
 
-    // 'close' may already have fired
-    if (response.destroyed) {
+    // A terminal event may already have fired.
+    if (response.destroyed || response.writableEnded) {
       onClose();
     }
   });
@@ -45,38 +49,38 @@ export const respondWithCookie = <T>(res: Response, body: T, { isSecure, values,
     sameSite: 'lax',
     httpOnly: true,
     secure: isSecure,
-    maxAge: Duration.fromObject({ days: 400 }).toMillis(),
+    maxAge: AUTH_COOKIE_MAX_AGE,
   };
 
   const authentication = { ...defaults, maxAge: rememberMe === false ? undefined : defaults.maxAge };
 
-  const cookieOptions: Record<ImmichCookie, CookieOptions> = {
-    [ImmichCookie.AuthType]: authentication,
-    [ImmichCookie.AccessToken]: authentication,
-    [ImmichCookie.MaintenanceToken]: { ...defaults, maxAge: Duration.fromObject({ days: 1 }).toMillis() },
-    [ImmichCookie.OAuthState]: defaults,
-    [ImmichCookie.OAuthCodeVerifier]: defaults,
+  const cookieOptions: Record<AuthCookie, CookieOptions> = {
+    [AuthCookie.AuthType]: authentication,
+    [AuthCookie.AccessToken]: authentication,
+    [AuthCookie.MaintenanceToken]: { ...defaults, maxAge: DAY_IN_MILLISECONDS },
+    [AuthCookie.OAuthState]: defaults,
+    [AuthCookie.OAuthCodeVerifier]: defaults,
     // no httpOnly so that the client can know the auth state
-    [ImmichCookie.IsAuthenticated]: { ...authentication, httpOnly: false },
-    [ImmichCookie.SharedLinkToken]: { ...defaults, maxAge: Duration.fromObject({ days: 1 }).toMillis() },
+    [AuthCookie.IsAuthenticated]: { ...authentication, httpOnly: false },
+    [AuthCookie.SharedLinkToken]: { ...defaults, maxAge: DAY_IN_MILLISECONDS },
   };
 
   for (const { key, value } of values) {
     const options = cookieOptions[key];
     res.cookie(key, value, options);
   }
-  if (values.some(({ key }) => key === ImmichCookie.AccessToken)) {
+  if (values.some(({ key }) => key === AuthCookie.AccessToken)) {
     clearBrowserCache(res);
   }
 
   return body;
 };
 
-export const respondWithoutCookie = <T>(res: Response, body: T, cookies: ImmichCookie[]) => {
+export const respondWithoutCookie = <T>(res: Response, body: T, cookies: AuthCookie[]) => {
   for (const cookie of cookies) {
     res.clearCookie(cookie);
   }
-  if (cookies.includes(ImmichCookie.AccessToken)) {
+  if (cookies.includes(AuthCookie.AccessToken)) {
     clearBrowserCache(res);
   }
 

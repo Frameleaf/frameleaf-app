@@ -32,3 +32,15 @@ describe('StorageCore', () => {
     });
   });
 });
+
+describe('motion video storage boundary', () => {
+  beforeEach(() => StorageCore.setMediaLocation('/photos'));
+  it.each([
+    ['/photos/encoded-video/owner/video.mp4', true],
+    ['/photos/encoded-video-other/video.mp4', false],
+    ['/photos/encoded-video2/video.mp4', false],
+    ['/photos/library/video.mp4', false],
+  ] as const)('classifies %s as generated motion storage: %s', (path, expected) => {
+    expect(StorageCore.isAndroidMotionPath(path)).toBe(expected);
+  });
+});

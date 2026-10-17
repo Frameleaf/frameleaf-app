@@ -7,7 +7,6 @@ import {
   getBestPhotos,
   getTimeBuckets,
   getVisitedLandmarks,
-  MemorySearchOrder,
   searchAssetStatistics,
   searchAssets,
   searchFacets,
@@ -67,9 +66,7 @@ const loadBestPhotosPreview = async (): Promise<ExploreBestPhotosPreview> => {
  * failing only costs this one section.
  */
 const loadMemories = async () => {
-  memoryManager.setFilters({ size: 12, order: MemorySearchOrder.Desc });
   await memoryManager.applyPreferences();
-  await memoryManager.refresh();
   return memoryManager.memories;
 };
 

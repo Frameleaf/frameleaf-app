@@ -342,6 +342,37 @@ describe(PhysicalFileRepository.name, () => {
         .where('id', '=', id)
         .executeTakeFirstOrThrow();
 
+    it.each([false, true])('rolls back a missing ingestion claim for already-linked=%s', async (linked) => {
+      const { ctx, sut } = setup();
+      const checksum = randomBytes(32);
+      const upload = await newUpload(ctx, checksum);
+      if (linked) await sut.ensureOriginalPhysicalFile(upload.id);
+      const before = await originalOf(upload.id);
+      const registered = await defaultDatabase
+        .selectFrom('physical_file')
+        .select('id')
+        .where('path', '=', upload.originalPath)
+        .execute();
+      await expect(
+        sut.linkUploadedOriginal(
+          upload.id,
+          { checksum, sizeInBytes: 1000 },
+          {
+            ...checks,
+            ingestion: { resourceId: randomUUID(), token: randomUUID(), ownerId: upload.ownerId },
+          },
+        ),
+      ).rejects.toThrow('Upload ingestion claim expired');
+      expect(await originalOf(upload.id)).toEqual(before);
+      expect(
+        await defaultDatabase
+          .selectFrom('physical_file')
+          .select('id')
+          .where('path', '=', upload.originalPath)
+          .execute(),
+      ).toEqual(registered);
+    });
+
     it('links an upload to the file another library already holds, whoever owns it', async () => {
       const { ctx, sut } = setup();
       const checksum = randomBytes(32);

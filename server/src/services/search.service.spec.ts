@@ -2,7 +2,7 @@ import { BadRequestException, NotFoundException, UnauthorizedException } from '@
 import { beforeEach, vitest } from 'vitest';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { SearchFacetField, SearchHistogramGranularity, SearchSuggestionType } from 'src/dtos/search.dto.js';
-import { AssetVisibility, Permission } from 'src/enum.js';
+import { AssetVisibility, Permission, UserMetadataKey } from 'src/enum.js';
 import { SearchService } from 'src/services/search.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -263,6 +263,31 @@ describe(SearchService.name, () => {
         sut.getSearchSuggestions(authStub.user1, { includeNull: true, type: SearchSuggestionType.CAMERA_LENS_MODEL }),
       ).resolves.toEqual(['10-24mm', null]);
       expect(mocks.search.getCameraLensModels).toHaveBeenCalledWith([authStub.user1.user.id], expect.anything());
+    });
+  });
+
+  describe('archived photos in search (ACCOUNT-P3)', () => {
+    it('keeps the default visibility whatever "Show archived photos in search" says: the search screens send it', async () => {
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { search: { includeArchived: false } } },
+      ]);
+      mocks.search.searchMetadata.mockResolvedValue({ hasNextPage: false, items: [] });
+      mocks.search.searchMetadataV3.mockResolvedValue({ hasNextPage: false, items: [] });
+      const auth = AuthFactory.create();
+
+      await sut.searchMetadata(auth, { city: 'Oslo' });
+      await sut.searchMetadata(auth, { filter: { city: { eq: 'Oslo' } } });
+
+      expect(mocks.search.searchMetadata).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ visibility: 'not-locked' }),
+      );
+      expect(mocks.search.searchMetadata.mock.calls[0][1]).not.toHaveProperty('excludeArchived');
+      expect(mocks.search.searchMetadataV3.mock.calls[0][1].filter).toEqual({
+        city: { eq: 'Oslo' },
+        visibility: { ne: AssetVisibility.Locked },
+      });
+      expect(mocks.user.getMetadata).not.toHaveBeenCalled();
     });
   });
 

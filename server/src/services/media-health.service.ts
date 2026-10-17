@@ -42,7 +42,7 @@ import {
   AssetVisibility,
   ChecksumAlgorithm,
   DatabaseLock,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   MediaHealthCategory,
@@ -279,7 +279,7 @@ export class MediaHealthService {
    * "Schedule incremental health scans" (Library care → Media health & integrity). One server holds
    * the schedule, as the integrity checks do; each tick starts every account's durable scan.
    */
-  @OnEvent({ name: 'ConfigInit', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
   async onConfigInit({ newConfig: { libraryCare } }: ArgOf<'ConfigInit'>) {
     this.scheduleLock = await this.databaseRepository.tryLock(DatabaseLock.LibraryCareSchedule);
     if (!this.scheduleLock) {

@@ -10,6 +10,17 @@ const page = (ids: string[], nextPage: string | null) => ({
 });
 
 describe('SpacePhotoSet', () => {
+  it.each([1, 2])('keeps each item once when page %s repeats an id', async (duplicatePage) => {
+    const fetch = vi
+      .fn<SpacePageFetcher>()
+      .mockResolvedValueOnce(page(duplicatePage === 1 ? ['a', 'a'] : ['a'], '2'))
+      .mockResolvedValueOnce(page(duplicatePage === 2 ? ['a', 'b', 'b'] : ['b'], null));
+    const photos = new SpacePhotoSet({ spaceId: 'space-1', fetch });
+    await photos.load(1);
+    await photos.loadMore();
+    expect(photos.assets.map(({ id }) => id)).toEqual(['a', 'b']);
+  });
+
   it('asks for the space, one page at a time, in the space order', async () => {
     const fetch = vi.fn<SpacePageFetcher>().mockResolvedValue(page(['a', 'b'], '2'));
     const photos = new SpacePhotoSet({ spaceId: 'space-1', order: AssetOrder.Asc, fetch });

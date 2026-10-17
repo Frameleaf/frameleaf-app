@@ -98,7 +98,7 @@ export class PreservationRepository {
   ): Promise<T> {
     assertExecutionActive();
     return this.db.transaction().execute(async (tx) => {
-      const held = await tx
+      const claim = tx
         .selectFrom('media_operation')
         .select('id')
         .where('id', '=', operationId)
@@ -108,11 +108,16 @@ export class PreservationRepository {
         .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
         .where('cancelRequestedAt', 'is', null)
         .where('pauseRequestedAt', 'is', null)
-        .forUpdate()
-        .executeTakeFirst();
+        .forUpdate();
+      const held = await claim.executeTakeFirst();
       assertExecutionActive();
       if (!held) throw new OperationClaimLostError();
-      return callback(new PreservationRepository(tx));
+      const result = await callback(new PreservationRepository(tx));
+      // Row locks serialize claim changes, but lease time and execution cancellation still advance.
+      const current = await claim.executeTakeFirst();
+      assertExecutionActive();
+      if (!current) throw new OperationClaimLostError();
+      return result;
     });
   }
   /* ---------------------------------------------------------------- */

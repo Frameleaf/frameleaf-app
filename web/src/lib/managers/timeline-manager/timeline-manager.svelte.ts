@@ -26,9 +26,7 @@ import {
   orderedPageYearMonth,
 } from '$lib/managers/timeline-manager/internal/load-support.svelte';
 import {
-  findClosestTimelineMonthForDate,
   findTimelineMonthForAsset as findTimelineMonthForAssetUtil,
-  findTimelineMonthForDate,
   getAssetWithOffset,
   getTimelineMonthByDate,
   retrieveRange as retrieveRangeUtil,
@@ -41,7 +39,6 @@ import {
   isAssetResponseDto,
   setDifference,
   toTimelineAsset,
-  type TimelineDateTime,
   type TimelineYearMonth,
 } from '$lib/utils/timeline-util';
 import { isMismatched, updateObject } from './internal/utils.svelte';
@@ -304,27 +301,29 @@ export class TimelineManager extends VirtualScrollManager {
       return;
     }
     this.#updatingViewportProximities = true;
-
-    for (const month of this.months) {
-      updateTimelineMonthViewportProximity(this, month);
-      if (month.isInOrNearViewport && month.isLoaded) {
-        for (const day of month.timelineDays) {
-          day.updateAssetBoundaries();
+    try {
+      for (const month of this.months) {
+        updateTimelineMonthViewportProximity(this, month);
+        if (month.isInOrNearViewport && month.isLoaded) {
+          for (const day of month.timelineDays) {
+            day.updateAssetBoundaries();
+          }
         }
       }
+      const month = this.months.find((month) => month.isInViewport);
+      const viewportTopRatioInMonth = this.#calculateVewportTopRatioInMonth(month);
+      const monthBottomViewportRatio = this.#calculateMonthBottomViewportRatio(month);
+      const current = this.viewportTopMonthIntersection;
+      if (
+        current?.month !== month ||
+        current?.viewportTopRatioInMonth !== viewportTopRatioInMonth ||
+        current?.monthBottomViewportRatio !== monthBottomViewportRatio
+      ) {
+        this.viewportTopMonthIntersection = { month, monthBottomViewportRatio, viewportTopRatioInMonth };
+      }
+    } finally {
+      this.#updatingViewportProximities = false;
     }
-
-    const month = this.months.find((month) => month.isInViewport);
-    const viewportTopRatioInMonth = this.#calculateVewportTopRatioInMonth(month);
-    const monthBottomViewportRatio = this.#calculateMonthBottomViewportRatio(month);
-
-    this.viewportTopMonthIntersection = {
-      month,
-      monthBottomViewportRatio,
-      viewportTopRatioInMonth,
-    };
-
-    this.#updatingViewportProximities = false;
     // A row that could not run on across a month boundary while that part of the timeline was on
     // screen runs on once it has scrolled away (FL-143).
     linkFlows(this);
@@ -477,6 +476,15 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   public override destroy() {
+    this.#requestedOptions = TimelineManager.#INIT_OPTIONS;
+    this.invalidateLiveProjection();
+    this.initTask.cancel();
+    for (const month of this.months) {
+      month.loader?.cancelToken?.abort();
+      month.cancel();
+    }
+    this.months = [];
+    this.albumAssets.clear();
     this.disconnect();
     this.isInitialized = false;
 
@@ -638,38 +646,29 @@ export class TimelineManager extends VirtualScrollManager {
   // value can be passed to make the method deterministic, which is mainly useful
   // for testing.
   async getRandomAsset(index?: number): Promise<TimelineAsset | undefined> {
-    const randomAssetIndex = index ?? Math.floor(Math.random() * this.assetCount);
-
-    let accumulatedCount = 0;
-
-    let randomMonth: TimelineMonth | undefined = undefined;
+    let offset = index ?? Math.floor(Math.random() * this.assetCount);
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset >= this.assetCount) {
+      return;
+    }
     for (const month of this.months) {
-      if (randomAssetIndex < accumulatedCount + month.assetsCount) {
-        randomMonth = month;
-        break;
+      const count = month.assetsCount;
+      if (offset >= count) {
+        offset -= count;
+        continue;
       }
-
-      accumulatedCount += month.assetsCount;
-    }
-    if (!randomMonth) {
+      await this.loadTimelineMonth(month.yearMonth, { cancelable: false });
+      // A reset can replace the timeline while the month is loading.
+      if (!this.months.includes(month)) {
+        return;
+      }
+      for (const day of month.timelineDays) {
+        if (offset < day.viewerAssets.length) {
+          return day.viewerAssets[offset]?.asset;
+        }
+        offset -= day.viewerAssets.length;
+      }
       return;
     }
-    await this.loadTimelineMonth(randomMonth.yearMonth, { cancelable: false });
-
-    let randomDay: TimelineDay | undefined = undefined;
-    for (const day of randomMonth.timelineDays) {
-      if (randomAssetIndex < accumulatedCount + day.viewerAssets.length) {
-        randomDay = day;
-        break;
-      }
-
-      accumulatedCount += day.viewerAssets.length;
-    }
-    if (!randomDay) {
-      return;
-    }
-
-    return randomDay.viewerAssets[randomAssetIndex - accumulatedCount].asset;
   }
 
   /**
@@ -732,17 +731,6 @@ export class TimelineManager extends VirtualScrollManager {
     this.removeAssets(ids);
   }
 
-  protected upsertSegmentForAsset(asset: TimelineAsset) {
-    const dateTime = getOrderingDate(asset, this.#options.dateType || TimeBucketDateType.Taken);
-    let month = getTimelineMonthByDate(this, dateTime);
-
-    if (!month) {
-      month = new TimelineMonth(this, dateTime, 1, true, this.#options.order, this.#options.dateType);
-      this.months.push(month);
-    }
-    return month;
-  }
-
   /**
    * Adds assets to existing segments, creating new segments as needed.
    *
@@ -755,8 +743,27 @@ export class TimelineManager extends VirtualScrollManager {
     }
     const context = new GroupInsertionCache();
     const monthCount = this.months.length;
+    const monthLookup = assets.length > 1 ? new Map<string, TimelineMonth>() : undefined;
+    if (monthLookup) {
+      for (const month of this.months) {
+        const { year, month: calendarMonth } = month.yearMonth;
+        const key = `${year}/${calendarMonth}`;
+        // Preserve the first strict calendar match; NaN never matches itself.
+        if (!Number.isNaN(year) && !Number.isNaN(calendarMonth) && !monthLookup.has(key)) {
+          monthLookup.set(key, month);
+        }
+      }
+    }
     for (const asset of assets) {
-      this.upsertSegmentForAsset(asset).addTimelineAsset(asset, context);
+      const dateTime = getOrderingDate(asset, this.#options.dateType || TimeBucketDateType.Taken);
+      const key = `${dateTime.year}/${dateTime.month}`;
+      let month = monthLookup ? monthLookup.get(key) : getTimelineMonthByDate(this, dateTime);
+      if (!month) {
+        month = new TimelineMonth(this, dateTime, 1, true, this.#options.order, this.#options.dateType);
+        this.months.push(month);
+        monthLookup?.set(key, month);
+      }
+      month.addTimelineAsset(asset, context);
     }
     if (this.months.length !== monthCount) {
       this.postCreateSegments();
@@ -868,25 +875,6 @@ export class TimelineManager extends VirtualScrollManager {
     return await getAssetWithOffset(this, assetDescriptor, interval, 'earlier');
   }
 
-  async getClosestAssetToDate(dateTime: TimelineDateTime) {
-    let timelineMonth = findTimelineMonthForDate(this, dateTime);
-    if (!timelineMonth) {
-      // if exact match not found, find closest
-      timelineMonth = findClosestTimelineMonthForDate(this.months, dateTime);
-      if (!timelineMonth) {
-        return;
-      }
-    }
-    await this.loadTimelineMonth(dateTime, { cancelable: false });
-    const asset = timelineMonth.findClosest(dateTime);
-    if (asset) {
-      return asset;
-    }
-    for await (const asset of this.assetsIterator({ startTimelineMonth: timelineMonth })) {
-      return asset;
-    }
-  }
-
   async retrieveRange(start: AssetDescriptor, end: AssetDescriptor) {
     return retrieveRangeUtil(this, start, end, this.ordered ? this.#orderedPositions() : undefined);
   }
@@ -963,7 +951,9 @@ export class TimelineManager extends VirtualScrollManager {
     if (this.#isLockedRuleMatch(asset)) {
       return false;
     }
-    if (this.#options.albumId || this.#options.personId || this.#options.timelineAlbumId) {
+    // Only the server knows an album's, a person's or Best Photos' members (LIB-P3: a new upload has
+    // no quality score yet); the next load brings them in.
+    if (this.#options.albumId || this.#options.personId || this.#options.timelineAlbumId || this.#options.bestPhotos) {
       return false;
     }
     if (this.#options.userId && asset.ownerId !== this.#options.userId) {

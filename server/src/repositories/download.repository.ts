@@ -3,7 +3,7 @@ import { type Kysely } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { AssetVisibility } from 'src/enum.js';
+import { AssetFileType, AssetVisibility } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { anyUuid, withAlbumVisibility, withHiddenContentFilter, withLockedOwnerScope } from 'src/utils/database.js';
 
@@ -36,6 +36,20 @@ export class DownloadRepository {
       .where('album_asset.albumId', '=', albumId)
       .$call((qb) => withAlbumVisibility(qb, options?.lockedOwnerId))
       .stream();
+  }
+
+  /**
+   * ACCOUNT-P5: the details file (XMP sidecar) of each of these assets that has one; the original's own
+   * sidecar first when an asset also has an edited one.
+   */
+  getSidecars(ids: string[]) {
+    return this.db
+      .selectFrom('asset_file')
+      .select(['asset_file.assetId', 'asset_file.path'])
+      .where('asset_file.assetId', '=', anyUuid(ids))
+      .where('asset_file.type', '=', AssetFileType.Sidecar)
+      .orderBy('asset_file.isEdited', 'asc')
+      .execute();
   }
 
   /** A whole-library download holds the owner's Locked media only for their elevated session (FL-34). */

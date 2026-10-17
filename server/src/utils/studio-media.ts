@@ -318,7 +318,13 @@ export const decodeWaveformPeaks = (buffer: Buffer): WaveformPeaks | null => {
   const bucketCount = buffer.readUInt32LE(16);
   const frameCount = buffer.readUInt32LE(20);
   const values = bucketCount * channels * 2;
-  if ((channels < 1 && bucketCount > 0) || sampleRate < 1 || buffer.length !== WAVEFORM_HEADER_BYTES + values * 2) {
+  if (
+    channels > WAVEFORM_MAX_CHANNELS ||
+    (channels < 1 && bucketCount > 0) ||
+    sampleRate < 1 ||
+    samplesPerBucket < 1 ||
+    buffer.length !== WAVEFORM_HEADER_BYTES + values * 2
+  ) {
     return null;
   }
   const peaks = new Int16Array(values);

@@ -287,7 +287,7 @@ test("pinned build dependencies, runtime identity and orphan adoption remain com
   );
   assert.match(
     read("machine-learning/Dockerfile"),
-    /^CMD \["python", "-m", "immich_ml"\]$/m,
+    /^CMD \["python", "-m", "frameleaf_ml"\]$/m,
   );
   assert.doesNotMatch(read("machine-learning/Dockerfile"), /AS prod-runpod/);
   assert.ok(
@@ -771,6 +771,22 @@ test("the server base is built in-repo and identical in the production and devel
     "every Intel driver package has a checksum",
   );
   assert.match(server, /sha256sum --strict -c intel-drivers\.sha256/);
+  const driverPackages = [
+    ...server.matchAll(/^  '[a-f0-9]{64}  ([^']+\.deb)' \\$/gm),
+  ].map(([, name]) => name);
+  const igcVersion = server.match(/^ARG IGC_VERSION=(.+)$/m)[1];
+  const runtimeVersion = server.match(/^ARG COMPUTE_RUNTIME_VERSION=(.+)$/m)[1];
+  const gmmVersion = server.match(/^ARG GMMLIB_VERSION=(.+)$/m)[1];
+  assert.deepEqual(driverPackages, [
+    "intel-igc-core_1.0.17537.24_amd64.deb",
+    "intel-igc-opencl_1.0.17537.24_amd64.deb",
+    "intel-opencl-icd-legacy1_24.35.30872.36_amd64.deb",
+    `intel-igc-core-2_${igcVersion}_amd64.deb`,
+    `intel-igc-opencl-2_${igcVersion}_amd64.deb`,
+    `intel-opencl-icd_${runtimeVersion}_amd64.deb`,
+    `libigdgmm12_${gmmVersion}_amd64.deb`,
+  ]);
+
   // An unreachable package index fails the build instead of warning, and the HTTPS PostgreSQL source
   // keeps the CA certificates it needs in the runtime image.
   assert.doesNotMatch(server, /apt-get update/);
@@ -812,6 +828,17 @@ test("the server base is built in-repo and identical in the production and devel
   const ffmpeg = JSON.parse(read("server/base-image/packages/ffmpeg.json"));
   assert.match(ffmpeg.sha256.amd64, /^[a-f0-9]{64}$/);
   assert.match(ffmpeg.sha256.arm64, /^[a-f0-9]{64}$/);
+  const ffmpegInstaller = read("server/base-image/packages/ffmpeg.sh");
+  assert.match(
+    ffmpegInstaller,
+    /FFMPEG_PACKAGE="jellyfin-ffmpeg\$\{FFMPEG_VERSION%%\.\*\}_/,
+  );
+  assert.doesNotMatch(ffmpegInstaller, /jellyfin-ffmpeg[0-9]+_/);
+  assert.match(ffmpegInstaller, /sha256sum -c ffmpeg\.sha256/);
+  assert.match(
+    ffmpegInstaller,
+    /apt-get -yqq -f install "\.\/\$FFMPEG_PACKAGE"/,
+  );
 });
 
 test("the owned Postgres image uses PG19 and pgvector only", () => {

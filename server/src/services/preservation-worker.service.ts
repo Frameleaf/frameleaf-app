@@ -15,7 +15,7 @@ import {
   AssetLockReason,
   AssetOrder,
   AssetVisibility,
-  ImmichWorker,
+  FrameleafWorker,
   MediaOperationKind,
   MediaOperationStatus,
   StorageFolder,
@@ -254,7 +254,7 @@ export class PreservationWorkerService {
   /* Scheduling                                                           */
   /* ------------------------------------------------------------------ */
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.stopping = false;
     this.tickHandle ??= setInterval(() => this.tick(), PRESERVATION_TICK_MS);
@@ -2072,17 +2072,28 @@ export class PreservationWorkerService {
       this.logger.log(`Preservation job ${id} cancelled by its owner`);
       return false;
     }
-    if (written.pauseRequestedAt && (await this.operations.settlePause(id, claimToken))) {
-      this.logger.log(`Preservation job ${id} paused by its owner`);
-      return false;
+    if (written.pauseRequestedAt) {
+      if (await this.operations.settlePause(id, claimToken)) {
+        this.logger.log(`Preservation job ${id} paused by its owner`);
+        return false;
+      }
+      // A withdrawn pause can continue; cancellation or claim loss cannot.
+      if (!(await this.operations.heartbeat(id, claimToken, PRESERVATION_LEASE_MS, { requireActiveClaim: true }))) {
+        await this.operations.acknowledgeCancel(id, claimToken, { released: false });
+        return false;
+      }
     }
-    if (written.status === MediaOperationStatus.Preparing) {
-      await this.operations.reportProgress(id, claimToken, {
+    if (
+      written.status === MediaOperationStatus.Preparing &&
+      !(await this.operations.reportProgress(id, claimToken, {
         status: MediaOperationStatus.Rendering,
         processedUnits: done,
         totalUnits: Math.max(total, done),
         progress: preservationProgress(done, Math.max(total, done)),
-      });
+      }))
+    ) {
+      await this.operations.acknowledgeCancel(id, claimToken, { released: false });
+      return false;
     }
     return true;
   }

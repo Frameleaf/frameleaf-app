@@ -70,18 +70,8 @@ const image: Record<string, string[]> = {
 };
 
 const possiblyAnimatedImageExtensions = new Set(['.avif', '.gif', '.heic', '.heif', '.jxl', '.png', '.webp']);
-const possiblyAnimatedImage: Record<string, string[]> = Object.fromEntries(
-  Object.entries(image).filter(([key]) => possiblyAnimatedImageExtensions.has(key)),
-);
 
 const heifImageExtensions = new Set(['.avif', '.heic', '.heif', '.hif']);
-const heifImage: Record<string, string[]> = Object.fromEntries(
-  Object.entries(image).filter(([key]) => heifImageExtensions.has(key)),
-);
-
-const extensionOverrides: Record<string, string> = {
-  'image/jpeg': '.jpg',
-};
 
 const transparentCapableExtensions = new Set([
   '.avif',
@@ -140,12 +130,6 @@ const isType = (filename: string, r: Record<string, string[]>) =>
 const lookup = (filename: string) =>
   types[getFilenameExtension(filename).toLowerCase()]?.[0] ?? 'application/octet-stream';
 
-const toExtension = (mimeType: string) => {
-  return (
-    extensionOverrides[mimeType] || Object.entries(types).find(([, mimeTypes]) => mimeTypes.includes(mimeType))?.[0]
-  );
-};
-
 export const mimeTypes = {
   image,
   profile,
@@ -154,11 +138,15 @@ export const mimeTypes = {
   raw,
   webUnsupportedImage,
 
-  isAsset: (filename: string) => isType(filename, image) || isType(filename, video),
+  isAsset: (filename: string) => {
+    const extension = getFilenameExtension(filename).toLowerCase();
+    return Object.hasOwn(image, extension) || Object.hasOwn(video, extension);
+  },
   isImage: (filename: string) => isType(filename, image),
   isWebSupportedImage: (filename: string) => isType(filename, webSupportedImage),
-  isHeifImage: (filename: string) => isType(filename, heifImage),
-  isPossiblyAnimatedImage: (filename: string) => isType(filename, possiblyAnimatedImage),
+  isHeifImage: (filename: string) => heifImageExtensions.has(getFilenameExtension(filename).toLowerCase()),
+  isPossiblyAnimatedImage: (filename: string) =>
+    possiblyAnimatedImageExtensions.has(getFilenameExtension(filename).toLowerCase()),
   isProfile: (filename: string) => isType(filename, profile),
   isSidecar: (filename: string) => isType(filename, sidecar),
   isVideo: (filename: string) => isType(filename, video),
@@ -167,8 +155,6 @@ export const mimeTypes = {
   isRaw: (filename: string) => isType(filename, raw),
   isHeic: (filename: string) => heicExtensions.has(getFilenameExtension(filename).toLowerCase()),
   lookup,
-  /** return an extension (including a leading `.`) for a mime-type */
-  toExtension,
   assetType: (filename: string) => {
     const contentType = lookup(filename);
     if (contentType.startsWith('image/')) {

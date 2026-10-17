@@ -9,8 +9,9 @@ vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
   featureFlagsManager: { value: { email: false, oauth: false, passwordLogin: true } },
 }));
 
-// Edit fixtures use a whole-GiB quota: jsdom treats the factory's 1000-byte quota (9.3e-7 GiB) as badInput.
-const GiB = 1024 ** 3;
+// The quota field is in decimal GB (D5). Edit fixtures use a whole-GB quota: jsdom treats the
+// factory's 1000-byte quota (1e-6 GB) as badInput.
+const GB = 1000 ** 3;
 const field = (label: string) => screen.getByLabelText<HTMLInputElement>(label);
 const type = (element: HTMLElement, value: string) => fireEvent.input(element, { target: { value } });
 
@@ -22,7 +23,7 @@ describe('AccountFormDialog (FL-76)', () => {
     authManager.setUser(admin);
   });
 
-  it('sends the quota in whole bytes, including a fractional GiB', async () => {
+  it('sends the quota in whole bytes, including a fractional GB', async () => {
     sdkMock.createUserAdmin.mockResolvedValue(userAdminFactory.build());
     renderWithTooltips(AccountFormDialog, { onClose: vi.fn() });
 
@@ -35,7 +36,7 @@ describe('AccountFormDialog (FL-76)', () => {
 
     await waitFor(() =>
       expect(sdkMock.createUserAdmin).toHaveBeenCalledWith({
-        userAdminCreateDto: expect.objectContaining({ quotaSizeInBytes: Math.round(1.5 * GiB) }),
+        userAdminCreateDto: expect.objectContaining({ quotaSizeInBytes: Math.round(1.5 * GB) }),
       }),
     );
   });
@@ -44,12 +45,12 @@ describe('AccountFormDialog (FL-76)', () => {
     const jamie = userAdminFactory.build({
       id: 'jamie',
       name: 'Jamie',
-      quotaSizeInBytes: 10 * GiB,
+      quotaSizeInBytes: 10 * GB,
       updatedAt: '2026-09-01T00:00:00.000Z',
     });
     sdkMock.getUserAdmin.mockResolvedValue({
       ...jamie,
-      quotaSizeInBytes: 20 * GiB,
+      quotaSizeInBytes: 20 * GB,
       updatedAt: '2026-09-02T00:00:00.000Z',
     });
     renderWithTooltips(AccountFormDialog, { user: jamie, onClose: vi.fn() });
@@ -66,7 +67,7 @@ describe('AccountFormDialog (FL-76)', () => {
     const jamie = userAdminFactory.build({
       id: 'jamie',
       name: 'Jamie',
-      quotaSizeInBytes: 10 * GiB,
+      quotaSizeInBytes: 10 * GB,
       updatedAt: '2026-09-01T00:00:00.000Z',
     });
     sdkMock.getUserAdmin.mockResolvedValue(jamie);
@@ -88,12 +89,12 @@ describe('AccountFormDialog (FL-76)', () => {
     const jamie = userAdminFactory.build({
       id: 'jamie',
       name: 'Jamie',
-      quotaSizeInBytes: 10 * GiB,
+      quotaSizeInBytes: 10 * GB,
       updatedAt: '2026-09-01T00:00:00.000Z',
     });
     sdkMock.getUserAdmin.mockResolvedValue({
       ...jamie,
-      quotaUsageInBytes: 5 * GiB,
+      quotaUsageInBytes: 5 * GB,
       updatedAt: '2026-09-02T00:00:00.000Z',
     });
     sdkMock.updateUserAdmin.mockResolvedValue({ ...jamie, name: 'Jamie Lee' });
@@ -106,7 +107,7 @@ describe('AccountFormDialog (FL-76)', () => {
   });
 
   it('refuses to save when the account cannot be re-read', async () => {
-    const jamie = userAdminFactory.build({ id: 'jamie', name: 'Jamie', quotaSizeInBytes: 10 * GiB });
+    const jamie = userAdminFactory.build({ id: 'jamie', name: 'Jamie', quotaSizeInBytes: 10 * GB });
     sdkMock.getUserAdmin.mockRejectedValue(new Error('offline'));
     renderWithTooltips(AccountFormDialog, { user: jamie, onClose: vi.fn() });
 

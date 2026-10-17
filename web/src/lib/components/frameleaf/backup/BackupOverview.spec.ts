@@ -13,7 +13,7 @@ vi.mock('$lib/managers/cloud-manager.svelte', () => ({
   },
 }));
 
-const GB = 1024 ** 3;
+const GB = 1000 ** 3;
 const recently = () => new Date(Date.now() - 3_600_000).toISOString();
 const cloud = (patch: Record<string, unknown> = {}) =>
   ({
@@ -44,7 +44,7 @@ describe('Backup › Overview (FL-362)', () => {
     render(BackupOverview);
     const status = await screen.findByRole('region', { name: 'Backup status' });
     expect(within(status).getByRole('heading', { name: en.frameleaf_backup_hero_none })).toBeInTheDocument();
-    expect(within(status).getByText('12 items · 3 GiB')).toBeInTheDocument();
+    expect(within(status).getByText('12 items · 3 GB')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Set up Cloud Backup' })).toHaveAttribute(
       'href',
       '/user-settings?area=backups&section=cloud',
@@ -64,7 +64,7 @@ describe('Backup › Overview (FL-362)', () => {
     expect(await screen.findByRole('heading', { name: en.frameleaf_backup_hero_ok })).toBeInTheDocument();
     const meter = screen.getByRole('meter', { name: 'Cloud Backup storage used' });
     expect(meter).toHaveAttribute('aria-valuenow', '50');
-    expect(meter).toHaveAttribute('aria-valuetext', '512 GiB of 1 TiB');
+    expect(meter).toHaveAttribute('aria-valuetext', '512 GB of 1 TB');
     expect(screen.getByRole('link', { name: 'Manage Cloud Backup' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Set up Buddy Backup' })).toBeInTheDocument();
     // Nothing is lent until a buddy is paired.

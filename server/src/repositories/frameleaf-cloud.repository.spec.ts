@@ -401,7 +401,7 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
             body: {
               version: 1,
               validFor: 3600,
-              // eslint-disable-next-line unicorn/prefer-https -- the refused address
+              // the refused address
               issuer: 'http://id.attacker.example/id',
               api: `${cloud.url}/api`,
               ml: { eu: `${cloud.url}/ml-eu` },
@@ -411,9 +411,9 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
     metadata.set(SystemMetadataKey.FrameleafCloudLink, link());
     const resolution = await resolveCloudGateway(deps);
     expect(resolution.state).not.toBe(CloudConnectionState.Ready);
-    expect('detail' in resolution ? resolution.detail : '').toMatch(
-      /issuer http:\/\/id\.attacker\.example\/id is not on/,
-    );
+    const detail = 'detail' in resolution ? resolution.detail : '';
+    expect(detail).toContain('discovery issuer is not on');
+    expect(detail).not.toContain('id.attacker.example');
     // Nothing else was asked: no signed assertion and no token request left the server.
     expect(cloud.requests.map((request) => request.path)).toEqual(['/.well-known/frameleaf-services']);
   });

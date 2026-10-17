@@ -1,9 +1,10 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFile } from 'src/database.js';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { AssetJobName, AssetStatsResponseDto } from 'src/dtos/asset.dto.js';
+import { defaults } from 'src/dtos/config.dto.js';
 import { AssetEditAction, type AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import {
   AssetFileType,
@@ -56,6 +57,7 @@ describe(AssetService.name, () => {
     mocks.partner.getAll.mockResolvedValue([]);
     mocks.duplicateRepository.getVideoDuplicateFrames.mockResolvedValue([]);
     mocks.partnerOrigin.getOriginLabels.mockResolvedValue(new Map());
+    mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
     mocks.search.getAssetLandmarks.mockResolvedValue([]);
     mocks.map.getLandmarkIcons.mockReturnValue(new Map());
     removedExtras = {};
@@ -76,6 +78,52 @@ describe(AssetService.name, () => {
         await release.queue(release.files(removed));
       }
       return removed;
+    });
+  });
+
+  describe('durable metadata lock effects', () => {
+    it('retries profile/thumbnail followup and owner updates without a stale blanket lock event', async () => {
+      mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
+      mocks.user.getLockedProfileImageSources.mockResolvedValue([]);
+      await sut.onAssetLocalEffects({
+        origin: { kind: 'lock' },
+        ownerId: 'owner',
+        lockedCascade: { assetIds: ['asset'], interactiveAdmissions: [] },
+      } as never);
+      expect(mocks.person.getMissingThumbnailsForAssets).toHaveBeenCalledWith(['asset']);
+      expect(mocks.user.getLockedProfileImageSources).toHaveBeenCalled();
+      expect(mocks.asset.getByIdsWithAllRelationsButStacks).toHaveBeenCalledWith(['asset'], 'owner');
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetLocked', expect.anything());
+    });
+
+    it('propagates a failed followup so the durable dispatcher cannot acknowledge it', async () => {
+      mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([{ ownerId: 'owner', personGroupId: 'person' }]);
+      mocks.job.queueAll.mockRejectedValueOnce(new Error('thumbnail admission failed'));
+      await expect(
+        sut.onAssetLocalEffects({
+          origin: { kind: 'lock' },
+          ownerId: 'owner',
+          lockedCascade: { assetIds: ['asset'], interactiveAdmissions: [] },
+        } as never),
+      ).rejects.toThrow('thumbnail admission failed');
+    });
+
+    it('ignores effects that contain no lock cascade', async () => {
+      await sut.onAssetLocalEffects({ origin: { kind: 'publication' }, ownerId: 'owner' } as never);
+      expect(mocks.person.getMissingThumbnailsForAssets).not.toHaveBeenCalled();
+      expect(mocks.user.getLockedProfileImageSources).not.toHaveBeenCalled();
+    });
+
+    it('also follows up real lock cascades produced by existing publication effects', async () => {
+      mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
+      mocks.user.getLockedProfileImageSources.mockResolvedValue([]);
+      await sut.onAssetLocalEffects({
+        origin: { kind: 'publication' },
+        ownerId: 'owner',
+        lockedCascade: { assetIds: ['asset'], interactiveAdmissions: [] },
+      } as never);
+      expect(mocks.person.getMissingThumbnailsForAssets).toHaveBeenCalledWith(['asset']);
+      expect(mocks.user.getLockedProfileImageSources).toHaveBeenCalled();
     });
   });
 
@@ -324,7 +372,319 @@ describe(AssetService.name, () => {
     });
   });
 
+  describe('fillMissingMetadata', () => {
+    it('takes origin admission before entering metadata write locks', async () => {
+      mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+
+      await expect(sut.fillMissingMetadata(authStub.admin, 'asset-1', { description: 'Imported' })).rejects.toThrow(
+        'origin busy',
+      );
+
+      expect(mocks.asset.withMetadataUpdate).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.job.queueInTransaction).not.toHaveBeenCalled();
+    });
+
+    const id = 'asset-1';
+    const requested = {
+      description: 'From Google',
+      latitude: 1,
+      longitude: 2,
+      isFavorite: true,
+      visibility: AssetVisibility.Archive,
+    };
+    let current: ReturnType<typeof getForAsset>;
+    let committed: boolean;
+    beforeEach(() => {
+      committed = false;
+      current = {
+        ...getForAsset(AssetFactory.create({ id, ownerId: authStub.admin.user.id })),
+        exifInfo: { description: '', latitude: null, longitude: null } as never,
+      };
+      mocks.asset.getById.mockImplementation(() => Promise.try(() => current));
+      mocks.asset.update.mockImplementation(() => Promise.try(() => current));
+      mocks.asset.withMetadataUpdate.mockImplementation(async (_id, write) => {
+        const result = await write(mocks.asset as never, mocks.access as never, {} as never);
+        committed = true;
+        return result;
+      });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([id]));
+      mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([]);
+      mocks.job.queueInTransaction.mockImplementation(() =>
+        Promise.try(() => {
+          expect(committed).toBe(false);
+        }),
+      );
+    });
+
+    it('keeps manual metadata committed after the importer snapshot and emits no no-op effects', async () => {
+      current.exifInfo = { description: 'Edited by hand', latitude: 5, longitude: 6 } as never;
+      current.isFavorite = true;
+      current.visibility = AssetVisibility.Archive;
+
+      expect(await sut.fillMissingMetadata(authStub.admin, id, requested)).toBe(true);
+
+      expect(mocks.asset.getById).toHaveBeenCalledWith(id, { exifInfo: true });
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.queueInTransaction).not.toHaveBeenCalled();
+      expect(mocks.partnerOrigin.markOverridden).not.toHaveBeenCalled();
+    });
+
+    it('fills missing fields under the guard, retaining metadata locks and transactional effects', async () => {
+      current.stackId = 'stack';
+      mocks.asset.getStackSiblingIds.mockResolvedValue(['sibling']);
+      await sut.fillMissingMetadata(authStub.admin, id, requested);
+
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith({
+        exif: {
+          assetId: id,
+          description: 'From Google',
+          latitude: 1,
+          longitude: 2,
+          lockedProperties: ['description', 'latitude', 'longitude'],
+        },
+        lockedPropertiesBehavior: 'append',
+      });
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(id, ['city', 'state', 'country']);
+      expect(mocks.asset.update).toHaveBeenCalledWith({ id, isFavorite: true, visibility: AssetVisibility.Archive });
+      expect(mocks.job.queueInTransaction).toHaveBeenCalledWith(expect.anything(), {
+        name: JobName.SidecarWrite,
+        data: { id },
+      });
+      expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+        'asset',
+        [id],
+        ['description', 'location', 'visibility'],
+        authStub.admin.user.id,
+        expect.anything(),
+      );
+      expect(mocks.asset.getByIdsWithAllRelationsButStacks).toHaveBeenCalledWith(
+        [id, 'sibling'],
+        authStub.admin.user.id,
+      );
+    });
+
+    it('admits partner propagation before the sidecar in the metadata transaction', async () => {
+      mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([id]);
+      await sut.fillMissingMetadata(authStub.admin, id, { description: 'From Google' });
+      expect(mocks.job.queueInTransaction.mock.calls.map(([, item]) => item)).toEqual([
+        { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: id, fields: ['description'] } },
+        { name: JobName.SidecarWrite, data: { id } },
+      ]);
+    });
+
+    it('retains a complete zero-valued coordinate pair and Hidden visibility', async () => {
+      current.exifInfo = { description: 'Mine', latitude: 0, longitude: 0 } as never;
+      current.visibility = AssetVisibility.Hidden;
+      await sut.fillMissingMetadata(authStub.admin, id, requested);
+
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.asset.update).toHaveBeenCalledWith({ id, isFavorite: true });
+      expect(mocks.partnerOrigin.markOverridden).not.toHaveBeenCalled();
+      expect(mocks.asset.getStackSiblingIds).not.toHaveBeenCalled();
+    });
+
+    it.each([null, { description: '', latitude: 0, longitude: null }])(
+      'fills an absent or incomplete EXIF coordinate pair: %s',
+      async (exifInfo) => {
+        current.exifInfo = exifInfo as never;
+        await sut.fillMissingMetadata(authStub.admin, id, requested);
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({
+            exif: expect.objectContaining({ description: 'From Google', latitude: 1, longitude: 2 }),
+          }),
+        );
+      },
+    );
+
+    it('leaves freshly Locked media alone even for an elevated owner', async () => {
+      current.isLocked = true;
+      expect(await sut.fillMissingMetadata(authStub.adminWithElevatedPermission, id, requested)).toBe(false);
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it.each(['missing', 'owner', 'deleted', 'access', 'write', 'admission', 'provenance'])(
+      'refuses %s and admits no post-commit effects',
+      async (failure) => {
+        switch (failure) {
+          case 'missing': {
+            mocks.asset.getById.mockResolvedValue(undefined);
+            break;
+          }
+          case 'owner': {
+            current.ownerId = 'other';
+            break;
+          }
+          case 'deleted': {
+            current.deletedAt = new Date();
+            break;
+          }
+          // No default
+        }
+        switch (failure) {
+          case 'access': {
+            mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+            break;
+          }
+          case 'write': {
+            mocks.asset.update.mockResolvedValue(undefined);
+            break;
+          }
+          case 'admission': {
+            mocks.job.queueInTransaction.mockRejectedValue(new Error('admission failed'));
+            break;
+          }
+          // No default
+        }
+        if (failure === 'provenance') mocks.partnerOrigin.markOverridden.mockRejectedValue(new Error('lineage failed'));
+        await expect(sut.fillMissingMetadata(authStub.admin, id, requested)).rejects.toThrow();
+        expect(committed).toBe(false);
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+        if (!['admission', 'provenance'].includes(failure))
+          expect(mocks.partnerOrigin.markOverridden).not.toHaveBeenCalled();
+        if (!['write', 'admission', 'provenance'].includes(failure))
+          expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      },
+    );
+  });
+
   describe('update', () => {
+    it.each(['ordinary', 'unlink', 'replace'] as const)(
+      'pins the whole %s lock group before commit without spreading description overrides',
+      async (action) => {
+        const ownerId = authStub.admin.user.id;
+        const oldMotion = AssetFactory.create({
+          id: 'old-motion',
+          ownerId,
+          type: AssetType.Video,
+          visibility: AssetVisibility.Hidden,
+        });
+        const newMotion = AssetFactory.create({ id: 'new-motion', ownerId, type: AssetType.Video });
+        const photo = AssetFactory.create({
+          id: 'photo',
+          ownerId,
+          livePhotoVideoId: action === 'ordinary' ? null : oldMotion.id,
+        });
+        const sibling = AssetFactory.create({ id: 'sibling', ownerId });
+        const ids =
+          action === 'ordinary'
+            ? [photo.id, sibling.id]
+            : action === 'unlink'
+              ? [photo.id, oldMotion.id, sibling.id]
+              : [photo.id, oldMotion.id, newMotion.id, sibling.id];
+        const rows = new Map([photo, oldMotion, newMotion, sibling].map((asset) => [asset.id, getForAsset(asset)]));
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([photo.id]));
+        mocks.asset.findLockGroupIds.mockResolvedValue(ids);
+        mocks.asset.getById.mockImplementation((id) => Promise.resolve(rows.get(id)));
+        mocks.asset.getByIds.mockResolvedValue(rows.values().toArray());
+        mocks.asset.update.mockImplementation((update) =>
+          Promise.resolve({ ...rows.get(update.id)!, ...update } as never),
+        );
+        mocks.asset.lock.mockResolvedValue([]);
+        mocks.partnerOrigin.getIdsWithFollowers.mockImplementation((_kind, ids) => Promise.resolve(ids));
+        let committed = false;
+        mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, admitted, _fields, write) => {
+          expect(admitted).toEqual(ids);
+          const result = await write();
+          expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith('asset', ids, ['visibility'], ownerId);
+          expect(mocks.partnerOrigin.markOverridden).not.toHaveBeenCalledWith(
+            'asset',
+            ids,
+            expect.arrayContaining(['description']),
+            ownerId,
+          );
+          committed = true;
+          return result;
+        });
+        mocks.job.queueAll.mockImplementation(() => {
+          expect(committed).toBe(true);
+          return Promise.resolve(undefined as never);
+        });
+        await sut.update(authStub.admin, photo.id, {
+          visibility: AssetVisibility.Locked,
+          description: 'Mine',
+          ...(action === 'ordinary' ? {} : { livePhotoVideoId: action === 'unlink' ? null : newMotion.id }),
+        });
+        expect(committed).toBe(true);
+        expect(mocks.job.queueAll).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: sibling.id, fields: ['visibility'] } },
+          ]),
+        );
+      },
+    );
+
+    it('rejects a single lock group that expands beyond origin admission', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      mocks.asset.findLockGroupIds.mockResolvedValueOnce([asset.id]).mockResolvedValue([asset.id, 'sibling']);
+      await expect(sut.update(authStub.admin, asset.id, { visibility: AssetVisibility.Locked })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(mocks.partnerOrigin.markOverridden).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, null])('admits origin edits before writing with motion id %s', async (livePhotoVideoId) => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+      await expect(sut.update(authStub.admin, asset.id, { description: 'Mine', livePhotoVideoId })).rejects.toThrow(
+        'origin busy',
+      );
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.asset.withLivePhotoUpdate).not.toHaveBeenCalled();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('records overrides before origin commit and dispatches sidecars afterward', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      let admitted = false;
+      let committed = false;
+      mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => {
+        admitted = true;
+        const result = await write();
+        expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+          'asset',
+          [asset.id],
+          ['description'],
+          authStub.admin.user.id,
+        );
+        committed = true;
+        return result;
+      });
+      mocks.asset.upsertExif.mockImplementation(() => {
+        expect(admitted).toBe(true);
+        expect(committed).toBe(false);
+        return Promise.resolve(undefined as never);
+      });
+      mocks.job.queue.mockImplementation(() => {
+        expect(committed).toBe(true);
+        return Promise.resolve(undefined as never);
+      });
+      await sut.update(authStub.admin, asset.id, { description: 'Mine' });
+      expect(committed).toBe(true);
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SidecarWrite, data: { id: asset.id } });
+    });
+
+    beforeEach(() => {
+      mocks.asset.withLivePhotoUpdate.mockImplementation((_id, _motion, write) =>
+        write(mocks.asset as never, mocks.access as never),
+      );
+      mocks.asset.findLockGroupIds.mockImplementation((ids) => Promise.resolve(ids));
+      mocks.asset.getLivePhotoCount.mockResolvedValue(0);
+    });
     it('should require asset write access for the id', async () => {
       await expect(
         sut.update(authStub.admin, 'asset-1', { visibility: AssetVisibility.Timeline }),
@@ -631,10 +991,11 @@ describe(AssetService.name, () => {
 
     it('should link a live video', async () => {
       const motionAsset = AssetFactory.create({ type: AssetType.Video, visibility: AssetVisibility.Timeline });
-      const stillAsset = AssetFactory.create();
+      const stillAsset = AssetFactory.from().owner(motionAsset.owner).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([stillAsset.id]));
-      mocks.asset.getById.mockResolvedValueOnce(getForAsset(motionAsset));
-      mocks.asset.getById.mockResolvedValueOnce(getForAsset(stillAsset));
+      mocks.asset.getById.mockImplementation((id) =>
+        Promise.try(() => getForAsset(id === motionAsset.id ? motionAsset : stillAsset)),
+      );
       mocks.asset.update.mockResolvedValue(getForAsset(stillAsset));
       const auth = AuthFactory.from(motionAsset.owner).build();
 
@@ -657,12 +1018,12 @@ describe(AssetService.name, () => {
       const motionAsset = AssetFactory.from({ type: AssetType.Video, visibility: AssetVisibility.Hidden })
         .owner(auth.user)
         .build();
-      const asset = AssetFactory.create({ livePhotoVideoId: motionAsset.id });
-      const unlinkedAsset = AssetFactory.create();
+      const asset = AssetFactory.from({ livePhotoVideoId: motionAsset.id }).owner(auth.user).build();
+      const unlinkedAsset = { ...asset, livePhotoVideoId: null };
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getById.mockResolvedValueOnce(getForAsset(asset));
-      mocks.asset.getById.mockResolvedValueOnce(getForAsset(motionAsset));
-      mocks.asset.getById.mockResolvedValueOnce(getForAsset(unlinkedAsset));
+      mocks.asset.getById.mockImplementation((id) =>
+        Promise.try(() => getForAsset(id === motionAsset.id ? motionAsset : asset)),
+      );
       mocks.asset.update.mockResolvedValueOnce(getForAsset(unlinkedAsset));
 
       await sut.update(auth, asset.id, { livePhotoVideoId: null });
@@ -695,7 +1056,369 @@ describe(AssetService.name, () => {
     });
   });
 
+  describe('Live Photo edit commit', () => {
+    const auth = AuthFactory.create();
+    type Row = ReturnType<typeof getForAsset> & { isLocked?: boolean };
+    let rows: Map<string, Row>;
+    let committed: boolean;
+    let failing: string | undefined;
+    let revoked: boolean;
+    let exif: string | undefined;
+    let effects: boolean[];
+
+    beforeEach(() => {
+      rows = new Map(
+        [
+          AssetFactory.from({ id: 'photo', ownerId: auth.user.id, livePhotoVideoId: 'old' }).build(),
+          AssetFactory.from({ id: 'video', ownerId: auth.user.id, type: AssetType.Video }).build(),
+          AssetFactory.from({
+            id: 'old',
+            ownerId: auth.user.id,
+            type: AssetType.Video,
+            visibility: AssetVisibility.Hidden,
+          }).build(),
+        ].map((asset) => [asset.id, getForAsset(asset)]),
+      );
+      committed = false;
+      failing = undefined;
+      revoked = false;
+      exif = undefined;
+      effects = [];
+      mocks.access.asset.checkOwnerAccess.mockImplementation(() =>
+        Promise.try(() => new Set(revoked ? [] : ['photo'])),
+      );
+      mocks.asset.getById.mockImplementation((id) => Promise.try(() => rows.get(id)));
+      mocks.asset.getByIds.mockImplementation((ids) => Promise.try(() => ids.flatMap((id) => rows.get(id) ?? [])));
+      mocks.asset.getLivePhotoCount.mockResolvedValue(0);
+      mocks.asset.findLockGroupIds.mockImplementation((ids) =>
+        Promise.try(() => [
+          ...new Set(
+            ids.flatMap((id) => {
+              const motionId = rows.get(id)?.livePhotoVideoId;
+              return motionId ? [id, motionId] : [id];
+            }),
+          ),
+        ]),
+      );
+      mocks.asset.update.mockImplementation((update) =>
+        Promise.try(() => {
+          const row = rows.get(update.id);
+          if (!row) return;
+          Object.assign(row, update);
+          if (failing === (update.id === 'photo' ? 'photo' : 'motion')) throw new Error('write failed');
+          return row;
+        }),
+      );
+      mocks.asset.upsertExif.mockImplementation(({ exif: update }) =>
+        Promise.try(() => {
+          exif = update.description ?? undefined;
+          if (failing === 'exif') throw new Error('write failed');
+          return undefined as never;
+        }),
+      );
+      mocks.asset.lock.mockImplementation((ids) =>
+        Promise.try(() => {
+          for (const id of ids) rows.get(id)!.isLocked = true;
+          return ids;
+        }),
+      );
+      mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
+      mocks.user.getLockedProfileImageSources.mockResolvedValue([]);
+      mocks.job.queue.mockImplementation(() =>
+        Promise.try(() => {
+          effects.push(committed);
+        }),
+      );
+      mocks.event.emit.mockImplementation(() =>
+        Promise.try(() => {
+          effects.push(committed);
+        }),
+      );
+      Object.assign(mocks.asset, {
+        withLivePhotoUpdate: vi.fn(
+          async (
+            _id: string,
+            _motion: string | null,
+            write: (assets: ServiceMocks['asset'], access: ServiceMocks['access']) => Promise<unknown>,
+          ) => {
+            const before = structuredClone(rows);
+            const beforeExif = exif;
+            try {
+              const result = await write(mocks.asset, mocks.access);
+              if (failing === 'commit') throw new Error('write failed');
+              committed = true;
+              return result;
+            } catch (error) {
+              rows = before;
+              exif = beforeExif;
+              throw error;
+            }
+          },
+        ),
+      });
+    });
+
+    it.each(['motion', 'photo', 'exif', 'commit'])(
+      'rolls back a failed %s stage without publishing effects',
+      async (stage) => {
+        failing = stage;
+        const before = structuredClone(rows);
+        await expect(sut.update(auth, 'photo', { livePhotoVideoId: 'video', description: 'changed' })).rejects.toThrow(
+          'write failed',
+        );
+        expect(rows).toEqual(before);
+        expect(exif).toBeUndefined();
+        expect(effects).toEqual([]);
+      },
+    );
+
+    it('rolls back the photo unlink when restoring motion visibility fails', async () => {
+      failing = 'motion';
+      const before = structuredClone(rows);
+      await expect(sut.update(auth, 'photo', { livePhotoVideoId: null })).rejects.toThrow('write failed');
+      expect(rows).toEqual(before);
+      expect(effects).toEqual([]);
+    });
+
+    it('commits both parts and EXIF before sidecar jobs and hide/show events', async () => {
+      await sut.update(auth, 'photo', {
+        livePhotoVideoId: 'video',
+        description: 'changed',
+        latitude: null,
+        longitude: null,
+      });
+      expect(rows.get('photo')!.livePhotoVideoId).toBe('video');
+      expect(rows.get('video')!.visibility).toBe(AssetVisibility.Hidden);
+      expect(rows.get('old')!.visibility).toBe(rows.get('photo')!.visibility);
+      expect(exif).toBe('changed');
+      expect(mocks.asset.clearLocation).toHaveBeenCalledWith(['photo', 'old', 'video']);
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetHide', { assetId: 'video', userId: auth.user.id });
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetShow', { assetId: 'old', userId: auth.user.id });
+      expect(effects.length).toBeGreaterThan(0);
+      expect(effects.every(Boolean)).toBe(true);
+    });
+
+    it('rechecks photo access after acquiring the transaction locks', async () => {
+      mocks.access.asset.checkOwnerAccess.mockImplementationOnce(() =>
+        Promise.try(() => {
+          revoked = true;
+          return new Set(['photo']);
+        }),
+      );
+      await expect(sut.update(auth, 'photo', { livePhotoVideoId: 'video' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a Locked motion from an ordinary session before any writes', async () => {
+      rows.get('video')!.isLocked = true;
+      await expect(sut.update(auth, 'photo', { livePhotoVideoId: 'video' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
+    it.each(['missing', 'type', 'owner', 'deleted', 'still type'])(
+      'refuses a motion link with invalid %s before any writes',
+      async (invalid) => {
+        switch (invalid) {
+          case 'missing': {
+            rows.delete('video');
+            break;
+          }
+          case 'type': {
+            rows.get('video')!.type = AssetType.Image;
+            break;
+          }
+          case 'owner': {
+            rows.get('video')!.ownerId = 'other-owner';
+            break;
+          }
+          // No default
+        }
+        if (invalid === 'deleted') rows.get('video')!.deletedAt = new Date();
+        else if (invalid === 'still type') rows.get('photo')!.type = AssetType.Video;
+        await expect(sut.update(auth, 'photo', { livePhotoVideoId: 'video' })).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+        expect(mocks.asset.update).not.toHaveBeenCalled();
+        expect(effects).toEqual([]);
+      },
+    );
+
+    it('refuses mixed Locked classes even from an elevated session', async () => {
+      rows.get('video')!.isLocked = true;
+      await expect(
+        sut.update({ ...auth, session: { ...auth.session!, hasElevatedPermission: true } }, 'photo', {
+          livePhotoVideoId: 'video',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
+    it('allows an explicit move to Locked without a PIN and locks both old and new motion parts before commit', async () => {
+      rows.get('video')!.isLocked = true;
+      const response = await sut.update(auth, 'photo', {
+        livePhotoVideoId: 'video',
+        visibility: AssetVisibility.Locked,
+      });
+      expect(mocks.asset.lock).toHaveBeenCalledWith(['photo', 'old', 'video'], AssetLockReason.Marked, auth.user.id);
+      expect(response.visibility).toBe(AssetVisibility.Locked);
+      expect(effects.every(Boolean)).toBe(true);
+    });
+
+    it('does not restore a detached motion still referenced by another photo', async () => {
+      mocks.asset.getLivePhotoCount.mockResolvedValue(1);
+      await sut.update(auth, 'photo', { livePhotoVideoId: null });
+      expect(rows.get('old')!.visibility).toBe(AssetVisibility.Hidden);
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetShow', expect.anything());
+    });
+
+    it.each([null, 'video'])(
+      'preserves the Android unlink restriction when changing the motion to %s',
+      async (livePhotoVideoId) => {
+        rows.get('old')!.originalPath = StorageCore.getBaseFolder(StorageFolder.EncodedVideo) + '/motion.mp4';
+        await expect(sut.update(auth, 'photo', { livePhotoVideoId })).rejects.toThrow(
+          'Cannot unlink Android motion photos',
+        );
+        expect(mocks.asset.update).not.toHaveBeenCalled();
+        expect(effects).toEqual([]);
+      },
+    );
+
+    it('allows an elevated owner to pair two Locked parts', async () => {
+      rows.get('photo')!.isLocked = true;
+      rows.get('video')!.isLocked = true;
+      await sut.update({ ...auth, session: { ...auth.session!, hasElevatedPermission: true } }, 'photo', {
+        livePhotoVideoId: 'video',
+      });
+      expect(rows.get('photo')!.livePhotoVideoId).toBe('video');
+      expect(effects.every(Boolean)).toBe(true);
+    });
+
+    it('refuses to detach a Locked motion from an ordinary session', async () => {
+      rows.get('old')!.isLocked = true;
+      await expect(sut.update(auth, 'photo', { livePhotoVideoId: null })).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
+    it("never changes another owner's motion when detaching a malformed legacy link", async () => {
+      rows.get('old')!.ownerId = 'other-owner';
+      await sut.update(auth, 'photo', { livePhotoVideoId: 'video', latitude: null, longitude: null });
+      expect(rows.get('old')!.visibility).toBe(AssetVisibility.Hidden);
+      expect(mocks.asset.update).not.toHaveBeenCalledWith(expect.objectContaining({ id: 'old' }));
+      expect(mocks.asset.clearLocation).toHaveBeenCalledWith(['photo', 'video']);
+    });
+  });
+
+  describe('lock cascade origins', () => {
+    it.each(['direct', 'bulk'] as const)(
+      'protects %s lock siblings before commit, including already-locked members',
+      async (action) => {
+        const ids = ['asset-1', 'sibling'];
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+        mocks.asset.findLockGroupIds.mockResolvedValue(ids);
+        mocks.asset.lock.mockResolvedValue([]);
+        mocks.partnerOrigin.getIdsWithFollowers.mockImplementation((_kind, ids) => Promise.resolve(ids));
+        let committed = false;
+        mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, admitted, _fields, write) => {
+          expect(admitted).toEqual(ids);
+          const result = await write();
+          expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+            'asset',
+            ids,
+            ['visibility'],
+            authStub.admin.user.id,
+          );
+          committed = true;
+          return result;
+        });
+        mocks.job.queueAll.mockImplementation(() => {
+          expect(committed).toBe(true);
+          return Promise.resolve(undefined as never);
+        });
+        if (action === 'direct') await sut.lock(authStub.admin, { ids: ['asset-1'] });
+        else
+          await sut.updateAll(authStub.admin, {
+            ids: ['asset-1'],
+            visibility: AssetVisibility.Locked,
+            description: 'Mine',
+          });
+        expect(committed).toBe(true);
+        expect(mocks.job.queueAll).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: 'sibling', fields: ['visibility'] } },
+          ]),
+        );
+        expect(mocks.partnerOrigin.markOverridden).not.toHaveBeenCalledWith(
+          'asset',
+          ids,
+          expect.arrayContaining(['description']),
+          authStub.admin.user.id,
+        );
+      },
+    );
+
+    it.each(['direct', 'bulk'] as const)(
+      'rejects an expanded %s lock group before override recording',
+      async (action) => {
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+        mocks.asset.findLockGroupIds.mockResolvedValueOnce(['asset-1']).mockResolvedValue(['asset-1', 'sibling']);
+        mocks.asset.lock.mockResolvedValue([]);
+        const edit =
+          action === 'direct'
+            ? sut.lock(authStub.admin, { ids: ['asset-1'] })
+            : sut.updateAll(authStub.admin, { ids: ['asset-1'], visibility: AssetVisibility.Locked });
+        await expect(edit).rejects.toBeInstanceOf(ConflictException);
+        expect(mocks.partnerOrigin.markOverridden).not.toHaveBeenCalled();
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      },
+    );
+  });
+
   describe('updateAll', () => {
+    beforeEach(() => {
+      mocks.asset.findLockGroupIds.mockImplementation((ids) => Promise.resolve(ids));
+    });
+    it.each([AssetVisibility.Archive, AssetVisibility.Locked])(
+      'admits origin edits before bulk %s writes',
+      async (visibility) => {
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+        mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+        await expect(
+          sut.updateAll(authStub.admin, { ids: ['asset-1'], description: 'Mine', visibility }),
+        ).rejects.toThrow('origin busy');
+        expect(mocks.asset.updateAllExif).not.toHaveBeenCalled();
+        expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+        expect(mocks.asset.lock).not.toHaveBeenCalled();
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      },
+    );
+
+    it('records bulk overrides before commit and dispatches sidecars afterward', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      let committed = false;
+      mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => {
+        const result = await write();
+        expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+          'asset',
+          ['asset-1'],
+          ['description'],
+          authStub.admin.user.id,
+        );
+        committed = true;
+        return result;
+      });
+      mocks.job.queueAll.mockImplementation(() => {
+        expect(committed).toBe(true);
+        return Promise.resolve(undefined as never);
+      });
+      await sut.updateAll(authStub.admin, { ids: ['asset-1'], description: 'Mine' });
+      expect(committed).toBe(true);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: 'asset-1' } }]);
+    });
+
     it('should require asset write access for all ids', async () => {
       const auth = AuthFactory.create();
       await expect(sut.updateAll(auth, { ids: ['asset-1'] })).rejects.toBeInstanceOf(BadRequestException);
@@ -917,6 +1640,18 @@ describe(AssetService.name, () => {
   });
 
   describe('lock (FL-34)', () => {
+    beforeEach(() => {
+      mocks.asset.findLockGroupIds.mockImplementation((ids) => Promise.resolve(ids));
+    });
+    it('takes origin admission before locking or publishing lock effects', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+      await expect(sut.lock(authStub.admin, { ids: ['asset-1'] })).rejects.toThrow('origin busy');
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+      expect(mocks.person.getMissingThumbnailsForAssets).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+
     it('should lock assets of the caller as their own lock without asking for the PIN', async () => {
       const auth = authStub.admin;
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
@@ -981,6 +1716,54 @@ describe(AssetService.name, () => {
   });
 
   describe('deleteAll', () => {
+    it('announces only ordinary changes, preserving their order and duplicates after sequenced effects', async () => {
+      const ids = ['ordinary-2', 'sequenced', 'ordinary-1', 'ordinary-2'];
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(ids));
+      mocks.trash.enqueueLocalEffects.mockResolvedValue(0);
+      mocks.trash.applyReviewed.mockImplementation((...args) => {
+        args[6]?.(['sequenced', 'sequenced']);
+        return Promise.resolve(ids);
+      });
+
+      await sut.deleteAll(authStub.user1, { ids });
+
+      expect(mocks.trash.enqueueLocalEffects).toHaveBeenCalledOnce();
+      expect(mocks.event.emit).toHaveBeenCalledExactlyOnceWith('AssetTrashAll', {
+        assetIds: ['ordinary-2', 'ordinary-1', 'ordinary-2'],
+        userId: authStub.user1.user.id,
+      });
+      expect(mocks.trash.enqueueLocalEffects.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.event.emit.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('reads sequenced IDs only linearly for a large mixed trash batch', async () => {
+      const ids = Array.from({ length: 512 }, (_, index) => `asset-${index}`);
+      let reads = 0;
+      const sequenced = new Proxy(ids.slice(0, 256), {
+        get(target, key, receiver) {
+          if (typeof key === 'string' && /^\d+$/.test(key)) {
+            reads++;
+          }
+          return Reflect.get(target, key, receiver);
+        },
+      });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(ids));
+      mocks.trash.enqueueLocalEffects.mockResolvedValue(0);
+      mocks.trash.applyReviewed.mockImplementation((...args) => {
+        args[6]?.(sequenced);
+        return Promise.resolve(ids);
+      });
+
+      await sut.deleteAll(authStub.user1, { ids });
+
+      expect(mocks.event.emit).toHaveBeenCalledExactlyOnceWith('AssetTrashAll', {
+        assetIds: ids.slice(256),
+        userId: authStub.user1.user.id,
+      });
+      expect(reads).toBeLessThanOrEqual(512);
+    });
+
     it('should require asset delete access for all ids', async () => {
       await expect(
         sut.deleteAll(authStub.user1, {
@@ -1681,7 +2464,95 @@ describe(AssetService.name, () => {
     });
   });
 
+  describe('sensitive metadata origin admission', () => {
+    it.each(['single', 'bulk'] as const)(
+      'admits %s metadata before persisting an owner-sensitive review',
+      async (action) => {
+        const item = { key: AssetMetadataKey.MlEnrichment, value: { nsfwDetection: { review: { isNsfw: true } } } };
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+        mocks.asset.findLockGroupIds.mockResolvedValue(['asset-1', 'sibling']);
+        mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+        const edit =
+          action === 'single'
+            ? sut.upsertMetadata(authStub.admin, 'asset-1', { items: [item] })
+            : sut.upsertBulkMetadata(authStub.admin, { items: [{ assetId: 'asset-1', ...item }] });
+        await expect(edit).rejects.toThrow('origin busy');
+        expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
+        expect(mocks.asset.upsertBulkMetadata).not.toHaveBeenCalled();
+        expect(mocks.asset.lock).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['single', 'bulk'] as const)(
+      'records %s owner group overrides inside the metadata transaction',
+      async (action) => {
+        const ids = ['asset-1', 'sibling'];
+        const item = { key: AssetMetadataKey.MlEnrichment, value: { nsfwDetection: { review: { isNsfw: true } } } };
+        const trx = { isTransaction: true } as never;
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+        mocks.asset.findLockGroupIds.mockResolvedValue(ids);
+        mocks.asset.lock.mockResolvedValue([]);
+        mocks.database.withAssetMetadataLocks.mockImplementation((_ids, write) => write(trx));
+        let committed = false;
+        mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, admitted, _fields, write) => {
+          expect(new Set(admitted)).toEqual(new Set(ids));
+          const result = await write();
+          expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+            'asset',
+            ids,
+            ['visibility'],
+            authStub.admin.user.id,
+            trx,
+          );
+          committed = true;
+          return result;
+        });
+        if (action === 'single') await sut.upsertMetadata(authStub.admin, 'asset-1', { items: [item] });
+        else await sut.upsertBulkMetadata(authStub.admin, { items: [{ assetId: 'asset-1', ...item }] });
+        expect(committed).toBe(true);
+        expect(mocks.asset.lockGroupRows).toHaveBeenCalledWith(['asset-1'], trx);
+      },
+    );
+
+    it('prepares detection policy before metadata writes can commit', async () => {
+      const item = {
+        key: AssetMetadataKey.MlEnrichment,
+        value: { nsfwDetection: { status: 'success', result: { isNsfw: true } } },
+      };
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      vi.spyOn(sut, 'getConfig').mockRejectedValue(new Error('policy unavailable'));
+      await expect(sut.upsertMetadata(authStub.admin, 'asset-1', { items: [item] })).rejects.toThrow(
+        'policy unavailable',
+      );
+      expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+    });
+
+    it('keeps a detection-only metadata lock free of owner overrides', async () => {
+      const item = {
+        key: AssetMetadataKey.MlEnrichment,
+        value: { nsfwDetection: { status: 'success', result: { isNsfw: true } } },
+      };
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.findLockGroupIds.mockResolvedValue(['asset-1', 'sibling']);
+      mocks.asset.lock.mockResolvedValue([]);
+      vi.spyOn(sut, 'getConfig').mockResolvedValue({
+        ...defaults,
+        machineLearning: {
+          ...defaults.machineLearning,
+          nsfwDetection: { ...defaults.machineLearning.nsfwDetection, hideFromLibrary: true },
+        },
+      });
+      await sut.upsertMetadata(authStub.admin, 'asset-1', { items: [item] });
+      expect(mocks.asset.lock).toHaveBeenCalledWith(['asset-1'], AssetLockReason.Detected, null);
+      expect(mocks.partnerOrigin.markOverridden).not.toHaveBeenCalled();
+    });
+  });
+
   describe('upsertMetadata', () => {
+    beforeEach(() => {
+      mocks.asset.findLockGroupIds.mockImplementation((ids) => Promise.resolve(ids));
+    });
     it('should throw a bad request exception if duplicate keys are sent', async () => {
       const asset = AssetFactory.create();
       const items = [
@@ -1736,6 +2607,51 @@ describe(AssetService.name, () => {
       );
 
       expect(mocks.asset.upsertBulkMetadata).not.toHaveBeenCalled();
+    });
+  });
+
+  describe.each(['upsertMetadata', 'upsertBulkMetadata'] as const)('%s metadata review validation', (method) => {
+    beforeEach(() => {
+      mocks.asset.findLockGroupIds.mockImplementation((ids) => Promise.resolve(ids));
+    });
+    it.each([
+      [{}, AssetLockReason.Detected],
+      [{ isNsfw: 'false' }, AssetLockReason.Detected],
+      [{ isNsfw: null }, AssetLockReason.Detected],
+      [{ isNsfw: false }, null],
+      [{ isNsfw: true }, AssetLockReason.Marked],
+    ] as const)('uses review %j with lock reason %s', async (review, reason) => {
+      const asset = AssetFactory.create();
+      const item = {
+        key: AssetMetadataKey.MlEnrichment,
+        value: { nsfwDetection: { status: 'success', result: { isNsfw: true }, review } },
+      };
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.upsertMetadata.mockResolvedValue([]);
+      mocks.asset.upsertBulkMetadata.mockResolvedValue([]);
+      vi.spyOn(sut, 'getConfig').mockResolvedValue({
+        ...defaults,
+        machineLearning: {
+          ...defaults.machineLearning,
+          nsfwDetection: { ...defaults.machineLearning.nsfwDetection, hideFromLibrary: true },
+        },
+      });
+
+      if (method === 'upsertMetadata') {
+        await sut.upsertMetadata(authStub.admin, asset.id, { items: [item] });
+      } else {
+        await sut.upsertBulkMetadata(authStub.admin, { items: [{ assetId: asset.id, ...item }] });
+      }
+
+      if (reason === null) {
+        expect(mocks.asset.lock).not.toHaveBeenCalled();
+      } else {
+        expect(mocks.asset.lock).toHaveBeenCalledWith(
+          [asset.id],
+          reason,
+          reason === AssetLockReason.Marked ? authStub.admin.user.id : null,
+        );
+      }
     });
   });
 

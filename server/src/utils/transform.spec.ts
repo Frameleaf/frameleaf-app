@@ -1,7 +1,14 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { AssetEditAction, AssetEditActionItem, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { AssetOcrResponseDto } from 'src/dtos/ocr.dto.js';
-import { transformFaceBoundingBox, transformOcrBoundingBox } from 'src/utils/transform.js';
+import {
+  createAffineMatrix,
+  getOutputDimensions,
+  transformFaceBoundingBox,
+  transformOcrBoundingBox,
+  transformPoints,
+} from 'src/utils/transform.js';
 
 describe('transformFaceBoundingBox', () => {
   const baseFace = {
@@ -18,7 +25,7 @@ describe('transformFaceBoundingBox', () => {
   describe('with no edits', () => {
     it('should return unchanged bounding box', () => {
       const result = transformFaceBoundingBox(baseFace, [], baseDimensions);
-      expect(result).toEqual(baseFace);
+      expect(result).toBe(baseFace);
     });
   });
 
@@ -207,7 +214,7 @@ describe('transformOcrBoundingBox', () => {
   describe('with no edits', () => {
     it('should return unchanged bounding box', () => {
       const result = transformOcrBoundingBox(baseOcr, [], baseDimensions);
-      expect(result).toEqual(baseOcr);
+      expect(result).toBe(baseOcr);
     });
   });
 
@@ -316,5 +323,102 @@ describe('transformOcrBoundingBox', () => {
       expect(result.textScore).toBe(baseOcr.textScore);
       expect(result.text).toBe(baseOcr.text);
     });
+  });
+});
+
+describe('transformPoints', () => {
+  it('keeps no-transform point references but never mutates inputs through crop, rotation, mirror or inverse', () => {
+    const points = Object.freeze([Object.freeze({ x: -0, y: 20 }), Object.freeze({ x: 40, y: -30 })]);
+    const input = [...points];
+    const dimensions = { width: 100, height: 80 };
+    const unchanged = transformPoints(input, [], dimensions);
+    expect(unchanged.points).not.toBe(input);
+    expect(unchanged.points[0]).toBe(points[0]);
+    expect(Object.is(unchanged.points[0].x, -0)).toBe(true);
+    const ignored: AssetEditActionItem[] = [{ action: AssetEditAction.Straighten, parameters: { angle: 12 } }];
+    expect(transformPoints(input, ignored, dimensions).points[0]).toBe(points[0]);
+    const edits: AssetEditActionItem[] = [
+      { action: AssetEditAction.Rotate, parameters: { angle: 90 } },
+      { action: AssetEditAction.Crop, parameters: { x: 10, y: 5, width: 60, height: 40 } },
+      { action: AssetEditAction.Mirror, parameters: { axis: MirrorAxis.Horizontal } },
+      { action: AssetEditAction.Mirror, parameters: { axis: MirrorAxis.Vertical } },
+    ];
+    for (const inverse of [false, true]) {
+      const result = transformPoints(input, edits, dimensions, { inverse });
+      expect(result.points[0]).not.toBe(points[0]);
+      expect(result.points[1]).not.toBe(points[1]);
+    }
+    expect(points[0]).toEqual({ x: -0, y: 20 });
+    expect(points[1]).toEqual({ x: 40, y: -30 });
+  });
+
+  it('matches exact base coordinates, integer face quantization, OCR ordering and affine matrices for seeded recipes', () => {
+    let seed = 0x51_f1_5e;
+    const random = () => {
+      seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0;
+      return seed / 2 ** 32;
+    };
+    const hash = createHash('sha256');
+    for (let sample = 0; sample < 256; sample++) {
+      const dimensions = { width: 1 + Math.floor(random() * 8192), height: 1 + Math.floor(random() * 8192) };
+      const recipe: AssetEditActionItem[] = [
+        { action: AssetEditAction.Rotate, parameters: { angle: (sample % 4) * 90 } },
+        { action: AssetEditAction.Mirror, parameters: { axis: MirrorAxis.Horizontal } },
+        {
+          action: AssetEditAction.Crop,
+          parameters: {
+            x: Math.floor(random() * 80),
+            y: Math.floor(random() * 80),
+            width: 1 + Math.floor(random() * 4096),
+            height: 1 + Math.floor(random() * 4096),
+          },
+        },
+        { action: AssetEditAction.Mirror, parameters: { axis: MirrorAxis.Vertical } },
+        { action: AssetEditAction.Straighten, parameters: { angle: 7.5 } },
+      ];
+      const edits = recipe.slice(sample % 6);
+      const points = Array.from({ length: sample % 17 }, () => ({
+        x: (random() - 0.25) * dimensions.width,
+        y: (random() - 0.25) * dimensions.height,
+      }));
+      const face = {
+        boundingBoxX1: random() * 400,
+        boundingBoxX2: random() * 1000,
+        boundingBoxY1: random() * 400,
+        boundingBoxY2: random() * 1000,
+        imageWidth: 1001,
+        imageHeight: 997,
+      };
+      const ocr: AssetOcrResponseDto = {
+        id: 'box',
+        assetId: 'asset',
+        x1: 0.1,
+        y1: 0.2,
+        x2: 0.4,
+        y2: 0.21,
+        x3: 0.41,
+        y3: 0.6,
+        x4: 0.11,
+        y4: 0.59,
+        boxScore: 0.8,
+        textScore: 0.9,
+        text: 'geometry',
+      };
+      hash.update(
+        JSON.stringify(
+          [
+            transformPoints(points, edits, dimensions),
+            transformPoints(points, edits, dimensions, { inverse: true }),
+            transformFaceBoundingBox(face, edits, dimensions),
+            transformOcrBoundingBox(ocr, edits, dimensions),
+            getOutputDimensions(edits, dimensions),
+            createAffineMatrix(edits, { pointSpace: dimensions, targetSpace: { width: 777, height: 555 } }),
+          ],
+          (_, value) => (typeof value === 'number' && Object.is(value, -0) ? '-0' : value),
+        ),
+      );
+    }
+    // Recorded from base 2a16d4bd; exact float order matters before face truncation.
+    expect(hash.digest('hex')).toBe('720a12a54effed9f34c0a35066a7a65216f4c698662d475758334df8d0692a1d');
   });
 });

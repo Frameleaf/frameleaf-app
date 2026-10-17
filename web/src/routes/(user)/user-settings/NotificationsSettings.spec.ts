@@ -33,7 +33,7 @@ const saveButton = () => screen.getByRole('button', { name: en.save });
 // The switches as the page names them (FL-368).
 const EMAIL = 'Send me emails';
 const SHARES = 'Email me: When someone shares with you';
-const UPDATES = 'Email me: New photos in shared albums';
+const UPDATES = 'Email me: Album updates';
 
 beforeEach(() => {
   vi.clearAllMocks();

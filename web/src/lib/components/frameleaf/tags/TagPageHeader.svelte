@@ -62,7 +62,7 @@
 
   /** The tag's page under its new name or place: the old address is gone, so it is replaced. */
   const follow = (value: string) =>
-    goto(Route.tags({ path: value }), { replaceState: true, invalidateAll: true, keepFocus: true, noScroll: true });
+    goto(Route.tags({ path: value }), { replace: true, invalidateAll: true, reset: false });
 
   const rename = async (typed: string) => {
     nameError = '';

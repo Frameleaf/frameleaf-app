@@ -9,10 +9,10 @@ from unittest.mock import Mock
 
 import pytest
 
-from immich_ml.config import Settings, settings
-from immich_ml.models.base import ModelUnavailableError
-from immich_ml.models.florence_manifest import FLORENCE_MODELS, florence_manifest, verify_florence_snapshot
-from immich_ml.models.image_description import FLORENCE_MODEL_NAMES, ImageDescriptionModel
+from frameleaf_ml.config import Settings, settings
+from frameleaf_ml.models.base import ModelUnavailableError
+from frameleaf_ml.models.florence_manifest import FLORENCE_MODELS, florence_manifest, verify_florence_snapshot
+from frameleaf_ml.models.image_description import FLORENCE_MODEL_NAMES, ImageDescriptionModel
 
 BUILTINS = tuple(FLORENCE_MODELS)
 
@@ -57,7 +57,7 @@ def test_manifest_covers_native_artifacts_and_attribution(name):
     assert not any(name.endswith((".py", ".bin", ".pkl")) for name in manifest["files"])
     assert florence_manifest(name.upper()) is manifest
     assert florence_manifest(manifest["repository"]) is manifest
-    notice = Path(__file__).parent / "immich_ml/models" / manifest["noticeFile"]
+    notice = Path(__file__).parent / "frameleaf_ml/models" / manifest["noticeFile"]
     assert hashlib.sha256(notice.read_bytes()).hexdigest() == manifest["noticeSha256"]
 
 
@@ -71,7 +71,7 @@ def test_cold_download_pins_revision_files_and_public_credentials(snapshot, monk
         calls.append((repo, kwargs))
         populate(model, contents)
 
-    monkeypatch.setattr("immich_ml.models.image_description.snapshot_download", acquire)
+    monkeypatch.setattr("frameleaf_ml.models.image_description.snapshot_download", acquire)
     model.download()
     assert calls == [
         (
@@ -96,7 +96,7 @@ def test_download_rejects_wrong_revision_bytes(snapshot, monkeypatch):
     def acquire(*args, **kwargs):
         populate(model, {**contents, "config.json": b"another revision"})
 
-    monkeypatch.setattr("immich_ml.models.image_description.snapshot_download", acquire)
+    monkeypatch.setattr("frameleaf_ml.models.image_description.snapshot_download", acquire)
     with pytest.raises(ModelUnavailableError, match="failed verification"):
         model.download()
 
@@ -109,7 +109,7 @@ def test_unconfigured_source_keeps_pinned_hub_and_hf_endpoint_is_authoritative(s
     if explicit_source:
         monkeypatch.setenv("HF_ENDPOINT", explicit_source)
     acquire = Mock(side_effect=lambda *args, **kwargs: populate(model, contents))
-    monkeypatch.setattr("immich_ml.models.image_description.snapshot_download", acquire)
+    monkeypatch.setattr("frameleaf_ml.models.image_description.snapshot_download", acquire)
     model.download()
     assert acquire.call_args.args == (manifest["mirrorRepository"] if explicit_source else manifest["repository"],)
     assert acquire.call_args.kwargs["endpoint"] == (explicit_source or "https://huggingface.co")
@@ -121,7 +121,7 @@ def test_explicit_source_failure_never_falls_back(snapshot, monkeypatch):
     model, _, _ = snapshot
     monkeypatch.setattr(settings, "model_source_url", "https://models.example.test")
     acquire = Mock(side_effect=RuntimeError("source unavailable"))
-    monkeypatch.setattr("immich_ml.models.image_description.snapshot_download", acquire)
+    monkeypatch.setattr("frameleaf_ml.models.image_description.snapshot_download", acquire)
     with pytest.raises(RuntimeError, match="source unavailable"):
         model.download()
     acquire.assert_called_once()
@@ -136,7 +136,7 @@ def test_corrupt_cache_fails_before_native_loader_or_download(snapshot, monkeypa
     populate(model, contents)
     (model.model_path / file).write_bytes(b"modified\nsecret.example.invalid/token")
     download = Mock(side_effect=AssertionError("Cached corruption must not trigger online repair"))
-    monkeypatch.setattr("immich_ml.models.image_description.snapshot_download", download)
+    monkeypatch.setattr("frameleaf_ml.models.image_description.snapshot_download", download)
     with pytest.raises(ModelUnavailableError, match="failed verification") as error:
         model.load()
     assert "secret.example.invalid" not in str(error.value)
@@ -176,7 +176,7 @@ def test_offline_load_uses_only_native_classes(snapshot, monkeypatch, accelerati
         ),
     )
     monkeypatch.setattr(
-        "immich_ml.models.image_description.snapshot_download",
+        "frameleaf_ml.models.image_description.snapshot_download",
         Mock(side_effect=AssertionError("Warm loads must remain offline")),
     )
     model.load()
@@ -269,7 +269,7 @@ def test_custom_consent_never_loads_another_repositorys_cached_python(tmp_path, 
         (destination / "config.json").write_text(json.dumps({"repository": repo}))
 
     processor, causal_model = Mock(), Mock()
-    monkeypatch.setattr("immich_ml.models.image_description.snapshot_download", acquire)
+    monkeypatch.setattr("frameleaf_ml.models.image_description.snapshot_download", acquire)
     monkeypatch.setattr(transformers.AutoProcessor, "from_pretrained", processor)
     monkeypatch.setattr(transformers.AutoModelForCausalLM, "from_pretrained", causal_model)
     untrusted_model.download()

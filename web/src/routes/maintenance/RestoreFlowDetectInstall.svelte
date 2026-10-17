@@ -4,10 +4,13 @@
    * in the maintenance page's Frameleaf card instead of upstream `@frameleaf/ui` layout. Each storage
    * folder shows whether it is readable and writable and whether it holds files, with the same hints.
    */
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { handleError } from '$lib/utils/handle-error';
   import { detectPriorInstall, type MaintenanceDetectInstallResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiAlert, mdiArrowRight, mdiCheck, mdiClose, mdiRefresh } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -19,8 +22,35 @@
 
   let detectedInstall: MaintenanceDetectInstallResponseDto | undefined = $state();
 
+  let loading = $state(false);
+  let failed = $state(false);
+  let alive = true;
+  onDestroy(() => {
+    alive = false;
+  });
   const reload = async () => {
-    detectedInstall = await detectPriorInstall();
+    if (loading) {
+      return;
+    }
+    loading = true;
+    failed = false;
+    const isCurrentSession = authManager.captureSession();
+    const isCurrent = () => alive && isCurrentSession();
+    try {
+      const result = await detectPriorInstall();
+      if (isCurrent()) {
+        detectedInstall = result;
+      }
+    } catch (error) {
+      if (isCurrent()) {
+        failed = true;
+        handleError(error, $t('errors.something_went_wrong'));
+      }
+    } finally {
+      if (isCurrent()) {
+        loading = false;
+      }
+    }
   };
 
   const getLibraryFolderCheckStatus = (writable: boolean, readable: boolean) => {
@@ -34,13 +64,15 @@
 
   const required = (folder: string) => folder === 'profile' || folder === 'upload';
 
-  onMount(() => reload());
+  onMount(() => {
+    void reload();
+  });
 </script>
 
 <div class="auth-card">
   <div class="auth-heading">
-    <h1>{$t('maintenance_restore_library')}</h1>
-    <p>{$t('maintenance_restore_library_description')}</p>
+    <h1>{$t('frameleaf_maintenance_restore_library')}</h1>
+    <p>{$t('frameleaf_maintenance_restore_library_description')}</p>
   </div>
   {#if detectedInstall}
     <ul class="checks">
@@ -68,7 +100,7 @@
                   <em>{$t('maintenance_restore_library_hint_regenerate_later')}</em>
                 {/if}
                 {#if folder === 'library'}
-                  <em>{$t('maintenance_restore_library_hint_storage_template_missing_files')}</em>
+                  <em>{$t('frameleaf_maintenance_restore_library_hint_folders')}</em>
                 {/if}
               {/if}
             </span>
@@ -76,14 +108,19 @@
         {/if}
       {/each}
     </ul>
-    <button type="button" class="button quiet refresh" onclick={reload}>
-      <Icon icon={mdiRefresh} size="18" aria-hidden={true} />
-      {$t('refresh')}
-    </button>
-  {:else}
-    <p class="muted" role="status">{$t('maintenance_restore_library_loading')}</p>
+    {#if !failed}
+      <button type="button" class="button quiet refresh" onclick={reload} disabled={loading}>
+        <Icon icon={mdiRefresh} size="18" aria-hidden={true} />
+        {$t('refresh')}
+      </button>
+    {/if}
+  {:else if !failed}
+    <p class="muted" role="status">{$t('frameleaf_maintenance_restore_library_loading')}</p>
   {/if}
-  <p class="muted">{$t('maintenance_restore_library_confirm')}</p>
+  {#if failed}
+    <InlineError compact message={$t('errors.something_went_wrong')} onRetry={reload} retrying={loading} />
+  {/if}
+  <p class="muted">{$t('frameleaf_maintenance_restore_library_confirm')}</p>
   <div class="maint-actions">
     <button type="button" class="button" onclick={end}>{$t('cancel')}</button>
     <button type="button" class="button primary" onclick={next}>

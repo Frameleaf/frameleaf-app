@@ -7,9 +7,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { type Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
-import type { Kysely } from 'kysely';
 import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
@@ -35,8 +35,8 @@ import {
   AssetType,
   Colorspace,
   DatabaseLock,
+  FrameleafWorker,
   ImageFormat,
-  ImmichWorker,
   JobName,
   MediaOperationDestination,
   MediaOperationKind,
@@ -328,7 +328,7 @@ export class CloudMlJobService {
     this.logger.setContext(CloudMlJobService.name);
   }
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.stopping = false;
     if (this.shutdown.signal.aborted) {
@@ -1012,22 +1012,27 @@ export class CloudMlJobService {
         kept.push(...theirs.slice(-room));
       }
       const records = [...confirmed, ...kept, ...(add ? [add] : [])];
-      for (const entry of waiting) {
-        if (!kept.includes(entry)) {
-          removed.push(entry.workDir);
-        }
-      }
-      // a prepared copy stays while an estimate or an unfinished job (queued, paused, uploading) needs it
+      // An unfinished job owns its files even if writing its estimate link failed after creation.
       const jobs = await this.mediaOperationRepository.listUnfinishedCloudMlJobSnapshots();
+      const jobWorkDirs = jobs.flatMap((snapshot) => {
+        const workDir = (snapshot as { workDir?: unknown } | null)?.workDir;
+        return typeof workDir === 'string' ? [workDir] : [];
+      });
       const jobInputs = jobs.flatMap((snapshot) => {
         const inputs = (snapshot as { inputs?: unknown } | null)?.inputs;
         return Array.isArray(inputs) ? inputs.map((input) => String((input as { path?: unknown })?.path ?? '')) : [];
       });
-      const inUse = new Set(
-        [...records.flatMap((entry) => entry.inputs.map((input) => input.path)), ...jobInputs].map((file) =>
+      const inUse = new Set([
+        ...jobWorkDirs,
+        ...[...records.flatMap((entry) => entry.inputs.map((input) => input.path)), ...jobInputs].map((file) =>
           path.dirname(file),
         ),
-      );
+      ]);
+      for (const entry of waiting) {
+        if (!kept.includes(entry) && !inUse.has(entry.workDir)) {
+          removed.push(entry.workDir);
+        }
+      }
       const prepared = (store.prepared ?? []).filter((entry) => {
         const keep =
           inUse.has(entry.dir) || this.preparing.has(entry.dir) || now.getTime() - Date.parse(entry.at) < DAY_MS;
@@ -1232,6 +1237,17 @@ export class CloudMlJobService {
       await this.stop(run, failure);
       return false;
     }
+    if ((run.snapshot.stage === 'preview' ? row.previewOperationId : row.fullOperationId) !== run.operation.id) {
+      await this.stop(
+        run,
+        new CloudMlJobFailure(
+          'cloud_ml_restoration_decided',
+          'Another operation owns this version now; nothing more is sent',
+          false,
+        ),
+      );
+      return false;
+    }
     if (row.status === statuses.running) {
       return true;
     }
@@ -1239,7 +1255,12 @@ export class CloudMlJobService {
       run.snapshot.stage === 'preview'
         ? [AssetRestorationStatus.PreviewQueued, AssetRestorationStatus.PreviewFailed]
         : [AssetRestorationStatus.Accepted, AssetRestorationStatus.RestoreFailed];
-    const moved = await this.restorationRepository.transition(row.id, from, { status: statuses.running, error: null });
+    const moved = await this.databaseRepository.withAssetMetadataLock(run.snapshot.assetId, (trx) =>
+      this.restorationRepository.transition(row.id, from, { status: statuses.running, error: null }, trx, {
+        stage: run.snapshot.stage,
+        id: run.operation.id,
+      }),
+    );
     if (!moved) {
       const detail = `This version is ${row.status.replaceAll('_', ' ')} now; nothing more is sent`;
       await this.stop(run, new CloudMlJobFailure('cloud_ml_restoration_decided', detail, false));
@@ -1685,7 +1706,15 @@ export class CloudMlJobService {
     try {
       files = await client.download(view, document ? [...outputs, document] : outputs, run.snapshot.workDir, {
         done: run.result.downloaded,
-        exists: (file) => this.storageRepository.checkFileExists(file),
+        exists: async (file, output) => {
+          try {
+            const { sha256, sizeInBytes } = await this.cryptoRepository.hashFileDigests(file);
+            return sizeInBytes === output.bytes && sha256.toString('hex') === output.sha256;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return false;
+            throw error;
+          }
+        },
         remove: (file) => this.storageRepository.unlink(file).catch(() => {}),
         fileName: (output) => `out-${output.outputId}${this.extensionOf(output.contentType)}`,
         record: (outputId) => {
@@ -1843,15 +1872,12 @@ export class CloudMlJobService {
     };
     const placed: string[] = [];
     const columns: Partial<Record<PublishedFile['column'], string>> = {};
+    for (const file of files) columns[file.column] = file.final;
     let outcome: Awaited<ReturnType<MediaOperationRepository['publishValidated']>>;
     try {
       outcome = await this.mediaOperationRepository.publishValidated(operation.id, claimToken, async (trx) => {
-        for (const file of files) {
-          this.storageRepository.mkdirSync(path.dirname(file.final));
-          await this.storageRepository.rename(file.tmp, file.final);
-          placed.push(file.final);
-          columns[file.column] = file.final;
-        }
+        // Share retention's asset lock without opening a second transaction inside publication.
+        await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${snapshot.assetId})::int)`.execute(trx);
         const updated = await this.restorationRepository.transition(
           row.id,
           [statuses.running],
@@ -1869,8 +1895,15 @@ export class CloudMlJobService {
             ...(run.result.upscaleScale !== null && { upscale: run.result.upscaleScale }),
           },
           trx,
+          { stage: snapshot.stage, id: operation.id },
         );
-        return !!updated;
+        if (!updated) return false;
+        for (const file of files) {
+          this.storageRepository.mkdirSync(path.dirname(file.final));
+          await this.storageRepository.rename(file.tmp, file.final);
+          placed.push(file.final);
+        }
+        return true;
       });
     } catch (error) {
       for (const file of placed) {
@@ -2082,11 +2115,17 @@ export class CloudMlJobService {
       { retry: failure.retry },
     );
     if (outcome === 'failed') {
-      await this.restorationRepository.transition(snapshot.restorationId, [statuses.running, this.queuedStatus(run)], {
-        status: statuses.failed,
-        error: failure.message.slice(0, 500),
-        ...(snapshot.stage === 'full' && { resultExpiresAt: resultExpiryAfterAbandon(new Date()) }),
-      });
+      await this.restorationRepository.transition(
+        snapshot.restorationId,
+        [statuses.running, this.queuedStatus(run)],
+        {
+          status: statuses.failed,
+          error: failure.message.slice(0, 500),
+          ...(snapshot.stage === 'full' && { resultExpiresAt: resultExpiryAfterAbandon(new Date()) }),
+        },
+        undefined,
+        { stage: snapshot.stage, id: operation.id },
+      );
       // the prepared copies and anything downloaded are of no use to a job that will not run again
       await this.removeJobFiles(snapshot);
       this.logger.warn(`Frameleaf Cloud job ${operation.id} failed (${failure.code}): ${failure.message}`);
@@ -2163,17 +2202,29 @@ export class CloudMlJobService {
     const now = new Date();
     if (snapshot.stage === 'full' && !run.result.job) {
       // nothing was sent: the reviewed preview is back to be decided, as if it had not been accepted
-      await this.restorationRepository.transition(snapshot.restorationId, [statuses.running, this.queuedStatus(run)], {
-        status: AssetRestorationStatus.PreviewReady,
-        reviewedAt: null,
-        fullOperationId: null,
-        previewExpiresAt: previewExpiryAfterReady(now),
-      });
+      await this.restorationRepository.transition(
+        snapshot.restorationId,
+        [statuses.running, this.queuedStatus(run)],
+        {
+          status: AssetRestorationStatus.PreviewReady,
+          reviewedAt: null,
+          fullOperationId: null,
+          previewExpiresAt: previewExpiryAfterReady(now),
+        },
+        undefined,
+        { stage: snapshot.stage, id: operation.id },
+      );
     } else {
-      await this.restorationRepository.transition(snapshot.restorationId, [statuses.running, this.queuedStatus(run)], {
-        status: statuses.cancelled,
-        ...(snapshot.stage === 'full' && { resultExpiresAt: resultExpiryAfterAbandon(now) }),
-      });
+      await this.restorationRepository.transition(
+        snapshot.restorationId,
+        [statuses.running, this.queuedStatus(run)],
+        {
+          status: statuses.cancelled,
+          ...(snapshot.stage === 'full' && { resultExpiresAt: resultExpiryAfterAbandon(now) }),
+        },
+        undefined,
+        { stage: snapshot.stage, id: operation.id },
+      );
     }
     await this.removeJobFiles(snapshot);
     this.logger.log(`Frameleaf Cloud job ${operation.id} cancelled by its owner`);
@@ -2274,6 +2325,8 @@ export class CloudMlJobService {
           snapshot.restorationId,
           [statuses.running, this.queuedStatus({ snapshot })],
           { status: failed ? statuses.failed : statuses.cancelled },
+          undefined,
+          { stage: snapshot.stage, id: operation.id },
         );
         await this.removeJobFiles(snapshot);
       } catch {
@@ -2310,13 +2363,25 @@ export class CloudMlJobService {
           continue;
         }
         await (snapshot.stage === 'full'
-          ? this.restorationRepository.transition(snapshot.restorationId, from, {
-              status: AssetRestorationStatus.PreviewReady,
-              reviewedAt: null,
-              fullOperationId: null,
-              previewExpiresAt: previewExpiryAfterReady(now),
-            })
-          : this.restorationRepository.transition(snapshot.restorationId, from, { status: statuses.cancelled }));
+          ? this.restorationRepository.transition(
+              snapshot.restorationId,
+              from,
+              {
+                status: AssetRestorationStatus.PreviewReady,
+                reviewedAt: null,
+                fullOperationId: null,
+                previewExpiresAt: previewExpiryAfterReady(now),
+              },
+              undefined,
+              { stage: snapshot.stage, id: operation.id },
+            )
+          : this.restorationRepository.transition(
+              snapshot.restorationId,
+              from,
+              { status: statuses.cancelled },
+              undefined,
+              { stage: snapshot.stage, id: operation.id },
+            ));
         await this.removeJobFiles(snapshot);
       } catch (error) {
         this.logger.warn(`Frameleaf Cloud job ${operation.id} was not reconciled: ${errorMessage(error)}`);
@@ -2884,7 +2949,7 @@ export class CloudMlJobService {
    */
   private async readmit(run: JobRun, client: FrameleafCloudJobClient) {
     try {
-      await this.admit(run.snapshot, null, run.operation.id);
+      await this.admit(run.snapshot, null, run.operation.id, true);
     } catch (error) {
       const refusal = admissionRefusalOf(error);
       if (refusal && STOPS_CREATED_CLOUD_JOB.has(refusal)) {
@@ -2901,8 +2966,8 @@ export class CloudMlJobService {
       if (failureOf(error)?.retry) {
         throw error;
       }
-      if (consentUnconfirmedOf(error)) {
-        // the cloud refused its status check before the consent version could be compared: send nothing now
+      if (!refusal || consentUnconfirmedOf(error)) {
+        // An incomplete admission check cannot authorize another upload.
         throw new CloudMlJobFailure(
           'cloud_ml_consent_unconfirmed',
           `The consent in force could not be confirmed (${errorMessage(error)}); nothing was sent, it is tried again`,
@@ -2917,6 +2982,7 @@ export class CloudMlJobService {
     target: Pick<CloudMlJobSnapshot, 'destinationId' | 'appWorkload'>,
     holdUsd: number | null,
     jobId: string | null,
+    createdCloudJob = false,
   ) {
     await selectMlDestination(
       {
@@ -2930,6 +2996,7 @@ export class CloudMlJobService {
         jobId,
         jobName: MediaOperationKind.CloudMlJob,
         holdUsd,
+        createdCloudJob,
       },
     );
   }

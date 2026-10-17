@@ -1,14 +1,4 @@
-import { authenticate } from '$lib/utils/auth';
-import { getFormatter } from '$lib/utils/i18n';
+import { authenticatedPageLoader } from '$lib/utils/page-load';
 import type { LayoutLoad } from './$types';
 
-export const load = (async ({ url }) => {
-  await authenticate(url);
-  const $t = await getFormatter();
-
-  return {
-    meta: {
-      title: $t('shared_links'),
-    },
-  };
-}) satisfies LayoutLoad;
+export const load = authenticatedPageLoader('shared_links') satisfies LayoutLoad;

@@ -15,8 +15,7 @@ INSERT INTO public."user" VALUES (true);
 
 test('SQL corruption preserves the canonical header, ledger, source data and completion marker', () => {
   const result = gunzipSync(amendBackupFixture(gzipSync(dump), 'corrupted')).toString();
-  assert.equal(result.replace('IM CORRUPTED;\n\n', ''), dump);
-  assert.ok(result.indexOf('IM CORRUPTED;') < result.indexOf('-- PostgreSQL database dump complete'));
+  assert.equal(result, `IM CORRUPTED;\n${dump}`);
 });
 
 test('missing-admin control changes only the post-restore health condition', () => {

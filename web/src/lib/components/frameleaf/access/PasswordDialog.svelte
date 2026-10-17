@@ -64,16 +64,23 @@
     }
 
     working = true;
+    const isCurrent = authManager.captureSession();
     error = '';
     try {
       const user = await changePassword({
         changePasswordDto: { password: current, newPassword: next, invalidateSessions: signOutOthers },
       });
+      if (!isCurrent()) {
+        return;
+      }
       authManager.setUser(user);
       result = { signedOutOthers: signOutOthers };
       toastManager.primary($t('frameleaf_access_password_changed'));
       open = false;
     } catch (error_) {
+      if (!isCurrent()) {
+        return;
+      }
       error = getServerErrorMessage(error_) ?? $t('frameleaf_access_password_failed');
       clear();
     } finally {

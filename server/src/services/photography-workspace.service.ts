@@ -32,7 +32,7 @@ import { AlbumService } from 'src/services/album.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { SearchService } from 'src/services/search.service.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   preparePhotographyLogo,
@@ -255,20 +255,18 @@ export class PhotographyWorkspaceService {
     auth: AuthDto,
     id: string,
     variant: 'original' | 'light' | 'dark' = 'original',
-  ): Promise<ImmichFileResponse> {
+  ): Promise<FileDownloadResponse> {
     const variants = await preparePhotographyLogo(await this.logoBytes(auth, id));
     const directory = await mkdtemp(join(tmpdir(), 'frameleaf-logo-'));
     try {
       const path = join(directory, 'logo.png');
       await writeFile(path, variants[variant]);
-      return new ImmichFileResponse({
+      return new FileDownloadResponse({
         path,
         contentType: 'image/png',
         fileName: 'studio-logo',
         cacheControl: CacheControl.None,
-        release: () => {
-          void rm(directory, { recursive: true, force: true });
-        },
+        release: () => rm(directory, { recursive: true, force: true }),
       });
     } catch (error) {
       await rm(directory, { recursive: true, force: true });

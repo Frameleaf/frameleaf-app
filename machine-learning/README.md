@@ -56,7 +56,7 @@ For CUDA deployments:
 The four built-in settings `microsoft/Florence-2-base`, `-base-ft`, `-large` and
 `-large-ft` retain their names. They load the corresponding native
 `florence-community` checkpoints through the existing Hub-compatible model source.
-[florence-models.json](immich_ml/models/florence-models.json) pins their immutable
+[florence-models.json](frameleaf_ml/models/florence-models.json) pins their immutable
 revisions and SHA-256 digests for every weight, tokenizer, processor, configuration
 and model-card file. Native loading uses local files, safetensors and
 `trust_remote_code=False`; no model-repository Python is downloaded or executed.

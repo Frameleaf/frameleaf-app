@@ -1,18 +1,6 @@
 <script lang="ts">
-  import type { InterpolationValues } from '$lib/elements/format-message';
-  import {
-    TYPE,
-    type MessageFormatElement,
-    type PluralElement,
-    type SelectElement,
-  } from '@formatjs/icu-messageformat-parser';
-  import { IntlMessageFormat, type FormatXMLElementFn } from 'intl-messageformat';
+  import { createMessageFormatter, type InterpolationValues } from '$lib/elements/format-message';
   import { locale as i18nLocale, json, type Translations } from 'svelte-i18n';
-
-  type MessagePart = {
-    message: string;
-    tag?: string;
-  };
 
   interface Props {
     key: Translations;
@@ -30,67 +18,9 @@
     return locale;
   };
 
-  const getElements = (message: string | MessageFormatElement[], locale: string): MessageFormatElement[] => {
-    return new IntlMessageFormat(message, locale, undefined, {
-      ignoreTag: false,
-    }).getAst();
-  };
-
-  const getTagReplacements = (element: PluralElement | SelectElement) => {
-    const replacements: Record<string, FormatXMLElementFn<unknown>> = {};
-
-    for (const option of Object.values(element.options)) {
-      for (const pluralElement of option.value) {
-        if (pluralElement.type !== TYPE.tag) {
-          continue;
-        }
-
-        const tag = pluralElement.value;
-        replacements[tag] = (...parts) => `<${tag}>${parts}</${tag}>`;
-      }
-    }
-
-    return replacements;
-  };
-
-  const formatElementToParts = (element: MessageFormatElement, values: InterpolationValues) => {
-    const message = new IntlMessageFormat([element], locale, undefined, {
-      ignoreTag: true,
-    }).format(values) as string;
-
-    const pluralElements = new IntlMessageFormat(message, locale, undefined, {
-      ignoreTag: false,
-    }).getAst();
-
-    return pluralElements.map((element) => elementToPart(element));
-  };
-
-  const elementToPart = (element: MessageFormatElement): MessagePart => {
-    const isTag = element.type === TYPE.tag;
-
-    return {
-      tag: isTag ? element.value : undefined,
-      message: new IntlMessageFormat(isTag ? element.children : [element], locale, undefined, {
-        ignoreTag: true,
-      }).format(values) as string,
-    };
-  };
-
-  const getParts = (message: string, locale: string) => {
+  const getParts = (format: ReturnType<typeof createMessageFormatter>) => {
     try {
-      const elements = getElements(message, locale);
-      const parts: MessagePart[] = [];
-
-      for (const element of elements) {
-        if (element.type === TYPE.plural || element.type === TYPE.select) {
-          const replacements = getTagReplacements(element);
-          parts.push(...formatElementToParts(element, { ...values, ...replacements }));
-        } else {
-          parts.push(elementToPart(element));
-        }
-      }
-
-      return parts;
+      return format(values);
     } catch (error) {
       if (error instanceof Error) {
         console.warn(`Message "${key}" has syntax error:`, error.message);
@@ -101,7 +31,8 @@
 
   let message = $derived(($json(key) as string) || key);
   let locale = $derived(getLocale($i18nLocale));
-  let parts = $derived(getParts(message, locale));
+  let formatter = $derived(createMessageFormatter(message, locale));
+  let parts = $derived(getParts(formatter));
 </script>
 
 <!--

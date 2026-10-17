@@ -72,6 +72,18 @@ describe('IntegrityReportSection (FL-81)', () => {
     expect(sdkMock.getIntegrityReport).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps watching the queue after one poll fails', async () => {
+    sdkMock.getIntegrityReport.mockResolvedValueOnce({ items: [finding('a')] }).mockResolvedValue({ items: [] });
+    sdkMock.getQueuesLegacy.mockRejectedValueOnce(new Error('restarting')).mockResolvedValue(idle);
+    handleCreateJob.mockResolvedValue(true);
+
+    render(IntegrityReportSection, { type: IntegrityReport.UntrackedFile, pollMs: 5 });
+    expect(await screen.findByText('/data/upload/a.png')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: en.admin.frameleaf_maintenance_report_recheck }));
+
+    await waitFor(() => expect(screen.queryByText('/data/upload/a.png')).not.toBeInTheDocument());
+  });
+
   it('loads the next page of findings with the cursor', async () => {
     sdkMock.getIntegrityReport
       .mockResolvedValueOnce({ items: [finding('a')], nextCursor: 'next' })

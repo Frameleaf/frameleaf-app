@@ -76,6 +76,12 @@
       ? $t('frameleaf_intel_custom_model_help', { values: { model: ml.clip.modelName } })
       : $t(`frameleaf_intel_search_quality_${quality}_help` as Translations),
   );
+  /** The chosen quality, which the help starts by saying back (bold, as the prototype). */
+  const qualityLead = $derived(
+    quality === 'custom'
+      ? $t('frameleaf_intel_custom')
+      : $t(`frameleaf_intel_search_quality_${quality}` as Translations),
+  );
 </script>
 
 <KitPage>
@@ -101,7 +107,7 @@
       />
     </Row>
     {#if ml.clip.enabled}
-      <Row label={$t('frameleaf_intel_search_quality')} help={qualityHelp}>
+      <Row label={$t('frameleaf_intel_search_quality')} help={qualityHelp} lead={qualityLead}>
         <SegmentedControl
           label={$t('frameleaf_intel_search_quality')}
           value={quality}

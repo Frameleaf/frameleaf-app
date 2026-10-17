@@ -7,7 +7,7 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   BootstrapEventPriority,
   DatabaseLock,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   QueueName,
@@ -18,7 +18,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { closeAttemptSweep } from 'src/utils/attempt-sweep.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
 import { discoverMediaLocation } from 'src/utils/media-location.js';
-import { ImmichStartupError } from 'src/utils/misc.js';
+import { FrameleafStartupError } from 'src/utils/misc.js';
 
 const docsMessage = `Please see https://help.frameleaf.app/administration/system-integrity#folder-checks for more information.`;
 
@@ -27,7 +27,7 @@ export class StorageService extends BaseService {
   private attemptSweepTimer?: NodeJS.Timeout;
   private attemptSweepActive?: Promise<void>;
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   startAttemptSweep() {
     this.attemptSweepTimer ??= setInterval(() => void this.sweepAttemptOutputs(), 60_000);
     this.attemptSweepTimer.unref();
@@ -141,7 +141,11 @@ export class StorageService extends BaseService {
         if (previous !== current) {
           this.logger.log(`Media location changed (from=${previous}, to=${current})`);
 
-          if (!path.startsWith(previous)) {
+          const windowsSource = /^[a-z]:/i.test(previous) || previous.startsWith('\\\\');
+          const source =
+            previous.endsWith('/') || (windowsSource && previous.endsWith('\\')) ? previous.slice(0, -1) : previous;
+          const prefixes = [source + '/', ...(windowsSource ? [source + '\\'] : [])];
+          if (samples.some(({ path }) => path !== source && prefixes.every((prefix) => !path.startsWith(prefix)))) {
             throw new Error(ErrorMessages.InconsistentMediaLocation);
           }
 
@@ -226,7 +230,7 @@ export class StorageService extends BaseService {
       }
     } catch (error) {
       this.logger.error(`Failed to read (${internalPath}): ${error}`);
-      throw new ImmichStartupError(`Failed to read: "${externalPath} (${internalPath}) - ${docsMessage}"`);
+      throw new FrameleafStartupError(`Failed to read: "${externalPath} (${internalPath}) - ${docsMessage}"`);
     }
   }
 
@@ -241,7 +245,7 @@ export class StorageService extends BaseService {
         return;
       }
       this.logger.error(`Failed to create ${internalPath}: ${error}`);
-      throw new ImmichStartupError(`Failed to create "${externalPath} - ${docsMessage}"`);
+      throw new FrameleafStartupError(`Failed to create "${externalPath} - ${docsMessage}"`);
     }
   }
 
@@ -251,7 +255,7 @@ export class StorageService extends BaseService {
       await this.storageRepository.overwriteFile(internalPath, Buffer.from(Date.now().toString()));
     } catch (error) {
       this.logger.error(`Failed to write ${internalPath}: ${error}`);
-      throw new ImmichStartupError(`Failed to write "${externalPath} - ${docsMessage}"`);
+      throw new FrameleafStartupError(`Failed to write "${externalPath} - ${docsMessage}"`);
     }
   }
 

@@ -104,6 +104,9 @@
       ? $t('frameleaf_intel_text_reading_custom_help')
       : $t(`frameleaf_intel_text_reading_${reading}_help` as Translations),
   );
+  const readingLead = $derived(
+    reading === 'custom' ? $t('frameleaf_intel_custom') : $t(`frameleaf_intel_text_reading_${reading}` as Translations),
+  );
 
   const undo = () =>
     applyChoice(settingsDraft.draft.machineLearning.ocr, {
@@ -151,7 +154,7 @@
           }}
         />
       </Row>
-      <Row label={$t('frameleaf_intel_text_how_much')} help={readingHelp}>
+      <Row label={$t('frameleaf_intel_text_how_much')} help={readingHelp} lead={readingLead}>
         <SegmentedControl
           label={$t('frameleaf_intel_text_how_much_label')}
           value={reading}

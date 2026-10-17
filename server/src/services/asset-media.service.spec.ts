@@ -21,7 +21,7 @@ import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { UploadBody } from 'src/types.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -311,6 +311,103 @@ describe(AssetMediaService.name, () => {
         expect.stringContaining('/data/upload/admin_id/ra/nd'),
       );
       expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/data/upload/admin_id/ra/nd'));
+    });
+  });
+
+  describe('Live Photo upload commit', () => {
+    const auth = authStub.user1;
+    let committed: boolean;
+    beforeEach(() => {
+      committed = false;
+      mocks.asset.getById.mockResolvedValue(
+        getForAsset(AssetFactory.from({ type: AssetType.Video }).owner(auth.user).build()),
+      );
+      mocks.asset.create.mockResolvedValue(assetEntity);
+      Object.assign(mocks.asset, {
+        createLivePhotoUpload: vitest.fn(() =>
+          Promise.try(() => {
+            committed = true;
+            return { asset: assetEntity, hiddenId: 'motion', lockedIds: [] };
+          }),
+        ),
+      });
+    });
+
+    it('prepares the still without hiding or announcing the motion before publication', async () => {
+      await sut.prepareUploadAsset(auth, { ...createDto, livePhotoVideoId: 'motion' }, fileStub.livePhotoStill);
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+    });
+
+    it('does not hide or announce the motion when asset publication fails', async () => {
+      mocks.asset.create.mockRejectedValue(new Error('publication failed'));
+      Object.assign(mocks.asset, {
+        createLivePhotoUpload: vitest.fn().mockRejectedValue(new Error('publication failed')),
+      });
+      await expect(
+        sut.uploadAsset(auth, { ...createDto, livePhotoVideoId: 'motion' }, fileStub.livePhotoStill),
+      ).rejects.toThrow();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetHide', expect.anything());
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: [fileStub.livePhotoStill.originalPath, undefined] },
+      });
+    });
+
+    it('emits the motion hide only after the repository commits the still and motion', async () => {
+      mocks.event.emit.mockImplementation((...[name]) =>
+        Promise.try(() => {
+          if (name === 'AssetHide') expect(committed).toBe(true);
+        }),
+      );
+      await sut.uploadAsset(auth, { ...createDto, livePhotoVideoId: 'motion' }, fileStub.livePhotoStill);
+      expect(mocks.asset.createLivePhotoUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ livePhotoVideoId: 'motion' }),
+        undefined,
+      );
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetHide', { assetId: 'motion', userId: auth.user.id });
+    });
+
+    it('preserves checksum-duplicate responses without hiding the requested motion', async () => {
+      const error = Object.assign(new Error('duplicate'), { constraint_name: 'UQ_assets_owner_checksum' });
+      mocks.asset.create.mockRejectedValue(error);
+      Object.assign(mocks.asset, { createLivePhotoUpload: vitest.fn().mockRejectedValue(error) });
+      mocks.asset.getUploadAssetIdByChecksum.mockResolvedValue('existing');
+      await expect(
+        sut.uploadAsset(auth, { ...createDto, livePhotoVideoId: 'motion' }, fileStub.livePhotoStill),
+      ).resolves.toEqual({ id: 'existing', status: AssetMediaStatus.DUPLICATE });
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetHide', expect.anything());
+    });
+
+    it('passes the explicit Locked decision through without requiring a PIN and follows up after commit', async () => {
+      Object.assign(mocks.asset, {
+        createLivePhotoUpload: vitest.fn(() =>
+          Promise.try(() => {
+            committed = true;
+            return { asset: assetEntity, hiddenId: 'motion', lockedIds: ['id_1', 'motion'] };
+          }),
+        ),
+      });
+      mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
+      mocks.user.getLockedProfileImageSources.mockResolvedValue([]);
+      mocks.event.emit.mockImplementation(() =>
+        Promise.try(() => {
+          expect(committed).toBe(true);
+        }),
+      );
+      await sut.uploadAsset(
+        auth,
+        { ...createDto, livePhotoVideoId: 'motion', visibility: AssetVisibility.Locked },
+        fileStub.livePhotoStill,
+      );
+      expect(mocks.asset.createLivePhotoUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ visibility: AssetVisibility.Timeline }),
+        { reason: AssetLockReason.Marked, lockedBy: auth.user.id },
+      );
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetLocked', { assetIds: ['id_1', 'motion'] });
     });
   });
 
@@ -664,8 +761,7 @@ describe(AssetMediaService.name, () => {
         .owner(authStub.user1.user)
         .build();
       const asset = AssetFactory.create({ livePhotoVideoId: motionAsset.id });
-      mocks.asset.getById.mockResolvedValueOnce(getForAsset(motionAsset));
-      mocks.asset.create.mockResolvedValueOnce(asset);
+      mocks.asset.createLivePhotoUpload.mockResolvedValueOnce({ asset, hiddenId: undefined, lockedIds: [] });
 
       await expect(
         sut.uploadAsset(authStub.user1, { ...createDto, livePhotoVideoId: motionAsset.id }, fileStub.livePhotoStill),
@@ -674,15 +770,17 @@ describe(AssetMediaService.name, () => {
         id: asset.id,
       });
 
-      expect(mocks.asset.getById).toHaveBeenCalledWith(motionAsset.id);
+      expect(mocks.asset.createLivePhotoUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ livePhotoVideoId: motionAsset.id }),
+        undefined,
+      );
       expect(mocks.asset.update).not.toHaveBeenCalled();
     });
 
     it('should hide the linked motion asset', async () => {
       const motionAsset = AssetFactory.from({ type: AssetType.Video }).owner(authStub.user1.user).build();
       const asset = AssetFactory.create();
-      mocks.asset.getById.mockResolvedValueOnce(getForAsset(motionAsset));
-      mocks.asset.create.mockResolvedValueOnce(asset);
+      mocks.asset.createLivePhotoUpload.mockResolvedValueOnce({ asset, hiddenId: motionAsset.id, lockedIds: [] });
 
       await expect(
         sut.uploadAsset(authStub.user1, { ...createDto, livePhotoVideoId: motionAsset.id }, fileStub.livePhotoStill),
@@ -691,10 +789,13 @@ describe(AssetMediaService.name, () => {
         id: asset.id,
       });
 
-      expect(mocks.asset.getById).toHaveBeenCalledWith(motionAsset.id);
-      expect(mocks.asset.update).toHaveBeenCalledWith({
-        id: motionAsset.id,
-        visibility: AssetVisibility.Hidden,
+      expect(mocks.asset.createLivePhotoUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ livePhotoVideoId: motionAsset.id }),
+        undefined,
+      );
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetHide', {
+        assetId: motionAsset.id,
+        userId: authStub.user1.user.id,
       });
     });
 
@@ -747,7 +848,7 @@ describe(AssetMediaService.name, () => {
         proxyPath: '/proxy.mp4',
       } as any);
       await expect(sut.downloadVideoEditVersion(authStub.admin, 'asset-1', 'version-1')).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: '/master.mp4',
           fileName: 'asset-1-version-1.mp4',
           contentType: 'video/mp4',
@@ -775,7 +876,7 @@ describe(AssetMediaService.name, () => {
       mocks.asset.getForOriginal.mockResolvedValue(asset);
 
       await expect(sut.downloadOriginal(authStub.admin, asset.id, {})).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.originalPath,
           fileName: asset.originalFileName,
           contentType: 'image/jpeg',
@@ -784,7 +885,7 @@ describe(AssetMediaService.name, () => {
       );
     });
 
-    it('should download edited file by default when edits exist', async () => {
+    it('downloads the original by default even when edits exist', async () => {
       const editedAsset = AssetFactory.from()
         .edit()
         .files([AssetFileType.FullSize, AssetFileType.Preview, AssetFileType.Thumbnail])
@@ -792,16 +893,17 @@ describe(AssetMediaService.name, () => {
         .build();
 
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([editedAsset.id]));
-      mocks.asset.getForOriginal.mockResolvedValue({ ...editedAsset, editedPath: editedAsset.files[3].path });
+      mocks.asset.getForOriginal.mockResolvedValue(editedAsset);
 
       await expect(sut.downloadOriginal(AuthFactory.create(), editedAsset.id, {})).resolves.toEqual(
-        new ImmichFileResponse({
-          path: editedAsset.files[3].path,
+        new FileDownloadResponse({
+          path: editedAsset.originalPath,
           fileName: editedAsset.originalFileName,
           contentType: 'image/jpeg',
           cacheControl: CacheControl.PrivateWithCache,
         }),
       );
+      expect(mocks.asset.getForOriginal).toHaveBeenCalledWith(editedAsset.id, false);
     });
 
     it('should download edited file when edited=true', async () => {
@@ -815,13 +917,14 @@ describe(AssetMediaService.name, () => {
       mocks.asset.getForOriginal.mockResolvedValue({ ...editedAsset, editedPath: editedAsset.files[3].path });
 
       await expect(sut.downloadOriginal(AuthFactory.create(), editedAsset.id, { edited: true })).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: editedAsset.files[3].path,
           fileName: editedAsset.originalFileName,
           contentType: 'image/jpeg',
           cacheControl: CacheControl.PrivateWithCache,
         }),
       );
+      expect(mocks.asset.getForOriginal).toHaveBeenCalledWith(editedAsset.id, true);
     });
 
     it('should not return the unedited version if requested using a shared link', async () => {
@@ -834,13 +937,14 @@ describe(AssetMediaService.name, () => {
       await expect(
         sut.downloadOriginal(AuthFactory.from().sharedLink().build(), editedAsset.id, { edited: false }),
       ).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: fullsizeEdited.path,
           fileName: editedAsset.originalFileName,
           contentType: 'image/jpeg',
           cacheControl: CacheControl.PrivateWithCache,
         }),
       );
+      expect(mocks.asset.getForOriginal).toHaveBeenCalledWith(editedAsset.id, true);
     });
 
     it('should download original file when edited=false', async () => {
@@ -854,13 +958,76 @@ describe(AssetMediaService.name, () => {
       mocks.asset.getForOriginal.mockResolvedValue(editedAsset);
 
       await expect(sut.downloadOriginal(AuthFactory.create(), editedAsset.id, { edited: false })).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: editedAsset.originalPath,
           fileName: editedAsset.originalFileName,
           contentType: 'image/jpeg',
           cacheControl: CacheControl.PrivateWithCache,
         }),
       );
+    });
+
+    describe('as shown (owner, 2026-10-16)', () => {
+      const developed = (ownerId: string, status = AssetDevelopRevisionStatus.Rendered) => ({
+        id: 'revision',
+        ownerId,
+        status,
+        masterPath: '/develop/master.webp',
+        previewPath: '/develop/preview.webp',
+      });
+
+      it('gives the owner their current develop version, the picture their viewer shows, uncached', async () => {
+        const asset = AssetFactory.create({ ownerId: authStub.admin.user.id, originalFileName: 'IMG_1.HEIC' });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: null });
+        mocks.asset.getCurrentDevelop.mockResolvedValue(developed(asset.ownerId));
+
+        await expect(sut.downloadOriginal(authStub.admin, asset.id, { edited: true })).resolves.toEqual(
+          new FileDownloadResponse({
+            path: '/develop/master.webp',
+            fileName: 'IMG_1.webp',
+            contentType: 'image/webp',
+            cacheControl: CacheControl.PrivateWithoutCache,
+          }),
+        );
+        expect(mocks.asset.getCurrentDevelop).toHaveBeenCalledWith(asset.id);
+      });
+
+      it('gives the original when the original is asked for, or while the current version is not rendered', async () => {
+        const asset = AssetFactory.create({ ownerId: authStub.admin.user.id });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForOriginal.mockResolvedValue(asset);
+        mocks.asset.getCurrentDevelop.mockResolvedValue({
+          ...developed(asset.ownerId, AssetDevelopRevisionStatus.Rendering),
+          masterPath: null,
+        });
+
+        await expect(sut.downloadOriginal(authStub.admin, asset.id, { edited: false })).resolves.toMatchObject({
+          path: asset.originalPath,
+        });
+        expect(mocks.asset.getCurrentDevelop).not.toHaveBeenCalled();
+        await expect(sut.downloadOriginal(authStub.admin, asset.id, { edited: true })).resolves.toMatchObject({
+          path: asset.originalPath,
+          cacheControl: CacheControl.PrivateWithCache,
+        });
+      });
+
+      it("never gives anyone else the owner's working version", async () => {
+        const fullsizeEdited = AssetFileFactory.create({ type: AssetFileType.FullSize, isEdited: true });
+        const asset = AssetFactory.from({ ownerId: authStub.user1.user.id }).file(fullsizeEdited).build();
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: fullsizeEdited.path });
+        mocks.asset.getCurrentDevelop.mockResolvedValue(developed(asset.ownerId));
+
+        await expect(sut.downloadOriginal(authStub.admin, asset.id, { edited: true })).resolves.toMatchObject({
+          path: fullsizeEdited.path,
+        });
+        await expect(
+          sut.downloadOriginal(AuthFactory.from().sharedLink().build(), asset.id, { edited: true }),
+        ).resolves.toMatchObject({ path: fullsizeEdited.path });
+        expect(mocks.asset.getCurrentDevelop).not.toHaveBeenCalled();
+      });
     });
   });
 
@@ -901,7 +1068,7 @@ describe(AssetMediaService.name, () => {
           expect(mocks.job.queue).not.toHaveBeenCalled();
           expect(mocks.asset.update).not.toHaveBeenCalled();
         } finally {
-          result.release?.();
+          await result.release?.();
         }
         await vitest.waitFor(async () => expect(stat(dirname(result.path))).rejects.toMatchObject({ code: 'ENOENT' }));
       },
@@ -1332,7 +1499,7 @@ describe(AssetMediaService.name, () => {
       });
 
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'image/jpeg',
@@ -1351,7 +1518,7 @@ describe(AssetMediaService.name, () => {
         path: asset.files[0].path,
       });
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.PREVIEW })).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'image/jpeg',
@@ -1372,7 +1539,7 @@ describe(AssetMediaService.name, () => {
         path: asset.files[0].path,
       });
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'application/octet-stream',
@@ -1392,7 +1559,7 @@ describe(AssetMediaService.name, () => {
         path: asset.files[0].path,
       });
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'image/jpeg',
@@ -1414,7 +1581,7 @@ describe(AssetMediaService.name, () => {
       await expect(
         sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL, edited: true }),
       ).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'image/jpeg',
@@ -1436,7 +1603,7 @@ describe(AssetMediaService.name, () => {
       await expect(
         sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL, edited: false }),
       ).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'image/jpeg',
@@ -1461,7 +1628,7 @@ describe(AssetMediaService.name, () => {
           edited: true,
         }),
       ).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'image/jpeg',
@@ -1485,7 +1652,7 @@ describe(AssetMediaService.name, () => {
       const auth = AuthFactory.from().sharedLink({ showExif: false }).build();
 
       await expect(sut.viewThumbnail(auth, asset.id, { size: AssetMediaSize.PREVIEW })).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'image/jpeg',
@@ -1507,7 +1674,7 @@ describe(AssetMediaService.name, () => {
       );
 
       await expect(sut.playbackStudioHdrVideo(authStub.admin, asset.id)).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: '/encoded/v-studio-hdr.mp4',
           contentType: 'video/mp4',
           cacheControl: CacheControl.PrivateWithCache,
@@ -1571,7 +1738,7 @@ describe(AssetMediaService.name, () => {
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id)).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: '/path/to/encoded/video.mp4',
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'video/mp4',
@@ -1593,7 +1760,7 @@ describe(AssetMediaService.name, () => {
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id)).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: '/path/to/encoded/video_edited.mp4',
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'video/mp4',
@@ -1612,7 +1779,7 @@ describe(AssetMediaService.name, () => {
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id, false)).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: '/path/to/encoded/video.mp4',
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'video/mp4',
@@ -1631,7 +1798,7 @@ describe(AssetMediaService.name, () => {
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id, false)).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: '/path/to/encoded/video_edited.mp4',
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'video/mp4',
@@ -1650,7 +1817,7 @@ describe(AssetMediaService.name, () => {
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id)).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.originalPath,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'application/octet-stream',

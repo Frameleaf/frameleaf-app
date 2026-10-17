@@ -23,7 +23,7 @@ cmake -S "$work/lensfun" -B "$work/lensfun-build" -G Ninja \
 cmake --build "$work/lensfun-build" --parallel "$(nproc)"
 cmake --install "$work/lensfun-build"
 cmake -S "$work/darktable" -B "$work/darktable-build" -G Ninja \
-  -DPROJECT_VERSION=5.6.1 -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local \
+  -DPROJECT_VERSION=5.6.2 -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local \
   -DCMAKE_INSTALL_LIBDIR=lib -DBINARY_PACKAGE_BUILD=ON -DRAWSPEED_ENABLE_WERROR=OFF \
   -DUSE_LIBRAW=ON -DDONT_USE_INTERNAL_LIBRAW=ON -DUSE_OPENMP=ON \
   -DUSE_OPENCL=OFF -DUSE_AI=OFF -DUSE_CAMERA_SUPPORT=OFF -DUSE_COLORD=OFF \

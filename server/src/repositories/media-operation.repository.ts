@@ -45,6 +45,10 @@ export type MediaOperationCreate = Omit<
   Insertable<MediaOperationTable>,
   'id' | 'createdAt' | 'updatedAt' | 'updateId' | 'status' | 'progress' | 'attempt' | 'autoRetries' | 'retryAt'
 >;
+export type CloudDescriptionBatchCreate = MediaOperationCreate & {
+  kind: MediaOperationKind.CloudDescriptionBatch;
+  destination: MediaOperationDestination.FrameleafCloud;
+};
 /**
  * What a worker's failure report did (FL-104).
  *
@@ -302,6 +306,26 @@ export class MediaOperationRepository {
     this.changed(row as unknown as MediaOperationChange);
     return row as unknown as MediaOperation;
   }
+  /** Commit batch rows and their DB-only acknowledgement before notifying observers. */
+  async createCloudDescriptionBatches(
+    operations: readonly CloudDescriptionBatchCreate[],
+    acknowledge: (tx: Transaction<DB>, operations: MediaOperation[]) => Promise<void>,
+  ): Promise<MediaOperation[]> {
+    const created = await this.db.transaction().execute(async (tx) => {
+      const rows: MediaOperation[] = [];
+      for (const operation of operations) {
+        await holdSourceAdmission(tx, operation.snapshot, operation.ownerId);
+        const row = await tx.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
+        await holdSourceAdmission(tx, operation.snapshot, operation.ownerId);
+        rows.push(row);
+      }
+      await acknowledge(tx, rows);
+      return rows;
+    });
+    this.changed(created);
+    return created;
+  }
+
   /** Serialize command submission with the project's edit lease and saves, including duplicate requests. */
   async createStudioReverseCommand(
     operation: MediaOperationCreate,
@@ -511,7 +535,7 @@ export class MediaOperationRepository {
         };
       }
   > {
-    return this.db.transaction().execute(async (trx) => {
+    const result = await this.db.transaction().execute(async (trx) => {
       await sql`SELECT pg_advisory_xact_lock(${lock})`.execute(trx);
       const active = await trx
         .selectFrom('media_operation')
@@ -530,9 +554,10 @@ export class MediaOperationRepository {
         .values(operation)
         .returningAll()
         .executeTakeFirstOrThrow();
-      this.changed(created as unknown as MediaOperationChange);
       return { created: created as unknown as MediaOperation };
     });
+    if (result.created) this.changed(result.created);
+    return result;
   }
   /**
    * Create a job unless one of the same kind is already unfinished for the same subject, named by a
@@ -575,10 +600,11 @@ export class MediaOperationRepository {
         .values(operation)
         .returningAll()
         .executeTakeFirstOrThrow();
-      this.changed(created as unknown as MediaOperationChange);
       return { created: created as unknown as MediaOperation };
     };
-    return executor ? create(executor) : this.db.transaction().execute(create);
+    const result = await (executor ? create(executor) : this.db.transaction().execute(create));
+    if (result.created) this.changed(result.created, executor);
+    return result;
   }
   /**
    * The newest job of one kind for each of these subjects, named by a snapshot key (FL-78: each
@@ -1185,7 +1211,7 @@ export class MediaOperationRepository {
         .returning(['id', 'ownerId'])
         .executeTakeFirst();
     const updated = await (executor ? run(executor) : this.write(run));
-    this.changed(updated);
+    this.changed(updated, executor);
     return !!updated;
   }
   /** Whether an asset may be adopted as this owner's result: theirs, and not deleted (FL-43). */
@@ -1221,10 +1247,11 @@ export class MediaOperationRepository {
     claimToken: string,
     publish: (trx: Transaction<DB>) => Promise<boolean>,
   ): Promise<'completed' | 'rejected' | 'lost'> {
-    return this.db.transaction().execute(async (trx) => {
+    let completed: MediaOperationChange | undefined;
+    const outcome = await this.db.transaction().execute(async (trx): Promise<'completed' | 'rejected' | 'lost'> => {
       const held = await trx
         .selectFrom('media_operation')
-        .select('id')
+        .select(['id', 'ownerId'])
         .where('id', '=', id)
         .where('claimToken', '=', claimToken)
         .where('status', '=', MediaOperationStatus.Validating)
@@ -1241,8 +1268,11 @@ export class MediaOperationRepository {
         // publication back, so an adopted output and an unfinished job are never committed apart.
         throw new Error(`Media operation ${id} could not complete under the claim that published it`);
       }
+      completed = held;
       return 'completed';
     });
+    this.changed(completed);
+    return outcome;
   }
   /** Move a claimed job to `validating`. The last gate before anything is published. */
   async beginValidation(
@@ -2537,8 +2567,19 @@ export class MediaOperationRepository {
     verifiedArtifact = false,
   ): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
-      if (!(await this.lockClaim(trx, operationId, claimToken, verifiedArtifact))) {
+      if (!(await this.lockClaim(trx, operationId, claimToken))) {
         return false;
+      }
+      if (verifiedArtifact) {
+        const checkpoint = await trx
+          .selectFrom('media_operation_checkpoint')
+          .select('id')
+          .where('operationId', '=', operationId)
+          .where('sequence', '=', chunk.sequence)
+          .forUpdate()
+          .executeTakeFirst();
+        // Evaluate the live lease after both row-lock waits, while neither identity can change.
+        if (!checkpoint || !(await this.lockClaim(trx, operationId, claimToken, true))) return false;
       }
       const result = await trx
         .updateTable('media_operation_checkpoint')

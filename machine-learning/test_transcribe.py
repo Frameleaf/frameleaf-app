@@ -14,12 +14,12 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from pytest_mock import MockerFixture
 
-from immich_ml.config import settings
-from immich_ml.models import get_model_class
-from immich_ml.models.base import ModelUnavailableError
-from immich_ml.models.constants import TRANSCRIBE_MODEL_ALIAS, get_transcribe_model_file
-from immich_ml.models.transcribe import AudioFormatError, TranscribeModel, read_wav, resolve_transcribe_model
-from immich_ml.schemas import ModelTask, ModelType, validate_options
+from frameleaf_ml.config import settings
+from frameleaf_ml.models import get_model_class
+from frameleaf_ml.models.base import ModelUnavailableError
+from frameleaf_ml.models.constants import TRANSCRIBE_MODEL_ALIAS, get_transcribe_model_file
+from frameleaf_ml.models.transcribe import AudioFormatError, TranscribeModel, read_wav, resolve_transcribe_model
+from frameleaf_ml.schemas import ModelTask, ModelType, validate_options
 
 
 def wav(seconds: float = 1.0, rate: int = 16_000, channels: int = 1, width: int = 2) -> bytes:
@@ -89,9 +89,9 @@ class TestModel:
 
     def test_the_alias_picks_turbo_on_a_gpu_and_small_on_a_cpu(self, mocker: MockerFixture) -> None:
         mocker.patch.object(settings, "transcription_model", None)
-        mocker.patch("immich_ml.models.transcribe.cuda_device_count", return_value=1)
+        mocker.patch("frameleaf_ml.models.transcribe.cuda_device_count", return_value=1)
         assert resolve_transcribe_model(TRANSCRIBE_MODEL_ALIAS) == "whisper-large-v3-turbo"
-        mocker.patch("immich_ml.models.transcribe.cuda_device_count", return_value=0)
+        mocker.patch("frameleaf_ml.models.transcribe.cuda_device_count", return_value=0)
         assert resolve_transcribe_model(TRANSCRIBE_MODEL_ALIAS) == "whisper-small"
         mocker.patch.object(settings, "transcription_model", "whisper-large-v3-turbo")
         assert resolve_transcribe_model(TRANSCRIBE_MODEL_ALIAS) == "whisper-large-v3-turbo"
@@ -162,7 +162,7 @@ class TestModel:
                 (tmp_path / path).write_bytes(data)
 
         mocker.patch(
-            "immich_ml.models.transcribe.get_transcribe_model_file",
+            "frameleaf_ml.models.transcribe.get_transcribe_model_file",
             return_value=source._replace(files=tuple(pinned.items())),
         )
         mocker.patch.object(sut, "_download_from_source", side_effect=fake_download)
@@ -207,7 +207,7 @@ class TestEndpoint:
             assert args[:3] == (TRANSCRIBE_MODEL_ALIAS, ModelType.AUDIO, ModelTask.TRANSCRIBE)
             return fake_model
 
-        mocker.patch("immich_ml.main.model_cache.get", side_effect=get)
+        mocker.patch("frameleaf_ml.main.model_cache.get", side_effect=get)
         return fake_model
 
     def test_streams_ndjson(self, served: TranscribeModel, deployed_app: TestClient) -> None:
@@ -275,7 +275,7 @@ class TestEndpoint:
         async def get(*args: Any, **kwargs: Any) -> TranscribeModel:
             return sut
 
-        mocker.patch("immich_ml.main.model_cache.get", side_effect=get)
+        mocker.patch("frameleaf_ml.main.model_cache.get", side_effect=get)
         response = deployed_app.post(
             "http://localhost:3003/transcribe", data={"entries": entries()}, files={"audio": wav(1.0)}
         )

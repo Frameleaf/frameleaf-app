@@ -46,11 +46,13 @@ export class SharedLinkFactory {
 
   owner(dto: UserLike = {}, builder?: FactoryBuilder<UserFactory>): SharedLinkFactory {
     this.#owner = build(UserFactory.from(dto), builder);
+    this.value.userId = this.#owner.build().id;
     return this;
   }
 
   album(dto: AlbumLike = {}, builder?: FactoryBuilder<AlbumFactory>) {
     this.#album = build(AlbumFactory.from(dto), builder);
+    this.value.albumId = this.#album.build().id;
     this.value.type = SharedLinkType.Album;
     return this;
   }

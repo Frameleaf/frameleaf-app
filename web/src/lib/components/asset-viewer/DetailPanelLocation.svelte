@@ -18,11 +18,13 @@
   import { landmarkHref, landmarkKind } from '$lib/frameleaf/landmarks';
   import ViewerLocationDialog from '$lib/components/frameleaf/ViewerLocationDialog.svelte';
   import { locationPatch } from '$lib/frameleaf/viewer-location';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { getAssetInfo, updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
   import { Icon, modalManager } from '@frameleaf/ui';
   import { mdiMapMarkerOutline, mdiOpenInNew, mdiPencil } from '@mdi/js';
+  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type LocationChange = Exclude<ReturnType<typeof locationPatch>, 'invalid' | null>;
@@ -48,34 +50,70 @@
   // FL-354: the landmark the item was taken at; the server lists the best label first.
   const landmark = $derived(asset.landmarks?.[0]);
 
+  let alive = true;
+  let generation = 0;
+  let previousAssetId: string | undefined;
+  onDestroy(() => {
+    alive = false;
+  });
+  $effect.pre(() => {
+    if (asset.id === previousAssetId) {
+      return;
+    }
+    previousAssetId = asset.id;
+    generation++;
+    failure = null;
+    isSaving = false;
+    pending = null;
+  });
+  const captureView = () => {
+    const owner = generation;
+    const isCurrentSession = authManager.captureSession();
+    return () => alive && owner === generation && isCurrentSession();
+  };
+
   const fail = (error: unknown, change: LocationChange | null) => {
     failure = classifyInlineEditError(error);
     pending = change;
   };
 
   const save = async (change: LocationChange) => {
+    const isCurrent = captureView();
     isSaving = true;
     try {
-      asset = await updateAsset({ id: asset.id, updateAssetDto: change });
+      const updated = await updateAsset({ id: asset.id, updateAssetDto: change });
+      if (!isCurrent()) {
+        return;
+      }
+      asset = updated;
       failure = null;
       pending = null;
       onAssetRefresh?.(asset);
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       fail(error, change);
       handleError(error, $t('errors.unable_to_change_location'));
     } finally {
-      isSaving = false;
+      if (isCurrent()) {
+        isSaving = false;
+      }
     }
   };
 
   // V-24: the template's "Edit location" dialog, which saves through `updateAsset` itself.
   const onAction = async () => {
+    const isCurrent = captureView();
     const updated = await modalManager.show(ViewerLocationDialog, {
       asset,
-      onError: (error: unknown, change: ReturnType<typeof locationPatch>) =>
-        fail(error, change && change !== 'invalid' ? change : null),
+      onError: (error: unknown, change: ReturnType<typeof locationPatch>) => {
+        if (isCurrent()) {
+          fail(error, change && change !== 'invalid' ? change : null);
+        }
+      },
     });
-    if (!updated) {
+    if (!updated || !isCurrent()) {
       return;
     }
     asset = updated;
@@ -85,13 +123,20 @@
   };
 
   const reload = async () => {
+    const isCurrent = captureView();
     try {
-      asset = await getAssetInfo({ id: asset.id });
+      const updated = await getAssetInfo({ id: asset.id });
+      if (!isCurrent()) {
+        return;
+      }
+      asset = updated;
       failure = null;
       pending = null;
       onAssetRefresh?.(asset);
     } catch (error) {
-      handleError(error, $t('frameleaf_info_error_reload_failed'));
+      if (isCurrent()) {
+        handleError(error, $t('frameleaf_info_error_reload_failed'));
+      }
     }
   };
 </script>

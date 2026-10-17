@@ -28,6 +28,8 @@
   import type { FilterPanelOptions } from '$lib/frameleaf/search-options';
   import '$lib/frameleaf/tokens.css';
   import { AssetTypeEnum, AssetVisibility, ImageEnrichmentFilter, SearchFacetField } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiClose, mdiContentSaveOutline } from '@mdi/js';
   import type { Translations } from 'svelte-i18n';
   import { t } from 'svelte-i18n';
 
@@ -62,6 +64,7 @@
     enrichmentCounts = {},
     onChange,
     onClose,
+    onSave,
   }: {
     query: DiscoveryQuery;
     options: FilterPanelOptions;
@@ -79,6 +82,8 @@
     enrichmentCounts?: Partial<Record<ImageEnrichmentFilter, number>>;
     onChange: (query: DiscoveryQuery) => void;
     onClose?: () => void;
+    /** Docked beside a library (LIB-P1): the footer's "Save search", the template's "Save preset". */
+    onSave?: () => void;
   } = $props();
 
   const radioName = $props.id();
@@ -311,7 +316,7 @@
       </div>
       {#if onClose}
         <Button variant="quiet" label={$t('frameleaf_search_close_filters')} onclick={onClose}>
-          <span aria-hidden="true">&times;</span>
+          <Icon icon={mdiClose} size="18" aria-hidden />
         </Button>
       {/if}
     </header>
@@ -519,6 +524,12 @@
 
   <footer>
     <Button onclick={() => onChange(withoutDiscoveryFilters(query))}>{$t('frameleaf_search_reset_filters')}</Button>
+    {#if onSave && !embedded}
+      <Button onclick={onSave}>
+        <Icon icon={mdiContentSaveOutline} size="16" aria-hidden />
+        {$t('frameleaf_search_save_search')}
+      </Button>
+    {/if}
   </footer>
 </aside>
 

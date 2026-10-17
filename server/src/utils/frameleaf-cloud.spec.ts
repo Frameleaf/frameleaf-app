@@ -503,7 +503,66 @@ describe('error envelope (FL-177, as-built decisions #15–#18)', () => {
   });
 });
 
+describe(cloudAddressProblem.name, () => {
+  it.each([
+    [
+      'malformed',
+      'https://user-secret:password-secret@[invalid/private-path?token=query-secret#fragment-secret',
+      /is not a URL/,
+    ],
+    [
+      'protocol',
+      'http://user-secret:password-secret@frameleaf.cloud/private-path?token=query-secret#fragment-secret',
+      /is not https/,
+    ],
+    [
+      'host',
+      'https://user-secret:password-secret@attacker.example/private-path?token=query-secret#fragment-secret',
+      /is not on frameleaf\.cloud/,
+    ],
+    [
+      'port',
+      'https://user-secret:password-secret@frameleaf.cloud:8443/private-path?token=query-secret#fragment-secret',
+      /is not on port 443/,
+    ],
+    [
+      'credentials',
+      'https://user-secret:password-secret@frameleaf.cloud/private-path?token=query-secret#fragment-secret',
+      /carries credentials/,
+    ],
+  ] as const)('keeps private URL values out of %s refusals', (_reason, url, expected) => {
+    const problem = cloudAddressProblem('https://frameleaf.cloud', 'storage address', url);
+    expect(problem).toMatch(expected);
+    expect(problem).toContain('storage address');
+    for (const value of ['user-secret', 'password-secret', 'private-path', 'query-secret', 'fragment-secret']) {
+      expect(problem).not.toContain(value);
+    }
+  });
+
+  it('keeps a malformed configured address out of its refusal', () => {
+    const problem = cloudAddressProblem(
+      'not-a-url?token=configuration-secret',
+      'storage address',
+      'https://frameleaf.cloud',
+    );
+    expect(problem).toMatch(/configured Frameleaf Cloud address .*is not a URL/);
+    expect(problem).not.toContain('configuration-secret');
+  });
+});
+
 describe('gateway amounts and usage (FL-177, as-built decisions #21, #22 and #24)', () => {
+  it.each([Number.MAX_VALUE, -Number.MAX_VALUE])('refuses a balance that overflows when rounded: %s', (balanceUsd) => {
+    expect(walletResponseSchema.safeParse({ balanceUsd }).success).toBe(false);
+    const capabilities = cloudContractFixture<{ wallet: Record<string, unknown> }>('ml/capabilities.json');
+    expect(
+      capabilitiesSchema.safeParse({ ...capabilities, wallet: { ...capabilities.wallet, balanceUsd } }).success,
+    ).toBe(false);
+  });
+
+  it('retains finite negative balances and rounds them to micro-USD', () => {
+    expect(walletResponseSchema.parse({ balanceUsd: -12.3456784 }).balanceUsd).toBe(-12.345678);
+  });
+
   it('reads *Usd fields as decimal dollars, to whole micro-USD', () => {
     const wallet = walletResponseSchema.parse({
       balanceUsd: 12.345678,

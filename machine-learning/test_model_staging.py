@@ -4,22 +4,22 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-import httpx
 import pytest
 from fastapi import HTTPException
 from filelock import FileLock, Timeout
 from huggingface_hub import set_client_factory
 from huggingface_hub.errors import LocalEntryNotFoundError
+from huggingface_hub.utils import httpx
 
-from immich_ml.config import settings
-from immich_ml.main import load
-from immich_ml.models.base import InferenceModel, ModelUnavailableError
-from immich_ml.models.florence_manifest import FLORENCE_MODELS
-from immich_ml.models.image_description import ImageDescriptionModel
-from immich_ml.models.nsfw_detection import NsfwDetectionModel
-from immich_ml.privacy import _download_client
-from immich_ml.schemas import ModelTask, ModelType
-from immich_ml.staging import RECEIPT, cache_hashes, stage_model, verify_staged
+from frameleaf_ml.config import settings
+from frameleaf_ml.main import load
+from frameleaf_ml.models.base import InferenceModel, ModelUnavailableError
+from frameleaf_ml.models.florence_manifest import FLORENCE_MODELS
+from frameleaf_ml.models.image_description import ImageDescriptionModel
+from frameleaf_ml.models.nsfw_detection import NsfwDetectionModel
+from frameleaf_ml.privacy import _download_client
+from frameleaf_ml.schemas import ModelTask, ModelType
+from frameleaf_ml.staging import RECEIPT, cache_hashes, stage_model, verify_staged
 
 
 class SyntheticModel(InferenceModel):
@@ -85,7 +85,7 @@ def test_pinned_florence_staging_preserves_repository_cache_and_offline_verifica
         for name, body in files.items():
             (destination / name).write_bytes(body)
 
-    with patch("immich_ml.models.image_description.snapshot_download", side_effect=acquire) as download:
+    with patch("frameleaf_ml.models.image_description.snapshot_download", side_effect=acquire) as download:
         with patch.object(model, "_load") as load_model:
             stage_model(model)
             monkeypatch.setattr(settings, "model_downloads", False)
@@ -159,7 +159,7 @@ def test_refresh_does_not_restore_obsolete_paths_for_the_selected_model(
         destination.write_bytes(content)
 
     layout, content = "onnx/model.onnx", b"old weights"
-    with patch("immich_ml.models.nsfw_detection.snapshot_download", side_effect=acquire):
+    with patch("frameleaf_ml.models.nsfw_detection.snapshot_download", side_effect=acquire):
         stage_model(model)
         layout, content = "model.onnx", b"new weights"
         stage_model(model, refresh=True)
@@ -214,7 +214,7 @@ def test_refresh_rollback_and_shared_cache_files_survive(
 def test_failed_publish_restores_active_cache(model: SyntheticModel) -> None:
     stage_model(model)
     model.content = b"v2"
-    with patch("immich_ml.staging.os.replace", side_effect=OSError("synthetic publish failure")):
+    with patch("frameleaf_ml.staging.os.replace", side_effect=OSError("synthetic publish failure")):
         with pytest.raises(OSError, match="synthetic publish failure"):
             stage_model(model, refresh=True)
     assert model.model_path.read_bytes() == b"synthetic model v1"

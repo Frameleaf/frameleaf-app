@@ -563,6 +563,19 @@ export class ClassificationRepository {
     }
 
     await this.db.transaction().execute(async (trx) => {
+      const current = await trx
+        .selectFrom('classification_rule')
+        .selectAll()
+        .where('id', '=', rule.id)
+        .forNoKeyUpdate()
+        .executeTakeFirst();
+      // Review must not restore a tag or archive setting the owner changed after loading the rule.
+      if (
+        !current ||
+        (['ownerId', 'albumId', 'action', 'tagId', 'archive'] as const).some((key) => current[key] !== rule[key])
+      ) {
+        throw new Error('Classification rule changed while reviewing; retry with the current rule');
+      }
       const assets = await this.liveAssets(trx, rule.ownerId, assetIds);
       const existing = await this.lockMatches(trx, rule.id, assetIds);
       for (const assetId of assetIds) {

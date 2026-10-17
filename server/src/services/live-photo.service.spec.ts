@@ -18,12 +18,14 @@ describe(LivePhotoService.name, () => {
     livePhotoRepository = {
       getUnlinkedByContentId: vi.fn().mockResolvedValue([]),
       getUnlinkedByFilename: vi.fn().mockResolvedValue([]),
+      withRelinkTransaction: vi
+        .fn()
+        .mockImplementation((_photoId, _videoId, callback) => callback(mocks.asset, mocks.album)),
     } as unknown as LivePhotoRepository;
 
     sut = new LivePhotoService(
       mocks.logger as never,
       mocks.asset as never,
-      mocks.album as never,
       mocks.event as never,
       livePhotoRepository,
       mocks.config as never,
@@ -376,6 +378,114 @@ describe(LivePhotoService.name, () => {
         expect(result).toEqual({ success: false, error: 'A Locked item cannot be paired with one that is not Locked' });
         expect(mocks.asset.update).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('atomic relinking', () => {
+    const auth = AuthFactory.create();
+    let state: {
+      photo: ReturnType<typeof AssetFactory.create>;
+      video: ReturnType<typeof AssetFactory.create>;
+      inAlbum: boolean;
+    };
+    let committed: boolean;
+    let failing: string | undefined;
+    beforeEach(() => {
+      state = {
+        photo: AssetFactory.from({
+          id: 'photo-1',
+          ownerId: auth.user.id,
+          type: AssetType.Image,
+          livePhotoVideoId: null,
+          visibility: AssetVisibility.Timeline,
+        }).build(),
+        video: AssetFactory.from({
+          id: 'video-1',
+          ownerId: auth.user.id,
+          type: AssetType.Video,
+          visibility: AssetVisibility.Timeline,
+        }).build(),
+        inAlbum: true,
+      };
+      committed = false;
+      failing = undefined;
+      mocks.asset.getByIds.mockImplementation((ids) =>
+        Promise.resolve([state.photo, state.video].filter(({ id }) => ids.includes(id)) as never),
+      );
+      mocks.asset.getLivePhotoCount.mockResolvedValue(0);
+      mocks.asset.update.mockImplementation((patch) =>
+        Promise.try(() => {
+          const role = patch.id === 'photo-1' ? 'photo' : 'video';
+          state[role] = { ...state[role], ...patch } as never;
+          if (failing === role) throw new Error('write failed');
+          return state[role] as never;
+        }),
+      );
+      mocks.album.removeAssetsFromAll.mockImplementation(() =>
+        Promise.try(() => {
+          state.inAlbum = false;
+          if (failing === 'albums') throw new Error('write failed');
+        }),
+      );
+      vi.mocked(livePhotoRepository.withRelinkTransaction).mockImplementation(async (_photoId, _videoId, callback) => {
+        const before = { ...state, photo: { ...state.photo }, video: { ...state.video } };
+        try {
+          const result = await callback(mocks.asset as never, mocks.album as never);
+          if (failing === 'commit') throw new Error('commit failed');
+          committed = true;
+          return result;
+        } catch (error) {
+          state = before;
+          throw error;
+        }
+      });
+    });
+
+    it.each(['relink', 'relinkOne'] as const)('rolls back every rejected write through %s', async (entry) => {
+      for (const stage of ['photo', 'video', 'albums']) {
+        failing = stage;
+        const before = { ...state, photo: { ...state.photo }, video: { ...state.video } };
+        const result =
+          entry === 'relink'
+            ? sut.relink(auth, { pairs: [{ photoId: 'photo-1', videoId: 'video-1' }] })
+            : sut.relinkOne(auth, 'photo-1', 'video-1');
+        await expect(result).rejects.toThrow('write failed');
+        expect(state).toEqual(before);
+        expect(mocks.event.emit).not.toHaveBeenCalled();
+      }
+    });
+
+    it('does not announce a link whose transaction cannot commit', async () => {
+      failing = 'commit';
+      const before = { ...state, photo: { ...state.photo }, video: { ...state.video } };
+      await expect(sut.relinkOne(auth, 'photo-1', 'video-1')).rejects.toThrow('commit failed');
+      expect(state).toEqual(before);
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+
+    it('announces the link only after its writes commit', async () => {
+      mocks.event.emit.mockImplementation(() =>
+        Promise.try(() => {
+          expect(committed).toBe(true);
+        }),
+      );
+      await expect(sut.relinkOne(auth, 'photo-1', 'video-1')).resolves.toEqual({ success: true });
+      expect(state.photo.livePhotoVideoId).toBe('video-1');
+      expect(state.video.visibility).toBe(AssetVisibility.Hidden);
+      expect(state.inAlbum).toBe(false);
+      expect(mocks.event.emit).toHaveBeenCalledOnce();
+    });
+
+    it.each(['owner', 'Locked state'])('rechecks changed %s after the pair lock is acquired', async (change) => {
+      vi.mocked(livePhotoRepository.withRelinkTransaction).mockImplementation(async (_photoId, _videoId, callback) => {
+        if (change === 'owner') state.photo.ownerId = 'other-owner';
+        else Reflect.set(state.video, 'isLocked', true);
+        return callback(mocks.asset as never, mocks.album as never);
+      });
+      await expect(sut.relinkOne(auth, 'photo-1', 'video-1')).resolves.toMatchObject({ success: false });
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.album.removeAssetsFromAll).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
     });
   });
 });

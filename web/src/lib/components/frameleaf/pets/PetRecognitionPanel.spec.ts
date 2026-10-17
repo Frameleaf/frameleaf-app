@@ -98,6 +98,15 @@ describe('PetRecognitionPanel', () => {
     expect(screen.queryByRole('button', { name: en.frameleaf_pets_recognition_start })).not.toBeInTheDocument();
   });
 
+  it('says recognition is off as a calm notice, not an error (DISCOVERY-P7)', () => {
+    setup(status({ available: false, reason: PetRecognitionUnavailableReason.MachineLearningDisabled }));
+
+    const notice = screen.getByTestId('pet-recognition-unavailable');
+    expect(notice).toHaveTextContent(en.frameleaf_pets_recognition_off_title);
+    expect(notice).toHaveTextContent(en.frameleaf_pets_recognition_reason_machine_learning_disabled);
+    expect(notice).not.toHaveClass('unavailable');
+  });
+
   it('asks someone who is not an administrator to ask one', () => {
     setup(status({ available: false, reason: PetRecognitionUnavailableReason.ConsentMissing }), false);
 

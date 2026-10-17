@@ -8,6 +8,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import LockedRulesPanel from '$lib/components/frameleaf/access/LockedRulesPanel.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { personFactory } from '@test-data/factories/person-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 
@@ -82,6 +83,78 @@ describe('LockedRulesPanel (FL-67)', () => {
 
   afterEach(() => {
     authManager.reset();
+  });
+
+  it('does not reveal a late rules load after the session locks', async () => {
+    let finish!: (value: UserPreferencesResponseDto) => void;
+    sdkMock.getMyPreferences.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await renderPanel();
+    await waitFor(() => expect(sdkMock.getMyPreferences).toHaveBeenCalledOnce());
+    eventManager.emit('SessionLocked');
+    expect(await screen.findByText('frameleaf_locked_rules_locked_description')).toBeInTheDocument();
+    finish(stored({ tagIds: [family.id] }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByRole('button', { name: 'frameleaf_locked_rules_save' })).toBeNull();
+    expect(screen.queryByText('Receipts')).toBeNull();
+  });
+
+  it('does not retry a conflict using another account session', async () => {
+    let fail!: (reason: Error) => void;
+    sdkMock.updateMyPreferences.mockReturnValueOnce(
+      new Promise((_, reject) => {
+        fail = reject;
+      }),
+    );
+    sdkMock.updateMyPreferences.mockResolvedValue(stored({ tagIds: [family.id] }, 'rev-2'));
+    await renderPanel();
+    await fireEvent.click(await screen.findByRole('checkbox', { name: 'Receipts' }));
+    await fireEvent.click(saveButton());
+    await waitFor(() => expect(sdkMock.updateMyPreferences).toHaveBeenCalledOnce());
+    authManager.setUser({ id: 'second' } as never);
+    fail(httpError(409));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sdkMock.updateMyPreferences).toHaveBeenCalledOnce();
+    expect(sdkMock.getMyPreferences).toHaveBeenCalledOnce();
+  });
+
+  it('stops a pending load when its component is destroyed', async () => {
+    let finish!: (value: UserPreferencesResponseDto) => void;
+    sdkMock.getMyPreferences.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const panel = render(LockedRulesPanel);
+    await waitFor(() => expect(sdkMock.getMyPreferences).toHaveBeenCalledOnce());
+    panel.unmount();
+    finish(stored({ tagIds: [family.id] }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sdkMock.getAuthStatus).toHaveBeenCalledOnce();
+  });
+
+  it('aborts a people search and ignores its late response after locking', async () => {
+    const alice = personFactory.build({ id: 'private-person', name: 'Private Alice' });
+    let finish!: (value: (typeof alice)[]) => void;
+    sdkMock.searchPerson.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await renderPanel();
+    await fireEvent.input(await screen.findByLabelText('frameleaf_locked_rules_find_person'), {
+      target: { value: 'Ali' },
+    });
+    await waitFor(() => expect(sdkMock.searchPerson).toHaveBeenCalledOnce());
+    eventManager.emit('SessionLocked');
+    expect(sdkMock.searchPerson.mock.calls[0][1]?.signal?.aborted).toBe(true);
+    finish([alice]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText('Private Alice')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'frameleaf_locked_rules_save' })).toBeNull();
   });
 
   it('shows nothing about the rules until the session is unlocked', async () => {

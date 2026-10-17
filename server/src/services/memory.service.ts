@@ -1,9 +1,8 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { isUndefined, omitBy } from 'lodash-es';
 import { DateTime } from 'luxon';
-import { basename, parse } from 'node:path';
+import { basename } from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import sanitize from 'sanitize-filename';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MemoryCurationFilter, MemoryShowLessRow } from 'src/repositories/memory.repository.js';
 import type { JobOf } from 'src/types.js';
@@ -40,10 +39,11 @@ import {
   StorageFolder,
   SystemMetadataKey,
 } from 'src/enum.js';
-import { ImmichReadStream } from 'src/repositories/storage.repository.js';
+import { ReadStreamResponse } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { MemoryHighlightService } from 'src/services/memory-highlight.service.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
+import { nextArchiveName } from 'src/utils/file.js';
 import {
   type HiddenContentQueryOptions,
   getHiddenContentQueryOptions,
@@ -866,7 +866,7 @@ export class MemoryService extends BaseService {
    * file is reachable: the archive lives outside any served folder and its path is never
    * exposed. An expired run is treated as gone rather than served late.
    */
-  async downloadExport(auth: AuthDto, id: string): Promise<ImmichReadStream> {
+  async downloadExport(auth: AuthDto, id: string): Promise<ReadStreamResponse> {
     const run = await this.findExportOrFail(auth, id);
     if (run.format === MemoryExportFormat.Highlight) {
       return this.highlights.download(auth, run as MemoryExport);
@@ -960,14 +960,6 @@ export class MemoryService extends BaseService {
           continue;
         }
 
-        let filename = sanitize(asset.originalFileName) || 'unnamed';
-        const seen = names.get(filename) ?? 0;
-        names.set(filename, seen + 1);
-        if (seen !== 0) {
-          const parsed = parse(filename);
-          filename = `${parsed.name}+${seen}${parsed.ext}`;
-        }
-
         let realpath = asset.originalPath;
         try {
           realpath = await this.storageRepository.realpath(realpath);
@@ -975,7 +967,7 @@ export class MemoryService extends BaseService {
           this.logger.warn('Unable to resolve realpath', { originalPath: asset.originalPath });
         }
 
-        zip.addFile(realpath, filename);
+        zip.addFile(realpath, nextArchiveName(names, asset.originalFileName));
       }
 
       await zip.finalize();
@@ -1348,7 +1340,9 @@ export class MemoryService extends BaseService {
     // the export rows go with the memory by cascade; their private archives must go too
     const exports = await this.memoryRepository.searchExports(auth.user.id, { memoryId: id });
     for (const run of exports) {
-      await this.removeExportFiles(run);
+      if (run.format !== MemoryExportFormat.Highlight) {
+        await this.removeExportFiles(run);
+      }
     }
     // FL-194: a highlight's render stops, and its project and private result go with the memory
     if (exports.some((run) => run.format === MemoryExportFormat.Highlight)) {

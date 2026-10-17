@@ -53,8 +53,9 @@ export const manifestTime = (key: string): Date | null => {
     return null;
   }
   const [, year, month, day, hour, minute, second] = match;
-  const date = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}.000Z`);
-  return Number.isNaN(date.getTime()) ? null : date;
+  const iso = `${year}-${month}-${day}T${hour}:${minute}:${second}.000Z`;
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) || date.toISOString() !== iso ? null : date;
 };
 
 const dayOf = (date: Date) => date.toISOString().slice(0, 10);
@@ -195,7 +196,8 @@ export const readManifest = (body: Buffer): CloudBackupManifest => {
     (manifest.version !== 1 && manifest.version !== 2 && manifest.version !== 3) ||
     typeof manifest.instanceId !== 'string' ||
     !manifest.assets ||
-    typeof manifest.assets !== 'object'
+    typeof manifest.assets !== 'object' ||
+    Array.isArray(manifest.assets)
   ) {
     throw new Error('This is not a Frameleaf backup manifest.');
   }
@@ -205,7 +207,11 @@ export const readManifest = (body: Buffer): CloudBackupManifest => {
     }
   }
   const profiles = manifest.profiles ?? {};
-  if (typeof profiles !== 'object' || Object.values(profiles).some((file) => !isFile(file))) {
+  if (
+    typeof profiles !== 'object' ||
+    Array.isArray(profiles) ||
+    Object.values(profiles).some((file) => !isFile(file))
+  ) {
     throw new Error('This backup manifest names a file without a valid checksum.');
   }
   const database = manifest.database ?? null;

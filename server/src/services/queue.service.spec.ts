@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import {
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   MlDestinationKind,
   MlWorkload,
@@ -23,7 +23,7 @@ describe(QueueService.name, () => {
   beforeEach(() => {
     ({ sut, mocks } = newTestService(QueueService));
 
-    mocks.config.getWorker.mockReturnValue(ImmichWorker.Microservices);
+    mocks.config.getWorker.mockReturnValue(FrameleafWorker.Microservices);
   });
 
   it('should work', () => {

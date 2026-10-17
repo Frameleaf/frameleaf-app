@@ -6,6 +6,7 @@ import {
   galleryRequest,
   galleryMedia,
   galleryFile,
+  openGallerySession,
   defaultPresentation,
   type GuestGallery,
 } from '$lib/frameleaf/photography/workflow-api';
@@ -16,6 +17,7 @@ vi.mock('$lib/frameleaf/photography/workflow-api', async (original) => ({
   galleryRequest: vi.fn(),
   galleryMedia: vi.fn(),
   galleryFile: vi.fn(),
+  openGallerySession: vi.fn(),
 }));
 const view: GuestGallery = {
   revision: 'loaded',
@@ -65,6 +67,8 @@ const view: GuestGallery = {
   },
 };
 beforeAll(() => addMessages('dev', en));
+/** Coming back to the tab reloads the gallery (the page has no Refresh button, as in the prototype). */
+const returnToTab = () => document.dispatchEvent(new Event('visibilitychange'));
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(galleryRequest).mockReset();
@@ -129,11 +133,41 @@ it('drops protected images and the stored session when the server revokes access
   vi.mocked(galleryRequest).mockRejectedValueOnce(
     Object.assign(new Error('Gallery access has ended.'), { status: 403 }),
   );
-  await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+  returnToTab();
   await screen.findByRole('alert');
   expect(screen.queryByRole('img', { name: 'Photo 7' })).toBeNull();
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:protected-pixels');
   expect(sessionStorage.getItem('photography-gallery:shoot')).toBeNull();
+});
+it('opens an invitation without a password step when the gallery has no password', async () => {
+  history.replaceState(null, '', '/photography/gallery/shoot#invitation=token');
+  vi.mocked(openGallerySession).mockResolvedValue({
+    session: 'fresh',
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  });
+  render(PhotographyClient, { galleryId: 'shoot' });
+  expect(await screen.findByText('The wedding collection')).toBeInTheDocument();
+  expect(openGallerySession).toHaveBeenCalledWith('shoot', 'token', '');
+  expect(screen.queryByLabelText('Gallery password')).toBeNull();
+  expect(galleryRequest).toHaveBeenCalledWith('shoot', 'fresh');
+  // the studio's header and the cover the prototype shows
+  expect(screen.getByRole('link', { name: 'Gallery' })).toBeInTheDocument();
+  expect(screen.getByText('Your private gallery')).toBeInTheDocument();
+  expect(location.hash).toBe('');
+});
+it('asks for the password only when the gallery answers that it needs one', async () => {
+  history.replaceState(null, '', '/photography/gallery/shoot#invitation=token');
+  vi.mocked(openGallerySession)
+    .mockResolvedValueOnce({ passwordRequired: true, brand: view.brand })
+    .mockResolvedValueOnce({ session: 'fresh', expiresAt: new Date(Date.now() + 60_000).toISOString() });
+  render(PhotographyClient, { galleryId: 'shoot' });
+  const field = await screen.findByLabelText('Gallery password');
+  // the entrance already carries the studio's name
+  expect(screen.getByRole('link', { name: 'North Studio' })).toBeInTheDocument();
+  await fireEvent.input(field, { target: { value: 'cedar-light' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Open gallery' }));
+  expect(await screen.findByText('The wedding collection')).toBeInTheDocument();
+  expect(openGallerySession).toHaveBeenLastCalledWith('shoot', 'token', 'cedar-light');
 });
 it('requires acceptance of the quoted amount and terms before offering payment', async () => {
   const order = {
@@ -232,6 +266,24 @@ it('requests only the exact entitled selected outputs in a ZIP', async () => {
   );
   expect(galleryFile).toHaveBeenCalledWith('shoot', 'scoped', '/zip/zip-id', true);
   expect(screen.queryByText('blocked-id')).toBeNull();
+
+  const print = sizes.find((element) => element.parentElement?.textContent?.includes('Full resolution'))!;
+  await fireEvent.click(web);
+  await fireEvent.click(print);
+  expect(screen.getByRole('button', { name: 'Download selected files' })).toBeDisabled();
+  expect(web).not.toBeChecked();
+  expect(print).not.toBeChecked();
+  await fireEvent.click(web);
+  vi.mocked(galleryRequest).mockResolvedValueOnce({ id: 'web-only' } as never);
+  await fireEvent.click(screen.getByRole('button', { name: 'Download selected files' }));
+  await waitFor(() =>
+    expect(galleryRequest).toHaveBeenLastCalledWith('shoot', 'scoped', '/zip', 'POST', {
+      outputs: [{ captureId: 'capture', outputId: 'web-id' }],
+    }),
+  );
+  expect(web).toBeChecked();
+  expect(print).not.toBeChecked();
+  expect(galleryFile).toHaveBeenLastCalledWith('shoot', 'scoped', '/zip/web-only', true);
 });
 
 it('replaces cached proofs only when the live published generation changes', async () => {
@@ -246,12 +298,12 @@ it('replaces cached proofs only when the live published generation changes', asy
   render(PhotographyClient, { galleryId: 'shoot' });
   await screen.findByRole('img', { name: 'Photo 7' });
   await waitFor(() => expect(galleryMedia).toHaveBeenCalledTimes(2));
-  await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+  returnToTab();
   await waitFor(() => expect(galleryRequest).toHaveBeenCalledTimes(2));
   await tick();
   expect(URL.revokeObjectURL).not.toHaveBeenCalled();
   expect(galleryMedia).toHaveBeenCalledTimes(2);
-  await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+  returnToTab();
   await waitFor(() => expect(galleryMedia).toHaveBeenCalledTimes(4));
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:protected-pixels');
 });

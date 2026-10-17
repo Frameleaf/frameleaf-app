@@ -57,7 +57,7 @@ import {
   AssetStatus,
   ChecksumAlgorithm,
   DatabaseLock,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   MediaOperationDestination,
@@ -616,22 +616,37 @@ export class CloudBackupService {
     }
     try {
       const usage = await this.cloudBackup.usage(await this.managedApi());
-      const managed = {
-        ...metadata.managed,
-        quotaBytes: usage.includedBytes,
-        readOnly: usage.readOnly,
-        readOnlyReason: usage.readOnlyReason,
-        usage: {
-          measuredAt: usage.measuredAt,
-          bytesCurrent: usage.bytesCurrent,
-          objects: usage.objects,
-          allowanceBytes: usage.allowanceBytes,
-          extraBlocks: usage.extraBlocks,
-        },
-        checkedAt: new Date().toISOString(),
-      };
-      await this.updateMetadata((current) => ({ ...current, managed }));
-      return { ...metadata, managed };
+      let refreshed = metadata;
+      await this.updateMetadata((current) => {
+        if (
+          current.target !== metadata.target ||
+          current.bucketRef !== metadata.bucketRef ||
+          current.keyFingerprint !== metadata.keyFingerprint ||
+          current.instanceId !== metadata.instanceId ||
+          current.bucket !== metadata.bucket ||
+          current.region !== metadata.region ||
+          current.managed?.storageId !== metadata.managed?.storageId ||
+          current.managed?.location?.locationId !== metadata.managed?.location?.locationId
+        )
+          return current;
+        const managed = {
+          ...current.managed,
+          quotaBytes: usage.includedBytes,
+          readOnly: usage.readOnly,
+          readOnlyReason: usage.readOnlyReason,
+          usage: {
+            measuredAt: usage.measuredAt,
+            bytesCurrent: usage.bytesCurrent,
+            objects: usage.objects,
+            allowanceBytes: usage.allowanceBytes,
+            extraBlocks: usage.extraBlocks,
+          },
+          checkedAt: new Date().toISOString(),
+        };
+        refreshed = { ...current, managed };
+        return refreshed;
+      });
+      return refreshed;
     } catch (error) {
       this.logger.warn(`Could not read the managed backup usage: ${errorMessage(error)}`);
       return metadata;
@@ -737,16 +752,14 @@ export class CloudBackupService {
       this.readClientKeys(dto.key, key, identity.instanceId, false);
       recovery = dto.keyMode === 'own-memory' ? this.memoryRecovery(dto.key, key, identity.instanceId) : null;
 
-      // The stored key modes write and read back the key file first, so a bucket is never claimed with a
-      // key this server could not keep; a claim that then fails takes away only a file this setup created.
-      const keyFile =
-        dto.keyMode === 'own-memory'
-          ? null
-          : await this.storeKey(dto.keyMode, key, {
-              instanceId: identity.instanceId,
-              bucket: connection.bucket,
-              keyFile: dto.key,
-            });
+      // Keep the stored key even on claim failure: the provider may commit before its response is lost.
+      if (dto.keyMode !== 'own-memory') {
+        await this.storeKey(dto.keyMode, key, {
+          instanceId: identity.instanceId,
+          bucket: connection.bucket,
+          keyFile: dto.key,
+        });
+      }
 
       let claim: { existing: boolean; claimedAt: string };
       try {
@@ -756,9 +769,6 @@ export class CloudBackupService {
           now: new Date(),
         });
       } catch (error) {
-        if (keyFile?.created) {
-          await this.keys.remove(identityDirectory(this.configRepository), fingerprint);
-        }
         throw this.asRequestError(error);
       }
 
@@ -1065,25 +1075,27 @@ export class CloudBackupService {
    */
   async turnOff(auth: AuthDto): Promise<CloudBackupStatusResponseDto> {
     this.requireEditableConfig();
-    if (await this.activeBucketOperation()) {
-      throw new ConflictException('Cancel the running backup before turning cloud backup off.');
-    }
     const { oldConfig, newConfig } = await this.databaseRepository.withLock(
-      DatabaseLock.SystemConfigUpdate,
+      DatabaseLock.FrameleafCloudBackup,
       async () => {
-        const result = await withEffectiveConfigWrite(this.configRepos(), async (repos) => {
-          const current = await readConfig(repos);
-          const next = structuredClone(current);
-          next.frameleafCloud.cloudBackup.enabled = false;
-          const saved = await updateConfig(repos, next);
-          return { oldConfig: current, newConfig: saved };
+        if (await this.activeBucketOperation()) {
+          throw new ConflictException('Cancel the running backup before turning cloud backup off.');
+        }
+        return this.databaseRepository.withLock(DatabaseLock.SystemConfigUpdate, async () => {
+          const result = await withEffectiveConfigWrite(this.configRepos(), async (repos) => {
+            const current = await readConfig(repos);
+            const next = structuredClone(current);
+            next.frameleafCloud.cloudBackup.enabled = false;
+            const saved = await updateConfig(repos, next);
+            return { oldConfig: current, newConfig: saved };
+          });
+          // FL-146 (FL-66): listed in the settings history as a Frameleaf Cloud change, under the same lock
+          await recordConfigHistory(this.historyRecorder(), result.oldConfig, result.newConfig, auth.user, {
+            kind: 'settings',
+            source: 'frameleaf-cloud',
+          });
+          return result;
         });
-        // FL-146 (FL-66): listed in the settings history as a Frameleaf Cloud change, under the same lock
-        await recordConfigHistory(this.historyRecorder(), result.oldConfig, result.newConfig, auth.user, {
-          kind: 'settings',
-          source: 'frameleaf-cloud',
-        });
-        return result;
       },
     );
     this.clearMemoryKey();
@@ -1093,6 +1105,7 @@ export class CloudBackupService {
       await this.reportAgentSettings(metadata.keyMode, false);
     }
     this.logger.log(`Cloud backup turned off by ${auth.user.id}; the bucket and its backups are kept`);
+
     return this.getStatus();
   }
 
@@ -1201,7 +1214,7 @@ export class CloudBackupService {
    * `DatabaseLock.FrameleafCloudBackupCheck` runs the cron that queues scheduled runs and the hourly check
    * that queues a verification when one is due.
    */
-  @OnEvent({ name: 'ConfigInit', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
   async onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
     this.scheduleLock = await this.databaseRepository.tryLock(DatabaseLock.FrameleafCloudBackupCheck);
     if (!this.scheduleLock) {
@@ -1513,7 +1526,7 @@ export class CloudBackupService {
     }
   }
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.stopping = false;
     this.tickHandle ??= setInterval(() => this.tick(), CLOUD_BACKUP_TICK_MS);
@@ -2673,16 +2686,28 @@ export class CloudBackupService {
       return false;
     }
     if (written.status === MediaOperationStatus.Cancelling || written.cancelRequestedAt) {
-      await this.operations.acknowledgeCancel(id, claimToken, { released: false });
-      await this.endManifest(result, 'cancelled');
-      await this.recordRun(operation, result, 'cancelled');
-      await this.reportManagedRun(operation, result, 'cancelled');
-      this.logger.log(`Cloud backup run ${id} cancelled`);
+      if (await this.operations.acknowledgeCancel(id, claimToken, { released: false })) {
+        await this.endManifest(result, 'cancelled');
+        await this.recordRun(operation, result, 'cancelled');
+        await this.reportManagedRun(operation, result, 'cancelled');
+        this.logger.log(`Cloud backup run ${id} cancelled`);
+      }
       return false;
     }
-    if (written.pauseRequestedAt && (await this.operations.settlePause(id, claimToken))) {
-      this.logger.log(`Cloud backup run ${id} paused`);
-      return false;
+    if (written.pauseRequestedAt) {
+      if (await this.operations.settlePause(id, claimToken)) {
+        this.logger.log(`Cloud backup run ${id} paused`);
+        return false;
+      }
+      // A withdrawn pause can continue; cancellation or claim loss cannot.
+      if (!(await this.operations.heartbeat(id, claimToken, CLOUD_BACKUP_LEASE_MS, { requireActiveClaim: true }))) {
+        if (await this.operations.acknowledgeCancel(id, claimToken, { released: false })) {
+          await this.endManifest(result, 'cancelled');
+          await this.recordRun(operation, result, 'cancelled');
+          await this.reportManagedRun(operation, result, 'cancelled');
+        }
+        return false;
+      }
     }
     return true;
   }
@@ -2760,13 +2785,25 @@ export class CloudBackupService {
     }
     reportExecutionProgress(`task:${taskOf(operation)}`, units.processed);
     if (written.status === MediaOperationStatus.Cancelling || written.cancelRequestedAt) {
-      await this.operations.acknowledgeCancel(operation.id, claimToken, { released: false });
+      if (!(await this.operations.acknowledgeCancel(operation.id, claimToken, { released: false }))) return 'stopped';
       this.logger.log(`Cloud backup operation ${operation.id} cancelled`);
       return 'cancelled';
     }
-    if (written.pauseRequestedAt && (await this.operations.settlePause(operation.id, claimToken))) {
-      this.logger.log(`Cloud backup operation ${operation.id} paused`);
-      return 'stopped';
+    if (written.pauseRequestedAt) {
+      if (await this.operations.settlePause(operation.id, claimToken)) {
+        this.logger.log(`Cloud backup operation ${operation.id} paused`);
+        return 'stopped';
+      }
+      // A withdrawn pause can continue; cancellation or claim loss cannot.
+      if (
+        !(await this.operations.heartbeat(operation.id, claimToken, CLOUD_BACKUP_LEASE_MS, {
+          requireActiveClaim: true,
+        }))
+      ) {
+        return (await this.operations.acknowledgeCancel(operation.id, claimToken, { released: false }))
+          ? 'cancelled'
+          : 'stopped';
+      }
     }
     return 'continue';
   }
@@ -4227,10 +4264,12 @@ export class CloudBackupService {
   }
 
   private async updateMetadata(change: (current: FrameleafCloudBackup) => FrameleafCloudBackup) {
-    const current = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
-    if (current) {
-      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudBackup, change(current));
-    }
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudBackup, async () => {
+      const current = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+      if (current) {
+        await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudBackup, change(current));
+      }
+    });
   }
 
   private notify(notice: {

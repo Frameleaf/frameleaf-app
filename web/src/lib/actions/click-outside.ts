@@ -6,42 +6,36 @@ interface Options {
   onEscape?: () => void;
 }
 
-/**
- * Calls a function when a click occurs outside of the element, or when the escape key is pressed.
- * @param node
- * @param options Object containing onOutclick and onEscape functions
- * @returns
- */
-export function clickOutside(node: HTMLElement, options: Options = {}): ActionReturn {
-  const { onOutclick, onEscape } = options;
+const escapeShortcut = { key: 'Escape' } as const;
 
+/** Keeps outside-click and Escape callbacks current while retaining the same listeners. */
+export function clickOutside(node: HTMLElement, options: Options = {}): ActionReturn<Options | undefined> {
   const handleClick = (event: MouseEvent) => {
-    const targetNode = event.target as Node | null;
-    if (node.contains(targetNode)) {
+    if (node.contains(event.target as Node | null)) {
       return;
     }
-
+    const { onOutclick } = options;
     onOutclick?.();
   };
 
   const handleKey = (event: KeyboardEvent) => {
-    if (!matchesShortcut(event, { key: 'Escape' })) {
-      return;
-    }
-
-    if (onEscape) {
+    const { onEscape } = options;
+    if (onEscape && matchesShortcut(event, escapeShortcut)) {
       event.stopPropagation();
       onEscape();
     }
   };
 
-  document.addEventListener('mousedown', handleClick, { capture: false });
-  node.addEventListener('keydown', handleKey, { capture: false });
+  document.addEventListener('mousedown', handleClick);
+  node.addEventListener('keydown', handleKey);
 
   return {
+    update(next: Options = {}) {
+      options = next;
+    },
     destroy() {
-      document.removeEventListener('mousedown', handleClick, false);
-      node.removeEventListener('keydown', handleKey, false);
+      document.removeEventListener('mousedown', handleClick);
+      node.removeEventListener('keydown', handleKey);
     },
   };
 }

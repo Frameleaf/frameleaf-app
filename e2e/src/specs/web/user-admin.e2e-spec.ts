@@ -166,7 +166,7 @@ test.describe('User Administration', () => {
       await page.goto(`${usersManager}&user=${user.userId}`);
       await page.getByRole('button', { name: 'Edit account', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Edit account' });
-      await dialog.getByLabel('Storage limit (GiB)').fill('10');
+      await dialog.getByLabel('Storage limit (GB)').fill('10');
       await dialog.getByLabel('Storage label', { exact: true }).fill('quota-user');
       await expect(
         dialog.getByText(
@@ -184,7 +184,8 @@ test.describe('User Administration', () => {
           );
           return { quotaSizeInBytes, storageLabel };
         })
-        .toEqual({ quotaSizeInBytes: 10 * 1024 ** 3, storageLabel: 'quota-user' });
+        // D5: the quota field is decimal GB
+        .toEqual({ quotaSizeInBytes: 10 * 1000 ** 3, storageLabel: 'quota-user' });
     });
 
     // FL-76: delete keeps the account for the recovery delay (typed email to confirm); it is then

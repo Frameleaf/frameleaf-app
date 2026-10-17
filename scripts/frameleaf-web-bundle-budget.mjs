@@ -135,12 +135,11 @@ const main = () => {
   const manifest = JSON.parse(
     readFileSync(join(client, ".vite/manifest.json"), "utf8"),
   );
-  const dictionary = parseDictionary(
-    readFileSync(
-      join(web, ".svelte-kit/generated/client-optimized/app.js"),
-      "utf8",
-    ),
+  const app = Object.keys(manifest).find(
+    (key) => manifest[key].isEntry && key.endsWith("/app.js"),
   );
+  if (!app) throw new Error("the manifest has no generated app entry");
+  const dictionary = parseDictionary(readFileSync(join(web, app), "utf8"));
   const sizes = measure({
     manifest,
     dictionary,

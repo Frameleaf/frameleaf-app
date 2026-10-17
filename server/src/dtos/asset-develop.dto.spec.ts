@@ -8,8 +8,55 @@ import {
   AssetDevelopSaveDto,
   DarktableDevelopRecipeSchema,
   KnownAssetDevelopRecipeSchema,
+  recipeJsonError,
   recipeStrokePoints,
 } from 'src/dtos/asset-develop.dto.js';
+
+describe('recipe JSON envelope budgets', () => {
+  it('preserves the encoder empty-input behavior when native JSON serialization returns undefined', () => {
+    const value = { version: 1 };
+    Object.defineProperty(value, 'toJSON', { value: () => {} });
+    expect(recipeJsonError(value)).toBeUndefined();
+  });
+
+  it('preserves UTF-8 limits, lone surrogates and unsafe-key refusal', () => {
+    for (const value of ['a'.repeat(65_534), '\u{D800}'.repeat(10_922), { ['😀'.repeat(64)]: null }]) {
+      expect(recipeJsonError(value)).toBeUndefined();
+    }
+    for (const value of [
+      'a'.repeat(65_535),
+      '\u{D800}'.repeat(10_923),
+      { ['😀'.repeat(65)]: null },
+      JSON.parse('{"__proto__":1}'),
+      Infinity,
+      Object.create(null),
+    ]) {
+      expect(recipeJsonError(value)).toBe('Recipe must be bounded plain JSON without unsafe keys');
+    }
+    const oversized = Array.from({ length: 8 }, () => Array.from({ length: 4090 }, () => Number.MAX_VALUE));
+    expect(recipeJsonError(oversized)).toBe('Recipe exceeds 512 KiB');
+  });
+
+  it('does not construct an encoder for each value and key', () => {
+    const NativeTextEncoder = TextEncoder;
+    let constructions = 0;
+    vi.stubGlobal(
+      'TextEncoder',
+      class extends NativeTextEncoder {
+        constructor() {
+          super();
+          constructions++;
+        }
+      },
+    );
+    try {
+      expect(recipeJsonError({ version: 1, values: ['one', 'two', true, null, '😀', '\u{D800}'] })).toBeUndefined();
+      expect(constructions).toBeLessThanOrEqual(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
 
 describe('AssetDevelopRecipeDto', () => {
   it('accepts a minimal recipe and fills the defaults', () => {
@@ -209,14 +256,16 @@ it('keeps existing version1 public save validation while retaining opaque fields
 
 describe('Native development API schemas', () => {
   it('publishes explicit double/integer metadata for SDK generation, including nested controls', () => {
-    const schema = z.toJSONSchema(DarktableDevelopRecipeSchema, { target: 'openapi-3.0', io: 'input' });
+    const document = z.toJSONSchema(DarktableDevelopRecipeSchema, { target: 'openapi-3.0', io: 'input' });
+    const definitions = document.definitions as Record<string, typeof document>;
+    const schema = document.$ref ? definitions[document.$ref.slice('#/definitions/'.length)] : document;
     const visit = (value: unknown) => {
       if (!value || typeof value !== 'object') return;
       const node = value as Record<string, unknown>;
       if (node.type === 'number') expect(node.format).toBe('double');
       for (const child of Object.values(node)) visit(child);
     };
-    visit(schema);
+    visit(document);
     expect(schema.properties?.version).toMatchObject({ type: 'integer', format: 'int32', enum: [2] });
   });
 });

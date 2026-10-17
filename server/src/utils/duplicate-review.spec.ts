@@ -102,6 +102,45 @@ describe('duplicate review rules', () => {
       ]);
     });
 
+    it('keeps tied maxima and reason ordering in a large mixed group', () => {
+      const assets = Array.from({ length: 512 }, (_, index) =>
+        image(`copy-${index}`, null, {
+          exifImageWidth: index % 2 === 0 ? 200 : 100,
+          exifImageHeight: 100,
+          fileSizeInByte: index % 3 === 0 ? 20 : 10,
+          make: index % 5 === 0 ? 'Canon' : null,
+        }),
+      );
+      const reasons = duplicateQualityReasons(assets);
+      expect(reasons.size).toBe(512);
+      expect(reasons.get('copy-0')).toEqual([
+        DuplicateQualityReason.HighestResolution,
+        DuplicateQualityReason.LargestFile,
+        DuplicateQualityReason.MostMetadata,
+      ]);
+      expect(reasons.get('copy-30')).toEqual(reasons.get('copy-0'));
+      expect(reasons.get('copy-1')).toEqual([DuplicateQualityReason.LowerResolution]);
+      expect(reasons.get('copy-2')).toEqual([DuplicateQualityReason.HighestResolution]);
+      expect(reasons.get('copy-3')).toEqual([
+        DuplicateQualityReason.LowerResolution,
+        DuplicateQualityReason.LargestFile,
+      ]);
+    });
+
+    it('retains invalid numeric comparisons without inventing a size or resolution maximum', () => {
+      const reasons = duplicateQualityReasons([
+        image('missing', null),
+        image('invalid', null, { fileSizeInByte: NaN, exifImageWidth: NaN, exifImageHeight: 100 }),
+        image('valid', null, { fileSizeInByte: 10, exifImageWidth: 100, exifImageHeight: 100 }),
+      ]);
+      expect(reasons.get('missing')).toEqual([]);
+      expect(reasons.get('invalid')).toEqual([]);
+      expect(reasons.get('valid')).toEqual([
+        DuplicateQualityReason.LowerResolution,
+        DuplicateQualityReason.MostMetadata,
+      ]);
+    });
+
     it('says nothing about identical copies', () => {
       const a = image('a', null, { exifImageWidth: 100, exifImageHeight: 100, fileSizeInByte: 10 });
       const b = image('b', null, { exifImageWidth: 100, exifImageHeight: 100, fileSizeInByte: 10 });

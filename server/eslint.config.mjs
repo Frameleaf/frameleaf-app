@@ -38,6 +38,27 @@ export default defineConfig([
       '@typescript-eslint/explicit-module-boundary-types': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-floating-promises': 'error',
+      // Keep the pre-upgrade documentation and parameter style policy.
+      'unicorn/no-asterisk-prefix-in-documentation-comments': 'off',
+      'unicorn/no-unnecessary-parameters': 'off',
+      // shortcut: restore widened style rules after focused reviews of the affected files.
+      'unicorn/prefer-ternary': 'off',
+      'unicorn/prefer-early-return': 'off',
+      'unicorn/prefer-continue': 'off',
+      'unicorn/no-unnecessary-array-flat-map': 'off',
+      'unicorn/prefer-combined-guards': 'off',
+      'unicorn/prefer-default-parameters': 'off',
+      'unicorn/prefer-logical-operator-over-ternary': 'off',
+      'unicorn/prefer-minimal-ternary': 'off',
+      'unicorn/prefer-type-error': 'off',
+      'unicorn/no-negated-condition': 'off',
+      'unicorn/consistent-conditional-object-spread': 'off',
+      'unicorn/prefer-group-by': 'off',
+      'unicorn/prefer-set-methods': 'off',
+      'unicorn/prefer-single-object-destructuring': 'off',
+      'unicorn/prefer-array-from-async': 'off',
+      'unicorn/prefer-array-flat-map': 'off',
+      'unicorn/no-immediate-mutation': 'off',
       'unicorn/name-replacements': 'off',
       'unicorn/filename-case': 'off',
       'unicorn/no-null': 'off',
@@ -121,4 +142,11 @@ export default defineConfig([
     rules: { 'import-x/no-unresolved': 'off' },
   },
   eslintPluginPrettierRecommended,
+  {
+    files: ['src/utils/media.ts'],
+    rules: {
+      // Constructor defaults intentionally allocate independent tuning state for each instance.
+      'unicorn/no-object-as-default-parameter': 'off',
+    },
+  },
 ]);

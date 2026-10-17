@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
-import { parse } from 'cookie';
+import { parseCookie as parse } from 'cookie';
 import { DateTime } from 'luxon';
 import { IncomingHttpHeaders } from 'node:http';
 import {
@@ -27,11 +27,11 @@ import {
   SignUpDto,
 } from 'src/dtos/auth.dto.js';
 import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
-import { AdminAuditAction, AuthType, ImmichCookie, ImmichHeader, ImmichQuery, JobName, Permission } from 'src/enum.js';
+import { AdminAuditAction, AuthCookie, AuthType, JobName, Permission, RequestHeader, RequestQuery } from 'src/enum.js';
 import { OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
-import { HumanReadableSize } from 'src/utils/bytes.js';
+import { DecimalSize } from 'src/utils/bytes.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { type SetupClient, whileClaimable } from 'src/utils/frameleaf-setup-gate.js';
 import {
@@ -86,6 +86,8 @@ const PIN_FAILURE_RESET_MS = 30 * 60 * 1000; // failures expire after 30 min of 
 
 type PinAttemptState = { failureCount: number; lastFailureAt: number; lockedUntil: number };
 const pinAttemptsByUser = new Map<string, PinAttemptState>();
+// Keep PIN backoff admission serial while bcrypt runs outside the event loop.
+const pinChecksByUser = new Map<string, Promise<void>>();
 
 function lookupPinLockoutMs(failureCount: number): number {
   let lockout = 0;
@@ -206,14 +208,14 @@ export class AuthService extends BaseService {
     const user = await this.userRepository.getByEmail(dto.email, { withPassword: true });
     // Always run bcrypt so response time is constant regardless of whether the email
     // is registered, preventing timing-based user enumeration.
-    const isAuthenticated = this.cryptoRepository.compareBcrypt(dto.password, user?.password ?? LOGIN_DUMMY_HASH);
+    const isAuthenticated = await this.cryptoRepository.compareBcrypt(dto.password, user?.password ?? LOGIN_DUMMY_HASH);
 
     if (!user || !user.password || !isAuthenticated) {
       this.logger.warn(`Failed login attempt for user ${dto.email} from ip address ${details.clientIp}`);
       throw new UnauthorizedException('Incorrect email or password');
     }
 
-    return this.createLoginResponse(user, details);
+    return this.createLoginResponse(user, details, { passwordHash: user.password });
   }
 
   async logout(auth: AuthDto, authType: AuthType): Promise<LogoutResponseDto> {
@@ -357,7 +359,7 @@ export class AuthService extends BaseService {
   async changePassword(auth: AuthDto, dto: ChangePasswordDto): Promise<UserAdminResponseDto> {
     const { password, newPassword } = dto;
     const user = await this.userRepository.getForChangePassword(auth.user.id);
-    const isValid = this.validateSecret(password, user.password);
+    const isValid = await this.validateSecret(password, user.password);
     if (!isValid) {
       throw new BadRequestException('Wrong password');
     }
@@ -416,47 +418,58 @@ export class AuthService extends BaseService {
   }
 
   private async validatePinCode(userId: string, dto: { pinCode?: string; password?: string }) {
-    // Throttle PIN brute-force per user (security.md M5).
-    let now = Date.now();
-    let state = pinAttemptsByUser.get(userId);
-    if (state && state.lockedUntil > now) {
-      const retryAfterSec = Math.ceil((state.lockedUntil - now) / 1000);
-      throw new UnauthorizedException(`Too many failed PIN attempts. Try again in ${retryAfterSec} seconds.`);
-    }
-
-    const user = await this.userRepository.getForPinCode(userId);
-    // A pending credential read must observe failures from other requests before checking another guess.
-    now = Date.now();
-    state = pinAttemptsByUser.get(userId);
-    if (state && state.lockedUntil > now) {
-      const retryAfterSec = Math.ceil((state.lockedUntil - now) / 1000);
-      throw new UnauthorizedException(`Too many failed PIN attempts. Try again in ${retryAfterSec} seconds.`);
-    }
+    const previous = pinChecksByUser.get(userId);
+    const { promise, resolve } = Promise.withResolvers<void>();
+    pinChecksByUser.set(userId, promise);
+    await previous;
     try {
-      this.validatePinCodeSecret(user, dto);
-    } catch (error) {
-      // Record failure and apply backoff. Failures expire after a quiet window.
-      const prev =
-        state && now - state.lastFailureAt < PIN_FAILURE_RESET_MS
-          ? state
-          : { failureCount: 0, lastFailureAt: 0, lockedUntil: 0 };
-      const failureCount = prev.failureCount + 1;
-      const lockoutMs = lookupPinLockoutMs(failureCount);
-      pinAttemptsByUser.set(userId, {
-        failureCount,
-        lastFailureAt: now,
-        lockedUntil: lockoutMs > 0 ? now + lockoutMs : 0,
-      });
-      throw error;
+      // Throttle PIN brute-force per user (security.md M5).
+      let now = Date.now();
+      let state = pinAttemptsByUser.get(userId);
+      if (state && state.lockedUntil > now) {
+        const retryAfterSec = Math.ceil((state.lockedUntil - now) / 1000);
+        throw new UnauthorizedException(`Too many failed PIN attempts. Try again in ${retryAfterSec} seconds.`);
+      }
+
+      const user = await this.userRepository.getForPinCode(userId);
+      // A pending credential read must observe failures from other requests before checking another guess.
+      now = Date.now();
+      state = pinAttemptsByUser.get(userId);
+      if (state && state.lockedUntil > now) {
+        const retryAfterSec = Math.ceil((state.lockedUntil - now) / 1000);
+        throw new UnauthorizedException(`Too many failed PIN attempts. Try again in ${retryAfterSec} seconds.`);
+      }
+      try {
+        await this.validatePinCodeSecret(user, dto);
+      } catch (error) {
+        // Record failure and apply backoff. Failures expire after a quiet window.
+        const prev =
+          state && now - state.lastFailureAt < PIN_FAILURE_RESET_MS
+            ? state
+            : { failureCount: 0, lastFailureAt: 0, lockedUntil: 0 };
+        const failureCount = prev.failureCount + 1;
+        const lockoutMs = lookupPinLockoutMs(failureCount);
+        pinAttemptsByUser.set(userId, {
+          failureCount,
+          lastFailureAt: now,
+          lockedUntil: lockoutMs > 0 ? now + lockoutMs : 0,
+        });
+        throw error;
+      }
+
+      // Successful credential check resets the per-user counter.
+      pinAttemptsByUser.delete(userId);
+
+      return user;
+    } finally {
+      resolve();
+      if (pinChecksByUser.get(userId) === promise) {
+        pinChecksByUser.delete(userId);
+      }
     }
-
-    // Successful credential check resets the per-user counter.
-    pinAttemptsByUser.delete(userId);
-
-    return user;
   }
 
-  private validatePinCodeSecret(
+  private async validatePinCodeSecret(
     user: { pinCode: string | null; password: string | null },
     dto: { pinCode?: string; password?: string },
   ) {
@@ -465,11 +478,11 @@ export class AuthService extends BaseService {
     }
 
     if (dto.password) {
-      if (!this.validateSecret(dto.password, user.password)) {
+      if (!(await this.validateSecret(dto.password, user.password))) {
         throw new BadRequestException('Wrong password');
       }
     } else if (dto.pinCode) {
-      if (!this.validateSecret(dto.pinCode, user.pinCode)) {
+      if (!(await this.validateSecret(dto.pinCode, user.pinCode))) {
         throw new BadRequestException('Wrong PIN code');
       }
     } else {
@@ -653,14 +666,14 @@ export class AuthService extends BaseService {
     { headers, queryParams }: Omit<ValidateRequest, 'metadata'>,
     refreshElevation = true,
   ): Promise<AuthDto> {
-    const shareKey = (headers[ImmichHeader.SharedLinkKey] || queryParams[ImmichQuery.SharedLinkKey]) as string;
-    const shareSlug = (headers[ImmichHeader.SharedLinkSlug] || queryParams[ImmichQuery.SharedLinkSlug]) as string;
-    const session = (headers[ImmichHeader.UserToken] ||
-      headers[ImmichHeader.SessionToken] ||
-      queryParams[ImmichQuery.SessionKey] ||
+    const shareKey = (headers[RequestHeader.SharedLinkKey] || queryParams[RequestQuery.SharedLinkKey]) as string;
+    const shareSlug = (headers[RequestHeader.SharedLinkSlug] || queryParams[RequestQuery.SharedLinkSlug]) as string;
+    const session = (headers[RequestHeader.UserToken] ||
+      headers[RequestHeader.SessionToken] ||
+      queryParams[RequestQuery.SessionKey] ||
       this.getBearerToken(headers) ||
       this.getCookieToken(headers)) as string;
-    const apiKey = (headers[ImmichHeader.ApiKey] || queryParams[ImmichQuery.ApiKey]) as string;
+    const apiKey = (headers[RequestHeader.ApiKey] || queryParams[RequestQuery.ApiKey]) as string;
 
     if (shareKey) {
       return this.validateSharedLinkKey(shareKey);
@@ -797,7 +810,8 @@ export class AuthService extends BaseService {
           normalizedEmail,
         email: normalizedEmail,
         oauthId: profile.sub,
-        quotaSizeInBytes: storageQuota === null ? null : storageQuota * HumanReadableSize.GiB,
+        // D5: the claim and the default quota are decimal GB
+        quotaSizeInBytes: storageQuota === null ? null : storageQuota * DecimalSize.GB,
         storageLabel: storageLabel || null,
         isAdmin,
       });
@@ -807,7 +821,7 @@ export class AuthService extends BaseService {
       await this.syncProfilePicture(user, profile.picture);
     }
 
-    return this.createLoginResponse(user, loginDetails, oauthSid, oauthBearerToken);
+    return this.createLoginResponse(user, loginDetails, { sid: oauthSid, bearerToken: oauthBearerToken });
   }
 
   private async syncProfilePicture(user: UserAdmin, url: string) {
@@ -918,17 +932,17 @@ export class AuthService extends BaseService {
 
   private getCookieToken(headers: IncomingHttpHeaders): string | null {
     const cookies = parse(headers.cookie || '');
-    return cookies[ImmichCookie.AccessToken] || null;
+    return cookies[AuthCookie.AccessToken] || null;
   }
 
   private getCookieOauthState(headers: IncomingHttpHeaders): string | null {
     const cookies = parse(headers.cookie || '');
-    return cookies[ImmichCookie.OAuthState] || null;
+    return cookies[AuthCookie.OAuthState] || null;
   }
 
   private getCookieCodeVerifier(headers: IncomingHttpHeaders): string | null {
     const cookies = parse(headers.cookie || '');
-    return cookies[ImmichCookie.OAuthCodeVerifier] || null;
+    return cookies[AuthCookie.OAuthCodeVerifier] || null;
   }
 
   async validateSharedLinkKey(key: string | string[]): Promise<AuthDto> {
@@ -985,7 +999,7 @@ export class AuthService extends BaseService {
     throw new UnauthorizedException('Invalid API key');
   }
 
-  private validateSecret(inputSecret: string, existingHash?: string | null): boolean {
+  private async validateSecret(inputSecret: string, existingHash?: string | null): Promise<boolean> {
     if (!existingHash) {
       return false;
     }
@@ -1089,14 +1103,14 @@ export class AuthService extends BaseService {
   private async createLoginResponse(
     user: UserAdmin,
     loginDetails: LoginDetails,
-    oauthSid?: string,
-    oauthBearerToken?: string,
+    identity: { sid?: string; bearerToken?: string; passwordHash?: string } = {},
   ) {
     const { response } = await createSession(
       { sessionRepository: this.sessionRepository, cryptoRepository: this.cryptoRepository },
       user,
       loginDetails,
-      { sid: oauthSid, bearerToken: oauthBearerToken },
+      identity,
+      identity.passwordHash,
     );
     return response;
   }

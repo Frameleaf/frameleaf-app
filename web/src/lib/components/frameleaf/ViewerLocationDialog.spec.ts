@@ -1,6 +1,8 @@
 import { updateAsset } from '@frameleaf/sdk';
 import '@testing-library/jest-dom';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
+import { geolocationManager } from '$lib/managers/geolocation.manager.svelte';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import ViewerLocationDialog from './ViewerLocationDialog.svelte';
 
@@ -148,5 +150,24 @@ describe('ViewerLocationDialog (V-24)', () => {
     await fireEvent.input(screen.getByLabelText('longitude'), { target: { value: '' } });
     expect(screen.getByRole('alert')).toHaveTextContent('frameleaf_info_coordinates_invalid');
     expect(screen.getByRole('button', { name: 'save' })).toBeDisabled();
+  });
+
+  it('does not remember a point when an old save completes after sign-out', async () => {
+    const asset = located();
+    let complete!: (result: typeof asset) => void;
+    vi.mocked(updateAsset).mockReturnValueOnce(
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+    );
+    const onClose = vi.fn();
+    render(ViewerLocationDialog, { asset, onClose });
+    await fireEvent.keyDown(screen.getByRole('application'), { key: 'ArrowUp' });
+    await fireEvent.click(screen.getByRole('button', { name: 'save' }));
+    await waitFor(() => expect(updateAsset).toHaveBeenCalledOnce());
+    clearPrivateBrowserState();
+    complete(asset);
+    await waitFor(() => expect(onClose).toHaveBeenCalledWith(asset));
+    expect(geolocationManager.lastPoint).toBeUndefined();
   });
 });

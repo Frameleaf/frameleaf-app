@@ -30,6 +30,15 @@ actual catalog with every supported release's JSON fixture. Negative cases remov
 or alter real constraints/defaults/nullability. Static extraction does not itself
 prove those tests pass; no database or test was run locally during preparation.
 
+## Replayed Immich 2.x catalogs
+
+`2.x.json` holds the content-table catalog of each distinct Immich 2.x shape and
+`replayed-<release>.sql.gz.base64` its schema-only dump. Both come from replaying each
+tag's own `server/src/schema/migrations` into an empty PostgreSQL database with
+`scripts/immich-import-replay/run.sh`, which also records every 2.x release's migration
+ledger in `frozen-sources.json`. `provenance.json` records the tag, commit and dump hash.
+The hosted `legacy.spec.ts` restores one dump per shape and imports it end to end.
+
 CLIP's vector dimension is intentionally variable because upstream changes it
 when its configured model changes. Its actual typmod is fingerprinted and checked
 for transfer separately. Index fillfactor is physical tuning, not constraint

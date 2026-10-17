@@ -55,6 +55,23 @@ describe(EdgeProxyService.name, () => {
       });
     });
 
+    it('removes response fields named by Connection while preserving end-to-end fields', () => {
+      expect(
+        downstreamHeaders({
+          connection: ' keep-alive, X-Private-Hop, x-second-hop ',
+          'x-private-hop': 'internal connection state',
+          'x-second-hop': 'also private',
+          'set-cookie': ['first=1; HttpOnly', 'second=2; Secure'],
+          'content-range': 'bytes 2-4/10',
+          'strict-transport-security': 'max-age=0',
+        }),
+      ).toEqual({
+        'set-cookie': ['first=1; HttpOnly', 'second=2; Secure'],
+        'content-range': 'bytes 2-4/10',
+        'strict-transport-security': 'max-age=31536000',
+      });
+    });
+
     it('keeps an upgrade and sets HSTS on every answer', () => {
       const headers = upstreamHeaders({ upgrade: 'websocket', connection: 'Upgrade' }, arrival, SECRET, 'websocket');
       expect(headers).toMatchObject({ connection: 'upgrade', upgrade: 'websocket' });
@@ -98,7 +115,9 @@ describe(EdgeProxyService.name, () => {
         });
       });
       upstream.on('upgrade', (_request, socket) => {
-        socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n');
+        socket.write(
+          'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade, X-Private-Hop\r\nX-Private-Hop: internal state\r\nSet-Cookie: first=1\r\nSet-Cookie: second=2\r\n\r\n',
+        );
         socket.pipe(socket);
       });
       const upstreamPort = await listen(upstream);
@@ -227,6 +246,18 @@ describe(EdgeProxyService.name, () => {
       expect(seen).toHaveLength(2);
     });
 
+    it('does not forward connection-specific response fields to the visitor', async () => {
+      upstream.removeAllListeners('request');
+      upstream.on('request', (_request, response) => {
+        response.writeHead(200, { connection: 'keep-alive, X-Private-Hop', 'x-private-hop': 'internal state' });
+        response.end('completed');
+      });
+      const answer = await request({ path: '/api/server/ping' });
+      expect(answer).toMatchObject({ status: 200, body: 'completed' });
+      expect(answer.headers['x-private-hop']).toBeUndefined();
+      expect(answer.headers['strict-transport-security']).toBe('max-age=31536000');
+    });
+
     it('streams a chunked upload and passes ranges through', async () => {
       const chunked = { method: 'POST', path: '/api/assets', headers: { 'transfer-encoding': 'chunked' } };
       const upload = await request(chunked, ['part-1;', 'part-2;', 'part-3']);
@@ -315,6 +346,7 @@ describe(EdgeProxyService.name, () => {
     });
 
     it('forwards a websocket upgrade and splices it', async () => {
+      let upgradeHeaders: IncomingHttpHeaders | undefined;
       const echoed = await new Promise<string>((resolve, reject) => {
         const outgoing = http.request({
           host: '127.0.0.1',
@@ -324,6 +356,7 @@ describe(EdgeProxyService.name, () => {
         });
         outgoing.on('upgrade', (response, socket) => {
           expect(response.statusCode).toBe(101);
+          upgradeHeaders = response.headers;
           socket.once('data', (data: Buffer) => {
             resolve(data.toString());
             socket.destroy();
@@ -334,6 +367,26 @@ describe(EdgeProxyService.name, () => {
         outgoing.end();
       });
       expect(echoed).toBe('ping');
+      expect(upgradeHeaders?.['strict-transport-security']).toBe('max-age=31536000');
+      expect(upgradeHeaders?.['x-private-hop']).toBeUndefined();
+      expect(upgradeHeaders?.['set-cookie']).toEqual(['first=1', 'second=2']);
+    });
+
+    it('keeps separate cookies and filters hop fields on a rejected upgrade', async () => {
+      upstream.removeAllListeners('upgrade');
+      upstream.on('upgrade', (_request, socket) => {
+        socket.end(
+          'HTTP/1.1 403 Forbidden\r\nConnection: close, X-Private-Hop\r\nX-Private-Hop: internal state\r\nSet-Cookie: first=1\r\nSet-Cookie: second=2\r\nContent-Length: 6\r\n\r\ndenied',
+        );
+      });
+      const answer = await request({
+        path: '/api/socket.io/',
+        headers: { connection: 'Upgrade', upgrade: 'websocket' },
+      });
+      expect(answer).toMatchObject({ status: 403, body: 'denied' });
+      expect(answer.headers['set-cookie']).toEqual(['first=1', 'second=2']);
+      expect(answer.headers['x-private-hop']).toBeUndefined();
+      expect(answer.headers['strict-transport-security']).toBe('max-age=31536000');
     });
 
     it('fails closed without the edge secret', async () => {

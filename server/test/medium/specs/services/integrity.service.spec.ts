@@ -449,7 +449,9 @@ describe(IntegrityService.name, () => {
         path: '/path/to/existing',
       });
 
-      storage.stat.mockRejectedValueOnce(new Error('ENOENT')).mockResolvedValueOnce({} as never);
+      storage.stat
+        .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }))
+        .mockResolvedValueOnce({} as never);
 
       await sut.handleUntrackedRefresh({
         items: [
@@ -579,7 +581,7 @@ describe(IntegrityService.name, () => {
 
       storage.stat
         .mockResolvedValueOnce({} as never)
-        .mockRejectedValueOnce(new Error('ENOENT'))
+        .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }))
         .mockResolvedValueOnce({} as never);
 
       await sut.handleMissingFiles({
@@ -626,7 +628,7 @@ describe(IntegrityService.name, () => {
 
       storage.stat
         .mockResolvedValueOnce({} as never)
-        .mockRejectedValueOnce(new Error('ENOENT'))
+        .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }))
         .mockResolvedValueOnce({} as never);
 
       await sut.handleMissingRefresh({

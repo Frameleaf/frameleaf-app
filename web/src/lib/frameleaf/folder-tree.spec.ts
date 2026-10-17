@@ -340,9 +340,11 @@ describe('folder files', () => {
   it('formats sizes as the prototype does', () => {
     expect(formatBytes(0)).toBe('0 B');
     expect(formatBytes(null)).toBe('0 B');
-    expect(formatBytes(812 * 1024)).toBe('812 KB');
-    expect(formatBytes(4.2 * 1024 * 1024)).toBe('4.2 MB');
-    expect(formatBytes(12 * 1024 ** 3)).toBe('12 GB');
+    // Decimal units (D5).
+    expect(formatBytes(812_000)).toBe('812 KB');
+    expect(formatBytes(4_200_000)).toBe('4.2 MB');
+    expect(formatBytes(12 * 1000 ** 3)).toBe('12 GB');
+    expect(formatBytes(1024 ** 3)).toBe('1.1 GB');
   });
 });
 

@@ -1,27 +1,25 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { focusTrap } from '$lib/actions/focus-trap';
-  import RunningJobsSection from '$lib/components/frameleaf/RunningJobsSection.svelte';
   import NotificationItem from '$lib/components/shared-components/navigation-bar/NotificationItem.svelte';
   import { OpenQueryParam } from '$lib/constants';
-  import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { notificationManager } from '$lib/stores/notification-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import { NotificationType, type NotificationDto } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
   import { mdiBellOutline, mdiClose } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import { motionFlip } from '$lib/frameleaf/motion';
 
   /**
    * The notifications panel, in the prototype's design (`SystemPanels.jsx` NotificationsPanel).
    *
-   * Two things live here. Above, what is running now — the viewer's own background jobs and, for an
-   * administrator, the server's queues — each with progress and a pause/play control (FL-104,
-   * owner request September 23, 2026). Below, the unread notifications, whose behaviour is the
-   * notification manager's and is unchanged: opening one marks it read and goes to its target.
+   * Notifications only (SHELL-P1, owner 2026-10-16): opening one marks it read, goes to its target
+   * and closes the panel. Work in progress is not listed here; the top bar's activity ring and the
+   * Activity page own it.
    */
 
   /** `onClose` is the close button; `onNavigate` is a row taking the person somewhere else. */
@@ -34,22 +32,38 @@
 
   // As in the prototype, the panel takes focus when it opens so the keyboard starts inside it.
   onMount(() => panel?.focus());
-  const nothingRunning = $derived(runningJobsSession.rows.length === 0);
+
+  let alive = true;
+  onDestroy(() => {
+    alive = false;
+  });
+  const capturePanel = () => {
+    const isCurrentSession = authManager.captureSession();
+    return () => alive && isCurrentSession();
+  };
 
   const markAsRead = async (id: string) => {
+    const isCurrent = capturePanel();
     try {
       await notificationManager.markAsRead(id);
     } catch (error) {
-      handleError(error, $t('errors.failed_to_update_notification_status'));
+      if (isCurrent()) {
+        handleError(error, $t('errors.failed_to_update_notification_status'));
+      }
     }
   };
 
   const markAllAsRead = async () => {
+    const isCurrent = capturePanel();
     try {
       await notificationManager.markAllAsRead();
-      toastManager.info($t('marked_all_as_read'));
+      if (isCurrent()) {
+        toastManager.info($t('marked_all_as_read'));
+      }
     } catch (error) {
-      handleError(error, $t('errors.failed_to_update_notification_status'));
+      if (isCurrent()) {
+        handleError(error, $t('errors.failed_to_update_notification_status'));
+      }
     }
   };
 
@@ -111,16 +125,31 @@
 
   /** The prototype's per-row dismiss (SystemPanels.jsx `notif-dismiss`, September 24 "Small actions"). */
   const dismiss = async (notification: NotificationDto) => {
+    const isCurrent = capturePanel();
     try {
       await notificationManager.dismiss(notification.id);
     } catch (error) {
-      handleError(error, $t('errors.frameleaf_notification_dismiss_failed'));
+      if (isCurrent()) {
+        handleError(error, $t('errors.frameleaf_notification_dismiss_failed'));
+      }
     }
   };
 
+  // The prototype's `open`: mark it read, go to its target, close the panel.
   const onclick = async (notification: NotificationDto) => {
+    const isCurrent = capturePanel();
     await markAsRead(notification.id);
-    await handleNotificationAction(notification);
+    if (!isCurrent()) {
+      return;
+    }
+    try {
+      await handleNotificationAction(notification);
+      onNavigate?.();
+    } catch (error) {
+      if (isCurrent()) {
+        handleError(error, $t('errors.something_went_wrong'));
+      }
+    }
   };
 </script>
 
@@ -146,17 +175,11 @@
   </header>
 
   <div class="fl-notif-body">
-    <RunningJobsSection onNavigate={onNavigate ?? onClose} />
-
     {#if noUnreadNotifications}
-      <div class="fl-notif-empty" class:compact={!nothingRunning}>
-        {#if nothingRunning}
-          <Icon icon={mdiBellOutline} size="28" aria-hidden="true" />
-          <p>{$t('frameleaf_notifications_empty')}</p>
-          <span>{$t('frameleaf_notifications_empty_help')}</span>
-        {:else}
-          <span>{$t('no_notifications')}</span>
-        {/if}
+      <div class="fl-notif-empty">
+        <Icon icon={mdiBellOutline} size="28" aria-hidden="true" />
+        <p>{$t('frameleaf_notifications_empty')}</p>
+        <span>{$t('frameleaf_notifications_empty_help')}</span>
       </div>
     {:else}
       <ul class="fl-notif-list">
@@ -304,9 +327,6 @@
     padding: 2.25rem 1.5rem;
     text-align: center;
     color: var(--fl-muted);
-  }
-  .fl-notif-empty.compact {
-    padding: 1rem 1.5rem;
   }
   .fl-notif-empty p {
     margin: 0.25rem 0 0;

@@ -1,5 +1,29 @@
-import { describe, expect, it } from 'vitest';
-import { getKeysDeep, globToPostgresRegex, removeOpenApi30IncompatibleKeys, unsetDeep } from 'src/utils/misc.js';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  batched,
+  getKeyByValue,
+  getKeysDeep,
+  globToPostgresRegex,
+  removeOpenApi30IncompatibleKeys,
+  unsetDeep,
+} from 'src/utils/misc.js';
+
+describe('getKeyByValue', () => {
+  it('returns the first own enumerable key with an exact value match', () => {
+    const object = Object.assign(Object.create({ inherited: 42 }), { first: 42, second: 42 });
+    Object.defineProperty(object, 'hidden', { value: 'hidden' });
+    expect(getKeyByValue(object, 42)).toBe('first');
+    expect(getKeyByValue(object, 'hidden')).toBeUndefined();
+    expect(getKeyByValue({ number: 42 }, '42')).toBeUndefined();
+    expect(getKeyByValue({ number: NaN }, NaN)).toBeUndefined();
+  });
+
+  it('supports objects without a prototype', () => {
+    const object = Object.assign(Object.create(null), { job: 'run' });
+    expect(getKeyByValue(object, 'run')).toBe('job');
+    expect(getKeyByValue(object, 'missing')).toBeUndefined();
+  });
+});
 
 describe('OpenAPI 3.0 literals', () => {
   it('preserves false and nullable string literals as single-value enums without treating a property named const as a keyword', () => {
@@ -49,6 +73,99 @@ describe('getKeysDeep', () => {
 
   it('should list nested properties', () => {
     expect(getKeysDeep({ foo: 'bar', hello: { world: true } })).toEqual(['foo', 'hello.world']);
+  });
+
+  it("preserves depth-first ordering, shared objects and the caller's path", () => {
+    const shared = { value: null };
+    const path = ['config', ''];
+    expect(getKeysDeep({ first: shared, ignored: {}, second: shared, last: false }, path)).toEqual([
+      'config..first.value',
+      'config..second.value',
+      'config..last',
+    ]);
+    expect(path).toEqual(['config', '']);
+  });
+
+  it('does not invoke function properties or include undefined values', () => {
+    const callback = vi.fn();
+    expect(getKeysDeep({ callback, missing: undefined, present: null })).toEqual(['present']);
+    expect(callback).not.toHaveBeenCalled();
+  });
+
+  it('walks deeply nested objects without using the call stack', () => {
+    let target: object = { value: true };
+    for (let index = 0; index < 5000; index++) {
+      target = { nested: target };
+    }
+    expect(getKeysDeep(target)).toEqual([`${'nested.'.repeat(5000)}value`]);
+  });
+
+  it('handles a nested object wider than the function argument limit', () => {
+    const nested = Object.fromEntries(Array.from({ length: 150_000 }, (_, index) => [`key${index}`, index]));
+    const keys = getKeysDeep({ nested });
+    expect(keys).toHaveLength(150_000);
+    expect(keys[0]).toBe('nested.key0');
+    expect(keys.at(-1)).toBe('nested.key149999');
+  });
+
+  it('rejects circular objects', () => {
+    const target: Record<string, unknown> = {};
+    target.self = target;
+    expect(() => getKeysDeep(target)).toThrow(RangeError);
+  });
+});
+
+describe('batched', () => {
+  const source = async function* (items: number[]) {
+    for (const item of items) {
+      yield await new Promise<number>((resolve) => queueMicrotask(() => resolve(item)));
+    }
+  };
+
+  it.each([
+    [[], 2, []],
+    [[1], 2, [[1]]],
+    [
+      [1, 2, 3, 4],
+      2,
+      [
+        [1, 2],
+        [3, 4],
+      ],
+    ],
+    [[1, 2, 3], 2, [[1, 2], [3]]],
+    [[1, 2, 3], 1, [[1], [2], [3]]],
+  ])('groups %j by %i without modifying earlier batches', async (items, size, expected) => {
+    const result: number[][] = await Array.fromAsync(batched(source(items), size));
+    expect(result).toEqual(expected);
+    expect(new Set(result).size).toBe(result.length);
+  });
+
+  it.each([0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])(
+    'rejects invalid batch size %s before reading the source',
+    async (size) => {
+      const iterable = { [Symbol.asyncIterator]: vi.fn(() => source([1, 2])) };
+      await expect(batched(iterable, size).next()).rejects.toThrow(RangeError);
+      expect(iterable[Symbol.asyncIterator]).not.toHaveBeenCalled();
+    },
+  );
+
+  it('closes the source when the consumer stops early', async () => {
+    const iterator = source([1, 2, 3]);
+    const close = vi.spyOn(iterator, 'return');
+    for await (const batch of batched(iterator, 1)) {
+      expect(batch).toEqual([1]);
+      break;
+    }
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('propagates source errors', async () => {
+    const error = new Error('stream failed');
+    const iterable = {
+      [Symbol.asyncIterator]: () => ({ next: () => Promise.reject(error) }),
+    };
+    await expect(batched(iterable, 1).next()).rejects.toBe(error);
   });
 });
 
@@ -104,4 +221,17 @@ describe('removeOpenApi30IncompatibleKeys', () => {
     removeOpenApi30IncompatibleKeys(schema);
     expect(schema).toEqual({ type: 'array', items: { type: 'array', items: point } });
   });
+});
+
+it('retains tuple bounds and formats when closed JSON Schema tuple items is false', () => {
+  const point = { type: 'number', format: 'double' };
+  const schema = { type: 'array', prefixItems: [point, point], items: false, minItems: 2, maxItems: 2 };
+  removeOpenApi30IncompatibleKeys(schema);
+  expect(schema).toEqual({ type: 'array', items: point, minItems: 2, maxItems: 2 });
+});
+
+it('leaves closed arrays without positional tuple metadata intact', () => {
+  const schema = { type: 'array', items: false };
+  removeOpenApi30IncompatibleKeys(schema);
+  expect(schema).toEqual({ type: 'array', items: false });
 });

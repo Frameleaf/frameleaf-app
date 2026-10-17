@@ -1,5 +1,6 @@
-import { Link, Section, Text } from '@react-email/components';
+import { toPlainText } from '@react-email/render';
 import * as React from 'react';
+import { Link, Section, Text } from 'react-email';
 import { ImmichButton } from 'src/emails/components/button.component.js';
 import ImmichLayout from 'src/emails/components/immich.layout.js';
 import { NO_LINK_SIGN_IN } from 'src/emails/components/no-link.js';
@@ -39,7 +40,7 @@ export const WelcomeEmail = ({ baseUrl, displayName, username, password, customT
   return (
     <ImmichLayout
       baseUrl={baseUrl}
-      preview={customTemplate ? emailContent.toString() : 'You have been invited to a Frameleaf server.'}
+      preview={customTemplate ? toPlainText(emailContent.toString()) : 'You have been invited to a Frameleaf server.'}
     >
       {customTemplate && (
         <Text className="m-0">

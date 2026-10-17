@@ -16,6 +16,7 @@
    * page, where the lifecycle and security actions live.
    */
   import Badge from '$lib/components/frameleaf/Badge.svelte';
+  import SupporterTag from '$lib/components/frameleaf/SupporterTag.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import {
     ACCOUNT_QUERY_MAX_LENGTH,
@@ -26,6 +27,7 @@
     type AccountFilter,
     type AccountSort,
   } from '$lib/frameleaf/accounts';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
   import { getByteUnitString } from '$lib/utils/byte-units';
@@ -42,6 +44,12 @@
     /** The account whose detail is open, marked in the list (as the Libraries table marks its row). */
     selectedId?: string;
   } = $props();
+
+  /**
+   * Supporter option (b): the "Supporter" tag beside a person. Everyone while this server holds a
+   * Server licence (the server feature), otherwise whoever holds their own Individual licence.
+   */
+  const isSupporter = (user: UserAdminResponseDto) => featureFlagsManager.value.supporter || !!user.license;
 
   const usageById = $derived(new Map(usage.map((row) => [row.userId, row])));
   const count = (value: number) => value.toLocaleString($locale);
@@ -116,7 +124,10 @@
             <a href={Route.viewUser(user)} aria-current={user.id === selectedId ? 'true' : undefined}>
               <UserAvatar {user} size="sm" />
               <span>
-                <strong>{user.name}</strong>
+                <span class="name">
+                  <strong>{user.name}</strong>
+                  {#if isSupporter(user)}<SupporterTag />{/if}
+                </span>
                 <small>{user.email}</small>
               </span>
             </a>
@@ -252,6 +263,13 @@
   a span {
     display: grid;
     min-width: 0;
+  }
+  /* The name and, for a supporter, the "Supporter" tag beside it (supporter option b). */
+  a .name {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--fl-space-2);
   }
   a small {
     font-size: var(--fl-font-small);

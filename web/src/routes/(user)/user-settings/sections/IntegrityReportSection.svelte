@@ -40,7 +40,7 @@
     type IntegrityReportResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiArrowLeft, mdiDeleteOutline, mdiDownload, mdiFileDocumentOutline, mdiRefresh } from '@mdi/js';
+  import { mdiDeleteOutline, mdiDownload, mdiFileDocumentOutline, mdiRefresh } from '@mdi/js';
   import { onDestroy, onMount } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
 
@@ -48,11 +48,10 @@
     type: IntegrityReport;
     /** How often the queue is polled for a finished check; tests shorten it. */
     pollMs?: number;
-    /** Where "back" goes: the page the list was opened from (File checks, FL-366). */
-    backHref?: string;
   };
 
-  let { type, pollMs = 2000, backHref = Route.systemMaintenance({ section: 'integrity' }) }: Props = $props();
+  // The way back to File checks is the page's own "‹ File checks" under its heading (ADMIN-P9).
+  let { type, pollMs = 2000 }: Props = $props();
 
   const refreshJobs: Record<IntegrityReport, ManualJobName> = {
     [IntegrityReport.UntrackedFile]: ManualJobName.IntegrityUntrackedFilesRefresh,
@@ -118,18 +117,27 @@
   let expectingUpdate = false;
 
   onMount(async () => {
-    integrityReport = await getIntegrityReport({ $type: type });
+    try {
+      integrityReport = await getIntegrityReport({ $type: type });
+    } catch (error) {
+      handleError(error, $t('errors.something_went_wrong'));
+    }
     while (running) {
-      const { integrityCheck } = await getQueuesLegacy();
-      // A queued refresh is not active yet, so waiting and delayed work counts as running too.
-      const { active, waiting, delayed } = integrityCheck.jobCounts;
-      if (integrityCheck.queueStatus.isActive || active + waiting + delayed > 0) {
-        expectingUpdate = true;
-      } else if (expectingUpdate) {
-        integrityReport = await getIntegrityReport({
-          $type: type,
-        });
-        expectingUpdate = false;
+      // One failed poll (a server restart, a dropped connection) is retried on the next one, not fatal.
+      try {
+        const { integrityCheck } = await getQueuesLegacy();
+        // A queued refresh is not active yet, so waiting and delayed work counts as running too.
+        const { active, waiting, delayed } = integrityCheck.jobCounts;
+        if (integrityCheck.queueStatus.isActive || active + waiting + delayed > 0) {
+          expectingUpdate = true;
+        } else if (expectingUpdate) {
+          integrityReport = await getIntegrityReport({
+            $type: type,
+          });
+          expectingUpdate = false;
+        }
+      } catch {
+        // Polled again after the pause below.
       }
 
       await asyncTimeout(pollMs);
@@ -183,10 +191,6 @@
 <OnEvents {onIntegrityReportDeleted} {onIntegrityReportDeleteStatus} />
 
 <section class="report" aria-labelledby="fl-integrity-report-title">
-  <a class="back" href={backHref}>
-    <Icon icon={mdiArrowLeft} size="16" aria-hidden={true} />
-    {$t('frameleaf_care_fc_title')}
-  </a>
   <div class="report-head">
     <div>
       <h2 id="fl-integrity-report-title">
@@ -316,18 +320,6 @@
     border-radius: var(--fl-radius-card);
     padding: 20px;
     min-width: 0;
-  }
-  .back {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 12px;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-    text-decoration: none;
-  }
-  .back:hover {
-    color: var(--fl-text);
   }
   .report-head {
     display: flex;

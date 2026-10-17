@@ -1,3 +1,4 @@
+import { ServerRole, UserAvatarColor } from '@frameleaf/sdk';
 import { fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import ProfileSection from '$lib/components/frameleaf/access/ProfileSection.svelte';
@@ -37,5 +38,86 @@ describe('ProfileSection avatar (FL-67)', () => {
     await waitFor(() => expect(sdkMock.createProfileImage).toHaveBeenCalled());
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(sdkMock.getMyUser).not.toHaveBeenCalled();
+  });
+
+  it('does not replace another account with a late colour response', async () => {
+    const previous = { ...authManager.user, avatarColor: UserAvatarColor.Primary };
+    authManager.setUser(previous);
+    let finish!: (value: typeof previous) => void;
+    sdkMock.updateMyUser.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    renderWithTooltips(ProfileSection, {});
+    await fireEvent.click(screen.getByRole('radio', { name: 'frameleaf_prefs_colour_pink' }));
+    await waitFor(() => expect(sdkMock.updateMyUser).toHaveBeenCalledOnce());
+    const next = userAdminFactory.build({ name: 'Next account' });
+    authManager.setUser(next);
+    finish({ ...previous, avatarColor: UserAvatarColor.Pink });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(authManager.user.id).toBe(next.id);
+  });
+
+  it('does not start a profile reload after the upload session changes', async () => {
+    const previous = authManager.user;
+    let finish!: (value: never) => void;
+    sdkMock.createProfileImage.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    sdkMock.getMyUser.mockResolvedValue({ ...previous, canUpload: true, serverRole: ServerRole.Admin });
+    renderWithTooltips(ProfileSection, {});
+    await choose(new File(['png'], 'me.png', { type: 'image/png' }));
+    await waitFor(() => expect(sdkMock.createProfileImage).toHaveBeenCalledOnce());
+    const next = userAdminFactory.build({ name: 'Next account' });
+    authManager.setUser(next);
+    finish({} as never);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sdkMock.getMyUser).not.toHaveBeenCalled();
+    expect(authManager.user.id).toBe(next.id);
+  });
+
+  it('ACCOUNT-P9: puts Save and Undo under the name and email fields, and saves from there', async () => {
+    sdkMock.updateMyUser.mockResolvedValue({ ...authManager.user, name: 'Morgan' });
+    renderWithTooltips(ProfileSection, {});
+
+    const save = screen.getByRole('button', { name: 'save' });
+    const undo = screen.getByRole('button', { name: 'frameleaf_prefs_profile_undo' });
+    const email = screen.getByRole('textbox', { name: 'frameleaf_prefs_profile_email' });
+    // after the fields in reading order, Save first as in the prototype
+    expect(email.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(save.compareDocumentPosition(undo) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(save).toBeDisabled();
+
+    await fireEvent.input(screen.getByRole('textbox', { name: 'frameleaf_prefs_profile_name' }), {
+      target: { value: 'Morgan' },
+    });
+    expect(save).toBeEnabled();
+    await fireEvent.click(save);
+    await waitFor(() =>
+      expect(sdkMock.updateMyUser).toHaveBeenCalledWith({
+        userUpdateMeDto: { name: 'Morgan', email: 'taylor@example.com' },
+      }),
+    );
+  });
+
+  it('does not show a previous account upload failure', async () => {
+    let fail!: (error: Error) => void;
+    sdkMock.createProfileImage.mockReturnValueOnce(
+      new Promise((_, reject) => {
+        fail = reject;
+      }),
+    );
+    renderWithTooltips(ProfileSection, {});
+    await choose(new File(['png'], 'me.png', { type: 'image/png' }));
+    await waitFor(() => expect(sdkMock.createProfileImage).toHaveBeenCalledOnce());
+    const next = userAdminFactory.build({ name: 'Next account' });
+    authManager.setUser(next);
+    fail(new Error('previous account upload failed'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(authManager.user.id).toBe(next.id);
   });
 });

@@ -90,34 +90,33 @@ const getEnhancedVideoDuplicateConfig = (machineLearning: SystemConfig['machineL
 
 const uniqueNonEmptyLines = (values: Array<string | null | undefined>): string[] => {
   const unique = new Set<string>();
-  const lines: string[] = [];
   for (const value of values) {
     if (!value) {
       continue;
     }
     for (const line of value.split(/\r?\n/)) {
       const trimmed = line.trim();
-      if (!trimmed || unique.has(trimmed)) {
-        continue;
+      if (trimmed) {
+        unique.add(trimmed);
       }
-      unique.add(trimmed);
-      lines.push(trimmed);
     }
   }
-  return lines;
+  return [...unique];
 };
 
 const getUniqueCoordinate = (assets: MapAsset[], key: 'latitude' | 'longitude'): number | null => {
-  const values = assets
-    .map((asset) => asset.exifInfo?.[key])
-    .filter((value): value is number => Number.isFinite(value));
-
-  if (values.length === 0) {
-    return null;
+  let coordinate: number | null = null;
+  for (const asset of assets) {
+    const value = asset.exifInfo?.[key];
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      continue;
+    }
+    if (coordinate !== null && coordinate !== value) {
+      return null;
+    }
+    coordinate = value === 0 ? 0 : value;
   }
-
-  const unique = new Set(values);
-  return unique.size === 1 ? [...unique][0] : null;
+  return coordinate;
 };
 
 @Injectable()
@@ -812,24 +811,25 @@ export class DuplicateService extends BaseService {
     asset: { id: string; duplicateId: string | null },
     duplicateAssets: AssetDuplicateResult[],
   ): Promise<string[]> {
-    const duplicateIds = [
-      ...new Set(
-        duplicateAssets
-          .filter((asset): asset is AssetDuplicateResult & { duplicateId: string } => !!asset.duplicateId)
-          .map((duplicate) => duplicate.duplicateId),
-      ),
-    ];
-
-    const targetDuplicateId = asset.duplicateId ?? duplicateIds.shift() ?? this.cryptoRepository.randomUUID();
-    const assetIdsToUpdate = duplicateAssets
-      .filter((asset) => asset.duplicateId !== targetDuplicateId)
-      .map((duplicate) => duplicate.assetId);
+    let targetDuplicateId = asset.duplicateId;
+    const sourceIds = new Set<string>();
+    const assetIdsToUpdate: string[] = [];
+    for (const duplicate of duplicateAssets) {
+      targetDuplicateId ??= duplicate.duplicateId || null;
+      if (targetDuplicateId === null || duplicate.duplicateId !== targetDuplicateId) {
+        assetIdsToUpdate.push(duplicate.assetId);
+        if (duplicate.duplicateId) {
+          sourceIds.add(duplicate.duplicateId);
+        }
+      }
+    }
+    targetDuplicateId ??= this.cryptoRepository.randomUUID();
     assetIdsToUpdate.push(asset.id);
 
     await this.duplicateRepository.merge({
       targetId: targetDuplicateId,
       assetIds: assetIdsToUpdate,
-      sourceIds: duplicateIds,
+      sourceIds: [...sourceIds],
     });
     return assetIdsToUpdate;
   }

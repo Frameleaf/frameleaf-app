@@ -382,6 +382,10 @@ export const readZipDirectory = async (source: ZipByteSource, limits: ZipReadLim
     byName.set(name, entry);
   }
 
+  if (limits.strictPaths && cursor !== directory.length) {
+    refuse('bundle_corrupt', 'The central directory contains unreported records');
+  }
+
   // Declared totals and overlaps, from the directory alone. Two entries that point into the same
   // compressed bytes are how a small file claims to hold far more than it does, so every entry's
   // data must end before the next one's header begins.

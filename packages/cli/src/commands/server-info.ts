@@ -12,14 +12,18 @@ export const serverInfo = async (options: BaseOptions) => {
     getMyUser(),
   ]);
 
-  console.log(`Server Info (via ${userInfo.email})`);
-  console.log(`  Url: ${url}`);
-  console.log(`  Version: ${versionInfo.major}.${versionInfo.minor}.${versionInfo.patch}`);
-  console.log(`  Formats:`);
-  console.log(`    Images: ${mediaTypes.image.map((extension) => extension.replace('.', ''))}`);
-  console.log(`    Videos: ${mediaTypes.video.map((extension) => extension.replace('.', ''))}`);
-  console.log(`  Statistics:`);
-  console.log(`    Images: ${stats.images}`);
-  console.log(`    Videos: ${stats.videos}`);
-  console.log(`    Total: ${stats.total}`);
+  console.log(
+    [
+      `Server Info (via ${userInfo.email})`,
+      `  Url: ${url}`,
+      `  Version: ${versionInfo.major}.${versionInfo.minor}.${versionInfo.patch}`,
+      '  Formats:',
+      `    Images: ${mediaTypes.image.map((extension) => extension.replace('.', ''))}`,
+      `    Videos: ${mediaTypes.video.map((extension) => extension.replace('.', ''))}`,
+      '  Statistics:',
+      `    Images: ${stats.images}`,
+      `    Videos: ${stats.videos}`,
+      `    Total: ${stats.total}`,
+    ].join('\n'),
+  );
 };

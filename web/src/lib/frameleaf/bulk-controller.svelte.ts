@@ -300,7 +300,7 @@ export class BulkController {
   ): Promise<void> {
     const controller = new AbortController();
     this.#running.set(requestId, controller);
-    this.#dispatch({ type: 'operation-start', requestId, action, scope, submittedTotal });
+    this.#dispatch({ type: 'operation-start', requestId, action, scope, payload, submittedTotal });
     if (durableBulkAction(action)) {
       try {
         await this.#handOff(requestId, action, scope, controller.signal, { payload, submittedTotal });
@@ -647,6 +647,7 @@ export class BulkController {
   /** Retry an operation under its own request key, so the record is resumed, not duplicated. */
   async retry(operation: BulkOperationRecord) {
     await this.runMatching(operation.action, operation.scope, {
+      payload: operation.payload,
       submittedTotal: operation.submittedTotal,
       requestId: operation.requestId,
     });

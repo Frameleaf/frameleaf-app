@@ -1,23 +1,30 @@
-import { ConflictException, ForbiddenException } from '@nestjs/common';
-import { createHmac, randomUUID } from 'node:crypto';
+import { ConflictException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Request, Response } from 'express';
+import type { ClsService } from 'nestjs-cls';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type { WorkflowRow } from 'src/repositories/photography-workflow.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import { PhotographyWatermarkSchema } from 'src/dtos/photography-rendition.dto.js';
 import {
   PhotographyGalleryDto,
+  PhotographyGalleryPasswordRequiredDto,
+  PhotographyPreviewSessionResponseDto,
   PhotographyPublicSiteDto,
   type PhotographySite,
   PhotographySiteSaveDto,
   PhotographyWorkflowDto,
+  PhotographyWorkflowListDto,
 } from 'src/dtos/photography-workflow.dto.js';
 import { JobStatus } from 'src/enum.js';
+import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { preparePhotographyLogo, renderPhotographyRendition } from 'src/utils/photography-rendition.js';
 
@@ -29,6 +36,19 @@ vi.mock('src/repositories/crypto.repository.js', () => ({ CryptoRepository: clas
 vi.mock('src/repositories/photography-workspace.repository.js', () => ({ PhotographyWorkspaceRepository: class {} }));
 vi.mock('src/repositories/photography-workflow.repository.js', () => ({ PhotographyWorkflowRepository: class {} }));
 
+/** The client preview's reserved recipient id (a v4-shaped UUID no random recipient takes). */
+const PREVIEW_ID = '00000000-0000-4000-8000-000000000000';
+
+/** What the application's exception filter writes for an error thrown by the service. */
+const respond = (error: Error) => {
+  const res = { headersSent: false, header: vi.fn().mockReturnThis(), status: vi.fn().mockReturnThis(), json: vi.fn() };
+  const logger = { setContext: vi.fn(), debug: vi.fn(), error: vi.fn() };
+  new GlobalExceptionFilter(
+    logger as unknown as LoggingRepository,
+    { getId: () => 'request' } as ClsService,
+  ).handleError({ complete: true } as Request, res as unknown as Response, error);
+  return { res, body: res.json.mock.calls[0]?.[0] as Record<string, any> };
+};
 const folders: string[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -90,6 +110,7 @@ async function setup(brand?: unknown) {
     }),
     studioLive: vi.fn(() => (visible ? Promise.resolve() : Promise.reject(new ForbiddenException()))),
     get: vi.fn((id: string) => Promise.resolve(id === shootId && row ? structuredClone(row) : undefined)),
+    ownerName: vi.fn(() => Promise.resolve('Jamie Reid')),
     live: vi.fn(() => {
       if (!visible) return Promise.reject(new ForbiddenException());
       return Promise.resolve();
@@ -99,6 +120,24 @@ async function setup(brand?: unknown) {
     logo: vi.fn(() => Promise.resolve([])),
     eligibleRevisions: vi.fn((_row: unknown, ids: string[]) => Promise.resolve(new Set(visible ? ids : []))),
     paymentOrder: vi.fn(() => Promise.resolve(row ? structuredClone(row) : undefined)),
+    list: vi.fn(() => Promise.resolve([] as Record<string, unknown>[])),
+    // like the repository: rewrites only the stored sessions and keeps the revision
+    mutateSessions: vi.fn(
+      (
+        _id: string,
+        ownerId: string,
+        albumId: string,
+        change: (sessions: WorkflowRow['value']['sessions']) => WorkflowRow['value']['sessions'],
+      ) => {
+        if (!row || row.ownerId !== ownerId || row.albumId !== albumId) return Promise.reject(new ForbiddenException());
+        try {
+          row.value.sessions = change(structuredClone(row.value.sessions));
+        } catch (error) {
+          return Promise.reject(error as Error);
+        }
+        return Promise.resolve();
+      },
+    ),
     mutate: vi.fn(
       async (
         id: string,
@@ -134,7 +173,7 @@ async function setup(brand?: unknown) {
   const revisions = { get: vi.fn((id: string) => Promise.resolve(id === revisionId ? revision : undefined)) };
   const crypto = {
     hashBcrypt: vi.fn(() => Promise.resolve('hashed')),
-    compareBcrypt: vi.fn((password) => password === 'correct-password'),
+    compareBcrypt: vi.fn((password) => Promise.resolve(password === 'correct-password')),
   };
   const jobs = { queue: vi.fn(async () => {}) };
   const storage = {
@@ -192,10 +231,12 @@ async function setup(brand?: unknown) {
     revisionId,
     source,
     repository,
+    workspace,
     revisions,
     albums,
     storage,
     jobs,
+    crypto,
     invitation,
     published,
     selected,
@@ -207,6 +248,14 @@ async function setup(brand?: unknown) {
 }
 
 describe('photography workflow integration boundaries', () => {
+  it("opens a new gallery with the prototype's split cover and keeps a saved gallery's own cover", async () => {
+    const s = await setup();
+    expect(s.row().value.config.presentation.coverTreatment).toBe('split');
+
+    s.row().value.config.presentation.coverTreatment = 'quiet';
+    const saved = await s.service.get(s.auth, s.shootId);
+    expect(saved.config.presentation.coverTreatment).toBe('quiet');
+  });
   it('persists stable captures on intake retries, rejects stale revisions and strips elevated access', async () => {
     const s = await setup();
     const first = s.row();
@@ -338,10 +387,154 @@ describe('photography workflow integration boundaries', () => {
   it('rejects wrong password before creating a scoped session', async () => {
     const s = await setup();
     const client = await s.invitation(true, 'correct-password');
+    const before = s.row().value.sessions.length;
     await expect(s.service.session(s.shootId, { token: client.token, password: 'wrong' })).rejects.toBeInstanceOf(
-      ForbiddenException,
+      UnauthorizedException,
     );
+    expect(s.row().value.sessions).toHaveLength(before);
   });
+  it.each([
+    ['missing', undefined],
+    ['wrong', 'wrong-password'],
+  ])(
+    'answers 401 with the studio brand when the password is %s, and 403 without it for a bad invitation',
+    async (_case, password) => {
+      const s = await setup();
+      const client = await s.invitation(true, 'correct-password');
+      const error = await s.service
+        .session(s.shootId, { token: client.token, ...(password && { password }) })
+        .catch((error: unknown) => error);
+      expect(error).toBeInstanceOf(UnauthorizedException);
+      const { res, body } = respond(error as Error);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(body).toMatchObject({
+        message: 'Gallery password required',
+        passwordRequired: true,
+        brand: {
+          // no Branding saved and nothing published: the owner's name, as the Branding page shows it
+          name: 'Jamie Reid',
+          tagline: '',
+          email: '',
+          phone: '',
+          color: '#577059',
+          background: '#f5f3ed',
+          textColor: '#263329',
+          font: 'editorial',
+          logoUrl: null,
+        },
+      });
+      expect(body).not.toHaveProperty('brand.logoAssetId');
+      expect(PhotographyGalleryPasswordRequiredDto.schema.safeParse(body).success).toBe(true);
+      // an unknown token for this gallery, and this gallery's token presented to another gallery
+      for (const [galleryId, token] of [
+        [s.shootId, randomBytes(32).toString('hex')],
+        [randomUUID(), client.token],
+      ]) {
+        const refusal = await s.service
+          .session(galleryId, { token, password: 'correct-password' })
+          .catch((error: unknown) => error);
+        expect(refusal).toBeInstanceOf(ForbiddenException);
+        const refused = respond(refusal as Error);
+        expect(refused.res.status).toHaveBeenCalledWith(403);
+        expect(refused.body).not.toHaveProperty('brand');
+        expect(refused.body).not.toHaveProperty('passwordRequired');
+      }
+    },
+  );
+  it('answers 403 without a brand for a revoked invitation, even with the wrong password', async () => {
+    const s = await setup();
+    const client = await s.invitation(true, 'correct-password');
+    await s.service.updateRecipient(s.auth, s.shootId, client.recipientId, {
+      expectedRevision: s.row().revision,
+      revoked: true,
+      expiresAt: null,
+      canProof: true,
+      canDownload: true,
+      captureIds: null,
+    });
+    const refusal = await s.service.session(s.shootId, { token: client.token }).catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(ForbiddenException);
+    expect(respond(refusal as Error).body).not.toHaveProperty('brand');
+  });
+  it('shows the published studio brand without its logo asset on the password screen', async () => {
+    const s = await setup({
+      name: 'Harbour Light Studio',
+      tagline: 'Family photographs',
+      email: 'hello@example.com',
+      phone: '555-0100',
+      color: '#123456',
+      background: '#ffffff',
+      textColor: '#000000',
+      font: 'modern',
+      logoAssetId: null,
+      watermarkColor: '#ffffff',
+      watermarkOpacity: 45,
+      watermarkPosition: 'bottom-right',
+      watermarkSize: 6,
+    });
+    const result = await s.service.createRecipient(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      name: 'Client',
+      password: 'correct-password',
+      expiresAt: null,
+      canProof: true,
+      canDownload: true,
+      captureIds: null,
+    });
+    await s.published();
+    s.row().value.published!.brand.logoAssetId = randomUUID();
+    const error = await s.service
+      .session(s.shootId, { token: result.invitation.token })
+      .catch((error: unknown) => error);
+    expect(respond(error as Error).body.brand).toEqual({
+      name: 'Harbour Light Studio',
+      tagline: 'Family photographs',
+      email: 'hello@example.com',
+      phone: '555-0100',
+      color: '#123456',
+      background: '#ffffff',
+      textColor: '#000000',
+      font: 'modern',
+      logoUrl: null,
+    });
+  });
+
+  it('names the studio after its owner when a gallery is published before Branding is saved (STUDIO-P1)', async () => {
+    const s = await setup();
+    const result = await s.service.createRecipient(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      name: 'Client',
+      password: 'correct-password',
+      expiresAt: null,
+      canProof: true,
+      canDownload: true,
+      captureIds: null,
+    });
+    await s.published();
+
+    expect(s.row().value.published!.brand.name).toBe(s.auth.user.name);
+    const error = await s.service
+      .session(s.shootId, { token: result.invitation.token })
+      .catch((error: unknown) => error);
+    expect(respond(error as Error).body.brand).toMatchObject({ name: s.auth.user.name });
+  });
+
+  it.each(['passwordHash', 'tokenHash'] as const)(
+    'refuses a gallery session if %s changes during verification',
+    async (field) => {
+      const s = await setup();
+      const client = await s.invitation(true, 'correct-password');
+      const comparison = Promise.withResolvers<boolean>();
+      s.crypto.compareBcrypt.mockClear().mockReturnValueOnce(comparison.promise);
+      const pending = s.service.session(s.shootId, { token: client.token, password: 'correct-password' });
+      await vi.waitFor(() => expect(s.crypto.compareBcrypt).toHaveBeenCalledOnce());
+      const before = s.row().value.sessions.length;
+      s.row().value.recipients[0][field] = 'changed-during-verification';
+      comparison.resolve(true);
+      await expect(pending).rejects.toBeInstanceOf(ForbiddenException);
+      expect(s.row().value.sessions).toHaveLength(before);
+    },
+  );
   it('keeps notes independent of favorites, applies named presets without changing live settings, and delivers explicitly included edits', async () => {
     const s = await setup();
     const client = await s.invitation();
@@ -394,6 +587,36 @@ describe('photography workflow integration boundaries', () => {
     expect(s.row().value.orders[0]).toMatchObject({ status: 'free', roundId: null });
     expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
     expect((await s.service.file(s.shootId, client.session, s.captureId, 'download')).path).not.toBe(s.source);
+  });
+  it('keeps published pixels intact when an expired renderer resumes after its replacement commits', async () => {
+    const s = await setup();
+    const client = await s.invitation();
+    await s.service.publish(s.auth, s.shootId, { expectedRevision: s.row().revision, scope: 'all-eligible' });
+    const oldSource = Promise.withResolvers<{ path: string }>();
+    const replacementSource = path.join(path.dirname(s.source), 'replacement.jpg');
+    await sharp({ create: { width: 800, height: 600, channels: 3, background: '#dd3322' } })
+      .jpeg()
+      .toFile(replacementSource);
+    s.repository.proofSource
+      .mockClear()
+      .mockReturnValueOnce(oldSource.promise)
+      .mockResolvedValue({ path: replacementSource });
+    const oldRender = s.service.render({ id: s.shootId });
+    let publishedPath: string;
+    let publishedBytes: Buffer;
+    try {
+      await vi.waitFor(() => expect(s.repository.proofSource).toHaveBeenCalledOnce());
+      s.row().value.publication!.updatedAt = new Date(Date.now() - 11 * 60_000).toISOString();
+      expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
+      publishedPath = (await s.service.file(s.shootId, client.session, s.captureId, 'preview')).path;
+      publishedBytes = await readFile(publishedPath);
+    } finally {
+      oldSource.resolve({ path: s.source });
+      await oldRender;
+    }
+    expect(s.row().value.publication!.status).toBe('ready');
+    expect((await s.service.file(s.shootId, client.session, s.captureId, 'preview')).path).toBe(publishedPath);
+    expect((await readFile(publishedPath)).equals(publishedBytes!)).toBe(true);
   });
   it('does not release prepared finals when the atomic publication commit fails', async () => {
     const s = await setup();
@@ -497,6 +720,37 @@ describe('photography workflow integration boundaries', () => {
     expect((await s.service.publicPhoto(s.ownerId, s.shootId, s.captureId)).path).not.toBe(s.source);
     s.setVisible(false);
     await expect(s.service.publicPhoto(s.ownerId, s.shootId, s.captureId)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+  it('reads each portfolio gallery once per public site load, and still skips a gallery that is gone', async () => {
+    const s = await setup();
+    await s.published();
+    await s.service.approval(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      captureId: s.captureId,
+      revisionId: s.revisionId,
+      requestClientApproval: false,
+    });
+    expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
+    await s.published();
+    const item = { shootId: s.shootId, captureId: s.captureId, consent: true as const };
+    const gone = { shootId: randomUUID(), captureId: s.captureId, consent: true as const };
+    const value = {
+      enabled: true,
+      title: 'Studio',
+      about: '',
+      services: '',
+      contact: '',
+      portfolio: [item, gone, item, gone, item],
+    } as unknown as PhotographySite;
+    s.repository.site.mockResolvedValue({ revision: randomUUID(), value });
+    s.repository.get.mockClear();
+    s.repository.live.mockClear();
+
+    const site = await s.service.publicSite(s.ownerId);
+
+    expect(site.portfolio).toHaveLength(3);
+    expect(s.repository.get).toHaveBeenCalledTimes(2);
+    expect(s.repository.live).toHaveBeenCalledTimes(1);
   });
   it('verifies provider amount/currency, applies payment once, and keeps snapshots after refund', async () => {
     const s = await setup();
@@ -1061,5 +1315,195 @@ describe('photography workflow integration boundaries', () => {
     expect(committed.publishedGenerationId).toBe(pending.publication!.id);
     expect(committed.photos[0].approvalRevisionId).toBe(next.id);
     expect(committed.photos[0].outputs[0].approvalPreviewUrl).toBeTruthy();
+  });
+});
+
+describe('photography gallery hero, studio summary and client preview', () => {
+  const shoot = (s: Awaited<ReturnType<typeof setup>>, extra: Record<string, unknown>) =>
+    s.workspace.get.mockResolvedValue({
+      value: { shoots: [{ id: s.shootId, albumId: s.row().albumId, name: 'Portrait', ...extra }] },
+    } as never);
+  it("reports the shoot's date on every gallery response, or null when the shoot is gone", async () => {
+    const s = await setup();
+    const client = await s.invitation();
+    await s.published();
+    shoot(s, { client: 'The Lee family', date: '2026-09-12' });
+    const gallery = await s.service.gallery(s.shootId, client.session);
+    expect(gallery).toMatchObject({ date: '2026-09-12', preview: false });
+    expect(gallery.recipient).toEqual({ id: client.recipientId, name: 'Client', canDownload: true });
+    expect(PhotographyGalleryDto.schema.safeParse(gallery).success).toBe(true);
+    const chosen = await s.service.choices(s.shootId, client.session, {
+      expectedRevision: s.row().revision,
+      captureIds: [s.captureId],
+      notes: [],
+    });
+    expect(chosen).toMatchObject({ date: '2026-09-12', preview: false });
+    s.workspace.get.mockResolvedValue({ value: { shoots: [] } } as never);
+    expect((await s.service.gallery(s.shootId, client.session)).date).toBeNull();
+    s.workspace.get.mockResolvedValue(undefined as never);
+    expect((await s.service.gallery(s.shootId, client.session)).date).toBeNull();
+  });
+  it('passes the outstanding total, currency and live invitation count through the studio summary', async () => {
+    const s = await setup();
+    s.repository.list.mockResolvedValue([
+      {
+        shootId: s.shootId,
+        albumId: s.row().albumId,
+        revision: s.row().revision,
+        title: 'Portrait',
+        mode: 'select-before-editing',
+        selectionDeadline: null,
+        expiresAt: null,
+        published: true,
+        submittedRounds: 1,
+        unpaidOrders: 2,
+        outstanding: 12_500,
+        currency: 'CAD',
+        invited: 3,
+        readyCount: 0,
+        pendingEdits: 0,
+      },
+    ]);
+    const summary = await s.service.list(s.auth);
+    expect(s.repository.list).toHaveBeenCalledWith(s.ownerId, [s.shootId]);
+    expect(summary.galleries).toEqual([expect.objectContaining({ outstanding: 12_500, currency: 'CAD', invited: 3 })]);
+    expect(summary.galleries[0]).not.toHaveProperty('albumId');
+    expect(PhotographyWorkflowListDto.schema.safeParse(summary).success).toBe(true);
+  });
+  it('mints a one-hour preview for the owner only, stored hashed, without changing the workflow revision', async () => {
+    const s = await setup();
+    await s.published();
+    const revision = s.row().revision;
+    const before = Date.now();
+    const preview = await s.service.preview(s.auth, s.shootId, {});
+    const after = Date.now();
+    expect(PhotographyPreviewSessionResponseDto.schema.safeParse(preview).success).toBe(true);
+    expect(Object.keys(preview).toSorted()).toEqual(['expiresAt', 'session']);
+    expect(preview.session).toMatch(/^[a-f0-9]{64}$/);
+    expect(Date.parse(preview.expiresAt)).toBeGreaterThanOrEqual(before + 3_600_000);
+    expect(Date.parse(preview.expiresAt)).toBeLessThanOrEqual(after + 3_600_000);
+    expect(s.row().revision).toBe(revision);
+    const stored = s.row().value.sessions.at(-1)!;
+    expect(stored).toMatchObject({ recipientId: PREVIEW_ID, preview: true, expiresAt: preview.expiresAt });
+    expect(stored.hash).not.toBe(preview.session);
+    const sessions = s.row().value.sessions.length;
+    const stranger = { user: { id: randomUUID(), name: 'Neighbour' }, session: { hasElevatedPermission: false } };
+    for (const auth of [stranger, { ...s.auth, apiKey: {} }, { ...s.auth, sharedLink: {} }, { user: s.auth.user }])
+      await expect(s.service.preview(auth as AuthDto, s.shootId, {})).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(s.service.preview(s.auth, s.shootId, { expectedRevision: null } as never)).rejects.toThrow();
+    expect(s.row().value.sessions).toHaveLength(sessions);
+    s.repository.get.mockResolvedValueOnce(undefined);
+    await expect(s.service.preview(s.auth, s.shootId, {})).rejects.toBeInstanceOf(ConflictException);
+  });
+  it('shows a preview every published photograph like an unrestricted client, and nothing of any client', async () => {
+    const s = await setup();
+    const client = await s.invitation();
+    await s.published();
+    await s.selected(client.session);
+    const { session } = await s.service.preview(s.auth, s.shootId, {});
+    const gallery = await s.service.gallery(s.shootId, session);
+    expect(PhotographyGalleryDto.schema.safeParse(gallery).success).toBe(true);
+    expect(gallery).toMatchObject({
+      preview: true,
+      recipient: { id: PREVIEW_ID, name: 'Portrait', canDownload: false },
+      title: 'Portrait',
+      choices: [],
+      notes: [],
+      rounds: [],
+      orders: [],
+      receipts: [],
+    });
+    expect(gallery.photos.map((photo) => photo.id)).toEqual(s.row().value.published!.photos.map((p) => p.captureId));
+    expect(gallery.photos.every((photo) => !photo.canDownload && photo.outputs.length === 0)).toBe(true);
+    shoot(s, { client: 'The Lee family', date: '2026-09-12' });
+    expect(await s.service.gallery(s.shootId, session)).toMatchObject({
+      date: '2026-09-12',
+      recipient: { id: PREVIEW_ID, name: 'The Lee family', canDownload: false },
+    });
+    for (const kind of ['thumbnail', 'preview'])
+      expect((await s.service.file(s.shootId, session, s.captureId, kind)).path).toBeTruthy();
+    // the logo and approval-proof reads accept the session, then find nothing to show for a preview
+    await expect(s.service.galleryLogo(s.shootId, session)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(s.service.outputPreview(s.shootId, session, s.captureId, randomUUID())).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect((await s.service.gallery(s.shootId, client.session)).preview).toBe(false);
+    await expect(s.service.gallery(randomUUID(), session)).rejects.toThrow();
+  });
+  it('refuses every change and download from a preview with 403 and leaves the gallery untouched', async () => {
+    const s = await setup();
+    const client = await s.invitation();
+    await s.published();
+    const round = await s.selected(client.session);
+    await s.service.approval(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      captureId: s.captureId,
+      revisionId: s.revisionId,
+      requestClientApproval: false,
+    });
+    await s.service.order(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      roundId: round.id,
+      recipientId: client.recipientId,
+      pricing: 'package',
+    });
+    const order = s.row().value.orders[0];
+    await s.service.accept(s.shootId, client.session, order.id, { expectedRevision: s.row().revision });
+    expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
+    const outputId = (await s.service.gallery(s.shootId, client.session)).photos[0].outputs[0].id;
+    const zip = await s.service.zip(s.shootId, client.session, { captureIds: [s.captureId] });
+    const { session } = await s.service.preview(s.auth, s.shootId, {});
+    const before = structuredClone(s.row());
+    const queued = s.jobs.queue.mock.calls.length;
+    const expectedRevision = before.revision;
+    const attempts: [string, () => Promise<unknown>][] = [
+      ['choices', () => s.service.choices(s.shootId, session, { expectedRevision, captureIds: [], notes: [] })],
+      ['submit', () => s.service.submit(s.shootId, session, { expectedRevision })],
+      [
+        'approve',
+        () =>
+          s.service.guestApproval(s.shootId, session, {
+            expectedRevision,
+            captureId: s.captureId,
+            revisionId: s.revisionId,
+            approved: true,
+            note: '',
+          }),
+      ],
+      ['accept', () => s.service.accept(s.shootId, session, order.id, { expectedRevision })],
+      ['checkout', () => s.service.checkout(s.shootId, session, order.id)],
+      ['zip', () => s.service.zip(s.shootId, session, { captureIds: [s.captureId] })],
+      ['archive', () => s.service.archive(s.shootId, session, zip.id)],
+      ['download', () => s.service.file(s.shootId, session, s.captureId, 'download')],
+      ['output', () => s.service.outputFile(s.shootId, session, s.captureId, outputId)],
+      ['delivery', () => s.service.recordDelivery(s.shootId, session, s.captureId)],
+    ];
+    for (const [name, attempt] of attempts) {
+      const error = await attempt()
+        .then(() => new Error(`${name} was allowed`))
+        .catch((error: unknown) => error);
+      expect(error, name).toBeInstanceOf(ForbiddenException);
+      expect(respond(error as Error).res.status, name).toHaveBeenCalledWith(403);
+    }
+    expect(s.row()).toEqual(before);
+    expect(s.storage.createZipStream).not.toHaveBeenCalled();
+    expect(s.jobs.queue).toHaveBeenCalledTimes(queued);
+  });
+  it('ends a preview after its hour and keeps only the newest previews', async () => {
+    const s = await setup();
+    const client = await s.invitation();
+    await s.published();
+    const tokens: string[] = [];
+    for (let index = 0; index < 25; index++) tokens.push((await s.service.preview(s.auth, s.shootId, {})).session);
+    expect(s.row().value.sessions.filter((session) => session.preview)).toHaveLength(20);
+    expect(s.row().value.sessions.filter((session) => !session.preview)).toHaveLength(1);
+    await expect(s.service.gallery(s.shootId, tokens[0])).rejects.toBeInstanceOf(ForbiddenException);
+    expect((await s.service.gallery(s.shootId, tokens.at(-1))).preview).toBe(true);
+    for (const stored of s.row().value.sessions)
+      if (stored.preview) stored.expiresAt = new Date(Date.now() - 1000).toISOString();
+    await expect(s.service.gallery(s.shootId, tokens.at(-1))).rejects.toBeInstanceOf(ForbiddenException);
+    expect((await s.service.gallery(s.shootId, client.session)).preview).toBe(false);
+    await s.service.preview(s.auth, s.shootId, {});
+    expect(s.row().value.sessions.filter((session) => session.preview)).toHaveLength(1);
   });
 });

@@ -30,10 +30,11 @@ export type Translate = (key: string, values?: Record<string, string | number>) 
 export type GrowthMetric = 'items' | 'storage';
 export type CalendarKind = 'captured' | 'uploaded';
 
-export const GiB = 1024 ** 3;
+/** Sizes are decimal everywhere in Frameleaf (D5): a GB is 1,000,000,000 bytes. */
+export const GB = 1000 ** 3;
 
-/** Bytes as GiB, two decimals, for charts and tables. Exact bytes stay in the tables and CSV. */
-export const toGiB = (bytes: number | null) => (bytes === null ? null : Math.round((bytes / GiB) * 100) / 100);
+/** Bytes as GB, two decimals, for charts and tables. Exact bytes stay in the tables and CSV. */
+export const toGB = (bytes: number | null) => (bytes === null ? null : Math.round((bytes / GB) * 100) / 100);
 
 export const scopeLabel = (option: Pick<AnalyticsScopeOptionDto, 'kind' | 'label' | 'removed'>, t: Translate) => {
   if (option.kind === AnalyticsScopeKind.Host) {
@@ -58,7 +59,7 @@ export type Cell = number | string | null;
 export type AnalyticsColumn = {
   label: string;
   /** Unit for numeric columns; `text` for the row label and other words. */
-  unit: 'items' | 'bytes' | 'GiB' | 'attempts' | 'percent' | 'USD' | 'albums' | 'text' | 'date' | 'row';
+  unit: 'items' | 'bytes' | 'GB' | 'attempts' | 'percent' | 'USD' | 'albums' | 'text' | 'date' | 'row';
 };
 
 export type AnalyticsTable = {
@@ -97,17 +98,15 @@ export const analyticsTables = (
       metric === 'storage'
         ? [
             { label: t('frameleaf_analytics_col_through'), unit: 'date' },
-            { label: t('frameleaf_analytics_physical_originals'), unit: 'GiB' },
-            { label: t('frameleaf_analytics_logical_originals'), unit: 'GiB' },
+            { label: t('frameleaf_analytics_physical_originals'), unit: 'GB' },
+            { label: t('frameleaf_analytics_logical_originals'), unit: 'GB' },
           ]
         : [
             { label: t('frameleaf_analytics_col_through'), unit: 'date' },
             { label: t('frameleaf_analytics_col_items'), unit: 'items' },
           ],
     rows: report.series.map((row) =>
-      metric === 'storage'
-        ? [row.through, toGiB(row.physicalBytes), toGiB(row.logicalBytes)]
-        : [row.through, row.items],
+      metric === 'storage' ? [row.through, toGB(row.physicalBytes), toGB(row.logicalBytes)] : [row.through, row.items],
     ),
   };
 
@@ -136,7 +135,7 @@ export const analyticsTables = (
 
   const bytesColumns: AnalyticsColumn[] = [
     { label: t('frameleaf_analytics_col_category'), unit: 'text' },
-    { label: 'GiB', unit: 'GiB' },
+    { label: 'GB', unit: 'GB' },
     { label: t('frameleaf_analytics_col_exact_bytes'), unit: 'bytes' },
   ];
 
@@ -145,7 +144,7 @@ export const analyticsTables = (
     title: t('frameleaf_analytics_originals'),
     measurementScope: selection,
     columns: bytesColumns,
-    rows: originalsRows(report, t).map(([name, bytes]) => [name, toGiB(bytes), bytes]),
+    rows: originalsRows(report, t).map(([name, bytes]) => [name, toGB(bytes), bytes]),
   };
 
   const volume: AnalyticsTable = {
@@ -154,9 +153,9 @@ export const analyticsTables = (
     measurementScope: AnalyticsMeasurementScope.Host,
     columns: bytesColumns,
     rows: [
-      [t('frameleaf_analytics_volume_used'), toGiB(report.host.volumeUsedBytes), report.host.volumeUsedBytes],
-      [t('frameleaf_analytics_volume_free'), toGiB(report.host.freeBytes), report.host.freeBytes],
-      [t('frameleaf_analytics_volume_capacity'), toGiB(report.host.capacityBytes), report.host.capacityBytes],
+      [t('frameleaf_analytics_volume_used'), toGB(report.host.volumeUsedBytes), report.host.volumeUsedBytes],
+      [t('frameleaf_analytics_volume_free'), toGB(report.host.freeBytes), report.host.freeBytes],
+      [t('frameleaf_analytics_volume_capacity'), toGB(report.host.capacityBytes), report.host.capacityBytes],
     ],
   };
 
@@ -170,7 +169,7 @@ export const analyticsTables = (
           caption: report.host.breakdown?.exceedsUsed ? t('frameleaf_analytics_parts_exceed_caption') : undefined,
           measurementScope: AnalyticsMeasurementScope.Host,
           columns: bytesColumns,
-          rows: parts.map((part) => [part.label, toGiB(part.bytes), part.bytes]),
+          rows: parts.map((part) => [part.label, toGB(part.bytes), part.bytes]),
         },
       ]
     : [];
@@ -385,7 +384,7 @@ export const volumeSegments = (report: AnalyticsReportResponseDto, t: Translate)
 
 // ── Formatting ────────────────────────────────────────────────────────────
 
-const TiB = 1024 ** 4;
+const TB = 1000 ** 4;
 
 /** The dashboard's number, size, date and duration formats for one locale (AnalyticsDashboard.jsx:7-28). */
 export const analyticsFormats = (locale: string | undefined, t: Translate) => {
@@ -396,16 +395,14 @@ export const analyticsFormats = (locale: string | undefined, t: Translate) => {
     new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(
       new Date(`${value.slice(0, 10)}T00:00:00Z`),
     );
-  /** Bytes in GiB, or TiB from one tebibyte up, as the prototype writes volume sizes. */
+  /** Bytes in GB, or TB from one terabyte up, as the prototype writes volume sizes (decimal, D5). */
   const size = (bytes: number) =>
-    bytes >= TiB
-      ? t('frameleaf_analytics_tib', {
-          value: new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(bytes / TiB),
+    bytes >= TB
+      ? t('frameleaf_analytics_tb', {
+          value: new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(bytes / TB),
         })
-      : t('frameleaf_analytics_gib', {
-          value: new Intl.NumberFormat(locale, { maximumFractionDigits: bytes >= 10 * GiB ? 0 : 1 }).format(
-            bytes / GiB,
-          ),
+      : t('frameleaf_analytics_gb', {
+          value: new Intl.NumberFormat(locale, { maximumFractionDigits: bytes >= 10 * GB ? 0 : 1 }).format(bytes / GB),
         });
   const percent = (part: number, whole: number) => (whole > 0 ? (part / whole) * 100 : 0);
   const duration = (milliseconds: number) => {

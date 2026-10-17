@@ -7,6 +7,7 @@ import {
   type LibraryViewState,
 } from '$lib/frameleaf/library-session';
 import { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
+import { libraryStartLayout } from '$lib/stores/preferences.store';
 
 class MemoryStorage {
   values = new Map<string, string>();
@@ -68,6 +69,30 @@ describe('LibrarySessionStore', () => {
       expect(store.session.scrollAnchor).toBe('asset-2');
       expect(store.session.page).toBe(before.page);
       expect(store.revision).toBe(before.revision);
+    }
+  });
+
+  it('ACCOUNT-P3: the first view in a tab opens in the chosen start layout, later views keep the switch', () => {
+    libraryStartLayout.set('work');
+    try {
+      store.setLayout('timeline');
+      store.persist();
+      // a new tab: device storage remembers Timeline, the tab has no snapshot yet
+      const fresh = new LibrarySessionStore({
+        userId: 'user-1',
+        pageSize: 10,
+        storage,
+        transientStorage: new MemoryStorage(),
+      });
+      fresh.restore(undefined, 'user-1');
+      expect(fresh.layout).toBe('work');
+      // the same tab, after a switch: the switch wins
+      fresh.setLayout('browse');
+      fresh.persist();
+      fresh.restore(undefined, 'user-1');
+      expect(fresh.layout).toBe('browse');
+    } finally {
+      libraryStartLayout.set(null);
     }
   });
 

@@ -226,42 +226,47 @@ export class PluginRepository {
   async load({ key, label, wasmBytes }: PluginLoad, { runInWorker, functions }: PluginLoadOptions) {
     const data = new Uint8Array(wasmBytes.buffer, wasmBytes.byteOffset, wasmBytes.byteLength);
     const logger = LoggingRepository.create(`Plugin:${label}`);
+    const ready = Promise.withResolvers<void>();
     const pool = createPool<ExtismPlugin>(
       {
-        create: () =>
-          newPlugin(
-            { wasm: [{ data }] },
-            {
-              useWasi: true,
-              // Workflow plugins receive bytes through host functions, never host filesystem mounts.
-              allowedPaths: {},
-              runInWorker,
-              functions: {
-                'extism:host/user': functions ?? {},
+        create: async () => {
+          try {
+            const plugin = await newPlugin(
+              { wasm: [{ data }] },
+              {
+                useWasi: true,
+                // Workflow plugins receive bytes through host functions, never host filesystem mounts.
+                allowedPaths: {},
+                runInWorker,
+                functions: {
+                  'extism:host/user': functions ?? {},
+                },
+                logger: {
+                  trace: (message) => logger.verbose(message),
+                  info: (message) => logger.log(message),
+                  debug: (message) => logger.debug(message),
+                  warn: (message) => logger.warn(message),
+                  error: (message) => logger.error(message),
+                } as Console,
+                logLevel: asExtismLogLevel(logger.getLogLevel()),
+                enableWasiOutput: true,
               },
-              logger: {
-                trace: (message) => logger.verbose(message),
-                info: (message) => logger.log(message),
-                debug: (message) => logger.debug(message),
-                warn: (message) => logger.warn(message),
-                error: (message) => logger.error(message),
-              } as Console,
-              logLevel: asExtismLogLevel(logger.getLogLevel()),
-              enableWasiOutput: true,
-            },
-          ),
+            );
+            ready.resolve();
+            return plugin;
+          } catch (error) {
+            ready.reject(error);
+            throw error;
+          }
+        },
         destroy: (plugin) => plugin.close(),
       },
       { min: 1, max: 5 },
     );
 
     try {
-      // pool.ready() never settles if the factory keeps rejecting (e.g. a wasm import the
-      // host does not provide), so surface the first creation error instead of hanging.
-      await new Promise<void>((resolve, reject) => {
-        pool.once('factoryCreateError', reject);
-        pool.ready().then(resolve).catch(reject);
-      });
+      // Pool.ready() leaves its polling timer alive after a failed factory call.
+      await ready.promise;
       this.pluginMap.set(key, { pool, label });
     } catch (error: any) {
       await pool.drain().catch(() => {});

@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { constants, createReadStream, createWriteStream } from 'node:fs';
-import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm, statfs } from 'node:fs/promises';
+import { type FileHandle, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, statfs } from 'node:fs/promises';
 import path from 'node:path';
-import { Readable, Transform } from 'node:stream';
+import { Readable, Transform, compose } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { crc32, createInflateRaw } from 'node:zlib';
 import type { TakeoutSource } from 'src/repositories/takeout.repository.js';
@@ -29,6 +29,17 @@ export class TakeoutStagingError extends Error {}
 export type StagedDigest = { size: number; checksum: Buffer; legacyChecksum: Buffer };
 
 const UUID = /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i;
+
+const readRange = async (handle: FileHandle, position: number, length: number): Promise<Buffer> => {
+  const buffer = Buffer.alloc(length);
+  let offset = 0;
+  while (offset < length) {
+    const { bytesRead } = await handle.read(buffer, offset, length - offset, position + offset);
+    if (bytesRead === 0) break;
+    offset += bytesRead;
+  }
+  return buffer.subarray(0, offset);
+};
 
 /** Counts, hashes both digests and refuses more bytes than were declared, as the bytes pass. */
 const digesting = (declared: number, onProgress?: (bytes: number) => void) => {
@@ -171,12 +182,13 @@ export class TakeoutStagingRepository {
     dev: number;
     ino: number;
   }> {
-    if ((await realpath(directory)) !== directory) {
-      throw new TakeoutStagingError('The selected folder changed on the server; select it again');
-    }
     const pending: Array<{ directory: string; prefix: string }> = [{ directory, prefix: '' }];
     while (pending.length > 0) {
+      signal.throwIfAborted();
       const next = pending.pop()!;
+      if ((await realpath(next.directory)) !== next.directory) {
+        throw new TakeoutStagingError('The selected folder changed on the server; select it again');
+      }
       const entries = await readdir(next.directory, { withFileTypes: true });
       entries.sort((a, b) => compareCodeUnits(b.name, a.name));
       for (const entry of entries) {
@@ -272,9 +284,8 @@ export class TakeoutStagingRepository {
     });
     try {
       if (offset < source.received && offset + bytes.length <= source.received) {
-        const existing = Buffer.alloc(bytes.length);
-        const { bytesRead } = await file.read(existing, 0, bytes.length, offset);
-        if (bytesRead !== bytes.length || !existing.equals(bytes)) {
+        const existing = await readRange(file, offset, bytes.length);
+        if (existing.length !== bytes.length || !existing.equals(bytes)) {
           throw new TakeoutStagingError('This is not the archive that was being uploaded');
         }
         return source.received;
@@ -305,9 +316,8 @@ export class TakeoutStagingRepository {
     }
     const file = await open(source.path, 'r');
     try {
-      const bytes = Buffer.alloc(size);
-      const { bytesRead } = await file.read(bytes, 0, size, offset);
-      if (bytesRead !== size || createHash('sha256').update(bytes).digest('hex') !== sha256) {
+      const bytes = await readRange(file, offset, size);
+      if (bytes.length !== size || createHash('sha256').update(bytes).digest('hex') !== sha256) {
         throw new TakeoutStagingError(
           'The selected archive differs from the one being uploaded. Select the original archive to resume.',
         );
@@ -325,11 +335,7 @@ export class TakeoutStagingRepository {
       return {
         source: {
           size,
-          read: async (position, length) => {
-            const buffer = Buffer.alloc(Math.max(0, length));
-            const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
-            return buffer.subarray(0, bytesRead);
-          },
+          read: (position, length) => readRange(handle, position, Math.max(0, length)),
         },
         close: () => handle.close(),
       };
@@ -363,9 +369,7 @@ export class TakeoutStagingRepository {
       if (entry.compression === 'store') {
         return raw;
       }
-      const inflate = createInflateRaw();
-      raw.on('error', (error: Error) => inflate.destroy(error));
-      return raw.pipe(inflate);
+      return compose(raw, createInflateRaw());
     };
     // Deferred like an async function, so a synchronous failure to open still arrives as a rejection.
     const openEntry = () => Promise.try(openEntryNow);
@@ -399,17 +403,19 @@ export class TakeoutStagingRepository {
     declared: number,
     destination: string,
     signal: AbortSignal,
+    onCreated: () => Promise<void>,
   ): Promise<StagedDigest> {
     await mkdir(path.dirname(destination), { recursive: true });
     const digest = digesting(declared);
+    // Cleanup owns the destination only after this exclusive create succeeds.
+    const output = await open(destination, 'wx', 0o600);
     try {
-      await pipeline(
-        createReadStream(staged),
-        digest.transform,
-        createWriteStream(destination, { flags: 'wx', mode: 0o600 }),
-        { signal },
-      );
+      await onCreated();
+      await pipeline(createReadStream(staged), digest.transform, output.createWriteStream({ autoClose: true }), {
+        signal,
+      });
     } catch (error) {
+      await output.close();
       await rm(destination, { force: true });
       throw error;
     }

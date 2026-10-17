@@ -85,8 +85,8 @@ type ProbeResult = { ok: boolean; detail: string };
  */
 @Injectable()
 export class FrameleafRemoteAccessService extends BaseService {
-  /** The last relay use Frameleaf Cloud reported, for the instance it was asked for. */
-  private usageCache?: { instanceId: string; at: number; usage: RemoteAccessUsageResponseDto };
+  /** The last relay use Frameleaf Cloud reported for this exact Cloud link. */
+  private usageCache?: { authority: string; at: number; usage: RemoteAccessUsageResponseDto };
 
   private get linkDeps() {
     return { configRepository: this.configRepository, systemMetadataRepository: this.systemMetadataRepository };
@@ -163,39 +163,41 @@ export class FrameleafRemoteAccessService extends BaseService {
 
   /** `PUT admin/cloud/remote`: turn remote access on or off; its mode, direct port and published address. */
   async update(auth: AuthDto, dto: RemoteAccessUpdateDto): Promise<RemoteAccessStatusResponseDto> {
-    if (dto.enabled) {
-      const reason = await remoteAccessUnavailable(this.linkDeps);
-      if (reason) {
-        throw new BadRequestException(reason);
-      }
-    }
-    const { oldConfig, newConfig } = await this.updateConfigExclusively(
-      (config) => {
-        const remote = config.frameleafCloud.remoteAccess;
-        if (dto.publicUrl === 'custom' && !verifiedCustomHost(remote)) {
-          throw new BadRequestException('Use my domain needs a custom hostname that Frameleaf Cloud verified.');
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
+      if (dto.enabled) {
+        const reason = await remoteAccessUnavailable(this.linkDeps);
+        if (reason) {
+          throw new BadRequestException(reason);
         }
-        config.frameleafCloud.remoteAccess = {
-          ...remote,
-          ...(dto.enabled !== undefined && { enabled: dto.enabled }),
-          ...(dto.mode !== undefined && { mode: dto.mode }),
-          ...(dto.directPort !== undefined && { directPort: dto.directPort }),
-          ...(dto.portMapping !== undefined && { portMapping: dto.portMapping }),
-          ...(dto.publicUrl !== undefined && { publicUrl: dto.publicUrl }),
-        };
-      },
-      { source: 'frameleaf-cloud', auth },
-    );
-    await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
-    if (dto.enabled !== undefined) {
-      await this.syncDesired(dto.enabled);
-    }
-    const remote = newConfig.frameleafCloud.remoteAccess;
-    this.logger.log(
-      `Remote access changed by ${auth.user.id}: ${remote.enabled ? 'on' : 'off'}, ${remote.mode}, ` +
-        `port ${remote.directPort}, publishes ${remote.publicUrl}`,
-    );
-    return this.getStatus();
+      }
+      const { oldConfig, newConfig } = await this.updateConfigExclusively(
+        (config) => {
+          const remote = config.frameleafCloud.remoteAccess;
+          if (dto.publicUrl === 'custom' && !verifiedCustomHost(remote)) {
+            throw new BadRequestException('Use my domain needs a custom hostname that Frameleaf Cloud verified.');
+          }
+          config.frameleafCloud.remoteAccess = {
+            ...remote,
+            ...(dto.enabled !== undefined && { enabled: dto.enabled }),
+            ...(dto.mode !== undefined && { mode: dto.mode }),
+            ...(dto.directPort !== undefined && { directPort: dto.directPort }),
+            ...(dto.portMapping !== undefined && { portMapping: dto.portMapping }),
+            ...(dto.publicUrl !== undefined && { publicUrl: dto.publicUrl }),
+          };
+        },
+        { source: 'frameleaf-cloud', auth },
+      );
+      await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+      if (dto.enabled !== undefined) {
+        await this.syncDesired(dto.enabled);
+      }
+      const remote = newConfig.frameleafCloud.remoteAccess;
+      this.logger.log(
+        `Remote access changed by ${auth.user.id}: ${remote.enabled ? 'on' : 'off'}, ${remote.mode}, ` +
+          `port ${remote.directPort}, publishes ${remote.publicUrl}`,
+      );
+      return this.getStatus();
+    });
   }
 
   /**
@@ -203,115 +205,119 @@ export class FrameleafRemoteAccessService extends BaseService {
    * command from Frameleaf Cloud starts from it.
    */
   private async syncDesired(enabled: boolean) {
-    // under the check-in's lock, so a check-in saving the link at the same time is not overwritten
-    await this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, () =>
-      this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
-        const { link, linked } = await readCloudLink(this.linkDeps);
-        if (!linked || !link || !!link.desired?.remoteAccess === enabled) {
-          return;
-        }
-        await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudLink, {
-          ...link,
-          desired: { cloudBackup: false, ...link.desired, remoteAccess: enabled },
-        });
-      }),
-    );
+    // update owns the heartbeat lifecycle lock through configuration and desired-state publication.
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+      const { link, linked } = await readCloudLink(this.linkDeps);
+      if (!linked || !link || !!link.desired?.remoteAccess === enabled) {
+        return;
+      }
+      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudLink, {
+        ...link,
+        desired: { cloudBackup: false, ...link.desired, remoteAccess: enabled },
+      });
+    });
   }
 
   // ------------------------------------------------------------------ custom hostname
 
   /** `PUT admin/cloud/remote/hostname`: add a hostname the administrator owns; its records then wait for DNS. */
   async setCustomHostname(auth: AuthDto, dto: RemoteHostnameUpdateDto): Promise<RemoteAccessStatusResponseDto> {
-    const { cloudUrl, link } = await this.requireAvailable();
-    const state = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess);
-    const names = state?.names?.instanceId === link.instanceId ? state.names : null;
-    const document = await this.cloudCall(() => this.frameleafCloudRepository.discovery(cloudUrl));
-    const check = validateCustomHostname(dto.hostname, directDomainOf(names, document));
-    if (!check.valid) {
-      throw new BadRequestException(check.message);
-    }
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
+      const { cloudUrl, link } = await this.requireAvailable();
+      const state = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess);
+      const names = state?.names?.instanceId === link.instanceId ? state.names : null;
+      const document = await this.cloudCall(() => this.frameleafCloudRepository.discovery(cloudUrl));
+      const check = validateCustomHostname(dto.hostname, directDomainOf(names, document));
+      if (!check.valid) {
+        throw new BadRequestException(check.message);
+      }
 
-    const config = await this.getConfig({ withCache: false });
-    const previous = config.frameleafCloud.remoteAccess.customHostname.host;
-    const answer = await this.cloudCall(async () => {
-      const { token } = await this.session(cloudUrl, link);
-      return this.frameleafCloudRepository.requestJson(remoteHostnameSchema, {
-        method: 'PUT',
-        url: remoteEndpoints(document).hostnames,
-        dpop: token,
-        body: { hostname: check.host },
+      const config = await this.getConfig({ withCache: false });
+      const previous = config.frameleafCloud.remoteAccess.customHostname.host;
+      const answer = await this.cloudCall(async () => {
+        const { token } = await this.session(cloudUrl, link);
+        return this.frameleafCloudRepository.requestJson(remoteHostnameSchema, {
+          method: 'PUT',
+          url: remoteEndpoints(document).hostnames,
+          dpop: token,
+          body: { hostname: check.host },
+        });
       });
+      await this.saveHostname(answer, previous !== check.host, check.host);
+      // the new hostname is in place before the old one goes, so a failure never leaves neither
+      if (previous && previous !== check.host) {
+        await this.removeAtCloud(cloudUrl, link, previous).catch((error: unknown) => {
+          this.logger.warn(`The previous custom hostname ${previous} could not be removed: ${error}`);
+        });
+      }
+      this.logger.log(`Custom hostname ${check.host} added by ${auth.user.id}: ${answer.state}`);
+      return this.getStatus(Date.now(), hostnameProblem(answer));
     });
-    await this.saveHostname(answer, previous !== check.host, check.host);
-    // the new hostname is in place before the old one goes, so a failure never leaves neither
-    if (previous && previous !== check.host) {
-      await this.removeAtCloud(cloudUrl, link, previous).catch((error: unknown) => {
-        this.logger.warn(`The previous custom hostname ${previous} could not be removed: ${error}`);
-      });
-    }
-    this.logger.log(`Custom hostname ${check.host} added by ${auth.user.id}: ${answer.state}`);
-    return this.getStatus(Date.now(), hostnameProblem(answer));
   }
 
   /** `POST admin/cloud/remote/hostname/check`: ask Frameleaf Cloud whether the records are in place. */
   async checkCustomHostname(auth: AuthDto): Promise<RemoteAccessStatusResponseDto> {
-    const { cloudUrl, link } = await this.requireAvailable();
-    const config = await this.getConfig({ withCache: false });
-    const host = config.frameleafCloud.remoteAccess.customHostname.host;
-    if (!host) {
-      throw new BadRequestException('Add a custom hostname first.');
-    }
-    const answer = await this.cloudCall(async () => {
-      const { document, token } = await this.session(cloudUrl, link);
-      const { hostnames } = await this.frameleafCloudRepository.requestJson(remoteHostnameListSchema, {
-        url: remoteEndpoints(document).hostnames,
-        dpop: token,
-      });
-      const found = hostnames.find((hostname) => hostname.hostname === host);
-      if (found) {
-        return found;
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
+      const { cloudUrl, link } = await this.requireAvailable();
+      const config = await this.getConfig({ withCache: false });
+      const host = config.frameleafCloud.remoteAccess.customHostname.host;
+      if (!host) {
+        throw new BadRequestException('Add a custom hostname first.');
       }
-      // Frameleaf Cloud no longer has it (it gave up after seven days, or the link changed): add it again
-      return this.frameleafCloudRepository.requestJson(remoteHostnameSchema, {
-        method: 'PUT',
-        url: remoteEndpoints(document).hostnames,
-        dpop: token,
-        body: { hostname: host },
+      const answer = await this.cloudCall(async () => {
+        const { document, token } = await this.session(cloudUrl, link);
+        const { hostnames } = await this.frameleafCloudRepository.requestJson(remoteHostnameListSchema, {
+          url: remoteEndpoints(document).hostnames,
+          dpop: token,
+        });
+        const found = hostnames.find((hostname) => hostname.hostname === host);
+        if (found) {
+          return found;
+        }
+        // Frameleaf Cloud no longer has it (it gave up after seven days, or the link changed): add it again
+        return this.frameleafCloudRepository.requestJson(remoteHostnameSchema, {
+          method: 'PUT',
+          url: remoteEndpoints(document).hostnames,
+          dpop: token,
+          body: { hostname: host },
+        });
       });
+      await this.saveHostname(answer, false, host, true);
+      this.logger.log(`Custom hostname ${host} checked by ${auth.user.id}: ${answer.state}`);
+      return this.getStatus(Date.now(), hostnameProblem(answer));
     });
-    await this.saveHostname(answer, false, host, true);
-    this.logger.log(`Custom hostname ${host} checked by ${auth.user.id}: ${answer.state}`);
-    return this.getStatus(Date.now(), hostnameProblem(answer));
   }
 
   /** `DELETE admin/cloud/remote/hostname`: stop using the custom hostname. Its DNS records can then be deleted. */
   async removeCustomHostname(auth: AuthDto): Promise<RemoteAccessStatusResponseDto> {
-    const config = await this.getConfig({ withCache: false });
-    const host = config.frameleafCloud.remoteAccess.customHostname.host;
-    if (!host) {
-      return this.getStatus();
-    }
-    // this server stops using it first; telling Frameleaf Cloud is best effort (it releases the
-    // hostname on unlink too, and an unverified claim expires on its own)
-    const { oldConfig, newConfig } = await this.updateConfigExclusively(
-      (next) => {
-        next.frameleafCloud.remoteAccess = {
-          ...next.frameleafCloud.remoteAccess,
-          publicUrl: 'frameleaf',
-          customHostname: { host: '', status: 'pending', checkedAt: null },
-        };
-      },
-      { source: 'frameleaf-cloud', auth },
-    );
-    await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
-    const { cloudUrl, link, linked } = await readCloudLink(this.linkDeps);
-    if (cloudUrl && linked && link?.instanceId) {
-      await this.removeAtCloud(cloudUrl, link as FrameleafCloudLink & { instanceId: string }, host).catch(
-        (error: unknown) => this.logger.warn(`Frameleaf Cloud was not told that ${host} was removed: ${error}`),
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
+      const config = await this.getConfig({ withCache: false });
+      const host = config.frameleafCloud.remoteAccess.customHostname.host;
+      if (!host) {
+        return this.getStatus();
+      }
+      // this server stops using it first; telling Frameleaf Cloud is best effort (it releases the
+      // hostname on unlink too, and an unverified claim expires on its own)
+      const { oldConfig, newConfig } = await this.updateConfigExclusively(
+        (next) => {
+          next.frameleafCloud.remoteAccess = {
+            ...next.frameleafCloud.remoteAccess,
+            publicUrl: 'frameleaf',
+            customHostname: { host: '', status: 'pending', checkedAt: null },
+          };
+        },
+        { source: 'frameleaf-cloud', auth },
       );
-    }
-    this.logger.log(`Custom hostname ${host} removed by ${auth.user.id}`);
-    return this.getStatus();
+      await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+      const { cloudUrl, link, linked } = await readCloudLink(this.linkDeps);
+      if (cloudUrl && linked && link?.instanceId) {
+        await this.removeAtCloud(cloudUrl, link as FrameleafCloudLink & { instanceId: string }, host).catch(
+          (error: unknown) => this.logger.warn(`Frameleaf Cloud was not told that ${host} was removed: ${error}`),
+        );
+      }
+      this.logger.log(`Custom hostname ${host} removed by ${auth.user.id}`);
+      return this.getStatus();
+    });
   }
 
   private async removeAtCloud(cloudUrl: string, link: FrameleafCloudLink & { instanceId: string }, host: string) {
@@ -368,31 +374,34 @@ export class FrameleafRemoteAccessService extends BaseService {
    * access plan, and at most once a minute.
    */
   async getUsage(auth: AuthDto, now = Date.now()): Promise<RemoteAccessUsageResponseDto> {
-    const { cloudUrl, link } = await this.requireAvailable();
-    const cached = this.usageCache;
-    if (cached?.instanceId === link.instanceId && now - cached.at < USAGE_FRESH_MS) {
-      return cached.usage;
-    }
-    const answer = await this.cloudCall(async () => {
-      const { document, token } = await this.session(cloudUrl, link);
-      return this.frameleafCloudRepository.requestJson(remoteUsageSchema, {
-        url: remoteEndpoints(document).usage,
-        dpop: token,
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
+      const { cloudUrl, link } = await this.requireAvailable();
+      const authority = JSON.stringify([cloudUrl, link.instanceId, link.accountId ?? null, link.linkedAt ?? null]);
+      const cached = this.usageCache;
+      if (cached?.authority === authority && now >= cached.at && now - cached.at < USAGE_FRESH_MS) {
+        return cached.usage;
+      }
+      const answer = await this.cloudCall(async () => {
+        const { document, token } = await this.session(cloudUrl, link);
+        return this.frameleafCloudRepository.requestJson(remoteUsageSchema, {
+          url: remoteEndpoints(document).usage,
+          dpop: token,
+        });
       });
+      const usage: RemoteAccessUsageResponseDto = {
+        period: answer.period,
+        periodStart: answer.periodStart,
+        periodEnd: answer.periodEnd,
+        bytes: answer.bytes,
+        limitBytes: answer.limitBytes,
+        throttled: !!answer.throttle,
+        throttleBps: answer.throttle?.bps ?? null,
+        throttleUntil: answer.throttle?.until ?? null,
+      };
+      this.usageCache = { authority, at: now, usage };
+      this.logger.debug(`Relay use read by ${auth.user.id}: ${usage.bytes} of ${usage.limitBytes} bytes`);
+      return usage;
     });
-    const usage: RemoteAccessUsageResponseDto = {
-      period: answer.period,
-      periodStart: answer.periodStart,
-      periodEnd: answer.periodEnd,
-      bytes: answer.bytes,
-      limitBytes: answer.limitBytes,
-      throttled: !!answer.throttle,
-      throttleBps: answer.throttle?.bps ?? null,
-      throttleUntil: answer.throttle?.until ?? null,
-    };
-    this.usageCache = { instanceId: link.instanceId, at: now, usage };
-    this.logger.debug(`Relay use read by ${auth.user.id}: ${usage.bytes} of ${usage.limitBytes} bytes`);
-    return usage;
   }
 
   // ------------------------------------------------------------------ self-check
@@ -404,66 +413,68 @@ export class FrameleafRemoteAccessService extends BaseService {
    * edge worker last saw them.
    */
   async test(auth: AuthDto, now = Date.now()): Promise<RemoteAccessStatusResponseDto> {
-    const config = await this.getConfig({ withCache: false });
-    const settings = config.frameleafCloud.remoteAccess;
-    const reason = await remoteAccessUnavailable(this.linkDeps, now);
-    if (reason) {
-      throw new BadRequestException(reason);
-    }
-    if (!settings.enabled) {
-      throw new BadRequestException('Turn remote access on first.');
-    }
-    const state = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess);
-    const current = edgeStateCurrent(state, now);
-    const checks: FrameleafRemoteAccessTest['checks'] = [];
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
+      const config = await this.getConfig({ withCache: false });
+      const settings = config.frameleafCloud.remoteAccess;
+      const reason = await remoteAccessUnavailable(this.linkDeps, now);
+      if (reason) {
+        throw new BadRequestException(reason);
+      }
+      if (!settings.enabled) {
+        throw new BadRequestException('Turn remote access on first.');
+      }
+      const state = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess);
+      const current = edgeStateCurrent(state, now);
+      const checks: FrameleafRemoteAccessTest['checks'] = [];
 
-    const certificate = state?.certificate;
-    const certificateOk = !!certificate && Date.parse(certificate.notAfter) > now;
-    checks.push({
-      id: 'certificate',
-      ok: certificateOk,
-      detail: certificateOk
-        ? `Issued to this server for ${certificate.names[0]}; expires ${certificate.notAfter.slice(0, 10)}`
-        : (state?.certificateIssuance?.lastError ?? 'This server has no certificate yet.'),
+      const certificate = state?.certificate;
+      const certificateOk = !!certificate && Date.parse(certificate.notAfter) > now;
+      checks.push({
+        id: 'certificate',
+        ok: certificateOk,
+        detail: certificateOk
+          ? `Issued to this server for ${certificate.names[0]}; expires ${certificate.notAfter.slice(0, 10)}`
+          : (state?.certificateIssuance?.lastError ?? 'This server has no certificate yet.'),
+      });
+
+      const listening = current && !!state?.direct.listening;
+      checks.push({
+        id: 'listener',
+        ok: listening,
+        detail: listening
+          ? `Listening for HTTPS on port ${state.direct.port}`
+          : current
+            ? (state?.reason ?? 'The HTTPS listener is not running.')
+            : 'The edge worker did not report in the last minute.',
+      });
+
+      const probe: ProbeResult =
+        listening && state?.names
+          ? await this.probe(state)
+          : { ok: false, detail: 'Not tried: the HTTPS listener is not running.' };
+      checks.push({ id: 'api', ...probe });
+
+      const relayConnected = current && !!state?.relay.connected;
+      checks.push({
+        id: 'relay',
+        ok: relayConnected,
+        detail: relayConnected ? 'Connected to the Frameleaf relay.' : 'Not connected to the Frameleaf relay yet.',
+      });
+
+      if (settings.mode === 'relay-and-direct') {
+        checks.push({ id: 'direct', ...directCheck(settings, state, listening) });
+      }
+
+      const result: FrameleafRemoteAccessTest = {
+        at: new Date(now).toISOString(),
+        // the relay and the router are reported, not required: direct HTTPS and the certificate are
+        ok: certificateOk && listening && probe.ok,
+        checks,
+      };
+      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafRemoteAccessTest, result);
+      this.logger.log(`Remote access self-check by ${auth.user.id}: ${result.ok ? 'passed' : 'failed'}`);
+      return this.getStatus(now);
     });
-
-    const listening = current && !!state?.direct.listening;
-    checks.push({
-      id: 'listener',
-      ok: listening,
-      detail: listening
-        ? `Listening for HTTPS on port ${state.direct.port}`
-        : current
-          ? (state?.reason ?? 'The HTTPS listener is not running.')
-          : 'The edge worker did not report in the last minute.',
-    });
-
-    const probe: ProbeResult =
-      listening && state?.names
-        ? await this.probe(state)
-        : { ok: false, detail: 'Not tried: the HTTPS listener is not running.' };
-    checks.push({ id: 'api', ...probe });
-
-    const relayConnected = current && !!state?.relay.connected;
-    checks.push({
-      id: 'relay',
-      ok: relayConnected,
-      detail: relayConnected ? 'Connected to the Frameleaf relay.' : 'Not connected to the Frameleaf relay yet.',
-    });
-
-    if (settings.mode === 'relay-and-direct') {
-      checks.push({ id: 'direct', ...directCheck(settings, state, listening) });
-    }
-
-    const result: FrameleafRemoteAccessTest = {
-      at: new Date(now).toISOString(),
-      // the relay and the router are reported, not required: direct HTTPS and the certificate are
-      ok: certificateOk && listening && probe.ok,
-      checks,
-    };
-    await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafRemoteAccessTest, result);
-    this.logger.log(`Remote access self-check by ${auth.user.id}: ${result.ok ? 'passed' : 'failed'}`);
-    return this.getStatus(now);
   }
 
   /** One request through the direct listener, as a device on the home network would make it. */
@@ -488,12 +499,14 @@ export class FrameleafRemoteAccessService extends BaseService {
         }
 
         settled = true;
+        clearTimeout(deadline);
         socket.destroy();
         resolve(result);
       };
-      socket.setTimeout(PROBE_TIMEOUT_MS, () => {
+      const deadline = setTimeout(() => {
         done({ ok: false, detail: 'The HTTPS listener did not answer in time.' });
-      });
+      }, PROBE_TIMEOUT_MS);
+      deadline.unref();
       socket.once('error', (error) => {
         done({ ok: false, detail: `The HTTPS listener refused the connection: ${error.message}` });
       });
@@ -517,9 +530,9 @@ export class FrameleafRemoteAccessService extends BaseService {
           );
         }
       });
-      socket.once('end', () =>
-        done({ ok: false, detail: 'The HTTPS listener closed the connection without an answer.' }),
-      );
+      const closed = () => done({ ok: false, detail: 'The HTTPS listener closed the connection without an answer.' });
+      socket.once('end', closed);
+      socket.once('close', closed);
     });
   }
 

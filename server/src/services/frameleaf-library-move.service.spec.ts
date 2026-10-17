@@ -1,5 +1,5 @@
 import { ConflictException } from '@nestjs/common';
-import { ImmichWorker, QueueName, SystemMetadataKey } from 'src/enum.js';
+import { FrameleafWorker, QueueName, SystemMetadataKey } from 'src/enum.js';
 import {
   FrameleafLibraryMoveService,
   LIBRARY_MOVE_LEASE_MS,
@@ -157,9 +157,35 @@ describe(FrameleafLibraryMoveService.name, () => {
       leaseExpiresAt: new Date().toISOString(),
       queues: [],
     });
-    mocks.config.getWorker.mockReturnValue(ImmichWorker.Microservices);
+    mocks.config.getWorker.mockReturnValue(FrameleafWorker.Microservices);
     await sut.onBootstrap();
     expect(libraryMoveFence.active).toBe(false);
-    mocks.config.getWorker.mockReturnValue(ImmichWorker.Api);
+    mocks.config.getWorker.mockReturnValue(FrameleafWorker.Api);
+  });
+
+  it.each(['read', 'resume', 'delete'] as const)('retries lease expiry after a transient %s failure', async (step) => {
+    await sut.pause('op-1');
+    const failing =
+      step === 'read' ? mocks.systemMetadata.get : step === 'resume' ? mocks.job.resume : mocks.systemMetadata.delete;
+    failing.mockRejectedValueOnce(new Error('temporary database failure'));
+    await vi.advanceTimersByTimeAsync(LIBRARY_MOVE_LEASE_MS + 2000);
+    expect(metadata.has(SystemMetadataKey.FrameleafLibraryMovePause)).toBe(true);
+    expect(libraryMoveFence.active).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(metadata.has(SystemMetadataKey.FrameleafLibraryMovePause)).toBe(false);
+    expect(libraryMoveFence.active).toBe(false);
+    expect(paused).toEqual(new Set([QueueName.SmartSearch]));
+  });
+
+  it('does not schedule an expiry retry after shutdown overtakes a failed read', async () => {
+    await sut.pause('op-1');
+    const read = Promise.withResolvers<never>();
+    mocks.systemMetadata.get.mockReturnValueOnce(read.promise);
+    await vi.advanceTimersByTimeAsync(LIBRARY_MOVE_LEASE_MS + 2000);
+    sut.onShutdown();
+    read.reject(new Error('temporary database failure'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

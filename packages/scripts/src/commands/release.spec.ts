@@ -1,7 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { getNewVersion, ReleaseError } from './release';
+import { getNewVersion } from './release';
+import { ReleaseError, ReleaseInputError } from 'src/types';
 
 describe(getNewVersion.name, () => {
+  it.each([
+    ['', 'patch'],
+    ['2.7.5', ''],
+    ['2.7.5', 'major'],
+    ['invalid', 'patch'],
+  ])('rejects invalid input %s / %s', (version, type) => {
+    expect(() => getNewVersion(version, type)).toThrow(ReleaseInputError);
+  });
+
+  it('normalizes tagged versions and drops build metadata on promotion', () => {
+    expect(getNewVersion('v2.7.5-rc.2+build', 'release')).toBe('2.7.5');
+  });
   describe('transitions', () => {
     const valid = [
       {

@@ -155,7 +155,7 @@ const summaryWithCommands = (
   reported: { counts: Record<string, number>; total: number },
   commands: { counts: Record<string, number>; total: number },
 ) => {
-  const counts: Record<string, number> = { ...commands.counts };
+  const counts = Object.assign(Object.create(null), commands.counts) as Record<string, number>;
   let total = commands.total;
   for (const [id, count] of Object.entries(reported.counts)) {
     if (Object.hasOwn(studioCommandMirror, id)) {
@@ -497,9 +497,12 @@ export class StudioProjectService {
       project.currentRevision > 0 ? await this.repository.getRevision(project.id, project.currentRevision) : undefined;
 
     if (!head) {
-      const created = await this.repository.create({ ownerId: auth.user.id, name });
-      const linked = (await this.repository.update(created.id, { duplicatedFromId: project.id })) ?? created;
-      return this.mapProject(linked, 'owner', auth.user.id, null, await this.visiblePosters(auth, [linked]));
+      const { project: copy } = await this.repository.createWithRevision({
+        ownerId: auth.user.id,
+        name,
+        duplicatedFromId: project.id,
+      });
+      return this.mapProject(copy, 'owner', auth.user.id, null, await this.visiblePosters(auth, [copy]));
     }
 
     const { project: copy } = await this.repository.createWithRevision({

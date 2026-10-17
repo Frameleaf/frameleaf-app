@@ -201,7 +201,8 @@ export const buildExplorePlaces = (counts: ExploreFacetCount[], limit = EXPLORE_
 export const buildExploreThings = (counts: ExploreFacetCount[], limit = EXPLORE_THING_LIMIT): ExploreCoverCard[] =>
   counts.slice(0, limit).map(({ value, label, count, coverAssetId }) => ({
     id: value,
-    label: label || value,
+    // A nested tag's facet label is its whole path ("Travel/Canada/Banff"); the card names the tag itself.
+    label: (label || value).split('/').findLast(Boolean) ?? (label || value),
     count,
     href: Route.search({ tagIds: [value] }),
     coverAssetId: coverAssetId ?? null,

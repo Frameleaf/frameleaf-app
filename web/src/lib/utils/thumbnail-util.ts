@@ -5,11 +5,25 @@ import { locale } from '$lib/stores/preferences.store';
 import { fromTimelinePlainDateTime } from '$lib/utils/timeline-util';
 
 export const getAltText = derived(t, ($t) => {
+  let formatter: Intl.DateTimeFormat | undefined;
+  let formatterLocale: string | undefined;
+  const dateOptions = { dateStyle: 'long', timeZone: 'UTC' } as const;
+  const peopleSuffixes = ['', '_1_person', '_2_people', '_3_people', '_4_or_more_people'] as const;
+
   return (asset: TimelineAsset) => {
-    const date = fromTimelinePlainDateTime(asset.localDateTime).toJSDate().toLocaleString(get(locale), {
-      dateStyle: 'long',
-      timeZone: 'UTC',
-    });
+    const jsDate = fromTimelinePlainDateTime(asset.localDateTime).toJSDate();
+    const currentLocale = get(locale);
+    let date: string;
+    if (Number.isNaN(jsDate.getTime())) {
+      // Date.toLocaleString returns Invalid Date before checking locale; Intl.format throws instead.
+      date = jsDate.toLocaleString(currentLocale, dateOptions);
+    } else {
+      if (!formatter || formatterLocale !== currentLocale) {
+        formatter = new Intl.DateTimeFormat(currentLocale, dateOptions);
+        formatterLocale = currentLocale;
+      }
+      date = formatter.format(jsDate);
+    }
     const hasPlace = asset.city && asset.country;
 
     const peopleCount = asset.people?.length ?? 0;
@@ -26,35 +40,7 @@ export const getAltText = derived(t, ($t) => {
       additionalCount: peopleCount > 3 ? peopleCount - 2 : 0,
     };
 
-    if (peopleCount > 0) {
-      switch (peopleCount) {
-        case 1: {
-          return hasPlace
-            ? $t('image_alt_text_date_place_1_person', { values })
-            : $t('image_alt_text_date_1_person', { values });
-        }
-        case 2: {
-          return hasPlace
-            ? $t('image_alt_text_date_place_2_people', { values })
-            : $t('image_alt_text_date_2_people', { values });
-        }
-        case 3: {
-          return hasPlace
-            ? $t('image_alt_text_date_place_3_people', { values })
-            : $t('image_alt_text_date_3_people', { values });
-        }
-        default: {
-          return hasPlace
-            ? $t('image_alt_text_date_place_4_or_more_people', { values })
-            : $t('image_alt_text_date_4_or_more_people', { values });
-        }
-      }
-    }
-
-    if (hasPlace) {
-      return $t('image_alt_text_date_place', { values });
-    }
-
-    return $t('image_alt_text_date', { values });
+    const peopleSuffix = peopleSuffixes[Math.min(peopleCount, 4)];
+    return $t(`image_alt_text_date${hasPlace ? '_place' : ''}${peopleSuffix}`, { values });
   };
 });

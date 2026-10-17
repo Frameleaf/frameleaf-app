@@ -272,6 +272,7 @@ export type StudioReadGrantPayload = {
   sourceEpochs?: SourceEpoch[];
   scope: 'render' | 'preview';
   kind: StudioResourceKind;
+  source?: StudioAudioSource;
   id: string;
   key: string;
   checksum: string | null;
@@ -1224,6 +1225,7 @@ export class StudioResourceService extends BaseService {
         sourceEpochs: manifest.sourceEpochs,
         scope: 'render',
         kind: entry.kind,
+        ...(entry.kind === StudioResourceKind.Audio && { source: entry.source }),
         id: entry.id,
         key: entry.key,
         checksum: entry.checksum,
@@ -1340,9 +1342,10 @@ export class StudioResourceService extends BaseService {
       };
     }
 
-    const sourceIds = [
-      ...new Set([...(grant.assetIds ?? []), ...(LIBRARY_BACKED_KINDS.has(grant.kind) ? [grant.id] : [])]),
-    ];
+    const libraryBacked =
+      LIBRARY_BACKED_KINDS.has(grant.kind) &&
+      (grant.kind !== StudioResourceKind.Audio || grant.source === undefined || grant.source === 'asset');
+    const sourceIds = [...new Set([...(grant.assetIds ?? []), ...(libraryBacked ? [grant.id] : [])])];
     if (!(await this.sourceEpochsMatch(grant.sourceEpochs, sourceIds, grant.v === 2))) {
       return {
         valid: false,
@@ -1391,7 +1394,7 @@ export class StudioResourceService extends BaseService {
         : { valid: false, reason: 'invalid-token', detail: 'Source admission was revoked; resolve the project again.' };
     }
 
-    if (LIBRARY_BACKED_KINDS.has(grant.kind)) {
+    if (libraryBacked) {
       const decisions = await this.decideAssets(auth, new Set([grant.id]), { backgroundRunner });
       const decision = decisions.get(grant.id);
       if (!decision) {

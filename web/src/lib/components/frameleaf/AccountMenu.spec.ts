@@ -2,6 +2,7 @@ import { CloudLinkState } from '@frameleaf/sdk';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import AccountMenu from './AccountMenu.svelte';
 
@@ -59,6 +60,42 @@ describe('AccountMenu', () => {
     await fireEvent.keyDown(first, { key: 'Escape' });
     expect(screen.queryByRole('menu')).toBeNull();
     expect(trigger).toHaveFocus();
+  });
+
+  it('offers "Set up your account" to members only; administrators go through first-run setup (SHELL-P5)', async () => {
+    await open(false);
+    expect(screen.queryByRole('menuitem', { name: 'frameleaf_setup_tool_title' })).toBeNull();
+    cleanup();
+
+    authManager.setUser(userAdminFactory.build({ isAdmin: false }));
+    await open(false);
+    expect(screen.getByRole('menuitem', { name: 'frameleaf_setup_tool_title' })).toHaveAttribute(
+      'href',
+      '/auth/onboarding',
+    );
+  });
+
+  it('marks a supporter on the avatar and thanks them in the support entry', async () => {
+    const show = async (purchased: boolean, showSupportBadge: boolean) => {
+      cleanup();
+      authManager.isPurchased = purchased;
+      authManager.setPreferences(preferencesFactory.build({ purchase: { showSupportBadge, hideBuyButtonUntil: '' } }));
+      await open(false);
+    };
+
+    await show(false, true);
+    expect(screen.queryByTestId('supporter-mark')).toBeNull();
+    expect(screen.getByRole('menuitem', { name: /^buy frameleaf_account_menu_support_hint$/ })).toBeInTheDocument();
+
+    // The key is there but the person hid the badge: no mark, still thanked.
+    await show(true, false);
+    expect(screen.queryByTestId('supporter-mark')).toBeNull();
+    expect(screen.getByRole('menuitem', { name: /^frameleaf_support_thanks/ })).toHaveAttribute('href', '/buy');
+
+    await show(true, true);
+    expect(screen.getByTestId('supporter-mark')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'frameleaf_account_menu_for_supporter' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /frameleaf_account_menu_support_hint_supporter/ })).toBeInTheDocument();
   });
 
   it('offers Support Frameleaf and, for an administrator, the Frameleaf Cloud link state and AI credit (FL-157)', async () => {

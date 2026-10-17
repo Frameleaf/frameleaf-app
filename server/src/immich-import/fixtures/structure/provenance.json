@@ -41,5 +41,50 @@
     "commit": "8aa95c67470a02a8ddedf03c2e52963af33065ff",
     "fixture": "1784647658615-AddOAuthBearerTokenToSession.ts.txt",
     "sha256": "d54d778e0913f7db59c70cb67dcfa37aa745d203525a40ba3e4c3ff4904717a7"
-  }
+  },
+  "replayed": {
+    "2.0.0": {
+      "tag": "v2.0.0",
+      "commit": "e4234af3b3bd32f5dd12a2b0808158339deded43",
+      "dump": "replayed-2.0.0.sql.gz.base64",
+      "sha256": "9c03e8d8253cce05ebdb7138d52921b98b72ad23322264f462644334e6f93fe6"
+    },
+    "2.2.0": {
+      "tag": "v2.2.0",
+      "commit": "57c8378ca7700ec7d46ff4e7acab34a2b08825bf",
+      "dump": "replayed-2.2.0.sql.gz.base64",
+      "sha256": "a445359474f7e4d89796a136b679417d88e9fd55a845419a0a4135f3ac560024"
+    },
+    "2.3.0": {
+      "tag": "v2.3.0",
+      "commit": "45a03156062d7f397f3f0c848cd0ff51a10534cc",
+      "dump": "replayed-2.3.0.sql.gz.base64",
+      "sha256": "09993135156ae73d5262579114dd2f362e2102e282d15e9191e1c6e472cef86c"
+    },
+    "2.4.0": {
+      "tag": "v2.4.0",
+      "commit": "a02adbb828ec3da17efa5d933b827695d3ed7222",
+      "dump": "replayed-2.4.0.sql.gz.base64",
+      "sha256": "f37fce91a78bf0001a8c0298472fa0f609f18cc50e7221573081238b2ce3299e"
+    },
+    "2.5.0": {
+      "tag": "v2.5.0",
+      "commit": "6fd3c9fffaf931206018a54494bc269c093bb414",
+      "dump": "replayed-2.5.0.sql.gz.base64",
+      "sha256": "c61a5b0c40d534e22f49e2d1ce978765a56e3f333d92c49c3ae4cad1395be75a"
+    },
+    "2.6.0": {
+      "tag": "v2.6.0",
+      "commit": "f413f5c6923ff6fae26248af9987f0036e87a735",
+      "dump": "replayed-2.6.0.sql.gz.base64",
+      "sha256": "2e32e4ddb316eee149821012749be45b2872ef9289bd8f7fdcb5bc694db6f61d"
+    },
+    "2.7.0": {
+      "tag": "v2.7.0",
+      "commit": "afec61addcbb14b54cb5dcc9dd7c8a101a6b72f3",
+      "dump": "replayed-2.7.0.sql.gz.base64",
+      "sha256": "be62ac46e0900a3e6a451d1f4ee8abea0df9d126dec9074089a2cad3563b68f7"
+    }
+  },
+  "replayedQualification": "Schema-only pg_dump of an empty database after replaying the tag's own upstream Kysely migrations (scripts/immich-import-replay); psql meta-commands and the empty search_path setting removed."
 }

@@ -17,7 +17,7 @@ import {
   ValidateAccessTokenResponseDto,
 } from 'src/dtos/auth.dto.js';
 import { UserAdminResponseDto } from 'src/dtos/user.dto.js';
-import { ApiTag, AuthType, ImmichCookie, Permission } from 'src/enum.js';
+import { ApiTag, AuthCookie, AuthType, Permission } from 'src/enum.js';
 import { Auth, Authenticated, GetLoginDetails, RemoteSignInExempt } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { AuthService, type LoginDetails } from 'src/services/auth.service.js';
@@ -46,9 +46,9 @@ export class AuthController {
       isSecure: loginDetails.isSecure,
       rememberMe: loginCredential.rememberMe,
       values: [
-        { key: ImmichCookie.AccessToken, value: body.accessToken },
-        { key: ImmichCookie.AuthType, value: AuthType.Password },
-        { key: ImmichCookie.IsAuthenticated, value: 'true' },
+        { key: AuthCookie.AccessToken, value: body.accessToken },
+        { key: AuthCookie.AuthType, value: AuthType.Password },
+        { key: AuthCookie.IsAuthenticated, value: 'true' },
       ],
     });
   }
@@ -104,14 +104,10 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
     @Auth() auth: AuthDto,
   ): Promise<LogoutResponseDto> {
-    const authType = (request.cookies || {})[ImmichCookie.AuthType];
+    const authType = (request.cookies || {})[AuthCookie.AuthType];
 
     const body = await this.service.logout(auth, authType);
-    return respondWithoutCookie(res, body, [
-      ImmichCookie.AccessToken,
-      ImmichCookie.AuthType,
-      ImmichCookie.IsAuthenticated,
-    ]);
+    return respondWithoutCookie(res, body, [AuthCookie.AccessToken, AuthCookie.AuthType, AuthCookie.IsAuthenticated]);
   }
 
   @Get('status')

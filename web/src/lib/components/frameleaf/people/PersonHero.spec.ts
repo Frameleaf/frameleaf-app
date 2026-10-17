@@ -62,6 +62,25 @@ describe('PersonHero (PD-1, PD-2, PD-7, PD-8)', () => {
     await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Correction history' })).toBeNull());
   });
 
+  it('keeps every action in the one row on a phone, with only Correction history in the … menu (DISCOVERY-P6)', async () => {
+    vi.mocked(matchMedia).mockImplementation(((query: string) => ({
+      matches: query.includes('max-width'),
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })) as never);
+    render(PersonHero, props());
+
+    const toolbar = screen.getByRole('toolbar', { name: /Ada/ });
+    for (const name of ['Featured photo', 'Set date of birth', 'Hide', 'Recognition groups']) {
+      expect(within(toolbar).getByRole('button', { name })).toBeInTheDocument();
+    }
+    await fireEvent.click(within(toolbar).getByRole('button', { name: 'More actions for Ada' }));
+    expect(await screen.findAllByRole('menuitem')).toHaveLength(1);
+  });
+
   it('counts photos and videos as PersonDetail.jsx does', () => {
     render(PersonHero, props());
     expect(screen.getByText('2 photos · 1 video')).toBeTruthy();

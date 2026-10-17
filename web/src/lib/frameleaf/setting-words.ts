@@ -27,7 +27,8 @@ type Words = {
   values?: Record<string, Translations> | (($t: MessageFormatter, value: unknown) => string | undefined);
 };
 
-const GIB = 1024 ** 3;
+// D5: decimal GB
+const GB = 1000 ** 3;
 const count =
   (key: Translations) =>
   ($t: MessageFormatter, value: unknown): string | undefined =>
@@ -134,10 +135,14 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
     label: 'frameleaf_prefs_downloads_split',
     values: ($t, value) =>
       typeof value === 'number'
-        ? $t('frameleaf_prefs_downloads_size_gb', { values: { size: Math.round((value / GIB) * 100) / 100 } })
+        ? $t('frameleaf_prefs_downloads_size_gb', { values: { size: Math.round((value / GB) * 100) / 100 } })
         : undefined,
   },
   'download.includeEmbeddedVideos': { label: 'frameleaf_prefs_downloads_motion_label' },
+  // ACCOUNT-P2, P3, P5: the account preferences added to Downloads, Look & playback and People & sharing.
+  'download.includeSidecar': { label: 'frameleaf_prefs_downloads_details' },
+  'search.includeArchived': { label: 'frameleaf_prefs_look_archived' },
+  'people.suggestInSpaces': { label: 'frameleaf_sharing_suggest_spaces' },
   'emailNotifications.enabled': { label: 'frameleaf_notify_yours_send' },
   'emailNotifications.albumInvite': { label: 'frameleaf_notify_yours_shares' },
   'emailNotifications.albumUpdate': { label: 'frameleaf_notify_yours_updates' },

@@ -453,7 +453,7 @@ export class PreservationFileRepository {
           hash.update(chunk);
           bytes += chunk.length;
           lines += page.length;
-          await handle.write(chunk);
+          await handle.writeFile(chunk, { signal: executionSignal() });
           reportExecutionProgress(temporary, bytes);
         }
         await handle.sync();

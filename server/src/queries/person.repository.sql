@@ -538,12 +538,39 @@ with
       $3 as "clusterGroupId"
     from
       "mapping"
+    returning
+      "id"
+  ),
+  "moved_people" as (
+    update "person"
+    set
+      "personGroupId" = "mapping"."newId"
+    from
+      "mapping"
+      inner join "created" on "created"."id" = "mapping"."newId"
+    where
+      "person"."personGroupId" = "mapping"."oldId"
+      and "person"."ownerId" = $4
+    returning
+      "person"."personGroupId"
   )
-select
-  "mapping"."oldId",
-  "mapping"."newId"
+update "asset_face"
+set
+  "personGroupId" = "mapping"."newId"
 from
   "mapping"
+  inner join "moved_people" on "moved_people"."personGroupId" = "mapping"."newId"
+where
+  "asset_face"."personGroupId" = "mapping"."oldId"
+  and exists (
+    select
+      "asset"."id"
+    from
+      "asset"
+    where
+      "asset"."id" = "asset_face"."assetId"
+      and "asset"."ownerId" = $5
+  )
 commit
 
 -- PersonRepository.createGroups
@@ -666,8 +693,10 @@ select
 from
   "asset_face"
 where
-  "asset_face"."assetId" in ($2)
-  and "asset_face"."personGroupId" in ($3)
+  (
+    "asset_face"."assetId",
+    "asset_face"."personGroupId"
+  ) in (($2, $3))
   and "asset_face"."deletedAt" is null
 
 -- PersonRepository.getRandomFace
@@ -745,6 +774,13 @@ set
   "deletedAt" = $1
 where
   "asset_face"."id" = $2
+
+-- PersonRepository.updateVisibility
+update "asset_face"
+set
+  "isVisible" = not "asset_face"."id" = any ($1::uuid[])
+where
+  "asset_face"."id" = any ($2::uuid[])
 
 -- PersonRepository.getForFeatureFaceUpdate
 select

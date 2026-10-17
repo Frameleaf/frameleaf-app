@@ -24,11 +24,12 @@ const IntegrityGetReportSchema = z
   .object({
     type: IntegrityReportSchema,
     cursor: z.string().optional().describe('Cursor for pagination'),
-    limit: z.int().positive().default(500).optional().describe('Number of items per page'),
+    // D2: a query string value is text, so coerce it (`?limit=50`) as the other query DTOs do.
+    limit: z.coerce.number().int().positive().default(500).optional().describe('Number of items per page'),
   })
   .meta({ id: 'IntegrityGetReportDto' });
 
-const IntegrityDeleteReportSchema = z.object({ type: IntegrityReport }).meta({ id: 'IntegrityDeleteReportDto' });
+const IntegrityDeleteReportSchema = z.object({ type: IntegrityReportSchema }).meta({ id: 'IntegrityDeleteReportDto' });
 
 const IntegrityReportResponseItemSchema = z.object({
   id: z.uuidv4().describe('Integrity report item id'),

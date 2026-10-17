@@ -50,6 +50,32 @@ describe('DetailPanelImageEnrichment', () => {
     vi.clearAllMocks();
   });
 
+  it('ignores an action result that lands after the viewer moved to another photo', async () => {
+    const first = assetFactory.build({ type: AssetTypeEnum.Image });
+    const second = assetFactory.build({ type: AssetTypeEnum.Image });
+    let resolveAction!: (value: AssetImageEnrichmentResponseDto) => void;
+    vi.mocked(getAssetImageEnrichment).mockImplementation(({ id }) => Promise.resolve(enrichmentFactory(id, false)));
+    vi.mocked(updateAssetImageEnrichment).mockReturnValue(
+      new Promise((resolve) => (resolveAction = resolve)) as ReturnType<typeof updateAssetImageEnrichment>,
+    );
+
+    const view = renderWithTooltips(DetailPanelImageEnrichment, { asset: first, isOwner: true });
+    await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_info_mark_sensitive' }));
+    // renderWithTooltips mounts a wrapper, so the panel's props travel as componentProps.
+    await view.rerender({
+      component: DetailPanelImageEnrichment,
+      componentProps: { asset: second, isOwner: true },
+    } as never);
+    await waitFor(() => expect(getAssetImageEnrichment).toHaveBeenCalledWith({ id: second.id }, expect.anything()));
+    await screen.findByRole('button', { name: 'frameleaf_info_mark_sensitive' });
+
+    resolveAction(enrichmentFactory(first.id, true));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.queryByRole('button', { name: 'frameleaf_info_unmark_sensitive' })).toBeNull();
+    expect(getAssetInfo).not.toHaveBeenCalled();
+  });
+
   it('removes an asset from the current view when marking it NSFW hides it from the session', async () => {
     const asset = assetFactory.build({ type: AssetTypeEnum.Image });
     const onAssetSuppressed = vi.fn();

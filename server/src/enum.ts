@@ -3,9 +3,9 @@ import z from 'zod';
 
 // eslint-disable-next-line no-restricted-imports -- Native Node pre-import consumers share pure environment values without application aliases.
 export {
-  ImmichEnvironment,
-  ImmichEnvironmentSchema,
-  ImmichWorker,
+  FrameleafEnvironment,
+  FrameleafEnvironmentSchema,
+  FrameleafWorker,
   LogFormat,
   LogFormatSchema,
   LogLevel,
@@ -17,7 +17,7 @@ export enum AuthType {
   OAuth = 'oauth',
 }
 
-export enum ImmichCookie {
+export enum AuthCookie {
   AccessToken = 'immich_access_token',
   MaintenanceToken = 'immich_maintenance_token',
   AuthType = 'immich_auth_type',
@@ -27,7 +27,7 @@ export enum ImmichCookie {
   OAuthCodeVerifier = 'immich_oauth_code_verifier',
 }
 
-export enum ImmichHeader {
+export enum RequestHeader {
   ApiKey = 'x-api-key',
   UserToken = 'x-immich-user-token',
   SessionToken = 'x-immich-session-token',
@@ -45,7 +45,7 @@ export enum ImmichHeader {
   FrameleafViaAuth = 'x-frameleaf-via-auth',
 }
 
-export enum ImmichQuery {
+export enum RequestQuery {
   SharedLinkKey = 'key',
   SharedLinkSlug = 'slug',
   ApiKey = 'apiKey',
@@ -2473,6 +2473,8 @@ export enum DatabaseLock {
    * two workers never refresh the same token at once and a disconnect never races a refresh.
    */
   FrameleafMailConnection = 975,
+  /** Serialize backup run state changes across the schedule owner and job workers. */
+  BackupSequenceRun = 976,
   /**
    * Universal storage: linking an upload to the server's one file for its content, or registering a new
    * one, happens one upload at a time per checksum (taken with the checksum as the second key), so two

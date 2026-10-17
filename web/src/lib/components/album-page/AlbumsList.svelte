@@ -15,13 +15,14 @@
   } from '$lib/stores/preferences.store';
   import {
     getSelectedAlbumGroupOption,
-    matchesAlbumSearch,
+    groupAlbumsByYear,
+    groupAlbumsByOwner,
+    createAlbumSearchPredicate,
     sortAlbums,
     stringToSortOrder,
     type AlbumGroup,
   } from '$lib/utils/album-utils';
   import { AlbumUserRole, type AlbumResponseDto, type SharedLinkResponseDto } from '@frameleaf/sdk';
-  import { groupBy } from 'lodash-es';
   import { type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -70,59 +71,10 @@
       ];
     },
 
-    /** Group by year */
-    [AlbumGroupBy.Year]: (order, albums): AlbumGroup[] => {
-      const unknownYear = $t('unknown_year');
-      const useStartDate = userSettings.sortBy === AlbumSortBy.OldestPhoto;
-
-      const groupedByYear = groupBy(albums, (album) => {
-        const date = useStartDate ? album.startDate : album.endDate;
-        return date ? new Date(date).getFullYear() : unknownYear;
-      });
-
-      const sortSign = order === SortOrder.Desc ? -1 : 1;
-      const sortedByYear = Object.entries(groupedByYear).sort(([a], [b]) => {
-        // We make sure empty albums stay at the end of the list
-        if (a === unknownYear) {
-          return 1;
-        }
-        return b === unknownYear ? -1 : (Number.parseInt(a) - Number.parseInt(b)) * sortSign;
-      });
-
-      return sortedByYear.map(([year, albums]) => ({
-        id: year,
-        name: year,
-        albums,
-      }));
-    },
-
-    /** Group by owner */
-    [AlbumGroupBy.Owner]: (order, albums): AlbumGroup[] => {
-      const currentUserId = authManager.user.id;
-      const groupedByOwnerIds = groupBy(albums, (album) => album.albumUsers[0].user.id);
-
-      const sortSign = order === SortOrder.Desc ? -1 : 1;
-      const sortedByOwnerNames = Object.entries(groupedByOwnerIds).sort(([ownerIdA, albumsA], [ownerIdB, albumsB]) => {
-        // We make sure owned albums stay either at the beginning or the end
-        // of the list
-        if (ownerIdA === currentUserId) {
-          return -sortSign;
-        }
-        if (ownerIdB === currentUserId) {
-          return sortSign;
-        }
-
-        const ownerA = albumsA[0].albumUsers[0].user;
-        const ownerB = albumsB[0].albumUsers[0].user;
-        return ownerA.name.localeCompare(ownerB.name, $locale) * sortSign;
-      });
-
-      return sortedByOwnerNames.map(([ownerId, albums]) => ({
-        id: ownerId,
-        name: ownerId === currentUserId ? $t('my_albums') : albums[0].albumUsers[0].user.name,
-        albums,
-      }));
-    },
+    [AlbumGroupBy.Year]: (order, albums) =>
+      groupAlbumsByYear(albums, order, userSettings.sortBy === AlbumSortBy.OldestPhoto, $t('unknown_year')),
+    [AlbumGroupBy.Owner]: (order, albums) =>
+      groupAlbumsByOwner(albums, order, authManager.user.id, $locale, $t('my_albums')),
   };
 
   let albums = $derived.by(() => {
@@ -142,9 +94,7 @@
       }
     }
   });
-  let filteredAlbums = $derived(
-    searchQuery ? albums.filter((album) => matchesAlbumSearch(album, searchQuery)) : albums,
-  );
+  let filteredAlbums = $derived(searchQuery ? albums.filter(createAlbumSearchPredicate(searchQuery)) : albums);
 
   let albumGroupOption = $derived(getSelectedAlbumGroupOption(userSettings));
   let groupedAlbums = $derived.by(() => {

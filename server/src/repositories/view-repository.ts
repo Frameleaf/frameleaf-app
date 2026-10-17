@@ -5,6 +5,7 @@ import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { DB } from 'src/schema/index.js';
 import { asUuid, withExif, withHiddenContentFilter } from 'src/utils/database.js';
 import { isLocked, isTimelineVisible } from 'src/utils/locked.js';
+import { escapeLikeTerm } from 'src/utils/trash-review.js';
 
 /** The folder an original sits in: its path up to (not including) the last slash. */
 const DIRECTORY_PATTERN = '^(.*/)[^/]*$';
@@ -62,7 +63,7 @@ export class ViewRepository {
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
   async getAssetsByOriginalPath(userId: string, partialPath: string, options?: HiddenContentQueryOptions) {
-    const normalizedPath = partialPath.replaceAll(/\/$/g, '');
+    const normalizedPath = escapeLikeTerm(partialPath.replaceAll(/\/$/g, ''));
 
     return (
       this.db

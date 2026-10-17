@@ -8,12 +8,14 @@ type Runnable = () => Promise<unknown>;
 type QueueEntry = { run: Runnable; reject: (reason?: unknown) => void };
 
 export class ExecutorQueue {
-  private queue: Array<QueueEntry> = [];
+  private queue: Array<QueueEntry | undefined> = [];
+  private head = 0;
   private running = 0;
-  private _concurrency: number;
+  private draining = false;
+  private _concurrency = 2;
 
   constructor(options?: Options) {
-    this._concurrency = options?.concurrency || 2;
+    this.concurrency = options?.concurrency ?? 2;
   }
 
   get concurrency() {
@@ -21,17 +23,14 @@ export class ExecutorQueue {
   }
 
   set concurrency(concurrency: number) {
-    if (concurrency < 1) {
+    if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
       return;
     }
 
     this._concurrency = concurrency;
 
-    const v = concurrency - this.running;
-    if (v > 0) {
-      for (let i = 0; i < v; i++) {
-        this.tryRun();
-      }
+    while (this.running < this.concurrency && this.head < this.queue.length) {
+      this.tryRun();
     }
   }
 
@@ -66,15 +65,29 @@ export class ExecutorQueue {
    */
   clear(reason: unknown = new AbortError('Cancelled before it started')): void {
     const pending = this.queue;
+    const head = this.head;
     this.queue = [];
-    for (const { reject } of pending) {
-      reject(reason);
+    this.head = 0;
+    for (let i = head; i < pending.length; i++) {
+      pending[i]?.reject(reason);
     }
   }
 
   private taskFinished(): void {
     this.running--;
-    this.tryRun();
+    // Synchronous failures finish before run() returns; drain them without recursive dispatch.
+    if (this.draining) {
+      return;
+    }
+
+    this.draining = true;
+    try {
+      while (this.running < this.concurrency && this.head < this.queue.length) {
+        this.tryRun();
+      }
+    } finally {
+      this.draining = false;
+    }
   }
 
   private tryRun() {
@@ -82,9 +95,19 @@ export class ExecutorQueue {
       return;
     }
 
-    const entry = this.queue.shift();
+    const entry = this.queue[this.head];
     if (!entry) {
       return;
+    }
+
+    this.queue[this.head++] = undefined;
+    if (this.head === this.queue.length) {
+      this.queue = [];
+      this.head = 0;
+    } else if (this.head >= 1024 && this.head * 2 >= this.queue.length) {
+      // Compact only after consuming half the array, keeping dequeue amortized constant time.
+      this.queue = this.queue.slice(this.head);
+      this.head = 0;
     }
 
     handlePromiseError(entry.run());

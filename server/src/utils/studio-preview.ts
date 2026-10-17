@@ -304,6 +304,9 @@ export const planPreviewEviction = (
   const survivors: EvictionCandidate[] = [];
 
   for (const candidate of candidates) {
+    if (candidate.status === 'evicted') {
+      continue;
+    }
     if (!keepRevisions.has(candidate.revisionDigest)) {
       if (isInFlight(candidate.status)) {
         cancel.add(candidate.id);

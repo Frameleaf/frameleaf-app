@@ -12,6 +12,7 @@
   import Pane from '$lib/components/frameleaf/Pane.svelte';
   import {
     RENDER_WORKER_QUERY_MAX_LENGTH,
+    bytesToGB,
     bytesToGiB,
     destinationKey,
     filterWorkers,
@@ -74,9 +75,9 @@
     if (minutes !== null) {
       parts.push($t('frameleaf_render_workers_ceiling_wall_clock', { values: { minutes } }));
     }
-    const gib = bytesToGiB(worker.maxOutputBytes);
-    if (gib !== null) {
-      parts.push($t('frameleaf_render_workers_ceiling_output', { values: { gib } }));
+    const gb = bytesToGB(worker.maxOutputBytes);
+    if (gb !== null) {
+      parts.push($t('frameleaf_render_workers_ceiling_output', { values: { gb } }));
     }
     return parts.length > 0 ? parts.join(' · ') : $t('frameleaf_render_workers_ceiling_none');
   };

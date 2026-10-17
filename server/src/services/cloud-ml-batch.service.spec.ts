@@ -1,8 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Transaction } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { QueueExecution } from 'src/queue/types.js';
-import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
+import type { CloudDescriptionBatchCreate, MediaOperation } from 'src/repositories/media-operation.repository.js';
+import type { DB } from 'src/schema/index.js';
 import type { CloudDescriptionEstimateRecord } from 'src/utils/cloud-description-batch.js';
 import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import type { MockInstance } from 'vitest';
@@ -27,6 +29,7 @@ import {
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { CloudTransferError } from 'src/repositories/frameleaf-cloud-ml.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { CloudMlBatchService } from 'src/services/cloud-ml-batch.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import {
@@ -124,6 +127,8 @@ describe(CloudMlBatchService.name, () => {
   let mocks: ServiceMocks;
   let metadata: Map<string, unknown>;
   let assets: Map<string, AssetRow>;
+  let durableOperations: MediaOperation[];
+  let transactionMetadataSet: MockInstance<SystemMetadataRepository['set']>;
 
   const configure = ({
     enabled = true,
@@ -231,6 +236,7 @@ describe(CloudMlBatchService.name, () => {
     ({ sut, mocks } = newTestService(CloudMlBatchService));
     metadata = new Map();
     assets = new Map();
+    durableOperations = [];
     metadata.set(SystemMetadataKey.FrameleafCloudLink, {
       status: 'linked',
       cloudUrl: 'https://cloud.test',
@@ -246,6 +252,9 @@ describe(CloudMlBatchService.name, () => {
       metadata.set(key, value);
       return Promise.resolve();
     });
+    transactionMetadataSet = vi
+      .spyOn(SystemMetadataRepository.prototype, 'set')
+      .mockImplementation((key, value, overwrite) => mocks.systemMetadata.set(key, value, overwrite));
     mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
     mocks.instanceIdentity.loadOrCreate.mockResolvedValue({
       instanceId: 'instance-1',
@@ -337,7 +346,31 @@ describe(CloudMlBatchService.name, () => {
     let created = 0;
     mocks.mediaOperation.create.mockImplementation((row) => {
       created++;
-      return Promise.resolve({ ...row, id: `batch-${created}` } as never);
+      const operation = { ...row, id: `batch-${created}` } as MediaOperation;
+      durableOperations.push(operation);
+      return Promise.resolve(operation);
+    });
+    Object.assign(mocks.mediaOperation, {
+      createCloudDescriptionBatches: vi.fn(
+        async (
+          rows: readonly CloudDescriptionBatchCreate[],
+          acknowledge: (tx: Transaction<DB>, operations: MediaOperation[]) => Promise<void>,
+        ) => {
+          const beforeMetadata = structuredClone(metadata);
+          const beforeOperations = [...durableOperations];
+          try {
+            const operations: MediaOperation[] = [];
+            for (const row of rows) operations.push(await mocks.mediaOperation.create(row));
+            await acknowledge({ isTransaction: true } as Transaction<DB>, operations);
+            return operations;
+          } catch (error) {
+            metadata.clear();
+            for (const [key, value] of beforeMetadata) metadata.set(key, value);
+            durableOperations.splice(0, durableOperations.length, ...beforeOperations);
+            throw error;
+          }
+        },
+      ),
     });
     mocks.mediaOperation.setBulkResult.mockResolvedValue({
       status: MediaOperationStatus.Preparing,
@@ -353,6 +386,8 @@ describe(CloudMlBatchService.name, () => {
     mocks.mediaOperation.markRemoteReleased.mockResolvedValue();
     mocks.mediaOperation.claimNext.mockResolvedValue(undefined);
   });
+
+  afterEach(() => transactionMetadataSet.mockRestore());
 
   describe('the kill switch (review P1)', () => {
     it.each([
@@ -445,6 +480,43 @@ describe(CloudMlBatchService.name, () => {
   });
 
   describe('estimateBackfill', () => {
+    it.each(['locked', 'reassigned'])('refuses a sample that became %s after candidate selection', async (change) => {
+      const [asset] = photos(ownerA, 1);
+      addAssets([asset]);
+      if (change === 'locked') {
+        mocks.mediaOperation.getLockedAssetIds.mockResolvedValueOnce(new Set()).mockResolvedValue(new Set([asset.id]));
+      } else {
+        mocks.mediaOperation.getLockedAssetIds.mockImplementationOnce(() => {
+          assets.set(asset.id, { ...asset, ownerId: ownerB });
+          return Promise.resolve(new Set());
+        });
+      }
+
+      await expect(sut.estimateBackfill(admin, now)).rejects.toThrow('None of the photos could be prepared');
+      expect(mocks.media.writeCloudUpload).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
+    });
+
+    it('isolates simultaneous estimate samples even in the same millisecond', async () => {
+      const [asset] = photos(ownerA, 1);
+      addAssets([asset]);
+      mocks.assetJob.streamForImageDescriptionJob.mockImplementation(() => makeStream([{ id: asset.id }]));
+      let nextId = 0;
+      mocks.crypto.randomUUID.mockImplementation(() => `00000000-0000-4000-8000-${String(++nextId).padStart(12, '0')}`);
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(now.getTime());
+      try {
+        await Promise.all([sut.estimateBackfill(admin, now), sut.estimateBackfill(admin, now)]);
+
+        const outputs = mocks.media.writeCloudUpload.mock.calls.map(([, output]) => output);
+        const removed = mocks.storage.unlinkDir.mock.calls.map(([folder]) => folder);
+        expect(outputs).toHaveLength(2);
+        expect(new Set(outputs).size).toBe(2);
+        expect(new Set(removed).size).toBe(2);
+      } finally {
+        clock.mockRestore();
+      }
+    });
+
     it("estimates from metered GPU time per owner's batches, keeps the estimate and queues nothing", async () => {
       addAssets([...photos(ownerA, 250), ...photos(ownerB, 3)]);
 
@@ -462,7 +534,7 @@ describe(CloudMlBatchService.name, () => {
       expect(mocks.media.writeCloudUpload).toHaveBeenCalledTimes(10);
       expect(mocks.storage.unlinkDir).toHaveBeenCalled();
       expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
-      expect(mocks.mediaOperation.create).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.createCloudDescriptionBatches).not.toHaveBeenCalled();
 
       // 250 + 3 photos: owner A in 200 and 50, owner B in 3; per photo (0.021 − 0.02) / 10 and (0.024 − 0.02) / 10
       expect(estimate).toMatchObject({
@@ -649,7 +721,7 @@ describe(CloudMlBatchService.name, () => {
       const result = await sut.startBackfill({ estimateId }, now);
 
       expect(result).toEqual({ batches: 3, photos: 253, operationIds: ['batch-1', 'batch-2', 'batch-3'] });
-      const rows = mocks.mediaOperation.create.mock.calls.map(([row]) => row);
+      const rows = mocks.mediaOperation.createCloudDescriptionBatches.mock.calls[0][0];
       expect(rows.map((row) => [row.ownerId, (row.snapshot as { assetIds: string[] }).assetIds.length])).toEqual([
         [ownerA, 200],
         [ownerA, 50],
@@ -695,7 +767,7 @@ describe(CloudMlBatchService.name, () => {
       const second = await sut.startBackfill({ estimateId }, now);
 
       expect(second).toEqual(first);
-      expect(mocks.mediaOperation.create).toHaveBeenCalledTimes(1);
+      expect(mocks.mediaOperation.createCloudDescriptionBatches).toHaveBeenCalledTimes(1);
     });
 
     it('leaves out photos that joined another batch or became Locked since the estimate (review P2)', async () => {
@@ -707,9 +779,25 @@ describe(CloudMlBatchService.name, () => {
       const result = await sut.startBackfill({ estimateId }, now);
 
       expect(result.photos).toBe(2);
-      expect(mocks.mediaOperation.create.mock.calls[0][0].snapshot).toMatchObject({
+      expect(mocks.mediaOperation.createCloudDescriptionBatches.mock.calls[0][0][0].snapshot).toMatchObject({
         assetIds: ['owner-a-3', 'owner-a-4'],
       });
+    });
+
+    it('acknowledges an empty filtered backfill once without creating work', async () => {
+      const [asset] = photos(ownerA, 1);
+      addAssets([asset]);
+      const estimateId = await estimateFirst();
+      mocks.mediaOperation.getLockedAssetIds.mockResolvedValue(new Set([asset.id]));
+
+      const first = await sut.startBackfill({ estimateId }, now);
+
+      expect(first).toEqual({ batches: 0, photos: 0, operationIds: [] });
+      await expect(sut.startBackfill({ estimateId }, now)).resolves.toEqual(first);
+      expect(durableOperations).toEqual([]);
+      expect(mocks.mediaOperation.createCloudDescriptionBatches).toHaveBeenCalledTimes(1);
+      expect(mocks.mediaOperation.createCloudDescriptionBatches.mock.calls[0][0]).toEqual([]);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
 
     it('refuses an estimate the server does not know, or one that expired', async () => {
@@ -720,7 +808,7 @@ describe(CloudMlBatchService.name, () => {
         /not known/,
       );
       await expect(sut.startBackfill({ estimateId }, new Date(now.getTime() + 31 * 60_000))).rejects.toThrow(/expired/);
-      expect(mocks.mediaOperation.create).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.createCloudDescriptionBatches).not.toHaveBeenCalled();
     });
 
     it('refuses when the model changed since the estimate', async () => {
@@ -729,7 +817,7 @@ describe(CloudMlBatchService.name, () => {
       mocks.mlDestination.getCloudModelChoice.mockResolvedValue('ms_NME7RZQ1');
 
       await expect(sut.startBackfill({ estimateId }, now)).rejects.toThrow(/model changed/);
-      expect(mocks.mediaOperation.create).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.createCloudDescriptionBatches).not.toHaveBeenCalled();
     });
 
     it('refuses when the wallet can no longer cover it', async () => {
@@ -746,7 +834,77 @@ describe(CloudMlBatchService.name, () => {
       });
 
       await expect(sut.startBackfill({ estimateId }, now)).rejects.toThrow(/Add credit first/);
-      expect(mocks.mediaOperation.create).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.createCloudDescriptionBatches).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('atomic batch creation', () => {
+    const prepare = async (origin: 'backfill' | 'automatic') => {
+      addAssets(photos(ownerA, 201));
+      if (origin === 'backfill') {
+        const { estimateId } = await sut.estimateBackfill(admin, now);
+        return {
+          key: SystemMetadataKey.FrameleafCloudDescriptionEstimates,
+          run: () => sut.startBackfill({ estimateId: estimateId! }, now),
+        };
+      }
+      configure({ autoDescribe: true });
+      metadata.set(SystemMetadataKey.FrameleafCloudDescriptionQueue, {
+        items: photos(ownerA, 201).map(({ id }) => ({ assetId: id, ownerId: ownerA, queuedAt: now.toISOString() })),
+        lastBatchAt: {},
+      });
+      return { key: SystemMetadataKey.FrameleafCloudDescriptionQueue, run: () => sut.batchNewPhotos(now, 2) };
+    };
+
+    it('keeps the committed backfill acknowledgement when waking the worker fails', async () => {
+      const { run } = await prepare('backfill');
+      mocks.job.queue.mockRejectedValueOnce(new Error('worker wakeup failed'));
+
+      await expect(run()).rejects.toThrow('worker wakeup failed');
+
+      expect(durableOperations).toHaveLength(2);
+      await expect(run()).resolves.toMatchObject({ batches: 2, photos: 201 });
+      expect(durableOperations).toHaveLength(2);
+      expect(mocks.mediaOperation.createCloudDescriptionBatches).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['backfill', 'automatic'] as const)('rolls back %s batches after a later insert fails', async (origin) => {
+      const { key, run } = await prepare(origin);
+      const before = structuredClone(metadata.get(key));
+      const insert = mocks.mediaOperation.create.getMockImplementation()!;
+      let attempts = 0;
+      mocks.mediaOperation.create.mockImplementation((row) => {
+        if (++attempts === 2) return Promise.reject(new Error('later batch insert failed'));
+        return insert(row);
+      });
+
+      await expect(run()).rejects.toThrow('later batch insert failed');
+
+      expect(durableOperations).toEqual([]);
+      expect(metadata.get(key)).toEqual(before);
+      mocks.mediaOperation.create.mockImplementation(insert);
+      await run();
+      await run();
+      expect(durableOperations).toHaveLength(2);
+    });
+
+    it.each(['backfill', 'automatic'] as const)('rolls back %s batches after acknowledgement fails', async (origin) => {
+      const { key, run } = await prepare(origin);
+      const before = structuredClone(metadata.get(key));
+      const save = mocks.systemMetadata.set.getMockImplementation()!;
+      mocks.systemMetadata.set.mockImplementation((name, value, overwrite) => {
+        if (name === key) return Promise.reject(new Error('batch acknowledgement failed'));
+        return save(name, value, overwrite);
+      });
+
+      await expect(run()).rejects.toThrow('batch acknowledgement failed');
+
+      expect(durableOperations).toEqual([]);
+      expect(metadata.get(key)).toEqual(before);
+      mocks.systemMetadata.set.mockImplementation(save);
+      await run();
+      await run();
+      expect(durableOperations).toHaveLength(2);
     });
   });
 
@@ -858,6 +1016,10 @@ describe(CloudMlBatchService.name, () => {
 
     it('replays an attempted submission with its own key, even past its expiry, before estimating again (review P2)', async () => {
       const later = new Date('2026-09-26T05:00:00.000Z');
+      // the upload targets expire at 05:00 too, so the job client has them signed again
+      mocks.frameleafCloudMl.refreshUpload.mockImplementation((_gateway, _jobId, inputId) =>
+        Promise.resolve({ ...uploadTarget(inputId), expiresAt: '2026-09-26T06:00:00.000Z' }),
+      );
 
       await sut.step(estimated({ attemptedAt: now.toISOString() }), 'claim-1', later);
 
@@ -1166,7 +1328,7 @@ describe(CloudMlBatchService.name, () => {
 
       await sut.batchNewPhotos(now, 0.5);
 
-      expect(mocks.mediaOperation.create).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.createCloudDescriptionBatches).not.toHaveBeenCalled();
       expect(mocks.event.emit).toHaveBeenCalledWith('AdminNotify', expect.objectContaining({ dedupeDays: 1 }));
     });
 
@@ -1189,8 +1351,10 @@ describe(CloudMlBatchService.name, () => {
         DatabaseLock.FrameleafCloudMlBatchQueue,
         expect.any(Function),
       );
-      expect(mocks.mediaOperation.create).toHaveBeenCalledTimes(1);
-      const [row] = mocks.mediaOperation.create.mock.calls[0];
+      expect(mocks.mediaOperation.createCloudDescriptionBatches).toHaveBeenCalledTimes(1);
+      const rows = mocks.mediaOperation.createCloudDescriptionBatches.mock.calls[0][0];
+      expect(rows).toHaveLength(1);
+      const [row] = rows;
       expect(row.ownerId).toBe(ownerA);
       // the Locked photo left the queue without joining the batch
       expect((row.snapshot as { assetIds: string[] }).assetIds).toHaveLength(19);
@@ -1312,6 +1476,48 @@ describe(CloudMlBatchService.name, () => {
         recursive: true,
         force: true,
       });
+    });
+
+    it.each([false, true])('verifies readmission consent despite a spent budget (stale: %s)', async (stale) => {
+      mocks.mlDestination.getById.mockResolvedValue({
+        ...cloud,
+        budgetLimitUsd: 0,
+        consentVersion: stale ? 'old-consent' : cloud.consentVersion,
+      });
+
+      await sut.step(submitted({ status: 'admitted', started: false, etag: null }), 'claim-1', now);
+
+      if (stale) {
+        expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.cancelJob).toHaveBeenCalledWith(expect.anything(), admitted.jobId);
+        expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+          BATCH_ID,
+          'claim-1',
+          expect.objectContaining({ errorCode: 'cloud_description_consent_version_outdated' }),
+          { retry: false },
+        );
+      } else {
+        expect(mocks.frameleafCloudMl.uploadInput).toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.startJob).toHaveBeenCalledWith(expect.anything(), admitted.jobId);
+        expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+      }
+    });
+
+    it.each(['getById', 'recordProbe'] as const)('sends nothing when readmission state fails at %s', async (stage) => {
+      mocks.mlDestination[stage].mockRejectedValue(new Error('admission database unavailable'));
+
+      await sut.step(submitted({ status: 'admitted', started: false, etag: null }), 'claim-1', now);
+
+      expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        BATCH_ID,
+        'claim-1',
+        expect.objectContaining({ errorCode: 'cloud_description_consent_unconfirmed' }),
+        { retry: true },
+      );
     });
 
     it('sends no photo when the cloud refused its own status check before consent could be compared (FL-201 review P2)', async () => {

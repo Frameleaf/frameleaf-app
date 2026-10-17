@@ -134,8 +134,7 @@ export class ClassificationService extends BaseService {
       });
       return this.present(await this.requireRule(auth, rule.id));
     } catch (error) {
-      // Never leave an ordinary album behind that looks like a smart album that failed.
-      await this.albumRepository.delete(album.id);
+      await this.albumRepository.deleteFailedClassificationAlbum(album.id, auth.user.id);
       throw error;
     }
   }

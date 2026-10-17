@@ -51,6 +51,7 @@
   <LibraryView
     bind:timelineManager
     {options}
+    title={area ? undefined : $t('library')}
     destination={{ kind: 'library' }}
     downloadFileName={brandedArchiveName($t('frameleaf_archive_name_photos'))}
     selectAll={area ? 'loaded' : 'matching'}

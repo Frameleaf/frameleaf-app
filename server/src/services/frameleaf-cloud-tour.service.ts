@@ -45,9 +45,9 @@ export class FrameleafCloudTourService extends BaseService {
   /** Records the first way this administrator ended the tour; a later ending (a reopened tour) keeps it. */
   async markSeen(auth: AuthDto, dto: CloudTourSeenDto): Promise<CloudTourResponseDto> {
     if (!(await this.readRecord(auth.user.id))) {
-      await this.userRepository.upsertMetadata(auth.user.id, {
-        key: UserMetadataKey.FrameleafCloudTour,
-        value: { seenAt: new Date().toISOString(), ending: dto.ending },
+      await this.userRepository.insertMetadataIfAbsent(auth.user.id, UserMetadataKey.FrameleafCloudTour, {
+        seenAt: new Date().toISOString(),
+        ending: dto.ending,
       });
     }
     return this.getTour(auth);

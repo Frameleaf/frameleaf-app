@@ -1,4 +1,4 @@
-import type { Handle } from '@sveltejs/kit';
+import type { Handle } from '@sveltejs/kit/hooks';
 import GoogleSans from '$lib/assets/fonts/GoogleSans/GoogleSans.ttf?url';
 import GoogleSansCode from '$lib/assets/fonts/GoogleSansCode/GoogleSansCode.ttf?url';
 

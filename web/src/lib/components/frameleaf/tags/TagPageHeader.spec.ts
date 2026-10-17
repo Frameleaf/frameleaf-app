@@ -63,7 +63,7 @@ const openMore = async () => {
   await fireEvent.click(screen.getByRole('button', { name: 'More tag actions' }));
   return screen.getByRole('menu', { name: 'More tag actions' });
 };
-const follows = { replaceState: true, invalidateAll: true, keepFocus: true, noScroll: true };
+const follows = { replace: true, invalidateAll: true, reset: false };
 
 /** The head of a tag's page: `TagPage` in `design/frameleaf/template/src/TagsV2.jsx`. */
 describe('TagPageHeader', () => {

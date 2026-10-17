@@ -104,7 +104,9 @@ const CloudStatusResponseSchema = z
     signInInvitedStorageQuota: z
       .int()
       .nullable()
-      .describe('Storage quota in GiB for accounts created through a Frameleaf invitation; null is unlimited'),
+      .describe(
+        'Storage quota in GB (1 GB = 1,000,000,000 bytes) for accounts created through a Frameleaf invitation; null is unlimited',
+      ),
     allowOriginalsOverRelay: z
       .boolean()
       .describe('Originals, archives and database backups may be downloaded through the relay'),
@@ -126,7 +128,7 @@ const CloudSignInUpdateSchema = z
       .nullable()
       .optional()
       .describe(
-        'Storage quota in GiB for accounts created through a Frameleaf invitation from now on; null is unlimited',
+        'Storage quota in GB (1 GB = 1,000,000,000 bytes) for accounts created through a Frameleaf invitation from now on; null is unlimited',
       ),
   })
   .meta({ id: 'CloudSignInUpdateDto' });

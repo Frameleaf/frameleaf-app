@@ -1,6 +1,7 @@
 import { Kysely, RawBuilder, SelectQueryBuilder, Transaction, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { JobName } from 'src/enum.js';
+import { jobSignal } from 'src/queue/context.js';
 import {
   attachLibraryParticipants,
   discoverLibraryChildOrigins,
@@ -186,7 +187,7 @@ export async function freezeSelection(
     await db.transaction().execute((tx) => capture(tx, result));
     // Eager preparation yields publication locks and its connection after every bounded page.
     // The final publication check still detects later attachments.
-    await shareSelections(db, claim!.id);
+    await shareSelections(db, claim!.id, context.signal);
   }
   if (context) {
     context.progress(++context.progressUnits);
@@ -400,9 +401,12 @@ async function settleLibraryRunPage(tx: Executor, queue: string) {
 }
 
 /** Handler preparation may drain captured pages, yielding the SQL/publication guard after each page. */
-export async function shareSelections(db: Executor, producerId: string) {
-  while (await shareSelectionPage(db, { producerId })) {
-    // Work and acquisition are bounded by the handler's existing execution signal.
+export async function shareSelections(db: Executor, producerId: string, signal = jobSignal()) {
+  for (;;) {
+    signal?.throwIfAborted();
+    const advanced = await shareSelectionPage(db, { producerId });
+    signal?.throwIfAborted();
+    if (!advanced) return;
   }
 }
 

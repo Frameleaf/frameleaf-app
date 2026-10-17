@@ -92,13 +92,18 @@ describe('TakeoutWizard', () => {
 
   it('opens on Upload, Check and Import, with one way in', () => {
     render(TakeoutWizard);
+    // ACCOUNT-P6: the start screen is the prototype's start dialog, its numbered steps with Upload now
     const steps = screen.getByRole('list', { name: en.frameleaf_takeout_steps_label });
     expect(
       within(steps)
         .getAllByRole('listitem')
-        .map((item) => item.textContent?.trim().replace(/^\d+/, '')),
+        .map((item) => item.querySelector('strong')?.textContent),
     ).toEqual(['Upload', 'Check', 'Import']);
+    expect(steps.querySelector('[aria-current="step"]')?.textContent).toContain('Upload');
+    expect(screen.getByText(en.frameleaf_takeout_all_files_title)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: en.frameleaf_takeout_choose_zips })).toBeInTheDocument();
+    // the imports list and the folder import are on the page now, not in the dialog
+    expect(screen.queryByRole('heading', { name: en.frameleaf_takeout_previous_heading })).toBeNull();
   });
 
   it('shows what was found and imports with one press', async () => {
@@ -191,14 +196,6 @@ describe('TakeoutWizard', () => {
     );
   });
 
-  it('lists earlier imports when none is open', () => {
-    render(TakeoutWizard, { imports: [reviewImport()] });
-    expect(screen.getByRole('link', { name: /Family export/ })).toHaveAttribute(
-      'href',
-      '/user-settings?area=backup&section=takeout&workflow=import&import=import-1',
-    );
-  });
-
   it('starts an import from the chosen ZIP files and opens it in place', async () => {
     sdkMock.createTakeoutImport.mockResolvedValue({ ...reviewImport(), id: 'created' });
     const { container } = render(TakeoutWizard);
@@ -209,7 +206,7 @@ describe('TakeoutWizard', () => {
     });
     expect(state.goto).toHaveBeenCalledWith(
       '/user-settings?area=backup&section=takeout&workflow=import&import=created',
-      expect.objectContaining({ noScroll: true }),
+      expect.objectContaining({ reset: false }),
     );
   });
 

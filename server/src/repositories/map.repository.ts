@@ -74,6 +74,14 @@ interface MapDB extends DB {
   naturalearth_countries_tmp: NaturalEarthCountriesTable;
 }
 
+const GEODATA_INDEXES = [
+  ['IDX_geodata_gist_earthcoord', 'gist', sql`ll_to_earth_public(latitude, longitude)`],
+  ['idx_geodata_places_alternate_names', 'gin', sql`f_unaccent("alternateNames") gin_trgm_ops`],
+  ['idx_geodata_places_name', 'gin', sql`f_unaccent(name) gin_trgm_ops`],
+  ['idx_geodata_places_admin1_name', 'gin', sql`f_unaccent("admin1Name") gin_trgm_ops`],
+  ['idx_geodata_places_admin2_name', 'gin', sql`f_unaccent("admin2Name") gin_trgm_ops`],
+] as const;
+
 @Injectable()
 export class MapRepository {
   constructor(
@@ -489,7 +497,7 @@ export class MapRepository {
 
     const response = await this.db
       .selectFrom('geodata_places')
-      .selectAll()
+      .select(['countryCode', 'name', 'admin1Name'])
       .where(
         sql`earth_box(ll_to_earth_public(${point.latitude}, ${point.longitude}), ${reverseGeocodeMaxDistance})`,
         '@>',
@@ -516,14 +524,14 @@ export class MapRepository {
       `Empty response from database for city reverse geocoding lat: ${point.latitude}, lon: ${point.longitude}. Likely cause: no nearby large populated place (500+ within ${reverseGeocodeMaxDistance / 1000}km). Falling back to country boundaries.`,
     );
 
-    const ne_response = await this.db
+    const boundary = await this.db
       .selectFrom('naturalearth_countries')
-      .selectAll()
+      .select(['id', 'admin', 'admin_a3', 'type'])
       .where('coordinates', '@>', sql<string>`point(${point.longitude}, ${point.latitude})`)
       .limit(1)
       .executeTakeFirst();
 
-    if (!ne_response) {
+    if (!boundary) {
       this.logger.log(
         `Empty response from database for natural earth country reverse geocoding lat: ${point.latitude}, lon: ${point.longitude}`,
       );
@@ -531,9 +539,9 @@ export class MapRepository {
       return { country: null, state: null, city: null };
     }
 
-    this.logger.verboseFn(() => `Raw: ${JSON.stringify(ne_response, ['id', 'admin', 'admin_a3', 'type'], 2)}`);
+    this.logger.verboseFn(() => `Raw: ${JSON.stringify(boundary, ['id', 'admin', 'admin_a3', 'type'], 2)}`);
 
-    const { admin_a3 } = ne_response;
+    const { admin_a3 } = boundary;
     // eslint-disable-next-line import-x/no-named-as-default-member
     const country = isoCountries.getName(admin_a3, 'en') ?? null;
     const state = null;
@@ -572,12 +580,11 @@ export class MapRepository {
                 (
                   LIKE naturalearth_countries INCLUDING ALL EXCLUDING INDEXES
                 )`.execute(manager);
+      await manager.insertInto('naturalearth_countries_tmp').values(entities).execute();
       await manager.schema.dropTable('naturalearth_countries').execute();
       await manager.schema.alterTable('naturalearth_countries_tmp').renameTo('naturalearth_countries').execute();
+      await sql`ALTER TABLE naturalearth_countries ADD PRIMARY KEY (id) WITH (FILLFACTOR = 100)`.execute(manager);
     });
-
-    await this.db.insertInto('naturalearth_countries').values(entities).execute();
-    await sql`ALTER TABLE naturalearth_countries ADD PRIMARY KEY (id) WITH (FILLFACTOR = 100)`.execute(this.db);
   }
 
   private async importGeodata() {
@@ -588,22 +595,33 @@ export class MapRepository {
     ]);
 
     await this.db.schema.dropTable('geodata_places_tmp').ifExists().execute();
-    await this.db.transaction().execute(async (manager) => {
+    try {
       await sql`CREATE TABLE geodata_places_tmp
                 (
                   LIKE geodata_places INCLUDING ALL EXCLUDING INDEXES
-                )`.execute(manager);
-      await manager.schema.dropTable('geodata_places').execute();
-      await manager.schema.alterTable('geodata_places_tmp').renameTo('geodata_places').execute();
-    });
-    await this.db.schema
-      .createIndex('IDX_geodata_gist_earthcoord')
-      .on('geodata_places')
-      .using('gist')
-      .expression(sql`ll_to_earth_public(latitude, longitude)`)
-      .execute();
-    await this.loadCities500(admin1, admin2);
-    await this.createGeodataIndices();
+                )`.execute(this.db);
+      await this.loadCities500(admin1, admin2);
+      await this.createGeodataIndices();
+      await this.db.transaction().execute(async (manager) => {
+        await manager.schema.dropTable('geodata_places').execute();
+        await manager.schema.alterTable('geodata_places_tmp').renameTo('geodata_places').execute();
+        await sql`ALTER TABLE geodata_places RENAME CONSTRAINT geodata_places_tmp_pkey TO geodata_places_pkey`.execute(
+          manager,
+        );
+        for (const [name] of GEODATA_INDEXES) {
+          await sql`ALTER INDEX ${sql.id(`${name}_tmp`)} RENAME TO ${sql.id(name)}`.execute(manager);
+        }
+      });
+    } catch (error) {
+      await this.db.schema
+        .dropTable('geodata_places_tmp')
+        .ifExists()
+        .execute()
+        .catch((cleanupError) => {
+          this.logger.warn('Unable to remove failed geodata staging table', cleanupError);
+        });
+      throw error;
+    }
   }
 
   private async loadCities500(admin1Map: Map<string, string>, admin2Map: Map<string, string>) {
@@ -616,62 +634,79 @@ export class MapRepository {
     this.logger.log(`Starting geodata import`);
     const startTime = performance.now();
 
-    const input = createReadStream(cities500, { highWaterMark: 512 * 1024 * 1024 });
-    let bufferGeodata = [];
-    const lineReader = readLine.createInterface({ input });
+    const input = createReadStream(cities500, { highWaterMark: 64 * 1024 });
+    const lineReader = readLine.createInterface({ input, crlfDelay: Infinity });
+    let rows: Insertable<GeodataPlacesTable>[] = [];
+    let pending: Promise<void>[] = [];
+    const failures: unknown[] = [];
     let count = 0;
 
-    let futures = [];
-    for await (const line of lineReader) {
-      const lineSplit = line.split('\t');
-      if ((lineSplit[7] === 'PPLX' && lineSplit[8] !== 'AU') || lineSplit[7] === 'PPLH') {
-        continue;
-      }
+    const insertBatch = (batch: Insertable<GeodataPlacesTable>[]) =>
+      this.db
+        .insertInto('geodata_places_tmp')
+        .values(batch)
+        .execute()
+        .then(() => {
+          count += batch.length;
+          if (count % 10_000 === 0) {
+            this.logger.log(`${count} geodata records imported`);
+          }
+        })
+        .catch((error: unknown) => {
+          failures.push(error);
+          lineReader.close();
+          input.destroy();
+        });
 
-      const geoData = {
-        id: Number.parseInt(lineSplit[0]),
-        name: lineSplit[1],
-        alternateNames: lineSplit[3],
-        latitude: Number(lineSplit[4]),
-        longitude: Number(lineSplit[5]),
-        countryCode: lineSplit[8],
-        admin1Code: lineSplit[10],
-        admin2Code: lineSplit[11],
-        modificationDate: lineSplit[18],
-        admin1Name: admin1Map.get(`${lineSplit[8]}.${lineSplit[10]}`) ?? null,
-        admin2Name: admin2Map.get(`${lineSplit[8]}.${lineSplit[10]}.${lineSplit[11]}`) ?? null,
-      };
-      bufferGeodata.push(geoData);
-      if (bufferGeodata.length >= 5000) {
-        const curLength = bufferGeodata.length;
-        futures.push(
-          this.db
-            .insertInto('geodata_places')
-            .values(bufferGeodata)
-            .execute()
+    try {
+      for await (const line of lineReader) {
+        if (failures.length > 0) {
+          throw failures[0];
+        }
+        const lineSplit = line.split('\t');
+        if ((lineSplit[7] === 'PPLX' && lineSplit[8] !== 'AU') || lineSplit[7] === 'PPLH') {
+          continue;
+        }
 
-            .then(() => {
-              count += curLength;
-              if (count % 10_000 === 0) {
-                this.logger.log(`${count} geodata records imported`);
-              }
-            }),
-        );
-        bufferGeodata = [];
-        // leave spare connection for other queries
-        if (futures.length >= 9) {
-          await Promise.all(futures);
-          futures = [];
+        const geoData = {
+          id: Number.parseInt(lineSplit[0]),
+          name: lineSplit[1],
+          alternateNames: lineSplit[3],
+          latitude: Number(lineSplit[4]),
+          longitude: Number(lineSplit[5]),
+          countryCode: lineSplit[8],
+          admin1Code: lineSplit[10],
+          admin2Code: lineSplit[11],
+          modificationDate: lineSplit[18],
+          admin1Name: admin1Map.get(`${lineSplit[8]}.${lineSplit[10]}`) ?? null,
+          admin2Name: admin2Map.get(`${lineSplit[8]}.${lineSplit[10]}.${lineSplit[11]}`) ?? null,
+        };
+        rows.push(geoData);
+        if (rows.length === 5000) {
+          pending.push(insertBatch(rows));
+          rows = [];
+          // Leave one database connection available for other queries.
+          if (pending.length === 9) {
+            await Promise.all(pending);
+            pending = [];
+          }
         }
       }
+      await Promise.all(pending);
+      if (failures.length > 0) {
+        throw failures[0];
+      }
+      if (rows.length > 0) {
+        await insertBatch(rows);
+        if (failures.length > 0) {
+          throw failures[0];
+        }
+      }
+    } finally {
+      lineReader.close();
+      input.destroy();
+      await Promise.all(pending);
     }
-
-    if (bufferGeodata.length > 0) {
-      await this.db.insertInto('geodata_places').values(bufferGeodata).execute();
-      count += bufferGeodata.length;
-    }
-
-    await Promise.all(futures);
 
     const duration = performance.now() - startTime;
     const seconds = duration / 1000;
@@ -688,13 +723,18 @@ export class MapRepository {
       throw new Error(`Geodata file ${filePath} not found`);
     }
 
-    const input = createReadStream(filePath, { highWaterMark: 512 * 1024 * 1024 });
-    const lineReader = readLine.createInterface({ input });
+    const input = createReadStream(filePath, { highWaterMark: 64 * 1024 });
+    const lineReader = readLine.createInterface({ input, crlfDelay: Infinity });
 
     const adminMap = new Map<string, string>();
-    for await (const line of lineReader) {
-      const lineSplit = line.split('\t');
-      adminMap.set(lineSplit[0], lineSplit[1]);
+    try {
+      for await (const line of lineReader) {
+        const [code, name] = line.split('\t', 2);
+        adminMap.set(code, name);
+      }
+    } finally {
+      lineReader.close();
+      input.destroy();
     }
 
     return adminMap;
@@ -708,28 +748,20 @@ export class MapRepository {
    * they still run together once the key is in place.
    */
   private async createGeodataIndices() {
-    await sql`ALTER TABLE geodata_places ADD PRIMARY KEY (id) WITH (FILLFACTOR = 100)`.execute(this.db);
-    await Promise.all([
-      this.db.schema
-        .createIndex(`idx_geodata_places_alternate_names`)
-        .on('geodata_places')
-        .using('gin (f_unaccent("alternateNames") gin_trgm_ops)')
-        .execute(),
-      this.db.schema
-        .createIndex(`idx_geodata_places_name`)
-        .on('geodata_places')
-        .using('gin (f_unaccent(name) gin_trgm_ops)')
-        .execute(),
-      this.db.schema
-        .createIndex(`idx_geodata_places_admin1_name`)
-        .on('geodata_places')
-        .using('gin (f_unaccent("admin1Name") gin_trgm_ops)')
-        .execute(),
-      this.db.schema
-        .createIndex(`idx_geodata_places_admin2_name`)
-        .on('geodata_places')
-        .using('gin (f_unaccent("admin2Name") gin_trgm_ops)')
-        .execute(),
-    ]);
+    await sql`ALTER TABLE geodata_places_tmp ADD PRIMARY KEY (id) WITH (FILLFACTOR = 100)`.execute(this.db);
+    const results = await Promise.allSettled(
+      GEODATA_INDEXES.map(([name, method, expression]) =>
+        this.db.schema
+          .createIndex(`${name}_tmp`)
+          .on('geodata_places_tmp')
+          .using(method)
+          .expression(expression)
+          .execute(),
+      ),
+    );
+    const failure = results.find((result) => result.status === 'rejected');
+    if (failure) {
+      throw failure.reason;
+    }
   }
 }

@@ -6,7 +6,7 @@ import type { SyncAck } from 'src/types.js';
 import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetMetadataKey, ChecksumAlgorithm } from 'src/enum.js';
+import { AlbumUserRole, AssetMetadataKey, ChecksumAlgorithm } from 'src/enum.js';
 import { TagSync } from 'src/repositories/tag-sync.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getHiddenContentFilter, hiddenContentAssetIdExists, withHiddenContentFilter } from 'src/utils/database.js';
@@ -321,8 +321,11 @@ class AlbumSync extends BaseSync {
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('album_audit', daysAgo);
   }
-  @GenerateSql({ params: [dummyQueryOptions], stream: true })
-  getUpserts(options: SyncQueryOptions) {
+  @GenerateSql(
+    { params: [dummyQueryOptions], stream: true },
+    { name: 'v1', params: [dummyQueryOptions, true], stream: true },
+  )
+  getUpserts(options: SyncQueryOptions, includeOwner = false) {
     const userId = options.userId;
     return this.upsertQuery('album', options)
       .distinctOn(['album.id', 'album.updateId'])
@@ -339,11 +342,18 @@ class AlbumSync extends BaseSync {
         'album.order',
         'album.updateId',
       ])
+      .$if(includeOwner, (qb) =>
+        qb.select((eb) =>
+          eb
+            .selectFrom('album_user as album_owner')
+            .select('album_owner.userId')
+            .whereRef('album_owner.albumId', '=', 'album.id')
+            .where('album_owner.role', '=', AlbumUserRole.Owner)
+            .limit(1)
+            .as('ownerId'),
+        ),
+      )
       .stream();
-  }
-  @GenerateSql({ params: [DummyValue.UUID] })
-  async getAlbumUsers(albumId: string) {
-    return this.db.selectFrom('album_user').select(['userId', 'role']).where('albumId', '=', albumId).execute();
   }
 }
 class AlbumAssetSync extends BaseSync {
@@ -985,6 +995,7 @@ class AssetOcrSync extends BaseSync {
       .select(['asset_ocr_audit.id', 'asset_ocr_audit.assetId', 'asset_ocr_audit.deletedAt'])
       .leftJoin('asset', 'asset.id', 'asset_ocr_audit.assetId')
       .where('asset.ownerId', '=', userId)
+      .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
   cleanupAuditTable(daysAgo: number) {
@@ -996,6 +1007,7 @@ class AssetOcrSync extends BaseSync {
       .select(columns.syncAssetOcr)
       .innerJoin('asset', 'asset.id', 'asset_ocr.assetId')
       .where('asset.ownerId', '=', userId)
+      .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
 }

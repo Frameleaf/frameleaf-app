@@ -13,14 +13,30 @@ import {
 import { toastManager } from '@frameleaf/ui';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { handleError } from '$lib/utils/handle-error';
+import { deferredPromise } from '@test-data/deferred';
 import { MEMORY_REMOVE_UNDO_TIMEOUT_MS, memoryManager } from './memory-manager.svelte';
 
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('$app/state', () => ({
-  page: { params: { id: 'memory-1' }, url: new URL('http://localhost/memories/memory-1?assetId=asset-1') },
+const navigation = vi.hoisted((): { url?: URL; session: number } => ({ session: 0 }));
+vi.mock('$app/state', async () => {
+  const { SvelteURL } = await import('svelte/reactivity');
+  const url = new SvelteURL('http://localhost/memories/memory-1?assetId=asset-1');
+  navigation.url = url;
+  return {
+    page: { params: { id: 'memory-1' }, url },
+  };
+});
+vi.mock('$lib/managers/auth-manager.svelte', () => ({
+  authManager: {
+    authenticated: false,
+    user: { id: 'me' },
+    captureSession: () => {
+      const session = navigation.session;
+      return () => session === navigation.session;
+    },
+  },
 }));
-vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { authenticated: false, user: { id: 'me' } } }));
 vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   removeMemoryAssets: vi.fn().mockResolvedValue([{ id: 'asset-1', success: true }]),
@@ -43,6 +59,48 @@ const memory = () =>
     assets: [{ id: 'asset-1', originalFileName: 'IMG_0001.jpg', type: 'IMAGE' }],
     isSaved: false,
   }) as unknown as MemoryResponseDto;
+
+it('retains the viewer window between photos and replaces it when memory contents change', () => {
+  const current = memory();
+  current.assets.push({ ...current.assets[0], id: 'asset-2' });
+  memoryManager.memories = [current];
+  const first = memoryManager.current!;
+  navigation.url!.searchParams.set('assetId', 'asset-2');
+  try {
+    const second = memoryManager.current!;
+    expect(second.asset.id).toBe('asset-2');
+    expect(second.viewerAssets).toBe(first.viewerAssets);
+    expect(second.previousHref).toContain('asset-1');
+    memoryManager.memories[0].assets = [current.assets[1]];
+    expect(memoryManager.current!.viewerAssets).not.toBe(second.viewerAssets);
+    expect(memoryManager.current!.viewerAssets.map(({ id }) => id)).toEqual(['asset-2']);
+  } finally {
+    navigation.url!.searchParams.set('assetId', 'asset-1');
+  }
+});
+
+it('invalidates the viewer window when an adjacent memory gains an asset', () => {
+  const previous = {
+    ...memory(),
+    memoryAt: '2026-10-15T00:00:00Z',
+    data: { year: 2020 },
+    id: 'previous',
+    assets: [{ ...memory().assets[0], id: 'before' }],
+  };
+  const next = {
+    ...memory(),
+    memoryAt: '2026-10-15T00:00:00Z',
+    data: { year: 2020 },
+    id: 'next',
+    assets: [{ ...memory().assets[0], id: 'after' }],
+  };
+  memoryManager.memories = [previous, memory(), next];
+  const window = memoryManager.current!.viewerAssets;
+  expect(window.map(({ id }) => id)).toEqual(['before', 'asset-1', 'after']);
+  memoryManager.memories[2].assets.push({ ...next.assets[0], id: 'added' });
+  expect(memoryManager.current!.viewerAssets).not.toBe(window);
+  expect(memoryManager.current!.viewerAssets.map(({ id }) => id)).toEqual(['before', 'asset-1', 'after', 'added']);
+});
 
 describe('memoryManager.removeCurrentAsset', () => {
   beforeEach(() => {
@@ -225,4 +283,110 @@ describe('memoryManager on a lock or unlock (FL-195 follow-up)', () => {
 
     await vi.waitFor(() => expect(memoryManager.memories).toEqual([]));
   });
+});
+
+describe('memory mutation session ownership', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    memoryManager.memories = [memory()];
+    memoryManager.hidden = [];
+  });
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  const changeSession = () => {
+    navigation.session++;
+    memoryManager.memories = [];
+    memoryManager.hidden = [];
+  };
+
+  it('does not navigate or offer Undo when removal completes in another session', async () => {
+    const response = deferredPromise<Awaited<ReturnType<typeof removeMemoryAssets>>>();
+    vi.mocked(removeMemoryAssets).mockReturnValueOnce(response.promise);
+    const removing = memoryManager.removeCurrentAsset();
+    changeSession();
+    response.resolve([{ id: 'asset-1', success: true }]);
+    await removing;
+    expect(toastManager.primary).not.toHaveBeenCalled();
+    expect(memoryManager.memories).toEqual([]);
+  });
+
+  it.each(['undo', 'finalize'] as const)('does not send a pending %s through another session', async (action) => {
+    await memoryManager.removeCurrentAsset();
+    const [[toast]] = vi.mocked(toastManager.primary).mock.calls as unknown as [
+      [{ button: (close: () => void) => { onclick: () => void } }],
+    ];
+    changeSession();
+    if (action === 'undo') {
+      toast.button(() => {}).onclick();
+    }
+    await vi.advanceTimersByTimeAsync(MEMORY_REMOVE_UNDO_TIMEOUT_MS);
+    expect(addMemoryAssets).not.toHaveBeenCalled();
+    expect(deleteMemory).not.toHaveBeenCalled();
+    expect(memoryManager.memories).toEqual([]);
+  });
+
+  it.each(['hide', 'restore'] as const)('does not publish an old %s response into another session', async (action) => {
+    const item = memory();
+    const response = deferredPromise<MemoryResponseDto>();
+    vi.mocked(updateMemory).mockReturnValueOnce(response.promise);
+    if (action === 'restore') {
+      memoryManager.hidden = [item];
+      memoryManager.memories = [];
+    }
+    const updating = action === 'hide' ? memoryManager.hideMemory(item.id) : memoryManager.restoreMemory(item.id);
+    await vi.advanceTimersByTimeAsync(0);
+    changeSession();
+    response.resolve(item);
+    await updating;
+    expect(memoryManager.memories).toEqual([]);
+    expect(memoryManager.hidden).toEqual([]);
+  });
+});
+
+it('does not insert an undone memory when its restore response arrives in another session', async () => {
+  vi.clearAllMocks();
+  vi.useFakeTimers();
+  try {
+    memoryManager.memories = [memory()];
+    await memoryManager.removeCurrentAsset();
+    const [[toast]] = vi.mocked(toastManager.primary).mock.calls as unknown as [
+      [{ button: (close: () => void) => { onclick: () => void } }],
+    ];
+    const response = deferredPromise<Awaited<ReturnType<typeof addMemoryAssets>>>();
+    vi.mocked(addMemoryAssets).mockReturnValueOnce(response.promise);
+    toast.button(() => {}).onclick();
+    navigation.session++;
+    memoryManager.memories = [];
+    response.resolve([{ id: 'asset-1', success: true }]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(memoryManager.memories).toEqual([]);
+  } finally {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  }
+});
+
+it('keeps Undo available through an ordinary same-session filter refresh', async () => {
+  vi.clearAllMocks();
+  vi.useFakeTimers();
+  try {
+    memoryManager.memories = [memory()];
+    await memoryManager.removeCurrentAsset();
+    const [[toast]] = vi.mocked(toastManager.primary).mock.calls as unknown as [
+      [{ button: (close: () => void) => { onclick: () => void } }],
+    ];
+    memoryManager.setFilters({ size: 251 });
+    await memoryManager.loading;
+    toast.button(() => {}).onclick();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(addMemoryAssets).toHaveBeenCalledOnce();
+    expect(memoryManager.memories[0].assets[0].id).toBe('asset-1');
+  } finally {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  }
 });

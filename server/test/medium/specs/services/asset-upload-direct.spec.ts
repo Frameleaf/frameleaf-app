@@ -142,12 +142,20 @@ describe('direct peer and actual native resource publication', () => {
       admission,
       new ICloudIdentityRepository(db),
     );
-    direct = new AssetUploadDirectService(native, authentication, admission);
-    vi.spyOn(direct as unknown as { createPeer: () => RTCPeerConnection }, 'createPeer').mockImplementation(() => {
-      const peer = new RTCPeerConnection({ iceServers: [], iceUseIpv6: false });
-      peers.push(peer);
-      return peer;
-    });
+    const startDirect = () => {
+      direct = new AssetUploadDirectService(native, authentication, admission);
+      vi.spyOn(direct as unknown as { createPeer: () => RTCPeerConnection }, 'createPeer').mockImplementation(() => {
+        const peer = new RTCPeerConnection({ iceServers: [], iceUseIpv6: false });
+        peers.push(peer);
+        return peer;
+      });
+    };
+    // A shut-down service takes no new negotiations, so each phase continues on a restarted server.
+    const restartDirect = async () => {
+      await direct.onShutdown();
+      startDirect();
+    };
+    startDirect();
     const payload = randomBytes(128 * 1024);
     const sha256 = createHash('sha256').update(payload).digest();
     const initial = await native.create(
@@ -274,7 +282,7 @@ describe('direct peer and actual native resource publication', () => {
       result: { id: final.result!.id, status: 'duplicate', sha256: sha256.toString('hex') },
     });
     expect(await db.selectFrom('asset').select('id').where('ownerId', '=', user.id).execute()).toHaveLength(1);
-    await direct.onShutdown();
+    await restartDirect();
     for (const refusal of [new UnauthorizedException(), new ForbiddenException()]) {
       const interrupted = await native.create(
         auth,
@@ -341,7 +349,7 @@ describe('direct peer and actual native resource publication', () => {
       const [part] = await repo.parts(undefined, retained.id);
       expect(await readFile(part.path)).toEqual(payload);
       expect(await db.selectFrom('asset').select('id').where('ownerId', '=', user.id).execute()).toHaveLength(1);
-      await direct.onShutdown();
+      await restartDirect();
     }
     await authContext.get(SessionRepository).delete(session.id);
     const client = new RTCPeerConnection({ iceServers: [], iceUseIpv6: false });

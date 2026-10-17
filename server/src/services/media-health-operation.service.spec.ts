@@ -57,6 +57,7 @@ describe(MediaHealthOperationService.name, () => {
       fail: vi.fn().mockResolvedValue('retrying'),
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
       settlePause: vi.fn().mockResolvedValue(true),
+      heartbeat: vi.fn().mockResolvedValue(true),
     } as unknown as MediaOperationRepository;
     mediaHealth = {
       countScanAssets: vi.fn().mockResolvedValue(30),
@@ -73,6 +74,55 @@ describe(MediaHealthOperationService.name, () => {
   });
 
   describe('scan', () => {
+    it.each([true, false])('records final cancellation only after acknowledging it: %s', async (acknowledged) => {
+      mediaHealth.scanPage.mockResolvedValue(page(5, 'asset-5'));
+      vi.mocked(operations.beginValidation).mockResolvedValue(false);
+      vi.mocked(operations.acknowledgeCancel).mockResolvedValue(acknowledged);
+
+      await sut.run(operationOf(scanSnapshot), 'token');
+
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(expect.any(String), 'token', { released: false });
+      if (acknowledged) {
+        expect(mediaHealth.setRunState).toHaveBeenLastCalledWith(scanSnapshot, 'cancelled', expect.anything());
+      } else {
+        expect(mediaHealth.setRunState).toHaveBeenCalledOnce();
+      }
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it.each(['cancelled', 'claim-lost', 'resumed'])(
+      'rechecks active authority after a failed pause before scanning another batch: %s',
+      async (state) => {
+        mediaHealth.scanPage
+          .mockResolvedValueOnce(page(MEDIA_HEALTH_SCAN_BATCH, 'asset-25'))
+          .mockResolvedValueOnce(page(5, 'asset-30'));
+        vi.mocked(operations.setBulkResult).mockResolvedValueOnce({ ...running, pauseRequestedAt: new Date() });
+        vi.mocked(operations.settlePause).mockResolvedValueOnce(false);
+        vi.mocked(operations.heartbeat).mockResolvedValue(state === 'resumed');
+        vi.mocked(operations.acknowledgeCancel).mockResolvedValue(state === 'cancelled');
+
+        await sut.run(operationOf(scanSnapshot), 'token');
+
+        expect(operations.heartbeat).toHaveBeenCalledWith(expect.any(String), 'token', expect.any(Number), {
+          requireActiveClaim: true,
+        });
+        if (state === 'resumed') {
+          expect(mediaHealth.scanPage).toHaveBeenCalledTimes(2);
+          expect(operations.complete).toHaveBeenCalled();
+        } else {
+          expect(mediaHealth.scanPage).toHaveBeenCalledOnce();
+          expect(mediaHealth.restoreUntracked).not.toHaveBeenCalled();
+          expect(operations.complete).not.toHaveBeenCalled();
+          expect(operations.acknowledgeCancel).toHaveBeenCalledWith(expect.any(String), 'token', { released: false });
+          if (state === 'cancelled') {
+            expect(mediaHealth.setRunState).toHaveBeenLastCalledWith(scanSnapshot, 'cancelled', expect.anything());
+          } else {
+            expect(mediaHealth.setRunState).toHaveBeenCalledOnce();
+          }
+        }
+      },
+    );
+
     it('works through the owner’s assets a batch at a time, then restores untracked files and completes', async () => {
       mediaHealth.scanPage
         .mockResolvedValueOnce(page(MEDIA_HEALTH_SCAN_BATCH, 'asset-25', { missing: 1, corrupt: 0 }))
@@ -130,8 +180,9 @@ describe(MediaHealthOperationService.name, () => {
       expect(operations.complete).not.toHaveBeenCalled();
     });
 
-    it('acknowledges a cancel and keeps the findings it has already written', async () => {
+    it.each([true, false])('records cancellation only when its claim acknowledges it: %s', async (acknowledged) => {
       mediaHealth.scanPage.mockResolvedValue(page(MEDIA_HEALTH_SCAN_BATCH, 'asset-25'));
+      vi.mocked(operations.acknowledgeCancel).mockResolvedValue(acknowledged);
       vi.mocked(operations.setBulkResult).mockResolvedValueOnce({
         ...running,
         status: MediaOperationStatus.Cancelling,
@@ -141,7 +192,11 @@ describe(MediaHealthOperationService.name, () => {
       await sut.run(operationOf(scanSnapshot), 'token');
 
       expect(operations.acknowledgeCancel).toHaveBeenCalledWith(expect.any(String), 'token', { released: false });
-      expect(mediaHealth.setRunState).toHaveBeenLastCalledWith(scanSnapshot, 'cancelled', expect.anything());
+      if (acknowledged) {
+        expect(mediaHealth.setRunState).toHaveBeenLastCalledWith(scanSnapshot, 'cancelled', expect.anything());
+      } else {
+        expect(mediaHealth.setRunState).toHaveBeenCalledOnce();
+      }
       expect(operations.complete).not.toHaveBeenCalled();
     });
 

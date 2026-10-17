@@ -35,6 +35,22 @@ describe('utils', () => {
       cancelUploadRequests();
       await expect(request).rejects.toBeInstanceOf(AbortError);
     });
+
+    it.each(['open', 'send'] as const)('forgets an upload when %s throws synchronously', async (method) => {
+      const failure = new Error(`${method} failed`);
+      const abort = vi.spyOn(FakeXhr.prototype, 'abort');
+      const failed = vi.spyOn(FakeXhr.prototype, method).mockImplementation(() => {
+        throw failure;
+      });
+      try {
+        await expect(uploadRequest({ url: '/api/assets', data: new FormData() })).rejects.toBe(failure);
+        cancelUploadRequests();
+        expect(abort).not.toHaveBeenCalled();
+      } finally {
+        failed.mockRestore();
+        abort.mockRestore();
+      }
+    });
   });
 
   describe('FL-115 playback cache key', () => {

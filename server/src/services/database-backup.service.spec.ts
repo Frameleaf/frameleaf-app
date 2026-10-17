@@ -9,7 +9,7 @@ import { createGunzip, createGzip, gzipSync } from 'node:zlib';
 import type { Stats } from 'node:fs';
 import type { QueueExecution } from 'src/queue/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { ImmichWorker, JobStatus, StorageFolder, SystemMetadataKey } from 'src/enum.js';
+import { FrameleafWorker, JobStatus, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
 import { queueExecution } from 'src/queue/context.js';
 import { DatabaseBackupService, restoreVerificationDue } from 'src/services/database-backup.service.js';
@@ -285,7 +285,7 @@ describe(DatabaseBackupService.name, () => {
       const dbUrl = 'postgresql://postgres:pwd@host:5432/immich?sslmode=require&uselibpqcompat=true';
       const configMock = {
         getEnv: () => ({ database: { config: { connectionType: 'url', url: dbUrl }, skipMigrations: false } }),
-        getWorker: () => ImmichWorker.Api,
+        getWorker: () => FrameleafWorker.Api,
         isDev: () => false,
       } as unknown as any;
 
@@ -412,12 +412,28 @@ describe(DatabaseBackupService.name, () => {
     `(`should fail if postgres version $postgresVersion is not supported`, async ({ postgresVersion }) => {
       mocks.database.getPostgresVersion.mockResolvedValue(postgresVersion);
       const result = await sut.handleBackupDatabase();
-      expect(mocks.process.spawn).not.toHaveBeenCalled();
+      expect(mocks.process.spawnDuplexStream).not.toHaveBeenCalled();
       expect(result).toBe(JobStatus.Failed);
     });
   });
 
   describe('buildPostgresLaunchArguments', () => {
+    it.each([
+      { url: 'postgresql://ops%22restore:p%40ss@localhost/frameleaf', user: 'ops"restore', password: 'p@ss' },
+      { url: 'postgresql://ops%25owner:p%25ss@localhost/frameleaf', user: 'ops%owner', password: 'p%ss' },
+      { url: 'postgresql://localhost/frameleaf?user=ops%22restore', user: 'ops"restore', password: '' },
+    ])('decodes URL credentials for role SQL and the child environment: $user', async ({ url, user, password }) => {
+      const env = mocks.config.getEnv();
+      mocks.config.getEnv.mockReturnValue({
+        ...env,
+        database: { ...env.database, config: { connectionType: 'url', url } },
+      });
+      const launch = await sut.buildPostgresLaunchArguments('psql');
+      expect(launch.databaseUsername).toBe(user);
+      expect(launch.databasePassword).toBe(password);
+      expect(launch.args).toContain(url);
+    });
+
     describe('default config', () => {
       it('should generate pg_dump arguments', async () => {
         await expect(sut.buildPostgresLaunchArguments('pg_dump')).resolves.toMatchInlineSnapshot(`
@@ -513,7 +529,7 @@ describe(DatabaseBackupService.name, () => {
               skipMigrations: false,
             },
           }),
-          getWorker: () => ImmichWorker.Api,
+          getWorker: () => FrameleafWorker.Api,
           isDev: () => false,
         } as unknown as any;
 
@@ -589,7 +605,7 @@ describe(DatabaseBackupService.name, () => {
         const dbUrl = 'postgresql://mypg:mypwd@myhost:1234/myimmich?sslmode=require&uselibpqcompat=true';
         const configMock = {
           getEnv: () => ({ database: { config: { connectionType: 'url', url: dbUrl }, skipMigrations: false } }),
-          getWorker: () => ImmichWorker.Api,
+          getWorker: () => FrameleafWorker.Api,
           isDev: () => false,
         } as unknown as any;
 
@@ -653,7 +669,7 @@ describe(DatabaseBackupService.name, () => {
         const dbUrl = 'post://gresql://mypg:myp@wd@myhos:t:1234/myimmich?sslmode=require&uselibpqcompat=true';
         const configMock = {
           getEnv: () => ({ database: { config: { connectionType: 'url', url: dbUrl }, skipMigrations: false } }),
-          getWorker: () => ImmichWorker.Api,
+          getWorker: () => FrameleafWorker.Api,
           isDev: () => false,
         } as unknown as any;
 
@@ -695,7 +711,7 @@ describe(DatabaseBackupService.name, () => {
         const dbUrl = 'socket://mypg:mypwd@/var/run/postgresql?db=myimmich';
         const configMock = {
           getEnv: () => ({ database: { config: { connectionType: 'url', url: dbUrl }, skipMigrations: false } }),
-          getWorker: () => ImmichWorker.Api,
+          getWorker: () => FrameleafWorker.Api,
           isDev: () => false,
         } as unknown as any;
 
@@ -955,7 +971,7 @@ describe(DatabaseBackupService.name, () => {
             skipMigrations: false,
           },
         }),
-        getWorker: () => ImmichWorker.Api,
+        getWorker: () => FrameleafWorker.Api,
         isDev: () => false,
       } as unknown as any;
 
@@ -1190,6 +1206,24 @@ describe(DatabaseBackupService.name, () => {
       await expect(sut.restoreDatabaseBackup('filename')).rejects.toThrowErrorMatchingInlineSnapshot(
         `[Error: Invalid backup file format!]`,
       );
+    });
+
+    it('quotes embedded double quotes in the database role used for schema grants', async () => {
+      vi.spyOn(sut, 'buildPostgresLaunchArguments').mockResolvedValue({
+        bin: 'psql',
+        args: [],
+        databaseUsername: 'ops"restore',
+        databasePassword: '',
+        databaseVersion: '19.1',
+      });
+      mocks.user.hasAdmin.mockResolvedValue(true);
+      let sql = '';
+      mocks.process.spawnDuplexStream
+        .mockImplementationOnce(() => mockDuplex()('pg_dump', 0, 'data', ''))
+        .mockImplementationOnce(() => mockDuplex()('gzip', 0, 'data', ''))
+        .mockImplementationOnce(() => mockDuplex((chunk) => (sql += chunk))('psql', 0, 'data', ''));
+      await sut.restoreDatabaseBackup('development-filename.sql');
+      expect(sql).toContain('GRANT ALL ON SCHEMA public TO "ops""restore";');
     });
 
     it('should successfully restore a backup', async () => {

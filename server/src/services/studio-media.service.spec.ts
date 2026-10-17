@@ -4,7 +4,7 @@ import { Writable } from 'node:stream';
 import { CacheControl } from 'src/enum.js';
 import { StudioMediaService, fillMissingFrames, getStudioMediaFolder } from 'src/services/studio-media.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { PeakAccumulator, encodeWaveformPeaks, studioMediaFingerprint } from 'src/utils/studio-media.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { videoInfoStub } from 'test/fixtures/media.stub.js';
@@ -145,7 +145,7 @@ describe(StudioMediaService.name, () => {
 
       await expect(sut.getFilmstrip(authStub.admin, assetId, { format: 'webp' })).resolves.toEqual(cached);
       await expect(sut.viewFilmstripSprite(authStub.admin, assetId, { format: 'webp', version })).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: `${folder}/filmstrip-${version}-20x90.webp`,
           contentType: 'image/webp',
           cacheControl: CacheControl.PrivateWithCache,

@@ -512,7 +512,34 @@ export const findStudioExportRangeMismatch = (
   return null;
 };
 
+const StudioExportCoreSchema = z.object({
+  video: z.object({
+    minBitDepth: z.union([z.literal(8), z.literal(10)]),
+    transfer: z.enum(['smpte2084', 'arib-std-b67']).nullable(),
+  }),
+  audio: z
+    .object({
+      policy: z.enum(STUDIO_EXPORT_AUDIO),
+      channels: z.int().positive().nullable(),
+      channelLayout: z.string().nullable(),
+      sampleRate: z.int().positive().nullable(),
+    })
+    .nullable(),
+  range: z
+    .object({
+      inPoint: z.int().nonnegative(),
+      outPoint: z.int().positive(),
+      cadence: z.string().refine((value) => {
+        const cadence = tryParseRational(value);
+        return cadence !== null && cadence.num > 0;
+      }),
+    })
+    .refine((range) => range.outPoint > range.inPoint)
+    .optional(),
+});
+
 export const parseStudioExportContract = (value: unknown): StudioExportContract | null => {
+  if (!StudioExportCoreSchema.safeParse(value).success) return null;
   const record = asRecord(value);
   const video = asRecord(record.video);
   if (
@@ -523,9 +550,6 @@ export const parseStudioExportContract = (value: unknown): StudioExportContract 
   if (record.subtitles !== undefined && record.embeddedSubtitles !== undefined) return null;
   if (record.subtitles !== undefined && !StudioSidecarSealSchema.safeParse(record.subtitles).success) return null;
   if (record.image !== undefined && !StudioExportImageContractSchema.safeParse(record.image).success) return null;
-  if (video.minBitDepth !== 8 && video.minBitDepth !== 10) {
-    return null;
-  }
   if (
     video.mastering !== undefined &&
     (video.transfer !== 'smpte2084' || !StudioExportMasteringSchema.safeParse(video.mastering).success)

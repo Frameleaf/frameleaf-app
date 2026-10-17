@@ -402,13 +402,14 @@ describe(PetRecognitionService.name, () => {
       expect(pets.getRecognizableAssetIds).not.toHaveBeenCalled();
     });
 
-    it('queues nothing for a run cancelled before it started', async () => {
+    it('excludes a run cancelled before it started from the queued selection', async () => {
       pets.getRun.mockResolvedValue({ id: runId, ownerId, status: PetRecognitionRunStatus.Cancelled });
       pets.isRunActive.mockResolvedValue(false);
 
       await sut.handleQueueAll({ userId: ownerId });
 
-      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      expect(pets.selectionForPetRecognition).toHaveBeenCalledExactlyOnceWith([]);
+      expect(mocks.job.queueSelection).toHaveBeenCalledExactlyOnceWith(JobName.PetRecognition, { selected: true });
     });
 
     it('fails producer setup atomically when its canonical run cannot be read', async () => {

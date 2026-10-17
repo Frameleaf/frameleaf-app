@@ -24,8 +24,13 @@ describe('PersonService face history (FL-57)', () => {
     mocks.person.getOrphanedFaceCorrections.mockResolvedValue([]);
     mocks.person.getFaceDecisionChecksums.mockResolvedValue(new Map());
     mocks.person.recordFaceCorrections.mockResolvedValue([]);
+    // face writes run inside the partner-origin edit admission; let it pass through
+    mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
+    // person edits run inside the person-origin admission (no origin row here), as in person.service.spec.ts
+    mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (_owner, _group, write) => write(undefined));
     mocks.person.hasFaces.mockResolvedValue(true);
     mocks.person.reassignFaces.mockResolvedValue(1);
+    mocks.person.withMergeWrite.mockImplementation(async (write) => write());
     mocks.person.reanchorMergeVerdicts.mockResolvedValue(0);
     mocks.person.getVisibleEvidenceAssetIds.mockResolvedValue(new Set());
     mocks.person.getForMergePerson.mockResolvedValue([]);
@@ -357,6 +362,7 @@ describe('PersonService face history (FL-57)', () => {
     it('moves the face back and marks the change undone', async () => {
       const entry = correction();
       const { auth, current } = setup(entry);
+      mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([entry.assetId!]);
 
       await expect(sut.undoCorrection(auth, entry.id)).resolves.toEqual(
         expect.objectContaining({ id: entry.id, undoneAt: expect.any(String), undoable: false }),
@@ -366,6 +372,15 @@ describe('PersonService face history (FL-57)', () => {
         { id: current.id, expectedRevision: current.updateId },
         { personGroupId: entry.fromPersonId },
       );
+      expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledExactlyOnceWith(
+        'asset',
+        [entry.assetId],
+        ['faces'],
+        auth.user.id,
+      );
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: entry.assetId, fields: ['faces'] } },
+      ]);
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.PersonIdentityRefresh,
         data: { ownerId: entry.ownerId, assetIds: [entry.assetId] },

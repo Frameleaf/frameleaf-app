@@ -45,11 +45,11 @@ import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireUploadAccess } from 'src/utils/access.js';
-import { asUploadRequest, onBeforeLink } from 'src/utils/asset.util.js';
+import { asUploadRequest } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
 import { moveFileWithin, storedCopyChecks } from 'src/utils/file-trash.js';
-import { ImmichFileResponse, getFileNameWithoutExtension, getFilenameExtension } from 'src/utils/file.js';
+import { FileDownloadResponse, getFileNameWithoutExtension, getFilenameExtension } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -159,13 +159,6 @@ export class AssetMediaService extends BaseService {
     });
 
     this.requireQuota(auth, file.size);
-
-    if (dto.livePhotoVideoId) {
-      await onBeforeLink(
-        { asset: this.assetRepository, event: this.eventRepository },
-        { userId: auth.user.id, livePhotoVideoId: dto.livePhotoVideoId },
-      );
-    }
 
     return {
       asset: {
@@ -288,7 +281,15 @@ export class AssetMediaService extends BaseService {
     let asset: Asset | undefined;
     try {
       const prepared = await this.prepareUploadAsset(auth, dto, file);
-      asset = await this.assetRepository.create(prepared.asset, prepared.lock);
+      if (prepared.asset.livePhotoVideoId) {
+        const published = await this.assetRepository.createLivePhotoUpload(prepared.asset, prepared.lock);
+        asset = published.asset;
+        if (published.lockedIds.length > 0) await this.afterAssetsLocked(published.lockedIds);
+        if (published.hiddenId)
+          await this.eventRepository.emit('AssetHide', { assetId: published.hiddenId, userId: auth.user.id });
+      } else {
+        asset = await this.assetRepository.create(prepared.asset, prepared.lock);
+      }
       await this.finishUploadAsset(auth, dto, file, asset, sidecarFile);
 
       return { id: asset.id, status: AssetMediaStatus.CREATED };
@@ -344,7 +345,7 @@ export class AssetMediaService extends BaseService {
     id: string,
     dto: AssetDownloadOriginalDto,
     signal?: AbortSignal,
-  ): Promise<ImmichFileResponse> {
+  ): Promise<FileDownloadResponse> {
     signal?.throwIfAborted();
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
 
@@ -357,7 +358,9 @@ export class AssetMediaService extends BaseService {
       dto.edited ?? false,
     );
 
-    const filePath = editedPath ?? originalPath!;
+    // Downloaded as shown (owner, 2026-10-16): the owner's viewer shows their current develop version.
+    const developedPath = dto.edited && !dto.format ? await this.getShownDevelopMaster(auth, id, ownerId) : undefined;
+    const filePath = developedPath ?? editedPath ?? originalPath!;
     if (dto.format) {
       const source = await this.assetRepository.getById(id);
       if (!source || source.type !== AssetType.Image || source.originalPath !== filePath)
@@ -393,7 +396,7 @@ export class AssetMediaService extends BaseService {
           !current.checksum.equals(checksum)
         )
           throw new ConflictException('This photo changed during export; try again');
-        return new ImmichFileResponse({
+        return new FileDownloadResponse({
           path: output,
           release,
           contentType: heic ? 'image/heic' : 'image/jpeg',
@@ -423,8 +426,26 @@ export class AssetMediaService extends BaseService {
       path: filePath,
       fileName: getFileNameWithoutExtension(originalFileName) + getFilenameExtension(filePath),
       contentType: mimeTypes.lookup(filePath),
-      cacheControl: CacheControl.PrivateWithCache,
+      // The current version can change under the same URL; a cached copy could be the one before.
+      cacheControl: developedPath ? CacheControl.PrivateWithoutCache : CacheControl.PrivateWithCache,
     });
+  }
+
+  /**
+   * The rendered master of the owner's current develop version: the picture their viewer shows
+   * (`viewThumbnail` serves it for an edited preview or full-size request), so a download of the asset
+   * as it is shown is that file. Nobody else sees the working version; they are given the edited file
+   * or the original as before.
+   */
+  private async getShownDevelopMaster(auth: AuthDto, id: string, ownerId: string): Promise<string | undefined> {
+    if (auth.sharedLink || auth.user.id !== ownerId) {
+      return;
+    }
+    const current = await this.assetRepository.getCurrentDevelop(id);
+    if (!current || current.ownerId !== ownerId || !current.masterPath || !hasPublishedDevelopRendition(current)) {
+      return;
+    }
+    return current.masterPath;
   }
 
   /**
@@ -437,13 +458,13 @@ export class AssetMediaService extends BaseService {
     auth: AuthDto,
     asset: OriginalAsset,
     purpose: OriginalPurpose,
-    response: ImmichFileResponse,
-  ): Promise<ImmichFileResponse> {
+    response: FileDownloadResponse,
+  ): Promise<FileDownloadResponse> {
     const policyFor = getOriginalLocationPolicies({ auth, assets: [asset], purpose });
 
     switch (policyFor(asset)) {
       case OriginalLocationPolicy.Serve: {
-        return new ImmichFileResponse(response);
+        return new FileDownloadResponse(response);
       }
 
       case OriginalLocationPolicy.Refuse: {
@@ -454,7 +475,7 @@ export class AssetMediaService extends BaseService {
         const lease = await this.metadataRepository.acquireLocationFreeOriginal(response.path).catch(() => {
           throw new ForbiddenException('The location of this file could not be removed');
         });
-        return new ImmichFileResponse({ ...response, path: lease.path, release: lease.release });
+        return new FileDownloadResponse({ ...response, path: lease.path, release: lease.release });
       }
     }
   }
@@ -476,7 +497,7 @@ export class AssetMediaService extends BaseService {
     id: string,
     dto: AssetMediaOptionsDto,
     via: FrameleafVia | null = null,
-  ): Promise<ImmichFileResponse | AssetMediaRedirectResponse> {
+  ): Promise<FileDownloadResponse | AssetMediaRedirectResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [id] });
 
     if (dto.size === AssetMediaSize.Original) {
@@ -521,7 +542,7 @@ export class AssetMediaService extends BaseService {
         if (!developedPath) {
           throw new NotFoundException('Current developed preview is unavailable');
         }
-        return new ImmichFileResponse({
+        return new FileDownloadResponse({
           fileName: `${getFileNameWithoutExtension(originalFileName)}_develop_${size}${getFilenameExtension(developedPath)}`,
           path: developedPath,
           contentType: mimeTypes.lookup(developedPath),
@@ -546,7 +567,7 @@ export class AssetMediaService extends BaseService {
         // The worker re-encodes pixels without source EXIF/XMP and validates required HDR metadata.
         // These are sanitized derivatives, as are ordinary previews; original-file stripping is not needed.
         const base = auth.sharedLink && !auth.sharedLink.showExif ? id : getFileNameWithoutExtension(originalFileName);
-        return new ImmichFileResponse({
+        return new FileDownloadResponse({
           path: hdr.path,
           fileName: `${base}_${type}.jpg`,
           contentType: 'image/jpeg',
@@ -594,7 +615,7 @@ export class AssetMediaService extends BaseService {
     const fileNameBase =
       auth.sharedLink && !auth.sharedLink.showExif ? id : getFileNameWithoutExtension(originalFileName);
     const fileName = `${fileNameBase}_${size}${getFilenameExtension(path)}`;
-    const response = new ImmichFileResponse({
+    const response = new FileDownloadResponse({
       fileName,
       path,
       contentType: mimeTypes.lookup(path),
@@ -612,12 +633,12 @@ export class AssetMediaService extends BaseService {
     return response;
   }
 
-  async downloadVideoEditVersion(auth: AuthDto, id: string, versionId: string): Promise<ImmichFileResponse> {
+  async downloadVideoEditVersion(auth: AuthDto, id: string, versionId: string): Promise<FileDownloadResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
     const version = await this.assetEditRepository.getVideoVersion(id, versionId);
     if (!version || version.ownerId !== auth.user.id || version.status !== 'ready' || !version.masterPath)
       throw new NotFoundException('Video version is unavailable');
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path: version.masterPath,
       fileName: `${id}-${version.id}.mp4`,
       contentType: 'video/mp4',
@@ -625,7 +646,7 @@ export class AssetMediaService extends BaseService {
     });
   }
 
-  async playbackVideo(auth: AuthDto, id: string, edited = true): Promise<ImmichFileResponse> {
+  async playbackVideo(auth: AuthDto, id: string, edited = true): Promise<FileDownloadResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [id] });
 
     const asset = await this.assetRepository.getForVideo(id);
@@ -652,7 +673,7 @@ export class AssetMediaService extends BaseService {
    * policy is applied as for any file served for playback. It exists only while no edit is
    * published over the original and the original is the one it was made from.
    */
-  async playbackStudioHdrVideo(auth: AuthDto, id: string): Promise<ImmichFileResponse> {
+  async playbackStudioHdrVideo(auth: AuthDto, id: string): Promise<FileDownloadResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [id] });
     if (auth.sharedLink) {
       throw new NotFoundException('Asset not found');
@@ -695,8 +716,8 @@ export class AssetMediaService extends BaseService {
     }
 
     return {
-      results: dto.assets.map(({ id, checksum }) => {
-        const duplicate = checksumMap[fromChecksum(checksum).toString('hex')];
+      results: dto.assets.map(({ id }, index) => {
+        const duplicate = checksumMap[checksums[index].toString('hex')];
         if (duplicate) {
           return {
             id,

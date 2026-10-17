@@ -7,7 +7,9 @@ const defaultSerializer = <K>(params: K) => JSON.stringify(params);
 
 class AsyncCache<K, V> {
   #cache = new Map<string, V>();
+  #pending = new Map<string, { promise: Promise<V> }>();
   #generation = 0;
+  #cacheGeneration = 0;
   #keyGenerations = new Map<string, number>();
 
   constructor(private fetcher: (params: K) => Promise<V>) {}
@@ -21,38 +23,56 @@ class AsyncCache<K, V> {
     }
 
     const generation = this.#generation;
+    const cacheGeneration = this.#cacheGeneration;
     const keyGeneration = this.#keyGenerations.get(cacheKey);
-    let value: V;
+    let pending = this.#pending.get(cacheKey);
     try {
-      value = await this.fetcher(params);
+      if (!pending) {
+        pending = { promise: this.fetcher(params) };
+        if (
+          generation === this.#generation &&
+          cacheGeneration === this.#cacheGeneration &&
+          keyGeneration === this.#keyGenerations.get(cacheKey)
+        ) {
+          this.#pending.set(cacheKey, pending);
+        }
+      }
+      const value = await pending.promise;
+      if (generation !== this.#generation || keyGeneration !== this.#keyGenerations.get(cacheKey)) {
+        throw new DOMException('Asset cache invalidated', 'AbortError');
+      }
+      if (value && updateCache && cacheGeneration === this.#cacheGeneration) {
+        this.#cache.set(cacheKey, value);
+      }
+
+      return value;
     } catch (error) {
       if (generation !== this.#generation || keyGeneration !== this.#keyGenerations.get(cacheKey)) {
         throw new DOMException('Asset cache invalidated', 'AbortError');
       }
       throw error;
+    } finally {
+      if (pending && this.#pending.get(cacheKey) === pending) {
+        this.#pending.delete(cacheKey);
+      }
     }
-    if (generation !== this.#generation || keyGeneration !== this.#keyGenerations.get(cacheKey)) {
-      throw new DOMException('Asset cache invalidated', 'AbortError');
-    }
-    if (value && updateCache) {
-      this.#cache.set(cacheKey, value);
-    }
-
-    return value;
   }
 
   clearKey(params: K) {
     const cacheKey = defaultSerializer(params);
     this.#cache.delete(cacheKey);
+    this.#pending.delete(cacheKey);
     this.#keyGenerations.set(cacheKey, (this.#keyGenerations.get(cacheKey) ?? 0) + 1);
   }
 
   /** `revoke` also rejects fetches still in flight: their answers belong to the old access boundary. */
   clear(revoke = false) {
+    this.#cacheGeneration++;
     if (revoke) {
       this.#generation++;
       this.#keyGenerations.clear();
     }
+    this.#pending.clear();
     this.#cache.clear();
   }
 }

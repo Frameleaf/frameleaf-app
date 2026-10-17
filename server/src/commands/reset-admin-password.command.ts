@@ -39,6 +39,7 @@ export class ResetAdminPasswordCommand extends CommandRunner {
     } catch (error) {
       console.error(error);
       console.error('Unable to reset admin password');
+      process.exitCode = 1;
     }
   }
 }

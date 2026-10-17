@@ -169,7 +169,7 @@ export class SharpProcessPool {
         args,
         bytes,
         signal,
-        deadline: Date.now() + this.options.deadlineMs,
+        deadline: performance.now() + this.options.deadlineMs,
         abort: () =>
           this.cancelPending(
             admittedTask,
@@ -288,7 +288,7 @@ export class SharpProcessPool {
       slot.lifetime = superviseMediaProcess(slot.child, {
         trackChild: false,
         signal: task.signal,
-        deadlineMs: Math.max(1, task.deadline - Date.now()),
+        deadlineMs: Math.max(1, task.deadline - performance.now()),
         idleMs: this.options.idleMs,
         graceMs: this.options.graceMs,
         progress: task.progress,
@@ -505,7 +505,7 @@ export class SharpProcessPool {
       await this.cleanupOutputs(task);
       check();
       task.outputs = undefined;
-      task.published = undefined;
+      // Retain published inode ownership until result acceptance or child-close rollback.
     } catch (error) {
       await this.cleanupOutputs(task, true);
       throw error;

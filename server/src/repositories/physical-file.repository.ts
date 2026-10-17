@@ -215,16 +215,18 @@ export const withFileTrashMove = async <T>(
   originalFileName: string,
   move: PhysicalFileTrashMove,
   callback: (trx: Transaction<DB>, id: string) => Promise<T>,
+  options: { targetPath?: string; checksum?: Buffer } = {},
 ): Promise<T> => {
   if (await recoverFileTrashMoves(db, move, path)) {
     throw new ConflictException('An interrupted file trash move needs recovery');
   }
   const id = randomUUID();
-  const target = StorageCore.getFileTrashPath(id, originalFileName);
+  const target = options.targetPath ?? StorageCore.getFileTrashPath(id, originalFileName);
   await sql`INSERT INTO public.move_history (id, "entityId", "pathType", "oldPath", "newPath")
     VALUES (${id}::uuid, ${id}::uuid, 'file_trash', ${path}, ${target})`.execute(db);
   try {
     return await db.transaction().execute(async (trx) => {
+      if (options.checksum) await lockChecksum(trx, options.checksum);
       for (const lockedPath of [path, target].toSorted()) await lockFilePath(trx, lockedPath);
       const { rows } = await sql`SELECT id FROM public.move_history
         WHERE id = ${id}::uuid AND "pathType" = 'file_trash'
@@ -413,6 +415,10 @@ export class PhysicalFileRepository {
         ownerId: string;
       };
     },
+    adoption?: {
+      transaction: Transaction<DB>;
+      proof: { path: string; identity: string | null } | undefined;
+    },
   ): Promise<
     | {
         physicalFile: PhysicalFile;
@@ -423,8 +429,15 @@ export class PhysicalFileRepository {
     // A candidate can appear, or change, between the proof and the transaction (a concurrent upload of the
     // same content): the proof is made once more for it, then the upload keeps its own file.
     for (let attempt = 0; ; attempt++) {
-      const proof = await this.proveStoredCopy(assetId, file, options.verify);
-      const result = await this.linkUploadedOriginalOnce(assetId, file, options, proof, attempt > 0);
+      const proof = adoption ? adoption.proof : await this.proveStoredCopy(assetId, file, options.verify);
+      const result = await this.linkUploadedOriginalOnce(
+        assetId,
+        file,
+        options,
+        proof,
+        !!adoption || attempt > 0,
+        adoption?.transaction,
+      );
       if (result !== RETRY_LINK) {
         return result;
       }
@@ -434,7 +447,7 @@ export class PhysicalFileRepository {
    * The file the content's existing candidate keeps, and its identity when it is proven to hold these
    * bytes (FL-412); the identity is null when the file is gone or holds other bytes.
    */
-  private async proveStoredCopy(
+  async proveStoredCopy(
     assetId: string,
     file: { checksum: Buffer; sizeInBytes: number },
     verify: (path: string) => Promise<string | null>,
@@ -457,8 +470,9 @@ export class PhysicalFileRepository {
     options: Parameters<PhysicalFileRepository['linkUploadedOriginal']>[2],
     proof: { path: string; identity: string | null } | undefined,
     lastAttempt: boolean,
+    kysely?: Transaction<DB>,
   ): Promise<undefined | typeof RETRY_LINK | { physicalFile: PhysicalFile; linked: boolean }> {
-    return this.db.transaction().execute(async (trx) => {
+    const execute = async (trx: Transaction<DB>) => {
       await lockChecksum(trx, file.checksum);
       const asset = await trx
         .selectFrom('asset')
@@ -477,6 +491,9 @@ export class PhysicalFileRepository {
       if (asset.physicalOriginalFileId) {
         // already linked: a concurrent upload of the same content linked this one onto its file
         const physicalFile = await this.getPhysicalFile(asset.physicalOriginalFileId, trx);
+        if (physicalFile && options.ingestion) {
+          await this.requireIngestionClaim(trx, asset.id, file.checksum, options.ingestion);
+        }
         return physicalFile ? { physicalFile, linked: physicalFile.canonicalAssetId !== asset.id } : undefined;
       }
       const candidate = await this.getServerOriginalCandidate(file.checksum, file.sizeInBytes, {
@@ -544,22 +561,31 @@ export class PhysicalFileRepository {
             await this.requireIngestionClaim(trx, asset.id, file.checksum, options.ingestion);
           }
           await options.untrash(entry.path, target);
-          await sql`DELETE FROM public.physical_file_trash WHERE id = ${entry.id}::uuid`.execute(trx);
-          const physicalFile = await this.registerOriginal(trx, {
-            canonicalAssetId: asset.id,
-            checksum: file.checksum,
-            path: target,
-            sizeInBytes: file.sizeInBytes,
-          });
-          await trx
-            .updateTable('asset')
-            .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
-            .where('id', '=', asUuid(asset.id))
-            .execute();
-          return { physicalFile, linked: true };
+          try {
+            await sql`DELETE FROM public.physical_file_trash WHERE id = ${entry.id}::uuid`.execute(trx);
+            const physicalFile = await this.registerOriginal(trx, {
+              canonicalAssetId: asset.id,
+              checksum: file.checksum,
+              path: target,
+              sizeInBytes: file.sizeInBytes,
+            });
+            await trx
+              .updateTable('asset')
+              .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
+              .where('id', '=', asUuid(asset.id))
+              .execute();
+            return { physicalFile, linked: true };
+          } catch (error) {
+            // the rollback keeps the trash row: the file goes back to where that row says it is
+            await options.untrash(target, entry.path).catch(() => {});
+            throw error;
+          }
         }
       }
       await this.lockPath(trx, asset.originalPath);
+      if (options.ingestion) {
+        await this.requireIngestionClaim(trx, asset.id, file.checksum, options.ingestion);
+      }
       const physicalFile = await this.registerOriginal(trx, {
         canonicalAssetId: asset.id,
         checksum: file.checksum,
@@ -572,7 +598,8 @@ export class PhysicalFileRepository {
         .where('id', '=', asUuid(asset.id))
         .execute();
       return { physicalFile, linked: false };
-    });
+    };
+    return kysely ? execute(kysely) : this.db.transaction().execute(execute);
   }
   /**
    * For a generated file with no `physical_file` row (made before universal storage, and inherited by a

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 import { ChokidarOptions, watch as chokidarWatch } from 'chokidar';
 import fastGlob from 'fast-glob';
 import {
@@ -29,14 +29,14 @@ export interface WatchEvents {
   onError(error: Error): void;
 }
 
-export interface ImmichReadStream {
+export interface ReadStreamResponse {
   stream: Readable;
   type?: string;
   disposition?: string | string[];
   length?: number;
 }
 
-export interface ImmichZipStream extends ImmichReadStream {
+export interface ZipDownloadStream extends ReadStreamResponse {
   addFile: (inputPath: string, filename: string) => void;
   finalize: () => Promise<void>;
 }
@@ -99,8 +99,8 @@ export class StorageRepository {
     return fs.utimes(filepath, atime, mtime);
   }
 
-  createZipStream(): ImmichZipStream {
-    const archive = archiver('zip', { store: true });
+  createZipStream(): ZipDownloadStream {
+    const archive = new ZipArchive({ store: true });
 
     const addFile = (input: string, filename: string) => {
       archive.file(input, { name: filename, mode: 0o644 });
@@ -123,7 +123,7 @@ export class StorageRepository {
     return createReadStream(filepath);
   }
 
-  async createReadStream(filepath: string, mimeType?: string | null): Promise<ImmichReadStream> {
+  async createReadStream(filepath: string, mimeType?: string | null): Promise<ReadStreamResponse> {
     const { size } = await fs.stat(filepath);
     await fs.access(filepath, constants.R_OK);
     return {
@@ -214,13 +214,28 @@ export class StorageRepository {
 
   async removeEmptyDirs(directory: string, self: boolean = false) {
     // lstat does not follow symlinks (in contrast to stat)
-    const stats = await fs.lstat(directory);
+    const stats = await fs.lstat(directory, { bigint: true });
     if (!stats.isDirectory()) {
       return;
     }
 
-    const files = await fs.readdir(directory);
-    await Promise.all(files.map((file) => this.removeEmptyDirs(path.join(directory, file), true)));
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    // Do not traverse a replacement reached through the path while its entries were read.
+    const current = await fs.lstat(directory, { bigint: true }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') {
+        throw error;
+      }
+    });
+    if (!current?.isDirectory() || current.dev !== stats.dev || current.ino !== stats.ino) {
+      return;
+    }
+    const children: Promise<void>[] = [];
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        children.push(this.removeEmptyDirs(path.join(directory, entry.name), true));
+      }
+    }
+    await Promise.all(children);
 
     if (self) {
       const updated = await fs.readdir(directory);
@@ -361,8 +376,7 @@ export class StorageRepository {
   async *walk(walkOptions: WalkOptionsDto): AsyncGenerator<string[]> {
     const { pathsToCrawl, exclusionPatterns, includeHidden } = walkOptions;
     if (pathsToCrawl.length === 0) {
-      async function* emptyGenerator() {}
-      return emptyGenerator();
+      return;
     }
 
     const globbedPaths = pathsToCrawl.map((path) => this.asGlob(path));

@@ -2,7 +2,7 @@ import type { MlSelection } from 'src/repositories/machine-learning.repository.j
 import { MediaOperationKind, MlWorkload, RenderWorkerStatus, SystemMetadataKey } from 'src/enum.js';
 import { HardwareCheckService } from 'src/services/hardware-check.service.js';
 import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
-import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
+import { mlDestinationStub, mlSelectionStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 describe(HardwareCheckService.name, () => {
@@ -57,7 +57,10 @@ describe(HardwareCheckService.name, () => {
     });
     expect(result.server.gpu).toEqual({ present: true, visible: true, usable: true });
     expect(result.ml.gpu).toEqual({ present: true, visible: true, usable: true });
-    expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.HardwareCheck, result);
+    expect(mocks.systemMetadata.set).toHaveBeenCalledWith(
+      SystemMetadataKey.HardwareCheck,
+      expect.objectContaining(result),
+    );
     expect(mocks.machineLearning.getContainerHardware).toHaveBeenCalledWith(
       expect.objectContaining({ url: mlDestinationStub.local.url }),
     );
@@ -79,6 +82,231 @@ describe(HardwareCheckService.name, () => {
 
     mocks.machineLearning.getContainerHardware.mockResolvedValue(null);
     await expect(sut.runCheck()).resolves.toMatchObject({ benchmark: null, ml: { reachable: false } });
+  });
+
+  it.each(['destination', 'url', 'credential', 'clip-model', 'description-model'] as const)(
+    'does not retain another source calibration after changing its %s',
+    async (change) => {
+      const config = await sut['getConfig']({ withCache: true });
+      const readConfig = vi
+        .spyOn(sut as unknown as { getConfig: () => Promise<typeof config> }, 'getConfig')
+        .mockResolvedValue(config);
+      await sut.runBenchmark();
+      const replacement = { ...mlDestinationStub.local };
+      switch (change) {
+        case 'destination': {
+          replacement.id = 'replacement-worker';
+          break;
+        }
+        case 'url': {
+          replacement.url = 'http://replacement-worker:3003';
+          break;
+        }
+        case 'credential': {
+          replacement.authToken = 'replacement-test-credential';
+          break;
+        }
+        case 'clip-model': {
+          readConfig.mockResolvedValue({
+            ...config,
+            machineLearning: {
+              ...config.machineLearning,
+              clip: { ...config.machineLearning.clip, modelName: 'replacement-clip' },
+            },
+          } as never);
+
+          break;
+        }
+        case 'description-model': {
+          readConfig.mockResolvedValue({
+            ...config,
+            machineLearning: {
+              ...config.machineLearning,
+              imageDescription: { ...config.machineLearning.imageDescription, modelName: 'replacement-description' },
+            },
+          } as never);
+
+          break;
+        }
+        // No default
+      }
+      mocks.mlDestination.getAll.mockResolvedValue([replacement]);
+
+      await expect(sut.runCheck()).resolves.toMatchObject({ benchmark: null });
+    },
+  );
+
+  it('rechecks an older saved benchmark whose source was never bound', async () => {
+    const benchmark = await sut.runBenchmark();
+    stored = benchmark;
+    mocks.hardwareProbe.readServer.mockClear();
+
+    await expect(sut.getCheck()).resolves.toMatchObject({ benchmark: null });
+
+    expect(mocks.hardwareProbe.readServer).toHaveBeenCalledOnce();
+  });
+
+  it('invalidates calibration when another enabled local destination becomes first', async () => {
+    const other = { ...mlDestinationStub.local, id: 'other-local', url: 'http://other-local:3003' };
+    mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, other]);
+    await sut.runBenchmark();
+    mocks.mlDestination.getAll.mockResolvedValue([other, mlDestinationStub.local]);
+
+    await expect(sut.runCheck()).resolves.toMatchObject({ benchmark: null });
+  });
+
+  it('retains same-source calibration when unrelated destination rows are reordered', async () => {
+    mocks.machineLearning.getRestorationModels.mockRejectedValue(new Error('worker unavailable'));
+    mocks.mlDestination.getAll.mockResolvedValue([
+      mlDestinationStub.local,
+      mlDestinationStub.libraryLan,
+      mlDestinationStub.lan,
+    ]);
+    const result = await sut.runBenchmark();
+    mocks.mlDestination.getAll.mockResolvedValue([
+      mlDestinationStub.lan,
+      mlDestinationStub.local,
+      mlDestinationStub.libraryLan,
+    ]);
+
+    await expect(sut.runCheck()).resolves.toMatchObject({ benchmark: result.benchmark });
+  });
+
+  it('measures embeddings and descriptions from one model configuration snapshot', async () => {
+    const config = await sut['getConfig']({ withCache: true });
+    const readConfig = vi
+      .spyOn(sut as unknown as { getConfig: () => Promise<typeof config> }, 'getConfig')
+      .mockResolvedValueOnce(config)
+      .mockResolvedValue({
+        ...config,
+        machineLearning: {
+          ...config.machineLearning,
+          clip: { ...config.machineLearning.clip, modelName: 'later-model' },
+        },
+      });
+    vi.spyOn(
+      sut as unknown as { selectRoutedMlDestination: () => Promise<MlSelection> },
+      'selectRoutedMlDestination',
+    ).mockResolvedValue(mlSelectionStub(MlWorkload.Clip));
+    vi.spyOn(
+      sut as unknown as { selectMlDestination: () => Promise<MlSelection> },
+      'selectMlDestination',
+    ).mockResolvedValue(mlSelectionStub(MlWorkload.Enrichment));
+    mocks.machineLearning.describeImageRun.mockResolvedValue({
+      result: {} as never,
+      model: config.machineLearning.imageDescription.modelName,
+      device: 'cuda:0',
+    });
+
+    await sut.runBenchmark();
+
+    expect(readConfig).toHaveBeenCalledOnce();
+    expect(mocks.machineLearning.encodeText).toHaveBeenCalledWith(expect.anything(), expect.any(String), {
+      modelName: config.machineLearning.clip.modelName,
+    });
+    expect(mocks.machineLearning.describeImageRun).toHaveBeenCalledWith(
+      expect.anything(),
+      '/tmp/test.jpg',
+      config.machineLearning.imageDescription,
+    );
+  });
+
+  it('keeps only a private fingerprint and omits it from fresh and cached responses', async () => {
+    const destination = { ...mlDestinationStub.local, authToken: 'private-test-credential' };
+    mocks.mlDestination.getAll.mockResolvedValue([destination]);
+
+    const result = await sut.runBenchmark();
+    const cached = await sut.getCheck();
+
+    expect(stored).toMatchObject({ benchmarkScope: expect.stringMatching(/^[a-f\d]{64}$/) });
+    expect(JSON.stringify(stored)).not.toContain(destination.authToken);
+    expect(result).not.toHaveProperty('benchmarkScope');
+    expect(cached).not.toHaveProperty('benchmarkScope');
+    expect(cached).toEqual(result);
+  });
+
+  it.each(['other-worker', 'changed-url', 'changed-credential'] as const)(
+    'does not calibrate this server from an embedding routed to %s',
+    async (change) => {
+      const destination = change === 'other-worker' ? mlDestinationStub.libraryLan : mlDestinationStub.local;
+      const selection = mlSelectionStub(MlWorkload.Clip, destination);
+      if (change === 'changed-url') selection.endpoint.url = 'http://replacement-worker:3003';
+      else if (change === 'changed-credential') selection.endpoint.authToken = 'replacement-test-credential';
+      vi.spyOn(
+        sut as unknown as { selectRoutedMlDestination: () => Promise<MlSelection> },
+        'selectRoutedMlDestination',
+      ).mockResolvedValue(selection);
+
+      const result = await sut.runBenchmark();
+
+      expect(result.ml.test).toBeNull();
+      expect(result.benchmark).toMatchObject({ embeddingMs: null, mlFactor: null });
+      expect(mocks.machineLearning.encodeText).not.toHaveBeenCalled();
+    },
+  );
+
+  it('still measures five embeddings for a matching local destination', async () => {
+    vi.spyOn(
+      sut as unknown as { selectRoutedMlDestination: () => Promise<MlSelection> },
+      'selectRoutedMlDestination',
+    ).mockResolvedValue(mlSelectionStub(MlWorkload.Clip));
+
+    const result = await sut.runBenchmark();
+
+    expect(mocks.machineLearning.encodeText).toHaveBeenCalledTimes(5);
+    expect(result.ml.test).toMatchObject({
+      kind: 'embedding',
+      ok: true,
+      gpu: true,
+      value: expect.any(Number),
+      error: null,
+    });
+    expect(result.benchmark!.embeddingMs).toBe(result.ml.test!.value);
+  });
+
+  it('does not attribute description timing to hardware probed at another endpoint', async () => {
+    const selection = mlSelectionStub(MlWorkload.Enrichment);
+    selection.endpoint.url = 'http://replacement-worker:3003';
+    vi.spyOn(
+      sut as unknown as { selectMlDestination: () => Promise<MlSelection> },
+      'selectMlDestination',
+    ).mockResolvedValue(selection);
+
+    const result = await sut.runBenchmark();
+
+    expect(result.benchmark!.workloads[0]).toMatchObject({ workload: 'descriptions', unavailable: 'failed' });
+    expect(mocks.machineLearning.describeImageRun).not.toHaveBeenCalled();
+    expect(mocks.hardwareProbe.withTestImage).not.toHaveBeenCalled();
+  });
+
+  it('uses one destination snapshot for hardware and workload measurements', async () => {
+    const replacement = { ...mlDestinationStub.local, id: 'replacement-worker', name: 'Replacement worker' };
+    mocks.mlDestination.getAll.mockResolvedValueOnce([mlDestinationStub.local]).mockResolvedValue([replacement]);
+    vi.spyOn(
+      sut as unknown as { selectRoutedMlDestination: () => Promise<MlSelection> },
+      'selectRoutedMlDestination',
+    ).mockResolvedValue(mlSelectionStub(MlWorkload.Clip));
+    vi.spyOn(
+      sut as unknown as { selectMlDestination: (input: { destinationId: string }) => Promise<MlSelection> },
+      'selectMlDestination',
+    ).mockImplementation(({ destinationId }) =>
+      Promise.resolve(
+        mlSelectionStub(
+          MlWorkload.Enrichment,
+          destinationId === replacement.id ? replacement : mlDestinationStub.local,
+        ),
+      ),
+    );
+    mocks.machineLearning.describeImageRun.mockResolvedValue({
+      result: {} as never,
+      model: 'Qwen/Qwen2.5-VL-3B-Instruct',
+      device: 'cuda:0',
+    });
+
+    const result = await sut.runBenchmark();
+
+    expect(result.benchmark!.workloads[0]).toMatchObject({ worker: 'This server' });
+    expect(mocks.mlDestination.getAll).toHaveBeenCalledOnce();
   });
 
   it('checks again when the kept check predates the per-container facts', async () => {
@@ -178,7 +406,7 @@ describe(HardwareCheckService.name, () => {
   });
 
   it('records throughput per workload, timing descriptions on this server only', async () => {
-    const selection = { destinationId: mlDestinationStub.local.id } as MlSelection;
+    const selection = mlSelectionStub(MlWorkload.Clip);
     const select = vi
       .spyOn(sut as unknown as { selectMlDestination: () => Promise<MlSelection> }, 'selectMlDestination')
       .mockResolvedValue(selection);
@@ -226,7 +454,7 @@ describe(HardwareCheckService.name, () => {
     vi.spyOn(
       sut as unknown as { selectMlDestination: () => Promise<MlSelection> },
       'selectMlDestination',
-    ).mockResolvedValue({ destinationId: mlDestinationStub.local.id } as MlSelection);
+    ).mockResolvedValue(mlSelectionStub(MlWorkload.Enrichment));
     // A CUDA container whose configured Qwen model failed, so Florence answered on the processor.
     mocks.machineLearning.describeImageRun.mockResolvedValue({
       result: {} as never,
@@ -248,7 +476,7 @@ describe(HardwareCheckService.name, () => {
     vi.spyOn(
       sut as unknown as { selectMlDestination: () => Promise<MlSelection> },
       'selectMlDestination',
-    ).mockResolvedValue({ destinationId: mlDestinationStub.local.id } as MlSelection);
+    ).mockResolvedValue(mlSelectionStub(MlWorkload.Enrichment));
     mocks.machineLearning.describeImageRun.mockResolvedValue({
       result: {} as never,
       model: 'Qwen/Qwen2.5-VL-3B-Instruct',
@@ -257,30 +485,7 @@ describe(HardwareCheckService.name, () => {
 
     const { benchmark } = await sut.runBenchmark();
 
-    expect(benchmark!.workloads[0]).toMatchObject({ workload: 'descriptions', runsOn: null });
-  });
-
-  it("times search on this server's ML container, not wherever search is routed (FL-427)", async () => {
-    const select = vi
-      .spyOn(sut as unknown as { selectMlDestination: () => Promise<MlSelection> }, 'selectMlDestination')
-      .mockResolvedValue({ destinationId: mlDestinationStub.local.id } as MlSelection);
-    mocks.machineLearning.encodeText.mockResolvedValue([] as never);
-
-    const { ml } = await sut.runCheck();
-
-    expect(select).toHaveBeenCalledWith(
-      expect.objectContaining({ workload: MlWorkload.Clip, destinationId: mlDestinationStub.local.id }),
-    );
-    expect(ml.test).toMatchObject({ kind: 'embedding', ok: true });
-  });
-
-  it("skips the search timing when this server's ML container does not run search", async () => {
-    mocks.mlDestination.getAll.mockResolvedValue([{ ...mlDestinationStub.local, workloads: [MlWorkload.Enrichment] }]);
-
-    const { ml } = await sut.runCheck();
-
-    expect(ml.test).toBeNull();
-    expect(mocks.machineLearning.encodeText).not.toHaveBeenCalled();
+    expect(benchmark!.workloads[0]).toMatchObject({ workload: 'descriptions', source: 'benchmark', runsOn: null });
   });
 
   it('records why descriptions could not be timed', async () => {

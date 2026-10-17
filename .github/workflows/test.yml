@@ -43,17 +43,20 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Mise
-        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
         with:
+          persist_github_token: true
           github_token: ${{ github.token }}
           install_args: --locked
-          version: 2026.7.12
+          version: 2026.10.8
       - name: Install script test dependencies
         run: pnpm --filter @frameleaf/scripts --filter 'frameleaf...' --filter 'frameleaf-e2e...' install --frozen-lockfile
       - name: Run unit tests
         run: pnpm --filter @frameleaf/scripts test
       - name: Validate Frameleaf workflow contracts
         run: node --test scripts/frameleaf-workflows.test.mjs scripts/frameleaf-development-workflow.test.mjs scripts/frameleaf-cloud-consumer-workflow.test.mjs
+      - name: Validate development startup failures
+        run: node --test scripts/frameleaf-devcontainer-startup.test.mjs
       - name: Validate public Docker Hub mirror configuration
         run: node --test scripts/dockerhub-mirror.test.mjs scripts/ci-registry-images.test.mjs
       - name: Validate medium native runner contract
@@ -103,11 +106,12 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Mise
-        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
         with:
+          persist_github_token: true
           github_token: ${{ github.token }}
           install_args: --locked
-          version: 2026.7.12
+          version: 2026.10.8
       - name: Run ci-unit
         run: |
           export FL285_VOLUME_FOLDER="$RUNNER_TEMP/fl285-volume"
@@ -126,7 +130,7 @@ jobs:
           git diff --binary > "$RUNNER_TEMP/server-lint.patch"
       - name: Archive automatic server lint fixes
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: server-lint-autofix
           path: ${{ runner.temp }}/server-lint.patch
@@ -147,11 +151,12 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Mise
-        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
         with:
+          persist_github_token: true
           github_token: ${{ github.token }}
           install_args: --locked
-          version: 2026.7.12
+          version: 2026.10.8
       - name: Run ci-unit
         run: mise run ci-unit
     timeout-minutes: 60
@@ -170,11 +175,12 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Mise
-        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
         with:
+          persist_github_token: true
           github_token: ${{ github.token }}
           install_args: --locked
-          version: 2026.7.12
+          version: 2026.10.8
       - name: Run setup @frameleaf/sdk
         run: mise run //:sdk:install && mise run //:sdk:build
       - name: Run pnpm install
@@ -201,11 +207,12 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Mise
-        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
         with:
+          persist_github_token: true
           github_token: ${{ github.token }}
           install_args: --locked
-          version: 2026.7.12
+          version: 2026.10.8
       - name: Run setup @frameleaf/sdk
         run: mise run //:sdk:install && mise run //:sdk:build
       - name: Run pnpm install
@@ -220,7 +227,7 @@ jobs:
           git diff --binary > "$RUNNER_TEMP/web-lint.patch"
       - name: Archive automatic lint fixes
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: web-lint-autofix
           path: ${{ runner.temp }}/web-lint.patch
@@ -241,11 +248,12 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Mise
-        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
         with:
+          persist_github_token: true
           github_token: ${{ github.token }}
           install_args: --locked
-          version: 2026.7.12
+          version: 2026.10.8
       - name: Run ci-unit
         run: mise run ci-unit
       - name: Capture automatic web formatting fixes
@@ -261,7 +269,7 @@ jobs:
           fi
       - name: Archive automatic web formatting fixes
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: web-format-autofix
           path: |
@@ -281,11 +289,12 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Mise
-        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
         with:
+          persist_github_token: true
           github_token: ${{ github.token }}
           install_args: --locked
-          version: 2026.7.12
+          version: 2026.10.8
       - name: Install dependencies
         run: pnpm -w install --frozen-lockfile
       - name: Format
@@ -320,11 +329,12 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Mise
-        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
         with:
+          persist_github_token: true
           github_token: ${{ github.token }}
           install_args: --locked
-          version: 2026.7.12
+          version: 2026.10.8
       - name: Run ci-unit
         run: mise run ci-unit
         if: ${{ !cancelled() }}
@@ -335,7 +345,7 @@ jobs:
           git diff --binary -- . > "$RUNNER_TEMP/e2e-format.patch"
       - name: Archive automatic E2E formatting fixes
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: e2e-format-autofix
           path: ${{ runner.temp }}/e2e-format.patch
@@ -343,8 +353,8 @@ jobs:
     timeout-minutes: 60
   server-medium-tests:
     env:
-      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
-      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06
       RYUK_CONTAINER_IMAGE: mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0
     # The suite is split by server/test/vitest.medium-suites.mjs: this protected check runs every medium
     # spec except the listed scale specs, which server-medium-scale-tests runs beside it.
@@ -369,9 +379,9 @@ jobs:
         working-directory: .
         run: bash scripts/configure-dockerhub-mirror.sh
       - name: Setup native runner builder
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
-          driver-opts: image=mirror.gcr.io/moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+          driver-opts: image=mirror.gcr.io/moby/buildkit@sha256:b059f8d7226d0b326bc871af489a5dddf65e36af4d20d14251b072974d9ee87c
           buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
@@ -383,7 +393,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: Build medium native runner
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: server/Dockerfile
@@ -427,8 +437,8 @@ jobs:
     timeout-minutes: 90
   server-medium-scale-tests:
     env:
-      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
-      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06
       RYUK_CONTAINER_IMAGE: mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0
     # The queue pipeline run and the scale specs (25,000 items each by default, FRAMELEAF_SCALE_ITEMS for
     # more), with a database of their own.
@@ -453,9 +463,9 @@ jobs:
         working-directory: .
         run: bash scripts/configure-dockerhub-mirror.sh
       - name: Setup native runner builder
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
-          driver-opts: image=mirror.gcr.io/moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+          driver-opts: image=mirror.gcr.io/moby/buildkit@sha256:b059f8d7226d0b326bc871af489a5dddf65e36af4d20d14251b072974d9ee87c
           buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
@@ -467,7 +477,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: Build medium native runner
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: server/Dockerfile
@@ -552,7 +562,7 @@ jobs:
           PYTHON
       - name: Upload medium scale diagnostics
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: medium-scale-diagnostics
           path: |
@@ -570,9 +580,9 @@ jobs:
   # used to build it themselves. The registry cache it reads is written by e2e-build-cache.yml.
   e2e-image:
     env:
-      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
-      FRAMELEAF_CI_STUDIO_NODE_IMAGE: mirror.gcr.io/library/node@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4
-      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0
+      FRAMELEAF_CI_STUDIO_NODE_IMAGE: mirror.gcr.io/library/node@sha256:f1233c415b41ffcf237c717b3dea92e9d4ea006e0e4c71edcb790605d74f5404
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06
     name: End-to-End Image
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ${{ matrix.runner }}
@@ -609,7 +619,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/e2e-image"
           docker save frameleaf-server:latest -o "$RUNNER_TEMP/e2e-image/server.tar"
       - name: Hand the server image to the end-to-end jobs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: e2e-image-${{ matrix.runner }}
           path: ${{ runner.temp }}/e2e-image/server.tar
@@ -619,9 +629,9 @@ jobs:
     timeout-minutes: 120
   e2e-tests-server-cli:
     env:
-      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
-      FRAMELEAF_CI_STUDIO_NODE_IMAGE: mirror.gcr.io/library/node@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4
-      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0
+      FRAMELEAF_CI_STUDIO_NODE_IMAGE: mirror.gcr.io/library/node@sha256:f1233c415b41ffcf237c717b3dea92e9d4ea006e0e4c71edcb790605d74f5404
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06
     name: End-to-End Tests (Server & CLI)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     needs: e2e-image
@@ -649,7 +659,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
       - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -678,7 +688,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: Fetch the server image built for this run
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: e2e-image-${{ matrix.runner }}
           path: ${{ runner.temp }}/e2e-image
@@ -913,7 +923,7 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.frameleaf-cloud-fixture.yml logs --no-color > docker-cloud-accounting-logs.txt
       - name: Archive Docker logs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: e2e-server-docker-logs-${{ matrix.runner }}
@@ -930,9 +940,9 @@ jobs:
     timeout-minutes: 120
   e2e-tests-web:
     env:
-      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
-      FRAMELEAF_CI_STUDIO_NODE_IMAGE: mirror.gcr.io/library/node@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4
-      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0
+      FRAMELEAF_CI_STUDIO_NODE_IMAGE: mirror.gcr.io/library/node@sha256:f1233c415b41ffcf237c717b3dea92e9d4ea006e0e4c71edcb790605d74f5404
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06
     name: End-to-End Tests (Web)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     needs: e2e-image
@@ -963,7 +973,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
       - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -998,7 +1008,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: Fetch the server image built for this run
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: e2e-image-${{ matrix.runner }}
           path: ${{ runner.temp }}/e2e-image
@@ -1015,7 +1025,7 @@ jobs:
         run: pnpm test:web --shard=${{ matrix.shard }}/3
         if: ${{ !cancelled() && steps.docker.outcome == 'success' }}
       - name: Archive e2e test (web) results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: success() || failure()
         with:
           name: e2e-web-test-results-${{ matrix.runner }}-${{ matrix.shard }}
@@ -1028,7 +1038,7 @@ jobs:
         run: pnpm test:web:ui
         if: ${{ !cancelled() && steps.docker.outcome == 'success' && matrix.shard == 3 }}
       - name: Archive ui test (web) results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: success() || failure()
         with:
           name: e2e-ui-test-results-${{ matrix.runner }}-${{ matrix.shard }}
@@ -1039,7 +1049,7 @@ jobs:
         run: pnpm test:web:maintenance
         if: ${{ !cancelled() && steps.docker.outcome == 'success' && matrix.shard == 1 }}
       - name: Archive maintenance tests (web) results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: success() || failure()
         with:
           name: e2e-maintenance-isolated-test-results-${{ matrix.runner }}-${{ matrix.shard }}
@@ -1049,7 +1059,7 @@ jobs:
         run: docker compose logs --no-color > docker-compose-logs.txt
         working-directory: ./e2e
       - name: Archive Docker logs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: e2e-web-docker-logs-${{ matrix.runner }}-${{ matrix.shard }}
@@ -1066,7 +1076,7 @@ jobs:
         run: pnpm test:web:icloud
         if: ${{ !cancelled() && steps.icloud-fixture.outcome == 'success' }}
       - name: Archive e2e test (iCloud sync) results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: ${{ !cancelled() && steps.icloud-fixture.outcome == 'success' }}
         with:
           name: e2e-icloud-test-results-${{ matrix.runner }}-${{ matrix.shard }}
@@ -1075,7 +1085,7 @@ jobs:
         if: ${{ always() && steps.icloud-fixture.outcome != 'skipped' }}
         run: docker compose -f docker-compose.yml -f docker-compose.icloud-bridge-fixture.yml logs --no-color > docker-icloud-logs.txt
       - name: Archive iCloud sync Docker logs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: ${{ always() && steps.icloud-fixture.outcome != 'skipped' }}
         with:
           name: e2e-icloud-docker-logs-${{ matrix.runner }}-${{ matrix.shard }}
@@ -1116,11 +1126,12 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Mise
-        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
         with:
+          persist_github_token: true
           github_token: ${{ github.token }}
           install_args: --locked
-          version: 2026.7.12
+          version: 2026.10.8
       - name: Run ci-unit
         run: mise run ci-unit
     timeout-minutes: 60
@@ -1139,11 +1150,12 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Mise
-        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
         with:
+          persist_github_token: true
           github_token: ${{ github.token }}
           install_args: --locked
-          version: 2026.7.12
+          version: 2026.10.8
       - name: Run pnpm install
         run: pnpm install --frozen-lockfile
       - name: Run formatter
@@ -1157,7 +1169,7 @@ jobs:
           git diff --binary -- frameleaf-release.test.cjs > "$RUNNER_TEMP/github-format.patch"
       - name: Upload formatter correction
         if: ${{ failure() && steps.github-format.outcome == 'failure' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: github-format-correction
           path: ${{ runner.temp }}/github-format.patch
@@ -1191,11 +1203,12 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Mise
-        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
         with:
+          persist_github_token: true
           github_token: ${{ github.token }}
           install_args: --locked
-          version: 2026.7.12
+          version: 2026.10.8
       - name: Install server dependencies
         run: pnpm --filter 'frameleaf...' install --frozen-lockfile
       - name: Verify generated API artifacts are tracked
@@ -1223,7 +1236,7 @@ jobs:
           exit 1
       - name: Archive generated API files
         if: failure() && steps.verify-changed-files.outputs.files_changed == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: frameleaf-generated-api
           path: |
@@ -1268,11 +1281,12 @@ jobs:
           echo "::error::Postgres did not become ready."
           exit 1
       - name: Setup Mise
-        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
         with:
+          persist_github_token: true
           github_token: ${{ github.token }}
           install_args: --locked
-          version: 2026.7.12
+          version: 2026.10.8
       - name: Install server dependencies
         run: pnpm install --frozen-lockfile
       - name: Verify canonical schema authority and immutable baseline history
@@ -1298,7 +1312,7 @@ jobs:
         env:
           DB_URL: postgres://postgres:postgres@localhost:5432/frameleaf
       - name: Archive exact canonical catalog
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: frameleaf-catalog-diagnostic
           path: /tmp/frameleaf-catalog.json
@@ -1324,7 +1338,7 @@ jobs:
           exit 1
       - name: Archive generated migration diagnostics
         if: failure() && steps.verify-changed-files.outputs.files_changed == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: sql-schema-migration-diagnostics
           path: |
@@ -1352,12 +1366,12 @@ jobs:
           exit 1
       - name: Archive generated SQL files
         if: failure() && steps.verify-changed-sql-files.outputs.files_changed == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: frameleaf-generated-sql
           path: server/src/queries
           retention-days: 7
     timeout-minutes: 60
     env:
-      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06
       DB_URL: postgres://postgres:postgres@localhost:5432/frameleaf

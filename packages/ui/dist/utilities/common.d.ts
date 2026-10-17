@@ -1,6 +1,6 @@
 import { MenuItemType, type ActionItem, type GithubLinkProps, type IfLike } from '../types.js';
 import type { DateTime } from 'luxon';
-export type QueryValue = number | string;
+export type QueryValue = number | string | boolean;
 export declare const asQueryString: (params?: Record<string, QueryValue | undefined>, options?: {
     skipEmptyStrings?: boolean;
     skipNullValues?: boolean;

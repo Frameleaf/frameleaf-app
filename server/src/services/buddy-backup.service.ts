@@ -19,7 +19,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import {
   DatabaseLock,
-  ImmichWorker,
+  FrameleafWorker,
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
@@ -540,7 +540,7 @@ export class BuddyBackupService {
     await this.start(admin.id);
   }
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.timer = setInterval(() => this.tick(), 30_000);
     this.tick();
