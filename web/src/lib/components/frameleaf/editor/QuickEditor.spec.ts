@@ -61,7 +61,7 @@ vi.mock('@frameleaf/ui', async () => {
     ...actual,
     Icon,
     modalManager: { showDialog: vi.fn() },
-    toastManager: { primary: vi.fn(), danger: vi.fn() },
+    toastManager: { primary: vi.fn(), danger: vi.fn(), warning: vi.fn() },
   };
 });
 
@@ -208,7 +208,7 @@ describe('QuickEditor', () => {
     measure.mockRestore();
   });
 
-  const sdkError = async (status: number, code?: string) => {
+  const sdkError = async (status: number, code?: string, extra: object = {}) => {
     const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
     try {
       await sdk.saveAssetDevelop(
@@ -216,7 +216,7 @@ describe('QuickEditor', () => {
         {
           fetch: async () =>
             Response.json(
-              { message: 'Refused', code },
+              { message: 'Refused', code, ...extra },
               {
                 status,
                 headers: { 'Content-Type': 'application/json' },
@@ -300,6 +300,61 @@ describe('QuickEditor', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('saves against the current version it opened on and, when another device moved it, reloads and keeps the draft (FL-431)', async () => {
+    const opened = revision({ assetId: photo.id, id: 'rev-opened', isCurrent: true });
+    const elsewhere = revision({ assetId: photo.id, id: 'rev-elsewhere', revision: 2, isCurrent: true });
+    vi.mocked(getAssetDevelop)
+      .mockResolvedValueOnce({ assetId: photo.id, currentRevisionId: opened.id, revisions: [opened] })
+      .mockResolvedValue({
+        assetId: photo.id,
+        currentRevisionId: elsewhere.id,
+        revisions: [elsewhere, { ...opened, isCurrent: false }],
+      });
+    vi.mocked(saveAssetDevelop)
+      .mockRejectedValueOnce(
+        await sdkError(409, 'develop_current_revision_changed', { currentRevisionId: elsewhere.id }),
+      )
+      .mockResolvedValueOnce(revision({ id: 'rev-3', revision: 3, status: AssetDevelopRevisionStatus.Queued }));
+    const onClose = vi.fn();
+    render(QuickEditor, { asset: photo, onClose });
+    await ready();
+    await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' }), {
+      target: { value: '25' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_save_version' }));
+    await waitFor(() => expect(toastManager.warning).toHaveBeenCalledWith('frameleaf_editor_version_conflict'));
+    expect(vi.mocked(saveAssetDevelop).mock.calls[0][0].assetDevelopSaveDto).toMatchObject({
+      expectedCurrentRevisionId: opened.id,
+      recipe: expect.objectContaining({ contrast: 25 }),
+    });
+    expect(toastManager.danger).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    await waitFor(() => expect(getAssetDevelop).toHaveBeenCalledTimes(2));
+
+    // The draft survives; saving again is a deliberate new version on top of what is current now.
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_save_version' }));
+    await waitFor(() => expect(saveAssetDevelop).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(saveAssetDevelop).mock.calls[1][0].assetDevelopSaveDto).toMatchObject({
+      expectedCurrentRevisionId: elsewhere.id,
+      recipe: expect.objectContaining({ contrast: 25 }),
+    });
+  });
+
+  it('expects the original to be current when the photo has no current version (FL-431)', async () => {
+    vi.mocked(saveAssetDevelop).mockResolvedValueOnce(revision({ status: AssetDevelopRevisionStatus.Queued }));
+    render(QuickEditor, { asset: photo, onClose: vi.fn() });
+    await ready();
+    await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' }), {
+      target: { value: '25' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_save_version' }));
+    await waitFor(() => expect(saveAssetDevelop).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(saveAssetDevelop).mock.calls[0][0].assetDevelopSaveDto).toHaveProperty(
+      'expectedCurrentRevisionId',
+      null,
+    );
+  });
+
   it('deliberately resets an opaque draft to Original and resumes the normal render save', async () => {
     const source = revision({ assetId: photo.id, recipe: { version: 2, future: { fill: ['opaque'] } } });
     vi.mocked(getAssetDevelop).mockResolvedValue({
@@ -354,7 +409,12 @@ describe('QuickEditor', () => {
     await waitFor(() =>
       expect(saveAssetDevelop).toHaveBeenCalledWith({
         id: photo.id,
-        assetDevelopSaveDto: { recipe: expect.objectContaining({ contrast: 25 }), render: true, replaceRecipe: true },
+        assetDevelopSaveDto: {
+          recipe: expect.objectContaining({ contrast: 25 }),
+          render: true,
+          replaceRecipe: true,
+          expectedCurrentRevisionId: null,
+        },
       }),
     );
     const sent = vi.mocked(saveAssetDevelop).mock.calls[0][0].assetDevelopSaveDto.recipe;

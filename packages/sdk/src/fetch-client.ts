@@ -4688,6 +4688,8 @@ export type AssetDevelopResponseDto = {
     revisions: AssetDevelopRevisionResponseDto[];
 };
 export type AssetDevelopSaveDto = {
+    /** Optimistic precondition: the currentRevisionId the client last read. null expects the original to be current (no current revision). When it no longer matches, the save is refused with 409 code develop_current_revision_changed and the actual currentRevisionId. Omit to save unconditionally */
+    expectedCurrentRevisionId?: string | null;
     /** Optional name for the saved version */
     label?: string;
     recipe: AssetDevelopRecipeDto;
@@ -20472,6 +20474,8 @@ export function saveAssetDevelop({ id, assetDevelopSaveDto }: {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: AssetDevelopRevisionResponseDto;
+    } | {
+        status: 409;
     }>(`/assets/${encodeURIComponent(id)}/develop`, oazapfts.json({
         ...opts,
         method: "PUT",
