@@ -29,6 +29,17 @@ import {
   keyEscrowBlobSchema,
   keyEscrowRecordSchema,
 } from 'src/utils/frameleaf-cloud-backup.js';
+import {
+  BackupCoverageRevisionInput,
+  backupCoverageEndpoints,
+  backupCoveragePageAcceptedSchema,
+  backupCoverageRevisionInputSchema,
+  backupCoverageRevisionSchema,
+  backupCoverageRowsPageSchema,
+  backupCoveragePageInputSchema,
+  backupRunCoverageStateSchema,
+  BACKUP_COVERAGE_MAX_BYTES,
+} from 'src/utils/frameleaf-cloud-backup-coverage.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 
 /** Where to reach Frameleaf Cloud's API and the DPoP-bound instance token for it (FL-178). */
@@ -161,6 +172,61 @@ export class FrameleafCloudBackupRepository {
       url: `${target.api.replace(/\/+$/, '')}/v2/backup/snapshots`,
       dpop: target.token,
       body: { descriptor, signature },
+    });
+  }
+
+  /* FL-362, FC-149: numeric run coverage. Every body is checked against the contract before it is sent. */
+
+  /** `POST …/coverage/revisions`: begin an immutable revision header (an identical retry is accepted). */
+  beginCoverage(target: ManagedBackupApi, runId: string, header: BackupCoverageRevisionInput) {
+    return this.cloud.requestJson(backupCoverageRevisionSchema, {
+      method: 'POST',
+      url: backupCoverageEndpoints(target.api, runId).begin,
+      dpop: target.token,
+      body: backupCoverageRevisionInputSchema.parse(header),
+    });
+  }
+
+  /**
+   * `PUT …/pages/:pageIndex`: one page, sent as the exact text written when the report was made, so a
+   * retry is byte-for-byte the first attempt.
+   */
+  putCoveragePage(target: ManagedBackupApi, runId: string, revisionId: string, pageIndex: number, body: string) {
+    backupCoveragePageInputSchema.parse(JSON.parse(body));
+    if (Buffer.byteLength(body, 'utf8') > BACKUP_COVERAGE_MAX_BYTES) {
+      throw new Error('A coverage page exceeds the contract’s byte limit');
+    }
+    return this.cloud.requestJson(backupCoveragePageAcceptedSchema, {
+      method: 'PUT',
+      url: backupCoverageEndpoints(target.api, runId).page(z.uuid().parse(revisionId), pageIndex),
+      dpop: target.token,
+      raw: { contentType: 'application/json', body },
+    });
+  }
+
+  /** `POST …/finalize`: publish the complete revision; a retry after a lost answer is safe. */
+  finalizeCoverage(target: ManagedBackupApi, runId: string, revisionId: string) {
+    return this.cloud.requestJson(backupCoverageRevisionSchema, {
+      method: 'POST',
+      url: backupCoverageEndpoints(target.api, runId).finalize(z.uuid().parse(revisionId)),
+      dpop: target.token,
+      body: {},
+    });
+  }
+
+  /** `GET …/coverage`: the published and pending revision of a run. */
+  getCoverageState(target: ManagedBackupApi, runId: string) {
+    return this.cloud.requestJson(backupRunCoverageStateSchema, {
+      url: backupCoverageEndpoints(target.api, runId).state,
+      dpop: target.token,
+    });
+  }
+
+  /** `GET …/revisions/:revisionId/pages`: one published page, then the next with its cursor. */
+  getCoveragePage(target: ManagedBackupApi, runId: string, revisionId: string, afterPage: string | null) {
+    return this.cloud.requestJson(backupCoverageRowsPageSchema, {
+      url: backupCoverageEndpoints(target.api, runId).pages(z.uuid().parse(revisionId), afterPage),
+      dpop: target.token,
     });
   }
 

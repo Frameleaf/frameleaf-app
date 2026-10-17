@@ -154,7 +154,11 @@ export type KeyEscrowBlob = z.infer<typeof keyEscrowBlobSchema>;
 export const keyEscrowRecordSchema = keyEscrowBlobSchema.extend({ updatedAt: Timestamp });
 export type KeyEscrowRecord = z.infer<typeof keyEscrowRecordSchema>;
 
-/** `POST /v1/backup/runs`: telemetry only. A manifest key other than `m/<extended ISO>.json.gz` is left out. */
+/**
+ * `POST /v1/backup/runs`: telemetry only. The manifest key is `m/<ISO>.json.gz`, extended or basic (FL-362:
+ * Frameleaf Cloud accepts this server's basic-format keys since FC-149); a client-encrypted `m/v1/…` key is
+ * left out, its signed snapshot receipt names it instead.
+ */
 export const backupRunReportSchema = z.strictObject({
   runId: z.uuid(),
   status: z.enum(['running', 'succeeded', 'partial', 'failed', 'cancelled']),
@@ -166,7 +170,7 @@ export const backupRunReportSchema = z.strictObject({
   manifestKey: z
     .string()
     .max(64)
-    .regex(/^m\/\d{4}-\d{2}-\d{2}T[\d.:-]+Z\.json\.gz$/)
+    .regex(/^m\/(?:\d{4}-\d{2}-\d{2}T[\d.:-]+|\d{8}T\d{6})Z\.json\.gz$/)
     .nullable(),
   errorCode: z
     .string()
