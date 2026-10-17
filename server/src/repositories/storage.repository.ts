@@ -37,7 +37,8 @@ export interface ReadStreamResponse {
 }
 
 export interface ZipDownloadStream extends ReadStreamResponse {
-  addFile: (inputPath: string, filename: string) => void;
+  /** Adds the file at a path, or (FL-423) bytes made for the archive, such as a generated details file. */
+  addFile: (input: string | Buffer, filename: string) => void;
   finalize: () => Promise<void>;
 }
 
@@ -102,8 +103,12 @@ export class StorageRepository {
   createZipStream(): ZipDownloadStream {
     const archive = new ZipArchive({ store: true });
 
-    const addFile = (input: string, filename: string) => {
-      archive.file(input, { name: filename, mode: 0o644 });
+    const addFile = (input: string | Buffer, filename: string) => {
+      if (typeof input === 'string') {
+        archive.file(input, { name: filename, mode: 0o644 });
+      } else {
+        archive.append(input, { name: filename, mode: 0o644 });
+      }
     };
 
     const finalize = () => archive.finalize();

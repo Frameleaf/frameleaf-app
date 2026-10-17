@@ -3,11 +3,40 @@ import { Readable } from 'node:stream';
 import { vitest } from 'vitest';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import { DownloadResponseDto } from 'src/dtos/download.dto.js';
-import { UserMetadataKey } from 'src/enum.js';
+import { AssetVisibility, UserMetadataKey } from 'src/enum.js';
 import { DownloadService } from 'src/services/download.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { newDate, newUuid } from 'test/small.factory.js';
 import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
+
+/** FL-423: an asset as `getByIdsWithAllRelationsButStacks` reads it for the person downloading. */
+const described = ({ id, ownerId, originalFileName, visibility }: ReturnType<typeof AssetFactory.create>) => ({
+  ...AssetFactory.from({ id, ownerId, originalFileName, visibility, localDateTime: new Date('2024-07-01T10:00:00Z') })
+    .exif({
+      assetId: id,
+      dateTimeOriginal: new Date('2024-07-01T16:00:00Z'),
+      timeZone: 'America/Edmonton',
+      latitude: 51.178_4,
+      longitude: -115.570_8,
+      description: 'Lake Louise at dawn',
+      rating: 4,
+      orientation: '6',
+    })
+    .face({}, (face) => face.person({ name: 'Ana' }))
+    .face({}, (face) => face.person({ name: 'Hidden person', isHidden: true }))
+    .build(),
+  tags: [
+    {
+      id: newUuid(),
+      value: 'Travel/Canada/Banff',
+      parentId: null,
+      color: null,
+      createdAt: newDate(),
+      updatedAt: newDate(),
+    },
+  ],
+});
 
 const downloadResponse: DownloadResponseDto = {
   totalSize: 105_000,
@@ -292,15 +321,17 @@ describe(DownloadService.name, () => {
         expect(archive.addFile.mock.calls).toEqual([['/original.HEIC', 'IMG_1.HEIC']]);
       });
 
-      it('lets the request decide over the preferences, and skips a details file missing on disk', async () => {
+      it('lets the request decide over the preferences, and makes a details file when the sidecar is missing on disk', async () => {
         const { archive, asset } = setup({ download: { includeSidecar: false } });
         mocks.storage.checkFileExists.mockResolvedValue(false);
+        mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([described(asset)] as never);
 
         await sut.downloadArchive(authStub.admin, { assetIds: [asset.id], edited: false, includeSidecar: true });
 
         expect(mocks.user.getMetadata).not.toHaveBeenCalled();
         expect(mocks.downloadRepository.getSidecars).toHaveBeenCalledWith([asset.id]);
-        expect(archive.addFile.mock.calls).toEqual([['/original.HEIC', 'IMG_1.HEIC']]);
+        expect(archive.addFile.mock.calls.map(([, name]) => name)).toEqual(['IMG_1.HEIC', 'IMG_1.HEIC.xmp']);
+        expect(archive.addFile.mock.calls[1][0]).toBeInstanceOf(Buffer);
       });
 
       it("never applies the link owner's preferences to a shared-link download", async () => {
@@ -310,7 +341,85 @@ describe(DownloadService.name, () => {
         await sut.downloadArchive(authStub.adminSharedLink, { assetIds: [asset.id] });
 
         expect(mocks.user.getMetadata).not.toHaveBeenCalled();
+        expect(mocks.asset.getByIdsWithAllRelationsButStacks).not.toHaveBeenCalled();
         expect(archive.addFile.mock.calls).toEqual([['/original.HEIC', 'IMG_1.HEIC']]);
+      });
+
+      describe('a photo without a sidecar (FL-423)', () => {
+        const xmpOf = (archive: { addFile: { mock: { calls: unknown[][] } } }, name: string) => {
+          const call = archive.addFile.mock.calls.find(([, member]) => member === name);
+          return call ? (call[0] as Buffer).toString('utf8') : undefined;
+        };
+
+        it('gets a details file made from its asset response, beside the one that has a sidecar', async () => {
+          const { archive, asset } = setup({});
+          const bare = AssetFactory.create({ originalFileName: 'IMG_2.JPG', originalPath: '/bare.JPG' });
+          mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id, bare.id]));
+          mocks.asset.getForOriginals.mockResolvedValue([asset, bare]);
+          mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([described(bare)] as never);
+
+          await sut.downloadArchive(authStub.admin, { assetIds: [asset.id, bare.id] });
+
+          // only the photo without a sidecar is read, as the person downloading sees it
+          expect(mocks.asset.getByIdsWithAllRelationsButStacks).toHaveBeenCalledWith([bare.id], authStub.admin.user.id);
+          expect(archive.addFile.mock.calls.map(([input, name]) => [typeof input, name])).toEqual([
+            ['string', 'IMG_1.HEIC'],
+            ['string', 'IMG_1.HEIC.xmp'],
+            ['string', 'IMG_2.JPG'],
+            ['object', 'IMG_2.JPG.xmp'],
+          ]);
+          expect(archive.addFile).toHaveBeenCalledWith('/original.HEIC.xmp', 'IMG_1.HEIC.xmp');
+          const xmp = xmpOf(archive, 'IMG_2.JPG.xmp')!;
+          expect(xmp).toContain('<exif:DateTimeOriginal>2024-07-01T10:00:00.000-06:00</exif:DateTimeOriginal>');
+          expect(xmp).toContain('<exif:GPSLatitude>51,10.704000N</exif:GPSLatitude>');
+          expect(xmp).toContain('<rdf:li xml:lang="x-default">Lake Louise at dawn</rdf:li>');
+          expect(xmp).toContain('<xmp:Rating>4</xmp:Rating>');
+          expect(xmp).toContain('<rdf:li>Travel/Canada/Banff</rdf:li>');
+          expect(xmp).toContain('<tiff:Orientation>6</tiff:Orientation>');
+          expect(xmp).toContain('<Iptc4xmpExt:PersonInImage><rdf:Bag><rdf:li>Ana</rdf:li></rdf:Bag>');
+          expect(xmp).not.toContain('Hidden person');
+        });
+
+        it('leaves the orientation out of an edit, which is already upright', async () => {
+          const { archive, asset } = setup({});
+          mocks.downloadRepository.getSidecars.mockResolvedValue([]);
+          mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([described(asset)] as never);
+
+          await sut.downloadArchive(authStub.admin, { assetIds: [asset.id], edited: true });
+
+          expect(archive.addFile.mock.calls.map(([, name]) => name)).toEqual(['IMG_1.jpeg', 'IMG_1.jpeg.xmp']);
+          expect(xmpOf(archive, 'IMG_1.jpeg.xmp')).not.toContain('tiff:Orientation');
+        });
+
+        it('names no people for a shared link, whose asset response has none', async () => {
+          const { archive, asset } = setup({});
+          mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+          mocks.downloadRepository.getSidecars.mockResolvedValue([]);
+          mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([described(asset)] as never);
+
+          await sut.downloadArchive(authStub.adminSharedLink, { assetIds: [asset.id], includeSidecar: true });
+
+          const xmp = xmpOf(archive, 'IMG_1.HEIC.xmp')!;
+          expect(xmp).toContain('<rdf:li xml:lang="x-default">Lake Louise at dawn</rdf:li>');
+          expect(xmp).not.toContain('PersonInImage');
+          expect(xmp).not.toContain('Ana');
+        });
+
+        it('makes none for the motion part of a Live Photo, nor when details files are turned off', async () => {
+          const { archive, asset } = setup({ download: { includeSidecar: false } });
+          mocks.downloadRepository.getSidecars.mockResolvedValue([]);
+          await sut.downloadArchive(authStub.admin, { assetIds: [asset.id] });
+          expect(mocks.asset.getByIdsWithAllRelationsButStacks).not.toHaveBeenCalled();
+          expect(archive.addFile.mock.calls).toEqual([['/original.HEIC', 'IMG_1.HEIC']]);
+
+          const motion = AssetFactory.create({ visibility: AssetVisibility.Hidden, originalFileName: 'IMG_1.MOV' });
+          mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([motion.id]));
+          mocks.asset.getForOriginals.mockResolvedValue([motion]);
+          mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([described(motion)] as never);
+          archive.addFile.mockClear();
+          await sut.downloadArchive(authStub.admin, { assetIds: [motion.id], includeSidecar: true });
+          expect(archive.addFile.mock.calls.map(([, name]) => name)).toEqual(['IMG_1.MOV']);
+        });
       });
     });
 

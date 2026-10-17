@@ -10098,7 +10098,7 @@
   "frameleaf_prefs_downloads_contains": "What a download contains",
   "frameleaf_prefs_downloads_description": "What you get when you download photos",
   "frameleaf_prefs_downloads_details": "Add a details file beside each photo",
-  "frameleaf_prefs_downloads_details_help": "A small file with the date, place and tags, for photos that have one. The photo itself is not changed.",
+  "frameleaf_prefs_downloads_details_help": "A small file with the date, place and tags. The photo itself is not changed.",
   "frameleaf_prefs_downloads_details_label": "Add a details file",
   "frameleaf_prefs_downloads_motion": "Include the short video with Live Photos and motion photos",
   "frameleaf_prefs_downloads_motion_help": "Downloads get the moving part as well as the still.",
