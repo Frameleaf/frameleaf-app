@@ -244,6 +244,8 @@ describe('Graphics card check (FL-364)', () => {
               secondsPerUnit: 85.7,
               runsOn: HardwareRunsOn.Cpu,
               worker: 'This server',
+              model: 'microsoft/Florence-2-base-ft',
+              fallbackFrom: 'Qwen/Qwen2.5-VL-3B-Instruct',
               unavailable: null,
               error: null,
             },
@@ -255,6 +257,8 @@ describe('Graphics card check (FL-364)', () => {
               secondsPerUnit: null,
               runsOn: null,
               worker: null,
+              model: null,
+              fallbackFrom: null,
               unavailable: HardwareWorkloadUnavailable.NoLocalRunner,
               error: null,
             },
@@ -276,6 +280,12 @@ describe('Graphics card check (FL-364)', () => {
     const technical = within(screen.getByText('Technical details').closest('details')!);
     expect(technical.getByText('420 ms')).toBeInTheDocument();
     expect(technical.getByText("Can't run here: Frameleaf Cloud only.")).toBeInTheDocument();
+    // FL-427: the model that answered, when the configured one could not run.
+    expect(
+      technical.getByText(
+        '42 photos an hour (85.7 s each) on the processor. Timed Florence-2 base: Qwen2.5-VL 3B could not run in the machine-learning container. Measured now on This server.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('lists the graphics cards other computers reported', async () => {

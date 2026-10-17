@@ -88,8 +88,15 @@ const WorkloadBenchmarkSchema = z
     unit: HardwareBenchmarkUnitSchema.nullable(),
     perHour: z.number().meta({ format: 'double' }).nullable().describe('Units per hour'),
     secondsPerUnit: z.number().meta({ format: 'double' }).nullable(),
-    runsOn: HardwareRunsOnSchema.nullable(),
+    runsOn: HardwareRunsOnSchema.nullable().describe(
+      'Where it ran, as the worker reported it; null when it did not say',
+    ),
     worker: z.string().nullable().describe('The worker that ran it'),
+    model: z.string().nullable().describe('The model that was timed'),
+    fallbackFrom: z
+      .string()
+      .nullable()
+      .describe('The configured model, when it could not run and the fallback model was timed instead'),
     unavailable: HardwareWorkloadUnavailableSchema.nullable().describe('Why there is no throughput, or null'),
     error: z.string().nullable(),
   })

@@ -18,6 +18,7 @@ import {
   renderWorkerCheckFrom,
   restorationThroughput,
   restorationWorkerCheckFrom,
+  runsOnDevice,
   serverCheckFrom,
   unavailableWorkload,
 } from 'src/utils/hardware-check.js';
@@ -83,7 +84,7 @@ export class HardwareCheckService extends BaseService {
         transcodeSpeed,
         mlFactor: factors.ml,
         serverFactor: factors.server,
-        workloads: await this.benchmarkWorkloads(check.ml.gpu.usable === true),
+        workloads: await this.benchmarkWorkloads(),
       },
     };
     await this.systemMetadataRepository.set(SystemMetadataKey.HardwareCheck, result);
@@ -97,7 +98,7 @@ export class HardwareCheckService extends BaseService {
       this.readMlContainer(destinations),
       this.readWorkers(destinations),
     ]);
-    const embedding = await this.timeEmbeddings(embeddings, mlReport);
+    const embedding = await this.timeEmbeddings(embeddings, mlReport, this.localDestination(destinations));
     const findings = detectHardwareFindings(serverFacts, mlReport);
     return {
       checkedAt: new Date().toISOString(),
@@ -175,15 +176,26 @@ export class HardwareCheckService extends BaseService {
     return [...render, ...restoration];
   }
 
-  /** Time search embeddings through the route search uses; null when search is off or not routed. */
-  private async timeEmbeddings(times: number, report: MlContainerReport | null): Promise<ContainerTest | null> {
+  /**
+   * Time search embeddings on this server's ML container, the one whose hardware the check reports
+   * (FL-427: not wherever search is routed); null when search is off or that container doesn't run it.
+   */
+  private async timeEmbeddings(
+    times: number,
+    report: MlContainerReport | null,
+    local: MlDestinationRow | undefined,
+  ): Promise<ContainerTest | null> {
     const { machineLearning } = await this.getConfig({ withCache: true });
-    if (!machineLearning.enabled || !machineLearning.clip.enabled) {
+    if (!machineLearning.enabled || !machineLearning.clip.enabled || !local?.workloads.includes(MlWorkload.Clip)) {
       return null;
     }
     const gpu = !!report && report.gpus.length > 0 && report.backend !== 'CPU';
     try {
-      const selection = await this.selectRoutedMlDestination({ workload: MlWorkload.Clip, jobName: 'HardwareCheck' });
+      const selection = await this.selectMlDestination({
+        workload: MlWorkload.Clip,
+        destinationId: local.id,
+        jobName: 'HardwareCheck',
+      });
       const timings: number[] = [];
       for (let index = 0; index < times; index++) {
         const started = performance.now();
@@ -205,14 +217,14 @@ export class HardwareCheckService extends BaseService {
    * Cloud); restoration comes from what its worker measured on the GPU it has now; the rest have no
    * local runner or no measurement, and say so.
    */
-  private async benchmarkWorkloads(mlGpu: boolean): Promise<WorkloadBenchmark[]> {
+  private async benchmarkWorkloads(): Promise<WorkloadBenchmark[]> {
     const destinations = await this.mlDestinationRepository.getAll();
     const studioWorker = destinations.some(
       (row) =>
         row.enabled && row.kind !== MlDestinationKind.FrameleafCloud && row.workloads.includes(MlWorkload.StudioAi),
     );
     return [
-      await this.benchmarkDescriptions(destinations, mlGpu),
+      await this.benchmarkDescriptions(destinations),
       unavailableWorkload('upscale', 'no-local-runner'),
       await this.benchmarkRestoration(destinations),
       // A transcription worker publishes no throughput and has no test route to time.
@@ -221,7 +233,11 @@ export class HardwareCheckService extends BaseService {
     ];
   }
 
-  private async benchmarkDescriptions(destinations: MlDestinationRow[], mlGpu: boolean): Promise<WorkloadBenchmark> {
+  /**
+   * The model and device are what the worker reports for the timed photos (FL-427): the configured
+   * model's fallback may answer instead, and OpenVINO may retry on the processor.
+   */
+  private async benchmarkDescriptions(destinations: MlDestinationRow[]): Promise<WorkloadBenchmark> {
     const { machineLearning } = await this.getConfig({ withCache: true });
     if (!machineLearning.enabled) {
       return unavailableWorkload('descriptions', 'machine-learning-off');
@@ -236,28 +252,36 @@ export class HardwareCheckService extends BaseService {
         destinationId: local.id,
         jobName: 'HardwareBenchmark',
       });
-      const timings = await this.hardwareProbeRepository.withTestImage(async (path) => {
-        const measured: number[] = [];
+      const runs = await this.hardwareProbeRepository.withTestImage(async (path) => {
+        const measured: Array<{ ms: number; model: string; device: string | null }> = [];
         // The first photo loads the model; only the ones after it are timed.
         for (let index = 0; index <= BENCHMARK_DESCRIPTIONS; index++) {
           const started = performance.now();
-          await this.machineLearningRepository.describeImage(selection, path, machineLearning.imageDescription);
+          const run = await this.machineLearningRepository.describeImageRun(
+            selection,
+            path,
+            machineLearning.imageDescription,
+          );
           if (index > 0) {
-            measured.push(performance.now() - started);
+            measured.push({ ms: performance.now() - started, model: run.model, device: run.device });
           }
         }
         return measured;
       });
-      const ms = median(timings);
-      if (ms === null || ms <= 0) {
+      const ms = median(runs.map((run) => run.ms));
+      const last = runs.at(-1);
+      if (ms === null || ms <= 0 || !last) {
         return unavailableWorkload('descriptions', 'failed');
       }
+      const configured = machineLearning.imageDescription.modelName;
       return measuredWorkload('descriptions', {
         unit: 'photo',
         secondsPerUnit: ms / 1000,
         source: 'benchmark',
-        runsOn: mlGpu ? 'gpu' : 'cpu',
+        runsOn: runsOnDevice(last.device),
         worker: local.name,
+        model: last.model,
+        fallbackFrom: last.model === configured ? null : configured,
       });
     } catch (error) {
       return unavailableWorkload('descriptions', 'failed', errorText(error));

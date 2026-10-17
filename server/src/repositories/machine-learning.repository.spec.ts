@@ -283,6 +283,35 @@ describe(MachineLearningRepository.name, () => {
       expect(retry[ModelTask.IMAGE_DESCRIPTION][ModelType.VISUAL].modelName).toBe(florenceModelName);
     });
 
+    it('says which model answered and where it ran, and keeps the device out of the stored result (FL-427)', async () => {
+      const ranOn = {
+        ...description,
+        [ModelTask.IMAGE_DESCRIPTION]: { ...description[ModelTask.IMAGE_DESCRIPTION], device: 'cpu' },
+      };
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(new Response('error', { status: 500, statusText: 'Internal Error' }))
+        .mockResolvedValueOnce(jsonResponse(ranOn))
+        .mockResolvedValueOnce(jsonResponse(ranOn));
+      vi.stubGlobal('fetch', fetch);
+      const options = {
+        modelName: qwenModelName,
+        fallbackModelName: florenceModelName,
+        acceleration: MachineLearningHardwareAcceleration.Auto,
+        device: 'AUTO',
+      };
+
+      const run = await sut.describeImageRun(selection(MlDestinationKind.Local, localUrl), imagePath, options);
+      const result = await sut.describeImage(selection(MlDestinationKind.Local, localUrl), imagePath, options);
+
+      expect(run).toEqual({
+        result: description[ModelTask.IMAGE_DESCRIPTION],
+        model: florenceModelName,
+        device: 'cpu',
+      });
+      expect(result).not.toHaveProperty('device');
+    });
+
     it('never retries the fallback model on a cloud destination', async () => {
       const fetch = vi.fn().mockResolvedValue(new Response('error', { status: 500, statusText: 'Internal Error' }));
       vi.stubGlobal('fetch', fetch);

@@ -14,6 +14,7 @@ import {
   renderWorkerCheckFrom,
   restorationThroughput,
   restorationWorkerCheckFrom,
+  runsOnDevice,
   serverCheckFrom,
   testEncoderFor,
   unavailableWorkload,
@@ -399,6 +400,8 @@ describe('hardware check (FL-159)', () => {
       secondsPerUnit: 2.4,
       runsOn: 'gpu',
       worker: 'Local',
+      model: null,
+      fallbackFrom: null,
       unavailable: null,
       error: null,
     });
@@ -419,5 +422,11 @@ describe('hardware check (FL-159)', () => {
     });
     expect(median([30, 10, 20])).toBe(20);
     expect(median([])).toBeNull();
+  });
+
+  it('reads where a worker says it ran a model, and leaves anything else unknown (FL-427)', () => {
+    expect(
+      ['cpu', 'CPU', 'cuda:0', 'GPU', 'GPU.1', 'AUTO', 'MULTI:GPU,CPU', null].map((device) => runsOnDevice(device)),
+    ).toEqual(['cpu', 'cpu', 'gpu', 'gpu', 'gpu', null, null, null]);
   });
 });

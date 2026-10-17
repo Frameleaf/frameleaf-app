@@ -12,7 +12,8 @@
  *
  * Bands follow the stored Hardware & GPU check of the ML container: green when the model fits its
  * GPU, white when it runs on the processor, and unavailable otherwise. Without a check every stop is
- * white, since nothing says which fit.
+ * white, since nothing says which fit. Which models load at all depends on the ML image, not the GPU
+ * (FL-427): the processor image has torch but no OpenVINO GenAI, the OpenVINO image the reverse.
  */
 import type { HardwareCheckResponseDto } from '@frameleaf/sdk';
 import { workerFromHardware, type RoutedWorkload } from '$lib/frameleaf/cloud-ml';
@@ -26,12 +27,19 @@ export type LocalModel = {
   short: string;
   /** GPU memory it needs, about, in GB. */
   vramGb: number;
-  /** A converted OpenVINO build exists, so it also runs on the processor. */
-  cpu: boolean;
-  /** Runs on a GPU only through CUDA (the CUDA ML image). */
-  cudaOnly: boolean;
+  /**
+   * The ML images (`mlImage`) that load it, and where it runs in each: `gpu` only on the image's GPU,
+   * `any` on the GPU when it fits and on the processor otherwise. An image left out cannot load it.
+   */
+  images: Readonly<Partial<Record<string, 'gpu' | 'cpu' | 'any'>>>;
   noteKey: string;
 };
+
+// Florence runs on torch: the processor image's on the CPU, the CUDA image's on the GPU (or the CPU
+// when CUDA is unavailable). Qwen runs on CUDA through torch, or as a converted OpenVINO build.
+const FLORENCE = Object.freeze({ cpu: 'cpu', cuda: 'any' } as const);
+const QWEN_CONVERTED = Object.freeze({ cuda: 'gpu', openvino: 'any' } as const);
+const CUDA_ONLY = Object.freeze({ cuda: 'gpu' } as const);
 
 /**
  * Description models, lightest first. The memory figures are the hints of the Machine learning
@@ -43,8 +51,7 @@ export const LOCAL_DESCRIPTION_MODELS: readonly LocalModel[] = Object.freeze([
     name: 'Florence-2 base',
     short: 'Florence-2 base',
     vramGb: 1,
-    cpu: false,
-    cudaOnly: true,
+    images: FLORENCE,
     noteKey: 'admin.frameleaf_model_local_note_florence',
   },
   {
@@ -52,8 +59,7 @@ export const LOCAL_DESCRIPTION_MODELS: readonly LocalModel[] = Object.freeze([
     name: 'Florence-2 large',
     short: 'Florence-2 large',
     vramGb: 3,
-    cpu: false,
-    cudaOnly: true,
+    images: FLORENCE,
     noteKey: 'admin.frameleaf_model_local_note_florence',
   },
   {
@@ -61,8 +67,7 @@ export const LOCAL_DESCRIPTION_MODELS: readonly LocalModel[] = Object.freeze([
     name: 'Qwen2.5-VL 3B',
     short: 'Qwen2.5 3B',
     vramGb: 6,
-    cpu: true,
-    cudaOnly: false,
+    images: QWEN_CONVERTED,
     noteKey: 'admin.frameleaf_model_local_note_qwen2_5_vl_3b',
   },
   {
@@ -70,8 +75,7 @@ export const LOCAL_DESCRIPTION_MODELS: readonly LocalModel[] = Object.freeze([
     name: 'Qwen2.5-VL 7B',
     short: 'Qwen2.5 7B',
     vramGb: 16,
-    cpu: true,
-    cudaOnly: false,
+    images: QWEN_CONVERTED,
     noteKey: 'admin.frameleaf_model_local_note_qwen2_5_vl_7b',
   },
   {
@@ -79,8 +83,7 @@ export const LOCAL_DESCRIPTION_MODELS: readonly LocalModel[] = Object.freeze([
     name: 'Qwen3-VL 30B-A3B',
     short: 'Qwen3 30B',
     vramGb: 60,
-    cpu: false,
-    cudaOnly: true,
+    images: CUDA_ONLY,
     noteKey: 'admin.frameleaf_model_local_note_qwen3_vl_30b_a3b',
   },
   {
@@ -88,8 +91,7 @@ export const LOCAL_DESCRIPTION_MODELS: readonly LocalModel[] = Object.freeze([
     name: 'Qwen2.5-VL 32B',
     short: 'Qwen2.5 32B',
     vramGb: 64,
-    cpu: false,
-    cudaOnly: true,
+    images: CUDA_ONLY,
     noteKey: 'admin.frameleaf_model_local_note_qwen2_5_vl_32b',
   },
   {
@@ -97,8 +99,7 @@ export const LOCAL_DESCRIPTION_MODELS: readonly LocalModel[] = Object.freeze([
     name: 'Qwen2.5-VL 72B',
     short: 'Qwen2.5 72B',
     vramGb: 144,
-    cpu: false,
-    cudaOnly: true,
+    images: CUDA_ONLY,
     noteKey: 'admin.frameleaf_model_local_note_qwen2_5_vl_72b',
   },
 ]);
@@ -109,14 +110,17 @@ export const localModelsFor = (row: RoutedWorkload): readonly LocalModel[] =>
 
 /** What the stored Hardware & GPU check says about the ML container. */
 export type LocalHardware = {
-  /** A check reached the ML container; without one nothing says which models fit. */
+  /** A check reached the ML container and it reported its image; without both nothing says which fit. */
   known: boolean;
   gpu: DetectedGpu | null;
+  /** The ML image flavour (cpu, cuda, openvino, rocm, …). */
+  image: string | null;
 };
 
 export const localHardware = (check: HardwareCheckResponseDto | null | undefined): LocalHardware => ({
-  known: !!check?.ml.reachable,
+  known: !!check?.ml.reachable && !!check.mlImage,
   gpu: workerFromHardware(check).gpu,
+  image: check?.mlImage ?? null,
 });
 
 export type LocalBand = 'cpu' | 'gpu' | 'none';
@@ -124,7 +128,7 @@ export type LocalBand = 'cpu' | 'gpu' | 'none';
 export type LocalReason =
   | { kind: 'memory'; needs: number; gpu: string; has: number }
   | { kind: 'memory-no-gpu'; needs: number }
-  | { kind: 'cuda'; gpu: string; backend: string }
+  | { kind: 'image'; image: string }
   | { kind: 'cloud-only' };
 
 export type LocalStop = {
@@ -134,26 +138,24 @@ export type LocalStop = {
   reason: LocalReason | null;
 };
 
-const fitsGpu = (model: LocalModel, gpu: DetectedGpu) =>
-  gpu.vramGb >= model.vramGb && (!model.cudaOnly || gpu.backend === 'CUDA');
-
 const bandOf = (model: LocalModel, hardware: LocalHardware): { band: LocalBand; reason: LocalReason | null } => {
-  if (!hardware.known) {
+  if (!hardware.known || !hardware.image) {
     return { band: 'cpu', reason: null };
   }
-  const { gpu } = hardware;
-  if (gpu && fitsGpu(model, gpu)) {
+  const { gpu, image } = hardware;
+  const where = model.images[image];
+  if (!where) {
+    return { band: 'none', reason: { kind: 'image', image } };
+  }
+  if (where !== 'cpu' && gpu && gpu.vramGb >= model.vramGb) {
     return { band: 'gpu', reason: null };
   }
-  if (model.cpu) {
+  if (where !== 'gpu') {
     return { band: 'cpu', reason: null };
   }
-  if (!gpu) {
-    return { band: 'none', reason: { kind: 'memory-no-gpu', needs: model.vramGb } };
-  }
-  return gpu.vramGb >= model.vramGb
-    ? { band: 'none', reason: { kind: 'cuda', gpu: gpu.name, backend: gpu.backend } }
-    : { band: 'none', reason: { kind: 'memory', needs: model.vramGb, gpu: gpu.name, has: gpu.vramGb } };
+  return gpu
+    ? { band: 'none', reason: { kind: 'memory', needs: model.vramGb, gpu: gpu.name, has: gpu.vramGb } }
+    : { band: 'none', reason: { kind: 'memory-no-gpu', needs: model.vramGb } };
 };
 
 /** The local side of one picker: its stops and the setting they write. */

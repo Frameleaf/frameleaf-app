@@ -589,8 +589,24 @@ export type WorkloadBenchmark = {
   runsOn: 'gpu' | 'cpu' | null;
   /** The worker that ran it. */
   worker: string | null;
+  /** The model that was timed (FL-427). */
+  model: string | null;
+  /** The configured model, when it could not run and the fallback model was timed instead. */
+  fallbackFrom: string | null;
   unavailable: WorkloadUnavailable | null;
   error: string | null;
+};
+
+/**
+ * Where a worker says it ran a model (torch `cpu` or `cuda:0`, OpenVINO `CPU` or `GPU.1`); null when
+ * it did not say, or let OpenVINO choose (`AUTO`) without saying what it chose (FL-427).
+ */
+export const runsOnDevice = (device: string | null): 'gpu' | 'cpu' | null => {
+  const name = device?.toLowerCase() ?? '';
+  if (name.startsWith('cpu')) {
+    return 'cpu';
+  }
+  return name.startsWith('cuda') || name.startsWith('gpu') ? 'gpu' : null;
 };
 
 export const unavailableWorkload = (
@@ -605,6 +621,8 @@ export const unavailableWorkload = (
   secondsPerUnit: null,
   runsOn: null,
   worker: null,
+  model: null,
+  fallbackFrom: null,
   unavailable,
   error,
 });
@@ -617,12 +635,16 @@ export const measuredWorkload = (
     source,
     runsOn,
     worker,
+    model = null,
+    fallbackFrom = null,
   }: {
     unit: 'photo' | 'frame';
     secondsPerUnit: number;
     source: 'benchmark' | 'qualification';
     runsOn: 'gpu' | 'cpu' | null;
     worker: string;
+    model?: string | null;
+    fallbackFrom?: string | null;
   },
 ): WorkloadBenchmark => ({
   workload,
@@ -632,6 +654,8 @@ export const measuredWorkload = (
   secondsPerUnit: Math.round(secondsPerUnit * 1000) / 1000,
   runsOn,
   worker,
+  model,
+  fallbackFrom,
   unavailable: null,
   error: null,
 });

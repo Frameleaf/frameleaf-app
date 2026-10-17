@@ -25,6 +25,7 @@
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { hardwareConsequences, workerFromHardware } from '$lib/frameleaf/cloud-ml';
   import { applyDescriptionHardwarePreset } from '$lib/frameleaf/enrichment-tasks';
+  import { LOCAL_DESCRIPTION_MODELS } from '$lib/frameleaf/local-models';
   import {
     composeFixes,
     fixStepKey,
@@ -445,6 +446,7 @@
       })),
     ];
   });
+  const modelName = (value: string) => LOCAL_DESCRIPTION_MODELS.find((model) => model.value === value)?.name ?? value;
   const throughputText = (row: HardwareWorkloadBenchmarkDto) => {
     if (row.unavailable) {
       if (row.unavailable === 'failed') {
@@ -454,10 +456,13 @@
       }
       return $t(`frameleaf_hardware_throughput_${row.unavailable.replaceAll('-', '_')}` as Translations);
     }
+    // FL-427: where the worker says it ran; a benchmark kept by an earlier version has no model.
     const where =
       row.runsOn === 'cpu'
         ? $t('frameleaf_hardware_throughput_where_cpu')
-        : $t('frameleaf_hardware_throughput_where_gpu');
+        : row.runsOn === 'gpu'
+          ? $t('frameleaf_hardware_throughput_where_gpu')
+          : $t('frameleaf_hardware_throughput_where_unknown');
     const amount =
       row.unit === 'photo'
         ? $t('frameleaf_hardware_throughput_photo', {
@@ -470,7 +475,14 @@
         : 'frameleaf_hardware_throughput_source_benchmark',
       { values: { worker: row.worker ?? '' } },
     );
-    return `${amount}. ${source}`;
+    const timed = row.model
+      ? row.fallbackFrom
+        ? $t('frameleaf_hardware_throughput_fallback', {
+            values: { model: modelName(row.model), configured: modelName(row.fallbackFrom) },
+          })
+        : $t('frameleaf_hardware_throughput_model', { values: { model: modelName(row.model) } })
+      : '';
+    return [`${amount}.`, timed, source].filter(Boolean).join(' ');
   };
 
   let copied = $state('');

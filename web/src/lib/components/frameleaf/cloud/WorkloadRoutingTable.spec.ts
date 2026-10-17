@@ -416,20 +416,21 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
       expect(radioValues(local)).toEqual(LOCAL_MODELS);
       expect(within(picker).queryByRole('radiogroup', { name: /Frameleaf Cloud model for/ })).toBeNull();
       expect(within(local).getByRole('radio', { name: /^Qwen2\.5-VL 3B: Your GPU · about 6 GB/ })).toBeChecked();
-      expect(within(picker).getByText('White · processor, no GPU')).toBeInTheDocument();
+      // FL-427: the CUDA image has no OpenVINO, so nothing here runs on the processor
+      expect(within(picker).queryByText('White · processor, no GPU')).toBeNull();
       // a model that needs more memory than the GPU has is crossed out, with the reason
-      expect(within(local).getByRole('radio', { name: /^Qwen2\.5-VL 32B/ })).toBeDisabled();
+      expect(within(local).getByRole('radio', { name: /^Qwen2\.5-VL 7B/ })).toBeDisabled();
       expect(
-        within(picker).getByText('Qwen2.5-VL 32B needs about 64 GB of GPU memory; NVIDIA GeForce RTX 3060 has 12 GB.'),
+        within(picker).getByText('Qwen2.5-VL 7B needs about 16 GB of GPU memory; NVIDIA GeForce RTX 3060 has 12 GB.'),
       ).toBeInTheDocument();
       expect(within(picker).getByText(/downloads the first time a job uses it/)).toBeInTheDocument();
 
-      await fireEvent.click(within(local).getByRole('radio', { name: /^Qwen2\.5-VL 7B: CPU · slow/ }));
-      expect(store.draft.machineLearning.imageDescription?.modelName).toBe('Qwen/Qwen2.5-VL-7B-Instruct');
+      await fireEvent.click(within(local).getByRole('radio', { name: /^Florence-2 large: Your GPU · about 3 GB/ }));
+      expect(store.draft.machineLearning.imageDescription?.modelName).toBe('microsoft/Florence-2-large-ft');
       expect(store.baseline.machineLearning.imageDescription?.modelName).toBe('Qwen/Qwen2.5-VL-3B-Instruct');
-      expect(within(local).getByRole('radio', { name: /^Qwen2\.5-VL 7B/ })).toBeChecked();
+      expect(within(local).getByRole('radio', { name: /^Florence-2 large/ })).toBeChecked();
       expect(
-        within(picker).getByText(/Save with the settings bar to use Qwen2\.5-VL 7B on this server\./),
+        within(picker).getByText(/Save with the settings bar to use Florence-2 large on this server\./),
       ).toBeInTheDocument();
       // a local model is a setting, not a Frameleaf Cloud choice
       expect(sdkMock.setCloudMlModelChoice).not.toHaveBeenCalled();

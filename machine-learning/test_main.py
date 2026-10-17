@@ -550,10 +550,21 @@ class TestImageDescriptionModel:
 
         model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino", session=gpu_session)
 
-        assert model.predict(Image.new("RGB", (3, 2), (1, 2, 3)))["description"] == "A room."
+        result = model.predict(Image.new("RGB", (3, 2), (1, 2, 3)))
+        assert result["description"] == "A room."
         assert gpu_session.calls == 1
         assert cpu_session.calls == 1
         assert model.device == "CPU"
+        # FL-427: the response says where it actually ran, so the GPU→CPU retry is visible.
+        assert result["device"] == "CPU"
+
+    def test_reports_the_torch_device_it_ran_on(self, monkeypatch: MonkeyPatch) -> None:
+        model = ImageDescriptionModel(
+            "microsoft/Florence-2-base-ft", acceleration="cuda", session={"device": "cpu", "torch": None}
+        )
+        monkeypatch.setattr(ImageDescriptionModel, "_predict_florence", lambda self, image: {"description": "A cat."})
+
+        assert model.predict(Image.new("RGB", (3, 2))) == {"description": "A cat.", "device": "cpu"}
 
     def test_make_prompt_uses_external_when_provided(self) -> None:
         model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda")

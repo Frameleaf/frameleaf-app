@@ -235,11 +235,18 @@ class ImageDescriptionModel(InferenceModel):
         self.load()
         if model_kwargs:
             self.configure(**model_kwargs)
-        return self._predict(
+        result = self._predict(
             *inputs,
             nsfw=model_kwargs.get("nsfw"),
             external_prompt=model_kwargs.get("external_prompt"),
         )
+        # FL-427: the device that actually ran it, after any CPU retry, so the server's benchmark
+        # reports it instead of guessing from the GPUs present. "AUTO" means OpenVINO chose and did not say.
+        return {**result, "device": self._execution_device()}
+
+    def _execution_device(self) -> str:
+        session = getattr(self, "session", None)
+        return str(session["device"]) if isinstance(session, dict) else self.device
 
     def configure(self, **kwargs: Any) -> None:
         if "acceleration" in kwargs:

@@ -165,7 +165,19 @@ export type ImageDescriptionRequest = {
     };
   };
 };
-export type ImageDescriptionResponse = { [ModelTask.IMAGE_DESCRIPTION]: ImageDescriptionResult } & VisualResponse;
+/** `device`: where the worker ran it (FL-427); older workers and Frameleaf Cloud leave it out. */
+export type ImageDescriptionResponse = {
+  [ModelTask.IMAGE_DESCRIPTION]: ImageDescriptionResult & { device?: string };
+} & VisualResponse;
+
+/** A description, the model that answered it and the device the worker ran it on (null when it did not say). */
+export type ImageDescriptionRun = { result: ImageDescriptionResult; model: string; device: string | null };
+
+// The result is stored with the asset, so the worker's `device` is split off it here.
+const describedBy = (
+  { device, ...result }: ImageDescriptionResponse[ModelTask.IMAGE_DESCRIPTION],
+  model: string,
+): ImageDescriptionRun => ({ result, model, device: device ?? null });
 
 export type NsfwDetectionRequest = {
   [ModelTask.NSFW_DETECTION]: {
@@ -1031,10 +1043,24 @@ export class MachineLearningRepository implements RestorationInference {
   async describeImage(
     selection: MlSelection,
     imagePath: string,
-    { modelName, acceleration, fallbackModelName, device }: ImageDescriptionOptions,
+    options: ImageDescriptionOptions,
     nsfw?: NsfwDetectionResult,
     prompt?: string,
   ) {
+    return (await this.describeImageRun(selection, imagePath, options, nsfw, prompt)).result;
+  }
+
+  /**
+   * `describeImage`, also saying which model answered (the configured one or its fallback) and
+   * where the worker ran it, for the hardware benchmark (FL-427).
+   */
+  async describeImageRun(
+    selection: MlSelection,
+    imagePath: string,
+    { modelName, acceleration, fallbackModelName, device }: ImageDescriptionOptions,
+    nsfw?: NsfwDetectionResult,
+    prompt?: string,
+  ): Promise<ImageDescriptionRun> {
     const buildRequest = (effectiveModelName: string) => ({
       [ModelTask.IMAGE_DESCRIPTION]: {
         [ModelType.VISUAL]: {
@@ -1063,7 +1089,7 @@ export class MachineLearningRepository implements RestorationInference {
         { imagePath },
         buildRequest(selection.cloudModelId),
       );
-      return body[ModelTask.IMAGE_DESCRIPTION];
+      return describedBy(body[ModelTask.IMAGE_DESCRIPTION], selection.cloudModelId);
     }
     const candidateModels: string[] = [modelName];
     if (fallbackModelName && fallbackModelName !== modelName && !florenceUnavailable) {
@@ -1083,7 +1109,7 @@ export class MachineLearningRepository implements RestorationInference {
             `Image description model '${modelName}' failed on destination ${selection.destinationId}; succeeded with fallback model '${candidateModel}'`,
           );
         }
-        return body[ModelTask.IMAGE_DESCRIPTION];
+        return describedBy(body[ModelTask.IMAGE_DESCRIPTION], candidateModel);
       } catch (error) {
         lastError = error;
         this.logger.warn(

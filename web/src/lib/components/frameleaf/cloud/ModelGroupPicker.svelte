@@ -131,9 +131,9 @@
           values: { name: stop.model.name, needs: reason.needs },
         });
       }
-      case 'cuda': {
-        return $t('admin.frameleaf_model_local_reason_cuda', {
-          values: { name: stop.model.name, gpu: reason.gpu, backend: reason.backend },
+      case 'image': {
+        return $t('admin.frameleaf_model_local_reason_image', {
+          values: { name: stop.model.name, image: reason.image },
         });
       }
       case 'cloud-only': {

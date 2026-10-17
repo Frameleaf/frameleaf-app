@@ -74603,6 +74603,16 @@
             "nullable": true,
             "type": "string"
           },
+          "fallbackFrom": {
+            "description": "The configured model, when it could not run and the fallback model was timed instead",
+            "nullable": true,
+            "type": "string"
+          },
+          "model": {
+            "description": "The model that was timed",
+            "nullable": true,
+            "type": "string"
+          },
           "perHour": {
             "description": "Units per hour",
             "format": "double",
@@ -74615,6 +74625,7 @@
                 "$ref": "#/components/schemas/HardwareRunsOn"
               }
             ],
+            "description": "Where it ran, as the worker reported it; null when it did not say",
             "nullable": true
           },
           "secondsPerUnit": {
@@ -74660,6 +74671,8 @@
         },
         "required": [
           "error",
+          "fallbackFrom",
+          "model",
           "perHour",
           "runsOn",
           "secondsPerUnit",

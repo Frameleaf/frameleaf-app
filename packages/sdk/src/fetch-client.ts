@@ -1969,8 +1969,13 @@ export type FileTrashRestoreResponseDto = {
 };
 export type HardwareWorkloadBenchmarkDto = {
     error: string | null;
+    /** The configured model, when it could not run and the fallback model was timed instead */
+    fallbackFrom: string | null;
+    /** The model that was timed */
+    model: string | null;
     /** Units per hour */
     perHour: number | null;
+    /** Where it ran, as the worker reported it; null when it did not say */
     runsOn: (HardwareRunsOn) | null;
     secondsPerUnit: number | null;
     /** benchmark: timed now; qualification: measured on this GPU when the worker was qualified */
