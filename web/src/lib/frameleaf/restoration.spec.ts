@@ -1,4 +1,5 @@
 import {
+  AssetRestorationMode,
   AssetRestorationStatus,
   MlAdmissionRefusal,
   MlDestinationHealth,
@@ -8,6 +9,8 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 import {
   CENTRE_REGION,
+  ENHANCE_CLOUD_STOP,
+  ENHANCE_OWN_MODEL_STOP,
   abandonedResultKeptUntil,
   anyRestorationBusy,
   canDecideRestoration,
@@ -15,7 +18,9 @@ import {
   canSelectRestoration,
   compareKindFor,
   defaultDestinationId,
+  enhanceStops,
   formatEstimateSeconds,
+  initialEnhanceStop,
   isFullCropRect,
   isOutputCapped,
   isRestorationBusy,
@@ -48,6 +53,7 @@ const destination = (overrides: Partial<AssetRestorationDestinationDto> = {}): A
     previewSeconds: null,
     fullSeconds: null,
   },
+  models: [],
   ...overrides,
 });
 
@@ -171,5 +177,71 @@ describe('restoration presentation rules (FL-115)', () => {
     expect(formatEstimateSeconds(45, 'en')).toBe('45 seconds');
     expect(formatEstimateSeconds(150, 'en')).toBe('3 minutes');
     expect(formatEstimateSeconds(7200, 'en')).toBe('2 hours');
+  });
+});
+
+describe('the Enhance model slider (FL-423)', () => {
+  const model = (id: string, mode: AssetRestorationMode, available = true) => ({
+    id,
+    name: id,
+    family: id.split('-')[0],
+    mode,
+    available,
+  });
+  const home = destination({
+    gpu: { name: 'RTX 4090', memoryTotalBytes: 24e9 },
+    models: [
+      model('seedvr2-3b', AssetRestorationMode.Creative),
+      model('rife-4', AssetRestorationMode.SmoothMotion),
+      model('realbasicvsr-x4', AssetRestorationMode.Faithful),
+      model('seedvr2-7b', AssetRestorationMode.Creative, false),
+    ],
+  });
+
+  it('lists the home models Faithful first, each kind in its own order, then Frameleaf Cloud', () => {
+    const stops = enhanceStops({ home, mode: AssetRestorationMode.Faithful, route: 'both', cloud: true });
+
+    expect(stops.map((stop) => [stop.id, stop.band, stop.mode, stop.model, stop.disabled])).toEqual([
+      ['realbasicvsr-x4', 'gpu', 'faithful', 'realbasicvsr-x4', false],
+      ['seedvr2-3b', 'gpu', 'creative', 'seedvr2-3b', false],
+      ['seedvr2-7b', 'gpu', 'creative', 'seedvr2-7b', true],
+      [ENHANCE_CLOUD_STOP, 'cloud', null, null, false],
+    ]);
+    expect(stops[2].reason).toBe('not-ready');
+  });
+
+  it('keeps the work at home when Where each job runs says so, and marks a cloud that is not set up', () => {
+    expect(
+      enhanceStops({ home, mode: AssetRestorationMode.Faithful, route: 'local', cloud: true }).map((stop) => stop.id),
+    ).not.toContain(ENHANCE_CLOUD_STOP);
+    expect(enhanceStops({ home: null, mode: AssetRestorationMode.Faithful, route: 'cloud', cloud: false })).toEqual([
+      expect.objectContaining({ id: ENHANCE_CLOUD_STOP, disabled: true, reason: 'needs-cloud' }),
+    ]);
+  });
+
+  it('gives a computer that listed no models one stop for its usual model, named by no id', () => {
+    const [own] = enhanceStops({
+      home: destination(),
+      mode: AssetRestorationMode.Creative,
+      route: 'local',
+      cloud: false,
+    });
+    expect(own).toMatchObject({ id: ENHANCE_OWN_MODEL_STOP, band: 'cpu', mode: 'creative', model: null });
+  });
+
+  it('starts on a ready model of the kind the server starts on, never on Frameleaf Cloud or a model not ready', () => {
+    const stops = enhanceStops({ home, mode: AssetRestorationMode.Creative, route: 'both', cloud: true });
+    expect(initialEnhanceStop(stops, AssetRestorationMode.Creative)?.id).toBe('seedvr2-3b');
+    expect(initialEnhanceStop(stops, AssetRestorationMode.Faithful)?.id).toBe('realbasicvsr-x4');
+
+    const notReady = enhanceStops({
+      home: destination({ models: [model('seedvr2-7b', AssetRestorationMode.Creative, false)] }),
+      mode: AssetRestorationMode.Faithful,
+      route: 'both',
+      cloud: true,
+    });
+    expect(notReady.map((stop) => stop.id)).toEqual(['seedvr2-7b', ENHANCE_CLOUD_STOP]);
+    expect(initialEnhanceStop(notReady, AssetRestorationMode.Faithful)).toBeNull();
+    expect(initialEnhanceStop([], AssetRestorationMode.Faithful)).toBeNull();
   });
 });
