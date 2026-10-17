@@ -12,7 +12,6 @@ import {
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Insertable } from 'kysely';
-import { type HiddenContentQueryOptions, everyOwnersRules } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { columns } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
@@ -33,6 +32,7 @@ import {
   withDefaultVisibility,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
+import { type HiddenContentQueryOptions, everyOwnersRules } from 'src/utils/hidden-content.js';
 import { isNotLocked, notLockedOrOwnedBy } from 'src/utils/locked.js';
 
 export interface AlbumAssetCount {
