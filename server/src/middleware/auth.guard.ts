@@ -91,9 +91,20 @@ export const Auth = createParamDecorator((data, context: ExecutionContext): Auth
   return context.switchToHttp().getRequest<AuthenticatedRequest>().user;
 });
 
-export const FileResponse = () =>
+/**
+ * Documents a binary file response. FL-436: pass the content types the route really sends, so strict
+ * clients (which reject a `Content-Type` the spec does not list) accept it; `image/*` covers an image
+ * route whose stored files can be in any image format. `application/octet-stream` stays listed on
+ * every route, so no existing client loses the media type it was generated against.
+ */
+export const FileResponse = (...contentTypes: string[]) =>
   ApiOkResponse({
-    content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
+    content: Object.fromEntries(
+      ['application/octet-stream', ...contentTypes].map((type) => [
+        type,
+        { schema: { type: 'string', format: 'binary' } },
+      ]),
+    ),
   });
 
 export const GetLoginDetails = createParamDecorator((data, context: ExecutionContext): LoginDetails => {
