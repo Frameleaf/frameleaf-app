@@ -10,6 +10,7 @@ import { EdgeRelayService } from 'src/edge/edge-relay.service.js';
 import { EdgeStateService, carrierGradeNat } from 'src/edge/edge-state.service.js';
 import { DatabaseLock, SystemMetadataKey } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, automock, getMocks } from 'test/utils.js';
@@ -763,6 +764,152 @@ describe(EdgeStateService.name, () => {
       await sut.tick(now + 10_000);
       expect(direct.stop).toHaveBeenCalled();
       await expect(certificates.read(identityDir, 'wildcard')).resolves.toEqual(wildcard);
+    });
+
+    describe('a Server licence without a plan (FL-437, FC-147)', () => {
+      const NO_PLAN = 'The relay comes with a Frameleaf Cloud plan. Without one, this server is reached directly.';
+      const NO_LICENCE = 'Remote access needs a Server licence or a Frameleaf Cloud plan.';
+      const serverLicence = (): FrameleafLicense => ({
+        ...license(['SUPPORTER_SERVER'], now),
+        kind: 'server',
+        source: 'key',
+      });
+      const plan = () => license(['CLOUD', 'REMOTE_ACCESS'], now);
+      const enrolments = () => calls.filter(({ url }) => url === `${API}/v1/remote/enroll`);
+      /** Frameleaf Cloud answers the enrolment with a 403 and this code from now on. */
+      const refuseEnrolment = (code: string) => {
+        const answer = mocks.frameleafCloud.requestJson.getMockImplementation()!;
+        mocks.frameleafCloud.requestJson.mockImplementation((schema: any, request: any) => {
+          if (request.url === `${API}/v1/remote/enroll`) {
+            calls.push({ method: request.method, url: request.url, body: request.body });
+            return Promise.reject(
+              new FrameleafCloudError('other' as never, 403, code, { code, message: code } as never),
+            );
+          }
+          return answer(schema, request);
+        });
+      };
+
+      beforeEach(() => {
+        metadata.set(SystemMetadataKey.FrameleafLicense, { key: serverLicence(), plan: null });
+      });
+
+      it('enrols, gets its certificate and serves the direct name, with no relay and no relay notice', async () => {
+        issueWith(wildcard);
+        await sut.tick(now);
+
+        expect(calls.map(({ method, url }) => `${method} ${url.replace(API, '')}`)).toEqual([
+          'POST /v1/remote/enroll',
+          'PUT /v1/remote/caa',
+          'PUT /v1/remote/dns/txt',
+          'DELETE /v1/remote/dns/txt',
+          'POST /v1/remote/certs',
+          'POST /v1/remote/wan-probe',
+        ]);
+        // direct is the only way in, whatever the connection mode says ("Relay only" by default)
+        expect(direct.configure).toHaveBeenCalledWith(expect.objectContaining({ allowWan: true }));
+        expect(direct.start).toHaveBeenCalled();
+        expect(portMapping.keep).toHaveBeenCalled();
+        expect(relay.ensure).not.toHaveBeenCalled();
+        expect(remoteState()).toMatchObject({
+          status: 'ready',
+          reason: NO_PLAN,
+          names: { label: 'u225vlzhsdlhwh4l' },
+          relay: { connected: false, needsPlan: true },
+          // the heartbeat reports direct connections from this, not from the saved mode
+          direct: { listening: true, allowWan: true },
+        });
+        const candidates = remoteState()!.candidates;
+        expect(candidates.some((candidate) => candidate.relay)).toBe(false);
+        expect(candidates.find((candidate) => candidate.kind === 'wan')).toMatchObject({
+          uri: 'https://203-0-113-7.u225vlzhsdlhwh4l.frameleaf.net:2443',
+          verified: true,
+        });
+
+        await sut.tick(now + 20 * 60 * 1000);
+        expect(mocks.notification.create).not.toHaveBeenCalledWith(
+          expect.objectContaining({ title: 'Remote access relay disconnected' }),
+        );
+      });
+
+      it('starts the relay once a plan is bought, enrolling again at once', async () => {
+        issueWith(wildcard);
+        await sut.tick(now);
+        expect(relay.ensure).not.toHaveBeenCalled();
+
+        metadata.set(SystemMetadataKey.FrameleafLicense, { key: serverLicence(), plan: plan() });
+        await sut.tick(now + 10_000);
+        expect(enrolments()).toHaveLength(2);
+        expect(relay.ensure).toHaveBeenCalledWith(expect.objectContaining({ instanceId: INSTANCE_ID }), now + 10_000);
+        expect(remoteState()).toMatchObject({ status: 'ready', reason: null, relay: { connected: false } });
+        expect(remoteState()!.relay.needsPlan).toBeUndefined();
+      });
+
+      it('keeps the direct name, enrolment and certificate when the plan lapses but the licence stays', async () => {
+        const issue = issueWith(wildcard);
+        metadata.set(SystemMetadataKey.FrameleafLicense, { key: serverLicence(), plan: plan() });
+        await sut.tick(now);
+        expect(relay.ensure).toHaveBeenCalled();
+        const names = remoteState()!.names;
+
+        metadata.set(SystemMetadataKey.FrameleafLicense, { key: serverLicence(), plan: license(['CLOUD'], now) });
+        relay.stop.mockClear();
+        await sut.tick(now + 10_000);
+        expect(relay.stop).toHaveBeenCalled();
+        expect(direct.stop).not.toHaveBeenCalled();
+        expect(direct.listening).toBe(true);
+        expect(issue).toHaveBeenCalledTimes(1);
+        await expect(certificates.read(identityDir, 'wildcard')).resolves.toEqual(wildcard);
+        expect(remoteState()).toMatchObject({
+          status: 'ready',
+          names: { label: names!.label, domain: names!.domain },
+          relay: { connected: false, needsPlan: true },
+        });
+      });
+
+      it('stops when neither a licence nor a plan is left, and enrols afresh once one is back', async () => {
+        issueWith(wildcard);
+        await sut.tick(now);
+
+        metadata.set(SystemMetadataKey.FrameleafLicense, { key: null, plan: null });
+        await sut.tick(now + 10_000);
+        expect(direct.stop).toHaveBeenCalled();
+        expect(remoteState()).toMatchObject({ status: 'idle', reason: NO_LICENCE });
+        // the certificate is kept (as on any lapse); Frameleaf Cloud removes the enrolment itself
+        await expect(certificates.read(identityDir, 'wildcard')).resolves.toEqual(wildcard);
+
+        // the stored enrolment is less than a day old, but it was removed meanwhile: enrol again
+        metadata.set(SystemMetadataKey.FrameleafLicense, { key: serverLicence(), plan: null });
+        await sut.tick(now + 20_000);
+        expect(enrolments()).toHaveLength(2);
+        expect(remoteState()).toMatchObject({ status: 'ready' });
+      });
+
+      it.each([
+        [
+          'enrollment-suspended',
+          'Frameleaf Cloud suspended remote access for this server. Check Servers in your Frameleaf account.',
+        ],
+        ['entitlement-missing', NO_LICENCE],
+      ])('stops serving the old enrolment when Frameleaf Cloud refuses it with %s', async (code, reason) => {
+        issueWith(wildcard);
+        await sut.tick(now);
+        expect(direct.listening).toBe(true);
+
+        refuseEnrolment(code);
+        // the daily refresh is refused
+        await sut.tick(now + 25 * HOUR);
+        expect(direct.stop).toHaveBeenCalled();
+        expect(direct.listening).toBe(false);
+        expect(remoteState()).toMatchObject({ status: 'error', reason, direct: { listening: false } });
+
+        // and it stays refused until the retry, without serving the old names in between
+        direct.start.mockClear();
+        await sut.tick(now + 25 * HOUR + 10_000);
+        expect(enrolments()).toHaveLength(2);
+        expect(direct.start).not.toHaveBeenCalled();
+        expect(remoteState()).toMatchObject({ status: 'error', reason });
+      });
     });
 
     it('closes every socket within 5 seconds on shutdown', async () => {

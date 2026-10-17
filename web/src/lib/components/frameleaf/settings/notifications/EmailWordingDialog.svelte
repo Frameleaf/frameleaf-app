@@ -4,11 +4,20 @@
    * `settings-v2/server/notifications.jsx`): the words in a box, buttons that drop a name or a link
    * into them, and a preview with sample names. Empty means the standard wording. "Use this
    * wording" puts it into the page's changes, which the settings bar saves with everything else.
+   *
+   * FL-426: the preview follows the page's other email choices as the server does: the Frameleaf
+   * name and logo at the top while they are shown, and the invitation's own first line in place of
+   * the standard greeting (own wording is sent as written).
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import Logo from '$lib/components/frameleaf/Logo.svelte';
   import TextArea from '$lib/components/frameleaf/settings/kit/TextArea.svelte';
-  import { withSamples, type Wording } from '$lib/components/frameleaf/settings/notifications/email-wording';
+  import {
+    standardWithFirstLine,
+    withSamples,
+    type Wording,
+  } from '$lib/components/frameleaf/settings/notifications/email-wording';
   import { Icon } from '@frameleaf/ui';
   import { mdiPlus } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -16,12 +25,18 @@
   let {
     wording,
     words,
+    firstLine = '',
+    showBranding = true,
     onUse,
     onClose,
   }: {
     wording: Wording;
     /** The current wording in plain words; empty for the standard one. */
     words: string;
+    /** "First line of an invitation", in plain words; empty for the standard greeting. */
+    firstLine?: string;
+    /** "Show the Frameleaf name and logo". */
+    showBranding?: boolean;
     onUse: (words: string) => void;
     onClose: () => void;
   } = $props();
@@ -31,7 +46,8 @@
   // svelte-ignore state_referenced_locally
   let text = $state(words);
   const name = $derived($t(wording.name));
-  const preview = $derived(withSamples(text || $t(wording.standard), wording, (key) => $t(key)));
+  const standard = $derived(standardWithFirstLine($t(wording.standard), wording, firstLine));
+  const preview = $derived(withSamples(text || standard, wording, (key) => $t(key)));
 </script>
 
 <Dialog title={name} closeLabel={$t('close')} bind:open onClosed={onClose}>
@@ -58,6 +74,9 @@
     </div>
     <div class="letter" role="group" aria-label={$t('frameleaf_notify_wording_preview')}>
       <small>{$t('frameleaf_notify_wording_preview')}</small>
+      {#if showBranding}
+        <div class="brand"><Logo variant="lockup" surface="auto" size="tiny" /></div>
+      {/if}
       <p>{preview}</p>
     </div>
   </div>
@@ -131,6 +150,12 @@
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
+  }
+  /* The Frameleaf name and logo at the top of the email, as the server draws it (FL-426). */
+  .brand {
+    display: flex;
+    justify-content: center;
+    padding: var(--fl-space-2) 0;
   }
   .letter p {
     margin: 0;

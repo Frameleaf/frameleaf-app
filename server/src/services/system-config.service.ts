@@ -344,7 +344,7 @@ export class SystemConfigService extends BaseService {
   }
 
   @OnEvent({ name: 'ConfigInit', priority: -100 })
-  onConfigInit({ newConfig: { logging, machineLearning } }: ArgOf<'ConfigInit'>) {
+  onConfigInit({ newConfig: { logging, machineLearning, server } }: ArgOf<'ConfigInit'>) {
     const { logLevel: envLevel } = this.configRepository.getEnv();
     const configLevel = logging.enabled ? logging.level : false;
     const level = envLevel ?? configLevel;
@@ -352,6 +352,8 @@ export class SystemConfigService extends BaseService {
     this.logger.log(`LogLevel=${level} ${envLevel ? '(set via FRAMELEAF_LOG_LEVEL)' : '(set via system config)'}`);
 
     this.machineLearningRepository.setup(machineLearning);
+    // FL-426: every worker's schedules run in the chosen time zone, before and after they are made
+    this.cronRepository.setTimeZone(server.timeZone);
   }
 
   @OnEvent({ name: 'ConfigUpdate', server: true })
@@ -386,7 +388,7 @@ export class SystemConfigService extends BaseService {
       }
     }
 
-    // FL-165: remote access itself needs a linked server with a remote access plan, and the custom
+    // FL-165: remote access itself needs a linked server with a Server licence or a plan (FL-437), and the custom
     // hostname only changes through its own DNS check (Settings › Frameleaf Cloud › Remote access)
     if (allow.enabled && !before?.enabled) {
       const problem = await remoteAccessUnavailable({

@@ -48,12 +48,13 @@ export class NotificationAdminService extends BaseService {
       }
     }
 
-    const { server } = await this.getConfig({ withCache: false });
+    const { server, templates } = await this.getConfig({ withCache: false });
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.TEST_EMAIL,
       data: {
         baseUrl: await this.getPublicUrl(server),
         displayName: user.name,
+        showBranding: templates.email.showBranding,
       },
       customTemplate: tempTemplate!,
     });
@@ -124,6 +125,7 @@ export class NotificationAdminService extends BaseService {
             displayName: 'John Doe',
             username: 'john@doe.com',
             password: 'thisIsAPassword123',
+            showBranding: templates.email.showBranding,
           },
           customTemplate: customTemplate || templates.email.welcomeTemplate,
         });
@@ -140,6 +142,7 @@ export class NotificationAdminService extends BaseService {
             albumName: 'Favorite Photos',
             recipientName: 'Jane Doe',
             cid: undefined,
+            showBranding: templates.email.showBranding,
           },
           customTemplate: customTemplate || templates.email.albumUpdateTemplate,
         });
@@ -157,6 +160,8 @@ export class NotificationAdminService extends BaseService {
             senderName: 'John Doe',
             recipientName: 'Jane Doe',
             cid: undefined,
+            showBranding: templates.email.showBranding,
+            firstLine: templates.email.invitationFirstLine,
           },
           customTemplate: customTemplate || templates.email.albumInviteTemplate,
         });

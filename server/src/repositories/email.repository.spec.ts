@@ -194,6 +194,74 @@ describe(EmailRepository.name, () => {
       expect(text).toContain(NO_LINK_ALBUM);
     });
 
+    describe('the emails themselves (FL-426)', () => {
+      const invite = {
+        albumName: 'Holiday',
+        albumId: '123',
+        recipientName: 'Jane',
+        senderName: 'John',
+        baseUrl: 'https://photos.example.com',
+      };
+
+      it('leaves the Frameleaf name and logo off the top of every email when turned off', async () => {
+        for (const request of [
+          { template: EmailTemplate.TEST_EMAIL, data: { displayName: 'Jane', baseUrl: invite.baseUrl } },
+          { template: EmailTemplate.WELCOME, data: { displayName: 'Jane', username: 'jane', baseUrl: invite.baseUrl } },
+          { template: EmailTemplate.ALBUM_INVITE, data: invite },
+          { template: EmailTemplate.ALBUM_UPDATE, data: invite },
+          { template: EmailTemplate.ITEM_SHARE, data: { ...invite, count: 2, link: `${invite.baseUrl}/sharing` } },
+        ] as EmailRenderRequest[]) {
+          const shown = await sut.renderEmail({ ...request, customTemplate: '' } as EmailRenderRequest);
+          expect(shown.html).toContain('frameleaf-logo-light.png');
+
+          const hidden = await sut.renderEmail({
+            ...request,
+            data: { ...request.data, showBranding: false },
+            customTemplate: '',
+          } as EmailRenderRequest);
+          expect(hidden.html).not.toContain('frameleaf-logo-light.png');
+          expect(hidden.html).not.toContain('alt="Frameleaf"');
+        }
+
+        const noAddress = await sut.renderEmail({
+          template: EmailTemplate.TEST_EMAIL,
+          data: { displayName: 'Jane', showBranding: false },
+          customTemplate: '',
+        });
+        expect(noAddress.html).not.toContain('text-2xl');
+      });
+
+      it('opens an invitation with its own first line, as plain text with the names filled in', async () => {
+        const firstLine = 'Hi {recipientName}, <b>{senderName}</b> has  something\nfor you';
+        for (const request of [
+          { template: EmailTemplate.ALBUM_INVITE, data: { ...invite, firstLine } },
+          { template: EmailTemplate.ITEM_SHARE, data: { ...invite, count: 1, firstLine } },
+        ] as EmailRenderRequest[]) {
+          const { html, text } = await sut.renderEmail({ ...request, customTemplate: '' });
+          expect(text).toContain('Hi Jane, <b>John</b> has something for you');
+          expect(html).toContain('&lt;b&gt;John&lt;/b&gt;');
+          expect(text).not.toContain('Hey Jane!');
+        }
+      });
+
+      it('keeps the standard greeting without a first line, and an own invitation wording as written', async () => {
+        const standard = await sut.renderEmail({
+          template: EmailTemplate.ALBUM_INVITE,
+          data: { ...invite, firstLine: ' \n ' },
+          customTemplate: '',
+        });
+        expect(standard.text).toContain('Hey Jane!');
+
+        const own = await sut.renderEmail({
+          template: EmailTemplate.ALBUM_INVITE,
+          data: { ...invite, firstLine: 'Hi there' },
+          customTemplate: 'Dear {recipientName}, see {albumName}',
+        });
+        expect(own.text).toContain('Dear Jane, see Holiday');
+        expect(own.text).not.toContain('Hi there');
+      });
+    });
+
     it('should render the email correctly for WELCOME template', async () => {
       const request: EmailRenderRequest = {
         template: EmailTemplate.WELCOME,

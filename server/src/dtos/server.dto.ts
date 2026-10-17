@@ -2,7 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import type { SemVer } from 'semver';
 import { ExtraModel, HistoryBuilder } from 'src/decorators.js';
-import { FrameleafViaSchema } from 'src/dtos/config.dto.js';
+import { FrameleafViaSchema, LoginPageMessageFormatSchema } from 'src/dtos/config.dto.js';
 import { isoDatetimeToDate } from 'src/validation.js';
 
 const ServerPingResponseSchema = z
@@ -130,6 +130,11 @@ const ServerAboutResponseSchema = z
     libraw: z.string().optional().describe('LibRaw/dcraw_emu version'),
     exiftool: z.string().optional().describe('ExifTool version'),
     licensed: z.boolean().describe('Whether the server is licensed'),
+    // FL-426: what an empty `server.timeZone` means, for Settings › Server name & welcome
+    systemTimeZone: z
+      .string()
+      .optional()
+      .describe('Time zone of the computer the server runs on (IANA name); the server uses it when none is chosen'),
     thirdPartySourceUrl: z.string().optional().describe('Third-party source URL'),
     thirdPartyBugFeatureUrl: z.string().optional().describe('Third-party bug/feature URL'),
     thirdPartyDocumentationUrl: z.string().optional().describe('Third-party documentation URL'),
@@ -248,6 +253,8 @@ const ServerConfigSchema = z
     oauthButtonText: z.string().describe('OAuth button text'),
     oauthAccountManagementUrl: z.string().describe('OAuth account management URL').optional().default(''),
     loginPageMessage: z.string().describe('Login page message'),
+    // FL-426: an app shows a plain message as typed, and cleans formatted text before showing it
+    loginPageMessageFormat: LoginPageMessageFormatSchema,
     serverName: z.string().describe('Server name set by an administrator; empty when none is set'),
     trashDays: z.int().describe('Number of days before trashed assets are permanently deleted'),
     userDeleteDelay: z.int().describe('Delay in days before deleted users are permanently removed'),

@@ -48,6 +48,10 @@ vi.mock('$lib/managers/server-config-manager.svelte', () => ({
 vi.mock('$lib/managers/event-manager.svelte', () => ({
   eventManager: { emit: vi.fn(), on: vi.fn() },
 }));
+// FL-426: the cleaning itself is tested with a browser-like DOM in welcome-message.spec.ts.
+vi.mock('$lib/frameleaf/welcome-message', () => ({
+  cleanWelcomeHtml: (html: string) => html.replaceAll(/<img[^>]*>|<script[\s\S]*?<\/script>/gi, ''),
+}));
 
 const frameleafOff = {
   signInAvailable: false,
@@ -106,6 +110,22 @@ describe('login mandatory-change routing', () => {
     expect(container.querySelector(':scope .auth-brand .fl-logo-arrive')).not.toBeNull();
     // the lockup stands on the page by itself: no plate behind it
     expect(container.querySelector('.auth-brand-plate')).toBeNull();
+  });
+
+  it('shows the welcome message as plain text, or as cleaned web formatting (FL-426)', () => {
+    const message = 'Hello <b>family</b><img src="https://tracker.example/x.png" onerror="alert(1)">';
+    const plainData = data(false);
+    plainData.publicConfig.server = { loginPageMessage: message, loginPageMessageFormat: 'plain' } as never;
+    const plain = render(Page, { data: plainData } as never);
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(plain.container.querySelector(':scope .auth-info b')).toBeNull();
+    plain.unmount();
+
+    const formattedData = data(false);
+    formattedData.publicConfig.server = { loginPageMessage: message, loginPageMessageFormat: 'html' } as never;
+    const formatted = render(Page, { data: formattedData } as never);
+    expect(formatted.container.querySelector(':scope .auth-info b')).toHaveTextContent('family');
+    expect(formatted.container.querySelector(':scope .auth-info img')).toBeNull();
   });
 
   it('stores the deep-link continuation before auto-launch navigation reloads page data', async () => {

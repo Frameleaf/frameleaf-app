@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { CronTime } from 'cron';
-import { DateTime } from 'luxon';
 import type { SystemConfig } from 'src/config.js';
 import type { BackupScheduleResponseDto } from 'src/dtos/database-backup.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
@@ -26,6 +25,7 @@ import {
 } from 'src/utils/backup-sequence.js';
 import { getConfig } from 'src/utils/config.js';
 import { handlePromiseError } from 'src/utils/misc.js';
+import { serverTimeZone } from 'src/utils/server-time-zone.js';
 
 export const BACKUP_SEQUENCE_CRON = 'backupSequence';
 /** How often a run in progress looks whether the place it waits for has finished. */
@@ -272,16 +272,18 @@ export class BackupSequenceService {
       this.cloudBackup.sequenceStatus().catch(() => ({ on: false, busy: false })),
     ]);
     const on = { local: config.backup.database.enabled, buddy: buddy.on, cloud: cloud.on };
+    // FL-426: the times are the server's, in the zone chosen in Server name & welcome
+    const timezone = serverTimeZone(config.server);
     let nextRunAt: string | null = null;
     try {
-      nextRunAt = new CronTime(cronExpression).sendAt().toUTC().toISO();
+      nextRunAt = new CronTime(cronExpression, timezone).sendAt().toUTC().toISO();
     } catch {
       // an expression that never fires has no next start
     }
     return {
       cronExpression,
       chosen: config.backup.schedule.cronExpression.trim() !== '',
-      timezone: DateTime.local().zoneName,
+      timezone,
       nextRunAt,
       places: BACKUP_SEQUENCE.map((id) => ({ id, on: on[id] })),
       run: state.run ? { startedAt: state.run.startedAt, place: state.run.place } : null,

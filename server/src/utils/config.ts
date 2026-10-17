@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import type { Transaction } from 'kysely';
 import type { DB } from 'src/schema/index.js';
 import type { DeepPartial } from 'src/types.js';
-import { AdminConfigDto, SystemConfig, defaults, mapAdminConfig } from 'src/dtos/config.dto.js';
+import { AdminConfigDto, LoginPageMessageFormat, SystemConfig, defaults, mapAdminConfig } from 'src/dtos/config.dto.js';
 import { DatabaseLock, SystemMetadataKey } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -119,7 +119,12 @@ const epochFor = (value: SystemConfig, sourceKind: Epoch['sourceKind'], epoch: n
   trashEnabled: value.trash.enabled,
 });
 
-/** Bootstrap publishes an absent database epoch without changing any settings. */
+/**
+ * Bootstrap publishes an absent database epoch without changing any settings. A database epoch
+ * whose digest no longer matches (an upgrade changed the defaults the stored values merge over)
+ * is re-published as the next epoch under the write lock, so readers holding the old epoch see it
+ * change. A source-kind change (file vs database) is still refused.
+ */
 export async function initializeEffectiveConfig(repos: RepoDeps): Promise<void> {
   if (repos.configRepo.getEnv().configFile) {
     await readConfig(repos);
@@ -128,13 +133,18 @@ export async function initializeEffectiveConfig(repos: RepoDeps): Promise<void> 
   await withEffectiveConfigWrite(repos, async (bound) => {
     const candidate = await readConfig(bound);
     const current = await bound.metadataRepo.getEffectiveConfigEpoch();
-    if (current) {
-      assertEpoch(current);
-      if (current.sourceKind !== 'database' || current.digest !== configDigest(candidate))
-        throw new ConflictException('effective_config_source_changed');
+    if (!current) {
+      await bound.metadataRepo.set(SystemMetadataKey.EffectiveConfigEpoch, epochFor(candidate, 'database', 1));
       return;
     }
-    await bound.metadataRepo.set(SystemMetadataKey.EffectiveConfigEpoch, epochFor(candidate, 'database', 1));
+    assertEpoch(current);
+    if (current.sourceKind !== 'database') throw new ConflictException('effective_config_source_changed');
+    if (current.digest === configDigest(candidate)) return;
+    const next = epochFor(candidate, 'database', current.epoch + 1);
+    if (current.recoveryMl) next.recoveryMl = current.recoveryMl;
+    if (current.recoveryMlBinding) next.recoveryMlBinding = current.recoveryMlBinding;
+    if (!Number.isSafeInteger(next.epoch)) throw new ConflictException('effective_config_epoch_exhausted');
+    await bound.metadataRepo.set(SystemMetadataKey.EffectiveConfigEpoch, next);
   });
 }
 
@@ -404,6 +414,26 @@ const loadFromFile = async ({ metadataRepo, logger }: RepoDeps, filepath: string
  */
 const RETIRED_CONFIG_KEYS = ['physicalDeduplication'];
 
+/**
+ * FL-426: before the welcome message could be plain text, the sign-in page always read it as web
+ * formatting. A saved message with markup and no format chosen keeps that look (now cleaned where it
+ * is shown); everything else is plain text, the default.
+ */
+const keepFormattedWelcome = (partial: object) => {
+  const server = (partial as { server?: unknown }).server;
+  if (!server || typeof server !== 'object') {
+    return;
+  }
+  const saved = server as { loginPageMessage?: unknown; loginPageMessageFormat?: unknown };
+  if (
+    saved.loginPageMessageFormat === undefined &&
+    typeof saved.loginPageMessage === 'string' &&
+    /<[a-z!/][^>]*>|&[a-z#\d]+;/i.test(saved.loginPageMessage)
+  ) {
+    saved.loginPageMessageFormat = LoginPageMessageFormat.Html;
+  }
+};
+
 const buildConfig = async (repos: RepoDeps, privateErrors = false) => {
   const { configRepo, metadataRepo, logger } = repos;
   const { configFile } = configRepo.getEnv();
@@ -417,6 +447,7 @@ const buildConfig = async (repos: RepoDeps, privateErrors = false) => {
     for (const key of RETIRED_CONFIG_KEYS) {
       delete (partial as Record<string, unknown>)[key];
     }
+    keepFormattedWelcome(partial);
   }
 
   // merge with defaults

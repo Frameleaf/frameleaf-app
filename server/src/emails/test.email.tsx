@@ -4,8 +4,8 @@ import ImmichLayout from 'src/emails/components/immich.layout.js';
 import { NO_LINK_TEST } from 'src/emails/components/no-link.js';
 import { TestEmailProps } from 'src/repositories/email.repository.js';
 
-export const TestEmail = ({ baseUrl, displayName }: TestEmailProps) => (
-  <ImmichLayout baseUrl={baseUrl} preview="This is a test email from Frameleaf.">
+export const TestEmail = ({ baseUrl, displayName, showBranding }: TestEmailProps) => (
+  <ImmichLayout baseUrl={baseUrl} showBranding={showBranding} preview="This is a test email from Frameleaf.">
     <Text className="m-0">
       Hey <strong>{displayName}</strong>!
     </Text>

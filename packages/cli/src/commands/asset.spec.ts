@@ -325,7 +325,8 @@ describe('checkForDuplicates', () => {
   });
 });
 
-describe('startWatch', () => {
+// Each test waits up to 5 s for the watcher; the default 5 s test budget leaves no room for setup on Windows.
+describe('startWatch', { timeout: 15_000 }, () => {
   let testFolder: string;
   let checkBulkUploadMocked: MockedFunction<typeof checkBulkUpload>;
 

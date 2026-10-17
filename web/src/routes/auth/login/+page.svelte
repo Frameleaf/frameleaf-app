@@ -13,6 +13,7 @@
   import AuthShell from '$lib/components/frameleaf/AuthShell.svelte';
   import AuthPasswordField from '$lib/components/frameleaf/AuthPasswordField.svelte';
   import Logo from '$lib/components/frameleaf/Logo.svelte';
+  import WelcomeMessage from '$lib/components/frameleaf/WelcomeMessage.svelte';
   import {
     clearRememberMePreference,
     clearOAuthContinue,
@@ -381,13 +382,14 @@
     <p>{$t('frameleaf_auth_welcome_body')}</p>
   </div>
 
-  {#if publicConfig.server.loginPageMessage}
-    <!-- The server's admin-configured login message intentionally supports markup. -->
-    <!-- eslint-disable svelte/no-at-html-tags -->
+  {#if publicConfig.server.loginPageMessage.trim()}
+    <!-- FL-426: plain text, or web formatting cleaned of scripts and remote content. -->
     <div class="auth-info">
-      {@html publicConfig.server.loginPageMessage}
+      <WelcomeMessage
+        message={publicConfig.server.loginPageMessage}
+        format={publicConfig.server.loginPageMessageFormat ?? 'plain'}
+      />
     </div>
-    <!-- eslint-enable svelte/no-at-html-tags -->
   {/if}
 
   {#if oauthLoading}

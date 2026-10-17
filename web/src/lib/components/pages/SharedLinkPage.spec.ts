@@ -41,6 +41,7 @@ const protectedData = (key: string) => ({ key, passwordRequired: true, meta: { t
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 beforeEach(() => {
   vi.resetAllMocks();
+  route.url = new URL('http://localhost/share/first');
   route.data.sharedLink = undefined;
   authManager.reset();
   setSharedLink(undefined);
@@ -98,6 +99,25 @@ it.each(['current', 'replace', 'return', 'close', 'session'])(
     expect(navigate).toHaveBeenCalledTimes(change === 'current' ? 1 : 0);
   },
 );
+
+it.each([{ key: 'first' }, { slug: 'guarded' }])('reloads the password gate after login: %j', async (params) => {
+  route.url = new URL('http://localhost/s/guarded?continue=%2Fadmin%2Fusers');
+  const sharedLink = sharedLinkFactory.build(params);
+  sdkMock.sharedLinkLogin.mockResolvedValueOnce(sharedLink);
+  render(SharedLinkPage, { data: { ...params, passwordRequired: true, meta: { title: 'Protected share' } } });
+  await fireEvent.input(screen.getByLabelText('password'), { target: { value: 'secret' } });
+  await fireEvent.submit(screen.getByRole('button', { name: 'continue' }).closest('form')!);
+
+  // A same-route navigation can otherwise reuse the loader's pre-login passwordRequired data.
+  await waitFor(() =>
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ targetRoute: 'current', assetId: null }),
+      expect.objectContaining({ invalidateAll: true, replaceState: true }),
+    ),
+  );
+  expect(screen.queryByLabelText('password')).not.toBeInTheDocument();
+  expect(getSharedLink()).toEqual(sharedLink);
+});
 
 it('ignores a password failure after navigating to another link', async () => {
   const pending = deferredPromise<ReturnType<typeof sharedLinkFactory.build>>();

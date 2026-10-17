@@ -22,6 +22,8 @@ const PUBLIC_PROPERTIES = [
   'oauth.enabled',
   'passwordLogin.enabled',
   'server.loginPageMessage',
+  // FL-426: the sign-in page shows the welcome message as typed or as cleaned web formatting.
+  'server.loginPageMessageFormat',
   // FL-71 (CC-4): the server name is shown on the sign-in screen and in the Command Center.
   'server.name',
   'theme.customCss',
@@ -67,6 +69,18 @@ describe('config visibility', () => {
     expect(defaults.theme.customCssEnabled).toBe(true);
     // The switch is for administrators: only the text itself is public, as before.
     expect((mapPublicConfig(defaults) as Record<string, any>).theme).toEqual({ customCss: '' });
+  });
+
+  it('should keep the FL-426 defaults for a configuration that does not name them', () => {
+    const { loginPageMessageFormat: _format, timeZone: _zone, ...server } = defaults.server;
+    const { invitationFirstLine: _line, showBranding: _branding, ...email } = defaults.templates.email;
+    const parsed = AdminConfigSchema.safeParse({ ...defaults, server, templates: { ...defaults.templates, email } });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.server).toEqual(expect.objectContaining({ loginPageMessageFormat: 'plain', timeZone: '' }));
+    expect(parsed.data?.templates.email).toEqual(
+      expect.objectContaining({ invitationFirstLine: '', showBranding: true }),
+    );
   });
 
   it('should map the defaults onto the user and public schemas', () => {

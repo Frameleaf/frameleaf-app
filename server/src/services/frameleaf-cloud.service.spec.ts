@@ -1158,6 +1158,51 @@ describe(FrameleafCloudService.name, () => {
       expect(nextAt - Date.now()).toBeLessThan(151_000);
     });
 
+    it('reports direct connections whenever the edge worker serves them, whatever the saved mode (FL-437)', async () => {
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      const lastBeat = () => cloud.requests.findLast(({ path }) => path === '/api/v1/instance/heartbeat')!.json();
+      const edge = (direct: Record<string, unknown>) =>
+        metadata.set(SystemMetadataKey.FrameleafRemoteAccess, {
+          status: 'ready',
+          bootId: 'boot-1',
+          updatedAt: new Date().toISOString(),
+          reason: 'The relay comes with a Frameleaf Cloud plan. Without one, this server is reached directly.',
+          names: { instanceId: storedLink()!.instanceId },
+          relay: { connected: false, needsPlan: true },
+          direct: { listening: true, port: 2443, mapping: null, cgnatSuspected: false, ...direct },
+          candidates: [],
+        });
+      // the saved mode is "Relay only"; a Server licence without a plan is served direct anyway
+      metadata.set(SystemMetadataKey.SystemConfig, {
+        ...(metadata.get(SystemMetadataKey.SystemConfig) as object | undefined),
+        frameleafCloud: { remoteAccess: { enabled: true, mode: 'relay' } },
+      });
+      clearConfigCache();
+
+      edge({ allowWan: true });
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(lastBeat().remoteAccess).toMatchObject({ enabled: true, relayConnected: false, direct: true });
+
+      // relay only, really served that way
+      edge({ allowWan: false });
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(lastBeat().remoteAccess).toMatchObject({ direct: false });
+
+      // nothing listening: never direct
+      edge({ allowWan: true, listening: false });
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(lastBeat().remoteAccess).toMatchObject({ direct: false });
+
+      // an edge state from before FL-437 follows the saved mode
+      edge({});
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(lastBeat().remoteAccess).toMatchObject({ direct: false });
+    });
+
     it('publishes the home-network fallback when remote access is off, unless LAN discovery is off (FL-218)', async () => {
       const env = mocks.config.getEnv();
       mocks.config.getEnv.mockReturnValue({

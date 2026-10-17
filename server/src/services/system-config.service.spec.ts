@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { cloneDeep, get } from 'lodash-es';
-import { RestorationStyle, SystemConfig, defaults } from 'src/dtos/config.dto.js';
+import { LoginPageMessageFormat, RestorationStyle, SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { VideoTrimMode } from 'src/dtos/editing.dto.js';
 import { mapConfig } from 'src/dtos/system-config.dto.js';
 import {
@@ -300,6 +300,8 @@ const updatedConfig = Object.freeze<SystemConfig>({
     name: '',
     externalDomain: '',
     loginPageMessage: '',
+    loginPageMessageFormat: LoginPageMessageFormat.Plain,
+    timeZone: '',
     publicUsers: true,
     lanDiscovery: true,
   },
@@ -374,6 +376,8 @@ const updatedConfig = Object.freeze<SystemConfig>({
       albumInviteTemplate: '',
       welcomeTemplate: '',
       albumUpdateTemplate: '',
+      invitationFirstLine: '',
+      showBranding: true,
     },
   },
   smartAlbums: {
@@ -634,6 +638,19 @@ describe(SystemConfigService.name, () => {
     });
   });
 
+  describe('time zone (FL-426)', () => {
+    it("runs every worker's schedules in the chosen time zone, at start and after a change", () => {
+      mocks.cron.setTimeZone.mockReturnValue();
+      const config = cloneDeep(defaults);
+      sut.onConfigInit({ newConfig: config });
+      expect(mocks.cron.setTimeZone).toHaveBeenLastCalledWith('');
+
+      config.server.timeZone = 'Europe/London';
+      sut.onConfigUpdate({ newConfig: config, oldConfig: defaults });
+      expect(mocks.cron.setTimeZone).toHaveBeenLastCalledWith('Europe/London');
+    });
+  });
+
   describe('getDefaults', () => {
     it('should return the default config', () => {
       mocks.systemMetadata.get.mockResolvedValue(partialConfig);
@@ -687,6 +704,34 @@ describe(SystemConfigService.name, () => {
     it('rejects an update-check frequency the server does not offer (FL-71)', async () => {
       mocks.config.getEnv.mockReturnValue(mockEnvData({ configFile: 'immich-config.json' }));
       mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify({ newVersionCheck: { frequency: 'hourly' } }));
+      await expect(sut.getAdminConfig()).rejects.toThrow();
+    });
+
+    it('keeps a saved welcome message with markup as web formatting until a format is chosen (FL-426)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ server: { loginPageMessage: 'Hello, <b>family</b>' } });
+      await expect(sut.getAdminConfig()).resolves.toMatchObject({
+        server: { loginPageMessage: 'Hello, <b>family</b>', loginPageMessageFormat: LoginPageMessageFormat.Html },
+      });
+
+      mocks.systemMetadata.get.mockResolvedValue({ server: { loginPageMessage: 'Hello, family' } });
+      await expect(sut.getAdminConfig()).resolves.toMatchObject({
+        server: { loginPageMessageFormat: LoginPageMessageFormat.Plain },
+      });
+
+      mocks.systemMetadata.get.mockResolvedValue({
+        server: { loginPageMessage: 'Use <b> for bold', loginPageMessageFormat: LoginPageMessageFormat.Plain },
+      });
+      await expect(sut.getAdminConfig()).resolves.toMatchObject({
+        server: { loginPageMessageFormat: LoginPageMessageFormat.Plain },
+      });
+    });
+
+    it('reads a chosen time zone and rejects one that is not a time zone (FL-426)', async () => {
+      mocks.config.getEnv.mockReturnValue(mockEnvData({ configFile: 'immich-config.json' }));
+      mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify({ server: { timeZone: 'America/Edmonton' } }));
+      await expect(sut.getAdminConfig()).resolves.toMatchObject({ server: { timeZone: 'America/Edmonton' } });
+
+      mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify({ server: { timeZone: 'Mars/Olympus' } }));
       await expect(sut.getAdminConfig()).rejects.toThrow();
     });
 
