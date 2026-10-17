@@ -501,8 +501,7 @@ qualify the encoded pictures or static mastering/content-light metadata.
 Remaining acceptance:
 
 - complete HDR source/edit coverage and physical-backend qualification; existing
-  decoded PQ/HLG browser fixtures and their remaining gates are recorded in
-  [the managed-color qualification ledger](managed-color-qualification.md);
+  decoded PQ/HLG browser fixtures are listed in the HDR checks above;
 - 4K throughput and device loss;
 - reference monitor review;
 - a render worker that streams frames to the encoder and maps edited/source PTS;
