@@ -12,7 +12,7 @@ import { AssetMediaCreateDto } from 'src/dtos/asset-media.dto.js';
  * FL-296: the iCloud item an upload is, so the server can record its source identity once the digest
  * checks out, and refuse it while another path holds the item's claim.
  */
-export const UploadSourceIdentitySchema = z
+const ICloudUploadSourceIdentitySchema = z
   .object({
     kind: z.literal('icloud'),
     cloudIdentifier: z.string().min(1).max(512),
@@ -25,6 +25,19 @@ export const UploadSourceIdentitySchema = z
   .refine((value) => (value.role === 'edit-render') === !!value.editVersion, {
     message: 'An edit render, and only one, names its edit version',
   });
+export const FolderUploadSourceIdentitySchema = z
+  .object({
+    kind: z.literal('folder'),
+    sourceId: z.uuid(),
+    runId: z.uuid(),
+    itemId: z.uuid(),
+  })
+  .strict();
+export type FolderUploadSourceIdentity = z.infer<typeof FolderUploadSourceIdentitySchema>;
+export const UploadSourceIdentitySchema = z.discriminatedUnion('kind', [
+  ICloudUploadSourceIdentitySchema,
+  FolderUploadSourceIdentitySchema,
+]);
 export type UploadSourceIdentity = z.infer<typeof UploadSourceIdentitySchema>;
 export type AssetUploadMetadata = AssetMediaCreateDto & {
   publication?: 'live-photo';
@@ -143,13 +156,19 @@ export function parseAssetUploadHeaders(headers: IncomingHttpHeaders) {
 }
 
 /** Each request owns an immutable file: a disconnected/losing writer never mutates acknowledged bytes. */
-export async function writeAssetUploadPart(folder: string, input: Readable, limit: number): Promise<AssetUploadPart> {
+export async function writeAssetUploadPart(
+  folder: string,
+  input: Readable,
+  limit: number,
+  check?: () => Promise<void>,
+): Promise<AssetUploadPart> {
   await mkdir(folder, { recursive: true, mode: 0o700 });
   const path = join(folder, `${randomUUID()}.part`);
   const file = await open(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
   let size = 0;
   let interrupted = false;
   let retained = false;
+  let nextCheck = 0;
   try {
     const iterator = input[Symbol.asyncIterator]();
     while (true) {
@@ -169,7 +188,12 @@ export async function writeAssetUploadPart(folder: string, input: Readable, limi
       }
       let written = 0;
       while (written < bytes.length) {
-        const result = await file.write(bytes, written, bytes.length - written, size);
+        if (check && size >= nextCheck) {
+          await check();
+          nextCheck = size + 2 ** 20;
+        }
+        const length = check ? Math.min(bytes.length - written, nextCheck - size) : bytes.length - written;
+        const result = await file.write(bytes, written, length, size);
         if (result.bytesWritten === 0) {
           throw new Error('Upload write made no progress');
         }
@@ -177,6 +201,7 @@ export async function writeAssetUploadPart(folder: string, input: Readable, limi
         size += result.bytesWritten;
       }
     }
+    await check?.();
     await file.sync();
     const directory = await open(folder, constants.O_RDONLY);
     try {

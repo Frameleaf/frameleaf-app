@@ -122,7 +122,7 @@ export async function withICloudPublicationTransaction<T>(
         .where('ownerId', '=', ownerId)
         .executeTakeFirst();
       const identity = row?.metadata.sourceIdentity;
-      if (identity?.role === 'edit-render') {
+      if (identity?.kind === 'icloud' && identity.role === 'edit-render') {
         const parsed = parseCloudIdentifier(identity.cloudIdentifier);
         if (parsed) items.push(parsed.cplAssetRecordName.toUpperCase());
         configuration ||= row?.state !== 'published' && !row?.resultAssetId;

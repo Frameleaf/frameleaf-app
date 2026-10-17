@@ -15,8 +15,8 @@ import { type FrameleafVia, claimsFrameleafVia, frameleafVia } from 'src/utils/f
  * closed instead of letting remote visitors in as if they were at home. A request with neither header
  * never went through the edge worker and is unmarked (`frameleafVia: null`). Every other
  * `X-Frameleaf-*` header a client sent is then dropped, so nothing later in the request can read a
- * claim the edge worker did not make; the one exception is `x-frameleaf-worker-session`, the render
- * worker's session credential, which this server issued and checks where it is used.
+ * claim the edge worker did not make. Render-worker credentials and installation-signed desktop
+ * request proofs are preserved and authenticated separately where they are used.
  *
  * A split deployment that runs the edge worker in another container than the API must set
  * `FRAMELEAF_EDGE_SECRET` explicitly and give both the same value; otherwise each generates its own.
@@ -27,9 +27,9 @@ export const FRAMELEAF_VIA_UNVERIFIED = 'frameleaf_via_unverified';
 
 /**
  * Headers in the `X-Frameleaf-` namespace that clients legitimately send: credentials this server
- * issued itself, checked where they are used, never arrival claims. Everything else is dropped.
+ * issued or authorized itself, checked where they are used, never arrival claims. Everything else is dropped.
  */
-const CLIENT_CREDENTIAL_HEADERS = new Set<string>([RequestHeader.RenderWorkerSession]);
+const CLIENT_CREDENTIAL_HEADERS = new Set<string>([RequestHeader.RenderWorkerSession, 'x-frameleaf-desktop-proof']);
 
 export type FrameleafForwarded = {
   /** The visitor's address as the edge worker reported it. */

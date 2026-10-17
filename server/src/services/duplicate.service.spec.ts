@@ -955,6 +955,15 @@ describe(DuplicateService.name, () => {
   });
 
   describe('handleSearchDuplicates', () => {
+    it('does not publish duplicate groups after an index transition refusal', async () => {
+      mocks.machineLearning.captureClipRead.mockResolvedValue({
+        assertCurrent: () => Promise.resolve(),
+        publish: () => Promise.reject(new Error('desktop_clip_index_changed')),
+      });
+      await expect(sut.handleSearchDuplicates({ id: 'asset' })).rejects.toThrow('desktop_clip_index_changed');
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
     beforeEach(() => {
       mocks.systemMetadata.get.mockResolvedValue({
         machineLearning: {

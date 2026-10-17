@@ -952,6 +952,7 @@ export class PersonService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForDetectFacesJob(id);
     const previewFile = asset?.files.find((file) => file.isEdited) ?? asset?.files[0];
     if (asset && !previewFile) deferJobUntilDependency('source-unavailable');

@@ -1,16 +1,20 @@
 import {
+  Check,
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
   Index,
   Table,
+  TriggerFunction,
   Unique,
   UpdateDateColumn,
 } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { PrimaryGeneratedUuidV7Column, UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { VideoMomentSource } from 'src/enum.js';
+import { desktop_clip_producer_guard } from 'src/schema/functions.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { DesktopClipProducerTable } from 'src/schema/tables/desktop-clip-index.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
 /**
@@ -160,6 +164,17 @@ export class VideoMomentFrameTable {
   with: `ef_construction = 300, m = 16`,
   synchronize: false,
 })
+@Check({
+  name: 'video_moment_frame_embedding_producer_key_check',
+  expression: `"producerModelKey" IS NULL OR "producerModelKey" ~ '^clip:[a-f0-9]{64}$'`,
+})
+@TriggerFunction({
+  name: 'video_moment_frame_embedding_producer_guard',
+  timing: 'before',
+  actions: ['insert', 'update'],
+  scope: 'row',
+  function: desktop_clip_producer_guard,
+})
 export class VideoMomentFrameEmbeddingTable {
   @ForeignKeyColumn(() => VideoMomentFrameTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', primary: true })
   frameId!: string;
@@ -169,6 +184,17 @@ export class VideoMomentFrameEmbeddingTable {
 
   @Column()
   modelName!: string;
+
+  @Column({ nullable: true })
+  producerModelKey!: string | null;
+
+  @ForeignKeyColumn(() => DesktopClipProducerTable, {
+    type: 'text',
+    default: 'legacy',
+    onDelete: 'RESTRICT',
+    onUpdate: 'RESTRICT',
+  })
+  producerAdmissionKey!: Generated<string>;
 }
 
 /**

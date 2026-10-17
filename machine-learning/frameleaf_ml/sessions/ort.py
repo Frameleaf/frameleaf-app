@@ -4,12 +4,14 @@ from collections.abc import Sequence
 from pathlib import Path
 from threading import Lock
 from typing import Any
+from uuid import uuid4
 
 import numpy as np
 import onnxruntime as ort
 from numpy.typing import NDArray
 
 from frameleaf_ml.models.constants import SUPPORTED_PROVIDERS
+from frameleaf_ml.native_ort import current_policy
 from frameleaf_ml.schemas import ModelPrecision, SessionNode
 from frameleaf_ml.sessions import runtime_cache_dir
 
@@ -95,16 +97,36 @@ class OrtSession:
         device_id: str | None = None,
     ):
         self.model_path = Path(model_path)
+        self.source_model_path = self.model_path
+        native = current_policy()
+        if native is not None:
+            requested = [native.provider] + (
+                [] if native.provider == "CPUExecutionProvider" else ["CPUExecutionProvider"]
+            )
+            if providers is not None and providers != requested:
+                raise ValueError("native_provider_override_forbidden")
+            providers = requested
         self.device_id = device_id
         self.providers = providers if providers is not None else self._providers_default
         self.provider_options = provider_options if provider_options is not None else self._provider_options_default
         self.sess_options = sess_options if sess_options is not None else self._sess_options_default
+        if native is not None and native.profile_dir is not None:
+            self.sess_options.enable_profiling = True
+            self.sess_options.profile_file_prefix = str(native.profile_dir / f"native-{uuid4().hex}")
         self.session = ort.InferenceSession(
             self.model_path.as_posix(),
             providers=self.providers,
             provider_options=self.provider_options,
             sess_options=self.sess_options,
         )
+        if native is not None:
+            self.session.disable_fallback()
+            if native.provider not in self.session.get_providers():
+                raise RuntimeError("native_provider_not_loaded")
+            if native.profile_dir is not None:
+                if len(native.sessions) >= 64:
+                    raise RuntimeError("native_session_limit")
+                native.sessions.append(self)
 
     def get_inputs(self) -> Sequence[SessionNode]:
         inputs: Sequence[SessionNode] = self.session.get_inputs()
