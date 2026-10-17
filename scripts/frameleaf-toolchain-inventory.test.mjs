@@ -119,18 +119,13 @@ test("builds deterministic evidence and distinguishes resolved, missing, and non
       recursive: true,
     });
     mkdirSync(path.join(repository, "server"), { recursive: true });
-    mkdirSync(path.join(repository, "deployment"));
     mkdirSync(path.join(repository, "docs"));
     mkdirSync(bin);
     writeFileSync(
       path.join(repository, "mise.toml"),
       '[tools]\nnode = "1.2.3"\npnpm = "9.0.0"\n',
     );
-    for (const file of [
-      "deployment/mise.toml",
-      "docs/mise.toml",
-      "machine-learning/mise.toml",
-    ])
+    for (const file of ["docs/mise.toml", "machine-learning/mise.toml"])
       writeFileSync(path.join(repository, file), "");
     writeFileSync(path.join(repository, ".nvmrc"), "1.2.3\n");
     writeFileSync(

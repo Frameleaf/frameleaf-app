@@ -1,9 +1,9 @@
 {
   "name": "immich-plugin-core",
   "version": "2.0.1",
-  "title": "Immich Core Plugin",
-  "description": "Core workflow capabilities for Immich",
-  "author": "Immich Team",
+  "title": "Frameleaf Core Plugin",
+  "description": "Core workflow capabilities for Frameleaf",
+  "author": "Frameleaf",
   "wasmPath": "dist/plugin.wasm",
   "templates": [
     {
