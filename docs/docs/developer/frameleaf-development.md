@@ -6,7 +6,7 @@ Frameleaf owns its application schema, PostgreSQL job processing, database image
 
 Use the `Frameleaf/frameleaf-app` repository and verify the `frameleaf` remote URL before remote writes. The default branch is `main`. Fetch it immediately before starting new independent work and record the exact baseline commit. Use an isolated worktree and preserve other tasks' uncommitted files.
 
-When continuing an explicitly assigned PR or implementation branch, use its current head and integration target. For the PostgreSQL hard cut, the target is PR #140's `master/frameleaf-implementation` branch. Integration there does not authorize merging that PR into `main` or publishing the application.
+When continuing an explicitly assigned PR, use its current head and target `main`. Merging into `main` does not authorize publishing or deploying the application.
 
 Use the active task's branch convention and commit as `AJ Taylor <aj@ajtaylor.net>` without coauthor trailers. Record source changes, hosted validation, integration, publication and deployment as separate outcomes.
 

@@ -59,11 +59,7 @@ async function verifyManagerRelease(file, { run, request = github } = {}) {
   assert(
     build?.head_sha === manifest.sourceCommit &&
       build.head_repository?.full_name === REPOSITORY &&
-      [
-        "main",
-        "master/frameleaf-implementation",
-        "aj/frameleaf-manager-release",
-      ].includes(build.head_branch) &&
+      build.head_branch === "main" &&
       build.event === "workflow_dispatch" &&
       build.status === "completed" &&
       build.conclusion === "success" &&

@@ -330,15 +330,12 @@ test("upstream roundtrip certification stays retired; Frameleaf quality gates st
   );
 });
 
-test("all nine protected checks execute on Frameleaf default and implementation PRs", () => {
+test("all nine protected checks execute on Frameleaf main PRs", () => {
   for (const [name, [file, id, command]] of Object.entries(required)) {
     const w = workflow(file);
     const j = w.jobs[id];
     assert.equal(j.name, name);
-    assert.ok(w.on.pull_request.branches.includes("main"));
-    assert.ok(
-      w.on.pull_request.branches.includes("master/frameleaf-implementation"),
-    );
+    assert.deepEqual(w.on.pull_request.branches, ["main"]);
     assert.equal(
       w.on.pull_request.paths,
       undefined,
@@ -1053,10 +1050,7 @@ test("legacy publishing and upstream mutations are inert and cannot inherit secr
 
 test("OpenAPI compares immutable same-repository base commits, not the moving target branch", () => {
   const w = workflow("check-openapi.yml");
-  assert.deepEqual(w.on.pull_request.branches, [
-    "main",
-    "master/frameleaf-implementation",
-  ]);
+  assert.deepEqual(w.on.pull_request.branches, ["main"]);
   assert.ok(w.on.pull_request.types.includes("edited"));
   const steps = w.jobs["check-openapi"].steps;
   const baseline = steps.find((s) => s.name === "Checkout exact PR base");
@@ -1467,10 +1461,10 @@ const assertIntegrationMlArchives = (w) => {
 
 test("integration image is a guarded manual pre-release that never writes release-pipeline tags", () => {
   const w = workflow("integration-image.yml");
-  // A workflow off the default branch cannot be dispatched: pushes to the integration branch build it.
+  // Pushes to main build it; a manual dispatch on main rebuilds the current head.
   assert.deepEqual(Object.keys(w.on), ["push", "workflow_dispatch"]);
   assert.deepEqual(w.on.push, {
-    branches: ["master/frameleaf-implementation"],
+    branches: ["main"],
   });
   assert.equal(w.on.workflow_dispatch, null);
   assert.deepEqual(w.concurrency, {
@@ -1500,12 +1494,16 @@ test("integration image is a guarded manual pre-release that never writes releas
       admission(j.if, repository, "", event, {
         github: { repository, event_name: event, ref },
       });
-    const branch = "refs/heads/master/frameleaf-implementation";
+    const branch = "refs/heads/main";
     assert.equal(dispatch("Frameleaf/frameleaf-app", branch), true, id);
     assert.equal(dispatch("Frameleaf/frameleaf-app", branch, "push"), true, id);
     for (const [repository, ref, event] of [
-      ["Frameleaf/frameleaf-app", "refs/heads/main"],
-      ["Frameleaf/frameleaf-app", "refs/heads/main", "push"],
+      ["Frameleaf/frameleaf-app", "refs/heads/master/frameleaf-implementation"],
+      [
+        "Frameleaf/frameleaf-app",
+        "refs/heads/master/frameleaf-implementation",
+        "push",
+      ],
       ["Frameleaf/frameleaf-app", "refs/heads/feature"],
       ["Frameleaf/frameleaf-app", "refs/tags/frameleaf-v1"],
       ["someone/frameleaf-app", branch],
@@ -1529,32 +1527,22 @@ test("integration image is a guarded manual pre-release that never writes releas
   const guard = w.jobs.guard.steps[0].run;
   const sha = "a".repeat(40);
   for (const [repository, ref, event, expected] of [
+    ["Frameleaf/frameleaf-app", "refs/heads/main", "workflow_dispatch", 0],
     [
       "Frameleaf/frameleaf-app",
       "refs/heads/master/frameleaf-implementation",
       "workflow_dispatch",
-      0,
-    ],
-    ["Frameleaf/frameleaf-app", "refs/heads/main", "workflow_dispatch", 1],
-    [
-      "attacker/frameleaf-app",
-      "refs/heads/master/frameleaf-implementation",
-      "workflow_dispatch",
       1,
     ],
+    ["attacker/frameleaf-app", "refs/heads/main", "workflow_dispatch", 1],
+    ["Frameleaf/frameleaf-app", "refs/heads/main", "push", 0],
     [
       "Frameleaf/frameleaf-app",
       "refs/heads/master/frameleaf-implementation",
       "push",
-      0,
-    ],
-    ["Frameleaf/frameleaf-app", "refs/heads/main", "push", 1],
-    [
-      "Frameleaf/frameleaf-app",
-      "refs/heads/master/frameleaf-implementation",
-      "pull_request",
       1,
     ],
+    ["Frameleaf/frameleaf-app", "refs/heads/main", "pull_request", 1],
   ])
     assert.equal(
       spawnSync("bash", ["-c", guard], {

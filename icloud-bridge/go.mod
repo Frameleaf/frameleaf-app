@@ -1,4 +1,4 @@
-module immich.app/icloud-bridge
+module frameleaf.app/icloud-bridge
 
 go 1.26.0
 
