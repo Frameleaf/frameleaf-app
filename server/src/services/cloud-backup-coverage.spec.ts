@@ -123,7 +123,7 @@ describe(CloudBackupCoverage.name, () => {
 
   it('publishes every account in pages of 32, with only numbers and opaque references', async () => {
     const { sut, sent, reports } = build(33);
-    await sut.write({ runId: RUN, instanceId: INSTANCE, snapshot: legacy, runReport });
+    await sut.write({ runId: RUN, managed: true, instanceId: INSTANCE, snapshot: legacy, runReport });
     await sut.publish(RUN, now);
 
     expect(sent.map(({ route }) => route.split(' ')[0])).toEqual(['begin', 'page', 'page', 'finalize']);
@@ -146,7 +146,7 @@ describe(CloudBackupCoverage.name, () => {
 
   it('recovers a lost finalize answer from the published state and resends nothing', async () => {
     const { sut, cloud, sent, reports } = build(2);
-    await sut.write({ runId: RUN, instanceId: INSTANCE, snapshot: legacy, runReport });
+    await sut.write({ runId: RUN, managed: true, instanceId: INSTANCE, snapshot: legacy, runReport });
     cloud.finalizeCoverage.mockRejectedValueOnce(refusal(null));
     await sut.publish(RUN, now);
     expect(reports.get(RUN)).toMatchObject({ status: 'pending', attempts: 1, revisionAccepted: true });
@@ -161,7 +161,7 @@ describe(CloudBackupCoverage.name, () => {
 
   it('replays exactly the same bytes after an interrupted attempt', async () => {
     const { sut, cloud, sent, reports } = build(40);
-    await sut.write({ runId: RUN, instanceId: INSTANCE, snapshot: legacy, runReport });
+    await sut.write({ runId: RUN, managed: true, instanceId: INSTANCE, snapshot: legacy, runReport });
     cloud.putCoveragePage.mockRejectedValueOnce(refusal(503));
     await sut.publish(RUN, now);
     const firstHeader = sent.find(({ route }) => route === 'begin')!.body;
@@ -176,7 +176,7 @@ describe(CloudBackupCoverage.name, () => {
 
   it('starts a later revision with the same pages when the unpublished one expired', async () => {
     const { sut, cloud, sent, reports } = build(3);
-    await sut.write({ runId: RUN, instanceId: INSTANCE, snapshot: legacy, runReport });
+    await sut.write({ runId: RUN, managed: true, instanceId: INSTANCE, snapshot: legacy, runReport });
     const firstRevision = reports.get(RUN)!.revisionId;
     cloud.putCoveragePage.mockRejectedValueOnce(refusal(404, 'not-found'));
     await sut.publish(RUN, now);
@@ -190,7 +190,7 @@ describe(CloudBackupCoverage.name, () => {
 
   it('never publishes over a conflicting revision', async () => {
     const { sut, cloud, reports } = build(2);
-    await sut.write({ runId: RUN, instanceId: INSTANCE, snapshot: legacy, runReport });
+    await sut.write({ runId: RUN, managed: true, instanceId: INSTANCE, snapshot: legacy, runReport });
     cloud.beginCoverage.mockRejectedValueOnce(refusal(409, 'idempotency-conflict'));
     await sut.publish(RUN, now);
     expect(reports.get(RUN)).toMatchObject({ status: 'rejected' });
@@ -202,6 +202,7 @@ describe(CloudBackupCoverage.name, () => {
     const { sut, sent } = build(2);
     await sut.write({
       runId: RUN,
+      managed: true,
       instanceId: INSTANCE,
       snapshot: null,
       runReport: { ...runReport, status: 'failed' },
@@ -214,7 +215,7 @@ describe(CloudBackupCoverage.name, () => {
 
   it('reports the run again when Frameleaf Cloud does not know it, and waits when the route is missing', async () => {
     const { sut, cloud, reports } = build(2);
-    await sut.write({ runId: RUN, instanceId: INSTANCE, snapshot: legacy, runReport });
+    await sut.write({ runId: RUN, managed: true, instanceId: INSTANCE, snapshot: legacy, runReport });
     cloud.beginCoverage.mockRejectedValue(refusal(404));
     await sut.publish(RUN, now);
     expect(cloud.reportRun).toHaveBeenCalledWith(target, runReport);
@@ -224,7 +225,7 @@ describe(CloudBackupCoverage.name, () => {
 
   it('drops the legacy reference when an older Frameleaf Cloud refuses the manifest key', async () => {
     const { sut, cloud, reports } = build(2);
-    await sut.write({ runId: RUN, instanceId: INSTANCE, snapshot: legacy, runReport });
+    await sut.write({ runId: RUN, managed: true, instanceId: INSTANCE, snapshot: legacy, runReport });
     cloud.beginCoverage.mockRejectedValueOnce(refusal(404));
     cloud.reportRun.mockRejectedValueOnce(refusal(400, 'request-invalid'));
     await sut.publish(RUN, now);
@@ -239,17 +240,25 @@ describe(CloudBackupCoverage.name, () => {
 
   it('never sends a report written by another instance, or one past the run window', async () => {
     const { sut, cloud, reports } = build(2);
-    await sut.write({ runId: RUN, instanceId: INSTANCE, snapshot: legacy, runReport });
+    await sut.write({ runId: RUN, managed: true, instanceId: INSTANCE, snapshot: legacy, runReport });
     linked = '01900000-0000-7000-8000-0000000000ff';
     await sut.publish(RUN, now);
     expect(reports.get(RUN)).toMatchObject({ status: 'expired' });
     expect(cloud.beginCoverage).not.toHaveBeenCalled();
   });
 
+  it('binds a report written while unlinked to the instance it is first sent as', async () => {
+    const { sut, reports } = build(1);
+    await sut.write({ runId: RUN, managed: true, instanceId: null, snapshot: legacy, runReport });
+    expect(reports.get(RUN)).toMatchObject({ status: 'pending', instanceId: null });
+    await sut.publish(RUN, now);
+    expect(reports.get(RUN)).toMatchObject({ status: 'published', instanceId: INSTANCE });
+  });
+
   it('keeps an own-bucket report local, and writes a report once', async () => {
     const { sut, cloud, reports, repository } = build(2);
-    await sut.write({ runId: RUN, instanceId: null, snapshot: legacy, runReport: null });
-    await sut.write({ runId: RUN, instanceId: INSTANCE, snapshot: null, runReport });
+    await sut.write({ runId: RUN, managed: false, instanceId: null, snapshot: legacy, runReport: null });
+    await sut.write({ runId: RUN, managed: true, instanceId: INSTANCE, snapshot: null, runReport });
     expect(repository.createCoverageReport).toHaveBeenCalledTimes(1);
     await sut.publish(RUN, now);
     expect(cloud.beginCoverage).not.toHaveBeenCalled();

@@ -2176,6 +2176,7 @@ export class CloudBackupService {
       }
       const written = await this.coverage.write({
         runId: operation.id,
+        managed,
         instanceId: managed ? await this.linkedInstanceId() : null,
         snapshot,
         runReport: managed ? reported.report : null,

@@ -76,10 +76,13 @@ export class CloudBackupCoverage {
   /**
    * Write a run's report from its inventory: once, whatever is asked later. `snapshot` is the committed
    * manifest Frameleaf Cloud can check inclusion against, or null (nothing committed, or no reference it can
-   * bind), which publishes unknown inclusion. `instanceId` null keeps the report local (no Frameleaf Cloud).
+   * bind), which publishes unknown inclusion. `managed` false keeps the report local (your own bucket, no
+   * Frameleaf Cloud). `instanceId` is the instance this server is linked as, or null while it is not linked:
+   * the first publication then binds the report to the instance it is sent as.
    */
   async write(input: {
     runId: string;
+    managed: boolean;
     instanceId: string | null;
     snapshot: BackupCoverageSnapshot;
     runReport: BackupRunReport | null;
@@ -119,7 +122,7 @@ export class CloudBackupCoverage {
       snapshot: snapshot as Record<string, unknown> | null,
       pages: bodies.pages,
       runReport: input.runReport as Record<string, unknown> | null,
-      status: input.instanceId ? 'pending' : 'local',
+      status: input.managed ? 'pending' : 'local',
     });
   }
 
@@ -184,7 +187,10 @@ export class CloudBackupCoverage {
     if (!instance) {
       throw new Settled('retry', 'not linked');
     }
-    if (instance !== report.instanceId) {
+    if (report.instanceId === null) {
+      // written while this server was not linked: it is this instance's own run
+      await this.selection.updateCoverageReport(report.runId, { instanceId: instance });
+    } else if (instance !== report.instanceId) {
       // a database restored onto another server: its reports belong to the server that wrote them
       throw new Settled('rejected', 'another instance');
     }
