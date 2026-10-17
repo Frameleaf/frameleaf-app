@@ -141,7 +141,8 @@ export class SharedSpaceController {
   }
 
   @Get(':id/preview/assets/:assetId/thumbnail')
-  @FileResponse()
+  // FL-436: the asset thumbnail, in the configured thumbnail format
+  @FileResponse('image/jpeg', 'image/webp')
   @Authenticated({ permission: Permission.AlbumRead })
   @Endpoint({
     summary: 'View a shared space preview thumbnail',

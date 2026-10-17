@@ -27,6 +27,12 @@ const settle = (run: (done: () => void) => void) =>
  * `cloud=available|unavailable`. Never the setup code, nor anything about users or content. The
  * record is published again when that state changes.
  *
+ * FL-435: it also carries `scheme` (`http` or `https`), the scheme to use on the advertised port.
+ * The server itself only ever listens on plain HTTP, so this is `http` unless `FRAMELEAF_LOCAL_URL`
+ * names this LAN address with `https://` (something in front of the server terminates TLS there).
+ * Apps that assumed `https` when the key was missing could not reach a server found on Wi-Fi. The
+ * port stays in the SRV record only, as DNS-SD intends.
+ *
  * Runs on the API worker only (one process). Not unit-testable against real multicast without
  * flaking in CI, so tests mock the `bonjour-service` module rather than exercising real UDP.
  */
@@ -112,15 +118,16 @@ export class LanDiscoveryService extends BaseService {
       systemMetadataRepository: this.systemMetadataRepository,
     });
     const name = server.name?.trim() || 'Frameleaf server';
-    const txt = { id, name, ...(await this.setupRecord()) };
+    // FL-218: advertise the port the network can reach (FRAMELEAF_LOCAL_URL's, behind a port mapping);
+    // FL-435: and the scheme that port answers on
+    const advertised = localAddressFor(lanAddresses[0], { port, localUrl: frameleafCloud.localUrl });
+    const txt = { id, name, scheme: advertised.protocol, ...(await this.setupRecord()) };
     if (this.closed || generation !== this.generation) {
       return;
     }
 
     this.bonjour ??= new Bonjour();
-    // FL-218: advertise the port the network can reach (FRAMELEAF_LOCAL_URL's, behind a port mapping)
-    const advertised = localAddressFor(lanAddresses[0], { port, localUrl: frameleafCloud.localUrl }).port;
-    this.service = this.bonjour.publish({ name, type: 'frameleaf', protocol: 'tcp', port: advertised, txt });
+    this.service = this.bonjour.publish({ name, type: 'frameleaf', protocol: 'tcp', port: advertised.port, txt });
     this.published = JSON.stringify(txt);
     this.watch ??= setInterval(() => void this.refresh(), LanDiscoveryService.REFRESH_MS);
     this.watch.unref?.();
@@ -148,11 +155,17 @@ export class LanDiscoveryService extends BaseService {
     }
     try {
       const { server } = await this.getConfig({ withCache: true });
+      const { port, frameleafCloud } = this.configRepository.getEnv();
+      const { lanAddresses } = detectHostAddresses(frameleafCloud.localUrl);
       const { id } = await serverIdentity({
         configRepository: this.configRepository,
         systemMetadataRepository: this.systemMetadataRepository,
       });
-      const txt = { id, name: server.name?.trim() || 'Frameleaf server', ...(await this.setupRecord()) };
+      const scheme = lanAddresses[0]
+        ? localAddressFor(lanAddresses[0], { port, localUrl: frameleafCloud.localUrl }).protocol
+        : 'http';
+      const name = server.name?.trim() || 'Frameleaf server';
+      const txt = { id, name, scheme, ...(await this.setupRecord()) };
       if (!this.closed && generation === this.generation && JSON.stringify(txt) !== this.published) {
         await this.start();
       }

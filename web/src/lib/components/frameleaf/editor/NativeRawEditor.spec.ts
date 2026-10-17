@@ -41,4 +41,37 @@ describe('NativeRawEditor', () => {
     expect(sdkMock.saveAssetDevelop).toHaveBeenCalledTimes(1);
     finish({ id: 'rev-1', revision: 1, status: 'queued', recipe: {} } as never);
   });
+
+  it('sends the current version it opened on and reloads, keeping the draft, when another device moved it (FL-431)', async () => {
+    const opened = { id: 'rev-opened', revision: 1, status: 'rendered', isCurrent: true, recipe: {} } as never;
+    sdkMock.getAssetDevelop
+      .mockResolvedValueOnce({ assetId: asset.id, currentRevisionId: 'rev-opened', revisions: [opened] })
+      .mockResolvedValue({ assetId: asset.id, currentRevisionId: 'rev-elsewhere', revisions: [] });
+    // Every SDK function is mocked here, so the HTTP-error guard is told what an HTTP error is.
+    sdkMock.isHttpError.mockImplementation((error) => typeof (error as { status?: unknown }).status === 'number');
+    sdkMock.saveAssetDevelop.mockRejectedValueOnce(
+      Object.assign(new Error('Conflict'), {
+        status: 409,
+        data: { code: 'develop_current_revision_changed', currentRevisionId: 'rev-elsewhere' },
+      }),
+    );
+    const onClose = vi.fn();
+    render(NativeRawEditor, { asset, onClose, onLegacy: vi.fn() });
+
+    await waitFor(() => expect(screen.getByText('frameleaf_develop_status_saved')).toBeInTheDocument());
+    await fireEvent.keyDown(document.body, { key: 's', ctrlKey: true });
+    await screen.findByText('frameleaf_editor_version_conflict');
+    expect(sdkMock.saveAssetDevelop.mock.calls[0][0].assetDevelopSaveDto).toMatchObject({
+      expectedCurrentRevisionId: 'rev-opened',
+    });
+    await waitFor(() => expect(sdkMock.getAssetDevelop).toHaveBeenCalledTimes(2));
+    expect(onClose).not.toHaveBeenCalled();
+
+    sdkMock.saveAssetDevelop.mockResolvedValueOnce({ id: 'rev-3', revision: 3, status: 'queued', recipe: {} } as never);
+    await fireEvent.keyDown(document.body, { key: 's', ctrlKey: true });
+    await waitFor(() => expect(sdkMock.saveAssetDevelop).toHaveBeenCalledTimes(2));
+    expect(sdkMock.saveAssetDevelop.mock.calls[1][0].assetDevelopSaveDto).toMatchObject({
+      expectedCurrentRevisionId: 'rev-elsewhere',
+    });
+  });
 });

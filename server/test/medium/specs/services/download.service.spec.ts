@@ -1,4 +1,5 @@
 import { Kysely } from 'kysely';
+import { Readable } from 'node:stream';
 import { AssetMetadataKey, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
@@ -112,6 +113,58 @@ describe(DownloadService.name, () => {
       await expect(
         planned(factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: true } })),
       ).resolves.toEqual([timeline.id, locked.id].sort());
+    });
+  });
+
+  describe('downloadArchive', () => {
+    it('puts a details file made from what the asset response shows beside a photo without a sidecar (FL-423)', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        originalFileName: 'IMG_1.JPG',
+        localDateTime: new Date('2024-07-01T10:00:00Z'),
+      });
+      await ctx.newExif({
+        assetId: asset.id,
+        dateTimeOriginal: new Date('2024-07-01T16:00:00Z'),
+        timeZone: 'America/Edmonton',
+        latitude: 51.1784,
+        longitude: -115.5708,
+        description: 'Lake Louise at dawn',
+        rating: 4,
+        orientation: '6',
+      });
+      const tags = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['Travel/Canada/Banff'] });
+      await ctx.newTagAsset({ tagIds: tags.map(({ id }) => id), assetIds: [asset.id] });
+      const { person: named } = await ctx.newPerson({ ownerId: user.id, name: 'Ana' });
+      const { person: hidden } = await ctx.newPerson({ ownerId: user.id, name: 'Kept private', isHidden: true });
+      for (const person of [named, hidden]) {
+        await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+      }
+
+      const zip = { addFile: vi.fn(), finalize: vi.fn(() => Promise.resolve()), stream: new Readable() };
+      const storage = ctx.getMock(StorageRepository);
+      storage.createZipStream.mockReturnValue(zip);
+      storage.realpath.mockImplementation((path) => Promise.resolve(path));
+
+      await sut.downloadArchive(factory.auth({ user: { id: user.id } }), {
+        assetIds: [asset.id],
+        includeSidecar: true,
+      });
+
+      expect(zip.addFile.mock.calls.map(([, name]) => name)).toEqual(['IMG_1.JPG', 'IMG_1.JPG.xmp']);
+      const xmp = (zip.addFile.mock.calls[1][0] as Buffer).toString('utf8');
+      expect(xmp).toContain('<exif:DateTimeOriginal>2024-07-01T10:00:00.000-06:00</exif:DateTimeOriginal>');
+      expect(xmp).toContain('<exif:GPSLatitude>51,10.704000N</exif:GPSLatitude>');
+      expect(xmp).toContain('<rdf:li xml:lang="x-default">Lake Louise at dawn</rdf:li>');
+      expect(xmp).toContain('<xmp:Rating>4</xmp:Rating>');
+      expect(xmp).toContain('<tiff:Orientation>6</tiff:Orientation>');
+      expect(xmp).toContain(
+        '<digiKam:TagsList><rdf:Seq><rdf:li>Travel/Canada/Banff</rdf:li></rdf:Seq></digiKam:TagsList>',
+      );
+      expect(xmp).toContain('<Iptc4xmpExt:PersonInImage><rdf:Bag><rdf:li>Ana</rdf:li></rdf:Bag>');
+      expect(xmp).not.toContain('Kept private');
     });
   });
 });

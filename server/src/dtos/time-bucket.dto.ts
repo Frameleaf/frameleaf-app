@@ -3,6 +3,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { BBoxSchema } from 'src/dtos/bbox.dto.js';
 import { BEST_PHOTOS_MIN_SCORE } from 'src/dtos/best-photos.dto.js';
+import { SearchFilterSchema } from 'src/dtos/search.dto.js';
 import {
   AssetLockReason,
   AssetLockReasonSchema,
@@ -10,12 +11,15 @@ import {
   AssetOrderSchema,
   AssetTypeSchema,
   AssetVisibilitySchema,
+  ImageEnrichmentFilterSchema,
   TimeBucketDateTypeSchema,
 } from 'src/enum.js';
 import { stringToBool } from 'src/validation.js';
 
 export const TIMELINE_HIGHLIGHT_DEFAULT = 4;
 export const TIMELINE_HIGHLIGHT_MAX = 12;
+/** FL-425: the longest JSON-encoded search filter a timeline request may carry */
+export const TIMELINE_FILTER_MAX_LENGTH = 16_384;
 
 const TimeBucketQueryBaseSchema = z
   .object({
@@ -67,6 +71,24 @@ const TimeBucketQueryBaseSchema = z
         'With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.',
       ),
     withCoordinates: stringToBool.optional().describe('Include location data in the response'),
+    filter: z
+      .string()
+      .max(TIMELINE_FILTER_MAX_LENGTH)
+      .transform((value, ctx): unknown => {
+        try {
+          return JSON.parse(value);
+        } catch {
+          ctx.issues.push({ code: 'custom', message: 'filter must be a JSON-encoded SearchFilter', input: value });
+          return z.NEVER;
+        }
+      })
+      .pipe(SearchFilterSchema)
+      .optional()
+      .describe(
+        'A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link',
+      )
+      .meta({ example: '{"make":{"eq":"Canon"},"rating":{"gte":4}}' }),
+    imageEnrichment: ImageEnrichmentFilterSchema.optional(),
     key: z.string().optional(),
     slug: z.string().optional(),
     bbox: z

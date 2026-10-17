@@ -1,4 +1,5 @@
 import {
+  TIMELINE_FILTER_MAX_LENGTH,
   TimeBucketAssetDto,
   TimeBucketDto,
   TimelineHighlightsDto,
@@ -51,6 +52,43 @@ describe('tag filters without the tags inside (DISCOVERY-P4)', () => {
     expect(TimeBucketDto.schema.parse({ tagId, withChildTags: 'false' }).withChildTags).toBe(false);
     expect(TimeBucketDto.schema.parse({ tagId, withChildTags: 'true' }).withChildTags).toBe(true);
     expect(TimeBucketDto.schema.parse({ tagId }).withChildTags).toBeUndefined();
+  });
+});
+
+describe('the search filter on the timeline (FL-425)', () => {
+  const personIds = ['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002'];
+  const filter = {
+    make: { eq: 'Canon' },
+    personIds: { all: personIds },
+    takenAt: { gte: '2024-01-01T00:00:00.000Z' },
+    or: [{ city: { eq: 'Banff' } }, { rating: { gte: 4 } }],
+  };
+
+  it('reads a JSON-encoded SearchFilter from the query string on every timeline route', () => {
+    const expected = { ...filter, takenAt: { gte: new Date('2024-01-01T00:00:00.000Z') } };
+    const query = { filter: JSON.stringify(filter), imageEnrichment: 'missing-image-description' };
+    expect(TimeBucketDto.schema.parse(query)).toEqual({
+      filter: expected,
+      imageEnrichment: 'missing-image-description',
+    });
+    expect(TimeBucketAssetDto.schema.parse({ ...query, timeBucket: '2024-01-01' }).filter).toEqual(expected);
+    expect(TimelineOrderedDto.schema.parse({ ...query, sort: 'rating' }).filter).toEqual(expected);
+    expect(TimelineHighlightsDto.schema.parse(query).filter).toEqual(expected);
+    expect(TimeBucketDto.schema.parse({})).toEqual({});
+  });
+
+  it('refuses malformed JSON, a condition search does not know, and an oversized filter', () => {
+    for (const value of [
+      '{"make":',
+      '"Canon"',
+      JSON.stringify({ camera: { eq: 'Canon' } }),
+      JSON.stringify({ personIds: { all: ['not-a-uuid'] } }),
+      JSON.stringify({ or: [] }),
+      JSON.stringify({ make: { eq: 'x'.repeat(TIMELINE_FILTER_MAX_LENGTH) } }),
+    ]) {
+      expect(TimeBucketDto.schema.safeParse({ filter: value }).success).toBe(false);
+    }
+    expect(TimeBucketDto.schema.safeParse({ imageEnrichment: 'blurry' }).success).toBe(false);
   });
 });
 

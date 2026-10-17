@@ -90,7 +90,6 @@ export const startBuddyCloud = async () => {
     expires: number;
     used: boolean;
   } | null = null;
-  const confirmations = new Set<string>();
   const key = generateKeyPairSync('ed25519');
   const jwks = { keys: [{ ...publicKey.parse(key.publicKey.export({ format: 'jwk' })), kid: 'fl310-fixture' }] };
   const grants = new Set<string>();
@@ -349,15 +348,13 @@ export const startBuddyCloud = async () => {
         },
       ],
     });
+    // Like Frameleaf Cloud, only the inviter confirms a pending pairing; the invitee is refused (FL-434).
     protectedRoute(`POST /v1/buddy/pairings/${pairing.pairId}/confirm`, (confirm, confirmer) => {
       BuddyAction.parse(confirm.json());
-      if (!pairing?.vaults.some((vault) => vault.sourceInstanceId === confirmer.id)) {
+      if (pairing?.state !== 'pending' || confirmer.id !== source.id) {
         return refused();
       }
-      confirmations.add(confirmer.id);
-      if (confirmations.size === 2) {
-        pairing = BuddyPairing.parse({ ...pairing, state: 'active' });
-      }
+      pairing = BuddyPairing.parse({ ...pairing, state: 'active' });
       return answer(pairing);
     });
     return answer(pairing);

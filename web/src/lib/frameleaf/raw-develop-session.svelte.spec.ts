@@ -1,7 +1,7 @@
-import type { AssetDevelopRevisionResponseDto } from '@frameleaf/sdk';
+import { AssetDevelopRevisionStatus, type AssetDevelopRevisionResponseDto } from '@frameleaf/sdk';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { initialNativeRecipe } from '$lib/frameleaf/native-develop';
-import { RawDevelopSession } from '$lib/frameleaf/raw-develop-session.svelte';
+import { DevelopConflictError, RawDevelopSession } from '$lib/frameleaf/raw-develop-session.svelte';
 
 const followed = vi.hoisted(() => ({ calls: [] as Array<{ id: string; onUpdate: (develop: unknown) => void }> }));
 vi.mock('$lib/frameleaf/develop-api', () => ({
@@ -19,7 +19,7 @@ const revision = (value: Partial<AssetDevelopRevisionResponseDto> = {}) =>
     assetId: 'a',
     revision: 1,
     label: null,
-    status: 'rendered',
+    status: AssetDevelopRevisionStatus.Rendered,
     progress: 100,
     recipe: native,
     isCurrent: true,
@@ -89,7 +89,7 @@ describe('RawDevelopSession', () => {
     session.patch('a', { contrast: 1.3, sensorCanvas: true });
     const first = session.save('a', ' Warm ');
     void session.save('a');
-    finish(revision({ id: 'rev-2', revision: 2, status: 'queued', isCurrent: false }));
+    finish(revision({ id: 'rev-2', revision: 2, status: AssetDevelopRevisionStatus.Queued, isCurrent: false }));
     await first;
     expect(sdkMock.saveAssetDevelop).toHaveBeenCalledTimes(1);
     expect(sdkMock.saveAssetDevelop).toHaveBeenCalledWith({
@@ -97,6 +97,7 @@ describe('RawDevelopSession', () => {
       assetDevelopSaveDto: {
         recipe: { version: 2, renderer: 'darktable/5.6.1', exposureEV: 1.5, contrast: 1.3 },
         sourceRevisionId: 'rev-1',
+        expectedCurrentRevisionId: 'rev-1',
         replaceRecipe: true,
         label: 'Warm',
         render: true,
@@ -109,7 +110,9 @@ describe('RawDevelopSession', () => {
 
   it('tells the editor when a saved version is shown in the library', async () => {
     const onPublished = vi.fn();
-    sdkMock.saveAssetDevelop.mockResolvedValue(revision({ id: 'rev-2', status: 'queued', isCurrent: false }));
+    sdkMock.saveAssetDevelop.mockResolvedValue(
+      revision({ id: 'rev-2', status: AssetDevelopRevisionStatus.Queued, isCurrent: false }),
+    );
     const session = new RawDevelopSession(photos, 'b', { onPublished });
     await session.open('b');
     session.patch('b', { exposureEV: 1 });
@@ -117,10 +120,48 @@ describe('RawDevelopSession', () => {
     followed.calls.at(-1)!.onUpdate({
       assetId: 'b',
       currentRevisionId: 'rev-2',
-      revisions: [revision({ id: 'rev-2', assetId: 'b', status: 'rendered', isCurrent: true })],
+      revisions: [
+        revision({ id: 'rev-2', assetId: 'b', status: AssetDevelopRevisionStatus.Rendered, isCurrent: true }),
+      ],
     });
     expect(onPublished).toHaveBeenCalledWith('b');
     expect(session.record('b').currentRevisionId).toBe('rev-2');
+    // Its own version became current, so the next save builds on it (FL-431).
+    expect(session.record('b').baseCurrentRevisionId).toBe('rev-2');
+  });
+
+  it('refuses a save when another device changed the current version, keeping the edits (FL-431)', async () => {
+    sdkMock.isHttpError.mockImplementation((error) => typeof (error as { status?: unknown }).status === 'number');
+    sdkMock.saveAssetDevelop.mockRejectedValueOnce(
+      Object.assign(new Error('Conflict'), {
+        status: 409,
+        data: { code: 'develop_current_revision_changed', currentRevisionId: 'rev-elsewhere' },
+      }),
+    );
+    const session = new RawDevelopSession(photos, 'a');
+    await session.open('a');
+    session.patch('a', { contrast: 1.3 });
+    sdkMock.getAssetDevelop.mockResolvedValue({
+      assetId: 'a',
+      currentRevisionId: 'rev-elsewhere',
+      revisions: [revision({ id: 'rev-elsewhere', revision: 2 }), revision({ isCurrent: false })],
+    });
+
+    await expect(session.save('a')).rejects.toBeInstanceOf(DevelopConflictError);
+    expect(sdkMock.saveAssetDevelop.mock.calls[0][0].assetDevelopSaveDto).toMatchObject({
+      expectedCurrentRevisionId: 'rev-1',
+    });
+    expect(session.record('a')).toMatchObject({ currentRevisionId: 'rev-elsewhere', revisionId: 'rev-1' });
+    expect(session.record('a').recipe.contrast).toBe(1.3);
+    expect(session.isDirty('a')).toBe(true);
+
+    sdkMock.saveAssetDevelop.mockResolvedValueOnce(
+      revision({ id: 'rev-3', revision: 3, status: AssetDevelopRevisionStatus.Queued, isCurrent: false }),
+    );
+    await session.save('a');
+    expect(sdkMock.saveAssetDevelop.mock.calls[1][0].assetDevelopSaveDto).toMatchObject({
+      expectedCurrentRevisionId: 'rev-elsewhere',
+    });
   });
 
   it('applies a look and changes its strength as one step', async () => {

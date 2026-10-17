@@ -338,7 +338,7 @@
 
   const showInTimeline = (node: FolderNode) => {
     status = $t('frameleaf_folders_show_in_timeline_status', { values: { name: nameOf(node) } });
-    // The search results for the folder path (M3): the timeline buckets cannot apply a path.
+    // The Photos timeline narrowed to the folder path (M3): the time buckets apply it (FL-425).
     void goto(
       viewInLibraryHref(
         { ...emptyDiscoveryQuery(), filter: { originalPath: { startsWith: node.path } } },

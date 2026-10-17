@@ -50,7 +50,14 @@ describe('Backup operational summary', () => {
     state.getCloudBackupStatus.mockReset().mockResolvedValue({ configured: false, usage: null });
   });
 
-  it('shows both encrypted directions after expiry, and replaces stale values when refresh fails', async () => {
+  it('keeps sending without a plan (FL-434)', async () => {
+    render(BackupSummary, { analytics: true });
+    const outgoing = await screen.findByRole('link', { name: /My backup · outgoing/ });
+    expect(outgoing).not.toHaveTextContent('Recovery only');
+  });
+
+  it('shows both encrypted directions when new backups are paused, and replaces stale values when refresh fails', async () => {
+    state.getBuddyBackupStatus.mockResolvedValue({ ...(await state.getBuddyBackupStatus()), enabled: false });
     render(BackupSummary, { analytics: true });
     const outgoing = await screen.findByRole('link', { name: /My backup · outgoing.*Recovery only/ });
     expect(outgoing).toHaveAttribute('href', '/user-settings?area=backups&section=buddy');

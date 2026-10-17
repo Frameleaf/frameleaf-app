@@ -13,6 +13,7 @@ import {
   deleteDevelopPreset,
   getAssetDevelop,
   getDevelopPresets,
+  isHttpError,
   renderAssetDevelopRevision,
   revertAssetDevelop,
   saveAssetDevelop,
@@ -45,6 +46,11 @@ export type PhotoRecord = {
   /** The native version saves build on (`sourceRevisionId`). */
   revisionId: string | undefined;
   currentRevisionId: string | null;
+  /**
+   * FL-431: the version the library showed when this edit started, sent as the save's precondition.
+   * Only this editor's own versions move it; another device's change makes the next save refuse.
+   */
+  baseCurrentRevisionId: string | null;
   revisions: AssetDevelopRevisionResponseDto[];
   /** The library shows a version made in another editor; this editor starts from the original. */
   foreign: boolean;
@@ -66,6 +72,7 @@ const emptyRecord = (): PhotoRecord => ({
   saved: initialNativeRecipe(),
   revisionId: undefined,
   currentRevisionId: null,
+  baseCurrentRevisionId: null,
   revisions: [],
   foreign: false,
   undo: [],
@@ -73,6 +80,19 @@ const emptyRecord = (): PhotoRecord => ({
   aspect: 'Original',
   look: null,
 });
+
+/** FL-431: the save was refused because another device changed the photo's current version first. */
+export class DevelopConflictError extends Error {
+  constructor() {
+    super('develop_current_revision_changed');
+    this.name = 'DevelopConflictError';
+  }
+}
+
+const isCurrentRevisionConflict = (error: unknown) =>
+  isHttpError(error) &&
+  error.status === 409 &&
+  (error.data as { code?: unknown } | undefined)?.code === 'develop_current_revision_changed';
 
 export type SessionOptions = {
   /** A saved version became the one the library shows. */
@@ -91,6 +111,8 @@ export class RawDevelopSession {
   saving = $state<string[]>([]);
 
   #follows = new Map<string, () => void>();
+  /** Versions this editor saved or rendered: when one becomes current it is the new save base. */
+  #own = new Set<string>();
   #disposed = false;
   #lastChange: { id: string; key: string; at: number } | undefined;
 
@@ -118,7 +140,8 @@ export class RawDevelopSession {
   /** Opens a photo, loading its versions the first time. */
   async open(id: string) {
     this.activeId = id;
-    if (!this.records[id] || this.records[id].status === 'failed') {
+    const record = this.records[id] as PhotoRecord | undefined;
+    if (!record || record.status === 'failed') {
       await this.load(id);
     }
   }
@@ -155,6 +178,7 @@ export class RawDevelopSession {
     const native = current && isNativeRecipe(current.recipe) ? (current.recipe as NativeRecipe) : undefined;
     const saved = native ? tidy(plain(native)) : initialNativeRecipe();
     delete saved.sensorCanvas;
+    const ownCurrent = !!develop.currentRevisionId && this.#own.has(develop.currentRevisionId);
     this.records[id] = {
       ...record,
       status: 'ready',
@@ -162,6 +186,7 @@ export class RawDevelopSession {
       revisions: develop.revisions,
       currentRevisionId: develop.currentRevisionId,
       foreign: !!current && !native,
+      ...((resetWorking || ownCurrent) && { baseCurrentRevisionId: develop.currentRevisionId ?? null }),
       ...(resetWorking && {
         recipe: plain(saved),
         saved,
@@ -209,8 +234,9 @@ export class RawDevelopSession {
   }
 
   setAspect(id: string, aspect: Aspect) {
-    if (this.records[id]) {
-      this.records[id].aspect = aspect;
+    const record = this.records[id] as PhotoRecord | undefined;
+    if (record) {
+      record.aspect = aspect;
     }
   }
 
@@ -279,17 +305,30 @@ export class RawDevelopSession {
         assetDevelopSaveDto: {
           recipe,
           ...(record.revisionId && { sourceRevisionId: record.revisionId }),
+          expectedCurrentRevisionId: record.baseCurrentRevisionId,
           replaceRecipe: true,
           ...(label?.trim() && { label: label.trim() }),
           render: true,
         },
       });
+      this.#own.add(result.id);
       const current = this.records[id];
       current.revisionId = result.id;
       current.saved = recipe;
       current.revisions = [result, ...current.revisions.filter((item) => item.id !== result.id)];
       this.follow(id, result.id);
       return result;
+    } catch (error) {
+      if (!isCurrentRevisionConflict(error)) {
+        throw error;
+      }
+      // FL-431: show the versions as they are now; the working recipe stays for a deliberate save.
+      const develop = await getAssetDevelop({ id });
+      if (!this.#disposed) {
+        this.#adopt(id, develop, { resetWorking: false });
+        this.records[id].baseCurrentRevisionId = develop.currentRevisionId ?? null;
+      }
+      throw new DevelopConflictError();
     } finally {
       this.saving = this.saving.filter((item) => item !== id);
     }
@@ -302,7 +341,7 @@ export class RawDevelopSession {
     const stop = followDevelop(
       id,
       (develop) => {
-        if (this.#disposed || !this.records[id]) {
+        if (this.#disposed || !Object.hasOwn(this.records, id)) {
           return;
         }
         this.#adopt(id, develop, { resetWorking: false });
@@ -331,6 +370,8 @@ export class RawDevelopSession {
     const develop = await revertAssetDevelop({ id, assetDevelopRevertDto: revisionId ? { revisionId } : {} });
     this.#adopt(id, develop, { resetWorking: false });
     const record = this.records[id];
+    // Reverting here is this editor's own choice of current version.
+    record.baseCurrentRevisionId = develop.currentRevisionId ?? null;
     if (revisionId) {
       const revision = develop.revisions.find((item) => item.id === revisionId);
       if (revision && isNativeRecipe(revision.recipe)) {
@@ -361,6 +402,7 @@ export class RawDevelopSession {
 
   async render(id: string, revisionId: string) {
     const revision = await renderAssetDevelopRevision({ id, revisionId });
+    this.#own.add(revisionId);
     this.#replaceRevision(id, revision);
     this.follow(id, revisionId);
   }

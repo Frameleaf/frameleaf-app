@@ -632,51 +632,26 @@ test("promotion revalidation rejects a different Test attempt than the captured 
   );
 });
 
-test("release sequence uses existing refs as well as releases and resumes the same source", () => {
-  assert.equal(chooseTag("3.1.0", [], [], sha), "frameleaf-v3.1.0-1");
-  assert.equal(
-    chooseTag(
-      "3.1.0",
-      [{ tag_name: "frameleaf-v3.1.0-7" }],
-      [{ ref: "refs/tags/frameleaf-v3.1.0-104" }],
-      sha,
-    ),
-    "frameleaf-v3.1.0-105",
+test("independent versions are immutable and only the same source can resume", () => {
+  assert.equal(chooseTag("1.0.0", [], [], sha), "frameleaf-v1.0.0");
+  assert.equal(chooseTag("1.1.0-rc.1", [], [], sha), "frameleaf-v1.1.0-rc.1");
+  const releases = [{ tag_name: "frameleaf-v1.0.0", target_commitish: sha }];
+  assert.equal(chooseTag("1.0.0", releases, [], sha), "frameleaf-v1.0.0");
+  assert.throws(() => chooseTag("1.0.0", releases, [], "b".repeat(40)), /bump/);
+  assert.throws(
+    () => chooseTag("1.0.0", [], [{ ref: "refs/tags/frameleaf-v1.0.0" }], sha),
+    /bump/,
   );
   assert.equal(
-    chooseTag(
-      "3.1.0",
-      [{ tag_name: "frameleaf-v3.1.0-7", target_commitish: sha }],
-      [],
-      sha,
-    ),
-    "frameleaf-v3.1.0-7",
-  );
-  assert.equal(
-    chooseTag(
-      "3.1.0-rc.1",
-      [{ tag_name: "frameleaf-v3x1x0-rcx1-999" }],
-      [],
-      sha,
-    ),
-    "frameleaf-v3.1.0-rc.1-1",
-  );
-  assert.throws(() =>
-    chooseTag(
-      "3.1.0",
-      [
-        { tag_name: "frameleaf-v3.1.0-1", target_commitish: sha },
-        { tag_name: "frameleaf-v3.1.0-2", target_commitish: sha },
-      ],
-      [],
-      sha,
-    ),
+    chooseTag("1.0.0", [{ tag_name: "frameleaf-v3.2.0-15" }], [], sha),
+    "frameleaf-v1.0.0",
   );
   for (const invalid of [
     "$(touch surprise)",
-    "../3.1.0",
-    "3.1",
-    "3.1.0+unsafe",
+    "../1.0.0",
+    "1.0",
+    "1.0.0+unsafe",
+    "1.0.0-1",
   ])
     assert.throws(() => chooseTag(invalid, [], [], sha));
 });
@@ -953,7 +928,7 @@ test("registry verifies SHA-256 against the actual received manifest bytes", asy
   );
 });
 
-test("a partial version alias failure reserves its sequence before a newer candidate", async () => {
+test("a partial version alias failure requires a version bump for a newer candidate", async () => {
   const releases = [];
   const aliases = new Map();
   const events = [];
@@ -988,10 +963,7 @@ test("a partial version alias failure reserves its sequence before a newer candi
   );
   assert.deepEqual(events, ["reserve", "alias", "alias"]);
   assert.equal(aliases.size, 1);
-  assert.equal(
-    chooseTag("3.1.0", releases, [], "b".repeat(40)),
-    "frameleaf-v3.1.0-2",
-  );
+  assert.throws(() => chooseTag("3.1.0", releases, [], "b".repeat(40)), /bump/);
   assert.equal(chooseTag("3.1.0", releases, [], sha), tag);
   let resumed = 0;
   await reserveAndStage({

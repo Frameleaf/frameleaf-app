@@ -76,6 +76,17 @@ describe('Updates (FL-368; the check is FL-80 S-4)', () => {
     expect(store.draft.newVersionCheck).toMatchObject({ enabled: false, frequency: VersionCheckFrequency.Weekly });
   });
 
+  it('says where a new version is heard about, as the prototype does (FL-421)', () => {
+    draft.store = newStore(true);
+    render(NewVersionCheckSettings);
+
+    expect(screen.getByText(en.frameleaf_server_updates_hear)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: en.frameleaf_settings_area_notifications })).toHaveAttribute(
+      'href',
+      '/user-settings?area=notifications&section=signals',
+    );
+  });
+
   it('says the server is up to date from what it last recorded', async () => {
     draft.store = newStore(true);
     vi.mocked(getVersionCheck).mockResolvedValue({ checkedAt: new Date().toISOString(), releaseVersion: 'v3.2.0' });

@@ -23,13 +23,7 @@
   let busy = $state(true);
   let failed = $state(false);
   let disposed = false;
-  const presentation = $derived(
-    buddyBackupPresentation(
-      buddy,
-      cloudManager.status?.state === 'linked',
-      !!cloudManager.license?.entitlements.cloudBackup,
-    ),
-  );
+  const presentation = $derived(buddyBackupPresentation(buddy, cloudManager.status?.state === 'linked'));
   const when = (value: string | null | undefined) =>
     value ? new Date(value).toLocaleString($locale) : $t('frameleaf_buddy_not_yet');
   const load = async () => {

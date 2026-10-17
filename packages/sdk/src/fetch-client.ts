@@ -1,6 +1,6 @@
 /**
  * Frameleaf
- * 3.2.0
+ * 1.0.0
  * DO NOT MODIFY - This file has been generated using oazapfts.
  * See https://www.npmjs.com/package/oazapfts
  */
@@ -54,6 +54,67 @@ export type ActivityStatisticsResponseDto = {
     /** Number of likes */
     likes: number;
 };
+export type AttentionCheckDto = {
+    kind: AttentionKind;
+    state: AttentionCheckState;
+};
+export type AttentionBackupDto = {
+    /** Whole days since it last finished, when it is behind */
+    days: number | null;
+    /** When this place last finished a backup */
+    lastSuccessAt: string | null;
+    /** The place the finding is about; null when there is none */
+    place: (AttentionBackupPlace) | null;
+};
+export type AttentionStorageDto = {
+    /** Space left on the drive the library is on */
+    availableBytes: number;
+    /** Size of that drive */
+    totalBytes: number;
+    /** How full the drive is */
+    usedPercent: number;
+};
+export type AttentionVersionDto = {
+    /** The newest version offered */
+    available: string;
+    /** The version this server runs */
+    current: string;
+};
+export type AttentionWorkQueueDto = {
+    count: number;
+    name: QueueName;
+};
+export type AttentionWorkDto = {
+    /** Items that failed, or that wait behind a pause, across these kinds of work */
+    count: number;
+    /** Each kind of work involved, most items first */
+    queues: AttentionWorkQueueDto[];
+};
+export type AttentionItemDto = {
+    /** The place, for a backup item */
+    backup: (AttentionBackupDto) | null;
+    /** Stable for the same finding across reads, for example backup:cloud */
+    id: string;
+    kind: AttentionKind;
+    level: AttentionLevel;
+    reason: AttentionReason;
+    /** When it started, when the server knows */
+    since: string | null;
+    /** The drive, for a storage item */
+    storage: (AttentionStorageDto) | null;
+    /** The versions, for a version item */
+    version: (AttentionVersionDto) | null;
+    /** The kinds of work, for a work item */
+    work: (AttentionWorkDto) | null;
+};
+export type AttentionResponseDto = {
+    /** When the checks were made */
+    checkedAt: string;
+    /** How each kind of check came out, in a fixed order */
+    checks: AttentionCheckDto[];
+    /** What needs attention, the most urgent first */
+    items: AttentionItemDto[];
+};
 export type BackupDeviceDto = {
     appVersion: string;
     deviceKey: string;
@@ -74,6 +135,7 @@ export type BackupDeviceListDto = {
 };
 export type BuddyStatusDto = {
     availableBytes: number | null;
+    canConfirm?: boolean;
     capacityUpdatedAt: string | null;
     configured: boolean;
     connection: string | null;
@@ -4688,6 +4750,8 @@ export type AssetDevelopResponseDto = {
     revisions: AssetDevelopRevisionResponseDto[];
 };
 export type AssetDevelopSaveDto = {
+    /** Optimistic precondition: the currentRevisionId the client last read. null expects the original to be current (no current revision). When it no longer matches, the save is refused with 409 code develop_current_revision_changed and the actual currentRevisionId. Omit to save unconditionally */
+    expectedCurrentRevisionId?: string | null;
     /** Optional name for the saved version */
     label?: string;
     recipe: AssetDevelopRecipeDto;
@@ -5171,6 +5235,8 @@ export type AssetRestorationRequestDto = {
     /** Preserve fine film grain instead of smoothing it */
     keepGrain?: boolean;
     mode: AssetRestorationMode;
+    /** FL-423: the restoration model to use, one of the destination's `models` for this mode. Left out, the destination uses its own model for the mode. Never substituted: a model the destination cannot run is refused. */
+    model?: string;
     region?: AssetRestorationRegionDto;
     /** Smooth motion only (FL-162): how many frames each frame becomes. Required for smooth_motion, refused otherwise. */
     smoothMotionFactor?: 2 | 4 | 8;
@@ -5180,6 +5246,17 @@ export type AssetRestorationRequestDto = {
 export type AssetRestorationSelectDto = {
     /** Restored revision to use as the playback version; omitted, the original is used */
     restorationId?: string;
+};
+export type AssetRestorationModelDto = {
+    /** The worker reported it available, with verified weights and a qualification, at its last check */
+    available: boolean;
+    /** Model family, for example realbasicvsr, seedvr2 or rife */
+    family: string;
+    /** The model id to send as the request’s `model` */
+    id: string;
+    mode: AssetRestorationMode;
+    /** The model’s display name */
+    name: string;
 };
 export type AssetRestorationDestinationDto = {
     /** The server would admit this workload on this destination right now */
@@ -5198,6 +5275,8 @@ export type AssetRestorationDestinationDto = {
     kind: MlDestinationKind;
     /** Media sent to this destination leaves the network */
     leavesNetwork: boolean;
+    /** FL-423: the models a home restoration worker can choose from for this kind of work (Faithful and Creative for a restoration, Smooth motion for Smooth motion), in the order the worker lists them. Empty for Frameleaf Cloud, whose model is chosen with its estimate, and for a worker that reported none. */
+    models: AssetRestorationModelDto[];
     name: string;
     /** Why the destination cannot be chosen, or null */
     refusal: (MlAdmissionRefusal) | null;
@@ -6292,7 +6371,7 @@ export type DownloadArchiveDto = {
     assetIds: string[];
     /** Download each asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original. Left out: the originals */
     edited?: boolean;
-    /** Put each photo's details file (XMP sidecar, when it has one) beside it as <file name>.xmp. Left out, the account's download.includeSidecar preference decides (shared links: no) */
+    /** Put each photo's details file beside it as <file name>.xmp: its XMP sidecar, or one made from what the asset response shows the requester when it has none. Left out, the account's download.includeSidecar preference decides (shared links: no) */
     includeSidecar?: boolean;
 };
 export type DownloadInfoDto = {
@@ -17125,6 +17204,9 @@ export type TimeBucketAssetDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
+    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link */
+    filter?: string;
+    imageEnrichment?: ImageEnrichmentFilter;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */
     isFavorite?: boolean;
     /** Filter by trash status (true for trashed assets only, false for non-trashed only) */
@@ -17169,6 +17251,9 @@ export type TimeBucketDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
+    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link */
+    filter?: string;
+    imageEnrichment?: ImageEnrichmentFilter;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */
     isFavorite?: boolean;
     /** Filter by trash status (true for trashed assets only, false for non-trashed only) */
@@ -17211,9 +17296,12 @@ export type TimelineHighlightsDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
+    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link */
+    filter?: string;
     grouping?: TimelineHighlightGrouping;
     /** Highlights besides the key photo for each month card (default 4). Year cards carry none */
     highlightCount?: number;
+    imageEnrichment?: ImageEnrichmentFilter;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */
     isFavorite?: boolean;
     /** Filter by trash status (true for trashed assets only, false for non-trashed only) */
@@ -17260,6 +17348,9 @@ export type TimelineOrderedDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
+    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link */
+    filter?: string;
+    imageEnrichment?: ImageEnrichmentFilter;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */
     isFavorite?: boolean;
     /** Filter by trash status (true for trashed assets only, false for non-trashed only) */
@@ -17397,6 +17488,17 @@ export function deleteActivity({ id }: {
     return oazapfts.ok(oazapfts.fetchText(`/activities/${encodeURIComponent(id)}`, {
         ...opts,
         method: "DELETE"
+    }));
+}
+/**
+ * Get what needs attention
+ */
+export function getAttention(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AttentionResponseDto;
+    }>("/admin/attention", {
+        ...opts
     }));
 }
 /**
@@ -20509,6 +20611,8 @@ export function saveAssetDevelop({ id, assetDevelopSaveDto }: {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: AssetDevelopRevisionResponseDto;
+    } | {
+        status: 409;
     }>(`/assets/${encodeURIComponent(id)}/develop`, oazapfts.json({
         ...opts,
         method: "PUT",
@@ -29122,12 +29226,14 @@ export function scanTakeoutImport({ id }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withChildTags, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
     bestPhotos?: boolean;
     dateType?: TimeBucketDateType;
+    filter?: string;
+    imageEnrichment?: ImageEnrichmentFilter;
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
@@ -29155,6 +29261,8 @@ export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, 
         bbox,
         bestPhotos,
         dateType,
+        filter,
+        imageEnrichment,
         isFavorite,
         isTrashed,
         key,
@@ -29179,12 +29287,14 @@ export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, 
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
     bestPhotos?: boolean;
     dateType?: TimeBucketDateType;
+    filter?: string;
+    imageEnrichment?: ImageEnrichmentFilter;
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
@@ -29211,6 +29321,8 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
         bbox,
         bestPhotos,
         dateType,
+        filter,
+        imageEnrichment,
         isFavorite,
         isTrashed,
         key,
@@ -29234,14 +29346,16 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
 /**
  * Get timeline highlights
  */
-export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, dateType, grouping, highlightCount, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, dateType, filter, grouping, highlightCount, imageEnrichment, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
     bestPhotos?: boolean;
     dateType?: TimeBucketDateType;
+    filter?: string;
     grouping?: TimelineHighlightGrouping;
     highlightCount?: number;
+    imageEnrichment?: ImageEnrichmentFilter;
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
@@ -29268,8 +29382,10 @@ export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, da
         bbox,
         bestPhotos,
         dateType,
+        filter,
         grouping,
         highlightCount,
+        imageEnrichment,
         isFavorite,
         isTrashed,
         key,
@@ -29293,7 +29409,7 @@ export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, da
 /**
  * Get the timeline in a flat order
  */
-export function getTimelineOrdered({ after, albumId, assetType, bbox, before, bestPhotos, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimelineOrdered({ after, albumId, assetType, bbox, before, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withChildTags, withCoordinates, withStacked }: {
     after?: string;
     albumId?: string;
     assetType?: AssetTypeEnum;
@@ -29301,6 +29417,8 @@ export function getTimelineOrdered({ after, albumId, assetType, bbox, before, be
     before?: string;
     bestPhotos?: boolean;
     dateType?: TimeBucketDateType;
+    filter?: string;
+    imageEnrichment?: ImageEnrichmentFilter;
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
@@ -29332,6 +29450,8 @@ export function getTimelineOrdered({ after, albumId, assetType, bbox, before, be
         before,
         bestPhotos,
         dateType,
+        filter,
+        imageEnrichment,
         isFavorite,
         isTrashed,
         key,
@@ -30154,6 +30274,64 @@ export enum UserAvatarColor {
     Orange = "orange",
     Gray = "gray",
     Amber = "amber"
+}
+export enum AttentionKind {
+    Backup = "backup",
+    Storage = "storage",
+    Work = "work",
+    Version = "version"
+}
+export enum AttentionCheckState {
+    Ok = "ok",
+    Attention = "attention",
+    Off = "off",
+    Unknown = "unknown"
+}
+export enum AttentionBackupPlace {
+    Cloud = "cloud",
+    Buddy = "buddy",
+    Local = "local"
+}
+export enum AttentionLevel {
+    Now = "now",
+    Soon = "soon"
+}
+export enum AttentionReason {
+    NotBackedUp = "not-backed-up",
+    BackupFailed = "backup-failed",
+    BackupBehind = "backup-behind",
+    NearlyFull = "nearly-full",
+    OutOfSpace = "out-of-space",
+    WorkFailed = "work-failed",
+    WorkPaused = "work-paused",
+    NewVersion = "new-version"
+}
+export enum QueueName {
+    ThumbnailGeneration = "thumbnailGeneration",
+    MetadataExtraction = "metadataExtraction",
+    VideoConversion = "videoConversion",
+    FaceDetection = "faceDetection",
+    FacialRecognition = "facialRecognition",
+    SmartSearch = "smartSearch",
+    DuplicateDetection = "duplicateDetection",
+    VideoDuplicateDetection = "videoDuplicateDetection",
+    BackgroundTask = "backgroundTask",
+    StorageTemplateMigration = "storageTemplateMigration",
+    Migration = "migration",
+    Search = "search",
+    Sidecar = "sidecar",
+    Library = "library",
+    Notifications = "notifications",
+    BackupDatabase = "backupDatabase",
+    Ocr = "ocr",
+    ImageEnrichment = "imageEnrichment",
+    ImageDescription = "imageDescription",
+    NsfwDetection = "nsfwDetection",
+    MediaHealth = "mediaHealth",
+    Workflow = "workflow",
+    IntegrityCheck = "integrityCheck",
+    Editor = "editor",
+    PetRecognition = "petRecognition"
 }
 export enum State {
     Pending = "pending",
@@ -31026,33 +31204,6 @@ export enum MlWorkerReadiness {
 export enum WorkerInventorySource {
     MlDestination = "ml-destination",
     RenderWorker = "render-worker"
-}
-export enum QueueName {
-    ThumbnailGeneration = "thumbnailGeneration",
-    MetadataExtraction = "metadataExtraction",
-    VideoConversion = "videoConversion",
-    FaceDetection = "faceDetection",
-    FacialRecognition = "facialRecognition",
-    SmartSearch = "smartSearch",
-    DuplicateDetection = "duplicateDetection",
-    VideoDuplicateDetection = "videoDuplicateDetection",
-    BackgroundTask = "backgroundTask",
-    StorageTemplateMigration = "storageTemplateMigration",
-    Migration = "migration",
-    Search = "search",
-    Sidecar = "sidecar",
-    Library = "library",
-    Notifications = "notifications",
-    BackupDatabase = "backupDatabase",
-    Ocr = "ocr",
-    ImageEnrichment = "imageEnrichment",
-    ImageDescription = "imageDescription",
-    NsfwDetection = "nsfwDetection",
-    MediaHealth = "mediaHealth",
-    Workflow = "workflow",
-    IntegrityCheck = "integrityCheck",
-    Editor = "editor",
-    PetRecognition = "petRecognition"
 }
 export enum AlbumSourceKind {
     IosPhotos = "ios-photos",

@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { ExifResponseSchema, mapExif } from 'src/dtos/exif.dto.js';
-import { AssetFileType, JobStatus } from 'src/enum.js';
+import { AssetFileType, AssetVisibility, JobStatus } from 'src/enum.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -326,6 +326,34 @@ describe(MetadataService.name, () => {
       await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toEqual(
         expect.objectContaining({ localDateTime: new Date(expected.localDateTime) }),
       );
+    });
+
+    it('lists pre-2009 captures, zoned and unzoned, in their own timeline months (FL-432)', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      // The EXIF of the e2e nature album's cyclamen_persicum.jpg (a +09:00 capture whose CreateDate is a
+      // year later) and notocactus_minimus.jpg (no offset, IPTC time in UTC).
+      const files = [
+        {
+          DateTimeOriginal: '2007:12:06 14:33:18+09:00',
+          CreateDate: '2008:12:14 23:50:20+09:00',
+          DateCreated: '2007:12:06',
+          TimeCreated: '14:33:18+09:00',
+        },
+        { DateTimeOriginal: '2008:05:23 15:54:59', CreateDate: '2008:05:23 15:54:59', TimeCreated: '15:54:59+00:00' },
+      ];
+      for (const exifData of files) {
+        const { filePath } = await createTestFile(exifData);
+        const { asset } = await ctx.newAsset({ originalPath: filePath, ownerId: user.id });
+        await sut.handleMetadataExtraction({ id: asset.id });
+      }
+
+      await expect(
+        ctx.get(AssetRepository).getTimeBuckets({ userIds: [user.id], visibility: AssetVisibility.Timeline }),
+      ).resolves.toEqual([
+        { timeBucket: '2008-05-01', count: 1 },
+        { timeBucket: '2007-12-01', count: 1 },
+      ]);
     });
 
     it('should handle dates far in the future', async () => {

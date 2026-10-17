@@ -58,6 +58,7 @@
   } from '$lib/frameleaf/raw-develop';
   import { DevelopPreviewLoader } from '$lib/frameleaf/raw-develop-preview.svelte';
   import {
+    DevelopConflictError,
     DevelopTools,
     RawDevelopSession,
     type DevelopPhoto,
@@ -251,6 +252,12 @@
     }
   }
 
+  /** FL-431: a save refused because another device changed the photo keeps the edits for a deliberate save. */
+  const notSaved = (error: unknown) =>
+    error instanceof DevelopConflictError
+      ? $t('frameleaf_editor_version_conflict')
+      : $t('frameleaf_develop_version_not_saved');
+
   async function saveVersion(label?: string) {
     try {
       const saved = await session.save(id, label);
@@ -258,8 +265,8 @@
         say($t('frameleaf_develop_version_saved'));
       }
       return !!saved;
-    } catch {
-      say($t('frameleaf_develop_version_not_saved'));
+    } catch (error) {
+      say(notSaved(error));
       return false;
     }
   }
@@ -289,8 +296,8 @@
       }
       hide();
       proceed();
-    } catch {
-      say($t('frameleaf_develop_version_not_saved'));
+    } catch (error) {
+      say(notSaved(error));
     } finally {
       working = false;
     }
@@ -498,8 +505,10 @@
             type="button"
             class="rde-link"
             onclick={() => {
-              for (const entry of queue.filter((item) => item.revision.status !== 'failed')) {
-                void session.cancel(entry.photo.id, entry.revision.id).catch(() => {});
+              for (const entry of queue) {
+                if (entry.revision.status !== 'failed') {
+                  void session.cancel(entry.photo.id, entry.revision.id).catch(() => {});
+                }
               }
             }}>{$t('frameleaf_develop_cancel_queue')}</button
           >{/if}
@@ -543,14 +552,14 @@
           type="button"
           class="rde-button icon-only"
           aria-label={$t('frameleaf_develop_undo')}
-          disabled={!record.undo.length}
+          disabled={record.undo.length === 0}
           onclick={() => session.undo(id)}><Icon icon={mdiUndo} size="16" aria-hidden={true} /></button
         >
         <button
           type="button"
           class="rde-button icon-only"
           aria-label={$t('frameleaf_develop_redo')}
-          disabled={!record.redo.length}
+          disabled={record.redo.length === 0}
           onclick={() => session.redo(id)}><Icon icon={mdiRedo} size="16" aria-hidden={true} /></button
         >
         <span class="rde-toolbar-divider"></span>

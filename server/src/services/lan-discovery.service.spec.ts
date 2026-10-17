@@ -139,7 +139,14 @@ describe(LanDiscoveryService.name, () => {
         type: 'frameleaf',
         protocol: 'tcp',
         port: 2283,
-        txt: { id: 'server-1', name: 'My Server', setup: 'needed', linked: 'false', cloud: 'unavailable' },
+        txt: {
+          id: 'server-1',
+          name: 'My Server',
+          scheme: 'http',
+          setup: 'needed',
+          linked: 'false',
+          cloud: 'unavailable',
+        },
       });
     });
 
@@ -154,6 +161,39 @@ describe(LanDiscoveryService.name, () => {
       await sut.onBootstrap();
 
       expect(publish).toHaveBeenCalledWith(expect.objectContaining({ port: 2290 }));
+    });
+
+    it('advertises the scheme the advertised port answers on (FL-435)', async () => {
+      await sut.onBootstrap();
+      expect(publish.mock.calls[0][0].txt).toMatchObject({ scheme: 'http' });
+      expect(publish.mock.calls[0][0].txt).not.toHaveProperty('port');
+
+      const env = mockEnvData({});
+      mocks.config.getEnv.mockReturnValue({
+        ...env,
+        port: 2283,
+        frameleafCloud: { ...env.frameleafCloud, localUrl: 'https://192.168.1.20:8443' },
+      });
+      await sut.onConfigUpdate({ newConfig: { server: { lanDiscovery: true } } } as never);
+
+      expect(publish).toHaveBeenLastCalledWith(
+        expect.objectContaining({ port: 8443, txt: expect.objectContaining({ scheme: 'https' }) }),
+      );
+    });
+
+    it('keeps advertising plain http when FRAMELEAF_LOCAL_URL names a different address (FL-435)', async () => {
+      const env = mockEnvData({});
+      mocks.config.getEnv.mockReturnValue({
+        ...env,
+        port: 2283,
+        frameleafCloud: { ...env.frameleafCloud, localUrl: 'https://photos.example.com' },
+      });
+
+      await sut.onBootstrap();
+
+      expect(publish).toHaveBeenCalledWith(
+        expect.objectContaining({ port: 2283, txt: expect.objectContaining({ scheme: 'http' }) }),
+      );
     });
 
     it('says when setup is complete, and publishes again once the first administrator exists (FL-292)', async () => {

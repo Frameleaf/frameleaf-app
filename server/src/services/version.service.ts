@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { randomBytes } from 'node:crypto';
-import { SemVer, diff, intersects, lt } from 'semver';
+import { SemVer, diff, intersects } from 'semver';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { IBaseJob, VersionCheckMetadata } from 'src/types.js';
 import { serverVersion } from 'src/constants.js';
@@ -22,7 +22,8 @@ import { BaseService } from 'src/services/base.service.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
 // can't use gt because it's broken for release candidates https://github.com/npm/node-semver/issues/483
-const isNewer = (channel: ReleaseChannel, releaseVersion: string) =>
+// FL-421: shared with "What needs your attention", so both say the same about a new version.
+export const isNewerRelease = (channel: ReleaseChannel, releaseVersion: string) =>
   intersects(`>${serverVersion}`, releaseVersion, { includePrerelease: channel === ReleaseChannel.ReleaseCandidate });
 
 const asNotification = (
@@ -30,7 +31,7 @@ const asNotification = (
   { checkedAt, releaseVersion }: VersionCheckMetadata,
 ): ReleaseEventV1 => {
   return {
-    isAvailable: isNewer(channel, releaseVersion),
+    isAvailable: isNewerRelease(channel, releaseVersion),
     checkedAt,
     serverVersion: ServerVersionResponseDto.fromSemVer(serverVersion),
     releaseVersion: ServerVersionResponseDto.fromSemVer(new SemVer(releaseVersion)),
@@ -74,9 +75,8 @@ const describeError = (error: unknown): string => {
  * applies to Immich-origin calls only (FL-146, 2026-09-25): the check asks Frameleaf's own GitHub
  * releases (`ServerInfoRepository.getLatestRelease`) while `newVersionCheck.enabled` is on, as
  * often as `newVersionCheck.frequency` says (daily or weekly; FL-71, owner decision 2026-09-27: the
- * cron ticks hourly and a tick asks only once the interval has passed), and on demand from About → "Check for updates". A release build is compared by its base version;
- * a rebuild of the running version (a higher tag sequence) is not announced, because a running
- * server does not know its own sequence.
+ * cron ticks hourly and a tick asks only once the interval has passed), and on demand from About → "Check for updates". Independent application releases are compared by SemVer;
+ * every changed release needs its own version. Legacy numbered rebuilds are not update offers.
  */
 @Injectable()
 export class VersionService extends BaseService {
@@ -108,15 +108,8 @@ export class VersionService extends BaseService {
       }
 
       if (previous.version !== current) {
-        const previousVersion = new SemVer(previous.version);
-
         this.logger.log(`Adding ${current} to upgrade history`);
         await this.versionRepository.create({ version: current });
-
-        const isNeedsNewMemories = lt(previousVersion, '1.129.0');
-        if (isNeedsNewMemories) {
-          await this.jobRepository.queue({ name: JobName.MemoryGenerate });
-        }
       }
     });
   }
@@ -211,7 +204,7 @@ export class VersionService extends BaseService {
 
     await this.systemMetadataRepository.set(SystemMetadataKey.VersionCheckState, metadata);
 
-    if (isNewer(channel, releaseVersion)) {
+    if (isNewerRelease(channel, releaseVersion)) {
       this.logger.log(`Found ${releaseVersion}, released at ${new Date(publishedAt).toLocaleString()}`);
       this.websocketRepository.clientBroadcast('on_new_release', asNotification(channel, metadata));
     }
