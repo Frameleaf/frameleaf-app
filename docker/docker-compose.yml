@@ -61,7 +61,7 @@ services:
 
   database:
     container_name: frameleaf_postgres
-    image: ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@sha256:c599a95a6697dcd2f33b35dfde9c5e3728e2fdcdc55971a19daec1f75f13994d
+    image: ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@sha256:7b155ed85302ab66c1022309f1f70f0b79f98f70bd52af8d7d3611a0cbf08cf0
     environment:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_USER: ${DB_USERNAME}
