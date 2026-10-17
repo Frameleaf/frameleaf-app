@@ -664,14 +664,24 @@ describe(MaintenanceWorkerService.name, () => {
     });
 
     it('holds and verifies the reserved maintenance session for an ordinary restore', async () => {
+      // recorded here and asserted below: the service reports a throw from the restore as a status, not a failure
+      let fencePid: number | undefined;
+      let releasedDuringRestore: number | undefined;
       databaseBackupServiceMock.restoreDatabaseBackup.mockImplementation(async (_filename, _progress, options) => {
-        expect(options?.fence?.backendPid).toBe(held.backendPid);
+        fencePid = options?.fence?.backendPid;
         await options?.fence?.assert();
-        expect(held.release).not.toHaveBeenCalled();
+        releasedDuringRestore = held.release.mock.calls.length;
       });
 
       await sut.runAction({ action: MaintenanceAction.RestoreDatabase, restoreBackupFilename: 'frameleaf.sql' });
 
+      expect(fencePid).toBe(held.backendPid);
+      expect(releasedDuringRestore).toBe(0);
+      expect(maintenanceWebsocketRepositoryMock.clientSend).not.toHaveBeenCalledWith(
+        'MaintenanceStatusV1',
+        'private',
+        expect.objectContaining({ task: 'error' }),
+      );
       expect(held.verify).toHaveBeenCalled();
       expect(held.release).toHaveBeenCalledOnce();
       expect(mocks.database.tryLock).not.toHaveBeenCalled();

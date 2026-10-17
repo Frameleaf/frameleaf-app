@@ -1442,6 +1442,10 @@ export class RenderWorkerService {
       if (!dto.output) {
         throw new BadRequestException('A preview render must report the frame it produced');
       }
+      // Like an export, a frame is published only from `validating`: never after a cancel, never unvalidated.
+      if (operation.status !== MediaOperationStatus.Validating) {
+        return { accepted: false, refusal: null };
+      }
       // FL-96: the frame is published (or, when superseded meanwhile, discarded) before the job
       // completes, so the person never waits on a finished render whose frame is missing.
       const { published } = await this.studioPreviews.onRenderCompleted(operation, dto.output);

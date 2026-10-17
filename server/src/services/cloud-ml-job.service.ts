@@ -702,7 +702,7 @@ export class CloudMlJobService {
     }
     const message =
       permission.reason === 'monthly-cap'
-        ? `This job would take you past your monthly Frameleaf Cloud limit of ${permission.monthlyCapUsd?.toFixed(2)} USD (${permission.spentThisMonthUsd?.toFixed(2)} USD used). An administrator can raise it.`
+        ? `This job would take you past your monthly Frameleaf Cloud limit of $${(permission.monthlyCapUsd ?? 0).toFixed(2)} ($${(permission.spentThisMonthUsd ?? 0).toFixed(2)} used). An administrator can raise it.`
         : 'Only administrators, and people an administrator allows, can run jobs on Frameleaf Cloud. An administrator can allow you.';
     throw new ForbiddenException({
       message,
@@ -1515,7 +1515,7 @@ export class CloudMlJobService {
     ) {
       throw new CloudMlJobFailure(
         'cloud_ml_estimate_increased',
-        `Frameleaf Cloud now estimates this job at up to ${sealed.cost.p90.toFixed(2)} USD, above the ${snapshot.approved.p90Usd.toFixed(2)} USD you confirmed. Nothing was sent; estimate again.`,
+        `Frameleaf Cloud now estimates this job at up to $${sealed.cost.p90.toFixed(2)}, above the $${snapshot.approved.p90Usd.toFixed(2)} you confirmed. Nothing was sent; estimate again.`,
         false,
       );
     }
@@ -3068,13 +3068,13 @@ export class CloudMlJobService {
     if (availableUsd < holdUsd) {
       return {
         code: 'insufficient-credits',
-        message: `This job needs ${holdUsd.toFixed(2)} USD held and the AI Wallet has ${availableUsd.toFixed(2)} USD available. Add credit first.`,
+        message: `This job needs $${holdUsd.toFixed(2)} held and the AI Wallet has $${availableUsd.toFixed(2)} available. Add credit first.`,
       };
     }
     if (wallet.dailyCapUsd !== null && wallet.spentTodayUsd + holdUsd > wallet.dailyCapUsd) {
       return {
         code: 'daily-cap',
-        message: `Today's AI Wallet limit of ${wallet.dailyCapUsd.toFixed(2)} USD leaves too little for this job. Try again tomorrow or raise the limit in your Frameleaf account.`,
+        message: `Today's AI Wallet limit of $${wallet.dailyCapUsd.toFixed(2)} leaves too little for this job. Try again tomorrow or raise the limit in your Frameleaf account.`,
       };
     }
     return null;

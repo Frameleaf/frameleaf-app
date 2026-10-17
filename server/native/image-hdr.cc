@@ -864,7 +864,9 @@ napi_value decodeLinear(napi_env env, Input& input) {
     auto dec = decoder(input, true);
     check(uhdr_decode(dec.get()));
     const auto* image = uhdr_get_decoded_image(dec.get());
-    if (!image || image->fmt != UHDR_IMG_FMT_64bppRGBAHalfFloat || image->ct != UHDR_CT_LINEAR)
+    // the JS contract names gamut 0, 1 or 2; an unspecified gamut is never passed on as sRGB
+    if (!image || image->fmt != UHDR_IMG_FMT_64bppRGBAHalfFloat || image->ct != UHDR_CT_LINEAR
+        || image->cg < UHDR_CG_BT_709 || image->cg > UHDR_CG_BT_2100)
       throw std::runtime_error("HDR_RECONSTRUCTION_UNAVAILABLE");
     napi_value data; void* pixels;
     check(napi_create_buffer(env, size_t(image->w) * image->h * 16, &pixels, &data));
