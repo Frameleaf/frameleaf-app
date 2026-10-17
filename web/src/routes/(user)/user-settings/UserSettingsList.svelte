@@ -19,6 +19,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { getApiKeys, getSessions, type ApiKeyResponseDto, type SessionResponseDto } from '@frameleaf/sdk';
   import BuddyRestoreSection from '$lib/components/frameleaf/cloud/BuddyRestoreSection.svelte';
+  import CloudBackupChoiceSection from '$lib/components/frameleaf/backup/CloudBackupChoiceSection.svelte';
   import PreservationPanel from '$lib/components/frameleaf/PreservationPanel.svelte';
   import AppSettings from './AppSettings.svelte';
   import DownloadSettings from './DownloadSettings.svelte';
@@ -73,6 +74,9 @@
   <!-- FL-74: every account preserves and restores its own originals, not only administrators. -->
   <PreservationPanel />
   <BuddyRestoreSection />
+{:else if section === 'cloud-backup-choice'}
+  <!-- FL-362: what Cloud Backup keeps of this account's own library. -->
+  <CloudBackupChoiceSection />
 {:else if section === 'takeout'}
   <TakeoutSettingsSection showRoots={authManager.user.isAdmin} />
 {:else if section === 'feature'}

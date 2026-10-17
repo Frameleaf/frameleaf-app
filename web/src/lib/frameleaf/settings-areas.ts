@@ -85,8 +85,9 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     id: 'backup',
     group: 'library',
     sections: ['backup'],
-    personal: ['takeout', 'preservation'],
-    order: ['takeout', 'backup', 'preservation'],
+    // FL-362: "What Cloud Backup keeps" is each account's own choice, beside its preservation.
+    personal: ['takeout', 'preservation', 'cloud-backup-choice'],
+    order: ['takeout', 'backup', 'preservation', 'cloud-backup-choice'],
   },
   // FL-366: one page per feature, opened from the area's own landing page (the old Search &
   // recognition page, Photo details and the eleven tuning pages are folded into them; see
@@ -646,7 +647,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     trash: 'trash',
     'user-settings': 'trash',
   },
-  backup: { takeout: 'import', backup: 'protection', preservation: 'protection' },
+  backup: { takeout: 'import', backup: 'protection', preservation: 'protection', 'cloud-backup-choice': 'protection' },
   intelligence: {
     'smart-search': 'search',
     descriptions: 'search',

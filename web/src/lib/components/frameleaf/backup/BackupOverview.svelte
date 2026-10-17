@@ -17,6 +17,7 @@
   import Pill, { type KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Steps, { type Step } from '$lib/components/frameleaf/settings/kit/Steps.svelte';
+  import WhosBackedUp from '$lib/components/frameleaf/backup/WhosBackedUp.svelte';
   import { behindAfterMs, clockTime, cronToSchedule, scheduleWords } from '$lib/frameleaf/backup-schedule';
   import {
     BACKUP_PLACE_IDS,
@@ -439,6 +440,11 @@
       {/each}
     </ItemList>
   </Section>
+
+  {#if places.cloud.on}
+    <!-- FL-362: how much of each account's library Cloud Backup holds, never what anyone chose -->
+    <WhosBackedUp />
+  {/if}
 
   {#if lending}
     <Section title={$t('frameleaf_backup_lend_title')} description={$t('frameleaf_backup_lend_description')}>
