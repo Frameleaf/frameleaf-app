@@ -97,6 +97,15 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'templates.email.welcomeTemplate': { label: 'frameleaf_notify_wording_welcome' },
   'templates.email.albumInviteTemplate': { label: 'frameleaf_notify_wording_invite' },
   'templates.email.albumUpdateTemplate': { label: 'frameleaf_notify_wording_update' },
+  // FL-422: Editing & playback › Edited masters and AI restoration
+  'editing.trimMode': {
+    label: 'frameleaf_editing_masters_trim',
+    values: { precise: 'frameleaf_editing_masters_trim_precise', fast: 'frameleaf_editing_masters_trim_fast' },
+  },
+  'editing.restoration.style': {
+    label: 'frameleaf_editing_restore_style',
+    values: { faithful: 'frameleaf_restoration_mode_faithful', creative: 'frameleaf_restoration_mode_creative' },
+  },
 });
 
 const TOOLS: Record<string, string> = {

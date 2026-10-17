@@ -24,6 +24,7 @@
   import RestorationPanel, {
     type RestorationCompareRequest,
   } from '$lib/components/frameleaf/editor/RestorationPanel.svelte';
+  import { editingDefaults } from '$lib/frameleaf/editing-defaults.svelte';
   import type { StudioAssetRef } from '$lib/frameleaf/studio/host-contract';
   import { restorationIdOfMedia } from '$lib/frameleaf/studio/assets';
   import { handleError } from '$lib/utils/handle-error';
@@ -91,8 +92,9 @@
       }
       loadFailed = false;
       asset = null;
-      void getAssetInfo({ id })
-        .then(async (loaded) => {
+      // FL-422: a restoration starts on the server's restoration style, so it is known before the panel opens.
+      void Promise.all([getAssetInfo({ id }), editingDefaults.load()])
+        .then(async ([loaded]) => {
           if ((chosenId ?? sources[0]?.id) !== id) {
             return;
           }

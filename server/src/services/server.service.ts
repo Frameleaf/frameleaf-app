@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import type { FrameleafKeySigner } from 'src/utils/frameleaf-dpop.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
@@ -10,6 +11,8 @@ import {
   ServerAppReleasesResponseDto,
   ServerConfigDto,
   ServerFeaturesDto,
+  ServerIdentityChallengeResponseDto,
+  ServerIdentityResponseDto,
   ServerMediaTypesResponseDto,
   ServerPingResponse,
   ServerStatsResponseDto,
@@ -22,10 +25,11 @@ import { BaseService } from 'src/services/base.service.js';
 import { DEFAULT_RAW_PROMPT_TEMPLATE } from 'src/services/prompt-assembler.service.js';
 import { apkLinks } from 'src/utils/app-releases.js';
 import { asHumanReadable } from 'src/utils/bytes.js';
-import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
+import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { localConnectionCandidates } from 'src/utils/frameleaf-lan-discovery.js';
 import { entitlementFlags, isLicensed } from 'src/utils/frameleaf-license.js';
 import { detectHostAddresses } from 'src/utils/frameleaf-remote-access.js';
+import { assertIdentityNonce, signLanIdentity } from 'src/utils/frameleaf-server-identity-proof.js';
 import { serverIdentity } from 'src/utils/frameleaf-server-identity.js';
 import { type FrameleafVia, isRemoteVia, signInClient } from 'src/utils/frameleaf-sign-in.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -62,6 +66,82 @@ export class ServerService extends BaseService {
       }
     }
     this.logger.log(`Feature Flags: ${JSON.stringify(await this.getFeatures(), null, 2)}`);
+    // FL-430: every server has an identity key from its first boot (not only once it links), so apps
+    // can pin it at sign-in; creation is exclusive, so workers booting together end with one key
+    try {
+      await loadInstanceIdentity(this.identityDeps);
+    } catch (error) {
+      this.logger.warn(`Could not load this server's identity key: ${error}`);
+    }
+  }
+
+  private get identityDeps() {
+    return {
+      configRepository: this.configRepository,
+      databaseRepository: this.databaseRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+      instanceIdentityRepository: this.instanceIdentityRepository,
+      frameleafCloudRepository: this.frameleafCloudRepository,
+    };
+  }
+
+  /**
+   * FL-430: the signers for the current identity key and, during a rotation's overlap, the retiring
+   * one. The key a rotation (in another worker) swapped in is picked up by comparing the stored public
+   * record with the loaded key, so most requests take no lock and read no key file.
+   */
+  private async identitySigners(): Promise<{ current: FrameleafKeySigner; retiring: FrameleafKeySigner | null }> {
+    const stored = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafInstance);
+    let loaded: FrameleafKeySigner | null;
+    try {
+      loaded = this.instanceIdentityRepository.currentSigner();
+    } catch {
+      // not loaded in this worker yet
+      loaded = null;
+    }
+    const identity = stored && loaded?.kid === stored.kid ? stored : await loadInstanceIdentity(this.identityDeps);
+    const current = this.instanceIdentityRepository.currentSigner();
+    const retiring = await this.instanceIdentityRepository.retiringSigner(identity);
+    return { current, retiring: retiring && retiring.kid !== current.kid ? retiring : null };
+  }
+
+  /** FL-430 `GET /server/identity`: the identity keys an app pins (over a trusted path) at sign-in. */
+  async getIdentity(): Promise<ServerIdentityResponseDto> {
+    const [{ id, linked }, { current, retiring }] = await Promise.all([
+      serverIdentity(this.identityDeps),
+      this.identitySigners(),
+    ]);
+    return {
+      instanceId: id,
+      linked,
+      identityKeys: [current, ...(retiring ? [retiring] : [])].map(({ kid, publicJwk }) => ({ kid, jwk: publicJwk })),
+    };
+  }
+
+  /**
+   * FL-430 `POST /server/identity/challenge`: sign the app's nonce, this server's id and the origin the
+   * request arrived on with the identity key (and the retiring key during an overlap).
+   */
+  async identityChallenge(nonce: string, origin: string): Promise<ServerIdentityChallengeResponseDto> {
+    assertIdentityNonce(nonce);
+    const [{ id }, { current, retiring }] = await Promise.all([
+      serverIdentity(this.identityDeps),
+      this.identitySigners(),
+    ]);
+    const claims = { instanceId: id, nonce, iat: Math.floor(Date.now() / 1000), origin };
+    const sign = (signer: FrameleafKeySigner) => {
+      if (!signer.signBytes) {
+        throw new Error('The identity key cannot sign raw bytes');
+      }
+      return signLanIdentity({ kid: signer.kid, signBytes: signer.signBytes }, claims);
+    };
+    return {
+      instanceId: id,
+      origin,
+      iat: claims.iat,
+      proof: sign(current),
+      ...(retiring && { retiringProof: sign(retiring) }),
+    };
   }
 
   async getAboutInfo(): Promise<ServerAboutResponseDto> {

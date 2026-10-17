@@ -127,6 +127,8 @@ export const RATE_LIMITS = Object.freeze({
     principal: 'credential',
     principalLimit: 10,
   },
+  /** FL-430: `POST server/identity/challenge`, which apps call before each home-network session. */
+  serverIdentityChallenge: { bucket: 'server-identity-challenge', limit: 120, windowSeconds: MINUTE },
   /** Starting a link to Frameleaf Cloud: `POST admin/cloud/link`. */
   linkStart: { bucket: 'link-start', limit: 10, windowSeconds: HOUR, principal: 'credential', principalLimit: 10 },
 } satisfies Record<string, RateLimitRule>);
