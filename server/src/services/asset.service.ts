@@ -1538,7 +1538,7 @@ export class AssetService extends BaseService {
    * recipe; a saved version is never re-cut by a later change of the setting.
    */
   private async withDefaultTrimMode(edits: AssetEditActionItem[]): Promise<AssetEditActionItem[]> {
-    if (!edits.some((edit) => edit.action === AssetEditAction.Trim && !edit.parameters.mode)) {
+    if (edits.every((edit) => edit.action !== AssetEditAction.Trim || edit.parameters.mode)) {
       return edits;
     }
     const { editing } = await this.getConfig({ withCache: true });

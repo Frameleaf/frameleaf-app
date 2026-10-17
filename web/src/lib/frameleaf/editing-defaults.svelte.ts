@@ -47,14 +47,18 @@ export class EditingDefaults {
 
   /** Reads the defaults once; later calls share the first answer. Never rejects. */
   load(): Promise<void> {
-    // The answer is typed as complete, but an older server leaves `editing` out.
-    this.#loading ??= Promise.resolve()
-      .then(() => getUserConfig())
-      .then((config) => this.#apply((config as { editing?: Editing } | undefined)?.editing))
-      .catch(() => {
-        // No answer: the editor keeps what the server does without the settings.
-      });
+    this.#loading ??= this.#read();
     return this.#loading;
+  }
+
+  async #read() {
+    try {
+      // The answer is typed as complete, but an older server leaves `editing` out.
+      const config = (await getUserConfig()) as { editing?: Editing } | undefined;
+      this.#apply(config?.editing);
+    } catch {
+      // No answer: the editor keeps what the server does without the settings.
+    }
   }
 
   #apply(editing: Editing | AdminConfigEditingDto | undefined) {

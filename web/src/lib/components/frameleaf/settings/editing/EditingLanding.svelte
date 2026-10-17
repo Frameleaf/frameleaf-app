@@ -119,8 +119,12 @@
     };
   };
 
-  const rows = $derived(sections.filter((section) => !Object.hasOwn(EDITING_PAGES, section.key)).map(linkTo));
-  const editingRows = $derived(sections.filter((section) => Object.hasOwn(EDITING_PAGES, section.key)).map(linkTo));
+  const rows = $derived(
+    sections.filter((section) => !Object.hasOwn(EDITING_PAGES, section.key)).map((section) => linkTo(section)),
+  );
+  const editingRows = $derived(
+    sections.filter((section) => Object.hasOwn(EDITING_PAGES, section.key)).map((section) => linkTo(section)),
+  );
 </script>
 
 <KitPage>
