@@ -25,6 +25,7 @@
     revertAssetDevelop,
     createDevelopPreset,
     getDevelopPresets,
+    isHttpError,
     type AssetResponseDto,
     type AssetDevelopRevisionResponseDto,
     type DevelopPresetResponseDto,
@@ -63,6 +64,14 @@
   let zoom = $state(1);
   let loaded = $state(false);
   let revisionId = $state<string | undefined>();
+  /** FL-431: the current version this edit started from; only this editor's own versions move it. */
+  let baseCurrentRevisionId: string | null | undefined;
+  const ownRevisionIds = new Set<string>();
+  const adoptOwnCurrent = (currentRevisionId: string | null) => {
+    if (currentRevisionId && ownRevisionIds.has(currentRevisionId)) {
+      baseCurrentRevisionId = currentRevisionId;
+    }
+  };
   let undo = $state<NativeRecipe[]>([]);
   let redo = $state<NativeRecipe[]>([]);
   let activeStroke = $state<{ points: [number, number][]; radius: number; erase: boolean } | undefined>();
@@ -94,6 +103,7 @@
       asset.id,
       (develop) => {
         revisions = develop.revisions;
+        adoptOwnCurrent(develop.currentRevisionId);
         const state = nativePublicationState(develop, targetRevision);
         if (state.awaitingPublication) {
           if (++renderedBeforeCurrent >= 10) {
@@ -123,6 +133,7 @@
         return;
       }
       revisions = develop.revisions;
+      baseCurrentRevisionId = develop.currentRevisionId ?? null;
       presets = savedPresets;
       const current = develop.revisions.find((item) => item.isCurrent && isNativeRecipe(item.recipe));
       if (current && isNativeRecipe(current.recipe)) {
@@ -209,17 +220,35 @@
         assetDevelopSaveDto: {
           recipe: final,
           ...(revisionId && { sourceRevisionId: revisionId }),
+          ...(baseCurrentRevisionId !== undefined && { expectedCurrentRevisionId: baseCurrentRevisionId }),
           replaceRecipe: true,
           ...(label.trim() && { label: label.trim() }),
           render: true,
         },
       });
+      ownRevisionIds.add(result.id);
       revisionId = result.id;
       revisions = [result, ...revisions];
       undo = [];
       redo = [];
       watch(result.id);
     } catch (error_) {
+      if (
+        isHttpError(error_) &&
+        error_.status === 409 &&
+        (error_.data as { code?: unknown } | undefined)?.code === 'develop_current_revision_changed'
+      ) {
+        // FL-431: another device moved the current version. Show it; the draft stays for a deliberate save.
+        error = $t('frameleaf_editor_version_conflict');
+        try {
+          const develop = await getAssetDevelop({ id: asset.id });
+          revisions = develop.revisions;
+          baseCurrentRevisionId = develop.currentRevisionId ?? null;
+        } catch (error__) {
+          failed(error__);
+        }
+        return;
+      }
       failed(error_);
     } finally {
       saving = false;
@@ -802,6 +831,7 @@
                 onclick={async () => {
                   try {
                     await revertAssetDevelop({ id: asset.id, assetDevelopRevertDto: { revisionId: version.id } });
+                    baseCurrentRevisionId = version.id;
                     watch(version.id);
                   } catch (error_) {
                     failed(error_);
@@ -813,6 +843,7 @@
                 onclick={async () => {
                   try {
                     await renderAssetDevelopRevision({ id: asset.id, revisionId: version.id });
+                    ownRevisionIds.add(version.id);
                     watch(version.id);
                   } catch (error_) {
                     failed(error_);

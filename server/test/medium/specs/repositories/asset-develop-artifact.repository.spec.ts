@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import { AssetType, AssetVisibility } from 'src/enum.js';
@@ -365,4 +365,76 @@ it('preserves shared Live Photo originals through Develop save, cancellation, se
   expect((await service.get(auth, stills[1].asset.id)).currentRevisionId).toBeNull();
   await expect(service.revert(auth, stills[1].asset.id, { revisionId: first.id })).rejects.toThrow();
   await preserved();
+});
+
+it('refuses a save whose expected current version is stale, deciding under the per-asset lock (FL-431)', async () => {
+  const { ctx, sut } = setup();
+  const { user } = await ctx.newUser();
+  const { asset } = await ctx.newAsset({ ownerId: user.id });
+  const save = (expectedCurrentRevisionId?: string | null) =>
+    sut.create({
+      assetId: asset.id,
+      ownerId: user.id,
+      recipe: defaultDevelopRecipe() as never,
+      recipeVersion: 1,
+      expectedCurrentRevisionId,
+      label: null,
+      status: AssetDevelopRevisionStatus.Saved,
+    });
+  const conflict = async (promise: Promise<unknown>) => {
+    let error: unknown;
+    try {
+      await promise;
+    } catch (error_) {
+      error = error_;
+    }
+    expect(error).toBeInstanceOf(ConflictException);
+    return (error as ConflictException).getResponse();
+  };
+  const count = async () =>
+    Number(
+      (
+        await sql<{ count: string }>`
+          SELECT count(*) AS count FROM public.asset_develop_revision WHERE "assetId" = ${asset.id}::uuid
+        `.execute(db)
+      ).rows[0].count,
+    );
+
+  // null: the original is current.
+  const first = await save(null);
+  await sut.setCurrent(asset.id, first.id);
+  expect(await conflict(save(null))).toEqual({
+    message: 'This photo has a newer current version than the one this edit started from',
+    error: 'Conflict',
+    statusCode: 409,
+    code: 'develop_current_revision_changed',
+    currentRevisionId: first.id,
+  });
+  const second = await save(first.id);
+  expect(second.revision).toBe(2);
+  expect(await save()).toMatchObject({ revision: 3 });
+  expect(await count()).toBe(3);
+
+  // Another device makes `second` current while holding the per-asset lock; the save waiting
+  // on that lock must judge the committed state, not a value read before it waited.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  let locked!: () => void;
+  const isLocked = new Promise<void>((resolve) => (locked = resolve));
+  const other = db.transaction().execute(async (trx) => {
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`asset_develop_revision:${asset.id}`}, 0))`.execute(trx);
+    locked();
+    await held;
+    await sql`UPDATE public.asset_develop_revision SET "isCurrent" = false WHERE "assetId" = ${asset.id}::uuid`.execute(
+      trx,
+    );
+    await sql`UPDATE public.asset_develop_revision SET "isCurrent" = true WHERE id = ${second.id}::uuid`.execute(trx);
+  });
+  await isLocked;
+  const stale = save(first.id);
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  release();
+  await other;
+  expect(await conflict(stale)).toMatchObject({ currentRevisionId: second.id });
+  expect(await count()).toBe(3);
 });

@@ -5892,6 +5892,7 @@
   "frameleaf_editor_tool_versions": "Versions",
   "frameleaf_editor_tools_label": "Editing tools",
   "frameleaf_editor_version_compare_stage": "Version compared with the original",
+  "frameleaf_editor_version_conflict": "This photo was changed on another device, so nothing was saved. The versions are up to date and your edits are still here. Save again to keep them as a new version.",
   "frameleaf_editor_version_details": "Details",
   "frameleaf_editor_version_external": "Brought back from {file}",
   "frameleaf_editor_version_failed": "Version {revision} couldn't be finished: {error}",
