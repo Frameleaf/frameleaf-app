@@ -57,7 +57,7 @@ Example: for /John/Projects/3D_Printing/2026-07-01/IMG_0001.jpg, searches like P
 
 ## Configuration
 
-Navigating to `Administration > Settings > Machine Learning Settings > Smart Search` will show the options available.
+Open **Settings → Search & intelligence → Visual search** to see the options available. The model is under **Advanced: search model**.
 
 ### CLIP models
 
@@ -79,11 +79,11 @@ For more details, check the tables below to see how they compare in memory usage
 Once you've chosen a model, follow these steps:
 
 1. Copy the name of the model (e.g. `ViT-B-16-SigLIP__webli`)
-2. Go to the Smart Search settings (**Administration > Settings > Machine Learning Settings > Smart Search**)
-3. Paste the model name into the Model Name section
+2. Go to **Settings → Search & intelligence → Visual search** and open **Advanced: search model**
+3. Paste the model name into **Search model**
 4. Save the settings
-5. Go to the Job Status page (**Administration > Job Queues**)
-6. Click "All" next to "Smart Search" to begin re-processing your assets with the new model
+5. Go to **Settings → Computers & background work → Background work**
+6. Run the **Visual search** queue for all items to begin re-processing your assets with the new model
 7. (Optional) Confirm that the logs for the server and machine learning service don't have relevant errors
 
 In rare instances, changing the model might leave bits of the old model's incompatible data in the database, causing errors when processing Smart Search jobs. If you notice errors like this in the logs, you can change the model back to the previous one and save, then repeat steps 3-7.

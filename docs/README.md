@@ -1,6 +1,6 @@
-# Website
+# Frameleaf documentation
 
-This website is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
+This is the source of the Frameleaf documentation site (help.frameleaf.app), built with [Docusaurus](https://docusaurus.io/).
 
 ### Installation
 
@@ -14,7 +14,7 @@ $ pnpm install
 $ pnpm run start
 ```
 
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
+This command starts a local development server on port 3005 and opens up a browser window. Most changes are reflected live without having to restart the server.
 
 ### Build
 
@@ -22,20 +22,8 @@ This command starts a local development server and opens up a browser window. Mo
 $ pnpm run build
 ```
 
-This command generates static content into the `build` directory and can be served using any static contents hosting service.
+This command copies the OpenAPI specification into `static/openapi.json` and generates static content into the `build` directory, which can be served using any static contents hosting service.
 
-### Deployment
+### Checks
 
-Using SSH:
-
-```
-$ USE_SSH=true pnpm run deploy
-```
-
-Not using SSH:
-
-```
-$ GIT_USER=<Your GitHub username> pnpm run deploy
-```
-
-If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+The **Docs build** workflow checks formatting (`pnpm format`) and builds the site on every pull request to `main`. Run `pnpm format:fix` to apply the formatting it expects.

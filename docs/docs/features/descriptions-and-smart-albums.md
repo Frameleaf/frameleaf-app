@@ -8,10 +8,13 @@ This page documents the connected features that build on top of [Image Enrichmen
 4. **Video descriptions** — generate descriptions and tags for videos by stitching the video's six reusable moment frames into a composite grid the vision-language model can see all at once.
 5. **Smart auto-albums** — six built-in albums (Travel, Documents & Receipts, Screenshots, Food, Pets, Nature) that automatically gather assets based on the tags generated for each description.
 
-All features are admin-only and run locally. They are disabled by default and need explicit enablement.
+All features are admin-only and run on the processing destination you choose for descriptions. Image descriptions (with identity injection) are on by default; smart albums and video moment captions are off until you turn them on.
+
+> [!NOTE]
+> The settings page uses plain names for these controls. This page gives the on-screen name first; where it says _caption_, the settings mean the generated description.
 
 > [!IMPORTANT]
-> Only the **Qwen2.5-VL** and **Phi-3.5-vision / Phi-3-vision** models honor the configurable prompt. Florence-2 is a caption-only fallback that ignores prompt customization, identity injection, and vocabulary controls. The admin UI surfaces a banner when a Florence model is selected.
+> Only the **Qwen2.5-VL** and **Phi-3.5-vision / Phi-3-vision** models honor the configurable prompt. Florence-2 is a caption-only fallback that ignores prompt customization, identity injection, and vocabulary controls. Florence can still be chosen as the description model (for example on the **Where work runs** slider) or as the **Backup model**.
 
 ---
 
@@ -35,14 +38,14 @@ The features interact. Doing them in the order below gets the best output the fi
 | --- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | **Pick the right model** (Qwen2.5-VL or Phi-3.5-vision).                                      | Florence-2 ignores _every other_ control on this page. Get the model right before you tune anything.                                                     |
 | 2   | **Run [Facial Recognition](./facial-recognition.md) and name your most-photographed people.** | Identity injection only mentions names you've curated. Doing this first means your very first description run already says "Kelly" instead of "Someone". |
-| 3   | **Preview a description** on a few photos and videos.                                         | "Try an enrichment change" runs the draft model and prompt on samples and writes nothing, so you see the result before paying for a library-wide run.    |
+| 3   | **Try it on a few photos** (and videos).                                                      | "Try an enrichment change" runs the draft model and prompt on samples and writes nothing, so you see the result before paying for a library-wide run.    |
 | 4   | **Tune the description prompt** (style, look-for, custom vocabulary, custom instructions).    | Tuning before the first big re-queue means you don't pay to re-describe everything twice.                                                                |
 | 5   | **Enable identity injection.**                                                                | Cheap to toggle and tune; combine with the prompt tuning in step 4 before the big run.                                                                   |
-| 6   | **Re-queue all descriptions.**                                                                | One library-wide pass with everything configured the way you want it.                                                                                    |
+| 6   | **Update captions now** (re-queue all descriptions).                                          | One library-wide pass with everything configured the way you want it.                                                                                    |
 | 7   | **Enable smart albums** and let the evaluator run as descriptions complete.                   | Albums are populated from description tags; they're useless without descriptions first.                                                                  |
 | 8   | **Re-evaluate smart albums** once descriptions are done.                                      | One-time backfill so older assets get pulled into the new albums.                                                                                        |
 
-If you've already deployed without following this order, that's fine — you can run [Step 6: Backfill the existing library](#step-6--backfill-the-existing-library) again at any time, and there's a per-album re-evaluate for smart albums.
+If you've already deployed without following this order, that's fine — you can run [Step 6: Backfill the existing library](#step-6--backfill-the-existing-library) again at any time, and each smart album has its own **Update now**.
 
 ---
 
@@ -52,67 +55,67 @@ The defaults are tuned to be useful out of the box. The minimum-clicks path is:
 
 ### Step 1 — Confirm the description model
 
-Navigate to **Administration → System Settings → Machine Learning → Image Description**.
+Navigate to **Settings → Search & intelligence → Descriptions & tags**.
 
-- **Enable image description generation** — confirm it is on.
-- **Model name** — pick from the curated dropdown. Defaults to `Qwen/Qwen2.5-VL-3B-Instruct`, with Qwen 7B and Phi-3.5-vision available for stronger hardware. If you see Florence-2 listed as the fallback model that's fine — just don't pick it as the primary unless you accept the trade-offs described in [Model selection guidance](#model-selection-guidance).
-- **Hardware acceleration** — leave at `AUTO` unless you need to pin a device.
+- **Write captions for photos** — confirm it is on.
+- **Caption model** (under **Advanced: caption model and hardware**) — pick from the curated list. Defaults to `Qwen/Qwen2.5-VL-3B-Instruct`, with Qwen 7B and Phi-3.5-vision available for stronger hardware. If you see Florence-2 listed as the **Backup model** that's fine — just don't pick it as the primary unless you accept the trade-offs described in [Model selection guidance](#model-selection-guidance).
+- **Kind of graphics card** — leave at **Automatic** unless you need to pin a device.
 
-Click **Save**.
+Save your changes.
 
 ### Step 2 — Turn on identity injection (optional but strongly recommended)
 
-Still inside Image Description, expand the **Prompt** accordion, then **Identity Injection**.
+Still on Descriptions & tags:
 
-- **Enable identity injection** — on.
-- **Max names** — default 5, fine for family photos. Raise to 10–15 if you photograph large groups (sports teams, weddings) and want everyone named.
-- **Min face confidence** — default 0.7, fine.
+- **Mention people I have named** — on.
+- **Most names in one caption** (under **Advanced: names, and writing your own instructions**) — default 5, fine for family photos. Raise to 10–15 if you photograph large groups (sports teams, weddings) and want everyone named.
+- **How sure before naming someone** — default 0.7, fine.
 
-Click **Save**. Re-queue any individual asset (from the asset detail panel) or run a full re-queue (Step 6) to apply the new behavior.
+Save your changes. Use **Rewrite with AI** in a photo's **AI enrichment** panel, or run a full update (Step 6), to apply the new behavior to existing photos.
 
 > [!NOTE]
 > The prompt explicitly requires the model to name every recognized person and forbids generic group nouns like _"a family"_, _"a group"_, or _"everyone"_ when names are known. If you've previously seen multi-person photos drop names, re-queue them — newer descriptions enforce naming.
 
 ### Step 3 — Preview a description, then videos
 
-Under **Image Description**, **Preview a description** opens **Try an enrichment change**: choose up to six of your own photos or videos, the processing destination to run on, and compare the current description with what the model and prompt you are editing would write. Nothing is saved. See [Sample-first enrichment](#sample-first-enrichment-and-plans).
+On Descriptions & tags, **Try it on a few photos → Try it** opens **Try an enrichment change**: choose up to six of your own photos or videos, the processing destination to run on, and compare the current description with what the model and prompt you are editing would write. Nothing is saved. See [Sample-first enrichment](#sample-first-enrichment-and-plans).
 
 Videos need no separate setup. The first time a video is described, six evenly spaced frames are cut, ranked and kept as its reusable moment frames; the description is made from a grid of them. Duplicate detection plays no part.
 
 ### Step 4 — Add custom instructions for your library (optional)
 
-Inside Image Description → **Prompt** accordion, find the **Custom instructions** textarea. This is free-form natural-language guidance — write it like you're briefing a careful assistant.
+Under **Advanced: wording lists and extra instructions**, find the **Extra instructions** field (called _custom instructions_ on this page). This is free-form natural-language guidance — write it like you're briefing a careful assistant.
 
 Skip if you want defaults. See [Custom instructions — examples](#custom-instructions--examples) for proven prompts.
 
 ### Step 5 — Turn on smart albums
 
-Navigate to **Administration → System Settings → Smart Albums**.
+Navigate to **Settings → Search & intelligence → Categories & smart albums**.
 
-- **Enable smart albums** — on.
+- **Build smart albums** — on.
 
-Click **Save**.
+Save your changes.
 
-The six built-in albums (Travel, Documents & Receipts, Screenshots, Food, Pets, Nature) are created automatically for every active user the first time you enable this. They will start populating as new image descriptions complete.
+The six built-in albums (Travel, Documents & Receipts, Screenshots, Food, Pets, Nature) are offered to every active user the first time you enable this; **Offer this album** on each album's page turns one off or on. They will start populating as new image descriptions complete.
 
 ### Step 6 — Backfill the existing library
 
-Inside **Image Description → Status & Re-generation**, you'll see:
+The **Caption progress** summary at the top of Descriptions & tags shows how many photos have captions. **Update captions now** opens a confirmation with:
 
 - **Total eligible assets** — every image the description pipeline can process. Videos are described too; they are cut into reusable frames when their turn comes.
 - **Already described** — assets with a stored description.
 - **Pending re-description** — assets without one.
 - **Estimated re-queue time** — a real wall-clock estimate computed from the most recent 100 completed description jobs.
 
-Click **Re-queue all descriptions** to populate descriptions for the rest of your library. A modal confirms the count and estimated time; click **Re-queue** to start.
+Click **Update captions now** to populate descriptions for the rest of your library. The confirmation shows the count and estimated time; click **Re-queue now** to start.
 
 Once descriptions populate, the smart-album evaluator runs on each completed description and assigns assets to matching albums.
 
 ### Step 7 — Re-evaluate smart albums against the existing library (one-time)
 
-If you enabled smart albums **after** descriptions were already populated, click **Re-evaluate all assets** at the bottom of the Smart Albums settings. This walks every described image and applies the current tag rules.
+If you enabled smart albums **after** descriptions were already populated, click **Update albums now** on Categories & smart albums. This walks every described image and applies the current tag rules.
 
-You can also click **Re-evaluate this album** inside any single kind's accordion to re-run that album only.
+You can also open a single album and use **Update this album → Update now** to re-run that album only.
 
 ---
 
@@ -122,20 +125,20 @@ This section covers per-control tuning, prompt examples for different library ty
 
 ### Description prompt controls
 
-The **Prompt** accordion inside Image Description exposes the following:
+Descriptions & tags exposes the following (on-screen names first, with the names used on this page):
 
-| Control                                | What it does                                                                                                                                                                                                                               | Default                                                        |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| **Description style**                  | Length preset. `terse` ≈ one sentence, `balanced` ≈ a short paragraph, `rich` ≈ longer paragraph.                                                                                                                                          | balanced                                                       |
-| **Sentence count target**              | Target sentence count (1–6). Soft target, the model occasionally goes over by one.                                                                                                                                                         | 3                                                              |
-| **Look for**                           | Additional **category labels** the model should call out when visibly present. Tag-style. Default includes `brands, signage, screens, documents, uniforms, tools, vehicles, animals, food, landmarks`.                                     | 10 items                                                       |
-| **Custom vocabulary**                  | Preferred **tag values** the model should reuse when assigning tags. One per line.                                                                                                                                                         | _empty_                                                        |
-| **Custom instructions**                | Free-form **natural-language** guidance appended to the prompt. Use full sentences — e.g. _"If you see a vehicle, identify the make and model. If people are playing a sport, name the sport."_ Up to 2000 characters. See examples below. | _empty_                                                        |
-| **Forbidden inferences**               | Categories the model must NOT infer even when suggestive content is visible (e.g. medical diagnoses).                                                                                                                                      | diagnoses, medication names, procedures, pregnancy, disability |
-| **NSFW indicators** (sub-accordion)    | Allow-list of explicit terms permitted in NSFW descriptions. Clear and save to restore defaults.                                                                                                                                           | 11 default terms                                               |
-| **Medical indicators** (sub-accordion) | Allow-list of medical terms permitted in descriptions.                                                                                                                                                                                     | 19 default terms                                               |
-| **Identity injection** (sub-accordion) | Toggle, max-names cap, min-confidence threshold. When on, the prompt also _requires_ the model to name each listed person and forbids generic group nouns.                                                                                 | enabled, 5, 0.7                                                |
-| **Advanced** (sub-accordion)           | Raw prompt-template override. Pre-fills with the current default template on enable. Includes a **Reset to default** button. Strict/warn placeholder validation.                                                                           | disabled                                                       |
+| Control                                        | What it does                                                                                                                                                                                                                               | Default                                                        |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| **Caption length** / **Writing style**         | Length preset. `terse` ≈ one sentence, `balanced` ≈ a short paragraph, `rich` ≈ longer paragraph.                                                                                                                                          | balanced                                                       |
+| **Sentences in a caption**                     | Target sentence count (1–6). Soft target, the model occasionally goes over by one.                                                                                                                                                         | 3                                                              |
+| **Things to look out for**                     | Additional **category labels** the model should call out when visibly present. Tag-style. Default includes `brands, signage, screens, documents, uniforms, tools, vehicles, animals, food, landmarks`.                                     | 10 items                                                       |
+| **Preferred tag words**                        | Preferred **tag values** the model should reuse when assigning tags. One per line.                                                                                                                                                         | _empty_                                                        |
+| **Extra instructions**                         | Free-form **natural-language** guidance appended to the prompt. Use full sentences — e.g. _"If you see a vehicle, identify the make and model. If people are playing a sport, name the sport."_ Up to 2000 characters. See examples below. | _empty_                                                        |
+| **Never guess at**                             | Categories the model must NOT infer even when suggestive content is visible (e.g. medical diagnoses).                                                                                                                                      | diagnoses, medication names, procedures, pregnancy, disability |
+| **Words allowed in captions of Locked photos** | Allow-list of explicit terms permitted in NSFW descriptions. Clear and save to restore defaults.                                                                                                                                           | 11 default terms                                               |
+| **Words allowed for medical things in view**   | Allow-list of medical terms permitted in descriptions.                                                                                                                                                                                     | 19 default terms                                               |
+| **Mention people I have named**                | Toggle, max-names cap, min-confidence threshold. When on, the prompt also _requires_ the model to name each listed person and forbids generic group nouns.                                                                                 | enabled, 5, 0.7                                                |
+| **Write my own instructions**                  | Raw prompt-template override. Pre-fills with the current default template on enable. Includes a **Start again from the built-in text** button. Strict/warn placeholder validation.                                                         | disabled                                                       |
 
 > [!TIP]
 > **Look for vs. Custom vocabulary vs. Custom instructions** — these three sound similar but do different jobs:
@@ -154,7 +157,7 @@ The **Custom instructions** field is the simplest way to teach the model new beh
 The instructions are appended to the prompt _before_ the JSON schema and rules, so the model has seen them by the time it produces output.
 
 > [!IMPORTANT]
-> Custom instructions are **ignored** when the **Advanced → Use raw prompt template** toggle is on. Advanced users own the entire prompt; they should weave instructions into the template directly. Toggle Advanced off (or pre-fill the template and paste your instructions in there) to use this field.
+> Custom instructions are **ignored** when **Write my own instructions** is on. Advanced users own the entire prompt; they should weave instructions into the template directly. Turn it off (or pre-fill the template and paste your instructions in there) to use this field.
 
 #### Example 1 — Identify vehicles by make and model
 
@@ -315,7 +318,7 @@ Identity injection pulls named recognized faces from Frameleaf's facial-recognit
 **How it works under the hood:**
 
 1. For each asset being described, Frameleaf queries the visible named faces on that asset.
-2. Faces above **Min face confidence** are taken (currently always passes — see note below), up to **Max names**.
+2. Faces above **How sure before naming someone** (min face confidence) are taken (currently always passes — see note below), up to **Most names in one caption** (max names).
 3. Each name and its position in the frame are added to the prompt as a list:
 
    ```
@@ -337,9 +340,9 @@ Identity injection pulls named recognized faces from Frameleaf's facial-recognit
 
 **Controls:**
 
-- **Min face confidence** (default 0.7) filters out low-confidence face matches before injection. Raise to 0.8 if you see misidentifications leak through; lower to 0.6 if you see correctly-named faces failing to surface.
+- **How sure before naming someone** (min face confidence, default 0.7) filters out low-confidence face matches before injection. Raise to 0.8 if you see misidentifications leak through; lower to 0.6 if you see correctly-named faces failing to surface.
   - _Note: Frameleaf's current schema doesn't store a per-face recognition score — named faces are treated as user-curated ground truth (confidence = 1.0). This control is therefore an on/off knob: setting it above 1.0 suppresses all identity hints without disabling injection. The threshold will become meaningful once per-face scores are stored._
-- **Max names** (default 5) caps how many recognized people are passed in a single prompt. Reduce to 1–2 for crowd photos where you only want the central subjects. Raise to 10–15 for sports teams, weddings, and other large-group photos where you want everyone named.
+- **Most names in one caption** (max names, default 5, range 1–20) caps how many recognized people are passed in a single prompt. Reduce to 1–2 for crowd photos where you only want the central subjects. Raise to 10–15 for sports teams, weddings, and other large-group photos where you want everyone named.
 
 **Post-validator behavior:**
 
@@ -352,14 +355,14 @@ Identity injection pulls named recognized faces from Frameleaf's facial-recognit
 
 ### Advanced prompt template (raw override)
 
-The Advanced sub-accordion exposes the raw template Frameleaf would otherwise build from the structured controls.
+**Write my own instructions** (under **Advanced: names, and writing your own instructions**) exposes the raw template Frameleaf would otherwise build from the structured controls.
 
 > [!CAUTION]
 > Most users should not enable this. The structured controls (style, vocabulary, look-for, custom instructions, indicators) compose into the same template at runtime, with safer defaults. Use raw mode only when you need something the structured controls can't express — for example, changing the order of sections, removing rules entirely, or asking for a different JSON shape.
 
-**Pre-fill on enable:** when you flip Advanced on for the first time, the textarea is pre-populated with the **current default template** so you have a working starting point instead of an empty box. You can edit any line, delete sections, or reorder. The pre-fill only happens when the textarea is empty — it never clobbers your existing edits.
+**Pre-fill on enable:** when you turn **Write my own instructions** on for the first time, the textarea is pre-populated with the **current default template** so you have a working starting point instead of an empty box. You can edit any line, delete sections, or reorder. The pre-fill only happens when the textarea is empty — it never clobbers your existing edits.
 
-**Reset to default:** a button below the textarea restores the canonical default template, discarding your edits. The button respects the same disabled state as the textarea.
+**Start again from the built-in text:** a button below the textarea restores the canonical default template, discarding your edits. The button respects the same disabled state as the textarea.
 
 **Supported placeholders** in the template:
 
@@ -371,10 +374,10 @@ The Advanced sub-accordion exposes the raw template Frameleaf would otherwise bu
 > [!NOTE]
 > The **Custom instructions** field from the structured controls is NOT injected into raw templates. If you want that text in a raw template, paste it directly where you want it to appear. Likewise, dynamic per-asset behavior such as the **video-context prefix** (added for videos) and the **NSFW reinforcement** (added when the NSFW classifier flags an asset) are still added automatically around your template — you don't need to handle them.
 
-**Placeholder validation:**
+**Placeholder validation** (**If '{schema}' is missing**):
 
-- `strict` — save fails if `{schema}` is missing from the template.
-- `warn` — save succeeds but the admin sees a warning banner.
+- **Don't save** (`strict`) — save fails if `{schema}` is missing from the template.
+- **Warn me** (`warn`) — save succeeds but the admin sees a warning banner.
 
 If you mis-build the template, generated descriptions will be empty or malformed. Switch the toggle off to restore the structured-controls template; your raw template text is preserved for next time.
 
@@ -413,8 +416,8 @@ Image descriptions and tags for **videos** work by sampling several frames from 
 
 ### Step-by-step: describe the videos in an existing library
 
-1. **Preview first.** In **Image Description**, use **Preview a description** with a video or two as samples.
-2. **Re-queue descriptions.** In **Image Description → Status & Re-generation**, click **Re-queue all descriptions**. Each video's frames are cut when its turn comes, one video at a time per job.
+1. **Preview first.** On Descriptions & tags, use **Try it on a few photos** with a video or two as samples.
+2. **Re-queue descriptions.** Click **Update captions now**. Each video's frames are cut when its turn comes, one video at a time per job.
 3. **Verify.** Open a video and check the Description panel. The description should reference the video as a whole — e.g. _"A short clip of Connor swinging a bat in a backyard; he begins facing the camera, swings the bat to his right, and walks off-frame at the end."_ The **Moments** section below it shows the frames it was made from.
 
 ### Faces on videos
@@ -455,7 +458,7 @@ Each of the six built-in albums has an independent tag-trigger list and a confid
 | Pets                 | pet, dog, cat, puppy, kitten                                           | 0.28              |
 | Nature               | nature, forest, mountain, ocean, sunset, wildlife, flower              | 0.28              |
 
-**Recommended additions** for richer libraries (add one per line in the Tag triggers textarea):
+**Recommended additions** for richer libraries (add one per line in **Tags that add a photo**, under the album's **Advanced: the two lists and the number**):
 
 - **Travel**: `boarding pass, train station, hostel, market, temple, cathedral` plus specific landmark and city names you photograph often (lowercased).
 - **Documents & Receipts**: `prescription, manual, warranty, schedule, ticket-stub, identity-card, license`
@@ -466,17 +469,17 @@ Each of the six built-in albums has an independent tag-trigger list and a confid
 
 **Tag matching is case-insensitive.** Hyphenated forms (`golden-retriever`) and space-separated forms (`golden retriever`) both work — the matcher normalizes on save.
 
-**Threshold tuning**: start at the default `0.28`. Move to `0.25` if albums look sparse, or to `0.32` if they're noisy. Useful range is 0.2–0.4.
+**Threshold tuning** (**Match strictness**, set by **How strict**): start at the default `0.28`. Move to `0.25` if albums look sparse, or to `0.32` if they're noisy. Useful range is 0.2–0.4.
 
 ### CLIP queries
 
-Each smart-album kind also has a **CLIP queries** textarea. Every line is encoded with the textual CLIP model and compared against each asset's smart-search visual embedding; an asset joins the album when the cosine similarity to **any** query meets the kind's threshold. CLIP matching runs in addition to tag triggers — an asset can match by tag, by CLIP query, or both, and the membership records which one fired.
+Each smart album also has a **Descriptions that add a photo** list (CLIP queries). Every line is encoded with the textual CLIP model and compared against each asset's smart-search visual embedding; an asset joins the album when the cosine similarity to **any** query meets the kind's threshold. CLIP matching runs in addition to tag triggers — an asset can match by tag, by CLIP query, or both, and the membership records which one fired.
 
 CLIP matching requires **Smart Search** to be enabled (it reads the same embeddings) and a reachable machine-learning server. When the ML server is unavailable, evaluation degrades gracefully: tag-trigger matching keeps working and CLIP matching is skipped with a warning in the server log. Query embeddings are encoded once per model and cached, so re-evaluations are cheap; changing the CLIP model re-encodes them automatically.
 
-### Status & Re-generation panel
+### Caption progress and the update confirmation
 
-Inside Image Description → Status & Re-generation:
+The **Update captions now** confirmation and the Descriptions & tags page show:
 
 - **Last config change** — server-side timestamp updated when any field of the description config changes (excluding the two timestamp fields themselves, so saving with no real change does not advance it).
 - **Pending re-queue scheduled** — set when you click "Re-queue later" in the cost modal; cleared automatically when the re-queue job dispatches.
@@ -490,28 +493,28 @@ Inside Image Description → Status & Re-generation:
 The cost modal has three buttons:
 
 - **Cancel** — close, no action.
-- **Re-queue later** — set `pendingRequeueAt` on the config. A persistent banner appears at the top of the Image Description settings reminding you to act. Useful when you're making several prompt edits in a single session and want to run the actual re-queue once at the end.
+- **Re-queue later** — set `pendingRequeueAt` on the config. A **Caption choices changed since the captions were written** notice stays at the top of Descriptions & tags reminding you to act. Useful when you're making several prompt edits in a single session and want to run the actual re-queue once at the end.
 - **Re-queue** — dispatch the re-queue job immediately. Idempotent via atomic PostgreSQL job deduplication — clicking twice while a job is in flight returns _"already in flight"_ instead of duplicating work.
 
-When you click **Re-queue now** from the banner, the modal opens with the latest live counts; on dispatch, `pendingRequeueAt` is cleared automatically.
+When you click **Update captions now** from that notice, the modal opens with the latest live counts; on dispatch, `pendingRequeueAt` is cleared automatically.
 
 ### Per-kind smart-album re-evaluation
 
-Each kind's accordion in Smart Albums settings has a **Re-evaluate this album** button. It re-runs the matcher for that kind only — assets currently in other kinds are **not** touched. Useful when you've added new tag triggers to one album and want to refresh just that album.
+Each album's page in Categories & smart albums has **Update this album → Update now**. It re-runs the matcher for that kind only — assets currently in other kinds are **not** touched. Useful when you've added new tag triggers to one album and want to refresh just that album.
 
-The page-bottom **Re-evaluate all assets** button runs every kind.
+**Update albums now** on Categories & smart albums runs every kind.
 
 Per-kind jobs use their own durable PostgreSQL deduplication key (`SmartAlbumReevaluateAll:<kind>`), so you can run a per-kind re-evaluate at the same time as another kind's re-evaluate or the all-kinds run without collisions.
 
 ### Excluding an asset from a smart album
 
-From the album view, open an asset and choose **Exclude from smart album** in the action menu. The exclusion is permanent until manually reversed and survives every re-evaluation, including forced ones. Use this for assets that match a tag trigger but don't belong (e.g. a photo of a pet at the beach that you only want in Pets, not Travel).
+Open the smart album, select the asset and choose **Remove from album**. The exclusion is permanent until manually reversed and survives every re-evaluation, including forced ones. Use this for assets that match a tag trigger but don't belong (e.g. a photo of a pet at the beach that you only want in Pets, not Travel).
 
 ---
 
 ## Sample-first enrichment and plans
 
-**Preview a description** (Image Description settings) opens **Try an enrichment change** in three steps:
+**Try it on a few photos → Try it** (Descriptions & tags) opens **Try an enrichment change** in three steps:
 
 1. **Choose sample** — up to six of your own photos or videos, and the processing destination to run on. The destination is always named: the default is the one routed under Processing destinations, and nothing ever falls back to another destination.
 2. **Compare** — the model and prompt you are editing, saved or not, run on each sample one at a time. The current description and the candidate appear side by side, with the tags, any names the check removed and, for a video, how many frames it saw. **Nothing is written**: descriptions, tags, the Locked state, search embeddings and frames are unchanged. A video without frames is cut into a temporary folder for the preview and the folder is removed afterwards.
@@ -533,7 +536,7 @@ A video's **Moments** section in the information panel shows its reusable frames
 - **Your moments** — add a moment at any time with a title and an optional typed transcript. There is no automatic speech recognition. Your moments are never removed by a refresh, a replaced original or a face correction.
 - **Find moments / Refresh moments** — queues a plan that cuts the frames and builds the moment search index. **Add captions** queues the optional captions stage.
 - **Search** — a search shows _Moments in your videos_ above the results: frames that match by meaning, and moments whose caption or transcript contains the words. Only your own videos are searched.
-- **Describe video moments** — a setting under **Descriptions & tags**, off by default. When it is on, every video described automatically also has its reusable frames captioned right after, one more model request per frame, on the routed destination. It changes no description, so turning it on or off never asks for descriptions to be redone. **Frames looked at per video** beside it shows the current sampling policy (six) and cannot be changed.
+- **Describe moments in videos** — a setting under **Descriptions & tags**, off by default. When it is on, every video described automatically also has its reusable frames captioned right after, one more model request per frame, on the routed destination. It changes no description, so turning it on or off never asks for descriptions to be redone. **Frames looked at per video** beside it shows the current sampling policy (six) and cannot be changed.
 
 ### What makes a result out of date
 
@@ -555,16 +558,16 @@ Manual descriptions, your own moments, typed transcripts and the cover choice ar
 Check, in order:
 
 1. The asset has at least one named recognized face. Open the asset, expand the People list, confirm names are attached.
-2. The face's recognition confidence is above your **Min face confidence** threshold (default 0.7).
+2. The face's recognition confidence is above your **How sure before naming someone** threshold (default 0.7).
 3. Your model is Qwen or Phi (Florence ignores all prompt customization).
-4. Re-queue the asset — either re-run from the asset detail panel (`Rerun image descriptions and tags`) or run a full library re-queue.
+4. Re-queue the asset — use **Rewrite with AI** in the **AI enrichment** section of its information panel, or run a full library update with **Update captions now**.
 
 ### Multi-person descriptions still say "a family" or "a group"
 
 If a description for an asset with 2+ named people doesn't use any of the names:
 
 1. **Re-queue the asset.** The strengthened identity-hint wording (which explicitly forbids collective nouns) only applies to descriptions generated _after_ that change shipped. Older descriptions retain the wording from when they were generated.
-2. Check that **Max names** is high enough — at least the number of recognized people on the asset. Default is 5; if you have 6 family members in the photo and Max names is 5, one will be omitted.
+2. Check that **Most names in one caption** is high enough — at least the number of recognized people on the asset. Default is 5; if you have 6 family members in the photo and the limit is 5, one will be omitted.
 3. Confirm the model is Qwen or Phi. Florence ignores the prompt entirely.
 4. Open the asset and check the People list — only **named** faces (with a non-empty name and not hidden) are injected. Faces detected but not named are skipped.
 
@@ -572,9 +575,9 @@ If a description for an asset with 2+ named people doesn't use any of the names:
 
 Check, in order:
 
-1. **Advanced (raw prompt template) is OFF.** Custom instructions are not injected in advanced mode — they're a feature of the structured prompt path. Toggle Advanced off, or paste your instructions into the raw template manually.
-2. **You saved the settings.** The textarea writes to staged config; `Save` commits.
-3. **You re-queued.** Existing descriptions don't change retroactively — re-run the asset (or do a full re-queue) for the new instructions to apply.
+1. **Write my own instructions is OFF.** Custom instructions are not injected in raw-template mode — they're a feature of the structured prompt path. Turn it off, or paste your instructions into the raw template manually.
+2. **You saved the settings.** Changes stay a draft until you save them.
+3. **You re-queued.** Existing descriptions don't change retroactively — use **Rewrite with AI** on the asset (or **Update captions now**) for the new instructions to apply.
 4. **The model is following the instructions.** Try simpler, more directive language. "If you see a car, identify the make and model" works better than "try to be more specific about vehicles."
 5. **You haven't hit the 2000-character cap.** Save will reject longer payloads. Trim or split into two saves.
 
@@ -588,30 +591,30 @@ Every video gets six evenly spaced frames, which gives each one the same overvie
 
 ### Advanced template box was empty / I want my default back
 
-If you previously enabled Advanced mode before pre-fill shipped, your textarea may be blank. Either:
+If you previously turned on **Write my own instructions** before pre-fill shipped, your textarea may be blank. Either:
 
-1. **Toggle Advanced off, then on again.** The pre-fill only triggers when the textarea is empty, so this will populate it. If your textarea already has text you want to keep, clear it first, then toggle.
-2. **Click "Reset to default"** below the textarea. This explicitly overwrites the textarea with the current default template, discarding any edits.
+1. **Turn Write my own instructions off, then on again.** The pre-fill only triggers when the textarea is empty, so this will populate it. If your textarea already has text you want to keep, clear it first, then toggle.
+2. **Click "Start again from the built-in text"** below the textarea. This explicitly overwrites the textarea with the current default template, discarding any edits.
 
 ### A smart album never populates an asset
 
 Check, in order:
 
-1. **Smart albums** are enabled in System Settings.
-2. The specific **kind** is enabled (each accordion has its own toggle).
+1. **Build smart albums** is on in Categories & smart albums.
+2. The specific album is offered (**Offer this album** on its page).
 3. The asset has a completed description (not still pending).
-4. The asset's stored tags contain one of the kind's **Tag triggers** (case-insensitive). Open the asset detail panel and look at the tags list.
-5. The matching tag's confidence is at or above the kind's **Tag threshold**.
-6. The asset is not on the kind's **exclusion list** (Excluded from smart album).
+4. The asset's stored tags contain one of the album's **Tags that add a photo** (case-insensitive). Open the asset detail panel and look at the tags list.
+5. The matching tag's confidence is at or above the album's **Match strictness**.
+6. The asset was not removed from that album by hand (removals are kept as exclusions).
 
 ### An album has unwanted assets
 
-- For one-off removal, use **Exclude from smart album** from the asset action menu.
-- For systematic noise, tighten the kind's **Tag triggers** list to remove the offending tag, then click **Re-evaluate this album**.
+- For one-off removal, select the asset in the album and choose **Remove from album**.
+- For systematic noise, tighten the album's **Tags that add a photo** list to remove the offending tag, then use **Update this album → Update now**.
 
-### The persistent banner won't go away
+### The "Caption choices changed" notice won't go away
 
-The banner is gated on `pendingRequeueAt`. It clears when the re-queue job dispatches. If the job fails silently (check `Administration → Jobs`), the timestamp may still be set. Clicking **Re-queue now** from the banner will re-dispatch and clear the timestamp on success.
+The notice is gated on `pendingRequeueAt`. It clears when the re-queue job dispatches. If the job fails silently (check **Settings → Computers & background work → Background work**), the timestamp may still be set. Clicking **Update captions now** from the notice will re-dispatch and clear the timestamp on success.
 
 ### "Estimated re-queue time" is wildly off
 
@@ -654,14 +657,14 @@ Suppose you have ~80,000 photos and ~3,000 videos accumulated over a decade, on 
 
 ### Day 2 — Description prompt tuning
 
-Tune the description prompt, then use **Preview a description** on a handful of photos and videos before anything reaches the library:
+Tune the description prompt, then use **Try it on a few photos** on a handful of photos and videos before anything reaches the library:
 
-1. **Administration → Machine Learning → Image Description.**
-2. **Model name:** `Qwen/Qwen2.5-VL-3B-Instruct` (the 3B fits comfortably in 8 GB).
-3. **Prompt → Style:** `balanced`, sentence count `3`.
-4. **Prompt → Look for:** keep the defaults plus add `birthday cake, sparklers, candles, soccer ball, baseball glove, basketball hoop, hiking trail, ski lift`.
-5. **Prompt → Custom vocabulary:** `golden hour, overcast, backyard, park, beach, ski resort, kitchen` plus your top 5 vacation destinations as lowercase phrases.
-6. **Prompt → Custom instructions** — paste this:
+1. **Settings → Search & intelligence → Descriptions & tags.**
+2. **Caption model:** `Qwen/Qwen2.5-VL-3B-Instruct` (the 3B fits comfortably in 8 GB).
+3. **Caption length:** Balanced (3 sentences).
+4. **Things to look out for:** keep the defaults plus add `birthday cake, sparklers, candles, soccer ball, baseball glove, basketball hoop, hiking trail, ski lift`.
+5. **Preferred tag words:** `golden hour, overcast, backyard, park, beach, ski resort, kitchen` plus your top 5 vacation destinations as lowercase phrases.
+6. **Extra instructions** — paste this:
 
    ```
    Always name every recognized person and avoid generic group terms like "the family"
@@ -675,15 +678,15 @@ Tune the description prompt, then use **Preview a description** on a handful of 
    Keep descriptions factual. Do not use poetic language or editorialize about emotions.
    ```
 
-7. **Prompt → Identity Injection:** enabled. Max names `8` (you have larger family group photos). Min face confidence default.
+7. **Mention people I have named:** on. **Most names in one caption** `8` (you have larger family group photos). **How sure before naming someone** default.
 8. **Save.**
 
 ### Day 3 — Backfill
 
-1. **Image Description → Status & Re-generation → Re-queue all descriptions.** The estimate is built from the rolling average of recent jobs. On a 3B Qwen with an NVIDIA GPU, expect ~0.5–1 s per asset, so ~12–24 hours total for an 80k+3k library.
+1. **Descriptions & tags → Update captions now.** The estimate is built from the rolling average of recent jobs. On a 3B Qwen with an NVIDIA GPU, expect ~0.5–1 s per asset, so ~12–24 hours total for an 80k+3k library.
 2. Let it run.
-3. **Smart Albums.** Enable. Add the suggested extra tag triggers for the kinds you care about (see [Smart-album tag tuning](#smart-album-tag-tuning)).
-4. **Smart Albums → Re-evaluate all assets.** Quick — only walks descriptions, not images. Runs in minutes.
+3. **Categories & smart albums.** Turn on **Build smart albums**. Add the suggested extra tag triggers for the kinds you care about (see [Smart-album tag tuning](#smart-album-tag-tuning)).
+4. **Categories & smart albums → Update albums now.** Quick — only walks descriptions, not images. Runs in minutes.
 
 ### Day 4 — Spot-check and iterate
 
@@ -694,7 +697,7 @@ Open 10 random assets across photos and videos. Look for:
 - **Smart album membership makes sense.** If Travel is sparse, add city/landmark names to its triggers and re-evaluate _that one album_.
 - **Video descriptions reflect the timeline.** Look for words like "begins", "then", "throughout" — signs the model treated the grid as a sequence.
 
-Iterate the custom instructions in 30-minute cycles: edit, save, re-queue a handful of assets you care about (using the per-asset Rerun action), check, repeat. Once happy, do another full re-queue if needed.
+Iterate the custom instructions in 30-minute cycles: edit, save, re-run a handful of assets you care about (with **Rewrite with AI** on each), check, repeat. Once happy, do another full re-queue if needed.
 
 ### Day 5+ — Maintenance
 

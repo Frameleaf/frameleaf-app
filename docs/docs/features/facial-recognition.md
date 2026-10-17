@@ -31,7 +31,7 @@ Face detection sends the generated preview image to the machine learning service
 The facial recognition algorithm we use is derived from [DBSCAN](https://www.youtube.com/watch?v=RDZUdRSDOok), a popular clustering algorithm. It essentially treats each detected face as a point in a graph and aims to group points that are close to each other.
 
 :::note
-An important concept is whether something is a _core point_. A core point has a minimum number of points around it within a certain distance. A non-core point can only be assigned to a cluster if it can reach a core point; a non-core point can't be used to extend a cluster even if it's part of one. In Frameleaf, the _Minimum Recognized Faces_ setting controls the threshold to be considered a core point.
+An important concept is whether something is a _core point_. A core point has a minimum number of points around it within a certain distance. A non-core point can only be assigned to a cluster if it can reach a core point; a non-core point can't be used to extend a cluster even if it's part of one. In Frameleaf, the _Photos needed before someone appears_ setting (minimum recognized faces) controls the threshold to be considered a core point.
 :::
 
 For each face, it looks around it to find other faces within a certain distance. Faces within this distance are considered similar, so it then checks if any of these faces are associated with a person.
@@ -57,7 +57,7 @@ If you didn't import your assets at once or if the server was able to process jo
 
 ## Configuration
 
-Navigating to Administration > Settings > Machine Learning Settings > Facial Recognition will show the options available.
+Open **Settings → Search & intelligence → Faces & identity**. **How carefully to group** offers presets; the individual settings below are under **Advanced: face model and numbers**.
 
 :::tip
 It's better to only tweak the parameters here than to set them to something very different unless you're ready to test a variety of options. If you do need to set a parameter to a strict setting, relaxing other settings can be a good option to compensate, and vice versa.
@@ -65,21 +65,27 @@ It's better to only tweak the parameters here than to set them to something very
 You can learn how the tune the result in this [Guide](/guides/better-facial-clusters)
 :::
 
-### Facial recognition model
+### Face model
 
 There are a few different models available; the default is typically considered the best. On more constrained systems where the default is too intensive, you can choose a smaller model instead.
 
-### Minimum detection score
+### Face clarity needed
+
+The minimum detection score.
 
 This setting affects whether a result from the face detection model is filtered out as a false positive. It may seem tempting to set this low to detect more faces, but it can lead to false positives that are difficult to deal with and can harm facial recognition. It is strongly recommended not to go below 0.5 for this setting. Setting it to a very high number like 0.9 is also not recommended: the default is already biased toward precision, so a threshold that high leads to many undetected faces.
 
-After changing this setting, it will only apply to new face detection jobs. To apply the new setting to all assets, you need to re-run face detection for all assets.
+After changing this setting, it will only apply to new face detection jobs. To apply the new setting to all assets, you need to re-run face detection for all assets from **Background work**.
 
-### Maximum recognition distance
+### How alike two faces must be
+
+The maximum recognition distance.
 
 The distance threshold described in How Facial Recognition Works. The default works well for most people, but it may be worth lowering it if the library has twins or otherwise very similar looking people. A threshold that's too low just means needing to merge duplicate people after facial recognition, whereas a threshold too high can produce unsalvageable results. It is strongly recommended not to go below 0.3 or above 0.7.
 
-### Minimum recognized faces
+### Photos needed before someone appears
+
+The minimum recognized faces.
 
 The core point threshold described in How Facial Recognition Works. This setting has a few implications. First, it takes effect immediately in that people with fewer faces than this are hidden from view. Secondly, it makes clustering more robust as it prevents loosely-related faces from being linked to each other by requiring a certain level of density.
 

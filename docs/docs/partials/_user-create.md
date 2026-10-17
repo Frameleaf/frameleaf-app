@@ -1,6 +1,6 @@
 If you have friends or family members who want to use the application as well, you can create additional accounts for them.
 
-1. On the **Administration > Users** page, select **Create user**.
-2. Enter the user's **Email**, a **Password** (twice) and their **Name**.
-3. Optionally set **Quota Size (GiB)** (leave it empty for unlimited), turn on **Require user to change password on first login**, or turn on **Admin User**.
-4. Select **Create**.
+1. Open **Settings → Users** and select **Create user**.
+2. Enter the person's **Email** and **Name**, and an **Initial password** (twice).
+3. Optionally set a **Storage limit (GB)** (leave it blank for no limit), turn on **Require a password change at the next sign-in**, or set the **Role** to **Administrator**.
+4. Select **Create account**.

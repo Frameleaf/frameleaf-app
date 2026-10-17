@@ -44,7 +44,7 @@ The parameters used here match those specified in the example `.env` file. If yo
 | -------------------- | -------------------- |
 | Host name/address    | `frameleaf_postgres` |
 | Port                 | `5432`               |
-| Maintenance database | `immich`             |
+| Maintenance database | `frameleaf`          |
 | Username             | `postgres`           |
 | Password             | `postgres`           |
 

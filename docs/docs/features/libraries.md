@@ -43,7 +43,7 @@ To validate that Frameleaf can reach your external library, start a shell inside
 
 ### Exclusion Patterns
 
-By default, all files in the import paths will be added to the library. If there are files that should not be added, exclusion patterns can be used to exclude them. Exclusion patterns are glob patterns are matched against the full file path. If a file matches an exclusion pattern, it will not be added to the library. Exclusion patterns can be added in the Scan Settings page for each library.
+By default, all files in the import paths will be added to the library. If there are files that should not be added, exclusion patterns can be used to exclude them. Exclusion patterns are glob patterns are matched against the full file path. If a file matches an exclusion pattern, it will not be added to the library. Exclusion patterns can be added under **Exclusion patterns** when you add or edit each library.
 
 Some basic examples:
 
@@ -76,17 +76,17 @@ If you encounter an `ENOSPC` error, you need to increase your file watcher limit
 ERROR [LibraryService] Library watcher for library c69faf55-f96d-4aa0-b83b-2d80cbc27d98 encountered error: Error: ENOSPC: System limit for number of file watchers reached, watch '/media/photo.jpg'
 ```
 
-In rare cases, the library watcher can hang, preventing Frameleaf from starting up. In this case, disable the library watcher in the configuration file. If the watcher is enabled from within Frameleaf, the app must be started without the microservices. Disable the microservices in the docker compose file, start Frameleaf, disable the library watcher in the admin settings, close Frameleaf, re-enable the microservices, and then Frameleaf can be started normally.
+In rare cases, the library watcher can hang, preventing Frameleaf from starting up. In this case, disable the library watcher in the configuration file. If the watcher is enabled from within Frameleaf, the app must be started without the microservices. Disable the microservices in the docker compose file, start Frameleaf, turn off **Watch external libraries for file changes** in **Settings → Libraries**, close Frameleaf, re-enable the microservices, and then Frameleaf can be started normally.
 
 ### Nightly job
 
 There is an automatic scan job that is scheduled to run once a day. Its schedule is configurable, see [Set Custom Scan Interval](#set-custom-scan-interval).
 
-This job also cleans up any libraries stuck in deletion. It is possible to trigger the cleanup by clicking "Scan all libraries" in the library management page.
+This job also cleans up any libraries stuck in deletion. It is possible to trigger the cleanup by clicking **Scan N libraries** in **Settings → Libraries**.
 
 ### Deleting a Library
 
-When deleting an external library, all assets inside are immediately deleted along with the library. Note that while a library can take a long time to fully delete in the background, it is immediately removed from the library list. If the deletion process is interrupted (for example, due to server restart), it will be cleaned up in the next nightly cron job. The cleanup process can also be manually initiated by clicking the "Scan All Libraries" button in the library list.
+When deleting an external library, all assets inside are immediately deleted along with the library. Note that while a library can take a long time to fully delete in the background, it is immediately removed from the library list. If the deletion process is interrupted (for example, due to server restart), it will be cleaned up by the next nightly scan. The cleanup process can also be manually initiated by clicking **Scan N libraries** in the library list.
 
 ## Usage
 
@@ -128,35 +128,26 @@ _Remember to run `docker compose up -d` to register the changes. Make sure you c
 
 These actions must be performed by the Frameleaf administrator.
 
-- Click on your avatar in the upper right corner.
-- Click on `Administration -> External Libraries`.
-- Click on `Create Library`.
-- Select which user owns the library, this **can not** be changed later
-- You are now entering the library management page.
-- Click on `Add` in the `Folders` section.
-- Enter `/mnt/media/christmas-trip` then click Add.
-- Click on `Edit` Library and rename it to "Christmas Trip".
+- Open **Settings → Libraries**.
+- Click **Add external library**.
+- Enter "Christmas Trip" as the **Library name**.
+- Select the **Owner**; this **can not** be changed later.
+- Under **Import folders**, click **Add folder** and enter `/mnt/media/christmas-trip`.
 
 NOTE: We have to use the `/mnt/media/christmas-trip` path and not the `/mnt/nas/christmas-trip` path since all paths have to be what the Docker containers see.
 
 Next, we'll add an exclusion pattern to filter out raw files.
 
-- Click on `Add` in the `Exclusion Patterns` section.
-- Enter `**/Raw/**` and click Add.
-- Click on `Scan`
+- Under **Exclusion patterns**, click **Add exclusion** and enter `**/Raw/**`.
+- Click **Create library**, then **Scan library** (saving folders does not start a scan).
 
 The christmas trip library will now be scanned in the background. In the meantime, let's add the videos and old photos to another library.
 
-- Go back to `Administration -> External Libraries`.
-- Click on `Create Library`.
-- Select which user owns the library,
-- You are now entering the library management page.
-- Click on `Add` in the `Folders` section.
-- Enter `/mnt/media/old-pics` then click Add
-- Click on `Add` in the `Folders` section.
-- Enter `/mnt/media/videos` then click Add
-- Click on `Scan`
-- Click on `Edit` Library and rename it to "Old videos and photos".
+- Go back to **Settings → Libraries** and click **Add external library**.
+- Enter "Old videos and photos" as the **Library name** and select the **Owner**.
+- Under **Import folders**, click **Add folder** and enter `/mnt/media/old-pics`.
+- Click **Add folder** again and enter `/mnt/media/videos`.
+- Click **Create library**, then **Scan library**.
 
 Within seconds, the assets from the old-pics and videos folders should show up in the main timeline.
 
@@ -164,7 +155,7 @@ Within seconds, the assets from the old-pics and videos folders should show up i
 
 Folder view provides an additional view besides the timeline that is similar to a file explorer. It allows you to navigate through the folders and files in the library. This feature is handy for a highly curated and customized external library or a nicely configured storage template.
 
-You can enable this feature under **Settings > Your preferences > Library features > Enable folders**. See [Folder view](/features/folder-view) for details.
+It is on by default; you can turn it on or off under **Settings > Your preferences > Tools & sidebar** (the **Folders** row). See [Folder view](/features/folder-view) for details.
 
 ### Set Custom Scan Interval
 
@@ -175,6 +166,6 @@ Only an admin can do this.
 You can define a custom interval for the external library rescan:
 
 1. Open **Settings** from the sidebar and go to **Libraries**.
-2. In **External libraries**, turn on **Enable scheduled scans**.
-3. Enter a cron expression in **Custom scan schedule**, for example `0 0 * * *` for every night at midnight. For more information you can refer to [Crontab Guru](https://crontab.guru/).
+2. Under **Periodic scanning**, turn on **Enable periodic library scanning**.
+3. Choose one of the preset times, or enter your own schedule as a cron expression, for example `0 0 * * *` for every night at midnight. For more information you can refer to [Crontab Guru](https://crontab.guru/).
 4. Save your changes.

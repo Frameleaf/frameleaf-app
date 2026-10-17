@@ -8,7 +8,7 @@ Every locked item has exactly one lock, and the lock records why it was locked:
 
 - **Moved from old Locked folder**: it was in the upstream Locked folder when the library was upgraded (see below).
 - **Marked**: you locked it with **Mark Sensitive** in the selection bar or the viewer, a sensitive review in the information panel, an upload into Locked, or an older client's "Move to Locked folder".
-- **Detected**: sensitive-content detection flagged it while **Hide detected NSFW assets** is on.
+- **Detected**: sensitive-content detection flagged it while **Hide flagged photos until unlocked** is on.
 
 A lock is metadata. Locking never changes an item's albums, stack, favorites, tags, faces or its place in the timeline or archive, and unlocking returns it exactly where it was.
 
@@ -76,10 +76,10 @@ The upgrade moves everything in the upstream Locked folder into the lock, so not
 
 1. Every item in the Locked folder gets a lock with the reason **Moved from old Locked folder** and returns to the timeline as its place (the video part of a live photo stays hidden). It stays hidden until you unlock, and it is listed in Locked.
 2. Every item you had marked sensitive gets a **Marked** lock.
-3. Items flagged by detection get a **Detected** lock only if **Hide detected NSFW assets** was on; with it off they were never hidden, so they stay where they are. Turning the setting on later locks the unreviewed detections at that moment.
+3. Items flagged by detection get a **Detected** lock only if **Hide flagged photos until unlocked** was on; with it off they were never hidden, so they stay where they are. Turning the setting on later locks the unreviewed detections at that moment.
 4. Stacks that were partly locked are locked as a whole, and the covers the locked photos held are replaced.
 
-The migration (`2100000000320-AddAssetLock`) is safe to run again and changes nothing the second time. It reads **Hide detected NSFW assets** from the saved settings; when the setting is on only in a configuration file, the server locks the existing unreviewed detections once when it first starts, and again whenever it starts to find the setting newly switched on.
+The migration (`2100000000320-AddAssetLock`) is safe to run again and changes nothing the second time. It reads **Hide flagged photos until unlocked** from the saved settings; when the setting is on only in a configuration file, the server locks the existing unreviewed detections once when it first starts, and again whenever it starts to find the setting newly switched on.
 
 Going back to a release without lock records restores the upstream Locked folder: every locked item is set to `visibility = locked`, so it stays hidden there.
 

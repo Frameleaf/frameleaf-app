@@ -1,9 +1,9 @@
 # Workers and Endpoints
 
-Frameleaf sends machine-learning work to **destinations**: the machine-learning container that ships with the server and other machines on your network. **Administration > Processing destinations** shows them in two parts:
+Frameleaf sends machine-learning work to **destinations**: the machine-learning container that ships with the server and other machines on your network. They are managed in **Settings → Computers & background work**:
 
-- **Workers & endpoints**, an inventory of every worker with its current state.
-- **Processing destinations**, where you add workers and choose where each kind of work runs.
+- **Computers** lists every worker. Its **Details → AI helpers: addresses, access keys and limits** holds the destinations (where you add workers) and the inventory of each worker with its current state.
+- **Where work runs** chooses where each kind of work runs.
 
 ## Two kinds of worker
 
@@ -36,7 +36,7 @@ Each worker shows:
 
 **Render workers** lists the Studio render workers by when they last checked in. They call the server, so there is no address to show. **Restoration runners on this server** lists the server processes holding restoration jobs right now.
 
-The inventory refreshes every 30 seconds while the page is open. When a refresh fails it keeps the last snapshot on screen and says how old it is. **Check capabilities** checks exactly that worker now; nothing else is contacted.
+The inventory refreshes every 30 seconds while the page is open. When a refresh fails it keeps the last snapshot on screen and says how old it is. **Check what it can run** checks exactly that worker now; nothing else is contacted.
 
 ### The machine-learning URL list
 
@@ -63,7 +63,7 @@ Then add a home-network destination at `http://frameleaf-restoration:3004`, allo
 
 - **Separate GPUs.** Set `FRAMELEAF_RESTORATION_GPU` to a GPU the machine-learning container does not use, and pin that container to its own GPU with `device_ids` in `hwaccel.ml.yml`.
 - **One GPU for both.** Tick **This worker shares a GPU with library analysis** on the restoration destination. Full restorations bound to it then stay queued while face, search, text and description jobs have work, and start when that work is done. Previews still run, because someone is waiting for them and they are short. A paused library queue does not hold restoration back.
-- **On the server.** Restoration jobs are not in the library-analysis queues. Each server process runs at most one restoration at a time on its own loop, so a restoration never takes a queue's concurrency slot; queue concurrency is set under **Job Queues** as before.
+- **On the server.** Restoration jobs are not in the library-analysis queues. Each server process runs at most one restoration at a time on its own loop, so a restoration never takes a queue's concurrency slot; queue concurrency is set under **Settings → Computers & background work → Background work**.
 
 ## API
 
