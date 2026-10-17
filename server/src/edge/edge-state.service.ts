@@ -31,13 +31,15 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { getConfig } from 'src/utils/config.js';
 import { identityDirectory, loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
-import { entitlementFlags } from 'src/utils/frameleaf-license.js';
+import { FrameleafCloudError, cloudErrorCode } from 'src/utils/frameleaf-cloud.js';
 import { RELAY_NOTICE_AFTER_MS, wanProbeResponseSchema } from 'src/utils/frameleaf-relay.js';
 import {
   ACME_ACCOUNT_URI,
   DNS_TXT_TIMEOUT_MS,
   EDGE_POLL_MS,
   LETS_ENCRYPT_DIRECTORY,
+  RELAY_NEEDS_PLAN,
+  REMOTE_NEEDS_LICENCE,
   TEARDOWN_MS,
   buildCandidates,
   certificateFacts,
@@ -52,6 +54,7 @@ import {
   inContainer,
   nextRenewalCheck,
   remoteEndpoints,
+  remoteEntitlement,
   renewalDue,
   retryDelayMs,
   verifiedCustomHost,
@@ -80,6 +83,11 @@ export type EdgeDesired =
       buddyRecovery?: BuddyRecoveryScope;
       recoveryOnly?: true;
       buddyOnly?: true;
+      /**
+       * FL-437: a Server licence and no plan: the enrolment, direct names and certificate, but no relay
+       * (and so no relay name or custom hostname). Direct connections are the only way in.
+       */
+      noRelay?: true;
     };
 
 /** An enrolment is refreshed (it is idempotent and heals the cloud's records) once a day. */
@@ -102,6 +110,30 @@ const CERTIFICATE_NOTICE_KEY = 'frameleaf-remote:certificate';
 const RELAY_NOTICE_KEY = 'frameleaf-remote:relay';
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/** Frameleaf Cloud refused the enrolment itself: the enrolment held so far is not served any more. */
+class EnrollmentRefused extends Error {}
+
+/**
+ * FL-437 (FC-147): `POST /v1/remote/enroll` answers 403 `enrollment-suspended` for a suspended or
+ * denylisted server, and 403 `entitlement-missing` once neither a Server licence nor a plan is left.
+ */
+const enrollmentRefusal = (error: unknown): string | null => {
+  if (!(error instanceof FrameleafCloudError) || error.status !== 403) {
+    return null;
+  }
+  switch (cloudErrorCode(error)) {
+    case 'enrollment-suspended': {
+      return 'Frameleaf Cloud suspended remote access for this server. Check Servers in your Frameleaf account.';
+    }
+    case 'entitlement-missing': {
+      return REMOTE_NEEDS_LICENCE;
+    }
+    default: {
+      return null;
+    }
+  }
+};
 
 /**
  * Whether this server is behind carrier-grade NAT: the router's own public address is a shared
@@ -147,7 +179,12 @@ export class EdgeStateService {
   private served: string | null = null;
   private servingMode: 'ordinary' | 'buddy' | 'recovery' = 'ordinary';
   private lastWritten: { state: Omit<FrameleafRemoteAccess, 'updatedAt'>; at: number } | null = null;
-  private enrollRetry: { at: number; failures: number } | null = null;
+  private enrollRetry: { at: number; failures: number; refused?: string } | null = null;
+  /**
+   * What the enrolment was last made under (FL-437): a change (a plan bought, a licence back after
+   * none) enrols again at once, so Frameleaf Cloud's records follow without waiting a day.
+   */
+  private enrolledAs: 'none' | 'licence' | 'plan' | null = null;
   private reportAttempts = new Map<EdgeCertificateKind, number>();
   private relayNoticeAt = 0;
   /** Set once the migrations have run (see `schemaReady`). */
@@ -260,18 +297,23 @@ export class EdgeStateService {
     const settings = config.frameleafCloud.remoteAccess;
     const buddyRecovery = await readBuddyRecovery(identityDirectory(this.configRepository), link.instanceId, now);
     const licenses = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafLicense);
-    const paid = entitlementFlags([licenses?.key, licenses?.plan], now).remoteAccess;
-    const ordinary = settings.enabled && paid;
+    // FL-437: a Server licence or a plan enrols and serves the direct names; only the plan adds the relay
+    const entitled = remoteEntitlement(licenses, now);
+    const ordinary = settings.enabled && entitled.direct;
+    // without the relay, direct connections are the only way in, whatever the connection mode says
+    const noRelay = entitled.direct && !entitled.relay;
     if (buddyRecovery) {
-      const buddyOnly = !ordinary && paid && buddyRecovery.backupEnabled;
+      const buddyOnly = !ordinary && entitled.direct && buddyRecovery.backupEnabled;
+      const recoveryOnly = !ordinary && !buddyOnly;
       return {
         serve: true,
         cloudUrl,
         link: link as FrameleafCloudLink & { instanceId: string },
-        settings: buddyOnly ? { ...settings, mode: 'relay-and-direct' } : settings,
+        settings: buddyOnly || (noRelay && !recoveryOnly) ? { ...settings, mode: 'relay-and-direct' } : settings,
         buddyRecovery,
         ...(buddyOnly && { buddyOnly: true as const }),
-        ...(!ordinary && !buddyOnly && { recoveryOnly: true as const }),
+        ...(recoveryOnly && { recoveryOnly: true as const }),
+        ...(noRelay && !recoveryOnly && { noRelay: true as const }),
       };
     }
     if (!settings.enabled) {
@@ -281,12 +323,18 @@ export class EdgeStateService {
       return {
         serve: false,
         status: 'idle',
-        reason: 'Remote access is included with a Frameleaf Cloud plan.',
+        reason: REMOTE_NEEDS_LICENCE,
         removeCertificates: false,
         link,
       };
     }
-    return { serve: true, cloudUrl, link: link as FrameleafCloudLink & { instanceId: string }, settings };
+    return {
+      serve: true,
+      cloudUrl,
+      link: link as FrameleafCloudLink & { instanceId: string },
+      settings: noRelay ? { ...settings, mode: 'relay-and-direct' } : settings,
+      ...(noRelay && { noRelay: true as const }),
+    };
   }
 
   /**
@@ -333,6 +381,10 @@ export class EdgeStateService {
 
     const previous = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess);
     const desired = await this.desired(now);
+    if (!desired.serve && desired.reason === REMOTE_NEEDS_LICENCE) {
+      // neither a licence nor a plan: Frameleaf Cloud removes the enrolment, so enrol afresh once one is back
+      this.enrolledAs = 'none';
+    }
     if (!desired.serve) {
       await this.idle(desired, previous, now);
       return;
@@ -401,6 +453,8 @@ export class EdgeStateService {
         port: this.listenPort(),
         mapping: settings.portMapping ? null : { externalPort: settings.directPort, method: 'manual' as const },
         cgnatSuspected: false,
+        // the mode actually served: Buddy-only and licence-only (FL-437) serve direct whatever the saved mode
+        allowWan: settings.mode === 'relay-and-direct',
       },
       candidates: [],
     };
@@ -423,7 +477,11 @@ export class EdgeStateService {
     let state: Omit<FrameleafRemoteAccess, 'updatedAt'> = {
       ...base,
       status: 'starting',
-      reason: desired.buddyOnly ? 'Buddy Backup transport only. Ordinary remote access is off.' : null,
+      reason: desired.buddyOnly
+        ? 'Buddy Backup transport only. Ordinary remote access is off.'
+        : desired.noRelay
+          ? RELAY_NEEDS_PLAN
+          : null,
       names: previous?.names,
       acmeAccountUri: previous?.acmeAccountUri,
       certificate: previous?.certificate ?? null,
@@ -433,11 +491,23 @@ export class EdgeStateService {
     };
 
     // enrolment: the label, names, relay assignment and CAA parameters
-    const enrollment = await this.ensureEnrollment(desired, state.names, now).catch((error: unknown) => {
-      const reason = `Frameleaf Cloud could not set up remote access: ${message(error)}`;
-      state = { ...state, status: 'error', reason };
-      return null;
-    });
+    let enrollment: FrameleafRemoteEnrollment | null;
+    try {
+      enrollment = await this.ensureEnrollment(desired, state.names, now);
+    } catch (error) {
+      if (error instanceof EnrollmentRefused) {
+        // suspended, or no licence or plan left at Frameleaf Cloud: nothing is served on the old enrolment
+        await this.stopServing();
+        state = { ...state, status: 'error', reason: error.message, direct: { ...state.direct, listening: false } };
+      } else {
+        state = {
+          ...state,
+          status: 'error',
+          reason: `Frameleaf Cloud could not set up remote access: ${message(error)}`,
+        };
+      }
+      enrollment = null;
+    }
     if (!enrollment) {
       await this.writeState(state, now);
       return;
@@ -471,7 +541,8 @@ export class EdgeStateService {
     }
 
     // the custom hostname's certificate, once Frameleaf Cloud verified its records
-    const customHost = verifiedCustomHost(settings);
+    // a custom hostname reaches this server through the relay only (FL-437: none without a plan)
+    const customHost = desired.noRelay ? null : verifiedCustomHost(settings);
     let custom: { host: string; certificate: string; key: string } | null = null;
     if (customHost) {
       const issuance =
@@ -492,7 +563,7 @@ export class EdgeStateService {
       state.customCertificate = result.facts ? { ...result.facts, host: customHost } : null;
       state.customCertificateIssuance = { ...result.issuance, host: customHost };
       custom = result.pair ? { host: customHost, ...result.pair } : null;
-    } else if (state.customCertificate || state.customCertificateIssuance) {
+    } else if (!desired.noRelay && (state.customCertificate || state.customCertificateIssuance)) {
       await this.certificates.remove(identityDir, ['custom']);
       state.customCertificate = null;
       state.customCertificateIssuance = undefined;
@@ -527,17 +598,19 @@ export class EdgeStateService {
         this.relay.configure({ contexts: { wildcard: wildcard.pair, custom }, enrollment });
         this.served = signature;
       }
-      // the relay is the baseline path: it runs whatever the direct listener does
-      await this.relay.ensure(
-        {
-          instanceId: desired.link.instanceId,
-          linkKey: `${desired.link.instanceId}|${desired.link.linkedAt ?? ''}`,
-          enrollment,
-          cloud,
-          ...(desired.buddyOnly && { buddyOnly: true }),
-        },
-        now,
-      );
+      // the relay is the baseline path: it runs whatever the direct listener does, given a plan
+      await (desired.noRelay
+        ? this.relay.stop()
+        : this.relay.ensure(
+            {
+              instanceId: desired.link.instanceId,
+              linkKey: `${desired.link.instanceId}|${desired.link.linkedAt ?? ''}`,
+              enrollment,
+              cloud,
+              ...(desired.buddyOnly && { buddyOnly: true }),
+            },
+            now,
+          ));
       try {
         await this.direct.start();
       } catch (error) {
@@ -554,7 +627,7 @@ export class EdgeStateService {
 
     state.direct = { ...state.direct, listening: this.direct.listening };
     // the relay's status first: the router can take a while to answer and never holds it up
-    state.relay = this.relay.status();
+    state.relay = desired.noRelay ? { connected: false, needsPlan: true } : this.relay.status();
     const wan = await this.directConnect(desired, previous, state, advertised, now);
     await this.noticeRelayDown(state.relay, now);
     state.candidates = buildCandidates({
@@ -846,17 +919,25 @@ export class EdgeStateService {
     current: FrameleafRemoteEnrollment | undefined,
     now: number,
   ): Promise<FrameleafRemoteEnrollment | null> {
+    // FL-437: enrolled under another entitlement (a plan bought, a licence back): enrol again at once
+    const entitlement = desired.noRelay ? 'licence' : 'plan';
+    const changed = this.enrolledAs !== null && this.enrolledAs !== entitlement;
     // linked again: enrol again at once, which also gives the new sign-in client its relay address
     const fresh =
+      !changed &&
       current &&
       current.instanceId === desired.link.instanceId &&
       current.cloudUrl === desired.cloudUrl &&
       current.linkedAt === desired.link.linkedAt &&
       now - Date.parse(current.enrolledAt) < ENROLL_REFRESH_MS;
     if (fresh) {
+      this.enrolledAs = entitlement;
       return current;
     }
     if (this.enrollRetry && this.enrollRetry.at > now) {
+      if (this.enrollRetry.refused) {
+        throw new EnrollmentRefused(this.enrollRetry.refused);
+      }
       if (current?.instanceId === desired.link.instanceId && current.cloudUrl === desired.cloudUrl) {
         // a refresh that failed keeps the enrolment it had
         return current;
@@ -876,6 +957,7 @@ export class EdgeStateService {
         throw new Error(problem);
       }
       this.enrollRetry = null;
+      this.enrolledAs = entitlement;
       if (answer.cloneSuspected) {
         this.logger.warn('Frameleaf Cloud enrolled this server for remote access while it suspects a copy of it');
       }
@@ -895,10 +977,17 @@ export class EdgeStateService {
       };
     } catch (error) {
       const failures = (this.enrollRetry?.failures ?? 0) + 1;
+      const refused = enrollmentRefusal(error);
       this.enrollRetry = {
         failures,
         at: now + Math.min(ENROLL_RETRY_MAX_MS, ENROLL_RETRY_FIRST_MS * 2 ** (failures - 1)),
+        ...(refused && { refused }),
       };
+      if (refused) {
+        // the enrolment held so far is not used: Frameleaf Cloud no longer serves its names
+        this.logger.warn(`Frameleaf Cloud refused remote access enrolment: ${message(error)}`);
+        throw new EnrollmentRefused(refused);
+      }
       this.logger.warn(`Remote access enrolment failed: ${message(error)}`);
       if (current?.instanceId === desired.link.instanceId && current.cloudUrl === desired.cloudUrl) {
         return current;

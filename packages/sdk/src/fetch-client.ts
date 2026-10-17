@@ -1086,7 +1086,7 @@ export type RemoteAccessStatusResponseDto = {
     directPort: number;
     /** Remote access is switched on */
     enabled: boolean;
-    /** https://r.<label>.<direct domain>, once enrolled */
+    /** https://r.<label>.<direct domain> once enrolled; without a plan, the direct address Frameleaf Cloud reached */
     frameleafAddress: string | null;
     lastTestAt: string | null;
     lastTestChecks: RemoteAccessTestCheckDto[];
@@ -1115,6 +1115,8 @@ export type RemoteAccessStatusResponseDto = {
     relayLastErrorAt: string | null;
     /** Round trip to the relay, from its last keepalive */
     relayLatencyMs: number | null;
+    /** No relay without a Frameleaf Cloud plan: this server is reached through its direct address only */
+    relayNeedsPlan?: boolean;
     /** The relay this server uses (eu1, us1) */
     relayRegion: string | null;
     /** Frameleaf Cloud stopped the relay for this server; it is tried again once relinked */

@@ -1415,7 +1415,10 @@ export class FrameleafCloudService extends BaseService {
       remoteAccess: {
         enabled,
         relayConnected: current && !!state?.relay.connected,
-        direct: current && settings.mode === 'relay-and-direct' && !!state?.direct.listening,
+        // FL-437: what the edge worker serves, not the saved mode (a licence-only server is always direct);
+        // an edge state written before FL-437 has no allowWan and falls back to the saved mode
+        direct:
+          current && !!state?.direct.listening && (state?.direct.allowWan ?? settings.mode === 'relay-and-direct'),
       },
     };
   }

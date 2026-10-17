@@ -386,7 +386,7 @@ export class SystemConfigService extends BaseService {
       }
     }
 
-    // FL-165: remote access itself needs a linked server with a remote access plan, and the custom
+    // FL-165: remote access itself needs a linked server with a Server licence or a plan (FL-437), and the custom
     // hostname only changes through its own DNS check (Settings › Frameleaf Cloud › Remote access)
     if (allow.enabled && !before?.enabled) {
       const problem = await remoteAccessUnavailable({

@@ -255,6 +255,18 @@ export const entitlementFlags = (licenses: Array<FrameleafLicense | null | undef
   return flags;
 };
 
+/**
+ * FL-437 (FC-147): this server's own Server licence is active or in grace. It gives the server its
+ * Frameleaf direct address and certificate without a plan; the relay still needs the plan.
+ */
+export const hasServerLicence = (store: FrameleafLicenseStore | null | undefined, now = Date.now()) => {
+  if (store?.key?.kind !== 'server') {
+    return false;
+  }
+  const { state } = licenseStatus(store.key, now);
+  return state === 'active' || state === 'grace';
+};
+
 /** A licensed server: its supporter key or plan certificate is active or in grace (About, FL-156). */
 export const isLicensed = (store: FrameleafLicenseStore | null | undefined, now = Date.now()) =>
   [store?.key, store?.plan].some((license) => {
