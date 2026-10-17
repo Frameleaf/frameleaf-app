@@ -14542,6 +14542,18 @@
                   "format": "binary",
                   "type": "string"
                 }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
               }
             },
             "description": ""
@@ -15760,6 +15772,24 @@
           "200": {
             "content": {
               "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
                 "schema": {
                   "format": "binary",
                   "type": "string"
@@ -19600,6 +19630,12 @@
           "200": {
             "content": {
               "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
                 "schema": {
                   "format": "binary",
                   "type": "string"
@@ -29328,6 +29364,12 @@
           "200": {
             "content": {
               "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
                 "schema": {
                   "format": "binary",
                   "type": "string"
@@ -41268,6 +41310,18 @@
                   "format": "binary",
                   "type": "string"
                 }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
               }
             },
             "description": ""
@@ -52251,6 +52305,24 @@
           "200": {
             "content": {
               "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
                 "schema": {
                   "format": "binary",
                   "type": "string"
