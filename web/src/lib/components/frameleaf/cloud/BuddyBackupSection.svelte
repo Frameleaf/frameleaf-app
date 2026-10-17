@@ -378,7 +378,7 @@
         {/snippet}
         <div class="inside">
           {#if !status.pairing}
-            <!-- Link first, then a plan, then a Server licence; setup stays visible until every gate is satisfied. -->
+            <!-- Link, then a plan, then a Server licence; setup stays visible until every gate is satisfied. -->
             {#if !linked}
               <p class="explain">{$t('frameleaf_buddy_link_required')}</p>
               <div class="fc-actions">
@@ -407,8 +407,10 @@
                 )}
               </p>
             {/if}
-            <Button variant="primary" disabled={busy || !status.enabled || !entitled || !serverLicensed} onclick={beginSetup}
-              >{$t('frameleaf_buddy_set_up_buddy_backup')}</Button
+            <Button
+              variant="primary"
+              disabled={busy || !status.enabled || !entitled || !serverLicensed}
+              onclick={beginSetup}>{$t('frameleaf_buddy_set_up_buddy_backup')}</Button
             >
           {:else}
             <dl class="facts">
