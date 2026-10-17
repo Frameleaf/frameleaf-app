@@ -128,9 +128,19 @@ export const AssetRestorationUpscaleSchema = z
   ])
   .describe('Upscale factor. Output is additionally capped at 4K.');
 
+/** A restoration worker's model id, as its manifest names it (`realbasicvsr-x4`, `seedvr2-3b`). */
+const RESTORATION_MODEL_ID = /^[a-z0-9][a-z0-9-]{1,63}$/;
+
 const AssetRestorationRequestSchema = z
   .object({
     mode: AssetRestorationModeSchema,
+    model: z
+      .string()
+      .regex(RESTORATION_MODEL_ID)
+      .optional()
+      .describe(
+        "FL-423: the restoration model to use, one of the destination's `models` for this mode. Left out, the destination uses its own model for the mode. Never substituted: a model the destination cannot run is refused.",
+      ),
     upscale: AssetRestorationUpscaleSchema.default(2),
     keepGrain: z.boolean().default(false).describe('Preserve fine film grain instead of smoothing it'),
     destinationId: z
@@ -194,6 +204,22 @@ const AssetRestorationEstimateSchema = z
   .meta({ id: 'AssetRestorationEstimateDto' });
 
 /**
+ * FL-423: one model a home restoration worker can restore with, as it reported at its last check.
+ * `mode` is the kind of restoration it does; choosing it means asking for that mode with this model.
+ */
+const AssetRestorationModelSchema = z
+  .object({
+    id: z.string().describe('The model id to send as the request’s `model`'),
+    name: z.string().describe('The model’s display name'),
+    family: z.string().describe('Model family, for example realbasicvsr, seedvr2 or rife'),
+    mode: AssetRestorationModeSchema,
+    available: z
+      .boolean()
+      .describe('The worker reported it available, with verified weights and a qualification, at its last check'),
+  })
+  .meta({ id: 'AssetRestorationModelDto' });
+
+/**
  * One destination as a choice. `available` mirrors the server's admission rule for the selected
  * mode's workload; `refusal` says why a destination cannot be chosen so the client can explain it
  * rather than hiding it.
@@ -219,6 +245,11 @@ const AssetRestorationDestinationSchema = z
       .nullable()
       .describe(
         'The GPU a home restoration worker reported at its last check, for the model slider (FL-159); null otherwise',
+      ),
+    models: z
+      .array(AssetRestorationModelSchema)
+      .describe(
+        'FL-423: the models a home restoration worker can choose from for this kind of work (Faithful and Creative for a restoration, Smooth motion for Smooth motion), in the order the worker lists them. Empty for Frameleaf Cloud, whose model is chosen with its estimate, and for a worker that reported none.',
       ),
   })
   .meta({ id: 'AssetRestorationDestinationDto' });
@@ -339,6 +370,7 @@ export class AssetRestorationRegionDto extends createZodDto(AssetRestorationRegi
 export class AssetRestorationRequestDto extends createZodDto(AssetRestorationRequestSchema) {}
 export class AssetRestorationOptionsQueryDto extends createZodDto(AssetRestorationOptionsQuerySchema) {}
 export class AssetRestorationEstimateDto extends createZodDto(AssetRestorationEstimateSchema) {}
+export class AssetRestorationModelDto extends createZodDto(AssetRestorationModelSchema) {}
 export class AssetRestorationDestinationDto extends createZodDto(AssetRestorationDestinationSchema) {}
 export class AssetRestorationOptionsDto extends createZodDto(AssetRestorationOptionsSchema) {}
 export class AssetRestorationResponseDto extends createZodDto(AssetRestorationResponseSchema) {}

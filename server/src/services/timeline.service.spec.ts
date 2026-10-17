@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { BEST_PHOTOS_MIN_SCORE } from 'src/dtos/best-photos.dto.js';
-import { AssetLockReason, AssetVisibility, TimeBucketDateType } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility, ImageEnrichmentFilter, TimeBucketDateType } from 'src/enum.js';
 import { TimelineService } from 'src/services/timeline.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -543,6 +543,94 @@ describe(TimelineService.name, () => {
         { timeBucket: 'bucket', tagId: 'tag-123', withChildTags: false, userIds: [authStub.admin.user.id] },
         authStub.admin,
       );
+    });
+  });
+
+  describe('the Filters panel’s search filter (FL-425)', () => {
+    const filter = {
+      make: { eq: 'Canon' },
+      personIds: { all: ['person-1', 'person-2'] },
+      takenAt: { gte: new Date('2024-01-01') },
+    };
+    const options = { filter, imageEnrichment: ImageEnrichmentFilter.MissingImageDescription };
+
+    it('passes the filter and the enrichment state to the buckets, a bucket, the ordered page and the highlights', async () => {
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+      mocks.asset.getTimeBucket.mockResolvedValue({ assets: '{}' });
+      mocks.asset.getTimelineOrdered.mockResolvedValue({ assets: '{}' });
+      mocks.asset.getTimelineHighlights.mockResolvedValue([]);
+      const expected = { ...options, userIds: [authStub.admin.user.id] };
+
+      await sut.getTimeBuckets(authStub.admin, { ...options });
+      await sut.getTimeBucket(authStub.admin, { ...options, timeBucket: 'bucket' });
+      await sut.getTimelineOrdered(authStub.admin, { ...options, sort: 'filename', skip: 0, take: 10 });
+      await sut.getTimelineHighlights(authStub.admin, { ...options, grouping: 'month' });
+
+      expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith(expected, authStub.admin);
+      expect(mocks.asset.getTimeBucket).toHaveBeenCalledWith(
+        'bucket',
+        { ...expected, timeBucket: 'bucket' },
+        authStub.admin,
+      );
+      expect(mocks.asset.getTimelineOrdered.mock.calls[0][0]).toEqual(expected);
+      expect(mocks.asset.getTimelineHighlights.mock.calls[0][0]).toEqual(expected);
+    });
+
+    it('keeps the page’s own scope beside it: the archive and a person', async () => {
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+
+      await sut.getTimeBuckets(authStub.admin, { filter, personId: 'person-3', visibility: AssetVisibility.Archive });
+
+      expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith(
+        { filter, personId: 'person-3', visibility: AssetVisibility.Archive, userIds: [authStub.admin.user.id] },
+        authStub.admin,
+      );
+    });
+
+    it('needs read access to every album and tag the filter names', async () => {
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+      const named = {
+        albumIds: { any: ['album-1'] },
+        tagIds: { all: ['tag-1'] },
+        or: [{ tagIds: { none: ['tag-2'] } }],
+      };
+
+      await expect(sut.getTimeBuckets(authStub.admin, { filter: named })).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.asset.getTimeBuckets).not.toHaveBeenCalled();
+
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-1']));
+      mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-1']));
+      await expect(sut.getTimeBuckets(authStub.admin, { filter: named })).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.access.tag.checkOwnerAccess.mock.lastCall?.[1]).toEqual(new Set(['tag-1', 'tag-2']));
+
+      mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-1', 'tag-2']));
+      await expect(sut.getTimeBuckets(authStub.admin, { filter: named })).resolves.toEqual([]);
+      expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith(
+        { filter: named, userIds: [authStub.admin.user.id] },
+        authStub.admin,
+      );
+    });
+
+    it('is not available through a shared link', async () => {
+      mocks.access.album.checkSharedLinkAccess.mockResolvedValue(new Set(['album-id']));
+
+      for (const narrowing of [{ filter }, { imageEnrichment: ImageEnrichmentFilter.Nsfw }]) {
+        await expect(
+          sut.getTimeBucket(authStub.adminSharedLink, { timeBucket: 'bucket', albumId: 'album-id', ...narrowing }),
+        ).rejects.toThrow('filter and imageEnrichment are not available through a shared link');
+        await expect(
+          sut.getTimeBuckets(authStub.adminSharedLink, { albumId: 'album-id', ...narrowing }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      }
+      expect(mocks.asset.getTimeBucket).not.toHaveBeenCalled();
+      expect(mocks.asset.getTimeBuckets).not.toHaveBeenCalled();
+    });
+
+    it('still needs the unlocked session for the Locked view', async () => {
+      await expect(sut.getTimeBuckets(authStub.admin, { filter, visibility: AssetVisibility.Locked })).rejects.toThrow(
+        'Elevated permission',
+      );
+      expect(mocks.asset.getTimeBuckets).not.toHaveBeenCalled();
     });
   });
 

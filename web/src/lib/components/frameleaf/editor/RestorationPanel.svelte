@@ -32,6 +32,7 @@
    */
   import CloudJobDialog from '$lib/components/frameleaf/cloud/CloudJobDialog.svelte';
   import ModelSlider from '$lib/components/frameleaf/cloud/ModelSlider.svelte';
+  import RestorationModelSlider from '$lib/components/frameleaf/editor/RestorationModelSlider.svelte';
   import { resolvePosition, type DetectedGpu } from '$lib/frameleaf/gpu-model-catalog';
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
   import {
@@ -47,7 +48,9 @@
     compareKindFor,
     defaultDestinationId,
     destinationKindKey,
+    enhanceStops,
     formatEstimateSeconds,
+    initialEnhanceStop,
     isFullCropRect,
     isOutputCapped,
     isRestorationBusy,
@@ -59,6 +62,7 @@
     restorationStatusKey,
     restorationStatusTone,
     retryOperationIdFor,
+    type EnhanceStop,
     type RestorationRegion,
     type RestorationUpscale,
   } from '$lib/frameleaf/restoration';
@@ -134,10 +138,11 @@
     subsection?: boolean;
     /**
      * VIEWER-P6: the photo editor's Enhance tab in the template's form (Editor.jsx:1872-1924): one
-     * "Enhance & upscale" card with a Lighter-to-Heavier model slider and one button. The slider
-     * decides where the work runs (a white or green stop on this server or your network, a blue stop
-     * on Frameleaf Cloud, confirmed with its cost); it restores faithfully at up to 4×, the centre of
-     * the photo first. The restorations list below is unchanged.
+     * "Enhance & upscale" card with a Lighter-to-Heavier model slider and one button. FL-423: the
+     * slider chooses the model: a white or green stop is a model the computer at home runs (the request
+     * names it, with the kind of restoration it does), a blue stop is Frameleaf Cloud, whose model is
+     * chosen with its cost. It enlarges up to 4×, the centre of the photo first. The restorations list
+     * below is unchanged.
      */
     enhance?: boolean;
   };
@@ -235,30 +240,62 @@
       smoothRunsOn = start.runsOn;
     }
   });
-  /* VIEWER-P6: the Enhance card's slider, and the destination its stop stands for. */
-  let enhanceModelId = $state<string | null>(null);
-  let enhanceRunsOn = $state<'local' | 'cloud' | null>(null);
-  /** The home destination that would take the work right now, this server first. */
+  /*
+   * VIEWER-P6 / FL-423: the Enhance card's slider. Its stops are the models the computer at home runs
+   * (and Frameleaf Cloud); the chosen stop is the model the request names, the kind of restoration it
+   * does, and where it runs.
+   */
+  let enhanceStopId = $state<string | null>(null);
+  /** The computer at home that takes the work: one that would right now, this server first. */
   const enhanceLocal = $derived(
     destinations.find((candidate) => candidate.kind !== MlDestinationKind.FrameleafCloud && candidate.available) ??
+      destinations.find(
+        (candidate) => candidate.kind !== MlDestinationKind.FrameleafCloud && candidate.models.length > 0,
+      ) ??
       null,
   );
-  const enhanceGpu = $derived.by((): DetectedGpu | null => {
-    const gpu = enhanceLocal?.gpu;
-    return gpu ? { name: gpu.name, vramGb: gpu.memoryTotalBytes / 1024 ** 3, backend: 'CUDA', profile: null } : null;
-  });
+  const enhanceGpu = $derived(
+    enhanceLocal?.gpu
+      ? { name: enhanceLocal.gpu.name, vramGb: Math.round(enhanceLocal.gpu.memoryTotalBytes / 1e9) }
+      : null,
+  );
   const enhanceRoute = $derived(options?.route ?? 'local');
-  // The slider starts on the model that fits here, as Where each job runs would choose it.
+  const enhanceSliderStops = $derived(
+    enhanceStops({ home: enhanceLocal, mode, route: enhanceRoute, cloud: !!cloudDestinationId }),
+  );
+  const enhanceStop = $derived(enhanceSliderStops.find((stop) => stop.id === enhanceStopId) ?? null);
+  const enhanceRunsOn = $derived(enhanceStop?.runsOn ?? null);
+  // The slider starts on a ready model of the kind the server starts on, else the first that can be chosen.
   $effect(() => {
-    if (!enhance || !options || enhanceModelId) {
+    if (!enhance || !options || enhanceStopId) {
       return;
     }
-    const start = resolvePosition('upscale', null, { gpu: enhanceGpu, route: enhanceRoute });
+    const start = initialEnhanceStop(
+      enhanceSliderStops,
+      untrack(() => mode),
+    );
     if (start) {
-      enhanceModelId = start.item.id;
-      enhanceRunsOn = start.runsOn;
+      chooseEnhanceStop(start);
     }
   });
+  /** A stop chooses its model, and the kind of restoration that model does. */
+  const chooseEnhanceStop = (stop: EnhanceStop) => {
+    enhanceStopId = stop.id;
+    if (stop.mode && stop.mode !== mode) {
+      mode = stop.mode;
+    }
+  };
+  /*
+   * FL-423: in the full form (videos), a model is chosen only when the chosen computer offers more than
+   * one ready model for this kind of restoration; with one, the computer uses it anyway.
+   */
+  let formModelId = $state<string | null>(null);
+  const formModels = $derived((selected?.models ?? []).filter((model) => model.mode === mode && model.available));
+  const formModel = $derived(
+    formModels.length > 1 ? (formModels.find((model) => model.id === formModelId) ?? formModels[0]) : null,
+  );
+  /** The model the request names, or null to leave the choice to the computer. */
+  const requestedModel = $derived(enhance ? (enhanceStop?.model ?? null) : (formModel?.id ?? null));
   // The stop decides the destination: a blue stop is Frameleaf Cloud, any other the home destination.
   $effect(() => {
     if (!enhance) {
@@ -423,7 +460,14 @@
     try {
       const created = await requestAssetRestoration({
         id: asset.id,
-        assetRestorationRequestDto: { mode, upscale, keepGrain, destinationId, region },
+        assetRestorationRequestDto: {
+          mode,
+          ...(requestedModel && { model: requestedModel }),
+          upscale,
+          keepGrain,
+          destinationId,
+          region,
+        },
       });
       list = {
         assetId: asset.id,
@@ -734,17 +778,15 @@
       {:else if !options}
         <p class="rs-help" aria-busy="true">{$t('loading')}</p>
       {:else}
-        <ModelSlider
-          workload="upscale"
-          value={enhanceModelId}
-          gpu={enhanceGpu}
-          route={enhanceRoute}
+        <RestorationModelSlider
+          stops={enhanceSliderStops}
+          value={enhanceStopId}
           label={$t('frameleaf_enhance_model')}
-          localDisabledReason={enhanceLocal ? '' : $t('frameleaf_enhance_no_local')}
-          onChange={(id, state) => {
-            enhanceModelId = id;
-            enhanceRunsOn = state.runsOn;
-          }}
+          computer={enhanceLocal && enhanceLocal.kind !== MlDestinationKind.Local ? enhanceLocal.name : null}
+          gpu={enhanceGpu}
+          noLocalReason={$t('frameleaf_enhance_no_local')}
+          disabled={optionsPending}
+          onChange={chooseEnhanceStop}
         />
       {/if}
       <div class="rs-actions">
@@ -764,8 +806,6 @@
           <p class="rs-help">{$t('frameleaf_enhance_cloud_unavailable')}</p>
         {:else if onCloud}
           <p class="rs-help">{$t('frameleaf_enhance_cloud_cost')}</p>
-        {:else if enhanceRunsOn === 'cloud' && !cloudDestinationId}
-          <p class="rs-help">{$t('frameleaf_enhance_needs_cloud')}</p>
         {/if}
         <p class="rs-help">{$t('frameleaf_enhance_preview_help')}</p>
       </div>
@@ -904,6 +944,22 @@
         {/if}
       {:else}
         <p class="rs-warning" role="status">{$t('frameleaf_restoration_pick_destination')}</p>
+      {/if}
+      {#if formModel}
+        <h3>{$t('frameleaf_restoration_model')}</h3>
+        <div class="ed-row" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_restoration_model')}>
+          {#each formModels as candidate (candidate.id)}
+            <button
+              type="button"
+              role="radio"
+              class="ed-chip"
+              aria-checked={formModel.id === candidate.id}
+              onclick={() => (formModelId = candidate.id)}
+            >
+              {candidate.name}
+            </button>
+          {/each}
+        </div>
       {/if}
       {#each destinations.filter((candidate) => !candidate.available && candidate.id !== destinationId) as refused (refused.id)}
         <p class="rs-help">

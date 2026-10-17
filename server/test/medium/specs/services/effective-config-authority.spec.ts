@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
+import { serverVersion } from 'src/constants.js';
 import { SystemConfigController } from 'src/controllers/system-config.controller.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
@@ -523,7 +524,7 @@ describe('effective configuration transaction authority', () => {
           files: [{ path: f.filename, sha256, size: content.length }],
           manifest: {
             version: 1,
-            frameleafVersion: '2.6.0',
+            frameleafVersion: serverVersion.toString(),
             storageRoot: directory,
             settings: { system: {}, users: [], fork: [] },
           },

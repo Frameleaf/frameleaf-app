@@ -547,6 +547,163 @@ group by
 order by
   "timeBucket" desc
 
+-- AssetRepository.getTimeBuckets (search filter)
+with
+  "asset" as (
+    select
+      date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' as "timeBucket"
+    from
+      "asset"
+      inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+    where
+      "asset"."deletedAt" is null
+      and (
+        f_unaccent ("asset_exif"."make") ilike ('%' || f_unaccent ($1) || '%')
+        and "asset"."fileCreatedAt" >= $2
+        and exists (
+          select
+            "asset_face"."assetId"
+          from
+            "asset_face"
+          where
+            "asset_face"."assetId" = "asset"."id"
+            and "asset_face"."deletedAt" is null
+            and "asset_face"."isVisible" = $3
+            and "asset_face"."personGroupId" = any ($4::uuid[])
+          group by
+            "asset_face"."assetId"
+          having
+            count(distinct "asset_face"."personGroupId") = $5
+        )
+        and (
+          "asset_exif"."city" = $6
+          or "asset_exif"."rating" >= $7
+        )
+      )
+      and "asset"."type" = $8
+      and not exists (
+        select
+          1
+        from
+          asset_metadata
+        where
+          asset_metadata."assetId" = "asset"."id"
+          and asset_metadata.key = $9
+          and asset_metadata.value #>> '{description,status}' = 'success'
+      )
+      and (
+        "asset"."visibility" in ('archive', 'timeline')
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+  )
+select
+  ("timeBucket" AT TIME ZONE 'UTC')::date::text as "timeBucket",
+  count(*) as "count"
+from
+  "asset"
+group by
+  "timeBucket"
+order by
+  "timeBucket" desc
+
+-- AssetRepository.getTimeBuckets (search filter in a map area)
+with
+  "asset" as (
+    select
+      date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' as "timeBucket"
+    from
+      "asset"
+      inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+    where
+      "asset"."deletedAt" is null
+      and (
+        f_unaccent ("asset_exif"."make") ilike ('%' || f_unaccent ($1) || '%')
+        and "asset"."fileCreatedAt" >= $2
+        and exists (
+          select
+            "asset_face"."assetId"
+          from
+            "asset_face"
+          where
+            "asset_face"."assetId" = "asset"."id"
+            and "asset_face"."deletedAt" is null
+            and "asset_face"."isVisible" = $3
+            and "asset_face"."personGroupId" = any ($4::uuid[])
+          group by
+            "asset_face"."assetId"
+          having
+            count(distinct "asset_face"."personGroupId") = $5
+        )
+        and (
+          "asset_exif"."city" = $6
+          or "asset_exif"."rating" >= $7
+        )
+      )
+      and earth_box (
+        ll_to_earth_public ($8, $9),
+        greatest(
+          earth_distance (
+            ll_to_earth_public ($10, $11),
+            ll_to_earth_public ($12, $13)
+          ),
+          earth_distance (
+            ll_to_earth_public ($14, $15),
+            ll_to_earth_public ($16, $17)
+          ),
+          earth_distance (
+            ll_to_earth_public ($18, $19),
+            ll_to_earth_public ($20, $21)
+          ),
+          earth_distance (
+            ll_to_earth_public ($22, $23),
+            ll_to_earth_public ($24, $25)
+          )
+        )
+      ) @> ll_to_earth_public (asset_exif.latitude, asset_exif.longitude)
+      and "asset_exif"."latitude" >= $26
+      and "asset_exif"."latitude" <= $27
+      and "asset_exif"."longitude" >= $28
+      and "asset_exif"."longitude" <= $29
+      and "asset"."type" = $30
+      and not exists (
+        select
+          1
+        from
+          asset_metadata
+        where
+          asset_metadata."assetId" = "asset"."id"
+          and asset_metadata.key = $31
+          and asset_metadata.value #>> '{description,status}' = 'success'
+      )
+      and (
+        "asset"."visibility" in ('archive', 'timeline')
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+  )
+select
+  ("timeBucket" AT TIME ZONE 'UTC')::date::text as "timeBucket",
+  count(*) as "count"
+from
+  "asset"
+group by
+  "timeBucket"
+order by
+  "timeBucket" desc
+
 -- AssetRepository.getTimelineHighlights
 with
   asset as (
@@ -770,6 +927,195 @@ with
         )
       )
       and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $3
+      and not exists (
+        select
+        from
+          "stack"
+        where
+          "stack"."id" = "asset"."stackId"
+          and "stack"."primaryAssetId" != "asset"."id"
+      )
+    order by
+      (asset."localDateTime" AT TIME ZONE 'UTC')::date desc,
+      asset."fileCreatedAt" desc,
+      "asset"."originalFileName" desc
+  ),
+  "cte" as (
+    select
+      *
+    from
+      "selection"
+  ),
+  "agg" as (
+    select
+      coalesce(array_agg("duration"), '{}') as "duration",
+      coalesce(array_agg("id"), '{}') as "id",
+      coalesce(array_agg("visibility"), '{}') as "visibility",
+      coalesce(array_agg("isFavorite"), '{}') as "isFavorite",
+      coalesce(array_agg("isImage"), '{}') as "isImage",
+      coalesce(array_agg("isTrashed"), '{}') as "isTrashed",
+      coalesce(array_agg("isOffline"), '{}') as "isOffline",
+      coalesce(array_agg("livePhotoVideoId"), '{}') as "livePhotoVideoId",
+      coalesce(array_agg("fileCreatedAt"), '{}') as "fileCreatedAt",
+      coalesce(array_agg("createdAt"), '{}') as "createdAt",
+      coalesce(array_agg("localOffsetHours"), '{}') as "localOffsetHours",
+      coalesce(array_agg("ownerId"), '{}') as "ownerId",
+      coalesce(array_agg("projectionType"), '{}') as "projectionType",
+      coalesce(array_agg("ratio"), '{}') as "ratio",
+      coalesce(array_agg("status"), '{}') as "status",
+      coalesce(array_agg("thumbhash"), '{}') as "thumbhash",
+      coalesce(array_agg("city"), '{}') as "city",
+      coalesce(array_agg("country"), '{}') as "country",
+      coalesce(array_agg("rating"), '{}') as "rating",
+      coalesce(array_agg("originalFileName"), '{}') as "originalFileName",
+      coalesce(array_agg("width"), '{}') as "width",
+      coalesce(array_agg("height"), '{}') as "height",
+      coalesce(array_agg("fileSizeInByte"), '{}') as "fileSizeInByte",
+      coalesce(json_agg("stack"), '[]') as "stack"
+    from
+      "cte"
+  )
+select
+  to_json(agg)::text as "assets"
+from
+  "agg"
+
+-- AssetRepository.getTimeBucket (search filter)
+with
+  "selection" as (
+    select
+      "asset"."duration",
+      "asset"."id",
+      (
+        case
+          when "asset"."visibility" = 'hidden' then "asset"."visibility"
+          when exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          ) then 'locked'::asset_visibility_enum
+          else "asset"."visibility"
+        end
+      ) as "visibility",
+      asset."isFavorite"
+      and asset."ownerId" = $1 as "isFavorite",
+      asset.type = 'IMAGE' as "isImage",
+      asset."deletedAt" is not null as "isTrashed",
+      "asset"."isOffline",
+      "asset"."livePhotoVideoId",
+      extract(
+        epoch
+        from
+          (
+            asset."localDateTime" AT TIME ZONE 'UTC' - asset."fileCreatedAt" at time zone 'UTC'
+          )
+      )::real / 3600 as "localOffsetHours",
+      "asset"."ownerId",
+      "asset"."status",
+      asset."fileCreatedAt" at time zone 'utc' as "fileCreatedAt",
+      asset."createdAt" at time zone 'utc' as "createdAt",
+      encode("asset"."thumbhash", 'base64') as "thumbhash",
+      "asset_exif"."projectionType",
+      coalesce(
+        case
+          when asset."height" = 0
+          or asset."width" = 0 then 1
+          else round(
+            asset."width"::numeric / asset."height"::numeric,
+            3
+          )
+        end,
+        1
+      ) as "ratio",
+      "asset_exif"."rating",
+      "asset"."originalFileName",
+      "asset"."width",
+      "asset"."height",
+      "asset_exif"."fileSizeInByte",
+      "asset_exif"."city",
+      "asset_exif"."country",
+      "stack"
+    from
+      "asset"
+      inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+      left join lateral (
+        select
+          array[stacked."stackId"::text, count('stacked')::text] as "stack"
+        from
+          "asset" as "stacked"
+        where
+          "stacked"."stackId" = "asset"."stackId"
+          and "stacked"."deletedAt" is null
+          and "stacked"."visibility" = $2
+          and exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "stacked"."id"
+          ) = exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        group by
+          "stacked"."stackId"
+      ) as "stacked_assets" on true
+    where
+      "asset"."deletedAt" is null
+      and (
+        "asset"."visibility" in ('archive', 'timeline')
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+      and (
+        f_unaccent ("asset_exif"."make") ilike ('%' || f_unaccent ($3) || '%')
+        and "asset"."fileCreatedAt" >= $4
+        and exists (
+          select
+            "asset_face"."assetId"
+          from
+            "asset_face"
+          where
+            "asset_face"."assetId" = "asset"."id"
+            and "asset_face"."deletedAt" is null
+            and "asset_face"."isVisible" = $5
+            and "asset_face"."personGroupId" = any ($6::uuid[])
+          group by
+            "asset_face"."assetId"
+          having
+            count(distinct "asset_face"."personGroupId") = $7
+        )
+        and (
+          "asset_exif"."city" = $8
+          or "asset_exif"."rating" >= $9
+        )
+      )
+      and "asset"."type" = $10
+      and not exists (
+        select
+          1
+        from
+          asset_metadata
+        where
+          asset_metadata."assetId" = "asset"."id"
+          and asset_metadata.key = $11
+          and asset_metadata.value #>> '{description,status}' = 'success'
+      )
+      and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $12
       and not exists (
         select
         from

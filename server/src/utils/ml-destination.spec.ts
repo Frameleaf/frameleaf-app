@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
+import { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
+import { RestorationModelState } from 'src/dtos/restoration-inference.dto.js';
 import {
   MlAdmissionRefusal,
   MlDestinationHealth,
@@ -28,12 +30,14 @@ import {
   readCloudModelChoices,
   readinessOf,
   resolveEndpoint,
+  restorationModelsFromReport,
   restorationRoleConflict,
   routedMlDestinationId,
   sameEndpointUrl,
   selectMlDestination,
   storedAdmission,
   storedProbe,
+  storedRestorationModels,
   summarizeProbe,
   workloadPolicyProblem,
 } from 'src/utils/ml-destination.js';
@@ -913,6 +917,37 @@ describe('worker readiness (FL-72)', () => {
         },
       }),
     ).toEqual(cpuHardware);
+  });
+
+  it('keeps the restoration models a worker reported, available only with verified weights and a qualification (FL-423)', () => {
+    const capability = {
+      family: 'realbasicvsr',
+      mode: AssetRestorationMode.Faithful,
+      displayName: 'RealBasicVSR x4',
+      fingerprint: 'a'.repeat(64),
+      qualificationId: 'q-1',
+      state: RestorationModelState.Available,
+    };
+    const models = restorationModelsFromReport([
+      { ...capability, id: 'realbasicvsr-x4' },
+      { ...capability, id: 'unverified', fingerprint: null },
+      { ...capability, id: 'unqualified', qualificationId: null },
+      { ...capability, id: 'missing', state: RestorationModelState.WeightsMissing },
+    ]);
+    expect(models).toEqual([
+      { id: 'realbasicvsr-x4', family: 'realbasicvsr', mode: 'faithful', name: 'RealBasicVSR x4', available: true },
+      { id: 'unverified', family: 'realbasicvsr', mode: 'faithful', name: 'RealBasicVSR x4', available: false },
+      { id: 'unqualified', family: 'realbasicvsr', mode: 'faithful', name: 'RealBasicVSR x4', available: false },
+      { id: 'missing', family: 'realbasicvsr', mode: 'faithful', name: 'RealBasicVSR x4', available: false },
+    ]);
+
+    // a CPU-only worker with models still keeps them, beside the facts it reported
+    const kept = hardwareFromProbe({ reachable: true, hardware: null }, [], models);
+    expect(kept).toMatchObject({ gpus: [], restorationModels: models });
+    expect(storedRestorationModels(kept)).toEqual(models);
+    expect(storedRestorationModels(cpuHardware)).toEqual([]);
+    expect(storedRestorationModels(null)).toEqual([]);
+    expect(hardwareFromProbe({ reachable: false, hardware: null }, [], models)).toBeNull();
   });
 
   it('distinguishes unknown, unreachable, not serving, CPU and model-ready', () => {

@@ -205,6 +205,29 @@ describe(StorageRepository.name, () => {
     await fs.rm(directory, { recursive: true, force: true });
   });
 
+  describe('createZipStream', () => {
+    it('stores a file from disk and bytes made for the archive, such as a details file (FL-423)', async () => {
+      await writeFiles({ '/zip/IMG_1.JPG': 'original pixels' });
+      const zip = sut.createZipStream();
+      const chunks: Buffer[] = [];
+      zip.stream.on('data', (chunk: Buffer) => {
+        chunks.push(chunk);
+      });
+      const ended = new Promise((resolve, reject) => zip.stream.on('end', resolve).on('error', reject));
+
+      zip.addFile(fixturePath('/zip/IMG_1.JPG'), 'IMG_1.JPG');
+      zip.addFile(Buffer.from('<x:xmpmeta>details</x:xmpmeta>', 'utf8'), 'IMG_1.JPG.xmp');
+      await zip.finalize();
+      await ended;
+
+      // stored, not compressed: each name and its bytes appear as they are
+      const archive = Buffer.concat(chunks).toString('latin1');
+      expect(archive).toContain('IMG_1.JPG.xmp');
+      expect(archive).toContain('original pixels');
+      expect(archive).toContain('<x:xmpmeta>details</x:xmpmeta>');
+    });
+  });
+
   describe('removeEmptyDirs', () => {
     it('removes empty descendants while retaining files, nonempty directories and the root', async () => {
       await writeFiles({ '/cleanup/full/keep.jpg': 'original', '/cleanup/.hidden/keep.txt': 'hidden' });

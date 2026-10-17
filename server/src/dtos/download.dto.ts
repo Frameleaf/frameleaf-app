@@ -52,7 +52,7 @@ const DownloadArchiveSchema = z
     includeSidecar: formBoolean
       .optional()
       .describe(
-        "Put each photo's details file (XMP sidecar, when it has one) beside it as <file name>.xmp. Left out, the account's download.includeSidecar preference decides (shared links: no)",
+        "Put each photo's details file beside it as <file name>.xmp: its XMP sidecar, or one made from what the asset response shows the requester when it has none. Left out, the account's download.includeSidecar preference decides (shared links: no)",
       ),
     archiveName: z.string().optional().describe('The name of the archive to download, without extension'),
   })

@@ -634,6 +634,104 @@ describe(AssetRestorationService.name, () => {
       expect(response.activeOperationId).toBe(OPERATION_ID);
     });
 
+    describe('the model the person chose (FL-423)', () => {
+      const reported = [
+        {
+          id: 'realbasicvsr-x4',
+          family: 'realbasicvsr',
+          mode: AssetRestorationMode.Faithful,
+          name: 'RealBasicVSR',
+          available: true,
+        },
+        {
+          id: 'seedvr2-3b',
+          family: 'seedvr2',
+          mode: AssetRestorationMode.Creative,
+          name: 'SeedVR2 3B',
+          available: true,
+        },
+        {
+          id: 'seedvr2-7b',
+          family: 'seedvr2',
+          mode: AssetRestorationMode.Creative,
+          name: 'SeedVR2 7B',
+          available: false,
+        },
+        { id: 'rife-4', family: 'rife', mode: AssetRestorationMode.SmoothMotion, name: 'RIFE', available: true },
+      ];
+      const lanWithModels = {
+        ...mlDestinationStub.lan,
+        workloads: [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative],
+        lastProbeWorkloads: [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative],
+        lastProbeHardware: {
+          preferredAcceleration: null,
+          providers: [],
+          cudaDeviceCount: 1,
+          gpus: [{ name: 'RTX 4090', memoryTotalBytes: 24e9 }],
+          restorationModels: reported,
+        },
+      };
+      const snapshotOfPreview = () =>
+        (operations.create.mock.calls[0][0] as { snapshot: Record<string, unknown> }).snapshot;
+
+      beforeEach(() => {
+        mocks.mlDestination.getById.mockResolvedValue(lanWithModels);
+        mocks.machineLearning.probe.mockResolvedValue({
+          ...mlProbeStub.healthy,
+          workloads: [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative],
+        });
+      });
+
+      it('lists what each home worker reported for this kind of work, and nothing for Frameleaf Cloud', async () => {
+        mocks.mlDestination.getAll.mockResolvedValue([lanWithModels, mlDestinationStub.frameleafCloud]);
+
+        const options = await sut.getOptions(authStub.user1, asset.id, { mode: AssetRestorationMode.Faithful });
+
+        expect(options.destinations.find((item) => item.id === lanWithModels.id)?.models).toEqual([
+          { id: 'realbasicvsr-x4', name: 'RealBasicVSR', family: 'realbasicvsr', mode: 'faithful', available: true },
+          { id: 'seedvr2-3b', name: 'SeedVR2 3B', family: 'seedvr2', mode: 'creative', available: true },
+          { id: 'seedvr2-7b', name: 'SeedVR2 7B', family: 'seedvr2', mode: 'creative', available: false },
+        ]);
+        expect(options.destinations.find((item) => item.kind === MlDestinationKind.FrameleafCloud)?.models).toEqual([]);
+        expect(mocks.machineLearning.probe).not.toHaveBeenCalled();
+      });
+
+      it('binds the preview to the chosen model, and leaves the choice to the worker when none is named', async () => {
+        await sut.requestPreview(authStub.user1, asset.id, {
+          ...request,
+          mode: AssetRestorationMode.Creative,
+          model: 'seedvr2-3b',
+        });
+        expect(snapshotOfPreview()).toMatchObject({ stage: 'preview', mode: 'creative', modelId: 'seedvr2-3b' });
+
+        operations.create.mockClear();
+        await sut.requestPreview(authStub.user1, asset.id, request);
+        expect(snapshotOfPreview()).not.toHaveProperty('modelId');
+      });
+
+      it('refuses a model the worker did not offer for this mode, or cannot use now, and never swaps it', async () => {
+        for (const [mode, model, message] of [
+          [AssetRestorationMode.Faithful, 'seedvr2-3b', 'has no seedvr2-3b model'],
+          [AssetRestorationMode.Creative, 'hat-x4', 'has no hat-x4 model'],
+          [AssetRestorationMode.Creative, 'seedvr2-7b', 'can’t use SeedVR2 7B right now'],
+        ] as const) {
+          await expect(sut.requestPreview(authStub.user1, asset.id, { ...request, mode, model })).rejects.toThrow(
+            message,
+          );
+        }
+        expect(restorations.create).not.toHaveBeenCalled();
+        expect(operations.create).not.toHaveBeenCalled();
+      });
+
+      it('leaves the check to a worker that reported no models, which runs the named one or refuses', async () => {
+        mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.lan);
+
+        await sut.requestPreview(authStub.user1, asset.id, { ...request, model: 'realbasicvsr-x4' });
+
+        expect(snapshotOfPreview()).toMatchObject({ modelId: 'realbasicvsr-x4' });
+      });
+    });
+
     it('refuses an offline original and unsupported media', async () => {
       mocks.asset.getById.mockResolvedValue({ ...asset, isOffline: true } as never);
       await expect(sut.requestPreview(authStub.user1, asset.id, request)).rejects.toBeInstanceOf(BadRequestException);

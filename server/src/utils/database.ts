@@ -27,6 +27,7 @@ import {
   DEFAULT_SEARCH_ORDER,
   IdsFilter,
   LandmarkIdsFilter,
+  SearchFilter,
   SearchFilterBranch,
   SearchOrder,
   StringFilter,
@@ -1104,6 +1105,31 @@ function branchPredicates(
       : []),
   ];
 }
+/**
+ * A structured search filter as one condition: its top-level conditions and, when it has `or`
+ * branches, any one of them. `branchScope` adds conditions to each branch (search's per-branch
+ * ownership). FL-425: the timeline narrows what it may already show by exactly what a search matches.
+ */
+export function searchFilterPredicate(
+  eb: AssetExpressionBuilder,
+  filter: SearchFilter,
+  viewerId: string | undefined,
+  revealOwnerId?: string,
+  branchScope?: (branch: SearchFilterBranch) => Expression<SqlBool>[],
+): Expression<SqlBool> {
+  const predicates = branchPredicates(eb, filter, viewerId, revealOwnerId);
+  const branches = filter.or ?? [];
+  if (branches.length > 0) {
+    predicates.push(
+      eb.or(
+        branches.map((branch) =>
+          eb.and([...branchPredicates(eb, branch, viewerId, revealOwnerId), ...(branchScope?.(branch) ?? [])]),
+        ),
+      ),
+    );
+  }
+  return predicates.length > 0 ? eb.and(predicates) : eb.lit(true);
+}
 // ordering is deliberately left to the caller so aggregate-only consumers (counts, stats)
 // can compose the same filters without stripping an order by
 export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuilderV3Options, scope?: AssetSearchScope) {
@@ -1146,22 +1172,11 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
         qb.select(withFacesAndPeople({ viewingUserId: scope.viewingUserId! })),
       )
       .$if(options.withStacked === false, (qb) => qb.where('asset.stackId', 'is', null))
-      .where((eb) => {
-        const predicates = branchPredicates(eb, filter, viewerId, options.revealLockedOwnerId);
-        if (branches.length > 0) {
-          predicates.push(
-            eb.or(
-              branches.map((branch) =>
-                eb.and([
-                  ...branchPredicates(eb, branch, viewerId, options.revealLockedOwnerId),
-                  ...(scopePerBranch && !isAlbumConfined(branch) ? [ownershipPredicate(eb)] : []),
-                ]),
-              ),
-            ),
-          );
-        }
-        return predicates.length > 0 ? eb.and(predicates) : eb.lit(true);
-      })
+      .where((eb) =>
+        searchFilterPredicate(eb, filter, viewerId, options.revealLockedOwnerId, (branch) =>
+          scopePerBranch && !isAlbumConfined(branch) ? [ownershipPredicate(eb)] : [],
+        ),
+      )
   );
 }
 const searchOrderColumns = {

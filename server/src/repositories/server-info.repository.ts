@@ -137,7 +137,7 @@ export class ServerInfoRepository {
 
   /**
    * Stable reads the latest published GitHub release; Release candidate reads the recent releases and
-   * includes prereleases. The version is parsed from the `frameleaf-v<semver>-<n>` tag.
+   * includes prereleases. The version is parsed from the `frameleaf-v<semver>` tag.
    *
    * Our release script never marks a GitHub release as a prerelease, so `/releases/latest` can be a
    * release-candidate tag; Stable then falls back to the release list and its newest stable tag. A withdrawn
