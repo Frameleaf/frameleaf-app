@@ -325,7 +325,8 @@ async function run(opts: MigrateOptions, controller = new Controller()) {
   }
 }
 
-describe('migrate against disposable source/destination fixtures', () => {
+// Each case runs a real migration against fixture servers; on the Windows runner even one can pass 5 s.
+describe('migrate against disposable source/destination fixtures', { timeout: 15_000 }, () => {
   let dir: string;
   let source: SourceFixture;
   let destination: DestinationFixture;
