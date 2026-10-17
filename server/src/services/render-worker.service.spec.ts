@@ -283,7 +283,7 @@ describe(RenderWorkerService.name, () => {
       completeCheckpoint: vi.fn().mockResolvedValue(true),
       withExportArtifact: vi.fn(),
       beginValidation: vi.fn().mockResolvedValue(true),
-      invalidateCheckpointsFrom: vi.fn().mockResolvedValue(undefined),
+      invalidateCheckpointsFrom: vi.fn().mockResolvedValue(true),
       complete: vi.fn().mockResolvedValue(true),
       fail: vi.fn().mockResolvedValue('failed'),
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
@@ -1829,7 +1829,18 @@ describe(RenderWorkerService.name, () => {
         // A changed effect history is re-rendered, and everything after it loses its reuse.
         await sut.planCheckpoint(SESSION_A, claimedByA.id, plan(0, { historyDigest: 'h2' }));
         expect(operations.upsertCheckpoint).toHaveBeenCalledTimes(1);
-        expect(operations.invalidateCheckpointsFrom).toHaveBeenCalledWith(claimedByA.id, 1);
+        expect(operations.invalidateCheckpointsFrom).toHaveBeenCalledWith(claimedByA.id, 'claim-1', 1);
+      });
+
+      it('refuses the plan when the claim no longer holds the job while invalidating', async () => {
+        vi.mocked(operations.getCheckpoints).mockResolvedValue([chunk(0), chunk(1)] as never);
+        vi.mocked(operations.invalidateCheckpointsFrom).mockResolvedValueOnce(false);
+
+        await expect(sut.planCheckpoint(SESSION_A, claimedByA.id, plan(0, { historyDigest: 'h2' }))).resolves.toEqual({
+          accepted: false,
+          refusal: null,
+        });
+        expect(operations.invalidateCheckpointsFrom).toHaveBeenCalledWith(claimedByA.id, 'claim-1', 1);
       });
 
       it('restarts at the first chunk of a run whose state flows into the re-rendered one', async () => {
@@ -1842,7 +1853,7 @@ describe(RenderWorkerService.name, () => {
 
         await sut.planCheckpoint(SESSION_A, claimedByA.id, plan(3, { seed: '7' }));
 
-        expect(operations.invalidateCheckpointsFrom).toHaveBeenCalledWith(claimedByA.id, 1);
+        expect(operations.invalidateCheckpointsFrom).toHaveBeenCalledWith(claimedByA.id, 'claim-1', 1);
         // The re-planned chunk is pending again, not invalid.
         expect(operations.upsertCheckpoint).toHaveBeenLastCalledWith(
           claimedByA.id,

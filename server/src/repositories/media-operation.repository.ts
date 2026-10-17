@@ -2601,16 +2601,24 @@ export class MediaOperationRepository {
       return Number(result.numUpdatedRows) === 1;
     });
   }
-  /** Retire chunks that can no longer describe the work. Invalid chunks are never reused. */
-  async invalidateCheckpointsFrom(operationId: string, sequence: number): Promise<void> {
-    await this.write((db) =>
-      db
+  /**
+   * Retire chunks that can no longer describe the work. Invalid chunks are never reused. Only the
+   * claim that holds the job may do it: a stale worker never invalidates a newer claim's chunks.
+   * Returns whether the claim still held the job.
+   */
+  async invalidateCheckpointsFrom(operationId: string, claimToken: string, sequence: number): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      if (!(await this.lockClaim(trx, operationId, claimToken))) {
+        return false;
+      }
+      await trx
         .updateTable('media_operation_checkpoint')
         .set({ state: MediaOperationCheckpointState.Invalid })
         .where('operationId', '=', operationId)
         .where('sequence', '>=', sequence)
-        .execute(),
-    );
+        .execute();
+      return true;
+    });
   }
   /**
    * Whether this claim still holds the job, taking a share lock on the row for the rest of the

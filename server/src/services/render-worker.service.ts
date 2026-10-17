@@ -1067,7 +1067,9 @@ export class RenderWorkerService {
       }
       // The re-planned chunk itself is pending again; everything else from the restart is invalid.
       if (restart < dto.sequence) {
-        await this.operations.invalidateCheckpointsFrom(operation.id, restart);
+        if (!(await this.operations.invalidateCheckpointsFrom(operation.id, dto.claimToken, restart))) {
+          return { accepted: false, refusal: null };
+        }
         await this.operations.upsertCheckpoint(
           operation.id,
           dto.claimToken,
@@ -1091,7 +1093,9 @@ export class RenderWorkerService {
             : []),
         );
       } else if (stored.some((chunk) => chunk.sequence > dto.sequence)) {
-        await this.operations.invalidateCheckpointsFrom(operation.id, dto.sequence + 1);
+        if (!(await this.operations.invalidateCheckpointsFrom(operation.id, dto.claimToken, dto.sequence + 1))) {
+          return { accepted: false, refusal: null };
+        }
       }
     }
 
