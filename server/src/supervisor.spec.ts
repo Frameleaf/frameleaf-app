@@ -26,6 +26,11 @@ vi.mock('node:child_process', async () => {
         name: file.split('/').at(-1)!.replace('.js', ''),
         stopped: Promise.resolve(),
         kill: vi.fn(),
+        connected: true,
+        send: vi.fn((_message: string, callback: (error: Error | null) => void) => {
+          callback(null);
+          return true;
+        }),
       });
       fixture.starts.push(worker.name);
       fixture.workers.push(worker);
@@ -127,9 +132,10 @@ describe('supervisor worker-local restart lifecycle', () => {
     fixture.failStart = undefined;
     process.argv = ['node', 'supervisor'];
     vi.stubEnv('FRAMELEAF_EDGE_SECRET', 'supervisor-unit-fixture');
+    vi.stubEnv('FRAMELEAF_NATIVE_OWNER', '0');
     const on = process.on.bind(process);
     vi.spyOn(process, 'on').mockImplementation(((event: string, listener: () => void) => {
-      if (event === 'SIGTERM' || event === 'SIGINT') {
+      if (['SIGTERM', 'SIGINT', 'message', 'disconnect'].includes(event)) {
         fixture.signals.set(event, listener);
         return process;
       }
@@ -158,6 +164,94 @@ describe('supervisor worker-local restart lifecycle', () => {
     const workers = new Workers();
     await expect(workers['waitForFreeLock']()).rejects.toBe(failure);
     expect(fixture.clients.at(-1)!.destroy).toHaveBeenCalledOnce();
+  });
+
+  it.each(['callback', 'throw'])('fails native attachment when owner-ready send fails: %s', async (failure) => {
+    const connected = Object.getOwnPropertyDescriptor(process, 'connected');
+    const send = Object.getOwnPropertyDescriptor(process, 'send');
+    const exitCode = process.exitCode;
+    vi.stubEnv('FRAMELEAF_NATIVE_OWNER', '1');
+    fixture.starts = [];
+    fixture.workers = [];
+    Object.defineProperties(process, {
+      connected: { configurable: true, value: true },
+      send: {
+        configurable: true,
+        value: vi.fn((_message, callback) => {
+          if (failure === 'throw') throw new Error('synthetic IPC failure');
+          callback(new Error('synthetic IPC failure'));
+          return false;
+        }),
+      },
+    });
+    try {
+      vi.resetModules();
+      await import('src/supervisor.js');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(process.exit).toHaveBeenCalledExactlyOnceWith(1);
+      expect(fixture.starts).toEqual([]);
+    } finally {
+      if (connected) Object.defineProperty(process, 'connected', connected);
+      else Reflect.deleteProperty(process, 'connected');
+      if (send) Object.defineProperty(process, 'send', send);
+      else Reflect.deleteProperty(process, 'send');
+      process.exitCode = exitCode;
+    }
+  });
+
+  it('uses private IPC to drain native API/edge forks and reports a successful stop', async () => {
+    vi.stubEnv('FRAMELEAF_NATIVE_OWNER', '1');
+    const workers = new Workers();
+    await workers.bootstrap();
+    workers.stop('SIGTERM');
+    for (const name of [FrameleafWorker.Api, FrameleafWorker.Edge]) {
+      const worker = latest(name) as unknown as { send: ReturnType<typeof vi.fn>; kill: ReturnType<typeof vi.fn> };
+      expect(worker.send).toHaveBeenCalledWith('frameleaf:stop', expect.any(Function));
+      expect(worker.kill).not.toHaveBeenCalled();
+    }
+    for (const name of [FrameleafWorker.Api, FrameleafWorker.Microservices, FrameleafWorker.Edge])
+      latest(name).emit('exit', 0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(process.exit).toHaveBeenCalledExactlyOnceWith(0);
+  });
+
+  it.each(['send failure', 'deadline'] as const)('reports a forced native stop after %s', async (failure) => {
+    vi.stubEnv('FRAMELEAF_NATIVE_OWNER', '1');
+    const workers = new Workers();
+    await workers.bootstrap();
+    const api = latest(FrameleafWorker.Api) as unknown as {
+      send: ReturnType<typeof vi.fn>;
+      kill: ReturnType<typeof vi.fn>;
+    };
+    if (failure === 'send failure') {
+      api.send.mockImplementation((_message: string, callback: (error: Error) => void) => {
+        callback(new Error('synthetic IPC failure'));
+        return false;
+      });
+    }
+    workers.stop('SIGTERM');
+    if (failure === 'send failure') {
+      expect(api.kill).toHaveBeenCalledWith('SIGKILL');
+      for (const name of [FrameleafWorker.Api, FrameleafWorker.Microservices, FrameleafWorker.Edge])
+        latest(name).emit('exit', 0);
+      await vi.advanceTimersByTimeAsync(0);
+    } else {
+      await vi.advanceTimersByTimeAsync(9000);
+      expect(api.kill).toHaveBeenCalledWith('SIGKILL');
+    }
+    expect(process.exit).toHaveBeenCalledExactlyOnceWith(1);
+  });
+
+  it('reports a native worker cleanup failure even when every process exits before the deadline', async () => {
+    vi.stubEnv('FRAMELEAF_NATIVE_OWNER', '1');
+    const workers = new Workers();
+    await workers.bootstrap();
+    workers.stop('SIGTERM');
+    latest(FrameleafWorker.Api).emit('exit', 1);
+    latest(FrameleafWorker.Microservices).emit('exit', 0);
+    latest(FrameleafWorker.Edge).emit('exit', 0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(process.exit).toHaveBeenCalledExactlyOnceWith(1);
   });
 
   it.each([FrameleafWorker.Microservices, FrameleafWorker.Edge])(

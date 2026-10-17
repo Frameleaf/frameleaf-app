@@ -85,6 +85,27 @@ describe(AppRepository.name, () => {
     afterEach(() => {
       exit.mockRestore();
       vitest.useRealTimers();
+      vitest.unstubAllEnvs();
+    });
+
+    it.each(['clean', 'rejected', 'deadline'])('preserves native cleanup outcome: %s', async (outcome) => {
+      vitest.stubEnv('FRAMELEAF_NATIVE_OWNER', '1');
+      const log = vitest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const sut = new AppRepository();
+        sut.setCloseFn(() =>
+          outcome === 'clean'
+            ? Promise.resolve()
+            : outcome === 'rejected'
+              ? Promise.reject(new Error('synthetic cleanup failure'))
+              : new Promise<void>(() => {}),
+        );
+        sut.stop(0);
+        await vitest.advanceTimersByTimeAsync(outcome === 'deadline' ? 3000 : 0);
+        expect(exit).toHaveBeenCalledExactlyOnceWith(outcome === 'clean' ? 0 : 1);
+      } finally {
+        log.mockRestore();
+      }
     });
 
     it('closes the application gracefully, then exits with the code asked for', async () => {
