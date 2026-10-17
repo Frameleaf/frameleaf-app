@@ -179,7 +179,7 @@
       "sourceRevision": "3a728b75062256951b6e19ce718907cf1a1d4cf0"
     },
     {
-      "component": "Rollup4.62.1 core source",
+      "component": "Rollup 4.62.1 core source",
       "id": "rollup-core-license",
       "path": "notices/rollup-core-license.txt",
       "scope": "package-core-source-only",
