@@ -67,6 +67,8 @@ jobs:
         run: node --test --test-concurrency=1 e2e/src/harness-wait.test.mjs e2e/src/harness-reset.test.mjs e2e/src/harness-http.test.mjs
       - name: Validate E2E test lifecycle ownership
         run: pnpm --filter frameleaf-e2e exec vitest run --config vitest.harness.config.ts
+      - name: Validate E2E UI fixture generators
+        run: pnpm --filter frameleaf-e2e test:ui-fixtures
       - name: Validate Frameleaf branding
         run: node --test scripts/frameleaf-branding.test.mjs
       - name: Verify Frameleaf workspace packages

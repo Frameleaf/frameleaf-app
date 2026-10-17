@@ -1453,17 +1453,6 @@ export class MediaOperationRepository {
   /* Cancellation                                                        */
   /* ------------------------------------------------------------------ */
   /**
-   * Record the owner's cancellation.
-   *
-   * A queued job has no worker to tell, so it is cancelled outright. Anything already claimed
-   * goes to `cancelling` and stays there until the remote acknowledges: an unacknowledged cancel
-   * is an open obligation, not a finished one.
-   *
-   * A claimed job keeps its lease on purpose. The worker needs it to answer — and if the worker
-   * has died instead, the lease expiring is how recovery finds out. Revoking the token here would
-   * leave the job stuck at `cancelling` with nobody able to settle it.
-   */
-  /**
    * FL-90: unfinished operations of these kinds for these Studio projects, for revocation. With
    * `ownerId`, only that account's.
    */
@@ -1559,6 +1548,17 @@ export class MediaOperationRepository {
       .orderBy('createdAt', 'asc')
       .execute();
   }
+  /**
+   * Record the owner's cancellation.
+   *
+   * A queued job has no worker to tell, so it is cancelled outright. Anything already claimed
+   * goes to `cancelling` and stays there until the remote acknowledges: an unacknowledged cancel
+   * is an open obligation, not a finished one.
+   *
+   * A claimed job keeps its lease on purpose. The worker needs it to answer — and if the worker
+   * has died instead, the lease expiring is how recovery finds out. Revoking the token here would
+   * leave the job stuck at `cancelling` with nobody able to settle it.
+   */
   async requestCancel(
     id: string,
     ownerId: string,
@@ -2594,6 +2594,8 @@ export class MediaOperationRepository {
         .where('sequence', '=', chunk.sequence)
         .where('chunkKey', '=', chunk.chunkKey)
         .where('claimToken', '=', claimToken)
+        // a chunk the server invalidated is never completed again, not even by the claim that wrote it
+        .where('state', '!=', MediaOperationCheckpointState.Invalid)
         .$if(verifiedArtifact, (qb) => qb.where('state', '=', MediaOperationCheckpointState.Pending))
         .executeTakeFirst();
       return Number(result.numUpdatedRows) === 1;

@@ -9,7 +9,7 @@ import { asBearerAuth, utils } from 'src/utils.js';
  * browser's Back and Forward keep the rail in step, the collapsed rail is remembered, a
  * destination the account turned off leaves the rail but not the product, the repair utilities
  * live in Library Care rather than the rail, and the access roles hold at the route boundary.
- * Prototype: `design/frameleaf/template/src/LibraryRail.jsx` and the `App.jsx` header.
+ * Prototype (Frameleaf/frameleaf-prototype): `src/LibraryRail.jsx` and the `App.jsx` header.
  */
 
 const rail = (page: Page) => page.getByRole('navigation', { name: 'Library navigation' });

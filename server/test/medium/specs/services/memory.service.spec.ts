@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { buffer, text } from 'node:stream/consumers';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
+import { MemoryExportCreateDto } from 'src/dtos/memory.dto.js';
 import {
   AssetFileType,
   AssetLockReason,
@@ -1356,6 +1357,13 @@ describe(MemoryService.name, () => {
         highlight: { destination: MediaOperationDestination.Lan },
       });
       expect(started.highlight?.destination).toBe(MediaOperationDestination.Lan);
+      // Frameleaf Cloud is refused before a highlight reaches the service
+      expect(
+        MemoryExportCreateDto.schema.safeParse({
+          format: MemoryExportFormat.Highlight,
+          highlight: { destination: MediaOperationDestination.FrameleafCloud },
+        }).success,
+      ).toBe(false);
     });
   });
 });

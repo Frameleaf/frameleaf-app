@@ -2394,6 +2394,21 @@ describe(RenderWorkerService.name, () => {
       expect(result).toEqual({ accepted: true, refusal: null });
     });
 
+    it.each([MediaOperationStatus.Rendering, MediaOperationStatus.Cancelling])(
+      'never publishes a frame from a %s render',
+      async (status) => {
+        vi.mocked(workers.getClaimed).mockResolvedValueOnce({ ...rendering, status } as never);
+        const result = await sut.complete(SESSION_A, rendering.id, {
+          claimToken: 'claim-1',
+          resultAssetId: null,
+          output,
+        } as never);
+        expect(result).toEqual({ accepted: false, refusal: null });
+        expect(studioPreviews.onRenderCompleted).not.toHaveBeenCalled();
+        expect(operations.complete).not.toHaveBeenCalled();
+      },
+    );
+
     it('refuses a worker-named result and a completion without a frame', async () => {
       await expect(
         sut.complete(SESSION_A, rendering.id, {
