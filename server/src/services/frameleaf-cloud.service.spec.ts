@@ -968,6 +968,126 @@ describe(FrameleafCloudService.name, () => {
       await sut.onBootstrap();
       expect(cloud.requests).toHaveLength(0);
     });
+
+    describe('a start that stops before the link is saved (FL-433)', () => {
+      /** Frameleaf Cloud's single-use rule: a token it accepted once is refused with 401 from then on. */
+      let spent: Set<string>;
+      /** What the server had saved when Frameleaf Cloud received the registration. */
+      let atSend: FrameleafCloudLink | undefined;
+      const registrations = () => cloud.requests.filter(({ path }) => path === '/api/v1/instances');
+      /** The process died: only what was saved at that moment survives into the next start. */
+      const crashTo = (saved: FrameleafCloudLink | undefined) => {
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, structuredClone(saved));
+        cloud.requests.length = 0;
+      };
+
+      beforeEach(() => {
+        serveLinking(() => ({ status: 400, body: { error: 'authorization_pending' } }));
+        spent = new Set();
+        atSend = undefined;
+        const register = cloud.routes.get('POST /api/v1/instances')!;
+        cloud.on('POST /api/v1/instances', (request) => {
+          atSend = structuredClone(storedLink());
+          const token = request.headers['x-frameleaf-link-token'] as string;
+          if (spent.has(token)) {
+            return { status: 401, body: { code: 'invalid_token', message: 'already used', retryable: false } };
+          }
+          spent.add(token);
+          return register(request);
+        });
+        cloud.on('DELETE /api/v1/instance', () => ({ status: 204, body: {} }));
+        linkToken = 'fll_headless_token_crash';
+      });
+
+      it('sends the same token again when the start stopped before Frameleaf Cloud took it', async () => {
+        // Frameleaf Cloud never saw it (the e2e-fork receipt: used_at NULL, no instance row)
+        cloud.on('POST /api/v1/instances', () => {
+          atSend = structuredClone(storedLink());
+          return { status: 503, body: { code: 'unavailable', message: 'down', retryable: true } };
+        });
+        await sut.onBootstrap();
+        crashTo(atSend);
+        serveLinking(() => ({ status: 400, body: { error: 'authorization_pending' } }));
+
+        await sut.onBootstrap();
+        expect(registrations().map(({ headers }) => headers['x-frameleaf-link-token'])).toEqual([
+          'fll_headless_token_crash',
+        ]);
+        expect(storedLink()).toMatchObject({ status: 'linked', accountId: 'account-1' });
+        expect(storedLink()?.pendingLinkToken).toBeUndefined();
+        expect(JSON.stringify(storedLink())).not.toContain('fll_headless_token_crash');
+        // spent only now: a later start never sends it again
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...storedLink()!, status: 'unlinked' });
+        cloud.requests.length = 0;
+        await sut.onBootstrap();
+        expect(registrations()).toHaveLength(0);
+      });
+
+      it('keeps the token when the registration got no answer, and links with it at the next start', async () => {
+        const requestJson = vi.spyOn(FrameleafCloudRepository.prototype, 'requestJson');
+        requestJson.mockRejectedValueOnce(new TypeError('fetch failed'));
+        await sut.onBootstrap();
+        requestJson.mockRestore();
+        expect(storedLink()).toMatchObject({ status: 'unlinked', lastError: expect.stringContaining('next start') });
+        expect(storedLink()?.usedLinkTokens ?? []).toHaveLength(0);
+
+        await sut.onBootstrap();
+        expect(storedLink()).toMatchObject({ status: 'linked', accountId: 'account-1' });
+      });
+
+      it('recognises its own link when Frameleaf Cloud accepted it but the start stopped before saving it', async () => {
+        await sut.onBootstrap();
+        expect(storedLink()?.status).toBe('linked');
+        // the server died after Frameleaf Cloud answered and before the link was saved
+        crashTo(atSend);
+        expect(storedLink()).toMatchObject({ status: 'unlinked', pendingLinkToken: { hash: expect.any(String) } });
+
+        await sut.onBootstrap();
+        // the same token once more, refused as used; this server's own key proves the link is its own,
+        // so the unfinished link is undone in Frameleaf Cloud and a new token links it again
+        expect(registrations()).toHaveLength(1);
+        expect(pathsCalled()).toContain('DELETE /api/v1/instance');
+        expect(storedLink()).toMatchObject({
+          status: 'unlinked',
+          lastError: expect.stringContaining('stopped before it saved the link'),
+        });
+        expect(storedLink()?.usedLinkTokens).toHaveLength(1);
+        expect(storedLink()?.pendingLinkToken).toBeUndefined();
+        expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('Create a new link token'));
+
+        cloud.requests.length = 0;
+        await sut.onBootstrap();
+        expect(cloud.requests).toHaveLength(0);
+      });
+
+      it('records a token that someone else used without touching any link', async () => {
+        spent.add('fll_headless_token_crash');
+        cloud.on('POST /id/token', () => ({ status: 401, body: { error: 'invalid_client' } }));
+        // an earlier start sent it and stopped
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, {
+          status: 'unlinked',
+          cloudUrl: cloud.url,
+          pendingLinkToken: { hash: 'other' },
+        });
+        await sut.onBootstrap();
+        expect(pathsCalled()).not.toContain('DELETE /api/v1/instance');
+        expect(storedLink()).toMatchObject({ status: 'unlinked', lastError: expect.stringContaining('link token') });
+        expect(storedLink()?.usedLinkTokens).toHaveLength(1);
+      });
+
+      it('lets the Frameleaf app retry its token after a start that stopped before Frameleaf Cloud took it', async () => {
+        mocks.user.getAdmin.mockResolvedValue(void 0);
+        const phone = { ip: '192.168.1.40', via: null };
+        const requestJson = vi.spyOn(FrameleafCloudRepository.prototype, 'requestJson');
+        requestJson.mockRejectedValueOnce(new TypeError('fetch failed'));
+        await expect(sut.claimNewServer({ linkToken: 'fll_app_token_crash' }, phone)).rejects.toBeDefined();
+        requestJson.mockRestore();
+        expect(storedLink()?.usedLinkTokens ?? []).toHaveLength(0);
+        await expect(sut.claimNewServer({ linkToken: 'fll_app_token_crash' }, phone)).resolves.toMatchObject({
+          instanceId: localInstanceId(),
+        });
+      });
+    });
   });
 
   describe('heartbeat (FL-155)', () => {
