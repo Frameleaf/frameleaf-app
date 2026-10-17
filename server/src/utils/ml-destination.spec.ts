@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
 import { RestorationModelState } from 'src/dtos/restoration-inference.dto.js';
-import type { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import {
   MlAdmissionRefusal,
   MlDestinationHealth,

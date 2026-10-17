@@ -1,8 +1,8 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { SystemConfig } from 'src/config.js';
 import type { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
-import { type RestorationModelCapability, RestorationModelState } from 'src/dtos/restoration-inference.dto.js';
 import type { MlProbeHardware } from 'src/schema/tables/ml-destination.table.js';
+import { type RestorationModelCapability, RestorationModelState } from 'src/dtos/restoration-inference.dto.js';
 import {
   CLOUD_ML_DESTINATION_KINDS,
   FRAMELEAF_CLOUD_ML_WORKLOADS,

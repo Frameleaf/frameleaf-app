@@ -12,8 +12,8 @@ const details = (values: Partial<AssetDetails> = {}): AssetDetails => ({
   exifInfo: exif({
     dateTimeOriginal: '2024-07-01T16:00:00.000Z',
     timeZone: 'America/Edmonton',
-    latitude: 51.178_4,
-    longitude: -115.570_8,
+    latitude: 51.1784,
+    longitude: -115.5708,
     description: 'Lake Louise at dawn',
     rating: 4,
     isRejected: false,
@@ -27,15 +27,19 @@ const details = (values: Partial<AssetDetails> = {}): AssetDetails => ({
 /** The value of one simple XMP field, or undefined when the file leaves it out. */
 const field = (xmp: string, name: string) => new RegExp(`<${name}>([^<]*)</${name}>`).exec(xmp)?.[1];
 const items = (xmp: string, name: string) =>
-  [...(new RegExp(`<${name}>(.*?)</${name}>`).exec(xmp)?.[1] ?? '').matchAll(/<rdf:li[^>]*>([^<]*)<\/rdf:li>/g)].map(
-    (match) => match[1],
-  );
+  (new RegExp(`<${name}>(.*?)</${name}>`).exec(xmp)?.[1] ?? '')
+    .matchAll(/<rdf:li[^>]*>([^<]*)<\/rdf:li>/g)
+    .map((match) => match[1])
+    .toArray();
 
 describe('assetDetailsXmp (FL-423)', () => {
   it('writes the date, place, description, rating, tags, people and orientation the response shows', () => {
     const xmp = assetDetailsXmp(details(), { orientation: true });
 
-    expect(xmp.startsWith('<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>')).toBe(true);
+    // the packet header carries the byte order mark U+FEFF
+    expect(xmp.startsWith(`<?xpacket begin="${String.fromCodePoint(0xfe_ff)}" id="W5M0MpCehiHzreSzNTczkc9d"?>`)).toBe(
+      true,
+    );
     expect(xmp.trimEnd().endsWith('<?xpacket end="w"?>')).toBe(true);
     // in the photo's own time zone (Edmonton is UTC-6 in July)
     expect(field(xmp, 'exif:DateTimeOriginal')).toBe('2024-07-01T10:00:00.000-06:00');
@@ -80,9 +84,9 @@ describe('assetDetailsXmp (FL-423)', () => {
           timeZone: null,
           rating: null,
           isRejected: true,
-          description: 'Tom & "Jo" <3\u0007',
-          latitude: -33.856_8,
-          longitude: 151.215_3,
+          description: 'Tom & "Jo" <3\u{7}',
+          latitude: -33.8568,
+          longitude: 151.2153,
         }),
         people: [person('Ana'), person('Hidden', true), person('  '), person('Ana')],
         tags: [tag('Food & drink')],

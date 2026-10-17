@@ -210,7 +210,9 @@ describe(StorageRepository.name, () => {
       await writeFiles({ '/zip/IMG_1.JPG': 'original pixels' });
       const zip = sut.createZipStream();
       const chunks: Buffer[] = [];
-      zip.stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+      zip.stream.on('data', (chunk: Buffer) => {
+        chunks.push(chunk);
+      });
       const ended = new Promise((resolve, reject) => zip.stream.on('end', resolve).on('error', reject));
 
       zip.addFile(fixturePath('/zip/IMG_1.JPG'), 'IMG_1.JPG');

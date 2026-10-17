@@ -1,10 +1,10 @@
 import { ConflictException } from '@nestjs/common';
 import { Kysely } from 'kysely';
+import type { PhotographyWorkflow } from 'src/services/photography-workflow.service.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
-import type { PhotographyWorkflow } from 'src/services/photography-workflow.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';

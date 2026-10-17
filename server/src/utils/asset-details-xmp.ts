@@ -18,6 +18,9 @@ export type AssetDetailsOptions = {
   orientation: boolean;
 };
 
+/** The byte order mark an XMP packet header carries. */
+const BOM = String.fromCodePoint(0xfe_ff);
+
 /** Characters XML 1.0 allows; everything else (control characters, lone surrogates) is dropped. */
 const isXmlChar = (code: number) =>
   code === 0x9 ||
@@ -88,7 +91,7 @@ export const assetDetailsXmp = (details: AssetDetails, options: AssetDetailsOpti
   }
 
   const orientation = Number(exif?.orientation);
-  if (options.orientation && Number.isInteger(orientation) && orientation >= 1 && orientation <= 8) {
+  if (options.orientation && Number.isSafeInteger(orientation) && orientation >= 1 && orientation <= 8) {
     fields.push(`<tiff:Orientation>${orientation}</tiff:Orientation>`);
   }
 
@@ -96,7 +99,7 @@ export const assetDetailsXmp = (details: AssetDetails, options: AssetDetailsOpti
     fields.push('<xmp:Rating>-1</xmp:Rating>');
   } else if (
     typeof exif?.rating === 'number' &&
-    Number.isInteger(exif.rating) &&
+    Number.isSafeInteger(exif.rating) &&
     exif.rating >= 0 &&
     exif.rating <= 5
   ) {
@@ -132,7 +135,7 @@ export const assetDetailsXmp = (details: AssetDetails, options: AssetDetailsOpti
   }
 
   return [
-    '<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>',
+    `<?xpacket begin="${BOM}" id="W5M0MpCehiHzreSzNTczkc9d"?>`,
     '<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Frameleaf">',
     ' <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">',
     '  <rdf:Description rdf:about=""',
