@@ -105,6 +105,7 @@
   } from '@mdi/js';
   import { onDestroy, onMount, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
+  import { editingDefaults } from '$lib/frameleaf/editing-defaults.svelte';
 
   type Props = {
     asset: AssetResponseDto;
@@ -161,7 +162,7 @@
   type SmoothMotionFactor = (typeof SMOOTH_MOTION_FACTORS)[number];
 
   /* Choices ------------------------------------------------------------- */
-  let mode = $state<AssetRestorationMode>(AssetRestorationMode.Faithful);
+  let mode = $state<AssetRestorationMode>(isVideo ? editingDefaults.restorationMode : AssetRestorationMode.Faithful);
   let upscale = $state<RestorationUpscale>(2);
   let keepGrain = $state(false);
   let destinationId = $state<string | null>(null);

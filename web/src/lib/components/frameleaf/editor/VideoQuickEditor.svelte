@@ -32,6 +32,7 @@
   } from '$lib/components/frameleaf/editor/RestorationPanel.svelte';
   import VideoVersionsMenu from '$lib/components/frameleaf/editor/VideoVersionsMenu.svelte';
   import { decodeRefusalMessageKey } from '$lib/frameleaf/decode-refusal';
+  import { editingDefaults } from '$lib/frameleaf/editing-defaults.svelte';
   import {
     ASPECTS,
     AUTO_TONE,
@@ -218,7 +219,8 @@
 
   onMount(async () => {
     try {
-      const { edits, originalVideo } = await getAssetEdits({ id: asset.id });
+      // FL-422: the server's editing defaults decide where a new trim and a restoration start.
+      const [{ edits, originalVideo }] = await Promise.all([getAssetEdits({ id: asset.id }), editingDefaults.load()]);
       if (
         !originalVideo ||
         [originalVideo.width, originalVideo.height, originalVideo.durationMs].some(
@@ -228,7 +230,7 @@
         throw new Error('Original video metadata unavailable');
       }
       source = originalVideo;
-      const start = fromVideoEdits(edits, originalVideo);
+      const start = fromVideoEdits(edits, originalVideo, editingDefaults.trimMode);
       draft = createVideoDraft(start);
       opened = start;
       // FL-113: the draft, tool and playhead carried to Studio come back with the person (App.jsx
@@ -908,7 +910,7 @@
     onClose(saveChangedCurrent);
     void goto(Route.studio({ assetIds: [asset.id], returnTo: asset.id, at: playhead }));
   };
-  const revert = () => change({ ...initialVideoEdit(duration), legacy: [] });
+  const revert = () => change({ ...initialVideoEdit(duration, editingDefaults.trimMode), legacy: [] });
   const copySettings = () => {
     videoSettingsClipboard = pickVideoSettings(edit);
     toastManager.primary($t('frameleaf_editor_settings_copied'));
@@ -922,7 +924,7 @@
   };
   const applyVersion = (edits: Array<{ action: string; parameters: unknown }>) => {
     if (source) {
-      change(fromVideoEdits(edits, source));
+      change(fromVideoEdits(edits, source, editingDefaults.trimMode));
     }
   };
 
