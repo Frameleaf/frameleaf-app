@@ -6,7 +6,7 @@ exporters, instrumentation, metrics listener, or user/job metric collectors. The
 re-enable reporting. The bundled Compose configurations no longer start Prometheus or Grafana.
 
 Version checks never contact an upstream service. When they are turned on, the server asks
-only Frameleaf's own GitHub releases for a newer version. Local version history, health checks,
+only Frameleaf's release feed (`api.frameleaf.cloud`), falling back to Frameleaf's own GitHub releases, for a newer version. Local version history, health checks,
 job progress, and logs remain available.
 
 See [Telemetry and automatic reporting](./fork-privacy-suite.md#telemetry-and-automatic-reporting)
@@ -35,7 +35,7 @@ When enabled, logs are output in structured JSON format:
 ```json
 {"level":"log","pid":36,"timestamp":1766533331507,"message":"Initialized websocket server","context":"WebsocketRepository"}
 {"level":"warn","pid":48,"timestamp":1766533331629,"message":"Unable to open /build/www/index.html, skipping SSR.","context":"ApiService"}
-{"level":"error","pid":36,"timestamp":1766533331690,"message":"Failed to load plugin immich-core:","context":"Error"}
+{"level":"error","pid":36,"timestamp":1766533331690,"message":"Failed to load plugin example-plugin:","context":"Error"}
 ```
 
 This format includes:

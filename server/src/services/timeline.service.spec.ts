@@ -171,7 +171,7 @@ describe(TimelineService.name, () => {
           take: 10,
           visibility: AssetVisibility.Locked,
         }),
-      ).rejects.toBeInstanceOf(Error);
+      ).rejects.toThrow('Elevated permission');
       expect(mocks.asset.getTimelineOrdered).not.toHaveBeenCalled();
     });
   });
@@ -426,7 +426,7 @@ describe(TimelineService.name, () => {
           visibility: AssetVisibility.Locked,
           lockReason: AssetLockReason.FrameleafLockedFolder,
         }),
-      ).rejects.toThrow();
+      ).rejects.toThrow('Elevated permission');
       expect(mocks.asset.getTimeBuckets).not.toHaveBeenCalled();
     });
   });

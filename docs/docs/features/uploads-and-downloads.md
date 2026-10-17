@@ -17,7 +17,7 @@ An upload is not resumable. Reloading or closing the tab stops the files still w
 
 - A single item downloads its current version; **Download original** gets the untouched file of an edited item.
 - Several items, an album or a whole view download as zip archives. An archive bigger than the size limit in your download settings is split into several parts, each with its own row.
-- Live Photos include their motion clip. The video embedded in some Android motion photos is included only when **Embedded videos** is turned on in your download settings.
+- Live Photos include their motion clip. The video embedded in some Android motion photos is included only when **Include the short video with Live Photos and motion photos** is turned on in your download settings (**Settings → Your preferences → Downloads**).
 - A row shows what is being prepared, then **Save**. A failed row offers **Retry**; **Cancel** stops a download that is still being prepared.
 - Only what you may download is ever listed. A Locked item is never downloaded or named unless you have unlocked Locked content in this session, and a public link that does not allow downloads offers none. Locking the session or signing out clears the panel.
 

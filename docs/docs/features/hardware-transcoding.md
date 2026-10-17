@@ -25,7 +25,7 @@ You do not need to redo any transcoding jobs after enabling hardware acceleratio
 - Raspberry Pi is currently not supported.
 - Two-pass mode is only supported for NVENC. Other APIs will ignore this setting.
 - By default, only encoding is currently hardware accelerated. This means the CPU is still used for software decoding and tone-mapping.
-  - You can benefit from end-to-end acceleration by enabling hardware decoding in the video transcoding settings.
+  - You can benefit from end-to-end acceleration by turning on hardware decoding (**Read videos with the graphics card too**) in **Settings → Editing & playback → Video playback copies**.
 - Hardware dependent
   - Codec support varies, but H.264 and HEVC are usually supported.
     - Notably, NVIDIA and AMD GPUs do not support VP9 encoding.
@@ -71,11 +71,11 @@ For RKMPP to work:
    Note: For VAAPI on WSL2, be sure to use `vaapi-wsl` rather than `vaapi`
 
 3. Redeploy the `frameleaf-server` container with these updated settings.
-4. In the Admin page under `Video transcoding settings`, change the hardware acceleration setting to the appropriate option and save.
+4. In **Settings → Editing & playback → Video playback copies**, turn on **Use the graphics card to convert videos faster**. If Frameleaf picks the wrong kind, set **Kind of graphics card** (hardware acceleration) under **Advanced: graphics card**, then save.
 
-   Note: For Jasper Lake and Elkhart Lake CPUs, you will need to set the `Hardware Acceleration` -> `Constant quality mode` to `CQP`
+   Note: For Jasper Lake and Elkhart Lake CPUs, you will need to set **Advanced: graphics card** → **Constant-quality mode** to `CQP`
 
-5. (Optional) Enable hardware decoding for optimal performance.
+5. (Optional) Turn on **Read videos with the graphics card too** (hardware decoding) for optimal performance.
 
 <details>
 <summary>frameleaf.json</summary>

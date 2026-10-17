@@ -113,13 +113,6 @@ export const LEGACY_ALLOWLIST = [
   },
   {
     reason:
-      "The offline source-import runbook documents the existing admin alias only for its five import-immich operations",
-    files: /^docs\/docs\/administration\/import-immich\.md$/,
-    allow:
-      /^immich-admin import-immich (?:status|(?:preflight|run|resume|verify) --config \/path\/config\.json)$/g,
-  },
-  {
-    reason:
       "The canonical admin reference names the current compatibility alias beside frameleaf-admin import-immich",
     files: /^docs\/docs\/administration\/server-commands\.md$/,
     allow: /\(also available through the current `immich-admin` alias\)/g,

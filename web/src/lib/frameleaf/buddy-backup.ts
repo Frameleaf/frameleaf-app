@@ -62,3 +62,13 @@ export const buddyBackupPresentation = (status: BuddyStatusDto | null, linked: b
   }
   return { outgoing, incoming, write, read, send: write && !!status?.recoveryVerified && !!status.keyFingerprint };
 };
+
+const BUDDY_CONNECTIONS = new Set(['local', 'wan', 'ipv6', 'relay']);
+
+/** How the last transfer reached the buddy, in words; null before the first transfer. */
+export const buddyConnectionKey = (connection: string | null | undefined): Translations | null =>
+  connection
+    ? ((BUDDY_CONNECTIONS.has(connection)
+        ? `frameleaf_buddy_connection_${connection}`
+        : 'frameleaf_buddy_connection_other') as Translations)
+    : null;

@@ -77,6 +77,8 @@ describe('Notifications landing: email status (FL-368, FL-379)', () => {
     render(NotificationsLanding, { sections: [] });
 
     await waitFor(() => expect(getMailConnection).toHaveBeenCalledTimes(1));
+    // the answer has been applied, not just requested
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(hero().getByRole('heading', { name: en.frameleaf_notify_hero_on })).toBeInTheDocument();
     expect(hero().queryByRole('button')).not.toBeInTheDocument();
   });
@@ -95,6 +97,7 @@ describe('Notifications landing: email status (FL-368, FL-379)', () => {
     render(NotificationsLanding, { sections: [] });
 
     await waitFor(() => expect(getMailConnection).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(hero().getByRole('heading', { name: en.frameleaf_notify_hero_paused })).toBeInTheDocument();
     expect(hero().getByRole('button', { name: en.frameleaf_notify_turn_on })).toBeInTheDocument();
   });

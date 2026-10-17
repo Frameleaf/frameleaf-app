@@ -3,15 +3,14 @@
 Audited integration base: `d78bb71b1bd4a5aed4735dddea02c8aa271cdcd9`.
 This packet covers the server producer and language-neutral consumer fixtures.
 Native iOS/Android implementation, native tests and translated release approval
-are excluded. Source integration into draft PR #140, independent authorization /
-privacy review, exact-head hosted checks, and FC109/FC110 release review remain
-separate gates. This document does not certify those gates.
+are excluded. Independent authorization / privacy review, exact-head hosted
+checks, and FC109/FC110 release review remain separate gates. This document does not certify those gates.
 
 ## Requirement mapping
 
 | Requirement                              | Committed baseline / packet evidence                                                                                                                                                                                                                                                                                                    |
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Stable settings paths and choices        | Reuse `web/src/lib/frameleaf/settings-coverage.contract.snap`: 312 admin setting leaves, including 38 leaves with enum/item-enum choices; `settings-coverage.ts` maps each path to its owning form, and `settings-coverage.spec.ts` detects drift against OpenAPI. No new descriptor service is needed.                                 |
+| Stable settings paths and choices        | Reuse `web/src/lib/frameleaf/settings-coverage.contract.snap`: every admin setting leaf, including leaves with enum/item-enum choices; `settings-coverage.ts` maps each path to its owning form, and `settings-coverage.spec.ts` detects drift against OpenAPI. No new descriptor service is needed.                                    |
 | Queue/job labels and stable codes        | `server/src/enum.ts`, `server/src/dtos/job-run.dto.ts`, `web/src/lib/frameleaf/job-queues.ts` and `durable-runs.ts`; mappings below. Identifiers and commands are unchanged.                                                                                                                                                            |
 | Known domain refusals                    | Setup, exchange, remote-auth, rate-limit, Cloud, worker and operation codes already exist. The packet preserves their fields and status; it adds display metadata in `GlobalExceptionFilter.fromError`.                                                                                                                                 |
 | Missing general distinctions             | `server/src/utils/server-error-display.ts` maps HTTP status to a stable general code and distinguishes request/response Zod validation by exception type. It never reads English to decide a code.                                                                                                                                      |
@@ -123,7 +122,7 @@ acceptance.
 ## Existing settings and job mapping inventory
 
 The settings coverage snapshot is the complete path/choice inventory; reuse it
-rather than copying 312 paths into another registry. `server/src/dtos/config.dto.ts`
+rather than copying its paths into another registry. `server/src/dtos/config.dto.ts`
 owns config visibility and validation. `system-config.dto.ts` retains the legacy
 import path. `SETTINGS_LEAF_COVERAGE` and `PREFERENCE_LEAF_COVERAGE` distinguish
 controls, credentials, credential state, fixed policy, server-managed values,

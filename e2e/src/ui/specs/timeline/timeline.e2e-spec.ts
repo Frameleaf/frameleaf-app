@@ -1095,6 +1095,11 @@ test.describe('Timeline', () => {
       // Browser zoom keeps Ctrl + and Ctrl −.
       const settled = await tileWidth(page, assets[0].id);
       await page.keyboard.press('Control+Minus');
+      // give a wrong reflow time to start and finish before measuring
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      await page.waitForFunction(() =>
+        [...document.querySelectorAll('[data-asset-id]')].every((tile) => tile.getAnimations().length === 0),
+      );
       expect(await tileWidth(page, assets[0].id)).toBe(settled);
     });
 

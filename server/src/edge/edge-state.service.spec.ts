@@ -328,7 +328,7 @@ describe(EdgeStateService.name, () => {
         direct: { listening: false, mapping: null },
       });
 
-      // A configured paid Buddy pair gets direct and relay transport without enabling ordinary remote access.
+      // A configured Buddy pair gets direct transport without ordinary remote access; a plan adds the relay.
       vi.stubEnv('FRAMELEAF_BUDDY_BACKUP', 'true');
       try {
         await writeFile(
@@ -351,6 +351,24 @@ describe(EdgeStateService.name, () => {
         );
         expect(remoteState()!.candidates.some((candidate) => candidate.kind === 'local')).toBe(true);
         expect(portMapping.keep).toHaveBeenCalled();
+
+        // A Server licence without a plan keeps Buddy Backup on the direct address (FL-437): only the relay needs a plan.
+        metadata.set(SystemMetadataKey.FrameleafLicense, {
+          key: { ...license(['SUPPORTER_SERVER'], now), kind: 'server', source: 'key' } as FrameleafLicense,
+          plan: null,
+        });
+        relay.ensure.mockClear();
+        relay.stop.mockClear();
+        await sut.tick(now + 16_000);
+        expect(relay.stop).toHaveBeenCalled();
+        expect(relay.ensure).not.toHaveBeenCalled();
+        expect(direct.configure).toHaveBeenLastCalledWith(expect.objectContaining({ allowWan: true }));
+        expect(proxy.configureRecovery).toHaveBeenLastCalledWith(
+          expect.objectContaining({ backupEnabled: true }),
+          true,
+        );
+        expect(remoteState()!.relay.needsPlan).toBe(true);
+
         vi.stubEnv('FRAMELEAF_BUDDY_BACKUP', 'false');
         await sut.tick(now + 17_000);
         expect(remoteState()).toMatchObject({ status: 'idle', candidates: [], direct: { listening: false } });

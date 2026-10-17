@@ -57,7 +57,7 @@ future option from FC-111.
 | Preference changes and retry/deduplication                       | PushService spec checks two devices with different authority, a preference change before a targeted retry, unchanged collapse identity, and ciphertext-only gateway requests. Existing event recipient selection, access/privacy filtering, retries, invalid-token handling and Live Activities remain in place.            |
 | No body logging                                                  | PushDeliver joins the existing sensitive-job guard; JobError redacts its payload, including template arguments. It was already never manually retried, so that policy is unchanged.                                                                                                                                         |
 | Critical translations                                            | **Pending FC-109 locale/tone decisions and FC-110 named native-speaker/source-version signoff.** Production catalogs currently contain English only; test pseudo-locales are fixtures and are never shipped as enabled languages.                                                                                           |
-| Independent privacy/contract review and hosted exact-head checks | Required on the final integrated PR #140 head; a local fixture pass is not this acceptance.                                                                                                                                                                                                                                 |
+| Independent privacy/contract review and hosted exact-head checks | Required on the exact integrated head; a local fixture pass is not this acceptance.                                                                                                                                                                                                                                         |
 
 The catalog currently registers 44 template forms: job failure; item share singular/plural; cluster
 request; space mention/reply; in-app album invitation/update; channel-specific push album
@@ -77,5 +77,5 @@ SMTP templates/subjects, captions and messages retain their existing delivery be
 translated coverage for these system producers requires explicit reviewed template registrations
 and approved locale catalogs; this bounded producer/contract packet does not claim that coverage.
 
-PR #140 remains draft/open/unmerged with automatic merge disabled. No deployment, translation
+No deployment, translation
 publication, native distribution or language qualification follows from this packet.

@@ -791,9 +791,8 @@ export class AssetRepository {
     });
   }
   /**
-   * Derive privacy once for every `ml-enrichment` item, update the legacy
-   * projection, then mirror the same committed state into the fork sidecar.
-   * All three writes share the caller's transaction.
+   * Derive privacy once for every `ml-enrichment` item and update the `isNsfw` projection, in the
+   * caller's transaction.
    */
   private async syncIsNsfwForItems(
     kysely: Kysely<DB>,
@@ -803,14 +802,12 @@ export class AssetRepository {
       value: unknown;
     }>,
   ): Promise<void> {
-    const privacyAssetIds: string[] = [];
     for (const item of items) {
       if (item.key !== AssetMetadataKey.MlEnrichment) {
         continue;
       }
       const isNsfw = deriveIsNsfwFromMetadata(item.value) ?? false;
       await this.updateIsNsfw(item.assetId, isNsfw, kysely);
-      privacyAssetIds.push(item.assetId);
     }
   }
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
@@ -842,12 +839,10 @@ export class AssetRepository {
       return;
     }
     await this.db.transaction().execute(async (tx) => {
-      const privacyAssetIds: string[] = [];
       for (const { assetId, key } of items) {
         await tx.deleteFrom('asset_metadata').where('assetId', '=', assetId).where('key', '=', key).execute();
         if (key === AssetMetadataKey.MlEnrichment) {
           await this.updateIsNsfw(assetId, false, tx);
-          privacyAssetIds.push(assetId);
         }
       }
     });
@@ -1274,11 +1269,9 @@ export class AssetRepository {
    * Unlocks assets (FL-34), stacks and live photos as a whole like `lock`. The stored visibility is
    * left as it is, so an item goes back exactly where it was. Returns what was unlocked and why it had
    * been locked. With `kysely` (a caller's transaction) the unlock commits with the caller's writes.
-   */
-  /**
-   * Unlocks `ids` with their whole stacks and live photos. `reasons` limits the release to locks of
-   * those reasons (FL-34: Mark Safe answers a sensitive verdict, so it releases marked and detected
-   * locks and leaves an item the owner kept in the upstream Locked folder where it is).
+   * `reasons` limits the release to locks of those reasons (FL-34: Mark Safe answers a sensitive
+   * verdict, so it releases marked and detected locks and leaves an item the owner kept in the upstream
+   * Locked folder where it is).
    */
   async unlock(
     ids: string[],
@@ -1911,7 +1904,6 @@ export class AssetRepository {
         }
         return 'changed';
       }
-      // public physical files follow `lockPublicForkWrites`; Frameleaf rows need a writable phase
       if (!(await operations.rename())) {
         return 'failed';
       }
@@ -2005,7 +1997,7 @@ export class AssetRepository {
       .select(['id', 'type', 'path', 'isEdited'])
       .where('assetId', '=', asUuid(id))
       .execute();
-    // the legacy table and the fork sidecar can both hold an asset's frames, depending on the phase
+    // the asset's video duplicate frames
     const frames = await sql<{
       path: string;
     }>`

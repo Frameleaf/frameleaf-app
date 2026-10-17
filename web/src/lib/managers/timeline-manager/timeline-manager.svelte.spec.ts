@@ -634,7 +634,6 @@ describe('TimelineManager', () => {
       expect(await getAssets(timelineManager)).toEqual([matching]);
     });
 
-    // disabled due to the wasm Justified Layout import
     it('ignores trashed assets when isTrashed is true', async () => {
       const asset = deriveLocalDateTimeFromFileCreatedAt(timelineAssetFactory.build({ isTrashed: false }));
       const trashedAsset = deriveLocalDateTimeFromFileCreatedAt(timelineAssetFactory.build({ isTrashed: true }));

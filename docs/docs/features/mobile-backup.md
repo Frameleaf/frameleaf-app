@@ -4,60 +4,86 @@ sidebar_position: 1
 
 # Mobile Backup
 
-## Overview
+The Frameleaf apps for iPhone, iPad and Android back up the photos and videos on your device to your Frameleaf server automatically. Open **Backup** in the app to see what is on the server, what is still waiting and why, and to start a backup right away with **Back Up Now**.
 
-Frameleaf supports uploading photos and videos from your mobile device to the server automatically.
+To install the app and connect it to your server, see [iPhone and Android Apps](./mobile-app.mdx).
 
-When backup is enabled, Frameleaf will upload new photos and videos from selected albums when you open or resume the app, as well as periodically in the background.
+## Choose what to back up
 
-To turn backup on, open the backup page in the app and switch on **Enable Backup**.
+Open **Backup choices** in the app.
 
-## General Features
+On iPhone and iPad, start from **Everything**, **Photos on Wi-Fi** or **Chosen albums**, then fine-tune:
 
-### Backup albums selection
+- **Photos** and **Videos**: back up either or both.
+- **Edited versions, stacked with the original**: a photo you edited in Photos is backed up as both the original and the edit, grouped together on the server. On by default.
+- **Only from a date**: leave older photos on the phone.
 
-On the backup page, choose **Select** to pick which albums on your mobile device to back up to the server. Tap an album to include it. You can also exclude specific albums (by double-tapping on them) from being backed up. This is useful for iOS users since assets can belong to multiple albums. For example, you may want to back up all assets except those in the "Videos" album.
+On Android, choose **Everything on this phone**, **Camera photos and videos only**, or **Folders I choose**, and pick any folders to skip. You can also choose photos and videos, photos only or videos only, and whether to back up everything however old, only from today on, or since a date you pick.
 
-### Deduplication
+## Choose when backup runs
 
-When you first select albums for backup, Frameleaf calculates a checksum for each file's content. This checksum identifies assets already on the server—whether uploaded via CLI, web interface, or another device. Files matching existing assets are skipped, preventing duplicate uploads and saving bandwidth.
+On iPhone and iPad:
 
-### Networking requirements
+| Choice                     | Default | What it does                                                  |
+| -------------------------- | ------- | ------------------------------------------------------------- |
+| Photos on mobile data      | On      | Photos back up on mobile data as well as Wi-Fi.               |
+| Videos on mobile data      | Off     | Videos wait for Wi-Fi.                                        |
+| Videos only while charging | Off     | Videos wait until the device is charging.                     |
+| Pause in Low Power Mode    | On      | Backup waits while Low Power Mode is on.                      |
+| Pause in Low Data Mode     | On      | Backup waits while the network you're on is in Low Data Mode. |
 
-By default, Frameleaf will only upload photos and videos when connected to Wi-Fi. You can change this behavior in the backup options: open the backup page, then its settings, and allow cellular data separately for photos and for videos.
+On Android:
 
-Native foreground backup keeps direct HTTPS first and can use a resource-scoped
-WebRTC data channel when its HTTPS route would otherwise use the relay. A failed
-direct connection resumes the same upload over permitted HTTPS after reading its
-durable offset. See [Direct mobile backup](./direct-mobile-backup.md) for the
-protocol, relay policy and background limitations.
+| Choice                | Default | What it does                              |
+| --------------------- | ------- | ----------------------------------------- |
+| Only on Wi-Fi         | Off     | Nothing backs up on mobile data.          |
+| Videos wait for Wi-Fi | On      | Photos may use mobile data; videos wait.  |
+| Only while charging   | Off     | Backup waits until the phone is charging. |
 
-### Backup album synchronization
+When something is waiting because of one of these choices, Backup says so, for example **Waiting for Wi-Fi** or **Waiting to charge**.
 
-Turn this on with **Sync albums** in the backup options. When enabled, Frameleaf automatically creates albums on the server that mirror the albums on your mobile device. Photos and videos are organized into these server-side albums to match your device's album structure, making it easy to find and browse your content the same way you do on your phone.
+## Every photo is checked
 
-This is a one-way sync from your device to the server. You can enable this feature at any time and use the **Reorganize into album** button to backfill existing uploads into their corresponding albums.
+Before uploading, the app fingerprints each original and asks your server whether it already has it, however it got there: from this phone, another device, the web app or an import. Anything already there is skipped, so nothing is uploaded twice.
 
-## Platform Specific Features
+A photo only counts as backed up once the server's copy matches the one on your phone. An upload that stops part way, because the connection dropped or the phone restarted, carries on where it stopped. Anything that didn't make it is listed under **Not on Server** with the reason, such as **Didn't arrive intact**, **Refused by your server** or **Not in your backup choices**, and you can retry it.
+
+## Deleting on your phone never deletes on the server
+
+Backup only ever adds to your server. Deleting a photo, video or album on your phone never deletes anything on the server, and never takes a photo out of a server album. (Taking a photo out of a synced album on the phone, without deleting it, takes it out of the matching server album only if the app put it there.) Signing out of a server or removing it from the app doesn't delete anything on the server either.
+
+To make room on your phone once your photos are safely on the server, use [Free Up Space](./mobile-app.mdx#free-up-space).
+
+## Albums
+
+Your phone's albums (on iPhone and iPad) or folders (on Android) can become albums on your server. In the app's backup settings, under **Albums**, choose **Off**, all of them, or only the ones you pick. Photos already on the server are added to those albums too, and an existing server album with the same name is used instead of making a copy. See [Album sync](./mobile-app.mdx#album-sync).
+
+## At home and away from home
+
+At home, the app backs up straight to your server over your own network.
+
+Away from home, the app can reach your server only when the server is linked to Frameleaf Cloud with a plan that includes remote access. Without one, Backup tells you the phone backs up when you're home, and it catches up the next time it's on your home network.
+
+With remote access, the app connects straight to your server when it can, and through Frameleaf's relay when it can't. Photos and videos sent through the relay count toward your plan's relay allowance; connections at home don't. On Android, originals and videos wait for a direct connection unless you allow them over the relay in the app's settings. For how the direct connection works, see [Direct mobile backup](./direct-mobile-backup.md).
+
+## Backing up in the background
 
 ### Android
 
-- It is a well-known problem that some Android models are very strict with battery optimization settings, which can cause a problem with the background worker. Visit [Don't kill my app](https://dontkillmyapp.com/) for a guide on disabling this setting on your phone.
-- In the backup options, you can allow the background task to run only when the device is charging.
-- You can set the minimum delay from the time a photo is taken to when the background upload task will run.
+- The app starts a backup about 30 seconds after you take a new photo or video, and catches up about every hour.
+- The hourly catch-up waits while the battery is low.
+- Some phones are strict about battery use and stop apps working in the background. If Backup says **Battery optimisation can pause backup**, allow Frameleaf to run in the background in your battery settings. [Don't kill my app](https://dontkillmyapp.com/) has guides for many phones.
 
-### iOS
+### iPhone and iPad
 
-- You must enable **Background App Refresh** for the app to work in the background. You can enable it in the Settings app under General > Background App Refresh.
+- iOS decides when apps may work in the background. Frameleaf backs up overnight when iOS allows it, and keeps **Back Up Now** going for a while after you leave the app. On iOS 26.1 or later, iOS also uploads what is left in the background on its own.
+- The more often you open the app, the more chances it gets. Open it, or tap **Back Up Now**, to back up right away.
+- Keep **Background App Refresh** on for Frameleaf, in the Settings app under General > Background App Refresh.
 
 <div style={{textAlign: 'center'}}>
 <img src={require('./img/background-app-refresh.webp').default} width="30%" title="background-app-refresh" />
 </div>
 
-- iOS automatically manages background tasks; the app cannot control when the background upload task will run. The more frequently you open the app, the more often background tasks will run.
+#### Photos stored only in iCloud
 
-#### iCloud Backup
-
-Local albums containing assets from iCloud and marked for backup in Frameleaf will be pulled from iCloud and temporarily stored in the app's cache folder. Once the hashing and uploading process is completed, the temporary files will be emptied.
-
-This process may consume additional data and storage space on your device, especially if you have a large number of iCloud photos and videos. Make sure you have enough storage space and monitor your data usage if you are not connected to Wi-Fi.
+If you use **Optimize iPhone Storage** with iCloud Photos, some originals are only in iCloud. The app downloads each original from iCloud before backing it up, on Wi-Fi by default, and Backup shows how many iCloud originals are waiting. This uses some extra data and space on the device while it works.

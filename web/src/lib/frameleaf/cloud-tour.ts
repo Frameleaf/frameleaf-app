@@ -166,6 +166,8 @@ export const clampTourStep = (value: unknown) => {
 export type CloudTourFacts = {
   license: Pick<LicenseStatusResponseDto, 'entitlements'> & {
     plan: Pick<LicenseSlotDto, 'state' | 'graceUntil'> | null;
+    /** The licence key activated on this server; a Server licence gives the direct address without a plan. */
+    key?: Pick<LicenseSlotDto, 'state' | 'kind'> | null;
   };
   remoteAccessEnabled: boolean;
   customHostnameVerified: boolean;
@@ -214,22 +216,30 @@ export const activeEntitlements = (license: CloudTourFacts['license'], now = Dat
   };
 };
 
+/**
+ * FL-437: a Server licence (active or in grace) reaches this server through its direct Frameleaf
+ * address without a plan; only the relay and an own domain need one.
+ */
+const hasServerLicence = (license: CloudTourFacts['license']) =>
+  license.key?.kind === 'server' && (license.key.state === 'active' || license.key.state === 'grace');
+
 /** Where each part stands right now, so the tour never promises what is not set up. */
 export const cloudTourStatus = (step: CloudTourStepId, facts: CloudTourFacts, now = Date.now()): CloudTourChip => {
   const included = activeEntitlements(facts.license, now);
+  const directOnly = !included.remoteAccess && hasServerLicence(facts.license);
   const needsPlan = text('needs_plan', 'muted');
   switch (step) {
     case 'remote': {
-      if (!included.remoteAccess) {
+      if (!included.remoteAccess && !directOnly) {
         return needsPlan;
       }
       return facts.remoteAccessEnabled ? text('on', 'ok') : text('ready_to_turn_on', 'muted');
     }
     case 'address': {
-      if (!included.remoteAccess) {
+      if (!included.remoteAccess && !directOnly) {
         return needsPlan;
       }
-      if (facts.customHostnameVerified) {
+      if (facts.customHostnameVerified && !directOnly) {
         return text('own_domain_verified', 'ok');
       }
       return facts.remoteAccessEnabled ? text('frameleaf_address_ready', 'ok') : text('ready_to_turn_on', 'muted');

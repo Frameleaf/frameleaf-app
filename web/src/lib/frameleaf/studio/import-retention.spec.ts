@@ -106,10 +106,12 @@ describe('host retained import boundary', () => {
     'uses immutable upload verification for a matching %s receipt',
     async (state) => {
       const api = setup();
-      api.register.mockResolvedValueOnce({ ...receipt, state, ...(state === 'published' && { imported }) });
+      const registered = { ...receipt, state, ...(state === 'published' && { imported }) };
+      api.register.mockResolvedValueOnce(registered);
       expect(await submitRetainedImport(api, scope, () => true, upload)).toEqual(imported);
       expect(api.upload).toHaveBeenCalledTimes(1);
-      expect(receipt.expiresAt).toBe(new Date(21_600_000).toISOString());
+      // the receipt the server returned is read, never rewritten
+      expect(registered).toEqual({ ...receipt, state, ...(state === 'published' && { imported }) });
     },
   );
 

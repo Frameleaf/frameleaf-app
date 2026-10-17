@@ -760,6 +760,7 @@
             {#if item.id === area && !$sidebarCollapsed && children.length > 0}
               <div
                 class="cc-nav-children"
+                role="group"
                 aria-label={$t('frameleaf_settings_nav_pages', { values: { area: areaCopy[item.id].title } })}
                 transition:motionSlide={{ duration: DURATION.base }}
               >

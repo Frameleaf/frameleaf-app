@@ -12,7 +12,7 @@ Frameleaf is built on Immich (AGPL-3.0; see `/licenses/LICENSE.txt`). The compon
 ## Studio models, voices and runtimes
 
 - **MusicGen small (ONNX conversion)** — Meta AI (facebook/musicgen-small); ONNX conversion by Xenova. Licence: CC-BY-NC-4.0. https://huggingface.co/Xenova/musicgen-small
-  Local use only: not offered on Frameleaf Cloud (non-commercial licence; owner decision FL-146, 2026-09-25).
+  Local use only: not offered on Frameleaf Cloud (non-commercial licence; owner decision FL-146, 2026-09-25). Basis: personal use by the server owner on their own server (legal review 2026-10-17, FL-445).
   Licence texts: licenses/texts/cc-by-nc-4.0.txt.
 - **Kokoro-82M text to speech** — hexgrad; ONNX conversion by onnx-community. Licence: Apache-2.0. https://huggingface.co/hexgrad/Kokoro-82M
   Voices: af_heart, af_bella, af_nicole, af_sky, af_sarah, af_alloy, af_aoede, af_jessica, af_kore, af_nova, af_river, am_michael, am_fenrir, am_puck, am_adam, am_echo, am_eric, am_liam, am_onyx, am_santa, bf_emma, bf_isabella, bf_alice, bf_lily, bm_george, bm_fable, bm_lewis, bm_daniel, ef_dora, em_alex, em_santa, ff_siwis, hf_alpha, hf_beta, hm_omega, hm_psi, if_sara, im_nicola, jf_alpha, jf_gongitsune, jf_nezumi, jf_tebukuro, jm_kumo, pf_dora, pm_alex, pm_santa, zf_xiaobei, zf_xiaoni, zf_xiaoxiao, zf_xiaoyi, zm_yunjian, zm_yunxi, zm_yunxia, zm_yunyang.
@@ -51,14 +51,15 @@ Frameleaf is built on Immich (AGPL-3.0; see `/licenses/LICENSE.txt`). The compon
 
 ## Studio assets and tools
 
-- **LottieFiles animations** — Each animation’s creator on LottieFiles (credited on the clip that uses it). Licence: Lottie Simple License (FL 9.13.21) (to confirm). https://lottiefiles.com/page/license
+- **LottieFiles animations** — Each animation’s creator on LottieFiles (credited on the clip that uses it). Licence: Lottie Simple License (FL 9.13.21). https://lottiefiles.com/page/license
+  Used under the Lottie Simple License for personal use by the server owner on their own server (legal review 2026-10-17, FL-445).
 - **Your own imported media** — You. Licence: Your own rights.
 - **Dolby Vision professional tools (CM Analyze, Metafier, Mezzinator, artistic trims)** — Dolby Laboratories. Licence: Proprietary; installed by the administrator under their own Dolby agreement, never distributed with Frameleaf. https://professional.dolby.com
 
 ## Photo library machine learning models
 
 - **InsightFace face detection and recognition (buffalo_l, buffalo_m, buffalo_s, antelopev2)** — InsightFace (deepinsight). Licence: InsightFace model licence: non-commercial research use; Frameleaf holds a commercial licence for buffalo_l. https://github.com/deepinsight/insightface
-  buffalo_l is used under a commercial licence the owner obtained from InsightFace at no cost, in support of open source (FL-146, 2026-09-25). buffalo_m, buffalo_s and antelopev2 are provided under InsightFace’s model terms: non-commercial research only.
+  buffalo_l is used under a commercial licence the owner obtained from InsightFace at no cost, in support of open source (FL-146, 2026-09-25). buffalo_m, buffalo_s and antelopev2 are provided under InsightFace’s model terms (non-commercial research only) and run for personal use by the server owner on their own server (legal review 2026-10-17, FL-445).
   Licence texts: licenses/texts/insightface-model-licence.txt.
 - **OpenAI CLIP (RN50, RN101, RN50x4/x16/x64, ViT-B/32, ViT-B/16, ViT-L/14, ViT-L/14@336)** — OpenAI. Licence: MIT. https://github.com/openai/CLIP
   Licence texts: licenses/texts/openai-clip-mit.txt, licenses/texts/open-clip-license.txt.
@@ -69,7 +70,7 @@ Frameleaf is built on Immich (AGPL-3.0; see `/licenses/LICENSE.txt`). The compon
 - **SigLIP and SigLIP 2 (WebLI)** — Google. Licence: Apache-2.0. https://huggingface.co/timm/ViT-B-16-SigLIP2
   Licence texts: licenses/texts/apache-2.0.txt.
 - **NLLB-CLIP (base and large, SigLIP)** — Alexander Visheratin. Licence: CC-BY-NC-4.0. https://huggingface.co/visheratin/nllb-clip-base-siglip
-  Local use only: not offered on Frameleaf Cloud (non-commercial licence; owner decision FL-146, 2026-09-25).
+  Local use only: not offered on Frameleaf Cloud (non-commercial licence; owner decision FL-146, 2026-09-25). Basis: personal use by the server owner on their own server (legal review 2026-10-17, FL-445).
   Licence texts: licenses/texts/cc-by-nc-4.0.txt.
 - **Multilingual CLIP (XLM-RoBERTa Large ViT-B/32, ViT-B/16+, ViT-L/14; LaBSE ViT-L/14)** — Fredrik Carlsson (M-CLIP). Licence: MIT. https://github.com/FreddeFrallan/Multilingual-CLIP
   Licence texts: licenses/texts/multilingual-clip-mit.txt.
@@ -81,8 +82,8 @@ Frameleaf is built on Immich (AGPL-3.0; see `/licenses/LICENSE.txt`). The compon
 - **Whisper speech recognition for Studio captions (large-v3-turbo, small; CTranslate2 conversions)** — OpenAI; CTranslate2 conversions by Mobius Labs (dropbox-dash) and SYSTRAN; faster-whisper by SYSTRAN. Licence: MIT (Whisper code and large-v3-turbo weights; faster-whisper; CTranslate2), Apache-2.0 (small weights per its Hugging Face card). https://github.com/openai/whisper
   Studio captions on the server (owner decision 2026-10-09): OpenAI Whisper large-v3-turbo (on a GPU) and small (on a CPU) as CTranslate2 conversions run by faster-whisper (MIT, SYSTRAN) on CTranslate2 (MIT, OpenNMT): dropbox-dash/faster-whisper-large-v3-turbo revision 0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf (model.bin SHA-256 e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da) and Systran/faster-whisper-small revision 536b0662742c02347bc0e980a01041f333bce120 (model.bin SHA-256 3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671), served unchanged by the Frameleaf model mirror. Runs on this server's ML worker or a home-network worker the owner names; never on Frameleaf Cloud from this path.
   Licence texts: licenses/texts/openai-whisper-mit.txt, licenses/texts/apache-2.0.txt.
-- **Qwen2.5-VL Instruct 3B and 7B (photo descriptions)** — Qwen team, Alibaba Cloud; OpenVINO conversions by llmware. Licence: Qwen Research License (3B, the default); Apache-2.0 (7B) (to confirm). https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct
-  The 3B model’s Qwen Research License does not permit commercial use; whether it may stay the default, and on Frameleaf Cloud, needs an owner decision.
+- **Qwen2.5-VL Instruct 3B and 7B (photo descriptions)** — Qwen team, Alibaba Cloud; OpenVINO conversions by llmware. Licence: Qwen Research License (3B, the default); Apache-2.0 (7B). https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct
+  The 3B model (the default) is under the Qwen Research License (non-commercial); the 7B model is under Apache-2.0. Both run for personal use by the server owner on their own server (legal review 2026-10-17, FL-445). The 3B model is not offered on Frameleaf Cloud (owner decision FL-146, 2026-09-25).
   Licence texts: licenses/texts/qwen-research-license.txt, licenses/texts/apache-2.0.txt.
 - **Florence-2 (base, large; -ft) and Phi-3 / Phi-3.5 vision (photo descriptions)** — Microsoft; native Florence conversions by florence-community; OpenVINO Phi conversions by OpenVINO. Licence: MIT. https://huggingface.co/microsoft/Florence-2-base
   The four built-in Florence-2 description variants use immutable native Transformers checkpoints from florence-community, served unchanged by the configured model source. Their model cards and Microsoft MIT notice are retained; repository Python and pickle weights are not loaded.

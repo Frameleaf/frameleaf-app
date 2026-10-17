@@ -555,13 +555,13 @@ export class CloudMlBatchService extends BaseService {
     spentInWindowUsd: number,
   ): string | null {
     if (availableUsd < p90Usd) {
-      return `The AI Wallet has ${availableUsd.toFixed(2)} USD available and these descriptions may cost up to ${p90Usd.toFixed(2)} USD. Add credit first.`;
+      return `The AI Wallet has $${availableUsd.toFixed(2)} available and these descriptions may cost up to $${p90Usd.toFixed(2)}. Add credit first.`;
     }
     if (wallet.dailyCapUsd !== null && wallet.spentTodayUsd + firstHoldUsd > wallet.dailyCapUsd) {
-      return `Today's AI Wallet limit of ${wallet.dailyCapUsd.toFixed(2)} USD leaves too little for the first batch. Try again tomorrow or raise the limit in your Frameleaf account.`;
+      return `Today's AI Wallet limit of $${wallet.dailyCapUsd.toFixed(2)} leaves too little for the first batch. Try again tomorrow or raise the limit in your Frameleaf account.`;
     }
     if (destination.budgetLimitUsd !== null && spentInWindowUsd + p90Usd > destination.budgetLimitUsd) {
-      return `${destination.name} has ${Math.max(0, destination.budgetLimitUsd - spentInWindowUsd).toFixed(2)} USD left of its ${destination.budgetLimitUsd.toFixed(2)} USD spending limit, less than these descriptions may cost.`;
+      return `${destination.name} has $${Math.max(0, destination.budgetLimitUsd - spentInWindowUsd).toFixed(2)} left of its $${destination.budgetLimitUsd.toFixed(2)} spending limit, less than these descriptions may cost.`;
     }
     return null;
   }
@@ -667,7 +667,7 @@ export class CloudMlBatchService extends BaseService {
       type: NotificationType.SystemMessage,
       level: NotificationLevel.Info,
       title: 'Automatic descriptions paused for today',
-      description: `Describing new photos with Frameleaf Cloud reached today's budget of ${dailyBudgetUsd.toFixed(2)} USD. New photos wait and are described from tomorrow; nothing is sent to another destination.`,
+      description: `Describing new photos with Frameleaf Cloud reached today's budget of $${dailyBudgetUsd.toFixed(2)}. New photos wait and are described from tomorrow; nothing is sent to another destination.`,
       dedupeKey: `frameleaf-cloud:description-budget:${serverDay(now, await this.serverZone())}`,
       dedupeDays: 1,
     });
@@ -1067,7 +1067,7 @@ export class CloudMlBatchService extends BaseService {
     if (snapshot.approvedP90Usd !== null && cost.p90Usd > snapshot.approvedP90Usd * CLOUD_DESCRIPTION_PRICE_TOLERANCE) {
       throw new BatchRefusal(
         'cloud_description_estimate_increased',
-        `Frameleaf Cloud now estimates this batch at up to ${cost.p90Usd.toFixed(2)} USD, above the ${snapshot.approvedP90Usd.toFixed(2)} USD it was approved at. Nothing was sent; estimate again.`,
+        `Frameleaf Cloud now estimates this batch at up to $${cost.p90Usd.toFixed(2)}, above the $${snapshot.approvedP90Usd.toFixed(2)} it was approved at. Nothing was sent; estimate again.`,
         false,
       );
     }
@@ -1076,7 +1076,7 @@ export class CloudMlBatchService extends BaseService {
     if (hold > available) {
       throw new BatchRefusal(
         'cloud_description_wallet_insufficient',
-        `This batch needs ${hold.toFixed(2)} USD held and the AI Wallet has ${Math.max(0, available).toFixed(2)} USD available. Nothing was sent.`,
+        `This batch needs $${hold.toFixed(2)} held and the AI Wallet has $${Math.max(0, available).toFixed(2)} available. Nothing was sent.`,
         false,
       );
     }
@@ -1090,7 +1090,7 @@ export class CloudMlBatchService extends BaseService {
       }
       throw new BatchRefusal(
         'cloud_description_daily_cap',
-        `Today's AI Wallet limit of ${wallet.dailyCapUsd.toFixed(2)} USD leaves too little for this batch. Nothing was sent.`,
+        `Today's AI Wallet limit of $${wallet.dailyCapUsd.toFixed(2)} leaves too little for this batch. Nothing was sent.`,
         false,
       );
     }
@@ -1099,7 +1099,7 @@ export class CloudMlBatchService extends BaseService {
       if (spent + hold > destination.budgetLimitUsd) {
         throw new BatchRefusal(
           'cloud_description_budget_exceeded',
-          `${destination.name} has ${Math.max(0, destination.budgetLimitUsd - spent).toFixed(2)} USD left of its spending limit, less than this batch needs held. Nothing was sent.`,
+          `${destination.name} has $${Math.max(0, destination.budgetLimitUsd - spent).toFixed(2)} left of its spending limit, less than this batch needs held. Nothing was sent.`,
           false,
         );
       }

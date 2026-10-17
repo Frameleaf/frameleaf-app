@@ -94,7 +94,7 @@ Admins can review each result, rerun detection, mark an asset safe, mark an asse
 
 ### PIN-Gated Hiding
 
-Sensitive marks, detections (when `Hide detected NSFW assets` is enabled) and the upstream Locked folder are one lock per asset; see [Locked](./locked.md). Locked assets are hidden from normal browsing until the current session is unlocked with the PIN, and **Locked** lists them all.
+Sensitive marks, detections (when **Hide flagged photos until unlocked** is on) and items from an imported Locked folder are one lock per asset; see [Locked](./locked.md). Locked assets are hidden from normal browsing until the current session is unlocked with the PIN, and **Locked** lists them all.
 
 Hidden assets are filtered from timelines, search, albums, map markers, downloads, shared-link payloads, sync streams, people, tags, memories, duplicate groups, stacks, and related derived views. Album membership is preserved; the asset is hidden from responses, not removed from the album.
 
@@ -121,32 +121,11 @@ The main navigation includes a lock/unlock control near Upload:
 
 ### Mobile Actions
 
-Mobile multi-select surfaces include actions to mark selected owned remote assets as NSFW or safe again. Server-side filtering applies to mobile clients as well, even where native mobile settings UI is still catching up.
+The Frameleaf iPhone and Android apps can mark your own items sensitive or safe again. Server-side filtering applies to every client.
 
-### Physical Deduplication
+### Universal Storage
 
-Physical deduplication is an optional admin feature for families or households where several Frameleaf users upload the same original photos or videos. When it is enabled, Frameleaf can keep each user's library record separate while storing only one physical copy of an exact file on disk.
-
-This is different from partner sharing. Partner sharing exposes another user's assets through sharing rules. Physical deduplication does not share library ownership, albums, favorites, descriptions, tags, permissions, or visibility. It only lets eligible duplicate files point at the same stored bytes.
-
-The feature is disabled by default and requires a master account. The master account is the canonical storage owner: when another user uploads an exact copy that already exists in the master account, the non-master user's asset can reference the master copy's physical file. If no matching master copy exists, Frameleaf stores the upload normally.
-
-Eligible shared files are:
-
-- original upload-managed files;
-- thumbnails;
-- previews;
-- fullsize generated files;
-- encoded videos.
-
-Frameleaf does not share these files:
-
-- sidecars;
-- edited thumbnails, previews, or fullsize files;
-- external-library files;
-- files from deleted, offline, or unavailable canonical assets.
-
-The original asset rows remain separate. Each user still has their own asset id, timeline entry, albums, favorites, metadata, permissions, and logical quota behavior. Disk savings are a storage optimization, not a change to who owns or can see an asset.
+Frameleaf automatically stores one physical copy of an exact file when several accounts upload the same photo or video. Each account keeps its own library record, albums, favorites, metadata, permissions and Locked state, and its quota is charged the full size. This is different from partner sharing: it shares no library ownership or visibility. See [Universal Storage](./physical-deduplication.md).
 
 ## Recommended Home-Lab Rollout
 
@@ -154,50 +133,20 @@ Start slowly. Do not enable automatic hiding until you have reviewed classifier 
 
 1. Make a backup and confirm your normal Frameleaf backup plan works. DO NOT SKIP THIS.
 2. Deploy Frameleaf using Frameleaf's server, web, and machine-learning images or build outputs. Do not mix upstream containers with Frameleaf server or web code.
-3. Create a fresh canonical PostgreSQL 19 database. If you have an existing Immich library, follow the [offline import](../administration/import-immich.md), then open `Administration > Settings > Machine Learning Settings`.
-4. Choose the image-enrichment hardware profile that matches your server:
-   - `Auto-detect` for most users;
-   - `Intel iGPU (OpenVINO)` for Intel integrated graphics;
-   - `NVIDIA GPU (CUDA)` for NVIDIA GPU hosts.
-5. Enable `Detect NSFW images`.
-6. Run `Administration > Jobs > NSFW Detection > All`.
+3. Create a fresh canonical PostgreSQL 19 database. If you have an existing library to import, follow the [offline import](../administration/import-immich.md), then open **Settings → Search & intelligence**.
+4. On **Descriptions & tags**, under **Advanced: caption model and hardware**, choose the **Kind of graphics card** that matches your server:
+   - **Automatic** for most users;
+   - **Intel (OpenVINO)** for Intel integrated graphics;
+   - **NVIDIA (CUDA)** for NVIDIA GPU hosts.
+5. On **Locked-content detection**, turn on **Suggest photos to lock**.
+6. Run the **Locked-content detection** queue for all items from **Settings → Computers & background work → Background work**.
 7. Review results in the asset detail panel and tune the threshold if needed.
-8. Enable `Hide detected NSFW assets` only after results look acceptable.
-9. Enable `Generate image descriptions and tags` if you want AI descriptions and searchable generated tags.
-10. Run `Administration > Jobs > Image descriptions and tags > All`.
-11. Create or confirm your locked-folder PIN.
-12. Use `Account settings > Suppressed content` to add tags or people you want hidden from normal browsing.
+8. Turn on **Hide flagged photos until unlocked** only after results look acceptable.
+9. Confirm **Write captions for photos** is on (it is by default) if you want AI descriptions and searchable generated tags.
+10. Run the **Descriptions & tags** queue for all items from **Settings → Computers & background work → Background work**.
+11. Create or confirm your PIN in **Settings → Access & security → Locked folder PIN**.
+12. Use **Settings → Access & security → Locked tags & people** to add tags or people you want hidden from normal browsing.
 13. Use `/suppressed` after PIN unlock to review and organize hidden/suppressed content.
-
-## Physical Deduplication Rollout
-
-Physical deduplication changes how files are referenced on disk, so treat it like a storage migration. Make a backup first and run the dry run before applying any existing-library migration.
-
-1. Choose a stable master account. This should usually be the household account whose storage-template layout you want canonical files to follow.
-2. Confirm the master account is active and not deleted.
-3. Open `Administration > Settings > Storage Template`.
-4. Enable `Physical deduplication`.
-5. Select the master account.
-6. Save the system settings.
-7. Open `Administration > Physical deduplication` and prepare a preview plan. No file changes during the preview.
-8. Check each retained original and its copies: checksums, reference counts, reclaimable bytes, skipped external-library files and copies without a master match. Leave out any group you want to keep separate.
-9. Mark the plan reviewed; the server checks it against the library again. Then apply it by typing `APPLY` and the plan's name. Anything that changed since the preview is refused, and only the reviewed copies are applied.
-10. Follow the job on the page or in Activity until it finishes. See [Physical deduplication](./physical-deduplication.md) for every check it makes.
-
-New uploads are handled automatically after the feature is enabled. A non-master user's upload is still checked for duplicates inside that same user's library. Cross-user matches are not rejected at upload time; after Frameleaf computes the checksum, it reuses a master physical file only when the master account already has an exact upload-managed match with the same checksum and size.
-
-If the master account does not have a matching file, the upload remains independent. If the uploading user is the master account, Frameleaf stores the file normally and records it as a possible canonical file for future non-master duplicates.
-
-## Physical Deduplication Safety Notes
-
-- Keep a verified backup before running the apply migration.
-- Start with a preview. Applying a reviewed plan is idempotent and checks every file's checksum on disk first, but it still deletes redundant duplicate bytes after those checks and the reference checks pass.
-- External-library files are ignored. They are not moved, linked, or deleted by this feature.
-- Sidecars remain per asset. A non-master linked asset does not write sidecar metadata beside the shared original.
-- Deleting one linked asset does not remove shared bytes while another asset still references them.
-- Deleting the master asset removes it from the master timeline, but shared physical bytes remain until the last linked reference is deleted.
-- Storage-template migration moves canonical master originals and updates linked asset paths together. Non-master linked assets skip moving the shared original.
-- Config-file mode makes the admin UI read-only; configure the feature in the config file instead if your instance uses config-file management.
 
 ## Suggested Model Settings
 
@@ -234,5 +183,6 @@ For NSFW discovery, prefer improving the dedicated NSFW classifier before relyin
 - [One-time offline Immich import](../administration/import-immich.md)
 - [Image Enrichment](image-enrichment.md)
 - [Hardware-Accelerated Machine Learning](ml-hardware-acceleration.md)
+- [Universal Storage](physical-deduplication.md)
 - [Administration: System Settings](../administration/system-settings.md)
 - [Administration: Jobs and Workers](../administration/jobs-workers.md)

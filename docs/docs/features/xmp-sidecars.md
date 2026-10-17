@@ -65,4 +65,4 @@ Frameleaf provides two admin jobs for managing sidecars:
 | `DISCOVER` | Finds new `.xmp` files next to media that don’t already have one linked                           |
 | `SYNC`     | Re-reads existing `.xmp` files and refreshes metadata in the database (e.g. after external edits) |
 
-Both are on the **Photo detail files** queue in **Settings > Compute & jobs > Queues & concurrency**: **Find detail files** runs `DISCOVER`, and **Synchronize all** runs `SYNC`.
+Both are on the **Photo detail files** queue in **Settings > Computers & background work > Background work**: **Find detail files** runs `DISCOVER`, and **Synchronize all** runs `SYNC`.

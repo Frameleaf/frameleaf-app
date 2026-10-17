@@ -1,6 +1,6 @@
 # Recover missing or corrupt media
 
-Use **Utilities → Review missing media** and **Utilities → Review corrupt media** to investigate files Frameleaf can no longer read. If the same original is available in iCloud, [iCloud Photos Sync](icloud-photos-sync.md) can also provide a validated recovery copy.
+Administrators can use **Settings → Utilities → Missing media** and **Settings → Utilities → Damaged media** to investigate files Frameleaf can no longer read. If the same original is available in iCloud, [iCloud Photos Sync](icloud-photos-sync.md) can also provide a validated recovery copy.
 
 A missing-file report means Frameleaf cannot access the file it expects. It does not prove somebody deleted it. Storage moves, unavailable storage, permissions, and changed paths can also make a file unreadable.
 
@@ -12,7 +12,7 @@ Keep existing backups and recovery copies until you can open the recovered media
 
 ## Locate a file that moved or was renamed
 
-1. Open the missing-media review tool under **Utilities** and run a scan.
+1. Open **Missing media** under **Settings → Utilities** and run a scan.
 2. Review the affected assets and use **Locate** to search for candidates in the configured library/storage locations.
 3. Review the result. A candidate is accepted for relinking only when its actual content hash matches the expected media. Names and extensions can change without changing that identity.
 4. Apply the validated relink where offered, then open the asset to verify access. Uncertain candidates remain for review.
@@ -52,7 +52,7 @@ Importing hidden Apple media and recovery involving Locked/suppressed destinatio
 | Requires review           | Identity, privacy, external recovery, or another safety condition prevented automatic completion. Inspect the reason.                    |
 | Resolved                  | The applicable finding has been resolved. Open the asset and verify the expected media.                                                  |
 
-The corrupt-media tool can move revalidated corrupt assets to the Trash after its PIN and typed-confirmation flow. That is not a recovery action. iCloud sync does not automatically restore intentionally trashed assets. Review the destination's current state before retrying a recovery.
+The **Damaged media** tool can move revalidated corrupt assets to the Trash after its PIN and typed-confirmation flow. That is not a recovery action. iCloud sync does not automatically restore intentionally trashed assets. Review the destination's current state before retrying a recovery.
 
 ## Why do the counts differ?
 

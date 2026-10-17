@@ -74,7 +74,7 @@ The provider's own error text is never shown, since anyone can put it in the add
 
 ## Enable OAuth
 
-Once you have a new OAuth client application configured, Frameleaf can be configured using the Administration Settings page, available on the web (Administration -> Settings).
+Once you have a new OAuth client application configured, Frameleaf can be configured on the web under **Settings → Access & security → Sign-in methods**.
 
 | Setting                                              | Type    | Default              | Description                                                                                                                                                 |
 | ---------------------------------------------------- | ------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -119,12 +119,12 @@ Auto Launch can also be enabled on a per-request basis by navigating to `/auth/l
 
 ## Mobile Redirect URI
 
-The redirect URI for the Frameleaf mobile app is `frameleaf-auth:///oauth-callback`, which is a [Custom Scheme](https://developer.apple.com/documentation/xcode/defining-a-custom-url-scheme-for-your-app). If this custom scheme is an invalid redirect URI for your OAuth Provider, use this server's forwarding route instead:
+The redirect URI for the Frameleaf iPhone and Android apps is `frameleaf-auth:///oauth-callback`, which is a [Custom Scheme](https://developer.apple.com/documentation/xcode/defining-a-custom-url-scheme-for-your-app). If this custom scheme is an invalid redirect URI for your OAuth Provider, use this server's forwarding route instead:
 
 1. Allow `https://DOMAIN/api/oauth/frameleaf-mobile-redirect` as a redirect URI with your provider (for example `https://photos.example.com/api/oauth/frameleaf-mobile-redirect`). Frameleaf forwards requests on this route to `frameleaf-auth:///oauth-callback`.
 2. Enable `Mobile Redirect URI Override` in the OAuth settings and set it to that address.
 
-Any other override address cannot be matched to this server, and app sign-in is refused with an error. Administration → Settings → Authentication shows the exact callback for the current configuration under **Mobile app callback**.
+Any other override address cannot be matched to this server, and app sign-in is refused with an error. **Settings → Access & security → Sign-in methods** shows the exact callback for the current configuration under **Mobile app callback**.
 
 ## Example Configuration
 
