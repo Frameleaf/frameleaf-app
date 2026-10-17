@@ -17,10 +17,12 @@ import {
 import { mdiHarddisk, mdiProgressAlert, mdiShieldAlertOutline, mdiUpdate } from '@mdi/js';
 import type { Translations } from 'svelte-i18n';
 import { BACKUP_PLACE_COPY } from '$lib/components/frameleaf/backup/backup-places';
-import type { KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
 import type { BackupPlaceId } from '$lib/frameleaf/backup-overview';
 import { jobQueue } from '$lib/frameleaf/job-queues';
 import { backupPageUrl, commandCenterUrl } from '$lib/frameleaf/settings-areas';
+
+// Same union as Pill.svelte's KitTone; .ts files can't import types from a .svelte module script.
+type KitTone = 'good' | 'warn' | 'bad' | 'off';
 
 /** A phrase to translate: its key and the values it takes. */
 export type Words = { key: Translations; values?: Record<string, string | number> };
