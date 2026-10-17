@@ -717,6 +717,24 @@ export class InstanceIdentityRepository {
   }
 
   /**
+   * FL-430: a signer bound to the key the last rotation retired, while it is still kept (the cloud's
+   * overlap window), so apps that pinned it can keep proving this server until they learn the new key.
+   * Only the home-network identity proof uses it; tokens are never minted with a retiring key.
+   */
+  async retiringSigner(identity: FrameleafInstanceIdentity): Promise<FrameleafKeySigner | null> {
+    const retiring = identity.retiring;
+    if (!retiring || Date.parse(retiring.until) <= Date.now()) {
+      return null;
+    }
+    const pem = await readFile(retiring.keyFile).catch(() => null);
+    if (!pem) {
+      return null;
+    }
+    const signer = this.signerOf(createPrivateKey(pem));
+    return signer.kid === retiring.kid ? signer : null;
+  }
+
+  /**
    * A signer bound to the current key as last loaded by `loadOrCreate` (FL-178). It keeps that key
    * even when a rotation replaces the current one meanwhile, so a token's client assertion and every
    * DPoP proof for it are always signed by one key. During a recovery after a damaged key (FL-175)

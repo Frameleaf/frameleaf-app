@@ -12,6 +12,7 @@ import {
   mdiAccountMultipleOutline,
   mdiAccountOutline,
   mdiApi,
+  mdiAutoFix,
   mdiBackupRestore,
   mdiBellOutline,
   mdiBookshelf,
@@ -26,6 +27,7 @@ import {
   mdiFolderOutline,
   mdiFormTextboxPassword,
   mdiImageAlbum,
+  mdiImageEditOutline,
   mdiImageMultipleOutline,
   mdiImageOutline,
   mdiImageSizeSelectLarge,
@@ -35,6 +37,7 @@ import {
   mdiLockSmart,
   mdiMapMarkerOutline,
   mdiMemory,
+  mdiMovieEditOutline,
   mdiPaletteOutline,
   mdiRobotOutline,
   mdiServerOutline,
@@ -493,6 +496,25 @@ export const ADMIN_SETTINGS_AREAS: readonly {
     titleKey: 'frameleaf_cc_section_playback',
     descriptionKey: 'frameleaf_cc_section_playback_description',
     icon: mdiVideoOutline,
+  },
+  // FL-422: Editing & playback's Editing group.
+  {
+    key: 'masters',
+    titleKey: 'frameleaf_cc_section_masters',
+    descriptionKey: 'frameleaf_cc_section_masters_description',
+    icon: mdiImageEditOutline,
+  },
+  {
+    key: 'restoration',
+    titleKey: 'frameleaf_cc_section_restoration',
+    descriptionKey: 'frameleaf_cc_section_restoration_description',
+    icon: mdiAutoFix,
+  },
+  {
+    key: 'studio',
+    titleKey: 'frameleaf_cc_section_studio',
+    descriptionKey: 'frameleaf_cc_section_studio_description',
+    icon: mdiMovieEditOutline,
   },
 ] as const;
 

@@ -88,6 +88,18 @@ describe('video quick editor edit (FL-113)', () => {
     ]);
   });
 
+  it('always names the trim mode and starts new trims where the server says (FL-422)', () => {
+    // A trim without a mode is cut the server's default way, so a precise trim says so.
+    expect(toVideoEdits(edit({ start: 2, trim: 'precise' }), source)).toEqual([
+      { action: AssetEditAction.Trim, parameters: { startMs: 2000, endMs: 24_000, mode: VideoTrimMode.Precise } },
+    ]);
+    expect(initialVideoEdit(24, 'fast').trim).toBe('fast');
+    // An untrimmed recipe opens on the default; a stored trim keeps the mode it was cut with.
+    expect(fromVideoEdits([], source, 'fast').trim).toBe('fast');
+    const stored = [{ action: AssetEditAction.Trim, parameters: { startMs: 1000, endMs: 4000 } }];
+    expect(fromVideoEdits(stored, source, 'fast').trim).toBe('precise');
+  });
+
   it('writes the develop model with the look and its strength', () => {
     expect(
       toVideoEdits(edit({ exposure: 0.5, clarity: 10, preset: VideoDevelopPreset.BW, presetStrength: 60 }), source),

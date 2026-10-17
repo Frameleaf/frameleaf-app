@@ -101,6 +101,8 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
   'user-settings': ['user'],
   'version-check': ['newVersionCheck'],
   'video-transcoding': ['ffmpeg'],
+  // FL-422: Edited masters holds the editing group; its restoration style is on AI restoration.
+  masters: ['editing'],
 });
 
 /**
@@ -124,6 +126,7 @@ const SECTION_CONFIG_PATHS: Readonly<Record<string, string>> = Object.freeze({
   libraryCare: 'integrity-checks',
   // FL-168: the Public server URL sits on Frameleaf Cloud › Remote access, not Server identity.
   'server.externalDomain': 'cloud-remote',
+  'editing.restoration': 'restoration',
 });
 
 /** The settings section a changed path belongs to, if any section edits it. */

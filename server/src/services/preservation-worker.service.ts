@@ -1746,7 +1746,8 @@ export class PreservationWorkerService {
       return 'applied';
     }
     try {
-      await this.assets.editAsset(auth, assetId, parsed.data as AssetEditsCreateDto);
+      // A preserved recipe is put back exactly; a trim it saved without a mode stays precise (FL-422).
+      await this.assets.editAsset(auth, assetId, parsed.data as AssetEditsCreateDto, 'save', { exact: true });
       return 'applied';
     } catch (error) {
       if (error instanceof BadRequestException && /not available for editing/.test(error.message)) {

@@ -322,6 +322,19 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     file: 'src/lib/components/frameleaf/settings/care/FileChecks.svelte',
     evidence: 'libraryCare.healthScanCronExpression',
   },
+  // FL-422: Editing & playback › Edited masters and AI restoration.
+  {
+    pattern: 'editing.restoration.style',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/editing/AiRestoration.svelte',
+    evidence: 'restoration.style',
+  },
+  {
+    pattern: 'editing.trimMode',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/editing/EditedMasters.svelte',
+    evidence: 'editing.trimMode',
+  },
   {
     pattern: 'ffmpeg.accel',
     kind: 'control',
