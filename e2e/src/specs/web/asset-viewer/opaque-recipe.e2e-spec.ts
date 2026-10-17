@@ -233,8 +233,8 @@ test('preserves an opaque recipe through real editor history/save-only fallback 
       ...opaque,
       contrast: 25,
     });
-    await editor.getByRole('button', { name: 'More actions', exact: true }).click();
-    await editor.getByRole('menuitem', { name: 'Reset all edits', exact: true }).click();
+    // VIEWER-P5: on a wide window Revert sits in the editor's top bar, not in More.
+    await editor.getByRole('button', { name: 'Reset all edits', exact: true }).click();
     const renderedPromise = observeSave(true);
     await editor.getByRole('button', { name: 'Save version', exact: true }).click();
     const admitted = await renderedPromise;

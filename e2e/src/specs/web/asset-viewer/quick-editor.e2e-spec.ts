@@ -190,8 +190,9 @@ test.describe('Quick editor and Studio continuity', () => {
     const editor = page.getByRole('dialog', { name: /Edit/ });
     await editor.getByRole('slider', { name: 'Exposure' }).fill('0.5');
 
-    // With unsaved edits the More menu offers Studio with or without them; the draft is kept either way.
-    await editor.getByRole('button', { name: 'More actions', exact: true }).click();
+    // With unsaved edits Open in Studio offers Studio with or without them; the draft is kept either way.
+    // VIEWER-P5: on a wide window it is a menu in the editor's top bar, not an entry in More.
+    await editor.getByRole('button', { name: 'Open in Studio', exact: true }).click();
     await editor.getByRole('menuitem', { name: 'Open in Studio without these edits', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(String.raw`/studio\?assets=${asset.id}&from=${asset.id}`));
 
