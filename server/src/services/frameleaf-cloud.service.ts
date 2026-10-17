@@ -26,6 +26,7 @@ import {
   FrameleafSetupLinkDto,
   FrameleafSetupLinkResponseDto,
 } from 'src/dtos/frameleaf-server-setup.dto.js';
+import { readBuddyRecovery } from 'src/edge/buddy-recovery.js';
 import {
   AdminAuditAction,
   DatabaseLock,
@@ -40,7 +41,6 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { FrameleafCloudPublicCall } from 'src/repositories/frameleaf-cloud.repository.js';
-import { readBuddyRecovery } from 'src/edge/buddy-recovery.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
   CLONE_SUSPECTED_NOTICE,

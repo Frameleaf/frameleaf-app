@@ -1086,7 +1086,7 @@ describe(FrameleafCloudService.name, () => {
       expect(lastBeat().remoteAccess).toMatchObject({ enabled: false, relayConnected: false });
 
       // a plain-HTTP address is never offered to a buddy
-      setExternalDomain('http://photos.example.com');
+      setExternalDomain('http://192.168.1.20:2283');
       makeDue();
       await sut.handleHeartbeat();
       expect(lastBeat().endpoints).toEqual([]);
