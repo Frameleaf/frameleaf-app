@@ -22,7 +22,14 @@ test("the server rights mirror matches the reviewed bill of materials", async ()
   assert.equal(await read(SERVER_MIRROR_PATH), files[SERVER_MIRROR_PATH]);
 });
 
-test("the packager review keeps its decisions; the owner approval is recorded beside it (FL-146)", async () => {
+// FL-451 (legal review 2026-10-17): every model use is personal use, on the user's own server or a
+// Frameleaf Cloud container, so the two rows the packager reviewed for their licence say they are eligible.
+const PERSONAL_USE_ROWS = [
+  "model:Xenova/musicgen-small",
+  "model:LiquidAI/LFM2.5-VL-450M-ONNX",
+];
+
+test("the packager review keeps its decisions; the owner approval is recorded beside it (FL-146, FL-451)", async () => {
   const manifest = JSON.parse(await read(ATTRIBUTION_PATH));
   const { distributionApproval, rows } = rightsRows(manifest);
   assert.equal(distributionApproval, false);
@@ -32,6 +39,14 @@ test("the packager review keeps its decisions; the owner approval is recorded be
       [row.redistribution, row.localRuntime, row.hostedUse],
       ["blocked", "blocked", "blocked"],
       row.id,
+    );
+  }
+  for (const id of PERSONAL_USE_ROWS) {
+    const resource = manifest.resources.find((row) => row.id === id);
+    assert.match(
+      resource.basis,
+      /personal use by the user on their own server or a Frameleaf Cloud container \(legal review 2026-10-17/,
+      id,
     );
   }
   // The rows the acceptance names explicitly are present rather than silently dropped.
@@ -154,12 +169,14 @@ test("historical approvals stay bound to their rows and the changed ONNX runtime
     mirror,
     /'runtime:onnx-cdn': \{[^}]*redistribution: 'blocked',[^}]*localRuntime: 'blocked',[^}]*hostedUse: 'blocked',[^}]*approvedOn: null/s,
   );
-  // FL-146 comment 34944: MusicGen-small (CC-BY-NC-4.0) is withheld from hosted use only.
-  assert.equal((mirror.match(/hostedUse: 'allowed'/g) ?? []).length, 208);
+  // FL-451 withdrew the FL-146 comment 34944 hosted-use exclusion of MusicGen-small (CC-BY-NC-4.0):
+  // only the changed ONNX runtime is still blocked, and no approved row withholds a use.
+  assert.equal((mirror.match(/hostedUse: 'allowed'/g) ?? []).length, 209);
   assert.match(
     mirror,
-    /'model:Xenova\/musicgen-small': \{[^}]*localRuntime: 'allowed',\n {4}hostedUse: 'blocked',[^}]*hostedUse:\n {8}'CC-BY-NC-4\.0/s,
+    /'model:Xenova\/musicgen-small': \{[^}]*localRuntime: 'allowed',\n {4}hostedUse: 'allowed',\n {4}approvedOn: '2026-09-25',\n {4}restrictions: \{\},/s,
   );
+  assert.ok(approval.resources.every((entry) => entry.excludedUses === undefined));
   // The two runtimes bundled by studio patch 0029 were approved again, at their new rows, on 2026-09-29.
   // Studio patch 0030 pinned the Supertonic model and the 64 voices to a commit; the owner approved
   // those rows again on 2026-09-29 as well.

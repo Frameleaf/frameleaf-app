@@ -164,8 +164,9 @@ export type CloudOffer = Readonly<{
 }>;
 
 /**
- * One model position on a workload ladder (light → heavy). `commercialHosted` "no" is never
- * offered on the cloud; every position here is "yes" today and the rule is kept for the catalogue.
+ * One model position on a workload ladder (light → heavy). `commercialHosted` is shown with the
+ * licence only: a licence that withholds commercial hosting never keeps a model off Frameleaf Cloud,
+ * because every model runs for the user's own personal use there (FL-451, legal review 2026-10-17).
  */
 export type ModelPosition = Readonly<{
   workload: LadderWorkload;
@@ -566,17 +567,11 @@ export const positionById = (id: string | null | undefined): ModelPosition | nul
 };
 
 /**
- * Models that stay on this server only (FL-146 owner decisions, 2026-09-25): the nllb-clip search
- * models (base and large, every variant; CC-BY-NC-4.0), MusicGen-small (CC-BY-NC-4.0) and
- * Qwen2.5-VL-3B-Instruct (Qwen Research License, including its OpenVINO conversion). They are never
- * offered on Frameleaf Cloud, whatever a catalogue says; the server refuses a cloud job for them too.
+ * Positions Frameleaf Cloud may host: every position with a cloud offer. No model is kept off the
+ * cloud for its licence (FL-451, legal review 2026-10-17, which retired the FL-146 local-only list).
  */
-const LOCAL_ONLY_MODEL = /nllb-clip|musicgen-small|qwen2\.5-vl-3b/i;
-export const isLocalOnlyModel = (id: string | null | undefined) => !!id && LOCAL_ONLY_MODEL.test(id);
-
-/** Positions Frameleaf Cloud may host: offered on the cloud, licensed for hosted use, not local only. */
 export const isCloudOffered = (item: ModelPosition | null | undefined): item is ModelPosition & { cloud: CloudOffer } =>
-  !!item?.cloud && item.commercialHosted !== 'no' && !isLocalOnlyModel(item.id);
+  !!item?.cloud;
 
 export const cloudPositions = (workload?: LadderWorkload) =>
   (workload ? ladderFor(workload) : Object.values(modelLadders).flat()).filter((item) => isCloudOffered(item));
@@ -760,7 +755,6 @@ export type StopReason =
   | { key: 'frameleaf_model_reason_needs_memory'; values: { name: string; needs: number; gpu: string; has: number } }
   | { key: 'frameleaf_model_reason_needs_memory_no_gpu'; values: { name: string; needs: number } }
   | { key: 'frameleaf_model_reason_not_hosted'; values: { name: string } }
-  | { key: 'frameleaf_model_reason_licence'; values: { name: string } }
   | { key: 'frameleaf_model_reason_local_only'; values: Record<string, never> }
   | { key: 'frameleaf_model_reason_cloud_only'; values: Record<string, never> };
 
@@ -812,11 +806,7 @@ export const positionState = (
           : { key: 'frameleaf_model_reason_needs_memory_no_gpu', values: { name: item.name, needs } },
       );
     }
-    reasons.push(
-      item.commercialHosted === 'no'
-        ? { key: 'frameleaf_model_reason_licence', values: { name: item.name } }
-        : { key: 'frameleaf_model_reason_not_hosted', values: { name: item.name } },
-    );
+    reasons.push({ key: 'frameleaf_model_reason_not_hosted', values: { name: item.name } });
   } else if (band === 'cloud' && route === 'local') {
     reasons.push({ key: 'frameleaf_model_reason_local_only', values: {} });
   } else if (band !== 'cloud' && route === 'cloud') {

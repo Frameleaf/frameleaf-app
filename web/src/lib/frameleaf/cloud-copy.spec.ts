@@ -94,7 +94,6 @@ describe('Frameleaf Cloud copy (FL-159 §5)', () => {
       'frameleaf_model_reason_needs_memory',
       'frameleaf_model_reason_needs_memory_no_gpu',
       'frameleaf_model_reason_not_hosted',
-      'frameleaf_model_reason_licence',
       'frameleaf_model_reason_local_only',
       'frameleaf_model_reason_cloud_only',
     ];

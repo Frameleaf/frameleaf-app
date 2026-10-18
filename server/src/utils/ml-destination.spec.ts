@@ -279,7 +279,7 @@ describe('Frameleaf Cloud downstream model/budget mechanics (workload-policy moc
     ).toBe(MlAdmissionRefusal.ModelMismatch);
   });
 
-  it('refuses a cloud job for the local-only nllb-clip, MusicGen-small and Qwen2.5-VL-3B models, even if listed (FL-146)', () => {
+  it('admits a cloud job for the nllb-clip, MusicGen-small and Qwen2.5-VL-3B models the catalogue lists (FL-451)', () => {
     for (const modelId of [
       'nllb-clip-base-siglip__mrl',
       'nllb-clip-large-siglip__v1',
@@ -287,9 +287,13 @@ describe('Frameleaf Cloud downstream model/budget mechanics (workload-policy moc
       'Qwen/Qwen2.5-VL-3B-Instruct',
       'llmware/qwen2.5-vl-3b-ov',
     ]) {
-      expect(refusal({ ...withFacts({ modelIds: ['restore-faithful', modelId] }), modelId })).toBe(
-        MlAdmissionRefusal.ModelMismatch,
-      );
+      const listed = withFacts({
+        modelIds: [...facts.modelIds, modelId],
+        modelGroups: { ...facts.modelGroups, [modelId]: 'descriptions' },
+      });
+      expect(refusal({ ...listed, workload: MlWorkload.Enrichment, modelId })).toBeNull();
+      // the group check still holds: a listed model is never sent for another group's work
+      expect(refusal({ ...listed, modelId })).toBe(MlAdmissionRefusal.ModelMismatch);
     }
   });
 
