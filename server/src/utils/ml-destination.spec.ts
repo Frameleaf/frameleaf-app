@@ -1375,3 +1375,22 @@ describe('clipTextDestinationId (FL-455)', () => {
     await expect(clipTextDestinationId(repository(cloud, [cloud]))).rejects.toBeInstanceOf(MlDestinationRefusedError);
   });
 });
+
+describe('home-only selection (FL-455)', () => {
+  it('refuses Frameleaf Cloud for work that never leaves this network, before anything is checked', async () => {
+    const { mlDestinationRepository, machineLearningRepository } = deps({
+      destination: mlDestinationStub.frameleafCloudConsented,
+    });
+    await expect(
+      selectMlDestination(
+        { mlDestinationRepository, machineLearningRepository },
+        {
+          workload: MlWorkload.Clip,
+          destinationId: mlDestinationStub.frameleafCloudConsented.id,
+          homeOnly: true,
+        },
+      ),
+    ).rejects.toMatchObject({ refusal: MlAdmissionRefusal.WorkloadNotAllowed });
+    expect(machineLearningRepository.probe).not.toHaveBeenCalled();
+  });
+});

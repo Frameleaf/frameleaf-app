@@ -161,6 +161,8 @@ export type MlSelectionRequest = {
    * (`transcription` or `tts`). A Studio AI cloud job without it has no model and is refused.
    */
   studioFeature?: StudioAiCloudFeature | null;
+  /** FL-455: work that never leaves this network (search text): a Frameleaf Cloud destination is refused. */
+  homeOnly?: boolean;
 };
 
 export type MlSelectionDeps = {
@@ -892,6 +894,15 @@ export const selectMlDestination = async (
   };
   await assertAuthority();
 
+  if (request.homeOnly && isCloudDestination(destination.kind)) {
+    throw new MlDestinationRefusedError(
+      MlAdmissionRefusal.WorkloadNotAllowed,
+      request.workload,
+      destination.id,
+      'search text is always read on this network, never on Frameleaf Cloud',
+    );
+  }
+
   if (destination.kind === MlDestinationKind.FrameleafCloud && cloudMlSettings) {
     const settings = await cloudMlSettings();
     if (!settings.enabled) {
@@ -1083,7 +1094,7 @@ export const clipTextDestinationId = async (mlDestinationRepository: MlDestinati
   if (!destination || !isCloudDestination(destination.kind)) {
     return routed;
   }
-  const local = (await mlDestinationRepository.getAll()).find(
+  const local = ((await mlDestinationRepository.getAll()) ?? []).find(
     (row) => row.kind === MlDestinationKind.Local && row.enabled,
   );
   if (!local) {

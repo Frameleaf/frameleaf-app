@@ -501,7 +501,7 @@ export class BaseService {
    */
   protected async selectClipTextDestination(request: Omit<MlSelectionRequest, 'destinationId' | 'workload'> = {}) {
     const destinationId = await clipTextDestinationId(this.mlDestinationRepository);
-    return this.selectMlDestination({ ...request, workload: MlWorkload.Clip, destinationId });
+    return this.selectMlDestination({ ...request, workload: MlWorkload.Clip, destinationId, homeOnly: true });
   }
 
   /**
