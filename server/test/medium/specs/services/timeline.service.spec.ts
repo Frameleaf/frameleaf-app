@@ -921,19 +921,20 @@ describe(TimelineService.name, () => {
     it('includes, for several people as for one, their photos in albums shared with the viewer', async () => {
       const { sut, ctx, user, other, auth, alice, bob, newItem, items } = await library();
       const both = [alice.personGroupId, bob.personGroupId];
-      const sharedBoth = await newItem('1970-02-14T12:00:00.000Z', {}, { ownerId: other.id, people: both });
-      const sharedAlice = await newItem(
-        '1970-02-15T12:00:00.000Z',
-        {},
-        { ownerId: other.id, people: [alice.personGroupId] },
-      );
-      const sharedNobody = await newItem('1970-02-16T12:00:00.000Z', {}, { ownerId: other.id });
-      const sharedLocked = await newItem(
-        '1970-02-17T12:00:00.000Z',
-        {},
-        { ownerId: other.id, people: both, visibility: AssetVisibility.Locked },
-      );
-      const unsharedBoth = await newItem('1970-02-18T12:00:00.000Z', {}, { ownerId: other.id, people: both });
+      // an exif row needs at least one field: an empty one makes an empty upsert
+      const shared = { make: 'Nikon' };
+      const sharedBoth = await newItem('1970-02-14T12:00:00.000Z', shared, { ownerId: other.id, people: both });
+      const sharedAlice = await newItem('1970-02-15T12:00:00.000Z', shared, {
+        ownerId: other.id,
+        people: [alice.personGroupId],
+      });
+      const sharedNobody = await newItem('1970-02-16T12:00:00.000Z', shared, { ownerId: other.id });
+      const sharedLocked = await newItem('1970-02-17T12:00:00.000Z', shared, {
+        ownerId: other.id,
+        people: both,
+        visibility: AssetVisibility.Locked,
+      });
+      const unsharedBoth = await newItem('1970-02-18T12:00:00.000Z', shared, { ownerId: other.id, people: both });
       const { album } = await ctx.newAlbum({ ownerId: other.id }, [
         sharedBoth.id,
         sharedAlice.id,
