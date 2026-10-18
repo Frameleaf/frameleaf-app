@@ -421,13 +421,7 @@ describe(MlDestinationService.name, () => {
       expect(mocks.frameleafConsent.record).toHaveBeenCalledWith({
         destinationId: mlDestinationStub.frameleafCloud.id,
         version: '2026-09-25',
-        features: {
-          identityNames: false,
-          medicalSignals: true,
-          ocrAddon: false,
-          smartSearch: false,
-          faceRecognition: false,
-        },
+        features: { identityNames: false, medicalSignals: true, ocrAddon: false },
         acceptedBy: authStub.admin.user.id,
         cloudRecordedVersion: '2026-09-25',
       });
