@@ -443,7 +443,7 @@ export class SyncService extends BaseService {
     checkpointMap: CheckpointMap,
     nowId: string,
   ) {
-    if (!types.some((type) => LEGACY_ALBUM_ASSET_REQUESTS.has(type))) {
+    if (types.every((type) => !LEGACY_ALBUM_ASSET_REQUESTS.has(type))) {
       return false;
     }
 
