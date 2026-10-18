@@ -13,7 +13,7 @@
   <ReadMe>https://github.com/Frameleaf/unraid-apps#readme</ReadMe>
   <License>https://github.com/Frameleaf/unraid-apps/blob/main/LICENSE</License>
   <WebUI>https://[IP]:[PORT:9443]</WebUI>
-  <ExtraParams>--label app.frameleaf.manager.role=controller --security-opt no-new-privileges --cap-drop ALL --cap-add DAC_OVERRIDE</ExtraParams>
+  <ExtraParams>--label app.frameleaf.manager.role=controller --security-opt no-new-privileges --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER</ExtraParams>
   <Config Name="Manager HTTPS port" Target="9443" Default="9443" Mode="tcp" Description="Use this same port in Manager HTTPS origin" Type="Port" Display="always" Required="true" Mask="false">9443</Config>
   <Config Name="Manager HTTPS origin" Target="MANAGER_ORIGIN" Default="" Description="Optional. Leave blank to open Manager by IP address or tower.local. Only for a custom DNS name, enter that exact HTTPS address with port (for example https://nas.example.com:9443) and set Advanced View WebUI to match." Type="Variable" Display="always" Required="false" Mask="false"></Config>
   <Config Name="Manager state" Target="/mnt/user/appdata/frameleaf-manager" Default="/mnt/user/appdata/frameleaf-manager" Mode="rw" Description="Persistent sessions and recovery configuration. When changing the host path, change the container path and MANAGER_DATA too." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/frameleaf-manager</Config>

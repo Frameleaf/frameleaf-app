@@ -64,7 +64,7 @@ if test "$platform" = unraid; then
 fi
 docker run --detach --name frameleaf-manager --restart unless-stopped \
   --label app.frameleaf.manager.role=controller \
-  --security-opt no-new-privileges --cap-drop ALL \
+  --security-opt no-new-privileges --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
   --publish "$bind:9443:9443" \
   --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \
   --mount type=bind,source=/proc/1/mountinfo,target=/run/frameleaf-host/mountinfo,readonly \
