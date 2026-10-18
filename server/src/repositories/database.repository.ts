@@ -4,7 +4,7 @@ import AsyncLock from 'async-lock';
 import { Kysely, type Transaction, sql } from 'kysely';
 import { Migrator } from 'kysely/migration';
 import { InjectKysely } from 'nestjs-kysely';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as semver from 'semver';
 import z from 'zod';
 import type { DB } from 'src/schema/index.js';
@@ -327,7 +327,7 @@ export class DatabaseRepository {
       migrationTableName: 'frameleaf_migrations',
       migrationLockTableName: 'frameleaf_migrations_lock',
       provider: createMigrationProvider(fileURLToPath(new URL('../schema/migrations/', import.meta.url)), {
-        import: (path) => import(path),
+        import: (path) => import(pathToFileURL(path).href),
       }),
     });
     const { error, results } = await migrator.migrateToLatest();
