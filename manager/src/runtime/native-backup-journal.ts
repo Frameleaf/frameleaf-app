@@ -162,10 +162,17 @@ export async function createNativeDatabaseBackup(
     }
     return parsed.data;
   };
-  // A durable verified receipt remains authoritative after scratch and checkpoint cleanup.
+  // Backup retries reuse durable proof; restore retries must freshly read the safety snapshot.
   const verified = receipt(operation, 'native-backup-verified');
-  if (verified !== undefined) return result(verified);
+  if (verified !== undefined && operation.kind === 'backup')
+    return result(verified);
   let encrypted = receipt(operation, 'native-backup-encrypt');
+  if (
+    verified !== undefined &&
+    (encrypted === undefined ||
+      !isDeepStrictEqual(result(verified), result(encrypted)))
+  )
+    throw invalid();
   if (encrypted === undefined) {
     let checkpoint = receipt(operation, 'native-backup-checkpoint');
     if (checkpoint === undefined)

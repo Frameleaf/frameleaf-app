@@ -1017,7 +1017,7 @@ test('restore pre-backup reuses verified encrypted backup and receipt-bound clea
         checkpoint: 1,
         initialize: 1,
         snapshot: 1,
-        restore: 1,
+        restore: 2,
         cleanup: 1,
       });
     },
@@ -1141,6 +1141,71 @@ test('restore pre-backup preserves a journal changed while the encrypted snapsho
         store.history()[0].receipts['native-backup-encrypt'],
         undefined,
       );
+    },
+  );
+});
+
+test('restore retry freshly reads the safety snapshot and rejects corruption despite its durable verified receipt', async () => {
+  await preBackupFixture(
+    async ({ store, runtime, engine, context, operation, calls }) => {
+      const verified = await completeNativeDatabaseBackup(
+        store,
+        runtime,
+        engine,
+        context,
+        operation,
+      );
+      engine.corrupt = true;
+      await assert.rejects(
+        completeNativeDatabaseBackup(
+          store,
+          runtime,
+          engine,
+          context,
+          operation,
+        ),
+        /native_backup_verification_failed/,
+      );
+      assert.deepEqual(operation.receipts['native-backup-verified'], verified);
+      assert.equal(store.history()[0].state, 'running');
+      assert.deepEqual(calls, {
+        checkpoint: 1,
+        initialize: 1,
+        snapshot: 1,
+        restore: 2,
+        cleanup: 1,
+      });
+      engine.corrupt = false;
+      assert.deepEqual(
+        await completeNativeDatabaseBackup(
+          store,
+          runtime,
+          engine,
+          context,
+          operation,
+        ),
+        verified,
+      );
+      assert.deepEqual(calls, {
+        checkpoint: 1,
+        initialize: 1,
+        snapshot: 1,
+        restore: 3,
+        cleanup: 1,
+      });
+      operation.receipts['native-backup-encrypt'].snapshotId = 'e'.repeat(64);
+      store.save(operation);
+      await assert.rejects(
+        completeNativeDatabaseBackup(
+          store,
+          runtime,
+          engine,
+          context,
+          operation,
+        ),
+        /native_backup_journal_invalid/,
+      );
+      assert.equal(calls.restore, 3);
     },
   );
 });
