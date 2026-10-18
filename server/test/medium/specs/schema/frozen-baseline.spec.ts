@@ -2,9 +2,14 @@ import { schemaDiff, schemaFromDatabase } from '@frameleaf/sql-tools';
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
-import { getFrameleafBaselineSchema, verifyFrameleafSchemaSources } from 'src/schema/frameleaf-schema.js';
+import {
+  getFrameleafBaselineSchema,
+  getFrameleafSchema,
+  verifyFrameleafSchemaSources,
+} from 'src/schema/frameleaf-schema.js';
 import { up } from 'src/schema/migrations/0000000000000-FrameleafBaseline.js';
 import { getKyselyConfig } from 'src/utils/database.js';
+import { getKyselyDB } from 'test/utils.js';
 
 // Hosted PostgreSQL: replay the pinned SQL independently from all model/helper bootstrap code.
 it('replays the frozen baseline without drift and repairs real missing and extra objects', async () => {
@@ -39,5 +44,30 @@ it('replays the frozen baseline without drift and repairs real missing and extra
     await db?.destroy();
     await admin.unsafe(`DROP DATABASE IF EXISTS "${name}"`);
     await admin.end();
+  }
+});
+
+it('matches the desired catalog after the complete immutable baseline and migration chain', async () => {
+  const db = await getKyselyDB();
+  try {
+    const {
+      rows: [database],
+    } = await sql<{ name: string }>`SELECT current_database() name`.execute(db);
+    const endpoint = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
+    endpoint.pathname = '/' + database.name;
+    const actual = await schemaFromDatabase({
+      connection: { connectionType: 'url', url: endpoint.href },
+      overrides: false,
+      excludeMigrationTables: true,
+    });
+    expect(actual.warnings).toEqual([]);
+    expect(
+      schemaDiff(getFrameleafSchema(), actual, {
+        parameters: { ignoreExtra: true },
+        extensions: { ignoreExtra: true },
+      }).asSql(),
+    ).toEqual([]);
+  } finally {
+    await db.destroy();
   }
 });

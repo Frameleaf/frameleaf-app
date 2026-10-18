@@ -436,6 +436,22 @@ describe(SearchService.name, () => {
   });
 
   describe('searchSmart', () => {
+    it('rejects a comparison if index admission happens during the search query', async () => {
+      let changed = false;
+      mocks.machineLearning.captureClipRead.mockResolvedValue({
+        assertCurrent: () => (changed ? Promise.reject(new Error('desktop_clip_index_changed')) : Promise.resolve()),
+        publish: (write) => write(),
+      });
+      mocks.machineLearning.encodeText.mockResolvedValue('[1, 2, 3]');
+      mocks.search.searchSmart.mockImplementation(() => {
+        changed = true;
+        return Promise.resolve({ items: [], hasNextPage: false });
+      });
+      await expect(sut.searchSmart(authStub.user1, { query: 'transition' })).rejects.toThrow(
+        'desktop_clip_index_changed',
+      );
+    });
+
     beforeEach(() => {
       mocks.search.searchSmart.mockResolvedValue({ hasNextPage: false, items: [] });
       mocks.machineLearning.encodeText.mockResolvedValue('[1, 2, 3]');

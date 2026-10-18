@@ -230,6 +230,16 @@ export class ImmichImportService {
     );
     for (const row of tables) {
       const table = String(row.tablename);
+      if (table === 'desktop_clip_index' || table === 'desktop_clip_producer') {
+        const seeds = await this.destination.query(`SELECT * FROM public.${quote(table)} LIMIT 2`);
+        const seed = seeds[0];
+        const pristine =
+          seeds.length === 1 &&
+          seed.scope === 'unadmitted' &&
+          (table === 'desktop_clip_index' ? seed.space === null : seed.key === 'legacy');
+        if (!pristine) throw new ImportRefused('DESTINATION_NOT_FRESH');
+        continue;
+      }
       if (!BOOTSTRAP_TABLES.has(table)) {
         const records = await this.destination.query(`SELECT 1 FROM public.${quote(table)} LIMIT 1`);
         if (records.length > 0) {

@@ -40,7 +40,8 @@ import {
  *
  * A caller names a workload and a destination. The destination is admitted only when it
  * exists, is enabled, allows the workload, was probed healthy just now and reports that it
- * serves the workload; a cloud destination additionally needs the administrator's recorded
+ * serves the workload. An authorized desktop pool uses its own qualification instead of NAS backend
+ * health; a cloud destination additionally needs the administrator's recorded
  * consent and must be inside its budget. Any other outcome is a refusal that names the
  * reason. Nothing in this module ever picks a different destination: there is no ordering,
  * no "next URL" and no cloud fallback, so a job whose destination is gone fails in place
@@ -156,6 +157,7 @@ export type MlSelectionRequest = {
 export type MlSelectionDeps = {
   mlDestinationRepository: MlDestinationRepository;
   machineLearningRepository: MachineLearningRepository;
+  selectBackgroundPool?: (selection: MlSelection) => Promise<MlSelection>;
   /**
    * FL-163 review P1: the saved Frameleaf Cloud processing settings, read at admission. When given, a
    * Frameleaf Cloud destination is refused while processing is turned off or while the workload's kind
@@ -784,11 +786,12 @@ const budgetWindowStart = () => new Date(Date.now() - ML_BUDGET_WINDOW_DAYS * 24
  *
  * The probe is live (bounded by `ML_PROBE_FRESHNESS_MS`) so an endpoint that vanished since
  * the last periodic check is refused at admission rather than discovered mid-request. The
- * returned selection carries the accounting hook; the machine-learning repository calls it
+ * qualified desktop pool is selected before backend probing. The returned selection carries the
+ * accounting hook; the machine-learning repository calls it
  * once per request and the row lands in `ml_workload_accounting` for FL-115.
  */
 export const selectMlDestination = async (
-  { mlDestinationRepository, machineLearningRepository, cloudMlSettings }: MlSelectionDeps,
+  { mlDestinationRepository, machineLearningRepository, cloudMlSettings, selectBackgroundPool }: MlSelectionDeps,
   request: MlSelectionRequest,
 ): Promise<MlSelection> => {
   const destination = await mlDestinationRepository.getById(request.destinationId);
@@ -854,6 +857,49 @@ export const selectMlDestination = async (
     throw new MlDestinationRefusedError(preflight.refusal, request.workload, destination.id, preflight.detail);
   }
 
+  let startedAt = new Date();
+  const record = (usage: MlUsage) => {
+    void mlDestinationRepository
+      .recordAccounting({
+        destinationId: destination.id,
+        destinationKind: destination.kind,
+        workload: request.workload,
+        jobId: request.jobId ?? null,
+        jobName: request.jobName ?? null,
+        bytesSent: usage.bytesSent,
+        bytesReceived: usage.bytesReceived,
+        durationMs: usage.durationMs,
+        outcome: usage.outcome,
+        // Local and LAN work costs nothing measurable here; Frameleaf Cloud work is settled
+        // later from its usage report (FL-159). Recording null keeps the row honest until then.
+        costUsd: null,
+        startedAt,
+        finishedAt: new Date(startedAt.getTime() + usage.durationMs),
+      })
+      .catch(() => {
+        // Accounting must never fail the inference that already happened.
+      });
+  };
+  if (
+    selectBackgroundPool &&
+    [MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face].includes(request.workload) &&
+    [MlDestinationKind.Local, MlDestinationKind.Lan].includes(destination.kind)
+  ) {
+    // Desktop capacity is admitted by its own qualification; NAS backend health is irrelevant to it.
+    const pool = await selectBackgroundPool({
+      destinationId: destination.id,
+      kind: destination.kind,
+      workload: request.workload,
+      endpoint: endpoint as MlEndpoint,
+      cloudModelId: null,
+      record,
+    });
+    if (pool.desktopClip || pool.desktopOcr || pool.desktopFace) {
+      await assertAuthority();
+      return pool;
+    }
+  }
+
   // Cloud consent can change during an admitted upload; a cached required version cannot authorize
   // another file, part, retry or start. Local destination health keeps its existing freshness bound.
   const probe = await machineLearningRepository.probe(endpoint as MlEndpoint, {
@@ -909,7 +955,7 @@ export const selectMlDestination = async (
     );
   }
 
-  const startedAt = new Date();
+  startedAt = new Date();
   await assertAuthority();
   return {
     destinationId: destination.id,
@@ -920,28 +966,7 @@ export const selectMlDestination = async (
       destination.kind === MlDestinationKind.FrameleafCloud
         ? cloudModelFor(request.workload, modelId, probe.cloud)
         : null,
-    record: (usage: MlUsage) => {
-      void mlDestinationRepository
-        .recordAccounting({
-          destinationId: destination.id,
-          destinationKind: destination.kind,
-          workload: request.workload,
-          jobId: request.jobId ?? null,
-          jobName: request.jobName ?? null,
-          bytesSent: usage.bytesSent,
-          bytesReceived: usage.bytesReceived,
-          durationMs: usage.durationMs,
-          outcome: usage.outcome,
-          // Local and LAN work costs nothing measurable here; Frameleaf Cloud work is settled
-          // later from its usage report (FL-159). Recording null keeps the row honest until then.
-          costUsd: null,
-          startedAt,
-          finishedAt: new Date(startedAt.getTime() + usage.durationMs),
-        })
-        .catch(() => {
-          // Accounting must never fail the inference that already happened.
-        });
-    },
+    record,
   };
 };
 

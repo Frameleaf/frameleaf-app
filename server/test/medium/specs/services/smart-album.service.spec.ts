@@ -29,6 +29,7 @@ const setup = (db?: Kysely<DB>) => {
   ctx
     .getMock(JobRepository)
     .pinDestination.mockImplementation((_workload, destinationId) => Promise.resolve(destinationId));
+  ctx.getMock(MachineLearningRepository).clipCacheKey.mockResolvedValue('legacy');
   return { sut, ctx };
 };
 

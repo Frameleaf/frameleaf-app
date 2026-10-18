@@ -229,7 +229,7 @@ const claimFor = (format, extra = {}) => {
     snapshot: {
       timing: { cadence: '30/1', timeBase: '1/30000', sources: [] },
       contract: { video: { minBitDepth: 8, transfer: null }, audio: { policy: 'preserve', channels: 2, channelLayout: 'stereo', sampleRate: 48_000 } },
-      studio: { graph },
+      studio: { graph, resources: [] },
     },
     settings: { format, color: 'preserve', resolution: '720p', quality: 'low', audio: 'preserve', subtitleMode: 'burn', ...extra },
     checkpoints: [],

@@ -9,9 +9,11 @@ import {
 import { randomUUID } from 'node:crypto';
 import { readdir, rm, rmdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { Transaction } from 'kysely';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { Readable } from 'node:stream';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { DB } from 'src/schema/index.js';
 import type { UploadFile } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
@@ -27,6 +29,7 @@ import {
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PhotoSourceRepository } from 'src/repositories/photo-source.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -42,6 +45,8 @@ import {
 } from 'src/utils/asset-upload-resource.js';
 import { getFilenameExtension } from 'src/utils/file.js';
 import { parseCloudIdentifier } from 'src/utils/icloud-identity.js';
+
+type UploadAdmissionCheck = (tx?: Transaction<DB>) => Promise<void>;
 
 export type NativeAssetUploadResult = { id: string; status: AssetMediaStatus; sha256: string };
 
@@ -60,6 +65,7 @@ export class AssetUploadResourceService {
     private logger: LoggingRepository,
     private rateLimits: RateLimitRepository,
     private identities: ICloudIdentityRepository,
+    private sources: PhotoSourceRepository,
   ) {}
 
   async limits() {
@@ -86,6 +92,24 @@ export class AssetUploadResourceService {
     }
     await requireAccess(this.access, { auth, permission: Permission.AssetUpload, ids: [auth.user.id] });
     return auth.user.id;
+  }
+
+  private async sourceAdmission(
+    auth: AuthDto,
+    resource: Pick<AssetUploadResource, 'metadata' | 'expectedChecksum' | 'expectedSize'>,
+    tx?: Transaction<DB>,
+  ) {
+    const binding = resource.metadata.sourceIdentity;
+    if (binding?.kind !== 'folder') return;
+    if (!auth.session || auth.apiKey || auth.sharedLink || auth.system)
+      throw new NotFoundException('Photo source unavailable');
+    await this.sources.assertUpload(
+      { ownerId: auth.user.id, sessionId: auth.session.id },
+      binding,
+      resource.expectedChecksum,
+      resource.expectedSize ?? undefined,
+      tx,
+    );
   }
 
   private file(resource: AssetUploadResource): UploadFile {
@@ -135,6 +159,11 @@ export class AssetUploadResourceService {
       },
       body: { ...parsed.metadata },
     });
+    await this.sourceAdmission(auth, {
+      metadata: parsed.metadata,
+      expectedChecksum: parsed.checksum,
+      expectedSize: parsed.size ?? null,
+    });
     await this.refuseClaimedItem(ownerId, parsed.metadata.sourceIdentity);
     // The committed resource exists before its URI is sent, including on an interrupted POST.
     const resource = await this.uploads.create(id, ownerId, { ...parsed, maxSize: limits.maxSize });
@@ -144,6 +173,7 @@ export class AssetUploadResourceService {
 
   async head(auth: AuthDto, id: string) {
     const row = await this.uploads.get(id, await this.owner(auth));
+    await this.sourceAdmission(auth, row);
     return row.metadata.publication === 'live-photo'
       ? { ...row, ingested: await this.uploads.livePhotoPairIngested(row) }
       : row;
@@ -192,10 +222,11 @@ export class AssetUploadResourceService {
   private async withStreamAdmission<T>(
     auth: AuthDto,
     id: string,
-    operation: (check: () => Promise<void>) => Promise<T>,
+    operation: (check: UploadAdmissionCheck) => Promise<T>,
   ) {
     await this.owner(auth);
-    await this.uploads.get(id, auth.user.id);
+    const resource = await this.uploads.get(id, auth.user.id);
+    await this.sourceAdmission(auth, resource);
     const token = randomUUID();
     let acquired: boolean;
     try {
@@ -206,7 +237,8 @@ export class AssetUploadResourceService {
     if (!acquired) {
       throw new ConflictException('Upload has an active request');
     }
-    const check = async () => {
+    const check: UploadAdmissionCheck = async (tx) => {
+      await this.sourceAdmission(auth, resource, tx);
       let current: boolean;
       try {
         current = await this.rateLimits.isUploadStreamCurrent(id, token);
@@ -239,7 +271,7 @@ export class AssetUploadResourceService {
     offset: number,
     complete: boolean,
     length: number | undefined,
-    check: () => Promise<void>,
+    check: UploadAdmissionCheck,
   ) {
     const timeout = setTimeout(() => input.destroy(new Error('Upload part timed out')), 10 * 60 * 1000);
     try {
@@ -252,7 +284,7 @@ export class AssetUploadResourceService {
         if (length !== undefined && length !== initial.expectedSize) {
           throw new BadRequestException('Upload length cannot change');
         }
-        const empty = await writeAssetUploadPart(this.folder(id), input, 0);
+        const empty = await writeAssetUploadPart(this.folder(id), input, 0, check);
         await rm(empty.path, { force: true });
         if (empty.interrupted) {
           return { resource: initial };
@@ -295,10 +327,12 @@ export class AssetUploadResourceService {
           initial.maxSize - offset,
           expectedSize === null ? initial.maxSize : expectedSize - offset,
         ),
+        initial.metadata.sourceIdentity?.kind === 'folder' ? check : undefined,
       );
       // An attempt owns only this unique scratch file until the manifest transaction commits.
       await check();
       const resource = await this.uploads.locked(id, auth.user.id, async (tx, row) => {
+        await check(tx);
         validate(row);
         if (row.expectedSize !== initial.expectedSize) {
           throw new ConflictException('Upload length changed during append');
@@ -355,7 +389,7 @@ export class AssetUploadResourceService {
     }
   }
 
-  private async sweepFolder(id: string, check: () => Promise<void>) {
+  private async sweepFolder(id: string, check: UploadAdmissionCheck) {
     const folder = this.folder(id);
     const files = await readdir(folder).catch((error: unknown) => {
       if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
@@ -375,7 +409,7 @@ export class AssetUploadResourceService {
     });
   }
 
-  private async finalize(auth: AuthDto, id: string, check: () => Promise<void>) {
+  private async finalize(auth: AuthDto, id: string, check: UploadAdmissionCheck) {
     let row = await this.uploads.get(id, auth.user.id);
     if (['finalizing', 'pair-finalizing'].includes(row.state)) {
       const initial = row;
@@ -413,6 +447,7 @@ export class AssetUploadResourceService {
       await this.storage.utimes(verified.path, new Date(), new Date(initial.metadata.fileModifiedAt));
       await check();
       row = await this.uploads.locked(id, auth.user.id, async (tx, current) => {
+        await check(tx);
         if (current.state !== initial.state) {
           return current;
         }
@@ -438,11 +473,16 @@ export class AssetUploadResourceService {
     if (row.state === 'verified' && row.metadata.publication !== 'live-photo') {
       await check();
       const prepared = await this.media.prepareUploadAsset(auth, this.metadata(row), this.file(row));
-      row = await this.uploads.locked(id, auth.user.id, (tx, current) =>
-        current.state === 'published' ? Promise.resolve(current) : this.uploads.publish(tx, current, prepared),
-      );
+      row = await this.uploads.locked(id, auth.user.id, async (tx, current) => {
+        await check(tx);
+        return current.state === 'published' ? current : this.uploads.publish(tx, current, prepared);
+      });
     }
-    if (row.state === 'published' && row.metadata.sourceIdentity?.role === 'edit-render') {
+    if (
+      row.state === 'published' &&
+      row.metadata.sourceIdentity?.kind === 'icloud' &&
+      row.metadata.sourceIdentity.role === 'edit-render'
+    ) {
       await this.uploads.enqueueLocalEffects();
     }
     if (row.state === 'published' && !row.ingested) {
@@ -469,7 +509,7 @@ export class AssetUploadResourceService {
    * check that cannot be made never stops a backup (the bytes are still de-duplicated by digest).
    */
   private async refuseClaimedItem(ownerId: string, source: UploadSourceIdentity | undefined) {
-    if (!source) {
+    if (source?.kind !== 'icloud') {
       return;
     }
     if (source.deviceKey && !(await this.identities.ownsDevice(ownerId, source.deviceKey))) {
@@ -498,7 +538,8 @@ export class AssetUploadResourceService {
    */
   private async recordSourceIdentity(ownerId: string, row: AssetUploadResource) {
     const source = row.metadata.sourceIdentity;
-    const parsed = source && identityMatchingEnabled() && parseCloudIdentifier(source.cloudIdentifier);
+    if (source?.kind !== 'icloud') return;
+    const parsed = identityMatchingEnabled() && parseCloudIdentifier(source.cloudIdentifier);
     if (!source || !parsed || !row.resultAssetId || !row.verifiedChecksum) {
       return;
     }
@@ -556,7 +597,7 @@ export class AssetUploadResourceService {
   private async resolveResult(
     auth: AuthDto,
     id: string,
-    check: () => Promise<void>,
+    check: UploadAdmissionCheck,
   ): Promise<{ resource: AssetUploadResource; result?: NativeAssetUploadResult }> {
     const resource = await this.finalize(auth, id, check);
     if (
@@ -587,9 +628,9 @@ export class AssetUploadResourceService {
     // Acquire the existing short-lived admissions in the same order as the database locks.
     return this.withStreamAdmission(auth, ids[0], (checkFirst) =>
       this.withStreamAdmission(auth, ids[1], async (checkSecond) => {
-        const check = async () => {
-          await checkFirst();
-          await checkSecond();
+        const check: UploadAdmissionCheck = async (tx) => {
+          await checkFirst(tx);
+          await checkSecond(tx);
         };
         for (const id of ids) {
           const current = await this.uploads.get(id, auth.user.id);
@@ -613,7 +654,7 @@ export class AssetUploadResourceService {
         }
         await check();
         const pair = await this.uploads.lockedMany(ids, auth.user.id, async (tx, current) => {
-          await check();
+          await check(tx);
           return this.uploads.publishLivePhoto(
             tx,
             current.find((row) => row.id === stillResourceId)!,
@@ -686,9 +727,11 @@ export class AssetUploadResourceService {
       }
       try {
         if (row.state === 'published') {
-          if (row.metadata.sourceIdentity?.role === 'edit-render') await this.uploads.enqueueLocalEffects();
+          if (row.metadata.sourceIdentity?.kind === 'icloud' && row.metadata.sourceIdentity.role === 'edit-render')
+            await this.uploads.enqueueLocalEffects();
           await this.ingest({ user }, row);
-        } else {
+        } else if (row.metadata.sourceIdentity?.kind !== 'folder') {
+          // Folder publication resumes through the desktop's live photo session, never a background actor.
           await this.withStreamAdmission({ user }, row.id, (check) => this.finalize({ user }, row.id, check));
         }
       } catch (error) {

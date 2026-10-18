@@ -48,9 +48,63 @@ where
   "workload" = $1
 
 -- MlDestinationRepository.clearRoute
+begin
+SELECT
+  pg_advisory_xact_lock(
+    hashtextextended ('frameleaf:ml-route:' || $1::text, 0)
+  )
 delete from "ml_workload_route"
 where
   "workload" = $1
+insert into
+  "ml_workload_route_origin" (
+    "workload",
+    "destinationId",
+    "origin",
+    "revisionId",
+    "updatedAt"
+  )
+values
+  ($1, $2, $3, $4, $5)
+on conflict ("workload") do update
+set
+  "workload" = $6,
+  "destinationId" = $7,
+  "origin" = $8,
+  "revisionId" = $9,
+  "updatedAt" = $10
+returning
+  "workload",
+  "revisionId"
+commit
+
+-- MlDestinationRepository.getRouteStates
+select
+  COALESCE(route.workload, origin.workload) as "workload",
+  "route"."destinationId",
+  CASE
+    WHEN (
+      origin.origin = 'pinned'
+      AND origin."destinationId" IS NULL
+      AND route.workload IS NULL
+    )
+    OR (route."destinationId" = origin."destinationId") THEN origin.origin
+    ELSE 'legacy'
+  END as "origin",
+  CASE
+    WHEN (
+      origin.origin = 'pinned'
+      AND origin."destinationId" IS NULL
+      AND route.workload IS NULL
+    )
+    OR (route."destinationId" = origin."destinationId") THEN origin."revisionId"
+    ELSE NULL
+  END as "revisionId"
+from
+  "ml_workload_route" as "route"
+  full join "ml_workload_route_origin" as "origin" on "origin"."workload" = "route"."workload"
+order by
+  "workload" asc
 
 -- MlDestinationRepository.getCloudModelChoices
 select

@@ -12,6 +12,7 @@ import { publicationDatabase, publicationTransaction } from 'src/queue/transacti
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-duplicate-frame.table.js';
+import { type ClipEmbedding, clipEmbeddingForStorage } from 'src/utils/clip-embedding.js';
 import { anyUuid, asUuid, withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database.js';
 import { isLocked } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -378,19 +379,23 @@ export class DuplicateRepository {
       .orderBy('frameIndex')
       .execute();
   }
-  async replaceVideoDuplicateFrames(assetId: string, frames: VideoDuplicateFrameInsert[]): Promise<string[]> {
+  async replaceVideoDuplicateFrames(
+    assetId: string,
+    frames: (Omit<VideoDuplicateFrameInsert, 'embedding'> & { embedding: ClipEmbedding })[],
+  ): Promise<string[]> {
+    const prepared = frames.map(({ embedding, ...frame }) => ({ ...frame, ...clipEmbeddingForStorage(embedding) }));
     return this.db.transaction().execute(async (trx) => {
-      if (frames.some((frame) => frame.assetId !== assetId)) {
+      if (prepared.some((frame) => frame.assetId !== assetId)) {
         throw new Error(`Cannot replace video duplicate frames for multiple assets`);
       }
-      const stalePaths: string[] = await this.replaceFramesIn(trx.withSchema('public'), assetId, frames);
+      const stalePaths: string[] = await this.replaceFramesIn(trx.withSchema('public'), assetId, prepared);
       return stalePaths;
     });
   }
   private async replaceFramesIn(
     db: Kysely<DB>,
     assetId: string,
-    frames: VideoDuplicateFrameInsert[],
+    frames: (VideoDuplicateFrameInsert & { producerModelKey: string | null })[],
   ): Promise<string[]> {
     const existing = await db
       .selectFrom('asset_video_duplicate_frame')

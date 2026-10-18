@@ -15,6 +15,7 @@ import {
   FRAMELEAF_CLOUD_ENDPOINT,
   type MachineLearningRepository,
   type MlEndpointProbe,
+  type MlSelection,
 } from 'src/repositories/machine-learning.repository.js';
 import * as cloudDisclosure from 'src/utils/frameleaf-cloud.js';
 import {
@@ -437,6 +438,98 @@ describe('consent and probe helpers', () => {
 });
 
 describe('selectMlDestination', () => {
+  it.each([MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face])(
+    'admits an authorized %s desktop pool before probing an unavailable NAS backend and keeps accounting',
+    async (workload) => {
+      const d = deps({ probe: { ...mlProbeStub.healthy, reachable: false } });
+      const desktop = vi.fn();
+      const property =
+        workload === MlWorkload.Clip ? 'desktopClip' : workload === MlWorkload.Ocr ? 'desktopOcr' : 'desktopFace';
+      const selectBackgroundPool = vi.fn((selection: MlSelection) =>
+        Promise.resolve({ ...selection, [property]: desktop }),
+      );
+      const chosen = await selectMlDestination(
+        { ...d, selectBackgroundPool },
+        { workload, destinationId: mlDestinationStub.local.id, jobId: 'queued-job' },
+      );
+      expect(chosen[property]).toBe(desktop);
+      expect(selectBackgroundPool).toHaveBeenCalledOnce();
+      expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
+      expect(d.mlDestinationRepository.recordProbe).not.toHaveBeenCalled();
+      await chosen.endpoint.assertAuthority!();
+      expect(d.mlDestinationRepository.assertRecoveryAuthority).toHaveBeenCalledTimes(3);
+      chosen.record({ bytesSent: 1, bytesReceived: 2, durationMs: 3, outcome: 'success' });
+      expect(d.mlDestinationRepository.recordAccounting).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: mlDestinationStub.local.id, jobId: 'queued-job', costUsd: null }),
+      );
+    },
+  );
+
+  it.each([{ enabled: false }, { workloads: [] }, { budgetLimitUsd: 0 }, { url: null }])(
+    'refuses static permission failure %j before desktop pool selection',
+    async (patch) => {
+      const destination = { ...mlDestinationStub.local, ...patch };
+      const d = deps({ destination });
+      const selectBackgroundPool = vi.fn();
+      await expect(
+        selectMlDestination(
+          { ...d, selectBackgroundPool },
+          {
+            workload: MlWorkload.Clip,
+            destinationId: destination.id,
+          },
+        ),
+      ).rejects.toBeInstanceOf(MlDestinationRefusedError);
+      expect(selectBackgroundPool).not.toHaveBeenCalled();
+      expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps ordinary backend health admission when no desktop pool is selected', async () => {
+    const d = deps({ probe: { ...mlProbeStub.healthy, reachable: false } });
+    const selectBackgroundPool = vi.fn((selection: MlSelection) => Promise.resolve(selection));
+    await expect(
+      selectMlDestination(
+        { ...d, selectBackgroundPool },
+        {
+          workload: MlWorkload.Clip,
+          destinationId: mlDestinationStub.local.id,
+        },
+      ),
+    ).rejects.toThrow('destination-unhealthy');
+    expect(selectBackgroundPool).toHaveBeenCalledOnce();
+    expect(d.machineLearningRepository.probe).toHaveBeenCalledOnce();
+  });
+
+  it('propagates desktop pool authority refusal without probing or falling back', async () => {
+    const d = deps({});
+    const selectBackgroundPool = vi.fn().mockRejectedValue(new Error('desktop_pool_policy_changed'));
+    await expect(
+      selectMlDestination(
+        { ...d, selectBackgroundPool },
+        {
+          workload: MlWorkload.Clip,
+          destinationId: mlDestinationStub.local.id,
+        },
+      ),
+    ).rejects.toThrow('desktop_pool_policy_changed');
+    expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
+  });
+
+  it('keeps other workloads on ordinary backend admission', async () => {
+    const d = deps({});
+    const selectBackgroundPool = vi.fn();
+    await selectMlDestination(
+      { ...d, selectBackgroundPool },
+      {
+        workload: MlWorkload.Enrichment,
+        destinationId: mlDestinationStub.local.id,
+      },
+    );
+    expect(selectBackgroundPool).not.toHaveBeenCalled();
+    expect(d.machineLearningRepository.probe).toHaveBeenCalledOnce();
+  });
+
   it.each([false, true])(
     'checks consent during created-job readmission despite a spent budget (stale: %s)',
     async (stale) => {

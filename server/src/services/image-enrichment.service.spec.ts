@@ -2359,7 +2359,7 @@ describe(ImageEnrichmentService.name, () => {
         }),
       ).resolves.toEqual({ status: JobStatus.Success });
 
-      expect(mocks.machineLearning.encodeText).not.toHaveBeenCalled();
+      expect(mocks.machineLearning.encodeTextWithProvenance).not.toHaveBeenCalled();
       expect(mocks.mlDestination.getRoute).not.toHaveBeenCalled();
     });
 

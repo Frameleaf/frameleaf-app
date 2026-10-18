@@ -1,6 +1,14 @@
-import { DummyDriver, Kysely, PostgresAdapter, PostgresIntrospector, PostgresQueryCompiler } from 'kysely';
+import {
+  CompiledQuery,
+  DummyDriver,
+  Kysely,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler,
+} from 'kysely';
+import postgres from 'postgres';
 import { DB } from 'src/schema/index.js';
-import { boundPoolClose, withTagId } from 'src/utils/database.js';
+import { boundPoolClose, getKyselyConfig, withTagId } from 'src/utils/database.js';
 import { DATABASE_CLOSE_TIMEOUT_SECONDS, RESTART_BUDGET } from 'src/utils/shutdown.js';
 
 describe(withTagId.name, () => {
@@ -54,4 +62,52 @@ describe(boundPoolClose.name, () => {
       RESTART_BUDGET.workerDeadlineMs - RESTART_BUDGET.graceMs,
     );
   });
+});
+
+describe('desktop inference database diagnostics', () => {
+  afterEach(() => vi.restoreAllMocks());
+  it.each(['desktop_ml_task', 'desktop_ml_attempt', 'desktop_worker_session', 'desktop_worker_challenge'])(
+    'redacts private inputs, output and error details for %s',
+    async (table) => {
+      const config = getKyselyConfig({
+        connectionType: 'url',
+        url: 'postgres://postgres:postgres@127.0.0.1:1/frameleaf',
+      });
+      const database = new Kysely(config);
+      // eslint-disable-next-line import-x/no-named-as-default-member -- postgres exposes this class on its default ESM export.
+      const error = Object.assign(new postgres.PostgresError('private photo contents'), {
+        code: '23514',
+        detail: 'private photo contents',
+      });
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        if (typeof config.log !== 'function') throw new Error('Missing database logger');
+        await config.log({
+          level: 'error',
+          error,
+          queryDurationMillis: 1,
+          query: CompiledQuery.raw(`insert into "${table}" values ($1)`, [{ caption: 'private photo contents' }]),
+        });
+        expect(JSON.stringify(log.mock.calls)).not.toContain('private photo contents');
+        expect(log.mock.calls[0][1]).toMatchObject({ params: '[redacted]', error: { code: '23514' } });
+      } finally {
+        await database.destroy();
+      }
+    },
+  );
+});
+
+it('keeps ordinary database failures diagnosable', async () => {
+  const config = getKyselyConfig({ connectionType: 'url', url: 'postgres://postgres:postgres@127.0.0.1:1/frameleaf' });
+  const database = new Kysely(config);
+  const error = new Error('ordinary diagnostic');
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    if (typeof config.log !== 'function') throw new Error('Missing database logger');
+    await config.log({ level: 'error', error, queryDurationMillis: 1, query: CompiledQuery.raw('select $1', [123]) });
+    expect(log.mock.calls[0][1]).toMatchObject({ error, params: [123] });
+  } finally {
+    log.mockRestore();
+    await database.destroy();
+  }
 });

@@ -11,6 +11,7 @@ import {
   VideoMomentIndexTable,
   VideoMomentTable,
 } from 'src/schema/tables/video-moment.table.js';
+import { type ClipEmbedding, clipEmbeddingForStorage } from 'src/utils/clip-embedding.js';
 import { anyUuid, asUuid, withHiddenContentFilter, withVideoFormat, withVideoStream } from 'src/utils/database.js';
 import { sourceFingerprint } from 'src/utils/enrichment-plan.js';
 import { withDatabaseCleanup } from 'src/utils/execution-database.js';
@@ -366,9 +367,11 @@ export class VideoMomentRepository {
    */
   async publishIndex(
     assetId: string,
-    embeddings: { frameId: string; embedding: string }[],
+    embeddings: { frameId: string; embedding: ClipEmbedding }[],
     patch: { embeddingModel: string; embeddingDestinationId: string | null },
   ): Promise<number> {
+    const prepared = embeddings.map(({ frameId, embedding }) => ({ frameId, ...clipEmbeddingForStorage(embedding) }));
+    patch = { ...patch };
     return this.db.transaction().execute(async (trx) => {
       if (!(await this.framesMatchSource(trx, assetId))) {
         return 0;
@@ -380,7 +383,7 @@ export class VideoMomentRepository {
         .forUpdate()
         .execute();
       const current = new Map(frames.map((frame) => [frame.id, frame]));
-      const rows = embeddings.filter(({ frameId }) => current.has(frameId));
+      const rows = prepared.filter(({ frameId }) => current.has(frameId));
       if (rows.length === 0) {
         return 0;
       }
@@ -391,6 +394,7 @@ export class VideoMomentRepository {
         .onConflict((oc) =>
           oc.column('frameId').doUpdateSet((eb) => ({
             embedding: eb.ref('excluded.embedding'),
+            producerModelKey: eb.ref('excluded.producerModelKey'),
             modelName: eb.ref('excluded.modelName'),
           })),
         )
