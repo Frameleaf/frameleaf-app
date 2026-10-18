@@ -107,7 +107,9 @@ test('native ownership is unknown until attached, without asking for credentials
     state: 'unknown',
     code: 'native_owner_not_attached',
   });
-  await assert.rejects(host.stop(), /native_host_inspection_failed/);
+  // An invalid controller can exit before stdin is written, depending on OS scheduling.
+  await assert.rejects(host.stop(), /native_host_(inspection|pipe)_failed/);
+  assert.equal(host.status().state, 'unknown');
   assert.equal(credentials, 0);
 });
 
