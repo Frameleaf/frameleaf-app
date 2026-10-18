@@ -39,6 +39,10 @@ const DatabaseReady = Running.extend({
   state: z.literal('database-ready'),
 }).strict();
 type DatabaseReceipt = z.infer<typeof DatabaseReady>;
+const CleanupReady = Running.extend({
+  state: z.literal('checkpoint-cleanup-ready'),
+}).strict();
+type CleanupReceipt = z.infer<typeof CleanupReady>;
 const Stopped = z
   .object({ protocolVersion: z.literal(1), state: z.literal('stopped') })
   .strict();
@@ -121,6 +125,7 @@ export interface NativeRuntime {
   };
   start(): Promise<Ready>;
   startDatabase(): Promise<DatabaseReceipt>;
+  startCheckpointCleanup(): Promise<CleanupReceipt>;
   stop(): Promise<StopReceipt>;
   checkpoint(
     operationId: string,
@@ -145,8 +150,8 @@ function deferred<T>() {
 }
 type Owner = {
   child: ChildProcessWithoutNullStreams | null;
-  mode: 'server' | 'database';
-  ready: ReturnType<typeof deferred<Ready | DatabaseReceipt>>;
+  mode: 'server' | 'database' | 'checkpoint-cleanup';
+  ready: ReturnType<typeof deferred<Ready | DatabaseReceipt | CleanupReceipt>>;
   closed: ReturnType<typeof deferred<StopReceipt>>;
   readySeen: boolean;
   stoppedSeen: boolean;
@@ -193,9 +198,12 @@ export class NativeHost implements NativeRuntime {
   startDatabase(): Promise<DatabaseReceipt> {
     return this.startOwner('database') as Promise<DatabaseReceipt>;
   }
+  startCheckpointCleanup(): Promise<CleanupReceipt> {
+    return this.startOwner('checkpoint-cleanup') as Promise<CleanupReceipt>;
+  }
   private startOwner(
-    mode: 'server' | 'database',
-  ): Promise<Ready | DatabaseReceipt> {
+    mode: 'server' | 'database' | 'checkpoint-cleanup',
+  ): Promise<Ready | DatabaseReceipt | CleanupReceipt> {
     if (this.inspecting)
       return Promise.reject(new Refusal('native_runtime_busy'));
     if (this.owner && !this.owner.finished) {
@@ -206,7 +214,7 @@ export class NativeHost implements NativeRuntime {
     const owner: Owner = {
       child: null,
       mode,
-      ready: deferred<Ready | DatabaseReceipt>(),
+      ready: deferred<Ready | DatabaseReceipt | CleanupReceipt>(),
       closed: deferred<StopReceipt>(),
       readySeen: false,
       stoppedSeen: false,
@@ -264,6 +272,7 @@ export class NativeHost implements NativeRuntime {
       return Promise.reject(new Refusal('native_checkpoint_cancelled'));
     const owner = this.owner;
     if (
+      (owner?.mode === 'checkpoint-cleanup' && !expected) ||
       !owner?.child ||
       !owner.readySeen ||
       owner.stopping ||
@@ -321,6 +330,11 @@ export class NativeHost implements NativeRuntime {
     if (!owner) return { state: 'unknown', code: 'native_owner_not_attached' };
     if (owner.fault) return { state: 'unknown', code: owner.fault.code };
     if (owner.finished) return { state: 'stopped' };
+    if (owner.mode === 'checkpoint-cleanup' && !owner.stopping)
+      return {
+        state: 'unknown',
+        code: 'native_checkpoint_cleanup_maintenance',
+      };
     if (owner.mode === 'database' && !owner.stopping)
       return { state: 'unknown', code: 'native_database_maintenance' };
     return {
@@ -523,7 +537,7 @@ export class NativeHost implements NativeRuntime {
         manifestSha256,
         databasePort,
         apiPort,
-        ...(owner.mode === 'database' ? { mode: 'database' } : {}),
+        ...(owner.mode !== 'server' ? { mode: owner.mode } : {}),
         password,
       }) + '\n';
     if (Buffer.byteLength(wire) > 16 * 1024)
@@ -568,7 +582,11 @@ export class NativeHost implements NativeRuntime {
         }
         pending = pending.subarray(newline + 1);
         const running = (
-          owner.mode === 'database' ? DatabaseReady : Running
+          owner.mode === 'checkpoint-cleanup'
+            ? CleanupReady
+            : owner.mode === 'database'
+              ? DatabaseReady
+              : Running
         ).safeParse(value);
         const checkpoint = CheckpointReply.safeParse(value);
         if (running.success && !owner.readySeen && !owner.stoppedSeen) {

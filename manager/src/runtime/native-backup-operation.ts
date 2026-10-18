@@ -45,9 +45,11 @@ export async function runNativeDatabaseBackup(
     throw new Refusal('native_runtime_busy');
   const faulted =
     status.state === 'unknown' &&
-    !['native_owner_not_attached', 'native_database_maintenance'].includes(
-      status.code ?? '',
-    );
+    ![
+      'native_owner_not_attached',
+      'native_database_maintenance',
+      'native_checkpoint_cleanup_maintenance',
+    ].includes(status.code ?? '');
   if (faulted && intent === undefined)
     throw new Refusal('native_backup_owner_unavailable');
   if (intent !== undefined && status.state === 'running')
@@ -66,14 +68,21 @@ export async function runNativeDatabaseBackup(
   try {
     if (needsOwner && temporary) {
       drained = false;
-      const key = 'native-backup-start-database';
+      const cleanupOnly = operation.completed.includes(
+        'native-backup-verified',
+      );
+      const key = cleanupOnly
+        ? 'native-backup-start-cleanup'
+        : 'native-backup-start-database';
       operation.step = key;
       store.save(operation);
-      const ready = await runtime.startDatabase();
+      const ready = cleanupOnly
+        ? await runtime.startCheckpointCleanup()
+        : await runtime.startDatabase();
       if (
         !isDeepStrictEqual(ready, {
           protocolVersion: 1,
-          state: 'database-ready',
+          state: cleanupOnly ? 'checkpoint-cleanup-ready' : 'database-ready',
           manifestSha256: context.installation.manifestSha256,
           sourceRevision: context.installation.sourceRevision,
           certified: context.installation.certified,

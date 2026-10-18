@@ -65,6 +65,16 @@ async function fixture(run, initiallyRunning = false) {
     start: async () => {
       throw Error('backup must not start the application');
     },
+    startCheckpointCleanup: async () => {
+      live = 'cleanup';
+      return {
+        protocolVersion: 1,
+        state: 'checkpoint-cleanup-ready',
+        manifestSha256: installation.manifestSha256,
+        sourceRevision: installation.sourceRevision,
+        certified: false,
+      };
+    },
     startDatabase: async () => {
       counts.start++;
       const operation = store.history()[0];
@@ -507,5 +517,35 @@ test('native library lineage starts from the installed profile and corrupt persi
       snapshot: 0,
       cleanup: 0,
     });
+  });
+});
+
+test('a verified backup resumes checkpoint retirement without starting the database again', async () => {
+  await fixture(async ({ store, operations, runtime, counts }) => {
+    const cleanup = runtime.cleanupCheckpoint;
+    runtime.cleanupCheckpoint = async () => {
+      throw new Refusal('native_checkpoint_cleanup_failed');
+    };
+    const op = operations.control('backup', 'cleanup-only-recovery');
+    assert.equal((await operations.wait(op.id)).state, 'failed');
+    assert.ok(store.history()[0].completed.includes('native-backup-verified'));
+    assert.equal(counts.start, 1);
+    runtime.startDatabase = async () => {
+      throw Error('database must remain offline during verified retirement');
+    };
+    let cleanupStarts = 0;
+    const startCleanup = runtime.startCheckpointCleanup;
+    runtime.startCheckpointCleanup = async () => {
+      cleanupStarts++;
+      assert.equal(store.history()[0].step, 'native-backup-start-cleanup');
+      return startCleanup();
+    };
+    runtime.cleanupCheckpoint = cleanup;
+    operations.resume(op.id);
+    assert.equal((await operations.wait(op.id)).state, 'complete');
+    assert.equal(cleanupStarts, 1);
+    assert.equal(counts.start, 1);
+    assert.equal(counts.snapshot, 1);
+    assert.equal(counts.checkpoint, 1);
   });
 });

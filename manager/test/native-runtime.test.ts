@@ -30,6 +30,9 @@ async function fixture(
     checkpoint: async () => {
       throw new Refusal('native_checkpoint_unavailable');
     },
+    startCheckpointCleanup: async () => {
+      throw new Refusal('native_checkpoint_unavailable');
+    },
     startDatabase: async () => {
       throw new Refusal('native_checkpoint_unavailable');
     },

@@ -33,7 +33,7 @@ import { createInterface } from 'node:readline';
 const lines=createInterface({input:process.stdin})[Symbol.asyncIterator]();
 const config=JSON.parse((await lines.next()).value), scenario=${JSON.stringify(scenario)};
 const emit=value=>process.stdout.write(JSON.stringify(value)+'\\n');
-emit({protocolVersion:1,state:scenario==='wrong-database'?'running':scenario==='wrong-server'?'database-ready':config.mode==='database'?'database-ready':'running',manifestSha256:config.manifestSha256,sourceRevision:'c'.repeat(40),certified:false});
+emit({protocolVersion:1,state:scenario==='wrong-database'?'running':scenario==='wrong-server'?'database-ready':config.mode==='checkpoint-cleanup'?'checkpoint-cleanup-ready':config.mode==='database'?'database-ready':'running',manifestSha256:config.manifestSha256,sourceRevision:'c'.repeat(40),certified:false});
 if(scenario==='unsolicited')emit({protocolVersion:1,state:'checkpoint-failed',operationId:'${operation}',code:'host_checkpoint_failed'});
 let pending=null;
 for await(const line of {[Symbol.asyncIterator]:()=>lines}){
@@ -388,3 +388,36 @@ test(
       });
   },
 );
+
+test('cleanup maintenance uses distinct readiness and refuses new checkpoints', async () => {
+  await fixture('normal', async (host) => {
+    assert.equal(
+      (await host.startCheckpointCleanup()).state,
+      'checkpoint-cleanup-ready',
+    );
+    assert.deepEqual(host.status(), {
+      state: 'unknown',
+      code: 'native_checkpoint_cleanup_maintenance',
+    });
+    await assert.rejects(host.startDatabase(), /native_runtime_busy/);
+    await assert.rejects(
+      host.checkpoint(operation),
+      /native_checkpoint_unavailable/,
+    );
+    const receipt = {
+      protocolVersion: 1,
+      state: 'checkpoint',
+      schemaVersion: 1,
+      operationId: operation,
+      manifestSha256: 'b'.repeat(64),
+      sourceRevision: 'c'.repeat(40),
+      postgresMajor: '19',
+      databaseFormat: 'frameleaf-canonical',
+      dump: { bytes: 27, sha256: 'd'.repeat(64) },
+    };
+    assert.equal(
+      (await host.cleanupCheckpoint(receipt)).state,
+      'checkpoint-cleaned',
+    );
+  });
+});
