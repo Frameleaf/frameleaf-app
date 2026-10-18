@@ -365,6 +365,35 @@ test('restore input staging is durable, exact and reusable without changing a li
   );
 });
 
+test('timely restore confirmation survives verification crossing the review expiry', async (t) => {
+  await stageFixture(async ({ store, context, operation, summary }) => {
+    let calls = 0;
+    const now = t.mock.method(Date, 'now', () =>
+      calls++ === 0 ? summary.expires - 1 : summary.expires + 1,
+    );
+    try {
+      const stage = await stageNativeRestoreInput(store, context, operation);
+      assert.equal(
+        operation.receipts['native-restore-review-accepted'].acceptedAt,
+        summary.expires - 1,
+      );
+      assert.deepEqual(
+        await stageNativeRestoreInput(store, context, operation),
+        stage,
+      );
+      await assert.rejects(
+        revalidateNativeRestoreReview(store, context, summary.id),
+        /native_restore_review_expired/,
+      );
+      assert.ok(
+        !(await readdir(context.installation.state)).includes('database'),
+      );
+    } finally {
+      now.mock.restore();
+    }
+  });
+});
+
 test('an accepted restore resumes after review expiry while a fresh expired restore is refused', async (t) => {
   await stageFixture(async ({ store, context, operation, summary }) => {
     const stage = await stageNativeRestoreInput(store, context, operation);
