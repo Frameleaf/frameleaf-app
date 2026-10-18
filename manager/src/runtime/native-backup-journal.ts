@@ -31,15 +31,27 @@ function receipt(operation: Operation, key: string): unknown | undefined {
   if (completed !== present) throw invalid();
   return present ? operation.receipts[key] : undefined;
 }
+function assertNativeBackupOwner(store: Store, operation: Operation) {
+  if (
+    operation.state !== 'running' ||
+    !isDeepStrictEqual(
+      store.history().find((value) => value.id === operation.id),
+      operation,
+    )
+  )
+    throw invalid();
+}
 async function step(
   store: Store,
   operation: Operation,
   key: string,
   work: () => Promise<unknown>,
 ) {
+  assertNativeBackupOwner(store, operation);
   operation.step = key;
   store.save(operation);
   const value = await work();
+  assertNativeBackupOwner(store, operation);
   operation.receipts[key] = value;
   if (!operation.completed.includes(key)) operation.completed.push(key);
   store.save(operation);
@@ -238,6 +250,7 @@ export async function createNativeDatabaseBackup(
             throw error;
           });
         if (exists) throw verificationFailed();
+        assertNativeBackupOwner(store, operation);
         operation.receipts[intentKey] = intent;
         store.save(operation);
       }
@@ -290,6 +303,7 @@ export async function completeNativeDatabaseBackup(
     context,
     operation,
   );
+  assertNativeBackupOwner(store, operation);
   const expectedOwner = {
     ...result.recovery.checkpoint,
     state: 'checkpoint-cleaned',
@@ -314,6 +328,7 @@ export async function completeNativeDatabaseBackup(
       return cleaned;
     });
   if (intent === undefined) {
+    assertNativeBackupOwner(store, operation);
     operation.receipts[intentKey] = expectedStage;
     store.save(operation);
   }
