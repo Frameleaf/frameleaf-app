@@ -1,4 +1,4 @@
-import { RawNode, ValueNode, type QueryId } from 'kysely';
+import { type QueryId, RawNode, ValueNode } from 'kysely';
 import { createImportScaleDiagnostics } from 'test/medium/import-scale-diagnostics.js';
 
 it.each([
@@ -11,7 +11,9 @@ it.each([
   let clock = 0;
   const diagnostics = createImportScaleDiagnostics(
     true,
-    (line) => output.push(line),
+    (line) => {
+      output.push(line);
+    },
     () => clock,
   );
   const queryId = {} as QueryId;
@@ -35,10 +37,12 @@ it('reports an unfinished feeder statement when the test times out', async () =>
   const output: string[] = [];
   const diagnostics = createImportScaleDiagnostics(
     true,
-    (line) => output.push(line),
+    (line) => {
+      output.push(line);
+    },
     () => 100,
   );
-  await diagnostics.run('share-feed', async () => {
+  await diagnostics.run('share-feed', () => {
     diagnostics.plugin.transformQuery({
       queryId: {} as QueryId,
       node: RawNode.create(['update job_run_item i set "jobId" = source."jobId", state = j.state'], []),
@@ -46,5 +50,6 @@ it('reports an unfinished feeder statement when the test times out', async () =>
     diagnostics.snapshot();
     const receipt = JSON.parse(output.at(-1)!.slice('import-scale-phase '.length));
     expect(receipt.unmatchedTransforms).toEqual([{ phase: 'membership-link', elapsedMs: 0 }]);
+    return Promise.resolve();
   });
 });
