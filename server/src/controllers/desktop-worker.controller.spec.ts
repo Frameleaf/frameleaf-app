@@ -1,0 +1,195 @@
+import express, { type Express } from 'express';
+import { generateKeyPairSync, sign } from 'node:crypto';
+import { EventEmitter } from 'node:events';
+import { setTimeout } from 'node:timers/promises';
+import request from 'supertest';
+import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
+import { desktopWorkerMessage } from 'src/dtos/desktop-worker.dto.js';
+import { frameleafViaMiddleware } from 'src/middleware/frameleaf-via.middleware.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
+import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
+import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
+import { type ControllerContext, controllerSetup } from 'test/utils.js';
+
+const keys = generateKeyPairSync('ed25519');
+const token = 'a'.repeat(64);
+const id = '445bc2b6-f4cd-439e-b8bb-7e84d7ee0550';
+const sessionId = '1117c1ca-0495-46e9-b579-f321520c2b1a';
+const grant = { deviceId: id, sessionId, authorizationEpoch: 2 };
+const repository = { session: vi.fn(), consume: vi.fn() };
+const broker = { claim: vi.fn(), input: vi.fn(), complete: vi.fn(), heartbeat: vi.fn(), fail: vi.fn() };
+let ctx: ControllerContext;
+let app: Express;
+const proof = (operation: string, payload: string) => {
+  const dto = { sessionId, sequence: 1, timestamp: Date.now(), signature: '' };
+  dto.signature = sign(
+    null,
+    Buffer.from(desktopWorkerMessage('server', 2, token, dto, operation, payload)),
+    keys.privateKey,
+  ).toString('base64');
+  return Buffer.from(JSON.stringify(dto)).toString('base64');
+};
+beforeAll(async () => {
+  const auth = new DesktopWorkerAuthService(
+    repository as never,
+    { get: vi.fn().mockResolvedValue({ id: 'server' }) } as never,
+  );
+  ctx = await controllerSetup(DesktopWorkerController, [
+    { provide: ConfigRepository, useValue: new ConfigRepository() },
+    { provide: DesktopQualificationService, useValue: {} },
+    {
+      provide: DesktopWorkerService,
+      useValue: new DesktopWorkerService(auth, broker as never, {} as never, broker as never),
+    },
+  ]);
+  app = express();
+  app.use(frameleafViaMiddleware('edge-secret'));
+  app.use((req, res) => ctx.getHttpServer().emit('request', req, res));
+});
+afterAll(async () => ctx.close());
+beforeEach(() => {
+  vi.clearAllMocks();
+  repository.session.mockResolvedValue({
+    publicKey: keys.publicKey.export({ type: 'spki', format: 'der' }).subarray(-32).toString('base64'),
+    authorizationEpoch: 2,
+  });
+  repository.consume.mockResolvedValue(grant);
+  broker.claim.mockResolvedValue(undefined);
+});
+it('requires worker token and signed proof; photo cookies/tokens alone cannot claim', async () => {
+  for (const authorization of ['', 'Bearer photo-token', 'Bearer ' + token]) {
+    expect(
+      (
+        await request(app)
+          .post('/desktop/worker/claim')
+          .set('Authorization', authorization)
+          .set('Cookie', 'immich_access_token=photo-token')
+          .send({ payload: '{"modelKeys":[],"waitMs":0}' })
+      ).status,
+    ).toBe(401);
+  }
+  expect(broker.claim).not.toHaveBeenCalled();
+  expect(ctx.authenticate).not.toHaveBeenCalled();
+});
+it('accepts exact signed payload bytes and rejects route/payload substitution', async () => {
+  const payload = '{"modelKeys":["m"],"waitMs":0}';
+  const response = await request(app)
+    .post('/desktop/worker/claim')
+    .auth(token, { type: 'bearer' })
+    .set('x-frameleaf-desktop-proof', proof('claim', payload))
+    .send({ payload });
+  expect(response.status).toBe(200);
+  expect(response.body).toEqual({ task: null });
+  expect(
+    (
+      await request(app)
+        .post('/desktop/worker/claim')
+        .auth(token, { type: 'bearer' })
+        .set('x-frameleaf-desktop-proof', proof('claim', payload))
+        .send({ payload: '{"modelKeys":[],"waitMs":0}' })
+    ).status,
+  ).toBe(401);
+  expect(
+    (
+      await request(app)
+        .post('/desktop/worker/claim')
+        .auth(token, { type: 'bearer' })
+        .set('x-frameleaf-desktop-proof', proof('claim', payload))
+        .send({ payload, extra: true })
+    ).status,
+  ).toBe(400);
+});
+it('returns scoped binary input without JSON conversion and binds the attempt path', async () => {
+  const input = Buffer.from([0, 1, 255, 10]);
+  broker.input.mockResolvedValue(input);
+  const response = await request(app)
+    .get(`/desktop/tasks/${id}/input`)
+    .auth(token, { type: 'bearer' })
+    .set('x-frameleaf-desktop-proof', proof(`input:${id}`, ''));
+  expect(response.status).toBe(200);
+  expect(response.body).toEqual(input);
+  expect(response.headers['cache-control']).toBe('no-store');
+  expect(
+    (
+      await request(app)
+        .get(`/desktop/tasks/${sessionId}/input`)
+        .auth(token, { type: 'bearer' })
+        .set('x-frameleaf-desktop-proof', proof(`input:${id}`, ''))
+    ).status,
+  ).toBe(401);
+  expect((await request(app).get('/desktop/tasks/not-uuid/input')).status).toBe(400);
+});
+
+it.each(['wan', 'relay'])('does not let a valid signed worker claim through verified %s arrival', async (via) => {
+  const payload = JSON.stringify({ modelKeys: ['clip:model'], waitMs: 0 });
+  const response = await request(app)
+    .post('/desktop/worker/claim')
+    .set('x-frameleaf-via-auth', 'edge-secret')
+    .set('x-frameleaf-via', via)
+    .set('Authorization', 'Bearer ' + token)
+    .set('x-frameleaf-desktop-proof', proof('claim', payload))
+    .send({ payload });
+  expect(response.status).toBe(403);
+  expect(broker.claim).not.toHaveBeenCalled();
+});
+
+it.each([
+  '/desktop/worker/challenges',
+  `/desktop/worker/challenges/${id}/report`,
+  '/desktop/worker/heartbeat',
+  `/desktop/tasks/${id}/result`,
+  `/desktop/tasks/${id}/fail`,
+])('refuses remote work before payload processing: %s', async (path) => {
+  const response = await request(app)
+    .post(path)
+    .set('x-frameleaf-via-auth', 'edge-secret')
+    .set('x-frameleaf-via', 'relay')
+    .send({});
+  expect(response.status).toBe(403);
+});
+it.each([`/desktop/tasks/${id}/input`, `/desktop/worker/challenges/${id}`, `/desktop/worker/qualifications/${id}`])(
+  'refuses remote input or qualification reads: %s',
+  async (path) => {
+    const response = await request(app)
+      .get(path)
+      .set('x-frameleaf-via-auth', 'edge-secret')
+      .set('x-frameleaf-via', 'wan');
+    expect(response.status).toBe(403);
+  },
+);
+it.each(['post', 'delete'] as const)(
+  'keeps remote credential %s controls behind signed authentication',
+  async (method) => {
+    const response = await request(app)
+      [method]('/desktop/worker/session')
+      .set('x-frameleaf-via-auth', 'edge-secret')
+      .set('x-frameleaf-via', 'relay')
+      .send({ payload: '{}' });
+    expect(response.status).toBe(401);
+  },
+);
+
+it('treats a disconnected claim as cancellation but retains other failures', async () => {
+  for (const kind of ['reason', 'timer', 'other']) {
+    const response = Object.assign(new EventEmitter(), { setHeader: vi.fn() });
+    const failure = new Error('authority unavailable');
+    const service = {
+      claim: vi.fn((_token, _proof, _payload, signal: AbortSignal) =>
+        kind === 'timer'
+          ? setTimeout(30_000, undefined, { signal })
+          : new Promise((_, reject) => {
+              signal.addEventListener('abort', () => reject(kind === 'other' ? failure : signal.reason), {
+                once: true,
+              });
+            }),
+      ),
+    };
+    const controller = new DesktopWorkerController(service as never, {} as never);
+    const result = controller.claimDesktopTask('token', 'proof', { payload: '{}' }, response as never);
+    response.emit('close');
+    if (kind === 'other') await expect(result).rejects.toBe(failure);
+    else await expect(result).resolves.toEqual({ task: null });
+    expect(response.listenerCount('close')).toBe(0);
+  }
+});

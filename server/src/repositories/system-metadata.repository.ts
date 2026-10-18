@@ -57,6 +57,7 @@ export class SystemMetadataRepository {
           SystemMetadataKey.SystemConfig,
           SystemMetadataKey.EffectiveConfigEpoch,
           SystemMetadataKey.FrameleafRecoveryMlAuthority,
+          SystemMetadataKey.FrameleafDesktopAssistance,
         ] as readonly string[]
       ).includes(key) &&
       !this.configTransaction
@@ -153,6 +154,7 @@ export class SystemMetadataRepository {
           SystemMetadataKey.SystemConfig,
           SystemMetadataKey.EffectiveConfigEpoch,
           SystemMetadataKey.FrameleafRecoveryMlAuthority,
+          SystemMetadataKey.FrameleafDesktopAssistance,
         ] as readonly string[]
       ).includes(key)
     )

@@ -1,0 +1,108 @@
+[
+  {
+    "binding": {
+      "protocolVersion": 1,
+      "modelKey": "clip:93f4dc772f817655256678095702dd151c8714e238fccbd7a49f544960fb52a6",
+      "entries": {
+        "clip": {
+          "textual": {
+            "modelName": "ViT-B-16-SigLIP-384__webli",
+            "options": {}
+          }
+        }
+      },
+      "models": [
+        {
+          "artifacts": {
+            ".gitattributes": "d044659330fad7709f2da67d0b6f6d0a8a655eb0a3a8f99a55fef18563e44191",
+            "README.md": "7f3eb44999af7cb7045911d2472f814aed3c03564956bf2191dcfe4ffd379e2e",
+            "config.json": "0285a9e0d61be4d829c08c95a4f83dbe387d410eb163af028333baeab23093a1",
+            "models--frameleaf--ViT-B-16-SigLIP-384__webli/refs/main": "afa9fd46114aaa22cf93bf3df7f8dc57b89e0983e8db9c3b6d65680e0c50193b",
+            "textual/model.onnx": "717583e5ad624da502b0aa7948e2f4961d01586b4c3c5626ced0849c1482266e",
+            "textual/special_tokens_map.json": "acc196266a358dbcf2445f7b18f610c3c8763a5f0fdbf753f6aa0607631e7ba9",
+            "textual/tokenizer.json": "ec6fe74c37f2a65be3857ef5e8fbca7662ebb15fcfa569a845a59958db969f76",
+            "textual/tokenizer_config.json": "0c58fcd8b4706112d9fa3c330ba4c29597d71bfc228612ba36de48e39820acda",
+            "visual/model.onnx": "c2a7778f7529bbf8812d74627b7a2b280e95c4537cbe6c039152a6788d0ddc63",
+            "visual/preprocess_cfg.json": "0360b111c638e1f8ec609ac94cbf91a4f7814db5ed7ded2a66a5b32f05d97bd2"
+          },
+          "name": "ViT-B-16-SigLIP-384__webli",
+          "task": "clip",
+          "type": "textual"
+        }
+      ],
+      "preprocessingSha256": "ac01469c44faed12f8fa2cac6649e3f1f2b7191a5161b1abe1b02f350570cf53"
+    },
+    "inputKind": "text"
+  },
+  {
+    "binding": {
+      "protocolVersion": 1,
+      "modelKey": "clip:d89f5dad3c5a6d8111d881614655d55d5d4f6b1d275ff5f10cd5a3230779eb87",
+      "entries": {
+        "clip": {
+          "textual": {
+            "modelName": "ViT-B-16-SigLIP-384__webli",
+            "options": {
+              "language": "en"
+            }
+          }
+        }
+      },
+      "models": [
+        {
+          "artifacts": {
+            ".gitattributes": "d044659330fad7709f2da67d0b6f6d0a8a655eb0a3a8f99a55fef18563e44191",
+            "README.md": "7f3eb44999af7cb7045911d2472f814aed3c03564956bf2191dcfe4ffd379e2e",
+            "config.json": "0285a9e0d61be4d829c08c95a4f83dbe387d410eb163af028333baeab23093a1",
+            "models--frameleaf--ViT-B-16-SigLIP-384__webli/refs/main": "afa9fd46114aaa22cf93bf3df7f8dc57b89e0983e8db9c3b6d65680e0c50193b",
+            "textual/model.onnx": "717583e5ad624da502b0aa7948e2f4961d01586b4c3c5626ced0849c1482266e",
+            "textual/special_tokens_map.json": "acc196266a358dbcf2445f7b18f610c3c8763a5f0fdbf753f6aa0607631e7ba9",
+            "textual/tokenizer.json": "ec6fe74c37f2a65be3857ef5e8fbca7662ebb15fcfa569a845a59958db969f76",
+            "textual/tokenizer_config.json": "0c58fcd8b4706112d9fa3c330ba4c29597d71bfc228612ba36de48e39820acda",
+            "visual/model.onnx": "c2a7778f7529bbf8812d74627b7a2b280e95c4537cbe6c039152a6788d0ddc63",
+            "visual/preprocess_cfg.json": "0360b111c638e1f8ec609ac94cbf91a4f7814db5ed7ded2a66a5b32f05d97bd2"
+          },
+          "name": "ViT-B-16-SigLIP-384__webli",
+          "task": "clip",
+          "type": "textual"
+        }
+      ],
+      "preprocessingSha256": "ac01469c44faed12f8fa2cac6649e3f1f2b7191a5161b1abe1b02f350570cf53"
+    },
+    "inputKind": "text"
+  },
+  {
+    "binding": {
+      "protocolVersion": 1,
+      "modelKey": "clip:b5b9a9d4748410f5c869fe1b73a16ab8caa25f852aec6075b12403ebd2cf5956",
+      "entries": {
+        "clip": {
+          "visual": {
+            "modelName": "ViT-B-16-SigLIP-384__webli"
+          }
+        }
+      },
+      "models": [
+        {
+          "artifacts": {
+            ".gitattributes": "d044659330fad7709f2da67d0b6f6d0a8a655eb0a3a8f99a55fef18563e44191",
+            "README.md": "7f3eb44999af7cb7045911d2472f814aed3c03564956bf2191dcfe4ffd379e2e",
+            "config.json": "0285a9e0d61be4d829c08c95a4f83dbe387d410eb163af028333baeab23093a1",
+            "models--frameleaf--ViT-B-16-SigLIP-384__webli/refs/main": "afa9fd46114aaa22cf93bf3df7f8dc57b89e0983e8db9c3b6d65680e0c50193b",
+            "textual/model.onnx": "717583e5ad624da502b0aa7948e2f4961d01586b4c3c5626ced0849c1482266e",
+            "textual/special_tokens_map.json": "acc196266a358dbcf2445f7b18f610c3c8763a5f0fdbf753f6aa0607631e7ba9",
+            "textual/tokenizer.json": "ec6fe74c37f2a65be3857ef5e8fbca7662ebb15fcfa569a845a59958db969f76",
+            "textual/tokenizer_config.json": "0c58fcd8b4706112d9fa3c330ba4c29597d71bfc228612ba36de48e39820acda",
+            "visual/model.onnx": "c2a7778f7529bbf8812d74627b7a2b280e95c4537cbe6c039152a6788d0ddc63",
+            "visual/preprocess_cfg.json": "0360b111c638e1f8ec609ac94cbf91a4f7814db5ed7ded2a66a5b32f05d97bd2"
+          },
+          "name": "ViT-B-16-SigLIP-384__webli",
+          "task": "clip",
+          "type": "visual"
+        }
+      ],
+      "preprocessingSha256": "ac01469c44faed12f8fa2cac6649e3f1f2b7191a5161b1abe1b02f350570cf53"
+    },
+    "inputKind": "image"
+  }
+]

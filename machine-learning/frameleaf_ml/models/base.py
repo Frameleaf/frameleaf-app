@@ -78,12 +78,15 @@ class InferenceModel(ABC):
             log.info(f"Downloading {model_type} model '{self.model_name}' to {self.model_path}. This may take a while.")
             self._download()
 
-    def load(self) -> None:
+    def load(self, *, allow_download: bool = True) -> None:
         if self.loaded:
             return
         self.load_attempts += 1
 
-        self.download()
+        if allow_download:
+            self.download()
+        elif not self.cached:
+            raise ModelUnavailableError("Verified model cache is unavailable")
         attempt = f"Attempt #{self.load_attempts} to load" if self.load_attempts > 1 else "Loading"
         log.info(f"{attempt} {self.model_type.replace('-', ' ')} model '{self.model_name}' to memory")
         self.session = self._load()

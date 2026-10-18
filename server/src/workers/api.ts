@@ -13,7 +13,7 @@ async function bootstrap() {
   // FL-291: SIGTERM stops taking connections and drains the requests in flight before exiting
   // eslint-disable-next-line unicorn/no-process-exit
   let stop = (): void => process.exit(0);
-  onStopRequest(() => stop());
+  onStopRequest(() => stop(), { ipc: process.env.FRAMELEAF_NATIVE_OWNER === '1' });
 
   const app = await NestFactory.create<NestExpressApplication>(ApiModule, {
     bufferLogs: true,

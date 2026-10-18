@@ -30,6 +30,11 @@ import { CronRepository } from 'src/repositories/cron.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
+import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
+import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
+import { DesktopMlRepository } from 'src/repositories/desktop-ml.repository.js';
+import { DesktopWorkerChallengeRepository } from 'src/repositories/desktop-worker-challenge.repository.js';
+import { DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
 import { DocumentRepository } from 'src/repositories/document.repository.js';
 import { DownloadRepository } from 'src/repositories/download.repository.js';
 import { DuplicateDecisionRepository } from 'src/repositories/duplicate-decision.repository.js';
@@ -79,6 +84,7 @@ import { PartnerOriginRepository } from 'src/repositories/partner-origin.reposit
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
+import { PhotoSourceRepository } from 'src/repositories/photo-source.repository.js';
 import { PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
@@ -124,6 +130,12 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
+  DesktopClipIndexRepository,
+  DesktopDeviceRepository,
+  PhotoSourceRepository,
+  DesktopMlRepository,
+  DesktopWorkerRepository,
+  DesktopWorkerChallengeRepository,
   ICloudAuditRepository,
   ICloudScheduledStagingRepository,
   ICloudScheduledWorkerRepository,

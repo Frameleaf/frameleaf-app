@@ -425,6 +425,15 @@ describe(PetRecognitionService.name, () => {
       expect(mocks.job.queueSelection).toHaveBeenCalled();
     });
 
+    it('does not enqueue nearest-photo work prepared across admission', async () => {
+      pets.getRecognitionAsset.mockResolvedValue(recognitionAsset());
+      mocks.machineLearning.captureClipRead.mockResolvedValue({
+        assertCurrent: () => Promise.resolve(),
+        publish: () => Promise.reject(new Error('desktop_clip_index_changed')),
+      });
+      await expect(sut.handleNearest({ petId: catId, assetId })).rejects.toThrow('desktop_clip_index_changed');
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
     it('looks again at the owner’s most similar photos after a confirmation', async () => {
       pets.getRecognitionAsset.mockResolvedValue(recognitionAsset());
 

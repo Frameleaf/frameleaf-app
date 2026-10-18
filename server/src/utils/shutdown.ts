@@ -38,6 +38,7 @@ export const DATABASE_CLOSE_TIMEOUT_SECONDS = 0.5;
 
 /** What the supervisor posts to a worker thread (microservices, maintenance) to stop it. */
 export const WORKER_STOP_MESSAGE = 'frameleaf:stop';
+export const SERVER_OWNER_READY_MESSAGE = 'frameleaf:owner-ready:v1';
 
 /** socket.io long-polls stay open until the next ping; they are closed with the gateway instead. */
 const isLongPoll = (req: IncomingMessage) => req.url?.startsWith('/api/socket.io') ?? false;
@@ -140,14 +141,19 @@ export const closeGracefully = async ({
 /**
  * FL-291: call `stop` once when this worker is asked to stop: on SIGTERM or SIGINT in a forked
  * process (the API), or on the supervisor's message in a worker thread, whose
- * signals belong to the supervisor.
+ * signals belong to the supervisor. Native forks also accept the private IPC stop and owner loss.
  */
 export const onStopRequest = (
   stop: () => void,
   {
     port = threadPort,
     proc = process,
-  }: { port?: Pick<MessagePort, 'on'> | null; proc?: Pick<NodeJS.Process, 'on'> } = {},
+    ipc = false,
+  }: {
+    port?: Pick<MessagePort, 'on'> | null;
+    proc?: Pick<NodeJS.Process, 'on'> & Partial<Pick<NodeJS.Process, 'connected' | 'send'>>;
+    ipc?: boolean;
+  } = {},
 ) => {
   let requested = false;
   const once = () => {
@@ -168,8 +174,18 @@ export const onStopRequest = (
     return;
   }
 
+  if (ipc && (proc.connected !== true || typeof proc.send !== 'function')) {
+    throw new Error('native_owner_unavailable');
+  }
+
   proc.on('SIGTERM', once);
   proc.on('SIGINT', once);
+  if (ipc) {
+    proc.on('message', (message: unknown) => {
+      if (message === WORKER_STOP_MESSAGE) once();
+    });
+    proc.on('disconnect', once);
+  }
 };
 
 export type SupervisedWorker = {

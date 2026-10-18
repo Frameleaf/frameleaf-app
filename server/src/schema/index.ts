@@ -15,6 +15,7 @@ import {
   asset_face_audit,
   asset_metadata_audit,
   asset_ocr_delete_audit,
+  desktop_clip_producer_guard,
   f_concat_ws,
   f_unaccent,
   immich_uuid_v7,
@@ -88,6 +89,12 @@ import {
 } from 'src/schema/tables/cloud-backup.table.js';
 import { ClusterGroupRequestTable } from 'src/schema/tables/cluster-group-request.table.js';
 import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
+import { DesktopClipIndexTable, DesktopClipProducerTable } from 'src/schema/tables/desktop-clip-index.table.js';
+import { DesktopDeviceTable } from 'src/schema/tables/desktop-device.table.js';
+import { DesktopMlAttemptTable, DesktopMlTaskTable } from 'src/schema/tables/desktop-ml-task.table.js';
+import { DesktopWorkerChallengeTable } from 'src/schema/tables/desktop-worker-challenge.table.js';
+import { DesktopWorkerQualificationTable } from 'src/schema/tables/desktop-worker-qualification.table.js';
+import { DesktopWorkerSessionTable } from 'src/schema/tables/desktop-worker-session.table.js';
 import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
@@ -112,6 +119,7 @@ import {
   MlWorkloadAccountingTable,
   MlWorkloadRouteTable,
 } from 'src/schema/tables/ml-destination.table.js';
+import { MlWorkloadRouteOriginTable } from 'src/schema/tables/ml-workload-route-origin.table.js';
 import { MoveTable } from 'src/schema/tables/move.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
 import { NotificationTable } from 'src/schema/tables/notification.table.js';
@@ -126,6 +134,11 @@ import { PersonTable } from 'src/schema/tables/person.table.js';
 import { PetAuditTable } from 'src/schema/tables/pet-audit.table.js';
 import { PetObservationAuditTable } from 'src/schema/tables/pet-observation-audit.table.js';
 import { PetCandidateTable, PetDetectionTable, PetObservationTable, PetTable } from 'src/schema/tables/pet.table.js';
+import {
+  PhotoSourceResourceTable,
+  PhotoSourceRunTable,
+  PhotoSourceTable,
+} from 'src/schema/tables/photo-source.table.js';
 import { DevelopExportTable, DevelopPresetTable } from 'src/schema/tables/photo-tools.table.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { PluginMethodTable } from 'src/schema/tables/plugin-method.table.js';
@@ -220,6 +233,18 @@ import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 @Database({ name: 'frameleaf' })
 export class ImmichDatabase {
   tables = [
+    DesktopClipIndexTable,
+    DesktopClipProducerTable,
+    MlWorkloadRouteOriginTable,
+    DesktopDeviceTable,
+    PhotoSourceTable,
+    PhotoSourceRunTable,
+    PhotoSourceResourceTable,
+    DesktopWorkerSessionTable,
+    DesktopWorkerChallengeTable,
+    DesktopWorkerQualificationTable,
+    DesktopMlTaskTable,
+    DesktopMlAttemptTable,
     AssetLocalEffectStreamTable,
     AssetLocalEffectTable,
     AssetLocalEffectCursorTable,
@@ -393,6 +418,7 @@ export class ImmichDatabase {
   ];
 
   functions = [
+    desktop_clip_producer_guard,
     immich_uuid_v7,
     updated_at,
     f_concat_ws,
@@ -426,6 +452,12 @@ export interface Migrations {
 }
 
 export interface DB extends QueueDatabase {
+  desktop_clip_index: DesktopClipIndexTable;
+  desktop_clip_producer: DesktopClipProducerTable;
+  desktop_device: DesktopDeviceTable;
+  photo_source: PhotoSourceTable;
+  photo_source_run: PhotoSourceRunTable;
+  photo_source_resource: PhotoSourceResourceTable;
   asset_local_effect_stream: AssetLocalEffectStreamTable;
   asset_local_effect: AssetLocalEffectTable;
   asset_local_effect_cursor: AssetLocalEffectCursorTable;
@@ -513,6 +545,7 @@ export interface DB extends QueueDatabase {
 
   ml_destination: MlDestinationTable;
   ml_workload_route: MlWorkloadRouteTable;
+  ml_workload_route_origin: MlWorkloadRouteOriginTable;
   ml_workload_accounting: MlWorkloadAccountingTable;
   ml_cloud_model_choice: MlCloudModelChoiceTable;
   operational_metric_sample: OperationalMetricSampleTable;

@@ -729,7 +729,7 @@ export class ICloudEditAuthorityRepository {
         .where('ownerId', '=', ownerId)
         .executeTakeFirst();
       const identity = row?.metadata.sourceIdentity;
-      if (identity?.role !== 'edit-render') {
+      if (identity?.kind !== 'icloud' || identity.role !== 'edit-render') {
         return null;
       }
       const parsed = parseCloudIdentifier(identity.cloudIdentifier);
@@ -763,10 +763,10 @@ export class ICloudEditAuthorityRepository {
         .where('ownerId', '=', ownerId)
         .executeTakeFirst();
       const identity = row?.metadata.sourceIdentity;
-      const parsed = identity && parseCloudIdentifier(identity.cloudIdentifier);
-      if (!row || identity?.role !== 'edit-render') {
+      if (!row || identity?.kind !== 'icloud' || identity.role !== 'edit-render') {
         return;
       }
+      const parsed = parseCloudIdentifier(identity.cloudIdentifier);
       if (!parsed || !identity.deviceKey || !row.verifiedChecksum) {
         conflict('edit_baseline_unproven');
       }

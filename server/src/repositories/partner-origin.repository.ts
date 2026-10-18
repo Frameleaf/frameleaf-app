@@ -765,8 +765,8 @@ export class PartnerOriginRepository {
         );
       }
       await sql`
-        INSERT INTO smart_search ("assetId", embedding)
-        SELECT ${copy.id}::uuid, embedding FROM smart_search WHERE "assetId" = ${source.id}::uuid
+        INSERT INTO smart_search ("assetId", embedding, "producerModelKey")
+        SELECT ${copy.id}::uuid, embedding, "producerModelKey" FROM smart_search WHERE "assetId" = ${source.id}::uuid
       `.execute(trx);
       const ocr = await trx.selectFrom('asset_ocr').selectAll().where('assetId', '=', source.id).execute();
       if (ocr.length > 0) {

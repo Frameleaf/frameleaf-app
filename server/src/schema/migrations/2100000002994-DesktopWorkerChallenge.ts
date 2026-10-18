@@ -1,0 +1,12 @@
+import { Kysely, sql } from 'kysely';
+
+export async function up(db: Kysely<any>): Promise<void> {
+  await sql.raw("CREATE TABLE \"desktop_worker_challenge\" (\n  \"id\" uuid NOT NULL DEFAULT uuid_generate_v4(),\n  \"deviceId\" uuid NOT NULL,\n  \"sessionId\" uuid NOT NULL,\n  \"requestId\" uuid NOT NULL,\n  \"authorizationEpoch\" integer NOT NULL,\n  \"credentialHash\" bytea NOT NULL,\n  \"modelKey\" character varying NOT NULL,\n  \"profileSha256\" character varying NOT NULL,\n  \"runtime\" jsonb NOT NULL,\n  \"specJson\" character varying NOT NULL,\n  \"bindingSha256\" character varying NOT NULL,\n  \"createdAt\" timestamp with time zone NOT NULL DEFAULT now(),\n  \"expiresAt\" timestamp with time zone NOT NULL,\n  \"reportSha256\" character varying,\n  \"runtimeFingerprint\" character varying,\n  \"reportedAt\" timestamp with time zone,\n  CONSTRAINT \"desktop_worker_challenge_deviceId_fkey\" FOREIGN KEY (\"deviceId\") REFERENCES \"desktop_device\" (\"id\") ON UPDATE CASCADE ON DELETE CASCADE,\n  CONSTRAINT \"desktop_worker_challenge_sessionId_fkey\" FOREIGN KEY (\"sessionId\") REFERENCES \"desktop_worker_session\" (\"id\") ON UPDATE CASCADE ON DELETE CASCADE,\n  CONSTRAINT \"desktop_worker_challenge_sessionId_requestId_uq\" UNIQUE (\"sessionId\", \"requestId\"),\n  CONSTRAINT \"desktop_worker_challenge_receipt_check\" CHECK ((\"reportSha256\" IS NULL AND \"runtimeFingerprint\" IS NULL AND \"reportedAt\" IS NULL) OR (\"reportSha256\" IS NOT NULL AND \"runtimeFingerprint\" IS NOT NULL AND \"reportedAt\" IS NOT NULL)),\n  CONSTRAINT \"desktop_worker_challenge_size_check\" CHECK (octet_length(\"specJson\") BETWEEN 1 AND 1048576),\n  CONSTRAINT \"desktop_worker_challenge_credential_check\" CHECK (octet_length(\"credentialHash\") = 32),\n  CONSTRAINT \"desktop_worker_challenge_pkey\" PRIMARY KEY (\"id\")\n);").execute(db);
+  await sql.raw("CREATE INDEX \"desktop_worker_challenge_deviceId_expiresAt_idx\" ON \"desktop_worker_challenge\" (\"deviceId\", \"expiresAt\");").execute(db);
+  await sql.raw("CREATE INDEX \"desktop_worker_challenge_deviceId_idx\" ON \"desktop_worker_challenge\" (\"deviceId\");").execute(db);
+  await sql.raw("CREATE INDEX \"desktop_worker_challenge_sessionId_idx\" ON \"desktop_worker_challenge\" (\"sessionId\");").execute(db);
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await sql.raw("DROP TABLE \"desktop_worker_challenge\";").execute(db);
+}

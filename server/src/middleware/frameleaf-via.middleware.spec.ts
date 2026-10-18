@@ -123,3 +123,16 @@ describe('frameleafViaMiddleware (FL-161)', () => {
     expect(requestVia({ headers: {} } as Request)).toBeNull();
   });
 });
+
+it('preserves the desktop request proof without trusting arrival or other client claims', () => {
+  const headers = {
+    'x-frameleaf-desktop-proof': 'installation-signature',
+    'x-frameleaf-admin': 'forged',
+    'x-frameleaf-worker-session': 'render-credential',
+  };
+  stripFrameleafHeaders(headers, false);
+  expect(headers).toEqual({
+    'x-frameleaf-desktop-proof': 'installation-signature',
+    'x-frameleaf-worker-session': 'render-credential',
+  });
+});

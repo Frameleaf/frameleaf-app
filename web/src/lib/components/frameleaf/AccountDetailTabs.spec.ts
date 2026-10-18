@@ -33,6 +33,9 @@ vi.mock('$lib/managers/server-config-manager.svelte', () => ({
 vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getUserHistoryAdmin: vi.fn(),
+  readDesktopMemberApproval: vi.fn().mockResolvedValue({ enabled: false }),
+  getUserPinCodeStateAdmin: vi.fn().mockResolvedValue({ pinCode: false }),
+  setDesktopMemberApproval: vi.fn(),
   deleteUserSessionAdmin: vi.fn(),
 }));
 

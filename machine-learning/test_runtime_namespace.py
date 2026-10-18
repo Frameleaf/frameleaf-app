@@ -26,8 +26,11 @@ def test_runtime_namespace_and_startup_targets() -> None:
             runpy.run_module("frameleaf_ml", run_name="__main__")
     assert stopped.value.code == 0
     command = spawn.call_args.args[0]
+    assert command[3] == "frameleaf_ml.nas_app:app"
     assert import_app(command[3]) is importlib.import_module("frameleaf_ml.main").app
-    assert load_class(command[command.index("-k") + 1]).__module__ == "frameleaf_ml.config"
+    assert load_class(command[command.index("-k") + 1]) is importlib.import_module(
+        "frameleaf_ml.gunicorn_worker"
+    ).CustomUvicornWorker
     logging_config = json.loads((package_dir / "log_conf.json").read_text())
     handler_module, handler_name = logging_config["handlers"]["console"]["class"].rsplit(".", 1)
     assert getattr(importlib.import_module(handler_module), handler_name)

@@ -217,50 +217,58 @@ export class DatabaseRepository {
     const tables = clipTables.map(({ tableName }) => tableName);
 
     // this is done in two transactions to handle concurrent writes
-    await this.db.transaction().execute(async (trx) => {
-      for (const table of tables) {
-        const constraint = `${table}_dim_size_constraint`;
-        await sql`delete from ${sql.table(table)}`.execute(trx);
-        await sql`alter table ${sql.table(table)} drop constraint if exists ${sql.raw(constraint)}`.execute(trx);
-        await sql`alter table ${sql.table(table)} add constraint ${sql.raw(constraint)} check (array_length(embedding::real[], 1) = ${sql.lit(dimSize)})`.execute(
-          trx,
-        );
-      }
-    });
+    await this.db
+      .transaction()
+      .setIsolationLevel('read committed')
+      .execute(async (trx) => {
+        await this.assertLegacyClipIndex(trx);
+        for (const table of tables) {
+          const constraint = `${table}_dim_size_constraint`;
+          await sql`delete from ${sql.table(table)}`.execute(trx);
+          await sql`alter table ${sql.table(table)} drop constraint if exists ${sql.raw(constraint)}`.execute(trx);
+          await sql`alter table ${sql.table(table)} add constraint ${sql.raw(constraint)} check (array_length(embedding::real[], 1) = ${sql.lit(dimSize)})`.execute(
+            trx,
+          );
+        }
+      });
 
     const vectorExtension = await this.getVectorExtension();
-    await this.db.transaction().execute(async (trx) => {
-      if (tables.includes('smart_search')) {
-        await sql`drop index if exists clip_index`.execute(trx);
-      }
-      if (tables.includes('smart_search_description')) {
-        await sql`drop index if exists clip_description_index`.execute(trx);
-      }
-      for (const table of tables) {
-        const constraint = `${table}_dim_size_constraint`;
-        await trx.schema
-          .alterTable(table)
-          .alterColumn('embedding', (col) => col.setDataType(sql.raw(`vector(${dimSize})`)))
-          .execute();
-        await sql`alter table ${sql.table(table)} drop constraint if exists ${sql.raw(constraint)}`.execute(trx);
-      }
-      if (tables.includes('smart_search')) {
-        await sql
-          .raw(vectorIndexQuery({ vectorExtension, table: 'smart_search', indexName: VectorIndex.Clip }))
-          .execute(trx);
-      }
-      if (tables.includes('smart_search_description')) {
-        await sql
-          .raw(
-            vectorIndexQuery({
-              vectorExtension,
-              table: 'smart_search_description',
-              indexName: 'clip_description_index',
-            }),
-          )
-          .execute(trx);
-      }
-    });
+    await this.db
+      .transaction()
+      .setIsolationLevel('read committed')
+      .execute(async (trx) => {
+        await this.assertLegacyClipIndex(trx);
+        if (tables.includes('smart_search')) {
+          await sql`drop index if exists clip_index`.execute(trx);
+        }
+        if (tables.includes('smart_search_description')) {
+          await sql`drop index if exists clip_description_index`.execute(trx);
+        }
+        for (const table of tables) {
+          const constraint = `${table}_dim_size_constraint`;
+          await trx.schema
+            .alterTable(table)
+            .alterColumn('embedding', (col) => col.setDataType(sql.raw(`vector(${dimSize})`)))
+            .execute();
+          await sql`alter table ${sql.table(table)} drop constraint if exists ${sql.raw(constraint)}`.execute(trx);
+        }
+        if (tables.includes('smart_search')) {
+          await sql
+            .raw(vectorIndexQuery({ vectorExtension, table: 'smart_search', indexName: VectorIndex.Clip }))
+            .execute(trx);
+        }
+        if (tables.includes('smart_search_description')) {
+          await sql
+            .raw(
+              vectorIndexQuery({
+                vectorExtension,
+                table: 'smart_search_description',
+                indexName: 'clip_description_index',
+              }),
+            )
+            .execute(trx);
+        }
+      });
 
     for (const table of tables) {
       await sql`vacuum analyze ${sql.table(table)}`.execute(this.db);
@@ -268,9 +276,22 @@ export class DatabaseRepository {
   }
 
   async deleteAllSearchEmbeddings(): Promise<void> {
-    await sql`truncate ${sql.table('smart_search')}, ${sql.table('smart_search_description')}, ${sql.table('asset_video_duplicate_frame')}, ${sql.table('video_moment_frame_embedding')}`.execute(
-      this.db,
-    );
+    await this.db
+      .transaction()
+      .setIsolationLevel('read committed')
+      .execute(async (trx) => {
+        await this.assertLegacyClipIndex(trx);
+        await sql`truncate ${sql.table('smart_search')}, ${sql.table('smart_search_description')}, ${sql.table('asset_video_duplicate_frame')}, ${sql.table('video_moment_frame_embedding')}`.execute(
+          trx,
+        );
+      });
+  }
+
+  private async assertLegacyClipIndex(tx: Transaction<DB>): Promise<void> {
+    // Serialize destructive legacy resets with desktop index admission.
+    await sql`SELECT pg_advisory_xact_lock(912741, 1)`.execute(tx);
+    if (await tx.selectFrom('desktop_clip_index').select('scope').where('scope', '=', 'clip').executeTakeFirst())
+      throw new Error('desktop_clip_index_admitted');
   }
 
   async vacuum({ analyze = false, table }: { analyze?: boolean; table?: keyof DB } = {}): Promise<void> {
