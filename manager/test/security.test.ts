@@ -167,3 +167,30 @@ test('optional same-host HTTPS framing retains Manager origin and CSRF protectio
     assert.equal(dsmWrite.next, false);
   } finally { store.close(); await rm(directory, { recursive: true, force: true }); }
 });
+
+test('without MANAGER_ORIGIN, Manager accepts local addresses only and still checks write origins', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-no-origin-'));
+  const store = new Store(directory);
+  try {
+    const security = new Security(store, undefined, join(directory, 'claim-key'));
+    const invoke = (headers: Record<string, string>, method = 'GET', path = '/') => {
+      let status = 0, next = false;
+      const response = {
+        set: () => {},
+        status: (value: number) => { status = value; return response; },
+        json: () => {},
+      } as unknown as Response;
+      security.guard({ headers, method, path, socket: { remoteAddress: 'fixture' }, is: () => true } as unknown as Request,
+        response, () => { next = true; });
+      return { status, next };
+    };
+    for (const host of ['192.168.1.20:9443', '[fd00::1]:9443', 'localhost:9443', 'tower.local:9443', 'tower:9443'])
+      assert.equal(invoke({ host }).next, true, host);
+    for (const host of ['evil.example:9443', 'attacker.com', '', 'a b'])
+      assert.equal(invoke({ host }).status, 403, host);
+    assert.equal(invoke({ host: 'tower:9443', origin: 'https://tower:9443' }, 'POST', '/manager-api/login').next, true);
+    assert.equal(invoke({ host: 'tower:9443', origin: 'https://192.168.1.20:9443' }, 'POST', '/manager-api/login').status, 403);
+    assert.equal(security.requestOrigin({ headers: { host: 'tower.local:9443' } } as unknown as Request), 'https://tower.local:9443');
+    assert.throws(() => new Security(store, undefined, join(directory, 'claim-key'), 'https://tower:5001'));
+  } finally { store.close(); await rm(directory, { recursive: true, force: true }); }
+});

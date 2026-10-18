@@ -21,14 +21,11 @@ and updates still require the application's release-verification gates.
    storage **before** installing. Use Unraid's configured appdata share or your
    chosen pool; do not assume a pool named `cache`. Database storage must be on
    supported local disk storage outside Docker's data root and `docker.img`.
-2. In the container editor, enable **Advanced View**. Choose the HTTPS host port
-   and set **Manager HTTPS origin** to the exact address you will open, for
-   example `https://192.0.2.10:9443` (replace this documentation IP with your NAS
-   address). The default **WebUI** uses the NAS IP and mapped host port. If you
-   use DNS, set **both** WebUI and Manager HTTPS origin to the same literal HTTPS
-   origin, for example `https://nas.example:9443`. Do not put `[IP]` or `[PORT:9443]`
-   placeholders in the environment variable. A different hostname or port causes
-   HTTP 403; use the configured origin instead of weakening the host check.
+2. Leave **Manager HTTPS origin** blank and open Manager from the WebUI link
+   (`https://<NAS IP>:9443` or `https://tower.local:9443`). Only if you reach
+   Manager through a custom DNS name, set **Manager HTTPS origin** to that exact
+   address, for example `https://nas.example:9443`, and set **Advanced View →
+   WebUI** to match; other hostnames are then refused with HTTP 403.
 3. Keep each storage mapping's **Host Path and Container Path identical**. When
    changing a folder, also update its corresponding advanced variable:
 
@@ -44,9 +41,8 @@ and updates still require the application's release-verification gates.
    `MANAGER_DATA`. Multiple approved media/database roots use colon-separated
    variables and an identical host/container mapping for each folder. Never
    expose the whole host filesystem to make additional folders selectable.
-4. Apply the container configuration and open the configured HTTPS origin.
-   Manager initially generates a self-signed certificate for that hostname or
-   IP. For a trusted HTTPS connection, provision a certificate and key matching
+4. Apply the container configuration and open the WebUI. Manager initially
+   generates a self-signed certificate, so expect a browser warning. For a trusted HTTPS connection, provision a certificate and key matching
    the origin as `tls.crt` and `tls.key` in the private Manager state folder
    before first startup. Protect the key and retain the state folder on updates.
 5. Read `<Manager state host path>/claim-key` locally and enter that private key

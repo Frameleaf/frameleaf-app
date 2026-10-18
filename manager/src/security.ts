@@ -1,6 +1,7 @@
 import { randomBytes, scrypt as derive, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { readFileSync } from 'node:fs';
+import { isIP } from 'node:net';
 import type { Request, Response, NextFunction } from 'express';
 import { Refusal, sha256 } from './contracts.js';
 import { Store } from './store.js';
@@ -10,20 +11,27 @@ const token = () => randomBytes(32).toString('hex');
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const COOKIE = '__Host-frameleaf-manager';
 const LIFETIME = 8 * 60 * 60 * 1000;
+// Without a configured origin, only names public DNS cannot point at this host are trusted (no rebinding).
+const localHost = (hostname: string) =>
+  isIP(hostname.replace(/^\[|\]$/g, '')) !== 0 || hostname === 'localhost' || hostname.endsWith('.local') || !hostname.includes('.');
 
 export class Security {
   private readonly frameAncestors: string;
   constructor(
     private store: Store,
-    readonly origin: string,
+    readonly origin: string | undefined,
     private bootstrapFile: string,
     frameOrigin?: string,
   ) {
+    this.frameAncestors = "'none'";
+    if (!origin) {
+      if (frameOrigin) throw new Error('A frame origin requires MANAGER_ORIGIN');
+      return;
+    }
     const url = new URL(origin);
     if (url.protocol !== 'https:' || url.pathname !== '/' || url.search || url.hash || url.username || url.password)
       throw new Error('Invalid Manager HTTPS origin');
     this.origin = url.origin;
-    this.frameAncestors = "'none'";
     if (frameOrigin) {
       const frame = new URL(frameOrigin);
       if (
@@ -32,6 +40,21 @@ export class Security {
       ) throw new Error('Frame origin must be an exact HTTPS origin on the Manager hostname');
       this.frameAncestors = frame.origin;
     }
+  }
+  /** The configured origin, or the local address the browser used when none is configured. */
+  requestOrigin(req: Request): string {
+    if (this.origin) {
+      if (req.headers.host !== new URL(this.origin).host) throw new Refusal('invalid_host', 403);
+      return this.origin;
+    }
+    let url: URL;
+    try {
+      url = new URL(`https://${req.headers.host}`);
+    } catch {
+      throw new Refusal('invalid_host', 403);
+    }
+    if (url.host !== req.headers.host || !localHost(url.hostname)) throw new Refusal('invalid_host', 403);
+    return url.origin;
   }
   claimed(): boolean {
     return !!this.store.get('administrator');
@@ -134,13 +157,13 @@ export class Security {
         'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
       });
       // Host equality rejects DNS rebinding, including on read-only endpoints. Never trust proxy headers.
-      if (req.headers.host !== new URL(this.origin).host) throw new Refusal('invalid_host', 403);
+      const origin = this.requestOrigin(req);
       if (!req.path.startsWith('/manager-api/')) return next();
       const write = !['GET', 'HEAD'].includes(req.method);
       const publicRoute = ['/manager-api/status', '/manager-api/claim', '/manager-api/login'].includes(req.path);
       const credential = ['administrator', 'backup-key', 'export'].some((path) => req.path === `/manager-api/${path}`);
       this.limit(req.socket.remoteAddress ?? 'unknown', write && (publicRoute || credential) ? 'login' : 'api');
-      if (write && (req.headers.origin !== this.origin || !req.is('application/json')))
+      if (write && (req.headers.origin !== origin || !req.is('application/json')))
         throw new Refusal('invalid_origin', 403);
       if (!publicRoute) {
         const session = this.session(req);

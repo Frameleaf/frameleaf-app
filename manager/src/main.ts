@@ -30,9 +30,9 @@ import { appdataDefaults } from './appdata.js';
 import { PostgresStorage } from './postgres-storage.js';
 
 const directory = process.env.MANAGER_DATA;
-const origin = process.env.MANAGER_ORIGIN;
-if (!directory || directory !== resolve(directory) || !origin)
-  throw new Error('MANAGER_DATA and MANAGER_ORIGIN are required');
+// Optional: without it Manager answers on any IP, localhost, .local or single-label address.
+const origin = process.env.MANAGER_ORIGIN || undefined;
+if (!directory || directory !== resolve(directory)) throw new Error('MANAGER_DATA is required');
 const store = new Store(directory);
 const docker = new Docker();
 const bootstrapFile = join(directory, 'claim-key');
@@ -140,10 +140,10 @@ class Api {
       operations: operations.history(),
       profile: store.get('profile'),
       administrator: { name: store.get<{ name: string }>('administrator')?.name },
-      managerOrigin: security.origin,
+      managerOrigin: security.requestOrigin(request),
       backupRoot,
       host: {
-        name: new URL(origin!).hostname,
+        name: new URL(security.requestOrigin(request)).hostname,
         available: !!host,
         platform: host?.platform ?? 'Unavailable',
         version: host?.version ?? 'Unavailable',
@@ -165,7 +165,7 @@ class Api {
         .filter(Boolean),
       databaseStorage: await databaseDefaults(),
       onboardingFinished: !!store.get('onboarding-finished'),
-      appUrl: installation ? new URL(`http://${new URL(origin!).hostname}:${installation.port}`).origin : null,
+      appUrl: installation ? new URL(`http://${new URL(security.requestOrigin(request)).hostname}:${installation.port}`).origin : null,
       librarySetup: installation
         ? await operations.libraryStatus().catch(() => ({ phase: 'unavailable', canFinish: false }))
         : null,
@@ -374,7 +374,7 @@ async function main() {
     await stat(cert);
     await stat(key);
   } catch {
-    const host = new URL(origin!).hostname.replace(/^\[|\]$/g, '');
+    const host = origin ? new URL(origin).hostname.replace(/^\[|\]$/g, '') : 'localhost';
     if (!/^[A-Za-z0-9.:-]+$/.test(host)) throw new Error('Invalid HTTPS hostname');
     await command('openssl', [
       'req',
