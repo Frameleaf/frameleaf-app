@@ -857,6 +857,7 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
         mode: null,
         licence: null,
         default: false,
+        identity: null,
       });
       for (const model of catalog.models) {
         expect(workloadForCatalogEntry(model.workload, model.mode), model.sku).not.toBeNull();
@@ -1049,7 +1050,7 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
         expect(cloudModelGroupFor(MlWorkload.StudioAi, 'speech')).toBe('tts');
         // a Studio AI job that names no feature has no model to send
         expect(cloudModelGroupFor(MlWorkload.StudioAi)).toBeNull();
-        expect(cloudModelGroupFor(MlWorkload.Face)).toBeNull();
+        expect(cloudModelGroupFor(MlWorkload.Ocr)).toBeNull();
       });
     });
   });

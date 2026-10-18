@@ -717,7 +717,8 @@ export const consentRecordFeatures = (
 ): CloudConsentRecordRequest['features'] => ({
   identityNames: features.identityNames,
   medicalSignals: features.medicalSignals,
-  ocrAddon: false,
+  // the reserved add-on is passed as it is, so the contract refuses it on rather than this hiding it
+  ocrAddon: features.ocrAddon as false,
   ...(features.smartSearch && { smartSearch: true as const }),
   ...(features.faceRecognition && { faceRecognition: true as const }),
 });

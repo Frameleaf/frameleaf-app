@@ -1327,7 +1327,7 @@ describe('FL-286 approved Cloud workload disclosure', () => {
 
 describe('FL-201 real disclosure policy and approved workloads', () => {
   it('keeps pending disclosure terminal for created jobs and unsupported workloads pending', () => {
-    expect(cloudDisclosure.hasPendingCloudDisclosure(MlWorkload.Face)).toBe(true);
+    expect(cloudDisclosure.hasPendingCloudDisclosure(MlWorkload.Ocr)).toBe(true);
     expect(STOPS_CREATED_CLOUD_JOB.has(MlAdmissionRefusal.DisclosurePending)).toBe(true);
     expect(STOPS_CREATED_CLOUD_JOB.has(MlAdmissionRefusal.WalletInsufficient)).toBe(false);
   });

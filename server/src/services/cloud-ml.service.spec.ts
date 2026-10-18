@@ -455,9 +455,9 @@ describe(CloudMlService.name, () => {
       expect(mocks.mlDestination.setRoute).not.toHaveBeenCalled();
     });
 
-    it('refuses faces and local-only work by policy', async () => {
+    it('refuses local-only work by policy', async () => {
       link();
-      await expect(sut.createDestination({ name: 'Cloud', workloads: [MlWorkload.Face] })).rejects.toThrow(
+      await expect(sut.createDestination({ name: 'Cloud', workloads: [MlWorkload.Ocr] })).rejects.toThrow(
         /stays on this network/,
       );
       expect(mocks.mlDestination.create).not.toHaveBeenCalled();
