@@ -137,6 +137,26 @@ type Ready = z.infer<typeof Running>;
 type StopReceipt = z.infer<typeof Stopped> & {
   inspection?: z.infer<typeof Quiescent>;
 };
+/** Cold inspection carries the same stop proof plus a strictly bound runtime identity. */
+export function nativeStopped(
+  value: unknown,
+  installation: NativeInstallation,
+): StopReceipt {
+  const parsed = Stopped.extend({ inspection: Quiescent.optional() })
+    .strict()
+    .safeParse(value);
+  const inspection = parsed.success ? parsed.data.inspection : undefined;
+  if (
+    !parsed.success ||
+    (inspection &&
+      (inspection.installationId !== installation.id ||
+        inspection.manifestSha256 !== installation.manifestSha256 ||
+        inspection.sourceRevision !== installation.sourceRevision ||
+        inspection.certified !== installation.certified))
+  )
+    throw new Refusal('native_shutdown_unconfirmed');
+  return parsed.data;
+}
 export interface NativeRuntime {
   readonly identity: Readonly<{
     runtime: 'native';
