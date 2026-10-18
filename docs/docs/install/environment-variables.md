@@ -27,7 +27,7 @@ If this does not work, try running `docker compose up -d --force-recreate`.
 These environment variables are used by the `docker-compose.yml` file and do **NOT** affect the containers directly.
 :::
 
-\*1: The Compose files use `${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}`, so an existing `IMMICH_VERSION` in your `.env` still selects the image tag when `FRAMELEAF_VERSION` is not set.
+\*1: The Compose files use `${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}`, so an existing `IMMICH_VERSION` in your `.env` still selects the image tag when `FRAMELEAF_VERSION` is not set.
 
 ## General
 

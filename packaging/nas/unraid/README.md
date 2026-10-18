@@ -9,7 +9,7 @@ that access lets it create and control containers on this host.
 
 This repository contains generated Docker templates. Packaging source and support
 live in [Frameleaf/frameleaf-app](https://github.com/Frameleaf/frameleaf-app).
-Images are pinned to verified release digests. A published template is not proof
+Templates reference `:latest` images and never pin a release. A published template is not proof
 of Community Apps acceptance or physical Unraid qualification.
 
 The initial catalog contains Manager only. Manual Server/ML templates await a
@@ -32,14 +32,11 @@ shown are examples, not evidence of a qualified Unraid installation.
    storage **before** installing. Use Unraid's configured appdata share or your
    chosen pool; do not assume a pool named `cache`. Database storage must be on
    supported local disk storage outside Docker's data root and `docker.img`.
-2. In the container editor, enable **Advanced View**. Choose the HTTPS host port
-   and set **Manager HTTPS origin** to the exact address you will open, for
-   example `https://192.0.2.10:9443` (replace this documentation IP with your NAS
-   address). The default **WebUI** uses the NAS IP and mapped host port. If you
-   use DNS, set **both** WebUI and Manager HTTPS origin to the same literal HTTPS
-   origin, for example `https://nas.example:9443`. Do not put `[IP]` or `[PORT:9443]`
-   placeholders in the environment variable. A different hostname or port causes
-   HTTP 403; use the configured origin instead of weakening the host check.
+2. Leave **Manager HTTPS origin** blank and open Manager from the WebUI link
+   (`https://<NAS IP>:9443` or `https://tower.local:9443`). Only if you reach
+   Manager through a custom DNS name, set **Manager HTTPS origin** to that exact
+   address, for example `https://nas.example:9443`, and set **Advanced View →
+   WebUI** to match; other hostnames are then refused with HTTP 403.
 3. Keep each storage mapping's **Host Path and Container Path identical**. When
    changing a folder, also update its corresponding advanced variable:
 
@@ -55,15 +52,14 @@ shown are examples, not evidence of a qualified Unraid installation.
    `MANAGER_DATA`. Multiple approved media/database roots use colon-separated
    variables and an identical host/container mapping for each folder. Never
    expose the whole host filesystem to make additional folders selectable.
-4. Apply the container configuration and open the configured HTTPS origin.
-   Manager initially generates a self-signed certificate for that hostname or
-   IP. For a trusted HTTPS connection, provision a certificate and key matching
-   the origin as `tls.crt` and `tls.key` in the private Manager state folder
+4. Apply the container configuration and open the WebUI. Manager initially
+   generates a self-signed certificate, so expect a browser warning. For a
+   trusted HTTPS connection, provision a certificate and key matching the
+   address as `tls.crt` and `tls.key` in the private Manager state folder
    before first startup. Protect the key and retain the state folder on updates.
-5. Read `<Manager state host path>/claim-key` locally and enter that private key
-   in Manager's first-administrator claim screen. Do not post it in support
-   issues, screenshots or logs. Choose the administrator credentials and follow
-   the installation wizard.
+5. From a device on your home network, choose the administrator name and
+   password, then follow the installation wizard. No claim key is needed; this
+   only works while Manager has no administrator.
 
 ## Importing an existing library
 
@@ -87,9 +83,9 @@ and required recovery secrets**. They do **not** back up photos, videos or exter
 libraries. Back those up independently, retain the recovery key and Manager state,
 and verify a restore before relying on the backups.
 
-Use Manager for application service updates. Update Manager itself using a newly
-published, verified catalog digest after retaining its state and recovery points.
-A pinned image does not move when a floating tag changes. Do not downgrade an
+Use Manager for application service updates. Update Manager itself with Unraid's
+**Check for Updates** (it follows `:latest`) after retaining its state and
+recovery points. Do not downgrade an
 image against an upgraded database schema or delete storage folders when removing
 containers. Restore a matched database, media, configuration and release instead.
 
@@ -119,7 +115,7 @@ media backups before upgrades. See the
 
 Report problems through [Frameleaf issues](https://github.com/Frameleaf/frameleaf-app/issues).
 Include the Unraid version, template/release version and sanitized error details.
-Never include credentials, claim keys, recovery keys or private media.
+Never include credentials, recovery keys or private media.
 
 Community Apps listing requires Validate, Scan and moderator acceptance at
 [the submission portal](https://ca.unraid.net/submit/new). Before declaring a

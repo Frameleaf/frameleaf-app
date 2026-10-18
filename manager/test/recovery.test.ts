@@ -245,8 +245,9 @@ test('a restart after archiving the stack resumes cancellation instead of reinst
   try {
     const operations = new Operations(store, {} as never, {} as never, {} as never, [], {} as never);
     operations.resume(operation.id);
-    for (let i = 0; i < 100 && store.history()[0].state === 'running'; i++)
-      await new Promise((resolve) => setTimeout(resolve, 1));
+    // Slow CI runners (arm64) need more than ~100 ms; closing the store early fails the background save.
+    for (const deadline = Date.now() + 5000; store.history()[0].state === 'running' && Date.now() < deadline; )
+      await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(store.history()[0].state, 'complete', store.history()[0].error ?? undefined);
     assert.equal(store.history()[0].error, 'recovered_source_stopped');
     assert.equal(store.get('installation'), null);
@@ -335,8 +336,8 @@ test('a failed lifecycle operation resumes and releases its lock after successfu
     },
   } as unknown as Docker;
   const wait = async () => {
-    for (let i = 0; i < 100 && store.history()[0].state === 'running'; i++)
-      await new Promise((resolve) => setTimeout(resolve, 1));
+    for (const deadline = Date.now() + 5000; store.history()[0].state === 'running' && Date.now() < deadline; )
+      await new Promise((resolve) => setTimeout(resolve, 5));
   };
   try {
     const operations = new Operations(store, docker, {} as never, {} as never, [], { verify: async () => {} } as never);
@@ -425,8 +426,8 @@ test('import verification uses the fenced dump receipt instead of earlier discov
     // This case isolates fenced-count selection; transport reconciliation has separate coverage.
     Object.assign(operations, { runImport: async () => ({ status: 'activated' }) });
     operations.resume(operation.id);
-    for (let i = 0; i < 100 && store.history()[0].state === 'running'; i++)
-      await new Promise((resolve) => setTimeout(resolve, 1));
+    for (const deadline = Date.now() + 5000; store.history()[0].state === 'running' && Date.now() < deadline; )
+      await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(store.history()[0].state, 'complete', store.history()[0].error ?? undefined);
     assert.deepEqual(store.history()[0].receipts['verify-import'], { countsMatch: true, activated: true });
   } finally {

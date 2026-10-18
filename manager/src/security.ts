@@ -1,6 +1,6 @@
 import { randomBytes, scrypt as derive, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { readFileSync } from 'node:fs';
+import { BlockList, isIP } from 'node:net';
 import type { Request, Response, NextFunction } from 'express';
 import { Refusal, sha256 } from './contracts.js';
 import { Store } from './store.js';
@@ -10,20 +10,37 @@ const token = () => randomBytes(32).toString('hex');
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const COOKIE = '__Host-frameleaf-manager';
 const LIFETIME = 8 * 60 * 60 * 1000;
+// Without a configured origin, only names public DNS cannot point at this host are trusted (no rebinding).
+const localHost = (hostname: string) =>
+  isIP(hostname.replace(/^\[|\]$/g, '')) !== 0 || hostname === 'localhost' || hostname.endsWith('.local') || !hostname.includes('.');
+// Claiming needs no code (owner 2026-10-14, as on the server): only the home network, only while unclaimed.
+// 100.64/10 (CGNAT, Tailscale) is remote access, not home.
+const home = new BlockList();
+for (const [address, prefix] of [['10.0.0.0', 8], ['172.16.0.0', 12], ['192.168.0.0', 16], ['127.0.0.0', 8], ['169.254.0.0', 16]] as const)
+  home.addSubnet(address, prefix, 'ipv4');
+for (const [address, prefix] of [['fc00::', 7], ['fe80::', 10], ['::1', 128]] as const) home.addSubnet(address, prefix, 'ipv6');
+export const homeAddress = (address: string | undefined) => {
+  const ip = address?.replace(/^::ffff:(?=\d+\.)/, '') ?? '';
+  const family = isIP(ip);
+  return family !== 0 && home.check(ip, family === 4 ? 'ipv4' : 'ipv6');
+};
 
 export class Security {
   private readonly frameAncestors: string;
   constructor(
     private store: Store,
-    readonly origin: string,
-    private bootstrapFile: string,
+    readonly origin: string | undefined,
     frameOrigin?: string,
   ) {
+    this.frameAncestors = "'none'";
+    if (!origin) {
+      if (frameOrigin) throw new Error('A frame origin requires MANAGER_ORIGIN');
+      return;
+    }
     const url = new URL(origin);
     if (url.protocol !== 'https:' || url.pathname !== '/' || url.search || url.hash || url.username || url.password)
       throw new Error('Invalid Manager HTTPS origin');
     this.origin = url.origin;
-    this.frameAncestors = "'none'";
     if (frameOrigin) {
       const frame = new URL(frameOrigin);
       if (
@@ -32,6 +49,21 @@ export class Security {
       ) throw new Error('Frame origin must be an exact HTTPS origin on the Manager hostname');
       this.frameAncestors = frame.origin;
     }
+  }
+  /** The configured origin, or the local address the browser used when none is configured. */
+  requestOrigin(req: Request): string {
+    if (this.origin) {
+      if (req.headers.host !== new URL(this.origin).host) throw new Refusal('invalid_host', 403);
+      return this.origin;
+    }
+    let url: URL;
+    try {
+      url = new URL(`https://${req.headers.host}`);
+    } catch {
+      throw new Refusal('invalid_host', 403);
+    }
+    if (url.host !== req.headers.host || !localHost(url.hostname)) throw new Refusal('invalid_host', 403);
+    return url.origin;
   }
   claimed(): boolean {
     return !!this.store.get('administrator');
@@ -46,11 +78,9 @@ export class Security {
     const { count } = this.store.db.prepare('SELECT count FROM attempts WHERE key=?').get(key) as { count: number };
     if (count > (scope === 'login' ? 10 : 120)) throw new Refusal('rate_limited', 429);
   }
-  async claim(name: string, password: string, proof: string): Promise<void> {
+  async claim(name: string, password: string, address: string | undefined): Promise<void> {
     if (this.claimed()) throw new Refusal('already_claimed');
-    // A LAN visitor cannot win a first-request race: proof must be read from the private mounted file.
-    const expected = readFileSync(this.bootstrapFile, 'utf8').trim();
-    if (!/^[a-f0-9]{64}$/.test(proof) || !same(expected, proof)) throw new Refusal('invalid_claim_proof', 401);
+    if (!homeAddress(address)) throw new Refusal('claim_lan_only', 403);
     const salt = token(),
       hash = ((await scrypt(password, salt, 64)) as Buffer).toString('hex');
     if (!this.store.createOnce('administrator', { name, salt, hash })) throw new Refusal('already_claimed');
@@ -134,7 +164,7 @@ export class Security {
         'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
       });
       // Host equality rejects DNS rebinding, including on read-only endpoints. Never trust proxy headers.
-      if (req.headers.host !== new URL(this.origin).host) throw new Refusal('invalid_host', 403);
+      const origin = this.requestOrigin(req);
       // Express route matching is case-insensitive unless explicitly configured otherwise.
       if (req.path.toLowerCase().startsWith('/manager-api/') && req.path !== req.path.toLowerCase())
         throw new Refusal('invalid_api_path', 403);
@@ -143,7 +173,7 @@ export class Security {
       const publicRoute = ['/manager-api/status', '/manager-api/claim', '/manager-api/login'].includes(req.path);
       const credential = ['administrator', 'backup-key', 'export'].some((path) => req.path === `/manager-api/${path}`);
       this.limit(req.socket.remoteAddress ?? 'unknown', write && (publicRoute || credential) ? 'login' : 'api');
-      if (write && (req.headers.origin !== this.origin || !req.is('application/json')))
+      if (write && (req.headers.origin !== origin || !req.is('application/json')))
         throw new Refusal('invalid_origin', 403);
       if (!publicRoute) {
         const session = this.session(req);

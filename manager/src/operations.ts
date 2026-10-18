@@ -305,7 +305,7 @@ export class Operations {
     )
       throw new Refusal('port_in_use');
     // Docker's bind at compose up is the final authority for ports used by non-container host processes.
-    if (port === Number(new URL(process.env.MANAGER_ORIGIN ?? 'https://localhost:9443').port || 443))
+    if (port === Number(new URL(process.env.MANAGER_ORIGIN || 'https://localhost:9443').port || 443))
       throw new Refusal('port_in_use');
   }
   start(reviewId: string, key: string): Operation {

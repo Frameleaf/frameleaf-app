@@ -1,6 +1,6 @@
 <Container version="2">
   <Name>frameleaf-server</Name>
-  <Repository>@SERVER_REF@</Repository>
+  <Repository>ghcr.io/frameleaf/frameleaf-server:latest</Repository>
   <Registry>https://ghcr.io</Registry>
   <Network>frameleaf</Network>
   <Privileged>false</Privileged>

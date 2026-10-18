@@ -5,7 +5,7 @@ import {
   type KeyObject,
   randomUUID,
 } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -55,12 +55,10 @@ async function fixture(
   ) => Promise<void>,
 ) {
   const root = await mkdtemp(join(tmpdir(), 'frameleaf-manager-grants-')),
-    store = new Store(root),
-    claim = join(root, 'claim-key');
-  await writeFile(claim, 'c'.repeat(64));
-  const security = new Security(store, origin, claim);
+    store = new Store(root);
+  const security = new Security(store, origin);
   try {
-    await security.claim('Owner', password, 'c'.repeat(64));
+    await security.claim('Owner', password, '127.0.0.1');
     await run(new DesktopGrants(store, security), store, security);
   } finally {
     store.close();
@@ -225,7 +223,6 @@ test('requests bind Manager, device, installation, action, body and reject durab
     const otherOrigin = new Security(
       store,
       'https://other.test:9443',
-      join(store.directory, 'claim-key'),
     );
     assert.throws(
       () => new DesktopGrants(store, otherOrigin),
@@ -338,7 +335,7 @@ test('pairing consumption and request replay are serialized across separate Mana
     try {
       const peer = new DesktopGrants(
         second,
-        new Security(second, origin, join(store.directory, 'claim-key')),
+        new Security(second, origin),
       );
       const approval = await grants.approve(password, details);
       const redemption = {

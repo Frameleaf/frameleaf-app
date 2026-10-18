@@ -1364,19 +1364,15 @@ async function createBundle(
   for (const name of INSTALL_FILES) {
     let body = await fs.readFile(path.join(root, "docker", name), "utf8");
     if (name === "example.env") {
-      assert(/^FRAMELEAF_VERSION=.+$/m.test(body), "Missing version setting");
-      body = body.replace(
-        /^FRAMELEAF_VERSION=.+$/m,
-        `FRAMELEAF_VERSION=${tag}`,
+      // Bundles never pin the release (owner 2026-10-18): installs follow :latest.
+      assert(
+        /^FRAMELEAF_VERSION=latest$/m.test(body),
+        "Version setting must be latest",
       );
     } else if (name.startsWith("docker-compose")) {
       assert(
-        body.includes("${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}"),
-        "Missing Compose release fallback",
-      );
-      body = body.replaceAll(
-        "${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
-        "${FRAMELEAF_VERSION:-${IMMICH_VERSION:-" + tag + "}}",
+        body.includes("${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}"),
+        "Missing Compose latest fallback",
       );
     }
     if (name.endsWith(".yml")) {

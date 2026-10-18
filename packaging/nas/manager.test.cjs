@@ -45,15 +45,16 @@ test('NAS Manager packages authenticate the component, both architectures and ex
     delete manifest.installers;
     await fs.writeFile(file, JSON.stringify(manifest));
     const xml = await fs.readFile(path.join(output, 'unraid/templates/frameleaf-manager.xml'), 'utf8');
-    assert(xml.includes(`<Repository>${manifest.image}</Repository>`));
+    assert(xml.includes('<Repository>ghcr.io/frameleaf/frameleaf-manager:latest</Repository>'));
     assert(xml.includes('MANAGER_PLATFORM'));
+    // Unraid creates mapped folders as nobody:users; without these Manager cannot lock or chmod its state.
+    assert(xml.includes('--cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER</ExtraParams>'));
     assert(xml.includes('Target="/run/frameleaf-host/unraid-autostart" Default="" Mode="rw"'));
     assert(xml.includes('Target="MANAGER_UNRAID_AUTOSTART" Default=""'));
-    assert(!xml.includes('latest'));
     assert.equal(await fs.readFile(path.join(output, 'unraid/LICENSE'), 'utf8'),
       await fs.readFile(path.join(__dirname, '../../LICENSE'), 'utf8'));
-    assert((await fs.readFile(path.join(output, 'unraid/README.md'), 'utf8')).includes('claim-key'));
-    assert(xml.includes('For DNS, also set Advanced View WebUI to this exact origin.'));
+    assert((await fs.readFile(path.join(output, 'unraid/README.md'), 'utf8')).includes('No claim key is needed'));
+    assert(xml.includes('Target="MANAGER_ORIGIN" Default=""') && !/MANAGER_ORIGIN[^>]*Required="true"/.test(xml));
     execFileSync('python3', ['-c', `
 import pathlib, re, sys, xml.etree.ElementTree as ET
 root = pathlib.Path(sys.argv[1])
@@ -82,15 +83,16 @@ for template in templates:
     for field in ['Name', 'Repository', 'Overview', 'Project', 'Support', 'Icon', 'TemplateURL']:
         assert app.findtext(field, '').strip(), field
     assert app.findtext('TemplateURL') == 'https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/' + template.name
-    assert re.fullmatch(r'ghcr.io/frameleaf/frameleaf-manager@sha256:[a-f0-9]{64}', app.findtext('Repository'))
+    assert app.findtext('Repository') == 'ghcr.io/frameleaf/frameleaf-manager:latest'
     assert app.findtext('Privileged') == 'false'
     for config in app.findall('Config'):
         assert config.get('Description', '').strip(), config.get('Name')
 `, path.join(output, 'unraid')]);
     const compose = load(await fs.readFile(path.join(output, 'truenas/frameleaf-manager.compose.yaml'), 'utf8'));
     assert.deepEqual(Object.keys(compose.services), ['manager']);
-    assert.equal(compose.services.manager.image, manifest.image);
+    assert.equal(compose.services.manager.image, 'ghcr.io/frameleaf/frameleaf-manager:latest');
     assert.equal(compose.services.manager.privileged, undefined);
+    assert.deepEqual(compose.services.manager.cap_add, ['CHOWN', 'DAC_OVERRIDE', 'FOWNER']);
     for (const bind of compose.services.manager.volumes.filter(bind => bind.source.startsWith('/mnt/')))
       assert.equal(bind.source, bind.target);
     assert(!compose.services.manager.volumes.some(bind => bind.target.startsWith('/var/lib/postgresql')));

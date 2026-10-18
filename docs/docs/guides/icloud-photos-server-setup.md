@@ -12,7 +12,7 @@ Prepare absolute paths in your deployment environment:
 
 ```dotenv
 FRAMELEAF_SOURCE_ROOT=/opt/frameleaf-app
-FRAMELEAF_IMAGE=ghcr.io/frameleaf/frameleaf-server:release
+FRAMELEAF_IMAGE=ghcr.io/frameleaf/frameleaf-server:latest
 FRAMELEAF_UID=1000
 FRAMELEAF_GID=1000
 ICLOUD_SECRETS_DIR=/srv/frameleaf-icloud/secrets

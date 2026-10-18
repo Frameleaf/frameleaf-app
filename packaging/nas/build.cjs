@@ -18,8 +18,7 @@ async function build(directory, expectedTag, output, verification = {}) {
     assert(typeof ref === 'string' && digest.test(ref.split('@')[1]), `Invalid ${name} digest`);
     return ref;
   };
-  const server = image('server');
-  const ml = image('machineLearning');
+  // Frameleaf images are never pinned in packages (owner 2026-10-18): templates reference :latest.
   const postgres = image('postgres');
   const source = (name) => fs.readFileSync(path.join(root, name), 'utf8');
   const write = (name, body) => {
@@ -29,18 +28,9 @@ async function build(directory, expectedTag, output, verification = {}) {
   };
   const replacements = {
     '@RELEASE_TAG@': manifest.tag,
-    '@SERVER_REF@': server,
-    '@ML_REF@': ml,
-    '@SERVER_TAG@': `${manifest.tag}@${server.split('@')[1]}`,
-    '@ML_TAG@': `${manifest.tag}@${ml.split('@')[1]}`,
     '@PG_REPOSITORY@': postgres.split('@')[0].split(':')[0],
     '@PG_TAG@': `${postgres.split('@')[0].split(':')[1] || '19beta4-pgvector0.8.7'}@${postgres.split('@')[1]}`,
   };
-  for (const [suffix, placeholder] of [['cuda', '@ML_CUDA_TAG@'], ['rocm', '@ML_ROCM_TAG@'], ['openvino', '@ML_OPENVINO_TAG@']]) {
-    const ref = manifest.images.machineLearningVariants?.[suffix];
-    assert(ref && digest.test(ref.split('@')[1]), `Missing ${suffix} image`);
-    replacements[placeholder] = `${manifest.tag}-${suffix}@${ref.split('@')[1]}`;
-  }
   const render = (body) => {
     for (const [key, value] of Object.entries(replacements)) body = body.replaceAll(key, value);
     assert(!/@[A-Z_]+@/.test(body), 'Unresolved package placeholder');

@@ -109,7 +109,7 @@ You can add this to the `frameleaf-server` service instead of extending from `hw
 ```yaml
 frameleaf-server:
   container_name: frameleaf_server
-  image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}
+  image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}
   # Note the lack of an `extends` section
   devices:
     - /dev/dri:/dev/dri

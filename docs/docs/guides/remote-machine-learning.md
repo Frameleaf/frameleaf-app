@@ -26,8 +26,8 @@ services:
   frameleaf-machine-learning:
     container_name: frameleaf_machine_learning
     # For hardware acceleration, add one of -[armnn, cuda, rocm, openvino, rknn] to the image tag.
-    # Example tag: ${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}-cuda
-    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}
+    # Example tag: ${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}-cuda
+    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}
     # extends:
     #   file: hwaccel.ml.yml
     #   service: # set to one of [armnn, cuda, rocm, openvino, openvino-wsl, rknn] for accelerated inference - use the `-wsl` version for WSL2 where applicable

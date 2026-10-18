@@ -87,7 +87,7 @@ async function verifyBundle(
     env.match(
       /^[ \t]*(?:export[ \t]+)?(?:FRAMELEAF|IMMICH)_VERSION[ \t]*(?:=|:).*$/gm,
     ),
-    [`FRAMELEAF_VERSION=${expectedTag}`],
+    ["FRAMELEAF_VERSION=latest"],
     "Environment version differs",
   );
   for (const name of ["docker-compose.yml", "docker-compose.rootless.yml"]) {
@@ -105,7 +105,7 @@ async function verifyBundle(
     ])
       assert.equal(
         services?.[service]?.image,
-        `ghcr.io/frameleaf/${image}:\${FRAMELEAF_VERSION:-\${IMMICH_VERSION:-${expectedTag}}}`,
+        `ghcr.io/frameleaf/${image}:\${FRAMELEAF_VERSION:-\${IMMICH_VERSION:-latest}}`,
         `${name}: ${service} image version differs`,
       );
   }

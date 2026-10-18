@@ -16,7 +16,6 @@
     toast = $state('');
   let password = $state(''),
     name = $state(''),
-    proof = $state(''),
     newPassword = $state('');
   let screen = $state('welcome'),
     menu = $state(false),
@@ -263,9 +262,8 @@
     backupsLoaded = true;
   }
   async function signIn() {
-    await api(claimed ? 'login' : 'claim', claimed ? { password } : { password, name, proof });
+    await api(claimed ? 'login' : 'claim', claimed ? { password } : { password, name });
     password = '';
-    proof = '';
     claimed = true;
     signedIn = true;
     await refresh();
@@ -512,7 +510,7 @@
         {:else if !signedIn}
           {@render heading(claimed ? 'Welcome back.' : 'Secure your Manager', claimed ? 'Sign in to manage this Frameleaf installation.' : 'Create the local administrator account used to manage this server.')}
           <form class="card" onsubmit={(event) => { event.preventDefault(); void run(signIn); }}><div class="card-header"><h2>Local administrator</h2></div><div class="card-body stack">
-            {#if !claimed}<label class="field"><span>Administrator name</span><input bind:value={name} required maxlength="120" autocomplete="name"/></label><label class="field"><span>Claim key</span><input bind:value={proof} type="password" required autocomplete="off"/><small>Read the claim key from the private Manager state folder on your server.</small></label>{/if}
+            {#if !claimed}<label class="field"><span>Administrator name</span><input bind:value={name} required maxlength="120" autocomplete="name"/></label>{/if}
             <label class="field"><span>Password</span><input type="password" bind:value={password} required minlength={claimed ? 1 : 14} maxlength="256" autocomplete={claimed ? 'current-password' : 'new-password'}/><small>{claimed ? 'Your Manager account is independent of your photo account.' : 'Use at least 14 characters. No Frameleaf Cloud account is required.'}</small></label>
             {@render notice('Local HTTPS and a separate account', 'Manager stays available when the photo application is stopped.', 'good', 'lock')}
           </div><div class="card-footer"><span class="safety-note"><Icon name="shield"/>Protected local session</span><button class="button primary" disabled={busy}>{claimed ? 'Sign in' : 'Create administrator'}</button></div></form>

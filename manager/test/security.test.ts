@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Request, Response } from 'express';
@@ -10,13 +10,11 @@ import { Security } from '../src/security.js';
 test('credential changes invalidate existing sessions and in-flight old-password logins', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'manager-credentials-'));
   const store = new Store(directory),
-    proof = 'a'.repeat(64),
     password = 'old private password',
     replacement = 'new private password';
-  await writeFile(join(directory, 'claim-key'), proof);
-  const security = new Security(store, 'https://manager.test:9443', join(directory, 'claim-key'));
+  const security = new Security(store, 'https://manager.test:9443');
   try {
-    await security.claim('Owner', password, proof);
+    await security.claim('Owner', password, '::ffff:192.168.1.5');
     const old = await security.login(password);
     await assert.rejects(security.updateAdministrator('Changed', 'wrong', replacement), /invalid_credentials/);
     assert.equal(store.get<any>('administrator').name, 'Owner');
@@ -36,18 +34,17 @@ test('credential changes invalidate existing sessions and in-flight old-password
   }
 });
 
-test('claim proof, atomic administrator creation, sessions and CSRF survive Manager replacement', async () => {
+test('home-network claim, atomic administrator creation, sessions and CSRF survive Manager replacement', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'manager-security-'));
-  const proof = '1'.repeat(64),
-    password = 'a private test password';
-  await writeFile(join(directory, 'claim-key'), proof);
+  const password = 'a private test password';
   let store = new Store(directory);
   try {
-    let security = new Security(store, 'https://manager.test:9443', join(directory, 'claim-key'));
-    await assert.rejects(security.claim('Owner', password, '2'.repeat(64)), /invalid_claim_proof/);
+    let security = new Security(store, 'https://manager.test:9443');
+    for (const address of ['203.0.113.9', '100.64.0.5', '::ffff:8.8.8.8', '2001:db8::1', undefined])
+      await assert.rejects(security.claim('Owner', password, address), /claim_lan_only/);
     const claims = await Promise.allSettled([
-      security.claim('Owner', password, proof),
-      security.claim('Other', 'another long password', proof),
+      security.claim('Owner', password, '::ffff:192.168.1.5'),
+      security.claim('Other', 'another long password', 'fd00::5'),
     ]);
     assert.equal(claims.filter((r) => r.status === 'fulfilled').length, 1);
     const winnerPassword = store.get<any>('administrator').name === 'Owner' ? password : 'another long password';
@@ -55,7 +52,7 @@ test('claim proof, atomic administrator creation, sessions and CSRF survive Mana
     const session = await security.login(winnerPassword);
     store.close();
     store = new Store(directory);
-    security = new Security(store, 'https://manager.test:9443', join(directory, 'claim-key'));
+    security = new Security(store, 'https://manager.test:9443');
     const request = (patch: Record<string, unknown> = {}) =>
       ({
         headers: {
@@ -144,7 +141,7 @@ test('optional same-host HTTPS framing retains Manager origin and CSRF protectio
     const origin = 'https://nas.test:9443';
     const invoke = (frame?: string, headers = { host: 'nas.test:9443' }, method = 'GET', path = '/') => {
       let csp = '', status = 0, next = false;
-      const security = new Security(store, origin, join(directory, 'claim-key'), frame);
+      const security = new Security(store, origin, frame);
       const response = {
         set: (value: Record<string, string>) => { csp = value['Content-Security-Policy']; },
         status: (value: number) => { status = value; return response; },
@@ -165,5 +162,32 @@ test('optional same-host HTTPS framing retains Manager origin and CSRF protectio
       'POST', '/manager-api/login');
     assert.equal(dsmWrite.status, 403, 'Framing does not grant the parent origin API access');
     assert.equal(dsmWrite.next, false);
+  } finally { store.close(); await rm(directory, { recursive: true, force: true }); }
+});
+
+test('without MANAGER_ORIGIN, Manager accepts local addresses only and still checks write origins', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-no-origin-'));
+  const store = new Store(directory);
+  try {
+    const security = new Security(store, undefined);
+    const invoke = (headers: Record<string, string>, method = 'GET', path = '/') => {
+      let status = 0, next = false;
+      const response = {
+        set: () => {},
+        status: (value: number) => { status = value; return response; },
+        json: () => {},
+      } as unknown as Response;
+      security.guard({ headers, method, path, socket: { remoteAddress: 'fixture' }, is: () => true } as unknown as Request,
+        response, () => { next = true; });
+      return { status, next };
+    };
+    for (const host of ['192.168.1.20:9443', '[fd00::1]:9443', 'localhost:9443', 'tower.local:9443', 'tower:9443'])
+      assert.equal(invoke({ host }).next, true, host);
+    for (const host of ['evil.example:9443', 'attacker.com', '', 'a b'])
+      assert.equal(invoke({ host }).status, 403, host);
+    assert.equal(invoke({ host: 'tower:9443', origin: 'https://tower:9443' }, 'POST', '/manager-api/login').next, true);
+    assert.equal(invoke({ host: 'tower:9443', origin: 'https://192.168.1.20:9443' }, 'POST', '/manager-api/login').status, 403);
+    assert.equal(security.requestOrigin({ headers: { host: 'tower.local:9443' } } as unknown as Request), 'https://tower.local:9443');
+    assert.throws(() => new Security(store, undefined, 'https://tower:5001'));
   } finally { store.close(); await rm(directory, { recursive: true, force: true }); }
 });

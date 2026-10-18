@@ -12,16 +12,16 @@ The folder must be outside Docker's data root and backed by a supported disk fil
 
 ## Launcher
 
-Use `launch.sh`, `cosign.pub` and a Manager image digest from a verified release. The launcher requires Docker, Compose v2, Cosign, `findmnt` and `realpath` on a Linux host. Create the state, library, backup and appdata folders on the intended storage first.
+Use `launch.sh`, `cosign.pub` and `ghcr.io/frameleaf/frameleaf-manager:latest`; the launcher verifies the pulled image's signature before starting it. The launcher requires Docker, Compose v2, Cosign, `findmnt` and `realpath` on a Linux host. Create the state, library, backup and appdata folders on the intended storage first.
 
 ```sh
-sh launch.sh "$VERIFIED_MANAGER_IMAGE" "$STATE_FOLDER" "$LIBRARY_FOLDER" \
+sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest "$STATE_FOLDER" "$LIBRARY_FOLDER" \
   "$DATABASE_BACKUP_FOLDER" "https://server.example:9443" auto "$LAN_ADDRESS"
 ```
 
 `auto` detects Unraid's configured appdata location. On other Linux hosts, pass the desired appdata folder instead of `auto`. An explicit folder overrides the detected default. The launcher binds that folder into Manager at the same absolute host path and passes it as `MANAGER_DATABASE_ROOTS`. To offer more disks in the wizard, bind each approved folder at its identical host path and add it to this colon-separated environment variable. Do not mount the whole host filesystem to make a path picker work.
 
-The launcher mounts `/proc/1/mountinfo` read only so Manager can compare the host filesystem identities of appdata and Docker storage, including bind aliases. It also mounts Unraid's Docker configuration read only and, when present, its exact autostart file for source cutover. It never sources the configuration as shell code. The first administrator must enter the private claim key from the Manager state folder.
+The launcher mounts `/proc/1/mountinfo` read only so Manager can compare the host filesystem identities of appdata and Docker storage, including bind aliases. It also mounts Unraid's Docker configuration read only and, when present, its exact autostart file for source cutover. It never sources the configuration as shell code. The first administrator is created from the home network while Manager has no administrator; no claim key is needed.
 
 ## Import authority
 

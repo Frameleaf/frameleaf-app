@@ -41,6 +41,7 @@ const Details = z
       .refine((values) => new Set(values).size === values.length),
   })
   .strict();
+const UNCONFIGURED_ORIGIN = 'https://localhost:9443';
 const Identity = z.object({ id: uuid, origin: z.string().url() }).strict();
 const Pairing = Details.extend({
   pairingId: uuid,
@@ -166,12 +167,14 @@ export class DesktopGrants {
     private store: Store,
     private security: Security,
   ) {
-    store.createOnce('desktop-manager-identity', {
-      id: randomUUID(),
-      origin: security.origin,
-    });
+    // ponytail: Docker installs may run without MANAGER_ORIGIN; desktop proofs need the native runtime, which requires it.
+    const origin = security.origin ?? UNCONFIGURED_ORIGIN;
+    store.createOnce('desktop-manager-identity', { id: randomUUID(), origin });
+    const stored = store.get<ManagerIdentity>('desktop-manager-identity');
+    if (stored?.origin === UNCONFIGURED_ORIGIN && origin !== UNCONFIGURED_ORIGIN)
+      store.set('desktop-manager-identity', { ...stored, origin });
     const parsed = Identity.safeParse(store.get('desktop-manager-identity'));
-    if (!parsed.success || parsed.data.origin !== security.origin)
+    if (!parsed.success || parsed.data.origin !== origin)
       throw new Refusal('desktop_manager_identity_changed');
     this.identity = Object.freeze(parsed.data);
     store.db

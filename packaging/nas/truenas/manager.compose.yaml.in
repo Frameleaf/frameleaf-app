@@ -3,12 +3,14 @@
 # Paths below are examples. Keep every host path identical to its container path.
 services:
   manager:
-    image: @MANAGER_REF@
+    image: ghcr.io/frameleaf/frameleaf-manager:latest
     restart: unless-stopped
     labels:
       app.frameleaf.manager.role: controller
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
+    # Root must write NAS folders it does not own (Unraid nobody:users, TrueNAS apps).
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
     ports: ['9443:9443']
     environment:
       MANAGER_ORIGIN: https://nas.example:9443

@@ -29,7 +29,7 @@ services:
   frameleaf-model-staging:
     profiles:
       - model-staging
-    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}
+    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}
     entrypoint: ['tini', '--', 'python', '-m', 'frameleaf_ml.staging']
     env_file:
       - path: .env.ml

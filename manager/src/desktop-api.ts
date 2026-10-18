@@ -77,7 +77,7 @@ export function desktopApi(
       if (native) {
         // A native proof is a separate channel; cookies, browser fetches and bearer tokens confer no authority.
         if (
-          request.headers.host !== new URL(security.origin).host ||
+          !security.origin || request.headers.host !== new URL(security.origin).host ||
           [
             'origin',
             'cookie',

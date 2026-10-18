@@ -55,11 +55,11 @@ for (const [filename, project, rootless] of [
     const ml = config.services["frameleaf-machine-learning"];
     assert.equal(
       server.image,
-      "ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+      "ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}",
     );
     assert.equal(
       ml.image,
-      "ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+      "ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}",
     );
     assert.equal(server.container_name, "frameleaf_server");
     assert.equal(ml.container_name, "frameleaf_machine_learning");
@@ -295,7 +295,7 @@ test("pinned build dependencies, runtime identity and orphan adoption remain com
       "'http://frameleaf-machine-learning:3003'",
     ),
   );
-  assert.match(read("docker/example.env"), /^FRAMELEAF_VERSION=release$/m);
+  assert.match(read("docker/example.env"), /^FRAMELEAF_VERSION=latest$/m);
   assert.doesNotMatch(read("docker/example.env"), /^IMMICH_/m);
   // FL-294: both command names are on the image's PATH (server/bin), the old ones as aliases
   for (const name of [

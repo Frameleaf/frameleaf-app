@@ -1,6 +1,6 @@
 <Container version="2">
   <Name>frameleaf-ml</Name>
-  <Repository>@ML_REF@</Repository>
+  <Repository>ghcr.io/frameleaf/frameleaf-machine-learning:latest</Repository>
   <Registry>https://ghcr.io</Registry>
   <Network>frameleaf</Network>
   <Privileged>false</Privileged>

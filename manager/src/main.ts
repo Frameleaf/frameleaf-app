@@ -15,7 +15,7 @@ import { NestFactory } from '@nestjs/core';
 import express, { type Request, type Response } from 'express';
 import { createReadStream, fstatSync } from 'node:fs';
 import { createNativeService } from './runtime/native-service.js';
-import { chmod, mkdir, readFile, realpath, stat, statfs, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, realpath, stat, statfs } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { join, resolve } from 'node:path';
@@ -35,11 +35,12 @@ import { nativeListener } from './runtime/native-listener.js';
 import { PostgresStorage } from './postgres-storage.js';
 
 const directory = process.env.MANAGER_DATA;
-const origin = process.env.MANAGER_ORIGIN;
-if (!directory || directory !== resolve(directory) || !origin)
-  throw new Error('MANAGER_DATA and MANAGER_ORIGIN are required');
 const runtime = process.env.MANAGER_RUNTIME ?? 'docker';
-const nativeAddress = runtime === 'native' ? nativeListener(origin) : null;
+// Docker: optional; without it Manager answers on any IP, localhost, .local or single-label address.
+const origin = process.env.MANAGER_ORIGIN || undefined;
+if (!directory || directory !== resolve(directory) || (runtime === 'native' && !origin))
+  throw new Error('MANAGER_DATA is required, and MANAGER_ORIGIN for the native runtime');
+const nativeAddress = runtime === 'native' ? nativeListener(origin!) : null;
 if (!['docker', 'native'].includes(runtime)) throw new Refusal('manager_runtime_invalid');
 const store = new Store(directory);
 if (runtime === 'docker' && store.get('native-installation')) throw new Refusal('manager_runtime_changed');
@@ -51,11 +52,10 @@ const backupRoot = process.env.MANAGER_BACKUP_ROOT ?? (runtime === 'native' ? jo
 if (!backupRoot || backupRoot !== resolve(backupRoot))
   throw new Error('MANAGER_BACKUP_ROOT must be an absolute mounted directory');
 const native = runtime === 'native'
-  ? await createNativeService(store, createReadStream('', { fd: 0, autoClose: true }), origin, join(backupRoot, 'frameleaf-database'))
+  ? await createNativeService(store, createReadStream('', { fd: 0, autoClose: true }), origin!, join(backupRoot, 'frameleaf-database'))
   : null;
 const docker = new Docker();
-const bootstrapFile = join(directory, 'claim-key');
-const security = new Security(store, origin, bootstrapFile, process.env.MANAGER_FRAME_ORIGIN);
+const security = new Security(store, origin, process.env.MANAGER_FRAME_ORIGIN);
 const seed = store.get<string>('release-seed') ?? randomBytes(32).toString('hex');
 store.createOnce('release-seed', seed);
 const releases = new Releases(join(directory, 'releases'), seed);
@@ -109,12 +109,12 @@ class Api {
     return { claimed: security.claimed() };
   }
 
-  @Post('claim') async claim(@Body() input: unknown, @Res({ passthrough: true }) response: Response) {
+  @Post('claim') async claim(@Body() input: unknown, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
     const value = z
-      .object({ name: z.string().min(1).max(120), password: Password, proof: z.string().max(64) })
+      .object({ name: z.string().min(1).max(120), password: Password })
       .strict()
       .parse(input);
-    await security.claim(value.name, value.password, value.proof);
+    await security.claim(value.name, value.password, request.socket.remoteAddress);
     const session = await security.login(value.password);
     security.cookie(response, session.session);
     return { csrf: session.csrf };
@@ -157,10 +157,10 @@ class Api {
       operations: operations.history(),
       profile: store.get('profile'),
       administrator: { name: store.get<{ name: string }>('administrator')?.name },
-      managerOrigin: security.origin,
+      managerOrigin: security.requestOrigin(request),
       backupRoot,
       host: {
-        name: new URL(origin!).hostname,
+        name: new URL(security.requestOrigin(request)).hostname,
         available: !!host,
         platform: host?.platform ?? 'Unavailable',
         version: host?.version ?? 'Unavailable',
@@ -182,7 +182,7 @@ class Api {
         .filter(Boolean),
       databaseStorage: await databaseDefaults(),
       onboardingFinished: !!store.get('onboarding-finished'),
-      appUrl: installation ? new URL(`http://${new URL(origin!).hostname}:${installation.port}`).origin : null,
+      appUrl: installation ? new URL(`http://${new URL(security.requestOrigin(request)).hostname}:${installation.port}`).origin : null,
       librarySetup: installation
         ? await operations.libraryStatus().catch(() => ({ phase: 'unavailable', canFinish: false }))
         : null,
@@ -380,11 +380,6 @@ class ManagerModule {}
 async function main() {
   process.umask(0o077);
   await mkdir(directory!, { recursive: true, mode: 0o700 });
-  try {
-    await stat(bootstrapFile);
-  } catch {
-    await writeFile(bootstrapFile, randomBytes(32).toString('hex'), { mode: 0o600, flag: 'wx' });
-  }
   const cert = join(directory!, 'tls.crt'),
     key = join(directory!, 'tls.key');
   if (!native) {
@@ -392,7 +387,7 @@ async function main() {
       await stat(cert);
       await stat(key);
     } catch {
-      const host = new URL(origin!).hostname.replace(/^\[|\]$/g, '');
+      const host = origin ? new URL(origin).hostname.replace(/^\[|\]$/g, '') : 'localhost';
       if (!/^[A-Za-z0-9.:-]+$/.test(host)) throw new Error('Invalid HTTPS hostname');
       await command('openssl', [
         'req',
