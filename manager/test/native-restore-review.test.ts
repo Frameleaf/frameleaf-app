@@ -262,13 +262,14 @@ test('invalid snapshot or context is rejected before decryption; interrupted dec
 });
 
 test('reviews that expire during decryption or revalidation never become usable', async (t) => {
-  await fixture(async ({ store, context, engine }) => {
+  await fixture(async ({ store, context, engine, path }) => {
     let clock = Date.now();
     const now = t.mock.method(Date, 'now', () => clock);
     const restore = engine.restore;
     engine.restore = async (...args) => {
       await restore(...args);
-      clock += 900_001;
+      clock =
+        store.get(`native-restore-review:${basename(path())}`).expires + 1;
     };
     await assert.rejects(
       prepareNativeRestoreReview(store, engine, context, '1'.repeat(64)),
@@ -1527,5 +1528,29 @@ test('restore prebackup owner drains cancelled readiness and retries a faulted o
       /native_restore_owner_unavailable/,
     );
     assert.deepEqual(f.lifecycle, []);
+  });
+});
+
+test('a long bounded readback starts the review confirmation window after verification', async (t) => {
+  await fixture(async ({ store, context, engine }) => {
+    let clock = Date.now();
+    const now = t.mock.method(Date, 'now', () => clock),
+      restore = engine.restore;
+    engine.restore = async (...args) => {
+      await restore(...args);
+      clock += 16 * 60_000;
+    };
+    try {
+      const summary = await prepareNativeRestoreReview(
+        store,
+        engine,
+        context,
+        '1'.repeat(64),
+      );
+      assert.equal(summary.expires, clock + 900_000);
+      assert.equal(summary.state, 'prepared');
+    } finally {
+      now.mock.restore();
+    }
   });
 });

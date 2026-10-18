@@ -1,4 +1,9 @@
-import { createHash, createPrivateKey, X509Certificate } from 'node:crypto';
+import {
+  createHash,
+  createPrivateKey,
+  randomUUID,
+  X509Certificate,
+} from 'node:crypto';
 import { isIP } from 'node:net';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -12,7 +17,10 @@ import { Store } from '../store.js';
 import { command } from '../docker.js';
 import { Backups } from '../backups.js';
 import { runNativeDatabaseBackup } from './native-backup-operation.js';
-import { prepareNativeRestoreReview } from './native-restore-review.js';
+import {
+  prepareNativeRestoreReview,
+  nativeRestoreReviewStatus,
+} from './native-restore-review.js';
 import { nativeListener } from './native-listener.js';
 import { NativeHost, NativeOperations, type NativeRuntime } from './native.js';
 
@@ -308,6 +316,7 @@ export class NativeService {
     typeof prepareNativeRestoreReview
   >[2];
   private reviewPending = false;
+  private activeReview?: string;
   readonly runtime: NativeRuntime;
   readonly backupCommand: typeof command;
   readonly backupPassword: () => Promise<string>;
@@ -430,22 +439,70 @@ export class NativeService {
     if (!result.success) throw new Refusal('native_backup_index_invalid');
     return result.data;
   }
-  async reviewRestore(snapshot: string, installationId: string) {
+  async reviewRestore(
+    snapshot: string,
+    installationId: string,
+    key: string = randomUUID(),
+  ) {
     if (installationId !== this.publicInstallation.id)
       throw new Refusal('installation_changed');
     if (!this.backups) throw new Refusal('native_backup_unavailable');
+    const backups = this.backups;
+    if (
+      !z.string().uuid().safeParse(key).success ||
+      key !== key.toLowerCase() ||
+      key === '00000000-0000-0000-0000-000000000000'
+    )
+      throw new Refusal('native_restore_request_invalid');
+    const acceptance = {
+      id: key,
+      snapshot,
+      installationId,
+      state: 'preparing' as const,
+    };
+    if (this.store.get(`native-restore-review:${key}`) !== null) {
+      const prior = this.restoreReview(key, installationId);
+      if (prior.snapshot !== snapshot)
+        throw new Refusal('native_restore_review_changed');
+      return acceptance;
+    }
     if (this.reviewPending) throw new Refusal('native_restore_review_busy');
     this.reviewPending = true;
-    try {
-      return await prepareNativeRestoreReview(
+    return new Promise<{
+      id: string;
+      snapshot: string;
+      installationId: string;
+      state: 'preparing';
+    }>((resolve, reject) => {
+      const work = prepareNativeRestoreReview(
         this.store,
-        this.backups,
+        backups,
         this.recoveryContext,
         snapshot,
+        (id) => {
+          this.activeReview = id;
+          resolve(acceptance);
+        },
+        key,
       );
-    } finally {
-      this.reviewPending = false;
-    }
+      // The durable review record owns completion after the HTTP acknowledgement.
+      void work.catch(reject).finally(() => {
+        this.reviewPending = false;
+        this.activeReview = undefined;
+      });
+    });
+  }
+  restoreReview(id: string, installationId: string) {
+    if (installationId !== this.publicInstallation.id)
+      throw new Refusal('installation_changed');
+    const status = nativeRestoreReviewStatus(
+      this.store,
+      this.recoveryContext,
+      id,
+    );
+    return status.state === 'preparing' && this.activeReview !== id
+      ? { ...status, state: 'interrupted' as const }
+      : status;
   }
   control(
     action: 'start' | 'stop' | 'restart' | 'backup',

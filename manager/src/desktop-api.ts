@@ -18,6 +18,7 @@ const nativePaths = new Set(
     'resume',
     'backups',
     'review-restore',
+    'restore-review',
   ].map((name) => NATIVE + name),
 );
 const browserPaths = new Set([
@@ -37,7 +38,10 @@ export function desktopApi(
   security: Security,
   grants: DesktopGrants,
   operations: ManagerLifecycle,
-  recovery?: Pick<NativeService, 'listRestoreBackups' | 'reviewRestore'>,
+  recovery?: Pick<
+    NativeService,
+    'listRestoreBackups' | 'reviewRestore' | 'restoreReview'
+  >,
 ) {
   const router = express.Router({ caseSensitive: true, strict: true });
   const bodies = new WeakMap<Request, Buffer>();
@@ -226,15 +230,22 @@ export function desktopApi(
     response.json(await recovery.listRestoreBackups(current.id));
   });
   router.post(NATIVE + 'review-restore', async (request, response) => {
-    const { snapshot } = z
+    const { snapshot, key } = z
       .object({
         snapshot: z.string().regex(/^[a-f0-9]{64}$/),
+        key: z.string().uuid(),
       })
       .strict()
       .parse(request.body);
     const current = authorize(request, 'restore');
     if (!recovery) throw new Refusal('native_recovery_unavailable');
-    response.json(await recovery.reviewRestore(snapshot, current.id));
+    response.json(await recovery.reviewRestore(snapshot, current.id, key));
+  });
+  router.post(NATIVE + 'restore-review', (request, response) => {
+    const { id } = Id.parse(request.body),
+      current = authorize(request, 'restore');
+    if (!recovery) throw new Refusal('native_recovery_unavailable');
+    response.json(recovery.restoreReview(id, current.id));
   });
   router.post(NATIVE + 'operation', (request, response) => {
     const { id } = Id.parse(request.body),

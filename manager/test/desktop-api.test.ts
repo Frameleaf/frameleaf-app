@@ -560,20 +560,35 @@ test('native recovery review requires signed restore scope and rejects paths or 
       const listPath = '/manager-api/desktop/backups',
         reviewPath = '/manager-api/desktop/review-restore';
       const snapshot = '1'.repeat(64),
-        body = JSON.stringify({ snapshot });
+        reviewId = randomUUID(),
+        body = JSON.stringify({ snapshot, key: reviewId });
       operations.listRestoreBackups = async (id) => {
         assert.equal(id, installationId);
         effects.push('native-backup-list');
         return [{ id: snapshot, time: '2026-10-18T00:00:00Z' }];
       };
-      operations.reviewRestore = async (value, id) => {
+      operations.reviewRestore = async (value, id, key) => {
+        assert.equal(key, reviewId);
         assert.equal(value, snapshot);
         assert.equal(id, installationId);
         effects.push('native-backup-review');
         return {
-          id: randomUUID(),
+          id: reviewId,
+          snapshot,
+          installationId,
+          state: 'preparing',
+        };
+      };
+      operations.restoreReview = (id, owner) => {
+        assert.equal(id, reviewId);
+        assert.equal(owner, installationId);
+        effects.push('native-backup-review-status');
+        return {
+          id,
+          snapshot,
+          installationId,
+          state: 'prepared',
           mediaIncluded: false,
-          requiresRuntimeChange: false,
         };
       };
       const readOnly = await pair(['status']);
@@ -600,9 +615,20 @@ test('native recovery review requires signed restore scope and rejects paths or 
         signed(grant, reviewPath, body, 'restore'),
       );
       assert.equal(review.status, 200);
-      assert.equal(review.body.mediaIncluded, false);
+      assert.equal(review.body.state, 'preparing');
+      const statusPath = '/manager-api/desktop/restore-review',
+        statusBody = JSON.stringify({ id: reviewId });
+      const prepared = await call(
+        statusPath,
+        statusBody,
+        signed(grant, statusPath, statusBody, 'restore'),
+      );
+      assert.equal(prepared.status, 200);
+      assert.equal(prepared.body.state, 'prepared');
+      assert.equal(prepared.body.mediaIncluded, false);
       const forbidden = JSON.stringify({
         snapshot,
+        key: reviewId,
         databaseRoot: '/private/database',
       });
       assert.equal(
@@ -639,7 +665,11 @@ test('native recovery review requires signed restore scope and rejects paths or 
       );
       assert.equal(expired.status, 401);
       assert.equal(expired.body.code, 'desktop_recent_auth_required');
-      assert.deepEqual(effects, ['native-backup-list', 'native-backup-review']);
+      assert.deepEqual(effects, [
+        'native-backup-list',
+        'native-backup-review',
+        'native-backup-review-status',
+      ]);
     },
     true,
   );
@@ -651,8 +681,12 @@ test('native recovery endpoints refuse Docker fallthrough even with a valid rest
     for (const [path, body] of [
       ['/manager-api/desktop/backups', '{}'],
       [
+        '/manager-api/desktop/restore-review',
+        JSON.stringify({ id: randomUUID() }),
+      ],
+      [
         '/manager-api/desktop/review-restore',
-        JSON.stringify({ snapshot: '1'.repeat(64) }),
+        JSON.stringify({ snapshot: '1'.repeat(64), key: randomUUID() }),
       ],
     ]) {
       const reply = await call(
