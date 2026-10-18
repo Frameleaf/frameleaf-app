@@ -23,10 +23,27 @@ test("the server rights mirror matches the reviewed bill of materials", async ()
 });
 
 // FL-451 (legal review 2026-10-17): every model use is personal use, on the user's own server or a
-// Frameleaf Cloud container, so the two rows the packager reviewed for their licence say they are eligible.
+// Frameleaf Cloud container, so the licensed model rows are reviewed as allowed and record that basis.
+// The Gemma E4B row stays blocked: its identity conflict is not a licence question.
 const PERSONAL_USE_ROWS = [
-  "model:Xenova/musicgen-small",
   "model:LiquidAI/LFM2.5-VL-450M-ONNX",
+  "model:OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX",
+  "model:OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX",
+  "model:Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx",
+  "model:Xenova/all-MiniLM-L6-v2",
+  "model:Xenova/clap-htsat-unfused",
+  "model:Xenova/clip-vit-base-patch32",
+  "model:Xenova/musicgen-small",
+  "model:onnx-community/Kokoro-82M-v1.0-ONNX",
+  "model:onnx-community/whisper-base_timestamped",
+  "model:onnx-community/whisper-large-v3-turbo_timestamped",
+  "model:onnx-community/whisper-small_timestamped",
+  "model:onnx-community/whisper-tiny_timestamped",
+  "model:supertonic-3",
+  "model:walterlow/RIFE_fp32_timestep",
+  "weights:anime4k-3d",
+  "weights:anime4k-an",
+  "weights:anime4k-rl",
 ];
 
 test("the packager review keeps its decisions; the owner approval is recorded beside it (FL-146, FL-451)", async () => {
@@ -34,13 +51,16 @@ test("the packager review keeps its decisions; the owner approval is recorded be
   const { distributionApproval, rows } = rightsRows(manifest);
   assert.equal(distributionApproval, false);
   assert.equal(rows.length, manifest.resources.length);
+  const personalUse = new Set(PERSONAL_USE_ROWS);
   for (const row of rows) {
+    const decision = personalUse.has(row.id) ? "allowed" : "blocked";
     assert.deepEqual(
       [row.redistribution, row.localRuntime, row.hostedUse],
-      ["blocked", "blocked", "blocked"],
+      [decision, decision, decision],
       row.id,
     );
   }
+  assert.equal(rows.filter((row) => personalUse.has(row.id)).length, 18);
   for (const id of PERSONAL_USE_ROWS) {
     const resource = manifest.resources.find((row) => row.id === id);
     assert.match(

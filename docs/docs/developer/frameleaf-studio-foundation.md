@@ -13,7 +13,9 @@ apps ship from their own separate repos (owner decision, 2026-09-29).
 1. **`studio/dependency-attribution.json`** - the reviewed bill of materials. Every model, voice,
    font, bundled weight, runtime download, external asset and tool the pinned engine can reach has
    an `id` (`<kind>:<name>`) and three decisions (`redistribution`, `localRuntime`, `hostedUse`),
-   each `allowed` or `blocked`, as the engine packager reviewed them (FL-84/FL-86). It also records
+   each `allowed` or `blocked`, as the engine packager reviewed them (FL-84/FL-86). Licensed model
+   rows are `allowed`: every model use is personal use by the user on their own server or a
+   Frameleaf Cloud container (legal review 2026-10-17, FL-451). It also records
    `embeddedComponents`: third-party binaries embedded _inside_ the engine build (FFmpeg, LAME,
    TurboRes, the MOSS ONNX runtime and tokenizer) with a `rightsStatus` that stays `blocked` until
    their exact embedded-source mapping and LGPL/MPL corresponding-source obligations are qualified -
