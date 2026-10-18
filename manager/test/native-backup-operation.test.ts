@@ -555,3 +555,69 @@ test('a verified backup resumes checkpoint retirement without starting the datab
     assert.equal(counts.checkpoint, 1);
   });
 });
+test('temporary backup owner drains without overwriting newer evidence after start, snapshot or stop', async () => {
+  for (const phase of ['start', 'snapshot', 'stop']) {
+    await fixture(async ({ store, runtime, engine, context, counts }) => {
+      const { operation } = store.start(
+        'backup',
+        'owner-fence-' + phase,
+        runtime.identity,
+      );
+      const target = phase === 'snapshot' ? engine : runtime;
+      const method = phase === 'start' ? 'startDatabase' : phase;
+      const original = target[method];
+      target[method] = async (...args) => {
+        const result = await original(...args);
+        const latest = store.history()[0];
+        latest.error = 'new owner evidence';
+        store.save(latest);
+        return result;
+      };
+      await assert.rejects(
+        runNativeDatabaseBackup(store, runtime, engine, context, operation),
+        /native_backup_journal_invalid/,
+      );
+      assert.equal(store.history()[0].error, 'new owner evidence');
+      assert.equal(store.history()[0].state, 'running');
+      assert.equal(counts.start, 1);
+      assert.equal(counts.stop, 1);
+      assert.equal(counts.cleanup, phase === 'stop' ? 1 : 0);
+      assert.equal(counts.snapshot, phase === 'start' ? 0 : 1);
+      assert.throws(
+        () => store.start('start', 'competing', {}),
+        /operation_in_progress/,
+      );
+    });
+  }
+});
+test('the outer native lifecycle cannot overwrite a newer backup journal on success or failure', async () => {
+  for (const failure of [false, true]) {
+    await fixture(async ({ store, operations, engine, counts }) => {
+      const original = engine.snapshot;
+      engine.snapshot = async (...args) => {
+        const result = await original(...args);
+        const latest = store.history()[0];
+        latest.error = 'new owner evidence';
+        store.save(latest);
+        if (failure) throw new Refusal('synthetic_snapshot_failure');
+        return result;
+      };
+      const operation = operations.control(
+        'backup',
+        'outer-owner-fence-' + failure,
+      );
+      await assert.rejects(
+        operations.wait(operation.id),
+        /operation_journal_changed/,
+      );
+      assert.equal(store.history()[0].error, 'new owner evidence');
+      assert.equal(store.history()[0].state, 'running');
+      assert.equal(counts.stop, 1);
+      assert.equal(counts.cleanup, 0);
+      assert.throws(
+        () => store.start('start', 'competing', {}),
+        /operation_in_progress/,
+      );
+    });
+  }
+});

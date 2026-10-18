@@ -7,6 +7,12 @@ import { Refusal, type Operation, type OperationKind } from './contracts.js';
 /** SQLite owns the cross-process operation lock. Every destructive call has a durable intent first. */
 export class Store {
   readonly db: DatabaseSync;
+  private versions = new WeakMap<Operation, string>();
+  private decode(value: string): Operation {
+    const operation: Operation = JSON.parse(value);
+    this.versions.set(operation, value);
+    return operation;
+  }
   constructor(readonly directory: string) {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     chmodSync(directory, 0o700);
@@ -59,20 +65,22 @@ export class Store {
       input,
       receipts: {},
     };
+    const value = JSON.stringify(operation);
     try {
       this.db
         .prepare('INSERT INTO operations VALUES (?,?,1,?)')
-        .run(operation.id, requestKey, JSON.stringify(operation));
+        .run(operation.id, requestKey, value);
     } catch {
       throw new Refusal('operation_in_progress');
     }
+    this.versions.set(operation, value);
     return { operation, created: true };
   }
   request(kind: OperationKind | undefined, requestKey: string, input: Record<string, unknown>): Operation | null {
     const prior = this.db.prepare('SELECT value FROM operations WHERE request_key=?').get(requestKey) as
       { value: string } | undefined;
     if (prior) {
-      const operation: Operation = JSON.parse(prior.value);
+      const operation = this.decode(prior.value);
       if ((kind && operation.kind !== kind) || JSON.stringify(operation.input) !== JSON.stringify(input))
         throw new Refusal('request_key_reused');
       return operation;
@@ -80,16 +88,21 @@ export class Store {
     return null;
   }
   save(operation: Operation): void {
+    const previous = this.versions.get(operation);
+    if (previous === undefined) throw new Refusal('operation_journal_changed');
     operation.updatedAt = Date.now();
+    const value = JSON.stringify(operation);
     // Failed/interrupted operations retain ownership: a new operation cannot race recovery.
-    this.db
-      .prepare('UPDATE operations SET active=?, value=? WHERE id=?')
-      .run(operation.state === 'complete' ? null : 1, JSON.stringify(operation), operation.id);
+    const saved = this.db
+      .prepare('UPDATE operations SET active=?, value=? WHERE id=? AND value=?')
+      .run(operation.state === 'complete' ? null : 1, value, operation.id, previous);
+    if (saved.changes !== 1) throw new Refusal('operation_journal_changed');
+    this.versions.set(operation, value);
   }
   history(): Operation[] {
     return (
       this.db.prepare('SELECT value FROM operations ORDER BY rowid DESC LIMIT 100').all() as { value: string }[]
-    ).map((r) => JSON.parse(r.value));
+    ).map((r) => this.decode(r.value));
   }
   close(): void {
     this.db.close();
