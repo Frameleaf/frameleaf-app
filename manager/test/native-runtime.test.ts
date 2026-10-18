@@ -33,6 +33,15 @@ async function fixture(
     startRestorePreparation: async () => {
       throw new Refusal('native_restore_unavailable');
     },
+    finalizeRestore: async () => {
+      throw new Refusal('native_restore_unavailable');
+    },
+    selectRestore: async () => {
+      throw new Refusal('native_restore_unavailable');
+    },
+    verifyRestore: async () => {
+      throw new Refusal('native_restore_unavailable');
+    },
     prepareRestore: async () => {
       throw new Refusal('native_restore_unavailable');
     },

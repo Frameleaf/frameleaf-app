@@ -1670,3 +1670,126 @@ test('restore safety readback preserves an unknown preexisting artifact before a
     },
   );
 });
+
+test('finalization renews the selected target proof and retains the restore lock', async () => {
+  await selectionFixture(async (f) => {
+    const selected = await selectionRunner()(
+      f.store,
+      f.runtime,
+      f.context,
+      f.operation,
+      f.cancellation.signal,
+    );
+    assert.equal(
+      typeof restoreOperation.runNativeRestoreFinalization,
+      'function',
+    );
+    const run = restoreOperation.runNativeRestoreFinalization;
+    f.runtime.finalizeRestore = async (proof, safety) => {
+      f.calls.push('finalize');
+      assert.equal(proof.prepared.binding.operationId, f.operation.id);
+      assert.equal(safety.snapshotId, f.backup.snapshotId);
+      f.setState({ state: 'stopped' });
+      return { ...selected, state: 'restore-finalized' };
+    };
+    f.calls.length = 0;
+    const result = await run(
+      f.store,
+      f.runtime,
+      f.context,
+      f.operation,
+      f.cancellation.signal,
+    );
+    assert.deepEqual(f.calls, ['stop', 'start', 'verify', 'finalize']);
+    assert.equal(result.state, 'restore-finalized');
+    assert.deepEqual(f.operation.receipts['native-restore-selected'], selected);
+    assert.deepEqual(f.operation.receipts['native-restore-finalized'], result);
+    assert.equal(f.store.history()[0].state, 'running');
+    assert.throws(
+      () => f.store.start('start', randomUUID(), {}),
+      /operation_in_progress/,
+    );
+  });
+});
+
+test('finalization retries a lost acknowledgement with fresh proof and never reselects', async (t) => {
+  await selectionFixture(async (f) => {
+    const selected = await selectionRunner()(
+      f.store,
+      f.runtime,
+      f.context,
+      f.operation,
+      f.cancellation.signal,
+    );
+    const run = restoreOperation.runNativeRestoreFinalization;
+    const proofs = [];
+    f.runtime.finalizeRestore = async (proof) => {
+      proofs.push(proof.verificationId);
+      f.calls.push('finalize');
+      f.setState({ state: 'stopped' });
+      return { ...selected, state: 'restore-finalized' };
+    };
+    const save = f.store.save.bind(f.store);
+    let lost = false;
+    const mock = t.mock.method(f.store, 'save', (operation) => {
+      save(operation);
+      if (!lost && operation.completed.includes('native-restore-finalized')) {
+        lost = true;
+        throw Error('lost final acknowledgement');
+      }
+    });
+    await assert.rejects(
+      run(f.store, f.runtime, f.context, f.operation),
+      /lost final acknowledgement/,
+    );
+    mock.mock.restore();
+    f.calls.length = 0;
+    await run(f.store, f.runtime, f.context, f.operation);
+    assert.deepEqual(f.calls, ['stop', 'start', 'verify', 'finalize']);
+    assert.notEqual(proofs[0], proofs[1]);
+    assert.equal(f.store.history()[0].state, 'running');
+    f.calls.length = 0;
+    await assert.rejects(
+      selectionRunner()(
+        f.store,
+        f.runtime,
+        f.context,
+        f.operation,
+        f.cancellation.signal,
+      ),
+      /native_restore_journal_invalid/,
+    );
+    assert.deepEqual(f.calls, []);
+  });
+});
+test('finalization refuses a missing selection before effects and drains a failed admission', async () => {
+  for (const missing of [true, false])
+    await selectionFixture(async (f) => {
+      const run = restoreOperation.runNativeRestoreFinalization;
+      if (!missing)
+        await selectionRunner()(
+        f.store,
+        f.runtime,
+        f.context,
+        f.operation,
+        f.cancellation.signal,
+      );
+      f.calls.length = 0;
+      f.runtime.finalizeRestore = async () => {
+        f.calls.push('finalize');
+        throw Error('admission failed');
+      };
+      await assert.rejects(run(f.store, f.runtime, f.context, f.operation));
+      assert.equal(f.operation.receipts['native-restore-finalized'], undefined);
+      assert.equal(f.store.history()[0].state, 'running');
+      if (missing) assert.deepEqual(f.calls, []);
+      else
+        assert.deepEqual(f.calls, [
+          'stop',
+          'start',
+          'verify',
+          'finalize',
+          'stop',
+        ]);
+    });
+});
