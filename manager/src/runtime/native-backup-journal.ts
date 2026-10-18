@@ -7,6 +7,7 @@ import { digest, Refusal, type Operation } from '../contracts.js';
 import { Store } from '../store.js';
 import { NativeCheckpointSchema, type NativeRuntime } from './native.js';
 import { createNativeRecovery, NativeRecovery } from './native-recovery.js';
+import { stageNativeRestoreInput } from './native-restore-input.js';
 import {
   stageNativeCheckpoint,
   verifyNativeBackupDirectory,
@@ -86,10 +87,15 @@ export async function createNativeDatabaseBackup(
   operation: Operation,
 ): Promise<z.infer<typeof Result>> {
   if (
-    operation.kind !== 'backup' ||
+    !['backup', 'restore'].includes(operation.kind) ||
     operation.state !== 'running' ||
     !Array.isArray(operation.completed) ||
-    !isDeepStrictEqual(operation.input, runtime.identity) ||
+    !isDeepStrictEqual(
+      operation.input,
+      operation.kind === 'restore'
+        ? { reviewId: operation.input?.reviewId, ...runtime.identity }
+        : runtime.identity,
+    ) ||
     runtime.identity.runtime !== 'native' ||
     runtime.identity.installationId !== context.installation.id ||
     runtime.identity.fingerprint !== digest(context.installation) ||
@@ -99,6 +105,34 @@ export async function createNativeDatabaseBackup(
     )
   )
     throw invalid();
+  if (operation.kind === 'restore') {
+    const intent = operation.receipts['native-restore-prebackup-intent'];
+    if (
+      !intent ||
+      !operation.completed.includes('native-restore-input') ||
+      !operation.receipts['native-restore-input']
+    )
+      throw invalid();
+    const staged = await stageNativeRestoreInput(
+      store,
+      {
+        installation: context.installation,
+        libraryId: context.libraryId,
+        release: context.release,
+      },
+      operation,
+    );
+    const status = runtime.status();
+    if (
+      !isDeepStrictEqual(intent, {
+        schemaVersion: 1,
+        binding: staged.binding,
+      }) ||
+      status.state !== 'unknown' ||
+      status.code !== 'native_database_maintenance'
+    )
+      throw invalid();
+  }
   const bound = { ...context, operation };
   const result = (value: unknown) => {
     const parsed = Result.safeParse(value);
