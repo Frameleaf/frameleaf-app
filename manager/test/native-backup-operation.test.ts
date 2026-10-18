@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { Store } from '../src/store.js';
 import { digest, Refusal } from '../src/contracts.js';
+import { NativeService } from '../src/runtime/native-service.js';
 import { NativeOperations } from '../src/runtime/native.js';
 import { runNativeDatabaseBackup } from '../src/runtime/native-backup-operation.js';
 
@@ -429,6 +430,82 @@ test('backup failure plus failed shutdown drains the recorded owner before conti
       checkpoint: 1,
       snapshot: 2,
       cleanup: 1,
+    });
+  });
+});
+
+function bootstrap(context) {
+  return {
+    protocolVersion: 2,
+    installation: context.installation,
+    backupKey: 'k'.repeat(43),
+    password: 'synthetic private service password',
+    controllerSha256: 'e'.repeat(64),
+    backupEngine: {
+      executable: context.installation.controller,
+      sha256: 'f'.repeat(64),
+    },
+    tls: {
+      certificatePem: 'synthetic certificate',
+      privateKeyPem: 'synthetic private key',
+    },
+    name: context.name,
+    release: context.release,
+  };
+}
+
+test('native service dispatches backups through its configured engine and preserves installed library lineage', async () => {
+  await fixture(async ({ store, runtime, engine, context, counts }) => {
+    store.set('native-library-id', 'e'.repeat(12));
+    const configuration = bootstrap(context);
+    const first = new NativeService(store, configuration, runtime, engine);
+    const one = first.control(
+      'backup',
+      'service-backup',
+      context.installation.id,
+    );
+    assert.equal((await first.wait(one.id)).state, 'complete');
+    assert.equal(
+      store.history()[0].receipts['native-backup-verified'].recovery.libraryId,
+      'e'.repeat(12),
+    );
+    const second = new NativeService(store, configuration, runtime, engine);
+    const two = second.control(
+      'backup',
+      'service-backup-two',
+      context.installation.id,
+    );
+    assert.equal((await second.wait(two.id)).state, 'complete');
+    assert.equal(
+      store.history()[0].receipts['native-backup-verified'].recovery.libraryId,
+      'e'.repeat(12),
+    );
+    assert.deepEqual(counts, {
+      start: 2,
+      stop: 2,
+      checkpoint: 2,
+      snapshot: 2,
+      cleanup: 2,
+    });
+  });
+});
+
+test('native library lineage starts from the installed profile and corrupt persisted lineage is refused', async () => {
+  await fixture(async ({ store, runtime, engine, context, counts }) => {
+    const configuration = bootstrap(context);
+    new NativeService(store, configuration, runtime, engine);
+    assert.equal(store.get('native-library-id'), context.installation.id);
+    store.set('native-library-id', { id: 'foreign' });
+    assert.throws(
+      () => new NativeService(store, configuration, runtime, engine),
+      /native_library_identity_invalid/,
+    );
+    assert.deepEqual(counts, {
+      start: 0,
+      stop: 0,
+      checkpoint: 0,
+      snapshot: 0,
+      cleanup: 0,
     });
   });
 });

@@ -47,8 +47,11 @@ if (runtime === 'native') {
   const bootstrapPipe = fstatSync(0);
   if (!bootstrapPipe.isFIFO() && !bootstrapPipe.isSocket()) throw new Refusal('native_bootstrap_unavailable');
 }
+const backupRoot = process.env.MANAGER_BACKUP_ROOT ?? (runtime === 'native' ? join(directory, 'backups') : undefined);
+if (!backupRoot || backupRoot !== resolve(backupRoot))
+  throw new Error('MANAGER_BACKUP_ROOT must be an absolute mounted directory');
 const native = runtime === 'native'
-  ? await createNativeService(store, createReadStream('', { fd: 0, autoClose: true }), origin)
+  ? await createNativeService(store, createReadStream('', { fd: 0, autoClose: true }), origin, join(backupRoot, 'frameleaf-database'))
   : null;
 const docker = new Docker();
 const bootstrapFile = join(directory, 'claim-key');
@@ -56,10 +59,7 @@ const security = new Security(store, origin, bootstrapFile, process.env.MANAGER_
 const seed = store.get<string>('release-seed') ?? randomBytes(32).toString('hex');
 store.createOnce('release-seed', seed);
 const releases = new Releases(join(directory, 'releases'), seed);
-const backupRoot = process.env.MANAGER_BACKUP_ROOT ?? (native ? join(directory, 'backups') : undefined);
-if (!backupRoot || backupRoot !== resolve(backupRoot))
-  throw new Error('MANAGER_BACKUP_ROOT must be an absolute mounted directory');
-const backups = new Backups(join(backupRoot, 'frameleaf-database'), native?.backupPassword ?? join(directory, 'recovery-key'), native?.backupCommand ?? command);
+const backups = native?.backups ?? new Backups(join(backupRoot, 'frameleaf-database'), native?.backupPassword ?? join(directory, 'recovery-key'), native?.backupCommand ?? command);
 const unraidConfig = '/run/frameleaf-host/docker.cfg';
 async function databaseDefaults() {
   const config = await readFile(unraidConfig, 'utf8').catch((error: NodeJS.ErrnoException) => {

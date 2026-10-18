@@ -4,12 +4,14 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { constants } from 'node:fs';
 import { access, lstat, open, realpath } from 'node:fs/promises';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve, join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { z } from 'zod';
 import { digest, Refusal, releaseTag } from '../contracts.js';
 import { Store } from '../store.js';
 import { command } from '../docker.js';
+import { Backups } from '../backups.js';
+import { runNativeDatabaseBackup } from './native-backup-operation.js';
 import { nativeListener } from './native-listener.js';
 import { NativeHost, NativeOperations, type NativeRuntime } from './native.js';
 
@@ -166,12 +168,20 @@ export async function createNativeService(
   store: Store,
   input: Readable,
   origin: string,
+  backupRepository = join(store.directory, 'backups', 'frameleaf-database'),
 ): Promise<NativeService> {
   const bootstrap = await readNativeBootstrap(input);
   await protectNativeController(bootstrap.installation.controller);
   await verifyNativeBackupEngine(bootstrap.backupEngine);
   validateNativeTls(bootstrap.tls, origin);
-  return new NativeService(store, bootstrap);
+  if (!path.safeParse(backupRepository).success)
+    throw new Refusal('native_backup_destination_invalid');
+  const backups = new Backups(
+    backupRepository,
+    async () => bootstrap.backupKey,
+    nativeBackupCommand(bootstrap.backupEngine),
+  );
+  return new NativeService(store, bootstrap, undefined, backups);
 }
 export function validateNativeTls(
   tls: NativeBootstrap['tls'],
@@ -308,6 +318,7 @@ export class NativeService {
     readonly store: Store,
     bootstrap: NativeBootstrap,
     runtime?: NativeRuntime,
+    readonly backups?: Backups,
   ) {
     bootstrap = Bootstrap.parse(bootstrap);
     Object.freeze(bootstrap.installation);
@@ -341,7 +352,30 @@ export class NativeService {
     )
       throw new Refusal('native_installation_changed');
     this.runtime = supplied;
-    this.lifecycle = new NativeOperations(store, this.runtime);
+    store.createOnce('native-library-id', bootstrap.installation.id);
+    const libraryId = store.get<string>('native-library-id');
+    if (typeof libraryId !== 'string' || !/^[a-f0-9]{12}$/.test(libraryId))
+      throw new Refusal('native_library_identity_invalid');
+    const context = {
+      installation: bootstrap.installation,
+      libraryId,
+      name: bootstrap.name,
+      release: bootstrap.release,
+    };
+    this.lifecycle = new NativeOperations(
+      store,
+      this.runtime,
+      backups
+        ? (operation) =>
+            runNativeDatabaseBackup(
+              store,
+              this.runtime,
+              backups,
+              context,
+              operation,
+            )
+        : undefined,
+    );
     this.publicInstallation = Object.freeze({
       id: bootstrap.installation.id,
       name: bootstrap.name,
@@ -374,7 +408,6 @@ export class NativeService {
   ) {
     if (installationId && installationId !== this.publicInstallation.id)
       throw new Refusal('installation_changed');
-    if (action === 'backup') throw new Refusal('native_action_unavailable');
     return this.lifecycle.control(action, key);
   }
   resume(id: string) {

@@ -28,7 +28,11 @@ const key = generateKeyPairSync('ed25519'),
     .toString('base64');
 const signature = (value: string) =>
   sign(null, Buffer.from(value), key.privateKey).toString('base64');
-async function fixture(run: (f: any) => Promise<void>, native = false) {
+async function fixture(
+  run: (f: any) => Promise<void>,
+  native = false,
+  nativeBackups = false,
+) {
   const root = await mkdtemp(join(tmpdir(), 'manager-desktop-api-')),
     store = new Store(root),
     claim = join(root, 'claim-key'),
@@ -112,7 +116,15 @@ async function fixture(run: (f: any) => Promise<void>, native = false) {
           checkpoint: async () => {
             throw new Refusal('native_checkpoint_unavailable');
           },
+          status: () => ({ state: 'running' }),
+          startDatabase: async () => {
+            throw new Refusal('native_checkpoint_unavailable');
+          },
+          cleanupCheckpoint: async () => {
+            throw new Refusal('native_checkpoint_unavailable');
+          },
         },
+        nativeBackups ? ({} as never) : undefined,
       )
     : dockerOperations;
   const app = express();
@@ -484,4 +496,43 @@ test('paired native lifecycle uses the existing native journal, independently of
     assert.equal(store.history().length, 1);
     assert.deepEqual(effects, ['native-start']);
   }, true);
+});
+
+test('a scoped native backup request is accepted idempotently and returns only its public operation state', async () => {
+  await fixture(
+    async ({ call, pair, signed, operations, store, effects }) => {
+      const grant = await pair();
+      const route = '/manager-api/desktop/control';
+      const body = JSON.stringify({ action: 'backup', key: randomUUID() });
+      const accepted = await call(
+        route,
+        body,
+        signed(grant, route, body, 'backup'),
+      );
+      assert.equal(accepted.status, 200);
+      await operations.wait(accepted.body.id);
+      const replay = await call(
+        route,
+        body,
+        signed(grant, route, body, 'backup'),
+      );
+      assert.equal(replay.body.id, accepted.body.id);
+      const lookup = '/manager-api/desktop/operation',
+        lookupBody = JSON.stringify({ id: accepted.body.id });
+      const result = await call(
+        lookup,
+        lookupBody,
+        signed(grant, lookup, lookupBody),
+      );
+      assert.equal(result.status, 200);
+      assert.equal(result.body.kind, 'backup');
+      assert.equal(result.body.state, 'failed');
+      assert.equal(result.body.receipts, undefined);
+      assert.equal(result.body.input, undefined);
+      assert.equal(store.history().length, 1);
+      assert.deepEqual(effects, []);
+    },
+    true,
+    true,
+  );
 });
