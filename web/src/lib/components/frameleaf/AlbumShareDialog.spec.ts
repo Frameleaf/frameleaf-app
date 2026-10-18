@@ -80,9 +80,9 @@ describe('AlbumShareDialog', () => {
 
     const people = within(await screen.findByRole('listbox', { name: 'People to invite' }));
     expect(screen.getByRole('button', { name: 'Invite' })).toBeDisabled();
-    await fireEvent.click(people.getByRole('option', { name: /Jamie/ }));
-    await fireEvent.click(people.getByRole('option', { name: /Sam/ }));
-    expect(people.getByRole('option', { name: /Jamie/ })).toHaveAttribute('aria-selected', 'true');
+    await fireEvent.click(people.getByRole('option', { name: /^Jamie\b/ }));
+    await fireEvent.click(people.getByRole('option', { name: /^Sam\b/ }));
+    expect(people.getByRole('option', { name: /^Jamie\b/ })).toHaveAttribute('aria-selected', 'true');
 
     await fireEvent.click(screen.getByRole('button', { name: 'Invite 2 people' }));
     await waitFor(() =>
