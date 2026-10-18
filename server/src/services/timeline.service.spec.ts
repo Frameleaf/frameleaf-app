@@ -569,7 +569,12 @@ describe(TimelineService.name, () => {
       mocks.asset.getTimeBucket.mockResolvedValue({ assets: '{}' });
       mocks.asset.getTimelineOrdered.mockResolvedValue({ assets: '{}' });
       mocks.asset.getTimelineHighlights.mockResolvedValue([]);
-      const expected = { ...options, userIds: [authStub.admin.user.id] };
+      // the filter names people, so it widens to shared albums and keeps other members' Locked rules
+      const expected = {
+        ...options,
+        userIds: [authStub.admin.user.id],
+        othersRulesViewerId: authStub.admin.user.id,
+      };
 
       await sut.getTimeBuckets(authStub.admin, { ...options });
       await sut.getTimeBucket(authStub.admin, { ...options, timeBucket: 'bucket' });
@@ -599,6 +604,27 @@ describe(TimelineService.name, () => {
           userIds: [authStub.admin.user.id],
           othersRulesViewerId: authStub.admin.user.id,
         },
+        authStub.admin,
+      );
+    });
+
+    it('applies other members’ Locked rules when several people widen the timeline to shared albums', async () => {
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+      const owner = authStub.admin.user.id;
+
+      for (const personIds of [{ all: ['person-1', 'person-2'] }, { any: ['person-1', 'person-2'] }]) {
+        await sut.getTimeBuckets(authStub.admin, { filter: { personIds } });
+        expect(mocks.asset.getTimeBuckets).toHaveBeenLastCalledWith(
+          { filter: { personIds }, userIds: [owner], othersRulesViewerId: owner },
+          authStub.admin,
+        );
+      }
+
+      // people inside one `or` branch never widen the timeline, so nothing else is needed
+      const branched = { or: [{ personIds: { any: ['person-1'] } }, { city: { eq: 'Paris' } }] };
+      await sut.getTimeBuckets(authStub.admin, { filter: branched });
+      expect(mocks.asset.getTimeBuckets).toHaveBeenLastCalledWith(
+        { filter: branched, userIds: [owner] },
         authStub.admin,
       );
     });
