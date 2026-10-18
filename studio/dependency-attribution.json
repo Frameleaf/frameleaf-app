@@ -251,7 +251,7 @@
   "externalAssets": [
     {
       "component": "Xenova/musicgen-small",
-      "gate": "Do not enable downloads or redistribute weights until intended-use review; MIT application license does not cover weights.",
+      "gate": "Intended-use review done: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451). The MIT application license does not cover the weights.",
       "includedInVendoredSnapshot": false,
       "license": "CC-BY-NC-4.0",
       "url": "https://huggingface.co/Xenova/musicgen-small"
@@ -263,7 +263,7 @@
   ],
   "resources": [
     {
-      "basis": "Noncommercial model declaration; commercial redistribution/hosted use has no separate permission. Noncommercial use is also unqualified until exact files and obligations are reviewed.",
+      "basis": "CC-BY-NC-4.0 (non-commercial) model licence. Eligible: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451). Admitted through the owner approval in rights-approval.json; the packager decisions stay blocked.",
       "decisions": {
         "hostedUse": "blocked",
         "localRuntime": "blocked",
@@ -450,7 +450,7 @@
       ]
     },
     {
-      "basis": "LFM v1.0 commercial revenue conditions require actual entity/deployment assessment; no eligibility assumed.",
+      "basis": "LFM Open License v1.0 (commercial revenue conditions). Eligible: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451). Admitted through the owner approval in rights-approval.json; the packager decisions stay blocked.",
       "decisions": {
         "hostedUse": "blocked",
         "localRuntime": "blocked",

@@ -47,8 +47,8 @@ const restorationFixture = cloudContractFixture<CatalogFixture>('ml/catalog-rest
 
 /**
  * The gateway's catalog.json plus the faithful restoration model of catalog-restoration.json (FL-181
- * P1: this catalogue confirms a faithful restoration model, but no creative one), a model that runs on
- * this server only (FL-146) and an entry the contract refuses.
+ * P1: this catalogue confirms a faithful restoration model, but no creative one), Qwen2.5-VL-3B (local
+ * only until FL-451, now offered like any other model) and an entry the contract refuses.
  */
 const catalog = catalogSchema.parse({
   ...catalogFixture,
@@ -186,8 +186,8 @@ describe(CloudMlService.name, () => {
       // the capability alone.
       expect(probe.workloads).toEqual([MlWorkload.Enrichment, MlWorkload.RestorationFaithful]);
       expect(probe.hardware).toMatchObject({ cudaDeviceCount: 1, torchCudaAvailable: true });
-      // FL-183: the catalogue's model identity is the SKU; the local-only model and the entry the
-      // contract refuses are never offered
+      // FL-183: the catalogue's model identity is the SKU; the entry the contract refuses is never
+      // offered, and Qwen2.5-VL-3B is offered like any other model (FL-451)
       expect(probe.cloud).toMatchObject({
         region: 'eu',
         entitled: true,
@@ -195,11 +195,12 @@ describe(CloudMlService.name, () => {
         balanceUsd: 12,
         heldUsd: 2,
         limits: { maxInputBytes: 2_147_483_648, maxInputs: 1000, concurrentTimePriced: 2 },
-        modelIds: ['ms_K6WT70CS', 'ms_M7QG26PT', 'ms_54S55W7C', 'ms_YS60DAXB'],
+        modelIds: ['ms_K6WT70CS', 'ms_M7QG26PT', 'ms_54S55W7C', 'ms_ZZZZZZZZ', 'ms_YS60DAXB'],
         modelWorkloads: {
           ms_K6WT70CS: MlWorkload.Enrichment,
           ms_M7QG26PT: MlWorkload.Enrichment,
           ms_54S55W7C: MlWorkload.Upscale,
+          ms_ZZZZZZZZ: MlWorkload.Enrichment,
           ms_YS60DAXB: MlWorkload.RestorationFaithful,
         },
         refusal: null,
@@ -284,7 +285,7 @@ describe(CloudMlService.name, () => {
       expect(probe.workloads).not.toContain(MlWorkload.RestorationCreative);
     });
 
-    it('never offers a restoration mode whose only model the licence gate refused (FL-183)', async () => {
+    it('offers a restoration mode whose only model has a non-commercial licence (FL-451)', async () => {
       link();
       mocks.frameleafCloudMl.getCatalog.mockResolvedValue(
         catalogSchema.parse({
@@ -298,8 +299,12 @@ describe(CloudMlService.name, () => {
 
       const probe = await sut.probe();
 
-      expect(probe.workloads).toEqual([MlWorkload.Enrichment, MlWorkload.RestorationFaithful]);
-      expect(probe.cloud?.modelIds).toEqual(['ms_YS60DAXB']);
+      expect(probe.workloads).toEqual([
+        MlWorkload.Enrichment,
+        MlWorkload.RestorationFaithful,
+        MlWorkload.RestorationCreative,
+      ]);
+      expect(probe.cloud?.modelIds).toEqual(['ms_YS60DAXB', 'ms_F1SSRED6']);
     });
 
     it('reads an expired entitlement as not entitled, so admission refuses it (FL-183)', async () => {
@@ -501,7 +506,7 @@ describe(CloudMlService.name, () => {
   });
 
   describe('catalogue, wallet and usage', () => {
-    it('lists the models the cloud offers by SKU and revision (never the local-only or refused ones)', async () => {
+    it('lists the models the cloud offers by SKU and revision (never the refused ones)', async () => {
       link();
       const result = await sut.getCatalog();
 
@@ -510,6 +515,7 @@ describe(CloudMlService.name, () => {
         'ms_K6WT70CS',
         'ms_M7QG26PT',
         'ms_54S55W7C',
+        'ms_ZZZZZZZZ',
         'ms_YS60DAXB',
       ]);
       expect(result.models[1]).toEqual({
@@ -524,7 +530,8 @@ describe(CloudMlService.name, () => {
         rank: 5,
         isDefault: false,
       });
-      expect(result.models[3]).toMatchObject({
+      expect(result.models[3]).toMatchObject({ id: 'ms_ZZZZZZZZ', workload: MlWorkload.Enrichment });
+      expect(result.models[4]).toMatchObject({
         id: 'ms_YS60DAXB',
         workload: MlWorkload.RestorationFaithful,
         description: 'RealBasicVSR, L40S-class, 48 GB. Start fee 0.1 USD per worker',

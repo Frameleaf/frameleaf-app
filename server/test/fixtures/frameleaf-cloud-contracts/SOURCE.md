@@ -34,7 +34,8 @@ what the cloud publishes (FL-177). Provenance and any pending candidate verifica
   `rejected/consent-record-{email,ocr-addon}.json` and `rejected/catalog-two-defaults.json`; every other `ml/`
   file is unchanged. The server's production schemas in `server/src/utils/frameleaf-cloud.ts` parse every answer
   fixture field for field, check every request fixture before it would be sent, and refuse every `ml/rejected/`
-  fixture (FL-183).
+  fixture (FL-183) except `rejected/catalog-entry-non-commercial-licence.json`, which this server accepts since
+  FL-451 (legal review 2026-10-17: a model's licence never keeps it off Frameleaf Cloud).
 - `errors/` (FL-183): `capacity.json`, `consent-missing.json`, `consent-version-outdated.json`, `daily-cap.json`,
   `entitlement-missing.json`, `estimate-used.json`, `ml-rate-limited.json` and `region-mismatch.json` are
   byte-identical to `origin/main`. The wallet top-up envelopes (`balance-cap.json`, `top-up-minimum.json`)

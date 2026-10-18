@@ -32,7 +32,6 @@ import {
   cloudModelFor,
   cloudModelGroupFor,
   hasPendingCloudDisclosure,
-  isLocalOnlyModel,
   normalizeCloudProbeFacts,
 } from 'src/utils/frameleaf-cloud.js';
 
@@ -587,12 +586,6 @@ const evaluateCloudAdmission = (
     return refuse(
       MlAdmissionRefusal.ConsentVersionOutdated,
       `${destination.name}: consent ${destination.consentVersion ?? 'none'} was given, Frameleaf Cloud now requires ${facts.consentRequiredVersion}`,
-    );
-  }
-  if (isLocalOnlyModel(modelId)) {
-    return refuse(
-      MlAdmissionRefusal.ModelMismatch,
-      `${destination.name}: the model ${modelId} runs on this server only and is never sent to Frameleaf Cloud`,
     );
   }
   // FL-186: a stored check from before model groups cannot place a model; a view shows it as waiting

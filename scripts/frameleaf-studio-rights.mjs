@@ -8,8 +8,8 @@
  * the engine packager reviewed them. `studio/rights-approval.json` records the owner's approval
  * (FL-146, September 25, 2026, afternoon: all 210 bundled resources approved), bound to a digest
  * of each approved row. An approved row may name uses the owner withheld (`excludedUses`, with the
- * reason, e.g. MusicGen-small's CC-BY-NC-4.0 licence keeps it off hosted use, FL-146 comment
- * 34944); those uses stay blocked and the refusal carries the reason. The server mirror admits a use when the reviewed decision allows it or the
+ * reason; none does since FL-451 withdrew MusicGen-small's hosted-use exclusion, 2026-10-17); those
+ * uses stay blocked and the refusal carries the reason. The server mirror admits a use when the reviewed decision allows it or the
  * owner approved that exact row; a row that changed after approval, or a resource that is new or
  * unknown, stays blocked. The resolver that admits Studio graph resources refuses a blocked one by
  * name instead of loading it.

@@ -150,12 +150,12 @@ describe('Frameleaf Cloud models (FL-146, FL-183, FL-186)', () => {
     expect(cloudModelFor(MlWorkload.Enrichment, null, { defaultModels: { descriptions: 'ms_K6WT70CS' } })).toBe(
       'ms_K6WT70CS',
     );
-    // a local-only choice is refused, never swapped for the default
+    // a chosen model is named as chosen, never swapped for the default; no model is local only (FL-451)
     expect(
       cloudModelFor(MlWorkload.Enrichment, 'Qwen/Qwen2.5-VL-3B-Instruct', {
         defaultModels: { descriptions: 'ms_K6WT70CS' },
       }),
-    ).toBeNull();
+    ).toBe('Qwen/Qwen2.5-VL-3B-Instruct');
     expect(cloudModelFor(MlWorkload.Upscale, null, null)).toBeNull();
   });
 });

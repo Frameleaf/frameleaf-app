@@ -34,14 +34,14 @@
     {
       "area": "cloud",
       "component": "model:Xenova/musicgen-small",
-      "description": "MusicGen small carries a CC-BY-NC-4.0 (non-commercial) licence, so it must never be offered on Frameleaf Cloud (hosted use); local/server/LAN-worker use stays approved.",
+      "description": "MusicGen small carries a CC-BY-NC-4.0 (non-commercial) licence. It is eligible everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451). The FL-146 hosted-use exclusion is withdrawn.",
       "enforcedBy": [
-        "studio/rights-approval.json resources[].excludedUses.hostedUse",
+        "studio/rights-approval.json (no excludedUses on the row)",
         "server/src/utils/studio-rights.generated.ts"
       ],
       "id": "musicgen-hosted-exclusion",
       "owner": "Owner (AJ Taylor)",
-      "reason": "Owner decision, Jira FL-146 comment 34944 (2026-09-25). Enforced as an excludedUses.hostedUse entry in studio/rights-approval.json.",
+      "reason": "Owner decision, Jira FL-451 (2026-10-17), following legal review: all model use is personal use, on the user's own server or in a Frameleaf Cloud container Frameleaf only rents. Replaces the FL-146 comment 34944 exclusion (2026-09-25).",
       "status": "cleared"
     },
     {
