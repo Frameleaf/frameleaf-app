@@ -13,12 +13,14 @@ import { DisablePasswordLoginCommand, EnablePasswordLoginCommand } from 'src/com
 import { PromptPasswordResetQuestions, ResetAdminPasswordCommand } from 'src/commands/reset-admin-password.command.js';
 import { RestoreStateCommand } from 'src/commands/restore-state.command.js';
 import { SchemaCheck } from 'src/commands/schema-check.js';
+import { ValidateRestoreCommand } from 'src/commands/validate-restore.command.js';
 import { VersionCommand } from 'src/commands/version.command.js';
 
 // Frameleaf administration commands.
 export const commandsAndQuestions = [
   ImportImmichCommand,
   RestoreStateCommand,
+  ValidateRestoreCommand,
   // FL-164: bare-metal restore from a cloud backup bucket
   ...cloudBackupCommands,
   ResetAdminPasswordCommand,
