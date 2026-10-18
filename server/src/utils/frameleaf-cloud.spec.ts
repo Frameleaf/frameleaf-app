@@ -41,7 +41,6 @@ import {
   isEntitled,
   isFinalCloudJobStatus,
   isGatewayCloneSuspected,
-  isLocalOnlyModel,
   isNewWorkPaused,
   jobAdmittedSchema,
   jobCreateRequestSchema,
@@ -725,7 +724,8 @@ describe('cloud workload ID mapping (FL-181)', () => {
  * FL-181, FL-183: the cloud's own `ml/` and `ml/rejected/` fixtures (FC-34, Frameleaf/frameleaf-cloud#29
  * at `89fb079f2a2dd7f82bd01c15b7609e2068cd09d6`; see `test/fixtures/frameleaf-cloud-contracts/SOURCE.md`)
  * drive these specs: every gateway answer this server reads parses with its production schema, every
- * body it sends passes the contract check it is sent through, and every rejected fixture is refused.
+ * body it sends passes the contract check it is sent through, and every rejected fixture is refused,
+ * except the non-commercial licence entry this server accepts since FL-451.
  */
 describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
   const REJECTED_CATALOG_ENTRIES = [
@@ -734,7 +734,6 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
     'catalog-entry-model-id.json',
     'catalog-entry-name-as-compute-sku.json',
     'catalog-entry-name-as-rev.json',
-    'catalog-entry-non-commercial-licence.json',
     'catalog-entry-restoration-without-mode.json',
   ];
   const REJECTED_ESTIMATES = [
@@ -883,7 +882,7 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
     it.each(REJECTED_CATALOG_ENTRIES)('refuses the rejected %s entry', (name) => {
       const entry = cloudContractFixture<{ workload: string }>(`ml/rejected/${name}`);
       expect(catalogEntrySchema.safeParse(entry).success).toBe(false);
-      // refused for leaking an identifier, its mode or its licence, never for its workload ID
+      // refused for leaking an identifier or for its mode, never for its workload ID
       expect(appWorkloadsForCloudId(entry.workload)).not.toEqual([]);
     });
 
@@ -895,7 +894,7 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
       expect(parsed.refused).toBe(REJECTED_CATALOG_ENTRIES.length);
     });
 
-    it('never offers a restoration mode whose only model has a non-commercial licence', () => {
+    it('offers a restoration mode whose only model has a non-commercial licence (FL-451)', () => {
       const catalog = cloudContractFixture<{ etag: string; models: Array<{ mode: string }> }>(
         'ml/catalog-restoration.json',
       );
@@ -906,16 +905,24 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
           cloudContractFixture<unknown>('ml/rejected/catalog-entry-non-commercial-licence.json'),
         ],
       });
+      // the cloud's fixture sits under rejected/ from before the legal review of 2026-10-17
+      expect(parsed.refused).toBe(0);
       expect(parsed.models.map((model) => workloadForCatalogEntry(model.workload, model.mode))).toEqual([
         MlWorkload.RestorationFaithful,
+        MlWorkload.RestorationCreative,
       ]);
+      expect(parsed.models[1].licence).toEqual({ name: 'NTU S-Lab License 1.0', commercialHosted: 'no' });
     });
 
-    it('accepts an explicit null mode outside restoration and a licence with conditions', () => {
+    it('accepts an explicit null mode outside restoration and a licence of any kind (FL-451)', () => {
       const [entry] = cloudContractFixture<{ models: Record<string, unknown>[] }>('ml/catalog.json').models;
       expect(catalogEntrySchema.parse({ ...entry, mode: null }).mode).toBeNull();
-      const licence = { name: 'Qwen License', commercialHosted: 'conditions' };
-      expect(catalogEntrySchema.parse({ ...entry, licence }).licence).toEqual(licence);
+      for (const commercialHosted of ['yes', 'conditions', 'no']) {
+        const licence = { name: 'Qwen License', commercialHosted };
+        expect(catalogEntrySchema.parse({ ...entry, licence }).licence).toEqual(licence);
+      }
+      const unknown = { name: 'Qwen License', commercialHosted: 'maybe' };
+      expect(catalogEntrySchema.safeParse({ ...entry, licence: unknown }).success).toBe(false);
     });
 
     it('refuses markup or control characters in text meant for people', () => {
@@ -924,47 +931,21 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
       expect(catalogEntrySchema.safeParse({ ...entry, notice: 'Built with\u{7}Qwen' }).success).toBe(false);
     });
 
-    it('offers no local-only model, even under a SKU, recognised by its display name (FL-146)', () => {
+    it('offers every accepted model, whatever its licence or name (FL-451, retiring the FL-146 list)', () => {
       const catalog = catalogSchema.parse(cloudContractFixture('ml/catalog.json'));
       const [entry] = catalog.models;
-      const localOnly = {
+      const qwen3b = {
         ...entry,
         sku: 'ms_ZZZZZZZZ',
         display: { ...entry.display, model: 'Qwen2.5-VL-3B-Instruct' },
       };
-      expect(offeredCatalogModels({ models: [...catalog.models, localOnly] }).map((model) => model.sku)).toEqual([
+      expect(offeredCatalogModels({ models: [...catalog.models, qwen3b] }).map((model) => model.sku)).toEqual([
         'ms_K6WT70CS',
         'ms_M7QG26PT',
         'ms_54S55W7C',
+        'ms_ZZZZZZZZ',
       ]);
       expect(offeredCatalogModels(null)).toEqual([]);
-    });
-
-    it('recognises a local-only model whatever spaces or punctuation its name carries', () => {
-      for (const name of [
-        'Qwen2.5 VL 3B',
-        'Qwen 2.5-VL 3B Instruct',
-        'qwen2_5_vl_3b',
-        'Qwen/Qwen2.5-VL-3B-Instruct',
-        'llmware/qwen2.5-vl-3b-ov',
-        'NLLB CLIP base',
-        'nllb-clip-large-siglip__v1',
-        'MusicGen Small',
-        'Xenova/musicgen-small',
-      ]) {
-        expect(isLocalOnlyModel(name), name).toBe(true);
-      }
-      for (const name of [
-        'Qwen2.5-VL-72B AWQ',
-        'Qwen2.5-VL-32B',
-        'Qwen3.5-9B',
-        'SeedVR2-3B',
-        'ms_K6WT70CS',
-        '',
-        null,
-      ]) {
-        expect(isLocalOnlyModel(name), String(name)).toBe(false);
-      }
     });
 
     /**
@@ -1028,9 +1009,9 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
         expect(catalogEntrySchema.safeParse({ ...standard, default: 'yes' }).success).toBe(false);
       });
 
-      it('never names a local-only model as a default', () => {
+      it('names a formerly local-only model as a default when the catalogue marks it (FL-451)', () => {
         const catalog = parse([{ ...standard, display: { model: 'Qwen2.5 VL 3B', gpu: 'Any' } }]);
-        expect(catalogDefaults(offeredCatalogModels(catalog))).toEqual({});
+        expect(catalogDefaults(offeredCatalogModels(catalog))).toEqual({ descriptions: 'ms_K6WT70CS' });
       });
 
       it('takes a workload default from its own group only', () => {

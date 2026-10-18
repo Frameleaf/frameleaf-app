@@ -6,11 +6,21 @@ import type { SyncAck } from 'src/types.js';
 import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AlbumUserRole, AssetMetadataKey, ChecksumAlgorithm } from 'src/enum.js';
+import { AlbumUserRole, AssetMetadataKey, ChecksumAlgorithm, UserMetadataKey } from 'src/enum.js';
 import { TagSync } from 'src/repositories/tag-sync.repository.js';
 import { DB } from 'src/schema/index.js';
-import { getHiddenContentFilter, hiddenContentAssetIdExists, withHiddenContentFilter } from 'src/utils/database.js';
-import { type HiddenContentQueryOptions, getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import {
+  getHiddenContentFilter,
+  hiddenAssetIdExists,
+  hiddenContentAssetIdExists,
+  hiddenFromOthers,
+  withHiddenContentFilter,
+} from 'src/utils/database.js';
+import {
+  type HiddenContentQueryOptions,
+  getHiddenContentQueryOptions,
+  getOthersRulesQueryOptions,
+} from 'src/utils/hidden-content.js';
 import {
   effectiveVisibility,
   getLockedOwnerId,
@@ -54,11 +64,12 @@ const dummyQueryOptions = {
   },
   excludeNsfw: true,
 };
+// FL-446: a cover another member owns is also withheld when it matches that owner's Locked rules
 const albumThumbnailAssetId = (options: HiddenContentQueryOptions) => {
-  const hiddenContent = getHiddenContentFilter(options);
-  return hiddenContent
+  const hidden = hiddenAssetIdExists(sql.ref('album.albumThumbnailAssetId'), options);
+  return hidden
     ? sql<string | null>`case
-        when ${hiddenContentAssetIdExists(sql.ref('album.albumThumbnailAssetId'), hiddenContent)} then null
+        when ${hidden} then null
         else album."albumThumbnailAssetId"
       end`.as('thumbnailAssetId')
     : sql<string | null>`album."albumThumbnailAssetId"`.as('thumbnailAssetId');
@@ -358,7 +369,7 @@ class AlbumSync extends BaseSync {
 }
 class AlbumAssetSync extends BaseSync {
   getCurrent(auth: AuthDto, key?: string) {
-    const options = getHiddenContentQueryOptions(auth);
+    const options = { ...getHiddenContentQueryOptions(auth), ...getOthersRulesQueryOptions(auth) };
     return this.db
       .selectFrom('album_asset')
       .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
@@ -529,6 +540,47 @@ class AlbumToAssetSync extends BaseSync {
   }
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('album_asset_audit', daysAgo);
+  }
+  /**
+   * FL-447: a fingerprint (md5) of the album items withheld from `userId` (owner decision, October 17,
+   * 2026: Locked items and items hidden by their owner's Locked rules reach partners only): every
+   * `albumId:assetId` pair, in the albums and shared spaces the user is a member of, of another member's
+   * item that is locked (`albumAssetVisibleTo`, as the album streams filter it) or matches its owner's
+   * Locked rules (`hiddenFromOthers`, Studio exports of such items included). With `before`, only the
+   * pairs whose album item and membership already existed before that id count — the set as it stood
+   * then, judged now — so an item or album added since is never a change. While no item is locked and no
+   * account has a Locked rule the condition is a one-time filter and nothing is scanned.
+   */
+  async getWithheldFingerprint(userId: string, before?: string): Promise<string> {
+    const row = await this.db
+      .selectFrom('album_asset')
+      .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
+      .innerJoin('album', 'album.id', 'album_asset.albumId')
+      .innerJoin('asset', 'asset.id', 'album_asset.assetId')
+      .where('album_user.userId', '=', userId)
+      .where('album.deletedAt', 'is', null)
+      .where(
+        sql<boolean>`(exists (select 1 from asset_lock) or exists (
+          select 1
+          from user_metadata as rules_owner
+          where rules_owner.key = ${sql.lit(UserMetadataKey.Preferences)}
+            and (
+              jsonb_path_exists(rules_owner.value, '$.privacy.suppression.tagIds[*]')
+              or jsonb_path_exists(rules_owner.value, '$.privacy.suppression.personIds[*]')
+              or jsonb_path_exists(rules_owner.value, '$.privacy.suppression.petIds[*]')
+            )
+        ))`,
+      )
+      .where('asset.ownerId', '!=', userId)
+      .where(sql<boolean>`(not ${albumAssetVisibleTo(userId)} or ${hiddenFromOthers(userId, 'asset')})`)
+      .$if(!!before, (qb) => qb.where('album_asset.updateId', '<', before!).where('album_user.createId', '<', before!))
+      .select(
+        sql<string>`md5(coalesce(string_agg(album_asset."albumId"::text || ':' || album_asset."assetId"::text, ',' order by album_asset."albumId", album_asset."assetId"), ''))`.as(
+          'fingerprint',
+        ),
+      )
+      .executeTakeFirstOrThrow();
+    return row.fingerprint;
   }
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {

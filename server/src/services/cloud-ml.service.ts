@@ -56,7 +56,6 @@ import {
   cloudFactsFromCapabilities,
   compareConsentVersions,
   isCloudModelGroup,
-  isLocalOnlyModel,
   knownWorkloads,
   offeredCatalogModels,
   stepUpUrl,
@@ -337,7 +336,7 @@ export class CloudMlService extends BaseService {
    * The models Frameleaf Cloud offers now, for the model picker (FL-183: the FC-34 catalogue). The
    * model's identity is its SKU (`id`) and revision (`fingerprint`); `name` is the catalogue label and
    * `description` its display-only model and GPU names, never sent back. Prices are per metered
-   * second. Entries the contract refuses, and local-only models, are left out.
+   * second. Entries the contract refuses are left out.
    */
   async getCatalog(): Promise<CloudMlCatalogResponseDto> {
     const gateway = await this.requireGateway();
@@ -396,9 +395,6 @@ export class CloudMlService extends BaseService {
       return this.getModelChoices();
     }
     const modelId = dto.modelId;
-    if (isLocalOnlyModel(modelId)) {
-      throw new BadRequestException(`The model ${modelId} runs on this server only`);
-    }
     const gateway = await this.requireGateway();
     const catalog = await this.callCloud(() => this.frameleafCloudMlRepository.getCatalog(gateway));
     const model = offeredCatalogModels(catalog).find((entry) => entry.sku === modelId);
@@ -560,8 +556,8 @@ export class CloudMlService extends BaseService {
         this.frameleafCloudMlRepository.getCatalog(gateway).catch(() => null),
       ]);
       this.warnRefusedEntries(catalog);
-      // Local-only models (FL-146) never count as offered, even if a catalogue lists them. The model
-      // SKU is the cloud's model identity (FL-183), so `modelIds` and a model choice hold it.
+      // Every accepted catalogue model counts as offered (FL-451). The model SKU is the cloud's model
+      // identity (FL-183), so `modelIds` and a model choice hold it.
       const usableModels = offeredCatalogModels(catalog);
       const modelIds = usableModels.map((model) => model.sku);
       const modelWorkloads = Object.fromEntries(

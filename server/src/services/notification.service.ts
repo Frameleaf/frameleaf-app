@@ -767,8 +767,8 @@ export class NotificationService extends BaseService {
       return;
     }
 
-    // Background delivery never inherits a recipient's PIN elevation. Existing access predicates
-    // exclude actual Locked media while preserving owner rule-only explicit album shares.
+    // Background delivery never inherits a recipient's PIN elevation. The access predicates exclude
+    // Locked media and another owner's Locked-rule matches (FL-446: those reach partners only).
     const allowed = await this.checkAccess({
       auth: { user: recipient },
       permission: Permission.AssetView,

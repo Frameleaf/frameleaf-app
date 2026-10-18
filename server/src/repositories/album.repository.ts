@@ -12,7 +12,6 @@ import {
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Insertable } from 'kysely';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { columns } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
@@ -33,6 +32,7 @@ import {
   withDefaultVisibility,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
+import { type HiddenContentQueryOptions, everyOwnersRules } from 'src/utils/hidden-content.js';
 import { isNotLocked, notLockedOrOwnedBy } from 'src/utils/locked.js';
 
 export interface AlbumAssetCount {
@@ -241,13 +241,14 @@ export class AlbumRepository {
   /**
    * FL-349: the few items a shared space shows someone invited to it, newest first. Only Timeline and
    * Archive media that is not Locked (so never hidden motion parts), never trashed, and never media
-   * marked sensitive, whoever owns it: the same reading as the preview counts.
+   * marked sensitive or matching its owner's Locked rules (FL-446), whoever owns it: the same reading
+   * as the preview counts.
    */
   async getSpacePreviewAssetIds(albumId: string, limit: number): Promise<string[]> {
     const rows = await this.db
       .selectFrom('asset')
       .$call((qb) => withDefaultVisibility(qb))
-      .$call((qb) => withHiddenContentFilter(qb, { excludeNsfw: true }))
+      .$call((qb) => withHiddenContentFilter(qb, { excludeNsfw: true, ...everyOwnersRules }))
       .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
       .select('asset.id')
       .where('album_asset.albumId', '=', albumId)

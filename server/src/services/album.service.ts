@@ -41,7 +41,12 @@ import { getAlbumEditFields, queueAlbumCopies, recordAlbumEdit } from 'src/servi
 import { albumOrderGroup, buildAlbumTree, orderAlbumTree } from 'src/utils/album-tree.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
-import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
+import {
+  everyOwnersRules,
+  getHiddenContentQueryOptions,
+  getOthersRulesQueryOptions,
+  getPrivacyQueryOptions,
+} from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import { getPreferences } from 'src/utils/preferences.js';
@@ -1014,11 +1019,15 @@ export class AlbumService extends BaseService {
    */
   /**
    * FL-137: what of these new album items other members can see. Locked media never reaches anyone but
-   * its owner, so an addition of Locked items only must not tell members that anything changed.
+   * its owner, nor does an item matching its owner's Locked rules (FL-446), so an addition of such items
+   * only must not tell members that anything changed.
    */
   private async shownToMembers(assetIds: string[]): Promise<string[]> {
-    const locked = await this.assetRepository.getLockedAssetIds(assetIds);
-    return assetIds.filter((assetId) => !locked.has(assetId));
+    const [locked, ruleHidden] = await Promise.all([
+      this.assetRepository.getLockedAssetIds(assetIds),
+      this.assetRepository.getHiddenContentAssetIds(assetIds, everyOwnersRules),
+    ]);
+    return assetIds.filter((assetId) => !locked.has(assetId) && !ruleHidden.has(assetId));
   }
 
   /**
@@ -1052,12 +1061,14 @@ export class AlbumService extends BaseService {
 
   /**
    * What this viewer may see of an album: the hidden-content filter, and — in an elevated session —
-   * their own Locked media (`lockedOwnerId`). Locked media of other people never shows.
+   * their own Locked media (`lockedOwnerId`). Locked media of other people never shows, nor does
+   * another member's item that matches its owner's Locked rules (FL-446: partners only).
    */
   private nsfwOptions(auth: AuthDto, suppressedOnly?: boolean): AlbumReadOptions {
     return {
       ...(suppressedOnly ? getPrivacyQueryOptions(auth, true) : getHiddenContentQueryOptions(auth)),
       ...getLockedVisibilityOptions(auth),
+      ...getOthersRulesQueryOptions(auth),
     };
   }
 
@@ -1103,7 +1114,13 @@ export class AlbumService extends BaseService {
       }));
     }
 
-    if (!options.excludeNsfw && !options.hiddenContent && !options.onlyHiddenContent) {
+    // FL-446: a cover another member owns is also left out when it matches that owner's Locked rules
+    if (
+      !options.excludeNsfw &&
+      !options.hiddenContent &&
+      !options.onlyHiddenContent &&
+      options.othersRulesViewerId === undefined
+    ) {
       return albums;
     }
 

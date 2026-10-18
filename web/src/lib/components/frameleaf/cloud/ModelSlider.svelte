@@ -6,7 +6,7 @@
    * icon and a text label and the selected stop a full line, so colour is never the only signal.
    * Built on native radio buttons (a radio group: arrow keys move between the stops that can be
    * chosen). The route decides what can be chosen: Local only crosses out blue stops with the reason,
-   * Cloud only moves hostable models to blue, and a licence that forbids hosted use never reaches blue.
+   * and Cloud only moves hostable models to blue; a model's licence never keeps it off blue (FL-451).
    * Below phone width the stops show their icons only.
    */
   import './gpu-models.css';

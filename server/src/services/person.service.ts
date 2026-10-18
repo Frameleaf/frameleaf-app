@@ -81,7 +81,11 @@ import {
 } from 'src/utils/face-anchor.js';
 import { type FaceSource, getFaceSourceRevision } from 'src/utils/face-source.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
-import { getHiddenContentQueryOptions, isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
+import {
+  getHiddenContentQueryOptions,
+  getOthersRulesQueryOptions,
+  isSuppressedWhileLocked,
+} from 'src/utils/hidden-content.js';
 import { isLockedAssetRow } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isFacialRecognitionEnabled } from 'src/utils/misc.js';
@@ -756,7 +760,11 @@ export class PersonService extends BaseService {
 
   async getStatistics(auth: AuthDto, personGroupId: string): Promise<PersonStatisticsResponseDto> {
     await this.requirePerson(auth, Permission.PersonRead, personGroupId);
-    return this.personRepository.getStatistics(personGroupId, auth.user.id, getHiddenContentQueryOptions(auth));
+    // the count reaches the person's shared-album media too (FL-446: never another owner's Locked-rule match)
+    return this.personRepository.getStatistics(personGroupId, auth.user.id, {
+      ...getHiddenContentQueryOptions(auth),
+      ...getOthersRulesQueryOptions(auth),
+    });
   }
 
   async getThumbnail(auth: AuthDto, personGroupId: string): Promise<FileDownloadResponse> {

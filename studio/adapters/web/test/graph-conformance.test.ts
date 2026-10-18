@@ -420,12 +420,14 @@ describe('Studio graph protocol v1 conformance (FL-306 to FL-309)', () => {
     generated.history.forEach((script, index) => expect(script.expect, script.id).toEqual(stored.history[index]!.expect))
   })
 
-  // FL-94 / 0134: these forbidden locked inputs must refuse, not regenerate an applied golden.
+  // FL-94 / 0134 and FL-450: these forbidden locked inputs must refuse, not regenerate an applied golden.
   for (const [id, index, reason, detail] of [
     ['clip.setSpeed/ripple-moves-clips-on-locked-tracks', 2, 'failed', 'clip.setSpeed: the clip cannot take that speed here'],
     ['clip.delete/ripple-refuses-locked-linked-track', 1, 'failed', 'clip.delete: a clip it would change is on a locked track'],
     ['clip.delete/ripple-refuses-locked-downstream-companion', 2, 'failed', 'clip.delete: a clip it would change is on a locked track'],
     ['clip.split/refuses-locked-tracks', 2, 'invalid', 'clip.split: nothing spans that time'],
+    ['clip.add/refuses-locked-video-track', 1, 'failed', 'clip.add: the destination track is locked'],
+    ['clip.add/refuses-locked-audio-track', 1, 'failed', 'clip.add: the destination track is locked'],
   ] as const) it(`${id} refuses without graph, history or identity draws`, async () => {
     const fixtures = load()
     const entry = fixtures.cases.find((entry) => entry.id === id)!

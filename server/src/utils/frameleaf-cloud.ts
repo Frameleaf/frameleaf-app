@@ -403,7 +403,9 @@ export type CloudRestorationMode = (typeof CLOUD_RESTORATION_MODES)[number];
  *
  * Strict, as the contract is: an entry that names an internal identifier (`modelId`, `gpuClass`,
  * `modelFingerprint`), carries a name where a SKU or revision belongs, gives a restoration model no
- * mode (or any other model one), or has a licence that forbids commercial hosted use is refused.
+ * mode (or any other model one) is refused. A model's licence never refuses it (FL-451, legal review
+ * 2026-10-17): every model runs for the personal use of the server's own user, on this server or in a
+ * Frameleaf Cloud container rented for them.
  * `catalogSchema` leaves such an entry out rather than failing the whole catalogue, so it is never
  * offered, chosen or sent.
  */
@@ -430,14 +432,17 @@ export const catalogEntrySchema = z
      */
     mode: z.enum(CLOUD_RESTORATION_MODES).nullable().optional(),
     /**
-     * FC-34: the model licence shown next to the model. Only `yes` and `conditions` are ever
-     * published; `no` (a licence forbidding commercial hosted use) refuses the entry.
+     * FC-34: the model licence shown next to the model. Any `commercialHosted` answer is accepted
+     * (FL-451): a licence that withholds commercial hosting does not withhold a model run for the
+     * user's own personal use in a Frameleaf Cloud container.
      */
-    licence: z.strictObject({ name: displayText(80), commercialHosted: z.enum(['yes', 'conditions']) }).optional(),
+    licence: z
+      .strictObject({ name: displayText(80), commercialHosted: z.enum(['yes', 'conditions', 'no']) })
+      .optional(),
     /**
      * FC-34 (cloud decision 2026-09-26): the model the cloud recommends for its group, the workload
      * (and, for restoration, the mode) in this region. At most one model per group carries it; none
-     * does when the recommended model is not available to this region or licence.
+     * does when the recommended model is not available to this region.
      */
     default: z.boolean().optional(),
     /** FC-48, transcription only: the languages the model is offered for, with the word error rate it is gated at. */
@@ -563,11 +568,11 @@ export const catalogSchema = z
 export type CloudCatalog = z.infer<typeof catalogSchema>;
 
 /**
- * The catalogue models this server may offer: every accepted entry except a local-only model (FL-146),
- * recognised by its display name, since a SKU never names the model.
+ * The catalogue models this server may offer: every accepted entry. No model is withheld for its
+ * licence (FL-451, legal review 2026-10-17, which retired the FL-146 local-only list).
  */
 export const offeredCatalogModels = (catalog: Pick<CloudCatalog, 'models'> | null): CloudCatalogEntry[] =>
-  (catalog?.models ?? []).filter((model) => !isLocalOnlyModel(model.sku) && !isLocalOnlyModel(model.display.model));
+  catalog?.models ?? [];
 
 /**
  * The default model SKU of each catalogue group (`catalogGroupKey`) among `models` (FC-34): only a
@@ -1834,23 +1839,6 @@ export type CloudProbeFacts = {
 };
 
 /**
- * Models that run on this server only (FL-146 owner decisions, 2026-09-25): the nllb-clip search
- * models (base and large, every variant; CC-BY-NC-4.0), MusicGen-small (CC-BY-NC-4.0) and
- * Qwen2.5-VL-3B-Instruct (Qwen Research License, including its OpenVINO conversion). They are never
- * taken from a Frameleaf Cloud catalogue, never routed or configured there, and admission refuses a
- * cloud job for them. They stay available on this server and home-network workers.
- */
-const LOCAL_ONLY_MODEL = /nllbclip|musicgensmall|qwen25vl3b/;
-
-/**
- * Whether `id` (a model id, or a catalogue display name such as "Qwen2.5 VL 3B") names a local-only
- * model. Letters and digits alone are compared, lower-cased, so spaces, dots, hyphens, slashes and
- * underscores never hide one.
- */
-export const isLocalOnlyModel = (id: string | null | undefined): boolean =>
-  !!id && LOCAL_ONLY_MODEL.test(id.toLowerCase().replaceAll(/[^\da-z]/g, ''));
-
-/**
  * The catalogue group a Frameleaf Cloud job for `workload` takes its default from (FC-34), or null
  * when there is none to take: Studio AI spans two cloud workloads (`transcription`, `tts`), so it
  * always names its model, and work the cloud never runs has no group. `cloudModelGroupFor` is the
@@ -1876,9 +1864,8 @@ export const cloudDefaultGroupFor = (workload: MlWorkload): string | null => {
 
 /**
  * The model a Frameleaf Cloud job for `workload` names (FL-183, FC-34): the one an administrator
- * chose (never a local-only one), else the model the catalogue marks as its group's default at the
- * last check, else null. A null answer is refused at admission; no model name or other model is ever
- * put in its place.
+ * chose, else the model the catalogue marks as its group's default at the last check, else null. A
+ * null answer is refused at admission; no model name or other model is ever put in its place.
  */
 export const cloudModelFor = (
   workload: MlWorkload,
@@ -1886,7 +1873,7 @@ export const cloudModelFor = (
   facts: Pick<CloudProbeFacts, 'defaultModels'> | null | undefined,
 ): string | null => {
   if (chosen) {
-    return isLocalOnlyModel(chosen) ? null : chosen;
+    return chosen;
   }
   const group = cloudDefaultGroupFor(workload);
   if (!group) {

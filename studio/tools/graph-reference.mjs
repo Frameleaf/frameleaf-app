@@ -705,9 +705,13 @@ const commands = {
     const rounded = Math.round(asset.record.duration * state.fps);
     const natural = rounded > 0 ? rounded : Math.max(1, Math.round(asset.type === 'image' ? state.fps * 3 : state.fps));
     if (asset.type === 'video' && duration !== undefined && duration > natural) invalid('duration is longer than the source');
+    // FL-450: the destination, and the first audio track that takes the linked sound, must be unlocked.
+    if (track.locked) failed('clip.add: the destination track is locked');
     let audioTrackId;
     if (asset.type === 'video' && asset.record.audioCodec) {
-      audioTrackId = state.tracks.find((candidate) => candidate.kind === 'audio')?.id ?? createAudioTrack(state, draw);
+      const firstAudio = state.tracks.find((candidate) => candidate.kind === 'audio');
+      if (firstAudio?.locked) failed('clip.add: the destination track is locked');
+      audioTrackId = firstAudio?.id ?? createAudioTrack(state, draw);
     }
     const clips = placed(state, asset, track.id, audioTrackId, from, duration ?? natural, undefined, draw);
     for (const clip of clips) if (taken(state, clip)) failed('clip.add: that place on the track is taken');

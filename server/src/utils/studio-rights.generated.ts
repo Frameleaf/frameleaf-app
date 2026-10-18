@@ -26,7 +26,7 @@ export type StudioResourceRights = {
   restrictions: Readonly<Partial<Record<StudioRightsUseName, string>>>;
 };
 
-export const STUDIO_RIGHTS_SOURCE_SHA256 = '337bb1a1c440a320de0b3eae013d7f5b137d5b46a7f6ea7344901f42b6a5f17a';
+export const STUDIO_RIGHTS_SOURCE_SHA256 = 'c7fae6ac4fa7a5c38a73565d24f5557943fd1334cd8f61d1e4767a89ad3bfbab';
 
 /** The owner approval the allowed rows come from, or null when there is none. */
 export const STUDIO_RIGHTS_APPROVAL = {
@@ -34,7 +34,7 @@ export const STUDIO_RIGHTS_APPROVAL = {
   approvedOn: '2026-09-25',
   source:
     'Jira FL-146, comment 34941: Owner decisions (2026-09-25, afternoon), "Studio resource rights: all 210 bundled resources (fonts, LUTs, tracks, models) are approved. Rights enforcement stays in place for anything new or unknown."',
-  sha256: '9a6b7a08b1b29fb9787a1d62924552ef4b1813538ff0828c3bb4b5f1aad3186b',
+  sha256: '9387a92c1c76191c26ac740023deec1b7c2c483e9ed10549f8730f2646549c85',
 } as const;
 
 /** Whether the engine as a whole may be redistributed. False blocks every redistribution. */
@@ -1216,12 +1216,9 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     license: 'cc-by-nc-4.0',
     redistribution: 'allowed',
     localRuntime: 'allowed',
-    hostedUse: 'blocked',
+    hostedUse: 'allowed',
     approvedOn: '2026-09-25',
-    restrictions: {
-      hostedUse:
-        'CC-BY-NC-4.0 (non-commercial) licence, so it is not offered on Frameleaf Cloud; local use on this server or a LAN worker stays approved. Owner decision, Jira FL-146 comment 34944 (2026-09-25).',
-    },
+    restrictions: {},
   },
   'model:onnx-community/Kokoro-82M-v1.0-ONNX': {
     kind: 'model',

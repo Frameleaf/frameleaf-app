@@ -30,7 +30,12 @@ describe(ActivityService.name, () => {
 
       await expect(sut.getAll(AuthFactory.create({ id: userId }), { assetId, albumId })).resolves.toEqual([]);
 
-      expect(mocks.activity.search).toHaveBeenCalledWith({ assetId, albumId, isLiked: undefined });
+      expect(mocks.activity.search).toHaveBeenCalledWith({
+        assetId,
+        albumId,
+        isLiked: undefined,
+        othersRulesViewerId: userId,
+      });
     });
 
     it('should filter by type=like', async () => {
@@ -43,7 +48,12 @@ describe(ActivityService.name, () => {
         sut.getAll(AuthFactory.create({ id: userId }), { assetId, albumId, type: ReactionType.LIKE }),
       ).resolves.toEqual([]);
 
-      expect(mocks.activity.search).toHaveBeenCalledWith({ assetId, albumId, isLiked: true });
+      expect(mocks.activity.search).toHaveBeenCalledWith({
+        assetId,
+        albumId,
+        isLiked: true,
+        othersRulesViewerId: userId,
+      });
     });
 
     it('should filter by type=comment', async () => {
@@ -52,11 +62,15 @@ describe(ActivityService.name, () => {
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
       mocks.activity.search.mockResolvedValue([]);
 
-      await expect(sut.getAll(AuthFactory.create(), { assetId, albumId, type: ReactionType.COMMENT })).resolves.toEqual(
-        [],
-      );
+      const auth = AuthFactory.create();
+      await expect(sut.getAll(auth, { assetId, albumId, type: ReactionType.COMMENT })).resolves.toEqual([]);
 
-      expect(mocks.activity.search).toHaveBeenCalledWith({ assetId, albumId, isLiked: false });
+      expect(mocks.activity.search).toHaveBeenCalledWith({
+        assetId,
+        albumId,
+        isLiked: false,
+        othersRulesViewerId: auth.user.id,
+      });
     });
 
     it('should hide private NSFW asset activities when requested', async () => {
@@ -69,7 +83,13 @@ describe(ActivityService.name, () => {
         sut.getAll({ ...AuthFactory.create({ id: userId }), hideNsfwAssets: true }, { assetId, albumId }),
       ).resolves.toEqual([]);
 
-      expect(mocks.activity.search).toHaveBeenCalledWith({ assetId, albumId, isLiked: undefined, excludeNsfw: true });
+      expect(mocks.activity.search).toHaveBeenCalledWith({
+        assetId,
+        albumId,
+        isLiked: undefined,
+        excludeNsfw: true,
+        othersRulesViewerId: userId,
+      });
     });
 
     it('names the viewer as the only Locked owner in an elevated session, and nobody otherwise', async () => {
@@ -102,6 +122,7 @@ describe(ActivityService.name, () => {
         assetId: undefined,
         lockedOwnerId: userId,
         revealLockedOwnerId: userId,
+        othersRulesViewerId: userId,
       });
     });
 
@@ -140,14 +161,18 @@ describe(ActivityService.name, () => {
       mocks.activity.getStatistics.mockResolvedValue({ comments: 0, likes: 0 });
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
 
-      await expect(
-        sut.getStatistics({ ...AuthFactory.create(), hideNsfwAssets: true }, { assetId, albumId }),
-      ).resolves.toEqual({
+      const auth = { ...AuthFactory.create(), hideNsfwAssets: true };
+      await expect(sut.getStatistics(auth, { assetId, albumId })).resolves.toEqual({
         comments: 0,
         likes: 0,
       });
 
-      expect(mocks.activity.getStatistics).toHaveBeenCalledWith({ albumId, assetId, excludeNsfw: true });
+      expect(mocks.activity.getStatistics).toHaveBeenCalledWith({
+        albumId,
+        assetId,
+        excludeNsfw: true,
+        othersRulesViewerId: auth.user.id,
+      });
     });
   });
 

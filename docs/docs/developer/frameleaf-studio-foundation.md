@@ -23,9 +23,10 @@ apps ship from their own separate repos (owner decision, 2026-09-29).
 2. **`studio/rights-approval.json`** - the owner's approval. It lists the exact rows the owner
    approved (FL-146, 2026-09-25: all 210 bundled resources), each bound to a digest of that row in
    `dependency-attribution.json`. If a row changes after approval, or a resource is new or unknown,
-   it stays blocked. `excludedUses` records uses the owner withheld even on an approved row - for
-   example MusicGen small stays off Frameleaf Cloud (CC-BY-NC-4.0), while local/server/LAN-worker
-   use is approved.
+   it stays blocked. `excludedUses` records uses the owner withheld even on an approved row. No row
+   carries one: every model use is personal use by the user on their own server or a Frameleaf
+   Cloud container (legal review 2026-10-17, FL-451), so MusicGen small (CC-BY-NC-4.0) runs on
+   Frameleaf Cloud as well as on the server and home-network workers.
 3. **`server/src/utils/studio-rights.generated.ts`** (built by `scripts/frameleaf-studio-rights.mjs`
    from the two files above) - the engine-runtime admission mirror. This is the only place a Studio
    resource is actually admitted or refused while a project is open; it is owned by the Studio

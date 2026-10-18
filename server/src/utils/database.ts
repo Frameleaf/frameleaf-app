@@ -8,6 +8,7 @@ import {
   KyselyConfig,
   NotNull,
   OperandValueExpression,
+  RawBuilder,
   ReferenceExpression,
   SelectQueryBuilder,
   Selectable,
@@ -45,6 +46,8 @@ import {
   ImageEnrichmentFilter,
   PetObservationState,
   SearchOrderField,
+  StudioExportVersionState,
+  UserMetadataKey,
 } from 'src/enum.js';
 import {
   AssetSearchBuilderOptions,
@@ -669,6 +672,10 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
           ? qb.where('asset.deletedAt', 'is', null)
           : qb.where((eb) => othersNotTrashed(eb, options.viewingUserId!)),
       )
+      // FL-446: nor an item matching its owner's Locked rules, which only partners receive
+      .$if(!options.userIds && !!options.albumIds?.length, (qb) =>
+        qb.where(sql<boolean>`not ${hiddenFromOthers(options.viewingUserId, 'asset')}`),
+      )
       .$if(!!options.encodedVideoPath, (qb) =>
         qb
           .innerJoin('asset_file', (join) =>
@@ -1170,6 +1177,9 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       .where(notLockedOrOwnedBy(scope.lockedOwnerId || undefined, 'asset'))
       .$if(!!scope.sharedLink, (qb) => qb.where('asset.deletedAt', 'is', null))
       .$if(!scope.sharedLink && !!viewerId, (qb) => qb.where((eb) => othersNotTrashed(eb, viewerId!)))
+      // FL-446: an album-confined search reaches other people's items; one matching its owner's Locked
+      // rules is never among them (partners receive it as a locked copy, nobody else at all)
+      .$if(!scopeGlobally, (qb) => qb.where(sql<boolean>`not ${hiddenFromOthers(viewerId, 'asset')}`))
       .$if(!!scope.lockedMotion, (qb) =>
         qb.where((eb) => eb.not(isMotionOfLockedStill(eb, scope.lockedMotion!.lockedOwnerId))),
       )
@@ -1549,25 +1559,150 @@ const hiddenContentAssetExists = (filter: HiddenContentFilter, assetAlias = 'ass
   }
   return predicates.length === 0 ? sql<boolean>`false` : sql<boolean>`(${sql.join(predicates, sql` or `)})`;
 };
-export const hiddenContentAssetIdExists = (
-  assetId: Expression<unknown>,
-  filter: HiddenContentFilter,
-) => sql<boolean>`exists (
+const hiddenAssetIdExistsWhere = (assetId: Expression<unknown>, predicate: RawBuilder<boolean>) => sql<boolean>`exists (
     select 1
     from asset as hidden_content_asset
     where hidden_content_asset.id = ${assetId}
-      and ${hiddenContentAssetExists(filter, 'hidden_content_asset')}
+      and ${predicate}
+  )`;
+export const hiddenContentAssetIdExists = (assetId: Expression<unknown>, filter: HiddenContentFilter) =>
+  hiddenAssetIdExistsWhere(assetId, hiddenContentAssetExists(filter, 'hidden_content_asset'));
+/** The ids one of the owner's Locked rules (`privacy.suppression.<key>`) names, read from `owner_rules`. */
+const ownerRuleIds = (key: 'tagIds' | 'personIds' | 'petIds') =>
+  sql`(select (jsonb_path_query(owner_rules.value, ${sql.lit(`$.privacy.suppression.${key}[*]`)}) #>> '{}')::uuid)`;
+/**
+ * True when the asset `assetId`, owned by `ownerId`, matches one of that owner's Locked rules — a
+ * person, pet or tag the owner marked Locked (`privacy.suppression`), the same matches
+ * `hiddenContentAssetExists` makes for the owner's own session — read from the owner's stored
+ * preferences.
+ */
+const matchesOwnerRules = (assetId: Expression<unknown>, ownerId: Expression<unknown>) => sql<boolean>`exists (
+    select 1
+    from user_metadata as owner_rules
+    where owner_rules."userId" = ${ownerId}
+      and owner_rules.key = ${sql.lit(UserMetadataKey.Preferences)}
+      and (
+        exists (
+          select 1
+          from tag_asset
+          inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+          where tag_asset."assetId" = ${assetId}
+            and tag_closure.id_ancestor in ${ownerRuleIds('tagIds')}
+        )
+        or exists (
+          select 1
+          from asset_face
+          where asset_face."assetId" = ${assetId}
+            and asset_face."personGroupId" in ${ownerRuleIds('personIds')}
+            and asset_face."deletedAt" is null
+            and asset_face."isVisible" is true
+        )
+        or exists (
+          select 1
+          from pet_observation
+          inner join pet on pet.id = pet_observation."petId"
+          where pet_observation."assetId" = ${assetId}
+            and pet_observation."petId" in ${ownerRuleIds('petIds')}
+            and pet_observation.state = ${sql.lit(PetObservationState.Confirmed)}
+            and pet."ownerId" = ${ownerId}
+        )
+      )
   )`;
 /**
+ * FL-447: true when the asset under `assetAlias` is a published Studio export (`resultAssetId`) made,
+ * directly or through earlier exports, from a source that matches ITS owner's Locked rules. The
+ * lineage is `studio_export_version_source`, the provenance a lock follows to the export
+ * (`lockDerivedResults`); it is walked at read time, so the export follows the source owner's current
+ * rules and current tags, faces and pets, and shows again once no source matches. An asset that is
+ * no export costs one probe of `studio_export_version_resultAssetId_idx`.
+ */
+const exportOfOwnerRulesMatch = (assetAlias: string) => sql<boolean>`exists (
+    with recursive owner_rules_lineage ("assetId") as (
+      select owner_rules_source."assetId"
+      from studio_export_version as owner_rules_export
+      inner join studio_export_version_source as owner_rules_source on owner_rules_source."versionId" = owner_rules_export.id
+      where owner_rules_export."resultAssetId" = ${sql.ref(`${assetAlias}.id`)}
+        and owner_rules_export.state = ${sql.lit(StudioExportVersionState.Published)}
+        and owner_rules_source."assetId" is not null
+      union
+      select owner_rules_source."assetId"
+      from owner_rules_lineage
+      inner join studio_export_version as owner_rules_export on owner_rules_export."resultAssetId" = owner_rules_lineage."assetId"
+      inner join studio_export_version_source as owner_rules_source on owner_rules_source."versionId" = owner_rules_export.id
+      where owner_rules_export.state = ${sql.lit(StudioExportVersionState.Published)}
+        and owner_rules_source."assetId" is not null
+    )
+    select 1
+    from owner_rules_lineage
+    inner join asset as owner_rules_lineage_asset on owner_rules_lineage_asset.id = owner_rules_lineage."assetId"
+    where ${matchesOwnerRules(sql.ref('owner_rules_lineage_asset.id'), sql.ref('owner_rules_lineage_asset.ownerId'))}
+  )`;
+/**
+ * FL-446 (owner decision, October 17, 2026: "hidden items are only shared with partner sharing,
+ * they're never shared any other way"): true when the asset under `assetAlias` matches one of its
+ * OWNER's Locked rules (`matchesOwnerRules`), or is a Studio export made from a source that matches
+ * its own owner's (`exportOfOwnerRulesMatch`, FL-447) — an export is hidden wherever its source is,
+ * as a lock carries to it. The rules are read from each owner's stored preferences, so this works
+ * for any number of owners in one read (an album with several contributors). Partners receive such
+ * items only as locked copies (FL-326); every other sharing path leaves them out with
+ * `hiddenFromOthers`.
+ */
+export const hiddenByOwnerRules = (assetAlias = 'asset') =>
+  sql<boolean>`(${matchesOwnerRules(sql.ref(`${assetAlias}.id`), sql.ref(`${assetAlias}.ownerId`))} or ${exportOfOwnerRulesMatch(assetAlias)})`;
+/**
+ * FL-446: true when the asset under `assetAlias` belongs to someone other than `viewerId` and matches
+ * its owner's Locked rules (`hiddenByOwnerRules`). The viewer's own media is left to their own
+ * session filter (`hiddenContent`), which an unlocked session lifts. Without a viewer (a read on
+ * nobody's behalf, such as a shared link's) every owner's rules apply.
+ */
+export const hiddenFromOthers = (viewerId: string | null | undefined, assetAlias = 'asset') =>
+  viewerId
+    ? sql<boolean>`(${sql.ref(`${assetAlias}.ownerId`)} != ${asUuid(viewerId)} and ${hiddenByOwnerRules(assetAlias)})`
+    : hiddenByOwnerRules(assetAlias);
+/**
+ * FL-446: what the session hides beyond locks — its hidden-content filter (`getHiddenContentFilter`)
+ * and other owners' Locked-rule matches (`hiddenFromOthers`) — or undefined when neither applies.
+ */
+export const hiddenContentOrOthersRules = (options: HiddenContentQueryOptions = {}, assetAlias = 'asset') => {
+  const filter = getHiddenContentFilter(options);
+  const predicates: RawBuilder<boolean>[] = [];
+  if (filter) {
+    predicates.push(hiddenContentAssetExists(filter, assetAlias));
+  }
+  if (options.othersRulesViewerId !== undefined) {
+    predicates.push(hiddenFromOthers(options.othersRulesViewerId, assetAlias));
+  }
+  if (predicates.length === 0) {
+    return;
+  }
+  return predicates.length === 1 ? predicates[0] : sql<boolean>`(${sql.join(predicates, sql` or `)})`;
+};
+/**
+ * The asset with this id is hidden from the session (`hiddenContentOrOthersRules`), for a cover,
+ * thumbnail or motion part named by id; undefined when the session hides nothing that way.
+ */
+export const hiddenAssetIdExists = (assetId: Expression<unknown>, options: HiddenContentQueryOptions = {}) => {
+  const predicate = hiddenContentOrOthersRules(options, 'hidden_content_asset');
+  return predicate ? hiddenAssetIdExistsWhere(assetId, predicate) : undefined;
+};
+/**
  * True when the asset under `assetAlias` is hidden from a session with these options: locked and not
- * revealed to it (`revealedLockScope`), or matched by its hidden-content filter (the Locked rules,
- * sensitive content). A suppressed-only view (`onlyHiddenContent`) is an unlocked session's, which
- * hides nothing of its own.
+ * revealed to it (`revealedLockScope`), matched by its hidden-content filter (the Locked rules,
+ * sensitive content), or someone else's media matched by its owner's Locked rules (`hiddenFromOthers`,
+ * FL-446). A suppressed-only view (`onlyHiddenContent`) is an unlocked session's, which hides nothing
+ * of its own.
  */
 export const hiddenFromSession = (options: HiddenContentQueryOptions = {}, assetAlias = 'asset') => {
   const notRevealed = sql<boolean>`not ${revealedLockScope(options.revealLockedOwnerId, assetAlias)}`;
   const filter = options.onlyHiddenContent ? undefined : getHiddenContentFilter(options);
-  return filter ? sql<boolean>`(${notRevealed} or ${hiddenContentAssetExists(filter, assetAlias)})` : notRevealed;
+  const predicates: RawBuilder<boolean>[] = [notRevealed];
+  if (filter) {
+    predicates.push(hiddenContentAssetExists(filter, assetAlias));
+  }
+  if (options.othersRulesViewerId !== undefined) {
+    predicates.push(hiddenFromOthers(options.othersRulesViewerId, assetAlias));
+  }
+  return predicates.length === 1 ? notRevealed : sql<boolean>`(${sql.join(predicates, sql` or `)})`;
 };
 /**
  * FL-195 follow-up (owner decision, September 27, 2026: "Memories that have locked photos should be
@@ -1605,13 +1740,19 @@ export function withHiddenContentFilter<QDB, TB extends keyof QDB, O>(
   options?: HiddenContentQueryOptions,
   assetAlias = 'asset',
 ) {
+  // FL-446: someone else's media that matches its owner's Locked rules never shows, whatever the filter
+  const othersRulesViewerId = options?.othersRulesViewerId;
+  const scoped =
+    othersRulesViewerId === undefined
+      ? qb
+      : qb.where(sql<boolean>`not ${hiddenFromOthers(othersRulesViewerId, assetAlias)}`);
   const filter = getHiddenContentFilter(options);
   if (!filter) {
-    return qb;
+    return scoped;
   }
   return options?.onlyHiddenContent
-    ? withHiddenContentOnly(qb, filter, assetAlias)
-    : withoutHiddenContent(qb, filter, assetAlias);
+    ? withHiddenContentOnly(scoped, filter, assetAlias)
+    : withoutHiddenContent(scoped, filter, assetAlias);
 }
 const taggedAssetExists = (tagId: Expression<unknown>) => sql<boolean>`exists (
       select 1

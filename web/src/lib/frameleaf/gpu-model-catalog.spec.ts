@@ -18,7 +18,6 @@ import {
   interpolationEstimate,
   interpolationWork,
   isCloudOffered,
-  isLocalOnlyModel,
   ladderFor,
   ladderStates,
   modelLadders,
@@ -204,58 +203,38 @@ describe('gpu model catalogue (FL-159, CLD-201)', () => {
     expect(quotedUnitCost(positionById('qwen3.5-9b@1'))!.usd).toBeGreaterThan(0);
   });
 
-  it('never offers a licence that forbids hosted use on the cloud', () => {
-    for (const item of Object.values(modelLadders).flat()) {
-      if (item.commercialHosted !== 'no') {
-        continue;
-      }
-
-      expect(cloudPositions(item.workload)).not.toContain(item);
-      expect(bandFor(item, null)).not.toBe('cloud');
+  it('offers every position with a cloud offer, whatever its licence allows for commercial hosting (FL-451)', () => {
+    const qwen = positionById('qwen3.5-9b@1')!;
+    for (const commercialHosted of ['yes', 'conditions', 'no'] as const) {
+      const item = { ...qwen, commercialHosted, licence: 'CC-BY-NC-4.0 (non-commercial)' };
+      expect(isCloudOffered(item), commercialHosted).toBe(true);
+      expect(positionState(item, { gpu: null, route: 'cloud' }).runsOn).toBe('cloud');
     }
-    for (const item of cloudPositions()) {
-      expect(item.commercialHosted).toBe('yes');
-      expect(item.licence).not.toMatch(/non-commercial|research/i);
-    }
+    const offered = Object.values(modelLadders)
+      .flat()
+      .filter((item) => item.cloud !== null);
+    expect(cloudPositions()).toEqual(offered);
   });
 
-  it('never offers the nllb-clip models or MusicGen-small on the cloud, whatever the offer (FL-146)', () => {
+  it('offers the nllb-clip models, MusicGen-small and Qwen2.5-VL-3B on the cloud like any other (FL-451)', () => {
     const qwen = positionById('qwen3.5-9b@1')!;
     for (const id of [
       'nllb-clip-base-siglip__mrl@1',
-      'nllb-clip-base-siglip__v1@1',
-      'nllb-clip-large-siglip__mrl@1',
       'nllb-clip-large-siglip__v1@1',
       'musicgen-small@1',
       'Xenova/musicgen-small',
+      'Qwen/Qwen2.5-VL-3B-Instruct',
+      'qwen2.5-vl-3b@1',
+      'llmware/qwen2.5-vl-3b-ov',
     ]) {
-      expect(isLocalOnlyModel(id), id).toBe(true);
       const item = { ...qwen, id };
-      expect(isCloudOffered(item), id).toBe(false);
-      expect(bandFor(item, null)).not.toBe('cloud');
-      expect(positionState(item, { gpu: null, route: 'cloud' }).runsOn).not.toBe('cloud');
-    }
-    expect(cloudPositions().filter((item) => isLocalOnlyModel(item.id))).toEqual([]);
-    expect(isLocalOnlyModel('qwen3.5-9b@1')).toBe(false);
-  });
-
-  it('keeps Qwen2.5-VL-3B local only: never selectable for the cloud tier (FL-146)', () => {
-    const qwen = positionById('qwen3.5-9b@1')!;
-    for (const id of ['Qwen/Qwen2.5-VL-3B-Instruct', 'qwen2.5-vl-3b@1', 'llmware/qwen2.5-vl-3b-ov']) {
-      expect(isLocalOnlyModel(id), id).toBe(true);
-      const item = { ...qwen, id };
-      expect(isCloudOffered(item), id).toBe(false);
+      expect(isCloudOffered(item), id).toBe(true);
       for (const route of ['cloud', 'both'] as const) {
-        const state = positionState(item, { gpu: null, route });
-        expect(state.runsOn, `${id} ${route}`).not.toBe('cloud');
+        expect(positionState(item, { gpu: null, route }).runsOn, `${id} ${route}`).toBe('cloud');
       }
     }
-    // Its Apache-2.0 sibling stays selectable.
-    expect(isLocalOnlyModel('Qwen/Qwen2.5-VL-7B-Instruct')).toBe(false);
-    for (const workload of LADDER_WORKLOADS) {
-      const stops = ladderStates(workload, { gpu: null, route: 'cloud' });
-      expect(stops.filter((entry) => !entry.disabled && /qwen2\.5-vl-3b/i.test(entry.item.id))).toEqual([]);
-    }
+    // a position without a cloud offer is still never hosted
+    expect(isCloudOffered({ ...qwen, cloud: null })).toBe(false);
   });
 
   it('defaults cloud descriptions to a commercially licensed catalogue pick (FL-146)', () => {

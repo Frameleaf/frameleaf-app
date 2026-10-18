@@ -847,10 +847,12 @@ describe(TimelineService.name, () => {
         sut,
         ctx,
         user,
+        other,
         auth,
         alice,
         bob,
         tag,
+        newItem,
         items: { banffMorning, banffEvening, paris, video, archived, locked, othersCanon },
       };
     };
@@ -884,7 +886,7 @@ describe(TimelineService.name, () => {
       ]);
     });
 
-    it('means for several people what search means: all of them, any of them, none of them', async () => {
+    it('means for several people in the own library what search means: all of them, any of them, none of them', async () => {
       const { sut, ctx, user, auth, alice, bob, items } = await library();
       const search = ctx.get(SearchRepository);
       const scope = { userIds: [user.id], lockedOwnerId: user.id, viewingUserId: user.id };
@@ -914,6 +916,85 @@ describe(TimelineService.name, () => {
         { timeBucket: '1970-03-01', count: 1 },
         { timeBucket: '1970-02-01', count: 1 },
       ]);
+    });
+
+    it('includes, for several people as for one, their photos in albums shared with the viewer', async () => {
+      const { sut, ctx, user, other, auth, alice, bob, newItem, items } = await library();
+      const both = [alice.personGroupId, bob.personGroupId];
+      // an exif row needs at least one field: an empty one makes an empty upsert
+      const shared = { make: 'Nikon' };
+      const sharedBoth = await newItem('1970-02-14T12:00:00.000Z', shared, { ownerId: other.id, people: both });
+      const sharedAlice = await newItem('1970-02-15T12:00:00.000Z', shared, {
+        ownerId: other.id,
+        people: [alice.personGroupId],
+      });
+      const sharedNobody = await newItem('1970-02-16T12:00:00.000Z', shared, { ownerId: other.id });
+      const sharedLocked = await newItem('1970-02-17T12:00:00.000Z', shared, {
+        ownerId: other.id,
+        people: both,
+        visibility: AssetVisibility.Locked,
+      });
+      const unsharedBoth = await newItem('1970-02-18T12:00:00.000Z', shared, { ownerId: other.id, people: both });
+      const { album } = await ctx.newAlbum({ ownerId: other.id }, [
+        sharedBoth.id,
+        sharedAlice.id,
+        sharedNobody.id,
+        sharedLocked.id,
+      ]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: user.id, role: AlbumUserRole.Viewer });
+
+      const timeline = { visibility: AssetVisibility.Timeline };
+      const shownBy = async (dto: TimeBucketDto) => {
+        const shown = [
+          ...(await bucketIds(sut, auth, dto, '1970-02-01')),
+          ...(await bucketIds(sut, auth, dto, '1970-03-01')),
+        ];
+        // the counts, the ordered page and the highlights hold exactly what the buckets list
+        const counted = (await sut.getTimeBuckets(auth, dto)).reduce((total, { count }) => total + count, 0);
+        expect(counted).toBe(shown.length);
+        const ordered = JSON.parse(
+          await sut.getTimelineOrdered(auth, { ...dto, sort: 'filename', skip: 0, take: 100 }),
+        );
+        expect(sorted(ordered.id)).toEqual(sorted(shown));
+        const highlighted = (await sut.getTimelineHighlights(auth, { ...dto, grouping: 'month' })).reduce(
+          (total, { count }) => total + count,
+          0,
+        );
+        expect(highlighted).toBe(shown.length);
+        return sorted(shown);
+      };
+
+      const cases: Array<[object, string[]]> = [
+        [{ all: both }, [items.banffMorning.id, items.video.id, sharedBoth.id]],
+        [{ any: both }, [items.banffMorning.id, items.paris.id, items.video.id, sharedBoth.id, sharedAlice.id]],
+        // "none of" alone stays in the own library: it would otherwise bring in every shared-album photo
+        [{ none: [bob.personGroupId] }, [items.banffEvening.id, items.paris.id]],
+        [{ all: [alice.personGroupId], none: [bob.personGroupId] }, [items.paris.id, sharedAlice.id]],
+      ];
+      for (const [personIds, expected] of cases) {
+        const shown = await shownBy({ ...asQuery({ personIds }), ...timeline });
+        expect(shown, JSON.stringify(personIds)).toEqual(sorted(expected));
+        // never another member's Locked item, nor anything not shared with the viewer
+        for (const hidden of [sharedLocked, unsharedBoth, items.othersCanon, items.archived, items.locked]) {
+          expect(shown).not.toContain(hidden.id);
+        }
+      }
+
+      // one person through the bucket's own `personId` and through the filter mean the same photos
+      expect(await shownBy({ personId: alice.personGroupId, ...timeline })).toEqual(
+        await shownBy({ ...asQuery({ personIds: { any: [alice.personGroupId] } }), ...timeline }),
+      );
+
+      // people inside one `or` branch never widen the timeline: the other branch would reach shared albums too
+      const branched = asQuery({ or: [{ personIds: { any: [alice.personGroupId] } }, { city: { eq: 'Paris' } }] });
+      expect(await shownBy({ ...branched, ...timeline })).toEqual(
+        sorted([items.banffMorning.id, items.paris.id, items.video.id]),
+      );
+
+      // the Locked view stays the owner's own
+      const elevated = factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: true } });
+      const lockedView = { ...asQuery({ personIds: { all: both } }), visibility: AssetVisibility.Locked };
+      expect(await bucketIds(sut, elevated, lockedView, '1970-02-01')).toEqual([items.locked.id]);
     });
 
     it('applies dates, places, rating, tags, media type, favourites and either-or branches', async () => {

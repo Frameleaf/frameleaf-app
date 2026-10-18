@@ -17591,7 +17591,7 @@ export type TimeBucketAssetDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
-    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link */
+    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link */
     filter?: string;
     imageEnrichment?: ImageEnrichmentFilter;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */
@@ -17638,7 +17638,7 @@ export type TimeBucketDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
-    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link */
+    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link */
     filter?: string;
     imageEnrichment?: ImageEnrichmentFilter;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */
@@ -17683,7 +17683,7 @@ export type TimelineHighlightsDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
-    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link */
+    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link */
     filter?: string;
     grouping?: TimelineHighlightGrouping;
     /** Highlights besides the key photo for each month card (default 4). Year cards carry none */
@@ -17735,7 +17735,7 @@ export type TimelineOrderedDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
-    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link */
+    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link */
     filter?: string;
     imageEnrichment?: ImageEnrichmentFilter;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */

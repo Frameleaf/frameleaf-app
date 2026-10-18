@@ -28,6 +28,10 @@ Partner sharing allows you to share your _entire_ library with other users of yo
 
 You can read this guide to learn more about [partner sharing](/features/partner-sharing).
 
+### Locked items and Locked rules
+
+Locked items, and items that match the owner's Locked rules (the people, pets and tags they chose in their security settings), are shared only with partners, as locked copies. Album and space members and public links never see them, even when they are in a shared album, and item-by-item shares stop showing them. See [Locked](/features/locked#locked-rules-and-what-you-shared).
+
 ## Public sharing
 
 You can create a public link to share a group of photos or videos, or an album, with anyone. The public link can be shared via email, social media, or any other method. There are a variety of options to customize the public link, such as setting an expiration date, password protection, and more. Public shared link is handy when you want to share a group of photos or videos with someone who doesn't have a Frameleaf account and allow the shared user to upload their photos or videos to your account.

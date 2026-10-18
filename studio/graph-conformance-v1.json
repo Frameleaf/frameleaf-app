@@ -15767,12 +15767,12 @@
       }
     },
     {
-      "id": "clip.add/locked-video-track-is-not-checked",
+      "id": "clip.add/refuses-locked-video-track",
       "story": "FL-307",
       "covers": [
         "clip.add"
       ],
-      "summary": "Implementation-defined: clip.add does not check the lock of its destination.",
+      "summary": "A locked destination track refuses clip.add before any track or id draw.",
       "base": "empty-30",
       "envelopes": [
         {
@@ -15807,122 +15807,24 @@
         }
       ],
       "expect": {
-        "status": "applied",
-        "digest": "81a6cad373e72ed0210944d312b407a245ef40474c76b7f19495dd16449e7489",
-        "envelopeDigest": "01551c1e21253552b3dd973ae1499f4ab0006086c70c37e9f7d5069e1b69130b",
-        "fixedPoint": true,
-        "clockIndependent": true,
-        "draws": [
-          [],
-          [
-            {
-              "draw": 0,
-              "id": "52a51e4f-ebce-4533-bea5-c1241d31eddf",
-              "at": [
-                "timeline.items[0].originId"
-              ]
-            },
-            {
-              "draw": 1,
-              "id": "ac40981a-06ad-44f7-bac7-ce2855633eb0",
-              "at": [
-                "timeline.items[0].id"
-              ]
-            }
-          ]
-        ],
-        "graph": {
-          "id": "fl-graph-protocol",
-          "name": "Graph protocol",
-          "description": "",
-          "createdAt": 0,
-          "updatedAt": 0,
-          "duration": 0,
-          "schemaVersion": 15,
-          "metadata": {
-            "width": 1920,
-            "height": 1080,
-            "fps": 30,
-            "frameRate": {
-              "num": 30,
-              "den": 1
-            }
-          },
-          "timeline": {
-            "tracks": [
-              {
-                "id": "v1",
-                "name": "V1",
-                "kind": "video",
-                "height": 100,
-                "locked": true,
-                "visible": true,
-                "muted": false,
-                "solo": false,
-                "order": 0,
-                "syncLock": true,
-                "volume": 0,
-                "items": []
-              },
-              {
-                "id": "a1",
-                "name": "A1",
-                "kind": "audio",
-                "height": 100,
-                "locked": false,
-                "visible": true,
-                "muted": false,
-                "solo": false,
-                "order": 1,
-                "syncLock": true,
-                "volume": 0,
-                "items": []
-              }
-            ],
-            "items": [
-              {
-                "id": "ac40981a-06ad-44f7-bac7-ce2855633eb0",
-                "trackId": "v1",
-                "from": 0,
-                "durationInFrames": 60,
-                "label": "drone.mp4",
-                "mediaId": "0198a1c2-0000-7000-8000-000000000002",
-                "originId": "52a51e4f-ebce-4533-bea5-c1241d31eddf",
-                "sourceStart": 0,
-                "sourceEnd": 60,
-                "sourceDuration": 240,
-                "sourceFps": 30,
-                "trimStart": 0,
-                "trimEnd": 0,
-                "type": "video",
-                "src": "",
-                "sourceWidth": 1920,
-                "sourceHeight": 1080,
-                "transform": {
-                  "x": 0,
-                  "y": 0,
-                  "width": 1920,
-                  "height": 1080,
-                  "rotation": 0
-                }
-              }
-            ],
-            "masterBusDb": 0,
-            "masterBusMuted": false,
-            "currentFrame": 0,
-            "zoomLevel": 1,
-            "scrollPosition": 0
-          }
-        }
+        "status": "rejected",
+        "index": 1,
+        "reason": "failed",
+        "detail": "clip.add: the destination track is locked"
+      },
+      "admission": {
+        "status": "rejected",
+        "reason": "failed",
+        "index": 1
       }
     },
     {
-      "id": "clip.add/locked-audio-track-is-not-checked",
+      "id": "clip.add/refuses-locked-audio-track",
       "story": "FL-307",
       "covers": [
         "clip.add"
       ],
-      "summary": "Implementation-defined: the linked sound goes on the first audio track even when it is locked.",
+      "summary": "A video with sound refuses clip.add when the first audio track, which takes its linked sound, is locked.",
       "base": "empty-30",
       "envelopes": [
         {
@@ -15957,148 +15859,15 @@
         }
       ],
       "expect": {
-        "status": "applied",
-        "digest": "55da63bac10a79b7a447e81a1991e4ac48d4869fc95364d1ed5966960ddd609e",
-        "envelopeDigest": "c2c59abec9d93612e87bbd6bacdcfc348e520026ceeef7548da224c2fec5c8e8",
-        "fixedPoint": true,
-        "clockIndependent": true,
-        "draws": [
-          [],
-          [
-            {
-              "draw": 0,
-              "id": "7f1d2d0b-d736-4eed-b6e6-3c7c50291433",
-              "at": [
-                "timeline.items[0].originId",
-                "timeline.items[1].originId"
-              ]
-            },
-            {
-              "draw": 1,
-              "id": "73064222-7439-46a6-a841-2dbbb23bbb0c",
-              "at": [
-                "timeline.items[0].linkedGroupId",
-                "timeline.items[1].linkedGroupId"
-              ]
-            },
-            {
-              "draw": 2,
-              "id": "3ce97eb0-de9c-4fb6-9ebd-f37fee597d3e",
-              "at": [
-                "timeline.items[0].id"
-              ]
-            },
-            {
-              "draw": 3,
-              "id": "d2787c71-6fab-403e-93f0-a9fbda33c44e",
-              "at": [
-                "timeline.items[1].id"
-              ]
-            }
-          ]
-        ],
-        "graph": {
-          "id": "fl-graph-protocol",
-          "name": "Graph protocol",
-          "description": "",
-          "createdAt": 0,
-          "updatedAt": 0,
-          "duration": 0,
-          "schemaVersion": 15,
-          "metadata": {
-            "width": 1920,
-            "height": 1080,
-            "fps": 30,
-            "frameRate": {
-              "num": 30,
-              "den": 1
-            }
-          },
-          "timeline": {
-            "tracks": [
-              {
-                "id": "v1",
-                "name": "V1",
-                "kind": "video",
-                "height": 100,
-                "locked": false,
-                "visible": true,
-                "muted": false,
-                "solo": false,
-                "order": 0,
-                "syncLock": true,
-                "volume": 0,
-                "items": []
-              },
-              {
-                "id": "a1",
-                "name": "A1",
-                "kind": "audio",
-                "height": 100,
-                "locked": true,
-                "visible": true,
-                "muted": false,
-                "solo": false,
-                "order": 1,
-                "syncLock": true,
-                "volume": 0,
-                "items": []
-              }
-            ],
-            "items": [
-              {
-                "id": "3ce97eb0-de9c-4fb6-9ebd-f37fee597d3e",
-                "trackId": "v1",
-                "from": 0,
-                "durationInFrames": 60,
-                "label": "surf.mp4",
-                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
-                "originId": "7f1d2d0b-d736-4eed-b6e6-3c7c50291433",
-                "linkedGroupId": "73064222-7439-46a6-a841-2dbbb23bbb0c",
-                "sourceStart": 0,
-                "sourceEnd": 60,
-                "sourceDuration": 240,
-                "sourceFps": 30,
-                "trimStart": 0,
-                "trimEnd": 0,
-                "type": "video",
-                "src": "",
-                "sourceWidth": 1920,
-                "sourceHeight": 1080,
-                "transform": {
-                  "x": 0,
-                  "y": 0,
-                  "width": 1920,
-                  "height": 1080,
-                  "rotation": 0
-                }
-              },
-              {
-                "id": "d2787c71-6fab-403e-93f0-a9fbda33c44e",
-                "trackId": "a1",
-                "from": 0,
-                "durationInFrames": 60,
-                "label": "surf.mp4",
-                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
-                "originId": "7f1d2d0b-d736-4eed-b6e6-3c7c50291433",
-                "linkedGroupId": "73064222-7439-46a6-a841-2dbbb23bbb0c",
-                "sourceStart": 0,
-                "sourceEnd": 60,
-                "sourceDuration": 240,
-                "sourceFps": 30,
-                "trimStart": 0,
-                "trimEnd": 0,
-                "type": "audio",
-                "src": ""
-              }
-            ],
-            "masterBusDb": 0,
-            "masterBusMuted": false,
-            "currentFrame": 0,
-            "zoomLevel": 1,
-            "scrollPosition": 0
-          }
-        }
+        "status": "rejected",
+        "index": 1,
+        "reason": "failed",
+        "detail": "clip.add: the destination track is locked"
+      },
+      "admission": {
+        "status": "rejected",
+        "reason": "failed",
+        "index": 1
       }
     },
     {

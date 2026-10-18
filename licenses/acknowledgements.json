@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "description": "Every third-party engine, model, voice, font and asset Frameleaf uses that needs credit. Source of truth for the About screen, docs/docs/overview/acknowledgements.md and licenses/THIRD-PARTY-NOTICES.md; scripts/frameleaf-acknowledgements.mjs checks coverage and regenerates both documents.",
-  "decisions": "Owner decisions FL-146 comments 34941, 34943 and 34944 (2026-09-25). Legal review 2026-10-17 (FL-445): all model and asset use by users is personal use by the server owner on their own server; this is the recorded basis for every licence.",
+  "decisions": "Owner decisions FL-146 comments 34941, 34943 and 34944 (2026-09-25). Legal review 2026-10-17 (FL-445, FL-451): all model and asset use by users is personal use by the user, on their own server or in a Frameleaf Cloud container that Frameleaf only rents to them; this is the recorded basis for every licence, and no model is kept off Frameleaf Cloud for its licence.",
   "groups": {
     "studio-editor": "Studio video editor",
     "studio-models": "Studio models, voices and runtimes",
@@ -30,7 +30,7 @@
     },
     {
       "status": "looked-up",
-      "notice": "Local use only: not offered on Frameleaf Cloud (non-commercial licence; owner decision FL-146, 2026-09-25). Basis: personal use by the server owner on their own server (legal review 2026-10-17, FL-445).",
+      "notice": "Non-commercial licence. Runs on this server, a home-network worker and Frameleaf Cloud. Basis: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "id": "musicgen-small",
       "group": "studio-models",
       "name": "MusicGen small (ONNX conversion)",
@@ -542,7 +542,7 @@
     },
     {
       "status": "looked-up",
-      "notice": "Local use only: not offered on Frameleaf Cloud (non-commercial licence; owner decision FL-146, 2026-09-25). Basis: personal use by the server owner on their own server (legal review 2026-10-17, FL-445).",
+      "notice": "Non-commercial licence. Runs on this server, a home-network worker and Frameleaf Cloud. Basis: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "id": "nllb-clip",
       "group": "library-models",
       "name": "NLLB-CLIP (base and large, SigLIP)",
@@ -633,7 +633,7 @@
     },
     {
       "status": "recorded",
-      "notice": "The 3B model (the default) is under the Qwen Research License (non-commercial); the 7B model is under Apache-2.0. Both run for personal use by the server owner on their own server (legal review 2026-10-17, FL-445). The 3B model is not offered on Frameleaf Cloud (owner decision FL-146, 2026-09-25).",
+      "notice": "The 3B model (the default) is under the Qwen Research License (non-commercial); the 7B model is under Apache-2.0. Both run on this server, a home-network worker and Frameleaf Cloud, for personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "id": "qwen2.5-vl",
       "group": "library-models",
       "name": "Qwen2.5-VL Instruct 3B and 7B (photo descriptions)",

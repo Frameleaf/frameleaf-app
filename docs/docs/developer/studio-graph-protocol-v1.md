@@ -8,6 +8,8 @@ It is a clean-room specification. It was written by reading the engine, and it d
 
 **Speed ripple correction (October 12, 2026).** Adaptation `0135-shared-speed-gap-effective-lock-refusal.patch` (SHA-256 `1f577b1f3ec660b17b1aeab0c5eea3954b70f1eea667f53626b0b88ae1fccc10`), in prepared source `86c3c5b8cab095d45df4c18601185de27b9f3a5b5ca64dc393f2b80c54e3a07d`, also refuses the previously forbidden `clip.setSpeed/ripple-moves-clips-on-locked-tracks` input. Its original envelopes and idempotency keys are retained; the actual result is `failed` at index 2, `clip.setSpeed: the clip cannot take that speed here`. The other 1,386 answers from the preceding three-case correction are unchanged. This is an atomic lock-bypass correction within v1, with no upstream revision, schema, payload, API or unified SDK change.
 
+**Add lock correction (October 17, 2026, FL-450).** `clip.add` now refuses a locked destination track, and a video with sound whose linked sound would go on a locked first audio track, as `failed` with `clip.add: the destination track is locked`, before any track or identity draw. The refusal is made by the Frameleaf command layer (`studio/adapters/web/src/canonical-commands.ts`) and the independent reference, not by an engine patch. The two previously forbidden inputs are renamed `clip.add/refuses-locked-video-track` and `clip.add/refuses-locked-audio-track`; their envelopes and idempotency keys are retained, and both record `rejected` at index 1 with a required admission. The other 1,385 answers are unchanged. Adaptation `0141-locked-track-drop-refusal.patch` (SHA-256 `dd32a9ac161448d08415996791f9ae63712fb37f59a63f19375adb82872df2d8`), in prepared source `804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6`, makes the web editor's own drags agree: a drag over a locked track shows a not-allowed cursor and no drop marker, and the drop places and moves nothing (12.2.2). No upstream revision, schema, payload, API or unified SDK change.
+
 Machine-readable files sit beside the other Studio contracts:
 
 | File                                    | What it is                                                                                                                                                       |
@@ -497,7 +499,7 @@ Two kinds of native rule appear. **Refuse** means the engine accepts an edit who
 | Undo past the session restores `head − 1`, whose content depends on autosave timing (9).                                                                      | Keep a session history; go past it only through the server's revision restore.                                     |
 | Negative half-frame deltas round towards positive infinity (3.3).                                                                                             | Use the section 3.3 formula exactly.                                                                               |
 | The engine accepts unreduced rationals; the server does not (3.1).                                                                                            | Always send reduced rationals.                                                                                     |
-| Nine clip commands do not check locks, and three check only part of what they change (12.2.2).                                                                | Treat a lock as binding for every command. Reproduce the fixtures.                                                 |
+| Seven clip command forms do not check locks, and four check only part of what they change (12.2.2).                                                           | Treat a lock as binding for every command. Reproduce the fixtures.                                                 |
 | `clip.move` does not check overlap (12.3.3, `clip.move/overlap-is-not-checked`).                                                                              | **Refuse** a move onto a place that is taken.                                                                      |
 | `clip.move` does not check the destination track's kind (12.3.3).                                                                                             | Move visual clips to video tracks and audio clips to audio tracks only. Reproduce.                                 |
 | `clip.setSpeed` accepts speeds from 10 to 16 that loading clamps to 10 (12.4.5, `clip.setSpeed/above-ten`).                                                   | **Refuse** a speed above 10.                                                                                       |
@@ -611,10 +613,13 @@ A track with `locked: true` is locked. Lock checking is **per command and is not
 | Lock checking                                     | Commands                                                                                                                                                    |
 | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Refuse when any clip they would change is locked  | `clip.roll`, `clip.slip`, `clip.slide`, `clip.push`, `clip.join`, `clip.reorder`, `clip.overwrite`, `track.closeGap`, `track.remove`, `clip.split` (12.3.4) |
+| Refuse when a track they would add to is locked   | `clip.add` (12.3.1)                                                                                                                                         |
 | Check some of what they change (see each command) | `clip.move`, `clip.setSpeed`, `clip.insert`, `clip.delete` (ripple only)                                                                                    |
-| Check nothing                                     | `clip.add`, `clip.delete` (non-ripple), `clip.trimStart`, `clip.trimEnd`, `clip.setLink`, `clip.update`, `clip.setTransform`, `clip.setTransformParent`     |
+| Check nothing                                     | `clip.delete` (non-ripple), `clip.trimStart`, `clip.trimEnd`, `clip.setLink`, `clip.update`, `clip.setTransform`, `clip.setTransformParent`                 |
 
-The twelve commands of part 3 check nothing either (13.1). The last two rows are **implementation-defined**: the engine's own editor never lets a person edit a locked track, so its edit actions were never guarded, and the command layer guards only some of them. **Native rule:** a native client treats a lock as binding for every command. It must not issue a command that would add, remove or change a clip on a locked track, including through a linked clip or a ripple. Given such an envelope in a fixture, a conforming implementation still produces the engine's graph. The October 12 correction records actual refusals for the four repaired forbidden inputs; it does not add a blanket lock guard to every command.
+The twelve commands of part 3 check nothing either (13.1). The last two rows are **implementation-defined**: the engine's own editor never lets a person edit a locked track, so its edit actions were never guarded, and the command layer guards only some of them. **Native rule:** a native client treats a lock as binding for every command. It must not issue a command that would add, remove or change a clip on a locked track, including through a linked clip or a ripple. Given such an envelope in a fixture, a conforming implementation still produces the engine's graph. The October 12 correction records actual refusals for the four repaired forbidden inputs, and the October 17 correction does the same for the two `clip.add` inputs; neither adds a blanket lock guard to every command.
+
+**Web editor.** The engine's own editor applies the same rule to a person's drags (patch 0141): dragging library media, a compound clip or a clip over a locked track, or a drag that would put any dragged clip or its linked sound on one, shows a not-allowed cursor and no drop marker, and releasing it changes nothing. The editor says why in a short message, announced to assistive technology. Insert and overwrite edits that target a locked track are refused with the same message. A track is locked here when it or its layer group is locked.
 
 `track.closeGap` checks the lock of every **attached caption** in its affected linked set (12.7.5). Other commands' caption lock behaviour remains as recorded by their own sections and fixtures.
 
@@ -741,7 +746,11 @@ Places library media on a video track at its natural or a given length. Payload:
 6. `kind` is given and is not the media's kind. A still accepts `image` and `photo`; a video accepts `video`: `invalid`.
 7. The track's `kind` is `audio`: `invalid`. A track with no `kind` counts as a video track.
 8. The media is a video and `duration` is longer than its natural length: `invalid`.
-9. The place is taken (below): `failed`.
+9. The track is locked: `failed`, `clip.add: the destination track is locked`.
+10. The media is a video with an `audioCodec` and the audio track with the least `order` is locked: `failed`, with the same detail. A later unlocked audio track is not used instead.
+11. The place is taken (below): `failed`.
+
+Refusals 9 and 10 come before any draw, including the id of a new audio track.
 
 **Effect.** With `fps` the project rate as a number and `rate` the record's `fps`:
 
@@ -771,7 +780,7 @@ Fields of a placed item:
 **Consequences**
 
 - **Linked:** creates the linked pair above. Existing clips are not touched.
-- **Locks:** not checked, for the video track or the audio track (12.2.2). Fixtures `clip.add/locked-video-track-is-not-checked`, `clip.add/locked-audio-track-is-not-checked`.
+- **Locks:** refusals 9 and 10, for the video track and for the audio track that takes the linked sound (12.2.2). Fixtures `clip.add/refuses-locked-video-track`, `clip.add/refuses-locked-audio-track`.
 - **Sync lock:** none.
 - **Overlap:** an item that would share a frame with a clip on its track is refused (`failed`). This holds for the audio clip too, so a free place on the video track can still be refused (`clip.add/rejects-taken-place-for-linked-sound`).
 - **Transitions:** none.

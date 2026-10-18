@@ -117,8 +117,9 @@ describe(AlbumService.name, () => {
       const result = await sut.getAll(auth, {});
 
       expect(result[0].albumThumbnailAssetId).toBeNull();
-      expect(mocks.asset.getHiddenContentAssetIds).toHaveBeenCalledWith([thumbnailAssetId], { excludeNsfw: true });
-      expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([album.id], { excludeNsfw: true });
+      const options = { excludeNsfw: true, othersRulesViewerId: owner.id };
+      expect(mocks.asset.getHiddenContentAssetIds).toHaveBeenCalledWith([thumbnailAssetId], options);
+      expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([album.id], options);
     });
 
     it('should use suppressed album thumbnails when suppressedOnly is active', async () => {
@@ -160,6 +161,7 @@ describe(AlbumService.name, () => {
         onlyHiddenContent: suppressedContent,
         lockedOwnerId: owner.id,
         revealLockedOwnerId: owner.id,
+        othersRulesViewerId: owner.id,
       });
     });
 
@@ -185,7 +187,9 @@ describe(AlbumService.name, () => {
       const result = await sut.getAll(AuthFactory.create(owner), { assetId: album.assets[0].id });
       expect(result).toHaveLength(1);
       expect(result[0].id).toEqual(album.id);
-      expect(mocks.album.getByAssetId).toHaveBeenCalledWith(owner.id, album.assets[0].id, {});
+      expect(mocks.album.getByAssetId).toHaveBeenCalledWith(owner.id, album.assets[0].id, {
+        othersRulesViewerId: owner.id,
+      });
     });
 
     it('gets list of albums that are shared', async () => {
@@ -902,7 +906,11 @@ describe(AlbumService.name, () => {
 
       expect(mocks.albumUser.delete).toHaveBeenCalledTimes(1);
       expect(mocks.albumUser.delete).toHaveBeenCalledWith({ albumId: album.id, userId });
-      expect(mocks.album.getById).toHaveBeenCalledWith(album.id, { withAssets: false }, owner.id);
+      expect(mocks.album.getById).toHaveBeenCalledWith(
+        album.id,
+        { withAssets: false, othersRulesViewerId: owner.id },
+        owner.id,
+      );
       expect(mocks.event.emit).toHaveBeenCalledWith('AlbumUserRemove', {
         albumId: album.id,
         userId,
@@ -1407,7 +1415,10 @@ describe(AlbumService.name, () => {
       const tree = await sut.getTree(auth);
 
       expect(tree.albums[0].albumThumbnailAssetId).toBeNull();
-      expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([album.id], { excludeNsfw: true });
+      expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([album.id], {
+        excludeNsfw: true,
+        othersRulesViewerId: owner.id,
+      });
     });
   });
 
@@ -1551,7 +1562,11 @@ describe(AlbumService.name, () => {
 
       const result = await sut.get(AuthFactory.create(owner), album.id);
 
-      expect(mocks.album.getById).toHaveBeenCalledWith(album.id, { withAssets: false }, owner.id);
+      expect(mocks.album.getById).toHaveBeenCalledWith(
+        album.id,
+        { withAssets: false, othersRulesViewerId: owner.id },
+        owner.id,
+      );
       expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(owner.id, new Set([album.id]));
       // supporter option (b): each member says whether they are a supporter
       expect(result.albumUsers.map(({ user, supporter }) => [user.id === owner.id, supporter])).toEqual([
@@ -1590,7 +1605,11 @@ describe(AlbumService.name, () => {
       const auth = AuthFactory.from().sharedLink().build();
       await sut.get(auth, album.id);
 
-      expect(mocks.album.getById).toHaveBeenCalledWith(album.id, { withAssets: false }, auth.user.id);
+      expect(mocks.album.getById).toHaveBeenCalledWith(
+        album.id,
+        { withAssets: false, othersRulesViewerId: auth.user.id },
+        auth.user.id,
+      );
       expect(mocks.access.album.checkSharedLinkAccess).toHaveBeenCalledWith(auth.sharedLink!.id, new Set([album.id]));
     });
 
@@ -1611,7 +1630,11 @@ describe(AlbumService.name, () => {
 
       await sut.get(AuthFactory.create(user), album.id);
 
-      expect(mocks.album.getById).toHaveBeenCalledWith(album.id, { withAssets: false }, user.id);
+      expect(mocks.album.getById).toHaveBeenCalledWith(
+        album.id,
+        { withAssets: false, othersRulesViewerId: user.id },
+        user.id,
+      );
       expect(mocks.access.album.checkSharedAlbumAccess).toHaveBeenCalledWith(
         user.id,
         new Set([album.id]),
@@ -1667,6 +1690,7 @@ describe(AlbumService.name, () => {
         fileCreatedAfter: after,
         fileCreatedBefore: before,
         favoriteOwnerId: auth.user.id,
+        othersRulesViewerId: auth.user.id,
       });
     });
 
@@ -1676,7 +1700,10 @@ describe(AlbumService.name, () => {
 
       await sut.getMapMarkers(auth, albumId);
 
-      expect(mocks.map.getAlbumMapMarkers).toHaveBeenCalledWith(albumId, { favoriteOwnerId: auth.user.id });
+      expect(mocks.map.getAlbumMapMarkers).toHaveBeenCalledWith(albumId, {
+        favoriteOwnerId: auth.user.id,
+        othersRulesViewerId: auth.user.id,
+      });
     });
 
     it("keeps only the viewer's own items when Partner items is off, as the prototype does", async () => {
@@ -1687,14 +1714,21 @@ describe(AlbumService.name, () => {
       expect(mocks.map.getAlbumMapMarkers).toHaveBeenLastCalledWith(albumId, {
         favoriteOwnerId: auth.user.id,
         onlyOwnerId: auth.user.id,
+        othersRulesViewerId: auth.user.id,
       });
 
       // "Shared spaces" only hides the viewer's own shared-space-only items, which album markers never are
       await sut.getMapMarkers(auth, albumId, { withPartners: true, withSharedAlbums: false });
-      expect(mocks.map.getAlbumMapMarkers).toHaveBeenLastCalledWith(albumId, { favoriteOwnerId: auth.user.id });
+      expect(mocks.map.getAlbumMapMarkers).toHaveBeenLastCalledWith(albumId, {
+        favoriteOwnerId: auth.user.id,
+        othersRulesViewerId: auth.user.id,
+      });
 
       await sut.getMapMarkers(auth, albumId, { withPartners: true, withSharedAlbums: true });
-      expect(mocks.map.getAlbumMapMarkers).toHaveBeenLastCalledWith(albumId, { favoriteOwnerId: auth.user.id });
+      expect(mocks.map.getAlbumMapMarkers).toHaveBeenLastCalledWith(albumId, {
+        favoriteOwnerId: auth.user.id,
+        othersRulesViewerId: auth.user.id,
+      });
     });
 
     it("ignores the filters on a shared link, which would otherwise reveal the owner's favorites", async () => {
@@ -1709,7 +1743,7 @@ describe(AlbumService.name, () => {
         withSharedAlbums: false,
       });
 
-      expect(mocks.map.getAlbumMapMarkers).toHaveBeenCalledWith(albumId, {});
+      expect(mocks.map.getAlbumMapMarkers).toHaveBeenCalledWith(albumId, { othersRulesViewerId: auth.user.id });
     });
 
     it('returns nothing to a shared link that hides metadata, filters or not', async () => {
@@ -2608,12 +2642,13 @@ describe(AlbumService.name, () => {
 
       expect(mocks.album.getById).toHaveBeenCalledWith(
         album.id,
-        { withAssets: false, lockedOwnerId: owner.id, revealLockedOwnerId: owner.id },
+        { withAssets: false, lockedOwnerId: owner.id, revealLockedOwnerId: owner.id, othersRulesViewerId: owner.id },
         owner.id,
       );
       expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([album.id], {
         lockedOwnerId: owner.id,
         revealLockedOwnerId: owner.id,
+        othersRulesViewerId: owner.id,
       });
     });
 
@@ -2627,7 +2662,7 @@ describe(AlbumService.name, () => {
       await sut.get(AuthFactory.create(owner), album.id);
 
       expect(mocks.album.getById.mock.calls[0][1].lockedOwnerId).toBeUndefined();
-      expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([album.id], {});
+      expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([album.id], { othersRulesViewerId: owner.id });
     });
 
     it('never offers Locked media as a cover choice, even to the elevated owner', async () => {

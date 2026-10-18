@@ -549,6 +549,7 @@
       importCancelUnknown: $t('frameleaf_studio_import_cancel_unknown'),
       relinkReload: $t('frameleaf_studio_relink_reload'),
       relinkSaved: $t('frameleaf_studio_relink_saved'),
+      lockedTrackRefused: $t('frameleaf_studio_locked_track_refused'),
     },
   });
 

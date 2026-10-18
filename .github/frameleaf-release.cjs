@@ -1063,6 +1063,22 @@ async function deployTestImages(
   console.log(lines.filter((line) => !line.includes("ARCHIVE")).join("\n"));
 }
 
+// Installs and Manager pull the versioned images anonymously; a private package would publish an
+// uninstallable release.
+async function requirePublicImages(registry, images) {
+  for (let i = 0; i < VARIANTS.length; i++) {
+    try {
+      await registry.read(VARIANTS[i].image, images[i].digest, "manifests", {
+        anonymous: true,
+      });
+    } catch (error) {
+      throw new Error(
+        `${VARIANTS[i].image} is not publicly pullable (status ${error.status}). Make the package public before promoting a release.`,
+      );
+    }
+  }
+}
+
 // FL-146 "Deploy production": the verified candidate a dispatch names, by its exact main commit or
 // by the digest of its frameleaf-server candidate. Only the current main head with a successful
 // same-SHA Deploy run qualifies (the release rules below); rolling tags are never evidence.
@@ -1101,6 +1117,7 @@ async function resolveCandidate(
   const images = [];
   for (const spec of VARIANTS)
     images.push(await candidateImage(registry, spec, sha));
+  await requirePublicImages(registry, images);
   const [serverImage, mlImage] = images;
   const outputs = {
     sha,
@@ -1548,6 +1565,7 @@ async function release(env = process.env) {
   // Verify every source before creating any release or floating image alias.
   for (const spec of VARIANTS)
     images.push(await candidateImage(registry, spec, env.SOURCE_SHA));
+  await requirePublicImages(registry, images);
   // The database and CLI images are published separately; a bundle that names a missing image is
   // never reserved, tagged or promoted.
   const dependencies = await verifyDependencyImages(registry, process.cwd());
