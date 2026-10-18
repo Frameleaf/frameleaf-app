@@ -22,6 +22,8 @@ const CloudMlConsentFeaturesSchema = z
     identityNames: z.boolean(),
     medicalSignals: z.boolean(),
     ocrAddon: z.boolean(),
+    smartSearch: z.boolean().describe('Smart search may run on Frameleaf Cloud'),
+    faceRecognition: z.boolean().describe('Face detection and recognition may run on Frameleaf Cloud'),
   })
   .meta({ id: 'CloudMlConsentFeaturesDto' });
 
@@ -41,6 +43,8 @@ const CloudMlConsentTermsQuerySchema = z
   .object({
     identityNames: stringToBool.optional().describe('The names-in-photos feature as the administrator chose it'),
     medicalSignals: stringToBool.optional().describe('The medical-signals feature as the administrator chose it'),
+    smartSearch: stringToBool.optional().describe('The smart search feature as the administrator chose it'),
+    faceRecognition: stringToBool.optional().describe('The face recognition feature as the administrator chose it'),
   })
   .meta({ id: 'CloudMlConsentTermsQueryDto' });
 
@@ -86,6 +90,11 @@ const CloudMlStatusResponseSchema = z
     destination: MlDestinationResponseSchema.nullable().describe('The Frameleaf Cloud destination, once added'),
     consent: CloudMlConsentStateSchema.nullable(),
     wallet: CloudMlWalletSchema.nullable().describe('The last AI Wallet read, or null'),
+    matchedModelWorkloads: z
+      .array(MlWorkloadSchema)
+      .describe(
+        "Smart search and faces work Frameleaf Cloud offers with exactly this server's own models, at the last check",
+      ),
     checkedAt: z.string(),
   })
   .meta({ id: 'CloudMlStatusResponseDto' });
@@ -162,7 +171,9 @@ const CloudMlDestinationCreateSchema = z
       .array(MlWorkloadSchema)
       .min(1)
       .max(16)
-      .describe('The workloads Frameleaf Cloud may run; faces, search and text recognition are refused'),
+      .describe(
+        'The workloads Frameleaf Cloud may run; smart search and faces only run while it offers this server’s own models, text recognition is refused',
+      ),
     budgetLimitUsd: z.number().min(0).meta({ format: 'double' }).nullable().optional(),
   })
   .meta({ id: 'CloudMlDestinationCreateDto' });

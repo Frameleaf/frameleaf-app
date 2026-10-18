@@ -66,7 +66,7 @@ import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isImageDescriptionEnabled, isSmartSearchEnabled } from 'src/utils/misc.js';
-import { routedMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
+import { clipTextDestinationId, routedMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
 import { FrameCutOutcome, VideoFrameDeps, ensureVideoFrames } from 'src/utils/video-moment-frames.js';
 
 /** What one stage of an enrichment plan did to one video. */
@@ -520,7 +520,8 @@ export class VideoMomentIndexService {
 
     if (isSmartSearchEnabled(config.machineLearning)) {
       try {
-        const selection = await this.select(MlWorkload.Clip, null, null);
+        // FL-455: search text is always encoded on this network
+        const selection = await this.select(MlWorkload.Clip, await clipTextDestinationId(this.mlDestinations), null);
         const modelName = config.machineLearning.clip.modelName;
         const read = await this.machineLearning.captureClipRead();
         const embedding = await this.machineLearning.encodeText(selection, dto.query, { modelName });

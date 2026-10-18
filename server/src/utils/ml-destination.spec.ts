@@ -23,7 +23,9 @@ import {
   MlDestinationRefusedError,
   STOPS_CREATED_CLOUD_JOB,
   accelerationOf,
+  clipTextDestinationId,
   evaluateAdmission,
+  frameleafCloudEligibility,
   hardwareFromProbe,
   hasRequiredConsent,
   healthFromProbe,
@@ -205,11 +207,80 @@ describe('Frameleaf Cloud downstream model/budget mechanics (workload-policy moc
     expect(evaluateAdmission({ ...cloud, workload: MlWorkload.Enrichment })).toEqual({ admitted: true });
   });
 
-  it('refuses faces by policy even when a row allows them', () => {
-    const faces = { ...mlDestinationStub.frameleafCloudConsented, workloads: [MlWorkload.Face] };
-    expect(refusal({ ...cloud, destination: faces, workload: MlWorkload.Face })).toBe(
-      MlAdmissionRefusal.WorkloadNotAllowed,
-    );
+  describe('smart search and faces (FL-455)', () => {
+    const library = {
+      ...mlDestinationStub.frameleafCloudConsented,
+      workloads: [MlWorkload.Face, MlWorkload.Clip],
+    };
+    /** A check where the cloud offers smart search and faces with this server's own models. */
+    const offered = (features: Partial<typeof facts.features> = { smartSearch: true, faceRecognition: true }) => ({
+      ...cloud,
+      destination: library,
+      probe: {
+        ...mlProbeStub.frameleafCloud,
+        workloads: [...mlProbeStub.frameleafCloud.workloads, MlWorkload.Clip, MlWorkload.Face],
+        cloud: {
+          ...facts,
+          features: { ...facts.features, ...features },
+          modelIds: [...facts.modelIds, 'ms_clip', 'ms_face'],
+          modelGroups: { ...facts.modelGroups, ms_clip: 'clip', ms_face: 'face' },
+          localModels: { [MlWorkload.Clip]: 'ms_clip', [MlWorkload.Face]: 'ms_face' },
+        },
+      },
+    });
+
+    it('admits them with a model matching this server, their consent on and the cloud offering them', () => {
+      expect(evaluateAdmission({ ...offered(), workload: MlWorkload.Clip })).toEqual({ admitted: true });
+      expect(evaluateAdmission({ ...offered(), workload: MlWorkload.Face })).toEqual({ admitted: true });
+    });
+
+    it('refuses each without its own consent', () => {
+      expect(refusal({ ...offered({ smartSearch: false, faceRecognition: true }), workload: MlWorkload.Clip })).toBe(
+        MlAdmissionRefusal.ConsentMissing,
+      );
+      expect(refusal({ ...offered({ smartSearch: true }), workload: MlWorkload.Face })).toBe(
+        MlAdmissionRefusal.ConsentMissing,
+      );
+      expect(
+        refusal({ ...offered({ smartSearch: false, faceRecognition: true }), workload: MlWorkload.Face }),
+      ).toBeNull();
+    });
+
+    it("refuses them while no catalogue model matches this server's model, whatever is chosen", () => {
+      const unmatched = offered();
+      unmatched.probe.cloud = { ...unmatched.probe.cloud, localModels: {} };
+      expect(refusal({ ...unmatched, workload: MlWorkload.Clip })).toBe(MlAdmissionRefusal.ModelMismatch);
+      expect(refusal({ ...unmatched, workload: MlWorkload.Face, modelId: 'ms_face' })).toBe(
+        MlAdmissionRefusal.ModelMismatch,
+      );
+      // facts stored before FL-455 carry no matches at all
+      unmatched.probe.cloud = { ...unmatched.probe.cloud, localModels: undefined };
+      expect(refusal({ ...unmatched, workload: MlWorkload.Face })).toBe(MlAdmissionRefusal.ModelMismatch);
+    });
+
+    it('refuses them while the cloud does not offer them, as it does not today', () => {
+      expect(refusal({ ...cloud, destination: library, workload: MlWorkload.Clip })).not.toBeNull();
+      expect(refusal({ ...cloud, destination: library, workload: MlWorkload.Face })).not.toBeNull();
+    });
+
+    it('still refuses text recognition and pet recognition on the cloud', () => {
+      const ocr = { ...mlDestinationStub.frameleafCloudConsented, workloads: [MlWorkload.Ocr] };
+      expect(refusal({ ...cloud, destination: ocr, workload: MlWorkload.Ocr })).toBe(
+        MlAdmissionRefusal.WorkloadNotAllowed,
+      );
+    });
+  });
+
+  it('answers the same through frameleafCloudEligibility as through admission (FL-455, for FL-456)', () => {
+    expect(frameleafCloudEligibility({ ...cloud, destination: cloud.destination })).toBeNull();
+    expect(
+      frameleafCloudEligibility({ ...withFacts({ entitled: false }), destination: cloud.destination }),
+    ).toMatchObject({
+      refusal: MlAdmissionRefusal.EntitlementMissing,
+    });
+    expect(frameleafCloudEligibility({ ...cloud, destination: cloud.destination, probe: null })).toMatchObject({
+      refusal: MlAdmissionRefusal.DestinationUnhealthy,
+    });
   });
 
   it('refuses before the first check and when the cloud is unavailable, never falling back', () => {
@@ -878,15 +949,17 @@ describe('library-analysis and restoration workers stay separate (FL-72)', () =>
     expect(workloadPolicyProblem(MlDestinationKind.Local, [MlWorkload.Face, MlWorkload.Clip])).toBeNull();
   });
 
-  it('lets Frameleaf Cloud mix only the workloads it offers, and never faces (FL-159)', () => {
+  it('lets Frameleaf Cloud mix only the workloads it can run, smart search and faces included (FL-159, FL-455)', () => {
     expect(
       workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [MlWorkload.Enrichment, MlWorkload.RestorationCreative]),
     ).toBeNull();
-    expect(workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [MlWorkload.Face])).toMatch(
-      /face stays on this network/,
-    );
+    expect(workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [MlWorkload.Face])).toBeNull();
+    expect(workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [MlWorkload.Clip])).toBeNull();
     expect(workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [MlWorkload.Clip, MlWorkload.Ocr])).toMatch(
-      /clip, ocr stays/,
+      /ocr stays/,
+    );
+    expect(workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [MlWorkload.PetRecognition])).toMatch(
+      /pet-recognition stays/,
     );
     expect(
       workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [
@@ -1270,5 +1343,30 @@ describe('FL-201 real disclosure policy and approved workloads', () => {
     expect(
       evaluateAdmission({ ...input, destination: { ...input.destination, consentVersion: 'stale' } }),
     ).toMatchObject({ admitted: false, refusal: MlAdmissionRefusal.ConsentVersionOutdated });
+  });
+});
+
+describe('clipTextDestinationId (FL-455)', () => {
+  const repository = (routedTo: typeof mlDestinationStub.local, rows = [mlDestinationStub.local]) =>
+    ({
+      getRoute: vi.fn().mockResolvedValue({ workload: MlWorkload.Clip, destinationId: routedTo.id }),
+      getById: vi.fn().mockResolvedValue(routedTo),
+      getAll: vi.fn().mockResolvedValue(rows),
+    }) as unknown as MlDestinationRepository;
+
+  it('encodes search text where smart search is routed when that is at home', async () => {
+    await expect(clipTextDestinationId(repository(mlDestinationStub.lan))).resolves.toBe(mlDestinationStub.lan.id);
+  });
+
+  it("keeps search text on this server's machine learning when smart search is routed to Frameleaf Cloud", async () => {
+    const cloud = mlDestinationStub.frameleafCloudConsented;
+    await expect(
+      clipTextDestinationId(repository(cloud, [cloud, mlDestinationStub.lan, mlDestinationStub.local])),
+    ).resolves.toBe(mlDestinationStub.local.id);
+  });
+
+  it('refuses rather than send search text to the cloud when this server has no machine learning on', async () => {
+    const cloud = mlDestinationStub.frameleafCloudConsented;
+    await expect(clipTextDestinationId(repository(cloud, [cloud]))).rejects.toBeInstanceOf(MlDestinationRefusedError);
   });
 });

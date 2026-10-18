@@ -1284,6 +1284,10 @@ export class MachineLearningRepository implements RestorationInference {
   }
 
   async encodeTextWithProvenance(selection: MlSelection, text: string, { language, modelName }: TextEncodingOptions) {
+    // FL-455: search text is always encoded on this network, never on Frameleaf Cloud
+    if (selection.endpoint.cloud) {
+      throw new CloudJobsUnavailableError('search text');
+    }
     const selected = await this.clipIndex?.selectProfile(modelName, 'text', language);
     if (selected) {
       const result = await this.encodeBoundClip(selection, { text }, selected.profile);

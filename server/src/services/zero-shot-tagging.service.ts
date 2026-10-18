@@ -77,7 +77,7 @@ export class ZeroShotTaggingService extends BaseService {
     const producer = await this.machineLearningRepository.clipCacheKey(clip.modelName);
     // Queue requests retain their own destination and cancellation ownership; no shared in-flight request.
     if (queueExecution.getStore()) {
-      const selection = await this.selectRoutedMlDestination({ workload: MlWorkload.Clip });
+      const selection = await this.selectClipTextDestination();
       const key = `${selection.destinationId}/${clip.modelName}/${producer}`;
       const ready = QUEUE_VOCABULARY.get(key);
       if (ready) return ready;
@@ -106,7 +106,7 @@ export class ZeroShotTaggingService extends BaseService {
   ): Promise<LabelEmbedding[]> {
     this.logger.log(`Encoding ${CLIP_ZERO_SHOT_LABELS.length} zero-shot labels for model ${clip.modelName}`);
     const results: LabelEmbedding[] = [];
-    const selection = admitted ?? (await this.selectRoutedMlDestination({ workload: MlWorkload.Clip }));
+    const selection = admitted ?? (await this.selectClipTextDestination());
     for (const label of CLIP_ZERO_SHOT_LABELS) {
       const raw = await this.machineLearningRepository.encodeText(selection, CLIP_ZERO_SHOT_PROMPT(label), {
         modelName: clip.modelName,

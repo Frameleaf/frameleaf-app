@@ -209,7 +209,9 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
       const group = await screen.findByRole('radiogroup', { name: `Where ${name} runs` });
       expect(within(group).getByRole('radio', { name: 'Both' })).toBeDisabled();
     }
-    expect(screen.getByText('Faces never leave this server.')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Frameleaf Cloud can find faces too when it offers this server's own face model/),
+    ).toBeInTheDocument();
   });
 
   it('routes work in the settings draft once cloud processing is on, and sets where jobs start', async () => {

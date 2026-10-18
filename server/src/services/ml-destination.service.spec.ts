@@ -1000,7 +1000,7 @@ describe(MlDestinationService.name, () => {
       expect(face.available).toBe(true);
       expect(face.routedDestinationId).toBe(mlDestinationStub.local.id);
       expect(face.destinations.find((d) => d.id === mlDestinationStub.local.id)?.available).toBe(true);
-      // Frameleaf Cloud allows nothing for face and has never been checked healthy.
+      // Frameleaf Cloud is not allowed faces here, offers no matching face model and has never been checked healthy.
       expect(face.destinations.find((d) => d.id === mlDestinationStub.frameleafCloud.id)?.available).toBe(false);
 
       const restoration = result.workloads.find((entry) => entry.workload === MlWorkload.RestorationFaithful)!;

@@ -1,3 +1,4 @@
+import { MlWorkload } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -142,5 +143,71 @@ describe('CloudMlConsentDialog (FL-159)', () => {
 
     medicalTerms(terms('2026-11-01.2', 'b'));
     await screen.findByText('Terms 2026-11-01.2.');
+  });
+
+  describe('smart search and face recognition (FL-455)', () => {
+    it("offers neither while Frameleaf Cloud does not run this server's models for them, saying both stay home", () => {
+      render(CloudMlConsentDialog, {
+        open: true,
+        destinationId: 'cloud-1',
+        consent,
+        region: 'eu',
+        onRecorded: vi.fn(),
+      });
+
+      const dialog = screen.getByRole('dialog', { name: 'Cloud processing terms · version 2026-10-01' });
+      expect(within(dialog).queryByRole('switch', { name: /Prepare smart search/ })).not.toBeInTheDocument();
+      expect(within(dialog).queryByRole('switch', { name: /Find and recognise faces/ })).not.toBeInTheDocument();
+      expect(within(dialog).getByText('Prepared on this server')).toBeInTheDocument();
+      expect(within(dialog).getByText('Found and recognised on this server')).toBeInTheDocument();
+      expect(within(dialog).queryByText(/Never sent/)).not.toBeInTheDocument();
+    });
+
+    it('asks for and accepts the terms of each one chosen, with its own disclosure line', async () => {
+      sdkMock.getCloudMlConsentTerms.mockImplementation(({ smartSearch, faceRecognition }) =>
+        Promise.resolve(smartSearch && faceRecognition ? terms('2026-10-18.1', 'd') : terms('2026-10-01', 'a')),
+      );
+      sdkMock.grantMlDestinationConsent.mockResolvedValue({} as never);
+      render(CloudMlConsentDialog, {
+        open: true,
+        destinationId: 'cloud-1',
+        consent,
+        region: 'eu',
+        matchedWorkloads: [MlWorkload.Clip, MlWorkload.Face],
+        onRecorded: vi.fn(),
+      });
+
+      await screen.findByText('Terms 2026-10-01.');
+      await fireEvent.click(screen.getByRole('switch', { name: /Prepare smart search on Frameleaf Cloud/ }));
+      await fireEvent.click(screen.getByRole('switch', { name: /Find and recognise faces on Frameleaf Cloud/ }));
+      await screen.findByText('Terms 2026-10-18.1.');
+      expect(sdkMock.getCloudMlConsentTerms).toHaveBeenLastCalledWith({
+        identityNames: false,
+        medicalSignals: false,
+        smartSearch: true,
+        faceRecognition: true,
+      });
+      expect(screen.getByText(/what you search for stays on this server/)).toBeInTheDocument();
+      expect(screen.getByText(/people are grouped and named only on this server/)).toBeInTheDocument();
+
+      await fireEvent.click(screen.getByRole('checkbox', { name: /I have read these terms/ }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Accept and turn on' }));
+      await vi.waitFor(() => expect(sdkMock.grantMlDestinationConsent).toHaveBeenCalledTimes(1));
+      expect(sdkMock.grantMlDestinationConsent).toHaveBeenCalledWith({
+        id: 'cloud-1',
+        mlDestinationConsentRequestDto: {
+          acknowledgeMediaLeavesNetwork: true,
+          version: '2026-10-18.1',
+          textSha256: 'd'.repeat(64),
+          features: {
+            identityNames: false,
+            medicalSignals: false,
+            ocrAddon: false,
+            smartSearch: true,
+            faceRecognition: true,
+          },
+        },
+      });
+    });
   });
 });

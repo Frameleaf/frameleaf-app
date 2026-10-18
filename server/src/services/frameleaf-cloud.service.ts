@@ -1513,7 +1513,11 @@ export class FrameleafCloudService extends BaseService {
       const backup = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
       return {
         remoteAccessSettings: remoteAccessSettingsOf(frameleafCloud.remoteAccess),
-        cloudMl: cloudMlSettingsOf(frameleafCloud.cloudMl, destination?.consentVersion),
+        cloudMl: cloudMlSettingsOf(
+          frameleafCloud.cloudMl,
+          destination?.consentVersion,
+          destination?.lastProbeCloud?.features?.faceRecognition === true,
+        ),
         cloudBackup: cloudBackupSettingsOf(frameleafCloud.cloudBackup, backup),
         licenseState: licenseStateOf(license),
       };

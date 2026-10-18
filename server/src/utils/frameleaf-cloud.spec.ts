@@ -630,13 +630,13 @@ describe('gateway amounts and usage (FL-177, as-built decisions #21, #22 and #24
 });
 
 /**
- * FL-181: the one boundary mapping between the cloud's six wire workload IDs (FC-66) and this
- * server's finer-grained `MlWorkload` values. `restoration` admits both restoration workloads;
- * `transcription` and `tts` both admit Studio AI; every other ID and every app workload not sent to
- * the cloud (face, clip, ocr, pet-recognition, studio-render) map to nothing.
+ * FL-181: the one boundary mapping between the cloud's wire workload IDs (FC-66) and this server's
+ * finer-grained `MlWorkload` values. `restoration` admits both restoration workloads; `transcription`
+ * and `tts` both admit Studio AI; FL-455 adds `clip` (smart search) and `face`; every other ID and every
+ * app workload not sent to the cloud (ocr, pet-recognition, studio-render) map to nothing.
  */
 describe('cloud workload ID mapping (FL-181)', () => {
-  it('names the six canonical IDs, in the order the cloud documents them', () => {
+  it('names the canonical IDs, in the order the cloud documents them', () => {
     expect(CLOUD_WORKLOAD_IDS).toEqual([
       'descriptions',
       'upscale',
@@ -644,6 +644,8 @@ describe('cloud workload ID mapping (FL-181)', () => {
       'transcription',
       'tts',
       'interpolation',
+      'clip',
+      'face',
     ]);
   });
 
@@ -657,16 +659,19 @@ describe('cloud workload ID mapping (FL-181)', () => {
     expect(appWorkloadsForCloudId('transcription')).toEqual([MlWorkload.StudioAi]);
     expect(appWorkloadsForCloudId('tts')).toEqual([MlWorkload.StudioAi]);
     expect(appWorkloadsForCloudId('interpolation')).toEqual([MlWorkload.Interpolation]);
+    // FL-455
+    expect(appWorkloadsForCloudId('clip')).toEqual([MlWorkload.Clip]);
+    expect(appWorkloadsForCloudId('face')).toEqual([MlWorkload.Face]);
   });
 
   it('admits nothing for an ID it does not know, never guessing', () => {
-    for (const unknown of ['face', 'clip', 'ocr', 'pet-recognition', 'studio-render', 'music', 'captioning', '']) {
+    for (const unknown of ['ocr', 'pet-recognition', 'studio-render', 'music', 'captioning', '']) {
       expect(appWorkloadsForCloudId(unknown), unknown).toEqual([]);
     }
   });
 
   it('folds a capabilities `workloads[]` list into the app workloads it admits, dropping unknown IDs and duplicates', () => {
-    expect(knownWorkloads(['descriptions', 'restoration', 'transcription', 'tts', 'face', 'teleportation'])).toEqual([
+    expect(knownWorkloads(['descriptions', 'restoration', 'transcription', 'tts', 'ocr', 'teleportation'])).toEqual([
       MlWorkload.Enrichment,
       MlWorkload.RestorationFaithful,
       MlWorkload.RestorationCreative,
@@ -681,18 +686,13 @@ describe('cloud workload ID mapping (FL-181)', () => {
     expect(cloudWorkloadIdFor(MlWorkload.RestorationFaithful)).toBe('restoration');
     expect(cloudWorkloadIdFor(MlWorkload.RestorationCreative)).toBe('restoration');
     expect(cloudWorkloadIdFor(MlWorkload.Interpolation)).toBe('interpolation');
+    expect(cloudWorkloadIdFor(MlWorkload.Clip)).toBe('clip');
+    expect(cloudWorkloadIdFor(MlWorkload.Face)).toBe('face');
   });
 
   it('never names a cloud ID for a workload the cloud never serves this way', () => {
     // Studio AI needs studioAiCloudWorkloadId (one app workload, two cloud IDs); the rest are never sent at all.
-    for (const workload of [
-      MlWorkload.StudioAi,
-      MlWorkload.Face,
-      MlWorkload.Clip,
-      MlWorkload.Ocr,
-      MlWorkload.PetRecognition,
-      MlWorkload.StudioRender,
-    ]) {
+    for (const workload of [MlWorkload.StudioAi, MlWorkload.Ocr, MlWorkload.PetRecognition, MlWorkload.StudioRender]) {
       expect(cloudWorkloadIdFor(workload), workload).toBeNull();
     }
   });

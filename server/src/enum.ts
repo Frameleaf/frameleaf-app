@@ -997,11 +997,11 @@ export const LIBRARY_ML_WORKLOADS: readonly MlWorkload[] = [
 ];
 
 /**
- * The workloads Frameleaf Cloud may be allowed (FL-146, FL-159): descriptions, upscaling, restoration,
- * Studio AI, interpolation and Studio render. Faces are refused by policy (biometric law), and search
- * embeddings and OCR stay on this network.
+ * The workloads Frameleaf Cloud may always be allowed (FL-146, FL-159): descriptions, upscaling,
+ * restoration, Studio AI and interpolation. Studio exports render at home only (this server or a
+ * home-network worker). Smart search and faces are `FRAMELEAF_CLOUD_CATALOG_WORKLOADS`; text
+ * recognition and pet recognition stay on this network.
  */
-// Studio exports render at home only (this server or a home-network worker); never on the cloud.
 export const FRAMELEAF_CLOUD_ML_WORKLOADS: readonly MlWorkload[] = [
   MlWorkload.Enrichment,
   MlWorkload.Upscale,
@@ -1009,6 +1009,20 @@ export const FRAMELEAF_CLOUD_ML_WORKLOADS: readonly MlWorkload[] = [
   MlWorkload.RestorationCreative,
   MlWorkload.StudioAi,
   MlWorkload.Interpolation,
+];
+
+/**
+ * FL-455: smart search (image embeddings) and faces (detection and recognition) may run on Frameleaf
+ * Cloud only while its catalogue offers exactly this server's pinned model for them
+ * (`cloud-model-identity.ts`) and the feature has its own consent. Search text is always encoded on
+ * this network.
+ */
+export const FRAMELEAF_CLOUD_CATALOG_WORKLOADS: readonly MlWorkload[] = [MlWorkload.Clip, MlWorkload.Face];
+
+/** Every workload a Frameleaf Cloud destination may be allowed (FL-455). */
+export const FRAMELEAF_CLOUD_ELIGIBLE_WORKLOADS: readonly MlWorkload[] = [
+  ...FRAMELEAF_CLOUD_ML_WORKLOADS,
+  ...FRAMELEAF_CLOUD_CATALOG_WORKLOADS,
 ];
 
 /** The workloads only the separate restoration worker serves (FL-114, FL-72, FL-162 Smooth motion). */

@@ -4,8 +4,9 @@
    * Compute & jobs → Where each job runs (FL-159, handoff §3.2; prototype WorkloadRouting.jsx): for
    * every kind of work that uses the ML service, this server, Frameleaf Cloud or both. "Both" means
    * each job lets the person pick, preselecting "When a job can run in both places, start with"; a
-   * job never moves to the cloud on its own. Search, faces and text recognition stay on this server,
-   * and Studio exports render at home. The cloud options stay disabled until this server is linked
+   * job never moves to the cloud on its own. Text recognition stays on this server and Studio exports
+   * render at home; search and faces reach Frameleaf Cloud only through their destination route, while
+   * it offers this server's own models and their consent is on (FL-455). The cloud options stay disabled until this server is linked
    * and cloud processing is on.
    *
    * Where work runs is a setting (`frameleafCloud.cloudMl.routing`, `startWith`) saved with the settings

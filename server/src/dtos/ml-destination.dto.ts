@@ -172,6 +172,8 @@ const MlDestinationConsentRequestSchema = z
         identityNames: z.boolean().default(false).describe('Allow people names in cloud description prompts'),
         medicalSignals: z.boolean().default(false).describe('Allow medical signals in cloud descriptions'),
         ocrAddon: z.boolean().default(false).describe('Allow the cloud text-recognition add-on'),
+        smartSearch: z.boolean().default(false).describe('Allow smart search on Frameleaf Cloud'),
+        faceRecognition: z.boolean().default(false).describe('Allow face detection and recognition on Frameleaf Cloud'),
       })
       .optional()
       .describe('Frameleaf Cloud: per-feature choices; every feature is off unless chosen'),

@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import z from 'zod';
 import { MlAdmissionRefusal, MlWorkload } from 'src/enum.js';
+import { type CloudIdentityWorkload, cloudModelIdentitySchema } from 'src/utils/cloud-model-identity.js';
 
 /**
  * Frameleaf Cloud contracts the self-hosted server reads (FL-159, CLD-201; program plan section 4,
@@ -19,6 +20,8 @@ import { MlAdmissionRefusal, MlWorkload } from 'src/enum.js';
  * FL-286: reviewed workloads covered by the October 3, 2026 AI GPU and AI Credits Terms:
  * https://frameleaf.app/legal/ai-gpu-and-ai-credits/
  * Cloud's current consent version/digest and per-job authorization remain required.
+ * FL-455 (owner decision 2026-10-18): smart search and faces are covered too; each still needs its
+ * own feature consent (`smartSearch`, `faceRecognition`) and a catalogue model matching this server's pin.
  */
 export const hasPendingCloudDisclosure = (workload: MlWorkload): boolean =>
   ![
@@ -28,6 +31,8 @@ export const hasPendingCloudDisclosure = (workload: MlWorkload): boolean =>
     MlWorkload.Upscale,
     MlWorkload.Interpolation,
     MlWorkload.StudioAi,
+    MlWorkload.Clip,
+    MlWorkload.Face,
   ].includes(workload);
 
 /** Longest a cloud response body may be; discovery, capabilities, catalogue and wallet are small. */
@@ -268,6 +273,10 @@ const consentFeaturesSchema = z.object({
   identityNames: z.boolean().default(false),
   medicalSignals: z.boolean().default(false),
   ocrAddon: z.boolean().default(false),
+  /** FL-455: smart search image embeddings on Frameleaf Cloud; off (or absent) unless chosen. */
+  smartSearch: z.boolean().optional(),
+  /** FL-455: face detection and recognition on Frameleaf Cloud; off (or absent) unless chosen. */
+  faceRecognition: z.boolean().optional(),
 });
 export type CloudConsentFeatures = z.infer<typeof consentFeaturesSchema>;
 
@@ -455,8 +464,20 @@ export const catalogEntrySchema = z
       .array(z.strictObject({ sku: voiceSkuSchema, label: displayText(80), language: languageTag }))
       .max(100)
       .optional(),
+    /**
+     * FL-455, `clip` and `face` only: exactly which model the entry runs (repository, revision, file
+     * checksums, preprocessing). The entry is only offered when it equals this server's pinned model.
+     */
+    identity: cloudModelIdentitySchema.optional(),
   })
   .superRefine((entry, context) => {
+    const guarded = entry.workload === 'clip' || entry.workload === 'face';
+    if (guarded && !entry.identity) {
+      context.addIssue({ code: 'custom', path: ['identity'], message: 'a clip or face model names its identity' });
+    }
+    if (!guarded && entry.identity) {
+      context.addIssue({ code: 'custom', path: ['identity'], message: 'only clip and face models name an identity' });
+    }
     if (entry.languages && entry.workload !== 'transcription') {
       context.addIssue({ code: 'custom', path: ['languages'], message: 'only transcription models list languages' });
     }
@@ -477,6 +498,7 @@ export const catalogEntrySchema = z
     mode: entry.mode ?? null,
     licence: entry.licence ?? null,
     default: entry.default === true,
+    identity: entry.identity ?? null,
     // FC-48 (owner decision 2026-09-27): speech is English only at launch; a voice in any other
     // language is never offered or sent, whatever a catalogue lists
     ...(entry.voices && { voices: entry.voices.filter((voice) => isEnglishVoice(voice.language)) }),
@@ -525,6 +547,13 @@ export const isCloudModelGroup = (value: string): value is CloudModelGroup =>
   (CLOUD_MODEL_GROUPS as readonly string[]).includes(value);
 
 /**
+ * FL-455: the catalogue groups of smart search and faces. No administrator chooses their model: a job
+ * names the one model matching this server's pin (`CloudProbeFacts.localModels`), so these are never
+ * in `CLOUD_MODEL_GROUPS`.
+ */
+export type CloudPinnedModelGroup = 'clip' | 'face';
+
+/**
  * `GET /v2/catalog` (FC-34 `CatalogResponse`): only what this server may run now. Every entry is
  * checked on its own against `catalogEntrySchema`; one that fails is left out and counted in
  * `refused`, so a single bad entry never hides the rest and is never offered. A group that marks more
@@ -568,6 +597,12 @@ export const catalogSchema = z
 export type CloudCatalog = z.infer<typeof catalogSchema>;
 
 /**
+ * FL-455: the catalogue workloads asked for with `GET /v2/catalog?include=` (and `/v2/catalog/quality`).
+ * Without it the cloud leaves them out, as it does for servers from before FL-455.
+ */
+export const CLOUD_CATALOG_INCLUDE = ['clip', 'face'] as const;
+
+/**
  * The catalogue models this server may offer: every accepted entry. No model is withheld for its
  * licence (FL-451, legal review 2026-10-17, which retired the FL-146 local-only list).
  */
@@ -597,13 +632,17 @@ export const CONSENT_TERMS_FOR_FEATURES: boolean = true;
  * `enabled`, else none, so the cloud answers for the features on record as before.
  */
 export const consentCurrentQuery = (
-  features: { identityNames: boolean; medicalSignals: boolean } | undefined,
+  features:
+    { identityNames: boolean; medicalSignals: boolean; smartSearch?: boolean; faceRecognition?: boolean } | undefined,
   enabled: boolean = CONSENT_TERMS_FOR_FEATURES,
 ): string =>
   features && enabled
     ? `?${new URLSearchParams({
         identityNames: String(features.identityNames),
         medicalSignals: String(features.medicalSignals),
+        // FL-455: only asked for when chosen, so a Cloud that does not offer them is asked as before
+        ...(features.smartSearch && { smartSearch: 'true' }),
+        ...(features.faceRecognition && { faceRecognition: 'true' }),
       })}`
     : '';
 
@@ -651,13 +690,37 @@ export type CloudConsentCurrent = z.infer<typeof consentCurrentSchema>;
  */
 export const consentRecordRequestSchema = z.strictObject({
   version: z.string().regex(CONSENT_VERSION_PATTERN),
-  features: z.strictObject({ identityNames: z.boolean(), medicalSignals: z.boolean(), ocrAddon: z.literal(false) }),
+  features: z.strictObject({
+    identityNames: z.boolean(),
+    medicalSignals: z.boolean(),
+    ocrAddon: z.literal(false),
+    // FL-455: sent only when chosen (`consentRecordFeatures`)
+    smartSearch: z.literal(true).optional(),
+    faceRecognition: z.literal(true).optional(),
+  }),
   acknowledgedBy: z
     .string()
     .regex(/^[\w-]{1,64}$/)
     .optional(),
 });
 export type CloudConsentRecordRequest = z.infer<typeof consentRecordRequestSchema>;
+
+/**
+ * FL-455: the features of a `POST /v2/consent` body. Smart search and faces are named only when chosen,
+ * so a Cloud that does not offer them records the same body as before.
+ */
+export const consentRecordFeatures = (
+  features: Pick<
+    CloudConsentFeatures,
+    'identityNames' | 'medicalSignals' | 'ocrAddon' | 'smartSearch' | 'faceRecognition'
+  >,
+): CloudConsentRecordRequest['features'] => ({
+  identityNames: features.identityNames,
+  medicalSignals: features.medicalSignals,
+  ocrAddon: false,
+  ...(features.smartSearch && { smartSearch: true as const }),
+  ...(features.faceRecognition && { faceRecognition: true as const }),
+});
 
 /** `POST /v2/consent` answer (FC-34 `ConsentRecorded`). */
 export const consentRecordedSchema = z.object({
@@ -1835,18 +1898,25 @@ export type CloudProbeFacts = {
    * such facts admit no model until the next check.
    */
   modelGroups?: Record<string, string>;
+  /**
+   * FL-455: for smart search (`clip`) and faces, the catalogue model SKU whose identity equals this
+   * server's pinned model (`matchLocalModels`). The only model a Cloud job for that work may name; a
+   * workload without one is not offered. Absent on facts stored before FL-455.
+   */
+  localModels?: Partial<Record<CloudIdentityWorkload, string>>;
   refusal: { refusal: MlAdmissionRefusal; detail: string } | null;
 };
 
 /**
  * The catalogue group a Frameleaf Cloud job for `workload` takes its default from (FC-34), or null
  * when there is none to take: Studio AI spans two cloud workloads (`transcription`, `tts`), so it
- * always names its model, and work the cloud never runs has no group. `cloudModelGroupFor` is the
+ * always names its model, and work the cloud does not run has no group. `cloudModelGroupFor` is the
  * group a job's chosen model is read from, Studio AI included.
  */
 export const cloudDefaultGroupFor = (workload: MlWorkload): string | null => {
   const cloudId = cloudWorkloadIdFor(workload);
-  if (!cloudId) {
+  // FL-455: smart search and faces take no default; they name the model matching this server's pin
+  if (!cloudId || workload === MlWorkload.Clip || workload === MlWorkload.Face) {
     return null;
   }
   switch (workload) {
@@ -1870,8 +1940,13 @@ export const cloudDefaultGroupFor = (workload: MlWorkload): string | null => {
 export const cloudModelFor = (
   workload: MlWorkload,
   chosen: string | null | undefined,
-  facts: Pick<CloudProbeFacts, 'defaultModels'> | null | undefined,
+  facts: Pick<CloudProbeFacts, 'defaultModels' | 'localModels'> | null | undefined,
 ): string | null => {
+  // FL-455: smart search and faces only ever name the model matching this server's pin; no choice or
+  // default stands in for it
+  if (workload === MlWorkload.Clip || workload === MlWorkload.Face) {
+    return facts?.localModels?.[workload] ?? null;
+  }
   if (chosen) {
     return chosen;
   }
@@ -1891,7 +1966,10 @@ export const cloudModelFor = (
 export const cloudModelGroupFor = (
   workload: MlWorkload,
   studioFeature?: StudioAiCloudFeature | null,
-): CloudModelGroup | null => {
+): CloudModelGroup | CloudPinnedModelGroup | null => {
+  if (workload === MlWorkload.Clip || workload === MlWorkload.Face) {
+    return workload;
+  }
   if (workload === MlWorkload.StudioAi) {
     if (!studioFeature) {
       return null;
@@ -1942,6 +2020,7 @@ export const cloudFactsFromCapabilities = (
   modelWorkloads: Record<string, MlWorkload | null> = {},
   defaultModels: Record<string, string> = {},
   modelGroups: Record<string, string> = {},
+  localModels: Partial<Record<CloudIdentityWorkload, string>> = {},
 ): CloudProbeFacts => ({
   region: capabilities.region,
   consentRequiredVersion: capabilities.consent.requiredVersion,
@@ -1958,13 +2037,15 @@ export const cloudFactsFromCapabilities = (
   modelWorkloads,
   defaultModels,
   modelGroups,
+  localModels,
   refusal: null,
 });
 
 /**
  * The workload IDs Frameleaf Cloud uses on the wire (FC-66, FL-181; canonical set in
  * `instance-contract.md` §FC-34, confirmed 2026-09-25): `descriptions`, `upscale`, `restoration`,
- * `transcription`, `tts`, `interpolation`. These IDs are never reused and are not the same strings
+ * `transcription`, `tts`, `interpolation`, and since FL-455 `clip` (smart search image embeddings) and
+ * `face` (face detection and recognition), which a Cloud offers only once it serves them. These IDs are never reused and are not the same strings
  * as `MlWorkload`: this server's workloads are finer-grained than the cloud's (restoration has a
  * faithful and a creative mode; Studio AI covers more than one kind of cloud work), so every place
  * that reads or sends a workload string on the cloud boundary (capabilities, catalogue, estimates,
@@ -1978,6 +2059,8 @@ export const CLOUD_WORKLOAD_IDS = [
   'transcription',
   'tts',
   'interpolation',
+  'clip',
+  'face',
 ] as const;
 export type CloudWorkloadId = (typeof CLOUD_WORKLOAD_IDS)[number];
 
@@ -1988,9 +2071,10 @@ export const cloudWorkloadIdSchema = z.enum(CLOUD_WORKLOAD_IDS);
  * workloads at the capability level: a specific job still needs the catalog to say which mode a
  * model runs (`workloadForCatalogEntry`). `transcription` and `tts` both admit Studio AI, since a
  * cloud that offers either one can run some Studio AI work; which ID a specific job needs is decided
- * by the Studio feature being run (`studioAiCloudWorkloadId`), not by this capability check. An ID
- * this server does not know (or one of the workloads this server never sends: face, clip, ocr,
- * pet-recognition, studio-render) admits nothing.
+ * by the Studio feature being run (`studioAiCloudWorkloadId`), not by this capability check. `clip`
+ * and `face` (FL-455) admit smart search and faces; whether a job may go is still decided by the
+ * catalogue model matching this server's pin and the feature's consent. An ID this server does not
+ * know (or work this server keeps at home: ocr, pet-recognition, studio-render) admits nothing.
  */
 export const appWorkloadsForCloudId = (id: string): MlWorkload[] => {
   switch (id) {
@@ -2010,6 +2094,12 @@ export const appWorkloadsForCloudId = (id: string): MlWorkload[] => {
     case 'interpolation': {
       return [MlWorkload.Interpolation];
     }
+    case 'clip': {
+      return [MlWorkload.Clip];
+    }
+    case 'face': {
+      return [MlWorkload.Face];
+    }
     default: {
       return [];
     }
@@ -2024,8 +2114,8 @@ export const knownWorkloads = (values: readonly string[]): MlWorkload[] => [
 /**
  * The cloud ID a job for `workload` is sent under (FL-181). `null` for a workload the cloud never
  * serves this way: Studio AI needs `studioAiCloudWorkloadId` instead, since one app workload covers
- * two cloud IDs and a specific job needs its own; face, clip, ocr, pet-recognition and studio-render
- * are never sent to the cloud at all.
+ * two cloud IDs and a specific job needs its own; ocr, pet-recognition and studio-render are never
+ * sent to the cloud at all.
  */
 export const cloudWorkloadIdFor = (workload: MlWorkload): CloudWorkloadId | null => {
   switch (workload) {
@@ -2041,6 +2131,12 @@ export const cloudWorkloadIdFor = (workload: MlWorkload): CloudWorkloadId | null
     }
     case MlWorkload.Interpolation: {
       return 'interpolation';
+    }
+    case MlWorkload.Clip: {
+      return 'clip';
+    }
+    case MlWorkload.Face: {
+      return 'face';
     }
     default: {
       return null;

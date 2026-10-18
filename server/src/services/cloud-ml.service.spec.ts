@@ -13,6 +13,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { CloudMlService, WALLET_STEP_UP_MESSAGE } from 'src/services/cloud-ml.service.js';
+import { localPinnedIdentity } from 'src/utils/cloud-model-identity.js';
 import {
   FrameleafCloudError,
   capabilitiesSchema,
@@ -175,7 +176,7 @@ describe(CloudMlService.name, () => {
       expect(mocks.frameleafCloud.discovery).not.toHaveBeenCalled();
     });
 
-    it('reports what the gateway offers, never faces or unknown work, with the facts admission needs', async () => {
+    it('reports what the gateway offers, never unknown work, with the facts admission needs', async () => {
       link();
 
       const probe = await sut.probe();
@@ -216,6 +217,54 @@ describe(CloudMlService.name, () => {
         onRegionMismatch: expect.any(Function),
         onRegionMismatchUnresolved: expect.any(Function),
       });
+    });
+
+    it("offers smart search and faces only with a catalogue model that is exactly this server's model (FL-455)", async () => {
+      link();
+      const [descriptions] = catalogFixture.models;
+      const clipIdentity = localPinnedIdentity(MlWorkload.Clip, 'ViT-B-16-SigLIP-384__webli')!;
+      const faceIdentity = localPinnedIdentity(MlWorkload.Face, 'buffalo_l')!;
+      mocks.frameleafCloudMl.getCapabilities.mockResolvedValue({
+        ...capabilities,
+        workloads: [...capabilities.workloads, 'clip', 'face'],
+      });
+      mocks.frameleafCloudMl.getCatalog.mockResolvedValue(
+        catalogSchema.parse({
+          etag: catalogFixture.etag,
+          models: [
+            descriptions,
+            { ...descriptions, sku: 'ms_C11P0000', workload: 'clip', default: true, identity: clipIdentity },
+            // another revision of the face model is never matched
+            {
+              ...descriptions,
+              sku: 'ms_FACE0001',
+              workload: 'face',
+              default: true,
+              identity: { ...faceIdentity, revision: 'e'.repeat(40) },
+            },
+          ],
+        }),
+      );
+
+      const probe = await sut.probe();
+
+      expect(probe.workloads).toContain(MlWorkload.Clip);
+      expect(probe.workloads).not.toContain(MlWorkload.Face);
+      expect(probe.cloud?.localModels).toEqual({ [MlWorkload.Clip]: 'ms_C11P0000' });
+    });
+
+    it('offers neither while the catalogue lists no smart search or face model, as today (FL-455)', async () => {
+      link();
+      mocks.frameleafCloudMl.getCapabilities.mockResolvedValue({
+        ...capabilities,
+        workloads: [...capabilities.workloads, 'clip', 'face'],
+      });
+
+      const probe = await sut.probe();
+
+      expect(probe.workloads).not.toContain(MlWorkload.Clip);
+      expect(probe.workloads).not.toContain(MlWorkload.Face);
+      expect(probe.cloud?.localModels).toEqual({});
     });
 
     it('serves only the work set to Both or Cloud only in Where each job runs', async () => {

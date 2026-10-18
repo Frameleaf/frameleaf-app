@@ -782,9 +782,13 @@ export type CloudStatusResponseDto = {
     state: CloudLinkState;
 };
 export type CloudMlConsentFeaturesDto = {
+    /** Face detection and recognition may run on Frameleaf Cloud */
+    faceRecognition: boolean;
     identityNames: boolean;
     medicalSignals: boolean;
     ocrAddon: boolean;
+    /** Smart search may run on Frameleaf Cloud */
+    smartSearch: boolean;
 };
 export type CloudMlConsentStateDto = {
     /** The version an administrator accepted on this server */
@@ -906,6 +910,8 @@ export type CloudMlStatusResponseDto = {
     enabled: boolean;
     /** Cloud processing entitlement, when the cloud answered */
     entitled: boolean | null;
+    /** Smart search and faces work Frameleaf Cloud offers with exactly this server's own models, at the last check */
+    matchedModelWorkloads: MlWorkload[];
     /** The Frameleaf account's data region */
     region: string | null;
     /** The last AI Wallet read, or null */
@@ -1020,7 +1026,7 @@ export type CloudMlDescriptionEstimateResponseDto = {
 export type CloudMlDestinationCreateDto = {
     budgetLimitUsd?: number | null;
     name?: string;
-    /** The workloads Frameleaf Cloud may run; faces, search and text recognition are refused */
+    /** The workloads Frameleaf Cloud may run; smart search and faces only run while it offers this server’s own models, text recognition is refused */
     workloads: MlWorkload[];
 };
 export type CloudMlModelChoiceDto = {
@@ -1375,7 +1381,7 @@ export type AdminConfigFrameleafCloudAutoDescribeDto = {
     enabled: boolean;
 };
 export type AdminConfigFrameleafCloudFacesDto = {
-    /** Faces never run on Frameleaf Cloud */
+    /** Unused; faces on Frameleaf Cloud are turned on with their own consent in the processing terms */
     enabled: false;
 };
 export type AdminConfigFrameleafCloudRoutingDto = {
@@ -8684,12 +8690,16 @@ export type MlDestinationConsentRequestDto = {
     acknowledgeMediaLeavesNetwork: true;
     /** Frameleaf Cloud: per-feature choices; every feature is off unless chosen */
     features?: {
+        /** Allow face detection and recognition on Frameleaf Cloud */
+        faceRecognition?: boolean;
         /** Allow people names in cloud description prompts */
         identityNames?: boolean;
         /** Allow medical signals in cloud descriptions */
         medicalSignals?: boolean;
         /** Allow the cloud text-recognition add-on */
         ocrAddon?: boolean;
+        /** Allow smart search on Frameleaf Cloud */
+        smartSearch?: boolean;
     };
     /** Frameleaf Cloud (FC-62): SHA-256 of the terms text the administrator was shown; refused when the cloud now asks for other terms */
     textSha256?: string;
@@ -16167,10 +16177,14 @@ export type ClassificationRuleQueryDto = {
     albumId?: string;
 };
 export type CloudMlConsentTermsQueryDto = {
+    /** The face recognition feature as the administrator chose it */
+    faceRecognition?: boolean;
     /** The names-in-photos feature as the administrator chose it */
     identityNames?: boolean;
     /** The medical-signals feature as the administrator chose it */
     medicalSignals?: boolean;
+    /** The smart search feature as the administrator chose it */
+    smartSearch?: boolean;
 };
 export type ConfigCredentialParamDto = {
     name: ConfigCredential;
@@ -18588,16 +18602,20 @@ export function getCloudMlConsentHistory(opts?: Oazapfts.RequestOpts) {
 /**
  * Get the Frameleaf Cloud consent terms for chosen features
  */
-export function getCloudMlConsentTerms({ identityNames, medicalSignals }: {
+export function getCloudMlConsentTerms({ identityNames, medicalSignals, smartSearch, faceRecognition }: {
     identityNames?: boolean;
     medicalSignals?: boolean;
+    smartSearch?: boolean;
+    faceRecognition?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: CloudMlConsentTermsDto;
     }>(`/admin/cloud/ml/consent/terms${QS.query(QS.explode({
         identityNames,
-        medicalSignals
+        medicalSignals,
+        smartSearch,
+        faceRecognition
     }))}`, {
         ...opts
     }));

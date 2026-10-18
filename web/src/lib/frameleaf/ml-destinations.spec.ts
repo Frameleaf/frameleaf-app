@@ -199,6 +199,25 @@ describe('separate library-analysis and restoration workers (FL-72)', () => {
     expect(workloadsForKind(MlDestinationKind.Lan)).toEqual([...ML_WORKLOAD_ORDER]);
   });
 
+  it("offers Frameleaf Cloud smart search and faces only while it runs this server's own models (FL-455)", () => {
+    expect(workloadsForKind(MlDestinationKind.FrameleafCloud, [MlWorkload.Clip, MlWorkload.Face])).toEqual([
+      MlWorkload.Face,
+      MlWorkload.Clip,
+      MlWorkload.Enrichment,
+      MlWorkload.RestorationFaithful,
+      MlWorkload.RestorationCreative,
+      MlWorkload.StudioAi,
+      MlWorkload.Upscale,
+      MlWorkload.Interpolation,
+    ]);
+    expect(workloadsForKind(MlDestinationKind.FrameleafCloud, [MlWorkload.Clip])).toContain(MlWorkload.Clip);
+    expect(workloadsForKind(MlDestinationKind.FrameleafCloud, [MlWorkload.Clip])).not.toContain(MlWorkload.Face);
+    // text and pet recognition never, whatever is passed
+    expect(workloadsForKind(MlDestinationKind.FrameleafCloud, [MlWorkload.Ocr, MlWorkload.PetRecognition])).not.toEqual(
+      expect.arrayContaining([MlWorkload.Ocr]),
+    );
+  });
+
   it('closes restoration once library work is ticked, and the reverse', () => {
     const lan = MlDestinationKind.Lan;
     expect(workloadBlockedInDraft(lan, [MlWorkload.Face], MlWorkload.RestorationFaithful)).toBe(true);
@@ -209,9 +228,13 @@ describe('separate library-analysis and restoration workers (FL-72)', () => {
     expect(
       workloadBlockedInDraft(lan, [MlWorkload.Face, MlWorkload.RestorationFaithful], MlWorkload.RestorationFaithful),
     ).toBe(false);
-    // Frameleaf Cloud never offers faces, search or text recognition, and may mix roles.
+    // Frameleaf Cloud offers faces and search only with this server's own models (FL-455), never text
+    // recognition, and may mix roles.
     const cloudKind = MlDestinationKind.FrameleafCloud;
     expect(workloadBlockedInDraft(cloudKind, [], MlWorkload.Face)).toBe(true);
+    expect(workloadBlockedInDraft(cloudKind, [], MlWorkload.Face, [MlWorkload.Face])).toBe(false);
+    expect(workloadBlockedInDraft(cloudKind, [], MlWorkload.Clip, [MlWorkload.Face])).toBe(true);
+    expect(workloadBlockedInDraft(cloudKind, [], MlWorkload.Ocr, [MlWorkload.Clip, MlWorkload.Face])).toBe(true);
     expect(workloadBlockedInDraft(cloudKind, [MlWorkload.Enrichment], MlWorkload.RestorationCreative)).toBe(false);
   });
 });

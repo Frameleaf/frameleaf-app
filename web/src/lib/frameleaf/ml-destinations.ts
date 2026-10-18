@@ -194,9 +194,9 @@ export const isLibraryWorkload = (workload: MlWorkload) => LIBRARY_WORKLOADS.inc
 export const isRestorationWorkload = (workload: MlWorkload) => RESTORATION_WORKLOADS.includes(workload);
 
 /**
- * The workloads Frameleaf Cloud may run (FL-159): descriptions, restoration, upscaling, Studio AI and
- * interpolation. Studio exports render at home only (§2.7). Faces are refused by policy; search and text recognition stay
- * on this network. Mirrors the server's `FRAMELEAF_CLOUD_ML_WORKLOADS`.
+ * The workloads Frameleaf Cloud may always run (FL-159): descriptions, restoration, upscaling, Studio AI
+ * and interpolation. Studio exports render at home only (§2.7); text recognition stays on this network.
+ * Mirrors the server's `FRAMELEAF_CLOUD_ML_WORKLOADS`.
  */
 export const FRAMELEAF_CLOUD_WORKLOADS: readonly MlWorkload[] = [
   MlWorkload.Enrichment,
@@ -207,10 +207,24 @@ export const FRAMELEAF_CLOUD_WORKLOADS: readonly MlWorkload[] = [
   MlWorkload.Interpolation,
 ];
 
-/** The workloads a destination of this kind may be allowed at all. */
-export const workloadsForKind = (kind: MlDestinationKind): MlWorkload[] =>
+/**
+ * FL-455: smart search and faces, which Frameleaf Cloud runs only while it offers exactly this server's
+ * own models (the status's `matchedModelWorkloads`). Mirrors the server's
+ * `FRAMELEAF_CLOUD_CATALOG_WORKLOADS`.
+ */
+export const FRAMELEAF_CLOUD_CATALOG_WORKLOADS: readonly MlWorkload[] = [MlWorkload.Clip, MlWorkload.Face];
+
+/**
+ * The workloads a destination of this kind may be allowed at all. For Frameleaf Cloud, smart search and
+ * faces are offered only when `matched` (what the cloud offers with this server's own models) names them.
+ */
+export const workloadsForKind = (kind: MlDestinationKind, matched: readonly MlWorkload[] = []): MlWorkload[] =>
   kind === MlDestinationKind.FrameleafCloud
-    ? ML_WORKLOAD_ORDER.filter((workload) => FRAMELEAF_CLOUD_WORKLOADS.includes(workload))
+    ? ML_WORKLOAD_ORDER.filter(
+        (workload) =>
+          FRAMELEAF_CLOUD_WORKLOADS.includes(workload) ||
+          (FRAMELEAF_CLOUD_CATALOG_WORKLOADS.includes(workload) && matched.includes(workload)),
+      )
     : [...ML_WORKLOAD_ORDER];
 
 /**
@@ -222,8 +236,9 @@ export const workloadBlockedInDraft = (
   kind: MlDestinationKind,
   selected: readonly MlWorkload[],
   workload: MlWorkload,
+  matched: readonly MlWorkload[] = [],
 ) => {
-  if (!workloadsForKind(kind).includes(workload)) {
+  if (!workloadsForKind(kind, matched).includes(workload)) {
     return true;
   }
   if (selected.includes(workload)) {
