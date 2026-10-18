@@ -966,7 +966,8 @@ describe(TimelineService.name, () => {
       const cases: Array<[object, string[]]> = [
         [{ all: both }, [items.banffMorning.id, items.video.id, sharedBoth.id]],
         [{ any: both }, [items.banffMorning.id, items.paris.id, items.video.id, sharedBoth.id, sharedAlice.id]],
-        [{ none: [bob.personGroupId] }, [items.banffEvening.id, items.paris.id, sharedAlice.id, sharedNobody.id]],
+        // "none of" alone stays in the own library: it would otherwise bring in every shared-album photo
+        [{ none: [bob.personGroupId] }, [items.banffEvening.id, items.paris.id]],
         [{ all: [alice.personGroupId], none: [bob.personGroupId] }, [items.paris.id, sharedAlice.id]],
       ];
       for (const [personIds, expected] of cases) {

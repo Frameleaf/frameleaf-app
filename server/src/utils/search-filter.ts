@@ -87,14 +87,15 @@ export const collectFilterIds = (filter: SearchFilter, field: IdsFilterField): s
 };
 
 /**
- * FL-425: whether a timeline's Filters panel narrows by people ("all of", "any of" or "none of"). Such a
- * timeline also shows the photos in albums shared with the viewer, as one `personId` does. Only the
+ * FL-425: whether a timeline's Filters panel asks for particular people ("all of" or "any of"). Such a
+ * timeline also shows those people's photos in albums shared with the viewer, as one `personId` does.
+ * "None of" alone never widens: it would bring in every shared-album photo without that person. Only the
  * top-level condition counts: it narrows every photo the timeline shows, whereas a people condition
  * inside one `or` branch would otherwise widen the other branches too.
  */
 export const filterNamesPeople = (filter: SearchFilter | undefined): boolean => {
   const people = filter?.personIds;
-  return !!people && (['any', 'all', 'none'] as const).some((operator) => (people[operator]?.length ?? 0) > 0);
+  return !!people && (['any', 'all'] as const).some((operator) => (people[operator]?.length ?? 0) > 0);
 };
 
 /**

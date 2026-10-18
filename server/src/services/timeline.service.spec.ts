@@ -612,11 +612,7 @@ describe(TimelineService.name, () => {
       mocks.asset.getTimeBuckets.mockResolvedValue([]);
       const owner = authStub.admin.user.id;
 
-      for (const personIds of [
-        { all: ['person-1', 'person-2'] },
-        { any: ['person-1', 'person-2'] },
-        { none: ['person-1', 'person-2'] },
-      ]) {
+      for (const personIds of [{ all: ['person-1', 'person-2'] }, { any: ['person-1', 'person-2'] }]) {
         await sut.getTimeBuckets(authStub.admin, { filter: { personIds } });
         expect(mocks.asset.getTimeBuckets).toHaveBeenLastCalledWith(
           { filter: { personIds }, userIds: [owner], othersRulesViewerId: owner },

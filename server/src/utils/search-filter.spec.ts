@@ -72,11 +72,15 @@ describe(applyLockedVisibilityPolicy.name, () => {
 describe(filterNamesPeople.name, () => {
   const [personA, personB] = ['00000000-0000-4000-8000-00000000000a', '00000000-0000-4000-8000-00000000000b'];
 
-  it('should be true for a top-level people condition of any operator', () => {
-    for (const personIds of [{ all: [personA, personB] }, { any: [personA, personB] }, { none: [personA] }]) {
+  it('should be true for a top-level "all of" or "any of" people condition', () => {
+    for (const personIds of [{ all: [personA, personB] }, { any: [personA, personB] }]) {
       expect(filterNamesPeople({ personIds })).toBe(true);
     }
     expect(filterNamesPeople({ personIds: { all: [personA], none: [personB] }, city: { eq: 'Oslo' } })).toBe(true);
+  });
+
+  it('should be false for "none of" alone', () => {
+    expect(filterNamesPeople({ personIds: { none: [personA] } })).toBe(false);
   });
 
   it('should be false without people, or with people only inside an `or` branch', () => {
