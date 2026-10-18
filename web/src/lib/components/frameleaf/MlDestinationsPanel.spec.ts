@@ -84,12 +84,19 @@ const cloudStatus = {
     requiredVersion: '2026-10-01',
     recordedVersion: null,
     acceptedVersion: null,
-    features: { identityNames: false, medicalSignals: false, ocrAddon: false },
+    features: {
+      identityNames: false,
+      medicalSignals: false,
+      ocrAddon: false,
+      smartSearch: false,
+      faceRecognition: false,
+    },
     summary: 'Media is processed in the EU region and deleted after each job.',
     documentUrl: null,
     outdated: false,
   },
   wallet: null,
+  matchedModelWorkloads: [],
   checkedAt: '2026-09-25T00:00:00.000Z',
 };
 
@@ -177,7 +184,13 @@ describe('MlDestinationsPanel (FL-110)', () => {
           version: '2026-10-01',
           textSha256: 'a'.repeat(64),
           // Names and medical signals never reach a cloud prompt unless chosen.
-          features: { identityNames: false, medicalSignals: false, ocrAddon: false },
+          features: {
+            identityNames: false,
+            medicalSignals: false,
+            ocrAddon: false,
+            smartSearch: false,
+            faceRecognition: false,
+          },
         },
       }),
     );

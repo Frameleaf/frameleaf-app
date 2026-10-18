@@ -72,7 +72,13 @@ const consent = (acceptedVersion: string | null) => ({
   requiredVersion: '2026-10-01',
   recordedVersion: acceptedVersion,
   acceptedVersion,
-  features: { identityNames: false, medicalSignals: false, ocrAddon: false },
+  features: {
+    identityNames: false,
+    medicalSignals: false,
+    ocrAddon: false,
+    smartSearch: false,
+    faceRecognition: false,
+  },
   summary: 'Media is processed in the EU region and deleted after each job.',
   documentUrl: null,
   outdated: false,
@@ -87,6 +93,7 @@ const status = (overrides: Partial<CloudMlStatusResponseDto> = {}): CloudMlStatu
   destination: null,
   consent: consent(null),
   wallet,
+  matchedModelWorkloads: [],
   checkedAt: '2026-09-25T09:00:00.000Z',
   ...overrides,
 });
@@ -181,7 +188,13 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
         acknowledgeMediaLeavesNetwork: true,
         version: '2026-10-01',
         textSha256: 'a'.repeat(64),
-        features: { identityNames: false, medicalSignals: false, ocrAddon: false },
+        features: {
+          identityNames: false,
+          medicalSignals: false,
+          ocrAddon: false,
+          smartSearch: false,
+          faceRecognition: false,
+        },
       },
     });
     expect(store.draft.frameleafCloud!.cloudMl.enabled).toBe(true);

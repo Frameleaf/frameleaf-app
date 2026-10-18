@@ -12,7 +12,13 @@ const consent = {
   requiredVersion: '2026-10-01',
   recordedVersion: null,
   acceptedVersion: null,
-  features: { identityNames: false, medicalSignals: false, ocrAddon: false },
+  features: {
+    identityNames: false,
+    medicalSignals: false,
+    ocrAddon: false,
+    smartSearch: false,
+    faceRecognition: false,
+  },
   summary: 'Media is processed in the EU region.',
   documentUrl: null,
   outdated: false,
@@ -97,7 +103,13 @@ describe('CloudMlConsentDialog (FL-159)', () => {
         acknowledgeMediaLeavesNetwork: true,
         version: '2026-11-01.2',
         textSha256: 'b'.repeat(64),
-        features: { identityNames: false, medicalSignals: true, ocrAddon: false },
+        features: {
+          identityNames: false,
+          medicalSignals: true,
+          ocrAddon: false,
+          smartSearch: false,
+          faceRecognition: false,
+        },
       },
     });
   });
