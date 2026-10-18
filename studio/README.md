@@ -325,7 +325,9 @@ September 25, 2026; the server mirror is `scripts/frameleaf-studio-rights.mjs`).
 admitted for local runtime only when the owner approved its exact reviewed row for that use and
 did not withhold it; the admission carries the row digest, so a row changed after approval is
 blocked again, and any id or URL outside the approved rows stays blocked. A reviewed row cannot
-admit itself: `decisions` stay as the packager recorded them. A URL is admitted only inside an
+admit itself: `decisions` stay as the packager recorded them. Licensed model rows are recorded as
+`allowed` (personal use by the user, legal review 2026-10-17, FL-451); every other row stays
+`blocked`, and an `allowed` model row is still admitted only through the owner's approval. A URL is admitted only inside an
 approved locator, and a Hugging Face model only from the approved commit
 (`/resolve/<revision>/`); when several rows cover a URL the most specific decides and any
 blocked one blocks it, and encoded path separators are refused. Patch 0028 makes the engine

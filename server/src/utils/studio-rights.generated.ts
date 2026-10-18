@@ -26,7 +26,7 @@ export type StudioResourceRights = {
   restrictions: Readonly<Partial<Record<StudioRightsUseName, string>>>;
 };
 
-export const STUDIO_RIGHTS_SOURCE_SHA256 = 'c7fae6ac4fa7a5c38a73565d24f5557943fd1334cd8f61d1e4767a89ad3bfbab';
+export const STUDIO_RIGHTS_SOURCE_SHA256 = 'b5e31ceb967f3f34a0b1695601399ab521f8ba1f29d05bbf28e3386dce1dc2c6';
 
 /** The owner approval the allowed rows come from, or null when there is none. */
 export const STUDIO_RIGHTS_APPROVAL = {
