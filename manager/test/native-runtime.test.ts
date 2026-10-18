@@ -13,6 +13,7 @@ async function fixture(
   const directory = await mkdtemp(join(tmpdir(), 'frameleaf-native-manager-'));
   const store = new Store(directory);
   const runtime: NativeRuntime = {
+    status: () => ({ state: 'stopped' }),
     identity: Object.freeze({
       runtime: 'native',
       installationId: 'a'.repeat(12),
@@ -26,6 +27,18 @@ async function fixture(
       certified: false,
     }),
     stop: async () => ({ protocolVersion: 1, state: 'stopped' }),
+    checkpoint: async () => {
+      throw new Refusal('native_checkpoint_unavailable');
+    },
+    startCheckpointCleanup: async () => {
+      throw new Refusal('native_checkpoint_unavailable');
+    },
+    startDatabase: async () => {
+      throw new Refusal('native_checkpoint_unavailable');
+    },
+    cleanupCheckpoint: async () => {
+      throw new Refusal('native_checkpoint_unavailable');
+    },
   };
   try {
     await run(store, runtime);

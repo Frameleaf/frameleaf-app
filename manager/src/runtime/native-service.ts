@@ -4,11 +4,14 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { constants } from 'node:fs';
 import { access, lstat, open, realpath } from 'node:fs/promises';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve, join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { z } from 'zod';
 import { digest, Refusal, releaseTag } from '../contracts.js';
 import { Store } from '../store.js';
+import { command } from '../docker.js';
+import { Backups } from '../backups.js';
+import { runNativeDatabaseBackup } from './native-backup-operation.js';
 import { nativeListener } from './native-listener.js';
 import { NativeHost, NativeOperations, type NativeRuntime } from './native.js';
 
@@ -33,6 +36,12 @@ const Installation = z
   })
   .strict()
   .refine((value) => value.databasePort !== value.apiPort);
+const BackupEngine = z
+  .object({
+    executable: path,
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
 const Bootstrap = z
   .object({
     protocolVersion: z.literal(2),
@@ -44,6 +53,8 @@ const Bootstrap = z
       })
       .strict(),
     controllerSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    backupEngine: BackupEngine,
+    backupKey: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
     name: z.string().trim().min(1).max(120),
     release: releaseTag,
     password: z
@@ -52,7 +63,8 @@ const Bootstrap = z
       .max(256)
       .regex(/^[^\r\n\0]+$/),
   })
-  .strict();
+  .strict()
+  .refine((value) => value.backupKey !== value.password);
 export type NativeBootstrap = z.infer<typeof Bootstrap>;
 
 /** One private inherited pipe from the desktop supervisor; never HTTP, argv, env or a state file. */
@@ -84,7 +96,16 @@ export async function readNativeBootstrap(
       JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw)),
     );
     if (!value.success) throw new Refusal('native_bootstrap_invalid');
-    await verifyController(value.data);
+    await verifyExecutable(
+      value.data.installation.controller,
+      value.data.controllerSha256,
+      'native_controller_changed',
+    );
+    await verifyExecutable(
+      value.data.backupEngine.executable,
+      value.data.backupEngine.sha256,
+      'native_backup_engine_changed',
+    );
     return value.data;
   } catch (error) {
     if (error instanceof Refusal) throw error;
@@ -147,11 +168,20 @@ export async function createNativeService(
   store: Store,
   input: Readable,
   origin: string,
+  backupRepository = join(store.directory, 'backups', 'frameleaf-database'),
 ): Promise<NativeService> {
   const bootstrap = await readNativeBootstrap(input);
   await protectNativeController(bootstrap.installation.controller);
+  await verifyNativeBackupEngine(bootstrap.backupEngine);
   validateNativeTls(bootstrap.tls, origin);
-  return new NativeService(store, bootstrap);
+  if (!path.safeParse(backupRepository).success)
+    throw new Refusal('native_backup_destination_invalid');
+  const backups = new Backups(
+    backupRepository,
+    async () => bootstrap.backupKey,
+    nativeBackupCommand(bootstrap.backupEngine),
+  );
+  return new NativeService(store, bootstrap, undefined, backups);
 }
 export function validateNativeTls(
   tls: NativeBootstrap['tls'],
@@ -192,12 +222,18 @@ async function verifyInstalledController(
   value: NativeBootstrap,
 ): Promise<void> {
   await protectNativeController(value.installation.controller);
-  await verifyController(value);
+  await verifyExecutable(
+    value.installation.controller,
+    value.controllerSha256,
+    'native_controller_changed',
+  );
 }
-async function verifyController(value: NativeBootstrap): Promise<void> {
-  const path = value.installation.controller;
-  if ((await realpath(path)) !== path)
-    throw new Refusal('native_controller_changed');
+async function verifyExecutable(
+  path: string,
+  sha256: string,
+  code: string,
+): Promise<void> {
+  if ((await realpath(path)) !== path) throw new Refusal(code);
   const file = await open(
     path,
     constants.O_RDONLY |
@@ -213,12 +249,12 @@ async function verifyController(value: NativeBootstrap): Promise<void> {
       (process.platform !== 'win32' &&
         ((metadata.mode & 0o022) !== 0 || (metadata.mode & 0o111) === 0))
     )
-      throw new Refusal('native_controller_changed');
+      throw new Refusal(code);
     const hash = createHash('sha256');
     let size = 0;
     for await (const chunk of file.createReadStream({ autoClose: false })) {
       size += chunk.length;
-      if (size > metadata.size) throw new Refusal('native_controller_changed');
+      if (size > metadata.size) throw new Refusal(code);
       hash.update(chunk);
     }
     const after = await file.stat();
@@ -228,18 +264,48 @@ async function verifyController(value: NativeBootstrap): Promise<void> {
       after.mtimeMs !== metadata.mtimeMs ||
       after.ctimeMs !== metadata.ctimeMs
     )
-      throw new Refusal('native_controller_changed');
-    if (hash.digest('hex') !== value.controllerSha256)
-      throw new Refusal('native_controller_changed');
+      throw new Refusal(code);
+    if (hash.digest('hex') !== sha256) throw new Refusal(code);
   } finally {
     await file.close();
   }
+}
+async function verifyNativeBackupEngine(
+  engine: NativeBootstrap['backupEngine'],
+): Promise<void> {
+  try {
+    await protectNativeController(engine.executable);
+    await verifyExecutable(
+      engine.executable,
+      engine.sha256,
+      'native_backup_engine_changed',
+    );
+  } catch {
+    throw new Refusal('native_backup_engine_changed');
+  }
+}
+export function nativeBackupCommand(
+  engine: NativeBootstrap['backupEngine'],
+  execute: typeof command = command,
+): typeof command {
+  const binding = Object.freeze(BackupEngine.parse(engine));
+  return async (binary, args, options = {}) => {
+    if (binary !== 'restic' || options.executable !== undefined)
+      throw new Refusal('native_backup_command_invalid');
+    await verifyNativeBackupEngine(binding);
+    return execute('restic', args, {
+      ...options,
+      executable: binding.executable,
+    });
+  };
 }
 
 /** The installed supervisor owns bootstrap authority; Manager owns the existing operation journal. */
 export class NativeService {
   private readonly lifecycle: NativeOperations;
   readonly runtime: NativeRuntime;
+  readonly backupCommand: typeof command;
+  readonly backupPassword: () => Promise<string>;
   private readonly tls: NativeBootstrap['tls'];
   private readonly publicInstallation: {
     id: string;
@@ -252,11 +318,15 @@ export class NativeService {
     readonly store: Store,
     bootstrap: NativeBootstrap,
     runtime?: NativeRuntime,
+    readonly backups?: Backups,
   ) {
     bootstrap = Bootstrap.parse(bootstrap);
     Object.freeze(bootstrap.installation);
+    Object.freeze(bootstrap.backupEngine);
+    this.backupCommand = nativeBackupCommand(bootstrap.backupEngine);
     if (store.get('installation')) throw new Refusal('manager_runtime_changed');
-    const { password, tls, ...configuration } = bootstrap;
+    const { password, backupKey, tls, ...configuration } = bootstrap;
+    this.backupPassword = async () => backupKey;
     const descriptor = {
       ...configuration,
       tlsCertificatePemSha256: createHash('sha256')
@@ -282,7 +352,30 @@ export class NativeService {
     )
       throw new Refusal('native_installation_changed');
     this.runtime = supplied;
-    this.lifecycle = new NativeOperations(store, this.runtime);
+    store.createOnce('native-library-id', bootstrap.installation.id);
+    const libraryId = store.get<string>('native-library-id');
+    if (typeof libraryId !== 'string' || !/^[a-f0-9]{12}$/.test(libraryId))
+      throw new Refusal('native_library_identity_invalid');
+    const context = {
+      installation: bootstrap.installation,
+      libraryId,
+      name: bootstrap.name,
+      release: bootstrap.release,
+    };
+    this.lifecycle = new NativeOperations(
+      store,
+      this.runtime,
+      backups
+        ? (operation) =>
+            runNativeDatabaseBackup(
+              store,
+              this.runtime,
+              backups,
+              context,
+              operation,
+            )
+        : undefined,
+    );
     this.publicInstallation = Object.freeze({
       id: bootstrap.installation.id,
       name: bootstrap.name,
@@ -315,7 +408,6 @@ export class NativeService {
   ) {
     if (installationId && installationId !== this.publicInstallation.id)
       throw new Refusal('installation_changed');
-    if (action === 'backup') throw new Refusal('native_action_unavailable');
     return this.lifecycle.control(action, key);
   }
   resume(id: string) {

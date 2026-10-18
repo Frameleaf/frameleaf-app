@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile, readdir, stat, rename, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, posix, win32 } from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Docker, command } from './docker.js';
 import { Refusal, type Source, type Backup } from './contracts.js';
@@ -49,14 +49,25 @@ export async function sourceBackups(docker: Docker, source: Source): Promise<Bac
 export class Backups {
   constructor(
     private repository: string,
-    private keyFile: string,
+    private readonly keyFile: string | (() => Promise<string>),
     private execute: typeof command = command,
-  ) {}
+  ) {
+    if (typeof keyFile === 'function') {
+      const supplied = execute;
+      this.execute = async (binary, args, options = {}) => {
+        if (options.input !== undefined || options.inputFile !== undefined)
+          throw new Refusal('backup_password_input_conflict');
+        return supplied(binary, args, { ...options, input: (await this.recoveryKey()) + '\n' });
+      };
+    }
+  }
   private args(args: string[]): string[] {
-    return ['--repo', this.repository, '--password-file', this.keyFile, '--json', ...args];
+    const password = typeof this.keyFile === 'string' ? ['--password-file', this.keyFile] : [];
+    return ['--repo', this.repository, ...password, '--json', ...args];
   }
   async unlock(key: string): Promise<void> {
     if (!/^[A-Za-z0-9_-]{43}$/.test(key)) throw new Refusal('invalid_recovery_key');
+    if (typeof this.keyFile !== 'string') throw new Refusal('backup_key_requires_secure_persistence');
     const temporary = `${this.keyFile}.${randomUUID()}`;
     await writeFile(temporary, key, { mode: 0o600, flag: 'wx' });
     try {
@@ -67,14 +78,17 @@ export class Backups {
     }
   }
   async initialize(): Promise<void> {
+    if (typeof this.keyFile === 'function') await this.recoveryKey();
     await mkdir(this.repository, { recursive: true, mode: 0o700 });
     const files = await readdir(this.repository);
     if (files.length && !files.includes('config')) throw new Refusal('backup_destination_not_empty');
-    try {
-      await stat(this.keyFile);
-    } catch {
-      if (files.length) throw new Refusal('recovery_key_required');
-      await writeFile(this.keyFile, randomBytes(32).toString('base64url'), { mode: 0o600, flag: 'wx' });
+    if (typeof this.keyFile === 'string') {
+      try {
+        await stat(this.keyFile);
+      } catch {
+        if (files.length) throw new Refusal('recovery_key_required');
+        await writeFile(this.keyFile, randomBytes(32).toString('base64url'), { mode: 0o600, flag: 'wx' });
+      }
     }
     if (!files.length) await this.execute('restic', this.args(['init']));
     await this.execute('restic', this.args(['cat', 'config']));
@@ -142,7 +156,7 @@ export class Backups {
           throw error;
         });
     const configured = await exists(join(this.repository, 'config'));
-    const keyAvailable = await exists(this.keyFile),
+    const keyAvailable = typeof this.keyFile === 'string' ? await exists(this.keyFile) : Boolean(await this.recoveryKey()),
       unlocked = configured && keyAvailable;
     return {
       configured,
@@ -153,7 +167,16 @@ export class Backups {
   }
   async restore(snapshot: string, emptyDirectory: string): Promise<void> {
     const entry = (await this.list()).find((s) => s.id === snapshot);
-    if (!/^[a-f0-9]{64}$/.test(snapshot) || !entry || entry.paths.length !== 1 || !entry.paths[0].startsWith('/'))
+    const paths = entry?.paths;
+    if (
+      !/^[a-f0-9]{64}$/.test(snapshot) ||
+      !Array.isArray(paths) ||
+      paths.length !== 1 ||
+      typeof paths[0] !== 'string' ||
+      paths[0].length > 4096 ||
+      /[\0\r\n]/.test(paths[0]) ||
+      !(posix.isAbsolute(paths[0]) || win32.isAbsolute(paths[0]))
+    )
       throw new Refusal('unknown_snapshot');
     await mkdir(emptyDirectory, { mode: 0o700 });
     await this.execute(
@@ -165,6 +188,11 @@ export class Backups {
     );
   }
   async recoveryKey(): Promise<string> {
+    if (typeof this.keyFile === 'function') {
+      const key = await this.keyFile();
+      if (!/^[A-Za-z0-9_-]{43}$/.test(key)) throw new Refusal('invalid_recovery_key');
+      return key;
+    }
     return readFile(this.keyFile, 'utf8');
   }
 }
