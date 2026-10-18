@@ -77,6 +77,9 @@ async function fixture(run: (f: any) => Promise<void>) {
       effects.push('stop');
       return { protocolVersion: 1, state: 'stopped' };
     },
+    checkpoint: async () => {
+      throw new Refusal('native_checkpoint_unavailable');
+    },
   };
   try {
     await run({ root, store, controller, bootstrap, runtime, effects });

@@ -44,6 +44,42 @@ const Failed = z
     code: z.string().min(1).max(128),
   })
   .strict();
+const checkpointOperation = z
+  .string()
+  .regex(
+    /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,
+  );
+const Checkpoint = z
+  .object({
+    protocolVersion: z.literal(1),
+    state: z.literal('checkpoint'),
+    schemaVersion: z.literal(1),
+    operationId: checkpointOperation,
+    manifestSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    sourceRevision: z.string().regex(/^[a-f0-9]{40}$/),
+    postgresMajor: z.literal('19'),
+    databaseFormat: z.literal('frameleaf-canonical'),
+    dump: z
+      .object({
+        bytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+        sha256: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .strict(),
+  })
+  .strict();
+const CheckpointFailed = z
+  .object({
+    protocolVersion: z.literal(1),
+    state: z.literal('checkpoint-failed'),
+    operationId: checkpointOperation,
+    code: z.literal('host_checkpoint_failed'),
+  })
+  .strict();
+const CheckpointReply = z.discriminatedUnion('state', [
+  Checkpoint,
+  CheckpointFailed,
+]);
+export type NativeCheckpoint = z.infer<typeof Checkpoint>;
 const Quiescent = Running.omit({ state: true })
   .extend({
     state: z.literal('quiescent'),
@@ -64,6 +100,10 @@ export interface NativeRuntime {
   }>;
   start(): Promise<Ready>;
   stop(): Promise<StopReceipt>;
+  checkpoint(
+    operationId: string,
+    signal?: AbortSignal,
+  ): Promise<NativeCheckpoint>;
 }
 
 function deferred<T>() {
@@ -88,6 +128,11 @@ type Owner = {
   fault: Refusal | null;
   startupTimer?: ReturnType<typeof setTimeout>;
   stopTimer?: ReturnType<typeof setTimeout>;
+  checkpoint?: {
+    operationId: string;
+    work: ReturnType<typeof deferred<NativeCheckpoint>>;
+    cleanup: () => void;
+  };
 };
 
 /** The descriptor comes from reviewed installed resources, never a photo-server response or webview. */
@@ -143,6 +188,55 @@ export class NativeHost implements NativeRuntime {
     if (!this.owner || this.owner.finished) return this.inspect();
     if (!this.owner.finished) this.stopOwner(this.owner);
     return this.owner.closed.promise;
+  }
+  checkpoint(
+    operationId: string,
+    signal?: AbortSignal,
+  ): Promise<NativeCheckpoint> {
+    if (!checkpointOperation.safeParse(operationId).success)
+      return Promise.reject(new Refusal('native_checkpoint_request_invalid'));
+    if (signal?.aborted)
+      return Promise.reject(new Refusal('native_checkpoint_cancelled'));
+    const owner = this.owner;
+    if (
+      !owner?.child ||
+      !owner.readySeen ||
+      owner.stopping ||
+      owner.finished ||
+      owner.fault
+    )
+      return Promise.reject(new Refusal('native_checkpoint_unavailable'));
+    if (owner.checkpoint)
+      return Promise.reject(new Refusal('native_checkpoint_busy'));
+    const work = deferred<NativeCheckpoint>();
+    const abort = () => this.stopOwner(owner);
+    const timer = setTimeout(() => {
+      owner.fault ??= new Refusal('native_checkpoint_timeout');
+      this.stopOwner(owner);
+    }, 7_200_000);
+    timer.unref();
+    owner.checkpoint = {
+      operationId,
+      work,
+      cleanup: () => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', abort);
+      },
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+    try {
+      owner.child.stdin.write(
+        JSON.stringify({
+          protocolVersion: 1,
+          action: 'checkpoint',
+          operationId,
+        }) + '\n',
+      );
+    } catch {
+      owner.fault ??= new Refusal('native_host_pipe_failed');
+      this.stopOwner(owner);
+    }
+    return work.promise;
   }
   status(): {
     state: 'unknown' | 'starting' | 'running' | 'stopping' | 'stopped';
@@ -281,6 +375,11 @@ export class NativeHost implements NativeRuntime {
   private stopOwner(owner: Owner): void {
     if (owner.stopping || owner.finished) return;
     owner.stopping = true;
+    // Keep the operation binding until the cancelled child reply drains.
+    owner.checkpoint?.cleanup();
+    owner.checkpoint?.work.reject(
+      owner.fault ?? new Refusal('native_checkpoint_cancelled'),
+    );
     owner.ready.reject(owner.fault ?? new Refusal('native_start_cancelled'));
     if (!owner.child) return;
     owner.child.stdin.end('stop\n');
@@ -295,6 +394,11 @@ export class NativeHost implements NativeRuntime {
     clearTimeout(owner.stopTimer);
     owner.finished = true;
     if (!owner.readySeen) owner.fault ??= new Refusal('native_start_cancelled');
+    owner.checkpoint?.cleanup();
+    owner.checkpoint?.work.reject(
+      owner.fault ?? new Refusal('native_checkpoint_cancelled'),
+    );
+    owner.checkpoint = undefined;
     if (owner.fault) {
       owner.ready.reject(owner.fault);
       owner.closed.reject(owner.fault);
@@ -380,6 +484,7 @@ export class NativeHost implements NativeRuntime {
         return fail('native_host_protocol_invalid');
       let newline: number;
       while ((newline = pending.indexOf(10)) !== -1) {
+        if (newline + 1 > 8192) return fail('native_host_protocol_invalid');
         let value: unknown;
         try {
           value = JSON.parse(pending.subarray(0, newline).toString('utf8'));
@@ -388,6 +493,7 @@ export class NativeHost implements NativeRuntime {
         }
         pending = pending.subarray(newline + 1);
         const running = Running.safeParse(value);
+        const checkpoint = CheckpointReply.safeParse(value);
         if (running.success && !owner.readySeen && !owner.stoppedSeen) {
           const expected = this.installation;
           if (
@@ -399,6 +505,26 @@ export class NativeHost implements NativeRuntime {
           owner.readySeen = true;
           clearTimeout(owner.startupTimer);
           if (!owner.stopping) owner.ready.resolve(running.data);
+        } else if (checkpoint.success) {
+          const receipt = checkpoint.data;
+          const request = owner.checkpoint;
+          if (
+            !owner.readySeen ||
+            owner.stoppedSeen ||
+            !request ||
+            receipt.operationId !== request.operationId
+          )
+            return fail('native_host_protocol_invalid');
+          if (
+            receipt.state === 'checkpoint' &&
+            (receipt.manifestSha256 !== this.installation.manifestSha256 ||
+              receipt.sourceRevision !== this.installation.sourceRevision)
+          )
+            return fail('native_host_identity_changed');
+          owner.checkpoint = undefined;
+          request.cleanup();
+          if (receipt.state === 'checkpoint') request.work.resolve(receipt);
+          else request.work.reject(new Refusal('native_checkpoint_failed'));
         } else if (
           Stopped.safeParse(value).success &&
           owner.stopping &&

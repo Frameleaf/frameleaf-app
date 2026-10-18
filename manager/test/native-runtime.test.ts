@@ -26,6 +26,9 @@ async function fixture(
       certified: false,
     }),
     stop: async () => ({ protocolVersion: 1, state: 'stopped' }),
+    checkpoint: async () => {
+      throw new Refusal('native_checkpoint_unavailable');
+    },
   };
   try {
     await run(store, runtime);
