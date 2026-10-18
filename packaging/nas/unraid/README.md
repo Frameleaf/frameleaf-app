@@ -1,5 +1,7 @@
 # Frameleaf for Unraid
 
+[Help center](https://frameleaf.app/help) · [Documentation](https://frameleaf.app/docs)
+
 Install **Frameleaf Manager** for a self-hosted photo and video library. Manager
 installs or imports a library and manages the application, PostgreSQL and optional
 machine learning as sibling containers. Only Manager receives the Docker socket;

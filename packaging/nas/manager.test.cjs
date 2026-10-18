@@ -60,7 +60,11 @@ root = pathlib.Path(sys.argv[1])
 profile = ET.parse(root / 'ca_profile.xml').getroot()
 assert profile.tag == 'CommunityApplications'
 assert 'Manager' in profile.findtext('Profile', '')
-assert profile.findtext('Forum') == 'https://github.com/Frameleaf/frameleaf-app/issues'
+assert profile.findtext('Forum') == 'https://frameleaf.app/help'
+assert profile.findtext('WebPage') == 'https://frameleaf.app/docs'
+readme = (root / 'README.md').read_text()
+assert '[Help center](https://frameleaf.app/help)' in readme
+assert '[Documentation](https://frameleaf.app/docs)' in readme
 templates = list((root / 'templates').glob('*.xml'))
 assert len(templates) == 1
 for template in templates:
