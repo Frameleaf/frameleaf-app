@@ -535,7 +535,8 @@ describe('durable smart-album reevaluation', () => {
         base: number;
       }>`select data->'_queueDestinations'->>'clip' destination,
       "retryBaseAttempt" base from job where id = ${claim.id}::uuid`.execute(db);
-      expect(rows[0]).toEqual({ destination: original.id, base: 1 });
+      // FL-455: search text refuses Frameleaf Cloud before admission, so nothing is pinned for a retry to reuse
+      expect(rows[0]).toEqual({ destination: refusal === 'cloud' ? null : original.id, base: 1 });
     },
   );
 });
