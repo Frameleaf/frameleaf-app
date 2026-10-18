@@ -38,4 +38,5 @@ test('a running container without a health check is not presented as verified he
 test('release refusals read as sentences', () => {
   assert.match(readable('release_bundle_missing'), /^This Frameleaf release is missing installation files/);
   assert.equal(readable('download-images'), 'Download the verified image set');
+  assert.match(readable('server_refused_403'), /refused Manager's request \(403\)/);
 });

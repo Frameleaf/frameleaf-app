@@ -128,8 +128,11 @@ const refusals: Record<string, string> = {
   release_verification_failed: 'This release did not pass signature and checksum verification, so Manager will not use it.',
   release_architecture_unavailable: 'This release has no images for this server’s processor type.',
 };
-export const readable = (value: string) =>
-  stepNames[value] ?? moveRefusals[value] ?? refusals[value] ?? value.replaceAll(/[_-]/g, ' ');
+export const readable = (value: string) => {
+  const refused = /^server_refused_(\d{3})$/.exec(value);
+  if (refused) return `The Frameleaf server refused Manager's request (${refused[1]}). Check the server logs, then resume.`;
+  return stepNames[value] ?? moveRefusals[value] ?? refusals[value] ?? value.replaceAll(/[_-]/g, ' ');
+};
 export function operationProgress(operation: JournalOperation, backupSkipped = false) {
   const ids = [
     ...new Set([...(plans[operation.kind] ?? []), ...operation.completed, ...(operation.step ? [operation.step] : [])]),

@@ -504,3 +504,50 @@ test('source recovery restores a default (empty) restart policy as "no" instead 
     await rm(directory, { recursive: true });
   }
 });
+test('a server refusal of the in-container Manager request names its HTTP status and never the token', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-server-request-')),
+    store = new Store(directory);
+  const token = 'c'.repeat(64);
+  store.set('installation', { id: 'd'.repeat(12) } as Installation);
+  const server = container('e');
+  server.Config.Labels = { 'app.frameleaf.manager': 'd'.repeat(12), 'com.docker.compose.service': 'frameleaf-server' };
+  let status = 403;
+  const sent: { url: string; init: { method: string; headers: Record<string, string> } }[] = [];
+  const docker = {
+    inventory: async () => [server],
+    node: async (_id: string, script: string, args: string[]) => {
+      let output = '';
+      await runInNewContext(script, {
+        require: () => ({ readFileSync: () => `${token}\n` }),
+        fetch: async (url: string, init: { method: string; headers: Record<string, string> }) => {
+          sent.push({ url, init });
+          return { ok: status < 300, status, json: async () => ({ phase: 'preparing' }) };
+        },
+        process: {
+          argv: ['node', ...args],
+          stdout: { write: (value: string) => (output += value) },
+          exit: () => assert.fail('the request itself must not fail'),
+        },
+      });
+      return output;
+    },
+  } as unknown as Docker;
+  const operations = new Operations(store, docker, {} as never, {} as never, [], {} as never);
+  try {
+    const refused = await operations.libraryStatus(true).then(
+      () => assert.fail('a 403 must be refused'),
+      (error: Error) => error,
+    );
+    assert.equal(refused.message, 'server_refused_403');
+    assert.ok(!JSON.stringify(refused).includes(token) && !refused.stack?.includes(token));
+    assert.equal(sent[0].url, 'http://127.0.0.1:2283/api/server/library-setup/manager');
+    assert.equal(sent[0].init.method, 'POST');
+    assert.equal(sent[0].init.headers['x-frameleaf-manager'], token);
+    status = 200;
+    assert.deepEqual(await operations.libraryStatus(), { phase: 'preparing' });
+    assert.equal(sent[1].init.method, 'GET');
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true });
+  }
+});

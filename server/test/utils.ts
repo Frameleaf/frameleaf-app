@@ -4,7 +4,7 @@ import { CallHandler, ExecutionContext, Provider } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { transformException } from '@nestjs/platform-express/multer/multer/multer.utils';
 import { Test } from '@nestjs/testing';
-import { NextFunction } from 'express';
+import { NextFunction, RequestHandler } from 'express';
 import { Kysely, type KyselyConfig } from 'kysely';
 import multer, { memoryStorage } from 'multer';
 import { ClsService } from 'nestjs-cls';
@@ -122,7 +122,12 @@ export type ControllerContext = {
 
 type ControllerClass = new (...args: any[]) => unknown;
 
-export const controllerSetup = async (controller: ControllerClass | ControllerClass[], providers: Provider[]) => {
+export const controllerSetup = async (
+  controller: ControllerClass | ControllerClass[],
+  providers: Provider[],
+  /** App-level Express middleware to install ahead of the routes, as `app.common.ts` does. */
+  middleware: RequestHandler[] = [],
+) => {
   const noopInterceptor = { intercept: (ctx: never, next: CallHandler<unknown>) => next.handle() };
   const upload = multer({ storage: memoryStorage() });
   const memoryFileInterceptor = {
@@ -165,6 +170,9 @@ export const controllerSetup = async (controller: ControllerClass | ControllerCl
     .useValue(noopInterceptor)
     .compile();
   const app = moduleRef.createNestApplication();
+  for (const handler of middleware) {
+    app.use(handler);
+  }
   await app.init();
 
   // allow the AuthController to override the AuthService itself
