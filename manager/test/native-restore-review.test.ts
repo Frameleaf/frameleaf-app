@@ -759,3 +759,113 @@ test('restore preparation retains a successful target across unconfirmed shutdow
     },
   );
 });
+
+test('restore preparation rejects wrong readiness and malformed or foreign prepared targets while draining its owner', async () => {
+  const run = restoreRunner();
+  for (const condition of ['ready', 'binding', 'schema', 'extra']) {
+    await operationFixture(
+      async ({ store, context, operation, runtime, calls, cancellation }) => {
+        if (condition === 'ready') {
+          const original = runtime.startRestorePreparation;
+          runtime.startRestorePreparation = async () => ({
+            ...(await original()),
+            state: 'database-ready',
+          });
+        } else {
+          const original = runtime.prepareRestore;
+          runtime.prepareRestore = async (...args) => {
+            const receipt = await original(...args);
+            if (condition === 'binding')
+              receipt.binding = {
+                ...receipt.binding,
+                reviewId: '33333333-3333-4333-8333-333333333333',
+              };
+            if (condition === 'schema') receipt.validation.canonical = false;
+            if (condition === 'extra')
+              receipt.path = '/caller/selected/database';
+            return receipt;
+          };
+        }
+        await assert.rejects(
+          run(store, runtime, context, operation, cancellation.signal),
+        );
+        assert.equal(calls.at(-1), 'stop');
+        assert.equal(
+          store.history()[0].receipts['native-restore-prepared'],
+          undefined,
+        );
+      },
+    );
+  }
+});
+
+test('restore preparation never overwrites a changed journal after an asynchronous host effect', async () => {
+  const run = restoreRunner();
+  await operationFixture(
+    async ({ store, context, operation, runtime, cancellation, calls }) => {
+      const original = runtime.prepareRestore;
+      runtime.prepareRestore = async (...args) => {
+        const receipt = await original(...args);
+        const latest = store.history()[0];
+        latest.error = 'new owner evidence';
+        store.save(latest);
+        return receipt;
+      };
+      await assert.rejects(
+        run(store, runtime, context, operation, cancellation.signal),
+      );
+      assert.equal(calls.at(-1), 'stop');
+      assert.equal(store.history()[0].error, 'new owner evidence');
+      assert.equal(
+        store.history()[0].receipts['native-restore-prepared'],
+        undefined,
+      );
+    },
+  );
+});
+
+test('restore preparation refuses a corrupted durable receipt instead of replaying or trusting it', async () => {
+  const run = restoreRunner();
+  await operationFixture(
+    async ({ store, context, operation, runtime, cancellation, calls }) => {
+      await run(store, runtime, context, operation, cancellation.signal);
+      operation.receipts['native-restore-prepared'].binding.libraryId =
+        '0'.repeat(12);
+      store.save(operation);
+      calls.length = 0;
+      await assert.rejects(
+        run(store, runtime, context, operation, cancellation.signal),
+      );
+      assert.ok(!calls.includes('prepare'));
+      assert.ok(!calls.includes('start'));
+      assert.equal(
+        store.history()[0].receipts['native-restore-prepared'].binding
+          .libraryId,
+        '0'.repeat(12),
+      );
+      assert.equal(store.history()[0].state, 'running');
+    },
+  );
+});
+
+test('restore preparation preserves cancellation during readiness and does not issue a restore command', async () => {
+  const run = restoreRunner();
+  await operationFixture(
+    async ({ store, context, operation, runtime, cancellation, calls }) => {
+      const original = runtime.startRestorePreparation;
+      runtime.startRestorePreparation = async () => {
+        const ready = await original();
+        cancellation.abort();
+        return ready;
+      };
+      await assert.rejects(
+        run(store, runtime, context, operation, cancellation.signal),
+      );
+      assert.deepEqual(calls, ['start', 'stop']);
+      assert.equal(
+        store.history()[0].receipts['native-restore-prepared'],
+        undefined,
+      );
+    },
+  );
+});
