@@ -17,7 +17,7 @@ function container(id: string, port?: number): Container {
     Name: `/immich-${id}`,
     Image: `sha256:${id.repeat(64)}`,
     State: { Running: true },
-    Config: { Image: 'fixture.invalid/immich-server:v3.2.4', Env: [], Labels: {}, Entrypoint: null, Cmd: null },
+    Config: { Image: 'fixture.invalid/source-server:v3.2.4', Env: [], Labels: {}, Entrypoint: null, Cmd: null },
     HostConfig: {
       RestartPolicy: { Name: 'always', MaximumRetryCount: 0 },
       NetworkMode: 'bridge',
@@ -27,7 +27,7 @@ function container(id: string, port?: number): Container {
       { Type: 'bind', Source: '/srv/immich/library', Destination: '/data', RW: true },
       { Type: 'bind', Source: '/etc/localtime', Destination: '/etc/localtime', RW: false },
     ],
-    NetworkSettings: { Networks: { immich_default: { IPAddress: '172.19.0.2', Aliases: ['immich-server', 'server'] } } },
+    NetworkSettings: { Networks: { source_default: { IPAddress: '172.19.0.2', Aliases: ['source-server', 'server'] } } },
   };
 }
 
@@ -61,7 +61,7 @@ test('the source fingerprint ignores the order Docker lists mounts and network a
   const second = structuredClone(first).reverse();
   for (const c of second) {
     c.Mounts.reverse();
-    c.NetworkSettings.Networks.immich_default.Aliases!.reverse();
+    c.NetworkSettings.Networks.source_default.Aliases!.reverse();
   }
   assert.equal(sourceFingerprint(structuredClone(second)), sourceFingerprint(structuredClone(first)));
   assert.deepEqual(mounts(second[0]), mounts(first[1]), 'reviewed media mappings are listed in a stable order');
