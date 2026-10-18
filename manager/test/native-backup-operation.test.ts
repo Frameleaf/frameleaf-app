@@ -590,3 +590,34 @@ test('temporary backup owner drains without overwriting newer evidence after sta
     });
   }
 });
+test('the outer native lifecycle cannot overwrite a newer backup journal on success or failure', async () => {
+  for (const failure of [false, true]) {
+    await fixture(async ({ store, operations, engine, counts }) => {
+      const original = engine.snapshot;
+      engine.snapshot = async (...args) => {
+        const result = await original(...args);
+        const latest = store.history()[0];
+        latest.error = 'new owner evidence';
+        store.save(latest);
+        if (failure) throw new Refusal('synthetic_snapshot_failure');
+        return result;
+      };
+      const operation = operations.control(
+        'backup',
+        'outer-owner-fence-' + failure,
+      );
+      await assert.rejects(
+        operations.wait(operation.id),
+        /native_operation_journal_changed/,
+      );
+      assert.equal(store.history()[0].error, 'new owner evidence');
+      assert.equal(store.history()[0].state, 'running');
+      assert.equal(counts.stop, 1);
+      assert.equal(counts.cleanup, 0);
+      assert.throws(
+        () => store.start('start', 'competing', {}),
+        /operation_in_progress/,
+      );
+    });
+  }
+});
