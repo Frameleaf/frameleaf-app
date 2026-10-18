@@ -86,6 +86,8 @@ export class ProcessRepository {
           clearTimeout(terminate);
           callback(error);
         });
+        // 'close' waits for stdout to end, so keep draining what the child still writes
+        process.stdout.resume();
         process.kill('SIGTERM');
       },
     });
@@ -98,6 +100,10 @@ export class ProcessRepository {
 
     // stdout -> duplex
     process.stdout.on('data', (chunk) => {
+      // after destroy nothing reads the duplex; pausing here would keep 'close' (and destroy) waiting forever
+      if (duplex.destroyed) {
+        return;
+      }
       advanceJobProgress(chunk.byteLength);
       // handle stream backpressure
       if (!duplex.push(chunk)) {
