@@ -542,4 +542,98 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
       }
     });
   });
+
+  describe('smart search and faces sliders (FL-455)', () => {
+    const useMatchedDraft = (enabled = true) => {
+      const base = config(enabled);
+      const withModels = {
+        ...base,
+        machineLearning: {
+          clip: { modelName: 'ViT-B-16-SigLIP-384__webli' },
+          facialRecognition: { modelName: 'buffalo_l' },
+        },
+      } as unknown as AdminConfigDto;
+      draftRef.current = new SystemConfigDraftStore(
+        { config: withModels, revision: 'r1' },
+        { defaults: config(false), load: vi.fn(), save: vi.fn() },
+      );
+    };
+    const useCloud = (matchedModelWorkloads: MlWorkload[], models: CloudMlModelDto[] = catalog) => {
+      sdkMock.getCloudMlStatus.mockResolvedValue({ ...cloudReady(), matchedModelWorkloads });
+      sdkMock.getCloudMlModelChoices.mockResolvedValue({ choices: [] });
+      sdkMock.getCloudMlCatalog.mockResolvedValue({ models });
+    };
+    const blueStops = (picker: HTMLElement) => picker.querySelectorAll('.ms-stop.is-cloud');
+
+    it("shows this server's models without a blue stop while Frameleaf Cloud does not offer them", async () => {
+      useMatchedDraft();
+      useCloud([]);
+      render(WorkloadRoutingTable);
+
+      const search = await findPicker('smart search');
+      await vi.waitFor(() => expect(sdkMock.getCloudMlCatalog).toHaveBeenCalled());
+      expect(radioValues(search)).toEqual([
+        'ViT-B-32__openai',
+        'ViT-B-16-SigLIP-384__webli',
+        'ViT-SO400M-16-SigLIP2-384__webli',
+      ]);
+      expect((within(search).getByRole('radio', { checked: true }) as HTMLInputElement).value).toBe(
+        'ViT-B-16-SigLIP-384__webli',
+      );
+      expect(blueStops(search)).toHaveLength(0);
+      const faces = await findPicker('face recognition');
+      expect(radioValues(faces)).not.toContain('buffalo_l@cloud');
+      expect(blueStops(faces)).toHaveLength(0);
+      // The model is chosen in Search & intelligence, not here.
+      for (const radio of within(search).getAllByRole('radio')) {
+        expect(radio).toBeDisabled();
+      }
+    });
+
+    it("adds a priced blue stop for this server's own search model once Frameleaf Cloud offers it", async () => {
+      useMatchedDraft();
+      useCloud([MlWorkload.Clip]);
+      render(WorkloadRoutingTable);
+
+      const search = await findPicker('smart search');
+      await vi.waitFor(() => expect(radioValues(search)).toContain('ViT-B-16-SigLIP-384__webli@cloud'));
+      expect(blueStops(search)).toHaveLength(1);
+      expect(
+        within(search).getByRole('radio', { name: /SigLIP ViT-B-16 384: Cloud · 203M · about \$0\.0092 per/ }),
+      ).toBeInTheDocument();
+      // still the model in use, run on this server
+      expect((within(search).getByRole('radio', { checked: true }) as HTMLInputElement).value).toBe(
+        'ViT-B-16-SigLIP-384__webli',
+      );
+      // faces were not matched, so they have no blue stop
+      expect(blueStops(await findPicker('face recognition'))).toHaveLength(0);
+    });
+
+    it('takes a face model in the catalogue as Frameleaf Cloud offering faces', async () => {
+      useMatchedDraft();
+      useCloud(
+        [],
+        [...catalog, { ...catalog[0], id: 'ms_FACES001', workload: MlWorkload.Face, group: null, name: 'Faces' }],
+      );
+      render(WorkloadRoutingTable);
+
+      const faces = await findPicker('face recognition');
+      await vi.waitFor(() => expect(radioValues(faces)).toContain('buffalo_l@cloud'));
+      expect(blueStops(faces)).toHaveLength(1);
+      expect(blueStops(await findPicker('smart search'))).toHaveLength(0);
+    });
+
+    it('never offers the blue stop before cloud processing is on', async () => {
+      useMatchedDraft(false);
+      useCloud([MlWorkload.Clip, MlWorkload.Face]);
+      render(WorkloadRoutingTable);
+
+      expect(
+        await screen.findByText(/Turn on Frameleaf Cloud to choose Frameleaf Cloud or both\./),
+      ).toBeInTheDocument();
+      const search = await findPicker('smart search');
+      expect(blueStops(search)).toHaveLength(0);
+      expect(blueStops(await findPicker('face recognition'))).toHaveLength(0);
+    });
+  });
 });

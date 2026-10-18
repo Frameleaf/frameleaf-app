@@ -179,6 +179,7 @@ export const operationKindKey: Readonly<Record<MediaOperationKind, Translations>
   [MediaOperationKind.PreservationRestore]: 'frameleaf_render_workers_kind_preservation_restore',
   [MediaOperationKind.StudioExportPublish]: 'frameleaf_render_workers_kind_studio_export_publish',
   [MediaOperationKind.CloudDescriptionBatch]: 'frameleaf_render_workers_kind_cloud_description_batch',
+  [MediaOperationKind.CloudLibraryBatch]: 'frameleaf_render_workers_kind_cloud_library_batch',
   [MediaOperationKind.CloudBackup]: 'frameleaf_render_workers_kind_cloud_backup',
   [MediaOperationKind.CloudRestore]: 'frameleaf_render_workers_kind_cloud_restore',
   [MediaOperationKind.CloudMlJob]: 'frameleaf_render_workers_kind_cloud_ml_job',

@@ -676,6 +676,11 @@ export class MediaOperationService {
       );
     }
 
+    // FL-455: a smart search or faces batch is made again from the photos' own jobs, never copied
+    if (operation.kind === MediaOperationKind.CloudLibraryBatch) {
+      throw new BadRequestException('Run smart search or face detection again for these photos from Jobs');
+    }
+
     // FL-162: a Frameleaf Cloud job spends the AI Wallet at the price its owner confirmed; running it
     // again takes a fresh estimate and a fresh confirmation, never a copy of the old one
     if (operation.kind === MediaOperationKind.CloudMlJob) {

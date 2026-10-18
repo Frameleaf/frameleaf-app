@@ -937,7 +937,7 @@ describe(CloudMlService.name, () => {
         frameleafCloud: { ...defaults.frameleafCloud, cloudMl: { ...defaults.frameleafCloud.cloudMl, enabled } },
       }) as typeof defaults;
 
-    it('cancels every unfinished cloud job and description batch, once each', async () => {
+    it('cancels every unfinished cloud job, description batch and library batch, once each', async () => {
       mocks.mediaOperation.listUnfinishedOfKinds.mockResolvedValue([
         {
           id: 'job-queued',
@@ -965,6 +965,7 @@ describe(CloudMlService.name, () => {
       expect(mocks.mediaOperation.listUnfinishedOfKinds).toHaveBeenCalledWith([
         MediaOperationKind.CloudMlJob,
         MediaOperationKind.CloudDescriptionBatch,
+        MediaOperationKind.CloudLibraryBatch,
       ]);
       expect(mocks.mediaOperation.requestCancel).toHaveBeenCalledTimes(2);
       expect(mocks.mediaOperation.requestCancel).toHaveBeenCalledWith('job-queued', 'user-1');

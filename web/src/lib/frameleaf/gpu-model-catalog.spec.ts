@@ -4,6 +4,7 @@ import {
   BANDS,
   CLOUD_DEFAULT_MODELS,
   LADDER_WORKLOADS,
+  MATCHED_WORKLOADS,
   PRICE_MULTIPLIER,
   bandFor,
   cloudPositions,
@@ -20,6 +21,7 @@ import {
   isCloudOffered,
   ladderFor,
   ladderStates,
+  matchedLadders,
   modelLadders,
   modelLicenceNoteKey,
   modelNoteKey,
@@ -317,5 +319,90 @@ describe('gpu model catalogue (FL-159, CLD-201)', () => {
     expect(local.runsOn).toBe('gpu');
     expect(local.seconds).toBeGreaterThan(0);
     expect(local.cost).toBeNull();
+  });
+
+  describe('smart search and faces (FL-455)', () => {
+    const ids = (workload: 'search' | 'faces', options: Parameters<typeof ladderStates>[1] = {}) =>
+      ladderStates(workload, options).map((entry) => entry.item.id);
+
+    it("lists this server's models light to heavy, and the cloud stop only while Frameleaf Cloud offers it", () => {
+      expect(ids('search')).toEqual([
+        'ViT-B-32__openai',
+        'ViT-B-16-SigLIP-384__webli',
+        'ViT-SO400M-16-SigLIP2-384__webli',
+      ]);
+      expect(ids('faces')).toEqual(['buffalo_s', 'buffalo_m', 'buffalo_l', 'antelopev2']);
+      expect(ids('search', { cloudMatched: ['face', 'enrichment'] })).not.toContain('ViT-B-16-SigLIP-384__webli@cloud');
+      expect(ids('search', { cloudMatched: ['clip'] }).at(-1)).toBe('ViT-B-16-SigLIP-384__webli@cloud');
+      expect(ids('faces', { cloudMatched: ['face'] }).at(-1)).toBe('buffalo_l@cloud');
+    });
+
+    it('turns the cloud stop blue only when matched; every other stop stays white or green', () => {
+      const cloudSearch = positionById('ViT-B-16-SigLIP-384__webli@cloud')!;
+      expect(cloudSearch.cloudMatch).toBe('clip');
+      expect(isCloudOffered(cloudSearch)).toBe(false);
+      expect(isCloudOffered(cloudSearch, ['clip'])).toBe(true);
+      expect(bandFor(cloudSearch, gpus.rtx4090)).toBe('none');
+      expect(bandFor(cloudSearch, gpus.rtx4090, 'cpu8', ['clip'])).toBe('cloud');
+      expect(cloudPositions('search')).toEqual([]);
+      expect(cloudPositions('search', ['clip'])).toEqual([cloudSearch]);
+      // never part of the routed cloud list (the Cloud processing estimate)
+      expect(cloudPositions().some((item) => item.cloudMatch)).toBe(false);
+
+      const matched = ['clip', 'face'];
+      for (const workload of MATCHED_WORKLOADS) {
+        const states = ladderStates(workload, { gpu: gpus.gtx1650, route: 'both', cloudMatched: matched });
+        expect(states.map((entry) => entry.band)).toEqual([...states.slice(0, -1).map(() => 'gpu'), 'cloud']);
+        expect(states.every((entry) => !entry.disabled)).toBe(true);
+        const cpu = ladderStates(workload, { gpu: null, cloudMatched: matched });
+        expect(cpu.slice(0, -1).every((entry) => entry.band === 'cpu')).toBe(true);
+        // only this server's model has a cloud offer
+        expect(
+          ladderFor(workload)
+            .filter((item) => item.cloud)
+            .every((item) => item.cloudMatch),
+        ).toBe(true);
+      }
+      // Local only crosses the blue stop out with the reason, like any other ladder
+      const local = ladderStates('faces', { gpu: null, route: 'local', cloudMatched: ['face'] }).at(-1)!;
+      expect(local.band).toBe('cloud');
+      expect(local.reasons[0].key).toBe('frameleaf_model_reason_local_only');
+    });
+
+    it('prices the cloud stop with the Frameleaf Cloud contract figures', () => {
+      const search = estimateCost('ViT-B-16-SigLIP-384__webli@cloud', 1000, ['clip'])!;
+      expect(search.rate).toBe(0.00076906);
+      expect(search.startFee).toBe(0.08);
+      expect(search.workers).toBe(1);
+      expect(search.p50).toBeCloseTo(0.0892, 4);
+      expect(search.p90).toBeCloseTo(0.0985, 4);
+      expect(search.hold).toBe(0.1);
+      const faces = estimateCost('buffalo_l@cloud', 1000, ['face'])!;
+      expect(faces.p50).toBeCloseTo(0.1031, 4);
+      expect(faces.p90).toBeCloseTo(0.1261, 4);
+      // not offered, no estimate
+      expect(estimateCost('buffalo_l@cloud', 1000)).toBeNull();
+      expect(estimateCost('buffalo_l@cloud', 1000, ['clip'])).toBeNull();
+      const quote = quotedUnitCost(positionById('ViT-B-16-SigLIP-384__webli@cloud'), ['clip'])!;
+      expect(quote.per).toBe(1000);
+      expect(quote.usd).toBeCloseTo(0.0092, 4);
+      const state = positionState(positionById('buffalo_l@cloud')!, { cloudMatched: ['face'] });
+      expect(state.quote?.usd).toBeCloseTo(0.0231, 4);
+      // the research tables every other ladder uses are unchanged
+      expect(startFees['small-24'].customerUsd).toBe(0.05);
+    });
+
+    it('has copy for every model and unit', () => {
+      for (const item of Object.values(matchedLadders).flat()) {
+        expect(messages[modelNoteKey(item)], item.id).toBeTruthy();
+      }
+      for (const workload of MATCHED_WORKLOADS) {
+        expect(messages[workloadUnitKey(workload)]).toContain('{count');
+      }
+      // what is searched for never goes to the cloud
+      expect(messages[modelNoteKey({ id: 'ViT-B-16-SigLIP-384__webli@cloud' })]).toMatch(
+        /search for is always read on this server/,
+      );
+    });
   });
 });

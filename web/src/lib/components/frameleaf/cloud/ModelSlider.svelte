@@ -8,6 +8,10 @@
    * chosen). The route decides what can be chosen: Local only crosses out blue stops with the reason,
    * and Cloud only moves hostable models to blue; a model's licence never keeps it off blue (FL-451).
    * Below phone width the stops show their icons only.
+   *
+   * FL-455: smart search and faces have sliders too. Their blue stop is this server's own model run on
+   * Frameleaf Cloud, shown only while the cloud offers it (`cloudMatched`, from the Cloud processing
+   * status or catalogue); without that the slider has white and green stops only.
    */
   import './gpu-models.css';
   import { formatDuration, formatUsd } from '$lib/frameleaf/cloud-ml';
@@ -20,16 +24,17 @@
     type Benchmark,
     type DetectedGpu,
     type GpuProfileId,
-    type LadderWorkload,
+    type CloudMatched,
     type PositionState,
     type RouteMode,
+    type SliderWorkload,
   } from '$lib/frameleaf/gpu-model-catalog';
   import { Icon } from '@frameleaf/ui';
   import { mdiCancel, mdiChip, mdiCloudOutline, mdiExpansionCard, mdiInformationOutline } from '@mdi/js';
   import { locale, t, type Translations } from 'svelte-i18n';
 
   type Props = {
-    workload: LadderWorkload;
+    workload: SliderWorkload;
     value: string | null | undefined;
     gpu: DetectedGpu | null;
     route: RouteMode;
@@ -40,6 +45,8 @@
     disabled?: boolean;
     /** Disables every local stop with this reason (for example a busy or missing worker). */
     localDisabledReason?: string;
+    /** FL-455: the Frameleaf Cloud workloads that run this server's own model now (search and faces). */
+    cloudMatched?: CloudMatched;
     onChange?: (id: string, state: PositionState) => void;
   };
 
@@ -54,6 +61,7 @@
     hideLegend = false,
     disabled = false,
     localDisabledReason = '',
+    cloudMatched = [],
     onChange,
   }: Props = $props();
 
@@ -64,7 +72,7 @@
     entry.reasons.map((reason) => $t(reason.key as Translations, { values: reason.values })).join(' ');
 
   const stops = $derived(
-    ladderStates(workload, { gpu, route, benchmark, cpuProfile }).map((entry) =>
+    ladderStates(workload, { gpu, route, benchmark, cpuProfile, cloudMatched }).map((entry) =>
       localDisabledReason && entry.runsOn === 'local' && !entry.disabled
         ? { ...entry, disabled: true, reasonText: localDisabledReason }
         : { ...entry, reasonText: reasonText(entry) },

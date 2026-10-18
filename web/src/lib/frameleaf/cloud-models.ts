@@ -55,6 +55,22 @@ export const cloudModelGroupsFor = (row: RoutedWorkload): CloudModelGroupRow[] =
   }
 };
 
+/**
+ * FL-455: the smart search and faces work Frameleaf Cloud runs with exactly this server's own model
+ * now, for the blue stop of their sliders: what the Cloud processing status matched at its last
+ * check, or a clip or face model in the catalogue (which only lists models it offers). Empty while
+ * neither says so, and so without a cloud stop. Every other workload is ignored.
+ */
+export const cloudMatchedWorkloads = (
+  status: Pick<CloudMlStatusResponseDto, 'matchedModelWorkloads'> | null | undefined,
+  catalog: readonly Pick<CloudMlModelDto, 'workload'>[] | null | undefined,
+): MlWorkload[] =>
+  [MlWorkload.Clip, MlWorkload.Face].filter(
+    (workload) =>
+      (status?.matchedModelWorkloads ?? []).includes(workload) ||
+      (catalog ?? []).some((model) => model.workload === workload),
+  );
+
 /** Studio AI never takes a catalogue default: an administrator always chooses its models. */
 export const takesCatalogDefault = (group: CloudMlModelGroup) =>
   group !== CloudMlModelGroup.Transcription && group !== CloudMlModelGroup.Tts;

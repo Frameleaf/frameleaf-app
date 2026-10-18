@@ -133,6 +133,7 @@ export class CloudMlService extends BaseService {
     const unfinished = await this.mediaOperationRepository.listUnfinishedOfKinds([
       MediaOperationKind.CloudMlJob,
       MediaOperationKind.CloudDescriptionBatch,
+      MediaOperationKind.CloudLibraryBatch,
     ]);
     let cancelled = 0;
     for (const operation of unfinished) {

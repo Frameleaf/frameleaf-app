@@ -788,6 +788,9 @@ const jobInputsSchema = z
 
 const scale = z.union([z.literal(2), z.literal(4)]);
 
+/** FL-455: a model as this server names it in its settings (`machineLearning.clip.modelName`). */
+const identityModelName = z.string().regex(/^[\w.-]{1,128}$/);
+
 /**
  * The strict `request` allow-list per cloud workload (FC-66 `WORKLOAD_REQUESTS`, API protection
  * measure 2): prompts, sampling and model parameters stay in the cloud, and any other key is refused
@@ -849,6 +852,11 @@ export const CLOUD_WORKLOAD_REQUESTS = {
       .regex(/^(?:[^\p{Cc}]|\n)*$/u),
   }),
   interpolation: z.strictObject({ factor: z.union([z.literal(2), z.literal(4), z.literal(8)]).optional() }),
+  // FL-455 `ClipRequest`: the model name this server expects; a SKU running another model is refused
+  // (422 `request-invalid`, detail `model`), so a job never runs on another model
+  clip: z.strictObject({ model: identityModelName.optional() }),
+  // FL-455 `FaceRequest`: the model name and this server's detection threshold
+  face: z.strictObject({ model: identityModelName.optional(), minScore: z.number().min(0.1).max(1).optional() }),
 } as const;
 
 /**
@@ -874,6 +882,8 @@ export const estimateRequestSchema = z.discriminatedUnion('workload', [
   estimateRequestFor('transcription'),
   estimateRequestFor('tts'),
   estimateRequestFor('interpolation'),
+  estimateRequestFor('clip'),
+  estimateRequestFor('face'),
 ]);
 export type CloudEstimateRequest = z.infer<typeof estimateRequestSchema>;
 
@@ -1000,6 +1010,8 @@ export const jobCreateRequestSchema = z.discriminatedUnion('workload', [
   jobRequestFor('transcription'),
   jobRequestFor('tts'),
   jobRequestFor('interpolation'),
+  jobRequestFor('clip'),
+  jobRequestFor('face'),
 ]);
 export type CloudJobCreateRequest = z.infer<typeof jobCreateRequestSchema>;
 
@@ -1398,6 +1410,161 @@ export const descriptionsResultSchema = z
     message: 'inputId must be unique',
   });
 export type CloudDescriptionsResult = z.infer<typeof descriptionsResultSchema>;
+
+/* ------------------------------------------------------------------ */
+/* Smart search and faces results (FL-455)                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * FL-455 result warnings: the first three mean the item failed (no embedding, no faces); `metadata-removed`
+ * says the runtime removed metadata the input still carried, without changing its pixels.
+ */
+export const CLOUD_LIBRARY_WARNINGS = [
+  'input-unsupported',
+  'input-too-large',
+  'input-unreadable',
+  'metadata-removed',
+] as const;
+export const CLOUD_LIBRARY_FAILURE_WARNINGS: readonly string[] = CLOUD_LIBRARY_WARNINGS.slice(0, 3);
+
+/** The largest smart search or face result document read (a photo with 2,000 faces stays under it). */
+export const CLOUD_LIBRARY_RESULT_MAX_BYTES = 8 * 1024 * 1024;
+
+/**
+ * An embedding as the cloud sends it: exact float32 values, little-endian, base64. Decoded unchanged, with
+ * no rounding and no normalisation, exactly as this server's ML service returns them.
+ */
+export const cloudEmbeddingSchema = z
+  .strictObject({
+    dim: z.number().int().min(1).max(4096),
+    encoding: z.literal('f32le-base64'),
+    data: z
+      .string()
+      .max(22_000)
+      .regex(/^[\d+/A-Za-z]*={0,2}$/),
+  })
+  .refine((embedding) => Buffer.from(embedding.data, 'base64').length === embedding.dim * 4, {
+    path: ['data'],
+    message: 'data holds exactly dim float32 values',
+  });
+export type CloudEmbedding = z.infer<typeof cloudEmbeddingSchema>;
+
+/** The values of an embedding; every one must be finite. */
+export const decodeCloudEmbedding = (embedding: CloudEmbedding): number[] => {
+  const bytes = Buffer.from(embedding.data, 'base64');
+  const values: number[] = [];
+  for (let index = 0; index < embedding.dim; index++) {
+    const value = bytes.readFloatLE(index * 4);
+    if (!Number.isFinite(value)) {
+      throw new Error('cloud_embedding_invalid');
+    }
+    values.push(value);
+  }
+  return values;
+};
+
+const libraryInputId = z.string().regex(/^[\w-]{1,64}$/);
+const librarySide = z.number().int().min(1).max(65_536);
+const libraryWarnings = z
+  .array(z.enum(CLOUD_LIBRARY_WARNINGS))
+  .max(4)
+  .refine((warnings) => new Set(warnings).size === warnings.length, 'warnings are unique');
+const libraryFailed = (warnings: readonly string[]) =>
+  warnings.some((warning) => CLOUD_LIBRARY_FAILURE_WARNINGS.includes(warning));
+
+/**
+ * The model identity a smart search or face result repeats (FL-455). Read leniently here: the identity
+ * guard (`cloud-model-identity.ts`) decides whether it is this server's model, and a result whose
+ * identity is not is never stored.
+ */
+const resultIdentity = z.record(z.string(), z.unknown());
+
+/** FL-455 `ClipResult` (`frameleaf.clip/v1`): one photo's image embedding for smart search. */
+export const clipResultSchema = z
+  .strictObject({
+    schema: z.literal('frameleaf.clip/v1'),
+    modelSku: modelSkuSchema,
+    modelRev: modelRevSchema,
+    identity: resultIdentity,
+    items: z
+      .array(
+        z
+          .strictObject({
+            inputId: libraryInputId,
+            image: z.strictObject({ width: librarySide, height: librarySide }).nullable(),
+            embedding: cloudEmbeddingSchema.nullable(),
+            warnings: libraryWarnings,
+          })
+          .refine((item) => libraryFailed(item.warnings) === (item.embedding === null), {
+            path: ['embedding'],
+            message:
+              'a failed item has no embedding and a failure warning; a succeeded item has both image and embedding',
+          })
+          .refine((item) => item.embedding === null || item.image !== null, {
+            path: ['image'],
+            message: 'a succeeded item names its image size',
+          }),
+      )
+      .min(1)
+      .max(1000),
+  })
+  .refine((result) => new Set(result.items.map((item) => item.inputId)).size === result.items.length, {
+    path: ['items'],
+    message: 'inputId must be unique',
+  });
+export type CloudClipResult = z.infer<typeof clipResultSchema>;
+
+/**
+ * FL-455 `FaceResult` (`frameleaf.faces/v1`): the faces found in one photo, in descending score order,
+ * each with its box in the decoded input's pixels (top-left origin, whole pixels, not clamped), its
+ * detection score and its recognition embedding. A photo with no face has `faces: []`.
+ */
+export const faceResultSchema = z
+  .strictObject({
+    schema: z.literal('frameleaf.faces/v1'),
+    modelSku: modelSkuSchema,
+    modelRev: modelRevSchema,
+    identity: resultIdentity,
+    minScore: z.number().min(0.1).max(1),
+    items: z
+      .array(
+        z
+          .strictObject({
+            inputId: libraryInputId,
+            image: z.strictObject({ width: librarySide, height: librarySide }).nullable(),
+            faces: z
+              .array(
+                z.strictObject({
+                  boundingBox: z.strictObject({
+                    x1: z.number().int(),
+                    y1: z.number().int(),
+                    x2: z.number().int(),
+                    y2: z.number().int(),
+                  }),
+                  score: z.number().min(0).max(1),
+                  embedding: cloudEmbeddingSchema,
+                }),
+              )
+              .max(2000),
+            warnings: libraryWarnings,
+          })
+          .refine((item) => !libraryFailed(item.warnings) || item.faces.length === 0, {
+            path: ['faces'],
+            message: 'a failed item has no faces',
+          })
+          .refine((item) => libraryFailed(item.warnings) || item.image !== null, {
+            path: ['image'],
+            message: 'a succeeded item names its image size',
+          }),
+      )
+      .min(1)
+      .max(1000),
+  })
+  .refine((result) => new Set(result.items.map((item) => item.inputId)).size === result.items.length, {
+    path: ['items'],
+    message: 'inputId must be unique',
+  });
+export type CloudFaceResult = z.infer<typeof faceResultSchema>;
 
 /** The largest description output document this server reads (FC-44 `DESCRIPTIONS_RESULT_MAX_BYTES`). */
 export const CLOUD_DESCRIPTION_RESULT_MAX_BYTES = 16_384;

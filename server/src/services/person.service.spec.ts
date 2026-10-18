@@ -9,6 +9,7 @@ import {
   CacheControl,
   JobName,
   JobStatus,
+  MlWorkload,
   SourceType,
   SystemMetadataKey,
 } from 'src/enum.js';
@@ -23,6 +24,7 @@ import { PersonGroupFactory } from 'test/factories/person-group.factory.js';
 import { PersonFactory } from 'test/factories/person.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
 import {
   getAsDetectedFace,
@@ -1781,6 +1783,67 @@ describe(PersonService.name, () => {
         assetId: asset.id,
         facesRecognizedAt: expect.any(Date),
       });
+    });
+
+    it('leaves a photo routed to Frameleaf Cloud for a batch, detecting nothing here (FL-455)', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).exif().build();
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+      mocks.assetJob.getForImageEnrichment.mockResolvedValue({ id: asset.id, ownerId: asset.ownerId } as never);
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+
+      await expect(sut.handleDetectFaces({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.machineLearning.detectFaces).not.toHaveBeenCalled();
+      expect(mocks.person.refreshFaces).not.toHaveBeenCalled();
+    });
+
+    it("makes a refused Frameleaf Cloud result on this server's own machine learning (FL-455)", async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).exif().build();
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+      mocks.machineLearning.detectFaces.mockResolvedValue({ imageHeight: 500, imageWidth: 400, faces: [] });
+      mocks.mlDestination.getById.mockImplementation((id) =>
+        Promise.resolve(
+          id === mlDestinationStub.local.id ? mlDestinationStub.local : mlDestinationStub.frameleafCloudConsented,
+        ),
+      );
+      mocks.mlDestination.getAll.mockResolvedValue([
+        mlDestinationStub.frameleafCloudConsented,
+        mlDestinationStub.local,
+      ]);
+      mocks.mlDestination.getRoute.mockResolvedValue({
+        workload: MlWorkload.Face,
+        destinationId: mlDestinationStub.frameleafCloudConsented.id,
+        modelId: null,
+        updatedAt: new Date(),
+      } as never);
+
+      await sut.handleDetectFaces({ id: asset.id, onThisServer: true });
+
+      expect(mocks.machineLearning.detectFaces).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: mlDestinationStub.local.id }),
+        expect.any(String),
+        expect.anything(),
+      );
+    });
+
+    it('refuses Frameleaf Cloud faces found in another preview or original (FL-455)', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).exif().build();
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+      const detection = { checksum: asset.checksum.toString('hex'), imageWidth: 400, imageHeight: 500, faces: [] };
+      const execution = {
+        claim: { id: 'claim', token: 'token' },
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        followups: [],
+        buffering: false,
+      } as unknown as QueueExecution;
+
+      await queueExecution.run(execution, () =>
+        sut.publishDetectedFaces(asset.id, { ...detection, previewPath: '/elsewhere' }),
+      );
+      await expect(execution.adoptions[0]({} as never)).rejects.toThrow('Face source changed');
+      expect(mocks.person.refreshFaces).not.toHaveBeenCalled();
     });
 
     it('should skip if machine learning is disabled', async () => {
