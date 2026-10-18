@@ -15,6 +15,10 @@ import { tmpdir } from 'node:os';
 import { join, basename } from 'node:path';
 import { createHash } from 'node:crypto';
 import { Store } from '../src/store.js';
+import { digest } from '../src/contracts.js';
+import { stageNativeRestoreInput } from '../src/runtime/native-restore-input.js';
+import filesystem from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import {
   prepareNativeRestoreReview,
   revalidateNativeRestoreReview,
@@ -285,5 +289,240 @@ test('reviews that expire during decryption or revalidation never become usable'
       /native_restore_review_expired/,
     );
     now.mock.restore();
+  });
+});
+
+async function stageFixture(run) {
+  await fixture(async (f) => {
+    const summary = await prepareNativeRestoreReview(
+      f.store,
+      f.engine,
+      f.context,
+      '1'.repeat(64),
+    );
+    await mkdir(f.context.installation.state, { mode: 0o700 });
+    await writeFile(
+      join(f.context.installation.state, 'host-state.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        manifestSha256: f.context.installation.manifestSha256,
+        sourceRevision: f.context.installation.sourceRevision,
+        postgresMajor: '19',
+      }),
+      { mode: 0o600 },
+    );
+    const operation = f.store.start('restore', 'restore-one', {
+      reviewId: summary.id,
+      runtime: 'native',
+      installationId: f.context.installation.id,
+      fingerprint: digest(f.context.installation),
+    }).operation;
+    await run({ ...f, summary, operation });
+  });
+}
+
+test('restore input staging is durable, exact and reusable without changing a live database', async () => {
+  await stageFixture(
+    async ({ store, context, summary, operation, dump, recovery }) => {
+      const stage = await stageNativeRestoreInput(store, context, operation);
+      assert.equal(
+        stage.directory,
+        join(context.installation.state, 'restore-input', operation.id),
+      );
+      assert.deepEqual((await readdir(stage.directory)).sort(), [
+        'input',
+        'restore-intent.json',
+      ]);
+      assert.deepEqual(
+        await readFile(join(stage.directory, 'input', 'database.dump')),
+        dump,
+      );
+      assert.deepEqual(
+        JSON.parse(
+          await readFile(
+            join(stage.directory, 'input', 'recovery.json'),
+            'utf8',
+          ),
+        ),
+        recovery,
+      );
+      assert.equal(stage.binding.reviewId, summary.id);
+      assert.equal(stage.binding.operationId, operation.id);
+      assert.equal(stage.binding.recoverySha256, digest(recovery));
+      assert.deepEqual(
+        await stageNativeRestoreInput(store, context, operation),
+        stage,
+      );
+      assert.equal(store.history()[0].state, 'running');
+      assert.ok(
+        !(await readdir(context.installation.state)).includes('database'),
+      );
+    },
+  );
+});
+
+test('an accepted restore resumes after review expiry while a fresh expired restore is refused', async (t) => {
+  await stageFixture(async ({ store, context, operation, summary }) => {
+    const stage = await stageNativeRestoreInput(store, context, operation);
+    const now = t.mock.method(Date, 'now', () => summary.expires + 1);
+    assert.deepEqual(
+      await stageNativeRestoreInput(store, context, operation),
+      stage,
+    );
+    now.mock.restore();
+  });
+  await stageFixture(async ({ store, context, operation, summary }) => {
+    const now = t.mock.method(Date, 'now', () => summary.expires + 1);
+    await assert.rejects(
+      stageNativeRestoreInput(store, context, operation),
+      /native_restore_review_expired/,
+    );
+    await assert.rejects(
+      readdir(join(context.installation.state, 'restore-input')),
+      { code: 'ENOENT' },
+    );
+    now.mock.restore();
+  });
+});
+
+test('staging rejects changed source, target, profile and operation bindings without adopting data', async () => {
+  for (const mutation of [
+    'source',
+    'target',
+    'profile',
+    'operation',
+    'foreign-target',
+  ])
+    await stageFixture(async ({ store, context, operation, path }) => {
+      if (mutation === 'source')
+        await writeFile(join(path(), 'database.dump'), 'changed');
+      if (mutation === 'profile')
+        await writeFile(
+          join(context.installation.state, 'host-state.json'),
+          '{}',
+          { mode: 0o600 },
+        );
+      if (mutation === 'operation')
+        operation.input.fingerprint = '0'.repeat(64);
+      if (mutation === 'target') {
+        const stage = await stageNativeRestoreInput(store, context, operation);
+        await writeFile(
+          join(stage.directory, 'input', 'database.dump'),
+          'changed',
+        );
+      }
+      if (mutation === 'foreign-target') {
+        const target = join(
+          context.installation.state,
+          'restore-input',
+          operation.id,
+        );
+        await mkdir(target, { recursive: true, mode: 0o700 });
+        await writeFile(join(target, 'sentinel'), 'retain', { mode: 0o600 });
+      }
+      await assert.rejects(stageNativeRestoreInput(store, context, operation));
+      if (mutation === 'foreign-target')
+        assert.equal(
+          await readFile(
+            join(
+              context.installation.state,
+              'restore-input',
+              operation.id,
+              'sentinel',
+            ),
+            'utf8',
+          ),
+          'retain',
+        );
+      assert.equal(store.history()[0].state, 'running');
+    });
+});
+
+test('a lost staging journal acknowledgement reuses published input and keeps the operation locked', async () => {
+  await stageFixture(async ({ store, context, operation }) => {
+    const save = store.save.bind(store);
+    let fail = true;
+    store.save = (op) => {
+      if (fail && op.completed.includes('native-restore-input')) {
+        fail = false;
+        throw Error('lost final save');
+      }
+      return save(op);
+    };
+    await assert.rejects(
+      stageNativeRestoreInput(store, context, operation),
+      /native_restore_input_changed/,
+    );
+    const resumed = store.history()[0];
+    const stage = await stageNativeRestoreInput(store, context, resumed);
+    assert.equal(stage.binding.operationId, operation.id);
+    assert.equal(store.history()[0].state, 'running');
+    assert.equal(
+      store.history()[0].completed.includes('native-restore-input'),
+      true,
+    );
+  });
+});
+
+test('interrupted copies retain owned evidence and retry safely without deleting foreign partials', async (t) => {
+  await stageFixture(async ({ store, context, operation }) => {
+    const copy = t.mock.method(
+      filesystem,
+      'copyFile',
+      async (_source, target) => {
+        await writeFile(target, 'partial', { flag: 'wx', mode: 0o600 });
+        throw Error('ENOSPC');
+      },
+    );
+    syncBuiltinESMExports();
+    try {
+      await assert.rejects(
+        stageNativeRestoreInput(store, context, operation),
+        /native_restore_input_changed/,
+      );
+    } finally {
+      copy.mock.restore();
+      syncBuiltinESMExports();
+    }
+    const root = join(context.installation.state, 'restore-input');
+    const partials = await readdir(root);
+    assert.equal(partials.length, 1);
+    assert.ok(partials[0].endsWith('.partial'));
+    const stage = await stageNativeRestoreInput(
+      store,
+      context,
+      store.history()[0],
+    );
+    assert.equal(stage.binding.operationId, operation.id);
+    assert.ok((await readdir(root)).includes(partials[0]));
+  });
+});
+
+test('staging cannot overwrite an operation state change that occurs while copying', async (t) => {
+  await stageFixture(async ({ store, context, operation }) => {
+    const original = filesystem.copyFile;
+    let changed = false;
+    const copy = t.mock.method(filesystem, 'copyFile', async (...args) => {
+      await original(...args);
+      if (!changed) {
+        changed = true;
+        const current = store.history()[0];
+        current.state = 'failed';
+        current.error = 'restore_interrupted';
+        store.save(current);
+      }
+    });
+    syncBuiltinESMExports();
+    try {
+      await assert.rejects(
+        stageNativeRestoreInput(store, context, operation),
+        /native_restore_input_changed/,
+      );
+    } finally {
+      copy.mock.restore();
+      syncBuiltinESMExports();
+    }
+    assert.equal(store.history()[0].state, 'failed');
+    assert.equal(store.history()[0].error, 'restore_interrupted');
   });
 });

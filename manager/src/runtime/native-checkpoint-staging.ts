@@ -396,3 +396,5 @@ export async function readNativeBackupDirectory(
     throw changed();
   }
 }
+
+export { json as readNativeCheckpointJson };

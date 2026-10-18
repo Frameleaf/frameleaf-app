@@ -152,3 +152,8 @@ export async function revalidateNativeRestoreReview(
     throw refused('native_restore_review_changed');
   return review;
 }
+
+export {
+  Context as NativeRestoreContextSchema,
+  Prepared as NativeRestoreReviewSchema,
+};
