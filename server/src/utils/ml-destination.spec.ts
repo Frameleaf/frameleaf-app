@@ -17,6 +17,7 @@ import {
   type MlEndpointProbe,
   type MlSelection,
 } from 'src/repositories/machine-learning.repository.js';
+import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import * as cloudDisclosure from 'src/utils/frameleaf-cloud.js';
 import {
   MlDestinationNotFoundError,
@@ -247,15 +248,19 @@ describe('Frameleaf Cloud downstream model/budget mechanics (workload-policy moc
     });
 
     it("refuses them while no catalogue model matches this server's model, whatever is chosen", () => {
-      const unmatched = offered();
-      unmatched.probe.cloud = { ...unmatched.probe.cloud, localModels: {} };
-      expect(refusal({ ...unmatched, workload: MlWorkload.Clip })).toBe(MlAdmissionRefusal.ModelMismatch);
-      expect(refusal({ ...unmatched, workload: MlWorkload.Face, modelId: 'ms_face' })).toBe(
+      const base = offered();
+      const withLocalModels = (localModels: CloudProbeFacts['localModels']) => ({
+        ...base,
+        probe: { ...base.probe, cloud: { ...base.probe.cloud, localModels } },
+      });
+      expect(refusal({ ...withLocalModels({}), workload: MlWorkload.Clip })).toBe(MlAdmissionRefusal.ModelMismatch);
+      expect(refusal({ ...withLocalModels({}), workload: MlWorkload.Face, modelId: 'ms_face' })).toBe(
         MlAdmissionRefusal.ModelMismatch,
       );
       // facts stored before FL-455 carry no matches at all
-      unmatched.probe.cloud = { ...unmatched.probe.cloud, localModels: undefined };
-      expect(refusal({ ...unmatched, workload: MlWorkload.Face })).toBe(MlAdmissionRefusal.ModelMismatch);
+      expect(refusal({ ...withLocalModels(undefined), workload: MlWorkload.Face })).toBe(
+        MlAdmissionRefusal.ModelMismatch,
+      );
     });
 
     it('refuses them while the cloud does not offer them, as it does not today', () => {

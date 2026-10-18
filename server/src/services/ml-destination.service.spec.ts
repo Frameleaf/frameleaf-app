@@ -392,7 +392,13 @@ describe(MlDestinationService.name, () => {
       const result = await sut.grantConsent(authStub.admin, mlDestinationStub.frameleafCloud.id, {
         acknowledgeMediaLeavesNetwork: true,
         version: '2026-09-25',
-        features: { identityNames: false, medicalSignals: true, ocrAddon: false },
+        features: {
+          identityNames: false,
+          medicalSignals: true,
+          ocrAddon: false,
+          smartSearch: false,
+          faceRecognition: false,
+        },
       });
 
       const gateway = {
@@ -410,12 +416,24 @@ describe(MlDestinationService.name, () => {
       );
       expect(mocks.frameleafCloudMl.recordConsent).toHaveBeenCalledWith(gateway, {
         version: '2026-09-25',
-        features: { identityNames: false, medicalSignals: true, ocrAddon: false },
+        features: {
+          identityNames: false,
+          medicalSignals: true,
+          ocrAddon: false,
+          smartSearch: false,
+          faceRecognition: false,
+        },
       });
       expect(mocks.frameleafConsent.record).toHaveBeenCalledWith({
         destinationId: mlDestinationStub.frameleafCloud.id,
         version: '2026-09-25',
-        features: { identityNames: false, medicalSignals: true, ocrAddon: false },
+        features: {
+          identityNames: false,
+          medicalSignals: true,
+          ocrAddon: false,
+          smartSearch: false,
+          faceRecognition: false,
+        },
         acceptedBy: authStub.admin.user.id,
         cloudRecordedVersion: '2026-09-25',
       });
@@ -481,7 +499,7 @@ describe(MlDestinationService.name, () => {
           acknowledgeMediaLeavesNetwork: true,
           version: '2026-10-01.2',
           textSha256: shown,
-          features,
+          features: { ...features, smartSearch: false, faceRecognition: false },
         })
         .catch((error: unknown) => error);
       expect(changed).toBeInstanceOf(ConflictException);
@@ -506,7 +524,7 @@ describe(MlDestinationService.name, () => {
         sut.grantConsent(authStub.admin, mlDestinationStub.frameleafCloud.id, {
           acknowledgeMediaLeavesNetwork: true,
           version: '2026-09-25.1',
-          features,
+          features: { ...features, smartSearch: false, faceRecognition: false },
         }),
       ).rejects.toBeInstanceOf(ConflictException);
 
@@ -519,7 +537,7 @@ describe(MlDestinationService.name, () => {
         sut.grantConsent(authStub.admin, mlDestinationStub.frameleafCloud.id, {
           acknowledgeMediaLeavesNetwork: true,
           version: '2026-09-30.4',
-          features,
+          features: { ...features, smartSearch: false, faceRecognition: false },
         }),
       ).rejects.toThrow(/2026-10-01.1/);
       expect(mocks.frameleafCloudMl.recordConsent).not.toHaveBeenCalled();
