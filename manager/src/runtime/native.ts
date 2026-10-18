@@ -80,6 +80,7 @@ const CheckpointReply = z.discriminatedUnion('state', [
   CheckpointFailed,
 ]);
 export type NativeCheckpoint = z.infer<typeof Checkpoint>;
+export { Checkpoint as NativeCheckpointSchema };
 const Quiescent = Running.omit({ state: true })
   .extend({
     state: z.literal('quiescent'),

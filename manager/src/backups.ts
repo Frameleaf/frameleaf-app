@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile, readdir, stat, rename, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, posix, win32 } from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Docker, command } from './docker.js';
 import { Refusal, type Source, type Backup } from './contracts.js';
@@ -167,7 +167,16 @@ export class Backups {
   }
   async restore(snapshot: string, emptyDirectory: string): Promise<void> {
     const entry = (await this.list()).find((s) => s.id === snapshot);
-    if (!/^[a-f0-9]{64}$/.test(snapshot) || !entry || entry.paths.length !== 1 || !entry.paths[0].startsWith('/'))
+    const paths = entry?.paths;
+    if (
+      !/^[a-f0-9]{64}$/.test(snapshot) ||
+      !Array.isArray(paths) ||
+      paths.length !== 1 ||
+      typeof paths[0] !== 'string' ||
+      paths[0].length > 4096 ||
+      /[\0\r\n]/.test(paths[0]) ||
+      !(posix.isAbsolute(paths[0]) || win32.isAbsolute(paths[0]))
+    )
       throw new Refusal('unknown_snapshot');
     await mkdir(emptyDirectory, { mode: 0o700 });
     await this.execute(

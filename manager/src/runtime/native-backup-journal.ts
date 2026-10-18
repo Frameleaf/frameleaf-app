@@ -1,0 +1,222 @@
+import { lstat, mkdir, readdir, realpath, rm, rmdir } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
+import { z } from 'zod';
+import { Backups } from '../backups.js';
+import { digest, Refusal, type Operation } from '../contracts.js';
+import { Store } from '../store.js';
+import { NativeCheckpointSchema, type NativeRuntime } from './native.js';
+import { createNativeRecovery, NativeRecovery } from './native-recovery.js';
+import {
+  stageNativeCheckpoint,
+  verifyNativeBackupDirectory,
+} from './native-checkpoint-staging.js';
+
+const Result = z
+  .object({
+    snapshotId: z.string().regex(/^[a-f0-9]{64}$/),
+    recovery: NativeRecovery,
+  })
+  .strict();
+type Context = Omit<Parameters<typeof createNativeRecovery>[0], 'operation'>;
+type Engine = Pick<Backups, 'initialize' | 'snapshot' | 'restore'>;
+const invalid = () => new Refusal('native_backup_journal_invalid');
+const verificationFailed = () =>
+  new Refusal('native_backup_verification_failed');
+function receipt(operation: Operation, key: string): unknown | undefined {
+  const completed = operation.completed.includes(key),
+    present = Object.hasOwn(operation.receipts, key);
+  if (completed !== present) throw invalid();
+  return present ? operation.receipts[key] : undefined;
+}
+async function step(
+  store: Store,
+  operation: Operation,
+  key: string,
+  work: () => Promise<unknown>,
+) {
+  operation.step = key;
+  store.save(operation);
+  const value = await work();
+  operation.receipts[key] = value;
+  if (!operation.completed.includes(key)) operation.completed.push(key);
+  store.save(operation);
+  return value;
+}
+async function clearVerificationCache(path: string): Promise<void> {
+  const directory = await lstat(path).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  });
+  if (!directory) return;
+  if (
+    !directory.isDirectory() ||
+    directory.isSymbolicLink() ||
+    (await realpath(path)) !== path
+  )
+    throw verificationFailed();
+  const names = await readdir(path);
+  if (names.some((name) => !['database.dump', 'recovery.json'].includes(name)))
+    throw verificationFailed();
+  for (const name of names) {
+    const file = join(path, name),
+      value = await lstat(file),
+      fresh = await lstat(path);
+    if (
+      !value.isFile() ||
+      value.isSymbolicLink() ||
+      value.nlink !== 1 ||
+      (await realpath(file)) !== file ||
+      directory.dev !== fresh.dev ||
+      directory.ino !== fresh.ino
+    )
+      throw verificationFailed();
+    await rm(file);
+  }
+  await rmdir(path);
+}
+
+/** Leaves the Store operation locked/running; the caller must finish receipt-bound owner and stage cleanup. */
+export async function createNativeDatabaseBackup(
+  store: Store,
+  runtime: NativeRuntime,
+  backups: Engine,
+  context: Context,
+  operation: Operation,
+): Promise<z.infer<typeof Result>> {
+  if (
+    operation.kind !== 'backup' ||
+    operation.state !== 'running' ||
+    !Array.isArray(operation.completed) ||
+    !isDeepStrictEqual(operation.input, runtime.identity) ||
+    runtime.identity.runtime !== 'native' ||
+    runtime.identity.installationId !== context.installation.id ||
+    runtime.identity.fingerprint !== digest(context.installation) ||
+    !isDeepStrictEqual(
+      store.history().find((value) => value.id === operation.id),
+      operation,
+    )
+  )
+    throw invalid();
+  const bound = { ...context, operation };
+  const result = (value: unknown) => {
+    const parsed = Result.safeParse(value);
+    if (!parsed.success) throw invalid();
+    try {
+      if (
+        !isDeepStrictEqual(
+          createNativeRecovery(bound, parsed.data.recovery.checkpoint),
+          parsed.data.recovery,
+        )
+      )
+        throw invalid();
+    } catch {
+      throw invalid();
+    }
+    return parsed.data;
+  };
+  // A durable verified receipt remains authoritative after scratch and checkpoint cleanup.
+  const verified = receipt(operation, 'native-backup-verified');
+  if (verified !== undefined) return result(verified);
+  let encrypted = receipt(operation, 'native-backup-encrypt');
+  if (encrypted === undefined) {
+    let checkpoint = receipt(operation, 'native-backup-checkpoint');
+    if (checkpoint === undefined)
+      checkpoint = await step(
+        store,
+        operation,
+        'native-backup-checkpoint',
+        async () => {
+          const value = await runtime.checkpoint(operation.id);
+          createNativeRecovery(bound, value);
+          return value;
+        },
+      );
+    const parsed = NativeCheckpointSchema.safeParse(checkpoint);
+    if (!parsed.success) throw invalid();
+    const recovery = createNativeRecovery(bound, parsed.data);
+    const priorStage = receipt(operation, 'native-backup-stage');
+    if (priorStage !== undefined) {
+      const expected = {
+        directory: join(store.directory, 'native-backup-staging', operation.id),
+        recovery,
+      };
+      if (!isDeepStrictEqual(priorStage, expected)) throw invalid();
+    }
+    const stage = (await step(store, operation, 'native-backup-stage', () =>
+      stageNativeCheckpoint(store.directory, bound, parsed.data),
+    )) as { directory: string; recovery: z.infer<typeof NativeRecovery> };
+    encrypted = await step(
+      store,
+      operation,
+      'native-backup-encrypt',
+      async () => {
+        await backups.initialize();
+        const snapshotId = await backups.snapshot(
+          stage.directory,
+          operation.id,
+        );
+        await verifyNativeBackupDirectory(stage.directory, recovery);
+        return result({ snapshotId, recovery });
+      },
+    );
+  }
+  const pending = result(encrypted);
+  const root = join(store.directory, 'native-backup-verification');
+  const cache = join(root, operation.id);
+  const intent = {
+    directory: cache,
+    snapshotId: pending.snapshotId,
+    recoverySha256: digest(pending.recovery),
+  };
+  const intentKey = 'native-backup-verification-intent';
+  const existingIntent = operation.receipts[intentKey];
+  if (
+    existingIntent !== undefined &&
+    !isDeepStrictEqual(existingIntent, intent)
+  )
+    throw invalid();
+  await step(store, operation, 'native-backup-verified', async () => {
+    try {
+      if (
+        store.directory !== resolve(store.directory) ||
+        (await realpath(store.directory)) !== store.directory
+      )
+        throw verificationFailed();
+      await mkdir(root, { mode: 0o700 }).catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code !== 'EEXIST') throw error;
+        },
+      );
+      const parent = await lstat(root);
+      if (
+        !parent.isDirectory() ||
+        parent.isSymbolicLink() ||
+        (await realpath(root)) !== root
+      )
+        throw verificationFailed();
+      if (existingIntent === undefined) {
+        const exists = await lstat(cache)
+          .then(() => true)
+          .catch((error: NodeJS.ErrnoException) => {
+            if (error.code === 'ENOENT') return false;
+            throw error;
+          });
+        if (exists) throw verificationFailed();
+        operation.receipts[intentKey] = intent;
+        store.save(operation);
+      }
+      await clearVerificationCache(cache);
+      try {
+        await backups.restore(pending.snapshotId, cache);
+        await verifyNativeBackupDirectory(cache, pending.recovery);
+      } finally {
+        await clearVerificationCache(cache);
+      }
+      return pending;
+    } catch {
+      throw verificationFailed();
+    }
+  });
+  return pending;
+}
