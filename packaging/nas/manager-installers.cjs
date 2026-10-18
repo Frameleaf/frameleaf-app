@@ -22,9 +22,7 @@ function renderManagerInstallers(manifest) {
     /^ghcr\.io\/frameleaf\/frameleaf-manager@sha256:[a-f0-9]{64}$/,
   );
   return INSTALLERS.map(([name, template, destination]) => {
-    const body = fs
-      .readFileSync(path.join(__dirname, template), "utf8")
-      .replaceAll("@MANAGER_REF@", manifest.image);
+    const body = fs.readFileSync(path.join(__dirname, template), "utf8");
     assert(!/@[A-Z_]+@/.test(body), "Unresolved Manager package placeholder");
     return { name, destination, bytes: Buffer.from(body, "utf8") };
   });

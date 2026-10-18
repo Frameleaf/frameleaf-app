@@ -88,7 +88,7 @@ for template in templates:
 `, path.join(output, 'unraid')]);
     const compose = load(await fs.readFile(path.join(output, 'truenas/frameleaf-manager.compose.yaml'), 'utf8'));
     assert.deepEqual(Object.keys(compose.services), ['manager']);
-    assert.equal(compose.services.manager.image, manifest.image);
+    assert.equal(compose.services.manager.image, 'ghcr.io/frameleaf/frameleaf-manager:latest');
     assert.equal(compose.services.manager.privileged, undefined);
     for (const bind of compose.services.manager.volumes.filter(bind => bind.source.startsWith('/mnt/')))
       assert.equal(bind.source, bind.target);

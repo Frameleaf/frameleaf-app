@@ -30,7 +30,7 @@ test("old variables and commands are found; similar identifiers are not", () => 
       "run `immich-admin list-users`",
       "test: [CMD, immich-healthcheck]",
       "docker exec frameleaf_server immich-admin reset-admin-password",
-      "image: ghcr.io/frameleaf/frameleaf-server:${IMMICH_VERSION:-release}",
+      "image: ghcr.io/frameleaf/frameleaf-server:${IMMICH_VERSION:-latest}",
       // not old names
       "FRAMELEAF_LOG_LEVEL=debug",
       "frameleaf-admin list-users",

@@ -247,7 +247,10 @@ test('authenticated TrueNAS and Unraid packaging refuses untrusted releases and 
     assert(calls.some((args) => args[0] === 'verify-attestation' && args.at(-1) === nas.images.server));
     const read = (name) => fs.readFileSync(path.join(output, name), 'utf8');
     const unraidServer = read('unraid/templates/frameleaf-server.xml');
-    assert(unraidServer.includes(nas.images.server));
+    assert(unraidServer.includes('<Repository>ghcr.io/frameleaf/frameleaf-server:latest</Repository>'));
+    assert(read('unraid/templates/frameleaf-ml.xml').includes('<Repository>ghcr.io/frameleaf/frameleaf-machine-learning:latest</Repository>'));
+    const ixValues = read('truenas/ix-dev/community/frameleaf/ix_values.yaml');
+    for (const tag of ['latest', 'latest-cuda', 'latest-rocm', 'latest-openvino']) assert(ixValues.includes(`tag: ${tag}\n`), tag);
     // FL-291: the stop timeout must exceed FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (9 s by default)
     assert(unraidServer.includes('<ExtraParams>--stop-timeout=10</ExtraParams>'));
     assert(
@@ -263,7 +266,6 @@ test('authenticated TrueNAS and Unraid packaging refuses untrusted releases and 
       unraidServer,
       /<Config Name="Machine learning" Target="FRAMELEAF_MACHINE_LEARNING_ENABLED" Default=""[^>]*><\/Config>/,
     );
-    assert(read('unraid/templates/frameleaf-ml.xml').includes(nas.images.machineLearning));
     for (const name of ['frameleaf-server', 'frameleaf-ml']) {
       assert(read(`unraid/templates/${name}.xml`).includes('Target="/run/frameleaf/studio-worker"'), name);
     }

@@ -10,7 +10,7 @@ ML-specific environment settings now belong in the optional `.env.ml` beside `.e
 | Machine learning | `ghcr.io/frameleaf/frameleaf-machine-learning` |
 | Database         | `ghcr.io/frameleaf/frameleaf-postgres`         |
 
-Release bundles pin `FRAMELEAF_VERSION` to their version. The `release` and `latest` tags follow stable releases; `edge` follows development builds. Hardware variants append `-cuda`, `-openvino`, `-armnn`, `-rknn` or `-rocm` to the selected ML tag. For example, the stable CUDA image is `ghcr.io/frameleaf/frameleaf-machine-learning:release-cuda`. Select the matching hardware configuration and platform; a tag does not prove a particular GPU or model is supported.
+Compose and release bundles use the `latest` tag, which follows stable releases; `edge` follows development builds. Hardware variants append `-cuda`, `-openvino`, `-armnn`, `-rknn` or `-rocm` to the selected ML tag. For example, the stable CUDA image is `ghcr.io/frameleaf/frameleaf-machine-learning:latest-cuda`. Select the matching hardware configuration and platform; a tag does not prove a particular GPU or model is supported.
 
 The release includes `docker-compose.yml`, `docker-compose.rootless.yml`, `example.env`, `hwaccel.ml.yml` and `hwaccel.transcoding.yml`. Use the regular **or** rootless Compose file. Copy `example.env` to `.env` only for a new installation. Read the [installation steps](../docs/docs/install/docker-compose.mdx) and review the release notes before starting or upgrading.
 

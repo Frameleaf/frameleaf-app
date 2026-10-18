@@ -656,7 +656,7 @@ test("independent versions are immutable and only the same source can resume", (
     assert.throws(() => chooseTag(invalid, [], [], sha));
 });
 
-test("install bundle pins both Compose fallbacks and env while preserving data configuration", async () => {
+test("install bundle keeps :latest in Compose and env and preserves data configuration", async () => {
   const root = await fs.mkdtemp(
     path.join(os.tmpdir(), "frameleaf-bundle-test-"),
   );
@@ -675,10 +675,10 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
     const composeFixture = [
       "services:",
       "  frameleaf-server:",
-      "    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+      "    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}",
       "    volumes: ['${UPLOAD_LOCATION}:/data']",
       "  frameleaf-machine-learning:",
-      "    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+      "    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}",
       "    volumes: ['model-cache:/cache']",
       "  database:",
       `    image: ${databaseImage}`,
@@ -695,7 +695,7 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
       const text = name.startsWith("docker-compose")
         ? composeFixture
         : name === "example.env"
-          ? "FRAMELEAF_VERSION=v3\nUPLOAD_LOCATION=./library\nDB_DATA_LOCATION=./postgres19\nDB_USERNAME=postgres\nDB_DATABASE_NAME=frameleaf\nDB_PASSWORD=fixture-only\n"
+          ? "FRAMELEAF_VERSION=latest\nUPLOAD_LOCATION=./library\nDB_DATA_LOCATION=./postgres19\nDB_USERNAME=postgres\nDB_DATABASE_NAME=frameleaf\nDB_PASSWORD=fixture-only\n"
           : "services: {}\n";
       originals.set(name, text);
       await fs.writeFile(path.join(root, "docker", name), text);
@@ -772,19 +772,8 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
     assert.deepEqual(nas.platforms, ["linux/amd64", "linux/arm64"]);
     for (const [name, original] of originals) {
       const bundled = await fs.readFile(path.join(dir, name), "utf8");
-      const expected = name.startsWith("docker-compose")
-        ? original.replaceAll(
-            "${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
-            "${FRAMELEAF_VERSION:-${IMMICH_VERSION:-" + tag + "}}",
-          )
-        : name === "example.env"
-          ? original.replace("FRAMELEAF_VERSION=v3", `FRAMELEAF_VERSION=${tag}`)
-          : original;
-      assert.equal(
-        bundled,
-        expected,
-        `${name}: only release version may change`,
-      );
+      // Never pinned to the release (owner 2026-10-18): bundles ship sources unchanged.
+      assert.equal(bundled, original, `${name}: bundle must not pin the release`);
       assert.equal(
         await fs.readFile(path.join(root, "docker", name), "utf8"),
         original,
@@ -1298,13 +1287,13 @@ async function dependencyRoot(databaseImage) {
       ? [
           "services:",
           "  frameleaf-server:",
-          "    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+          "    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}",
           "  database:",
           `    image: ${databaseImage}`,
           "",
         ].join("\n")
       : name === "example.env"
-        ? "FRAMELEAF_VERSION=release\n"
+        ? "FRAMELEAF_VERSION=latest\n"
         : "services: {}\n";
     await fs.writeFile(path.join(root, "docker", name), text);
   }
@@ -1412,16 +1401,16 @@ test("promotion rejects stale pins, upstream images and unpinned third-party ima
       [
         "ghcr.io",
         "immich-app",
-        "frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+        "frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}",
       ].join("/"),
       /must not pull upstream images/,
     ],
     [
-      "docker.io/example/server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+      "docker.io/example/server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}",
       /only the Frameleaf server and ML images may follow the release version/,
     ],
     [
-      "ghcr.io/frameleaf/frameleaf-postgres:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+      "ghcr.io/frameleaf/frameleaf-postgres:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}",
       /only the Frameleaf server and ML images may follow the release version/,
     ],
   ]) {

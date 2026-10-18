@@ -26,7 +26,7 @@ const sha = "a".repeat(40);
 const example = [
   "UPLOAD_LOCATION=./library",
   "DB_DATA_LOCATION=./postgres",
-  "FRAMELEAF_VERSION=release",
+  "FRAMELEAF_VERSION=latest",
   "DB_PASSWORD=postgres",
   "DB_USERNAME=postgres",
 ].join("\n");

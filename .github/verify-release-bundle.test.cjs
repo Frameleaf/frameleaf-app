@@ -26,14 +26,14 @@ test("NAS packaging accepts one complete version-matched release bundle", async 
       await fs.writeFile(
         path.join(root, "docker", name),
         name === "example.env"
-          ? "FRAMELEAF_VERSION=release\n"
+          ? "FRAMELEAF_VERSION=latest\n"
           : name.startsWith("docker-compose")
             ? [
                 "services:",
                 "  frameleaf-server:",
-                "    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+                "    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}",
                 "  frameleaf-machine-learning:",
-                "    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+                "    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}",
                 "  database:",
                 `    image: ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@sha256:${"c".repeat(64)}`,
                 "",
@@ -131,9 +131,9 @@ test("NAS packaging accepts one complete version-matched release bundle", async 
         await fs.writeFile(
           file,
           valid.replace(
-            `ghcr.io/frameleaf/${image}:\${FRAMELEAF_VERSION:-\${IMMICH_VERSION:-${tag}}}`,
+            `ghcr.io/frameleaf/${image}:\${FRAMELEAF_VERSION:-\${IMMICH_VERSION:-latest}}`,
             `ghcr.io/frameleaf/${image}:wrong`,
-          ) + `# \${FRAMELEAF_VERSION:-\${IMMICH_VERSION:-${tag}}}\n`,
+          ) + `# \${FRAMELEAF_VERSION:-\${IMMICH_VERSION:-latest}}\n`,
         );
         await refreshSums();
         await assert.rejects(

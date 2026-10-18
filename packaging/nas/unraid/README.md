@@ -9,7 +9,7 @@ that access lets it create and control containers on this host.
 
 This repository contains generated Docker templates. Packaging source and support
 live in [Frameleaf/frameleaf-app](https://github.com/Frameleaf/frameleaf-app).
-Images are pinned to verified release digests. A published template is not proof
+Templates reference `:latest` images and never pin a release. A published template is not proof
 of Community Apps acceptance or physical Unraid qualification.
 
 The initial catalog contains Manager only. Manual Server/ML templates await a
@@ -83,9 +83,9 @@ and required recovery secrets**. They do **not** back up photos, videos or exter
 libraries. Back those up independently, retain the recovery key and Manager state,
 and verify a restore before relying on the backups.
 
-Use Manager for application service updates. Update Manager itself using a newly
-published, verified catalog digest after retaining its state and recovery points.
-A pinned image does not move when a floating tag changes. Do not downgrade an
+Use Manager for application service updates. Update Manager itself with Unraid's
+**Check for Updates** (it follows `:latest`) after retaining its state and
+recovery points. Do not downgrade an
 image against an upgraded database schema or delete storage folders when removing
 containers. Restore a matched database, media, configuration and release instead.
 

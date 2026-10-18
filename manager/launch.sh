@@ -1,8 +1,8 @@
 #!/bin/sh
-# Usage: sh launch.sh VERIFIED_MANAGER_DIGEST HOST_STATE_FOLDER HOST_MEDIA_FOLDER HOST_BACKUP_FOLDER HTTPS_ORIGIN [APPDATA_FOLDER|auto] [LAN_ADDRESS]
+# Usage: sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest HOST_STATE_FOLDER HOST_MEDIA_FOLDER HOST_BACKUP_FOLDER HTTPS_ORIGIN [APPDATA_FOLDER|auto] [LAN_ADDRESS]
 set -eu
 umask 077
-test "$#" -ge 5 || { echo 'Expected image digest, state folder, media folder, backup folder and HTTPS origin' >&2; exit 2; }
+test "$#" -ge 5 || { echo 'Expected Manager image, state folder, media folder, backup folder and HTTPS origin' >&2; exit 2; }
 image=$1 state=$2 media=$3 backups=$4 origin=$5 appdata=${6:-auto} bind=${7:-127.0.0.1}
 platform=linux
 if test -f /boot/config/docker.cfg; then platform=unraid; fi
@@ -28,9 +28,8 @@ if printf '%s' "$appdata" | LC_ALL=C grep '[[:cntrl:]:,"$`\\]' >/dev/null; then 
 test -d "$appdata" || { echo 'Create the selected appdata folder on the host disk before launching Manager' >&2; exit 2; }
 # An Unraid exclusive share can resolve to a pool. Bind its real location, never guess a pool name.
 appdata=$(realpath "$appdata")
-case "$image" in ghcr.io/frameleaf/frameleaf-manager@sha256:*) ;; *) echo 'A verified Manager image digest is required' >&2; exit 2;; esac
-digest=${image##*@sha256:}
-test "${#digest}" = 64 && ! printf '%s' "$digest" | LC_ALL=C tr -d 'a-f0-9' | grep . >/dev/null || exit 2
+# Never pin a release (owner 2026-10-18): Manager always follows :latest.
+test "$image" = ghcr.io/frameleaf/frameleaf-manager:latest || { echo 'Use ghcr.io/frameleaf/frameleaf-manager:latest' >&2; exit 2; }
 for path in "$state" "$media" "$backups" "$appdata"; do
   case "$path" in /*) ;; *) echo 'Use absolute existing host folders' >&2; exit 2;; esac
   test -d "$path" || { echo 'A required host folder is missing' >&2; exit 2; }
@@ -51,8 +50,10 @@ case "$filesystem" in
 esac
 command -v cosign >/dev/null || { echo 'Install Cosign to verify the Manager image before launch' >&2; exit 2; }
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-cosign verify --key "$script_dir/cosign.pub" "$image" >/dev/null
 docker pull "$image"
+# Verify the exact bytes just pulled, then run those bytes, so the tag cannot move in between.
+image=$(docker image inspect --format '{{index .RepoDigests 0}}' "$image")
+cosign verify --key "$script_dir/cosign.pub" "$image" >/dev/null
 set --
 if test "$platform" = unraid; then
   set -- --mount type=bind,source=/boot/config/docker.cfg,target=/run/frameleaf-host/docker.cfg,readonly

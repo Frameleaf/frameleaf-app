@@ -3,7 +3,7 @@
 # Paths below are examples. Keep every host path identical to its container path.
 services:
   manager:
-    image: @MANAGER_REF@
+    image: ghcr.io/frameleaf/frameleaf-manager:latest
     restart: unless-stopped
     labels:
       app.frameleaf.manager.role: controller
