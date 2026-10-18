@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { Store } from '../src/store.js';
 import { digest } from '../src/contracts.js';
+import * as journal from '../src/runtime/native-backup-journal.js';
 import { createNativeDatabaseBackup } from '../src/runtime/native-backup-journal.js';
 
 async function fixture(work: (f: any) => Promise<void>) {
@@ -396,5 +397,233 @@ test('a reopened journal reconciles only the partial verification cache covered 
     } finally {
       reopened.db.close();
     }
+  });
+});
+
+function ownedCleanup(f: any) {
+  let calls = 0;
+  f.runtime.cleanupCheckpoint = async (checkpoint: unknown) => {
+    calls++;
+    assert.deepEqual(checkpoint, f.checkpoint);
+    const persisted = f.store.history()[0];
+    assert.ok(persisted.completed.includes('native-backup-verified'));
+    assert.equal(persisted.state, 'running');
+    await rm(f.owner, { recursive: true, force: true });
+    return { ...f.checkpoint, state: 'checkpoint-cleaned' };
+  };
+  return () => calls;
+}
+
+test('backup completion journals owner and stage cleanup while retaining exclusive operation authority', async () => {
+  await fixture(async (f) => {
+    assert.equal(typeof journal.completeNativeDatabaseBackup, 'function');
+    const cleanupCalls = ownedCleanup(f);
+    const result = await journal.completeNativeDatabaseBackup(
+      f.store,
+      f.runtime,
+      f.engine,
+      f.context,
+      f.operation,
+    );
+    assert.equal(result.snapshotId, f.snapshotId);
+    await assert.rejects(readFile(join(f.owner, 'database.dump')), {
+      code: 'ENOENT',
+    });
+    await assert.rejects(
+      readFile(
+        join(
+          f.store.directory,
+          'native-backup-staging',
+          f.operation.id,
+          'database.dump',
+        ),
+      ),
+      { code: 'ENOENT' },
+    );
+    assert.ok(
+      f.store.history()[0].completed.includes('native-backup-owner-cleaned'),
+    );
+    assert.ok(
+      f.store.history()[0].completed.includes('native-backup-stage-cleaned'),
+    );
+    assert.throws(
+      () => f.store.start('start', randomUUID(), { ...f.runtime.identity }),
+      /operation_in_progress/,
+    );
+    assert.deepEqual(
+      await journal.completeNativeDatabaseBackup(
+        f.store,
+        f.runtime,
+        f.engine,
+        f.context,
+        f.operation,
+      ),
+      result,
+    );
+    assert.equal(cleanupCalls(), 1);
+    assert.deepEqual(f.calls, {
+      checkpoint: 1,
+      initialize: 1,
+      snapshot: 1,
+      restore: 1,
+    });
+    f.operation.receipts['native-backup-owner-cleaned'].dump.sha256 =
+      'e'.repeat(64);
+    f.store.save(f.operation);
+    await assert.rejects(
+      journal.completeNativeDatabaseBackup(
+        f.store,
+        f.runtime,
+        f.engine,
+        f.context,
+        f.operation,
+      ),
+      /native_backup_journal_invalid/,
+    );
+    assert.equal(cleanupCalls(), 1);
+  });
+});
+
+for (const lost of [
+  'native-backup-owner-cleaned',
+  'native-backup-stage-cleaned',
+]) {
+  test(`a lost ${lost} journal acknowledgement resumes cleanup without a new dump or snapshot`, async (t) => {
+    await fixture(async (f) => {
+      assert.equal(typeof journal.completeNativeDatabaseBackup, 'function');
+      const cleanupCalls = ownedCleanup(f);
+      const original = f.store.save.bind(f.store);
+      let injected = false;
+      const save = t.mock.method(f.store, 'save', (operation: any) => {
+        if (!injected && operation.completed.includes(lost)) {
+          injected = true;
+          throw Error('synthetic cleanup receipt write failure');
+        }
+        return original(operation);
+      });
+      try {
+        await assert.rejects(
+          journal.completeNativeDatabaseBackup(
+            f.store,
+            f.runtime,
+            f.engine,
+            f.context,
+            f.operation,
+          ),
+          /synthetic cleanup receipt write failure/,
+        );
+      } finally {
+        save.mock.restore();
+      }
+      assert.ok(injected);
+      f.store.close();
+      const reopened = new Store(f.store.directory);
+      f.store = reopened;
+      try {
+        reopened.interrupt();
+        const result = await journal.completeNativeDatabaseBackup(
+          reopened,
+          f.runtime,
+          f.engine,
+          f.context,
+          resume(reopened),
+        );
+        assert.equal(result.snapshotId, f.snapshotId);
+        assert.equal(
+          cleanupCalls(),
+          lost === 'native-backup-owner-cleaned' ? 2 : 1,
+        );
+        assert.deepEqual(f.calls, {
+          checkpoint: 1,
+          initialize: 1,
+          snapshot: 1,
+          restore: 1,
+        });
+        assert.equal(reopened.history()[0].state, 'running');
+      } finally {
+        reopened.close();
+      }
+    });
+  });
+}
+
+test('foreign cleanup replies cannot advance stage deletion or replace a verified backup', async () => {
+  await fixture(async (f) => {
+    f.runtime.cleanupCheckpoint = async () => ({
+      ...f.checkpoint,
+      state: 'checkpoint-cleaned',
+      dump: { ...f.checkpoint.dump, sha256: 'e'.repeat(64) },
+    });
+    await assert.rejects(
+      journal.completeNativeDatabaseBackup(
+        f.store,
+        f.runtime,
+        f.engine,
+        f.context,
+        f.operation,
+      ),
+      /native_backup_journal_invalid/,
+    );
+    assert.ok(
+      f.store.history()[0].completed.includes('native-backup-verified'),
+    );
+    assert.ok(
+      !f.store.history()[0].completed.includes('native-backup-owner-cleaned'),
+    );
+    assert.deepEqual(await readFile(join(f.owner, 'database.dump')), f.bytes);
+    assert.deepEqual(
+      await readFile(
+        join(
+          f.store.directory,
+          'native-backup-staging',
+          f.operation.id,
+          'database.dump',
+        ),
+      ),
+      f.bytes,
+    );
+    const cleanupCalls = ownedCleanup(f);
+    await journal.completeNativeDatabaseBackup(
+      f.store,
+      f.runtime,
+      f.engine,
+      f.context,
+      f.operation,
+    );
+    assert.equal(cleanupCalls(), 1);
+    assert.deepEqual(f.calls, {
+      checkpoint: 1,
+      initialize: 1,
+      snapshot: 1,
+      restore: 1,
+    });
+  });
+});
+
+test('cleanup journal markers without a verified snapshot fail before checkpoint or engine effects', async () => {
+  await fixture(async (f) => {
+    f.operation.receipts['native-backup-owner-cleaned'] = {
+      ...f.checkpoint,
+      state: 'checkpoint-cleaned',
+    };
+    f.operation.completed.push('native-backup-owner-cleaned');
+    f.store.save(f.operation);
+    await assert.rejects(
+      journal.completeNativeDatabaseBackup(
+        f.store,
+        f.runtime,
+        f.engine,
+        f.context,
+        f.operation,
+      ),
+      /native_backup_journal_invalid/,
+    );
+    assert.deepEqual(f.calls, {
+      checkpoint: 0,
+      initialize: 0,
+      snapshot: 0,
+      restore: 0,
+    });
+    assert.deepEqual(await readFile(join(f.owner, 'database.dump')), f.bytes);
   });
 });

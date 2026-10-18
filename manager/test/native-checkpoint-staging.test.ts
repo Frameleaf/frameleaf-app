@@ -17,6 +17,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import * as staging from '../src/runtime/native-checkpoint-staging.js';
 import { stageNativeCheckpoint } from '../src/runtime/native-checkpoint-staging.js';
 
 async function fixture(work: (f: any) => Promise<void>) {
@@ -303,5 +304,94 @@ test('a source change after copying is refused and cannot publish a mismatched r
       copy.mock.restore();
       syncBuiltinESMExports();
     }
+  });
+});
+
+test('completed staging cleanup removes only verified Manager copies and is idempotent', async () => {
+  await fixture(async (f) => {
+    const stage = await stageNativeCheckpoint(
+      f.manager,
+      f.context,
+      f.checkpoint,
+    );
+    assert.equal(typeof staging.cleanupNativeCheckpointStage, 'function');
+    const cleaned = await staging.cleanupNativeCheckpointStage(
+      f.manager,
+      stage.recovery,
+    );
+    assert.equal(cleaned.directory, stage.directory);
+    await assert.rejects(readdir(stage.directory), { code: 'ENOENT' });
+    assert.deepEqual(
+      await staging.cleanupNativeCheckpointStage(f.manager, stage.recovery),
+      cleaned,
+    );
+    assert.deepEqual(await readFile(join(f.owner, 'database.dump')), f.bytes);
+  });
+});
+
+for (const changed of ['dump', 'metadata', 'unknown', 'hardlink']) {
+  test(`staging cleanup preserves ${changed} instead of adopting changed data`, async () => {
+    await fixture(async (f) => {
+      const stage = await stageNativeCheckpoint(
+        f.manager,
+        f.context,
+        f.checkpoint,
+      );
+      assert.equal(typeof staging.cleanupNativeCheckpointStage, 'function');
+      if (changed === 'dump')
+        await writeFile(
+          join(stage.directory, 'database.dump'),
+          'foreign bytes',
+        );
+      if (changed === 'metadata')
+        await writeFile(join(stage.directory, 'recovery.json'), '{}');
+      if (changed === 'unknown')
+        await writeFile(join(stage.directory, 'foreign'), 'keep');
+      if (changed === 'hardlink')
+        await link(
+          join(stage.directory, 'database.dump'),
+          join(f.root, 'external-copy'),
+        );
+      const before = await readdir(stage.directory);
+      await assert.rejects(
+        staging.cleanupNativeCheckpointStage(f.manager, stage.recovery),
+        /native_checkpoint_changed/,
+      );
+      assert.deepEqual(await readdir(stage.directory), before);
+      assert.deepEqual(await readFile(join(f.owner, 'database.dump')), f.bytes);
+    });
+  });
+}
+
+test('interrupted staging deletion resumes a matching known-file partial', async () => {
+  await fixture(async (f) => {
+    const stage = await stageNativeCheckpoint(
+      f.manager,
+      f.context,
+      f.checkpoint,
+    );
+    assert.equal(typeof staging.cleanupNativeCheckpointStage, 'function');
+    const original = filesystem.rm;
+    filesystem.rm = async (...args) => {
+      if (args[0] === join(stage.directory, 'database.dump'))
+        throw Object.assign(Error('synthetic unlink interruption'), {
+          code: 'EIO',
+        });
+      return original(...args);
+    };
+    syncBuiltinESMExports();
+    try {
+      await assert.rejects(
+        staging.cleanupNativeCheckpointStage(f.manager, stage.recovery),
+        /native_checkpoint_changed/,
+      );
+    } finally {
+      filesystem.rm = original;
+      syncBuiltinESMExports();
+    }
+    assert.deepEqual(await readdir(stage.directory), ['database.dump']);
+    await staging.cleanupNativeCheckpointStage(f.manager, stage.recovery);
+    await assert.rejects(readdir(stage.directory), { code: 'ENOENT' });
+    assert.deepEqual(await readFile(join(f.owner, 'database.dump')), f.bytes);
   });
 });

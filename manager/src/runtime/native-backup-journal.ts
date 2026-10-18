@@ -10,6 +10,7 @@ import { createNativeRecovery, NativeRecovery } from './native-recovery.js';
 import {
   stageNativeCheckpoint,
   verifyNativeBackupDirectory,
+  cleanupNativeCheckpointStage,
 } from './native-checkpoint-staging.js';
 
 const Result = z
@@ -219,4 +220,76 @@ export async function createNativeDatabaseBackup(
     }
   });
   return pending;
+}
+
+/** Completes cleanup but leaves Store lock release to the owning NativeOperations runner. */
+export async function completeNativeDatabaseBackup(
+  store: Store,
+  runtime: NativeRuntime,
+  backups: Engine,
+  context: Context,
+  operation: Operation,
+): Promise<z.infer<typeof Result>> {
+  if (
+    !Array.isArray(operation.completed) ||
+    !operation.receipts ||
+    typeof operation.receipts !== 'object'
+  )
+    throw invalid();
+  const ownerKey = 'native-backup-owner-cleaned',
+    stageKey = 'native-backup-stage-cleaned';
+  const intentKey = 'native-backup-stage-cleanup-intent';
+  const owner = receipt(operation, ownerKey),
+    stage = receipt(operation, stageKey);
+  const intent = operation.receipts[intentKey];
+  if (
+    ((owner !== undefined || stage !== undefined || intent !== undefined) &&
+      receipt(operation, 'native-backup-verified') === undefined) ||
+    ((stage !== undefined || intent !== undefined) && owner === undefined) ||
+    (stage !== undefined && intent === undefined)
+  )
+    throw invalid();
+  const result = await createNativeDatabaseBackup(
+    store,
+    runtime,
+    backups,
+    context,
+    operation,
+  );
+  const expectedOwner = {
+    ...result.recovery.checkpoint,
+    state: 'checkpoint-cleaned',
+  };
+  const expectedStage = {
+    directory: join(store.directory, 'native-backup-staging', operation.id),
+    recoverySha256: digest(result.recovery),
+  };
+  if (
+    (owner !== undefined && !isDeepStrictEqual(owner, expectedOwner)) ||
+    (intent !== undefined && !isDeepStrictEqual(intent, expectedStage)) ||
+    (stage !== undefined && !isDeepStrictEqual(stage, expectedStage))
+  )
+    throw invalid();
+  if (stage !== undefined) return result;
+  if (owner === undefined)
+    await step(store, operation, ownerKey, async () => {
+      const cleaned = await runtime.cleanupCheckpoint(
+        result.recovery.checkpoint,
+      );
+      if (!isDeepStrictEqual(cleaned, expectedOwner)) throw invalid();
+      return cleaned;
+    });
+  if (intent === undefined) {
+    operation.receipts[intentKey] = expectedStage;
+    store.save(operation);
+  }
+  await step(store, operation, stageKey, async () => {
+    const cleaned = await cleanupNativeCheckpointStage(
+      store.directory,
+      result.recovery,
+    );
+    if (!isDeepStrictEqual(cleaned, expectedStage)) throw invalid();
+    return cleaned;
+  });
+  return result;
 }

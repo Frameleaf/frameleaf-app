@@ -13,7 +13,7 @@ import {
 } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { Refusal } from '../contracts.js';
+import { digest, Refusal } from '../contracts.js';
 import { NativeCheckpointSchema } from './native.js';
 import {
   createNativeRecovery,
@@ -275,6 +275,98 @@ export async function verifyNativeBackupDirectory(
     )
       throw changed();
     await verifyDump(join(path, 'database.dump'), recovery.checkpoint.dump);
+  } catch {
+    throw changed();
+  }
+}
+
+/** Called only after the journal persists verified backup and cleanup intent. */
+export async function cleanupNativeCheckpointStage(
+  managerDirectory: string,
+  expected: NativeRecoveryRecord,
+) {
+  try {
+    const recovery = NativeRecovery.parse(expected);
+    await directory(managerDirectory);
+    const root = join(managerDirectory, 'native-backup-staging');
+    const path = join(root, recovery.checkpoint.operationId);
+    const result = { directory: path, recoverySha256: digest(recovery) };
+    const sync = async (parent: string) => {
+      if (process.platform === 'win32') return;
+      const handle = await open(parent, readFlags);
+      try {
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+    };
+    let parent;
+    try {
+      parent = await directory(root);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      await sync(managerDirectory);
+      return result;
+    }
+    let identity;
+    try {
+      identity = await directory(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      await sync(root);
+      return result;
+    }
+    const names = await readdir(path);
+    if (
+      names.some((name) => !['database.dump', 'recovery.json'].includes(name))
+    )
+      throw changed();
+    const files = new Map<string, Stats>();
+    for (const name of names) {
+      const file = join(path, name);
+      if (name === 'database.dump')
+        files.set(name, await verifyDump(file, recovery.checkpoint.dump));
+      else {
+        const before = await lstat(file);
+        if (
+          !isDeepStrictEqual(
+            NativeRecovery.parse(await json(file)),
+            recovery,
+          ) ||
+          !sameFile(before, await lstat(file))
+        )
+          throw changed();
+        files.set(name, before);
+      }
+    }
+    for (const name of ['recovery.json', 'database.dump'].filter((name) =>
+      files.has(name),
+    )) {
+      const fresh = await directory(path),
+        freshParent = await directory(root);
+      const file = join(path, name);
+      if (
+        fresh.dev !== identity.dev ||
+        fresh.ino !== identity.ino ||
+        freshParent.dev !== parent.dev ||
+        freshParent.ino !== parent.ino ||
+        !sameFile(files.get(name)!, await lstat(file))
+      )
+        throw changed();
+      await rm(file);
+    }
+    const fresh = await directory(path),
+      freshParent = await directory(root);
+    if (
+      fresh.dev !== identity.dev ||
+      fresh.ino !== identity.ino ||
+      freshParent.dev !== parent.dev ||
+      freshParent.ino !== parent.ino
+    )
+      throw changed();
+    await rmdir(path);
+    await sync(root);
+    return result;
   } catch {
     throw changed();
   }
