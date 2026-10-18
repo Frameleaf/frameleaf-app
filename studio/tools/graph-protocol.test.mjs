@@ -991,12 +991,14 @@ test('clip.setMask, clip.relink, shape.add, shape.setStyle and title.setStyle ma
   }
 });
 
-// 0134 repairs only these previously forbidden locked inputs; refusal is an independent oracle.
+// 0134 and FL-450 repair only these previously forbidden locked inputs; refusal is an independent oracle.
 for (const [id, index, reason, detail] of [
     ['clip.setSpeed/ripple-moves-clips-on-locked-tracks', 2, 'failed', 'clip.setSpeed: the clip cannot take that speed here'],
     ['clip.delete/ripple-refuses-locked-linked-track', 1, 'failed', 'clip.delete: a clip it would change is on a locked track'],
     ['clip.delete/ripple-refuses-locked-downstream-companion', 2, 'failed', 'clip.delete: a clip it would change is on a locked track'],
     ['clip.split/refuses-locked-tracks', 2, 'invalid', 'clip.split: nothing spans that time'],
+    ['clip.add/refuses-locked-video-track', 1, 'failed', 'clip.add: the destination track is locked'],
+    ['clip.add/refuses-locked-audio-track', 1, 'failed', 'clip.add: the destination track is locked'],
   ]) test(`FL94 ${id} refuses atomically in the independent reference`, () => {
     const entry = fixtures.cases.find((entry) => entry.id === id);
     const base = fixtures.bases[entry.base];

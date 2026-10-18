@@ -71,7 +71,9 @@ export function compositionSourcesFor(sourceSha256) {
     sourceSha256 === 'e2821a958f1da55ac5f03b641b9e2f18fe82d0e283ef63e5149cb1b31045215b' ||
     sourceSha256 === '0c69a72edaca2861c5d4fad86b6b3e4ba9bb088bb65ffceace32d7b046fa5164' ||
     sourceSha256 === '11c977ef51aaf616ae0a0e7be1ff1ecf33ba0ebac8e155d3fc2e2454223a5a0d' ||
-    sourceSha256 === 'e3f7e88e3e38e6ace377a230b47ec41f9197db373cbb5932024dd94b9b67c7e9'
+    sourceSha256 === 'e3f7e88e3e38e6ace377a230b47ec41f9197db373cbb5932024dd94b9b67c7e9' ||
+    // FL-450 locked-lane drag refusal leaves the composition producers unchanged.
+    sourceSha256 === '804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6'
   )
     return {
       ...COMPOSITION_SOURCES,

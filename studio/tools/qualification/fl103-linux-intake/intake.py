@@ -6,8 +6,8 @@ from release import publish_release
 
 PREFIX='fl103-intake-'
 # The reviewed engine recipe the intake accepts; source_test.py keeps it equal to studio/engine-build.json.
-RECIPE_SOURCE_SHA256='e3f7e88e3e38e6ace377a230b47ec41f9197db373cbb5932024dd94b9b67c7e9'
-RECIPE_PATCH_COUNT=137
+RECIPE_SOURCE_SHA256='804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6'
+RECIPE_PATCH_COUNT=138
 LIMITS={'cpu.max':'200000 100000','memory.max':'2147483648','memory.swap.max':'0','pids.max':'128'}
 def command(argv,timeout=10):return subprocess.check_output(argv,text=True,stderr=subprocess.STDOUT,timeout=timeout).strip()
 def system_state(base):

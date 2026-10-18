@@ -689,7 +689,12 @@
       "path": "patches/0140-whisper-no-adapter-fallback.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "e8b6418c2e9a64d8a7ed2018059e655823f78244d69d68a37957e8feae99b54b"
+    },
+    {
+      "path": "patches/0141-locked-track-drop-refusal.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "dd32a9ac161448d08415996791f9ae63712fb37f59a63f19375adb82872df2d8"
     }
   ],
-  "sourceSha256": "e3f7e88e3e38e6ace377a230b47ec41f9197db373cbb5932024dd94b9b67c7e9"
+  "sourceSha256": "804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6"
 }
