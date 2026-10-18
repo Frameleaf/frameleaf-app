@@ -135,6 +135,9 @@ export class Security {
       });
       // Host equality rejects DNS rebinding, including on read-only endpoints. Never trust proxy headers.
       if (req.headers.host !== new URL(this.origin).host) throw new Refusal('invalid_host', 403);
+      // Express route matching is case-insensitive unless explicitly configured otherwise.
+      if (req.path.toLowerCase().startsWith('/manager-api/') && req.path !== req.path.toLowerCase())
+        throw new Refusal('invalid_api_path', 403);
       if (!req.path.startsWith('/manager-api/')) return next();
       const write = !['GET', 'HEAD'].includes(req.method);
       const publicRoute = ['/manager-api/status', '/manager-api/claim', '/manager-api/login'].includes(req.path);

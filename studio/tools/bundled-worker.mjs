@@ -18,10 +18,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { promisify } from 'node:util';
 import { WorkerHttpError, createWorkerClient } from './bundled-worker-client.mjs';
 import { executeBundledClaim } from './bundled-worker-executor.mjs';
 
 const GIB = 1024 ** 3;
+const SESSION_RENEW_WINDOW_MS = 10 * 60_000;
 const log = (message) => console.log(`[studio-worker] ${message}`);
 
 export const workerConfig = (env = process.env) => ({
@@ -49,7 +51,8 @@ export const workingMemoryBytes = (configured, totalMemory = os.totalmem()) => {
 export async function readTrust(file) {
   try {
     const trust = JSON.parse(await readFile(file, 'utf8'));
-    if (trust?.version === 1 && typeof trust.workerId === 'string' && typeof trust.enrolmentSecret === 'string') return trust;
+    if (trust?.version === 1 && typeof trust.workerId === 'string' && typeof trust.enrolmentSecret === 'string')
+      return trust;
   } catch {
     // not written yet, or mid-rotation; try again
   }
@@ -78,21 +81,89 @@ export const NO_TRUST_VOLUME =
 /** How long to wait for an enrolment before explaining what can prevent it. */
 export const ENROLMENT_HINT_MS = 5 * 60_000;
 
-export async function admit({ client, trust, conformance, engineDigest, memoryBytes }) {
-  return client.post('/api/render-workers/admission', {
-    workerId: trust.workerId,
-    enrolmentSecret: trust.enrolmentSecret,
-    engineDigest,
-    conformanceReportedAt: conformance.reportedAt.toISOString(),
-    softwareRenderer: conformance.softwareRenderer,
-    gpuMemoryBytes: String(memoryBytes),
-    gpuWorkingBudgetEvidence: null,
-    codecs: conformance.codecs,
-    formats: conformance.formats,
-  });
+export async function admit({ client, trust, conformance, engineDigest, memoryBytes, signal }) {
+  return client.post(
+    '/api/render-workers/admission',
+    {
+      workerId: trust.workerId,
+      enrolmentSecret: trust.enrolmentSecret,
+      engineDigest,
+      conformanceReportedAt: conformance.reportedAt.toISOString(),
+      softwareRenderer: conformance.softwareRenderer,
+      gpuMemoryBytes: String(memoryBytes),
+      gpuWorkingBudgetEvidence: null,
+      codecs: conformance.codecs,
+      formats: conformance.formats,
+    },
+    { signal },
+  );
 }
 
-async function main() {
+/** Readiness is an admitted, usable session; credentials never cross the owner channel. */
+export function sessionReady(session, workerId, engineDigest, now = Date.now()) {
+  const expiry = typeof session?.expiresAt === 'string' ? Date.parse(session.expiresAt) : NaN;
+  if (
+    session?.workerId !== workerId ||
+    typeof workerId !== 'string' ||
+    !workerId ||
+    typeof session?.sessionToken !== 'string' ||
+    session.sessionToken.length > 1024 ||
+    !/^[\x21-\x7e]+$/.test(session.sessionToken) ||
+    !Number.isFinite(expiry) ||
+    expiry <= now + SESSION_RENEW_WINDOW_MS ||
+    !Array.isArray(session.scopes) ||
+    !session.scopes.includes('studio_export') ||
+    !Number.isSafeInteger(session.leaseMs) ||
+    session.leaseMs <= 0 ||
+    session.leaseMs > 2_147_483_647 ||
+    !Number.isSafeInteger(session.heartbeatIntervalMs) ||
+    session.heartbeatIntervalMs <= 0 ||
+    session.heartbeatIntervalMs >= session.leaseMs ||
+    typeof engineDigest !== 'string' ||
+    !/^[a-f0-9]{40}$/.test(engineDigest)
+  ) {
+    throw new Error('WORKER_ADMISSION_INVALID');
+  }
+  return {
+    protocolVersion: 1,
+    state: 'ready',
+    engineDigest,
+    expiresAt: new Date(expiry).toISOString(),
+  };
+}
+
+/** Native ownership is a one-command private pipe; containers do not opt in. */
+export function bindOwnerPipe(input, shutdown) {
+  let pending = '';
+  const abort = (reason) => {
+    input.pause();
+    shutdown.abort(new Error(reason));
+  };
+  const stop = () => abort('WORKER_STOPPED');
+  const read = (chunk) => {
+    if (shutdown.signal.aborted) return;
+    if (chunk.length > 5 - pending.length) {
+      abort('WORKER_OWNER_COMMAND_INVALID');
+      return;
+    }
+    pending += chunk.toString();
+    if (!'stop\n'.startsWith(pending)) abort('WORKER_OWNER_COMMAND_INVALID');
+    else if (pending === 'stop\n') stop();
+  };
+  input.on('data', read);
+  input.on('end', stop);
+  input.on('error', stop);
+  return () => {
+    input.removeListener('data', read);
+    input.removeListener('end', stop);
+    input.removeListener('error', stop);
+    input.destroy();
+  };
+}
+
+export async function main(signal, report = () => {}) {
+  signal.throwIfAborted();
+  const pause = (milliseconds) => sleep(milliseconds, undefined, { signal });
   const config = workerConfig();
   if (!config.enabled) {
     log('Disabled (FRAMELEAF_STUDIO_WORKER=false); Studio exports need another render worker.');
@@ -109,12 +180,14 @@ async function main() {
     return;
   }
   const { createEngineRenderer } = await import('./bundled-worker-renderer.mjs');
-  const renderer = await createEngineRenderer({ log });
+  const renderer = await createEngineRenderer({ log, signal });
   const anonymous = createWorkerClient({ serverUrl: config.serverUrl });
+  const qualifying = { protocolVersion: 1, state: 'qualifying' };
+  await report(qualifying);
 
   let waitingSince = null;
   let hinted = false;
-  for (;;) {
+  while (!signal.aborted) {
     const trust = await readTrust(config.trustFile);
     if (!trust) {
       if (waitingSince === null) {
@@ -128,48 +201,64 @@ async function main() {
             'the same host. Until then Studio stays unavailable.',
         );
       }
-      await sleep(config.pollMs);
+      await pause(config.pollMs);
       continue;
     }
     waitingSince = null;
     hinted = false;
-    let session;
+    let session, readiness;
     try {
-      const conformance = await renderer.conformance();
+      const conformance = await renderer.conformance({ signal });
       if (conformance.formats.length === 0) {
         log('The conformance render produced no verified MP4; not offering exports. Retrying in 10 minutes.');
-        await sleep(10 * 60_000);
+        await pause(10 * 60_000);
         continue;
       }
       // The server rotates the enrolment at every start; read it again after the (slow) conformance render.
       const current = (await readTrust(config.trustFile)) ?? trust;
-      session = await admit({ client: anonymous, trust: current, conformance, engineDigest: build.upstreamCommit, memoryBytes });
-      log(`Admitted until ${session.expiresAt} (${conformance.softwareRenderer ? 'CPU' : 'GPU'}, ${memoryBytes / BigInt(GIB)} GiB)`);
+      session = await admit({
+        client: anonymous,
+        trust: current,
+        conformance,
+        engineDigest: build.upstreamCommit,
+        memoryBytes,
+        signal,
+      });
+      readiness = sessionReady(session, current.workerId, build.upstreamCommit);
+      log(
+        `Admitted until ${session.expiresAt} (${conformance.softwareRenderer ? 'CPU' : 'GPU'}, ${memoryBytes / BigInt(GIB)} GiB)`,
+      );
     } catch (error) {
+      signal.throwIfAborted();
       log(`Admission failed (${error instanceof WorkerHttpError ? error.status : error.message}); retrying`);
-      await sleep(Math.max(config.pollMs, 15_000));
+      await pause(Math.max(config.pollMs, 15_000));
       continue;
     }
 
+    signal.throwIfAborted();
+    await report(readiness);
+    signal.throwIfAborted();
     const client = anonymous.withSession(session.sessionToken);
-    const renewAt = Date.parse(session.expiresAt) - 10 * 60_000;
-    while (Date.now() < renewAt) {
+    const renewAt = Date.parse(session.expiresAt) - SESSION_RENEW_WINDOW_MS;
+    while (!signal.aborted && Date.now() < renewAt) {
       let claim;
       try {
-        claim = await client.post('/api/render-workers/claims', { kinds: ['studio_export'] });
+        claim = await client.post('/api/render-workers/claims', { kinds: ['studio_export'] }, { signal });
       } catch (error) {
+        signal.throwIfAborted();
         if (error instanceof WorkerHttpError && (error.status === 401 || error.status === 403)) break;
         log(`Claim request failed (${error.message})`);
-        await sleep(config.pollMs);
+        await pause(config.pollMs);
         continue;
       }
       if (!claim) {
-        await sleep(config.pollMs);
+        await pause(config.pollMs);
         continue;
       }
       log(`Claimed export ${claim.operationId} (attempt ${claim.attempt})`);
       const result = await executeBundledClaim(claim, {
         client,
+        signal,
         renderer,
         probe: renderer.probe,
         workRoot: config.workRoot,
@@ -179,13 +268,53 @@ async function main() {
       }).catch((error) => ({ status: 'failed', error }));
       if (result.error) log(`Export ${claim.operationId} ended unexpectedly: ${result.error.message}`);
     }
+    if (!signal.aborted) await report(qualifying);
   }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  process.on('SIGTERM', () => process.exit(0));
-  await main().catch((error) => {
-    console.error('[studio-worker] stopped:', error?.message ?? error);
-    process.exitCode = 1;
-  });
+  const args = process.argv.slice(2);
+  if (args.length > 1 || (args.length === 1 && args[0] !== '--owner-pipe')) {
+    throw new Error('Usage: bundled-worker.mjs [--owner-pipe]');
+  }
+  const shutdown = new AbortController();
+  const stop = () => shutdown.abort(new Error('WORKER_STOPPED'));
+  const ownerMode = args.length === 1;
+  if (ownerMode && (!process.connected || typeof process.send !== 'function')) {
+    throw new Error('Native Studio ownership requires an IPC channel');
+  }
+  const releaseOwner = ownerMode ? bindOwnerPipe(process.stdin, shutdown) : null;
+  const report = ownerMode
+    ? async (message) => {
+        try {
+          await promisify(process.send.bind(process))(message);
+        } catch {
+          stop();
+          throw shutdown.signal.reason;
+        }
+      }
+    : undefined;
+  if (ownerMode) process.on('disconnect', stop);
+  process.on('SIGTERM', stop);
+  process.on('SIGINT', stop);
+  try {
+    await main(shutdown.signal, report);
+  } catch (error) {
+    if (!shutdown.signal.aborted) {
+      console.error('[studio-worker] stopped:', error?.message ?? error);
+      process.exitCode = 1;
+    }
+  } finally {
+    releaseOwner?.();
+    process.removeListener('SIGTERM', stop);
+    process.removeListener('SIGINT', stop);
+    if (ownerMode) {
+      process.removeListener('disconnect', stop);
+      if (process.connected) process.disconnect();
+    }
+    if (shutdown.signal.reason?.message === 'WORKER_OWNER_COMMAND_INVALID') {
+      console.error('[studio-worker] invalid owner command');
+      process.exitCode = 1;
+    }
+  }
 }

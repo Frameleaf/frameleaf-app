@@ -13,7 +13,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { type DB } from 'src/schema/index.js';
 import { buddyMaintenanceState } from 'src/utils/buddy-backup-maintenance.js';
 import { getKyselyConfig } from 'src/utils/database.js';
-import { SupervisorStop, WORKER_STOP_MESSAGE } from 'src/utils/shutdown.js';
+import { SERVER_OWNER_READY_MESSAGE, SupervisorStop, WORKER_STOP_MESSAGE, onStopRequest } from 'src/utils/shutdown.js';
 
 /**
  * FL-161: an `FRAMELEAF_EDGE_SECRET` set in the environment, kept for installs that set one on purpose.
@@ -118,12 +118,13 @@ export class Workers {
   }
 
   /**
-   * FL-291: stop the server gracefully. Each worker is asked to stop (SIGTERM for the forked API and
-   * edge processes, a message for the worker threads): it stops taking work, lets running jobs and
+   * FL-291: stop the server gracefully. Forks receive SIGTERM, or private IPC for native hosts;
+   * worker threads receive a message. Each stops taking work, lets running jobs and
    * requests finish within the grace period, hands back what is left and closes its connections. The
    * supervisor exits once they all have, killing any still running at its deadline.
    */
-  stop(signal: NodeJS.Signals) {
+  stop(signal: NodeJS.Signals, exitCode = 0) {
+    this.exitCode ||= exitCode;
     if (this.stopper.stopping) {
       return;
     }
@@ -135,7 +136,10 @@ export class Workers {
     this.stopper.begin(() =>
       Object.values(this.workers).map((worker) => ({
         stop: () => worker.stop(),
-        kill: () => void worker.kill('SIGKILL'),
+        kill: () => {
+          if (process.env.FRAMELEAF_NATIVE_OWNER === '1') this.exitCode = 1;
+          void worker.kill('SIGKILL');
+        },
       })),
     );
   }
@@ -225,7 +229,24 @@ export class Workers {
       });
 
       kill = (signal) => void worker.kill(signal);
-      stop = () => void worker.kill('SIGTERM');
+      stop = () => {
+        if (process.env.FRAMELEAF_NATIVE_OWNER !== '1') {
+          worker.kill('SIGTERM');
+          return;
+        }
+        const failed = () => {
+          this.exitCode = 1;
+          worker.kill('SIGKILL');
+        };
+        if (!worker.connected) return failed();
+        try {
+          worker.send(WORKER_STOP_MESSAGE, (error) => {
+            if (error) failed();
+          });
+        } catch {
+          failed();
+        }
+      };
       // eslint-disable-next-line unicorn/prefer-hoisting-branch-code
       anyWorker = worker;
     } else {
@@ -268,6 +289,7 @@ export class Workers {
   onExit(name: FrameleafWorker, exitCode: number | null) {
     // FL-291: a stop in progress: no restart, no killing the others; exit once the last one has gone
     if (this.stopper.stopping) {
+      if (process.env.FRAMELEAF_NATIVE_OWNER === '1' && exitCode !== 0) this.exitCode = 1;
       console.info(`${name} worker stopped`);
       delete this.workers[name];
       this.stopper.workerExited(Object.keys(this.workers).length);
@@ -290,7 +312,7 @@ export class Workers {
       if (edge && name !== FrameleafWorker.Edge && !this.stoppingEdge) {
         this.stoppingEdge = true;
         this.edgeStopRequested = true;
-        void edge.kill('SIGTERM');
+        edge.stop();
         this.edgeKillTimer = setTimeout(() => {
           const stuck = this.workers[FrameleafWorker.Edge];
           if (stuck) {
@@ -368,14 +390,14 @@ export class Workers {
 
       if (Object.hasOwn(this.workers, FrameleafWorker.Api) && name !== FrameleafWorker.Api) {
         console.error('Killing api process');
-        void this.workers[FrameleafWorker.Api]!.kill('SIGTERM');
+        this.workers[FrameleafWorker.Api]!.stop();
       }
     }
     // FL-165: the edge worker is a process of its own; it must not outlive the server and keep the port
     // (an ending edge worker returned above, so the worker ending here is never the edge)
     if (Object.hasOwn(this.workers, FrameleafWorker.Edge)) {
       this.edgeStopRequested = true;
-      void this.workers[FrameleafWorker.Edge]!.kill('SIGTERM');
+      this.workers[FrameleafWorker.Edge]!.stop();
     }
 
     process.exit(exitCode);
@@ -427,6 +449,26 @@ async function main() {
   // FL-294: one warning per start for deprecated IMMICH_ variables (the workers stay quiet)
   warnDeprecatedEnv();
   const workers = new Workers();
+  if (process.env.FRAMELEAF_NATIVE_OWNER === '1') {
+    if (!process.connected || !process.send) {
+      console.error('Native server ownership requires an IPC channel');
+      process.exitCode = 1;
+      return;
+    }
+    onStopRequest(() => workers.stop('SIGTERM'), { ipc: true });
+    const attachmentFailed = () => {
+      workers.stop('SIGTERM', 1);
+    };
+    try {
+      process.send(SERVER_OWNER_READY_MESSAGE, (error) => {
+        if (error) attachmentFailed();
+      });
+    } catch {
+      attachmentFailed();
+    }
+    void workers.bootstrap();
+    return;
+  }
   // FL-291: Docker (through tini) sends SIGTERM here only; the workers are stopped from here
   process.on('SIGTERM', () => workers.stop('SIGTERM'));
   process.on('SIGINT', () => workers.stop('SIGINT'));

@@ -815,18 +815,21 @@ export class Operations {
     );
     return path;
   }
-  control(kind: 'start' | 'stop' | 'restart' | 'backup', key: string): Operation {
-    const prior = this.store.request(kind, key, {});
+  control(kind: 'start' | 'stop' | 'restart' | 'backup', key: string, installationId?: string): Operation {
+    const input = installationId ? { installationId } : {};
+    if (installationId && this.installation()?.id !== installationId) throw new Refusal('installation_changed');
+    const prior = this.store.request(kind, key, input);
     if (prior) return prior;
     const installation = this.installation();
     if (!installation) throw new Refusal('no_installation');
-    const { operation, created } = this.store.start(kind, key, {});
+    const { operation, created } = this.store.start(kind, key, input);
     if (created) this.launch(operation, () => this.runControl(operation));
     return operation;
   }
   private async runControl(operation: Operation): Promise<void> {
     const installation = this.installation();
     if (!installation) throw new Refusal('no_installation');
+    if (operation.input.installationId && operation.input.installationId !== installation.id) throw new Refusal('installation_changed');
     const kind = operation.kind;
     if (kind === 'backup') {
       await this.step(operation, 'database-backup', async () => {
