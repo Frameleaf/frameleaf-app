@@ -522,3 +522,147 @@ async function runNativeRestoreAdmission(
     record(`native-restore-stop-${phase}-owner`, stopped);
   }
 }
+
+/** The caller completes the operation only after exact normal-server readiness. */
+export async function runNativeRestore(
+  store: Store,
+  runtime: NativeRuntime,
+  backups: Parameters<typeof completeNativeDatabaseBackup>[2],
+  input: Parameters<typeof completeNativeDatabaseBackup>[3],
+  operation: Operation,
+  signal?: AbortSignal,
+) {
+  const { name, ...reviewContext } = input;
+  const context = NativeRestoreContextSchema.parse(reviewContext);
+  const identity = {
+    runtime: 'native',
+    installationId: context.installation.id,
+    fingerprint: digest(context.installation),
+  };
+  const invalid = () => new Refusal('native_restore_journal_invalid');
+  function owned() {
+    if (
+      operation.kind !== 'restore' ||
+      operation.state !== 'running' ||
+      !Array.isArray(operation.completed) ||
+      !operation.receipts ||
+      !isDeepStrictEqual(runtime.identity, identity) ||
+      store.get('native-library-id') !== context.libraryId ||
+      !isDeepStrictEqual(operation.input, {
+        reviewId: operation.input?.reviewId,
+        ...identity,
+      }) ||
+      !isDeepStrictEqual(
+        store.history().find((value) => value.id === operation.id),
+        operation,
+      )
+    )
+      throw invalid();
+    if (signal?.aborted) throw new Refusal('native_restore_cancelled');
+  }
+  owned();
+  const key = 'native-restore-start-intent';
+  const prior = operation.receipts[key];
+  if (operation.completed.includes(key) !== (prior !== undefined))
+    throw invalid();
+  if (prior === undefined) {
+    if (
+      operation.receipts['native-restore-finalization-owner-intent'] ===
+      undefined
+    ) {
+      await runNativeRestorePrebackup(
+        store,
+        runtime,
+        backups,
+        input,
+        operation,
+        signal,
+      );
+      await runNativeRestoreSelection(store, runtime, input, operation, signal);
+    }
+    await runNativeRestoreFinalization(
+      store,
+      runtime,
+      input,
+      operation,
+      signal,
+    );
+  }
+  owned();
+  const prepared = NativeRestorePreparedSchema.parse(
+    operation.receipts['native-restore-prepared'],
+  );
+  const finalized = NativeRestoreFinalizedSchema.parse(
+    operation.receipts['native-restore-finalized'],
+  );
+  const selected = NativeRestoreSelectionSchema.parse(
+    operation.receipts['native-restore-selected'],
+  );
+  const backup = z
+    .object({
+      snapshotId: z.string().regex(/^[a-f0-9]{64}$/),
+      recovery: NativeRecovery,
+    })
+    .strict()
+    .parse(operation.receipts['native-backup-verified']);
+  if (
+    prepared.binding.operationId !== operation.id ||
+    prepared.binding.reviewId !== operation.input.reviewId ||
+    prepared.binding.installationId !== context.installation.id ||
+    prepared.binding.manifestSha256 !== context.installation.manifestSha256 ||
+    prepared.binding.sourceRevision !== context.installation.sourceRevision ||
+    prepared.binding.libraryId !== context.libraryId ||
+    finalized.operationId !== operation.id ||
+    selected.operationId !== operation.id ||
+    ![
+      'native-restore-prepared',
+      'native-restore-finalized',
+      'native-restore-selected',
+      'native-backup-verified',
+    ].every((value) => operation.completed.includes(value)) ||
+    !isDeepStrictEqual(
+      backup.recovery,
+      createNativeRecovery(
+        { ...context, name, operation },
+        backup.recovery.checkpoint,
+      ),
+    )
+  )
+    throw invalid();
+  const intent = {
+    ...identity,
+    operationId: operation.id,
+    preparedSha256: digest(prepared),
+    finalized,
+    selected,
+    safetySha256: digest(backup),
+  };
+  if (prior !== undefined && !isDeepStrictEqual(prior, intent)) throw invalid();
+  if (prior === undefined) record(key, intent);
+  // The retained start intent authorizes only the same finalized target; never replay selection here.
+  operation.step = 'native-restore-start-server';
+  store.save(operation);
+  const ready = await runtime.start();
+  owned();
+  if (
+    !isDeepStrictEqual(ready, {
+      protocolVersion: 1,
+      state: 'running',
+      manifestSha256: context.installation.manifestSha256,
+      sourceRevision: context.installation.sourceRevision,
+      certified: context.installation.certified,
+    })
+  ) {
+    nativeStopped(await runtime.stop(), context.installation);
+    throw new Refusal('native_host_identity_changed');
+  }
+  record('native-restore-started', ready);
+  return ready;
+  function record(key: string, value: unknown) {
+    owned();
+    operation.step = key;
+    operation.receipts[key] = value;
+    if (!operation.completed.includes(key)) operation.completed.push(key);
+    store.save(operation);
+  }
+}

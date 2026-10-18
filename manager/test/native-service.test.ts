@@ -632,3 +632,77 @@ test('native recovery acknowledges durable work before readback and reports fail
     }
   });
 });
+
+test('restore service requires a fresh compatible review and preserves the same request after expiry', async () => {
+  await fixture(async ({ store, bootstrap, runtime, effects }) => {
+    const { digest } = await import('../src/contracts.js');
+    const { createNativeRecovery } =
+      await import('../src/runtime/native-recovery.js');
+    const service = new NativeService(store, bootstrap, runtime, {} as never);
+    assert.equal(typeof service.restore, 'function');
+    const reviewId = randomUUID(),
+      key = randomUUID();
+    const context = {
+      installation: bootstrap.installation,
+      libraryId: bootstrap.installation.id,
+      release: bootstrap.release,
+    };
+    const checkpoint = {
+      protocolVersion: 1,
+      state: 'checkpoint',
+      schemaVersion: 1,
+      operationId: randomUUID(),
+      manifestSha256: bootstrap.installation.manifestSha256,
+      sourceRevision: bootstrap.installation.sourceRevision,
+      postgresMajor: '19',
+      databaseFormat: 'frameleaf-canonical',
+      dump: { bytes: 20, sha256: '1'.repeat(64) },
+    };
+    const review = {
+      id: reviewId,
+      state: 'prepared',
+      snapshot: '2'.repeat(64),
+      expires: Date.now() + 900_000,
+      contextFingerprint: digest(context),
+      recovery: createNativeRecovery(
+        {
+          ...context,
+          name: bootstrap.name,
+          operation: { id: checkpoint.operationId, createdAt: Date.now() },
+        },
+        checkpoint,
+      ),
+    };
+    store.set(`native-restore-review:${reviewId}`, { ...review, expires: 0 });
+    assert.throws(
+      () => service.restore(reviewId, key, bootstrap.installation.id),
+      /native_restore_review_expired/,
+    );
+    const changed = structuredClone(review);
+    changed.recovery.checkpoint.sourceRevision = '0'.repeat(40);
+    store.set(`native-restore-review:${reviewId}`, changed);
+    assert.throws(
+      () => service.restore(reviewId, key, bootstrap.installation.id),
+      /native_restore_runtime_change_required/,
+    );
+    assert.equal(store.history().length, 0);
+    store.set(`native-restore-review:${reviewId}`, review);
+    assert.throws(
+      () => service.restore(reviewId, key, 'f'.repeat(12)),
+      /installation_changed/,
+    );
+    const operation = service.restore(reviewId, key, bootstrap.installation.id);
+    assert.equal(operation.kind, 'restore');
+    assert.equal((await service.wait(operation.id)).state, 'failed'); // Metadata alone cannot replace real readback.
+    store.set(`native-restore-review:${reviewId}`, { ...review, expires: 0 });
+    assert.equal(
+      service.restore(reviewId, key, bootstrap.installation.id).id,
+      operation.id,
+    );
+    assert.throws(
+      () => service.restore(randomUUID(), key, bootstrap.installation.id),
+      /request_key_reused/,
+    );
+    assert.deepEqual(effects, []);
+  });
+});

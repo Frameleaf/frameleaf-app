@@ -19,6 +19,9 @@ const nativePaths = new Set(
     'backups',
     'review-restore',
     'restore-review',
+    'restore',
+    'restore-operation',
+    'resume-restore',
   ].map((name) => NATIVE + name),
 );
 const browserPaths = new Set([
@@ -40,7 +43,7 @@ export function desktopApi(
   operations: ManagerLifecycle,
   recovery?: Pick<
     NativeService,
-    'listRestoreBackups' | 'reviewRestore' | 'restoreReview'
+    'listRestoreBackups' | 'reviewRestore' | 'restoreReview' | 'restore'
   >,
 ) {
   const router = express.Router({ caseSensitive: true, strict: true });
@@ -158,6 +161,17 @@ export function desktopApi(
     return found;
   };
   const publicOperation = ({ input, receipts, ...safe }: Operation) => safe;
+  const restoreOperation = (id: string, installationId: string) => {
+    const found = store.history().find((value) => value.id === id);
+    if (
+      !found ||
+      found.kind !== 'restore' ||
+      found.input.runtime !== 'native' ||
+      found.input.installationId !== installationId
+    )
+      throw new Refusal('desktop_operation_not_authorized', 403);
+    return found;
+  };
 
   router.get(BROWSER, (_request, response) =>
     response.json({ manager: grants.identity, grants: grants.list() }),
@@ -251,6 +265,28 @@ export function desktopApi(
     const { id } = Id.parse(request.body),
       current = authorize(request, 'status');
     response.json(publicOperation(operation(id, current.id)));
+  });
+  router.post(NATIVE + 'restore', (request, response) => {
+    const { reviewId, key } = z
+      .object({ reviewId: z.string().uuid(), key: z.string().uuid() })
+      .strict()
+      .parse(request.body);
+    const current = authorize(request, 'restore');
+    if (!recovery) throw new Refusal('native_recovery_unavailable');
+    response.json({ id: recovery.restore(reviewId, key, current.id).id });
+  });
+  router.post(NATIVE + 'restore-operation', (request, response) => {
+    const { id } = Id.parse(request.body),
+      current = authorize(request, 'restore');
+    if (!recovery) throw new Refusal('native_recovery_unavailable');
+    response.json(publicOperation(restoreOperation(id, current.id)));
+  });
+  router.post(NATIVE + 'resume-restore', (request, response) => {
+    const { id } = Id.parse(request.body),
+      current = authorize(request, 'restore');
+    if (!recovery) throw new Refusal('native_recovery_unavailable');
+    restoreOperation(id, current.id);
+    response.json({ id: operations.resume(id).id });
   });
   router.post(NATIVE + 'resume', (request, response) => {
     const value = Id.extend({ action: Action }).strict().parse(request.body),

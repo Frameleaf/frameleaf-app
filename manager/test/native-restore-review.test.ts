@@ -1793,3 +1793,166 @@ test('finalization refuses a missing selection before effects and drains a faile
         ]);
     });
 });
+
+async function executionFixture(run) {
+  await preBackupOwnerFixture(async (f) => {
+    const effects = [];
+    const ready = (state) => ({
+      protocolVersion: 1,
+      state,
+      manifestSha256: f.context.installation.manifestSha256,
+      sourceRevision: f.context.installation.sourceRevision,
+      certified: false,
+    });
+    f.runtime.startRestorePreparation = async () => {
+      effects.push('maintenance');
+      f.setState({ state: 'unknown', code: 'native_restore_maintenance' });
+      return ready('restore-prepare-ready');
+    };
+    f.runtime.prepareRestore = async (binding) => {
+      effects.push('prepare');
+      return {
+        protocolVersion: 1,
+        schemaVersion: 1,
+        state: 'restore-prepared',
+        binding,
+        attemptId: randomUUID(),
+        profileIdentity: '1:2',
+        targetIdentity: '1:3',
+        databaseIdentity: '1:4',
+        validation: {
+          postgresMajor: 19,
+          vectorVersion: '0.8.7',
+          canonical: true,
+          executionStateReconstructed: true,
+        },
+      };
+    };
+    f.runtime.verifyRestore = async (prepared) => {
+      effects.push('verify');
+      const { protocolVersion, ...target } = prepared;
+      return {
+        protocolVersion: 1,
+        state: 'restore-verified',
+        prepared: target,
+        offlineChecksums: true,
+        schemaValidated: true,
+        verificationId: randomUUID(),
+      };
+    };
+    f.runtime.selectRestore = async () => {
+      effects.push('select');
+      f.setState({ state: 'stopped' });
+      return {
+        protocolVersion: 1,
+        state: 'restore-activation-pending',
+        operationId: f.operation.id,
+        generation: randomUUID(),
+      };
+    };
+    f.runtime.finalizeRestore = async () => {
+      effects.push('finalize');
+      f.setState({ state: 'stopped' });
+      return {
+        protocolVersion: 1,
+        state: 'restore-finalized',
+        operationId: f.operation.id,
+        generation: randomUUID(),
+      };
+    };
+    f.runtime.start = async () => {
+      effects.push('server');
+      const saved = f.store.history()[0];
+      assert.equal(saved.state, 'running');
+      assert.ok(saved.receipts['native-restore-start-intent']);
+      assert.ok(saved.receipts['native-restore-finalized']);
+      f.setState({ state: 'running' });
+      return ready('running');
+    };
+    await run({ ...f, effects });
+  });
+}
+
+test('complete native restore backs up, selects, finalizes and confirms normal readiness in one lock', async () => {
+  await executionFixture(async (f) => {
+    assert.equal(typeof restoreOperation.runNativeRestore, 'function');
+    await restoreOperation.runNativeRestore(
+      f.store,
+      f.runtime,
+      f.engine,
+      f.context,
+      f.operation,
+    );
+    assert.deepEqual(f.effects, [
+      'maintenance',
+      'prepare',
+      'maintenance',
+      'verify',
+      'select',
+      'maintenance',
+      'verify',
+      'finalize',
+      'server',
+    ]);
+    assert.equal(f.calls.snapshot, 1);
+    assert.equal(
+      f.operation.receipts['native-restore-started'].state,
+      'running',
+    );
+    assert.equal(f.store.history()[0].state, 'running');
+  });
+});
+test('restore startup retry rechecks readiness without repeating selection or safety backup', async () => {
+  await executionFixture(async (f) => {
+    const start = f.runtime.start;
+    let lost = true;
+    f.runtime.start = async () => {
+      const ready = await start();
+      if (lost) {
+        lost = false;
+        throw Error('lost readiness');
+      }
+      return ready;
+    };
+    const run = restoreOperation.runNativeRestore;
+    await assert.rejects(
+      run(f.store, f.runtime, f.engine, f.context, f.operation),
+      /lost readiness/,
+    );
+    f.effects.length = 0;
+    await run(f.store, f.runtime, f.engine, f.context, f.operation);
+    assert.deepEqual(f.effects, ['server']);
+    assert.equal(f.calls.snapshot, 1);
+    f.operation.receipts['native-restore-start-intent'].preparedSha256 =
+      '0'.repeat(64);
+    f.store.save(f.operation);
+    f.effects.length = 0;
+    await assert.rejects(
+      run(f.store, f.runtime, f.engine, f.context, f.operation),
+    );
+    assert.deepEqual(f.effects, []);
+  });
+});
+
+test('foreign post-restore readiness is drained and cannot finish the restore', async () => {
+  await executionFixture(async (f) => {
+    const start = f.runtime.start;
+    f.runtime.start = async () => ({
+      ...(await start()),
+      sourceRevision: '0'.repeat(40),
+    });
+    await assert.rejects(
+      restoreOperation.runNativeRestore(
+        f.store,
+        f.runtime,
+        f.engine,
+        f.context,
+        f.operation,
+      ),
+      /native_host_identity_changed/,
+    );
+    assert.equal(f.runtime.status().state, 'stopped');
+    assert.equal(f.operation.receipts['native-restore-started'], undefined);
+    assert.equal(f.store.history()[0].state, 'running');
+  });
+});

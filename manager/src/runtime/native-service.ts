@@ -17,6 +17,7 @@ import { Store } from '../store.js';
 import { command } from '../docker.js';
 import { Backups } from '../backups.js';
 import { runNativeDatabaseBackup } from './native-backup-operation.js';
+import { runNativeRestore } from './native-restore-operation.js';
 import {
   prepareNativeRestoreReview,
   nativeRestoreReviewStatus,
@@ -394,6 +395,10 @@ export class NativeService {
               operation,
             )
         : undefined,
+      backups
+        ? (operation) =>
+            runNativeRestore(store, this.runtime, backups, context, operation)
+        : undefined,
     );
     this.publicInstallation = Object.freeze({
       id: bootstrap.installation.id,
@@ -512,6 +517,33 @@ export class NativeService {
     if (installationId && installationId !== this.publicInstallation.id)
       throw new Refusal('installation_changed');
     return this.lifecycle.control(action, key);
+  }
+  restore(reviewId: string, key: string, installationId: string) {
+    if (installationId !== this.publicInstallation.id)
+      throw new Refusal('installation_changed');
+    if (!this.backups) throw new Refusal('native_backup_unavailable');
+    const uuid =
+      /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
+    if (
+      typeof reviewId !== 'string' ||
+      typeof key !== 'string' ||
+      !uuid.test(reviewId) ||
+      !uuid.test(key)
+    )
+      throw new Refusal('native_restore_request_invalid');
+    const prior = this.store.request('restore', key, {
+      reviewId,
+      ...this.runtime.identity,
+    });
+    if (prior) return prior;
+    const review = this.restoreReview(reviewId, installationId);
+    if (review.state === 'expired')
+      throw new Refusal('native_restore_review_expired');
+    if (review.state !== 'prepared')
+      throw new Refusal('native_restore_review_not_ready');
+    if (review.requiresRuntimeChange)
+      throw new Refusal('native_restore_runtime_change_required');
+    return this.lifecycle.restore(reviewId, key);
   }
   resume(id: string) {
     return this.lifecycle.resume(id);

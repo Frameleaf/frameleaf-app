@@ -1042,6 +1042,7 @@ export class NativeOperations {
     readonly store: Store,
     private runtime: NativeRuntime,
     private backup?: (operation: Operation) => Promise<unknown>,
+    private restoreWork?: (operation: Operation) => Promise<unknown>,
   ) {}
   control(
     kind: 'start' | 'stop' | 'restart' | 'backup',
@@ -1064,14 +1065,36 @@ export class NativeOperations {
       this.executing.has(id) ||
       !['failed', 'interrupted'].includes(operation.state) ||
       (!['start', 'stop', 'restart'].includes(operation.kind) &&
-        !(operation.kind === 'backup' && this.backup)) ||
-      JSON.stringify(operation.input) !== JSON.stringify(this.runtime.identity)
+        !(operation.kind === 'backup' && this.backup) &&
+        !(operation.kind === 'restore' && this.restoreWork)) ||
+      (operation.kind === 'restore' &&
+        !checkpointOperation.safeParse(operation.input.reviewId).success) ||
+      !isDeepStrictEqual(
+        operation.input,
+        operation.kind === 'restore'
+          ? { reviewId: operation.input.reviewId, ...this.runtime.identity }
+          : this.runtime.identity,
+      )
     )
       throw new Refusal('operation_not_recoverable');
     operation.state = 'running';
     operation.error = null;
     this.store.save(operation);
     this.launch(operation);
+    return operation;
+  }
+  restore(reviewId: string, key: string): Operation {
+    if (!this.restoreWork) throw new Refusal('native_action_unavailable');
+    if (
+      !checkpointOperation.safeParse(reviewId).success ||
+      !checkpointOperation.safeParse(key).success
+    )
+      throw new Refusal('native_restore_request_invalid');
+    const { operation, created } = this.store.start('restore', key, {
+      reviewId,
+      ...this.runtime.identity,
+    });
+    if (created) this.launch(operation);
     return operation;
   }
   async wait(id: string): Promise<Operation> {
@@ -1114,6 +1137,11 @@ export class NativeOperations {
     this.store.save(operation);
   }
   private async run(operation: Operation): Promise<void> {
+    if (operation.kind === 'restore') {
+      if (!this.restoreWork) throw new Refusal('native_action_unavailable');
+      await this.restoreWork(operation);
+      return;
+    }
     if (operation.kind === 'backup') {
       if (!this.backup) throw new Refusal('native_action_unavailable');
       await this.backup(operation);
