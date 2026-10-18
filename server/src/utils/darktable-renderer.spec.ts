@@ -1,5 +1,5 @@
 import { ServiceUnavailableException } from '@nestjs/common';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -17,9 +17,14 @@ const mocks = vi.hoisted(() => ({
   metadata: vi.fn(),
   stats: vi.fn(),
   autoClose: true,
+  tempRoot: undefined as string | undefined,
   onSpawn: undefined as (() => void) | undefined,
   children: [] as Array<{ emit: (event: string) => boolean; kill: ReturnType<typeof vi.fn> }>,
 }));
+vi.mock('node:os', async (original) => {
+  const os = await original<typeof import('node:os')>();
+  return { ...os, tmpdir: () => mocks.tempRoot ?? os.tmpdir() };
+});
 vi.mock('node:child_process', async () => {
   const { EventEmitter } = await import('node:events');
   return {
@@ -43,6 +48,9 @@ vi.mock('node:child_process', async () => {
 vi.mock('sharp', () => ({ default: () => ({ metadata: mocks.metadata, stats: mocks.stats }) }));
 
 const recipe = { version: 2, renderer: 'darktable/5.6.1', exposureEV: 1 };
+// Pinned Darktable disk exports expand variables and consume backslash escapes.
+const expandOutput = (path: string) =>
+  path.replaceAll(/\\(.)|\$\([^)]*\)/g, (_match, literal) => literal ?? 'expanded-variable');
 
 /** An explicit unit-test database double, not evidence of a native camera history. */
 function historyDouble(file: string) {
@@ -65,6 +73,7 @@ describe('pinned darktable adapter', () => {
     mocks.autoClose = true;
     mocks.onSpawn = undefined;
     mocks.children.length = 0;
+    mocks.tempRoot = undefined;
     directory = await mkdtemp(join(tmpdir(), 'darktable-test-'));
     input = join(directory, 'source.CR2');
     await writeFile(input, 'unit-test original');
@@ -85,13 +94,26 @@ describe('pinned darktable adapter', () => {
       if (args[1].endsWith('bootstrap.png')) {
         historyDouble(args[args.indexOf('--library') + 1]);
       }
-      await writeFile(args[1], 'unit-test output');
+      await writeFile(expandOutput(args[1]), 'unit-test output');
       return { stdout: '', stderr: '' };
     });
   });
 
   afterEach(async () => {
+    mocks.tempRoot = undefined;
     await rm(directory, { recursive: true, force: true });
+  });
+  it('preserves literal output paths containing native pattern syntax', async () => {
+    mocks.tempRoot = join(directory, String.raw`literal\Photos-$(HOME)`);
+    await mkdir(mocks.tempRoot, { recursive: true });
+    await expect(renderDarktable(input, recipe)).resolves.toBeInstanceOf(Buffer);
+    expect(await readFile(input, 'utf8')).toBe('unit-test original');
+    for (const [, args] of mocks.exec.mock.calls.slice(1)) {
+      expect(args[0]).toContain(mocks.tempRoot);
+      for (const option of ['--library', '--configdir', '--cachedir']) {
+        expect(args[args.indexOf(option) + 1]).toContain(mocks.tempRoot);
+      }
+    }
   });
 
   it.each(['5.6.0', '5.6.1', '5.6.20', '5.6.2+4', '5.8.0'])('rejects engine drift: %s', (version) => {
@@ -256,7 +278,7 @@ describe('pinned darktable adapter', () => {
         return { stdout: 'darktable 5.6.2\n' };
       }
       nativeDirectory = dirname(args[0]);
-      await writeFile(args[1], 'partial output');
+      await writeFile(expandOutput(args[1]), 'partial output');
       controller.abort(new DOMException('Native deadline exceeded', 'TimeoutError'));
       options.signal.throwIfAborted();
     });
