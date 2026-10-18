@@ -85,7 +85,7 @@ const TimeBucketQueryBaseSchema = z
       .pipe(SearchFilterSchema)
       .optional()
       .describe(
-        'A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link',
+        'A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link',
       )
       .meta({ example: '{"make":{"eq":"Canon"},"rating":{"gte":4}}' }),
     imageEnrichment: ImageEnrichmentFilterSchema.optional(),

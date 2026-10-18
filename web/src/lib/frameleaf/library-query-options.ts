@@ -13,7 +13,8 @@ import { Route } from '$lib/route';
  * One tag, one person, one pet, one album, media type and favourites become the time buckets' own
  * options, as before; every other condition (dates, places, cameras, rating, several people, an
  * enrichment state, either-or branches) travels in the buckets' `filter`, which the server applies as
- * search does. The results toolbar's count, the empty state and Slideshow then describe what the grid
+ * search does. People, one or several ("all of", "any of", "none of"), also include their photos in
+ * albums shared with the viewer, as a person's page does. The results toolbar's count, the empty state and Slideshow then describe what the grid
  * shows. Only free text, which no timeline can run, is reported in `unapplied` and left to the search
  * results page.
  */
