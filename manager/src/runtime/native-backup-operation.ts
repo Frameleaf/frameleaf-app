@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { digest, Refusal, type Operation } from '../contracts.js';
 import { Store } from '../store.js';
-import type { NativeRuntime } from './native.js';
+import { nativeStopped, type NativeRuntime } from './native.js';
 import { completeNativeDatabaseBackup } from './native-backup-journal.js';
 
 type Context = Parameters<typeof completeNativeDatabaseBackup>[3];
@@ -130,9 +130,7 @@ export async function runNativeDatabaseBackup(
       journalError = error;
     }
     // The durable database intent already authorizes draining our temporary owner even if storage fails.
-    const stopped = await runtime.stop();
-    if (stopped?.protocolVersion !== 1 || stopped.state !== 'stopped')
-      throw new Refusal('native_shutdown_unconfirmed');
+    const stopped = nativeStopped(await runtime.stop(), context.installation);
     if (journalError) throw journalError;
     stillOwned();
     operation.receipts[key] = stopped;

@@ -91,6 +91,12 @@ async function fixture(run: (f: any) => Promise<void>) {
     startRestorePreparation: async () => {
       throw new Refusal('native_restore_unavailable');
     },
+    selectRestore: async () => {
+      throw new Refusal('native_restore_unavailable');
+    },
+    verifyRestore: async () => {
+      throw new Refusal('native_restore_unavailable');
+    },
     prepareRestore: async () => {
       throw new Refusal('native_restore_unavailable');
     },
@@ -431,5 +437,195 @@ test('native readiness receipt contains only the verified installation binding',
       () => service.ready('https://0.0.0.0:9443'),
       /native_manager_origin_invalid/,
     );
+  });
+});
+
+test('native recovery lists safe backup metadata and prepares a review without host actions', async () => {
+  await fixture(async ({ store, bootstrap, runtime, effects }) => {
+    const { createHash } = await import('node:crypto');
+    const { mkdir } = await import('node:fs/promises');
+    const { createNativeRecovery } =
+      await import('../src/runtime/native-recovery.js');
+    const bytes = Buffer.from('PGDMP synthetic native review');
+    const operation = { id: randomUUID(), createdAt: 1234 };
+    const checkpoint = {
+      protocolVersion: 1,
+      state: 'checkpoint',
+      schemaVersion: 1,
+      operationId: operation.id,
+      manifestSha256: bootstrap.installation.manifestSha256,
+      sourceRevision: bootstrap.installation.sourceRevision,
+      postgresMajor: '19',
+      databaseFormat: 'frameleaf-canonical',
+      dump: {
+        bytes: bytes.length,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+      },
+    };
+    const recovery = createNativeRecovery(
+      {
+        installation: bootstrap.installation,
+        libraryId: bootstrap.installation.id,
+        name: bootstrap.name,
+        release: bootstrap.release,
+        operation,
+      },
+      checkpoint,
+    );
+    const snapshot = '1'.repeat(64);
+    let index = [
+      {
+        id: snapshot,
+        time: '2026-10-18T00:00:00Z',
+        paths: ['/private/backup/staging'],
+      },
+    ];
+    const backups = {
+      list: async () => index,
+      restore: async (id, directory) => {
+        assert.equal(id, snapshot);
+        await mkdir(directory, { mode: 0o700 });
+        await writeFile(join(directory, 'database.dump'), bytes, {
+          mode: 0o600,
+        });
+        await writeFile(
+          join(directory, 'recovery.json'),
+          JSON.stringify(recovery),
+          { mode: 0o600 },
+        );
+      },
+    };
+    const service = new NativeService(
+      store,
+      bootstrap,
+      runtime,
+      backups as never,
+    );
+    assert.equal(typeof service.listRestoreBackups, 'function');
+    assert.equal(typeof service.reviewRestore, 'function');
+    assert.deepEqual(
+      await service.listRestoreBackups(bootstrap.installation.id),
+      [{ id: snapshot, time: index[0].time }],
+    );
+    const pending = service.reviewRestore(snapshot, bootstrap.installation.id);
+    await assert.rejects(
+      service.reviewRestore(snapshot, bootstrap.installation.id),
+      /native_restore_review_busy/,
+    );
+    const accepted = await pending;
+    assert.equal(accepted.state, 'preparing');
+    let review;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      review = service.restoreReview(accepted.id, bootstrap.installation.id);
+      if (review.state === 'prepared') break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.equal(review.state, 'prepared');
+    assert.equal(review.libraryId, bootstrap.installation.id);
+    assert.equal(review.mediaIncluded, false);
+    assert.equal(review.requiresRuntimeChange, false);
+    assert.equal(store.history().length, 0);
+    assert.deepEqual(effects, []);
+    await assert.rejects(
+      service.reviewRestore(snapshot, 'f'.repeat(12)),
+      /installation_changed/,
+    );
+    await assert.rejects(
+      service.listRestoreBackups('f'.repeat(12)),
+      /installation_changed/,
+    );
+    index = [{ ...index[0], id: '/private/path' }];
+    await assert.rejects(
+      service.listRestoreBackups(bootstrap.installation.id),
+      /native_backup_index_invalid/,
+    );
+  });
+});
+
+test('native recovery acknowledges durable work before readback and reports failure or interrupted restart safely', async () => {
+  await fixture(async ({ store, bootstrap, runtime, effects }) => {
+    let failReadback;
+    const blocked = new Promise((_resolve, reject) => {
+      failReadback = reject;
+    });
+    void blocked.catch(() => {});
+    const service = new NativeService(store, bootstrap, runtime, {
+      restore: () => blocked,
+    } as never);
+    const snapshot = '1'.repeat(64),
+      key = randomUUID();
+    let timer;
+    try {
+      const accepted = await Promise.race([
+        service.reviewRestore(snapshot, bootstrap.installation.id, key),
+        new Promise((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(Error('review acknowledgement blocked on readback')),
+            1000,
+          );
+        }),
+      ]);
+      clearTimeout(timer);
+      assert.equal(accepted.state, 'preparing');
+      assert.equal(accepted.id, key);
+      assert.deepEqual(
+        await service.reviewRestore(snapshot, bootstrap.installation.id, key),
+        accepted,
+      );
+      assert.equal(
+        store.get(`native-restore-review:${accepted.id}`).state,
+        'preparing',
+      );
+      assert.equal(
+        service.restoreReview(accepted.id, bootstrap.installation.id).state,
+        'preparing',
+      );
+      failReadback(Error('synthetic private storage details'));
+      let status;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        status = service.restoreReview(accepted.id, bootstrap.installation.id);
+        if (status.state === 'failed') break;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      assert.equal(status.state, 'failed');
+      assert.deepEqual(
+        await service.reviewRestore(snapshot, bootstrap.installation.id, key),
+        accepted,
+      );
+      await assert.rejects(
+        service.reviewRestore('2'.repeat(64), bootstrap.installation.id, key),
+        /native_restore_review_changed/,
+      );
+      assert.ok(!JSON.stringify(status).includes('private storage'));
+      const savedKey = `native-restore-review:${accepted.id}`,
+        saved = store.get(savedKey);
+      saved.state = 'preparing';
+      delete saved.error;
+      store.set(savedKey, saved);
+      const restarted = new NativeService(
+        store,
+        bootstrap,
+        runtime,
+        {} as never,
+      );
+      assert.equal(
+        restarted.restoreReview(accepted.id, bootstrap.installation.id).state,
+        'interrupted',
+      );
+      saved.expires = 0;
+      store.set(savedKey, saved);
+      assert.equal(
+        restarted.restoreReview(accepted.id, bootstrap.installation.id).state,
+        'expired',
+      );
+      assert.throws(
+        () => restarted.restoreReview(accepted.id, 'f'.repeat(12)),
+        /installation_changed/,
+      );
+      assert.deepEqual(effects, []);
+    } finally {
+      clearTimeout(timer);
+      failReadback(Error('fixture cleanup'));
+    }
   });
 });

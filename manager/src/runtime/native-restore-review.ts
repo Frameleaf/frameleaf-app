@@ -48,10 +48,15 @@ export async function prepareNativeRestoreReview(
   backups: Pick<Backups, 'restore'>,
   input: Context,
   snapshot: string,
+  accepted?: (id: string) => void,
+  id: string = randomUUID(),
 ) {
   const parsed = Context.safeParse(input);
   if (
     !parsed.success ||
+    !z.string().uuid().safeParse(id).success ||
+    id !== id.toLowerCase() ||
+    id === '00000000-0000-0000-0000-000000000000' ||
     !z
       .string()
       .regex(/^[a-f0-9]{64}$/)
@@ -66,17 +71,17 @@ export async function prepareNativeRestoreReview(
     if (error.code !== 'EEXIST') throw error;
   });
   const parent = await privateDirectory(root);
-  const id = randomUUID();
   const intent = {
     id,
     snapshot,
-    expires: Date.now() + 900_000,
+    expires: Date.now() + 7_200_000,
     contextFingerprint: digest(context),
   };
   const key = `native-restore-review:${id}`;
   if (!store.createOnce(key, { ...intent, state: 'preparing' }))
     throw refused('native_restore_review_changed');
   try {
+    accepted?.(id);
     const path = join(root, id);
     await backups.restore(snapshot, path);
     const recovery = await readNativeBackupDirectory(path);
@@ -89,21 +94,15 @@ export async function prepareNativeRestoreReview(
       store.get('native-library-id') !== context.libraryId
     )
       throw refused('native_restore_review_changed');
-    const review = Prepared.parse({ ...intent, state: 'prepared', recovery });
+    // The short confirmation window begins with verified evidence, not a potentially long readback.
+    const review = Prepared.parse({
+      ...intent,
+      expires: Date.now() + 900_000,
+      state: 'prepared',
+      recovery,
+    });
     store.set(key, review);
-    return {
-      id,
-      expires: review.expires,
-      libraryId: recovery.libraryId,
-      release: recovery.installation.release,
-      targetRelease: context.release,
-      createdAt: recovery.createdAt,
-      mediaIncluded: false as const,
-      requiresRuntimeChange:
-        recovery.installation.release !== context.release ||
-        recovery.checkpoint.sourceRevision !==
-          context.installation.sourceRevision,
-    };
+    return nativeRestoreReviewStatus(store, context, id);
   } catch {
     // Unknown or changed files are retained with this failed review; never sweep caller-controlled restore contents.
     store.set(key, {
@@ -113,6 +112,65 @@ export async function prepareNativeRestoreReview(
     });
     throw refused('native_restore_verification_failed');
   }
+}
+
+/** Display evidence only; restore must still revalidate the actual files before host actions. */
+export function nativeRestoreReviewStatus(
+  store: Store,
+  input: Context,
+  id: string,
+) {
+  const context = Context.parse(input);
+  if (
+    !z.string().uuid().safeParse(id).success ||
+    store.get('native-library-id') !== context.libraryId
+  )
+    throw refused('native_restore_review_changed');
+  const value = store.get(`native-restore-review:${id}`);
+  const prepared = Prepared.safeParse(value);
+  const progress = Prepared.omit({ recovery: true })
+    .extend({
+      state: z.enum(['preparing', 'failed']),
+      error: z.literal('native_restore_verification_failed').optional(),
+    })
+    .strict()
+    .safeParse(value);
+  const record = prepared.success
+    ? prepared.data
+    : progress.success
+      ? progress.data
+      : null;
+  if (
+    !record ||
+    record.id !== id ||
+    record.contextFingerprint !== digest(context) ||
+    (prepared.success && prepared.data.recovery.libraryId !== context.libraryId)
+  )
+    throw refused('native_restore_review_changed');
+  const base = {
+    id,
+    snapshot: record.snapshot,
+    installationId: context.installation.id,
+    expires: record.expires,
+  };
+  if (record.expires <= Date.now())
+    return { ...base, state: 'expired' as const };
+  if (!prepared.success)
+    return { ...base, state: record.state as 'preparing' | 'failed' };
+  const recovery = prepared.data.recovery;
+  return {
+    ...base,
+    state: 'prepared' as const,
+    libraryId: recovery.libraryId,
+    release: recovery.installation.release,
+    targetRelease: context.release,
+    createdAt: recovery.createdAt,
+    mediaIncluded: false as const,
+    requiresRuntimeChange:
+      recovery.installation.release !== context.release ||
+      recovery.checkpoint.sourceRevision !==
+        context.installation.sourceRevision,
+  };
 }
 
 /** Recheck immediately before the later restore operation takes any host action. */

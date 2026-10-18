@@ -13,11 +13,12 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, basename } from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Store } from '../src/store.js';
 import { digest } from '../src/contracts.js';
 import { stageNativeRestoreInput } from '../src/runtime/native-restore-input.js';
 import { completeNativeDatabaseBackup } from '../src/runtime/native-backup-journal.js';
+import { createNativeRecovery } from '../src/runtime/native-recovery.js';
 import * as restoreOperation from '../src/runtime/native-restore-operation.js';
 import filesystem from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
@@ -261,13 +262,14 @@ test('invalid snapshot or context is rejected before decryption; interrupted dec
 });
 
 test('reviews that expire during decryption or revalidation never become usable', async (t) => {
-  await fixture(async ({ store, context, engine }) => {
+  await fixture(async ({ store, context, engine, path }) => {
     let clock = Date.now();
     const now = t.mock.method(Date, 'now', () => clock);
     const restore = engine.restore;
     engine.restore = async (...args) => {
       await restore(...args);
-      clock += 900_001;
+      clock =
+        store.get(`native-restore-review:${basename(path())}`).expires + 1;
     };
     await assert.rejects(
       prepareNativeRestoreReview(store, engine, context, '1'.repeat(64)),
@@ -1162,6 +1164,414 @@ test('restore pre-backup preserves a journal changed while the encrypted snapsho
       );
     },
   );
+});
+
+test('restore preparation accepts a bound cold quiescent receipt but rejects a foreign inspection', async () => {
+  await operationFixture(async (f) => {
+    const prepared = await restoreRunner()(
+      f.store,
+      f.runtime,
+      f.context,
+      f.operation,
+      f.cancellation.signal,
+    );
+    const inspection = {
+      protocolVersion: 1,
+      state: 'quiescent',
+      installationId: f.context.installation.id,
+      manifestSha256: f.context.installation.manifestSha256,
+      sourceRevision: f.context.installation.sourceRevision,
+      certified: false,
+      profileIdentity: '1'.repeat(64),
+      generation: randomUUID(),
+    };
+    f.runtime.stop = async () => ({
+      protocolVersion: 1,
+      state: 'stopped',
+      inspection,
+    });
+    assert.deepEqual(
+      await restoreRunner()(
+        f.store,
+        f.runtime,
+        f.context,
+        f.operation,
+        f.cancellation.signal,
+      ),
+      prepared,
+    );
+    inspection.manifestSha256 = '0'.repeat(64);
+    await assert.rejects(
+      restoreRunner()(
+        f.store,
+        f.runtime,
+        f.context,
+        f.operation,
+        f.cancellation.signal,
+      ),
+      /native_shutdown_unconfirmed/,
+    );
+  });
+});
+
+async function selectionFixture(run) {
+  await operationFixture(async (f) => {
+    const context = { ...f.context, name: 'Native library' };
+    const checkpoint = {
+      protocolVersion: 1,
+      state: 'checkpoint',
+      schemaVersion: 1,
+      operationId: f.operation.id,
+      manifestSha256: context.installation.manifestSha256,
+      sourceRevision: context.installation.sourceRevision,
+      postgresMajor: '19',
+      databaseFormat: 'frameleaf-canonical',
+      dump: { bytes: 21, sha256: '9'.repeat(64) },
+    };
+    const backup = {
+      snapshotId: '8'.repeat(64),
+      recovery: createNativeRecovery(
+        { ...context, operation: f.operation },
+        checkpoint,
+      ),
+    };
+    const values = {
+      'native-backup-verified': backup,
+      'native-backup-encrypt': structuredClone(backup),
+      'native-backup-owner-cleaned': {
+        ...checkpoint,
+        state: 'checkpoint-cleaned',
+      },
+      'native-backup-stage-cleaned': {
+        directory: join(
+          f.store.directory,
+          'native-backup-staging',
+          f.operation.id,
+        ),
+        recoverySha256: digest(backup.recovery),
+      },
+    };
+    for (const [key, value] of Object.entries(values)) {
+      f.operation.receipts[key] = value;
+      f.operation.completed.push(key);
+    }
+    f.store.save(f.operation);
+    f.runtime.verifyRestore = async (prepared) => {
+      f.calls.push('verify');
+      const { protocolVersion, ...target } = prepared;
+      return {
+        protocolVersion: 1,
+        state: 'restore-verified',
+        prepared: target,
+        offlineChecksums: true,
+        schemaValidated: true,
+        verificationId: randomUUID(),
+      };
+    };
+    f.runtime.selectRestore = async (proof, safety) => {
+      f.calls.push('select');
+      assert.equal(proof.prepared.binding.operationId, f.operation.id);
+      assert.deepEqual(safety, {
+        snapshotId: backup.snapshotId,
+        recoverySha256: digest(backup.recovery),
+        checkpoint,
+      });
+      f.setState({ state: 'stopped' });
+      return {
+        protocolVersion: 1,
+        state: 'restore-activation-pending',
+        operationId: f.operation.id,
+        generation: randomUUID(),
+      };
+    };
+    await run({ ...f, context, backup });
+  });
+}
+function selectionRunner() {
+  assert.equal(typeof restoreOperation.runNativeRestoreSelection, 'function');
+  return restoreOperation.runNativeRestoreSelection;
+}
+
+test('native restore runner prepares, freshly verifies and selects in the live owner but retains finalization lock', async () => {
+  const run = selectionRunner();
+  await selectionFixture(async (f) => {
+    const selected = await run(
+      f.store,
+      f.runtime,
+      f.context,
+      f.operation,
+      f.cancellation.signal,
+    );
+    assert.deepEqual(f.calls, [
+      'start',
+      'prepare',
+      'stop',
+      'start',
+      'verify',
+      'select',
+    ]);
+    assert.equal(selected.state, 'restore-activation-pending');
+    assert.deepEqual(f.operation.receipts['native-restore-selected'], selected);
+    assert.equal(f.store.history()[0].state, 'running');
+    assert.throws(
+      () => f.store.start('start', randomUUID(), {}),
+      /operation_in_progress/,
+    );
+  });
+});
+test('selection resume always renews proof after a lost journal acknowledgement', async (t) => {
+  const run = selectionRunner();
+  await selectionFixture(async (f) => {
+    const save = f.store.save.bind(f.store);
+    let lost = false;
+    const mock = t.mock.method(f.store, 'save', (operation) => {
+      save(operation);
+      if (!lost && operation.completed.includes('native-restore-selected')) {
+        lost = true;
+        throw Error('lost selection acknowledgement');
+      }
+    });
+    await assert.rejects(
+      run(f.store, f.runtime, f.context, f.operation, f.cancellation.signal),
+      /lost selection acknowledgement/,
+    );
+    mock.mock.restore();
+    f.calls.length = 0;
+    await run(
+      f.store,
+      f.runtime,
+      f.context,
+      f.operation,
+      f.cancellation.signal,
+    );
+    assert.deepEqual(f.calls, ['stop', 'start', 'verify', 'select']);
+    assert.equal(f.store.history()[0].state, 'running');
+  });
+});
+test('selection rejects missing safety cleanup, changed proof and failed selection while draining owned maintenance', async () => {
+  const run = selectionRunner();
+  for (const mutation of ['cleanup', 'proof', 'select'])
+    await selectionFixture(async (f) => {
+      if (mutation === 'cleanup') {
+        delete f.operation.receipts['native-backup-owner-cleaned'];
+        f.operation.completed = f.operation.completed.filter(
+          (key) => key !== 'native-backup-owner-cleaned',
+        );
+        f.store.save(f.operation);
+      }
+      if (mutation === 'proof') {
+        const verify = f.runtime.verifyRestore;
+        f.runtime.verifyRestore = async (prepared) => {
+          const proof = await verify(prepared);
+          proof.prepared.databaseIdentity = '1:999';
+          return proof;
+        };
+      }
+      if (mutation === 'select')
+        f.runtime.selectRestore = async () => {
+          f.calls.push('select');
+          throw Error('selection failed');
+        };
+      await assert.rejects(
+        run(f.store, f.runtime, f.context, f.operation, f.cancellation.signal),
+      );
+      assert.equal(f.operation.receipts['native-restore-selected'], undefined);
+      assert.equal(f.store.history()[0].state, 'running');
+      if (mutation === 'cleanup') assert.deepEqual(f.calls, []);
+      else assert.equal(f.calls.at(-1), 'stop');
+    });
+});
+
+function preBackupRunner() {
+  assert.equal(typeof restoreOperation.runNativeRestorePrebackup, 'function');
+  return restoreOperation.runNativeRestorePrebackup;
+}
+async function preBackupOwnerFixture(run) {
+  await preBackupFixture(async (f) => {
+    delete f.operation.receipts['native-restore-prebackup-intent'];
+    f.store.save(f.operation);
+    f.setState({ state: 'running' });
+    const lifecycle = [];
+    f.runtime.stop = async () => {
+      lifecycle.push('stop');
+      f.setState({ state: 'stopped' });
+      return { protocolVersion: 1, state: 'stopped' };
+    };
+    function ready(state) {
+      return {
+        protocolVersion: 1,
+        state,
+        manifestSha256: f.context.installation.manifestSha256,
+        sourceRevision: f.context.installation.sourceRevision,
+        certified: f.context.installation.certified,
+      };
+    }
+    f.runtime.startDatabase = async () => {
+      lifecycle.push('database');
+      f.setState({ state: 'unknown', code: 'native_database_maintenance' });
+      return ready('database-ready');
+    };
+    f.runtime.startCheckpointCleanup = async () => {
+      lifecycle.push('cleanup');
+      f.setState({
+        state: 'unknown',
+        code: 'native_checkpoint_cleanup_maintenance',
+      });
+      return ready('checkpoint-cleanup-ready');
+    };
+    await run({ ...f, lifecycle });
+  });
+}
+
+test('restore prebackup owner drains writers, verifies safety and stops without releasing the restore lock', async () => {
+  const run = preBackupRunner();
+  await preBackupOwnerFixture(async (f) => {
+    const result = await run(
+      f.store,
+      f.runtime,
+      f.engine,
+      f.context,
+      f.operation,
+    );
+    assert.equal(result.snapshotId, 'f'.repeat(64));
+    assert.deepEqual(f.lifecycle, ['stop', 'database', 'stop']);
+    assert.equal(f.calls.checkpoint, 1);
+    assert.equal(f.calls.cleanup, 1);
+    assert.equal(f.operation.state, 'running');
+    assert.throws(
+      () => f.store.start('start', 'competing', {}),
+      /operation_in_progress/,
+    );
+    await run(f.store, f.runtime, f.engine, f.context, f.operation);
+    assert.equal(f.calls.checkpoint, 1);
+    assert.equal(f.calls.snapshot, 1);
+    assert.deepEqual(f.lifecycle, ['stop', 'database', 'stop', 'stop']);
+  });
+});
+
+test('restore prebackup owner resumes checkpoint cleanup without restarting normal database mode', async () => {
+  const run = preBackupRunner();
+  await preBackupOwnerFixture(async (f) => {
+    const cleanup = f.runtime.cleanupCheckpoint;
+    f.runtime.cleanupCheckpoint = async () => {
+      throw new Error('interrupted cleanup');
+    };
+    await assert.rejects(
+      run(f.store, f.runtime, f.engine, f.context, f.operation),
+      /interrupted cleanup/,
+    );
+    assert.deepEqual(f.lifecycle, ['stop', 'database', 'stop']);
+    f.runtime.cleanupCheckpoint = cleanup;
+    await run(f.store, f.runtime, f.engine, f.context, f.operation);
+    assert.deepEqual(f.lifecycle, [
+      'stop',
+      'database',
+      'stop',
+      'stop',
+      'cleanup',
+      'stop',
+    ]);
+    assert.equal(f.calls.checkpoint, 1);
+    assert.equal(f.calls.snapshot, 1);
+  });
+});
+
+test('restore prebackup owner refuses changed input before stopping writers and drains failed readiness', async () => {
+  const run = preBackupRunner();
+  await preBackupOwnerFixture(async (f) => {
+    f.operation.receipts['native-restore-prebackup-intent'] = {
+      schemaVersion: 1,
+      binding: {},
+    };
+    f.store.save(f.operation);
+    await assert.rejects(
+      run(f.store, f.runtime, f.engine, f.context, f.operation),
+    );
+    assert.deepEqual(f.lifecycle, []);
+  });
+  await preBackupOwnerFixture(async (f) => {
+    const start = f.runtime.startDatabase;
+    f.runtime.startDatabase = async () => ({
+      ...(await start()),
+      sourceRevision: '0'.repeat(40),
+    });
+    await assert.rejects(
+      run(f.store, f.runtime, f.engine, f.context, f.operation),
+      /native_host_identity_changed/,
+    );
+    assert.deepEqual(f.lifecycle, ['stop', 'database', 'stop']);
+    assert.equal(f.calls.checkpoint, 0);
+  });
+});
+
+test('restore prebackup owner drains cancelled readiness and retries a faulted owner only with matching prior intent', async () => {
+  const run = preBackupRunner();
+  await preBackupOwnerFixture(async (f) => {
+    const cancellation = new AbortController(),
+      start = f.runtime.startDatabase;
+    f.runtime.startDatabase = async () => {
+      const ready = await start();
+      cancellation.abort();
+      return ready;
+    };
+    await assert.rejects(
+      run(
+        f.store,
+        f.runtime,
+        f.engine,
+        f.context,
+        f.operation,
+        cancellation.signal,
+      ),
+      /native_restore_cancelled/,
+    );
+    assert.deepEqual(f.lifecycle, ['stop', 'database', 'stop']);
+    assert.equal(f.calls.checkpoint, 0);
+    f.setState({ state: 'unknown', code: 'native_host_pipe_failed' });
+    f.runtime.startDatabase = start;
+    await run(f.store, f.runtime, f.engine, f.context, f.operation);
+    assert.deepEqual(f.lifecycle, [
+      'stop',
+      'database',
+      'stop',
+      'stop',
+      'database',
+      'stop',
+    ]);
+    assert.equal(f.calls.checkpoint, 1);
+  });
+  await preBackupOwnerFixture(async (f) => {
+    f.setState({ state: 'unknown', code: 'native_host_pipe_failed' });
+    await assert.rejects(
+      run(f.store, f.runtime, f.engine, f.context, f.operation),
+      /native_restore_owner_unavailable/,
+    );
+    assert.deepEqual(f.lifecycle, []);
+  });
+});
+
+test('a long bounded readback starts the review confirmation window after verification', async (t) => {
+  await fixture(async ({ store, context, engine }) => {
+    let clock = Date.now();
+    const now = t.mock.method(Date, 'now', () => clock),
+      restore = engine.restore;
+    engine.restore = async (...args) => {
+      await restore(...args);
+      clock += 16 * 60_000;
+    };
+    try {
+      const summary = await prepareNativeRestoreReview(
+        store,
+        engine,
+        context,
+        '1'.repeat(64),
+      );
+      assert.equal(summary.expires, clock + 900_000);
+      assert.equal(summary.state, 'prepared');
+    } finally {
+      now.mock.restore();
+    }
+  });
 });
 
 test('restore retry freshly reads the safety snapshot and rejects corruption despite its durable verified receipt', async () => {

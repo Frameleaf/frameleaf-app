@@ -140,8 +140,15 @@ export async function createNativeDatabaseBackup(
         schemaVersion: 1,
         binding: staged.binding,
       }) ||
-      status.state !== 'unknown' ||
-      status.code !== 'native_database_maintenance'
+      !(
+        (status.state === 'unknown' &&
+          status.code === 'native_database_maintenance') ||
+        (operation.completed.includes('native-backup-verified') &&
+          ((status.state === 'unknown' &&
+            status.code === 'native_checkpoint_cleanup_maintenance') ||
+            (operation.completed.includes('native-backup-owner-cleaned') &&
+              status.state === 'stopped')))
+      )
     )
       throw invalid();
   }

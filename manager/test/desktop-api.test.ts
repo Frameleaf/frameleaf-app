@@ -137,7 +137,15 @@ async function fixture(
       )
     : dockerOperations;
   const app = express();
-  app.use(desktopApi(store, security, grants, operations));
+  app.use(
+    desktopApi(
+      store,
+      security,
+      grants,
+      operations,
+      operations instanceof NativeService ? operations : undefined,
+    ),
+  );
   app.use(security.guard);
   app.use(express.json());
   app.post('/manager-api/control', (_req, res) => res.json({ browser: true }));
@@ -544,4 +552,151 @@ test('a scoped native backup request is accepted idempotently and returns only i
     true,
     true,
   );
+});
+
+test('native recovery review requires signed restore scope and rejects paths or browser transport', async () => {
+  await fixture(
+    async ({ operations, effects, pair, signed, call, browser, store }) => {
+      const listPath = '/manager-api/desktop/backups',
+        reviewPath = '/manager-api/desktop/review-restore';
+      const snapshot = '1'.repeat(64),
+        reviewId = randomUUID(),
+        body = JSON.stringify({ snapshot, key: reviewId });
+      operations.listRestoreBackups = async (id) => {
+        assert.equal(id, installationId);
+        effects.push('native-backup-list');
+        return [{ id: snapshot, time: '2026-10-18T00:00:00Z' }];
+      };
+      operations.reviewRestore = async (value, id, key) => {
+        assert.equal(key, reviewId);
+        assert.equal(value, snapshot);
+        assert.equal(id, installationId);
+        effects.push('native-backup-review');
+        return {
+          id: reviewId,
+          snapshot,
+          installationId,
+          state: 'preparing',
+        };
+      };
+      operations.restoreReview = (id, owner) => {
+        assert.equal(id, reviewId);
+        assert.equal(owner, installationId);
+        effects.push('native-backup-review-status');
+        return {
+          id,
+          snapshot,
+          installationId,
+          state: 'prepared',
+          mediaIncluded: false,
+        };
+      };
+      const readOnly = await pair(['status']);
+      const denied = await call(
+        reviewPath,
+        body,
+        signed(readOnly, reviewPath, body, 'restore'),
+      );
+      assert.equal(denied.status, 403);
+      assert.deepEqual(effects, []);
+      const grant = await pair(['status', 'restore']);
+      const listed = await call(
+        listPath,
+        '{}',
+        signed(grant, listPath, '{}', 'restore'),
+      );
+      assert.equal(listed.status, 200);
+      assert.deepEqual(listed.body, [
+        { id: snapshot, time: '2026-10-18T00:00:00Z' },
+      ]);
+      const review = await call(
+        reviewPath,
+        body,
+        signed(grant, reviewPath, body, 'restore'),
+      );
+      assert.equal(review.status, 200);
+      assert.equal(review.body.state, 'preparing');
+      const statusPath = '/manager-api/desktop/restore-review',
+        statusBody = JSON.stringify({ id: reviewId });
+      const prepared = await call(
+        statusPath,
+        statusBody,
+        signed(grant, statusPath, statusBody, 'restore'),
+      );
+      assert.equal(prepared.status, 200);
+      assert.equal(prepared.body.state, 'prepared');
+      assert.equal(prepared.body.mediaIncluded, false);
+      const forbidden = JSON.stringify({
+        snapshot,
+        key: reviewId,
+        databaseRoot: '/private/database',
+      });
+      assert.equal(
+        (
+          await call(
+            reviewPath,
+            forbidden,
+            signed(grant, reviewPath, forbidden, 'restore'),
+          )
+        ).status,
+        400,
+      );
+      assert.equal(
+        (
+          await call(reviewPath, body, {
+            ...signed(grant, reviewPath, body, 'restore'),
+            ...browser,
+          })
+        ).status,
+        403,
+      );
+      const row = store.db
+        .prepare('SELECT value FROM desktop_grants WHERE id=?')
+        .get(grant.id);
+      const saved = JSON.parse(row.value);
+      saved.recentUntil = Date.now() - 1;
+      store.db
+        .prepare('UPDATE desktop_grants SET value=? WHERE id=?')
+        .run(JSON.stringify(saved), grant.id);
+      const expired = await call(
+        reviewPath,
+        body,
+        signed(grant, reviewPath, body, 'restore'),
+      );
+      assert.equal(expired.status, 401);
+      assert.equal(expired.body.code, 'desktop_recent_auth_required');
+      assert.deepEqual(effects, [
+        'native-backup-list',
+        'native-backup-review',
+        'native-backup-review-status',
+      ]);
+    },
+    true,
+  );
+});
+
+test('native recovery endpoints refuse Docker fallthrough even with a valid restore grant', async () => {
+  await fixture(async ({ pair, signed, call, effects }) => {
+    const grant = await pair(['restore']);
+    for (const [path, body] of [
+      ['/manager-api/desktop/backups', '{}'],
+      [
+        '/manager-api/desktop/restore-review',
+        JSON.stringify({ id: randomUUID() }),
+      ],
+      [
+        '/manager-api/desktop/review-restore',
+        JSON.stringify({ snapshot: '1'.repeat(64), key: randomUUID() }),
+      ],
+    ]) {
+      const reply = await call(
+        path,
+        body,
+        signed(grant, path, body, 'restore'),
+      );
+      assert.equal(reply.status, 409);
+      assert.equal(reply.body.code, 'native_recovery_unavailable');
+    }
+    assert.deepEqual(effects, []);
+  });
 });

@@ -46,8 +46,31 @@ export const NativeRestorePreparedSchema = z
   })
   .strict();
 export type NativeRestorePrepared = z.infer<typeof NativeRestorePreparedSchema>;
+export const NativeRestoreVerifiedSchema = z
+  .object({
+    protocolVersion: z.literal(1),
+    state: z.literal('restore-verified'),
+    prepared: NativeRestorePreparedSchema.omit({
+      protocolVersion: true,
+    }).strict(),
+    offlineChecksums: z.literal(true),
+    schemaValidated: z.literal(true),
+    verificationId: operationId,
+  })
+  .strict();
+export type NativeRestoreVerified = z.infer<typeof NativeRestoreVerifiedSchema>;
 export const NativeRestoreReply = z.discriminatedUnion('state', [
   NativeRestorePreparedSchema,
+  NativeRestoreVerifiedSchema,
+  z
+    .object({
+      protocolVersion: z.literal(1),
+      state: z.literal('restore-verify-failed'),
+      operationId,
+      verificationId: operationId,
+      code: z.literal('host_restore_verification_failed'),
+    })
+    .strict(),
   z
     .object({
       protocolVersion: z.literal(1),
@@ -57,3 +80,15 @@ export const NativeRestoreReply = z.discriminatedUnion('state', [
     })
     .strict(),
 ]);
+
+export const NativeRestoreSelectionSchema = z
+  .object({
+    protocolVersion: z.literal(1),
+    state: z.literal('restore-activation-pending'),
+    operationId,
+    generation: operationId,
+  })
+  .strict();
+export type NativeRestoreSelection = z.infer<
+  typeof NativeRestoreSelectionSchema
+>;
