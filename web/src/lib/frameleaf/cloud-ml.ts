@@ -251,8 +251,10 @@ export type WorkloadRow = {
 };
 
 /**
- * Every kind of work in "Where each job runs", in the prototype's order. Search, faces and text
- * recognition stay on this server (§2.8); Studio exports render at home only (§2.7).
+ * Every kind of work in "Where each job runs", in the prototype's order. Text recognition stays on this
+ * server and Studio exports render at home only (§2.7). Search and faces have no route here: they use
+ * Frameleaf Cloud only through the destination's own route, while it offers this server's own models
+ * and their consent is on (FL-455).
  */
 export const mlWorkloads: readonly WorkloadRow[] = Object.freeze([
   { id: 'search', cloud: false, localGb: 2 },

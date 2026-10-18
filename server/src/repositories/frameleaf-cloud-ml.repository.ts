@@ -13,6 +13,7 @@ import {
 } from 'src/repositories/frameleaf-cloud.repository.js';
 import { ML_CLONE_SUSPENDED_DETAIL, ML_REGION_MISMATCH_DETAIL } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
+  CLOUD_CATALOG_INCLUDE,
   CLOUD_IDEMPOTENCY_IN_FLIGHT_DEFAULT_SECONDS,
   CLOUD_IDEMPOTENCY_IN_FLIGHT_MAX_SECONDS,
   CLOUD_IDEMPOTENCY_IN_FLIGHT_RETRIES,
@@ -41,6 +42,7 @@ import {
   cloudRequestBody,
   consentCurrentQuery,
   consentCurrentSchema,
+  consentRecordFeatures,
   consentRecordRequestSchema,
   consentRecordedSchema,
   estimateRequestSchema,
@@ -167,7 +169,11 @@ export class FrameleafCloudMlRepository {
   }
 
   getCatalog(gateway: CloudMlGateway): Promise<CloudCatalog> {
-    return this.request(gateway, catalogSchema, { url: `${gateway.url}/v2/catalog`, dpop: gateway.token });
+    // FL-455: `clip` and `face` entries are only listed when asked for, since older servers refuse them
+    return this.request(gateway, catalogSchema, {
+      url: `${gateway.url}/v2/catalog?include=${CLOUD_CATALOG_INCLUDE.join(',')}`,
+      dpop: gateway.token,
+    });
   }
 
   /**
@@ -575,7 +581,7 @@ export class FrameleafCloudMlRepository {
    */
   getConsent(
     gateway: CloudMlGateway,
-    features?: Pick<CloudConsentFeatures, 'identityNames' | 'medicalSignals'>,
+    features?: Pick<CloudConsentFeatures, 'identityNames' | 'medicalSignals' | 'smartSearch' | 'faceRecognition'>,
   ): Promise<CloudConsentCurrent> {
     return this.request(gateway, consentCurrentSchema, {
       url: `${gateway.url}/v2/consent/current${consentCurrentQuery(features)}`,
@@ -605,7 +611,11 @@ export class FrameleafCloudMlRepository {
     gateway: CloudMlGateway,
     consent: { version: string; features: CloudConsentFeatures; acknowledgedBy?: string },
   ): Promise<CloudConsentRecorded> {
-    const body = cloudRequestBody(consentRecordRequestSchema, consent, 'the consent');
+    const body = cloudRequestBody(
+      consentRecordRequestSchema,
+      { ...consent, features: consentRecordFeatures(consent.features) },
+      'the consent',
+    );
     return await this.request(gateway, consentRecordedSchema, {
       method: 'POST',
       url: `${gateway.url}/v2/consent`,

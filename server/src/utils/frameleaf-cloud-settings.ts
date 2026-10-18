@@ -131,11 +131,12 @@ const ROUTE_WORKLOADS: Record<string, readonly CloudWorkload[]> = {
 /**
  * Cloud processing as the administrator set it up: whether it is on, where each workload runs, the
  * automatic descriptions (`autoBatch`) and their daily budget, the processing terms version accepted, and
- * whether faces may be sent (never, in this version).
+ * whether faces may be sent: the face recognition consent on record (FL-455).
  */
 export const cloudMlSettingsOf = (
   settings: FrameleafCloudConfig['cloudMl'] | undefined,
   consentVersion: string | null | undefined,
+  faceRecognition: boolean = false,
 ): CloudMlSettings | undefined => {
   if (!settings) {
     return undefined;
@@ -155,7 +156,7 @@ export const cloudMlSettingsOf = (
     autoBatch: settings.autoDescribe.enabled,
     dailyBudgetUsd: settings.autoDescribe.dailyBudgetUsd,
     consentVersion: consentVersion ?? null,
-    faces: !!settings.faces?.enabled,
+    faces: !!faceRecognition,
   });
 };
 

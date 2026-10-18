@@ -11,7 +11,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { UserAdmin } from 'src/database.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
-import { DatabaseLock } from 'src/enum.js';
+import { DatabaseLock, MlWorkload } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
@@ -93,7 +93,12 @@ import { AccessRequest, checkAccess, requireAccess } from 'src/utils/access.js';
 import { ConfigHistoryKind, ConfigHistorySource, recordConfigHistory } from 'src/utils/config-history.js';
 import { getConfig, readConfig, updateConfig, withEffectiveConfigWrite } from 'src/utils/config.js';
 import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
-import { MlSelectionRequest, routedMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
+import {
+  MlSelectionRequest,
+  clipTextDestinationId,
+  routedMlDestinationId,
+  selectMlDestination,
+} from 'src/utils/ml-destination.js';
 import { replaceLockedProfileImages } from 'src/utils/profile-image.js';
 import { resolvePublicUrl } from 'src/utils/public-url.js';
 
@@ -488,6 +493,15 @@ export class BaseService {
   protected async selectRoutedMlDestination(request: Omit<MlSelectionRequest, 'destinationId'>) {
     const destinationId = await routedMlDestinationId(this.mlDestinationRepository, request.workload);
     return this.selectMlDestination({ ...request, destinationId });
+  }
+
+  /**
+   * FL-455: admit a CLIP text query (search, smart albums, tags). Search text always stays on this
+   * network, even when smart search itself is routed to Frameleaf Cloud (`clipTextDestinationId`).
+   */
+  protected async selectClipTextDestination(request: Omit<MlSelectionRequest, 'destinationId' | 'workload'> = {}) {
+    const destinationId = await clipTextDestinationId(this.mlDestinationRepository);
+    return this.selectMlDestination({ ...request, workload: MlWorkload.Clip, destinationId, homeOnly: true });
   }
 
   /**

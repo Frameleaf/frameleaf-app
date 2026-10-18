@@ -182,7 +182,7 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     pattern: 'frameleafCloud.cloudMl.faces.enabled',
     kind: 'policy',
     file: 'src/lib/components/frameleaf/cloud/CloudMlSection.svelte',
-    evidence: 'frameleaf_cloud_ml_fact_faces',
+    evidence: 'frameleaf_cloud_ml_faces_stay_home',
   },
   {
     pattern: 'frameleafCloud.cloudMl.routing.*',

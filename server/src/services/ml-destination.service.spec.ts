@@ -392,7 +392,13 @@ describe(MlDestinationService.name, () => {
       const result = await sut.grantConsent(authStub.admin, mlDestinationStub.frameleafCloud.id, {
         acknowledgeMediaLeavesNetwork: true,
         version: '2026-09-25',
-        features: { identityNames: false, medicalSignals: true, ocrAddon: false },
+        features: {
+          identityNames: false,
+          medicalSignals: true,
+          ocrAddon: false,
+          smartSearch: false,
+          faceRecognition: false,
+        },
       });
 
       const gateway = {
@@ -481,7 +487,7 @@ describe(MlDestinationService.name, () => {
           acknowledgeMediaLeavesNetwork: true,
           version: '2026-10-01.2',
           textSha256: shown,
-          features,
+          features: { ...features, smartSearch: false, faceRecognition: false },
         })
         .catch((error: unknown) => error);
       expect(changed).toBeInstanceOf(ConflictException);
@@ -506,7 +512,7 @@ describe(MlDestinationService.name, () => {
         sut.grantConsent(authStub.admin, mlDestinationStub.frameleafCloud.id, {
           acknowledgeMediaLeavesNetwork: true,
           version: '2026-09-25.1',
-          features,
+          features: { ...features, smartSearch: false, faceRecognition: false },
         }),
       ).rejects.toBeInstanceOf(ConflictException);
 
@@ -519,7 +525,7 @@ describe(MlDestinationService.name, () => {
         sut.grantConsent(authStub.admin, mlDestinationStub.frameleafCloud.id, {
           acknowledgeMediaLeavesNetwork: true,
           version: '2026-09-30.4',
-          features,
+          features: { ...features, smartSearch: false, faceRecognition: false },
         }),
       ).rejects.toThrow(/2026-10-01.1/);
       expect(mocks.frameleafCloudMl.recordConsent).not.toHaveBeenCalled();
@@ -1000,7 +1006,7 @@ describe(MlDestinationService.name, () => {
       expect(face.available).toBe(true);
       expect(face.routedDestinationId).toBe(mlDestinationStub.local.id);
       expect(face.destinations.find((d) => d.id === mlDestinationStub.local.id)?.available).toBe(true);
-      // Frameleaf Cloud allows nothing for face and has never been checked healthy.
+      // Frameleaf Cloud is not allowed faces here, offers no matching face model and has never been checked healthy.
       expect(face.destinations.find((d) => d.id === mlDestinationStub.frameleafCloud.id)?.available).toBe(false);
 
       const restoration = result.workloads.find((entry) => entry.workload === MlWorkload.RestorationFaithful)!;

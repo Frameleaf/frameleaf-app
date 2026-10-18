@@ -542,8 +542,8 @@ export const modelLadders: Readonly<Record<LadderWorkload, readonly ModelPositio
 });
 
 /**
- * Local-only work (never offered on the cloud). Faces keep InsightFace buffalo_l under a commercial
- * licence Frameleaf holds (§2.8); search and text recognition stay on this server.
+ * This server's models for search, faces and text recognition. Search and faces may also run on
+ * Frameleaf Cloud, but only with exactly these models, while the cloud offers them (FL-455).
  */
 export const localOnlyModels = Object.freeze({
   search: Object.freeze([{ id: 'clip-vit-b-32', name: 'CLIP ViT-B-32', licence: 'MIT' }]),

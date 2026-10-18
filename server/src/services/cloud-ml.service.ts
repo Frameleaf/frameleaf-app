@@ -20,7 +20,7 @@ import {
 } from 'src/dtos/cloud-ml.dto.js';
 import { MlDestinationResponseDto } from 'src/dtos/ml-destination.dto.js';
 import {
-  FRAMELEAF_CLOUD_ML_WORKLOADS,
+  FRAMELEAF_CLOUD_ELIGIBLE_WORKLOADS,
   FrameleafWorker,
   MachineLearningHardwareAcceleration,
   MediaOperationKind,
@@ -33,6 +33,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { CLOUD_IDENTITY_WORKLOADS, isCloudIdentityWorkload, matchLocalModels } from 'src/utils/cloud-model-identity.js';
 import {
   CloudConnectionState,
   CloudGatewayResolution,
@@ -70,7 +71,13 @@ const CLOUD_ML_SETTLEMENT_LIMIT = 50;
 /** How far back a usage reconcile looks for settlements. */
 export const CLOUD_ML_USAGE_WINDOW_DAYS = 30;
 
-const emptyFeatures = { identityNames: false, medicalSignals: false, ocrAddon: false };
+const emptyFeatures = {
+  identityNames: false,
+  medicalSignals: false,
+  ocrAddon: false,
+  smartSearch: false,
+  faceRecognition: false,
+};
 
 /** Raising the daily cap or turning automatic top-up on is confirmed by the account owner (FL-177). */
 export const WALLET_STEP_UP_MESSAGE =
@@ -171,6 +178,10 @@ export class CloudMlService extends BaseService {
       destination: destination ? await this.toDto(destination) : null,
       consent: null,
       wallet: wallet ? this.toWalletDto(wallet) : null,
+      // FL-455: what the consent dialog and the destination form may offer for smart search and faces
+      matchedModelWorkloads: CLOUD_IDENTITY_WORKLOADS.filter(
+        (workload) => destination?.lastProbeCloud?.localModels?.[workload] !== undefined,
+      ),
       checkedAt: new Date().toISOString(),
     };
     if (resolution.state !== CloudConnectionState.Ready) {
@@ -184,7 +195,7 @@ export class CloudMlService extends BaseService {
         requiredVersion: consent.requiredVersion,
         recordedVersion: consent.recordedVersion,
         acceptedVersion: accepted,
-        features: consent.features,
+        features: { ...emptyFeatures, ...consent.features },
         summary: consent.summary,
         documentUrl: consent.documentUrl,
         // FC-62: the required version only goes up, and never below one this server already accepted
@@ -213,6 +224,9 @@ export class CloudMlService extends BaseService {
       const terms = await this.frameleafCloudMlRepository.getConsent(gateway, {
         identityNames: dto.identityNames ?? false,
         medicalSignals: dto.medicalSignals ?? false,
+        // FL-455: named only when chosen
+        ...(dto.smartSearch && { smartSearch: true }),
+        ...(dto.faceRecognition && { faceRecognition: true }),
       });
       return {
         requiredVersion: terms.requiredVersion,
@@ -567,6 +581,12 @@ export class CloudMlService extends BaseService {
       const modelGroups = Object.fromEntries(
         usableModels.map((model) => [model.sku, catalogGroupKey(model.workload, model.mode)]),
       );
+      // FL-455: smart search and faces are only offered with the catalogue model that is exactly this
+      // server's pinned model (repository, revision, files, preprocessing); no other one is ever sent
+      const localModels = matchLocalModels(usableModels, {
+        [MlWorkload.Clip]: config.machineLearning.clip.modelName,
+        [MlWorkload.Face]: config.machineLearning.facialRecognition.modelName,
+      });
       // FC-34: the model the catalogue marks per group is what work without a chosen model uses; none
       // is guessed
       const facts = cloudFactsFromCapabilities(
@@ -575,6 +595,7 @@ export class CloudMlService extends BaseService {
         modelWorkloads,
         catalogDefaults(usableModels),
         modelGroups,
+        localModels,
       );
       // FL-181 (P1): `restoration` is one wire workload for both modes, so the capability alone
       // cannot tell faithful and creative apart; a mode is only offered once the catalogue itself
@@ -598,10 +619,13 @@ export class CloudMlService extends BaseService {
         // a kind of work set to "Local only" is not served here, so admission refuses it.
         workloads: knownWorkloads(capabilities.workloads).filter((workload) => {
           if (
-            !FRAMELEAF_CLOUD_ML_WORKLOADS.includes(workload) ||
+            !FRAMELEAF_CLOUD_ELIGIBLE_WORKLOADS.includes(workload) ||
             !cloudRouteAllows(config.frameleafCloud.cloudMl, workload)
           ) {
             return false;
+          }
+          if (isCloudIdentityWorkload(workload)) {
+            return localModels[workload] !== undefined;
           }
           if (workload === MlWorkload.RestorationFaithful || workload === MlWorkload.RestorationCreative) {
             return restorationModesInCatalog.has(workload);

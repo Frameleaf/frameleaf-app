@@ -3070,6 +3070,15 @@
         "operationId": "getCloudMlConsentTerms",
         "parameters": [
           {
+            "name": "faceRecognition",
+            "required": false,
+            "in": "query",
+            "description": "The face recognition feature as the administrator chose it",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "identityNames",
             "required": false,
             "in": "query",
@@ -3083,6 +3092,15 @@
             "required": false,
             "in": "query",
             "description": "The medical-signals feature as the administrator chose it",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "smartSearch",
+            "required": false,
+            "in": "query",
+            "description": "The smart search feature as the administrator chose it",
             "schema": {
               "type": "boolean"
             }
@@ -56547,7 +56565,7 @@
       "AdminConfigFrameleafCloudFacesDto": {
         "properties": {
           "enabled": {
-            "description": "Faces never run on Frameleaf Cloud",
+            "description": "Unused; faces on Frameleaf Cloud are turned on with their own consent in the processing terms",
             "enum": [
               false
             ],
@@ -71656,6 +71674,10 @@
       },
       "CloudMlConsentFeaturesDto": {
         "properties": {
+          "faceRecognition": {
+            "description": "Face detection and recognition may run on Frameleaf Cloud",
+            "type": "boolean"
+          },
           "identityNames": {
             "type": "boolean"
           },
@@ -71664,12 +71686,18 @@
           },
           "ocrAddon": {
             "type": "boolean"
+          },
+          "smartSearch": {
+            "description": "Smart search may run on Frameleaf Cloud",
+            "type": "boolean"
           }
         },
         "required": [
+          "faceRecognition",
           "identityNames",
           "medicalSignals",
-          "ocrAddon"
+          "ocrAddon",
+          "smartSearch"
         ],
         "type": "object"
       },
@@ -71797,12 +71825,20 @@
       },
       "CloudMlConsentTermsQueryDto": {
         "properties": {
+          "faceRecognition": {
+            "description": "The face recognition feature as the administrator chose it",
+            "type": "boolean"
+          },
           "identityNames": {
             "description": "The names-in-photos feature as the administrator chose it",
             "type": "boolean"
           },
           "medicalSignals": {
             "description": "The medical-signals feature as the administrator chose it",
+            "type": "boolean"
+          },
+          "smartSearch": {
+            "description": "The smart search feature as the administrator chose it",
             "type": "boolean"
           }
         },
@@ -72023,7 +72059,7 @@
             "type": "string"
           },
           "workloads": {
-            "description": "The workloads Frameleaf Cloud may run; faces, search and text recognition are refused",
+            "description": "The workloads Frameleaf Cloud may run; smart search and faces only run while it offers this server’s own models, text recognition is refused",
             "items": {
               "$ref": "#/components/schemas/MlWorkload"
             },
@@ -72944,6 +72980,13 @@
             "nullable": true,
             "type": "boolean"
           },
+          "matchedModelWorkloads": {
+            "description": "Smart search and faces work Frameleaf Cloud offers with exactly this server's own models, at the last check",
+            "items": {
+              "$ref": "#/components/schemas/MlWorkload"
+            },
+            "type": "array"
+          },
           "region": {
             "description": "The Frameleaf account's data region",
             "nullable": true,
@@ -72967,6 +73010,7 @@
           "detail",
           "enabled",
           "entitled",
+          "matchedModelWorkloads",
           "region",
           "wallet"
         ],
@@ -90875,6 +90919,11 @@
           "features": {
             "description": "Frameleaf Cloud: per-feature choices; every feature is off unless chosen",
             "properties": {
+              "faceRecognition": {
+                "default": false,
+                "description": "Allow face detection and recognition on Frameleaf Cloud",
+                "type": "boolean"
+              },
               "identityNames": {
                 "default": false,
                 "description": "Allow people names in cloud description prompts",
@@ -90888,6 +90937,11 @@
               "ocrAddon": {
                 "default": false,
                 "description": "Allow the cloud text-recognition add-on",
+                "type": "boolean"
+              },
+              "smartSearch": {
+                "default": false,
+                "description": "Allow smart search on Frameleaf Cloud",
                 "type": "boolean"
               }
             },

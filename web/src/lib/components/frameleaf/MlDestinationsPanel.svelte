@@ -103,6 +103,27 @@
     return id ? (destinations.find((destination) => destination.id === id)?.name ?? null) : null;
   };
 
+  /**
+   * FL-455: smart search and faces Frameleaf Cloud offers with exactly this server's own models; only
+   * these may be allowed on the Frameleaf Cloud destination besides its usual work.
+   */
+  let cloudMatched = $state<MlWorkload[]>([]);
+  const loadCloudMatched = async () => {
+    try {
+      const status = await getCloudMlStatus();
+      cloudMatched = status?.matchedModelWorkloads ?? [];
+    } catch {
+      cloudMatched = [];
+    }
+  };
+
+  const hasCloud = $derived(destinations.some((destination) => destination.kind === MlDestinationKind.FrameleafCloud));
+  $effect(() => {
+    if (hasCloud) {
+      untrack(() => void loadCloudMatched());
+    }
+  });
+
   const refresh = async () => {
     const [nextDestinations, nextRoutes] = await Promise.all([listMlDestinations(), getMlWorkloadRoutes()]);
     destinations = nextDestinations;
@@ -254,7 +275,9 @@
       url: destination.url ?? '',
       authToken: '',
       // A workload the kind can no longer run cannot be shown; leave it out so saving clears it.
-      workloads: destination.workloads.filter((workload) => workloadsForKind(destination.kind).includes(workload)),
+      workloads: destination.workloads.filter((workload) =>
+        workloadsForKind(destination.kind, cloudMatched).includes(workload),
+      ),
       budgetLimitUsd: destination.costControls.budgetLimitUsd?.toString() ?? '',
       maxRuntimeMinutes: destination.costControls.maxRuntimeMinutes?.toString() ?? '',
       maxUploadMb:
@@ -671,6 +694,7 @@
     destinationId={consentTarget.id}
     consent={cloudConsent}
     region={cloudRegion}
+    matchedWorkloads={cloudMatched}
     onRecorded={() => {
       statusMessage = $t('admin.frameleaf_ml_destinations_consent_recorded', {
         values: { name: consentTarget?.name ?? '' },
@@ -734,12 +758,12 @@
       {/if}
       <fieldset>
         <legend>{$t('admin.frameleaf_ml_destinations_allowed_workloads')}</legend>
-        {#each workloadsForKind(draft.kind) as workload (workload)}
+        {#each workloadsForKind(draft.kind, cloudMatched) as workload (workload)}
           <label class="check">
             <input
               type="checkbox"
               checked={draft.workloads.includes(workload)}
-              disabled={workloadBlockedInDraft(draft.kind, draft.workloads, workload)}
+              disabled={workloadBlockedInDraft(draft.kind, draft.workloads, workload, cloudMatched)}
               onchange={(event) => toggleWorkload(workload, (event.currentTarget as HTMLInputElement).checked)}
             />
             {$t(mlWorkloadLabelKey(workload))}

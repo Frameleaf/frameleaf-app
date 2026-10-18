@@ -3,7 +3,7 @@ import type { SystemConfig } from 'src/config.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { BootstrapEventPriority, FrameleafWorker, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
+import { BootstrapEventPriority, FrameleafWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
 import { deferJobAdoption, publishJobResult, queueExecution } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -291,7 +291,7 @@ export class SmartAlbumService extends BaseService {
     query: string,
   ): Promise<Float32Array | undefined> {
     if (queueExecution.getStore()) {
-      const selection = await this.selectRoutedMlDestination({ workload: MlWorkload.Clip });
+      const selection = await this.selectClipTextDestination();
       try {
         const raw = await this.machineLearningRepository.encodeText(selection, query, { modelName: clip.modelName });
         const parsed = parseEmbedding(raw);
@@ -310,7 +310,7 @@ export class SmartAlbumService extends BaseService {
     if (cached) {
       return cached;
     }
-    const promise = this.selectRoutedMlDestination({ workload: MlWorkload.Clip })
+    const promise = this.selectClipTextDestination()
       .then((selection) => this.machineLearningRepository.encodeText(selection, query, { modelName: clip.modelName }))
       .then((raw) => {
         const parsed = parseEmbedding(raw);

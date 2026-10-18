@@ -99,7 +99,9 @@ describe('Where work runs (FL-364)', () => {
     expect(screen.queryAllByRole('combobox')).toHaveLength(0);
     // One table, nine rows, in the household names.
     expect(within(row('Faces & identity')).getByText('This server')).toBeInTheDocument();
-    expect(row('Faces & identity')).toHaveTextContent('Works here. Faces never leave home.');
+    expect(row('Faces & identity')).toHaveTextContent(
+      'Works here. Runs at home unless face recognition is turned on for Frameleaf Cloud.',
+    );
     expect(within(row('Enhance & upscale')).getByText('Can’t run yet')).toBeInTheDocument();
     expect(row('Studio export')).toHaveTextContent('Exports are never made on Frameleaf Cloud.');
     expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument();
@@ -182,7 +184,7 @@ describe('Where work runs (FL-364)', () => {
     const picker = await screen.findByRole('combobox', { name: 'Where Descriptions & tags runs' });
     expect(picker).toHaveValue('ask');
     expect(row('Descriptions & tags')).toHaveTextContent('You choose each time you start one.');
-    // Faces never offers Frameleaf Cloud.
+    // Faces has no Frameleaf Cloud choice in this table; it reaches the cloud only through its destination route (FL-455).
     expect(screen.queryByRole('combobox', { name: 'Where Faces & identity runs' })).not.toBeInTheDocument();
 
     await fireEvent.change(picker, { target: { value: 'none' } });

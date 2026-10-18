@@ -259,6 +259,25 @@ describe(MachineLearningRepository.name, () => {
       expect(record).not.toHaveBeenCalled();
     });
 
+    it('never encodes search text on Frameleaf Cloud, even when smart search is routed there (FL-455)', async () => {
+      const fetch = vi.fn();
+      vi.stubGlobal('fetch', fetch);
+      const record = vi.fn();
+      const cloud: MlSelection = {
+        destinationId: 'destination-frameleaf-cloud',
+        kind: MlDestinationKind.FrameleafCloud,
+        workload: MlWorkload.Clip,
+        endpoint: FRAMELEAF_CLOUD_ENDPOINT,
+        record,
+      };
+
+      await expect(
+        sut.encodeText(cloud, 'a dog on a beach', { modelName: defaults.machineLearning.clip.modelName }),
+      ).rejects.toBeInstanceOf(CloudJobsUnavailableError);
+      expect(fetch).not.toHaveBeenCalled();
+      expect(record).not.toHaveBeenCalled();
+    });
+
     it('sends the bearer token of the selected endpoint', async () => {
       const fetch = vi
         .fn()
