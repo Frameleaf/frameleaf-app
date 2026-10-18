@@ -162,10 +162,17 @@ export async function createNativeDatabaseBackup(
     }
     return parsed.data;
   };
-  // A durable verified receipt remains authoritative after scratch and checkpoint cleanup.
+  // Backup retries reuse durable proof; restore retries must freshly read the safety snapshot.
   const verified = receipt(operation, 'native-backup-verified');
-  if (verified !== undefined) return result(verified);
+  if (verified !== undefined && operation.kind === 'backup')
+    return result(verified);
   let encrypted = receipt(operation, 'native-backup-encrypt');
+  if (
+    verified !== undefined &&
+    (encrypted === undefined ||
+      !isDeepStrictEqual(result(verified), result(encrypted)))
+  )
+    throw invalid();
   if (encrypted === undefined) {
     let checkpoint = receipt(operation, 'native-backup-checkpoint');
     if (checkpoint === undefined)
@@ -209,7 +216,14 @@ export async function createNativeDatabaseBackup(
     );
   }
   const pending = result(encrypted);
-  const root = join(store.directory, 'native-backup-verification');
+  const parentDirectory =
+    operation.kind === 'restore' ? context.installation.state : store.directory;
+  const root = join(
+    parentDirectory,
+    operation.kind === 'restore'
+      ? 'restore-safety'
+      : 'native-backup-verification',
+  );
   const cache = join(root, operation.id);
   const intent = {
     directory: cache,
@@ -226,8 +240,8 @@ export async function createNativeDatabaseBackup(
   await step(store, operation, 'native-backup-verified', async () => {
     try {
       if (
-        store.directory !== resolve(store.directory) ||
-        (await realpath(store.directory)) !== store.directory
+        parentDirectory !== resolve(parentDirectory) ||
+        (await realpath(parentDirectory)) !== parentDirectory
       )
         throw verificationFailed();
       await mkdir(root, { mode: 0o700 }).catch(
@@ -239,6 +253,9 @@ export async function createNativeDatabaseBackup(
       if (
         !parent.isDirectory() ||
         parent.isSymbolicLink() ||
+        (operation.kind === 'restore' &&
+          process.platform !== 'win32' &&
+          (parent.mode & 0o077) !== 0) ||
         (await realpath(root)) !== root
       )
         throw verificationFailed();
@@ -259,7 +276,8 @@ export async function createNativeDatabaseBackup(
         await backups.restore(pending.snapshotId, cache);
         await verifyNativeBackupDirectory(cache, pending.recovery);
       } finally {
-        await clearVerificationCache(cache);
+        // Retain restore readback for the private controller's independent admission check.
+        if (operation.kind === 'backup') await clearVerificationCache(cache);
       }
       return pending;
     } catch {
