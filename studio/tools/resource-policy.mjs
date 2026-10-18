@@ -14,6 +14,22 @@ const readApproval = async (studio) => {
   }
 };
 
+const BLOCKED_DECISIONS = { redistribution: 'blocked', localRuntime: 'blocked', hostedUse: 'blocked' };
+const ALLOWED_DECISIONS = { redistribution: 'allowed', localRuntime: 'allowed', hostedUse: 'allowed' };
+// FL-451 (legal review 2026-10-17): model use is personal use by the user, so a licensed model row
+// may be reviewed as allowed. Every other kind keeps the packager's blocked review.
+const MODEL_KINDS = new Set(['model', 'bundled-weights']);
+
+/**
+ * Refuses a reviewed row whose decisions are not the packager's: all blocked, or all allowed on a
+ * model row. A reviewed decision never admits anything by itself; admission is the owner's approval.
+ */
+export function assertReviewedDecisions(resource, message) {
+  const decisions = MODEL_KINDS.has(resource.kind) && resource.decisions?.localRuntime === 'allowed'
+    ? ALLOWED_DECISIONS : BLOCKED_DECISIONS;
+  assert.deepEqual(resource.decisions, decisions, message);
+}
+
 // Paths are literal repository-relative identities, never a URL, query, or encoded alias.
 // Existing bundled npm files are validated too, but do not become network identities.
 function fileBindings(resource, admitted) {
@@ -58,8 +74,9 @@ function fileBindings(resource, admitted) {
  *   (`rights-approval.json`, bound to {@link approvalRowDigest}) for `localRuntime` and did not
  *   withhold that use. The admission carries that row digest, so a row that changes after
  *   approval is blocked again at the next prepare.
- * - The reviewed decisions in `dependency-attribution.json` stay as the packager recorded them;
- *   a manifest row that claims `allowed` itself is refused, so no JSON edit can admit anything.
+ * - The reviewed decisions in `dependency-attribution.json` stay as the packager recorded them:
+ *   all blocked, or all allowed on a licensed model row (FL-451). A non-model row that claims
+ *   `allowed` is refused, and a reviewed `allowed` admits nothing here, so no JSON edit can admit anything.
  * - Everything else, including any id the manifest does not name, stays blocked.
  * - The pinned `locator` and `revision` travel with each entry, so a model fetched by URL is
  *   admitted only from the exact revision the owner approved (see `runtime/resource-admission.mjs`).
@@ -76,7 +93,7 @@ export async function writeResourcePolicy(studio, engine) {
   for (const resource of manifest.resources) {
     assert.ok(resource.id && !Object.hasOwn(policy, resource.id), 'Duplicate resource policy identity');
     // Approval needs the owner's recorded decision, not a JSON edit of the reviewed row.
-    assert.deepEqual(resource.decisions, { redistribution: 'blocked', localRuntime: 'blocked', hostedUse: 'blocked' }, `Unreviewed runtime approval: ${resource.id}`);
+    assertReviewedDecisions(resource, `Unreviewed runtime approval: ${resource.id}`);
     const admitted = approval?.approved.get(resource.id) === true
       && approval.uses.includes('localRuntime')
       && !Object.hasOwn(approval.excluded.get(resource.id) ?? {}, 'localRuntime');

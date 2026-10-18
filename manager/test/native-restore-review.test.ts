@@ -990,6 +990,25 @@ test('restore pre-backup reuses verified encrypted backup and receipt-bound clea
       );
       assert.equal(result.snapshotId, 'f'.repeat(64));
       assert.equal(result.recovery.checkpoint.operationId, operation.id);
+      const artifact = join(
+        context.installation.state,
+        'restore-safety',
+        operation.id,
+      );
+      assert.deepEqual(
+        JSON.parse(await readFile(join(artifact, 'recovery.json'), 'utf8')),
+        result.recovery,
+      );
+      assert.equal(
+        createHash('sha256')
+          .update(await readFile(join(artifact, 'database.dump')))
+          .digest('hex'),
+        result.recovery.checkpoint.dump.sha256,
+      );
+      assert.equal(
+        operation.receipts['native-backup-verification-intent'].directory,
+        artifact,
+      );
       assert.deepEqual(calls, {
         checkpoint: 1,
         initialize: 1,
@@ -1019,7 +1038,7 @@ test('restore pre-backup reuses verified encrypted backup and receipt-bound clea
         checkpoint: 1,
         initialize: 1,
         snapshot: 1,
-        restore: 1,
+        restore: 2,
         cleanup: 1,
       });
     },
@@ -1553,4 +1572,101 @@ test('a long bounded readback starts the review confirmation window after verifi
       now.mock.restore();
     }
   });
+});
+
+test('restore retry freshly reads the safety snapshot and rejects corruption despite its durable verified receipt', async () => {
+  await preBackupFixture(
+    async ({ store, runtime, engine, context, operation, calls }) => {
+      const verified = await completeNativeDatabaseBackup(
+        store,
+        runtime,
+        engine,
+        context,
+        operation,
+      );
+      engine.corrupt = true;
+      await assert.rejects(
+        completeNativeDatabaseBackup(
+          store,
+          runtime,
+          engine,
+          context,
+          operation,
+        ),
+        /native_backup_verification_failed/,
+      );
+      assert.deepEqual(operation.receipts['native-backup-verified'], verified);
+      assert.equal(store.history()[0].state, 'running');
+      assert.deepEqual(calls, {
+        checkpoint: 1,
+        initialize: 1,
+        snapshot: 1,
+        restore: 2,
+        cleanup: 1,
+      });
+      engine.corrupt = false;
+      assert.deepEqual(
+        await completeNativeDatabaseBackup(
+          store,
+          runtime,
+          engine,
+          context,
+          operation,
+        ),
+        verified,
+      );
+      assert.deepEqual(calls, {
+        checkpoint: 1,
+        initialize: 1,
+        snapshot: 1,
+        restore: 3,
+        cleanup: 1,
+      });
+      operation.receipts['native-backup-encrypt'].snapshotId = 'e'.repeat(64);
+      store.save(operation);
+      await assert.rejects(
+        completeNativeDatabaseBackup(
+          store,
+          runtime,
+          engine,
+          context,
+          operation,
+        ),
+        /native_backup_journal_invalid/,
+      );
+      assert.equal(calls.restore, 3);
+    },
+  );
+});
+
+test('restore safety readback preserves an unknown preexisting artifact before any engine restore', async () => {
+  await preBackupFixture(
+    async ({ store, runtime, engine, context, operation, calls }) => {
+      const artifact = join(
+        context.installation.state,
+        'restore-safety',
+        operation.id,
+      );
+      await mkdir(artifact, { recursive: true, mode: 0o700 });
+      await writeFile(join(artifact, 'database.dump'), 'foreign artifact', {
+        mode: 0o600,
+      });
+      await assert.rejects(
+        completeNativeDatabaseBackup(
+          store,
+          runtime,
+          engine,
+          context,
+          operation,
+        ),
+        /native_backup_verification_failed/,
+      );
+      assert.equal(
+        await readFile(join(artifact, 'database.dump'), 'utf8'),
+        'foreign artifact',
+      );
+      assert.equal(calls.restore, 0);
+      assert.equal(store.history()[0].state, 'running');
+    },
+  );
 });

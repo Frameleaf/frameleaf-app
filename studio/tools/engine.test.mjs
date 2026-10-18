@@ -280,7 +280,13 @@ test('runtime policy admits exactly the owner-approved rows and keeps everything
     assert.equal(narrowed.canUseResource('model:walterlow/RIFE_fp32_timestep'), false);
 
     // A reviewed row cannot admit itself: approval is the owner's record, not a JSON edit.
-    manifest.resources[0].decisions.localRuntime = 'allowed';
+    // Licensed model rows are reviewed as allowed (FL-451); any other row claiming it is refused.
+    manifest.resources.find(({ id }) => id === 'font:Inter').decisions.localRuntime = 'allowed';
+    await writeFile(path.join(root, 'dependency-attribution.json'), JSON.stringify(manifest));
+    await assert.rejects(writeResourcePolicy(root, engine), /Unreviewed runtime approval/);
+    // A model row is reviewed as a whole: partly allowed is refused too.
+    manifest.resources.find(({ id }) => id === 'font:Inter').decisions.localRuntime = 'blocked';
+    manifest.resources.find(({ id }) => id === 'model:Xenova/musicgen-small').decisions.hostedUse = 'blocked';
     await writeFile(path.join(root, 'dependency-attribution.json'), JSON.stringify(manifest));
     await assert.rejects(writeResourcePolicy(root, engine), /Unreviewed runtime approval/);
   } finally { await rm(root, { recursive: true, force: true }); }
