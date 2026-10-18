@@ -3,7 +3,7 @@ import { createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { open, rename, rm } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
-import { Refusal, containerId, imageDigest, type Database, type Mount } from './contracts.js';
+import { Refusal, containerId, imageDigest, redact, type Database, type Mount } from './contracts.js';
 import { publishFile } from './files.js';
 
 export type Container = {
@@ -31,6 +31,8 @@ export type CommandOptions = {
   executable?: string;
   input?: string;
   inputFile?: string;
+  /** The reader may stop once it has what it needs (pg_restore --list reads only the table of contents). */
+  inputMayCloseEarly?: boolean;
   outputFile?: string;
   timeout?: number;
   cwd?: string;
@@ -56,13 +58,17 @@ export async function command(
   });
   const timer = setTimeout(() => child.kill('SIGKILL'), options.timeout ?? 120_000);
   let result = Buffer.alloc(0),
-    tooLarge = false;
-  // Never retain stderr: Docker, pg_dump and restic failures can contain database credentials.
-  child.stderr.resume();
+    tooLarge = false,
+    exit = 'not started',
+    stderr = '';
+  // stderr can contain credentials: keep only a short tail in memory, redacted before it is logged.
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk: string) => (stderr = (stderr + chunk).slice(-STDERR_TAIL)));
   const exited = new Promise<void>((resolve, reject) => {
     child.once('error', () => reject(new Refusal(`${binary}_unavailable`, 503)));
-    child.once('close', (code) => {
+    child.once('close', (code, signal) => {
       clearTimeout(timer);
+      exit = signal ? `signal ${signal}` : tooLarge ? 'output too large' : `exit ${code}`;
       code === 0 && !tooLarge ? resolve() : reject(new Refusal(`${binary}_operation_failed`, 503));
     });
   });
@@ -78,7 +84,13 @@ export async function command(
         child.kill('SIGKILL');
       } else result = Buffer.concat([result, chunk]);
     });
-  if (options.inputFile) transfers.push(pipeline(createReadStream(options.inputFile), child.stdin));
+  if (options.inputFile)
+    transfers.push(
+      pipeline(createReadStream(options.inputFile), child.stdin).catch((error: NodeJS.ErrnoException) => {
+        // The exit code still decides success; only the reader hanging up early is tolerated.
+        if (!(options.inputMayCloseEarly && ['EPIPE', 'ERR_STREAM_PREMATURE_CLOSE'].includes(error.code ?? ''))) throw error;
+      }),
+    );
   else {
     child.stdin.on('error', () => {});
     child.stdin.end(options.input);
@@ -92,11 +104,26 @@ export async function command(
   } catch (error) {
     child.kill('SIGKILL');
     await Promise.allSettled([exited, ...transfers]);
+    logFailure(binary, args, exit, stderr, error);
     if (options.outputFile) await rm(`${options.outputFile}.partial`, { force: true });
     throw error;
   } finally {
     clearTimeout(timer);
   }
+}
+
+const STDERR_TAIL = 2048;
+const SECRET_ARGUMENT = /^([A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|KEY)[A-Z0-9_]*)=(.*)$/is;
+/** One redacted line for the container log: what ran, how it ended and the end of stderr. */
+function logFailure(binary: string, args: string[], exit: string, stderr: string, error: unknown): void {
+  const secrets = args.map((arg) => SECRET_ARGUMENT.exec(arg)?.[2] ?? '').filter(Boolean);
+  const shown = args
+    .map((arg) => arg.replace(SECRET_ARGUMENT, '$1=[redacted]'))
+    .map((arg) => (arg.length > 120 ? `${arg.slice(0, 117)}...` : arg))
+    .join(' ');
+  const reason = error instanceof Refusal ? error.code : ((error as NodeJS.ErrnoException)?.code ?? String(error));
+  const tail = redact(stderr, secrets).trim().replaceAll(/\s+/g, ' ');
+  console.error(redact(`manager: command failed (${reason}, ${exit}): ${binary} ${shown}${tail ? ` | stderr: ${tail}` : ''}`, secrets));
 }
 
 export const environment = (c: Container) =>
@@ -106,13 +133,16 @@ export const environment = (c: Container) =>
       return [line.slice(0, at), line.slice(at + 1)];
     }),
   );
+// Docker lists mounts in no fixed order; reviews and fingerprints need a stable one.
 export const mounts = (c: Container): Mount[] =>
-  c.Mounts.filter((m) => m.Type === 'bind' || m.Type === 'volume').map((m) => ({
-    type: m.Type as 'bind' | 'volume',
-    source: m.Type === 'volume' ? m.Name! : m.Source,
-    target: m.Destination,
-    readOnly: !m.RW,
-  }));
+  c.Mounts.filter((m) => m.Type === 'bind' || m.Type === 'volume')
+    .map((m) => ({
+      type: m.Type as 'bind' | 'volume',
+      source: m.Type === 'volume' ? m.Name! : m.Source,
+      target: m.Destination,
+      readOnly: !m.RW,
+    }))
+    .sort((a, b) => a.target.localeCompare(b.target) || a.source.localeCompare(b.source));
 export const overlap = (a: string, b: string): boolean =>
   a === b || a.startsWith(`${b.replace(/\/$/, '')}/`) || b.startsWith(`${a.replace(/\/$/, '')}/`);
 export function sharesMedia(c: Container, media: Mount[], all: Container[] = []): boolean {
@@ -256,7 +286,11 @@ export class Docker {
   }
   async verifyDump(db: Database, file: string): Promise<void> {
     containerId.parse(db.container);
-    await this.execute('docker', ['exec', '-i', db.container, 'pg_restore', '--list'], { inputFile: file });
+    // pg_restore --list exits after the table of contents; the rest of the stream is never read.
+    await this.execute('docker', ['exec', '-i', db.container, 'pg_restore', '--list'], {
+      inputFile: file,
+      inputMayCloseEarly: true,
+    });
   }
   async restartPolicy(id: string, policy: string): Promise<void> {
     containerId.parse(id);

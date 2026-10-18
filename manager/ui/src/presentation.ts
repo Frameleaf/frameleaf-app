@@ -127,6 +127,15 @@ const refusals: Record<string, string> = {
   release_verification_timeout: 'Checking the release took too long. Try again.',
   release_verification_failed: 'This release did not pass signature and checksum verification, so Manager will not use it.',
   release_architecture_unavailable: 'This release has no images for this server’s processor type.',
+  source_changed_review_again:
+    'The Immich installation changed after it was reviewed. Review the import again so Manager works from its current settings.',
+  port_in_use:
+    'Another app on this server is already using that port. Choose a different Frameleaf port. Immich’s own port is fine for an import, because Immich is stopped first.',
+  docker_operation_failed:
+    'A Docker command did not finish. The Manager container log has the command, exit code and error output. Fix the cause, then resume.',
+  docker_unavailable: 'Manager could not run Docker. Check that the Docker socket is mapped into Manager.',
+  operation_failed:
+    'This step stopped with an unexpected error. The Manager container log has the details. Completed steps are kept, so you can resume.',
 };
 export const readable = (value: string) => {
   const refused = /^server_refused_(\d{3})$/.exec(value);
