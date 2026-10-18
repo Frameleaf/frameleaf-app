@@ -38,6 +38,7 @@ describe(EdgeProxyService.name, () => {
           'x-frameleaf-via-auth': 'guess',
           'x-frameleaf-anything': 'dropped',
           'x-frameleaf-worker-session': 'kept',
+          'x-frameleaf-manager': 'dropped',
         },
         arrival,
         SECRET,

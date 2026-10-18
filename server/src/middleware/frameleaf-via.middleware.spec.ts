@@ -102,10 +102,20 @@ describe('frameleafViaMiddleware (FL-161)', () => {
     expect(request.headers['x-frameleaf-worker-session']).toBe('session-token');
   });
 
+  it('keeps the Manager credential on a loopback request, which Manager sends from inside the container', () => {
+    const request = run({ 'x-frameleaf-manager': 'manager-token' });
+    expect(request.headers['x-frameleaf-manager']).toBe('manager-token');
+  });
+
+  it('drops the Manager credential from a request that came through remote access', () => {
+    const request = run({ 'x-frameleaf-via': 'wan', 'x-frameleaf-via-auth': secret, 'x-frameleaf-manager': 'guess' });
+    expect(request.headers['x-frameleaf-manager']).toBeUndefined();
+  });
+
   it('reads the arrival before the headers are stripped', () => {
     const headers = { 'x-frameleaf-via': 'wan', 'x-frameleaf-via-auth': secret };
     expect(readFrameleafArrival(headers, secret).via).toBe('wan');
-    stripFrameleafHeaders(headers);
+    stripFrameleafHeaders(headers, false);
     expect(readFrameleafArrival(headers, secret).via).toBeNull();
   });
 

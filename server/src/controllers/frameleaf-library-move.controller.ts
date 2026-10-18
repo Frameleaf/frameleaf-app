@@ -6,7 +6,7 @@ import {
   LibraryMovePauseStatusDto,
   LibraryMoveResumeDto,
 } from 'src/dtos/frameleaf-library-move.dto.js';
-import { ApiTag } from 'src/enum.js';
+import { ApiTag, RequestHeader } from 'src/enum.js';
 import { Authenticated } from 'src/middleware/auth.guard.js';
 import { FrameleafLibraryMoveService } from 'src/services/frameleaf-library-move.service.js';
 import { FrameleafLibrarySetupService } from 'src/services/frameleaf-library-setup.service.js';
@@ -30,7 +30,7 @@ export class FrameleafLibraryMoveController {
     history,
   })
   async status(
-    @Headers('x-frameleaf-manager') token?: string,
+    @Headers(RequestHeader.ManagerToken) token?: string,
     @Query('operationId') operationId?: string,
   ): Promise<LibraryMovePauseStatusDto> {
     await this.setup.authorizeManager(token);
@@ -46,7 +46,7 @@ export class FrameleafLibraryMoveController {
     history,
   })
   async pause(
-    @Headers('x-frameleaf-manager') token: string | undefined,
+    @Headers(RequestHeader.ManagerToken) token: string | undefined,
     @Body() dto: LibraryMovePauseDto,
   ): Promise<LibraryMovePauseStatusDto> {
     await this.setup.authorizeManager(token);
@@ -62,7 +62,7 @@ export class FrameleafLibraryMoveController {
     history,
   })
   async resume(
-    @Headers('x-frameleaf-manager') token: string | undefined,
+    @Headers(RequestHeader.ManagerToken) token: string | undefined,
     @Body() dto: LibraryMoveResumeDto,
   ): Promise<LibraryMovePauseStatusDto> {
     await this.setup.authorizeManager(token);

@@ -75,7 +75,7 @@ export const upstreamHeaders = (
     }
     copy[lower] = value;
   }
-  stripFrameleafHeaders(copy);
+  stripFrameleafHeaders(copy, true);
   const host = arrival.buddyRecovery
     ? arrival.host
     : typeof headers.host === 'string' && headers.host
