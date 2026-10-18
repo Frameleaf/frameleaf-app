@@ -26,6 +26,7 @@ const Installation = z
   .strict()
   .refine((value) => value.databasePort !== value.apiPort);
 export type NativeInstallation = z.infer<typeof Installation>;
+export { Installation as NativeInstallationSchema };
 const Running = z
   .object({
     protocolVersion: z.literal(1),

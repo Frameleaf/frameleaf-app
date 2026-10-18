@@ -371,3 +371,28 @@ export async function cleanupNativeCheckpointStage(
     throw changed();
   }
 }
+
+/** Read only the bounded, exact native restore inventory; no source paths are accepted from metadata. */
+export async function readNativeBackupDirectory(
+  path: string,
+): Promise<NativeRecoveryRecord> {
+  try {
+    await directory(path);
+    for (const file of [
+      path,
+      join(path, 'database.dump'),
+      join(path, 'recovery.json'),
+    ]) {
+      const value = await lstat(file);
+      if (process.platform !== 'win32' && (value.mode & 0o077) !== 0)
+        throw changed();
+    }
+    const recovery = NativeRecovery.parse(
+      await json(join(path, 'recovery.json')),
+    );
+    await verifyNativeBackupDirectory(path, recovery);
+    return recovery;
+  } catch {
+    throw changed();
+  }
+}
