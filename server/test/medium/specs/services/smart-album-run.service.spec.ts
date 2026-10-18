@@ -504,6 +504,8 @@ describe('durable smart-album reevaluation', () => {
       await f.ctx.updateConfig(config);
       clearConfigCache();
       const destinations = f.ctx.getMock(MlDestinationRepository);
+      // FL-455: search text routed to Frameleaf Cloud looks for this server's own machine learning; there is none
+      destinations.getAll.mockResolvedValue([]);
       const route = await destinations.getRoute(MlWorkload.Clip);
       const original = (await destinations.getById(route!.destinationId))!;
       destinations.getById.mockResolvedValue(
