@@ -6,9 +6,11 @@ import { digest, Refusal, type Operation } from '../contracts.js';
 import { Store } from '../store.js';
 import {
   NativeRestoreInputBinding,
+  NativeRestorePreparedSchema,
   NativeRestoreReply,
   type NativeRestoreBinding,
   type NativeRestorePrepared,
+  type NativeRestoreVerified,
 } from './native-restore-contract.js';
 
 const localPath = z
@@ -142,6 +144,10 @@ export interface NativeRuntime {
     binding: NativeRestoreBinding,
     signal?: AbortSignal,
   ): Promise<NativeRestorePrepared>;
+  verifyRestore(
+    prepared: NativeRestorePrepared,
+    signal?: AbortSignal,
+  ): Promise<NativeRestoreVerified>;
   stop(): Promise<StopReceipt>;
   checkpoint(
     operationId: string,
@@ -178,9 +184,13 @@ type Owner = {
   fault: Refusal | null;
   startupTimer?: ReturnType<typeof setTimeout>;
   stopTimer?: ReturnType<typeof setTimeout>;
+  verificationIds: Set<string>;
   restore?: {
+    prepared?: Omit<NativeRestorePrepared, 'protocolVersion'>;
     binding: NativeRestoreBinding;
-    work: ReturnType<typeof deferred<NativeRestorePrepared>>;
+    work: ReturnType<
+      typeof deferred<NativeRestorePrepared | NativeRestoreVerified>
+    >;
     cleanup: () => void;
   };
   checkpoint?: {
@@ -231,6 +241,32 @@ export class NativeHost implements NativeRuntime {
     input: NativeRestoreBinding,
     signal?: AbortSignal,
   ): Promise<NativeRestorePrepared> {
+    return this.requestRestore(
+      input,
+      undefined,
+      signal,
+    ) as Promise<NativeRestorePrepared>;
+  }
+  verifyRestore(
+    input: NativeRestorePrepared,
+    signal?: AbortSignal,
+  ): Promise<NativeRestoreVerified> {
+    const parsed = NativeRestorePreparedSchema.safeParse(input);
+    if (!parsed.success)
+      return Promise.reject(new Refusal('native_restore_request_invalid'));
+    // The protocol version belongs only to the outer controller envelope.
+    const { protocolVersion, ...prepared } = parsed.data;
+    return this.requestRestore(
+      prepared.binding,
+      prepared,
+      signal,
+    ) as Promise<NativeRestoreVerified>;
+  }
+  private requestRestore(
+    input: NativeRestoreBinding,
+    prepared: Omit<NativeRestorePrepared, 'protocolVersion'> | undefined,
+    signal?: AbortSignal,
+  ): Promise<NativeRestorePrepared | NativeRestoreVerified> {
     const parsed = NativeRestoreInputBinding.safeParse(input);
     if (
       !parsed.success ||
@@ -256,7 +292,7 @@ export class NativeHost implements NativeRuntime {
     if (owner.restore || owner.checkpoint)
       return Promise.reject(new Refusal('native_restore_busy'));
     const binding = parsed.data,
-      work = deferred<NativeRestorePrepared>();
+      work = deferred<NativeRestorePrepared | NativeRestoreVerified>();
     const abort = () => this.stopOwner(owner);
     const timer = setTimeout(() => {
       owner.fault ??= new Refusal('native_restore_timeout');
@@ -265,6 +301,7 @@ export class NativeHost implements NativeRuntime {
     timer.unref();
     owner.restore = {
       binding,
+      prepared,
       work,
       cleanup: () => {
         clearTimeout(timer);
@@ -276,9 +313,9 @@ export class NativeHost implements NativeRuntime {
       owner.child.stdin.write(
         JSON.stringify({
           protocolVersion: 1,
-          action: 'prepare-restore',
+          action: prepared ? 'verify-restore' : 'prepare-restore',
           operationId: binding.operationId,
-          binding,
+          ...(prepared ? { prepared } : { binding }),
         }) + '\n',
       );
     } catch {
@@ -309,6 +346,7 @@ export class NativeHost implements NativeRuntime {
       stopping: false,
       finished: false,
       fault: null,
+      verificationIds: new Set(),
     };
     this.observed = null;
     this.owner = owner;
@@ -709,22 +747,42 @@ export class NativeHost implements NativeRuntime {
           const operation =
             receipt.state === 'restore-prepared'
               ? receipt.binding.operationId
-              : receipt.operationId;
+              : receipt.state === 'restore-verified'
+                ? receipt.prepared.binding.operationId
+                : receipt.operationId;
+          const verifying =
+            receipt.state === 'restore-verified' ||
+            receipt.state === 'restore-verify-failed';
           if (
             !owner.readySeen ||
             owner.stoppedSeen ||
             owner.mode !== 'restore-prepare' ||
             !request ||
             operation !== request.binding.operationId ||
+            Boolean(request.prepared) !== verifying ||
+            (verifying && owner.verificationIds.has(receipt.verificationId)) ||
+            (receipt.state === 'restore-verified' &&
+              !isDeepStrictEqual(receipt.prepared, request.prepared)) ||
             (receipt.state === 'restore-prepared' &&
               !isDeepStrictEqual(receipt.binding, request.binding))
           )
             return fail('native_host_protocol_invalid');
+          if (verifying) owner.verificationIds.add(receipt.verificationId);
           owner.restore = undefined;
           request.cleanup();
-          if (receipt.state === 'restore-prepared')
+          if (
+            receipt.state === 'restore-prepared' ||
+            receipt.state === 'restore-verified'
+          )
             request.work.resolve(receipt);
-          else request.work.reject(new Refusal('native_restore_failed'));
+          else
+            request.work.reject(
+              new Refusal(
+                verifying
+                  ? 'native_restore_verification_failed'
+                  : 'native_restore_failed',
+              ),
+            );
         } else if (checkpoint.success) {
           const receipt = checkpoint.data;
           const request = owner.checkpoint;

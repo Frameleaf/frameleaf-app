@@ -91,6 +91,9 @@ async function fixture(run: (f: any) => Promise<void>) {
     startRestorePreparation: async () => {
       throw new Refusal('native_restore_unavailable');
     },
+    verifyRestore: async () => {
+      throw new Refusal('native_restore_unavailable');
+    },
     prepareRestore: async () => {
       throw new Refusal('native_restore_unavailable');
     },
