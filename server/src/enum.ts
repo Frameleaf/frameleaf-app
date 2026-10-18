@@ -2484,6 +2484,8 @@ export enum DatabaseLock {
    * enrols, issues certificates and listens, however many containers run one.
    */
   FrameleafEdge = 963,
+  /** FL-455: one pass over Frameleaf Cloud smart search and faces batches runs at a time, across every worker. */
+  FrameleafCloudMlLibraryBatch = 964,
   /** FL-162: the kept Frameleaf Cloud job estimates change one at a time, so a confirmation is taken once. */
   FrameleafCloudMlJobEstimates = 970,
   /** FL-292: claims of a new server happen one at a time. */

@@ -222,7 +222,7 @@ export class CloudLibraryBatchService extends BaseService {
 
   @OnJob({ name: JobName.CloudMlLibraryBatch, queue: QueueName.BackgroundTask })
   async handleBatchPass(): Promise<JobStatus> {
-    await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudMlBatch, () => this.runPass());
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudMlLibraryBatch, () => this.runPass());
     return JobStatus.Success;
   }
 
