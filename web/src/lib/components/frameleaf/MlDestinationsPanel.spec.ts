@@ -188,8 +188,6 @@ describe('MlDestinationsPanel (FL-110)', () => {
             identityNames: false,
             medicalSignals: false,
             ocrAddon: false,
-            smartSearch: false,
-            faceRecognition: false,
           },
         },
       }),

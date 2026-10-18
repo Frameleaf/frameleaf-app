@@ -107,8 +107,6 @@ describe('CloudMlConsentDialog (FL-159)', () => {
           identityNames: false,
           medicalSignals: true,
           ocrAddon: false,
-          smartSearch: false,
-          faceRecognition: false,
         },
       },
     });

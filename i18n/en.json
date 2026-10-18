@@ -128,7 +128,7 @@
     "frameleaf_cloud_ml_consent_feature_medical": "Describe health and medical details",
     "frameleaf_cloud_ml_consent_feature_medical_help": "Lets descriptions mention visible medical devices, injuries or conditions.",
     "frameleaf_cloud_ml_consent_feature_names": "Allow names written in photos",
-    "frameleaf_cloud_ml_consent_feature_names_help": "Allow names that are written in a photo, like a name badge or a caption, to appear in its description. The names you give people in Frameleaf are never sent.",
+    "frameleaf_cloud_ml_consent_feature_names_help": "Allow names that are written in a photo, like a name badge or a caption, to appear in its description; the names you give people in Frameleaf are never sent.",
     "frameleaf_cloud_ml_consent_feature_smart_search": "Prepare smart search on Frameleaf Cloud",
     "frameleaf_cloud_ml_consent_feature_smart_search_help": "Sends a preview of each photo. Frameleaf Cloud reads what it shows with the same model this server uses, and this server keeps the result for search. What you search for never leaves this server.",
     "frameleaf_cloud_ml_consent_features": "Optional features",

@@ -192,8 +192,6 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
           identityNames: false,
           medicalSignals: false,
           ocrAddon: false,
-          smartSearch: false,
-          faceRecognition: false,
         },
       },
     });
