@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { open, rename, rm } from 'node:fs/promises';
+import { isAbsolute, resolve } from 'node:path';
 import { Refusal, containerId, imageDigest, type Database, type Mount } from './contracts.js';
 import { publishFile } from './files.js';
 
@@ -26,6 +27,8 @@ export type Container = {
   NetworkSettings: { Networks: Record<string, { IPAddress: string; Aliases?: string[]; DNSNames?: string[] }> };
 };
 export type CommandOptions = {
+  /** Fixed packaged executable selected by a trusted adapter, never an HTTP request. */
+  executable?: string;
   input?: string;
   inputFile?: string;
   outputFile?: string;
@@ -39,9 +42,13 @@ export async function command(
   args: string[],
   options: CommandOptions = {},
 ): Promise<string> {
+  if (options.executable !== undefined &&
+    (!options.executable || options.executable.includes('\0') ||
+      !isAbsolute(options.executable) || resolve(options.executable) !== options.executable))
+    throw new Refusal('command_executable_invalid');
   // An incomplete transfer is never a receipt; the operation lock makes its retry exclusive.
   if (options.outputFile) await rm(`${options.outputFile}.partial`, { force: true });
-  const child = spawn(binary, args, {
+  const child = spawn(options.executable ?? binary, args, {
     shell: false,
     cwd: options.cwd,
     stdio: ['pipe', 'pipe', 'pipe'],
