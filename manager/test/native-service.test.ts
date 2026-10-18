@@ -88,6 +88,12 @@ async function fixture(run: (f: any) => Promise<void>) {
     checkpoint: async () => {
       throw new Refusal('native_checkpoint_unavailable');
     },
+    startRestorePreparation: async () => {
+      throw new Refusal('native_restore_unavailable');
+    },
+    prepareRestore: async () => {
+      throw new Refusal('native_restore_unavailable');
+    },
     startCheckpointCleanup: async () => {
       throw new Refusal('native_checkpoint_unavailable');
     },

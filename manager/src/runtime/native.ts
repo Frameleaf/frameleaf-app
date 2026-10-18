@@ -4,6 +4,12 @@ import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { digest, Refusal, type Operation } from '../contracts.js';
 import { Store } from '../store.js';
+import {
+  NativeRestoreInputBinding,
+  NativeRestoreReply,
+  type NativeRestoreBinding,
+  type NativeRestorePrepared,
+} from './native-restore-contract.js';
 
 const localPath = z
   .string()
@@ -44,6 +50,10 @@ const CleanupReady = Running.extend({
   state: z.literal('checkpoint-cleanup-ready'),
 }).strict();
 type CleanupReceipt = z.infer<typeof CleanupReady>;
+const RestoreReady = Running.extend({
+  state: z.literal('restore-prepare-ready'),
+}).strict();
+type RestoreReceipt = z.infer<typeof RestoreReady>;
 const Stopped = z
   .object({ protocolVersion: z.literal(1), state: z.literal('stopped') })
   .strict();
@@ -127,6 +137,11 @@ export interface NativeRuntime {
   start(): Promise<Ready>;
   startDatabase(): Promise<DatabaseReceipt>;
   startCheckpointCleanup(): Promise<CleanupReceipt>;
+  startRestorePreparation(): Promise<RestoreReceipt>;
+  prepareRestore(
+    binding: NativeRestoreBinding,
+    signal?: AbortSignal,
+  ): Promise<NativeRestorePrepared>;
   stop(): Promise<StopReceipt>;
   checkpoint(
     operationId: string,
@@ -151,8 +166,10 @@ function deferred<T>() {
 }
 type Owner = {
   child: ChildProcessWithoutNullStreams | null;
-  mode: 'server' | 'database' | 'checkpoint-cleanup';
-  ready: ReturnType<typeof deferred<Ready | DatabaseReceipt | CleanupReceipt>>;
+  mode: 'server' | 'database' | 'checkpoint-cleanup' | 'restore-prepare';
+  ready: ReturnType<
+    typeof deferred<Ready | DatabaseReceipt | CleanupReceipt | RestoreReceipt>
+  >;
   closed: ReturnType<typeof deferred<StopReceipt>>;
   readySeen: boolean;
   stoppedSeen: boolean;
@@ -161,6 +178,11 @@ type Owner = {
   fault: Refusal | null;
   startupTimer?: ReturnType<typeof setTimeout>;
   stopTimer?: ReturnType<typeof setTimeout>;
+  restore?: {
+    binding: NativeRestoreBinding;
+    work: ReturnType<typeof deferred<NativeRestorePrepared>>;
+    cleanup: () => void;
+  };
   checkpoint?: {
     operationId: string;
     work: ReturnType<
@@ -202,9 +224,72 @@ export class NativeHost implements NativeRuntime {
   startCheckpointCleanup(): Promise<CleanupReceipt> {
     return this.startOwner('checkpoint-cleanup') as Promise<CleanupReceipt>;
   }
+  startRestorePreparation(): Promise<RestoreReceipt> {
+    return this.startOwner('restore-prepare') as Promise<RestoreReceipt>;
+  }
+  prepareRestore(
+    input: NativeRestoreBinding,
+    signal?: AbortSignal,
+  ): Promise<NativeRestorePrepared> {
+    const parsed = NativeRestoreInputBinding.safeParse(input);
+    if (
+      !parsed.success ||
+      !checkpointOperation.safeParse(parsed.data.operationId).success ||
+      !checkpointOperation.safeParse(parsed.data.reviewId).success ||
+      parsed.data.installationId !== this.installation.id ||
+      parsed.data.manifestSha256 !== this.installation.manifestSha256 ||
+      parsed.data.sourceRevision !== this.installation.sourceRevision
+    )
+      return Promise.reject(new Refusal('native_restore_request_invalid'));
+    if (signal?.aborted)
+      return Promise.reject(new Refusal('native_restore_cancelled'));
+    const owner = this.owner;
+    if (
+      !owner?.child ||
+      owner.mode !== 'restore-prepare' ||
+      !owner.readySeen ||
+      owner.stopping ||
+      owner.finished ||
+      owner.fault
+    )
+      return Promise.reject(new Refusal('native_restore_unavailable'));
+    if (owner.restore || owner.checkpoint)
+      return Promise.reject(new Refusal('native_restore_busy'));
+    const binding = parsed.data,
+      work = deferred<NativeRestorePrepared>();
+    const abort = () => this.stopOwner(owner);
+    const timer = setTimeout(() => {
+      owner.fault ??= new Refusal('native_restore_timeout');
+      this.stopOwner(owner);
+    }, 7_200_000);
+    timer.unref();
+    owner.restore = {
+      binding,
+      work,
+      cleanup: () => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', abort);
+      },
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+    try {
+      owner.child.stdin.write(
+        JSON.stringify({
+          protocolVersion: 1,
+          action: 'prepare-restore',
+          operationId: binding.operationId,
+          binding,
+        }) + '\n',
+      );
+    } catch {
+      owner.fault ??= new Refusal('native_host_pipe_failed');
+      this.stopOwner(owner);
+    }
+    return work.promise;
+  }
   private startOwner(
-    mode: 'server' | 'database' | 'checkpoint-cleanup',
-  ): Promise<Ready | DatabaseReceipt | CleanupReceipt> {
+    mode: 'server' | 'database' | 'checkpoint-cleanup' | 'restore-prepare',
+  ): Promise<Ready | DatabaseReceipt | CleanupReceipt | RestoreReceipt> {
     if (this.inspecting)
       return Promise.reject(new Refusal('native_runtime_busy'));
     if (this.owner && !this.owner.finished) {
@@ -215,7 +300,9 @@ export class NativeHost implements NativeRuntime {
     const owner: Owner = {
       child: null,
       mode,
-      ready: deferred<Ready | DatabaseReceipt | CleanupReceipt>(),
+      ready: deferred<
+        Ready | DatabaseReceipt | CleanupReceipt | RestoreReceipt
+      >(),
       closed: deferred<StopReceipt>(),
       readySeen: false,
       stoppedSeen: false,
@@ -273,6 +360,7 @@ export class NativeHost implements NativeRuntime {
       return Promise.reject(new Refusal('native_checkpoint_cancelled'));
     const owner = this.owner;
     if (
+      owner?.mode === 'restore-prepare' ||
       (owner?.mode === 'checkpoint-cleanup' && !expected) ||
       !owner?.child ||
       !owner.readySeen ||
@@ -281,7 +369,7 @@ export class NativeHost implements NativeRuntime {
       owner.fault
     )
       return Promise.reject(new Refusal('native_checkpoint_unavailable'));
-    if (owner.checkpoint)
+    if (owner.checkpoint || owner.restore)
       return Promise.reject(new Refusal('native_checkpoint_busy'));
     const work = deferred<NativeCheckpoint | NativeCheckpointCleaned>();
     const abort = () => this.stopOwner(owner);
@@ -331,6 +419,8 @@ export class NativeHost implements NativeRuntime {
     if (!owner) return { state: 'unknown', code: 'native_owner_not_attached' };
     if (owner.fault) return { state: 'unknown', code: owner.fault.code };
     if (owner.finished) return { state: 'stopped' };
+    if (owner.mode === 'restore-prepare' && !owner.stopping)
+      return { state: 'unknown', code: 'native_restore_maintenance' };
     if (owner.mode === 'checkpoint-cleanup' && !owner.stopping)
       return {
         state: 'unknown',
@@ -469,6 +559,10 @@ export class NativeHost implements NativeRuntime {
     owner.checkpoint?.work.reject(
       owner.fault ?? new Refusal('native_checkpoint_cancelled'),
     );
+    owner.restore?.cleanup();
+    owner.restore?.work.reject(
+      owner.fault ?? new Refusal('native_restore_cancelled'),
+    );
     owner.ready.reject(owner.fault ?? new Refusal('native_start_cancelled'));
     if (!owner.child) return;
     owner.child.stdin.end('stop\n');
@@ -488,6 +582,11 @@ export class NativeHost implements NativeRuntime {
       owner.fault ?? new Refusal('native_checkpoint_cancelled'),
     );
     owner.checkpoint = undefined;
+    owner.restore?.cleanup();
+    owner.restore?.work.reject(
+      owner.fault ?? new Refusal('native_restore_cancelled'),
+    );
+    owner.restore = undefined;
     if (owner.fault) {
       owner.ready.reject(owner.fault);
       owner.closed.reject(owner.fault);
@@ -583,13 +682,16 @@ export class NativeHost implements NativeRuntime {
         }
         pending = pending.subarray(newline + 1);
         const running = (
-          owner.mode === 'checkpoint-cleanup'
-            ? CleanupReady
-            : owner.mode === 'database'
-              ? DatabaseReady
-              : Running
+          owner.mode === 'restore-prepare'
+            ? RestoreReady
+            : owner.mode === 'checkpoint-cleanup'
+              ? CleanupReady
+              : owner.mode === 'database'
+                ? DatabaseReady
+                : Running
         ).safeParse(value);
         const checkpoint = CheckpointReply.safeParse(value);
+        const restore = NativeRestoreReply.safeParse(value);
         if (running.success && !owner.readySeen && !owner.stoppedSeen) {
           const expected = this.installation;
           if (
@@ -601,6 +703,28 @@ export class NativeHost implements NativeRuntime {
           owner.readySeen = true;
           clearTimeout(owner.startupTimer);
           if (!owner.stopping) owner.ready.resolve(running.data);
+        } else if (restore.success) {
+          const receipt = restore.data,
+            request = owner.restore;
+          const operation =
+            receipt.state === 'restore-prepared'
+              ? receipt.binding.operationId
+              : receipt.operationId;
+          if (
+            !owner.readySeen ||
+            owner.stoppedSeen ||
+            owner.mode !== 'restore-prepare' ||
+            !request ||
+            operation !== request.binding.operationId ||
+            (receipt.state === 'restore-prepared' &&
+              !isDeepStrictEqual(receipt.binding, request.binding))
+          )
+            return fail('native_host_protocol_invalid');
+          owner.restore = undefined;
+          request.cleanup();
+          if (receipt.state === 'restore-prepared')
+            request.work.resolve(receipt);
+          else request.work.reject(new Refusal('native_restore_failed'));
         } else if (checkpoint.success) {
           const receipt = checkpoint.data;
           const request = owner.checkpoint;

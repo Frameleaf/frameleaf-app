@@ -7,6 +7,7 @@ import { digest, Refusal, type Operation } from '../contracts.js';
 import { Store } from '../store.js';
 import { NativeCheckpointSchema, type NativeRuntime } from './native.js';
 import { createNativeRecovery, NativeRecovery } from './native-recovery.js';
+import { stageNativeRestoreInput } from './native-restore-input.js';
 import {
   stageNativeCheckpoint,
   verifyNativeBackupDirectory,
@@ -30,15 +31,27 @@ function receipt(operation: Operation, key: string): unknown | undefined {
   if (completed !== present) throw invalid();
   return present ? operation.receipts[key] : undefined;
 }
+function assertNativeBackupOwner(store: Store, operation: Operation) {
+  if (
+    operation.state !== 'running' ||
+    !isDeepStrictEqual(
+      store.history().find((value) => value.id === operation.id),
+      operation,
+    )
+  )
+    throw invalid();
+}
 async function step(
   store: Store,
   operation: Operation,
   key: string,
   work: () => Promise<unknown>,
 ) {
+  assertNativeBackupOwner(store, operation);
   operation.step = key;
   store.save(operation);
   const value = await work();
+  assertNativeBackupOwner(store, operation);
   operation.receipts[key] = value;
   if (!operation.completed.includes(key)) operation.completed.push(key);
   store.save(operation);
@@ -86,10 +99,15 @@ export async function createNativeDatabaseBackup(
   operation: Operation,
 ): Promise<z.infer<typeof Result>> {
   if (
-    operation.kind !== 'backup' ||
+    !['backup', 'restore'].includes(operation.kind) ||
     operation.state !== 'running' ||
     !Array.isArray(operation.completed) ||
-    !isDeepStrictEqual(operation.input, runtime.identity) ||
+    !isDeepStrictEqual(
+      operation.input,
+      operation.kind === 'restore'
+        ? { reviewId: operation.input?.reviewId, ...runtime.identity }
+        : runtime.identity,
+    ) ||
     runtime.identity.runtime !== 'native' ||
     runtime.identity.installationId !== context.installation.id ||
     runtime.identity.fingerprint !== digest(context.installation) ||
@@ -99,6 +117,34 @@ export async function createNativeDatabaseBackup(
     )
   )
     throw invalid();
+  if (operation.kind === 'restore') {
+    const intent = operation.receipts['native-restore-prebackup-intent'];
+    if (
+      !intent ||
+      !operation.completed.includes('native-restore-input') ||
+      !operation.receipts['native-restore-input']
+    )
+      throw invalid();
+    const staged = await stageNativeRestoreInput(
+      store,
+      {
+        installation: context.installation,
+        libraryId: context.libraryId,
+        release: context.release,
+      },
+      operation,
+    );
+    const status = runtime.status();
+    if (
+      !isDeepStrictEqual(intent, {
+        schemaVersion: 1,
+        binding: staged.binding,
+      }) ||
+      status.state !== 'unknown' ||
+      status.code !== 'native_database_maintenance'
+    )
+      throw invalid();
+  }
   const bound = { ...context, operation };
   const result = (value: unknown) => {
     const parsed = Result.safeParse(value);
@@ -204,6 +250,7 @@ export async function createNativeDatabaseBackup(
             throw error;
           });
         if (exists) throw verificationFailed();
+        assertNativeBackupOwner(store, operation);
         operation.receipts[intentKey] = intent;
         store.save(operation);
       }
@@ -256,6 +303,7 @@ export async function completeNativeDatabaseBackup(
     context,
     operation,
   );
+  assertNativeBackupOwner(store, operation);
   const expectedOwner = {
     ...result.recovery.checkpoint,
     state: 'checkpoint-cleaned',
@@ -280,6 +328,7 @@ export async function completeNativeDatabaseBackup(
       return cleaned;
     });
   if (intent === undefined) {
+    assertNativeBackupOwner(store, operation);
     operation.receipts[intentKey] = expectedStage;
     store.save(operation);
   }

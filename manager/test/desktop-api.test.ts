@@ -117,6 +117,12 @@ async function fixture(
             throw new Refusal('native_checkpoint_unavailable');
           },
           status: () => ({ state: 'running' }),
+          startRestorePreparation: async () => {
+            throw new Refusal('native_restore_unavailable');
+          },
+          prepareRestore: async () => {
+            throw new Refusal('native_restore_unavailable');
+          },
           startCheckpointCleanup: async () => {
             throw new Refusal('native_checkpoint_unavailable');
           },
