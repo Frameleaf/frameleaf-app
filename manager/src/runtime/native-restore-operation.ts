@@ -5,6 +5,7 @@ import { Store } from '../store.js';
 import { nativeStopped, type NativeRuntime } from './native.js';
 import { z } from 'zod';
 import { createNativeRecovery, NativeRecovery } from './native-recovery.js';
+import { completeNativeDatabaseBackup } from './native-backup-journal.js';
 import { stageNativeRestoreInput } from './native-restore-input.js';
 import { NativeRestoreContextSchema } from './native-restore-review.js';
 import {
@@ -15,6 +16,135 @@ import {
 } from './native-restore-contract.js';
 
 type Context = Parameters<typeof stageNativeRestoreInput>[1];
+
+/** Keeps the parent restore locked while the original database is backed up and drained. */
+export async function runNativeRestorePrebackup(
+  store: Store,
+  runtime: NativeRuntime,
+  backups: Parameters<typeof completeNativeDatabaseBackup>[2],
+  input: Parameters<typeof completeNativeDatabaseBackup>[3],
+  operation: Operation,
+  signal?: AbortSignal,
+) {
+  const { name, ...reviewContext } = input;
+  const context = NativeRestoreContextSchema.parse(reviewContext);
+  const identity = {
+    runtime: 'native',
+    installationId: context.installation.id,
+    fingerprint: digest(context.installation),
+  };
+  const invalid = () => new Refusal('native_restore_journal_invalid');
+  function stillOwned() {
+    if (
+      operation.kind !== 'restore' ||
+      operation.state !== 'running' ||
+      !isDeepStrictEqual(runtime.identity, identity) ||
+      store.get('native-library-id') !== context.libraryId ||
+      !isDeepStrictEqual(
+        store.history().find((value) => value.id === operation.id),
+        operation,
+      )
+    )
+      throw invalid();
+  }
+  function cancelled() {
+    if (signal?.aborted) throw new Refusal('native_restore_cancelled');
+  }
+  stillOwned();
+  cancelled();
+  const staged = await stageNativeRestoreInput(store, context, operation);
+  stillOwned();
+  cancelled();
+  const key = 'native-restore-prebackup-intent';
+  const intent = { schemaVersion: 1, binding: staged.binding };
+  if (
+    operation.receipts[key] !== undefined &&
+    !isDeepStrictEqual(operation.receipts[key], intent)
+  )
+    throw invalid();
+  const status = runtime.status();
+  if (
+    status.state === 'starting' ||
+    status.state === 'stopping' ||
+    (status.state === 'unknown' &&
+      status.code !== 'native_owner_not_attached' &&
+      operation.receipts[key] === undefined)
+  )
+    throw new Refusal('native_restore_owner_unavailable');
+  const stopIntent = { ...identity, operationId: operation.id };
+  if (
+    operation.receipts['native-restore-prebackup-stop-intent'] !== undefined &&
+    !isDeepStrictEqual(
+      operation.receipts['native-restore-prebackup-stop-intent'],
+      stopIntent,
+    )
+  )
+    throw invalid();
+  record(key, intent);
+  // Persist authorization before stopping writers or recovering an interrupted maintenance owner.
+  record('native-restore-prebackup-stop-intent', stopIntent);
+  await drain();
+  cancelled();
+  let ownsHost = false;
+  try {
+    if (!operation.completed.includes('native-backup-owner-cleaned')) {
+      const cleanup = operation.completed.includes('native-backup-verified');
+      stillOwned();
+      operation.step = cleanup
+        ? 'native-restore-prebackup-start-cleanup'
+        : 'native-restore-prebackup-start-database';
+      store.save(operation);
+      ownsHost = true;
+      const ready = cleanup
+        ? await runtime.startCheckpointCleanup()
+        : await runtime.startDatabase();
+      stillOwned();
+      cancelled();
+      if (
+        !isDeepStrictEqual(ready, {
+          protocolVersion: 1,
+          state: cleanup ? 'checkpoint-cleanup-ready' : 'database-ready',
+          manifestSha256: context.installation.manifestSha256,
+          sourceRevision: context.installation.sourceRevision,
+          certified: context.installation.certified,
+        })
+      )
+        throw new Refusal('native_host_identity_changed');
+    }
+    const result = await completeNativeDatabaseBackup(
+      store,
+      runtime,
+      backups,
+      { ...context, name },
+      operation,
+    );
+    stillOwned();
+    cancelled();
+    return result;
+  } finally {
+    if (ownsHost) await drain();
+  }
+  function record(key: string, value: unknown) {
+    stillOwned();
+    operation.step = key;
+    operation.receipts[key] = value;
+    if (!operation.completed.includes(key)) operation.completed.push(key);
+    store.save(operation);
+  }
+  async function drain() {
+    let journalError: unknown;
+    try {
+      stillOwned();
+      operation.step = 'native-restore-prebackup-stop-owner';
+      store.save(operation);
+    } catch (error) {
+      journalError = error;
+    }
+    const stopped = nativeStopped(await runtime.stop(), context.installation);
+    if (journalError) throw journalError;
+    record('native-restore-prebackup-stop-owner', stopped);
+  }
+}
 
 /** Preparation retains the operation lock; only the later activation protocol can complete restore. */
 export async function runNativeRestorePreparation(

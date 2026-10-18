@@ -1361,3 +1361,171 @@ test('selection rejects missing safety cleanup, changed proof and failed selecti
       else assert.equal(f.calls.at(-1), 'stop');
     });
 });
+
+function preBackupRunner() {
+  assert.equal(typeof restoreOperation.runNativeRestorePrebackup, 'function');
+  return restoreOperation.runNativeRestorePrebackup;
+}
+async function preBackupOwnerFixture(run) {
+  await preBackupFixture(async (f) => {
+    delete f.operation.receipts['native-restore-prebackup-intent'];
+    f.store.save(f.operation);
+    f.setState({ state: 'running' });
+    const lifecycle = [];
+    f.runtime.stop = async () => {
+      lifecycle.push('stop');
+      f.setState({ state: 'stopped' });
+      return { protocolVersion: 1, state: 'stopped' };
+    };
+    function ready(state) {
+      return {
+        protocolVersion: 1,
+        state,
+        manifestSha256: f.context.installation.manifestSha256,
+        sourceRevision: f.context.installation.sourceRevision,
+        certified: f.context.installation.certified,
+      };
+    }
+    f.runtime.startDatabase = async () => {
+      lifecycle.push('database');
+      f.setState({ state: 'unknown', code: 'native_database_maintenance' });
+      return ready('database-ready');
+    };
+    f.runtime.startCheckpointCleanup = async () => {
+      lifecycle.push('cleanup');
+      f.setState({
+        state: 'unknown',
+        code: 'native_checkpoint_cleanup_maintenance',
+      });
+      return ready('checkpoint-cleanup-ready');
+    };
+    await run({ ...f, lifecycle });
+  });
+}
+
+test('restore prebackup owner drains writers, verifies safety and stops without releasing the restore lock', async () => {
+  const run = preBackupRunner();
+  await preBackupOwnerFixture(async (f) => {
+    const result = await run(
+      f.store,
+      f.runtime,
+      f.engine,
+      f.context,
+      f.operation,
+    );
+    assert.equal(result.snapshotId, 'f'.repeat(64));
+    assert.deepEqual(f.lifecycle, ['stop', 'database', 'stop']);
+    assert.equal(f.calls.checkpoint, 1);
+    assert.equal(f.calls.cleanup, 1);
+    assert.equal(f.operation.state, 'running');
+    assert.throws(
+      () => f.store.start('start', 'competing', {}),
+      /operation_in_progress/,
+    );
+    await run(f.store, f.runtime, f.engine, f.context, f.operation);
+    assert.equal(f.calls.checkpoint, 1);
+    assert.equal(f.calls.snapshot, 1);
+    assert.deepEqual(f.lifecycle, ['stop', 'database', 'stop', 'stop']);
+  });
+});
+
+test('restore prebackup owner resumes checkpoint cleanup without restarting normal database mode', async () => {
+  const run = preBackupRunner();
+  await preBackupOwnerFixture(async (f) => {
+    const cleanup = f.runtime.cleanupCheckpoint;
+    f.runtime.cleanupCheckpoint = async () => {
+      throw new Error('interrupted cleanup');
+    };
+    await assert.rejects(
+      run(f.store, f.runtime, f.engine, f.context, f.operation),
+      /interrupted cleanup/,
+    );
+    assert.deepEqual(f.lifecycle, ['stop', 'database', 'stop']);
+    f.runtime.cleanupCheckpoint = cleanup;
+    await run(f.store, f.runtime, f.engine, f.context, f.operation);
+    assert.deepEqual(f.lifecycle, [
+      'stop',
+      'database',
+      'stop',
+      'stop',
+      'cleanup',
+      'stop',
+    ]);
+    assert.equal(f.calls.checkpoint, 1);
+    assert.equal(f.calls.snapshot, 1);
+  });
+});
+
+test('restore prebackup owner refuses changed input before stopping writers and drains failed readiness', async () => {
+  const run = preBackupRunner();
+  await preBackupOwnerFixture(async (f) => {
+    f.operation.receipts['native-restore-prebackup-intent'] = {
+      schemaVersion: 1,
+      binding: {},
+    };
+    f.store.save(f.operation);
+    await assert.rejects(
+      run(f.store, f.runtime, f.engine, f.context, f.operation),
+    );
+    assert.deepEqual(f.lifecycle, []);
+  });
+  await preBackupOwnerFixture(async (f) => {
+    const start = f.runtime.startDatabase;
+    f.runtime.startDatabase = async () => ({
+      ...(await start()),
+      sourceRevision: '0'.repeat(40),
+    });
+    await assert.rejects(
+      run(f.store, f.runtime, f.engine, f.context, f.operation),
+      /native_host_identity_changed/,
+    );
+    assert.deepEqual(f.lifecycle, ['stop', 'database', 'stop']);
+    assert.equal(f.calls.checkpoint, 0);
+  });
+});
+
+test('restore prebackup owner drains cancelled readiness and retries a faulted owner only with matching prior intent', async () => {
+  const run = preBackupRunner();
+  await preBackupOwnerFixture(async (f) => {
+    const cancellation = new AbortController(),
+      start = f.runtime.startDatabase;
+    f.runtime.startDatabase = async () => {
+      const ready = await start();
+      cancellation.abort();
+      return ready;
+    };
+    await assert.rejects(
+      run(
+        f.store,
+        f.runtime,
+        f.engine,
+        f.context,
+        f.operation,
+        cancellation.signal,
+      ),
+      /native_restore_cancelled/,
+    );
+    assert.deepEqual(f.lifecycle, ['stop', 'database', 'stop']);
+    assert.equal(f.calls.checkpoint, 0);
+    f.setState({ state: 'unknown', code: 'native_host_pipe_failed' });
+    f.runtime.startDatabase = start;
+    await run(f.store, f.runtime, f.engine, f.context, f.operation);
+    assert.deepEqual(f.lifecycle, [
+      'stop',
+      'database',
+      'stop',
+      'stop',
+      'database',
+      'stop',
+    ]);
+    assert.equal(f.calls.checkpoint, 1);
+  });
+  await preBackupOwnerFixture(async (f) => {
+    f.setState({ state: 'unknown', code: 'native_host_pipe_failed' });
+    await assert.rejects(
+      run(f.store, f.runtime, f.engine, f.context, f.operation),
+      /native_restore_owner_unavailable/,
+    );
+    assert.deepEqual(f.lifecycle, []);
+  });
+});
