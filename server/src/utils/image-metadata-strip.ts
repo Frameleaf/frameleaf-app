@@ -150,7 +150,7 @@ export const stripWebpMetadata = (input: Buffer): Buffer => {
     if (end > size) {
       return fail('a WebP chunk is cut short');
     }
-    if (id === 'VP8 ' || id === 'VP8L' || id === 'ANMF') {
+    if (['VP8 ', 'VP8L', 'ANMF'].includes(id)) {
       image = true;
     }
     if (id !== 'EXIF' && id !== 'XMP ') {

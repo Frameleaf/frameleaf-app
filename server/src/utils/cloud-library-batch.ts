@@ -5,9 +5,9 @@ import type { FrameleafCloudLibraryQueue } from 'src/types.js';
 import type { CloudJobUploadState } from 'src/utils/frameleaf-cloud-job-client.js';
 import { DatabaseLock, MlDestinationKind, MlWorkload, SystemMetadataKey } from 'src/enum.js';
 import {
+  CLOUD_LIBRARY_FAILURE_WARNINGS,
   type CloudClipResult,
   type CloudFaceResult,
-  CLOUD_LIBRARY_FAILURE_WARNINGS,
   decodeCloudEmbedding,
 } from 'src/utils/frameleaf-cloud.js';
 
@@ -352,7 +352,7 @@ export class CloudLibraryQueueWriter {
       clearTimeout(this.timer);
       this.timer = undefined;
     }
-    const items = [...this.pending.values()];
+    const items = this.pending.values().toArray();
     this.pending.clear();
     this.writing = this.writing
       .catch(() => {})
