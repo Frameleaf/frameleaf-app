@@ -5,13 +5,20 @@ import { Refusal, sha256, type Operation } from './contracts.js';
 import type { ManagerLifecycle } from './runtime/contract.js';
 import { Security } from './security.js';
 import { Store } from './store.js';
+import type { NativeService } from './runtime/native-service.js';
 
 const NATIVE = '/manager-api/desktop/';
 const BROWSER = '/manager-api/desktop-grants';
 const nativePaths = new Set(
-  ['redeem', 'status', 'control', 'operation', 'resume'].map(
-    (name) => NATIVE + name,
-  ),
+  [
+    'redeem',
+    'status',
+    'control',
+    'operation',
+    'resume',
+    'backups',
+    'review-restore',
+  ].map((name) => NATIVE + name),
 );
 const browserPaths = new Set([
   BROWSER,
@@ -30,6 +37,7 @@ export function desktopApi(
   security: Security,
   grants: DesktopGrants,
   operations: ManagerLifecycle,
+  recovery?: Pick<NativeService, 'listRestoreBackups' | 'reviewRestore'>,
 ) {
   const router = express.Router({ caseSensitive: true, strict: true });
   const bodies = new WeakMap<Request, Buffer>();
@@ -210,6 +218,23 @@ export function desktopApi(
     response.json({
       id: operations.control(value.action, value.key, current.id).id,
     });
+  });
+  router.post(NATIVE + 'backups', async (request, response) => {
+    Empty.parse(request.body);
+    const current = authorize(request, 'restore');
+    if (!recovery) throw new Refusal('native_recovery_unavailable');
+    response.json(await recovery.listRestoreBackups(current.id));
+  });
+  router.post(NATIVE + 'review-restore', async (request, response) => {
+    const { snapshot } = z
+      .object({
+        snapshot: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .strict()
+      .parse(request.body);
+    const current = authorize(request, 'restore');
+    if (!recovery) throw new Refusal('native_recovery_unavailable');
+    response.json(await recovery.reviewRestore(snapshot, current.id));
   });
   router.post(NATIVE + 'operation', (request, response) => {
     const { id } = Id.parse(request.body),

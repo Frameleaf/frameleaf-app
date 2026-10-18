@@ -12,6 +12,7 @@ import { Store } from '../store.js';
 import { command } from '../docker.js';
 import { Backups } from '../backups.js';
 import { runNativeDatabaseBackup } from './native-backup-operation.js';
+import { prepareNativeRestoreReview } from './native-restore-review.js';
 import { nativeListener } from './native-listener.js';
 import { NativeHost, NativeOperations, type NativeRuntime } from './native.js';
 
@@ -303,6 +304,10 @@ export function nativeBackupCommand(
 /** The installed supervisor owns bootstrap authority; Manager owns the existing operation journal. */
 export class NativeService {
   private readonly lifecycle: NativeOperations;
+  private readonly recoveryContext: Parameters<
+    typeof prepareNativeRestoreReview
+  >[2];
+  private reviewPending = false;
   readonly runtime: NativeRuntime;
   readonly backupCommand: typeof command;
   readonly backupPassword: () => Promise<string>;
@@ -362,6 +367,11 @@ export class NativeService {
       name: bootstrap.name,
       release: bootstrap.release,
     };
+    this.recoveryContext = {
+      installation: context.installation,
+      libraryId,
+      release: context.release,
+    };
     this.lifecycle = new NativeOperations(
       store,
       this.runtime,
@@ -400,6 +410,42 @@ export class NativeService {
   }
   installation() {
     return this.publicInstallation;
+  }
+  async listRestoreBackups(installationId: string) {
+    if (installationId !== this.publicInstallation.id)
+      throw new Refusal('installation_changed');
+    if (!this.backups) throw new Refusal('native_backup_unavailable');
+    const result = z
+      .array(
+        z
+          .object({
+            id: z.string().regex(/^[a-f0-9]{64}$/),
+            time: z.string().datetime({ offset: true }),
+          })
+          .strict(),
+      )
+      .safeParse(
+        (await this.backups.list()).map(({ id, time }) => ({ id, time })),
+      );
+    if (!result.success) throw new Refusal('native_backup_index_invalid');
+    return result.data;
+  }
+  async reviewRestore(snapshot: string, installationId: string) {
+    if (installationId !== this.publicInstallation.id)
+      throw new Refusal('installation_changed');
+    if (!this.backups) throw new Refusal('native_backup_unavailable');
+    if (this.reviewPending) throw new Refusal('native_restore_review_busy');
+    this.reviewPending = true;
+    try {
+      return await prepareNativeRestoreReview(
+        this.store,
+        this.backups,
+        this.recoveryContext,
+        snapshot,
+      );
+    } finally {
+      this.reviewPending = false;
+    }
   }
   control(
     action: 'start' | 'stop' | 'restart' | 'backup',
