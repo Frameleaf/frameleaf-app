@@ -34,23 +34,24 @@ export const COMPATIBLE_SETTINGS = [
   'backup',
 ];
 export function sourceFingerprint(containers: Container[]): string {
+  // Docker returns Mounts (and aliases) in no fixed order: sort every unordered list before hashing.
+  // Env, Cmd and Entrypoint keep their order; it is meaningful.
+  const sorted = <T>(items: T[], key: (item: T) => string) => [...items].sort((a, b) => key(a).localeCompare(key(b)));
   return digest(
-    containers
-      .sort((a, b) => a.Id.localeCompare(b.Id))
-      .map((c) => ({
-        id: c.Id,
-        image: c.Image,
-        config: c.Config,
-        mounts: c.Mounts,
-        host: c.HostConfig,
-        // Addresses change when a container stops; attachment names and aliases are configuration.
-        networks: Object.fromEntries(
-          Object.entries(c.NetworkSettings.Networks).map(([name, network]) => [
-            name,
-            { aliases: network.Aliases ?? [] },
-          ]),
-        ),
-      })),
+    sorted(containers, (c) => c.Id).map((c) => ({
+      id: c.Id,
+      image: c.Image,
+      config: c.Config,
+      mounts: sorted(c.Mounts, (m) => JSON.stringify([m.Destination, m.Type, m.Source, m.Name ?? ''])),
+      host: c.HostConfig,
+      // Addresses change when a container stops; attachment names and aliases are configuration.
+      networks: Object.fromEntries(
+        sorted(Object.entries(c.NetworkSettings.Networks), ([name]) => name).map(([name, network]) => [
+          name,
+          { aliases: sorted(network.Aliases ?? [], (alias) => alias) },
+        ]),
+      ),
+    })),
   );
 }
 export function databaseCandidates(app: Container, all: Container[], host: string): Container[] {

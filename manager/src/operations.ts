@@ -23,6 +23,7 @@ import {
   type Database,
   type Backup,
   publicSource,
+  redact,
 } from './contracts.js';
 
 export const ReviewInput = z
@@ -251,7 +252,7 @@ export class Operations {
       if (!input.mediaPath) throw new Refusal('media_path_required');
       await storagePath(input.mediaPath, this.roots, 1024 ** 3);
     }
-    await this.checkPort(input.port);
+    await this.checkPort(input.port, null, source);
     const databaseStorage = await this.databaseStorage.validate(
       input.databaseRoot,
       (source?.summary.databaseBytes ?? 1024 ** 3) * 3,
@@ -291,12 +292,18 @@ export class Operations {
         'Database only. Photos, videos and external libraries stay in place. After Frameleaf writes to media, a database backup alone cannot safely return the library to Immich.',
     };
   }
-  async checkPort(port: number, installation?: Installation | null): Promise<void> {
+  /**
+   * An import may reuse the port of the Immich it replaces: Immich is stopped with restart disabled
+   * before Frameleaf starts, and source recovery stops Frameleaf before restarting Immich.
+   */
+  async checkPort(port: number, installation?: Installation | null, source?: Source | null): Promise<void> {
     const containers = await this.docker.inventory();
+    const replaced = new Set(source ? [...source.workers, source.database.container] : []);
     if (
       containers.some(
         (c) =>
           c.State.Running &&
+          !replaced.has(c.Id) &&
           (!installation || c.Config.Labels?.['app.frameleaf.manager'] !== installation.id) &&
           Object.values(c.HostConfig.PortBindings ?? {}).some((values) =>
             values?.some((v) => Number(v.HostPort) === port),
@@ -331,6 +338,11 @@ export class Operations {
       .catch((error) => {
         operation.state = 'failed';
         operation.error = error instanceof Refusal ? error.code : 'operation_failed';
+        // Codes only reach the journal; the container log says which step failed and why.
+        console.error(
+          redact(`manager: ${operation.kind} failed at ${operation.step ?? 'start'}: ${operation.error}` +
+            (error instanceof Refusal ? '' : ` (${(error as NodeJS.ErrnoException)?.code ?? (error as Error)?.message ?? error})`)),
+        );
         this.store.save(operation);
       })
       .finally(() => this.executing.delete(operation.id));
@@ -413,7 +425,7 @@ export class Operations {
       if (this.installation()) throw new Refusal('installation_already_exists');
       await this.releases.eligible(review.input.tag);
       if (review.source) await this.discovery.revalidate(review.source);
-      await this.checkPort(review.input.port);
+      await this.checkPort(review.input.port, null, review.source);
       await this.databaseStorage.validate(
         review.input.databaseRoot,
         (review.source?.summary.databaseBytes ?? 1024 ** 3) * 3,
