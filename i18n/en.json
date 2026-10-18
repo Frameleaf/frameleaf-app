@@ -2432,6 +2432,7 @@
   "frameleaf_activity_kind_bulk": "Bulk operation",
   "frameleaf_activity_kind_cloud_backup": "Cloud backup",
   "frameleaf_activity_kind_cloud_description_batch": "Frameleaf Cloud descriptions",
+  "frameleaf_activity_kind_cloud_library_batch": "Frameleaf Cloud smart search and faces",
   "frameleaf_activity_kind_cloud_ml_job": "Frameleaf Cloud job",
   "frameleaf_activity_kind_cloud_restoration": "Frameleaf Cloud restoration",
   "frameleaf_activity_kind_cloud_restore": "Restore from cloud backup",

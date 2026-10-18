@@ -209,7 +209,7 @@ export type CloudOffer = Readonly<{
  * because every model runs for the user's own personal use there (FL-451, legal review 2026-10-17).
  */
 export type ModelPosition = Readonly<{
-  workload: LadderWorkload;
+  workload: SliderWorkload;
   id: string;
   name: string;
   short: string;
