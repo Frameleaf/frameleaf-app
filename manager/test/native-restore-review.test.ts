@@ -17,6 +17,7 @@ import { createHash } from 'node:crypto';
 import { Store } from '../src/store.js';
 import { digest } from '../src/contracts.js';
 import { stageNativeRestoreInput } from '../src/runtime/native-restore-input.js';
+import { completeNativeDatabaseBackup } from '../src/runtime/native-backup-journal.js';
 import * as restoreOperation from '../src/runtime/native-restore-operation.js';
 import filesystem from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
@@ -864,6 +865,280 @@ test('restore preparation preserves cancellation during readiness and does not i
       assert.deepEqual(calls, ['start', 'stop']);
       assert.equal(
         store.history()[0].receipts['native-restore-prepared'],
+        undefined,
+      );
+    },
+  );
+});
+
+async function preBackupFixture(run) {
+  await stageFixture(async (f) => {
+    const stage = await stageNativeRestoreInput(
+      f.store,
+      f.context,
+      f.operation,
+    );
+    f.operation.receipts['native-restore-prebackup-intent'] = {
+      schemaVersion: 1,
+      binding: stage.binding,
+    };
+    f.store.save(f.operation);
+    const bytes = Buffer.from('PGDMP current quiesced pre-restore database');
+    const checkpoint = {
+      protocolVersion: 1,
+      state: 'checkpoint',
+      schemaVersion: 1,
+      operationId: f.operation.id,
+      manifestSha256: f.context.installation.manifestSha256,
+      sourceRevision: f.context.installation.sourceRevision,
+      postgresMajor: '19',
+      databaseFormat: 'frameleaf-canonical',
+      dump: {
+        bytes: bytes.length,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+      },
+    };
+    const owner = join(
+      f.context.installation.state,
+      'checkpoints',
+      f.operation.id,
+    );
+    await mkdir(owner, { recursive: true, mode: 0o700 });
+    await writeFile(join(owner, 'database.dump'), bytes, { mode: 0o600 });
+    const { protocolVersion, state: checkpointState, ...record } = checkpoint;
+    await writeFile(join(owner, 'checkpoint.json'), JSON.stringify(record), {
+      mode: 0o600,
+    });
+    const calls = {
+      checkpoint: 0,
+      initialize: 0,
+      snapshot: 0,
+      restore: 0,
+      cleanup: 0,
+    };
+    let state = { state: 'unknown', code: 'native_database_maintenance' };
+    const runtime = {
+      identity: {
+        runtime: 'native',
+        installationId: f.context.installation.id,
+        fingerprint: digest(f.context.installation),
+      },
+      status: () => state,
+      checkpoint: async (id) => {
+        calls.checkpoint++;
+        assert.equal(id, f.operation.id);
+        return structuredClone(checkpoint);
+      },
+      cleanupCheckpoint: async (receipt) => {
+        calls.cleanup++;
+        assert.deepEqual(receipt, checkpoint);
+        await rm(owner, { recursive: true });
+        return { ...receipt, state: 'checkpoint-cleaned' };
+      },
+    };
+    const captured = new Map();
+    const engine = {
+      corrupt: false,
+      initialize: async () => {
+        calls.initialize++;
+      },
+      snapshot: async (directory, operationId) => {
+        calls.snapshot++;
+        assert.equal(operationId, f.operation.id);
+        for (const name of ['database.dump', 'recovery.json'])
+          captured.set(name, await readFile(join(directory, name)));
+        return 'f'.repeat(64);
+      },
+      restore: async (snapshotId, directory) => {
+        calls.restore++;
+        assert.equal(snapshotId, 'f'.repeat(64));
+        await mkdir(directory, { mode: 0o700 });
+        for (const [name, bytes] of captured)
+          await writeFile(join(directory, name), bytes, { mode: 0o600 });
+        if (engine.corrupt)
+          await writeFile(
+            join(directory, 'database.dump'),
+            'changed readback',
+            { mode: 0o600 },
+          );
+      },
+    };
+    await run({
+      ...f,
+      runtime,
+      engine,
+      calls,
+      context: { ...f.context, name: 'Native library' },
+      setState: (value) => {
+        state = value;
+      },
+    });
+  });
+}
+
+test('restore pre-backup reuses verified encrypted backup and receipt-bound cleanup under the parent restore lock', async () => {
+  await preBackupFixture(
+    async ({ store, runtime, engine, context, operation, calls }) => {
+      const result = await completeNativeDatabaseBackup(
+        store,
+        runtime,
+        engine,
+        context,
+        operation,
+      );
+      assert.equal(result.snapshotId, 'f'.repeat(64));
+      assert.equal(result.recovery.checkpoint.operationId, operation.id);
+      assert.deepEqual(calls, {
+        checkpoint: 1,
+        initialize: 1,
+        snapshot: 1,
+        restore: 1,
+        cleanup: 1,
+      });
+      assert.equal(store.history()[0].kind, 'restore');
+      assert.equal(store.history()[0].state, 'running');
+      assert.ok(operation.completed.includes('native-restore-input'));
+      assert.ok(operation.completed.includes('native-backup-verified'));
+      assert.throws(
+        () => store.start('start', 'competing', {}),
+        /operation_in_progress/,
+      );
+      assert.deepEqual(
+        await completeNativeDatabaseBackup(
+          store,
+          runtime,
+          engine,
+          context,
+          operation,
+        ),
+        result,
+      );
+      assert.deepEqual(calls, {
+        checkpoint: 1,
+        initialize: 1,
+        snapshot: 1,
+        restore: 1,
+        cleanup: 1,
+      });
+    },
+  );
+});
+
+test('restore pre-backup refuses missing or foreign intent, changed input and an application owner before checkpoint effects', async () => {
+  for (const mutation of ['missing', 'foreign', 'input', 'owner'])
+    await preBackupFixture(
+      async ({
+        store,
+        runtime,
+        engine,
+        context,
+        operation,
+        calls,
+        setState,
+      }) => {
+        if (mutation === 'missing')
+          delete operation.receipts['native-restore-prebackup-intent'];
+        if (mutation === 'foreign')
+          operation.receipts['native-restore-prebackup-intent'].binding = {
+            ...operation.receipts['native-restore-prebackup-intent'].binding,
+            reviewId: '44444444-4444-4444-8444-444444444444',
+          };
+        if (mutation === 'input')
+          await writeFile(
+            join(
+              context.installation.state,
+              'restore-input',
+              operation.id,
+              'input',
+              'database.dump',
+            ),
+            'changed',
+            { mode: 0o600 },
+          );
+        if (mutation === 'owner') setState({ state: 'running' });
+        store.save(operation);
+        await assert.rejects(
+          completeNativeDatabaseBackup(
+            store,
+            runtime,
+            engine,
+            context,
+            operation,
+          ),
+        );
+        assert.deepEqual(calls, {
+          checkpoint: 0,
+          initialize: 0,
+          snapshot: 0,
+          restore: 0,
+          cleanup: 0,
+        });
+        assert.equal(store.history()[0].state, 'running');
+      },
+    );
+});
+
+test('restore pre-backup cannot advance after corrupt encrypted readback and retries without a fresh checkpoint', async () => {
+  await preBackupFixture(
+    async ({ store, runtime, engine, context, operation, calls }) => {
+      engine.corrupt = true;
+      await assert.rejects(
+        completeNativeDatabaseBackup(
+          store,
+          runtime,
+          engine,
+          context,
+          operation,
+        ),
+        /native_backup_verification_failed/,
+      );
+      assert.equal(calls.cleanup, 0);
+      assert.equal(store.history()[0].state, 'running');
+      engine.corrupt = false;
+      const result = await completeNativeDatabaseBackup(
+        store,
+        runtime,
+        engine,
+        context,
+        operation,
+      );
+      assert.equal(result.snapshotId, 'f'.repeat(64));
+      assert.deepEqual(calls, {
+        checkpoint: 1,
+        initialize: 1,
+        snapshot: 1,
+        restore: 2,
+        cleanup: 1,
+      });
+    },
+  );
+});
+
+test('restore pre-backup preserves a journal changed while the encrypted snapshot is being created', async () => {
+  await preBackupFixture(
+    async ({ store, runtime, engine, context, operation, calls }) => {
+      const original = engine.snapshot;
+      engine.snapshot = async (...args) => {
+        const result = await original(...args);
+        const latest = store.history()[0];
+        latest.error = 'new owner evidence';
+        store.save(latest);
+        return result;
+      };
+      await assert.rejects(
+        completeNativeDatabaseBackup(
+          store,
+          runtime,
+          engine,
+          context,
+          operation,
+        ),
+      );
+      assert.equal(calls.snapshot, 1);
+      assert.equal(calls.cleanup, 0);
+      assert.equal(store.history()[0].error, 'new owner evidence');
+      assert.equal(
+        store.history()[0].receipts['native-backup-encrypt'],
         undefined,
       );
     },
