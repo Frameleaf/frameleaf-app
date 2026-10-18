@@ -30,7 +30,7 @@ const iconDir = join(outDir, 'icons');
 
 const WIKIDATA = 'https://qlever.dev/api/wikidata';
 // Wikimedia refuses clients that do not say who they are, and every other site deserves the same honesty.
-const USER_AGENT = 'FrameleafIconBuilder/0.1 (https://frameleaf.app; aj@ajtaylor.net)';
+const USER_AGENT = 'FrameleafIconBuilder/0.1 (https://frameleaf.app; support@frameleaf.app)';
 const SIZE = 128;
 const MARGIN = 10; // about 8% on each side
 // Wider than this (longer side : shorter side) is a wordmark, not an icon.
