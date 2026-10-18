@@ -2,7 +2,22 @@ import { performance } from 'node:perf_hooks';
 import type { KyselyPlugin, QueryId, RawNode } from 'kysely';
 
 type Phase = 'seed' | 'dispatch' | 'counts' | 'share-feed' | 'low-water-update';
-type QueryPhase = 'capture' | 'acknowledgement' | 'retained-audit' | 'finish-enumeration' | 'other';
+type QueryPhase =
+  | 'capture'
+  | 'acknowledgement'
+  | 'retained-audit'
+  | 'finish-enumeration'
+  | 'select-source'
+  | 'select-page'
+  | 'owner-link'
+  | 'membership-link'
+  | 'other';
+const feederStatements = [
+  ['select s.id, s."runId", s."sourceKind" from job_selection s', 'select-source'],
+  ['select i.*, s."safeToRetry"', 'select-page'],
+  ['update job_run_item i set "jobId"=owner."jobId"', 'owner-link'],
+  ['update job_run_item i set "jobId" = source."jobId"', 'membership-link'],
+] as const;
 
 /** Test-only raw transform/result timings; unmatched transforms do not prove SQL execution. */
 export const createImportScaleDiagnostics = (
@@ -57,7 +72,7 @@ export const createImportScaleDiagnostics = (
             ? 'retained-audit'
             : statement.startsWith('update job_run set "enumerationDone" = true where id =')
               ? 'finish-enumeration'
-              : 'other';
+              : (feederStatements.find(([prefix]) => statement.startsWith(prefix))?.[1] ?? 'other');
       unmatchedTransforms.set(queryId, { phase, started: now() });
       const completed = queries[phase]?.completed ?? 0;
       if (phase !== 'other' && (phase !== 'acknowledgement' || completed % 50 === 0)) report('query-start');
