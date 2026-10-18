@@ -1,0 +1,8 @@
+# Used instead of the root .dockerignore (written for the release images) when building .oss-scanner/Dockerfile.
+.git/
+.env*
+**/node_modules/
+**/.pnpm-store/
+**/.venv/
+web/.svelte-kit
+server/upload/
