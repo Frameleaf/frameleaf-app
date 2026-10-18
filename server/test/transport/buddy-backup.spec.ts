@@ -136,7 +136,7 @@ const absent = async (path: string) => {
 it('keeps fixed peer listeners below the Linux ephemeral port range', () => {
   for (const side of BUDDY_SIDES) {
     expect(buddyPort(side)).toBeGreaterThan(1023);
-    expect(buddyPort(side)).toBeLessThan(32768);
+    expect(buddyPort(side)).toBeLessThan(32_768);
   }
 });
 
