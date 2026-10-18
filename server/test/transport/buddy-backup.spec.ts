@@ -133,6 +133,13 @@ const absent = async (path: string) => {
   }
 };
 
+it('keeps fixed peer listeners below the Linux ephemeral port range', () => {
+  for (const side of BUDDY_SIDES) {
+    expect(buddyPort(side)).toBeGreaterThan(1023);
+    expect(buddyPort(side)).toBeLessThan(32768);
+  }
+});
+
 it('retains causal forwarding state without leaking request identities or error text', () => {
   const secret = 'private-fixture-sentinel';
   const state = { reusedSocket: true, requestAborted: false, responseDestroyed: false, responseFinished: false };
