@@ -1158,7 +1158,7 @@ var compareConstraints = () => ({
 		reason: Reason.MissingInSource
 	}],
 	onCompare: (source, target) => {
-		if (source.definition !== undefined && source.definition !== target.definition) return dropAndRecreateConstraint(source, target, "constraint definition changed");
+		if (source.definition !== undefined && normalizeIndexSql(source.definition) !== normalizeIndexSql(target.definition)) return dropAndRecreateConstraint(source, target, "constraint definition changed");
 		switch (source.type) {
 			case ConstraintType.PRIMARY_KEY: return comparePrimaryKeyConstraint(source, target);
 			case ConstraintType.FOREIGN_KEY: return compareForeignKeyConstraint(source, target);
@@ -1193,7 +1193,7 @@ var compareUniqueConstraint = (source, target) => {
 	return [];
 };
 var compareCheckConstraint = (source, target) => {
-	if (source.expression !== target.expression) {}
+	if (normalizeIndexSql(source.expression) !== normalizeIndexSql(target.expression)) return dropAndRecreateConstraint(source, target, "check expression changed");
 	return [];
 };
 var dropAndRecreateConstraint = (source, target, reason) => {
