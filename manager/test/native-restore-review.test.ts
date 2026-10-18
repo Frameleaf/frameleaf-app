@@ -17,6 +17,7 @@ import { createHash } from 'node:crypto';
 import { Store } from '../src/store.js';
 import { digest } from '../src/contracts.js';
 import { stageNativeRestoreInput } from '../src/runtime/native-restore-input.js';
+import * as restoreOperation from '../src/runtime/native-restore-operation.js';
 import filesystem from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import {
@@ -525,4 +526,236 @@ test('staging cannot overwrite an operation state change that occurs while copyi
     assert.equal(store.history()[0].state, 'failed');
     assert.equal(store.history()[0].error, 'restore_interrupted');
   });
+});
+
+function restoreRunner() {
+  assert.equal(typeof restoreOperation.runNativeRestorePreparation, 'function');
+  return restoreOperation.runNativeRestorePreparation;
+}
+
+async function operationFixture(run) {
+  await stageFixture(async (f) => {
+    const calls = [];
+    let state = { state: 'stopped' },
+      failure = null;
+    const cancellation = new AbortController();
+    const runtime = {
+      identity: {
+        runtime: 'native',
+        installationId: f.context.installation.id,
+        fingerprint: digest(f.context.installation),
+      },
+      status: () => state,
+      start: async () => {
+        throw Error('must not start application');
+      },
+      startDatabase: async () => {
+        throw Error('must not start original database');
+      },
+      startCheckpointCleanup: async () => {
+        throw Error('wrong maintenance mode');
+      },
+      checkpoint: async () => {
+        throw Error('must not checkpoint original database');
+      },
+      startRestorePreparation: async () => {
+        calls.push('start');
+        const saved = f.store.history()[0];
+        assert.deepEqual(
+          saved.receipts['native-restore-owner-intent'],
+          runtime.identity,
+        );
+        assert.ok(saved.completed.includes('native-restore-input'));
+        state = { state: 'unknown', code: 'native_restore_maintenance' };
+        if (failure === 'start') throw Error('start failed');
+        return {
+          protocolVersion: 1,
+          state: 'restore-prepare-ready',
+          manifestSha256: f.context.installation.manifestSha256,
+          sourceRevision: f.context.installation.sourceRevision,
+          certified: false,
+        };
+      },
+      prepareRestore: async (binding, signal) => {
+        calls.push('prepare');
+        assert.deepEqual(signal, cancellation.signal);
+        assert.equal(binding.operationId, f.operation.id);
+        if (failure === 'prepare') throw Error('restore failed');
+        if (failure === 'cancel') cancellation.abort();
+        return {
+          protocolVersion: 1,
+          schemaVersion: 1,
+          state: 'restore-prepared',
+          binding,
+          attemptId: '22222222-2222-4222-8222-222222222222',
+          profileIdentity: '1:2',
+          targetIdentity: '1:3',
+          databaseIdentity: '1:4',
+          validation: {
+            postgresMajor: 19,
+            vectorVersion: '0.8.7',
+            canonical: true,
+            executionStateReconstructed: true,
+          },
+        };
+      },
+      stop: async () => {
+        calls.push('stop');
+        if (failure === 'stop') throw Error('shutdown unconfirmed');
+        state = { state: 'stopped' };
+        return { protocolVersion: 1, state: 'stopped' };
+      },
+    };
+    await run({
+      ...f,
+      runtime,
+      calls,
+      cancellation,
+      fail: (value) => {
+        failure = value;
+      },
+      setState: (value) => {
+        state = value;
+      },
+    });
+  });
+}
+
+test('restore preparation journals exact receipt and confirmed shutdown but retains operation ownership for activation', async () => {
+  const run = restoreRunner();
+  await operationFixture(
+    async ({ store, context, operation, runtime, calls, cancellation }) => {
+      const result = await run(
+        store,
+        runtime,
+        context,
+        operation,
+        cancellation.signal,
+      );
+      assert.deepEqual(calls, ['start', 'prepare', 'stop']);
+      assert.equal(result.state, 'restore-prepared');
+      const saved = store.history()[0];
+      assert.deepEqual(saved.receipts['native-restore-prepared'], result);
+      assert.ok(saved.completed.includes('native-restore-stop-owner'));
+      assert.equal(saved.state, 'running');
+      assert.throws(
+        () => store.start('start', 'competing', {}),
+        /operation_in_progress/,
+      );
+      calls.length = 0;
+      assert.deepEqual(
+        await run(store, runtime, context, operation, cancellation.signal),
+        result,
+      );
+      assert.deepEqual(calls, ['stop']); // Fresh drain acknowledgement, never replay pg_restore into an uncertain attempt.
+    },
+  );
+});
+
+test('restore preparation refuses live foreign or stale owners and pre-cancelled requests without host effects', async () => {
+  const run = restoreRunner();
+  for (const condition of ['running', 'fault', 'stale', 'cancel', 'foreign']) {
+    await operationFixture(
+      async ({
+        store,
+        context,
+        operation,
+        runtime,
+        calls,
+        cancellation,
+        setState,
+      }) => {
+        if (condition === 'running') setState({ state: 'running' });
+        if (condition === 'fault')
+          setState({ state: 'unknown', code: 'native_shutdown_unconfirmed' });
+        if (condition === 'stale') {
+          const other = store.history()[0];
+          other.error = 'changed';
+          store.save(other);
+        }
+        if (condition === 'cancel') cancellation.abort();
+        if (condition === 'foreign')
+          runtime.identity.installationId = '0'.repeat(12);
+        await assert.rejects(
+          run(store, runtime, context, operation, cancellation.signal),
+        );
+        assert.deepEqual(calls, []);
+        assert.equal(store.history()[0].state, 'running');
+      },
+    );
+  }
+});
+
+test('restore preparation drains failed starts and restores, cancellation and journal write failures', async (t) => {
+  const run = restoreRunner();
+  for (const condition of ['start', 'prepare', 'cancel', 'save']) {
+    await operationFixture(
+      async ({
+        store,
+        context,
+        operation,
+        runtime,
+        calls,
+        cancellation,
+        fail,
+      }) => {
+        if (condition !== 'save') fail(condition);
+        let mock;
+        if (condition === 'save') {
+          const original = store.save.bind(store);
+          mock = t.mock.method(store, 'save', (value) => {
+            if (value.receipts['native-restore-prepared'])
+              throw Error('disk full');
+            original(value);
+          });
+        }
+        await assert.rejects(
+          run(store, runtime, context, operation, cancellation.signal),
+        );
+        mock?.mock.restore();
+        assert.equal(calls.at(-1), 'stop');
+        assert.equal(store.history()[0].state, 'running');
+        assert.throws(
+          () => store.start('start', 'competing', {}),
+          /operation_in_progress/,
+        );
+      },
+    );
+  }
+});
+
+test('restore preparation retains a successful target across unconfirmed shutdown and retry', async () => {
+  const run = restoreRunner();
+  await operationFixture(
+    async ({
+      store,
+      context,
+      operation,
+      runtime,
+      calls,
+      cancellation,
+      fail,
+    }) => {
+      fail('stop');
+      await assert.rejects(
+        run(store, runtime, context, operation, cancellation.signal),
+        /shutdown unconfirmed/,
+      );
+      assert.ok(store.history()[0].receipts['native-restore-prepared']);
+      assert.ok(
+        !store.history()[0].completed.includes('native-restore-stop-owner'),
+      );
+      fail(null);
+      calls.length = 0;
+      const result = await run(
+        store,
+        runtime,
+        context,
+        operation,
+        cancellation.signal,
+      );
+      assert.equal(result.state, 'restore-prepared');
+      assert.deepEqual(calls, ['stop']);
+    },
+  );
 });
