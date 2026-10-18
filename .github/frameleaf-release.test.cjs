@@ -773,7 +773,11 @@ test("install bundle keeps :latest in Compose and env and preserves data configu
     for (const [name, original] of originals) {
       const bundled = await fs.readFile(path.join(dir, name), "utf8");
       // Never pinned to the release (owner 2026-10-18): bundles ship sources unchanged.
-      assert.equal(bundled, original, `${name}: bundle must not pin the release`);
+      assert.equal(
+        bundled,
+        original,
+        `${name}: bundle must not pin the release`,
+      );
       assert.equal(
         await fs.readFile(path.join(root, "docker", name), "utf8"),
         original,

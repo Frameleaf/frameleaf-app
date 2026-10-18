@@ -1365,7 +1365,10 @@ async function createBundle(
     let body = await fs.readFile(path.join(root, "docker", name), "utf8");
     if (name === "example.env") {
       // Bundles never pin the release (owner 2026-10-18): installs follow :latest.
-      assert(/^FRAMELEAF_VERSION=latest$/m.test(body), "Version setting must be latest");
+      assert(
+        /^FRAMELEAF_VERSION=latest$/m.test(body),
+        "Version setting must be latest",
+      );
     } else if (name.startsWith("docker-compose")) {
       assert(
         body.includes("${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}"),
