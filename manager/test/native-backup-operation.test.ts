@@ -65,6 +65,12 @@ async function fixture(run, initiallyRunning = false) {
     start: async () => {
       throw Error('backup must not start the application');
     },
+    startRestorePreparation: async () => {
+      throw new Refusal('native_restore_unavailable');
+    },
+    prepareRestore: async () => {
+      throw new Refusal('native_restore_unavailable');
+    },
     startCheckpointCleanup: async () => {
       live = 'cleanup';
       return {
