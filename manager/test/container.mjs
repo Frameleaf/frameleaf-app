@@ -75,18 +75,7 @@ try {
   assert.equal(status?.status, 200);
   assert.equal(status.body.claimed, false);
   assert.equal((await request('dashboard')).status, 401);
-  assert.equal(
-    (
-      await request('claim', {
-        name: 'Test administrator',
-        password: 'a long disposable password',
-        proof: '0'.repeat(64),
-      })
-    ).status,
-    401,
-  );
-  const proof = docker('exec', name, 'cat', `${directory}/state/claim-key`).trim();
-  const claim = await request('claim', { name: 'Test administrator', password: 'a long disposable password', proof });
+  const claim = await request('claim', { name: 'Test administrator', password: 'a long disposable password' });
   assert.equal(claim.status, 201);
   assert.match(claim.headers['set-cookie'][0], /HttpOnly/);
   assert.match(claim.headers['set-cookie'][0], /Secure/);

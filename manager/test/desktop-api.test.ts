@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import { createServer, request } from 'node:http';
 import { generateKeyPairSync, randomUUID, sign } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -35,11 +35,9 @@ async function fixture(
 ) {
   const root = await mkdtemp(join(tmpdir(), 'manager-desktop-api-')),
     store = new Store(root),
-    claim = join(root, 'claim-key'),
     effects: string[] = [];
-  await writeFile(claim, 'c'.repeat(64));
-  const security = new Security(store, origin, claim);
-  await security.claim('Owner', password, 'c'.repeat(64));
+  const security = new Security(store, origin);
+  await security.claim('Owner', password, '127.0.0.1');
   const session = await security.login(password),
     grants = new DesktopGrants(store, security);
   const dockerOperations = new Operations(

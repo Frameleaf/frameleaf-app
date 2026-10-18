@@ -75,4 +75,4 @@ docker run --detach --name frameleaf-manager --restart unless-stopped \
   --env "MANAGER_APPDATA_ROOT=$appdata" --env "MANAGER_DATABASE_ROOTS=$appdata" --env "MANAGER_PLATFORM=$platform" \
   --env "DOCKER_APP_CONFIG_PATH=${DOCKER_APP_CONFIG_PATH:-}" \
   --env "MANAGER_BACKUP_ROOT=$backups" --env "MANAGER_ORIGIN=$origin" --env "MANAGER_BIND_ADDRESS=$bind" "$@" "$image"
-printf 'Manager: %s\nRead the claim key from %s/claim-key on this host.\n' "$origin" "$state"
+printf 'Manager: %s\nOpen it from your home network to create the administrator.\n' "$origin"

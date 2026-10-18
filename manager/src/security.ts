@@ -1,7 +1,6 @@
 import { randomBytes, scrypt as derive, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { readFileSync } from 'node:fs';
-import { isIP } from 'node:net';
+import { BlockList, isIP } from 'node:net';
 import type { Request, Response, NextFunction } from 'express';
 import { Refusal, sha256 } from './contracts.js';
 import { Store } from './store.js';
@@ -14,13 +13,23 @@ const LIFETIME = 8 * 60 * 60 * 1000;
 // Without a configured origin, only names public DNS cannot point at this host are trusted (no rebinding).
 const localHost = (hostname: string) =>
   isIP(hostname.replace(/^\[|\]$/g, '')) !== 0 || hostname === 'localhost' || hostname.endsWith('.local') || !hostname.includes('.');
+// Claiming needs no code (owner 2026-10-14, as on the server): only the home network, only while unclaimed.
+// 100.64/10 (CGNAT, Tailscale) is remote access, not home.
+const home = new BlockList();
+for (const [address, prefix] of [['10.0.0.0', 8], ['172.16.0.0', 12], ['192.168.0.0', 16], ['127.0.0.0', 8], ['169.254.0.0', 16]] as const)
+  home.addSubnet(address, prefix, 'ipv4');
+for (const [address, prefix] of [['fc00::', 7], ['fe80::', 10], ['::1', 128]] as const) home.addSubnet(address, prefix, 'ipv6');
+export const homeAddress = (address: string | undefined) => {
+  const ip = address?.replace(/^::ffff:(?=\d+\.)/, '') ?? '';
+  const family = isIP(ip);
+  return family !== 0 && home.check(ip, family === 4 ? 'ipv4' : 'ipv6');
+};
 
 export class Security {
   private readonly frameAncestors: string;
   constructor(
     private store: Store,
     readonly origin: string | undefined,
-    private bootstrapFile: string,
     frameOrigin?: string,
   ) {
     this.frameAncestors = "'none'";
@@ -69,11 +78,9 @@ export class Security {
     const { count } = this.store.db.prepare('SELECT count FROM attempts WHERE key=?').get(key) as { count: number };
     if (count > (scope === 'login' ? 10 : 120)) throw new Refusal('rate_limited', 429);
   }
-  async claim(name: string, password: string, proof: string): Promise<void> {
+  async claim(name: string, password: string, address: string | undefined): Promise<void> {
     if (this.claimed()) throw new Refusal('already_claimed');
-    // A LAN visitor cannot win a first-request race: proof must be read from the private mounted file.
-    const expected = readFileSync(this.bootstrapFile, 'utf8').trim();
-    if (!/^[a-f0-9]{64}$/.test(proof) || !same(expected, proof)) throw new Refusal('invalid_claim_proof', 401);
+    if (!homeAddress(address)) throw new Refusal('claim_lan_only', 403);
     const salt = token(),
       hash = ((await scrypt(password, salt, 64)) as Buffer).toString('hex');
     if (!this.store.createOnce('administrator', { name, salt, hash })) throw new Refusal('already_claimed');

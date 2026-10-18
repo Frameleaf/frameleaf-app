@@ -51,7 +51,7 @@ test('NAS Manager packages authenticate the component, both architectures and ex
     assert(xml.includes('Target="MANAGER_UNRAID_AUTOSTART" Default=""'));
     assert.equal(await fs.readFile(path.join(output, 'unraid/LICENSE'), 'utf8'),
       await fs.readFile(path.join(__dirname, '../../LICENSE'), 'utf8'));
-    assert((await fs.readFile(path.join(output, 'unraid/README.md'), 'utf8')).includes('claim-key'));
+    assert((await fs.readFile(path.join(output, 'unraid/README.md'), 'utf8')).includes('No claim key is needed'));
     assert(xml.includes('Target="MANAGER_ORIGIN" Default=""') && !/MANAGER_ORIGIN[^>]*Required="true"/.test(xml));
     execFileSync('python3', ['-c', `
 import pathlib, re, sys, xml.etree.ElementTree as ET

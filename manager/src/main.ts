@@ -15,7 +15,7 @@ import { NestFactory } from '@nestjs/core';
 import express, { type Request, type Response } from 'express';
 import { createReadStream, fstatSync } from 'node:fs';
 import { createNativeService } from './runtime/native-service.js';
-import { chmod, mkdir, readFile, realpath, stat, statfs, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, realpath, stat, statfs } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { join, resolve } from 'node:path';
@@ -55,8 +55,7 @@ const native = runtime === 'native'
   ? await createNativeService(store, createReadStream('', { fd: 0, autoClose: true }), origin!, join(backupRoot, 'frameleaf-database'))
   : null;
 const docker = new Docker();
-const bootstrapFile = join(directory, 'claim-key');
-const security = new Security(store, origin, bootstrapFile, process.env.MANAGER_FRAME_ORIGIN);
+const security = new Security(store, origin, process.env.MANAGER_FRAME_ORIGIN);
 const seed = store.get<string>('release-seed') ?? randomBytes(32).toString('hex');
 store.createOnce('release-seed', seed);
 const releases = new Releases(join(directory, 'releases'), seed);
@@ -110,12 +109,12 @@ class Api {
     return { claimed: security.claimed() };
   }
 
-  @Post('claim') async claim(@Body() input: unknown, @Res({ passthrough: true }) response: Response) {
+  @Post('claim') async claim(@Body() input: unknown, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
     const value = z
-      .object({ name: z.string().min(1).max(120), password: Password, proof: z.string().max(64) })
+      .object({ name: z.string().min(1).max(120), password: Password })
       .strict()
       .parse(input);
-    await security.claim(value.name, value.password, value.proof);
+    await security.claim(value.name, value.password, request.socket.remoteAddress);
     const session = await security.login(value.password);
     security.cookie(response, session.session);
     return { csrf: session.csrf };
@@ -381,11 +380,6 @@ class ManagerModule {}
 async function main() {
   process.umask(0o077);
   await mkdir(directory!, { recursive: true, mode: 0o700 });
-  try {
-    await stat(bootstrapFile);
-  } catch {
-    await writeFile(bootstrapFile, randomBytes(32).toString('hex'), { mode: 0o600, flag: 'wx' });
-  }
   const cert = join(directory!, 'tls.crt'),
     key = join(directory!, 'tls.key');
   if (!native) {

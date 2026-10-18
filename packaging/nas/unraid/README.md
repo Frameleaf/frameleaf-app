@@ -53,13 +53,13 @@ shown are examples, not evidence of a qualified Unraid installation.
    variables and an identical host/container mapping for each folder. Never
    expose the whole host filesystem to make additional folders selectable.
 4. Apply the container configuration and open the WebUI. Manager initially
-   generates a self-signed certificate, so expect a browser warning. For a trusted HTTPS connection, provision a certificate and key matching
-   the origin as `tls.crt` and `tls.key` in the private Manager state folder
+   generates a self-signed certificate, so expect a browser warning. For a
+   trusted HTTPS connection, provision a certificate and key matching the
+   address as `tls.crt` and `tls.key` in the private Manager state folder
    before first startup. Protect the key and retain the state folder on updates.
-5. Read `<Manager state host path>/claim-key` locally and enter that private key
-   in Manager's first-administrator claim screen. Do not post it in support
-   issues, screenshots or logs. Choose the administrator credentials and follow
-   the installation wizard.
+5. From a device on your home network, choose the administrator name and
+   password, then follow the installation wizard. No claim key is needed; this
+   only works while Manager has no administrator.
 
 ## Importing an existing library
 
@@ -115,7 +115,7 @@ media backups before upgrades. See the
 
 Report problems through [Frameleaf issues](https://github.com/Frameleaf/frameleaf-app/issues).
 Include the Unraid version, template/release version and sanitized error details.
-Never include credentials, claim keys, recovery keys or private media.
+Never include credentials, recovery keys or private media.
 
 Community Apps listing requires Validate, Scan and moderator acceptance at
 [the submission portal](https://ca.unraid.net/submit/new). Before declaring a
