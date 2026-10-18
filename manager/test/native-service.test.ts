@@ -65,6 +65,7 @@ async function fixture(run: (f: any) => Promise<void>) {
   };
   const effects: string[] = [];
   const runtime: NativeRuntime = {
+    status: () => ({ state: 'stopped' }),
     identity: {
       runtime: 'native',
       installationId: installation.id,

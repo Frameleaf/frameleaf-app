@@ -115,6 +115,10 @@ export interface NativeRuntime {
     installationId: string;
     fingerprint: string;
   }>;
+  status(): {
+    state: 'unknown' | 'starting' | 'running' | 'stopping' | 'stopped';
+    code?: string;
+  };
   start(): Promise<Ready>;
   startDatabase(): Promise<DatabaseReceipt>;
   stop(): Promise<StopReceipt>;
@@ -658,9 +662,15 @@ export class NativeOperations {
   constructor(
     readonly store: Store,
     private runtime: NativeRuntime,
+    private backup?: (operation: Operation) => Promise<unknown>,
   ) {}
-  control(kind: 'start' | 'stop' | 'restart', key: string): Operation {
-    if (!['start', 'stop', 'restart'].includes(kind))
+  control(
+    kind: 'start' | 'stop' | 'restart' | 'backup',
+    key: string,
+  ): Operation {
+    if (kind === 'backup' && !this.backup)
+      throw new Refusal('native_action_unavailable');
+    if (!['start', 'stop', 'restart', 'backup'].includes(kind))
       throw new Refusal('invalid_control_operation');
     const { operation, created } = this.store.start(kind, key, {
       ...this.runtime.identity,
@@ -674,7 +684,8 @@ export class NativeOperations {
       !operation ||
       this.executing.has(id) ||
       !['failed', 'interrupted'].includes(operation.state) ||
-      !['start', 'stop', 'restart'].includes(operation.kind) ||
+      (!['start', 'stop', 'restart'].includes(operation.kind) &&
+        !(operation.kind === 'backup' && this.backup)) ||
       JSON.stringify(operation.input) !== JSON.stringify(this.runtime.identity)
     )
       throw new Refusal('operation_not_recoverable');
@@ -724,6 +735,11 @@ export class NativeOperations {
     this.store.save(operation);
   }
   private async run(operation: Operation): Promise<void> {
+    if (operation.kind === 'backup') {
+      if (!this.backup) throw new Refusal('native_action_unavailable');
+      await this.backup(operation);
+      return;
+    }
     if (
       operation.kind === 'restart' &&
       !operation.completed.includes('stop-native-host')

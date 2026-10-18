@@ -13,6 +13,7 @@ async function fixture(
   const directory = await mkdtemp(join(tmpdir(), 'frameleaf-native-manager-'));
   const store = new Store(directory);
   const runtime: NativeRuntime = {
+    status: () => ({ state: 'stopped' }),
     identity: Object.freeze({
       runtime: 'native',
       installationId: 'a'.repeat(12),
