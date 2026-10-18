@@ -87,6 +87,9 @@ async function fixture(run: (f: any) => Promise<void>) {
     checkpoint: async () => {
       throw new Refusal('native_checkpoint_unavailable');
     },
+    startDatabase: async () => {
+      throw new Refusal('native_checkpoint_unavailable');
+    },
     cleanupCheckpoint: async () => {
       throw new Refusal('native_checkpoint_unavailable');
     },

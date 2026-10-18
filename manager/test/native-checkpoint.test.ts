@@ -33,7 +33,7 @@ import { createInterface } from 'node:readline';
 const lines=createInterface({input:process.stdin})[Symbol.asyncIterator]();
 const config=JSON.parse((await lines.next()).value), scenario=${JSON.stringify(scenario)};
 const emit=value=>process.stdout.write(JSON.stringify(value)+'\\n');
-emit({protocolVersion:1,state:'running',manifestSha256:config.manifestSha256,sourceRevision:'c'.repeat(40),certified:false});
+emit({protocolVersion:1,state:scenario==='wrong-database'?'running':scenario==='wrong-server'?'database-ready':config.mode==='database'?'database-ready':'running',manifestSha256:config.manifestSha256,sourceRevision:'c'.repeat(40),certified:false});
 if(scenario==='unsolicited')emit({protocolVersion:1,state:'checkpoint-failed',operationId:'${operation}',code:'host_checkpoint_failed'});
 let pending=null;
 for await(const line of {[Symbol.asyncIterator]:()=>lines}){
@@ -337,5 +337,54 @@ test(
         nextOperation,
       );
     });
+  },
+);
+
+test(
+  'database maintenance has distinct readiness, checkpoints and cleanup but cannot serve an application start',
+  { skip: process.platform === 'win32' },
+  async () => {
+    await fixture('normal', async (host) => {
+      const first = host.startDatabase();
+      assert.equal(first, host.startDatabase());
+      await assert.rejects(host.start(), /native_runtime_busy/);
+      assert.equal((await first).state, 'database-ready');
+      assert.deepEqual(host.status(), {
+        state: 'unknown',
+        code: 'native_database_maintenance',
+      });
+      const checkpoint = await host.checkpoint(operation);
+      assert.equal(
+        (await host.cleanupCheckpoint(checkpoint)).state,
+        'checkpoint-cleaned',
+      );
+      assert.equal((await host.stop()).state, 'stopped');
+    });
+  },
+);
+
+test(
+  'an application owner cannot silently change into database-only maintenance',
+  { skip: process.platform === 'win32' },
+  async () => {
+    await fixture('normal', async (host) => {
+      await host.start();
+      await assert.rejects(host.startDatabase(), /native_runtime_busy/);
+      assert.deepEqual(host.status(), { state: 'running' });
+    });
+  },
+);
+
+test(
+  'wrong readiness mode is refused even with the matching runtime identity',
+  { skip: process.platform === 'win32' },
+  async () => {
+    for (const scenario of ['wrong-database', 'wrong-server'])
+      await fixture(scenario, async (host) => {
+        await assert.rejects(
+          scenario === 'wrong-database' ? host.startDatabase() : host.start(),
+          /native_host_protocol_invalid/,
+        );
+      });
   },
 );

@@ -35,6 +35,10 @@ const Running = z
     certified: z.boolean(),
   })
   .strict();
+const DatabaseReady = Running.extend({
+  state: z.literal('database-ready'),
+}).strict();
+type DatabaseReceipt = z.infer<typeof DatabaseReady>;
 const Stopped = z
   .object({ protocolVersion: z.literal(1), state: z.literal('stopped') })
   .strict();
@@ -112,6 +116,7 @@ export interface NativeRuntime {
     fingerprint: string;
   }>;
   start(): Promise<Ready>;
+  startDatabase(): Promise<DatabaseReceipt>;
   stop(): Promise<StopReceipt>;
   checkpoint(
     operationId: string,
@@ -136,7 +141,8 @@ function deferred<T>() {
 }
 type Owner = {
   child: ChildProcessWithoutNullStreams | null;
-  ready: ReturnType<typeof deferred<Ready>>;
+  mode: 'server' | 'database';
+  ready: ReturnType<typeof deferred<Ready | DatabaseReceipt>>;
   closed: ReturnType<typeof deferred<StopReceipt>>;
   readySeen: boolean;
   stoppedSeen: boolean;
@@ -178,16 +184,25 @@ export class NativeHost implements NativeRuntime {
     });
   }
   start(): Promise<Ready> {
+    return this.startOwner('server') as Promise<Ready>;
+  }
+  startDatabase(): Promise<DatabaseReceipt> {
+    return this.startOwner('database') as Promise<DatabaseReceipt>;
+  }
+  private startOwner(
+    mode: 'server' | 'database',
+  ): Promise<Ready | DatabaseReceipt> {
     if (this.inspecting)
       return Promise.reject(new Refusal('native_runtime_busy'));
     if (this.owner && !this.owner.finished) {
-      if (this.owner.stopping)
+      if (this.owner.stopping || this.owner.mode !== mode)
         return Promise.reject(new Refusal('native_runtime_busy'));
       return this.owner.ready.promise;
     }
     const owner: Owner = {
       child: null,
-      ready: deferred<Ready>(),
+      mode,
+      ready: deferred<Ready | DatabaseReceipt>(),
       closed: deferred<StopReceipt>(),
       readySeen: false,
       stoppedSeen: false,
@@ -302,6 +317,8 @@ export class NativeHost implements NativeRuntime {
     if (!owner) return { state: 'unknown', code: 'native_owner_not_attached' };
     if (owner.fault) return { state: 'unknown', code: owner.fault.code };
     if (owner.finished) return { state: 'stopped' };
+    if (owner.mode === 'database' && !owner.stopping)
+      return { state: 'unknown', code: 'native_database_maintenance' };
     return {
       state: owner.stopping
         ? 'stopping'
@@ -502,6 +519,7 @@ export class NativeHost implements NativeRuntime {
         manifestSha256,
         databasePort,
         apiPort,
+        ...(owner.mode === 'database' ? { mode: 'database' } : {}),
         password,
       }) + '\n';
     if (Buffer.byteLength(wire) > 16 * 1024)
@@ -545,7 +563,9 @@ export class NativeHost implements NativeRuntime {
           return fail('native_host_protocol_invalid');
         }
         pending = pending.subarray(newline + 1);
-        const running = Running.safeParse(value);
+        const running = (
+          owner.mode === 'database' ? DatabaseReady : Running
+        ).safeParse(value);
         const checkpoint = CheckpointReply.safeParse(value);
         if (running.success && !owner.readySeen && !owner.stoppedSeen) {
           const expected = this.installation;
