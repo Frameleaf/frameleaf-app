@@ -1083,13 +1083,16 @@ export const routedMlDestinationId = async (
 };
 
 /**
- * FL-455: where a CLIP text query (search, smart albums, tags, classification) is encoded. Search text
- * always stays on this network: the destination smart search is routed to, unless that is Frameleaf
- * Cloud, then this server's own machine learning. A refusal when this server has none turned on; the
- * text is never sent to the cloud.
+ * FL-455: the destination at home for `workload`: the one it is routed to, unless that is Frameleaf Cloud,
+ * then this server's own machine learning. A refusal when this server has none turned on; nothing is ever
+ * sent to the cloud from here. Used for search text, which always stays home, and for work whose Frameleaf
+ * Cloud result was refused.
  */
-export const clipTextDestinationId = async (mlDestinationRepository: MlDestinationRepository): Promise<string> => {
-  const routed = await routedMlDestinationId(mlDestinationRepository, MlWorkload.Clip);
+export const homeMlDestinationId = async (
+  mlDestinationRepository: MlDestinationRepository,
+  workload: MlWorkload,
+): Promise<string> => {
+  const routed = await routedMlDestinationId(mlDestinationRepository, workload);
   const destination = await mlDestinationRepository.getById(routed);
   if (!destination || !isCloudDestination(destination.kind)) {
     return routed;
@@ -1100,10 +1103,17 @@ export const clipTextDestinationId = async (mlDestinationRepository: MlDestinati
   if (!local) {
     throw new MlDestinationRefusedError(
       MlAdmissionRefusal.WorkloadNotRouted,
-      MlWorkload.Clip,
+      workload,
       null,
-      "search text is read on this network; turn on this server's machine learning",
+      `${workload === MlWorkload.Clip ? 'search text' : workload} runs on this network here; turn on this server's machine learning`,
     );
   }
   return local.id;
 };
+
+/**
+ * FL-455: where a CLIP text query (search, smart albums, tags, classification) is encoded. Search text
+ * always stays on this network (`homeMlDestinationId`); it is never sent to the cloud.
+ */
+export const clipTextDestinationId = (mlDestinationRepository: MlDestinationRepository): Promise<string> =>
+  homeMlDestinationId(mlDestinationRepository, MlWorkload.Clip);

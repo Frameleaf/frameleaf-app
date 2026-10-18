@@ -12,6 +12,11 @@
  *
  * Studio exports render at home only (this server or a home-network worker, §2.7): the `render`
  * ladder has no cloud position.
+ *
+ * Smart search and faces (FL-455) have ladders of their own (`matchedLadders`): this server's models,
+ * plus one blue stop for the model Frameleaf Cloud may run for them. That stop exists only while the
+ * cloud offers exactly this server's model (`cloudMatch`, read from the Cloud processing status or
+ * catalogue at run time), never from this file alone. Search text is always read on this server.
  */
 
 /** Customers pay this multiple of the fully loaded GPU cost, for GPU time and the start fee alike. */
@@ -79,10 +84,19 @@ export const startFees: Readonly<
 // ------------------------------------------------------------------ workloads
 
 export type LadderWorkload = 'descriptions' | 'upscale' | 'restoration' | 'studio' | 'render' | 'interpolation';
+/**
+ * Work whose cloud stop needs Frameleaf Cloud to run exactly this server's model (FL-455). Kept apart
+ * from `LadderWorkload`, so routing, the benchmark and Hardware & GPU stay as they were.
+ */
+export type MatchedWorkload = 'search' | 'faces';
+/** Every kind of work with a model slider. */
+export type SliderWorkload = LadderWorkload | MatchedWorkload;
+/** The Frameleaf Cloud workload (the server's `MlWorkload` value) a cloud stop needs offered. */
+export type CloudMatch = 'clip' | 'face';
 
 /** How many units a price label quotes, which container runs the work locally, and whether video is chunked. */
 export const workloadUnits: Readonly<
-  Record<LadderWorkload, Readonly<{ per: number; container: 'ml' | 'server'; chunked?: boolean }>>
+  Record<SliderWorkload, Readonly<{ per: number; container: 'ml' | 'server'; chunked?: boolean }>>
 > = Object.freeze({
   descriptions: { per: 100, container: 'ml' },
   upscale: { per: 1, container: 'ml' },
@@ -90,12 +104,30 @@ export const workloadUnits: Readonly<
   studio: { per: 1, container: 'ml' },
   render: { per: 1, container: 'server' },
   interpolation: { per: 1, container: 'ml', chunked: true },
+  // Search and faces cost fractions of a cent per photo, so prices are quoted per 1,000 photos.
+  search: { per: 1000, container: 'ml' },
+  faces: { per: 1000, container: 'ml' },
 });
 
-export const LADDER_WORKLOADS = Object.freeze(Object.keys(workloadUnits) as LadderWorkload[]);
+export const LADDER_WORKLOADS: readonly LadderWorkload[] = Object.freeze([
+  'descriptions',
+  'upscale',
+  'restoration',
+  'studio',
+  'render',
+  'interpolation',
+]);
+export const MATCHED_WORKLOADS: readonly MatchedWorkload[] = Object.freeze(['search', 'faces']);
+/** The Frameleaf Cloud workload each matched kind of work needs offered. */
+export const CLOUD_MATCH: Readonly<Record<MatchedWorkload, CloudMatch>> = Object.freeze({
+  search: 'clip',
+  faces: 'face',
+});
+export const isMatchedWorkload = (id: string): id is MatchedWorkload =>
+  (MATCHED_WORKLOADS as readonly string[]).includes(id);
 
 /** The unit a workload is billed and timed in, as an i18n key taking `{count}`. */
-export const workloadUnitKey = (workload: LadderWorkload) => `frameleaf_cloud_unit_${workload}` as const;
+export const workloadUnitKey = (workload: SliderWorkload) => `frameleaf_cloud_unit_${workload}` as const;
 
 /** GPU profiles the research rates models against; `cpu8` and `mac_docker` are processor-only hosts. */
 export type GpuProfileId =
@@ -138,7 +170,7 @@ const speeds = (code: string) =>
   >;
 
 /** Local seconds per unit for each speed class (estimates; the benchmark replaces them). */
-const classSeconds: Readonly<Record<LadderWorkload, Record<'fast' | 'ok' | 'slow', number>>> = Object.freeze({
+const classSeconds: Readonly<Record<SliderWorkload, Record<'fast' | 'ok' | 'slow', number>>> = Object.freeze({
   descriptions: { fast: 1.5, ok: 5, slow: 20 },
   upscale: { fast: 3, ok: 12, slow: 60 },
   restoration: { fast: 50, ok: 240, slow: 1500 },
@@ -146,6 +178,9 @@ const classSeconds: Readonly<Record<LadderWorkload, Record<'fast' | 'ok' | 'slow
   render: { fast: 20, ok: 90, slow: 300 },
   // Doubling the frame rate of one minute of 1080p video (estimates).
   interpolation: { fast: 25, ok: 120, slow: 600 },
+  // One photo through the search model, and finding and reading the faces in one photo (estimates).
+  search: { fast: 0.02, ok: 0.1, slow: 0.5 },
+  faces: { fast: 0.05, ok: 0.25, slow: 1 },
 });
 type SizeClass = 'cpu' | 'tiny' | 'small' | 'medium' | 'large' | 'xl';
 const sizeFactor: Readonly<Record<SizeClass, number>> = Object.freeze({
@@ -161,6 +196,11 @@ export type CloudOffer = Readonly<{
   gpuClass: GpuClassId;
   feeClass: FeeClassId;
   secondsPerUnit: Readonly<{ p50: number; p90: number }>;
+  /**
+   * The Frameleaf Cloud contract's own customer rate and start fee for this offer, where it names
+   * them; they replace the research rate of `gpuClass` and the start fee of `feeClass`.
+   */
+  contract?: Readonly<{ usdPerSec: number; startFeeUsd: number }>;
 }>;
 
 /**
@@ -183,6 +223,11 @@ export type ModelPosition = Readonly<{
   vramGb: Readonly<Partial<Record<'fp16' | 'int8' | 'int4', number>>>;
   speed: Readonly<Partial<Record<GpuProfileId, SpeedClass>>>;
   cloud: CloudOffer | null;
+  /**
+   * FL-455: the cloud offer stands only while Frameleaf Cloud offers this workload with exactly this
+   * server's model (`isCloudOffered`); null for every other position.
+   */
+  cloudMatch: CloudMatch | null;
   retiresOn: string | null;
 }>;
 
@@ -198,9 +243,10 @@ type PositionSpec = {
   vramGb: ModelPosition['vramGb'];
   speed: ModelPosition['speed'];
   cloud: CloudOffer | null;
+  cloudMatch?: CloudMatch;
 };
 
-const position = (workload: LadderWorkload, spec: PositionSpec): ModelPosition =>
+const position = (workload: SliderWorkload, spec: PositionSpec): ModelPosition =>
   Object.freeze({
     workload,
     commercialHosted: 'yes',
@@ -208,9 +254,22 @@ const position = (workload: LadderWorkload, spec: PositionSpec): ModelPosition =
     retiresOn: null,
     ...spec,
     licenceNote: spec.licenceNote ?? false,
+    cloudMatch: spec.cloudMatch ?? null,
   });
 const cloud = (gpuClassId: GpuClassId, feeClass: FeeClassId, p50: number, p90: number): CloudOffer =>
   Object.freeze({ gpuClass: gpuClassId, feeClass, secondsPerUnit: Object.freeze({ p50, p90 }) });
+
+/**
+ * FL-455 planning figures from the Frameleaf Cloud contract for search and faces: gpu24 at
+ * $0.00076906 per second and the small-24 start fee of $0.08. They are higher than this file's
+ * research rate for gpu24 and its small-24 fee, and they are what Frameleaf Cloud charges, so these
+ * offers carry them (`CloudOffer.contract`) instead of changing the tables every other ladder uses.
+ * 1,000 photos: search about $0.089 typical and $0.098 at the high end, faces $0.103 and $0.126
+ * (start fee included). The job's own estimate from the server stays what is charged.
+ */
+const MATCHED_CONTRACT = Object.freeze({ usdPerSec: 0.00076906, startFeeUsd: 0.08 });
+const matchedCloud = (p50: number, p90: number): CloudOffer =>
+  Object.freeze({ ...cloud('gpu24', 'small-24', p50, p90), contract: MATCHED_CONTRACT });
 
 const noteKeyOf = (id: string) =>
   id
@@ -542,8 +601,132 @@ export const modelLadders: Readonly<Record<LadderWorkload, readonly ModelPositio
 });
 
 /**
+ * Smart search and faces (FL-455), light → heavy: the models this server can be set to (the choices
+ * of Search & intelligence), then one blue stop for the model Frameleaf Cloud may run. The cloud runs
+ * only the model this server uses, and only the release default today (SigLIP 384 for search,
+ * buffalo_l for faces), so the blue stop repeats that model with `@cloud` and `cloudMatch`; it is left
+ * off the slider while Frameleaf Cloud does not offer it (`ladderStates`). Speeds, memory and cloud
+ * seconds are planning estimates; local positions have no cloud offer.
+ */
+export const matchedLadders: Readonly<Record<MatchedWorkload, readonly ModelPosition[]>> = Object.freeze({
+  search: Object.freeze([
+    position('search', {
+      id: 'ViT-B-32__openai',
+      name: 'CLIP ViT-B-32',
+      short: 'ViT-B-32',
+      params: '151M',
+      sizeClass: 'tiny',
+      licence: 'MIT',
+      cpuFeasible: true,
+      vramGb: { fp16: 0.6 },
+      speed: speeds('FFFFFFFF'),
+      cloud: null,
+    }),
+    position('search', {
+      id: 'ViT-B-16-SigLIP-384__webli',
+      name: 'SigLIP ViT-B-16 384',
+      short: 'SigLIP 384',
+      params: '203M',
+      sizeClass: 'small',
+      licence: 'Apache-2.0',
+      cpuFeasible: true,
+      vramGb: { fp16: 1 },
+      speed: speeds('OFFFFFFO'),
+      cloud: null,
+    }),
+    position('search', {
+      id: 'ViT-SO400M-16-SigLIP2-384__webli',
+      name: 'SigLIP 2 SO400M 384',
+      short: 'SigLIP 2',
+      params: '1.1B',
+      sizeClass: 'medium',
+      licence: 'Apache-2.0',
+      cpuFeasible: true,
+      vramGb: { fp16: 3 },
+      speed: speeds('SOFFFFFS'),
+      cloud: null,
+    }),
+    position('search', {
+      id: 'ViT-B-16-SigLIP-384__webli@cloud',
+      name: 'SigLIP ViT-B-16 384',
+      short: 'SigLIP 384',
+      params: '203M',
+      sizeClass: 'small',
+      licence: 'Apache-2.0',
+      vramGb: {},
+      speed: speeds('NNNNNNNN'),
+      cloud: matchedCloud(0.012, 0.024),
+      cloudMatch: 'clip',
+    }),
+  ]),
+  faces: Object.freeze([
+    position('faces', {
+      id: 'buffalo_s',
+      name: 'buffalo_s',
+      short: 'buffalo_s',
+      params: null,
+      sizeClass: 'tiny',
+      licence: 'commercial',
+      cpuFeasible: true,
+      vramGb: { fp16: 0.5 },
+      speed: speeds('FFFFFFFF'),
+      cloud: null,
+    }),
+    position('faces', {
+      id: 'buffalo_m',
+      name: 'buffalo_m',
+      short: 'buffalo_m',
+      params: null,
+      sizeClass: 'small',
+      licence: 'commercial',
+      cpuFeasible: true,
+      vramGb: { fp16: 0.8 },
+      speed: speeds('OFFFFFFO'),
+      cloud: null,
+    }),
+    position('faces', {
+      id: 'buffalo_l',
+      name: 'buffalo_l',
+      short: 'buffalo_l',
+      params: null,
+      sizeClass: 'small',
+      licence: 'commercial',
+      cpuFeasible: true,
+      vramGb: { fp16: 1 },
+      speed: speeds('OFFFFFFO'),
+      cloud: null,
+    }),
+    position('faces', {
+      id: 'antelopev2',
+      name: 'antelopev2',
+      short: 'antelopev2',
+      params: null,
+      sizeClass: 'medium',
+      licence: 'commercial',
+      cpuFeasible: true,
+      vramGb: { fp16: 1.5 },
+      speed: speeds('SOFFFFFS'),
+      cloud: null,
+    }),
+    position('faces', {
+      id: 'buffalo_l@cloud',
+      name: 'buffalo_l',
+      short: 'buffalo_l',
+      params: null,
+      sizeClass: 'small',
+      licence: 'commercial',
+      vramGb: {},
+      speed: speeds('NNNNNNNN'),
+      cloud: matchedCloud(0.03, 0.06),
+      cloudMatch: 'face',
+    }),
+  ]),
+});
+
+/**
  * This server's models for search, faces and text recognition. Search and faces may also run on
- * Frameleaf Cloud, but only with exactly these models, while the cloud offers them (FL-455).
+ * Frameleaf Cloud, but only with exactly these models, while the cloud offers them (FL-455; their
+ * sliders are `matchedLadders`).
  */
 export const localOnlyModels = Object.freeze({
   search: Object.freeze([{ id: 'clip-vit-b-32', name: 'CLIP ViT-B-32', licence: 'MIT' }]),
@@ -551,13 +734,14 @@ export const localOnlyModels = Object.freeze({
   ocr: Object.freeze([{ id: 'pp-ocrv5-mobile', name: 'PP-OCRv5 mobile', licence: 'Apache-2.0' }]),
 });
 
-export const ladderFor = (workload: LadderWorkload): readonly ModelPosition[] => modelLadders[workload] ?? [];
+export const ladderFor = (workload: SliderWorkload): readonly ModelPosition[] =>
+  (isMatchedWorkload(workload) ? matchedLadders[workload] : modelLadders[workload]) ?? [];
 
 export const positionById = (id: string | null | undefined): ModelPosition | null => {
   if (!id) {
     return null;
   }
-  for (const ladder of Object.values(modelLadders)) {
+  for (const ladder of [...Object.values(modelLadders), ...Object.values(matchedLadders)]) {
     const found = ladder.find((item) => item.id === id);
     if (found) {
       return found;
@@ -567,14 +751,28 @@ export const positionById = (id: string | null | undefined): ModelPosition | nul
 };
 
 /**
+ * The Frameleaf Cloud workloads that run exactly this server's model now (FL-455): the Cloud
+ * processing status's `matchedModelWorkloads`, or the catalogue's own clip/face entries. Without
+ * them search and faces have no cloud stop.
+ */
+export type CloudMatched = readonly string[];
+
+/**
  * Positions Frameleaf Cloud may host: every position with a cloud offer. No model is kept off the
  * cloud for its licence (FL-451, legal review 2026-10-17, which retired the FL-146 local-only list).
+ * A search or faces offer also needs Frameleaf Cloud to offer this server's model (`cloudMatched`).
  */
-export const isCloudOffered = (item: ModelPosition | null | undefined): item is ModelPosition & { cloud: CloudOffer } =>
-  !!item?.cloud;
+export const isCloudOffered = (
+  item: ModelPosition | null | undefined,
+  cloudMatched: CloudMatched = [],
+): item is ModelPosition & { cloud: CloudOffer } =>
+  !!item?.cloud && (!item.cloudMatch || cloudMatched.includes(item.cloudMatch));
 
-export const cloudPositions = (workload?: LadderWorkload) =>
-  (workload ? ladderFor(workload) : Object.values(modelLadders).flat()).filter((item) => isCloudOffered(item));
+/** Cloud positions of one workload, or of every routed ladder (search and faces only by name). */
+export const cloudPositions = (workload?: SliderWorkload, cloudMatched: CloudMatched = []) =>
+  (workload ? ladderFor(workload) : Object.values(modelLadders).flat()).filter((item) =>
+    isCloudOffered(item, cloudMatched),
+  );
 
 /** Smallest GPU memory the model needs at any precision (null when it has no GPU path). */
 export const minVramGb = (item: Pick<ModelPosition, 'vramGb'> | null | undefined): number | null => {
@@ -627,6 +825,7 @@ export const bandFor = (
   item: ModelPosition | null,
   gpu: DetectedGpu | null,
   cpuProfile: GpuProfileId = 'cpu8',
+  cloudMatched: CloudMatched = [],
 ): Band => {
   if (!item) {
     return 'none';
@@ -637,7 +836,7 @@ export const bandFor = (
   if (cpuSpeed(item, cpuProfile) !== 'no') {
     return 'cpu';
   }
-  return isCloudOffered(item) ? 'cloud' : 'none';
+  return isCloudOffered(item, cloudMatched) ? 'cloud' : 'none';
 };
 
 // ------------------------------------------------------------------ estimates
@@ -692,10 +891,14 @@ export type CostEstimate = {
  * fee are both 2× our loaded cost. p50 is typical, p90 the high end, and the wallet hold is p90
  * rounded up to the cent (§2.4).
  */
-export const estimateCost = (itemOrId: ModelPosition | string | null, quantity: number): CostEstimate | null => {
+export const estimateCost = (
+  itemOrId: ModelPosition | string | null,
+  quantity: number,
+  cloudMatched: CloudMatched = [],
+): CostEstimate | null => {
   const item = typeof itemOrId === 'string' ? positionById(itemOrId) : itemOrId;
   const units = quantity;
-  if (!isCloudOffered(item) || !Number.isFinite(units) || units <= 0) {
+  if (!isCloudOffered(item, cloudMatched) || !Number.isFinite(units) || units <= 0) {
     return null;
   }
   const gpu = gpuClassById(item.cloud.gpuClass);
@@ -703,9 +906,9 @@ export const estimateCost = (itemOrId: ModelPosition | string | null, quantity: 
   if (!gpu || !fee) {
     return null;
   }
-  const rate = gpu.customerUsdPerSec;
+  const rate = item.cloud.contract?.usdPerSec ?? gpu.customerUsdPerSec;
   const workers = workersFor(item, units);
-  const startFee = fee.customerUsd;
+  const startFee = item.cloud.contract?.startFeeUsd ?? fee.customerUsd;
   const workSeconds = {
     p50: round(units * item.cloud.secondsPerUnit.p50, 2),
     p90: round(units * item.cloud.secondsPerUnit.p90, 2),
@@ -731,13 +934,14 @@ export const estimateCost = (itemOrId: ModelPosition | string | null, quantity: 
 };
 
 /** Typical GPU-time cost for the number of units a label quotes (e.g. per 100 photos), start fee excluded. */
-export const quotedUnitCost = (item: ModelPosition | null) => {
-  if (!isCloudOffered(item)) {
+export const quotedUnitCost = (item: ModelPosition | null, cloudMatched: CloudMatched = []) => {
+  if (!isCloudOffered(item, cloudMatched)) {
     return null;
   }
   const per = workloadUnits[item.workload]?.per ?? 1;
   const gpu = gpuClassById(item.cloud.gpuClass);
-  return gpu ? { per, usd: item.cloud.secondsPerUnit.p50 * gpu.customerUsdPerSec * per } : null;
+  const rate = item.cloud.contract?.usdPerSec ?? gpu?.customerUsdPerSec;
+  return rate === undefined ? null : { per, usd: item.cloud.secondsPerUnit.p50 * rate * per };
 };
 
 /** The range of start fees, for the billing explainer. */
@@ -786,11 +990,21 @@ export const positionState = (
     route = 'both',
     benchmark = null,
     cpuProfile = 'cpu8',
-  }: { gpu?: DetectedGpu | null; route?: RouteMode; benchmark?: Benchmark | null; cpuProfile?: GpuProfileId } = {},
+    cloudMatched = [],
+  }: {
+    gpu?: DetectedGpu | null;
+    route?: RouteMode;
+    benchmark?: Benchmark | null;
+    cpuProfile?: GpuProfileId;
+    /** FL-455: what Frameleaf Cloud offers with this server's own models (search and faces). */
+    cloudMatched?: CloudMatched;
+  } = {},
 ): PositionState => {
-  const natural = bandFor(item, gpu, cpuProfile);
+  const natural = bandFor(item, gpu, cpuProfile, cloudMatched);
   const band: Band =
-    route === 'cloud' && natural !== 'cloud' && natural !== 'none' && isCloudOffered(item) ? 'cloud' : natural;
+    route === 'cloud' && natural !== 'cloud' && natural !== 'none' && isCloudOffered(item, cloudMatched)
+      ? 'cloud'
+      : natural;
   const local = band === 'gpu' || band === 'cpu';
   const speedClass = band === 'gpu' ? speedOn(item, gpu) : band === 'cpu' ? cpuSpeed(item, cpuProfile) : 'no';
   const reasons: StopReason[] = [];
@@ -819,7 +1033,7 @@ export const positionState = (
     speedClass,
     seconds: local ? localSecondsPerUnit(item, gpu, { benchmark, cpuProfile }) : null,
     measured: local && benchmark?.factors[item.id] !== undefined,
-    quote: band === 'cloud' ? quotedUnitCost(item) : null,
+    quote: band === 'cloud' ? quotedUnitCost(item, cloudMatched) : null,
     reasons,
     disabled: reasons.length > 0,
   };
@@ -830,12 +1044,18 @@ export const positionState = (
  * licensed catalogue pick. Descriptions use Qwen3.5 9B (Apache-2.0): rich descriptions with strong
  * text reading, and the pricing research's worked example (about $0.85 per 1,000 photos).
  */
-export const CLOUD_DEFAULT_MODELS: Readonly<Partial<Record<LadderWorkload, string>>> = Object.freeze({
+export const CLOUD_DEFAULT_MODELS: Readonly<Partial<Record<SliderWorkload, string>>> = Object.freeze({
   descriptions: 'qwen3.5-9b@1',
 });
 
-export const ladderStates = (workload: LadderWorkload, options: Parameters<typeof positionState>[1] = {}) =>
-  ladderFor(workload).map((item) => positionState(item, options));
+/**
+ * Every stop of a slider. A search or faces cloud stop is left out while Frameleaf Cloud does not offer
+ * this server's model, rather than shown crossed out: nothing could make it available from here.
+ */
+export const ladderStates = (workload: SliderWorkload, options: Parameters<typeof positionState>[1] = {}) =>
+  ladderFor(workload)
+    .filter((item) => !item.cloudMatch || isCloudOffered(item, options.cloudMatched))
+    .map((item) => positionState(item, options));
 
 /**
  * The position to use: the saved choice when it can be chosen, otherwise the heaviest position that
@@ -844,7 +1064,7 @@ export const ladderStates = (workload: LadderWorkload, options: Parameters<typeo
  * fits counts as a fallback; retired ids just reset.
  */
 export const resolvePosition = (
-  workload: LadderWorkload,
+  workload: SliderWorkload,
   savedId: string | null | undefined,
   options: Parameters<typeof positionState>[1] = {},
 ): (PositionState & { fallback: boolean }) | null => {

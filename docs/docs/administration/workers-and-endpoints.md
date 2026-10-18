@@ -65,6 +65,16 @@ Then add a home-network destination at `http://frameleaf-restoration:3004`, allo
 - **One GPU for both.** Tick **This worker shares a GPU with library analysis** on the restoration destination. Full restorations bound to it then stay queued while face, search, text and description jobs have work, and start when that work is done. Previews still run, because someone is waiting for them and they are short. A paused library queue does not hold restoration back.
 - **On the server.** Restoration jobs are not in the library-analysis queues. Each server process runs at most one restoration at a time on its own loop, so a restoration never takes a queue's concurrency slot; queue concurrency is set under **Settings → Computers & background work → Background work**.
 
+## Smart search and faces on Frameleaf Cloud
+
+Smart search (image embeddings) and face detection and recognition can run on Frameleaf Cloud. Frameleaf Cloud is offered for them only when it runs exactly the model this server uses: the same model files at the same revision, prepared the same way. Each also needs its own choice in the Frameleaf Cloud processing terms (**Prepare smart search on Frameleaf Cloud**, **Find and recognise faces on Frameleaf Cloud**), and the work allowed on the Frameleaf Cloud destination and routed to it.
+
+- **Batches, not single photos.** A photo whose job reaches the Frameleaf Cloud route waits for a batch. A batch is made once one person has 50 photos waiting for the same work, or ten minutes after the first one, and holds up to 500 photos. It appears under Activity, with what it cost.
+- **What is sent.** The same preview the job reads on this server, with its metadata (location, camera, dates, text) removed and its pixels unchanged. Locked and hidden photos are never sent. What you search for is never sent: search text is always read on this server.
+- **What is kept.** A result is stored only when Frameleaf Cloud says it was made by this server's own model, and it is stored exactly as this server's own result would be. People are grouped and named only on this server. A result made by another model is refused, and that photo is processed on this server instead.
+- **Spending.** Each batch is estimated first and held against the AI Wallet. It waits for tomorrow when today's AI Wallet limit is reached, and stops at the destination's spending limit.
+- **Turning it off.** Turning Frameleaf Cloud processing off, or routing the work elsewhere, stops every batch that has not finished; its photos are processed where they are routed then.
+
 ## API
 
 `GET /api/admin/workers` returns the inventory for administrators. It reads stored state only: loads are counts, runner identities are process names, and no owner, asset or credential is returned. Destinations, routes and checks use the `/api/ml-destinations` endpoints.

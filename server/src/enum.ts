@@ -603,6 +603,8 @@ export enum SystemMetadataKey {
    * automatically"), with when automatic batching last ran.
    */
   FrameleafCloudDescriptionQueue = 'frameleaf-cloud-description-queue',
+  /** FL-455: the photos waiting for a Frameleaf Cloud smart search or faces batch. */
+  FrameleafCloudLibraryQueue = 'frameleaf-cloud-library-queue',
   /** FL-163: the backfill estimates an administrator was shown, which queueing a backfill reads back. */
   FrameleafCloudDescriptionEstimates = 'frameleaf-cloud-description-estimates',
   /**
@@ -1427,6 +1429,12 @@ export enum MediaOperationKind {
    * records the estimate, the cloud job and every photo's input, and the job is polled until it ends.
    */
   CloudDescriptionBatch = 'cloud_description_batch',
+  /**
+   * FL-455: one Frameleaf Cloud smart search or faces batch, a frozen set of one owner's photos sent as one
+   * cloud job (`clip` or `face`, named in the snapshot). Each result is accepted only when it was made by
+   * this server's own model, and is stored exactly as this server's own result would be.
+   */
+  CloudLibraryBatch = 'cloud_library_batch',
   /**
    * FL-162 (`CLD-202`): a Frameleaf Cloud restoration, upscaling or Smooth motion job for one asset,
    * preview or full. The snapshot pins the prepared inputs, model, request, estimate and consent; the
@@ -2315,6 +2323,8 @@ export enum JobName {
    * every batch's next step (estimate, submit, poll, cancel, settle).
    */
   CloudMlDescriptionBatch = 'CloudMlDescriptionBatch',
+  /** FL-455: one pass over Frameleaf Cloud smart search and faces batches: batching, then each batch's next step. */
+  CloudMlLibraryBatch = 'CloudMlLibraryBatch',
   /** FL-164: the cloud backup schedule's tick: queue a backup run unless an operation is in progress. */
   CloudBackupSchedule = 'CloudBackupSchedule',
   /** FL-362: the one backup schedule's tick: back up each place that is on, one after another. */

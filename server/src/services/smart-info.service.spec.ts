@@ -1,10 +1,11 @@
 import type { QueueExecution } from 'src/queue/types.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
-import { AssetFileType, AssetVisibility, FrameleafWorker, JobName, JobStatus } from 'src/enum.js';
+import { AssetFileType, AssetVisibility, FrameleafWorker, JobName, JobStatus, MlWorkload } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { getCLIPModelInfo } from 'src/utils/misc.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
+import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -261,6 +262,70 @@ describe(SmartInfoService.name, () => {
         expect.objectContaining({ modelName: 'ViT-B-16-SigLIP-384__webli' }),
       );
       expect(mocks.search.upsert).toHaveBeenCalledWith(asset.id, '[0.01, 0.02, 0.03]');
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SmartSearchPostprocess, data: { id: asset.id } });
+    });
+
+    it('leaves a photo routed to Frameleaf Cloud for a batch, encoding nothing here (FL-455)', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
+      mocks.assetJob.getForClipEncoding.mockResolvedValue(asset);
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+
+      expect(await sut.handleEncodeClip({ id: asset.id })).toEqual(JobStatus.Skipped);
+
+      expect(mocks.machineLearning.encodeImage).not.toHaveBeenCalled();
+      expect(mocks.search.upsert).not.toHaveBeenCalled();
+    });
+
+    it("makes a refused Frameleaf Cloud result on this server's own machine learning (FL-455)", async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
+      mocks.assetJob.getForClipEncoding.mockResolvedValue(asset);
+      mocks.machineLearning.encodeImage.mockResolvedValue('[0.01, 0.02, 0.03]');
+      mocks.mlDestination.getById.mockImplementation((id) =>
+        Promise.resolve(
+          id === mlDestinationStub.local.id ? mlDestinationStub.local : mlDestinationStub.frameleafCloudConsented,
+        ),
+      );
+      mocks.mlDestination.getRoute.mockResolvedValue({
+        workload: MlWorkload.Clip,
+        destinationId: mlDestinationStub.frameleafCloudConsented.id,
+        modelId: null,
+        updatedAt: new Date(),
+      } as never);
+      mocks.mlDestination.getAll.mockResolvedValue([
+        mlDestinationStub.frameleafCloudConsented,
+        mlDestinationStub.local,
+      ]);
+
+      expect(await sut.handleEncodeClip({ id: asset.id, onThisServer: true })).toEqual(JobStatus.Success);
+
+      expect(mocks.machineLearning.encodeImage).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: mlDestinationStub.local.id }),
+        asset.files[0].path,
+        expect.anything(),
+      );
+      expect(mocks.search.upsert).toHaveBeenCalledWith(asset.id, '[0.01, 0.02, 0.03]');
+    });
+
+    it('stores a Frameleaf Cloud embedding like its own, and refuses one for another preview (FL-455)', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
+      mocks.assetJob.getForClipEncoding.mockResolvedValue(asset);
+      const embedding = { embedding: '[0.5]', modelKey: `clip:${'a'.repeat(64)}` };
+
+      await expect(
+        sut.publishClipEmbedding(asset.id, embedding, {
+          modelName: 'ViT-B-16-SigLIP-384__webli',
+          previewPath: 'other',
+        }),
+      ).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.search.upsert).not.toHaveBeenCalled();
+
+      await expect(
+        sut.publishClipEmbedding(asset.id, embedding, {
+          modelName: 'ViT-B-16-SigLIP-384__webli',
+          previewPath: asset.files[0].path,
+        }),
+      ).resolves.toBe(JobStatus.Success);
+      expect(mocks.search.upsert).toHaveBeenCalledWith(asset.id, embedding);
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SmartSearchPostprocess, data: { id: asset.id } });
     });
 

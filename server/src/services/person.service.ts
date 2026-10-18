@@ -70,6 +70,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
 import { getDimensions } from 'src/utils/asset.util.js';
+import { CloudLibraryQueueWriter, cloudLibraryDestination } from 'src/utils/cloud-library-batch.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import {
   FaceBoundingBoxRow,
@@ -89,6 +90,7 @@ import {
 import { isLockedAssetRow } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isFacialRecognitionEnabled } from 'src/utils/misc.js';
+import { homeMlDestinationId } from 'src/utils/ml-destination.js';
 import { Point, transformFaceBoundingBox, transformPoints } from 'src/utils/transform.js';
 
 const personKey = ({ ownerId, personGroupId }: PersonId) => `${ownerId}/${personGroupId}`;
@@ -117,6 +119,21 @@ const isDefinedId = (id: string | null): id is string => !!id;
 
 @Injectable()
 export class PersonService extends BaseService {
+  /** FL-455: photos whose face detection is routed to Frameleaf Cloud wait here for a batch. */
+  private readonly cloudLibraryQueue = new CloudLibraryQueueWriter(
+    () => ({ databaseRepository: this.databaseRepository, systemMetadataRepository: this.systemMetadataRepository }),
+    (message) => this.logger.warn(message),
+  );
+
+  @OnEvent({ name: 'AppShutdown' })
+  async onShutdownFlushCloudLibraryQueue() {
+    try {
+      await this.cloudLibraryQueue.flush();
+    } catch (error) {
+      this.logger.warn(`The Frameleaf Cloud faces queue was not written: ${error}`);
+    }
+  }
+
   async getAll(auth: AuthDto, dto: PersonSearchDto): Promise<PeopleResponseDto> {
     const { withHidden = false, closestAssetId, closestPersonId, page, size } = dto;
     let closestFaceAssetId = closestAssetId;
@@ -953,7 +970,11 @@ export class PersonService extends BaseService {
   }
 
   @OnJob({ name: JobName.AssetDetectFaces, queue: QueueName.FaceDetection })
-  async handleDetectFaces({ id, preserveImportedFaces }: JobOf<JobName.AssetDetectFaces>): Promise<JobStatus> {
+  async handleDetectFaces({
+    id,
+    preserveImportedFaces,
+    onThisServer,
+  }: JobOf<JobName.AssetDetectFaces>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: true });
     if (!isFacialRecognitionEnabled(machineLearning)) {
       deferJobUntilDependency('workload-disabled');
@@ -972,11 +993,32 @@ export class PersonService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const selection = await this.selectRoutedMlDestination({
-      workload: MlWorkload.Face,
-      jobId: id,
-      jobName: JobName.AssetDetectFaces,
-    });
+    // FL-455: routed to Frameleaf Cloud, the photo waits for a batch (an imported face set is always
+    // regenerated here); a Frameleaf Cloud result that was refused is made here instead (`onThisServer`)
+    if (
+      !onThisServer &&
+      !preserveImportedFaces &&
+      (await cloudLibraryDestination(this.mlDestinationRepository, MlWorkload.Face))
+    ) {
+      const owner = await this.assetJobRepository.getForImageEnrichment(asset.id);
+      if (owner) {
+        await this.cloudLibraryQueue.add({ assetId: asset.id, ownerId: owner.ownerId, workload: 'face' });
+        return JobStatus.Skipped;
+      }
+    }
+
+    const selection = onThisServer
+      ? await this.selectMlDestination({
+          workload: MlWorkload.Face,
+          jobId: id,
+          jobName: JobName.AssetDetectFaces,
+          destinationId: await homeMlDestinationId(this.mlDestinationRepository, MlWorkload.Face),
+        })
+      : await this.selectRoutedMlDestination({
+          workload: MlWorkload.Face,
+          jobId: id,
+          jobName: JobName.AssetDetectFaces,
+        });
     const { imageHeight, imageWidth, faces } = await this.machineLearningRepository.detectFaces(
       selection,
       previewFile.path,
@@ -984,13 +1026,41 @@ export class PersonService extends BaseService {
     );
     this.logger.debug(`${faces.length} faces detected in ${previewFile.path}`);
 
+    await this.publishDetectedFaces(
+      asset.id,
+      { previewPath: previewFile.path, checksum: asset.checksum.toString('hex'), imageWidth, imageHeight, faces },
+      preserveImportedFaces,
+    );
+    return JobStatus.Success;
+  }
+
+  /**
+   * Store the faces detected in one photo, the same way for this server's own detection and a Frameleaf
+   * Cloud result (FL-455): faces at the place of an existing one keep its identity and decisions, new ones
+   * are added and recognised, and machine-learning faces no longer found are removed unless a decision holds
+   * them. Refused when the original or the preview the faces were found in changed since.
+   */
+  async publishDetectedFaces(
+    id: string,
+    detection: {
+      previewPath: string;
+      /** The original's checksum (hex) when the faces were detected. */
+      checksum: string;
+      imageWidth: number;
+      imageHeight: number;
+      faces: Array<{ boundingBox: { x1: number; y1: number; x2: number; y2: number }; embedding: string }>;
+    },
+    preserveImportedFaces?: boolean,
+  ): Promise<void> {
+    const { imageHeight, imageWidth, faces } = detection;
+    const checksum = Buffer.from(detection.checksum, 'hex');
     await publishJobResult(async () => {
-      await assertPublicationSource(asset.id, asset.checksum);
+      await assertPublicationSource(id, checksum);
       const latest = await this.assetJobRepository.getForDetectFacesJob(id);
       if (
         !latest ||
-        !latest.checksum.equals(asset.checksum) ||
-        (latest.files.find((file) => file.isEdited) ?? latest.files[0])?.path !== previewFile.path
+        !latest.checksum.equals(checksum) ||
+        (latest.files.find((file) => file.isEdited) ?? latest.files[0])?.path !== detection.previewPath
       ) {
         throw new Error('Face source changed before publication');
       }
@@ -1071,7 +1141,6 @@ export class PersonService extends BaseService {
 
       await this.assetRepository.upsertJobStatus({ assetId: currentAsset.id, facesRecognizedAt: new Date() });
     });
-    return JobStatus.Success;
   }
 
   /**
