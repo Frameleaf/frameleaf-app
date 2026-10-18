@@ -24,6 +24,7 @@ function setup(checkpoints: Array<{ type: string; ack: string }>, fingerprints: 
   mocks.session.isPendingSyncReset.mockResolvedValue(false);
   mocks.syncCheckpoint.getAll.mockResolvedValue(checkpoints as never);
   mocks.syncCheckpoint.getNow.mockResolvedValue({ nowId: 'now-id' });
+  mocks.syncCheckpoint.upsertAll.mockResolvedValue([] as never);
   const chunks: string[] = [];
   const response = new Writable({
     write(chunk, _encoding, done) {
