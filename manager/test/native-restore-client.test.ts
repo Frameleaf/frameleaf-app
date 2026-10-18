@@ -87,17 +87,21 @@ let pending;
 for await(const line of {[Symbol.asyncIterator]:()=>lines}){
  if(line==='stop'){if(pending)emit(scenario==='verify-hold'?{protocolVersion:1,state:'restore-verify-failed',operationId:pending,code:'host_restore_verification_failed',verificationId:'55555555-5555-4555-8555-555555555555'}:{protocolVersion:1,state:'restore-prepare-failed',operationId:pending,code:'host_restore_failed'});emit({protocolVersion:1,state:'stopped'});break;}
  const request=JSON.parse(line);
- if(request.action==='select-restore'){
+ if(request.action==='select-restore'||request.action==='finalize-restore'){
+  const finalizing=request.action==='finalize-restore';
+  if(scenario.startsWith('finalize-')&&!finalizing)process.exit(8);
+  const phase=scenario.replace(/^finalize-/, 'select-');
   if(Object.keys(request).sort().join(',')!=='action,operationId,protocolVersion,safety,verificationId'||request.operationId!==${JSON.stringify(operation)}||request.verificationId!=='55555555-5555-4555-8555-555555555555'||Object.keys(request.safety.checkpoint).sort().join(',')!=='databaseFormat,dump,manifestSha256,operationId,postgresMajor,schemaVersion,sourceRevision')process.exit(8);
-  if(scenario==='select-hold')continue;
-  const selected={protocolVersion:1,state:'restore-activation-pending',operationId:request.operationId,generation:'66666666-6666-4666-8666-666666666666'};
-  if(scenario==='select-operation')selected.operationId='77777777-7777-4777-8777-777777777777';
-  if(scenario==='select-generation')selected.generation='00000000-0000-0000-0000-000000000000';
-  if(scenario==='select-no-ack'){emit({protocolVersion:1,state:'stopped'});break;}
-  emit(selected);if(scenario==='select-duplicate')emit(selected);
-  if(scenario==='select-delayed-stop')await new Promise(resolve=>setTimeout(resolve,1000));
-  if(scenario!=='select-no-stop')emit({protocolVersion:1,state:'stopped'});
-  if(scenario==='select-exit')process.exitCode=9;
+  if(phase==='select-hold')continue;
+  const selected={protocolVersion:1,state:finalizing?'restore-finalized':'restore-activation-pending',operationId:request.operationId,generation:'66666666-6666-4666-8666-666666666666'};
+  if(phase==='select-operation')selected.operationId='77777777-7777-4777-8777-777777777777';
+  if(phase==='select-generation')selected.generation='00000000-0000-0000-0000-000000000000';
+  if(phase==='select-no-ack'){emit({protocolVersion:1,state:'stopped'});break;}
+  if(phase==='select-kind')selected.state=finalizing?'restore-activation-pending':'restore-finalized';
+  emit(selected);if(phase==='select-duplicate')emit(selected);
+  if(phase==='select-delayed-stop')await new Promise(resolve=>setTimeout(resolve,1000));
+  if(phase!=='select-no-stop')emit({protocolVersion:1,state:'stopped'});
+  if(phase==='select-exit')process.exitCode=9;
   break;
  }
 
@@ -463,6 +467,80 @@ test(
       const fresh = await host.verifyRestore(prepared),
         cancel = new AbortController();
       const work = host.selectRestore(fresh, safety, cancel.signal),
+        deadline = Date.now() + 5000;
+      while (host.status().state !== 'stopping' && Date.now() < deadline)
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.equal(host.status().state, 'stopping');
+      cancel.abort();
+      await assert.rejects(work, /native_restore_cancelled/);
+      assert.deepEqual(await host.stop(), {
+        protocolVersion: 1,
+        state: 'stopped',
+      });
+    });
+  },
+);
+
+test(
+  'final admission consumes a fresh private proof and distinguishes a fenced selection',
+  { skip: process.platform === 'win32' },
+  async () => {
+    await fixture('finalize-normal', async (host) => {
+      assert.equal(typeof host.finalizeRestore, 'function');
+      await host.startRestorePreparation();
+      await assert.rejects(
+        host.finalizeRestore(proof, safety),
+        /native_restore_proof_invalid/,
+      );
+      const fresh = await host.verifyRestore(prepared);
+      assert.deepEqual(await host.finalizeRestore(fresh, safety), {
+        protocolVersion: 1,
+        state: 'restore-finalized',
+        operationId: operation,
+        generation: '66666666-6666-4666-8666-666666666666',
+      });
+      assert.deepEqual(host.status(), { state: 'stopped' });
+      await assert.rejects(
+        host.finalizeRestore(fresh, safety),
+        /native_restore_unavailable/,
+      );
+    });
+  },
+);
+
+test(
+  'final admission refuses wrong or missing acknowledgements and unconfirmed shutdown',
+  { skip: process.platform === 'win32' },
+  async () => {
+    for (const suffix of [
+      'operation',
+      'generation',
+      'kind',
+      'duplicate',
+      'no-ack',
+      'no-stop',
+      'exit',
+    ]) {
+      await fixture(`finalize-${suffix}`, async (host) => {
+        await host.startRestorePreparation();
+        const fresh = await host.verifyRestore(prepared);
+        await assert.rejects(
+          host.finalizeRestore(fresh, safety),
+          /native_(host_protocol_invalid|shutdown_unconfirmed|restore_selection_failed)/,
+        );
+      });
+    }
+  },
+);
+test(
+  'final admission cancellation after acknowledgement cannot report success',
+  { skip: process.platform === 'win32' },
+  async () => {
+    await fixture('finalize-delayed-stop', async (host) => {
+      await host.startRestorePreparation();
+      const fresh = await host.verifyRestore(prepared),
+        cancel = new AbortController();
+      const work = host.finalizeRestore(fresh, safety, cancel.signal),
         deadline = Date.now() + 5000;
       while (host.status().state !== 'stopping' && Date.now() < deadline)
         await new Promise((resolve) => setTimeout(resolve, 20));

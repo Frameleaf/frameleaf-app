@@ -92,3 +92,11 @@ export const NativeRestoreSelectionSchema = z
 export type NativeRestoreSelection = z.infer<
   typeof NativeRestoreSelectionSchema
 >;
+export const NativeRestoreFinalizedSchema = NativeRestoreSelectionSchema.extend(
+  {
+    state: z.literal('restore-finalized'),
+  },
+).strict();
+export type NativeRestoreFinalized = z.infer<
+  typeof NativeRestoreFinalizedSchema
+>;

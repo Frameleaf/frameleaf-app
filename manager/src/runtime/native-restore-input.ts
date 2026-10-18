@@ -17,7 +17,6 @@ import { Store } from '../store.js';
 import {
   NativeRestoreContextSchema,
   NativeRestoreReviewSchema,
-  revalidateNativeRestoreReview,
 } from './native-restore-review.js';
 import {
   readNativeBackupDirectory,
@@ -102,19 +101,11 @@ export async function stageNativeRestoreInput(
     key = 'native-restore-input';
   let accepted: z.infer<typeof Accepted>;
   if (operation.receipts[intentKey] === undefined) {
-    const review = await revalidateNativeRestoreReview(
-      store,
-      context,
-      reviewId as string,
+    const parsed = NativeRestoreReviewSchema.safeParse(
+      store.get(`native-restore-review:${reviewId}`),
     );
-    const acceptedAt = Date.now();
-    if (acceptedAt >= review.expires)
-      throw new Refusal('native_restore_review_expired');
-    stillOwned();
-    accepted = { review, acceptedAt };
-    operation.receipts[intentKey] = accepted;
-    operation.step = key;
-    store.save(operation);
+    if (!parsed.success) throw changed();
+    accepted = { review: parsed.data, acceptedAt: Date.now() };
   } else {
     const parsed = Accepted.safeParse(operation.receipts[intentKey]);
     if (!parsed.success) throw changed();
@@ -124,10 +115,21 @@ export async function stageNativeRestoreInput(
   if (
     review.id !== reviewId ||
     review.contextFingerprint !== digest(context) ||
-    review.recovery.libraryId !== context.libraryId ||
-    accepted.acceptedAt >= review.expires
+    review.recovery.libraryId !== context.libraryId
   )
     throw changed();
+  if (accepted.acceptedAt >= review.expires) {
+    if (operation.receipts[intentKey] === undefined)
+      throw new Refusal('native_restore_review_expired');
+    throw changed();
+  }
+  if (operation.receipts[intentKey] === undefined) {
+    // Bind timely consent before slow readback; staging below still verifies every source and published byte.
+    stillOwned();
+    operation.receipts[intentKey] = accepted;
+    operation.step = key;
+    store.save(operation);
+  }
   const binding = NativeRestoreInputBinding.parse({
     schemaVersion: 1,
     runtime: 'native',

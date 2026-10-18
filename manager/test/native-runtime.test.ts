@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -31,6 +32,15 @@ async function fixture(
       throw new Refusal('native_checkpoint_unavailable');
     },
     startRestorePreparation: async () => {
+      throw new Refusal('native_restore_unavailable');
+    },
+    finalizeRestore: async () => {
+      throw new Refusal('native_restore_unavailable');
+    },
+    selectRestore: async () => {
+      throw new Refusal('native_restore_unavailable');
+    },
+    verifyRestore: async () => {
       throw new Refusal('native_restore_unavailable');
     },
     prepareRestore: async () => {
@@ -317,5 +327,41 @@ test('a stale operation cannot overwrite another SQLite connection even when tim
     } finally {
       other.close();
     }
+  });
+});
+
+test('native restore requests bind their review and resume under the existing operation lock', async () => {
+  await fixture(async (store, runtime) => {
+    const review = randomUUID(),
+      key = randomUUID();
+    let attempts = 0;
+    const operations = new NativeOperations(
+      store,
+      runtime,
+      undefined,
+      async (operation) => {
+        assert.equal(operation.kind, 'restore');
+        assert.deepEqual(operation.input, {
+          reviewId: review,
+          ...runtime.identity,
+        });
+        if (++attempts === 1) throw new Refusal('native_host_failed');
+      },
+    );
+    assert.equal(typeof operations.restore, 'function');
+    const operation = operations.restore(review, key);
+    assert.equal((await operations.wait(operation.id)).state, 'failed');
+    assert.equal(operations.restore(review, key).id, operation.id);
+    assert.throws(
+      () => operations.restore(randomUUID(), key),
+      /request_key_reused/,
+    );
+    assert.throws(
+      () => operations.control('start', 'competing-start'),
+      /operation_in_progress/,
+    );
+    operations.resume(operation.id);
+    assert.equal((await operations.wait(operation.id)).state, 'complete');
+    assert.equal(attempts, 2);
   });
 });

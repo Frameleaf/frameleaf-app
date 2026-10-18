@@ -700,3 +700,124 @@ test('native recovery endpoints refuse Docker fallthrough even with a valid rest
     assert.deepEqual(effects, []);
   });
 });
+
+test('native restore execution and status require recent restore proof and expose no private receipts', async () => {
+  await fixture(
+    async ({ operations, store, pair, signed, call, browser, effects }) => {
+      const path = '/manager-api/desktop/restore',
+        reviewId = randomUUID(),
+        key = randomUUID();
+      const body = JSON.stringify({ reviewId, key });
+      operations.restore = (review, requestKey, id) => {
+        assert.equal(review, reviewId);
+        assert.equal(id, installationId);
+        effects.push('restore');
+        return store.start('restore', requestKey, {
+          reviewId: review,
+          runtime: 'native',
+          installationId: id,
+          fingerprint: 'd'.repeat(64),
+        }).operation;
+      };
+      const denied = await pair(['status']);
+      assert.equal(
+        (await call(path, body, signed(denied, path, body, 'restore'))).status,
+        403,
+      );
+      assert.deepEqual(effects, []);
+      const grant = await pair(['status', 'restore']);
+      assert.equal(
+        (
+          await call(path, body, {
+            ...signed(grant, path, body, 'restore'),
+            ...browser,
+          })
+        ).status,
+        403,
+      );
+      const extra = JSON.stringify({ reviewId, key, database: '/outside' });
+      assert.equal(
+        (await call(path, extra, signed(grant, path, extra, 'restore'))).status,
+        400,
+      );
+      const accepted = await call(
+        path,
+        body,
+        signed(grant, path, body, 'restore'),
+      );
+      assert.equal(accepted.status, 200);
+      const operation = store.history()[0];
+      operation.receipts.private = { password: 'fixture-private-marker' };
+      store.save(operation);
+      const statusPath = '/manager-api/desktop/restore-operation',
+        statusBody = JSON.stringify({ id: accepted.body.id });
+      const status = await call(
+        statusPath,
+        statusBody,
+        signed(grant, statusPath, statusBody, 'restore'),
+      );
+      assert.equal(status.status, 200);
+      assert.equal(status.body.kind, 'restore');
+      assert.equal(status.body.receipts, undefined);
+      assert.equal(status.body.input, undefined);
+      assert.ok(
+        !JSON.stringify(status.body).includes('fixture-private-marker'),
+      );
+      const oldStatus = '/manager-api/desktop/status';
+      assert.deepEqual(
+        (await call(oldStatus, '{}', signed(grant, oldStatus))).body.operations,
+        [],
+      );
+      const row = store.db
+        .prepare('SELECT value FROM desktop_grants WHERE id=?')
+        .get(grant.id);
+      const expired = JSON.parse(row.value);
+      expired.recentUntil = Date.now() - 1;
+      store.db
+        .prepare('UPDATE desktop_grants SET value=? WHERE id=?')
+        .run(JSON.stringify(expired), grant.id);
+      assert.equal(
+        (await call(path, body, signed(grant, path, body, 'restore'))).status,
+        401,
+      );
+      assert.deepEqual(effects, ['restore']);
+    },
+    true,
+    true,
+  );
+});
+test('native restore execution never dispatches Docker or accepts lifecycle operations as restore', async () => {
+  for (const native of [false, true])
+    await fixture(
+      async ({ store, pair, signed, call, effects }) => {
+        const grant = await pair(['restore']);
+        const path = '/manager-api/desktop/restore',
+          body = JSON.stringify({ reviewId: randomUUID(), key: randomUUID() });
+        if (!native) {
+          const reply = await call(
+            path,
+            body,
+            signed(grant, path, body, 'restore'),
+          );
+          assert.equal(reply.status, 409);
+          assert.equal(reply.body.code, 'native_recovery_unavailable');
+        } else {
+          const operation = store.start('stop', randomUUID(), {
+            installationId,
+          }).operation;
+          for (const suffix of ['restore-operation', 'resume-restore']) {
+            const route = '/manager-api/desktop/' + suffix,
+              input = JSON.stringify({ id: operation.id });
+            assert.equal(
+              (await call(route, input, signed(grant, route, input, 'restore')))
+                .status,
+              403,
+            );
+          }
+        }
+        assert.deepEqual(effects, []);
+      },
+      native,
+      true,
+    );
+});

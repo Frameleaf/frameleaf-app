@@ -9,11 +9,13 @@ import {
   NativeRestorePreparedSchema,
   NativeRestoreVerifiedSchema,
   NativeRestoreSelectionSchema,
+  NativeRestoreFinalizedSchema,
   NativeRestoreReply,
   type NativeRestoreBinding,
   type NativeRestorePrepared,
   type NativeRestoreVerified,
   type NativeRestoreSelection,
+  type NativeRestoreFinalized,
 } from './native-restore-contract.js';
 
 const localPath = z
@@ -184,6 +186,11 @@ export interface NativeRuntime {
     safety: NativeRestoreSafety,
     signal?: AbortSignal,
   ): Promise<NativeRestoreSelection>;
+  finalizeRestore(
+    proof: NativeRestoreVerified,
+    safety: NativeRestoreSafety,
+    signal?: AbortSignal,
+  ): Promise<NativeRestoreFinalized>;
   stop(): Promise<StopReceipt>;
   checkpoint(
     operationId: string,
@@ -224,8 +231,11 @@ type Owner = {
   verifiedRestore?: NativeRestoreVerified;
   selection?: {
     operationId: string;
-    receipt?: NativeRestoreSelection;
-    work: ReturnType<typeof deferred<NativeRestoreSelection>>;
+    state: 'restore-activation-pending' | 'restore-finalized';
+    receipt?: NativeRestoreSelection | NativeRestoreFinalized;
+    work: ReturnType<
+      typeof deferred<NativeRestoreSelection | NativeRestoreFinalized>
+    >;
     cleanup: () => void;
   };
   restore?: {
@@ -373,6 +383,25 @@ export class NativeHost implements NativeRuntime {
     snapshot: NativeRestoreSafety,
     signal?: AbortSignal,
   ): Promise<NativeRestoreSelection> {
+    return this.requestSelection(input, snapshot, false, signal).then((value) =>
+      NativeRestoreSelectionSchema.parse(value),
+    );
+  }
+  finalizeRestore(
+    input: NativeRestoreVerified,
+    snapshot: NativeRestoreSafety,
+    signal?: AbortSignal,
+  ): Promise<NativeRestoreFinalized> {
+    return this.requestSelection(input, snapshot, true, signal).then((value) =>
+      NativeRestoreFinalizedSchema.parse(value),
+    );
+  }
+  private requestSelection(
+    input: NativeRestoreVerified,
+    snapshot: NativeRestoreSafety,
+    finalize: boolean,
+    signal?: AbortSignal,
+  ): Promise<NativeRestoreSelection | NativeRestoreFinalized> {
     const proof = NativeRestoreVerifiedSchema.safeParse(input),
       safety = RestoreSafety.safeParse(snapshot);
     if (
@@ -402,7 +431,7 @@ export class NativeHost implements NativeRuntime {
     if (!isDeepStrictEqual(owner.verifiedRestore, proof.data))
       return Promise.reject(new Refusal('native_restore_proof_invalid'));
     owner.verifiedRestore = undefined;
-    const work = deferred<NativeRestoreSelection>(),
+    const work = deferred<NativeRestoreSelection | NativeRestoreFinalized>(),
       operationId = proof.data.prepared.binding.operationId;
     const abort = () => this.stopOwner(owner);
     const timer = setTimeout(() => {
@@ -413,6 +442,7 @@ export class NativeHost implements NativeRuntime {
     timer.unref();
     owner.selection = {
       operationId,
+      state: finalize ? 'restore-finalized' : 'restore-activation-pending',
       work,
       cleanup: () => {
         clearTimeout(timer);
@@ -425,7 +455,7 @@ export class NativeHost implements NativeRuntime {
       owner.child.stdin.write(
         JSON.stringify({
           protocolVersion: 1,
-          action: 'select-restore',
+          action: finalize ? 'finalize-restore' : 'select-restore',
           operationId,
           verificationId: proof.data.verificationId,
           safety: { ...safety.data, checkpoint },
@@ -858,7 +888,9 @@ export class NativeHost implements NativeRuntime {
         ).safeParse(value);
         const checkpoint = CheckpointReply.safeParse(value);
         const restore = NativeRestoreReply.safeParse(value);
-        const selection = NativeRestoreSelectionSchema.safeParse(value);
+        const selection = z
+          .union([NativeRestoreSelectionSchema, NativeRestoreFinalizedSchema])
+          .safeParse(value);
         if (selection.success) {
           const request = owner.selection;
           if (
@@ -867,7 +899,8 @@ export class NativeHost implements NativeRuntime {
             owner.mode !== 'restore-prepare' ||
             !request ||
             request.receipt ||
-            selection.data.operationId !== request.operationId
+            selection.data.operationId !== request.operationId ||
+            selection.data.state !== request.state
           )
             return fail('native_host_protocol_invalid');
           request.receipt = selection.data;
@@ -1009,6 +1042,7 @@ export class NativeOperations {
     readonly store: Store,
     private runtime: NativeRuntime,
     private backup?: (operation: Operation) => Promise<unknown>,
+    private restoreWork?: (operation: Operation) => Promise<unknown>,
   ) {}
   control(
     kind: 'start' | 'stop' | 'restart' | 'backup',
@@ -1031,14 +1065,36 @@ export class NativeOperations {
       this.executing.has(id) ||
       !['failed', 'interrupted'].includes(operation.state) ||
       (!['start', 'stop', 'restart'].includes(operation.kind) &&
-        !(operation.kind === 'backup' && this.backup)) ||
-      JSON.stringify(operation.input) !== JSON.stringify(this.runtime.identity)
+        !(operation.kind === 'backup' && this.backup) &&
+        !(operation.kind === 'restore' && this.restoreWork)) ||
+      (operation.kind === 'restore' &&
+        !checkpointOperation.safeParse(operation.input.reviewId).success) ||
+      !isDeepStrictEqual(
+        operation.input,
+        operation.kind === 'restore'
+          ? { reviewId: operation.input.reviewId, ...this.runtime.identity }
+          : this.runtime.identity,
+      )
     )
       throw new Refusal('operation_not_recoverable');
     operation.state = 'running';
     operation.error = null;
     this.store.save(operation);
     this.launch(operation);
+    return operation;
+  }
+  restore(reviewId: string, key: string): Operation {
+    if (!this.restoreWork) throw new Refusal('native_action_unavailable');
+    if (
+      !checkpointOperation.safeParse(reviewId).success ||
+      !checkpointOperation.safeParse(key).success
+    )
+      throw new Refusal('native_restore_request_invalid');
+    const { operation, created } = this.store.start('restore', key, {
+      reviewId,
+      ...this.runtime.identity,
+    });
+    if (created) this.launch(operation);
     return operation;
   }
   async wait(id: string): Promise<Operation> {
@@ -1081,6 +1137,11 @@ export class NativeOperations {
     this.store.save(operation);
   }
   private async run(operation: Operation): Promise<void> {
+    if (operation.kind === 'restore') {
+      if (!this.restoreWork) throw new Refusal('native_action_unavailable');
+      await this.restoreWork(operation);
+      return;
+    }
     if (operation.kind === 'backup') {
       if (!this.backup) throw new Refusal('native_action_unavailable');
       await this.backup(operation);
