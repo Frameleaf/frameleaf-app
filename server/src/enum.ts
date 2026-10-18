@@ -39,8 +39,6 @@ export enum RequestHeader {
   HlsPosition = 'x-frameleaf-hls-pos',
   /** The scoped, expiring session credential a render worker was handed at admission (FL-95). */
   RenderWorkerSession = 'x-frameleaf-worker-session',
-  /** The Frameleaf Manager's machine credential (`/run/frameleaf/manager-token`); loopback only, never via the edge worker. */
-  ManagerToken = 'x-frameleaf-manager',
   /** FL-161: how the edge worker received a request (`lan`, `wan` or `relay`); counts only with the secret below. */
   FrameleafVia = 'x-frameleaf-via',
   /** FL-161: the edge worker's per-boot secret (`FRAMELEAF_EDGE_SECRET`), proving it set the via header. */

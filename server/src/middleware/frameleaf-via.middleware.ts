@@ -24,6 +24,13 @@ import { type FrameleafVia, claimsFrameleafVia, frameleafVia } from 'src/utils/f
  * `FRAMELEAF_EDGE_SECRET` explicitly and give both the same value; otherwise each generates its own.
  */
 
+/**
+ * The Frameleaf Manager's machine credential (`/run/frameleaf/manager-token`), sent over loopback from
+ * inside the server container; never accepted through the edge worker.
+ * ponytail: lives here, not in `RequestHeader`, because `src/enum.ts` is hash-locked by the schema catalog.
+ */
+export const MANAGER_TOKEN_HEADER = 'x-frameleaf-manager';
+
 /** The error code of a request that claims an arrival the edge worker did not vouch for. */
 export const FRAMELEAF_VIA_UNVERIFIED = 'frameleaf_via_unverified';
 
@@ -31,9 +38,9 @@ export const FRAMELEAF_VIA_UNVERIFIED = 'frameleaf_via_unverified';
  * Headers in the `X-Frameleaf-` namespace that clients legitimately send: credentials this server
  * issued itself, checked where they are used, never arrival claims. Everything else is dropped.
  */
-const CLIENT_CREDENTIAL_HEADERS = new Set<string>([RequestHeader.RenderWorkerSession, RequestHeader.ManagerToken]);
+const CLIENT_CREDENTIAL_HEADERS = new Set<string>([RequestHeader.RenderWorkerSession, MANAGER_TOKEN_HEADER]);
 /** Credentials only a caller on this host holds; dropped from anything that came through remote access. */
-const LOCAL_ONLY_CREDENTIAL_HEADERS = new Set<string>([RequestHeader.ManagerToken]);
+const LOCAL_ONLY_CREDENTIAL_HEADERS = new Set<string>([MANAGER_TOKEN_HEADER]);
 
 export type FrameleafForwarded = {
   /** The visitor's address as the edge worker reported it. */

@@ -11,8 +11,9 @@ import {
   WarmLibrarySetupDto,
 } from 'src/dtos/frameleaf-library-setup.dto.js';
 import { ManagerAccessDto } from 'src/dtos/frameleaf-manager-access.dto.js';
-import { ApiTag, Permission, RequestHeader, SyncEntityType, SyncRequestType } from 'src/enum.js';
+import { ApiTag, Permission, SyncEntityType, SyncRequestType } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { MANAGER_TOKEN_HEADER } from 'src/middleware/frameleaf-via.middleware.js';
 import { FrameleafLibrarySetupService } from 'src/services/frameleaf-library-setup.service.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { managerAccessUrl } from 'src/utils/frameleaf-manager-access.js';
@@ -93,7 +94,7 @@ export class FrameleafLibrarySetupController {
   @Get('manager')
   @Authenticated({ public: true })
   @Endpoint({ operationId: 'getManagerLibrarySetup', summary: 'Manager machine-authenticated setup status', history })
-  async managerStatus(@Headers(RequestHeader.ManagerToken) token?: string): Promise<LibrarySetupStatusDto> {
+  async managerStatus(@Headers(MANAGER_TOKEN_HEADER) token?: string): Promise<LibrarySetupStatusDto> {
     await this.setup.authorizeManager(token);
     return this.setup.status();
   }
@@ -101,7 +102,7 @@ export class FrameleafLibrarySetupController {
   @Post('manager')
   @Authenticated({ public: true })
   @Endpoint({ operationId: 'beginManagerLibrarySetup', summary: 'Manager machine-authenticated rescan', history })
-  async managerBegin(@Headers(RequestHeader.ManagerToken) token?: string): Promise<LibrarySetupStatusDto> {
+  async managerBegin(@Headers(MANAGER_TOKEN_HEADER) token?: string): Promise<LibrarySetupStatusDto> {
     await this.setup.authorizeManager(token);
     await this.setup.begin(true);
     return this.setup.status();
