@@ -13,7 +13,7 @@ import {
   pairingMessage,
   requestMessage,
 } from '../src/desktop-grants.js';
-import { sha256 } from '../src/contracts.js';
+import { Refusal, sha256 } from '../src/contracts.js';
 import { Operations } from '../src/operations.js';
 import { desktopApi } from '../src/desktop-api.js';
 import { NativeService } from '../src/runtime/native-service.js';
@@ -68,6 +68,10 @@ async function fixture(run: (f: any) => Promise<void>, native = false) {
             privateKeyPem: 'synthetic private key',
           },
           controllerSha256: 'e'.repeat(64),
+          backupEngine: {
+            executable: join(root, 'backup-engine'),
+            sha256: 'f'.repeat(64),
+          },
           name: 'Native library',
           release: 'frameleaf-v3.0.0-1',
           password,
@@ -103,6 +107,9 @@ async function fixture(run: (f: any) => Promise<void>, native = false) {
           stop: async () => {
             effects.push('native-stop');
             return { protocolVersion: 1, state: 'stopped' };
+          },
+          checkpoint: async () => {
+            throw new Refusal('native_checkpoint_unavailable');
           },
         },
       )

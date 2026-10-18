@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { test } from 'node:test';
-import { sha256 } from '../src/contracts.js';
+import { Refusal, sha256 } from '../src/contracts.js';
 import { Store } from '../src/store.js';
 import {
   NativeService,
@@ -32,6 +32,8 @@ async function fixture(run: (f: any) => Promise<void>) {
   const store = new Store(join(root, 'manager'));
   const controller = join(root, 'controller');
   await writeFile(controller, 'synthetic controller', { mode: 0o700 });
+  const engine = join(root, 'backup-engine');
+  await writeFile(engine, 'synthetic backup engine', { mode: 0o700 });
   const installation = {
     runtime: 'native',
     id: 'a'.repeat(12),
@@ -48,6 +50,10 @@ async function fixture(run: (f: any) => Promise<void>) {
     protocolVersion: 2,
     installation,
     controllerSha256: sha256('synthetic controller'),
+    backupEngine: {
+      executable: engine,
+      sha256: sha256('synthetic backup engine'),
+    },
     tls: {
       certificatePem: 'synthetic certificate',
       privateKeyPem: 'synthetic private key',
@@ -120,6 +126,19 @@ test('native bootstrap is bounded, complete, strict and keeps credentials out of
         installation: { ...bootstrap.installation, apiPort: 54329 },
       },
       { ...bootstrap, controllerSha256: '0'.repeat(64) },
+      { ...bootstrap, backupEngine: undefined },
+      {
+        ...bootstrap,
+        backupEngine: { executable: 'restic', sha256: 'a'.repeat(64) },
+      },
+      {
+        ...bootstrap,
+        backupEngine: { ...bootstrap.backupEngine, sha256: '0'.repeat(64) },
+      },
+      {
+        ...bootstrap,
+        backupEngine: { ...bootstrap.backupEngine, extra: true },
+      },
     ])
       await assert.rejects(read(value));
     await assert.rejects(readNativeBootstrap(Readable.from(['{}'])));
@@ -137,6 +156,38 @@ test('native bootstrap is bounded, complete, strict and keeps credentials out of
     const hanging = new Readable({ read() {} });
     await assert.rejects(readNativeBootstrap(hanging, 10));
     assert.equal(hanging.destroyed, true);
+  });
+});
+test('native bootstrap binds the engine bytes, physical path and installation fingerprint', async () => {
+  await fixture(async ({ root, bootstrap, store, runtime }) => {
+    const link = join(root, 'engine-link');
+    await symlink(bootstrap.backupEngine.executable, link);
+    await assert.rejects(
+      read({
+        ...bootstrap,
+        backupEngine: { ...bootstrap.backupEngine, executable: link },
+      }),
+    );
+    const service = new NativeService(store, bootstrap, runtime);
+    assert.equal(typeof service.backupCommand, 'function');
+    assert.deepEqual(
+      store.get('native-installation').descriptor.backupEngine,
+      bootstrap.backupEngine,
+    );
+    assert.throws(
+      () =>
+        new NativeService(
+          store,
+          {
+            ...bootstrap,
+            backupEngine: { ...bootstrap.backupEngine, sha256: 'f'.repeat(64) },
+          },
+          runtime,
+        ),
+      /native_installation_changed/,
+    );
+    await writeFile(bootstrap.backupEngine.executable, 'changed engine');
+    await assert.rejects(read(bootstrap));
   });
 });
 test('native bootstrap refuses linked or changed controllers', async () => {
