@@ -18602,20 +18602,20 @@ export function getCloudMlConsentHistory(opts?: Oazapfts.RequestOpts) {
 /**
  * Get the Frameleaf Cloud consent terms for chosen features
  */
-export function getCloudMlConsentTerms({ identityNames, medicalSignals, smartSearch, faceRecognition }: {
+export function getCloudMlConsentTerms({ faceRecognition, identityNames, medicalSignals, smartSearch }: {
+    faceRecognition?: boolean;
     identityNames?: boolean;
     medicalSignals?: boolean;
     smartSearch?: boolean;
-    faceRecognition?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: CloudMlConsentTermsDto;
     }>(`/admin/cloud/ml/consent/terms${QS.query(QS.explode({
+        faceRecognition,
         identityNames,
         medicalSignals,
-        smartSearch,
-        faceRecognition
+        smartSearch
     }))}`, {
         ...opts
     }));

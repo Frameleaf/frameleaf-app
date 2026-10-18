@@ -3070,6 +3070,15 @@
         "operationId": "getCloudMlConsentTerms",
         "parameters": [
           {
+            "name": "faceRecognition",
+            "required": false,
+            "in": "query",
+            "description": "The face recognition feature as the administrator chose it",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "identityNames",
             "required": false,
             "in": "query",
@@ -3092,15 +3101,6 @@
             "required": false,
             "in": "query",
             "description": "The smart search feature as the administrator chose it",
-            "schema": {
-              "type": "boolean"
-            }
-          },
-          {
-            "name": "faceRecognition",
-            "required": false,
-            "in": "query",
-            "description": "The face recognition feature as the administrator chose it",
             "schema": {
               "type": "boolean"
             }
