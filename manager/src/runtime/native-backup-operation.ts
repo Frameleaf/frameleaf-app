@@ -30,6 +30,18 @@ export async function runNativeDatabaseBackup(
     )
   )
     throw new Refusal('native_backup_journal_invalid');
+  const identity = structuredClone(runtime.identity);
+  function stillOwned() {
+    if (
+      operation.state !== 'running' ||
+      !isDeepStrictEqual(runtime.identity, identity) ||
+      !isDeepStrictEqual(
+        store.history().find((value) => value.id === operation.id),
+        operation,
+      )
+    )
+      throw new Refusal('native_backup_journal_invalid');
+  }
   const intentKey = 'native-backup-database-intent';
   const intent = operation.receipts[intentKey];
   if (intent !== undefined && !isDeepStrictEqual(intent, runtime.identity))
@@ -74,11 +86,13 @@ export async function runNativeDatabaseBackup(
       const key = cleanupOnly
         ? 'native-backup-start-cleanup'
         : 'native-backup-start-database';
+      stillOwned();
       operation.step = key;
       store.save(operation);
       const ready = cleanupOnly
         ? await runtime.startCheckpointCleanup()
         : await runtime.startDatabase();
+      stillOwned();
       if (
         !isDeepStrictEqual(ready, {
           protocolVersion: 1,
@@ -93,21 +107,24 @@ export async function runNativeDatabaseBackup(
       if (!operation.completed.includes(key)) operation.completed.push(key);
       store.save(operation);
     }
-    return await completeNativeDatabaseBackup(
+    const result = await completeNativeDatabaseBackup(
       store,
       runtime,
       engine,
       context,
       operation,
     );
+    stillOwned();
+    return result;
   } finally {
     if (temporary && !drained) await stopTemporary();
   }
   async function stopTemporary() {
     const key = 'native-backup-stop-database';
-    operation.step = key;
     let journalError;
     try {
+      stillOwned();
+      operation.step = key;
       store.save(operation);
     } catch (error) {
       journalError = error;
@@ -117,6 +134,7 @@ export async function runNativeDatabaseBackup(
     if (stopped?.protocolVersion !== 1 || stopped.state !== 'stopped')
       throw new Refusal('native_shutdown_unconfirmed');
     if (journalError) throw journalError;
+    stillOwned();
     operation.receipts[key] = stopped;
     if (!operation.completed.includes(key)) operation.completed.push(key);
     store.save(operation);

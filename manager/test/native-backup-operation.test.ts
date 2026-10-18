@@ -608,7 +608,7 @@ test('the outer native lifecycle cannot overwrite a newer backup journal on succ
       );
       await assert.rejects(
         operations.wait(operation.id),
-        /native_operation_journal_changed/,
+        /operation_journal_changed/,
       );
       assert.equal(store.history()[0].error, 'new owner evidence');
       assert.equal(store.history()[0].state, 'running');

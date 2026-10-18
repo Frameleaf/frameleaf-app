@@ -209,9 +209,10 @@ test('native recovery refuses another installation or a Docker operation', async
       () => operations.resume(operation.id),
       /operation_not_recoverable/,
     );
-    operation.input = {};
-    operation.state = 'interrupted';
-    store.save(operation);
+    const current = store.history()[0];
+    current.input = {};
+    current.state = 'interrupted';
+    store.save(current);
     assert.throws(
       () => operations.resume(operation.id),
       /operation_not_recoverable/,
@@ -286,5 +287,35 @@ test('journal failure before the effect retains its lock and returns a stable re
     assert.equal((await operations.wait(operation.id)).state, 'complete');
     assert.equal(starts, 1);
     assert.doesNotMatch(JSON.stringify(store.history()), /synthetic-private/);
+  });
+});
+test('a stale operation cannot overwrite another SQLite connection even when timestamps match', async (t) => {
+  t.mock.method(Date, 'now', () => 1234);
+  await fixture(async (store, runtime) => {
+    const { operation } = store.start('start', 'stale-version', {
+      ...runtime.identity,
+    });
+    const other = new Store(store.directory);
+    try {
+      const current = other.history()[0];
+      current.error = 'new owner evidence';
+      other.save(current);
+      assert.equal(current.updatedAt, operation.updatedAt);
+      operation.state = 'complete';
+      assert.throws(() => store.save(operation), /operation_journal_changed/);
+      assert.equal(store.history()[0].state, 'running');
+      assert.equal(store.history()[0].error, 'new owner evidence');
+      assert.throws(
+        () => store.start('stop', 'cannot-release-newer-lock', {}),
+        /operation_in_progress/,
+      );
+      const retry = store.request('start', 'stale-version', runtime.identity);
+      assert.ok(retry);
+      retry.state = 'failed';
+      store.save(retry);
+      assert.equal(other.history()[0].state, 'failed');
+    } finally {
+      other.close();
+    }
   });
 });
