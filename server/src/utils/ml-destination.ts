@@ -1099,7 +1099,7 @@ export const clipTextDestinationId = async (mlDestinationRepository: MlDestinati
   );
   if (!local) {
     throw new MlDestinationRefusedError(
-      MlAdmissionRefusal.WorkloadNotAllowed,
+      MlAdmissionRefusal.WorkloadNotRouted,
       MlWorkload.Clip,
       null,
       "search text is read on this network; turn on this server's machine learning",
