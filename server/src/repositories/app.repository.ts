@@ -38,14 +38,19 @@ export class AppRepository {
     this.stopping = true;
 
     const { graceMs, workerDeadlineMs } = budget ?? new ConfigRepository().getEnv().shutdown;
+    const failureExitCode = process.env.FRAMELEAF_NATIVE_OWNER === '1' ? 1 : exitCode;
+    let completedExitCode = exitCode;
 
     /* eslint-disable unicorn/no-process-exit */
     // in exceptional circumstance, the application may hang
-    setTimeout(() => process.exit(exitCode), workerDeadlineMs);
+    setTimeout(() => process.exit(failureExitCode), workerDeadlineMs);
 
     void Promise.try(() => this.closeFn?.(graceMs))
-      .catch((error) => console.error(`Unable to stop gracefully: ${error}`))
-      .finally(() => process.exit(exitCode));
+      .catch((error) => {
+        completedExitCode = failureExitCode;
+        console.error(`Unable to stop gracefully: ${error}`);
+      })
+      .finally(() => process.exit(completedExitCode));
     /* eslint-enable unicorn/no-process-exit */
   }
 

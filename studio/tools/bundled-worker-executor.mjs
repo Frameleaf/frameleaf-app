@@ -9,12 +9,13 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { prepareClaimFonts } from './bundled-worker-fonts.mjs';
 import { holdLease } from './bundled-worker-client.mjs';
 import { audioPlan, encodeArgs, runFfmpeg } from './bundled-worker-formats.mjs';
 import { BundledRefusal, bundledRecipe, outputMismatch } from './bundled-worker-recipe.mjs';
 
 const MEDIA_INPUT_KINDS = new Set(['library-asset', 'project-import']);
-/** Inputs a bundled render verifies but does not need as media: title fonts are installed with it. */
+/** Font inputs are verified and registered separately from timeline media. */
 const VERIFIED_ONLY_INPUT_KINDS = new Set(['font']);
 
 const sha256File = async (file) => {
@@ -39,6 +40,7 @@ export async function executeBundledClaim(claim, context) {
   let outputBytes = 0;
   const lease = holdLease({
     client,
+    signal: context.signal,
     operationId: claim.operationId,
     claimToken: claim.claimToken,
     leaseMs: claim.leaseMs,
@@ -46,15 +48,21 @@ export async function executeBundledClaim(claim, context) {
     outputBytes: () => outputBytes,
   });
   const post = (pathname, body) => client.post(`${root}${pathname}`, { ...binding, ...body }, { signal: lease.signal });
-  await mkdir(workRoot, { recursive: true, mode: 0o700 });
-  const folder = await mkdtemp(path.join(workRoot, 'claim-'));
+  let folder;
   let outcome = 'failed';
   let failure;
   try {
+    lease.assertLive();
+    await mkdir(workRoot, { recursive: true, mode: 0o700 });
+    folder = await mkdtemp(path.join(workRoot, 'claim-'));
     await lease.beat();
-    const recipe = bundledRecipe(claim, { softwareRenderer: renderer.softwareRenderer, writers: renderer.writers });
+    const recipe = bundledRecipe(claim, {
+      softwareRenderer: renderer.softwareRenderer,
+      writers: renderer.writers,
+    });
     const resumable = claim.checkpoints?.find(
-      (checkpoint) => checkpoint.sequence === 0 && checkpoint.chunkKey === recipe.chunkKey && checkpoint.state === 'complete',
+      (checkpoint) =>
+        checkpoint.sequence === 0 && checkpoint.chunkKey === recipe.chunkKey && checkpoint.state === 'complete',
     );
 
     const planned = await post('/checkpoints', {
@@ -74,7 +82,13 @@ export async function executeBundledClaim(claim, context) {
     if (resumable) {
       log(`Export ${claim.operationId}: reusing the artifact a previous attempt finished`);
     } else {
-      const outputPath = await renderClaim(claim, recipe, { ...context, folder, lease, post, onBytes: (bytes) => (outputBytes = bytes) });
+      const outputPath = await renderClaim(claim, recipe, {
+        ...context,
+        folder,
+        lease,
+        post,
+        onBytes: (bytes) => (outputBytes = bytes),
+      });
       const size = (await stat(outputPath)).size;
       if (claim.limits?.maxOutputBytes && BigInt(size) > BigInt(claim.limits.maxOutputBytes)) {
         throw new BundledRefusal('output_too_large', 'The rendered export is larger than this server allows.');
@@ -83,8 +97,15 @@ export async function executeBundledClaim(claim, context) {
       const files = [{ file: outputPath, size, role: undefined }];
       if (recipe.captions.mode === 'sidecar') {
         const captions = path.join(folder, 'captions.srt');
-        await writeFile(captions, recipe.captions.content, { flag: 'wx', mode: 0o600 });
-        files.push({ file: captions, size: Buffer.byteLength(recipe.captions.content), role: 'subtitle' });
+        await writeFile(captions, recipe.captions.content, {
+          flag: 'wx',
+          mode: 0o600,
+        });
+        files.push({
+          file: captions,
+          size: Buffer.byteLength(recipe.captions.content),
+          role: 'subtitle',
+        });
       }
       for (const { file, size: bytes, role } of files) {
         lease.assertLive();
@@ -92,11 +113,19 @@ export async function executeBundledClaim(claim, context) {
           claim.operationId,
           claim.claimToken,
           file,
-          { chunkKey: recipe.chunkKey, checksum: await sha256File(file), sizeInBytes: String(bytes), ...(role && { role }) },
+          {
+            chunkKey: recipe.chunkKey,
+            checksum: await sha256File(file),
+            sizeInBytes: String(bytes),
+            ...(role && { role }),
+          },
           { signal: lease.signal },
         );
         if (!uploaded?.accepted) {
-          throw new BundledRefusal('artifact_refused', `The server refused the rendered ${role === 'subtitle' ? 'caption file' : 'file'}.`);
+          throw new BundledRefusal(
+            'artifact_refused',
+            `The server refused the rendered ${role === 'subtitle' ? 'caption file' : 'file'}.`,
+          );
         }
       }
     }
@@ -104,23 +133,34 @@ export async function executeBundledClaim(claim, context) {
     await lease.beat();
     const complete = { artifactSequence: 0, resultAssetId: null };
     const validated = await post('/validate', complete);
-    if (!validated?.accepted) throw new BundledRefusal('validation_refused', 'The server could not validate the rendered file.');
+    if (!validated?.accepted)
+      throw new BundledRefusal('validation_refused', 'The server could not validate the rendered file.');
     await lease.beat();
     const completed = await post('/complete', complete);
-    if (!completed?.accepted) throw new BundledRefusal('completion_refused', 'The server did not accept the finished export.');
+    if (!completed?.accepted)
+      throw new BundledRefusal('completion_refused', 'The server did not accept the finished export.');
     outcome = 'completed';
     log(`Export ${claim.operationId} completed`);
   } catch (error) {
     failure = error;
   } finally {
     const { cancelled, reason } = lease.state;
-    lease.release();
-    await rm(folder, { recursive: true, force: true });
+    await lease.release();
+    if (folder) await rm(folder, { recursive: true, force: true });
     if (outcome !== 'completed') {
-      outcome = await settleFailure(claim, client, { failure, cancelled, reason, log });
+      outcome = await settleFailure(claim, client, {
+        failure,
+        cancelled,
+        reason,
+        log,
+      });
     }
   }
-  return { status: outcome, operationId: claim.operationId, ...(failure?.code && { code: failure.code }) };
+  return {
+    status: outcome,
+    operationId: claim.operationId,
+    ...(failure?.code && { code: failure.code }),
+  };
 }
 
 /** Tell the server how the attempt ended: a cancel is acknowledged, a refusal or failure reported. */
@@ -141,7 +181,12 @@ async function settleFailure(claim, client, { failure, cancelled, reason, log })
     const refusal = failure instanceof BundledRefusal;
     await client.post(`${root}/fail`, {
       ...binding,
-      errorCode: refusal ? `bundled_${failure.code}` : 'bundled_render_failed',
+      errorCode:
+        reason === 'WORKER_STOPPED'
+          ? 'bundled_worker_stopped'
+          : refusal
+            ? `bundled_${failure.code}`
+            : 'bundled_render_failed',
       error: refusal
         ? failure.message
         : 'The bundled Studio worker could not finish this export. Check the machine-learning container log.',
@@ -159,6 +204,7 @@ async function renderClaim(claim, recipe, context) {
   const inputs = path.join(folder, 'inputs');
   await mkdir(inputs, { mode: 0o700 });
   const files = new Map();
+  const downloaded = new Map();
   let budget = maxInputBytes;
   for (const input of claim.inputs ?? []) {
     lease.assertLive();
@@ -169,13 +215,19 @@ async function renderClaim(claim, recipe, context) {
         `This project uses a ${input.kind} resource, which the bundled Studio worker cannot render yet.`,
       );
     }
-    const file = path.join(inputs, `${files.size}-${MEDIA_INPUT_KINDS.has(input.kind) ? 'media' : 'verified'}`);
+    const file = path.join(inputs, `${downloaded.size}-${MEDIA_INPUT_KINDS.has(input.kind) ? 'media' : 'verified'}`);
     let received;
     try {
-      received = await client.download(claim.operationId, input, file, { maxBytes: budget, signal: lease.signal });
+      received = await client.download(claim.operationId, input, file, {
+        maxBytes: budget,
+        signal: lease.signal,
+      });
     } catch (error) {
       if (error.message === 'INPUT_LIMIT_EXCEEDED') {
-        throw new BundledRefusal('inputs_too_large', 'The project media is larger than the bundled Studio worker accepts.');
+        throw new BundledRefusal(
+          'inputs_too_large',
+          'The project media is larger than the bundled Studio worker accepts.',
+        );
       }
       if (error.message === 'INPUT_CHECKSUM_MISMATCH') {
         throw new BundledRefusal('input_changed', 'A source changed while it was being read; export again.');
@@ -183,6 +235,7 @@ async function renderClaim(claim, recipe, context) {
       throw error;
     }
     budget -= received.size;
+    downloaded.set(input.inputId, file);
     if (MEDIA_INPUT_KINDS.has(input.kind)) files.set(input.resourceId, file);
   }
   for (const id of recipe.mediaIds) {
@@ -191,10 +244,16 @@ async function renderClaim(claim, recipe, context) {
     }
   }
 
-  await post('/progress', { status: 'rendering', processedUnits: 0, totalUnits: recipe.frames });
+  await post('/progress', {
+    status: 'rendering',
+    processedUnits: 0,
+    totalUnits: recipe.frames,
+  });
   let reported = 0;
   const engineOutput = path.join(folder, recipe.pass === 'engine' ? 'export.mp4' : 'master.mp4');
+  const fonts = await prepareClaimFonts(claim, downloaded, lease.signal);
   await renderer.render({
+    fonts,
     project: recipe.graph,
     files,
     settings: recipe.settings,
@@ -205,7 +264,11 @@ async function renderClaim(claim, recipe, context) {
       const processed = Math.min(recipe.frames, Math.floor(fraction * recipe.frames));
       if (processed - reported >= Math.max(1, Math.floor(recipe.frames / 20))) {
         reported = processed;
-        void post('/progress', { status: 'rendering', processedUnits: processed, totalUnits: recipe.frames }).catch(() => {});
+        void post('/progress', {
+          status: 'rendering',
+          processedUnits: processed,
+          totalUnits: recipe.frames,
+        }).catch(() => {});
       }
     },
   });
@@ -216,7 +279,7 @@ async function renderClaim(claim, recipe, context) {
     await rm(engineOutput, { force: true });
   }
   onBytes((await stat(outputPath)).size);
-  const mismatch = outputMismatch(recipe, await probe(outputPath));
+  const mismatch = outputMismatch(recipe, await probe(outputPath, { signal: lease.signal }));
   if (mismatch) throw new BundledRefusal('output_mismatch', `The export was not written as promised: ${mismatch}.`);
   return outputPath;
 }
@@ -226,7 +289,8 @@ async function renderClaim(claim, recipe, context) {
  * stream copy for H.264 and AAC, an encode for every other codec, plus the sealed caption track.
  */
 async function secondPass(recipe, master, { probe, folder, lease, ffmpeg, renderer }) {
-  const masterAudio = (await probe(master)).streams.find((stream) => stream.codec_type === 'audio') ?? null;
+  const masterAudio =
+    (await probe(master, { signal: lease.signal })).streams.find((stream) => stream.codec_type === 'audio') ?? null;
   const audio = audioPlan(recipe.target, masterAudio, new Set(renderer.encoders ?? ['libopus']));
   if (audio.refusal) throw new BundledRefusal('unsupported_audio', audio.refusal);
   if (recipe.target.kind === 'audio' && !masterAudio) {
@@ -235,20 +299,35 @@ async function secondPass(recipe, master, { probe, folder, lease, ffmpeg, render
   let subtitles;
   if (recipe.captions.mode === 'embedded') {
     subtitles = path.join(folder, 'track.srt');
-    await writeFile(subtitles, recipe.captions.content, { flag: 'wx', mode: 0o600 });
+    await writeFile(subtitles, recipe.captions.content, {
+      flag: 'wx',
+      mode: 0o600,
+    });
   }
   const output = path.join(folder, `export${recipe.target.extension}`);
   lease.assertLive();
   try {
     await runFfmpeg(
-      encodeArgs({ input: master, output, format: recipe.target, encoder: recipe.encoder, quality: recipe.quality, audio, subtitles }),
+      encodeArgs({
+        input: master,
+        output,
+        format: recipe.target,
+        encoder: recipe.encoder,
+        quality: recipe.quality,
+        audio,
+        subtitles,
+      }),
       { ffmpeg, signal: lease.signal },
     );
   } catch (error) {
     if (lease.signal.aborted) throw lease.signal.reason;
     throw new BundledRefusal(
       'encode_failed',
-      `This machine-learning container could not write ${recipe.target.id} (${String(error.stderr || error.message).trim().split('\n')[0]}).`,
+      `This machine-learning container could not write ${recipe.target.id} (${
+        String(error.stderr || error.message)
+          .trim()
+          .split('\n')[0]
+      }).`,
     );
   }
   return output;

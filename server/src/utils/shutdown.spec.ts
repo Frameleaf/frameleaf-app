@@ -192,6 +192,46 @@ describe(closeGracefully.name, () => {
 });
 
 describe(onStopRequest.name, () => {
+  it('accepts the native IPC stop or owner disconnect once, ignoring unrelated messages', () => {
+    const proc = Object.assign(new EventEmitter(), { connected: true, send: vi.fn() });
+    const stop = vi.fn();
+    onStopRequest(stop, { port: null, proc: proc as any, ipc: true });
+    proc.emit('message', { type: WORKER_STOP_MESSAGE });
+    proc.emit('message', 'unknown');
+    expect(stop).not.toHaveBeenCalled();
+    proc.emit('message', WORKER_STOP_MESSAGE);
+    proc.emit('disconnect');
+    proc.emit('SIGTERM');
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it('stops a native fork when the owner disappears without a stop command', () => {
+    const proc = Object.assign(new EventEmitter(), { connected: true, send: vi.fn() });
+    const stop = vi.fn();
+    onStopRequest(stop, { port: null, proc: proc as any, ipc: true });
+    proc.emit('disconnect');
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it.each([{}, { connected: false, send: () => {} }, { connected: true }])(
+    'refuses native startup without connected IPC: %j',
+    (channel) => {
+      const proc = Object.assign(new EventEmitter(), channel);
+      expect(() => onStopRequest(vi.fn(), { port: null, proc: proc as any, ipc: true })).toThrow(
+        'native_owner_unavailable',
+      );
+    },
+  );
+
+  it('leaves IPC inactive for default container signal handling', () => {
+    const proc = new EventEmitter();
+    const stop = vi.fn();
+    onStopRequest(stop, { port: null, proc: proc as any });
+    proc.emit('message', WORKER_STOP_MESSAGE);
+    proc.emit('disconnect');
+    expect(stop).not.toHaveBeenCalled();
+  });
+
   it('stops a forked process on SIGTERM or SIGINT, once', () => {
     const proc = new EventEmitter();
     const stop = vi.fn();
