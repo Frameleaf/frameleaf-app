@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MlWorkload } from 'src/enum.js';
 import {
-  CloudModelIdentityMismatchError,
   type CloudModelIdentity,
+  CloudModelIdentityMismatchError,
   acceptCloudClipResult,
   acceptCloudFaceResult,
   cloudIdentityProblem,
@@ -68,7 +68,7 @@ describe('the local pin (FL-455)', () => {
 describe(sameModelIdentity.name, () => {
   it('ignores file order and keys this server does not compare', () => {
     const pin = clipPin();
-    const claimed = { ...pin, files: [...pin.files].reverse(), upstream: 'elsewhere' } as CloudModelIdentity;
+    const claimed = { ...pin, files: pin.files.toReversed(), upstream: 'elsewhere' } as CloudModelIdentity;
     expect(sameModelIdentity(claimed, pin)).toBe(true);
   });
 
@@ -158,12 +158,22 @@ describe('accepting a Cloud result (FL-455)', () => {
     };
 
     await expect(
-      withCloudIdentityGuard({ cloud: async () => ({ identity: 'pinned', result: {} }), accept, local, onRejected }),
+      withCloudIdentityGuard({
+        cloud: () => Promise.resolve({ identity: 'pinned', result: {} }),
+        accept,
+        local,
+        onRejected,
+      }),
     ).resolves.toBe('cloud');
     expect(local).not.toHaveBeenCalled();
 
     await expect(
-      withCloudIdentityGuard({ cloud: async () => ({ identity: 'other', result: {} }), accept, local, onRejected }),
+      withCloudIdentityGuard({
+        cloud: () => Promise.resolve({ identity: 'other', result: {} }),
+        accept,
+        local,
+        onRejected,
+      }),
     ).resolves.toBe('local');
     expect(onRejected).toHaveBeenCalledWith(expect.any(CloudModelIdentityMismatchError));
   });
@@ -172,7 +182,7 @@ describe('accepting a Cloud result (FL-455)', () => {
     const local = vi.fn();
     await expect(
       withCloudIdentityGuard({
-        cloud: async () => ({ identity: 'x', result: {} }),
+        cloud: () => Promise.resolve({ identity: 'x', result: {} }),
         accept: () => {
           throw new Error('producer_result_invalid');
         },

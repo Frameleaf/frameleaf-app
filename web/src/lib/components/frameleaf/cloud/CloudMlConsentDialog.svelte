@@ -120,8 +120,8 @@
     untrack(() => {
       identityNames = consent.features.identityNames;
       medicalSignals = consent.features.medicalSignals;
-      smartSearch = consent.features.smartSearch === true;
-      faceRecognition = consent.features.faceRecognition === true;
+      smartSearch = !!consent.features.smartSearch;
+      faceRecognition = !!consent.features.faceRecognition;
       read = false;
       terms = null;
       termsFor = null;

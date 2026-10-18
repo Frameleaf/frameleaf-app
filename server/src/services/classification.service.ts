@@ -31,7 +31,6 @@ import {
   ClassificationMediaType,
   ClassificationRuleAction,
   MediaOperationItemStatus,
-  MlWorkload,
   Permission,
 } from 'src/enum.js';
 import { afterJobCommit, publishJobResult, queueExecution } from 'src/queue/context.js';

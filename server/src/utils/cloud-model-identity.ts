@@ -62,7 +62,7 @@ export const identityFilePaths = (workload: CloudIdentityWorkload, artifacts: Re
     .filter(
       (path) =>
         !SNAPSHOT_REF.test(path) &&
-        !path.split('/').some((part) => part.startsWith('.')) &&
+        path.split('/').every((part) => !part.startsWith('.')) &&
         !/\.md$/i.test(path) &&
         (workload !== MlWorkload.Clip || !path.startsWith('textual/')),
     )
@@ -185,7 +185,7 @@ export const localPinnedProfile = (
       ) ?? null
     );
   }
-  for (const space of [...spaces.spaces].reverse()) {
+  for (const space of spaces.spaces.toReversed()) {
     const visual = catalogue.profiles.find(
       (profile) =>
         profile.modelKey === space.visualModelKey &&

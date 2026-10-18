@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
+import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
 import { RestorationModelState } from 'src/dtos/restoration-inference.dto.js';
 import {
@@ -17,7 +18,6 @@ import {
   type MlEndpointProbe,
   type MlSelection,
 } from 'src/repositories/machine-learning.repository.js';
-import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import * as cloudDisclosure from 'src/utils/frameleaf-cloud.js';
 import {
   MlDestinationNotFoundError,
@@ -214,7 +214,7 @@ describe('Frameleaf Cloud downstream model/budget mechanics (workload-policy moc
       workloads: [MlWorkload.Face, MlWorkload.Clip],
     };
     /** A check where the cloud offers smart search and faces with this server's own models. */
-    const offered = (features: Partial<typeof facts.features> = { smartSearch: true, faceRecognition: true }) => ({
+    const offered = (features?: Partial<typeof facts.features>) => ({
       ...cloud,
       destination: library,
       probe: {
@@ -222,7 +222,7 @@ describe('Frameleaf Cloud downstream model/budget mechanics (workload-policy moc
         workloads: [...mlProbeStub.frameleafCloud.workloads, MlWorkload.Clip, MlWorkload.Face],
         cloud: {
           ...facts,
-          features: { ...facts.features, ...features },
+          features: { ...facts.features, ...(features ?? { smartSearch: true, faceRecognition: true }) },
           modelIds: [...facts.modelIds, 'ms_clip', 'ms_face'],
           modelGroups: { ...facts.modelGroups, ms_clip: 'clip', ms_face: 'face' },
           localModels: { [MlWorkload.Clip]: 'ms_clip', [MlWorkload.Face]: 'ms_face' },

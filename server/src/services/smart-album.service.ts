@@ -3,7 +3,7 @@ import type { SystemConfig } from 'src/config.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { BootstrapEventPriority, FrameleafWorker, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
+import { BootstrapEventPriority, FrameleafWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
 import { deferJobAdoption, publishJobResult, queueExecution } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { BaseService } from 'src/services/base.service.js';

@@ -5,7 +5,6 @@ import type { MlSelection } from 'src/repositories/machine-learning.repository.j
 import { SystemConfig } from 'src/config.js';
 import { CLIP_ZERO_SHOT_LABELS, CLIP_ZERO_SHOT_PROMPT } from 'src/constants/clip-zero-shot-labels.js';
 import { ZERO_SHOT_TAG_NAMESPACE } from 'src/constants/zero-shot-tag.js';
-import { MlWorkload } from 'src/enum.js';
 import { afterJobCommit, publishJobResult, queueExecution } from 'src/queue/context.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
