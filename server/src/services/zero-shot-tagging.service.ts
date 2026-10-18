@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
+import type { DesktopClipReadGuard } from 'src/repositories/desktop-clip-index.repository.js';
 import type { MlSelection } from 'src/repositories/machine-learning.repository.js';
 import { SystemConfig } from 'src/config.js';
 import { CLIP_ZERO_SHOT_LABELS, CLIP_ZERO_SHOT_PROMPT } from 'src/constants/clip-zero-shot-labels.js';
 import { ZERO_SHOT_TAG_NAMESPACE } from 'src/constants/zero-shot-tag.js';
-import { MlWorkload } from 'src/enum.js';
 import { afterJobCommit, publishJobResult, queueExecution } from 'src/queue/context.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -26,7 +26,12 @@ export class ZeroShotTaggingService extends BaseService {
    * embedding. Failures are logged but never thrown - tagging is a
    * best-effort enrichment, never a hard dependency of encoding.
    */
-  async tagAsset(assetId: string, ownerId: string, assetEmbedding: string): Promise<void> {
+  async tagAsset(
+    assetId: string,
+    ownerId: string,
+    assetEmbedding: string,
+    sourceRead?: DesktopClipReadGuard,
+  ): Promise<void> {
     const { machineLearning } = await this.getConfig({ withCache: true });
     if (!isSmartSearchEnabled(machineLearning)) {
       return;
@@ -36,6 +41,7 @@ export class ZeroShotTaggingService extends BaseService {
       return;
     }
     try {
+      const read = sourceRead ?? (await this.machineLearningRepository.captureClipRead());
       const vector = parseEmbedding(assetEmbedding);
       if (!vector) {
         return;
@@ -48,13 +54,16 @@ export class ZeroShotTaggingService extends BaseService {
       if (scored.length === 0) {
         return;
       }
-      await publishJobResult(() =>
-        this.applyTags(
-          assetId,
-          ownerId,
-          scored.map((entry) => `${ZERO_SHOT_TAG_NAMESPACE}/${entry.label}`),
-        ),
-      );
+      await publishJobResult(async () => {
+        const inserted = await read.publish(() =>
+          this.applyTags(
+            assetId,
+            ownerId,
+            scored.map((entry) => `${ZERO_SHOT_TAG_NAMESPACE}/${entry.label}`),
+          ),
+        );
+        if (inserted) await afterJobCommit(() => this.eventRepository.emit('AssetTag', { assetId, userId: ownerId }));
+      });
     } catch (error) {
       if (queueExecution.getStore()) throw error;
       this.logger.warn(
@@ -64,10 +73,11 @@ export class ZeroShotTaggingService extends BaseService {
   }
 
   private async getVocabularyEmbeddings(clip: SystemConfig['machineLearning']['clip']): Promise<LabelEmbedding[]> {
+    const producer = await this.machineLearningRepository.clipCacheKey(clip.modelName);
     // Queue requests retain their own destination and cancellation ownership; no shared in-flight request.
     if (queueExecution.getStore()) {
-      const selection = await this.selectRoutedMlDestination({ workload: MlWorkload.Clip });
-      const key = `${selection.destinationId}/${clip.modelName}`;
+      const selection = await this.selectClipTextDestination();
+      const key = `${selection.destinationId}/${clip.modelName}/${producer}`;
       const ready = QUEUE_VOCABULARY.get(key);
       if (ready) return ready;
       const encoded = await this.encodeVocabulary(clip, selection);
@@ -75,7 +85,7 @@ export class ZeroShotTaggingService extends BaseService {
       QUEUE_VOCABULARY.set(key, encoded);
       return encoded;
     }
-    const cacheKey = clip.modelName;
+    const cacheKey = `${clip.modelName}/${producer}`;
     const cached = VOCABULARY_CACHE.get(cacheKey);
     if (cached) {
       return cached;
@@ -95,7 +105,7 @@ export class ZeroShotTaggingService extends BaseService {
   ): Promise<LabelEmbedding[]> {
     this.logger.log(`Encoding ${CLIP_ZERO_SHOT_LABELS.length} zero-shot labels for model ${clip.modelName}`);
     const results: LabelEmbedding[] = [];
-    const selection = admitted ?? (await this.selectRoutedMlDestination({ workload: MlWorkload.Clip }));
+    const selection = admitted ?? (await this.selectClipTextDestination());
     for (const label of CLIP_ZERO_SHOT_LABELS) {
       const raw = await this.machineLearningRepository.encodeText(selection, CLIP_ZERO_SHOT_PROMPT(label), {
         modelName: clip.modelName,
@@ -108,16 +118,14 @@ export class ZeroShotTaggingService extends BaseService {
     return results;
   }
 
-  private async applyTags(assetId: string, ownerId: string, tags: string[]): Promise<void> {
+  private async applyTags(assetId: string, ownerId: string, tags: string[]): Promise<boolean> {
     if (tags.length === 0) {
-      return;
+      return false;
     }
     const upserted = await upsertTags(this.tagRepository, { userId: ownerId, tags });
     const items: Insertable<TagAssetTable>[] = upserted.map((tag) => ({ tagId: tag.id, assetId }));
     const inserted = await this.tagRepository.upsertAssetIds(items);
-    if (inserted.length > 0) {
-      await afterJobCommit(() => this.eventRepository.emit('AssetTag', { assetId, userId: ownerId }));
-    }
+    return inserted.length > 0;
   }
 }
 

@@ -17,6 +17,7 @@ import {
   gpuProblems,
   LADDER_WORKLOADS,
   ladderFor,
+  MATCHED_WORKLOADS,
   modelNoteKey,
   problemExplainKey,
   workloadUnitKey,
@@ -84,8 +85,10 @@ describe('Frameleaf Cloud copy (FL-159 §5)', () => {
         ...(row.cloud ? [] : [workloadWhyKey(row.id)]),
       ]),
       ...gpuClasses.map((gpu) => gpuClassLabelKey(gpu.id)),
-      ...LADDER_WORKLOADS.map((workload) => workloadUnitKey(workload)),
-      ...LADDER_WORKLOADS.flatMap((workload) => ladderFor(workload).map((item) => modelNoteKey(item))),
+      ...[...LADDER_WORKLOADS, ...MATCHED_WORKLOADS].map((workload) => workloadUnitKey(workload)),
+      ...[...LADDER_WORKLOADS, ...MATCHED_WORKLOADS].flatMap((workload) =>
+        ladderFor(workload).map((item) => modelNoteKey(item)),
+      ),
       ...Object.values(BANDS).map((band) => band.labelKey),
       ...gpuProblems.map((problem) => problemExplainKey(problem.id)),
       ...Object.entries(composeFixes).flatMap(([id, fix]) =>
@@ -94,7 +97,6 @@ describe('Frameleaf Cloud copy (FL-159 §5)', () => {
       'frameleaf_model_reason_needs_memory',
       'frameleaf_model_reason_needs_memory_no_gpu',
       'frameleaf_model_reason_not_hosted',
-      'frameleaf_model_reason_licence',
       'frameleaf_model_reason_local_only',
       'frameleaf_model_reason_cloud_only',
     ];

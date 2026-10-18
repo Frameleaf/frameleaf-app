@@ -622,7 +622,7 @@ napi_value decodeApple(napi_env env, Input& input, heif_context* ctx, heif_image
   input.dimensions(width, height, mapWidth, mapHeight);
   napi_value data; void* output;
   check(napi_create_buffer(env, size_t(width) * height * 16, &output, &data));
-  napi_value sdrData; void* sdrOutput = nullptr;
+  napi_value sdrData = nullptr; void* sdrOutput = nullptr;
   if (paired) check(napi_create_buffer(env, size_t(width) * height * 4, &sdrOutput, &sdrData));
   auto* target = static_cast<float*>(output);
   for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {

@@ -12,6 +12,7 @@ import { PostgresJSDialect } from "kysely-postgres-js";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { basename, dirname, extname, join, parse as parse$1 } from "node:path";
+import { pathToFileURL } from "node:url";
 import { jsonArrayFrom } from "kysely/helpers/postgres";
 //#region src/types.ts
 var DatabaseSslMode = /* @__PURE__ */ function(DatabaseSslMode) {
@@ -758,7 +759,7 @@ var Migrator = class {
 			if (extname(filename) !== ".js") continue;
 			paths.push(join(dist, filename));
 		}
-		await Promise.all(paths.map((path) => import(path)));
+		await Promise.all(paths.map((path) => import(pathToFileURL(path).href)));
 		const { up, down } = await this.#compare();
 		if (up.items.length === 0) {
 			console.log("No changes detected");
@@ -1157,7 +1158,7 @@ var compareConstraints = () => ({
 		reason: Reason.MissingInSource
 	}],
 	onCompare: (source, target) => {
-		if (source.definition !== undefined && source.definition !== target.definition) return dropAndRecreateConstraint(source, target, "constraint definition changed");
+		if (source.definition !== undefined && normalizeIndexSql(source.definition) !== normalizeIndexSql(target.definition)) return dropAndRecreateConstraint(source, target, "constraint definition changed");
 		switch (source.type) {
 			case ConstraintType.PRIMARY_KEY: return comparePrimaryKeyConstraint(source, target);
 			case ConstraintType.FOREIGN_KEY: return compareForeignKeyConstraint(source, target);
@@ -1192,7 +1193,7 @@ var compareUniqueConstraint = (source, target) => {
 	return [];
 };
 var compareCheckConstraint = (source, target) => {
-	if (source.expression !== target.expression) {}
+	if (normalizeIndexSql(source.expression) !== normalizeIndexSql(target.expression)) return dropAndRecreateConstraint(source, target, "check expression changed");
 	return [];
 };
 var dropAndRecreateConstraint = (source, target, reason) => {

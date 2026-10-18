@@ -2,9 +2,11 @@
   /**
    * Cloud processing terms (FL-159, handoff §3.1; prototype FrameleafCloud.jsx `ConsentDialog`): the
    * version Frameleaf Cloud requires now, the five promises (previews only with metadata stripped,
-   * zero retention, no training, the account's region, nothing without confirmation), faces never
-   * sent, and the optional features, which stay off unless chosen (names written in a photo, medical
-   * signals; the names people are given here are never sent, FC-44). "Accept and turn on" stays disabled until the terms are marked as read. Accepting
+   * zero retention, no training, the account's region, nothing without confirmation), what happens to
+   * smart search and faces, and the optional features, which stay off unless chosen (names written in a
+   * photo, medical signals; the names people are given here are never sent, FC-44). FL-455: smart search
+   * and face recognition are features of their own, offered only while Frameleaf Cloud runs exactly this
+   * server's models for them (`matchedWorkloads`); each is versioned with the terms it needs. "Accept and turn on" stays disabled until the terms are marked as read. Accepting
    * records the version on this server and with Frameleaf Cloud; when the Frameleaf Cloud destination
    * does not exist yet it is added first, and it still runs only the work routed to it. FC-62: the
    * terms shown are the ones Frameleaf Cloud asks for with the features chosen now, read each time they
@@ -19,6 +21,7 @@
   import { FRAMELEAF_CLOUD_WORKLOADS } from '$lib/frameleaf/ml-destinations';
   import { handleError } from '$lib/utils/handle-error';
   import {
+    MlWorkload,
     createCloudMlDestination,
     getCloudMlConsentTerms,
     grantMlDestinationConsent,
@@ -37,13 +40,19 @@
     destinationId: string | null;
     consent: CloudMlConsentStateDto;
     region: string | null;
+    /** FL-455: smart search and faces Frameleaf Cloud offers with this server's own models. */
+    matchedWorkloads?: MlWorkload[];
     onRecorded?: () => void;
   };
 
-  let { open = $bindable(false), destinationId, consent, region, onRecorded }: Props = $props();
+  let { open = $bindable(false), destinationId, consent, region, matchedWorkloads = [], onRecorded }: Props = $props();
 
   let identityNames = $state(false);
   let medicalSignals = $state(false);
+  let smartSearch = $state(false);
+  let faceRecognition = $state(false);
+  const offersSmartSearch = $derived(matchedWorkloads.includes(MlWorkload.Clip));
+  const offersFaces = $derived(matchedWorkloads.includes(MlWorkload.Face));
   let read = $state(false);
   let saving = $state(false);
   // The destination this dialog added, kept so a retry after a failed consent does not add it twice.
@@ -55,8 +64,17 @@
   let terms = $state<CloudMlConsentTermsDto | null>(null);
   /** The features the shown terms were read for: a changed choice waits for its own terms. */
   let termsFor = $state<string | null>(null);
-  const featureKey = (names: boolean, medical: boolean) => `${names}:${medical}`;
-  const termsCurrent = $derived(!!terms && termsFor === featureKey(identityNames, medicalSignals));
+  type Choices = { identityNames: boolean; medicalSignals: boolean; smartSearch: boolean; faceRecognition: boolean };
+  const featureKey = (choices: Choices) =>
+    `${choices.identityNames}:${choices.medicalSignals}:${choices.smartSearch}:${choices.faceRecognition}`;
+  /** The choices as sent: smart search and faces only when Frameleaf Cloud offers them. */
+  const chosen = $derived<Choices>({
+    identityNames,
+    medicalSignals,
+    smartSearch: offersSmartSearch && smartSearch,
+    faceRecognition: offersFaces && faceRecognition,
+  });
+  const termsCurrent = $derived(!!terms && termsFor === featureKey(chosen));
   let termsChanged = $state(false);
   let termsTurn = 0;
 
@@ -66,10 +84,16 @@
     documentUrl: terms ? terms.documentUrl : consent.documentUrl,
   });
 
-  const loadTerms = async (names: boolean, medical: boolean) => {
+  const loadTerms = async (choices: Choices) => {
     const turn = ++termsTurn;
     try {
-      const next = await getCloudMlConsentTerms({ identityNames: names, medicalSignals: medical });
+      const next = await getCloudMlConsentTerms({
+        identityNames: choices.identityNames,
+        medicalSignals: choices.medicalSignals,
+        // FL-455: asked for only when chosen, so a Cloud without them answers as before
+        ...(choices.smartSearch && { smartSearch: true }),
+        ...(choices.faceRecognition && { faceRecognition: true }),
+      });
       if (turn !== termsTurn) {
         return;
       }
@@ -78,7 +102,7 @@
         read = false;
       }
       terms = next;
-      termsFor = featureKey(names, medical);
+      termsFor = featureKey(choices);
     } catch (error) {
       if (turn === termsTurn) {
         terms = null;
@@ -96,6 +120,8 @@
     untrack(() => {
       identityNames = consent.features.identityNames;
       medicalSignals = consent.features.medicalSignals;
+      smartSearch = !!consent.features.smartSearch;
+      faceRecognition = !!consent.features.faceRecognition;
       read = false;
       terms = null;
       termsFor = null;
@@ -108,9 +134,8 @@
     if (!open) {
       return;
     }
-    const names = identityNames;
-    const medical = medicalSignals;
-    untrack(() => void loadTerms(names, medical));
+    const choices = { ...chosen };
+    untrack(() => void loadTerms(choices));
   });
 
   const accept = async () => {
@@ -133,7 +158,13 @@
           acknowledgeMediaLeavesNetwork: true,
           version: terms.requiredVersion,
           ...(terms.textSha256 && { textSha256: terms.textSha256 }),
-          features: { identityNames, medicalSignals, ocrAddon: false },
+          features: {
+            identityNames: chosen.identityNames,
+            medicalSignals: chosen.medicalSignals,
+            ocrAddon: false,
+            ...(chosen.smartSearch && { smartSearch: true }),
+            ...(chosen.faceRecognition && { faceRecognition: true }),
+          },
         },
       });
       open = false;
@@ -144,7 +175,7 @@
         // the version it named is never accepted unseen
         termsChanged = true;
         read = false;
-        await loadTerms(identityNames, medicalSignals);
+        await loadTerms(chosen);
         return;
       }
       handleError(error, $t('admin.frameleaf_cloud_ml_consent_error'));
@@ -179,8 +210,18 @@
           ? $t('admin.frameleaf_cloud_ml_region_value', { values: { region } })
           : $t('admin.frameleaf_cloud_ml_region_unknown')}
       </dd>
+      <dt>{$t('admin.frameleaf_cloud_ml_smart_search_label')}</dt>
+      <dd>
+        {chosen.smartSearch
+          ? $t('admin.frameleaf_cloud_ml_smart_search_sent')
+          : $t('admin.frameleaf_cloud_ml_smart_search_stays_home')}
+      </dd>
       <dt>{$t('admin.frameleaf_cloud_ml_faces_label')}</dt>
-      <dd>{$t('admin.frameleaf_cloud_ml_faces_never_sent')}</dd>
+      <dd>
+        {chosen.faceRecognition
+          ? $t('admin.frameleaf_cloud_ml_faces_sent')
+          : $t('admin.frameleaf_cloud_ml_faces_stay_home')}
+      </dd>
     </dl>
     {#if shown.documentUrl}
       <a class="fc-link" href={shown.documentUrl} target="_blank" rel="noopener noreferrer">
@@ -201,6 +242,22 @@
       bind:checked={medicalSignals}
       disabled={saving}
     />
+    {#if offersSmartSearch}
+      <SettingToggle
+        title={$t('admin.frameleaf_cloud_ml_consent_feature_smart_search')}
+        subtitle={$t('admin.frameleaf_cloud_ml_consent_feature_smart_search_help')}
+        bind:checked={smartSearch}
+        disabled={saving}
+      />
+    {/if}
+    {#if offersFaces}
+      <SettingToggle
+        title={$t('admin.frameleaf_cloud_ml_consent_feature_faces')}
+        subtitle={$t('admin.frameleaf_cloud_ml_consent_feature_faces_help')}
+        bind:checked={faceRecognition}
+        disabled={saving}
+      />
+    {/if}
     <label class="fc-confirm">
       <input type="checkbox" bind:checked={read} disabled={saving} />
       {$t('admin.frameleaf_cloud_ml_consent_read')}

@@ -12,7 +12,8 @@ const onDisk = async (path: string) => {
   return exitCode === 0;
 };
 
-describe('/trash', () => {
+// The arm CI runner is slow for library-backed trash flows; tests without their own budget get two minutes there (FL-440).
+describe('/trash', { timeout: process.env.CI ? 120_000 : 15_000 }, () => {
   let admin: LoginResponseDto;
   let ws: Socket;
 

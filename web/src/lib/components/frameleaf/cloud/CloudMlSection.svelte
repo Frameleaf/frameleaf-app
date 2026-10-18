@@ -284,8 +284,18 @@
           ? $t('admin.frameleaf_cloud_ml_fact_medical_allowed')
           : $t('admin.frameleaf_cloud_ml_fact_medical_never')}
       </dd>
+      <dt>{$t('admin.frameleaf_cloud_ml_smart_search_label')}</dt>
+      <dd>
+        {status?.consent?.features.smartSearch
+          ? $t('admin.frameleaf_cloud_ml_smart_search_sent')
+          : $t('admin.frameleaf_cloud_ml_smart_search_stays_home')}
+      </dd>
       <dt>{$t('admin.frameleaf_cloud_ml_faces_label')}</dt>
-      <dd>{$t('admin.frameleaf_cloud_ml_fact_faces')}</dd>
+      <dd>
+        {status?.consent?.features.faceRecognition
+          ? $t('admin.frameleaf_cloud_ml_faces_sent')
+          : $t('admin.frameleaf_cloud_ml_faces_stay_home')}
+      </dd>
     </dl>
     {#if refusal && linked}
       <p class="fc-refusal" role="status">
@@ -522,6 +532,7 @@
     destinationId={status.destination?.id ?? null}
     consent={status.consent}
     region={status.region}
+    matchedWorkloads={status.matchedModelWorkloads ?? []}
     onRecorded={() => {
       if (cloudMl) {
         cloudMl.enabled = true;

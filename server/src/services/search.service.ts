@@ -39,7 +39,7 @@ import {
   isNewShapeRequest,
   mapPlaces,
 } from 'src/dtos/search.dto.js';
-import { AssetOrder, AssetType, AssetVisibility, CacheControl, MlWorkload, Permission } from 'src/enum.js';
+import { AssetOrder, AssetType, AssetVisibility, CacheControl, Permission } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted, requireElevatedPermission } from 'src/utils/access.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
@@ -377,6 +377,7 @@ export class SearchService extends BaseService {
     }
 
     const userIds = this.getUserIdsToSearch(auth);
+    const read = await this.machineLearningRepository.captureClipRead();
     const embedding = await this.resolveEmbedding(auth, dto, machineLearning);
     const page = dto.page ?? 1;
     const size = dto.size || 100;
@@ -395,6 +396,7 @@ export class SearchService extends BaseService {
       },
     );
 
+    await read.assertCurrent();
     return this.mapResponse(items, { auth }, { nextPage: hasNextPage ? (page + 1).toString() : null });
   }
 
@@ -548,6 +550,7 @@ export class SearchService extends BaseService {
       throw new BadRequestException('Smart search is not enabled');
     }
 
+    const read = await this.machineLearningRepository.captureClipRead();
     const [{ filter, scope }, embedding] = await Promise.all([
       this.resolveSearchScopeV3(auth, dto),
       this.resolveEmbedding(auth, dto, machineLearning),
@@ -567,6 +570,7 @@ export class SearchService extends BaseService {
       scope,
     );
 
+    await read.assertCurrent();
     return this.mapResponse(items, { auth });
   }
 
@@ -610,10 +614,11 @@ export class SearchService extends BaseService {
     machineLearning: SystemConfig['machineLearning'],
   ): Promise<string> {
     if (dto.query) {
-      const key = machineLearning.clip.modelName + dto.query + dto.language;
+      const producer = await this.machineLearningRepository.clipCacheKey(machineLearning.clip.modelName, dto.language);
+      const key = JSON.stringify([machineLearning.clip.modelName, producer, dto.query, dto.language]);
       let embedding = this.embeddingCache.get(key);
       if (!embedding) {
-        const selection = await this.selectRoutedMlDestination({ workload: MlWorkload.Clip });
+        const selection = await this.selectClipTextDestination();
         embedding = await this.machineLearningRepository.encodeText(selection, dto.query, {
           modelName: machineLearning.clip.modelName,
           language: dto.language,

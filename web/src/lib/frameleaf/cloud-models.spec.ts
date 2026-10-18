@@ -10,6 +10,7 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import {
   catalogModelsFor,
   choicesByGroup,
+  cloudMatchedWorkloads,
   cloudModelChoice,
   cloudModelGroupsFor,
   loadCloudModelData,
@@ -117,5 +118,18 @@ describe('Frameleaf Cloud model choice (FL-186)', () => {
 
     sdkMock.getCloudMlModelChoices.mockRejectedValue(new Error('forbidden'));
     await expect(loadCloudModelData(null)).resolves.toEqual({ catalog: null, catalogFailed: false, choices: {} });
+  });
+
+  it('offers the search and faces cloud stops only when the status or the catalogue says so (FL-455)', () => {
+    expect(cloudMatchedWorkloads(null, null)).toEqual([]);
+    expect(cloudMatchedWorkloads({ matchedModelWorkloads: [] }, catalog)).toEqual([]);
+    expect(cloudMatchedWorkloads({ matchedModelWorkloads: [MlWorkload.Face] }, null)).toEqual([MlWorkload.Face]);
+    expect(cloudMatchedWorkloads(null, [{ workload: MlWorkload.Clip }])).toEqual([MlWorkload.Clip]);
+    // other matched work never adds a stop
+    expect(
+      cloudMatchedWorkloads({ matchedModelWorkloads: [MlWorkload.Ocr, MlWorkload.Clip] }, [
+        { workload: MlWorkload.Face },
+      ]),
+    ).toEqual([MlWorkload.Clip, MlWorkload.Face]);
   });
 });

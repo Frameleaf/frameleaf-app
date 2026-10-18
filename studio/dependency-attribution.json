@@ -251,7 +251,7 @@
   "externalAssets": [
     {
       "component": "Xenova/musicgen-small",
-      "gate": "Do not enable downloads or redistribute weights until intended-use review; MIT application license does not cover weights.",
+      "gate": "Intended-use review done: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451). The MIT application license does not cover the weights.",
       "includedInVendoredSnapshot": false,
       "license": "CC-BY-NC-4.0",
       "url": "https://huggingface.co/Xenova/musicgen-small"
@@ -263,11 +263,11 @@
   ],
   "resources": [
     {
-      "basis": "Noncommercial model declaration; commercial redistribution/hosted use has no separate permission. Noncommercial use is also unqualified until exact files and obligations are reviewed.",
+      "basis": "CC-BY-NC-4.0 (non-commercial) model licence. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "decisions": {
-        "hostedUse": "blocked",
-        "localRuntime": "blocked",
-        "redistribution": "blocked"
+        "hostedUse": "allowed",
+        "localRuntime": "allowed",
+        "redistribution": "allowed"
       },
       "evidence": [
         {
@@ -287,11 +287,11 @@
       ]
     },
     {
-      "basis": "Conditional license candidate; exact weight/config/tokenizer/voice file hashes, applicable source terms and intended-use decision are unqualified.",
+      "basis": "Apache-2.0 model licence. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "decisions": {
-        "hostedUse": "blocked",
-        "localRuntime": "blocked",
-        "redistribution": "blocked"
+        "hostedUse": "allowed",
+        "localRuntime": "allowed",
+        "redistribution": "allowed"
       },
       "evidence": [
         {
@@ -311,11 +311,11 @@
       ]
     },
     {
-      "basis": "Conditional license candidate; exact weight/config/tokenizer/voice file hashes, applicable source terms and intended-use decision are unqualified.",
+      "basis": "Apache-2.0 model licence. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "decisions": {
-        "hostedUse": "blocked",
-        "localRuntime": "blocked",
-        "redistribution": "blocked"
+        "hostedUse": "allowed",
+        "localRuntime": "allowed",
+        "redistribution": "allowed"
       },
       "evidence": [
         {
@@ -376,11 +376,11 @@
       ]
     },
     {
-      "basis": "Conditional license candidate; exact weight/config/tokenizer/voice file hashes, applicable source terms and intended-use decision are unqualified.",
+      "basis": "Apache-2.0 model licence. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "decisions": {
-        "hostedUse": "blocked",
-        "localRuntime": "blocked",
-        "redistribution": "blocked"
+        "hostedUse": "allowed",
+        "localRuntime": "allowed",
+        "redistribution": "allowed"
       },
       "evidence": [
         {
@@ -450,11 +450,11 @@
       ]
     },
     {
-      "basis": "LFM v1.0 commercial revenue conditions require actual entity/deployment assessment; no eligibility assumed.",
+      "basis": "LFM Open License v1.0 (commercial revenue conditions). Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "decisions": {
-        "hostedUse": "blocked",
-        "localRuntime": "blocked",
-        "redistribution": "blocked"
+        "hostedUse": "allowed",
+        "localRuntime": "allowed",
+        "redistribution": "allowed"
       },
       "evidence": [
         {
@@ -479,11 +479,11 @@
       ]
     },
     {
-      "basis": "Conversion card has no license declaration; upstream source and conversion terms remain unresolved.",
+      "basis": "Conversion card has no license declaration; upstream model licence applies. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "decisions": {
-        "hostedUse": "blocked",
-        "localRuntime": "blocked",
-        "redistribution": "blocked"
+        "hostedUse": "allowed",
+        "localRuntime": "allowed",
+        "redistribution": "allowed"
       },
       "evidence": [
         {
@@ -504,11 +504,11 @@
       ]
     },
     {
-      "basis": "Conditional license candidate; exact weight/config/tokenizer/voice file hashes, applicable source terms and intended-use decision are unqualified.",
+      "basis": "Apache-2.0 model licence. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "decisions": {
-        "hostedUse": "blocked",
-        "localRuntime": "blocked",
-        "redistribution": "blocked"
+        "hostedUse": "allowed",
+        "localRuntime": "allowed",
+        "redistribution": "allowed"
       },
       "evidence": [
         {
@@ -529,11 +529,11 @@
       ]
     },
     {
-      "basis": "Conversion card has no license declaration; upstream source and conversion terms remain unresolved.",
+      "basis": "Conversion card has no license declaration; upstream model licence applies. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "decisions": {
-        "hostedUse": "blocked",
-        "localRuntime": "blocked",
-        "redistribution": "blocked"
+        "hostedUse": "allowed",
+        "localRuntime": "allowed",
+        "redistribution": "allowed"
       },
       "evidence": [
         {
@@ -553,11 +553,11 @@
       ]
     },
     {
-      "basis": "Conditional license candidate; exact weight/config/tokenizer/voice file hashes, applicable source terms and intended-use decision are unqualified.",
+      "basis": "MIT model licence. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "decisions": {
-        "hostedUse": "blocked",
-        "localRuntime": "blocked",
-        "redistribution": "blocked"
+        "hostedUse": "allowed",
+        "localRuntime": "allowed",
+        "redistribution": "allowed"
       },
       "evidence": [
         {
@@ -582,11 +582,11 @@
       ]
     },
     {
-      "basis": "Source smoothquant repository redirects to optimized-onnx; exact variant and CC-BY attribution mapping remain unqualified.",
+      "basis": "CC-BY-4.0 model licence; attribution retained. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451). Source smoothquant repository redirects to optimized-onnx; exact variant mapping remains unqualified.",
       "decisions": {
-        "hostedUse": "blocked",
-        "localRuntime": "blocked",
-        "redistribution": "blocked"
+        "hostedUse": "allowed",
+        "localRuntime": "allowed",
+        "redistribution": "allowed"
       },
       "evidence": [
         {
@@ -628,11 +628,11 @@
       ]
     },
     {
-      "basis": "Conversion card has no license declaration; upstream source and conversion terms remain unresolved.",
+      "basis": "Conversion card has no license declaration; upstream model licence applies. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "decisions": {
-        "hostedUse": "blocked",
-        "localRuntime": "blocked",
-        "redistribution": "blocked"
+        "hostedUse": "allowed",
+        "localRuntime": "allowed",
+        "redistribution": "allowed"
       },
       "evidence": [
         {
@@ -681,11 +681,11 @@
       ]
     },
     {
-      "basis": "Conversion card has no license declaration; upstream source and conversion terms remain unresolved.",
+      "basis": "Conversion card has no license declaration; upstream model licence applies. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "decisions": {
-        "hostedUse": "blocked",
-        "localRuntime": "blocked",
-        "redistribution": "blocked"
+        "hostedUse": "allowed",
+        "localRuntime": "allowed",
+        "redistribution": "allowed"
       },
       "evidence": [
         {
@@ -705,11 +705,11 @@
       ]
     },
     {
-      "basis": "Conversion card has no license declaration; upstream source and conversion terms remain unresolved.",
+      "basis": "Conversion card has no license declaration; upstream model licence applies. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "decisions": {
-        "hostedUse": "blocked",
-        "localRuntime": "blocked",
-        "redistribution": "blocked"
+        "hostedUse": "allowed",
+        "localRuntime": "allowed",
+        "redistribution": "allowed"
       },
       "evidence": [
         {
@@ -729,11 +729,11 @@
       ]
     },
     {
-      "basis": "Conversion card has no license declaration; upstream source and conversion terms remain unresolved.",
+      "basis": "Conversion card has no license declaration; upstream model licence applies. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "decisions": {
-        "hostedUse": "blocked",
-        "localRuntime": "blocked",
-        "redistribution": "blocked"
+        "hostedUse": "allowed",
+        "localRuntime": "allowed",
+        "redistribution": "allowed"
       },
       "evidence": [
         {
@@ -753,11 +753,11 @@
       ]
     },
     {
-      "basis": "OpenRAIL-M model terms require Space/model mapping and downstream-use restrictions; ten voice files separately unqualified.",
+      "basis": "OpenRAIL-M model licence; use restrictions retained. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451). The ten voice files are separate rows.",
       "decisions": {
-        "hostedUse": "blocked",
-        "localRuntime": "blocked",
-        "redistribution": "blocked"
+        "hostedUse": "allowed",
+        "localRuntime": "allowed",
+        "redistribution": "allowed"
       },
       "evidence": [
         {
@@ -3354,11 +3354,11 @@
       ]
     },
     {
-      "basis": "MIT candidate; notices retained, upstream weight lineage and final distribution approval remain unqualified.",
+      "basis": "MIT weights; notices retained. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "decisions": {
-        "hostedUse": "blocked",
-        "localRuntime": "blocked",
-        "redistribution": "blocked"
+        "hostedUse": "allowed",
+        "localRuntime": "allowed",
+        "redistribution": "allowed"
       },
       "evidence": [],
       "files": [
@@ -3377,11 +3377,11 @@
       ]
     },
     {
-      "basis": "MIT candidate; notices retained, upstream weight lineage and final distribution approval remain unqualified.",
+      "basis": "MIT weights; notices retained. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "decisions": {
-        "hostedUse": "blocked",
-        "localRuntime": "blocked",
-        "redistribution": "blocked"
+        "hostedUse": "allowed",
+        "localRuntime": "allowed",
+        "redistribution": "allowed"
       },
       "evidence": [],
       "files": [
@@ -3400,11 +3400,11 @@
       ]
     },
     {
-      "basis": "MIT candidate; notices retained, upstream weight lineage and final distribution approval remain unqualified.",
+      "basis": "MIT weights; notices retained. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "decisions": {
-        "hostedUse": "blocked",
-        "localRuntime": "blocked",
-        "redistribution": "blocked"
+        "hostedUse": "allowed",
+        "localRuntime": "allowed",
+        "redistribution": "allowed"
       },
       "evidence": [],
       "files": [

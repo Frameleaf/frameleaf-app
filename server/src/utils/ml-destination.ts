@@ -5,7 +5,8 @@ import type { MlProbeHardware } from 'src/schema/tables/ml-destination.table.js'
 import { type RestorationModelCapability, RestorationModelState } from 'src/dtos/restoration-inference.dto.js';
 import {
   CLOUD_ML_DESTINATION_KINDS,
-  FRAMELEAF_CLOUD_ML_WORKLOADS,
+  FRAMELEAF_CLOUD_CATALOG_WORKLOADS,
+  FRAMELEAF_CLOUD_ELIGIBLE_WORKLOADS,
   LIBRARY_ML_WORKLOADS,
   MlAdmissionRefusal,
   MlDestinationHealth,
@@ -32,7 +33,7 @@ import {
   cloudModelFor,
   cloudModelGroupFor,
   hasPendingCloudDisclosure,
-  isLocalOnlyModel,
+  isCloudModelGroup,
   normalizeCloudProbeFacts,
 } from 'src/utils/frameleaf-cloud.js';
 
@@ -41,7 +42,8 @@ import {
  *
  * A caller names a workload and a destination. The destination is admitted only when it
  * exists, is enabled, allows the workload, was probed healthy just now and reports that it
- * serves the workload; a cloud destination additionally needs the administrator's recorded
+ * serves the workload. An authorized desktop pool uses its own qualification instead of NAS backend
+ * health; a cloud destination additionally needs the administrator's recorded
  * consent and must be inside its budget. Any other outcome is a refusal that names the
  * reason. Nothing in this module ever picks a different destination: there is no ordering,
  * no "next URL" and no cloud fallback, so a job whose destination is gone fails in place
@@ -60,11 +62,18 @@ const ROUTED_KIND: Partial<
   [MlWorkload.Interpolation]: 'interpolation',
 };
 
-/** Whether the administrator allowed this workload on Frameleaf Cloud ("Both" or "Cloud only"). */
+/**
+ * Whether the administrator allowed this workload on Frameleaf Cloud ("Both" or "Cloud only"). Smart
+ * search and faces (FL-455) have no kind of work here: their switch is the feature's own consent,
+ * which `frameleafCloudEligibility` checks, and the destination's route.
+ */
 export const cloudRouteAllows = (
   cloudMl: Pick<SystemConfig['frameleafCloud']['cloudMl'], 'routing'>,
   workload: MlWorkload,
 ): boolean => {
+  if (FRAMELEAF_CLOUD_CATALOG_WORKLOADS.includes(workload)) {
+    return true;
+  }
   const kind = ROUTED_KIND[workload];
   return !!kind && cloudMl.routing[kind] !== 'local';
 };
@@ -152,11 +161,14 @@ export type MlSelectionRequest = {
    * (`transcription` or `tts`). A Studio AI cloud job without it has no model and is refused.
    */
   studioFeature?: StudioAiCloudFeature | null;
+  /** FL-455: work that never leaves this network (search text): a Frameleaf Cloud destination is refused. */
+  homeOnly?: boolean;
 };
 
 export type MlSelectionDeps = {
   mlDestinationRepository: MlDestinationRepository;
   machineLearningRepository: MachineLearningRepository;
+  selectBackgroundPool?: (selection: MlSelection) => Promise<MlSelection>;
   /**
    * FL-163 review P1: the saved Frameleaf Cloud processing settings, read at admission. When given, a
    * Frameleaf Cloud destination is refused while processing is turned off or while the workload's kind
@@ -227,13 +239,15 @@ export const mlWorkerRoleOf = (workloads: readonly MlWorkload[]): MlWorkerRole =
  * - Library analysis and restoration never share a local or LAN worker, so a long restoration
  *   cannot hold the hardware library analysis needs.
  * - Frameleaf Cloud may mix them (each cloud job gets its own capacity) but only for the
- *   workloads it offers; faces are refused by policy and search embeddings and OCR stay local.
+ *   workloads it can run. Smart search and faces may be allowed (FL-455); they are only sent while
+ *   the catalogue offers this server's own model and the feature has its consent
+ *   (`frameleafCloudEligibility`). Text recognition, pet recognition and Studio exports stay local.
  */
 export const workloadPolicyProblem = (kind: MlDestinationKind, workloads: readonly MlWorkload[]): string | null => {
   if (kind === MlDestinationKind.FrameleafCloud) {
-    const refused = workloads.filter((workload) => !FRAMELEAF_CLOUD_ML_WORKLOADS.includes(workload));
+    const refused = workloads.filter((workload) => !FRAMELEAF_CLOUD_ELIGIBLE_WORKLOADS.includes(workload));
     return refused.length > 0
-      ? `Frameleaf Cloud runs descriptions, restoration and Studio AI only; ${refused.join(', ')} stays on this network`
+      ? `Frameleaf Cloud runs descriptions, restoration, Studio AI, smart search and faces only; ${refused.join(', ')} stays on this network`
       : null;
   }
   const role = mlWorkerRoleOf(workloads);
@@ -469,7 +483,7 @@ export const storedAdmission = ({
       endpoint,
       probe,
       spentUsd,
-      modelId: group ? (choices[group] ?? null) : null,
+      modelId: group && isCloudModelGroup(group) ? (choices[group] ?? null) : null,
       studioFeature: feature,
       fromStoredCheck: true,
     });
@@ -589,12 +603,6 @@ const evaluateCloudAdmission = (
       `${destination.name}: consent ${destination.consentVersion ?? 'none'} was given, Frameleaf Cloud now requires ${facts.consentRequiredVersion}`,
     );
   }
-  if (isLocalOnlyModel(modelId)) {
-    return refuse(
-      MlAdmissionRefusal.ModelMismatch,
-      `${destination.name}: the model ${modelId} runs on this server only and is never sent to Frameleaf Cloud`,
-    );
-  }
   // FL-186: a stored check from before model groups cannot place a model; a view shows it as waiting
   // for the next check (below) rather than refusing the model, and the live admission checks again
   const modelsKnown = !fromStoredCheck || facts.modelGroups !== undefined;
@@ -662,6 +670,9 @@ const evaluateCloudAdmission = (
  * choice per feature, and a Studio AI job that names no feature has no model group at all.
  */
 const missingModelDetail = (workload: MlWorkload, studioFeature: StudioAiCloudFeature | null | undefined): string => {
+  if (workload === MlWorkload.Clip || workload === MlWorkload.Face) {
+    return `Frameleaf Cloud offers no model that matches this server's ${workload === MlWorkload.Clip ? 'smart search' : 'face'} model`;
+  }
   if (workload !== MlWorkload.StudioAi) {
     return `Frameleaf Cloud recommends no model for ${workload} in this region; choose one in Where each job runs`;
   }
@@ -670,6 +681,82 @@ const missingModelDetail = (workload: MlWorkload, studioFeature: StudioAiCloudFe
   }
   const feature = studioFeature === 'speech' ? 'speech' : 'speech to text and captions';
   return `choose a Frameleaf Cloud model for Studio AI ${feature} in Where each job runs`;
+};
+
+/**
+ * Whether Frameleaf Cloud may run `workload` for this destination now, or the refusal that says why
+ * (FL-455). One check, so a caller walking several possible sources (FL-456) asks it the same way the
+ * single-route admission does: the work is one Frameleaf Cloud can run, the destination is consented,
+ * the work's disclosure is reviewed, the feature has its own consent (smart search, faces), the budget
+ * allows it, and the gateway's last report (`probe`) says the account is linked, entitled, offers the
+ * work and has a model for it (for smart search and faces, the one matching this server's pin).
+ * `probe: null` is the pre-flight: only the rules before the cloud report are settled.
+ */
+export const frameleafCloudEligibility = ({
+  destination,
+  workload,
+  probe,
+  spentUsd,
+  modelId,
+  holdUsd,
+  studioFeature,
+  fromStoredCheck,
+  createdCloudJob,
+}: Omit<MlAdmissionInput, 'destination' | 'endpoint'> & { destination: MlDestinationRow }): Refused | null => {
+  if (!FRAMELEAF_CLOUD_ELIGIBLE_WORKLOADS.includes(workload)) {
+    return refuse(MlAdmissionRefusal.WorkloadNotAllowed, `${destination.name}: ${workload} stays on this network`);
+  }
+  if (!hasRequiredConsent(destination)) {
+    return refuse(
+      MlAdmissionRefusal.ConsentMissing,
+      `${destination.name} sends media off this network and has no recorded consent`,
+    );
+  }
+  // Only workloads covered by the reviewed public disclosure can reach Cloud admission.
+  // Cloud still requires its current consent version below, alongside administrator opt-in.
+  if (hasPendingCloudDisclosure(workload)) {
+    return refuse(
+      MlAdmissionRefusal.DisclosurePending,
+      `${destination.name}: disclosure pending for ${workload}; nothing is sent until its approved disclosure is available`,
+    );
+  }
+  if (!createdCloudJob && destination.budgetLimitUsd !== null && spentUsd >= destination.budgetLimitUsd) {
+    return refuse(
+      MlAdmissionRefusal.BudgetExceeded,
+      `${destination.name} has spent $${spentUsd.toFixed(2)} of its $${destination.budgetLimitUsd.toFixed(2)} limit`,
+    );
+  }
+  // The pre-flight (no probe yet) only settles the rules above; the cloud rules need its report.
+  if (probe === null) {
+    return refuse(MlAdmissionRefusal.DestinationUnhealthy, `${destination.name} has not been checked yet`);
+  }
+  return (
+    cloudFeatureConsentProblem(destination, workload, probe) ??
+    evaluateCloudAdmission(destination, workload, probe, modelId, holdUsd, studioFeature, fromStoredCheck)
+  );
+};
+
+/**
+ * FL-455: smart search and faces each need their own consent, recorded with Frameleaf Cloud and read
+ * from its report; without it nothing of that work is sent, whatever else allows it.
+ */
+const cloudFeatureConsentProblem = (
+  destination: MlDestinationRow,
+  workload: MlWorkload,
+  probe: MlEndpointProbe,
+): Refused | null => {
+  if (!FRAMELEAF_CLOUD_CATALOG_WORKLOADS.includes(workload) || !probe.cloud || probe.cloud.refusal) {
+    // without a report the cloud rules refuse it as unavailable
+    return null;
+  }
+  const features = probe.cloud.features;
+  const consented = workload === MlWorkload.Clip ? features.smartSearch === true : features.faceRecognition === true;
+  return consented
+    ? null
+    : refuse(
+        MlAdmissionRefusal.ConsentMissing,
+        `${destination.name}: ${workload === MlWorkload.Clip ? 'smart search' : 'faces'} is not turned on in the Frameleaf Cloud processing terms`,
+      );
 };
 
 /**
@@ -699,11 +786,19 @@ export const evaluateAdmission = ({
   if (!destination.workloads.includes(workload)) {
     return refuse(MlAdmissionRefusal.WorkloadNotAllowed, `${destination.name} is not allowed to run ${workload}`);
   }
-  const isCloud = destination.kind === MlDestinationKind.FrameleafCloud;
-  if (isCloud && !FRAMELEAF_CLOUD_ML_WORKLOADS.includes(workload)) {
-    return refuse(
-      MlAdmissionRefusal.WorkloadNotAllowed,
-      `${destination.name}: ${workload} never runs on Frameleaf Cloud`,
+  if (destination.kind === MlDestinationKind.FrameleafCloud) {
+    return (
+      frameleafCloudEligibility({
+        destination,
+        workload,
+        probe,
+        spentUsd,
+        modelId,
+        holdUsd,
+        studioFeature,
+        fromStoredCheck,
+        createdCloudJob,
+      }) ?? { admitted: true }
     );
   }
   if (
@@ -722,29 +817,10 @@ export const evaluateAdmission = ({
       `${destination.name} sends media off this network and has no recorded consent`,
     );
   }
-  // Only workloads covered by the reviewed public disclosure can reach Cloud admission.
-  // Cloud still requires its current consent version below, alongside administrator opt-in.
-  if (isCloud && hasPendingCloudDisclosure(workload)) {
-    return refuse(
-      MlAdmissionRefusal.DisclosurePending,
-      `${destination.name}: disclosure pending for ${workload}; nothing is sent until its approved disclosure is available`,
-    );
-  }
-  if (!(isCloud && createdCloudJob) && destination.budgetLimitUsd !== null && spentUsd >= destination.budgetLimitUsd) {
+  if (destination.budgetLimitUsd !== null && spentUsd >= destination.budgetLimitUsd) {
     return refuse(
       MlAdmissionRefusal.BudgetExceeded,
       `${destination.name} has spent $${spentUsd.toFixed(2)} of its $${destination.budgetLimitUsd.toFixed(2)} limit`,
-    );
-  }
-  if (isCloud) {
-    // The pre-flight (no probe yet) only settles the rules above; the cloud rules need its report.
-    if (probe === null) {
-      return refuse(MlAdmissionRefusal.DestinationUnhealthy, `${destination.name} has not been checked yet`);
-    }
-    return (
-      evaluateCloudAdmission(destination, workload, probe, modelId, holdUsd, studioFeature, fromStoredCheck) ?? {
-        admitted: true,
-      }
     );
   }
   if (!endpoint) {
@@ -791,11 +867,12 @@ const budgetWindowStart = () => new Date(Date.now() - ML_BUDGET_WINDOW_DAYS * 24
  *
  * The probe is live (bounded by `ML_PROBE_FRESHNESS_MS`) so an endpoint that vanished since
  * the last periodic check is refused at admission rather than discovered mid-request. The
- * returned selection carries the accounting hook; the machine-learning repository calls it
+ * qualified desktop pool is selected before backend probing. The returned selection carries the
+ * accounting hook; the machine-learning repository calls it
  * once per request and the row lands in `ml_workload_accounting` for FL-115.
  */
 export const selectMlDestination = async (
-  { mlDestinationRepository, machineLearningRepository, cloudMlSettings }: MlSelectionDeps,
+  { mlDestinationRepository, machineLearningRepository, cloudMlSettings, selectBackgroundPool }: MlSelectionDeps,
   request: MlSelectionRequest,
 ): Promise<MlSelection> => {
   const destination = await mlDestinationRepository.getById(request.destinationId);
@@ -816,6 +893,15 @@ export const selectMlDestination = async (
     }
   };
   await assertAuthority();
+
+  if (request.homeOnly && isCloudDestination(destination.kind)) {
+    throw new MlDestinationRefusedError(
+      MlAdmissionRefusal.WorkloadNotAllowed,
+      request.workload,
+      destination.id,
+      'search text is always read on this network, never on Frameleaf Cloud',
+    );
+  }
 
   if (destination.kind === MlDestinationKind.FrameleafCloud && cloudMlSettings) {
     const settings = await cloudMlSettings();
@@ -861,6 +947,49 @@ export const selectMlDestination = async (
     throw new MlDestinationRefusedError(preflight.refusal, request.workload, destination.id, preflight.detail);
   }
 
+  let startedAt = new Date();
+  const record = (usage: MlUsage) => {
+    void mlDestinationRepository
+      .recordAccounting({
+        destinationId: destination.id,
+        destinationKind: destination.kind,
+        workload: request.workload,
+        jobId: request.jobId ?? null,
+        jobName: request.jobName ?? null,
+        bytesSent: usage.bytesSent,
+        bytesReceived: usage.bytesReceived,
+        durationMs: usage.durationMs,
+        outcome: usage.outcome,
+        // Local and LAN work costs nothing measurable here; Frameleaf Cloud work is settled
+        // later from its usage report (FL-159). Recording null keeps the row honest until then.
+        costUsd: null,
+        startedAt,
+        finishedAt: new Date(startedAt.getTime() + usage.durationMs),
+      })
+      .catch(() => {
+        // Accounting must never fail the inference that already happened.
+      });
+  };
+  if (
+    selectBackgroundPool &&
+    [MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face].includes(request.workload) &&
+    [MlDestinationKind.Local, MlDestinationKind.Lan].includes(destination.kind)
+  ) {
+    // Desktop capacity is admitted by its own qualification; NAS backend health is irrelevant to it.
+    const pool = await selectBackgroundPool({
+      destinationId: destination.id,
+      kind: destination.kind,
+      workload: request.workload,
+      endpoint: endpoint as MlEndpoint,
+      cloudModelId: null,
+      record,
+    });
+    if (pool.desktopClip || pool.desktopOcr || pool.desktopFace) {
+      await assertAuthority();
+      return pool;
+    }
+  }
+
   // Cloud consent can change during an admitted upload; a cached required version cannot authorize
   // another file, part, retry or start. Local destination health keeps its existing freshness bound.
   const probe = await machineLearningRepository.probe(endpoint as MlEndpoint, {
@@ -893,7 +1022,8 @@ export const selectMlDestination = async (
     destination.kind === MlDestinationKind.FrameleafCloud
       ? cloudModelGroupFor(request.workload, request.studioFeature)
       : null;
-  const modelId = group ? await mlDestinationRepository.getCloudModelChoice(group) : null;
+  // FL-455: smart search and faces have no choice to read; they name the model matching this server's pin
+  const modelId = group && isCloudModelGroup(group) ? await mlDestinationRepository.getCloudModelChoice(group) : null;
 
   const verdict = evaluateAdmission({
     destination,
@@ -916,7 +1046,7 @@ export const selectMlDestination = async (
     );
   }
 
-  const startedAt = new Date();
+  startedAt = new Date();
   await assertAuthority();
   return {
     destinationId: destination.id,
@@ -927,28 +1057,7 @@ export const selectMlDestination = async (
       destination.kind === MlDestinationKind.FrameleafCloud
         ? cloudModelFor(request.workload, modelId, probe.cloud)
         : null,
-    record: (usage: MlUsage) => {
-      void mlDestinationRepository
-        .recordAccounting({
-          destinationId: destination.id,
-          destinationKind: destination.kind,
-          workload: request.workload,
-          jobId: request.jobId ?? null,
-          jobName: request.jobName ?? null,
-          bytesSent: usage.bytesSent,
-          bytesReceived: usage.bytesReceived,
-          durationMs: usage.durationMs,
-          outcome: usage.outcome,
-          // Local and LAN work costs nothing measurable here; Frameleaf Cloud work is settled
-          // later from its usage report (FL-159). Recording null keeps the row honest until then.
-          costUsd: null,
-          startedAt,
-          finishedAt: new Date(startedAt.getTime() + usage.durationMs),
-        })
-        .catch(() => {
-          // Accounting must never fail the inference that already happened.
-        });
-    },
+    record,
   };
 };
 
@@ -972,3 +1081,39 @@ export const routedMlDestinationId = async (
   }
   return route.destinationId;
 };
+
+/**
+ * FL-455: the destination at home for `workload`: the one it is routed to, unless that is Frameleaf Cloud,
+ * then this server's own machine learning. A refusal when this server has none turned on; nothing is ever
+ * sent to the cloud from here. Used for search text, which always stays home, and for work whose Frameleaf
+ * Cloud result was refused.
+ */
+export const homeMlDestinationId = async (
+  mlDestinationRepository: MlDestinationRepository,
+  workload: MlWorkload,
+): Promise<string> => {
+  const routed = await routedMlDestinationId(mlDestinationRepository, workload);
+  const destination = await mlDestinationRepository.getById(routed);
+  if (!destination || !isCloudDestination(destination.kind)) {
+    return routed;
+  }
+  const local = ((await mlDestinationRepository.getAll()) ?? []).find(
+    (row) => row.kind === MlDestinationKind.Local && row.enabled,
+  );
+  if (!local) {
+    throw new MlDestinationRefusedError(
+      MlAdmissionRefusal.WorkloadNotRouted,
+      workload,
+      null,
+      `${workload === MlWorkload.Clip ? 'search text' : workload} runs on this network here; turn on this server's machine learning`,
+    );
+  }
+  return local.id;
+};
+
+/**
+ * FL-455: where a CLIP text query (search, smart albums, tags, classification) is encoded. Search text
+ * always stays on this network (`homeMlDestinationId`); it is never sent to the cloud.
+ */
+export const clipTextDestinationId = (mlDestinationRepository: MlDestinationRepository): Promise<string> =>
+  homeMlDestinationId(mlDestinationRepository, MlWorkload.Clip);

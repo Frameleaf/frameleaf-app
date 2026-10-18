@@ -48,7 +48,7 @@ try:
             "python",
             "-m",
             "gunicorn",
-            "frameleaf_ml.main:app",
+            "frameleaf_ml.nas_app:app",
             "-k",
             "frameleaf_ml.config.CustomUvicornWorker",
             "-c",

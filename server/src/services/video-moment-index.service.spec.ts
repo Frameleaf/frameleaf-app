@@ -624,6 +624,14 @@ describe(VideoMomentIndexService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
     });
 
+    it('refuses frame comparisons after the index transition', async () => {
+      mocks.machineLearning.captureClipRead.mockResolvedValue({
+        assertCurrent: () => Promise.reject(new Error('desktop_clip_index_changed')),
+        publish: (write) => write(),
+      });
+      moments.searchFrames.mockResolvedValue([]);
+      await expect(sut.searchSimilar(authStub.user1, frameId, {})).rejects.toThrow('desktop_clip_index_changed');
+    });
     it("searches the caller's library with the frame's own embedding and model, never returning the frame", async () => {
       const momentId = newUuid();
       moments.searchFrames.mockResolvedValue([

@@ -113,8 +113,8 @@ for (const restoredAgain of [false, true])
         },
         node: async (_id: string, _script: string, args: string[]) => {
           events.push('setup');
-          assert.deepEqual(args, ['POST']);
-          return JSON.stringify({ phase: 'awaiting-account', canFinish: false });
+          assert.deepEqual(args, ['POST', 'library-setup/manager', '']);
+          return JSON.stringify({ value: { phase: 'awaiting-account', canFinish: false } });
         },
       } as unknown as Docker;
       const backups = {

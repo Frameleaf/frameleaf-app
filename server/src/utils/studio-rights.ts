@@ -5,8 +5,10 @@
  * has a reviewed decision for three uses in `studio/dependency-attribution.json`, mirrored into
  * `studio-rights.generated.ts`, together with the owner's approval of all 210 bundled resources
  * (FL-146, September 25, 2026, `studio/rights-approval.json`), which is bound to each row's digest.
- * The owner withheld hosted use of MusicGen-small (CC-BY-NC-4.0, FL-146 comment 34944): it runs on
- * this server or a LAN worker, never on Frameleaf Cloud, and the refusal gives that reason.
+ * No row withholds a use for its licence: every model use is the user's personal use, on their own
+ * server or in a Frameleaf Cloud container (FL-451, legal review 2026-10-17, which withdrew the FL-146
+ * hosted-use exclusion of MusicGen-small). A use the owner withholds from an approved row is refused
+ * with the owner's reason.
  * A use is admitted only when its decision is `allowed`; a resource that is new, unknown or changed
  * after approval is blocked (`rightsPolicy.unknownResource`), and a
  * refusal always names the row, so a blocked resource blocks the feature that needs it instead
@@ -64,8 +66,7 @@ export const checkStudioRights = (
     };
   }
   if (row[use] !== 'allowed') {
-    // A use the owner withheld from an approved row says why (MusicGen-small's CC-BY-NC-4.0 licence
-    // keeps it off hosted use); anything else is simply not approved yet.
+    // A use the owner withheld from an approved row says why; anything else is simply not approved yet.
     const restriction = row.restrictions?.[use];
     return {
       allowed: false,

@@ -1663,13 +1663,15 @@ const handlers: Record<string, Handler> = {
       invalid('duration is longer than the source')
     }
     const durationInFrames = duration ?? natural
+    // FL-450: a lock is binding, as in the editor's own drop. Refused before any track or id draw.
+    if (track.locked) failed('clip.add: the destination track is locked')
     // A video with sound gets Freecut's linked audio companion, on the first audio track.
     const linkVideoAudio = mediaType === 'video' && !!source!.audioCodec
     let audioTrackId: string | undefined
     if (linkVideoAudio) {
-      audioTrackId = tracks().find(
-        (candidate) => !candidate.isGroup && candidate.kind === 'audio',
-      )?.id
+      const firstAudio = tracks().find((candidate) => !candidate.isGroup && candidate.kind === 'audio')
+      if (firstAudio?.locked) failed('clip.add: the destination track is locked')
+      audioTrackId = firstAudio?.id
       if (!audioTrackId) {
         const all = tracks()
         const created = createClassicTrack({

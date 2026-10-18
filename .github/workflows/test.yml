@@ -1304,6 +1304,8 @@ jobs:
         run: mise run //:plugins
       - name: Build the app
         run: mise run //server:build
+      - name: Test SQL-tools comparison and migration loading
+        run: node --test packages/sql-tools/test/*.test.mjs
       - name: Run existing migrations
         run: pnpm --filter frameleaf migrations:run
       - name: Capture exact canonical catalog for reconciliation

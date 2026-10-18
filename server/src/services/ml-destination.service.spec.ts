@@ -56,6 +56,10 @@ describe(MlDestinationService.name, () => {
       } as never),
     );
     mocks.mlDestination.setRoute.mockResolvedValue();
+    mocks.mlDestination.setDefaultRoute.mockResolvedValue(true);
+    mocks.mlDestination.getRouteStates.mockResolvedValue([
+      { workload: MlWorkload.Face, destinationId: mlDestinationStub.local.id, origin: 'legacy', revisionId: null },
+    ]);
     mocks.mlDestination.clearRoute.mockResolvedValue();
     mocks.mlDestination.getCloudModelChoices.mockResolvedValue([]);
     mocks.mlDestination.create.mockImplementation((row) =>
@@ -65,6 +69,9 @@ describe(MlDestinationService.name, () => {
   });
 
   describe('bootstrap', () => {
+    beforeEach(() => {
+      mocks.mlDestination.getRouteStates.mockResolvedValue([]);
+    });
     it('creates a local destination for each configured ML URL and routes unrouted library workloads to the first', async () => {
       mocks.mlDestination.getByUrl.mockResolvedValue(undefined);
       mocks.mlDestination.getRoute.mockResolvedValue(undefined);
@@ -95,7 +102,7 @@ describe(MlDestinationService.name, () => {
           ],
         }),
       );
-      expect(mocks.mlDestination.setRoute).toHaveBeenCalledTimes(5);
+      expect(mocks.mlDestination.setDefaultRoute).toHaveBeenCalledTimes(5);
       for (const workload of [
         MlWorkload.Face,
         MlWorkload.Clip,
@@ -103,7 +110,7 @@ describe(MlDestinationService.name, () => {
         MlWorkload.Enrichment,
         MlWorkload.PetRecognition,
       ]) {
-        expect(mocks.mlDestination.setRoute).toHaveBeenCalledWith(workload, 'created');
+        expect(mocks.mlDestination.setDefaultRoute).toHaveBeenCalledWith(workload, 'created');
       }
     });
 
@@ -131,8 +138,38 @@ describe(MlDestinationService.name, () => {
       expect(mocks.mlDestination.update).toHaveBeenCalledWith(mlDestinationStub.local.id, {
         workloads: [...mlDestinationStub.local.workloads, MlWorkload.PetRecognition],
       });
-      expect(mocks.mlDestination.setRoute).toHaveBeenCalledTimes(1);
-      expect(mocks.mlDestination.setRoute).toHaveBeenCalledWith(MlWorkload.PetRecognition, mlDestinationStub.local.id);
+      expect(mocks.mlDestination.setDefaultRoute).toHaveBeenCalledTimes(1);
+      expect(mocks.mlDestination.setDefaultRoute).toHaveBeenCalledWith(
+        MlWorkload.PetRecognition,
+        mlDestinationStub.local.id,
+      );
+    });
+
+    it('keeps an explicit unrouted choice without expanding the local workload allow-list', async () => {
+      mocks.mlDestination.getByUrl.mockResolvedValue(mlDestinationStub.local);
+      mocks.mlDestination.getRoute.mockImplementation((workload) =>
+        Promise.resolve(
+          workload === MlWorkload.PetRecognition
+            ? undefined
+            : { workload, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() },
+        ),
+      );
+      mocks.mlDestination.getRouteStates.mockResolvedValue([
+        { workload: MlWorkload.PetRecognition, destinationId: null, origin: 'pinned', revisionId: 'fixture-revision' },
+      ]);
+      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(FrameleafWorker.Microservices);
+      await sut.onConfigInit({
+        newConfig: {
+          ...defaults,
+          machineLearning: {
+            ...defaults.machineLearning,
+            availabilityChecks: { ...defaults.machineLearning.availabilityChecks, enabled: false },
+          },
+        },
+      } as never);
+      expect(mocks.mlDestination.update).not.toHaveBeenCalled();
+      expect(mocks.mlDestination.setDefaultRoute).not.toHaveBeenCalled();
+      expect(mocks.mlDestination.setRoute).not.toHaveBeenCalled();
     });
 
     it('never creates a cloud destination or routes restoration and Studio work on its own', async () => {
@@ -151,7 +188,7 @@ describe(MlDestinationService.name, () => {
       } as never);
 
       expect(mocks.mlDestination.create).not.toHaveBeenCalled();
-      const routed = mocks.mlDestination.setRoute.mock.calls.map(([workload]) => workload);
+      const routed = mocks.mlDestination.setDefaultRoute.mock.calls.map(([workload]) => workload);
       expect(routed).not.toContain(MlWorkload.RestorationFaithful);
       expect(routed).not.toContain(MlWorkload.RestorationCreative);
       expect(routed).not.toContain(MlWorkload.StudioAi);
@@ -190,6 +227,7 @@ describe(MlDestinationService.name, () => {
         expect.objectContaining({ summary: ML_URL_REMOVED_SUMMARY, health: MlDestinationHealth.Unhealthy }),
       );
       // Routes are never rewritten to another endpoint.
+      expect(mocks.mlDestination.setDefaultRoute).not.toHaveBeenCalled();
       expect(mocks.mlDestination.setRoute).not.toHaveBeenCalled();
       expect(mocks.mlDestination.clearRoute).not.toHaveBeenCalled();
     });
@@ -244,6 +282,7 @@ describe(MlDestinationService.name, () => {
         },
       } as never);
 
+      expect(mocks.mlDestination.setDefaultRoute).not.toHaveBeenCalled();
       expect(mocks.mlDestination.setRoute).not.toHaveBeenCalled();
     });
   });
@@ -353,7 +392,13 @@ describe(MlDestinationService.name, () => {
       const result = await sut.grantConsent(authStub.admin, mlDestinationStub.frameleafCloud.id, {
         acknowledgeMediaLeavesNetwork: true,
         version: '2026-09-25',
-        features: { identityNames: false, medicalSignals: true, ocrAddon: false },
+        features: {
+          identityNames: false,
+          medicalSignals: true,
+          ocrAddon: false,
+          smartSearch: false,
+          faceRecognition: false,
+        },
       });
 
       const gateway = {
@@ -442,7 +487,7 @@ describe(MlDestinationService.name, () => {
           acknowledgeMediaLeavesNetwork: true,
           version: '2026-10-01.2',
           textSha256: shown,
-          features,
+          features: { ...features, smartSearch: false, faceRecognition: false },
         })
         .catch((error: unknown) => error);
       expect(changed).toBeInstanceOf(ConflictException);
@@ -467,7 +512,7 @@ describe(MlDestinationService.name, () => {
         sut.grantConsent(authStub.admin, mlDestinationStub.frameleafCloud.id, {
           acknowledgeMediaLeavesNetwork: true,
           version: '2026-09-25.1',
-          features,
+          features: { ...features, smartSearch: false, faceRecognition: false },
         }),
       ).rejects.toBeInstanceOf(ConflictException);
 
@@ -480,7 +525,7 @@ describe(MlDestinationService.name, () => {
         sut.grantConsent(authStub.admin, mlDestinationStub.frameleafCloud.id, {
           acknowledgeMediaLeavesNetwork: true,
           version: '2026-09-30.4',
-          features,
+          features: { ...features, smartSearch: false, faceRecognition: false },
         }),
       ).rejects.toThrow(/2026-10-01.1/);
       expect(mocks.frameleafCloudMl.recordConsent).not.toHaveBeenCalled();
@@ -961,7 +1006,7 @@ describe(MlDestinationService.name, () => {
       expect(face.available).toBe(true);
       expect(face.routedDestinationId).toBe(mlDestinationStub.local.id);
       expect(face.destinations.find((d) => d.id === mlDestinationStub.local.id)?.available).toBe(true);
-      // Frameleaf Cloud allows nothing for face and has never been checked healthy.
+      // Frameleaf Cloud is not allowed faces here, offers no matching face model and has never been checked healthy.
       expect(face.destinations.find((d) => d.id === mlDestinationStub.frameleafCloud.id)?.available).toBe(false);
 
       const restoration = result.workloads.find((entry) => entry.workload === MlWorkload.RestorationFaithful)!;

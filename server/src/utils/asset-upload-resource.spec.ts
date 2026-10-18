@@ -36,6 +36,22 @@ describe('durable upload bytes', () => {
     expect(await readdir(folder)).toEqual([]);
   });
 
+  it('bounds streamed authority reads by bytes and checks the final tail before retaining it', async () => {
+    const check = vi.fn().mockResolvedValue(undefined);
+    await writeAssetUploadPart(
+      folder,
+      Readable.from(Array.from({ length: 256 }, () => Buffer.alloc(4096))),
+      2 ** 20,
+      check,
+    );
+    expect(check).toHaveBeenCalledTimes(2);
+    const retained = await readdir(folder);
+    check.mockReset().mockResolvedValueOnce(undefined).mockRejectedValue(new Error('source revoked'));
+    await expect(writeAssetUploadPart(folder, Readable.from([Buffer.from('tail')]), 4, check)).rejects.toThrow(
+      'source revoked',
+    );
+    expect(await readdir(folder)).toEqual(retained);
+  });
   it('hashes all ordered parts and creates no output on a whole digest mismatch', async () => {
     const first = await writeAssetUploadPart(folder, Readable.from([Buffer.from('abc')]), 20);
     const second = await writeAssetUploadPart(folder, Readable.from([Buffer.from('def')]), 20);
@@ -116,6 +132,33 @@ describe('native upload headers', () => {
     expect(parse({ duration: 4250, isFavorite: true })).toMatchObject({ duration: 4250, isFavorite: true });
     for (const isFavorite of [1, 0, null, 'yes', 'TRUE', {}]) {
       expect(() => parse({ isFavorite })).toThrow();
+    }
+  });
+  it('binds folder uploads to an opaque source, run and planned item without exposing local paths', () => {
+    const source = {
+      kind: 'folder',
+      sourceId: '11111111-1111-4111-8111-111111111111',
+      runId: '22222222-2222-4222-8222-222222222222',
+      itemId: '33333333-3333-4333-8333-333333333333',
+    };
+    const parse = (sourceIdentity: unknown) =>
+      parseAssetUploadHeaders({
+        ...headers,
+        'asset-metadata': Buffer.from(
+          JSON.stringify({
+            ...JSON.parse(Buffer.from(metadata, 'base64url').toString()),
+            sourceIdentity,
+          }),
+        ).toString('base64url'),
+      });
+    expect(parse(source).metadata.sourceIdentity).toEqual(source);
+    for (const invalid of [
+      { ...source, runId: 'bad' },
+      { ...source, root: '/local/photos' },
+      { ...source, itemId: undefined },
+      { ...source, role: 'original' },
+    ]) {
+      expect(() => parse(invalid)).toThrow();
     }
   });
   it('carries an iCloud source identity, strictly typed (FL-296)', () => {

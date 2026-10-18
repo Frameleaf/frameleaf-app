@@ -27,7 +27,8 @@
 import { StrictMode, Suspense, lazy, useEffect, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
-import { changeAppLanguage, i18nReady } from '@/i18n'
+import { changeAppLanguage, i18n, i18nReady } from '@/i18n'
+import { applyHostEngineStrings } from './host-engine-strings'
 import './editor.css'
 import { routeTree } from '@/routeTree.gen'
 import { ErrorBoundary } from '@/app/error-boundary'
@@ -925,6 +926,7 @@ async function mount(context: StudioHostContext): Promise<void> {
   applyTheme(context)
   await i18nReady
   await changeAppLanguage(context.auth.locale).catch(() => undefined)
+  applyHostEngineStrings(i18n, context.strings)
 
   if (generatedRevoked) throw new Error('Generated media was revoked')
   const workspace = new VirtualWorkspace()
@@ -1054,6 +1056,7 @@ async function update(context: StudioHostContext): Promise<void> {
   }
   if (context.auth.locale !== previous.auth.locale)
     await changeAppLanguage(context.auth.locale).catch(() => undefined)
+  applyHostEngineStrings(i18n, context.strings)
   await state.media.seed([...context.assets, ...(context.generatedMedia ?? [])])
   await state.media.seedImports(context.projectImports ?? [])
   // A project saved for the first time (or a host that can keep files again) takes what was

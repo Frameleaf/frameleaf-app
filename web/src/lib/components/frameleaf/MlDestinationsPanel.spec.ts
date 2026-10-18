@@ -84,12 +84,19 @@ const cloudStatus = {
     requiredVersion: '2026-10-01',
     recordedVersion: null,
     acceptedVersion: null,
-    features: { identityNames: false, medicalSignals: false, ocrAddon: false },
+    features: {
+      identityNames: false,
+      medicalSignals: false,
+      ocrAddon: false,
+      smartSearch: false,
+      faceRecognition: false,
+    },
     summary: 'Media is processed in the EU region and deleted after each job.',
     documentUrl: null,
     outdated: false,
   },
   wallet: null,
+  matchedModelWorkloads: [],
   checkedAt: '2026-09-25T00:00:00.000Z',
 };
 
@@ -177,7 +184,11 @@ describe('MlDestinationsPanel (FL-110)', () => {
           version: '2026-10-01',
           textSha256: 'a'.repeat(64),
           // Names and medical signals never reach a cloud prompt unless chosen.
-          features: { identityNames: false, medicalSignals: false, ocrAddon: false },
+          features: {
+            identityNames: false,
+            medicalSignals: false,
+            ocrAddon: false,
+          },
         },
       }),
     );
@@ -292,7 +303,8 @@ describe('MlDestinationsPanel (FL-110)', () => {
     await fireEvent.click(within(row).getByRole('button', { name: 'Edit' }));
     const dialog = await screen.findByRole('dialog', { name: 'Edit destination' });
     expect(within(dialog).queryByLabelText('URL')).not.toBeInTheDocument();
-    // Faces are never offered; restoration and descriptions may share Frameleaf Cloud.
+    // Faces are offered only while Frameleaf Cloud runs this server's own face model (FL-455); restoration
+    // and descriptions may share Frameleaf Cloud.
     expect(within(dialog).queryByLabelText('Face recognition')).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText('Restoration (creative)')).toBeEnabled();
     // jsdom miscounts the 0.01 step of a whole-dollar budget, so the form is submitted directly.
@@ -303,6 +315,19 @@ describe('MlDestinationsPanel (FL-110)', () => {
     expect(mlDestinationUpdateDto).not.toHaveProperty('url');
     expect(mlDestinationUpdateDto).not.toHaveProperty('authToken');
     expect(mlDestinationUpdateDto.workloads).toEqual([MlWorkload.Enrichment, MlWorkload.RestorationFaithful]);
+  });
+
+  it("offers faces on Frameleaf Cloud once it runs this server's own face model (FL-455)", async () => {
+    sdkMock.getCloudMlStatus.mockResolvedValue({ matchedModelWorkloads: [MlWorkload.Face] } as never);
+    render(MlDestinationsPanel, { destinations: [destination(), cloud], routes });
+
+    await waitFor(() => expect(sdkMock.getCloudMlStatus).toHaveBeenCalled());
+    const row = screen.getByRole('listitem', { name: 'Frameleaf Cloud' });
+    await fireEvent.click(within(row).getByRole('button', { name: 'Edit' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit destination' });
+    expect(within(dialog).getByLabelText('Face recognition')).toBeEnabled();
+    expect(within(dialog).queryByLabelText('Search and similarity')).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText('Text in photos')).not.toBeInTheDocument();
   });
 
   it('closes restoration in the form once library work is ticked (FL-72)', async () => {

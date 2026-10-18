@@ -25,7 +25,8 @@ import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js
 export type BuddySide = 'a' | 'b';
 export const BUDDY_SIDES = ['a', 'b'] as const;
 export const buddyHost = (side: BuddySide) => `r.buddyfixture${side.repeat(4)}.buddy.test`;
-export const buddyPort = (side: BuddySide) => (side === 'a' ? 38_443 : 38_444);
+// Keep fixed peer listeners outside Linux's default ephemeral range (32768-60999).
+export const buddyPort = (side: BuddySide) => (side === 'a' ? 28_443 : 28_444);
 const publicKey = z.strictObject({ kty: z.literal('OKP'), crv: z.literal('Ed25519'), x: z.string().length(43) });
 const permissions = z.strictObject({
   allowRemoteEnable: z.boolean(),

@@ -70,7 +70,13 @@ const setup = (db?: Kysely<DB>) => {
     sut as unknown as { selectRoutedMlDestination: () => Promise<unknown> },
     'selectRoutedMlDestination',
   ).mockResolvedValue({});
+  // FL-455: search text is encoded through its own home-only selection
+  vi.spyOn(
+    sut as unknown as { selectClipTextDestination: () => Promise<unknown> },
+    'selectClipTextDestination',
+  ).mockResolvedValue({});
   ctx.getMock(EventRepository).emit.mockResolvedValue();
+  ctx.getMock(MachineLearningRepository).clipCacheKey.mockResolvedValue('legacy');
   return { sut, ctx, albums: BaseService.create(AlbumService, sut) };
 };
 

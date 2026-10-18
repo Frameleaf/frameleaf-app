@@ -22,6 +22,7 @@ from frameleaf_ml.schemas import (
     ModelType,
 )
 from frameleaf_ml.sessions import runtime_cache_dir
+from frameleaf_ml.sessions.ort import OrtSession
 
 from ._ops import align_face
 
@@ -38,7 +39,10 @@ class FaceRecognizer(InferenceModel):
     def _load(self) -> ModelSession:
         session = self._make_session(self.model_path)
         if (not self.batch_size or self.batch_size > 1) and str(session.get_inputs()[0].shape[0]) != "batch":
-            session = self._make_session(self._add_batch_axis(self.model_path))
+            derived = self._add_batch_axis(self.model_path)
+            session = self._make_session(derived)
+            if isinstance(session, OrtSession):
+                session.source_model_path = self.model_path
         return session
 
     def _predict(

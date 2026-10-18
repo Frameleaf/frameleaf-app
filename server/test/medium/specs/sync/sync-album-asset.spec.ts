@@ -377,9 +377,10 @@ describe(SyncRequestType.AlbumAssetsV2, () => {
       );
     });
 
-    it("should not forward another member's asset once it moves into the Locked folder", async () => {
-      // The stream is filtered, so a device that already holds the item keeps its copy until the item
-      // leaves the album; a server-side delete cannot be sent without removing the membership.
+    it("should reset another member's device once the asset it holds moves into the Locked folder", async () => {
+      // Owner decision, October 17, 2026 (FL-447): Locked items are never shared except with partners, so
+      // a device that already holds the item must drop it. The cursor stream cannot take it back, so the
+      // withheld set changes and the device is reset; it then syncs again without the item.
       const { auth, ctx } = await setup();
       const { user: user2 } = await ctx.newUser();
       const { asset } = await ctx.newAsset({ ownerId: user2.id });
@@ -396,7 +397,13 @@ describe(SyncRequestType.AlbumAssetsV2, () => {
       await ctx.get(AssetRepository).update({ id: asset.id, visibility: AssetVisibility.Locked });
       await wait(2);
 
-      await ctx.assertSyncIsComplete(auth, [SyncRequestType.AlbumAssetsV2]);
+      const reset = await ctx.syncStream(auth, [SyncRequestType.AlbumAssetsV2]);
+      expect(reset).toEqual([{ type: SyncEntityType.SyncResetV1, data: {}, ack: 'SyncResetV1|reset' }]);
+      await ctx.syncAckAll(auth, reset);
+
+      const again = await ctx.syncStream(auth, [SyncRequestType.AlbumAssetsV2]);
+      expect(again).not.toContainEqual(expect.objectContaining({ data: expect.objectContaining({ id: asset.id }) }));
+      expect(again.at(-1)).toEqual(expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }));
     });
   });
 });

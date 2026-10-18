@@ -67,4 +67,33 @@ describe('ModelSlider (FL-159 §3.3)', () => {
       expect.objectContaining({ disabled: false }),
     );
   });
+
+  it("shows the smart search and faces blue stop only while Frameleaf Cloud offers this server's model (FL-455)", () => {
+    const { unmount } = render(ModelSlider, {
+      workload: 'search',
+      value: 'ViT-B-16-SigLIP-384__webli',
+      gpu: rtx4090,
+      route: 'both',
+      label: 'Smart search',
+    });
+    let group = screen.getByRole('group', { name: 'Smart search' });
+    expect(group.querySelectorAll('.ms-stop.is-cloud')).toHaveLength(0);
+    expect(within(group).queryByText(/Frameleaf Cloud only/)).not.toBeInTheDocument();
+    unmount();
+
+    render(ModelSlider, {
+      workload: 'faces',
+      value: 'buffalo_l',
+      gpu: rtx4090,
+      route: 'both',
+      label: 'Face recognition',
+      cloudMatched: ['face'],
+    });
+    group = screen.getByRole('group', { name: 'Face recognition' });
+    const blue = group.querySelectorAll('.ms-stop.is-cloud');
+    expect(blue).toHaveLength(1);
+    expect(blue[0].querySelector('input')?.value).toBe('buffalo_l@cloud');
+    expect(within(group).getByRole('radio', { name: /^buffalo_l: Cloud · about/ })).toBeEnabled();
+    expect(within(group).getByText(/Frameleaf Cloud only/)).toBeInTheDocument();
+  });
 });

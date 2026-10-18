@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { resolve } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 import { trackQueueChild } from 'src/queue/child-process.js';
 import { jobSignal } from 'src/queue/context.js';
 
@@ -37,13 +37,17 @@ export async function renderRawWithLibRaw(
     if (signal?.aborted) {
       throw new RawRenderError('cancelled', 'ABORT_ERR', signal.reason);
     }
-    // The absolute binary is built from the same pinned source as the server's LibRaw library.
+    const decoder = process.env.FRAMELEAF_RAW_DECODER_PATH ?? '/usr/local/bin/dcraw_emu';
+    if (!isAbsolute(decoder)) {
+      throw new RawRenderError('dependency_missing', 'ERR_RAW_DECODER_PATH');
+    }
+    // Desktop supplies its inventory-verified binary; NAS retains its pinned image path.
     // stdout avoids temporary files and any derivative beside the immutable original.
     const { stdout, stderr } = await new Promise<{ stdout: Buffer; stderr: Buffer }>((resolveOutput, reject) => {
       let failure: unknown;
       let output: { stdout: Buffer; stderr: Buffer } | undefined;
       const child = execFile(
-        '/usr/local/bin/dcraw_emu',
+        decoder,
         ['-T', '-6', '-w', '-o', '1', '-Z', '-', resolve(input)],
         {
           encoding: 'buffer',

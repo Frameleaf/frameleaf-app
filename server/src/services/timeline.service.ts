@@ -21,7 +21,7 @@ import {
   requireSuppressedOnlyAccess,
 } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { collectFilterIds, requirePetFilterAllowed } from 'src/utils/search-filter.js';
+import { collectFilterIds, filterNamesPeople, requirePetFilterAllowed } from 'src/utils/search-filter.js';
 
 @Injectable()
 export class TimelineService extends BaseService {
@@ -117,8 +117,8 @@ export class TimelineService extends BaseService {
       // September 22, 2026). The main timeline never does: the Locked view is its own view.
       ...(dto.albumId && getLockedVisibilityOptions(auth)),
       // FL-446: an album, or a person widened to shared albums, never shows another member's item that
-      // matches its owner's Locked rules
-      ...((dto.albumId || dto.personId) && getOthersRulesQueryOptions(auth)),
+      // matches its owner's Locked rules. FL-425: so do the Filters panel's people, which widen alike.
+      ...((dto.albumId || dto.personId || filterNamesPeople(dto.filter)) && getOthersRulesQueryOptions(auth)),
       userIds,
       ...(lockReason && { lockReasons: [lockReason] }),
       // LIB-P3: the caller's own Best Photos, at the Best Photos page's threshold (checked in timeBucketChecks)

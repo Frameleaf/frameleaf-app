@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import z from 'zod';
 import { MlAdmissionRefusal, MlWorkload } from 'src/enum.js';
+import { type CloudIdentityWorkload, cloudModelIdentitySchema } from 'src/utils/cloud-model-identity.js';
 
 /**
  * Frameleaf Cloud contracts the self-hosted server reads (FL-159, CLD-201; program plan section 4,
@@ -19,6 +20,8 @@ import { MlAdmissionRefusal, MlWorkload } from 'src/enum.js';
  * FL-286: reviewed workloads covered by the October 3, 2026 AI GPU and AI Credits Terms:
  * https://frameleaf.app/legal/ai-gpu-and-ai-credits/
  * Cloud's current consent version/digest and per-job authorization remain required.
+ * FL-455 (owner decision 2026-10-18): smart search and faces are covered too; each still needs its
+ * own feature consent (`smartSearch`, `faceRecognition`) and a catalogue model matching this server's pin.
  */
 export const hasPendingCloudDisclosure = (workload: MlWorkload): boolean =>
   ![
@@ -28,6 +31,8 @@ export const hasPendingCloudDisclosure = (workload: MlWorkload): boolean =>
     MlWorkload.Upscale,
     MlWorkload.Interpolation,
     MlWorkload.StudioAi,
+    MlWorkload.Clip,
+    MlWorkload.Face,
   ].includes(workload);
 
 /** Longest a cloud response body may be; discovery, capabilities, catalogue and wallet are small. */
@@ -268,6 +273,10 @@ const consentFeaturesSchema = z.object({
   identityNames: z.boolean().default(false),
   medicalSignals: z.boolean().default(false),
   ocrAddon: z.boolean().default(false),
+  /** FL-455: smart search image embeddings on Frameleaf Cloud; off (or absent) unless chosen. */
+  smartSearch: z.boolean().optional(),
+  /** FL-455: face detection and recognition on Frameleaf Cloud; off (or absent) unless chosen. */
+  faceRecognition: z.boolean().optional(),
 });
 export type CloudConsentFeatures = z.infer<typeof consentFeaturesSchema>;
 
@@ -403,7 +412,9 @@ export type CloudRestorationMode = (typeof CLOUD_RESTORATION_MODES)[number];
  *
  * Strict, as the contract is: an entry that names an internal identifier (`modelId`, `gpuClass`,
  * `modelFingerprint`), carries a name where a SKU or revision belongs, gives a restoration model no
- * mode (or any other model one), or has a licence that forbids commercial hosted use is refused.
+ * mode (or any other model one) is refused. A model's licence never refuses it (FL-451, legal review
+ * 2026-10-17): every model runs for the personal use of the server's own user, on this server or in a
+ * Frameleaf Cloud container rented for them.
  * `catalogSchema` leaves such an entry out rather than failing the whole catalogue, so it is never
  * offered, chosen or sent.
  */
@@ -430,14 +441,17 @@ export const catalogEntrySchema = z
      */
     mode: z.enum(CLOUD_RESTORATION_MODES).nullable().optional(),
     /**
-     * FC-34: the model licence shown next to the model. Only `yes` and `conditions` are ever
-     * published; `no` (a licence forbidding commercial hosted use) refuses the entry.
+     * FC-34: the model licence shown next to the model. Any `commercialHosted` answer is accepted
+     * (FL-451): a licence that withholds commercial hosting does not withhold a model run for the
+     * user's own personal use in a Frameleaf Cloud container.
      */
-    licence: z.strictObject({ name: displayText(80), commercialHosted: z.enum(['yes', 'conditions']) }).optional(),
+    licence: z
+      .strictObject({ name: displayText(80), commercialHosted: z.enum(['yes', 'conditions', 'no']) })
+      .optional(),
     /**
      * FC-34 (cloud decision 2026-09-26): the model the cloud recommends for its group, the workload
      * (and, for restoration, the mode) in this region. At most one model per group carries it; none
-     * does when the recommended model is not available to this region or licence.
+     * does when the recommended model is not available to this region.
      */
     default: z.boolean().optional(),
     /** FC-48, transcription only: the languages the model is offered for, with the word error rate it is gated at. */
@@ -450,8 +464,20 @@ export const catalogEntrySchema = z
       .array(z.strictObject({ sku: voiceSkuSchema, label: displayText(80), language: languageTag }))
       .max(100)
       .optional(),
+    /**
+     * FL-455, `clip` and `face` only: exactly which model the entry runs (repository, revision, file
+     * checksums, preprocessing). The entry is only offered when it equals this server's pinned model.
+     */
+    identity: cloudModelIdentitySchema.optional(),
   })
   .superRefine((entry, context) => {
+    const guarded = entry.workload === 'clip' || entry.workload === 'face';
+    if (guarded && !entry.identity) {
+      context.addIssue({ code: 'custom', path: ['identity'], message: 'a clip or face model names its identity' });
+    }
+    if (!guarded && entry.identity) {
+      context.addIssue({ code: 'custom', path: ['identity'], message: 'only clip and face models name an identity' });
+    }
     if (entry.languages && entry.workload !== 'transcription') {
       context.addIssue({ code: 'custom', path: ['languages'], message: 'only transcription models list languages' });
     }
@@ -472,6 +498,7 @@ export const catalogEntrySchema = z
     mode: entry.mode ?? null,
     licence: entry.licence ?? null,
     default: entry.default === true,
+    identity: entry.identity ?? null,
     // FC-48 (owner decision 2026-09-27): speech is English only at launch; a voice in any other
     // language is never offered or sent, whatever a catalogue lists
     ...(entry.voices && { voices: entry.voices.filter((voice) => isEnglishVoice(voice.language)) }),
@@ -520,6 +547,13 @@ export const isCloudModelGroup = (value: string): value is CloudModelGroup =>
   (CLOUD_MODEL_GROUPS as readonly string[]).includes(value);
 
 /**
+ * FL-455: the catalogue groups of smart search and faces. No administrator chooses their model: a job
+ * names the one model matching this server's pin (`CloudProbeFacts.localModels`), so these are never
+ * in `CLOUD_MODEL_GROUPS`.
+ */
+export type CloudPinnedModelGroup = 'clip' | 'face';
+
+/**
  * `GET /v2/catalog` (FC-34 `CatalogResponse`): only what this server may run now. Every entry is
  * checked on its own against `catalogEntrySchema`; one that fails is left out and counted in
  * `refused`, so a single bad entry never hides the rest and is never offered. A group that marks more
@@ -563,11 +597,17 @@ export const catalogSchema = z
 export type CloudCatalog = z.infer<typeof catalogSchema>;
 
 /**
- * The catalogue models this server may offer: every accepted entry except a local-only model (FL-146),
- * recognised by its display name, since a SKU never names the model.
+ * FL-455: the catalogue workloads asked for with `GET /v2/catalog?include=` (and `/v2/catalog/quality`).
+ * Without it the cloud leaves them out, as it does for servers from before FL-455.
+ */
+export const CLOUD_CATALOG_INCLUDE = ['clip', 'face'] as const;
+
+/**
+ * The catalogue models this server may offer: every accepted entry. No model is withheld for its
+ * licence (FL-451, legal review 2026-10-17, which retired the FL-146 local-only list).
  */
 export const offeredCatalogModels = (catalog: Pick<CloudCatalog, 'models'> | null): CloudCatalogEntry[] =>
-  (catalog?.models ?? []).filter((model) => !isLocalOnlyModel(model.sku) && !isLocalOnlyModel(model.display.model));
+  catalog?.models ?? [];
 
 /**
  * The default model SKU of each catalogue group (`catalogGroupKey`) among `models` (FC-34): only a
@@ -592,13 +632,17 @@ export const CONSENT_TERMS_FOR_FEATURES: boolean = true;
  * `enabled`, else none, so the cloud answers for the features on record as before.
  */
 export const consentCurrentQuery = (
-  features: { identityNames: boolean; medicalSignals: boolean } | undefined,
+  features:
+    { identityNames: boolean; medicalSignals: boolean; smartSearch?: boolean; faceRecognition?: boolean } | undefined,
   enabled: boolean = CONSENT_TERMS_FOR_FEATURES,
 ): string =>
   features && enabled
     ? `?${new URLSearchParams({
         identityNames: String(features.identityNames),
         medicalSignals: String(features.medicalSignals),
+        // FL-455: only asked for when chosen, so a Cloud that does not offer them is asked as before
+        ...(features.smartSearch && { smartSearch: 'true' }),
+        ...(features.faceRecognition && { faceRecognition: 'true' }),
       })}`
     : '';
 
@@ -646,13 +690,38 @@ export type CloudConsentCurrent = z.infer<typeof consentCurrentSchema>;
  */
 export const consentRecordRequestSchema = z.strictObject({
   version: z.string().regex(CONSENT_VERSION_PATTERN),
-  features: z.strictObject({ identityNames: z.boolean(), medicalSignals: z.boolean(), ocrAddon: z.literal(false) }),
+  features: z.strictObject({
+    identityNames: z.boolean(),
+    medicalSignals: z.boolean(),
+    ocrAddon: z.literal(false),
+    // FL-455: sent only when chosen (`consentRecordFeatures`)
+    smartSearch: z.literal(true).optional(),
+    faceRecognition: z.literal(true).optional(),
+  }),
   acknowledgedBy: z
     .string()
     .regex(/^[\w-]{1,64}$/)
     .optional(),
 });
 export type CloudConsentRecordRequest = z.infer<typeof consentRecordRequestSchema>;
+
+/**
+ * FL-455: the features of a `POST /v2/consent` body. Smart search and faces are named only when chosen,
+ * so a Cloud that does not offer them records the same body as before.
+ */
+export const consentRecordFeatures = (
+  features: Pick<
+    CloudConsentFeatures,
+    'identityNames' | 'medicalSignals' | 'ocrAddon' | 'smartSearch' | 'faceRecognition'
+  >,
+): CloudConsentRecordRequest['features'] => ({
+  identityNames: features.identityNames,
+  medicalSignals: features.medicalSignals,
+  // the reserved add-on is passed as it is, so the contract refuses it on rather than this hiding it
+  ocrAddon: features.ocrAddon as false,
+  ...(features.smartSearch && { smartSearch: true as const }),
+  ...(features.faceRecognition && { faceRecognition: true as const }),
+});
 
 /** `POST /v2/consent` answer (FC-34 `ConsentRecorded`). */
 export const consentRecordedSchema = z.object({
@@ -719,6 +788,9 @@ const jobInputsSchema = z
 
 const scale = z.union([z.literal(2), z.literal(4)]);
 
+/** FL-455: a model as this server names it in its settings (`machineLearning.clip.modelName`). */
+const identityModelName = z.string().regex(/^[\w.-]{1,128}$/);
+
 /**
  * The strict `request` allow-list per cloud workload (FC-66 `WORKLOAD_REQUESTS`, API protection
  * measure 2): prompts, sampling and model parameters stay in the cloud, and any other key is refused
@@ -780,6 +852,11 @@ export const CLOUD_WORKLOAD_REQUESTS = {
       .regex(/^(?:[^\p{Cc}]|\n)*$/u),
   }),
   interpolation: z.strictObject({ factor: z.union([z.literal(2), z.literal(4), z.literal(8)]).optional() }),
+  // FL-455 `ClipRequest`: the model name this server expects; a SKU running another model is refused
+  // (422 `request-invalid`, detail `model`), so a job never runs on another model
+  clip: z.strictObject({ model: identityModelName.optional() }),
+  // FL-455 `FaceRequest`: the model name and this server's detection threshold
+  face: z.strictObject({ model: identityModelName.optional(), minScore: z.number().min(0.1).max(1).optional() }),
 } as const;
 
 /**
@@ -805,6 +882,8 @@ export const estimateRequestSchema = z.discriminatedUnion('workload', [
   estimateRequestFor('transcription'),
   estimateRequestFor('tts'),
   estimateRequestFor('interpolation'),
+  estimateRequestFor('clip'),
+  estimateRequestFor('face'),
 ]);
 export type CloudEstimateRequest = z.infer<typeof estimateRequestSchema>;
 
@@ -931,6 +1010,8 @@ export const jobCreateRequestSchema = z.discriminatedUnion('workload', [
   jobRequestFor('transcription'),
   jobRequestFor('tts'),
   jobRequestFor('interpolation'),
+  jobRequestFor('clip'),
+  jobRequestFor('face'),
 ]);
 export type CloudJobCreateRequest = z.infer<typeof jobCreateRequestSchema>;
 
@@ -1329,6 +1410,161 @@ export const descriptionsResultSchema = z
     message: 'inputId must be unique',
   });
 export type CloudDescriptionsResult = z.infer<typeof descriptionsResultSchema>;
+
+/* ------------------------------------------------------------------ */
+/* Smart search and faces results (FL-455)                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * FL-455 result warnings: the first three mean the item failed (no embedding, no faces); `metadata-removed`
+ * says the runtime removed metadata the input still carried, without changing its pixels.
+ */
+export const CLOUD_LIBRARY_WARNINGS = [
+  'input-unsupported',
+  'input-too-large',
+  'input-unreadable',
+  'metadata-removed',
+] as const;
+export const CLOUD_LIBRARY_FAILURE_WARNINGS: readonly string[] = CLOUD_LIBRARY_WARNINGS.slice(0, 3);
+
+/** The largest smart search or face result document read (a photo with 2,000 faces stays under it). */
+export const CLOUD_LIBRARY_RESULT_MAX_BYTES = 8 * 1024 * 1024;
+
+/**
+ * An embedding as the cloud sends it: exact float32 values, little-endian, base64. Decoded unchanged, with
+ * no rounding and no normalisation, exactly as this server's ML service returns them.
+ */
+export const cloudEmbeddingSchema = z
+  .strictObject({
+    dim: z.number().int().min(1).max(4096),
+    encoding: z.literal('f32le-base64'),
+    data: z
+      .string()
+      .max(22_000)
+      .regex(/^[\d+/A-Za-z]*={0,2}$/),
+  })
+  .refine((embedding) => Buffer.from(embedding.data, 'base64').length === embedding.dim * 4, {
+    path: ['data'],
+    message: 'data holds exactly dim float32 values',
+  });
+export type CloudEmbedding = z.infer<typeof cloudEmbeddingSchema>;
+
+/** The values of an embedding; every one must be finite. */
+export const decodeCloudEmbedding = (embedding: CloudEmbedding): number[] => {
+  const bytes = Buffer.from(embedding.data, 'base64');
+  const values: number[] = [];
+  for (let index = 0; index < embedding.dim; index++) {
+    const value = bytes.readFloatLE(index * 4);
+    if (!Number.isFinite(value)) {
+      throw new Error('cloud_embedding_invalid');
+    }
+    values.push(value);
+  }
+  return values;
+};
+
+const libraryInputId = z.string().regex(/^[\w-]{1,64}$/);
+const librarySide = z.number().int().min(1).max(65_536);
+const libraryWarnings = z
+  .array(z.enum(CLOUD_LIBRARY_WARNINGS))
+  .max(4)
+  .refine((warnings) => new Set(warnings).size === warnings.length, 'warnings are unique');
+const libraryFailed = (warnings: readonly string[]) =>
+  warnings.some((warning) => CLOUD_LIBRARY_FAILURE_WARNINGS.includes(warning));
+
+/**
+ * The model identity a smart search or face result repeats (FL-455). Read leniently here: the identity
+ * guard (`cloud-model-identity.ts`) decides whether it is this server's model, and a result whose
+ * identity is not is never stored.
+ */
+const resultIdentity = z.record(z.string(), z.unknown());
+
+/** FL-455 `ClipResult` (`frameleaf.clip/v1`): one photo's image embedding for smart search. */
+export const clipResultSchema = z
+  .strictObject({
+    schema: z.literal('frameleaf.clip/v1'),
+    modelSku: modelSkuSchema,
+    modelRev: modelRevSchema,
+    identity: resultIdentity,
+    items: z
+      .array(
+        z
+          .strictObject({
+            inputId: libraryInputId,
+            image: z.strictObject({ width: librarySide, height: librarySide }).nullable(),
+            embedding: cloudEmbeddingSchema.nullable(),
+            warnings: libraryWarnings,
+          })
+          .refine((item) => libraryFailed(item.warnings) === (item.embedding === null), {
+            path: ['embedding'],
+            message:
+              'a failed item has no embedding and a failure warning; a succeeded item has both image and embedding',
+          })
+          .refine((item) => item.embedding === null || item.image !== null, {
+            path: ['image'],
+            message: 'a succeeded item names its image size',
+          }),
+      )
+      .min(1)
+      .max(1000),
+  })
+  .refine((result) => new Set(result.items.map((item) => item.inputId)).size === result.items.length, {
+    path: ['items'],
+    message: 'inputId must be unique',
+  });
+export type CloudClipResult = z.infer<typeof clipResultSchema>;
+
+/**
+ * FL-455 `FaceResult` (`frameleaf.faces/v1`): the faces found in one photo, in descending score order,
+ * each with its box in the decoded input's pixels (top-left origin, whole pixels, not clamped), its
+ * detection score and its recognition embedding. A photo with no face has `faces: []`.
+ */
+export const faceResultSchema = z
+  .strictObject({
+    schema: z.literal('frameleaf.faces/v1'),
+    modelSku: modelSkuSchema,
+    modelRev: modelRevSchema,
+    identity: resultIdentity,
+    minScore: z.number().min(0.1).max(1),
+    items: z
+      .array(
+        z
+          .strictObject({
+            inputId: libraryInputId,
+            image: z.strictObject({ width: librarySide, height: librarySide }).nullable(),
+            faces: z
+              .array(
+                z.strictObject({
+                  boundingBox: z.strictObject({
+                    x1: z.number().int(),
+                    y1: z.number().int(),
+                    x2: z.number().int(),
+                    y2: z.number().int(),
+                  }),
+                  score: z.number().min(0).max(1),
+                  embedding: cloudEmbeddingSchema,
+                }),
+              )
+              .max(2000),
+            warnings: libraryWarnings,
+          })
+          .refine((item) => !libraryFailed(item.warnings) || item.faces.length === 0, {
+            path: ['faces'],
+            message: 'a failed item has no faces',
+          })
+          .refine((item) => libraryFailed(item.warnings) || item.image !== null, {
+            path: ['image'],
+            message: 'a succeeded item names its image size',
+          }),
+      )
+      .min(1)
+      .max(1000),
+  })
+  .refine((result) => new Set(result.items.map((item) => item.inputId)).size === result.items.length, {
+    path: ['items'],
+    message: 'inputId must be unique',
+  });
+export type CloudFaceResult = z.infer<typeof faceResultSchema>;
 
 /** The largest description output document this server reads (FC-44 `DESCRIPTIONS_RESULT_MAX_BYTES`). */
 export const CLOUD_DESCRIPTION_RESULT_MAX_BYTES = 16_384;
@@ -1830,35 +2066,25 @@ export type CloudProbeFacts = {
    * such facts admit no model until the next check.
    */
   modelGroups?: Record<string, string>;
+  /**
+   * FL-455: for smart search (`clip`) and faces, the catalogue model SKU whose identity equals this
+   * server's pinned model (`matchLocalModels`). The only model a Cloud job for that work may name; a
+   * workload without one is not offered. Absent on facts stored before FL-455.
+   */
+  localModels?: Partial<Record<CloudIdentityWorkload, string>>;
   refusal: { refusal: MlAdmissionRefusal; detail: string } | null;
 };
 
 /**
- * Models that run on this server only (FL-146 owner decisions, 2026-09-25): the nllb-clip search
- * models (base and large, every variant; CC-BY-NC-4.0), MusicGen-small (CC-BY-NC-4.0) and
- * Qwen2.5-VL-3B-Instruct (Qwen Research License, including its OpenVINO conversion). They are never
- * taken from a Frameleaf Cloud catalogue, never routed or configured there, and admission refuses a
- * cloud job for them. They stay available on this server and home-network workers.
- */
-const LOCAL_ONLY_MODEL = /nllbclip|musicgensmall|qwen25vl3b/;
-
-/**
- * Whether `id` (a model id, or a catalogue display name such as "Qwen2.5 VL 3B") names a local-only
- * model. Letters and digits alone are compared, lower-cased, so spaces, dots, hyphens, slashes and
- * underscores never hide one.
- */
-export const isLocalOnlyModel = (id: string | null | undefined): boolean =>
-  !!id && LOCAL_ONLY_MODEL.test(id.toLowerCase().replaceAll(/[^\da-z]/g, ''));
-
-/**
  * The catalogue group a Frameleaf Cloud job for `workload` takes its default from (FC-34), or null
  * when there is none to take: Studio AI spans two cloud workloads (`transcription`, `tts`), so it
- * always names its model, and work the cloud never runs has no group. `cloudModelGroupFor` is the
+ * always names its model, and work the cloud does not run has no group. `cloudModelGroupFor` is the
  * group a job's chosen model is read from, Studio AI included.
  */
 export const cloudDefaultGroupFor = (workload: MlWorkload): string | null => {
   const cloudId = cloudWorkloadIdFor(workload);
-  if (!cloudId) {
+  // FL-455: smart search and faces take no default; they name the model matching this server's pin
+  if (!cloudId || workload === MlWorkload.Clip || workload === MlWorkload.Face) {
     return null;
   }
   switch (workload) {
@@ -1876,17 +2102,21 @@ export const cloudDefaultGroupFor = (workload: MlWorkload): string | null => {
 
 /**
  * The model a Frameleaf Cloud job for `workload` names (FL-183, FC-34): the one an administrator
- * chose (never a local-only one), else the model the catalogue marks as its group's default at the
- * last check, else null. A null answer is refused at admission; no model name or other model is ever
- * put in its place.
+ * chose, else the model the catalogue marks as its group's default at the last check, else null. A
+ * null answer is refused at admission; no model name or other model is ever put in its place.
  */
 export const cloudModelFor = (
   workload: MlWorkload,
   chosen: string | null | undefined,
-  facts: Pick<CloudProbeFacts, 'defaultModels'> | null | undefined,
+  facts: Pick<CloudProbeFacts, 'defaultModels' | 'localModels'> | null | undefined,
 ): string | null => {
+  // FL-455: smart search and faces only ever name the model matching this server's pin; no choice or
+  // default stands in for it
+  if (workload === MlWorkload.Clip || workload === MlWorkload.Face) {
+    return facts?.localModels?.[workload] ?? null;
+  }
   if (chosen) {
-    return isLocalOnlyModel(chosen) ? null : chosen;
+    return chosen;
   }
   const group = cloudDefaultGroupFor(workload);
   if (!group) {
@@ -1904,7 +2134,10 @@ export const cloudModelFor = (
 export const cloudModelGroupFor = (
   workload: MlWorkload,
   studioFeature?: StudioAiCloudFeature | null,
-): CloudModelGroup | null => {
+): CloudModelGroup | CloudPinnedModelGroup | null => {
+  if (workload === MlWorkload.Clip || workload === MlWorkload.Face) {
+    return workload;
+  }
   if (workload === MlWorkload.StudioAi) {
     if (!studioFeature) {
       return null;
@@ -1955,6 +2188,7 @@ export const cloudFactsFromCapabilities = (
   modelWorkloads: Record<string, MlWorkload | null> = {},
   defaultModels: Record<string, string> = {},
   modelGroups: Record<string, string> = {},
+  localModels: Partial<Record<CloudIdentityWorkload, string>> = {},
 ): CloudProbeFacts => ({
   region: capabilities.region,
   consentRequiredVersion: capabilities.consent.requiredVersion,
@@ -1971,13 +2205,15 @@ export const cloudFactsFromCapabilities = (
   modelWorkloads,
   defaultModels,
   modelGroups,
+  localModels,
   refusal: null,
 });
 
 /**
  * The workload IDs Frameleaf Cloud uses on the wire (FC-66, FL-181; canonical set in
  * `instance-contract.md` §FC-34, confirmed 2026-09-25): `descriptions`, `upscale`, `restoration`,
- * `transcription`, `tts`, `interpolation`. These IDs are never reused and are not the same strings
+ * `transcription`, `tts`, `interpolation`, and since FL-455 `clip` (smart search image embeddings) and
+ * `face` (face detection and recognition), which a Cloud offers only once it serves them. These IDs are never reused and are not the same strings
  * as `MlWorkload`: this server's workloads are finer-grained than the cloud's (restoration has a
  * faithful and a creative mode; Studio AI covers more than one kind of cloud work), so every place
  * that reads or sends a workload string on the cloud boundary (capabilities, catalogue, estimates,
@@ -1991,6 +2227,8 @@ export const CLOUD_WORKLOAD_IDS = [
   'transcription',
   'tts',
   'interpolation',
+  'clip',
+  'face',
 ] as const;
 export type CloudWorkloadId = (typeof CLOUD_WORKLOAD_IDS)[number];
 
@@ -2001,9 +2239,10 @@ export const cloudWorkloadIdSchema = z.enum(CLOUD_WORKLOAD_IDS);
  * workloads at the capability level: a specific job still needs the catalog to say which mode a
  * model runs (`workloadForCatalogEntry`). `transcription` and `tts` both admit Studio AI, since a
  * cloud that offers either one can run some Studio AI work; which ID a specific job needs is decided
- * by the Studio feature being run (`studioAiCloudWorkloadId`), not by this capability check. An ID
- * this server does not know (or one of the workloads this server never sends: face, clip, ocr,
- * pet-recognition, studio-render) admits nothing.
+ * by the Studio feature being run (`studioAiCloudWorkloadId`), not by this capability check. `clip`
+ * and `face` (FL-455) admit smart search and faces; whether a job may go is still decided by the
+ * catalogue model matching this server's pin and the feature's consent. An ID this server does not
+ * know (or work this server keeps at home: ocr, pet-recognition, studio-render) admits nothing.
  */
 export const appWorkloadsForCloudId = (id: string): MlWorkload[] => {
   switch (id) {
@@ -2023,6 +2262,12 @@ export const appWorkloadsForCloudId = (id: string): MlWorkload[] => {
     case 'interpolation': {
       return [MlWorkload.Interpolation];
     }
+    case 'clip': {
+      return [MlWorkload.Clip];
+    }
+    case 'face': {
+      return [MlWorkload.Face];
+    }
     default: {
       return [];
     }
@@ -2037,8 +2282,8 @@ export const knownWorkloads = (values: readonly string[]): MlWorkload[] => [
 /**
  * The cloud ID a job for `workload` is sent under (FL-181). `null` for a workload the cloud never
  * serves this way: Studio AI needs `studioAiCloudWorkloadId` instead, since one app workload covers
- * two cloud IDs and a specific job needs its own; face, clip, ocr, pet-recognition and studio-render
- * are never sent to the cloud at all.
+ * two cloud IDs and a specific job needs its own; ocr, pet-recognition and studio-render are never
+ * sent to the cloud at all.
  */
 export const cloudWorkloadIdFor = (workload: MlWorkload): CloudWorkloadId | null => {
   switch (workload) {
@@ -2054,6 +2299,12 @@ export const cloudWorkloadIdFor = (workload: MlWorkload): CloudWorkloadId | null
     }
     case MlWorkload.Interpolation: {
       return 'interpolation';
+    }
+    case MlWorkload.Clip: {
+      return 'clip';
+    }
+    case MlWorkload.Face: {
+      return 'face';
     }
     default: {
       return null;

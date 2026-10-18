@@ -87,6 +87,18 @@ export const collectFilterIds = (filter: SearchFilter, field: IdsFilterField): s
 };
 
 /**
+ * FL-425: whether a timeline's Filters panel asks for particular people ("all of" or "any of"). Such a
+ * timeline also shows those people's photos in albums shared with the viewer, as one `personId` does.
+ * "None of" alone never widens: it would bring in every shared-album photo without that person. Only the
+ * top-level condition counts: it narrows every photo the timeline shows, whereas a people condition
+ * inside one `or` branch would otherwise widen the other branches too.
+ */
+export const filterNamesPeople = (filter: SearchFilter | undefined): boolean => {
+  const people = filter?.personIds;
+  return !!people && (['any', 'all'] as const).some((operator) => (people[operator]?.length ?? 0) > 0);
+};
+
+/**
  * Pets belong to their owner alone (FL-58): no pet endpoint accepts a shared link, so a shared-link
  * visitor has no pet to filter by. This check is load-bearing rather than cosmetic: a shared-link
  * request authenticates as the link's owner, so the SQL's "the viewer's own pets" scoping alone would

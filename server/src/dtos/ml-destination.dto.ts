@@ -172,6 +172,8 @@ const MlDestinationConsentRequestSchema = z
         identityNames: z.boolean().default(false).describe('Allow people names in cloud description prompts'),
         medicalSignals: z.boolean().default(false).describe('Allow medical signals in cloud descriptions'),
         ocrAddon: z.boolean().default(false).describe('Allow the cloud text-recognition add-on'),
+        smartSearch: z.boolean().default(false).describe('Allow smart search on Frameleaf Cloud'),
+        faceRecognition: z.boolean().default(false).describe('Allow face detection and recognition on Frameleaf Cloud'),
       })
       .optional()
       .describe('Frameleaf Cloud: per-feature choices; every feature is off unless chosen'),
@@ -182,6 +184,19 @@ const MlWorkloadRouteSchema = z
   .object({
     workload: MlWorkloadSchema,
     destinationId: z.uuidv4().nullable().describe('Destination the workload is routed to, or null when unrouted'),
+    origin: z
+      .enum(['default', 'pinned', 'legacy'])
+      .meta({ id: 'MlRouteOrigin' })
+      .nullable()
+      .optional()
+      .describe(
+        'Recorded route intent; null means no route or recorded intent. Missing on older servers means unknown.',
+      ),
+    revisionId: z
+      .uuidv4()
+      .nullable()
+      .optional()
+      .describe('Recorded intent incarnation, or null when intent is unknown'),
   })
   .meta({ id: 'MlWorkloadRouteDto' });
 

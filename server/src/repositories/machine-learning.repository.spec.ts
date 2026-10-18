@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -27,6 +27,7 @@ import {
   ModelType,
   RestorationWorkerError,
 } from 'src/repositories/machine-learning.repository.js';
+import { parseDesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
 import * as cloudDisclosure from 'src/utils/frameleaf-cloud.js';
 import {
   RestorationInferenceInput,
@@ -38,6 +39,11 @@ import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stu
 
 const qwenModelName = 'Qwen/Qwen2.5-VL-3B-Instruct';
 const florenceModelName = 'microsoft/Florence-2-base-ft';
+const boundProfile = parseDesktopModelCatalogue(
+  JSON.parse(readFileSync(new URL('../../resources/desktop/model-catalogue.json', import.meta.url), 'utf8')),
+).profiles[0];
+const boundDimensions = boundProfile.embeddingDimensions;
+if (boundDimensions === undefined) throw new Error('clip_fixture_required');
 
 const localUrl = 'http://frameleaf-machine-learning:3003';
 // The LAN restoration worker's port (FL-72 fixtures keep restoration on its own worker).
@@ -123,6 +129,86 @@ describe(MachineLearningRepository.name, () => {
   });
 
   describe('predict', () => {
+    it.each([MlWorkload.Clip, MlWorkload.PetRecognition])(
+      'binds NAS %s transport and returned vector to the exact producing profile',
+      async (workload) => {
+        const embedding = JSON.stringify(Array.from({ length: boundDimensions }, () => 0.1));
+        const fetch = vi.fn().mockResolvedValue(
+          jsonResponse({
+            protocolVersion: 1,
+            modelKey: boundProfile.modelKey,
+            preprocessingSha256: boundProfile.spec.preprocessingSha256,
+            result: { clip: embedding },
+          }),
+        );
+        vi.stubGlobal('fetch', fetch);
+        const assertAuthority = vi.fn().mockResolvedValue(undefined);
+        const record = vi.fn();
+        const chosen = selection(MlDestinationKind.Lan, lanUrl, record, 'synthetic-token');
+        chosen.workload = MlWorkload.Clip;
+        chosen.endpoint.assertAuthority = assertAuthority;
+        expect(await sut.encodeBoundClip({ ...chosen, workload }, { text: 'frameleaf fixture' }, boundProfile)).toEqual(
+          {
+            embedding,
+            modelKey: boundProfile.modelKey,
+          },
+        );
+        expect(String(fetch.mock.calls[0][0])).toBe(`${lanUrl}/predict-bound`);
+        const request = fetch.mock.calls[0][1];
+        expect(new Headers(request.headers).get('authorization')).toBe('Bearer synthetic-token');
+        expect(JSON.parse((request.body as FormData).get('binding') as string)).toEqual({
+          protocolVersion: 1,
+          modelKey: boundProfile.modelKey,
+          models: boundProfile.spec.models,
+          entries: boundProfile.spec.entries,
+          preprocessingSha256: boundProfile.spec.preprocessingSha256,
+        });
+        expect(assertAuthority).toHaveBeenCalledTimes(2);
+        expect(record).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success' }));
+      },
+    );
+
+    it.each(['wrong-key', 'wrong-preprocessing', 'wrong-dimensions', 'unexpected-image-metadata'])(
+      'refuses %s producer output without accounting it as success',
+      async (failure) => {
+        const fetch = vi.fn().mockResolvedValue(
+          jsonResponse({
+            protocolVersion: 1,
+            modelKey: failure === 'wrong-key' ? `clip:${'f'.repeat(64)}` : boundProfile.modelKey,
+            preprocessingSha256:
+              failure === 'wrong-preprocessing' ? 'e'.repeat(64) : boundProfile.spec.preprocessingSha256,
+            result: {
+              ...(failure === 'unexpected-image-metadata' && { imageWidth: 2 }),
+              clip: JSON.stringify(
+                Array.from({ length: failure === 'wrong-dimensions' ? 2 : boundDimensions }, () => 0.1),
+              ),
+            },
+          }),
+        );
+        vi.stubGlobal('fetch', fetch);
+        const record = vi.fn();
+        const chosen = selection(MlDestinationKind.Local, localUrl, record);
+        chosen.workload = MlWorkload.Clip;
+        await expect(sut.encodeBoundClip(chosen, { text: 'fixture' }, boundProfile)).rejects.toThrow(
+          'producer_result_invalid',
+        );
+        expect(record).toHaveBeenCalledTimes(1);
+        expect(record).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failure' }));
+        expect(fetch).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('does not fall back to legacy prediction after a bound producer refusal', async () => {
+      const fetch = vi.fn().mockResolvedValue(jsonResponse({ detail: 'model_identity_unavailable' }, 409));
+      vi.stubGlobal('fetch', fetch);
+      const chosen = selection(MlDestinationKind.Lan, lanUrl);
+      chosen.workload = MlWorkload.Clip;
+      await expect(sut.encodeBoundClip(chosen, { text: 'fixture' }, boundProfile)).rejects.toThrow(
+        'failed with status 409',
+      );
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(String(fetch.mock.calls[0][0])).toBe(`${lanUrl}/predict-bound`);
+    });
     it('sends the request to the selected endpoint only and never to another URL when it fails', async () => {
       const fetch = vi.fn().mockResolvedValue(new Response('error', { status: 500, statusText: 'Internal Error' }));
       vi.stubGlobal('fetch', fetch);
@@ -169,6 +255,25 @@ describe(MachineLearningRepository.name, () => {
       await expect(sut.encodeImage(cloud, imagePath, { ...defaults.machineLearning.clip })).rejects.toBeInstanceOf(
         CloudJobsUnavailableError,
       );
+      expect(fetch).not.toHaveBeenCalled();
+      expect(record).not.toHaveBeenCalled();
+    });
+
+    it('never encodes search text on Frameleaf Cloud, even when smart search is routed there (FL-455)', async () => {
+      const fetch = vi.fn();
+      vi.stubGlobal('fetch', fetch);
+      const record = vi.fn();
+      const cloud: MlSelection = {
+        destinationId: 'destination-frameleaf-cloud',
+        kind: MlDestinationKind.FrameleafCloud,
+        workload: MlWorkload.Clip,
+        endpoint: FRAMELEAF_CLOUD_ENDPOINT,
+        record,
+      };
+
+      await expect(
+        sut.encodeText(cloud, 'a dog on a beach', { modelName: defaults.machineLearning.clip.modelName }),
+      ).rejects.toBeInstanceOf(CloudJobsUnavailableError);
       expect(fetch).not.toHaveBeenCalled();
       expect(record).not.toHaveBeenCalled();
     });

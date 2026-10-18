@@ -30,6 +30,9 @@ const MAX_OUTPUT_BYTES = 1024 ** 3;
 // ponytail: one native render per worker process; use shared admission if the deployment needs a global ceiling.
 let nativeRenderActive = false;
 
+// Darktable disk exports interpret filenames as patterns, including backslash escapes and $(variables).
+const literalExportPath = (path: string) => path.replaceAll(/[\\$]/g, String.raw`\$&`);
+
 /** An aborted execFile promise can reject before close; keep admission until the child is actually gone. */
 async function runDarktable(args: string[], signal: AbortSignal) {
   signal.throwIfAborted();
@@ -399,7 +402,7 @@ export async function renderDarktable(
     ];
     // Native-size initialization avoids a tiny bounding box truncating the shorter image edge to zero.
     const bootstrap = join(directory, 'bootstrap.png');
-    await runDarktable([source, bootstrap, ...common], abort);
+    await runDarktable([source, literalExportPath(bootstrap), ...common], abort);
     abort.throwIfAborted();
     if ((await stat(bootstrap)).size > MAX_OUTPUT_BYTES) {
       throw new Error('Invalid native bootstrap output size');
@@ -407,7 +410,7 @@ export async function renderDarktable(
     await rm(bootstrap); // Only the native history is needed; do not retain two full-resolution PNGs.
     const masks = await writeNativeMasks(library, directory, recipe, bitmaps, abort);
     const { rotatedMasks } = prepareNativeHistory(library, recipe, masks);
-    const rendered = await runDarktable([source, output, ...common], abort);
+    const rendered = await runDarktable([source, literalExportPath(output), ...common], abort);
     if (
       recipe.lensCorrection &&
       !recipe.sensorCanvas &&

@@ -44,7 +44,7 @@ The default fallback setting is `microsoft/Florence-2-base-ft`. See [Image Enric
 
 #### Model licences
 
-Some models have licences that limit commercial use. On your own server they run for personal use by you, the server owner (legal review 2026-10-17). Check the licence before using a model outside your own installation.
+Some models have licences that limit commercial use. They run for your personal use, on your own server or in a Frameleaf Cloud container rented for you (legal review 2026-10-17), so every one of them is available on this server, a home-network worker and Frameleaf Cloud. Check the licence before using a model outside your own installation.
 
 | Model                                                          | Licence                                         |
 | -------------------------------------------------------------- | ----------------------------------------------- |

@@ -36,31 +36,33 @@ const REAPPROVED = new Set(['runtime:whisper-transformers']);
 const isPinned = (id: string) => /^voice:(kokoro|supertonic)-|^model:supertonic-3$/.test(id);
 
 describe('studio rights (FL-86)', () => {
-  it('keeps MusicGen-small local only: its CC-BY-NC-4.0 licence withholds hosted use (FL-146 comment 34944)', () => {
+  it('allows MusicGen-small everywhere: its CC-BY-NC-4.0 licence covers personal use (FL-451)', () => {
     expect(studioResourceRights[MUSICGEN]).toMatchObject({
       license: 'cc-by-nc-4.0',
       localRuntime: 'allowed',
-      hostedUse: 'blocked',
+      hostedUse: 'allowed',
       approvedOn: '2026-09-25',
+      restrictions: {},
     });
     expect(checkStudioRights(MUSICGEN, StudioRightsUse.LocalRuntime)).toEqual({ allowed: true, id: MUSICGEN });
-    const hosted = checkStudioRights(MUSICGEN, StudioRightsUse.HostedUse);
-    expect(hosted).toMatchObject({ allowed: false, id: MUSICGEN });
-    expect(hosted.allowed ? '' : hosted.detail).toMatch(/hosted use is not allowed\. CC-BY-NC-4\.0/);
-    // Music generation on the cloud destination is refused by name; on this server it resolves.
-    expect(checkStudioProducerRights('musicgen', studioRightsUseFor(StudioDestination.FrameleafCloud))).toMatchObject({
-      allowed: false,
+    expect(checkStudioRights(MUSICGEN, StudioRightsUse.HostedUse)).toEqual({ allowed: true, id: MUSICGEN });
+    // Music generation resolves on the cloud destination and on this server alike.
+    expect(checkStudioProducerRights('musicgen', studioRightsUseFor(StudioDestination.FrameleafCloud))).toEqual({
+      allowed: true,
       id: MUSICGEN,
     });
     expect(checkStudioProducerRights('musicgen', studioRightsUseFor(StudioDestination.Local))).toEqual({
       allowed: true,
       id: MUSICGEN,
     });
-    // Every other approved row keeps hosted use.
+    // Only the changed ONNX runtime is kept off hosted use, and no row withholds a use for its licence.
     const hostedBlocked = Object.entries(studioResourceRights)
       .filter(([, rights]) => rights.hostedUse !== 'allowed')
       .map(([id]) => id);
-    expect(hostedBlocked).toEqual([MUSICGEN, CHANGED_ONNX]);
+    expect(hostedBlocked).toEqual([CHANGED_ONNX]);
+    expect(Object.values(studioResourceRights).filter((rights) => Object.keys(rights.restrictions).length > 0)).toEqual(
+      [],
+    );
   });
 
   it('admits current approvals and blocks the changed ONNX runtime (FL-146)', () => {
@@ -90,9 +92,7 @@ describe('studio rights (FL-86)', () => {
         expect(rights.approvedOn, id).toBe(REAPPROVED.has(id) || isPinned(id) ? '2026-09-29' : '2026-09-25');
       }
       expect(checkStudioRights(id, StudioRightsUse.LocalRuntime)).toEqual({ allowed: true, id });
-      if (id !== MUSICGEN) {
-        expect(checkStudioRights(id, StudioRightsUse.HostedUse)).toEqual({ allowed: true, id });
-      }
+      expect(checkStudioRights(id, StudioRightsUse.HostedUse)).toEqual({ allowed: true, id });
       // The rows allow redistribution; the engine distribution itself is still unapproved.
       expect(rights.redistribution).toBe('allowed');
       expect(checkStudioRights(id, StudioRightsUse.Redistribution).allowed).toBe(STUDIO_DISTRIBUTION_APPROVAL);

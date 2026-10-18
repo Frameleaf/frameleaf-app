@@ -13,6 +13,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { CloudMlService, WALLET_STEP_UP_MESSAGE } from 'src/services/cloud-ml.service.js';
+import { localPinnedIdentity } from 'src/utils/cloud-model-identity.js';
 import {
   FrameleafCloudError,
   capabilitiesSchema,
@@ -47,8 +48,8 @@ const restorationFixture = cloudContractFixture<CatalogFixture>('ml/catalog-rest
 
 /**
  * The gateway's catalog.json plus the faithful restoration model of catalog-restoration.json (FL-181
- * P1: this catalogue confirms a faithful restoration model, but no creative one), a model that runs on
- * this server only (FL-146) and an entry the contract refuses.
+ * P1: this catalogue confirms a faithful restoration model, but no creative one), Qwen2.5-VL-3B (local
+ * only until FL-451, now offered like any other model) and an entry the contract refuses.
  */
 const catalog = catalogSchema.parse({
   ...catalogFixture,
@@ -175,7 +176,7 @@ describe(CloudMlService.name, () => {
       expect(mocks.frameleafCloud.discovery).not.toHaveBeenCalled();
     });
 
-    it('reports what the gateway offers, never faces or unknown work, with the facts admission needs', async () => {
+    it('reports what the gateway offers, never unknown work, with the facts admission needs', async () => {
       link();
 
       const probe = await sut.probe();
@@ -186,8 +187,8 @@ describe(CloudMlService.name, () => {
       // the capability alone.
       expect(probe.workloads).toEqual([MlWorkload.Enrichment, MlWorkload.RestorationFaithful]);
       expect(probe.hardware).toMatchObject({ cudaDeviceCount: 1, torchCudaAvailable: true });
-      // FL-183: the catalogue's model identity is the SKU; the local-only model and the entry the
-      // contract refuses are never offered
+      // FL-183: the catalogue's model identity is the SKU; the entry the contract refuses is never
+      // offered, and Qwen2.5-VL-3B is offered like any other model (FL-451)
       expect(probe.cloud).toMatchObject({
         region: 'eu',
         entitled: true,
@@ -195,11 +196,12 @@ describe(CloudMlService.name, () => {
         balanceUsd: 12,
         heldUsd: 2,
         limits: { maxInputBytes: 2_147_483_648, maxInputs: 1000, concurrentTimePriced: 2 },
-        modelIds: ['ms_K6WT70CS', 'ms_M7QG26PT', 'ms_54S55W7C', 'ms_YS60DAXB'],
+        modelIds: ['ms_K6WT70CS', 'ms_M7QG26PT', 'ms_54S55W7C', 'ms_ZZZZZZZZ', 'ms_YS60DAXB'],
         modelWorkloads: {
           ms_K6WT70CS: MlWorkload.Enrichment,
           ms_M7QG26PT: MlWorkload.Enrichment,
           ms_54S55W7C: MlWorkload.Upscale,
+          ms_ZZZZZZZZ: MlWorkload.Enrichment,
           ms_YS60DAXB: MlWorkload.RestorationFaithful,
         },
         refusal: null,
@@ -215,6 +217,54 @@ describe(CloudMlService.name, () => {
         onRegionMismatch: expect.any(Function),
         onRegionMismatchUnresolved: expect.any(Function),
       });
+    });
+
+    it("offers smart search and faces only with a catalogue model that is exactly this server's model (FL-455)", async () => {
+      link();
+      const [descriptions] = catalogFixture.models;
+      const clipIdentity = localPinnedIdentity(MlWorkload.Clip, 'ViT-B-16-SigLIP-384__webli')!;
+      const faceIdentity = localPinnedIdentity(MlWorkload.Face, 'buffalo_l')!;
+      mocks.frameleafCloudMl.getCapabilities.mockResolvedValue({
+        ...capabilities,
+        workloads: [...capabilities.workloads, 'clip', 'face'],
+      });
+      mocks.frameleafCloudMl.getCatalog.mockResolvedValue(
+        catalogSchema.parse({
+          etag: catalogFixture.etag,
+          models: [
+            descriptions,
+            { ...descriptions, sku: 'ms_C11P0000', workload: 'clip', default: true, identity: clipIdentity },
+            // another revision of the face model is never matched
+            {
+              ...descriptions,
+              sku: 'ms_FACE0001',
+              workload: 'face',
+              default: true,
+              identity: { ...faceIdentity, revision: 'e'.repeat(40) },
+            },
+          ],
+        }),
+      );
+
+      const probe = await sut.probe();
+
+      expect(probe.workloads).toContain(MlWorkload.Clip);
+      expect(probe.workloads).not.toContain(MlWorkload.Face);
+      expect(probe.cloud?.localModels).toEqual({ [MlWorkload.Clip]: 'ms_C11P0000' });
+    });
+
+    it('offers neither while the catalogue lists no smart search or face model, as today (FL-455)', async () => {
+      link();
+      mocks.frameleafCloudMl.getCapabilities.mockResolvedValue({
+        ...capabilities,
+        workloads: [...capabilities.workloads, 'clip', 'face'],
+      });
+
+      const probe = await sut.probe();
+
+      expect(probe.workloads).not.toContain(MlWorkload.Clip);
+      expect(probe.workloads).not.toContain(MlWorkload.Face);
+      expect(probe.cloud?.localModels).toEqual({});
     });
 
     it('serves only the work set to Both or Cloud only in Where each job runs', async () => {
@@ -284,7 +334,7 @@ describe(CloudMlService.name, () => {
       expect(probe.workloads).not.toContain(MlWorkload.RestorationCreative);
     });
 
-    it('never offers a restoration mode whose only model the licence gate refused (FL-183)', async () => {
+    it('offers a restoration mode whose only model has a non-commercial licence (FL-451)', async () => {
       link();
       mocks.frameleafCloudMl.getCatalog.mockResolvedValue(
         catalogSchema.parse({
@@ -298,8 +348,12 @@ describe(CloudMlService.name, () => {
 
       const probe = await sut.probe();
 
-      expect(probe.workloads).toEqual([MlWorkload.Enrichment, MlWorkload.RestorationFaithful]);
-      expect(probe.cloud?.modelIds).toEqual(['ms_YS60DAXB']);
+      expect(probe.workloads).toEqual([
+        MlWorkload.Enrichment,
+        MlWorkload.RestorationFaithful,
+        MlWorkload.RestorationCreative,
+      ]);
+      expect(probe.cloud?.modelIds).toEqual(['ms_YS60DAXB', 'ms_F1SSRED6']);
     });
 
     it('reads an expired entitlement as not entitled, so admission refuses it (FL-183)', async () => {
@@ -401,9 +455,9 @@ describe(CloudMlService.name, () => {
       expect(mocks.mlDestination.setRoute).not.toHaveBeenCalled();
     });
 
-    it('refuses faces and local-only work by policy', async () => {
+    it('refuses local-only work by policy', async () => {
       link();
-      await expect(sut.createDestination({ name: 'Cloud', workloads: [MlWorkload.Face] })).rejects.toThrow(
+      await expect(sut.createDestination({ name: 'Cloud', workloads: [MlWorkload.Ocr] })).rejects.toThrow(
         /stays on this network/,
       );
       expect(mocks.mlDestination.create).not.toHaveBeenCalled();
@@ -501,7 +555,7 @@ describe(CloudMlService.name, () => {
   });
 
   describe('catalogue, wallet and usage', () => {
-    it('lists the models the cloud offers by SKU and revision (never the local-only or refused ones)', async () => {
+    it('lists the models the cloud offers by SKU and revision (never the refused ones)', async () => {
       link();
       const result = await sut.getCatalog();
 
@@ -510,6 +564,7 @@ describe(CloudMlService.name, () => {
         'ms_K6WT70CS',
         'ms_M7QG26PT',
         'ms_54S55W7C',
+        'ms_ZZZZZZZZ',
         'ms_YS60DAXB',
       ]);
       expect(result.models[1]).toEqual({
@@ -524,7 +579,8 @@ describe(CloudMlService.name, () => {
         rank: 5,
         isDefault: false,
       });
-      expect(result.models[3]).toMatchObject({
+      expect(result.models[3]).toMatchObject({ id: 'ms_ZZZZZZZZ', workload: MlWorkload.Enrichment });
+      expect(result.models[4]).toMatchObject({
         id: 'ms_YS60DAXB',
         workload: MlWorkload.RestorationFaithful,
         description: 'RealBasicVSR, L40S-class, 48 GB. Start fee 0.1 USD per worker',
@@ -881,7 +937,7 @@ describe(CloudMlService.name, () => {
         frameleafCloud: { ...defaults.frameleafCloud, cloudMl: { ...defaults.frameleafCloud.cloudMl, enabled } },
       }) as typeof defaults;
 
-    it('cancels every unfinished cloud job and description batch, once each', async () => {
+    it('cancels every unfinished cloud job, description batch and library batch, once each', async () => {
       mocks.mediaOperation.listUnfinishedOfKinds.mockResolvedValue([
         {
           id: 'job-queued',
@@ -909,6 +965,7 @@ describe(CloudMlService.name, () => {
       expect(mocks.mediaOperation.listUnfinishedOfKinds).toHaveBeenCalledWith([
         MediaOperationKind.CloudMlJob,
         MediaOperationKind.CloudDescriptionBatch,
+        MediaOperationKind.CloudLibraryBatch,
       ]);
       expect(mocks.mediaOperation.requestCancel).toHaveBeenCalledTimes(2);
       expect(mocks.mediaOperation.requestCancel).toHaveBeenCalledWith('job-queued', 'user-1');

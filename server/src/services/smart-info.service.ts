@@ -9,11 +9,28 @@ import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { BaseService } from 'src/services/base.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
+import { type ClipEmbedding } from 'src/utils/clip-embedding.js';
+import { CloudLibraryQueueWriter, cloudLibraryDestination } from 'src/utils/cloud-library-batch.js';
 import { getCLIPModelInfo, isSmartSearchEnabled } from 'src/utils/misc.js';
+import { homeMlDestinationId } from 'src/utils/ml-destination.js';
 
 @Injectable()
 export class SmartInfoService extends BaseService {
   private _classificationService: ClassificationService | undefined;
+  /** FL-455: photos whose smart search is routed to Frameleaf Cloud wait here for a batch. */
+  private readonly cloudLibraryQueue = new CloudLibraryQueueWriter(
+    () => ({ databaseRepository: this.databaseRepository, systemMetadataRepository: this.systemMetadataRepository }),
+    (message) => this.logger.warn(message),
+  );
+
+  @OnEvent({ name: 'AppShutdown' })
+  async onShutdownFlushCloudLibraryQueue() {
+    try {
+      await this.cloudLibraryQueue.flush();
+    } catch (error) {
+      this.logger.warn(`The Frameleaf Cloud smart search queue was not written: ${error}`);
+    }
+  }
 
   private get classificationService(): ClassificationService {
     this._classificationService ??= BaseService.create(ClassificationService, this);
@@ -39,7 +56,7 @@ export class SmartInfoService extends BaseService {
   }
 
   @OnEvent({ name: 'ConfigValidate' })
-  onConfigValidate({ newConfig }: ArgOf<'ConfigValidate'>) {
+  async onConfigValidate({ newConfig }: ArgOf<'ConfigValidate'>) {
     try {
       getCLIPModelInfo(newConfig.machineLearning.clip.modelName);
     } catch {
@@ -47,12 +64,14 @@ export class SmartInfoService extends BaseService {
         `Unknown CLIP model: ${newConfig.machineLearning.clip.modelName}. Please check the model name for typos and confirm this is a supported model.`,
       );
     }
+    await this.machineLearningRepository.assertClipModel(newConfig.machineLearning.clip.modelName);
   }
 
   private async init(newConfig: SystemConfig, oldConfig?: SystemConfig) {
     if (!isSmartSearchEnabled(newConfig.machineLearning)) {
       return;
     }
+    await this.machineLearningRepository.assertClipModel(newConfig.machineLearning.clip.modelName);
 
     await this.databaseRepository.withLock(DatabaseLock.CLIPDimSize, async () => {
       const { dimSize } = getCLIPModelInfo(newConfig.machineLearning.clip.modelName);
@@ -108,7 +127,7 @@ export class SmartInfoService extends BaseService {
   }
 
   @OnJob({ name: JobName.SmartSearch, queue: QueueName.SmartSearch })
-  async handleEncodeClip({ id }: JobOf<JobName.SmartSearch>): Promise<JobStatus> {
+  async handleEncodeClip({ id, onThisServer }: JobOf<JobName.SmartSearch>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: true });
     if (!isSmartSearchEnabled(machineLearning)) {
       deferJobUntilDependency('workload-disabled');
@@ -126,16 +145,49 @@ export class SmartInfoService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const selection = await this.selectRoutedMlDestination({
-      workload: MlWorkload.Clip,
-      jobId: id,
-      jobName: JobName.SmartSearch,
-    });
+    // FL-455: routed to Frameleaf Cloud, the photo waits for a batch; one job never sends one photo. A
+    // Frameleaf Cloud result that was refused is made here instead (`onThisServer`), never on the cloud.
+    if (!onThisServer && (await cloudLibraryDestination(this.mlDestinationRepository, MlWorkload.Clip))) {
+      await this.cloudLibraryQueue.add({ assetId: asset.id, ownerId: asset.ownerId, workload: 'clip' });
+      return JobStatus.Skipped;
+    }
+
+    const selection = onThisServer
+      ? await this.selectMlDestination({
+          workload: MlWorkload.Clip,
+          jobId: id,
+          jobName: JobName.SmartSearch,
+          destinationId: await homeMlDestinationId(this.mlDestinationRepository, MlWorkload.Clip),
+        })
+      : await this.selectRoutedMlDestination({ workload: MlWorkload.Clip, jobId: id, jobName: JobName.SmartSearch });
     const embedding = await this.machineLearningRepository.encodeImage(
       selection,
       asset.files[0].path,
       machineLearning.clip,
     );
+    return this.publishClipEmbedding(asset.id, embedding, {
+      modelName: machineLearning.clip.modelName,
+      previewPath: asset.files[0].path,
+    });
+  }
+
+  /**
+   * Store one photo's smart search embedding and queue its postprocessing, the same way for this server's
+   * own result and a Frameleaf Cloud result (FL-455). Skipped when the model changed since the embedding was
+   * made, or the photo's preview is not the one it was made from any more.
+   */
+  async publishClipEmbedding(
+    assetId: string,
+    embedding: ClipEmbedding,
+    made: { modelName: string; previewPath: string },
+  ): Promise<JobStatus> {
+    const current = await this.assetJobRepository.getForClipEncoding(assetId);
+    if (!current || current.files.length !== 1 || current.files[0].path !== made.previewPath) {
+      return JobStatus.Skipped;
+    }
+    if (current.visibility === AssetVisibility.Hidden) {
+      return JobStatus.Skipped;
+    }
 
     if (this.databaseRepository.isBusy(DatabaseLock.CLIPDimSize)) {
       this.logger.verbose(`Waiting for CLIP dimension size to be updated`);
@@ -143,16 +195,16 @@ export class SmartInfoService extends BaseService {
     }
 
     const newConfig = await this.getConfig({ withCache: true });
-    if (machineLearning.clip.modelName !== newConfig.machineLearning.clip.modelName) {
+    if (made.modelName !== newConfig.machineLearning.clip.modelName) {
       // Skip the job if the model has changed since the embedding was generated.
       return JobStatus.Skipped;
     }
 
-    await this.searchRepository.upsert(asset.id, embedding);
+    await this.searchRepository.upsert(assetId, embedding);
     await this.jobRepository.collectFollowups(() =>
       this.jobRepository.queue({
         name: JobName.SmartSearchPostprocess,
-        data: { id: asset.id },
+        data: { id: assetId },
       }),
     );
     return JobStatus.Success;
@@ -161,17 +213,19 @@ export class SmartInfoService extends BaseService {
   @OnJob({ name: JobName.SmartSearchPostprocess, queue: QueueName.SmartSearch })
   async handlePostprocessClip({ id }: JobOf<JobName.SmartSearchPostprocess>): Promise<JobStatus> {
     await this.jobRepository.guardAssetSource(id);
+    const read = await this.machineLearningRepository.captureClipRead();
     const asset = await this.assetJobRepository.getForClipEncoding(id);
     const persisted = await this.searchRepository.getEmbedding(id);
     if (!asset || !persisted || asset.visibility === AssetVisibility.Hidden) {
       return JobStatus.Skipped;
     }
     deferJobAdoption(async () => {
-      if ((await this.searchRepository.getEmbedding(id))?.embedding !== persisted.embedding) {
+      const current = await this.searchRepository.getEmbedding(id);
+      if (current?.embedding !== persisted.embedding || current?.producerModelKey !== persisted.producerModelKey) {
         throw new Error('CLIP embedding changed before postprocessing publication');
       }
     });
-    await this.zeroShotTaggingService.tagAsset(asset.id, asset.ownerId, persisted.embedding);
+    await this.zeroShotTaggingService.tagAsset(asset.id, asset.ownerId, persisted.embedding, read);
     await this.classificationService.evaluateAsset(asset.id, asset.ownerId);
     return JobStatus.Success;
   }

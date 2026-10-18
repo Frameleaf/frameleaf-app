@@ -38,6 +38,7 @@ describe(EdgeProxyService.name, () => {
           'x-frameleaf-via-auth': 'guess',
           'x-frameleaf-anything': 'dropped',
           'x-frameleaf-worker-session': 'kept',
+          'x-frameleaf-manager': 'dropped',
         },
         arrival,
         SECRET,
@@ -431,4 +432,21 @@ describe(EdgeProxyService.name, () => {
       );
     });
   });
+});
+
+it('forwards installation-signed desktop proofs while replacing visitor arrival claims', () => {
+  const headers = upstreamHeaders(
+    {
+      'x-frameleaf-desktop-proof': 'installation-signature',
+      'x-frameleaf-via': 'lan',
+      'x-frameleaf-via-auth': 'forged',
+      'x-frameleaf-admin': 'forged',
+    },
+    arrival,
+    SECRET,
+  );
+  expect(headers['x-frameleaf-desktop-proof']).toBe('installation-signature');
+  expect(headers['x-frameleaf-via']).toBe('wan');
+  expect(headers['x-frameleaf-via-auth']).toBe(SECRET);
+  expect(headers).not.toHaveProperty('x-frameleaf-admin');
 });

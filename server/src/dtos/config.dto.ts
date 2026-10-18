@@ -206,7 +206,8 @@ const nsfwDetectionDefaults = {
 
 /**
  * FL-159: Frameleaf Cloud processing. Everything is off until an administrator turns it on and adds the
- * destination; faces are refused by policy and cannot be turned on in this version.
+ * destination. FL-455: smart search and faces are turned on with their own consent in the processing
+ * terms, not here; `faces.enabled` stays off and is kept only so saved configurations still read.
  */
 const CLOUD_ROUTED_WORKLOADS = ['descriptions', 'upscale', 'restoration', 'studio', 'interpolation'] as const;
 const frameleafCloudDefaults = {
@@ -661,7 +662,13 @@ const AdminConfigFrameleafCloudSchema = z
           })
           .meta({ id: 'AdminConfigFrameleafCloudAutoDescribeDto' }),
         faces: z
-          .object({ enabled: z.literal(false).describe('Faces never run on Frameleaf Cloud') })
+          .object({
+            enabled: z
+              .literal(false)
+              .describe(
+                'Unused; faces on Frameleaf Cloud are turned on with their own consent in the processing terms',
+              ),
+          })
           .meta({ id: 'AdminConfigFrameleafCloudFacesDto' }),
         spenders: z
           .array(

@@ -524,10 +524,7 @@
     },
     {
       "id": "model:Xenova/musicgen-small",
-      "sha256": "ad5eb23fa07eb3ad7a7f41034c9250e041b3d5bdcd0d33fa609ce96451d2f650",
-      "excludedUses": {
-        "hostedUse": "CC-BY-NC-4.0 (non-commercial) licence, so it is not offered on Frameleaf Cloud; local use on this server or a LAN worker stays approved. Owner decision, Jira FL-146 comment 34944 (2026-09-25)."
-      }
+      "sha256": "ad5eb23fa07eb3ad7a7f41034c9250e041b3d5bdcd0d33fa609ce96451d2f650"
     },
     {
       "id": "model:onnx-community/Kokoro-82M-v1.0-ONNX",
@@ -990,5 +987,5 @@
     "localRuntime",
     "hostedUse"
   ],
-  "exclusionsSource": "Jira FL-146, comment 34944: Owner decision (2026-09-25), model licences: \"Removed from the Frameleaf Cloud offering (hosted use): nllb-clip ... and MusicGen-small (CC-BY-NC-4.0). Both stay available locally, on the server or a LAN worker.\""
+  "exclusionsRetired": "Jira FL-451: Owner decision (2026-10-17), legal review: all model use is personal use by the user, on their own server or in a Frameleaf Cloud container that Frameleaf only rents to them. The FL-146 (comment 34944) hosted-use exclusion of MusicGen-small is withdrawn; every licensed model is allowed on this server, a LAN worker and Frameleaf Cloud."
 }

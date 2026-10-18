@@ -1,6 +1,6 @@
 /**
  * Frameleaf
- * 1.0.0
+ * 1.1.0
  * DO NOT MODIFY - This file has been generated using oazapfts.
  * See https://www.npmjs.com/package/oazapfts
  */
@@ -782,9 +782,13 @@ export type CloudStatusResponseDto = {
     state: CloudLinkState;
 };
 export type CloudMlConsentFeaturesDto = {
+    /** Face detection and recognition may run on Frameleaf Cloud */
+    faceRecognition: boolean;
     identityNames: boolean;
     medicalSignals: boolean;
     ocrAddon: boolean;
+    /** Smart search may run on Frameleaf Cloud */
+    smartSearch: boolean;
 };
 export type CloudMlConsentStateDto = {
     /** The version an administrator accepted on this server */
@@ -906,6 +910,8 @@ export type CloudMlStatusResponseDto = {
     enabled: boolean;
     /** Cloud processing entitlement, when the cloud answered */
     entitled: boolean | null;
+    /** Smart search and faces work Frameleaf Cloud offers with exactly this server's own models, at the last check */
+    matchedModelWorkloads: MlWorkload[];
     /** The Frameleaf account's data region */
     region: string | null;
     /** The last AI Wallet read, or null */
@@ -1020,7 +1026,7 @@ export type CloudMlDescriptionEstimateResponseDto = {
 export type CloudMlDestinationCreateDto = {
     budgetLimitUsd?: number | null;
     name?: string;
-    /** The workloads Frameleaf Cloud may run; faces, search and text recognition are refused */
+    /** The workloads Frameleaf Cloud may run; smart search and faces only run while it offers this server’s own models, text recognition is refused */
     workloads: MlWorkload[];
 };
 export type CloudMlModelChoiceDto = {
@@ -1375,7 +1381,7 @@ export type AdminConfigFrameleafCloudAutoDescribeDto = {
     enabled: boolean;
 };
 export type AdminConfigFrameleafCloudFacesDto = {
-    /** Faces never run on Frameleaf Cloud */
+    /** Unused; faces on Frameleaf Cloud are turned on with their own consent in the processing terms */
     enabled: false;
 };
 export type AdminConfigFrameleafCloudRoutingDto = {
@@ -6071,6 +6077,128 @@ export type UserConfigDto = {
     trash: UserConfigTrashDto;
     user: UserConfigUserDto;
 };
+export type DesktopMemberApprovalDto = {
+    enabled: boolean;
+};
+export type DesktopCapabilitiesDto = {
+    enrollmentPolicy: DesktopEnrollmentPolicy;
+    features: {
+        enrollment: true;
+        nativeHost: false;
+        sources: false;
+        worker: false;
+        workerSession: true;
+    };
+    protocolVersion: number;
+    serverId: string;
+};
+export type DesktopDeviceDto = {
+    architecture: DesktopArchitecture;
+    createdAt: string;
+    id: string;
+    installationId: string;
+    mode: DesktopMode;
+    name: string;
+    platform: DesktopPlatform;
+    revokedAt: string | null;
+    routeEffects: {
+        changed: string[];
+        preserved: DesktopRoutePreservation;
+    };
+    state: DesktopDeviceState;
+};
+export type DesktopEnrollmentDto = {
+    architecture: DesktopArchitecture;
+    installationId: string;
+    mode: DesktopMode;
+    name: string;
+    platform: DesktopPlatform;
+    protocolVersion: number;
+    publicKey: string;
+    requestId: string;
+    signature: string;
+    timestamp: number;
+};
+export type DesktopSessionRequestDto = {
+    deviceId: string;
+    requestId: string;
+    signature: string;
+    timestamp: number;
+};
+export type DesktopSessionDto = {
+    authorizationEpoch: number;
+    expiresAt: string;
+    modelKeys: string[];
+    scopes: DesktopWorkerScope[];
+    sessionId: string;
+    workerToken: string;
+};
+export type DesktopWorkerPayloadDto = {
+    payload: string;
+};
+export type DesktopWorkerAckDto = {
+    accepted: boolean;
+};
+export type DesktopQualificationChallengeDto = {
+    bindingSha256: string;
+    expiresAt: string;
+    fixtureBase64: string;
+    id: string;
+    manifestSha256: string;
+    modelKey: string;
+    reportSha256: string | null;
+    specJson: string;
+};
+export type DesktopWorkerClaimDto = {
+    task: {
+        authorizationEpoch: number;
+        configJson: string;
+        configSha256: string;
+        deviceId: string;
+        executionDeadline: string;
+        expiresAt: string;
+        generation: number;
+        id: string;
+        inputKind: DesktopInputKind;
+        inputSha256: string;
+        maxInputBytes: number;
+        modelKey: string;
+        qualificationExpiresAt: string;
+        qualificationId: string;
+        sessionId: string;
+        taskId: string;
+    } | null;
+};
+export type DesktopWorkerHeartbeatDto = {
+    accepted: boolean;
+    expiresAt: string | null;
+};
+export type DesktopModelInventoryDto = {
+    protocolVersion: number;
+    provider: Provider;
+    runtimeSourceRevision: string;
+    workloads: {
+        modelKeys: string[];
+        modelNames: string[];
+        state: DesktopModelAvailability;
+        workload: DesktopLibraryWorkload;
+    }[];
+};
+export type DesktopAcceptedQualificationDto = {
+    authorizationEpoch: number;
+    bindingSha256: string;
+    configSha256: string;
+    deviceId: string;
+    expiresAt: string;
+    id: string;
+    inputKind: DesktopInputKind;
+    manifestSha256: string;
+    modelKey: string;
+    qualifiedAt: string;
+    reportSha256: string;
+    runtimeFingerprint: string;
+    sessionId: string;
+};
 export type AssetDevelopMaskAdjustments = {
     /** Black point inside the mask */
     blacks?: number;
@@ -8511,6 +8639,10 @@ export type MlCapabilitiesResponseDto = {
 export type MlWorkloadRouteDto = {
     /** Destination the workload is routed to, or null when unrouted */
     destinationId: string | null;
+    /** Recorded route intent; null means no route or recorded intent. Missing on older servers means unknown. */
+    origin?: (MlRouteOrigin) | null;
+    /** Recorded intent incarnation, or null when intent is unknown */
+    revisionId?: string | null;
     workload: MlWorkload;
 };
 export type MlWorkloadRoutesResponseDto = {
@@ -8558,12 +8690,16 @@ export type MlDestinationConsentRequestDto = {
     acknowledgeMediaLeavesNetwork: true;
     /** Frameleaf Cloud: per-feature choices; every feature is off unless chosen */
     features?: {
+        /** Allow face detection and recognition on Frameleaf Cloud */
+        faceRecognition?: boolean;
         /** Allow people names in cloud description prompts */
         identityNames?: boolean;
         /** Allow medical signals in cloud descriptions */
         medicalSignals?: boolean;
         /** Allow the cloud text-recognition add-on */
         ocrAddon?: boolean;
+        /** Allow smart search on Frameleaf Cloud */
+        smartSearch?: boolean;
     };
     /** Frameleaf Cloud (FC-62): SHA-256 of the terms text the administrator was shown; refused when the cloud now asks for other terms */
     textSha256?: string;
@@ -9168,6 +9304,95 @@ export type PetObservationCreateDto = {
     imageHeight?: number;
     /** Width of the image the region was drawn on */
     imageWidth?: number;
+};
+export type PhotoSourceCreateDto = {
+    deviceId: string;
+    id: string;
+    kind: PhotoSourceKind;
+    mode: PhotoSourceCopyMode;
+    name: string;
+    scopeFingerprint: string;
+};
+export type PhotoSourceResponseDto = {
+    createdAt: string;
+    deviceId: string;
+    id: string;
+    kind: PhotoSourceKind;
+    mode: PhotoSourceCopyMode;
+    name: string;
+    revokedAt: string | null;
+    scopeFingerprint: string;
+};
+export type PhotoSourceRunDto = {
+    id: string;
+    maxBytes: number;
+    maxItems: number;
+};
+export type PhotoSourceRunResponseDto = {
+    createdAt: string;
+    id: string;
+    inventoryComplete: boolean;
+    maxBytes: number;
+    maxItems: number;
+    sourceId: string;
+    state: PhotoSourceRunState;
+};
+export type PhotoSourceSnapshotDto = {
+    items: {
+        bytes: number;
+        id: string;
+        resourceKey: string;
+        state: PhotoSourceItemState;
+        verifiedAt: string | null;
+        version: string;
+    }[];
+    nextCursor: string | null;
+    run: {
+        createdAt: string;
+        id: string;
+        inventoryComplete: boolean;
+        maxBytes: number;
+        maxItems: number;
+        sourceId: string;
+        state: PhotoSourceRunState;
+    };
+};
+export type PhotoSourceRunStateDto = {
+    inventoryComplete: boolean;
+    state: PhotoSourceRunState;
+};
+export type PhotoSourceItemDto = {
+    bytes: number;
+    id: string;
+    resourceKey: string;
+    sha256: string;
+    version: string;
+};
+export type PhotoSourceItemResponseDto = {
+    bytes: number;
+    id: string;
+    resourceKey: string;
+    runId: string;
+    sha256: string;
+    state: PhotoSourceItemState;
+    verifiedAt: string | null;
+    version: string;
+};
+export type PhotoSourceVerifyDto = {
+    uploadResourceId: string;
+};
+export type PhotoSourceReceiptDto = {
+    assetId: string;
+    bytes: number;
+    itemId: string;
+    ownerId: string;
+    runId: string;
+    serverId: string;
+    sha256: string;
+    sourceId: string;
+    storage: PhotoSourceStorage;
+    uploadResourceId: string;
+    verifiedAt: string;
 };
 export type PhotographyGalleryDto = {
     brand: {
@@ -15952,10 +16177,14 @@ export type ClassificationRuleQueryDto = {
     albumId?: string;
 };
 export type CloudMlConsentTermsQueryDto = {
+    /** The face recognition feature as the administrator chose it */
+    faceRecognition?: boolean;
     /** The names-in-photos feature as the administrator chose it */
     identityNames?: boolean;
     /** The medical-signals feature as the administrator chose it */
     medicalSignals?: boolean;
+    /** The smart search feature as the administrator chose it */
+    smartSearch?: boolean;
 };
 export type ConfigCredentialParamDto = {
     name: ConfigCredential;
@@ -17376,7 +17605,7 @@ export type TimeBucketAssetDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
-    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link */
+    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link */
     filter?: string;
     imageEnrichment?: ImageEnrichmentFilter;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */
@@ -17423,7 +17652,7 @@ export type TimeBucketDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
-    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link */
+    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link */
     filter?: string;
     imageEnrichment?: ImageEnrichmentFilter;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */
@@ -17468,7 +17697,7 @@ export type TimelineHighlightsDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
-    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link */
+    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link */
     filter?: string;
     grouping?: TimelineHighlightGrouping;
     /** Highlights besides the key photo for each month card (default 4). Year cards carry none */
@@ -17520,7 +17749,7 @@ export type TimelineOrderedDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
-    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link */
+    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link */
     filter?: string;
     imageEnrichment?: ImageEnrichmentFilter;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */
@@ -18373,16 +18602,20 @@ export function getCloudMlConsentHistory(opts?: Oazapfts.RequestOpts) {
 /**
  * Get the Frameleaf Cloud consent terms for chosen features
  */
-export function getCloudMlConsentTerms({ identityNames, medicalSignals }: {
+export function getCloudMlConsentTerms({ faceRecognition, identityNames, medicalSignals, smartSearch }: {
+    faceRecognition?: boolean;
     identityNames?: boolean;
     medicalSignals?: boolean;
+    smartSearch?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: CloudMlConsentTermsDto;
     }>(`/admin/cloud/ml/consent/terms${QS.query(QS.explode({
+        faceRecognition,
         identityNames,
-        medicalSignals
+        medicalSignals,
+        smartSearch
     }))}`, {
         ...opts
     }));
@@ -22076,6 +22309,332 @@ export function getUserConfigDefaults(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Read desktop processing approval for a member account
+ */
+export function readDesktopMemberApproval({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopMemberApprovalDto;
+    }>(`/desktop/accounts/${encodeURIComponent(id)}/approval`, {
+        ...opts
+    }));
+}
+/**
+ * Approve or remove desktop processing for a member account
+ */
+export function setDesktopMemberApproval({ id, desktopMemberApprovalDto }: {
+    id: string;
+    desktopMemberApprovalDto: DesktopMemberApprovalDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopMemberApprovalDto;
+    }>(`/desktop/accounts/${encodeURIComponent(id)}/approval`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: desktopMemberApprovalDto
+    })));
+}
+/**
+ * Get desktop capabilities
+ */
+export function getDesktopCapabilities(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopCapabilitiesDto;
+    }>("/desktop/capabilities", {
+        ...opts
+    }));
+}
+/**
+ * List this account’s desktop devices
+ */
+export function getDesktopDevices(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopDeviceDto[];
+    }>("/desktop/devices", {
+        ...opts
+    }));
+}
+/**
+ * Enroll or resume this desktop identity
+ */
+export function enrollDesktopDevice({ desktopEnrollmentDto }: {
+    desktopEnrollmentDto: DesktopEnrollmentDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DesktopDeviceDto;
+    }>("/desktop/devices/enroll", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopEnrollmentDto
+    })));
+}
+/**
+ * Issue an installation-bound library worker credential
+ */
+export function issueDesktopWorkerSession({ desktopSessionRequestDto }: {
+    desktopSessionRequestDto: DesktopSessionRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DesktopSessionDto;
+    }>("/desktop/devices/session", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopSessionRequestDto
+    })));
+}
+/**
+ * Revoke this account’s desktop device
+ */
+export function revokeDesktopDevice({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/desktop/devices/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * End this desktop association while retaining its installation identity
+ */
+export function endDesktopSession({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/desktop/devices/${encodeURIComponent(id)}/session`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Report a bounded desktop attempt failure
+ */
+export function failDesktopTask({ id, xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
+    id: string;
+    xFrameleafDesktopProof: string;
+    desktopWorkerPayloadDto: DesktopWorkerPayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopWorkerAckDto;
+    }>(`/desktop/tasks/${encodeURIComponent(id)}/fail`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopWorkerPayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    })));
+}
+/**
+ * Read only the input bound to this desktop attempt handle
+ */
+export function readDesktopTaskInput({ id, xFrameleafDesktopProof }: {
+    id: string;
+    xFrameleafDesktopProof: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/desktop/tasks/${encodeURIComponent(id)}/input`, {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    }));
+}
+/**
+ * Stage an idempotent desktop inference result for NAS validation
+ */
+export function completeDesktopTask({ id, xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
+    id: string;
+    xFrameleafDesktopProof: string;
+    desktopWorkerPayloadDto: DesktopWorkerPayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopWorkerAckDto;
+    }>(`/desktop/tasks/${encodeURIComponent(id)}/result`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopWorkerPayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    })));
+}
+/**
+ * Issue an installation-signed model qualification challenge
+ */
+export function createDesktopQualificationChallenge({ xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
+    xFrameleafDesktopProof: string;
+    desktopWorkerPayloadDto: DesktopWorkerPayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopQualificationChallengeDto;
+    }>("/desktop/worker/challenges", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopWorkerPayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    })));
+}
+/**
+ * Read an unexpired challenge for the current desktop credential
+ */
+export function readDesktopQualificationChallenge({ id, xFrameleafDesktopProof }: {
+    id: string;
+    xFrameleafDesktopProof: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopQualificationChallengeDto;
+    }>(`/desktop/worker/challenges/${encodeURIComponent(id)}`, {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    }));
+}
+/**
+ * Record exact desktop qualification evidence without granting inference scope
+ */
+export function recordDesktopQualification({ id, xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
+    id: string;
+    xFrameleafDesktopProof: string;
+    desktopWorkerPayloadDto: DesktopWorkerPayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopWorkerAckDto;
+    }>(`/desktop/worker/challenges/${encodeURIComponent(id)}/report`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopWorkerPayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    })));
+}
+/**
+ * Claim one qualified desktop inference attempt
+ */
+export function claimDesktopTask({ xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
+    xFrameleafDesktopProof: string;
+    desktopWorkerPayloadDto: DesktopWorkerPayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopWorkerClaimDto;
+    }>("/desktop/worker/claim", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopWorkerPayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    })));
+}
+/**
+ * Renew a bounded desktop inference lease
+ */
+export function heartbeatDesktopTask({ xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
+    xFrameleafDesktopProof: string;
+    desktopWorkerPayloadDto: DesktopWorkerPayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopWorkerHeartbeatDto;
+    }>("/desktop/worker/heartbeat", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopWorkerPayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    })));
+}
+/**
+ * Read selected model availability for this signed desktop worker
+ */
+export function readDesktopModelInventory({ xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
+    xFrameleafDesktopProof: string;
+    desktopWorkerPayloadDto: DesktopWorkerPayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopModelInventoryDto;
+    }>("/desktop/worker/models", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopWorkerPayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    })));
+}
+/**
+ * Read accepted runtime evidence without granting processing scope
+ */
+export function readDesktopAcceptedQualification({ id, xFrameleafDesktopProof }: {
+    id: string;
+    xFrameleafDesktopProof: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopAcceptedQualificationDto;
+    }>(`/desktop/worker/qualifications/${encodeURIComponent(id)}`, {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    }));
+}
+/**
+ * Revoke this desktop worker grant
+ */
+export function revokeDesktopWorkerSession({ xFrameleafDesktopProof }: {
+    xFrameleafDesktopProof: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopWorkerAckDto;
+    }>("/desktop/worker/session", {
+        ...opts,
+        method: "DELETE",
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    }));
+}
+/**
+ * Rotate a live installation-bound worker credential
+ */
+export function renewDesktopWorkerSession({ xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
+    xFrameleafDesktopProof: string;
+    desktopWorkerPayloadDto: DesktopWorkerPayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopSessionDto;
+    }>("/desktop/worker/session", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopWorkerPayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    })));
+}
+/**
  * List develop presets
  */
 export function getDevelopPresets(opts?: Oazapfts.RequestOpts) {
@@ -24954,6 +25513,117 @@ export function createPetObservation({ id, petObservationCreateDto }: {
         ...opts,
         method: "POST",
         body: petObservationCreateDto
+    })));
+}
+/**
+ * Approve an owner-scoped desktop folder-copy source
+ */
+export function createPhotoSource({ photoSourceCreateDto }: {
+    photoSourceCreateDto: PhotoSourceCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotoSourceResponseDto;
+    }>("/photo-sources", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photoSourceCreateDto
+    })));
+}
+/**
+ * Revoke a photo source while retaining its managed copies and associations
+ */
+export function revokePhotoSource({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/photo-sources/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Start or recover a bounded photo-copy run
+ */
+export function createPhotoSourceRun({ id, photoSourceRunDto }: {
+    id: string;
+    photoSourceRunDto: PhotoSourceRunDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotoSourceRunResponseDto;
+    }>(`/photo-sources/${encodeURIComponent(id)}/runs`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photoSourceRunDto
+    })));
+}
+/**
+ * Read paginated copy-run dispositions without source paths or asset IDs
+ */
+export function getPhotoSourceRun({ after, id, runId }: {
+    after?: string;
+    id: string;
+    runId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotoSourceSnapshotDto;
+    }>(`/photo-sources/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}${QS.query(QS.explode({
+        after
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Pause, resume, cancel or finish a copy run; incomplete inventory never removes originals
+ */
+export function setPhotoSourceRunState({ id, runId, photoSourceRunStateDto }: {
+    id: string;
+    runId: string;
+    photoSourceRunStateDto: PhotoSourceRunStateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotoSourceRunResponseDto;
+    }>(`/photo-sources/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: photoSourceRunStateDto
+    })));
+}
+/**
+ * Reserve an immutable source resource and its whole-run byte/item budget
+ */
+export function planPhotoSourceCopy({ id, runId, photoSourceItemDto }: {
+    id: string;
+    runId: string;
+    photoSourceItemDto: PhotoSourceItemDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotoSourceItemResponseDto;
+    }>(`/photo-sources/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/items`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photoSourceItemDto
+    })));
+}
+/**
+ * Verify healthy owned original bytes and record the source association
+ */
+export function verifyPhotoSourceCopy({ id, itemId, runId, photoSourceVerifyDto }: {
+    id: string;
+    itemId: string;
+    runId: string;
+    photoSourceVerifyDto: PhotoSourceVerifyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotoSourceReceiptDto;
+    }>(`/photo-sources/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/items/${encodeURIComponent(itemId)}/verify`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photoSourceVerifyDto
     })));
 }
 export function photographyGallery({ xPhotographySession, id }: {
@@ -31329,6 +31999,7 @@ export enum MediaOperationKind {
     PreservationRestore = "preservation_restore",
     StudioExportPublish = "studio_export_publish",
     CloudDescriptionBatch = "cloud_description_batch",
+    CloudLibraryBatch = "cloud_library_batch",
     CloudMlJob = "cloud_ml_job",
     CloudBackup = "cloud_backup",
     CloudRestore = "cloud_restore",
@@ -32120,6 +32791,60 @@ export enum Unit {
     Photo = "photo",
     Minute = "minute"
 }
+export enum DesktopEnrollmentPolicy {
+    Administrators = "administrators",
+    AccountApproved = "account-approved"
+}
+export enum DesktopArchitecture {
+    Arm64 = "arm64",
+    X8664 = "x86_64"
+}
+export enum DesktopMode {
+    LocalServer = "local-server",
+    ClientWorker = "client-worker"
+}
+export enum DesktopPlatform {
+    Macos = "macos",
+    Windows = "windows",
+    Linux = "linux"
+}
+export enum DesktopRoutePreservation {
+    All = "all"
+}
+export enum DesktopDeviceState {
+    AwaitingApproval = "awaiting-approval",
+    Preparing = "preparing",
+    Paused = "paused",
+    Revoked = "revoked"
+}
+export enum DesktopWorkerScope {
+    LibraryInference = "library-inference"
+}
+export enum DesktopInputKind {
+    Text = "text",
+    Image = "image"
+}
+export enum Provider {
+    CpuExecutionProvider = "CPUExecutionProvider",
+    CudaExecutionProvider = "CUDAExecutionProvider",
+    CoreMlExecutionProvider = "CoreMLExecutionProvider",
+    OpenVinoExecutionProvider = "OpenVINOExecutionProvider",
+    MiGraphXExecutionProvider = "MIGraphXExecutionProvider"
+}
+export enum DesktopModelAvailability {
+    Eligible = "eligible",
+    Disabled = "disabled",
+    Pinned = "pinned",
+    Legacy = "legacy",
+    Unavailable = "unavailable",
+    Unsupported = "unsupported"
+}
+export enum DesktopLibraryWorkload {
+    Clip = "clip",
+    Ocr = "ocr",
+    Face = "face",
+    Enrichment = "enrichment"
+}
 export enum DevelopPresetMaskKind {
     Radial = "radial",
     Linear = "linear"
@@ -32626,6 +33351,11 @@ export enum StudioExportFormat {
     AudioAac = "audio-aac",
     AudioWav = "audio-wav"
 }
+export enum MlRouteOrigin {
+    Default = "default",
+    Pinned = "pinned",
+    Legacy = "legacy"
+}
 export enum MlStudioFeature {
     SpeechToText = "speech-to-text",
     Captions = "captions",
@@ -32737,6 +33467,25 @@ export enum PetObservationSource {
 export enum PetObservationState {
     Confirmed = "confirmed",
     Rejected = "rejected"
+}
+export enum PhotoSourceKind {
+    Folder = "folder"
+}
+export enum PhotoSourceCopyMode {
+    Copy = "copy"
+}
+export enum PhotoSourceRunState {
+    Open = "open",
+    Paused = "paused",
+    Cancelled = "cancelled",
+    Complete = "complete"
+}
+export enum PhotoSourceItemState {
+    Planned = "planned",
+    Verified = "verified"
+}
+export enum PhotoSourceStorage {
+    Managed = "managed"
 }
 export enum Mode2 {
     EditedDelivery = "edited-delivery",
@@ -33443,6 +34192,7 @@ export enum JobName {
     FrameleafHeartbeat = "FrameleafHeartbeat",
     FrameleafLicenseRefresh = "FrameleafLicenseRefresh",
     CloudMlDescriptionBatch = "CloudMlDescriptionBatch",
+    CloudMlLibraryBatch = "CloudMlLibraryBatch",
     CloudBackupSchedule = "CloudBackupSchedule",
     BackupSequence = "BackupSequence",
     CloudBackupVerify = "CloudBackupVerify",

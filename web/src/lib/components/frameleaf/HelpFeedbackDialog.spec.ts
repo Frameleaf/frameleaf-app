@@ -88,9 +88,11 @@ describe('HelpFeedbackDialog (S-3)', () => {
     ]) {
       expect(within(list).getAllByText(name).length).toBeGreaterThan(0);
     }
-    // The OpenRAIL-M use restrictions are passed on, and the non-commercial models say they stay local.
+    // The OpenRAIL-M use restrictions are passed on, and the non-commercial models name their
+    // personal-use basis: they run on Frameleaf Cloud too (FL-451).
     expect(within(list).getByText(/Attachment A/)).toBeInTheDocument();
-    expect(within(list).getAllByText(/Local use only: not offered on Frameleaf Cloud/)).toHaveLength(2);
+    expect(within(list).getAllByText(/on this server, a home-network worker and Frameleaf Cloud/)).toHaveLength(3);
+    expect(within(list).queryAllByText(/not offered on Frameleaf Cloud/)).toEqual([]);
     expect(within(list).getByText('121 font families')).toBeInTheDocument();
     expect(within(list).getByText(/Voices: af_heart/)).toBeInTheDocument();
   });

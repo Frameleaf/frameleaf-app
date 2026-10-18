@@ -4,8 +4,9 @@
    * Compute & jobs → Where each job runs (FL-159, handoff §3.2; prototype WorkloadRouting.jsx): for
    * every kind of work that uses the ML service, this server, Frameleaf Cloud or both. "Both" means
    * each job lets the person pick, preselecting "When a job can run in both places, start with"; a
-   * job never moves to the cloud on its own. Search, faces and text recognition stay on this server,
-   * and Studio exports render at home. The cloud options stay disabled until this server is linked
+   * job never moves to the cloud on its own. Text recognition stays on this server and Studio exports
+   * render at home; search and faces reach Frameleaf Cloud only through their destination route, while
+   * it offers this server's own models and their consent is on (FL-455). The cloud options stay disabled until this server is linked
    * and cloud processing is on.
    *
    * Where work runs is a setting (`frameleafCloud.cloudMl.routing`, `startWith`) saved with the settings
@@ -14,8 +15,15 @@
    * stops, saved with the settings bar), and the Frameleaf Cloud model from the cloud's catalogue once
    * cloud processing is on (blue stops, saved per model group at once, apart from the workload's route,
    * which is what admission reads for every cloud job).
+   *
+   * FL-455: smart search and faces show their model slider too, for where each model would run: this
+   * server's models in white and green, and a blue stop for this server's own model on Frameleaf Cloud
+   * only while the cloud offers it (`cloudMatchedWorkloads`: the status's matched work, or the
+   * catalogue). It shows the model in use; that model is chosen in Search & intelligence, so the
+   * slider here cannot change it. Search text is always read on this server.
    */
   import './frameleaf-cloud.css';
+  import ModelSlider from '$lib/components/frameleaf/cloud/ModelSlider.svelte';
   import WorkloadModelPickers from '$lib/components/frameleaf/cloud/WorkloadModelPickers.svelte';
   import {
     isRoutedWorkload,
@@ -25,13 +33,19 @@
     routeSummary,
     routingModes,
     workerFromHardware,
+    workerGpu,
     workloadNameKey,
     workloadRoute,
     workloadUseKey,
     workloadWhyKey,
   } from '$lib/frameleaf/cloud-ml';
-  import { choicesByGroup, loadCloudModelData, type CloudModelData } from '$lib/frameleaf/cloud-models';
-  import type { RouteMode } from '$lib/frameleaf/gpu-model-catalog';
+  import {
+    choicesByGroup,
+    cloudMatchedWorkloads,
+    loadCloudModelData,
+    type CloudModelData,
+  } from '$lib/frameleaf/cloud-models';
+  import { isMatchedWorkload, ladderFor, type MatchedWorkload, type RouteMode } from '$lib/frameleaf/gpu-model-catalog';
   import { localModelsFor } from '$lib/frameleaf/local-models';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -85,6 +99,14 @@
   );
   const cloudOn = $derived(linked && !!cloudMl?.enabled);
   const worker = $derived(workerFromHardware(hardware));
+  /** FL-455: search and faces get their blue stop only while Frameleaf Cloud offers this server's models. */
+  const cloudMatched = $derived(cloudOn ? cloudMatchedWorkloads(status, models.catalog) : []);
+  const machineLearning = $derived(settingsDraft?.draft.machineLearning);
+  /** The model search or faces uses, while it is one the slider shows. */
+  const matchedModel = (id: MatchedWorkload) => {
+    const value = id === 'search' ? machineLearning?.clip?.modelName : machineLearning?.facialRecognition?.modelName;
+    return ladderFor(id).some((item) => item.id === value && !item.cloudMatch) ? value : null;
+  };
 
   // FL-186: read the chosen models and the catalogue once cloud processing is linked and turned on,
   // including when it is turned on on this page, and again the next time after it was turned off.
@@ -195,6 +217,24 @@
             {$t(workloadWhyKey(row.id))}
           {/if}
         </p>
+        {#if showModels && isMatchedWorkload(row.id) && matchedModel(row.id)}
+          {@const workload = row.id as MatchedWorkload}
+          <div class="fc-routing-models">
+            <ModelSlider
+              {workload}
+              value={matchedModel(workload)}
+              gpu={workerGpu(worker, workload)}
+              cpuProfile={worker.cpuProfile}
+              route="both"
+              {cloudMatched}
+              label={$t('admin.frameleaf_model_for', {
+                values: { name: $t(workloadNameKey(workload)).toLocaleLowerCase() },
+              })}
+              disabled
+            />
+            <p class="fc-routing-summary">{$t('admin.frameleaf_routing_same_model_note')}</p>
+          </div>
+        {/if}
         {#if showModels && isRoutedWorkload(row.id) && (cloudOn || localModelsFor(row.id).length > 0)}
           <div class="fc-routing-models">
             <WorkloadModelPickers

@@ -593,7 +593,11 @@ export type JobItem =
 
   // Facial Recognition
   | { name: JobName.AssetDetectFacesQueueAll; data: IBaseJob }
-  | { name: JobName.AssetDetectFaces; data: IEntityJob & { preserveImportedFaces?: boolean } }
+  | {
+      name: JobName.AssetDetectFaces;
+      /** `onThisServer` (FL-455): a Frameleaf Cloud result was refused, so this run never goes to the cloud. */
+      data: IEntityJob & { preserveImportedFaces?: boolean; onThisServer?: boolean };
+    }
   | { name: JobName.FacialRecognitionQueueAll; data: INightlyJob }
   | { name: JobName.FacialRecognition; data: IDeferrableJob & { force?: boolean } }
   | { name: JobName.ProfileImageRepair; data: Record<string, never> }
@@ -602,7 +606,7 @@ export type JobItem =
 
   // Smart Search
   | { name: JobName.SmartSearchQueueAll; data: IBaseJob }
-  | { name: JobName.SmartSearch; data: IEntityJob }
+  | { name: JobName.SmartSearch; data: IEntityJob & { onThisServer?: boolean } }
   | { name: JobName.SmartSearchPostprocess; data: IEntityJob }
   | { name: JobName.AssetMetadataPostprocess; data: IEntityJob }
   | {
@@ -670,6 +674,7 @@ export type JobItem =
   | { name: JobName.FrameleafLicenseRefresh; data: IBaseJob }
   // FL-163: one pass over Frameleaf Cloud description batches
   | { name: JobName.CloudMlDescriptionBatch; data: IBaseJob }
+  | { name: JobName.CloudMlLibraryBatch; data: IBaseJob }
   // FL-164: the cloud backup schedule and the verification check
   | { name: JobName.CloudBackupSchedule; data: IBaseJob }
   | { name: JobName.CloudBackupVerify; data: IBaseJob }
@@ -1334,6 +1339,14 @@ export type FrameleafCloudDescriptionQueue = {
 };
 
 /**
+ * FL-455: photos whose smart search or face job reached the Frameleaf Cloud route, oldest first, per kind of
+ * work; batched into one cloud job per owner and kind.
+ */
+export type FrameleafCloudLibraryQueue = {
+  items: Array<{ assetId: string; ownerId: string; workload: 'clip' | 'face'; queuedAt: string }>;
+};
+
+/**
  * FL-165: the enrolment Frameleaf Cloud answered `POST /v1/remote/enroll` with (contract
  * `remote/enroll.ts`), kept with the link it belongs to. `domain` is the direct domain the cloud uses
  * now; it is never assumed.
@@ -1462,6 +1475,7 @@ export type FrameleafRemoteAccess = {
 };
 
 export interface SystemMetadata extends Record<SystemMetadataKey, Record<string, any>> {
+  [SystemMetadataKey.FrameleafDesktopAssistance]: import('src/services/desktop-assistance-policy.service.js').DesktopAssistancePolicyRegistry;
   [SystemMetadataKey.AdminOnboarding]: { isOnboarded: boolean };
   [SystemMetadataKey.FacialRecognitionState]: { lastRun?: string };
   [SystemMetadataKey.MaintenanceMode]: MaintenanceModeState;
@@ -1498,6 +1512,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.HardwareCheck]: HardwareCheck;
   [SystemMetadataKey.FrameleafCloudMigrationNotice]: FrameleafCloudMigrationNotice;
   [SystemMetadataKey.FrameleafCloudDescriptionQueue]: FrameleafCloudDescriptionQueue;
+  [SystemMetadataKey.FrameleafCloudLibraryQueue]: FrameleafCloudLibraryQueue;
   [SystemMetadataKey.FrameleafCloudDescriptionEstimates]: { records: CloudDescriptionEstimateRecord[] };
   [SystemMetadataKey.FrameleafCloudMlJobEstimates]: {
     records: CloudMlJobEstimateRecord[];

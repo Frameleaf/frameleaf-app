@@ -46,7 +46,8 @@ export type MediaOperationCreate = Omit<
   'id' | 'createdAt' | 'updatedAt' | 'updateId' | 'status' | 'progress' | 'attempt' | 'autoRetries' | 'retryAt'
 >;
 export type CloudDescriptionBatchCreate = MediaOperationCreate & {
-  kind: MediaOperationKind.CloudDescriptionBatch;
+  /** FL-455: smart search and faces batches are made the same way as description batches. */
+  kind: MediaOperationKind.CloudDescriptionBatch | MediaOperationKind.CloudLibraryBatch;
   destination: MediaOperationDestination.FrameleafCloud;
 };
 /**
@@ -1720,7 +1721,7 @@ export class MediaOperationRepository {
             eb('status', '=', MediaOperationStatus.Failed),
             eb.and([
               eb('status', '=', MediaOperationStatus.Completed),
-              eb('kind', '=', MediaOperationKind.CloudDescriptionBatch),
+              eb('kind', 'in', [MediaOperationKind.CloudDescriptionBatch, MediaOperationKind.CloudLibraryBatch]),
             ]),
           ]),
         )
@@ -1759,6 +1760,17 @@ export class MediaOperationRepository {
   /* ------------------------------------------------------------------ */
   /* Frameleaf Cloud description batches (FL-163)                        */
   /* ------------------------------------------------------------------ */
+  /** FL-455: every photo in an unfinished smart search (`clip`) or faces (`face`) batch, whoever owns it. */
+  async getOpenCloudLibraryAssetIds(workload: 'clip' | 'face'): Promise<Set<string>> {
+    const rows = await this.db
+      .selectFrom('media_operation')
+      .select(sql<string>`jsonb_array_elements_text("snapshot" -> 'assetIds')`.as('assetId'))
+      .where('kind', '=', MediaOperationKind.CloudLibraryBatch)
+      .where(sql<string>`"snapshot" ->> 'workload'`, '=', workload)
+      .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .execute();
+    return new Set(rows.map(({ assetId }) => assetId));
+  }
   /** Every photo in an unfinished description batch, whoever owns it. */
   async getOpenCloudDescriptionAssetIds(): Promise<Set<string>> {
     const rows = await this.db
@@ -1799,22 +1811,29 @@ export class MediaOperationRepository {
    * (FL-163 re-check P2): unfinished batches, and finished ones admitted since `since` (the budget
    * window). A hold released but never reported as settled stops counting once it leaves the window.
    */
-  async sumCloudDescriptionOpenHolds(destinationId: string, since: Date): Promise<number> {
+  async sumCloudDescriptionOpenHolds(
+    destinationId: string,
+    since: Date,
+    kinds: readonly MediaOperationKind[] = [MediaOperationKind.CloudDescriptionBatch],
+  ): Promise<number> {
     const row = await this.db
       .selectFrom('media_operation')
       .select(sql<number>`coalesce(sum(("result" -> 'job' ->> 'holdUsd')::double precision), 0)`.as('heldUsd'))
-      .where('kind', '=', MediaOperationKind.CloudDescriptionBatch)
+      .where('kind', 'in', [...kinds])
       .where(sql<string>`"snapshot" ->> 'destinationId'`, '=', destinationId)
       .where((eb) => this.unsettledAdmission(eb, since))
       .executeTakeFirstOrThrow();
     return Number(row.heldUsd);
   }
   /** Whether an admitted description batch still waits for its settlement, bounded as the holds are. */
-  async hasUnsettledCloudDescriptionJobs(since: Date): Promise<boolean> {
+  async hasUnsettledCloudDescriptionJobs(
+    since: Date,
+    kind: MediaOperationKind = MediaOperationKind.CloudDescriptionBatch,
+  ): Promise<boolean> {
     const row = await this.db
       .selectFrom('media_operation')
       .select('id')
-      .where('kind', '=', MediaOperationKind.CloudDescriptionBatch)
+      .where('kind', '=', kind)
       .where((eb) => this.unsettledAdmission(eb, since))
       .limit(1)
       .executeTakeFirst();
@@ -1836,12 +1855,15 @@ export class MediaOperationRepository {
    * (FL-163 re-check): the cleanup pass replays their idempotency key, once their estimate expired, to
    * learn whether a job exists and stop it.
    */
-  listCloudDescriptionPendingReleases(limit: number): Promise<MediaOperation[]> {
+  listCloudDescriptionPendingReleases(
+    limit: number,
+    kind: MediaOperationKind = MediaOperationKind.CloudDescriptionBatch,
+  ): Promise<MediaOperation[]> {
     return (
       this.db
         .selectFrom('media_operation')
         .selectAll()
-        .where('kind', '=', MediaOperationKind.CloudDescriptionBatch)
+        .where('kind', '=', kind)
         .where('status', 'in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
         .where('remoteJobId', 'is', null)
         // the saved submission is the pending-release marker: written, with its key, before the POST

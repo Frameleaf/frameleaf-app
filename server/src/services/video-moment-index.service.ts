@@ -4,6 +4,7 @@ import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
+import type { ClipEmbedding } from 'src/utils/clip-embedding.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
@@ -65,7 +66,7 @@ import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isImageDescriptionEnabled, isSmartSearchEnabled } from 'src/utils/misc.js';
-import { routedMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
+import { clipTextDestinationId, routedMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
 import { FrameCutOutcome, VideoFrameDeps, ensureVideoFrames } from 'src/utils/video-moment-frames.js';
 
 /** What one stage of an enrichment plan did to one video. */
@@ -191,7 +192,7 @@ export class VideoMomentIndexService {
 
     try {
       const selection = await this.select(MlWorkload.Clip, options.destinationId, options.jobId ?? assetId);
-      const embeddings: { frameId: string; embedding: string }[] = [];
+      const embeddings: { frameId: string; embedding: ClipEmbedding }[] = [];
       // One frame at a time: the frames are small, and a video must not monopolise the destination.
       for (const frame of pending) {
         if (options.heartbeat && !(await options.heartbeat())) {
@@ -519,11 +520,14 @@ export class VideoMomentIndexService {
 
     if (isSmartSearchEnabled(config.machineLearning)) {
       try {
-        const selection = await this.select(MlWorkload.Clip, null, null);
+        // FL-455: search text is always encoded on this network
+        const selection = await this.select(MlWorkload.Clip, await clipTextDestinationId(this.mlDestinations), null);
         const modelName = config.machineLearning.clip.modelName;
+        const read = await this.machineLearning.captureClipRead();
         const embedding = await this.machineLearning.encodeText(selection, dto.query, { modelName });
         const frameHits = await this.moments.searchFrames(embedding, modelName, scope);
         const staleFrameCaptions = await this.staleCaptionIds(frameHits.flatMap(({ momentId }) => momentId ?? []));
+        await read.assertCurrent();
         for (const hit of frameHits) {
           hits.push({
             assetId: hit.assetId,
@@ -555,6 +559,7 @@ export class VideoMomentIndexService {
     frameId: string,
     dto: VideoMomentSimilarDto,
   ): Promise<VideoMomentSearchResponseDto> {
+    const read = await this.machineLearning.captureClipRead();
     const frame = await this.moments.getFrame(frameId);
     // An unknown frame and a frame of a video the caller may not read answer the same.
     await requireAccess(this.access, { auth, permission: Permission.AssetRead, ids: [frame?.assetId ?? frameId] });
@@ -571,6 +576,7 @@ export class VideoMomentIndexService {
       excludeFrameId: frameId,
     });
     const staleCaptions = await this.staleCaptionIds(found.flatMap(({ momentId }) => momentId ?? []));
+    await read.assertCurrent();
     const hits = found.map((hit) => ({
       assetId: hit.assetId,
       timestampMs: hit.timestampMs,

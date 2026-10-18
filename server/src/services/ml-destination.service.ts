@@ -20,7 +20,7 @@ import { MlRestorationModelsResponseDto } from 'src/dtos/restoration-inference.d
 import {
   BootstrapEventPriority,
   DatabaseLock,
-  FRAMELEAF_CLOUD_ML_WORKLOADS,
+  FRAMELEAF_CLOUD_ELIGIBLE_WORKLOADS,
   FrameleafWorker,
   LIBRARY_ML_WORKLOADS,
   MediaOperationDestination,
@@ -222,9 +222,10 @@ export class MlDestinationService extends BaseService {
       return;
     }
 
+    const recorded = new Set((await this.mlDestinationRepository.getRouteStates()).map((row) => row.workload));
     for (const workload of LIBRARY_ML_WORKLOADS) {
       const route = await this.mlDestinationRepository.getRoute(workload);
-      if (route) {
+      if (route || recorded.has(workload)) {
         continue;
       }
       // FL-58: a library workload added after this destination was created (pet recognition) is
@@ -238,8 +239,8 @@ export class MlDestinationService extends BaseService {
         }
         first = await this.mlDestinationRepository.update(first.id, { workloads });
       }
-      await this.mlDestinationRepository.setRoute(workload, first.id);
-      this.logger.log(`Routed ${workload} to local destination ${first.name}`);
+      if (await this.mlDestinationRepository.setDefaultRoute(workload, first.id))
+        this.logger.log(`Routed ${workload} to local destination ${first.name}`);
     }
   }
 
@@ -360,6 +361,10 @@ export class MlDestinationService extends BaseService {
       identityNames: dto.features?.identityNames ?? false,
       medicalSignals: dto.features?.medicalSignals ?? false,
       ocrAddon: dto.features?.ocrAddon ?? false,
+      // FL-455: each is its own consent, versioned with the terms the cloud asks for with it; named only
+      // when chosen, so the cloud is asked and told exactly as before otherwise
+      ...(dto.features?.smartSearch && { smartSearch: true }),
+      ...(dto.features?.faceRecognition && { faceRecognition: true }),
     };
     const resolution = await resolveCloudGateway(this.cloudGatewayDeps());
     if (resolution.state !== CloudConnectionState.Ready) {
@@ -588,12 +593,14 @@ export class MlDestinationService extends BaseService {
   }
 
   async getRoutes(): Promise<MlWorkloadRoutesResponseDto> {
-    const routes = await this.mlDestinationRepository.getRoutes();
+    const routes = await this.mlDestinationRepository.getRouteStates();
     const byWorkload = new Map(routes.map((route) => [route.workload, route]));
     return {
       routes: Object.values(MlWorkload).map((workload) => ({
         workload,
         destinationId: byWorkload.get(workload)?.destinationId ?? null,
+        origin: byWorkload.get(workload)?.origin ?? null,
+        revisionId: byWorkload.get(workload)?.revisionId ?? null,
       })),
     };
   }
@@ -692,7 +699,7 @@ export class MlDestinationService extends BaseService {
     // for speech. Other destinations are unchanged.
     const choices = await readCloudModelChoices(this.mlDestinationRepository, rows);
     const hasCloudModel = (row: MlDestinationRow, workload: MlWorkload) => {
-      if (row.kind !== MlDestinationKind.FrameleafCloud || !FRAMELEAF_CLOUD_ML_WORKLOADS.includes(workload)) {
+      if (row.kind !== MlDestinationKind.FrameleafCloud || !FRAMELEAF_CLOUD_ELIGIBLE_WORKLOADS.includes(workload)) {
         return true;
       }
       const verdict = storedAdmission({ destination: row, workload, spentUsd: 0, choices });

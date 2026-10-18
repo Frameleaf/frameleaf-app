@@ -325,7 +325,9 @@ September 25, 2026; the server mirror is `scripts/frameleaf-studio-rights.mjs`).
 admitted for local runtime only when the owner approved its exact reviewed row for that use and
 did not withhold it; the admission carries the row digest, so a row changed after approval is
 blocked again, and any id or URL outside the approved rows stays blocked. A reviewed row cannot
-admit itself: `decisions` stay as the packager recorded them. A URL is admitted only inside an
+admit itself: `decisions` stay as the packager recorded them. Licensed model rows are recorded as
+`allowed` (personal use by the user, legal review 2026-10-17, FL-451); every other row stays
+`blocked`, and an `allowed` model row is still admitted only through the owner's approval. A URL is admitted only inside an
 approved locator, and a Hugging Face model only from the approved commit
 (`/resolve/<revision>/`); when several rows cover a URL the most specific decides and any
 blocked one blocks it, and encoded path separators are refused. Patch 0028 makes the engine
@@ -698,3 +700,7 @@ full audio and STU-305 acceptance remain open.
 ## Whisper without a GPU adapter
 
 Patch `0140-whisper-no-adapter-fallback.patch` checks for an available WebGPU adapter before the first Whisper model session. When none is available, it selects WASM directly: the pinned Transformers runtime retains a failed first-session promise, so trying an unavailable GPU first prevents the later WASM retry. The existing model, artifact verification, word timing and worker lifecycle remain in use. The real-worker browser check can require either backend with `STUDIO_WHISPER_BROWSER_EXPECT_BACKEND=wasm` or `webgpu`; both its initial and offline runs must execute that backend. Broader model and browser qualification remains separate.
+
+## Locked tracks refuse drags and adds (FL-450)
+
+Patch `0141-locked-track-drop-refusal.patch` makes a lock binding for a person's drags in the editor. Dragging library media, files, a compound clip or a timeline clip over a locked track (or one inside a locked layer group) shows a not-allowed cursor and no drop marker; releasing it adds, moves and duplicates nothing. A drag that would put any dragged clip, or a video's linked sound, on a locked track is refused the same way. Insert and overwrite edits that target a locked track give the same short message, `timeline.track.lockedTrackRefused`. A drag hovering a locked track is announced through a polite status region, and the refusal toast is announced by the editor's toaster. The host translates the message (`lockedTrackRefused` in the host strings, `frameleaf_studio_locked_track_refused`) and the adapter writes it over the engine's English after each language change. The graph command `clip.add` refuses the same inputs in the command layer (protocol 12.3.1). The existing Freecut MIT notice covers the adapted sources and tests.

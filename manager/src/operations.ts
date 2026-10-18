@@ -155,6 +155,13 @@ export class Operations {
   }
   /** FL-360: the server's machine-authenticated library move pause, called from inside its container. */
   private async libraryMovePause(method: 'GET' | 'POST', path: string, body?: unknown): Promise<ServerPauseStatus> {
+    return this.serverRequest(method, `library-move/manager${path}`, body) as Promise<ServerPauseStatus>;
+  }
+  /**
+   * Call a machine-authenticated `/api/server/...` endpoint from inside the server container, with the
+   * mounted Manager token. A refusal surfaces as `server_refused_<status>`; the token is never echoed.
+   */
+  private async serverRequest(method: 'GET' | 'POST', path: string, body?: unknown): Promise<unknown> {
     const installation = this.installation();
     if (!installation) throw new Refusal('no_installation');
     const server = (await this.docker.inventory()).find(
@@ -163,8 +170,12 @@ export class Operations {
         c.Config.Labels?.['com.docker.compose.service'] === 'frameleaf-server',
     );
     if (!server?.State.Running) throw new Refusal('application_unavailable');
-    const script = `const fs=require('node:fs'),b=process.argv[3];fetch('http://127.0.0.1:2283/api/server/library-move/manager'+process.argv[2],{method:process.argv[1],headers:{'x-frameleaf-manager':fs.readFileSync('/run/frameleaf/manager-token','utf8').trim(),...(b?{'content-type':'application/json'}:{})},body:b||undefined}).then(r=>{if(!r.ok)throw Error();return r.json()}).then(v=>process.stdout.write(JSON.stringify(v))).catch(()=>process.exit(1));`;
-    return JSON.parse(await this.docker.node(server.Id, script, [method, path, body ? JSON.stringify(body) : '']));
+    const script = `const fs=require('node:fs'),b=process.argv[3];fetch('http://127.0.0.1:2283/api/server/'+process.argv[2],{method:process.argv[1],headers:{'x-frameleaf-manager':fs.readFileSync('/run/frameleaf/manager-token','utf8').trim(),...(b?{'content-type':'application/json'}:{})},body:b||undefined}).then(async r=>process.stdout.write(JSON.stringify(r.ok?{value:await r.json()}:{status:r.status}))).catch(()=>process.exit(1));`;
+    const result = JSON.parse(
+      await this.docker.node(server.Id, script, [method, path, body ? JSON.stringify(body) : '']),
+    ) as { value?: unknown; status?: number };
+    if (result.status !== undefined) throw new Refusal(`server_refused_${Number(result.status)}`, 502);
+    return result.value;
   }
   reviewMove(root: string) {
     return this.mediaMove.review(root);
@@ -725,16 +736,8 @@ export class Operations {
     await atomicJson(join(this.directory(), 'import-compose.json'), compose);
   }
   async libraryStatus(begin = false): Promise<unknown> {
-    const installation = this.installation();
-    if (!installation) return null;
-    const server = (await this.docker.inventory()).find(
-      (c) =>
-        c.Config.Labels?.['app.frameleaf.manager'] === installation.id &&
-        c.Config.Labels?.['com.docker.compose.service'] === 'frameleaf-server',
-    );
-    if (!server?.State.Running) throw new Refusal('application_unavailable');
-    const script = `const fs=require('node:fs');fetch('http://127.0.0.1:2283/api/server/library-setup/manager',{method:process.argv[1],headers:{'x-frameleaf-manager':fs.readFileSync('/run/frameleaf/manager-token','utf8').trim()}}).then(r=>{if(!r.ok)throw Error();return r.json()}).then(v=>process.stdout.write(JSON.stringify(v))).catch(()=>process.exit(1));`;
-    return JSON.parse(await this.docker.node(server.Id, script, [begin ? 'POST' : 'GET']));
+    if (!this.installation()) return null;
+    return this.serverRequest(begin ? 'POST' : 'GET', 'library-setup/manager');
   }
   async targetDatabase(): Promise<Database> {
     const installation = this.installation();
@@ -815,18 +818,21 @@ export class Operations {
     );
     return path;
   }
-  control(kind: 'start' | 'stop' | 'restart' | 'backup', key: string): Operation {
-    const prior = this.store.request(kind, key, {});
+  control(kind: 'start' | 'stop' | 'restart' | 'backup', key: string, installationId?: string): Operation {
+    const input = installationId ? { installationId } : {};
+    if (installationId && this.installation()?.id !== installationId) throw new Refusal('installation_changed');
+    const prior = this.store.request(kind, key, input);
     if (prior) return prior;
     const installation = this.installation();
     if (!installation) throw new Refusal('no_installation');
-    const { operation, created } = this.store.start(kind, key, {});
+    const { operation, created } = this.store.start(kind, key, input);
     if (created) this.launch(operation, () => this.runControl(operation));
     return operation;
   }
   private async runControl(operation: Operation): Promise<void> {
     const installation = this.installation();
     if (!installation) throw new Refusal('no_installation');
+    if (operation.input.installationId && operation.input.installationId !== installation.id) throw new Refusal('installation_changed');
     const kind = operation.kind;
     if (kind === 'backup') {
       await this.step(operation, 'database-backup', async () => {

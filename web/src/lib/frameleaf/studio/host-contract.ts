@@ -345,7 +345,12 @@ export type StudioAdapterString =
   /** A relinked file is saved, but this editor must be reloaded before more edits. */
   | 'relinkReload'
   /** A missing file was relinked and the project saved. */
-  | 'relinkSaved';
+  | 'relinkSaved'
+  /**
+   * A drag or add onto a locked track was refused (FL-450). The adapter writes it over the
+   * engine's own English for that message, so the editor's refusal speaks the host's language.
+   */
+  | 'lockedTrackRefused';
 
 export type StudioWorkspaceMode = 'basic' | 'advanced';
 

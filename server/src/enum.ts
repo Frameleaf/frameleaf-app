@@ -535,6 +535,7 @@ export enum SystemMetadataKey {
   MaintenanceMode = 'maintenance-mode',
   /** FL-360: a Frameleaf Manager library move has paused uploads, changes and job queues. */
   FrameleafLibraryMovePause = 'frameleaf-library-move-pause',
+  FrameleafDesktopAssistance = 'frameleaf-desktop-assistance',
   SystemConfig = 'system-config',
   SystemFlags = 'system-flags',
   VersionCheckState = 'version-check-state',
@@ -602,6 +603,8 @@ export enum SystemMetadataKey {
    * automatically"), with when automatic batching last ran.
    */
   FrameleafCloudDescriptionQueue = 'frameleaf-cloud-description-queue',
+  /** FL-455: the photos waiting for a Frameleaf Cloud smart search or faces batch. */
+  FrameleafCloudLibraryQueue = 'frameleaf-cloud-library-queue',
   /** FL-163: the backfill estimates an administrator was shown, which queueing a backfill reads back. */
   FrameleafCloudDescriptionEstimates = 'frameleaf-cloud-description-estimates',
   /**
@@ -996,11 +999,11 @@ export const LIBRARY_ML_WORKLOADS: readonly MlWorkload[] = [
 ];
 
 /**
- * The workloads Frameleaf Cloud may be allowed (FL-146, FL-159): descriptions, upscaling, restoration,
- * Studio AI, interpolation and Studio render. Faces are refused by policy (biometric law), and search
- * embeddings and OCR stay on this network.
+ * The workloads Frameleaf Cloud may always be allowed (FL-146, FL-159): descriptions, upscaling,
+ * restoration, Studio AI and interpolation. Studio exports render at home only (this server or a
+ * home-network worker). Smart search and faces are `FRAMELEAF_CLOUD_CATALOG_WORKLOADS`; text
+ * recognition and pet recognition stay on this network.
  */
-// Studio exports render at home only (this server or a home-network worker); never on the cloud.
 export const FRAMELEAF_CLOUD_ML_WORKLOADS: readonly MlWorkload[] = [
   MlWorkload.Enrichment,
   MlWorkload.Upscale,
@@ -1008,6 +1011,20 @@ export const FRAMELEAF_CLOUD_ML_WORKLOADS: readonly MlWorkload[] = [
   MlWorkload.RestorationCreative,
   MlWorkload.StudioAi,
   MlWorkload.Interpolation,
+];
+
+/**
+ * FL-455: smart search (image embeddings) and faces (detection and recognition) may run on Frameleaf
+ * Cloud only while its catalogue offers exactly this server's pinned model for them
+ * (`cloud-model-identity.ts`) and the feature has its own consent. Search text is always encoded on
+ * this network.
+ */
+export const FRAMELEAF_CLOUD_CATALOG_WORKLOADS: readonly MlWorkload[] = [MlWorkload.Clip, MlWorkload.Face];
+
+/** Every workload a Frameleaf Cloud destination may be allowed (FL-455). */
+export const FRAMELEAF_CLOUD_ELIGIBLE_WORKLOADS: readonly MlWorkload[] = [
+  ...FRAMELEAF_CLOUD_ML_WORKLOADS,
+  ...FRAMELEAF_CLOUD_CATALOG_WORKLOADS,
 ];
 
 /** The workloads only the separate restoration worker serves (FL-114, FL-72, FL-162 Smooth motion). */
@@ -1412,6 +1429,12 @@ export enum MediaOperationKind {
    * records the estimate, the cloud job and every photo's input, and the job is polled until it ends.
    */
   CloudDescriptionBatch = 'cloud_description_batch',
+  /**
+   * FL-455: one Frameleaf Cloud smart search or faces batch, a frozen set of one owner's photos sent as one
+   * cloud job (`clip` or `face`, named in the snapshot). Each result is accepted only when it was made by
+   * this server's own model, and is stored exactly as this server's own result would be.
+   */
+  CloudLibraryBatch = 'cloud_library_batch',
   /**
    * FL-162 (`CLD-202`): a Frameleaf Cloud restoration, upscaling or Smooth motion job for one asset,
    * preview or full. The snapshot pins the prepared inputs, model, request, estimate and consent; the
@@ -2300,6 +2323,8 @@ export enum JobName {
    * every batch's next step (estimate, submit, poll, cancel, settle).
    */
   CloudMlDescriptionBatch = 'CloudMlDescriptionBatch',
+  /** FL-455: one pass over Frameleaf Cloud smart search and faces batches: batching, then each batch's next step. */
+  CloudMlLibraryBatch = 'CloudMlLibraryBatch',
   /** FL-164: the cloud backup schedule's tick: queue a backup run unless an operation is in progress. */
   CloudBackupSchedule = 'CloudBackupSchedule',
   /** FL-362: the one backup schedule's tick: back up each place that is on, one after another. */
@@ -2459,6 +2484,8 @@ export enum DatabaseLock {
    * enrols, issues certificates and listens, however many containers run one.
    */
   FrameleafEdge = 963,
+  /** FL-455: one pass over Frameleaf Cloud smart search and faces batches runs at a time, across every worker. */
+  FrameleafCloudMlLibraryBatch = 964,
   /** FL-162: the kept Frameleaf Cloud job estimates change one at a time, so a confirmation is taken once. */
   FrameleafCloudMlJobEstimates = 970,
   /** FL-292: claims of a new server happen one at a time. */

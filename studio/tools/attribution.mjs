@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { lstat, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parseJsonRejectingDuplicateKeys } from '../../scripts/frameleaf-studio-contracts.mjs';
+import { assertReviewedDecisions } from './resource-policy.mjs';
 
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const readJson = async (file) => parseJsonRejectingDuplicateKeys(await readFile(file, 'utf8'), file);
@@ -28,8 +29,8 @@ async function expectedAttribution(studio, engine) {
     assert.ok(resource.id && !ids.has(resource.id), `Invalid resource identity: ${resource.id}`);
     ids.add(resource.id);
     assert.ok(resource.basis && resource.locator && Array.isArray(resource.files), `Missing resource evidence: ${resource.id}`);
-    // No resource has completed rights and runtime qualification in this slice.
-    assert.deepEqual(resource.decisions, { redistribution: 'blocked', localRuntime: 'blocked', hostedUse: 'blocked' }, `Unreviewed resource approval: ${resource.id}`);
+    // Only licensed model rows are reviewed as allowed (FL-451); every other row stays blocked.
+    assertReviewedDecisions(resource, `Unreviewed resource approval: ${resource.id}`);
     for (const evidence of resource.evidence) {
       assert.equal(digest(await regularFile(studio, evidence.path)), evidence.sha256, `Resource evidence changed: ${resource.id}`);
     }

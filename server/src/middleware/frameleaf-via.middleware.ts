@@ -15,21 +15,36 @@ import { type FrameleafVia, claimsFrameleafVia, frameleafVia } from 'src/utils/f
  * closed instead of letting remote visitors in as if they were at home. A request with neither header
  * never went through the edge worker and is unmarked (`frameleafVia: null`). Every other
  * `X-Frameleaf-*` header a client sent is then dropped, so nothing later in the request can read a
- * claim the edge worker did not make; the one exception is `x-frameleaf-worker-session`, the render
- * worker's session credential, which this server issued and checks where it is used.
+ * claim the edge worker did not make. The exceptions are credentials this server issued or authorized
+ * and checks where they are used: render-worker credentials, installation-signed desktop request
+ * proofs and, only on a request that did not come through the edge worker, `x-frameleaf-manager` (the
+ * Manager's machine credential, sent from inside the server container over loopback).
  *
  * A split deployment that runs the edge worker in another container than the API must set
  * `FRAMELEAF_EDGE_SECRET` explicitly and give both the same value; otherwise each generates its own.
  */
+
+/**
+ * The Frameleaf Manager's machine credential (`/run/frameleaf/manager-token`), sent over loopback from
+ * inside the server container; never accepted through the edge worker.
+ * ponytail: lives here, not in `RequestHeader`, because `src/enum.ts` is hash-locked by the schema catalog.
+ */
+export const MANAGER_TOKEN_HEADER = 'x-frameleaf-manager';
 
 /** The error code of a request that claims an arrival the edge worker did not vouch for. */
 export const FRAMELEAF_VIA_UNVERIFIED = 'frameleaf_via_unverified';
 
 /**
  * Headers in the `X-Frameleaf-` namespace that clients legitimately send: credentials this server
- * issued itself, checked where they are used, never arrival claims. Everything else is dropped.
+ * issued or authorized itself, checked where they are used, never arrival claims. Everything else is dropped.
  */
-const CLIENT_CREDENTIAL_HEADERS = new Set<string>([RequestHeader.RenderWorkerSession]);
+const CLIENT_CREDENTIAL_HEADERS = new Set<string>([
+  RequestHeader.RenderWorkerSession,
+  'x-frameleaf-desktop-proof',
+  MANAGER_TOKEN_HEADER,
+]);
+/** Credentials only a caller on this host holds; dropped from anything that came through remote access. */
+const LOCAL_ONLY_CREDENTIAL_HEADERS = new Set<string>([MANAGER_TOKEN_HEADER]);
 
 export type FrameleafForwarded = {
   /** The visitor's address as the edge worker reported it. */
@@ -76,10 +91,17 @@ export const readFrameleafArrival = (headers: IncomingHttpHeaders, edgeSecret: s
   };
 };
 
-/** Drop every client-supplied `X-Frameleaf-*` header except the credentials this server issued. */
-export const stripFrameleafHeaders = (headers: IncomingHttpHeaders) => {
+/**
+ * Drop every client-supplied `X-Frameleaf-*` header except the credentials this server issued. A
+ * `remote` request (one the edge worker received) also loses the local-only Manager credential.
+ */
+export const stripFrameleafHeaders = (headers: IncomingHttpHeaders, remote: boolean) => {
   for (const name of Object.keys(headers)) {
-    if (name.toLowerCase().startsWith('x-frameleaf-') && !CLIENT_CREDENTIAL_HEADERS.has(name.toLowerCase())) {
+    const lower = name.toLowerCase();
+    if (
+      lower.startsWith('x-frameleaf-') &&
+      (!CLIENT_CREDENTIAL_HEADERS.has(lower) || (remote && LOCAL_ONLY_CREDENTIAL_HEADERS.has(lower)))
+    ) {
       delete headers[name];
     }
   }
@@ -97,7 +119,7 @@ export const frameleafViaMiddleware =
       });
       return;
     }
-    stripFrameleafHeaders(request.headers);
+    stripFrameleafHeaders(request.headers, arrival.via !== null);
     const marked = request as FrameleafRequest;
     marked.frameleafVia = arrival.via;
     marked.frameleafForwarded = arrival.forwarded;

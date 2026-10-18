@@ -5,6 +5,7 @@ import { AssetVisibility } from 'src/enum.js';
 import {
   applyLockedVisibilityPolicy,
   collectFilterIds,
+  filterNamesPeople,
   filterUsesLocation,
   requirePetFilterAllowed,
   usesLocationFilter,
@@ -65,6 +66,28 @@ describe(applyLockedVisibilityPolicy.name, () => {
 
     const branched = { or: [{ isFavorite: { eq: true } }, { visibility: { eq: AssetVisibility.Timeline } }] };
     expect(applyLockedVisibilityPolicy(unelevatedAuth(), branched).visibility).toEqual({ ne: AssetVisibility.Locked });
+  });
+});
+
+describe(filterNamesPeople.name, () => {
+  const [personA, personB] = ['00000000-0000-4000-8000-00000000000a', '00000000-0000-4000-8000-00000000000b'];
+
+  it('should be true for a top-level "all of" or "any of" people condition', () => {
+    for (const personIds of [{ all: [personA, personB] }, { any: [personA, personB] }]) {
+      expect(filterNamesPeople({ personIds })).toBe(true);
+    }
+    expect(filterNamesPeople({ personIds: { all: [personA], none: [personB] }, city: { eq: 'Oslo' } })).toBe(true);
+  });
+
+  it('should be false for "none of" alone', () => {
+    expect(filterNamesPeople({ personIds: { none: [personA] } })).toBe(false);
+  });
+
+  it('should be false without people, or with people only inside an `or` branch', () => {
+    expect(filterNamesPeople(undefined)).toBe(false);
+    expect(filterNamesPeople({})).toBe(false);
+    expect(filterNamesPeople({ personIds: {} })).toBe(false);
+    expect(filterNamesPeople({ or: [{ personIds: { any: [personA] } }, { city: { eq: 'Oslo' } }] })).toBe(false);
   });
 });
 

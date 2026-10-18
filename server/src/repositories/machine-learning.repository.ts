@@ -6,7 +6,10 @@ import { basename, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import z from 'zod';
+import type { Transaction } from 'kysely';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
+import type { DB } from 'src/schema/index.js';
+import type { DesktopModelProfile } from 'src/utils/desktop-model-catalogue.js';
 import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import type { MlContainerReport } from 'src/utils/hardware-check.js';
 import { MachineLearningConfig } from 'src/dtos/config.dto.js';
@@ -32,12 +35,20 @@ import {
   MlDestinationKind,
   MlWorkload,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { fetchJobText } from 'src/queue/http.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
 import { readConfig } from 'src/utils/config.js';
+import { faceEntries } from 'src/utils/desktop-face.js';
+import { ocrEntries } from 'src/utils/desktop-ocr.js';
+import { parseBoundFaceResult } from 'src/utils/face-result.js';
+import { canonicalJson } from 'src/utils/object.js';
+import { parseBoundOcrResult } from 'src/utils/ocr-result.js';
 import { recoveryMlRefusal } from 'src/utils/recovery-ml-authority.js';
 import {
   RestorationInference,
@@ -271,7 +282,20 @@ export type MlUsage = {
  * so a call cannot reach a destination the caller did not name. `record` is the accounting
  * hook the selection owner installs; the repository calls it exactly once per request.
  */
+export type DesktopPoolOptions = {
+  jobId?: string | null;
+  modelName: string;
+  ocr?: MachineLearningConfig['ocr'];
+  face?: MachineLearningConfig['facialRecognition'];
+  assertConfig: (tx?: Transaction<DB>) => Promise<void>;
+};
+export type DesktopPoolSelector = (selection: MlSelection, options: DesktopPoolOptions) => Promise<MlSelection>;
+
 export type MlSelection = {
+  /** Internal admitted background pool; never reconstructed from an API response. */
+  desktopFace?: (payload: ModelPayload, entries: unknown) => Promise<unknown>;
+  desktopOcr?: (payload: ModelPayload, entries: unknown) => Promise<unknown>;
+  desktopClip?: (payload: ModelPayload, profile: DesktopModelProfile) => Promise<unknown>;
   destinationId: string;
   kind: MlDestinationKind;
   workload: MlWorkload;
@@ -466,6 +490,7 @@ export const sameEndpoint = (a: MlEndpoint | null, b: MlEndpoint | null) =>
 @Injectable()
 export class MachineLearningRepository implements RestorationInference {
   private _config?: MachineLearningConfig;
+  private desktopPoolSelector: DesktopPoolSelector | null = null;
   /** FL-159: the Frameleaf Cloud check, registered by the cloud processing service. */
   private cloudProber: CloudMlProber | null = null;
   private probeCache = new Map<string, { authToken?: string; authorityIdentity?: string; probe: MlEndpointProbe }>();
@@ -483,6 +508,7 @@ export class MachineLearningRepository implements RestorationInference {
     private authority?: MlDestinationRepository,
     private configRepo?: ConfigRepository,
     private metadataRepo?: SystemMetadataRepository,
+    private clipIndex?: DesktopClipIndexRepository,
   ) {
     this.logger.setContext(MachineLearningRepository.name);
   }
@@ -945,11 +971,24 @@ export class MachineLearningRepository implements RestorationInference {
    * the destination was the caller's explicit choice and moving the media elsewhere would
    * silently change where it goes.
    */
-  private async predict<T>(selection: MlSelection, payload: ModelPayload, config: MachineLearningRequest): Promise<T> {
+  private async predict<T>(
+    selection: MlSelection,
+    payload: ModelPayload,
+    config: MachineLearningRequest,
+    bound?: { binding: Record<string, unknown>; parse: (value: unknown) => T; path?: 'predict-face-bound' },
+  ): Promise<T> {
+    if (selection.desktopClip || selection.desktopOcr || selection.desktopFace)
+      throw new Error('desktop_bound_profile_required');
     if (selection.endpoint.cloud) {
       throw new CloudJobsUnavailableError(selection.workload);
     }
     const formData = await this.getFormData(payload, config);
+    if (bound) {
+      formData.set('binding', JSON.stringify(bound.binding));
+      const input = formData.get('image') ?? formData.get('text');
+      const size = input instanceof Blob ? input.size : Buffer.byteLength(input ?? '');
+      if (!size || size > 16 * 1024 * 1024) throw new Error('producer_input_invalid');
+    }
     const bytesSent = await this.measure(payload);
     const started = Date.now();
     const usage = (outcome: MlUsage['outcome'], bytesReceived: number): MlUsage => ({
@@ -964,12 +1003,15 @@ export class MachineLearningRepository implements RestorationInference {
     let body: string;
     try {
       await this.authorize(selection.endpoint);
-      ({ response, body } = await fetchJobText(new URL('predict', selection.endpoint.url), {
-        method: 'POST',
-        headers: this.authHeaders(selection.endpoint),
-        body: formData,
-        redirect: 'error',
-      }));
+      ({ response, body } = await fetchJobText(
+        new URL(bound?.path ?? (bound ? 'predict-bound' : 'predict'), selection.endpoint.url),
+        {
+          method: 'POST',
+          headers: this.authHeaders(selection.endpoint),
+          body: formData,
+          redirect: 'error',
+        },
+      ));
       await this.authorize(selection.endpoint);
     } catch (error: Error | unknown) {
       this.probeCache.delete(selection.endpoint.url);
@@ -987,6 +1029,17 @@ export class MachineLearningRepository implements RestorationInference {
       );
     }
 
+    if (bound) {
+      let result: T;
+      try {
+        result = bound.parse(JSON.parse(body));
+      } catch {
+        selection.record(usage('failure', body.length));
+        throw new Error('producer_result_invalid');
+      }
+      selection.record(usage('success', body.length));
+      return result;
+    }
     selection.record(usage('success', body.length));
     return JSON.parse(body) as T;
   }
@@ -999,14 +1052,51 @@ export class MachineLearningRepository implements RestorationInference {
     return Buffer.byteLength(payload.text);
   }
 
-  async detectFaces(selection: MlSelection, imagePath: string, { modelName, minScore }: FaceDetectionOptions) {
-    const request = {
-      [ModelTask.FACIAL_RECOGNITION]: {
-        [ModelType.DETECTION]: { modelName, options: { minScore } },
-        [ModelType.RECOGNITION]: { modelName },
+  async detectBoundFaces(selection: MlSelection, imagePath: string, profile: DesktopModelProfile) {
+    if (
+      selection.workload !== MlWorkload.Face ||
+      profile.workload !== 'face' ||
+      profile.embeddingDimensions !== 512 ||
+      profile.spec.fixtureKind !== 'image' ||
+      profile.modelKey !== profile.spec.modelKey
+    )
+      throw new Error('producer_input_invalid');
+    const { protocolVersion, modelKey, entries, models, preprocessingSha256 } = profile.spec;
+    return this.predict(selection, { imagePath }, entries as MachineLearningRequest, {
+      path: 'predict-face-bound',
+      binding: { protocolVersion, modelKey, entries, models, preprocessingSha256 },
+      parse: (value) => {
+        const response = z
+          .strictObject({
+            protocolVersion: z.literal(1),
+            modelKey: z.literal(profile.modelKey),
+            preprocessingSha256: z.literal(profile.spec.preprocessingSha256),
+            result: z.unknown(),
+          })
+          .parse(value);
+        return parseBoundFaceResult(response.result);
       },
-    };
-    const response = await this.predict<FacialRecognitionResponse>(selection, { imagePath }, request);
+    });
+  }
+
+  async detectFaces(selection: MlSelection, imagePath: string, { modelName, minScore }: FaceDetectionOptions) {
+    const request = faceEntries({ modelName, minScore });
+    let response: FacialRecognitionResponse;
+    if (selection.desktopFace) {
+      const size = await this.measure({ imagePath });
+      if (!size || size > 16 * 1024 * 1024) throw new Error('desktop_input_size_invalid');
+      const started = Date.now();
+      let received = 0;
+      let outcome: 'success' | 'failure' = 'failure';
+      try {
+        const result = await selection.desktopFace({ imagePath }, request);
+        response = parseBoundFaceResult(result);
+        received = Buffer.byteLength(JSON.stringify(result));
+        outcome = 'success';
+      } finally {
+        selection.record({ bytesSent: size, bytesReceived: received, durationMs: Date.now() - started, outcome });
+      }
+    } else response = await this.predict<FacialRecognitionResponse>(selection, { imagePath }, request);
     return {
       imageHeight: response.imageHeight,
       imageWidth: response.imageWidth,
@@ -1014,15 +1104,199 @@ export class MachineLearningRepository implements RestorationInference {
     };
   }
 
+  setDesktopPoolSelector(selector: DesktopPoolSelector | null) {
+    this.desktopPoolSelector = selector;
+  }
+
+  async selectBackgroundPool(selection: MlSelection, jobId?: string | null): Promise<MlSelection> {
+    if (!queueExecution.getStore() || ![MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face].includes(selection.workload))
+      return selection;
+    if (!this.desktopPoolSelector) throw new Error('desktop_pool_authority_unavailable');
+    const ocr = selection.workload === MlWorkload.Ocr ? structuredClone(this.config.ocr) : undefined;
+    const face = selection.workload === MlWorkload.Face ? structuredClone(this.config.facialRecognition) : undefined;
+    const modelName = face?.modelName ?? ocr?.modelName ?? this.config.clip.modelName;
+    return this.desktopPoolSelector(selection, {
+      jobId,
+      modelName,
+      ...(ocr && { ocr }),
+      ...(face && { face }),
+      assertConfig: (tx?: Transaction<DB>) =>
+        face
+          ? this.assertDesktopFaceConfig(selection, faceEntries(face), tx, face)
+          : ocr
+            ? this.assertDesktopOcrConfig(selection, ocrEntries(ocr), tx, ocr)
+            : this.assertDesktopPoolConfig(selection, modelName, tx),
+    });
+  }
+
+  async assertDesktopPoolConfig(
+    selection: Pick<MlSelection, 'kind' | 'endpoint'>,
+    modelName: string,
+    tx?: Transaction<DB>,
+  ): Promise<void> {
+    const current =
+      this.configRepo && this.metadataRepo
+        ? (
+            await readConfig({
+              configRepo: this.configRepo,
+              metadataRepo: tx ? new SystemMetadataRepository(tx) : this.metadataRepo,
+              logger: this.logger,
+            })
+          ).machineLearning
+        : this.config;
+    if (
+      !current.enabled ||
+      !current.clip.enabled ||
+      current.clip.modelName !== modelName ||
+      (selection.kind === MlDestinationKind.Local && !current.urls.includes(selection.endpoint.url))
+    )
+      throw new Error('desktop_pool_config_changed');
+  }
+
+  async assertDesktopOcrConfig(
+    selection: Pick<MlSelection, 'kind' | 'endpoint'>,
+    entries: unknown,
+    tx?: Transaction<DB>,
+    expected?: MachineLearningConfig['ocr'],
+  ): Promise<void> {
+    const current =
+      this.configRepo && this.metadataRepo
+        ? (
+            await readConfig({
+              configRepo: this.configRepo,
+              metadataRepo: tx ? new SystemMetadataRepository(tx) : this.metadataRepo,
+              logger: this.logger,
+            })
+          ).machineLearning
+        : this.config;
+    if (
+      !current.enabled ||
+      !current.ocr.enabled ||
+      canonicalJson(ocrEntries(current.ocr)) !== canonicalJson(entries) ||
+      (expected && canonicalJson(current.ocr) !== canonicalJson(expected)) ||
+      (selection.kind === MlDestinationKind.Local && !current.urls.includes(selection.endpoint.url))
+    )
+      throw new Error('desktop_pool_config_changed');
+  }
+
+  async assertDesktopFaceConfig(
+    selection: Pick<MlSelection, 'kind' | 'endpoint'>,
+    entries: unknown,
+    tx?: Transaction<DB>,
+    expected?: MachineLearningConfig['facialRecognition'],
+  ): Promise<void> {
+    const current =
+      this.configRepo && this.metadataRepo
+        ? (
+            await readConfig({
+              configRepo: this.configRepo,
+              metadataRepo: tx ? new SystemMetadataRepository(tx) : this.metadataRepo,
+              logger: this.logger,
+            })
+          ).machineLearning
+        : this.config;
+    if (
+      !current.enabled ||
+      !current.facialRecognition.enabled ||
+      canonicalJson(faceEntries(current.facialRecognition)) !== canonicalJson(entries) ||
+      (expected && canonicalJson(current.facialRecognition) !== canonicalJson(expected)) ||
+      (selection.kind === MlDestinationKind.Local && !current.urls.includes(selection.endpoint.url))
+    )
+      throw new Error('desktop_pool_config_changed');
+  }
+
+  async captureClipRead() {
+    if (this.clipIndex) return this.clipIndex.captureRead();
+    return {
+      assertCurrent: () => Promise.resolve(),
+      publish: <T>(write: () => Promise<T>) => write(),
+    };
+  }
+
+  async clipCacheKey(modelName: string, language?: string): Promise<string> {
+    const selected = await this.clipIndex?.selectProfile(modelName, 'text', language);
+    return selected ? `${selected.binding.revisionId}:${selected.profile.modelKey}` : 'legacy';
+  }
+
+  async assertClipModel(modelName: string): Promise<void> {
+    await this.clipIndex?.selectProfile(modelName, 'image');
+  }
+
   async encodeImage(selection: MlSelection, imagePath: string, { modelName }: MachineLearningConfig['clip']) {
+    const selected = await this.clipIndex?.selectProfile(modelName, 'image');
+    if (selected) {
+      const result = await this.encodeBoundClip(selection, { imagePath }, selected.profile);
+      await this.clipIndex!.assertCurrent(selected.binding);
+      return result;
+    }
     const request = { [ModelTask.SEARCH]: { [ModelType.VISUAL]: { modelName } } };
     const response = await this.predict<ClipVisualResponse>(selection, { imagePath }, request);
+    if (await this.clipIndex?.getActive()) throw new Error('desktop_clip_index_changed');
     return response[ModelTask.SEARCH];
   }
 
-  async encodeText(selection: MlSelection, text: string, { language, modelName }: TextEncodingOptions) {
+  async encodeBoundClip(selection: MlSelection, payload: ModelPayload, profile: DesktopModelProfile) {
+    const image = 'imagePath' in payload;
+    if (
+      ![MlWorkload.Clip, MlWorkload.PetRecognition].includes(selection.workload) ||
+      image === 'text' in payload ||
+      image !== (profile.spec.fixtureKind === 'image') ||
+      profile.modelKey !== profile.spec.modelKey
+    )
+      throw new Error('producer_input_invalid');
+    const size = await this.measure(payload);
+    if (!size || size > 16 * 1024 * 1024) throw new Error('producer_input_invalid');
+    const { protocolVersion, modelKey, entries, models, preprocessingSha256 } = profile.spec;
+    const parse = (value: unknown) => {
+      const parsed = z
+        .strictObject({
+          protocolVersion: z.literal(1),
+          modelKey: z.literal(profile.modelKey),
+          preprocessingSha256: z.literal(profile.spec.preprocessingSha256),
+          result: z.unknown(),
+        })
+        .parse(value);
+      return parseBoundClipResult(parsed.result, profile);
+    };
+    if (selection.desktopClip) {
+      const started = Date.now();
+      let received = 0;
+      let outcome: 'success' | 'failure' = 'failure';
+      try {
+        const result = await selection.desktopClip(payload, profile);
+        received = Buffer.byteLength(JSON.stringify(result));
+        const value = parse({ protocolVersion, modelKey, preprocessingSha256, result });
+        outcome = 'success';
+        return value;
+      } finally {
+        selection.record({ bytesSent: size, bytesReceived: received, durationMs: Date.now() - started, outcome });
+      }
+    }
+    return this.predict(selection, payload, entries as MachineLearningRequest, {
+      binding: { protocolVersion, modelKey, entries, models, preprocessingSha256 },
+      parse,
+    });
+  }
+
+  async encodeText(selection: MlSelection, text: string, options: TextEncodingOptions) {
+    const result = await this.encodeTextWithProvenance(selection, text, options);
+    return typeof result === 'string' ? result : result.embedding;
+  }
+
+  async encodeTextWithProvenance(selection: MlSelection, text: string, { language, modelName }: TextEncodingOptions) {
+    // FL-455: search text is always encoded on this network, never on Frameleaf Cloud
+    if (selection.endpoint.cloud) {
+      throw new CloudJobsUnavailableError('search text');
+    }
+    const selected = await this.clipIndex?.selectProfile(modelName, 'text', language);
+    if (selected) {
+      const result = await this.encodeBoundClip(selection, { text }, selected.profile);
+      await this.clipIndex!.assertCurrent(selected.binding);
+      return result;
+    }
     const request = { [ModelTask.SEARCH]: { [ModelType.TEXTUAL]: { modelName, options: { language } } } };
     const response = await this.predict<ClipTextualResponse>(selection, { text }, request);
+    if (await this.clipIndex?.getActive()) throw new Error('desktop_clip_index_changed');
     return response[ModelTask.SEARCH];
   }
 
@@ -1031,12 +1305,23 @@ export class MachineLearningRepository implements RestorationInference {
     imagePath: string,
     { modelName, minDetectionScore, minRecognitionScore, maxResolution }: OcrOptions,
   ) {
-    const request = {
-      [ModelTask.OCR]: {
-        [ModelType.DETECTION]: { modelName, options: { minScore: minDetectionScore, maxResolution } },
-        [ModelType.RECOGNITION]: { modelName, options: { minScore: minRecognitionScore } },
-      },
-    };
+    const request = ocrEntries({ modelName, minDetectionScore, minRecognitionScore, maxResolution });
+    if (selection.desktopOcr) {
+      const started = Date.now();
+      const size = await this.measure({ imagePath });
+      if (!size || size > 16 * 1024 * 1024) throw new Error('desktop_input_size_invalid');
+      let received = 0;
+      let outcome: 'success' | 'failure' = 'failure';
+      try {
+        const result = await selection.desktopOcr({ imagePath }, request);
+        const response = parseBoundOcrResult(result);
+        received = Buffer.byteLength(JSON.stringify(result));
+        outcome = 'success';
+        return response.ocr;
+      } finally {
+        selection.record({ bytesSent: size, bytesReceived: received, durationMs: Date.now() - started, outcome });
+      }
+    }
     const response = await this.predict<OcrResponse>(selection, { imagePath }, request);
     return response[ModelTask.OCR];
   }
