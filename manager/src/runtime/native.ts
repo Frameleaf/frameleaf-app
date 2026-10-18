@@ -389,7 +389,7 @@ export class NativeHost implements NativeRuntime {
       owner.fault ??= new Refusal('native_restore_timeout');
       this.stopOwner(owner);
       owner.child?.kill();
-    }, 300_000);
+    }, 7_200_000);
     timer.unref();
     owner.selection = {
       operationId,
