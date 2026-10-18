@@ -42,6 +42,14 @@ for await(const line of {[Symbol.asyncIterator]:()=>lines}){
   emit({protocolVersion:1,state:'stopped'});break;
  }
  const request=JSON.parse(line);
+ if(request.action==='cleanup-checkpoint'){
+  if(Object.keys(request).sort().join(',')!=='action,checkpoint,operationId,protocolVersion'||request.checkpoint.operationId!==request.operationId)process.exit(8);
+  const cleaned={protocolVersion:1,...request.checkpoint,state:'checkpoint-cleaned'};
+  if(scenario==='cleanup-dump')cleaned.dump={...cleaned.dump,sha256:'e'.repeat(64)};
+  if(scenario==='cleanup-action')cleaned.state='checkpoint';
+  if(scenario==='cleanup-failure'){emit({protocolVersion:1,state:'checkpoint-cleanup-failed',operationId:request.operationId,code:'host_checkpoint_cleanup_failed'});continue;}
+  emit(cleaned);continue;
+ }
  if(Object.keys(request).sort().join(',')!=='action,operationId,protocolVersion'||request.protocolVersion!==1||request.action!=='checkpoint')process.exit(8);
  pending=request.operationId;
  if(scenario==='hold')continue;
@@ -278,6 +286,56 @@ test(
       await refused;
       await assert.rejects(host.stop(), /native_checkpoint_timeout/);
       t.mock.timers.reset();
+    });
+  },
+);
+
+test(
+  'cleanup binds the exact checkpoint receipt and does not accept another action or dump',
+  { skip: process.platform === 'win32' },
+  async () => {
+    await fixture('normal', async (host) => {
+      await host.start();
+      const receipt = await host.checkpoint(operation);
+      assert.equal(typeof host.cleanupCheckpoint, 'function');
+      const cleaned = await host.cleanupCheckpoint(receipt);
+      assert.deepEqual(cleaned, { ...receipt, state: 'checkpoint-cleaned' });
+      assert.equal(host.status().state, 'running');
+      await assert.rejects(
+        host.cleanupCheckpoint({ ...receipt, sourceRevision: 'e'.repeat(40) }),
+        /native_checkpoint_request_invalid/,
+      );
+    });
+    for (const scenario of ['cleanup-dump', 'cleanup-action'])
+      await fixture(scenario, async (host) => {
+        await host.start();
+        const receipt = await host.checkpoint(operation);
+        await assert.rejects(
+          host.cleanupCheckpoint(receipt),
+          /native_host_protocol_invalid/,
+        );
+        await assert.rejects(host.stop());
+      });
+  },
+);
+
+test(
+  'a cleanup failure is scoped and does not terminate the live owner',
+  { skip: process.platform === 'win32' },
+  async () => {
+    await fixture('cleanup-failure', async (host) => {
+      await host.start();
+      const receipt = await host.checkpoint(operation);
+      assert.equal(typeof host.cleanupCheckpoint, 'function');
+      await assert.rejects(
+        host.cleanupCheckpoint(receipt),
+        /native_checkpoint_cleanup_failed/,
+      );
+      assert.equal(host.status().state, 'running');
+      assert.equal(
+        (await host.checkpoint(nextOperation)).operationId,
+        nextOperation,
+      );
     });
   },
 );

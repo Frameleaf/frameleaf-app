@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { isAbsolute, resolve } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { digest, Refusal, type Operation } from '../contracts.js';
 import { Store } from '../store.js';
@@ -75,10 +76,21 @@ const CheckpointFailed = z
     code: z.literal('host_checkpoint_failed'),
   })
   .strict();
+const CheckpointCleaned = Checkpoint.extend({
+  state: z.literal('checkpoint-cleaned'),
+}).strict();
+const CheckpointCleanupFailed = CheckpointFailed.extend({
+  state: z.literal('checkpoint-cleanup-failed'),
+  code: z.literal('host_checkpoint_cleanup_failed'),
+}).strict();
 const CheckpointReply = z.discriminatedUnion('state', [
   Checkpoint,
   CheckpointFailed,
+  CheckpointCleaned,
+  CheckpointCleanupFailed,
 ]);
+type NativeCheckpointCleaned = z.infer<typeof CheckpointCleaned>;
+
 export type NativeCheckpoint = z.infer<typeof Checkpoint>;
 export { Checkpoint as NativeCheckpointSchema };
 const Quiescent = Running.omit({ state: true })
@@ -105,6 +117,10 @@ export interface NativeRuntime {
     operationId: string,
     signal?: AbortSignal,
   ): Promise<NativeCheckpoint>;
+  cleanupCheckpoint(
+    checkpoint: NativeCheckpoint,
+    signal?: AbortSignal,
+  ): Promise<NativeCheckpointCleaned>;
 }
 
 function deferred<T>() {
@@ -131,7 +147,10 @@ type Owner = {
   stopTimer?: ReturnType<typeof setTimeout>;
   checkpoint?: {
     operationId: string;
-    work: ReturnType<typeof deferred<NativeCheckpoint>>;
+    work: ReturnType<
+      typeof deferred<NativeCheckpoint | NativeCheckpointCleaned>
+    >;
+    expected?: NativeCheckpoint;
     cleanup: () => void;
   };
 };
@@ -194,6 +213,32 @@ export class NativeHost implements NativeRuntime {
     operationId: string,
     signal?: AbortSignal,
   ): Promise<NativeCheckpoint> {
+    return this.requestCheckpoint(operationId, signal).then((value) =>
+      Checkpoint.parse(value),
+    );
+  }
+  cleanupCheckpoint(
+    checkpoint: NativeCheckpoint,
+    signal?: AbortSignal,
+  ): Promise<NativeCheckpointCleaned> {
+    const parsed = Checkpoint.safeParse(checkpoint);
+    if (
+      !parsed.success ||
+      parsed.data.manifestSha256 !== this.installation.manifestSha256 ||
+      parsed.data.sourceRevision !== this.installation.sourceRevision
+    )
+      return Promise.reject(new Refusal('native_checkpoint_request_invalid'));
+    return this.requestCheckpoint(
+      parsed.data.operationId,
+      signal,
+      parsed.data,
+    ).then((value) => CheckpointCleaned.parse(value));
+  }
+  private requestCheckpoint(
+    operationId: string,
+    signal?: AbortSignal,
+    expected?: NativeCheckpoint,
+  ): Promise<NativeCheckpoint | NativeCheckpointCleaned> {
     if (!checkpointOperation.safeParse(operationId).success)
       return Promise.reject(new Refusal('native_checkpoint_request_invalid'));
     if (signal?.aborted)
@@ -209,7 +254,7 @@ export class NativeHost implements NativeRuntime {
       return Promise.reject(new Refusal('native_checkpoint_unavailable'));
     if (owner.checkpoint)
       return Promise.reject(new Refusal('native_checkpoint_busy'));
-    const work = deferred<NativeCheckpoint>();
+    const work = deferred<NativeCheckpoint | NativeCheckpointCleaned>();
     const abort = () => this.stopOwner(owner);
     const timer = setTimeout(() => {
       owner.fault ??= new Refusal('native_checkpoint_timeout');
@@ -219,18 +264,25 @@ export class NativeHost implements NativeRuntime {
     owner.checkpoint = {
       operationId,
       work,
+      expected,
       cleanup: () => {
         clearTimeout(timer);
         signal?.removeEventListener('abort', abort);
       },
     };
     signal?.addEventListener('abort', abort, { once: true });
+    let checkpoint;
+    if (expected) {
+      const { protocolVersion: _version, state: _state, ...receipt } = expected;
+      checkpoint = receipt;
+    }
     try {
       owner.child.stdin.write(
         JSON.stringify({
           protocolVersion: 1,
-          action: 'checkpoint',
+          action: expected ? 'cleanup-checkpoint' : 'checkpoint',
           operationId,
+          ...(checkpoint ? { checkpoint } : {}),
         }) + '\n',
       );
     } catch {
@@ -516,16 +568,44 @@ export class NativeHost implements NativeRuntime {
             receipt.operationId !== request.operationId
           )
             return fail('native_host_protocol_invalid');
+          const cleanup =
+            receipt.state === 'checkpoint-cleaned' ||
+            receipt.state === 'checkpoint-cleanup-failed';
+          if (Boolean(request.expected) !== cleanup)
+            return fail('native_host_protocol_invalid');
           if (
-            receipt.state === 'checkpoint' &&
-            (receipt.manifestSha256 !== this.installation.manifestSha256 ||
-              receipt.sourceRevision !== this.installation.sourceRevision)
-          )
-            return fail('native_host_identity_changed');
+            receipt.state === 'checkpoint' ||
+            receipt.state === 'checkpoint-cleaned'
+          ) {
+            if (
+              receipt.manifestSha256 !== this.installation.manifestSha256 ||
+              receipt.sourceRevision !== this.installation.sourceRevision
+            )
+              return fail('native_host_identity_changed');
+            if (
+              request.expected &&
+              !isDeepStrictEqual(
+                { ...receipt, state: 'checkpoint' },
+                request.expected,
+              )
+            )
+              return fail('native_host_protocol_invalid');
+          }
           owner.checkpoint = undefined;
           request.cleanup();
-          if (receipt.state === 'checkpoint') request.work.resolve(receipt);
-          else request.work.reject(new Refusal('native_checkpoint_failed'));
+          if (
+            receipt.state === 'checkpoint' ||
+            receipt.state === 'checkpoint-cleaned'
+          )
+            request.work.resolve(receipt);
+          else
+            request.work.reject(
+              new Refusal(
+                cleanup
+                  ? 'native_checkpoint_cleanup_failed'
+                  : 'native_checkpoint_failed',
+              ),
+            );
         } else if (
           Stopped.safeParse(value).success &&
           owner.stopping &&

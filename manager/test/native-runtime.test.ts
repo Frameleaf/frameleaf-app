@@ -29,6 +29,9 @@ async function fixture(
     checkpoint: async () => {
       throw new Refusal('native_checkpoint_unavailable');
     },
+    cleanupCheckpoint: async () => {
+      throw new Refusal('native_checkpoint_unavailable');
+    },
   };
   try {
     await run(store, runtime);
