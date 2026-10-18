@@ -7,10 +7,13 @@ import { Store } from '../store.js';
 import {
   NativeRestoreInputBinding,
   NativeRestorePreparedSchema,
+  NativeRestoreVerifiedSchema,
+  NativeRestoreSelectionSchema,
   NativeRestoreReply,
   type NativeRestoreBinding,
   type NativeRestorePrepared,
   type NativeRestoreVerified,
+  type NativeRestoreSelection,
 } from './native-restore-contract.js';
 
 const localPath = z
@@ -89,6 +92,14 @@ const Checkpoint = z
       .strict(),
   })
   .strict();
+const RestoreSafety = z
+  .object({
+    snapshotId: z.string().regex(/^[a-f0-9]{64}$/),
+    recoverySha256: z.string().regex(/^[a-f0-9]{64}$/),
+    checkpoint: Checkpoint,
+  })
+  .strict();
+export type NativeRestoreSafety = z.infer<typeof RestoreSafety>;
 const CheckpointFailed = z
   .object({
     protocolVersion: z.literal(1),
@@ -148,6 +159,11 @@ export interface NativeRuntime {
     prepared: NativeRestorePrepared,
     signal?: AbortSignal,
   ): Promise<NativeRestoreVerified>;
+  selectRestore(
+    proof: NativeRestoreVerified,
+    safety: NativeRestoreSafety,
+    signal?: AbortSignal,
+  ): Promise<NativeRestoreSelection>;
   stop(): Promise<StopReceipt>;
   checkpoint(
     operationId: string,
@@ -185,6 +201,13 @@ type Owner = {
   startupTimer?: ReturnType<typeof setTimeout>;
   stopTimer?: ReturnType<typeof setTimeout>;
   verificationIds: Set<string>;
+  verifiedRestore?: NativeRestoreVerified;
+  selection?: {
+    operationId: string;
+    receipt?: NativeRestoreSelection;
+    work: ReturnType<typeof deferred<NativeRestoreSelection>>;
+    cleanup: () => void;
+  };
   restore?: {
     prepared?: Omit<NativeRestorePrepared, 'protocolVersion'>;
     binding: NativeRestoreBinding;
@@ -289,8 +312,9 @@ export class NativeHost implements NativeRuntime {
       owner.fault
     )
       return Promise.reject(new Refusal('native_restore_unavailable'));
-    if (owner.restore || owner.checkpoint)
+    if (owner.restore || owner.checkpoint || owner.selection)
       return Promise.reject(new Refusal('native_restore_busy'));
+    owner.verifiedRestore = undefined;
     const binding = parsed.data,
       work = deferred<NativeRestorePrepared | NativeRestoreVerified>();
     const abort = () => this.stopOwner(owner);
@@ -316,6 +340,75 @@ export class NativeHost implements NativeRuntime {
           action: prepared ? 'verify-restore' : 'prepare-restore',
           operationId: binding.operationId,
           ...(prepared ? { prepared } : { binding }),
+        }) + '\n',
+      );
+    } catch {
+      owner.fault ??= new Refusal('native_host_pipe_failed');
+      this.stopOwner(owner);
+    }
+    return work.promise;
+  }
+  selectRestore(
+    input: NativeRestoreVerified,
+    snapshot: NativeRestoreSafety,
+    signal?: AbortSignal,
+  ): Promise<NativeRestoreSelection> {
+    const proof = NativeRestoreVerifiedSchema.safeParse(input),
+      safety = RestoreSafety.safeParse(snapshot);
+    if (
+      !proof.success ||
+      !safety.success ||
+      safety.data.checkpoint.operationId !==
+        proof.data.prepared.binding.operationId ||
+      safety.data.checkpoint.manifestSha256 !==
+        this.installation.manifestSha256 ||
+      safety.data.checkpoint.sourceRevision !== this.installation.sourceRevision
+    )
+      return Promise.reject(new Refusal('native_restore_request_invalid'));
+    if (signal?.aborted)
+      return Promise.reject(new Refusal('native_restore_cancelled'));
+    const owner = this.owner;
+    if (
+      !owner?.child ||
+      owner.mode !== 'restore-prepare' ||
+      !owner.readySeen ||
+      owner.stopping ||
+      owner.finished ||
+      owner.fault
+    )
+      return Promise.reject(new Refusal('native_restore_unavailable'));
+    if (owner.restore || owner.checkpoint || owner.selection)
+      return Promise.reject(new Refusal('native_restore_busy'));
+    if (!isDeepStrictEqual(owner.verifiedRestore, proof.data))
+      return Promise.reject(new Refusal('native_restore_proof_invalid'));
+    owner.verifiedRestore = undefined;
+    const work = deferred<NativeRestoreSelection>(),
+      operationId = proof.data.prepared.binding.operationId;
+    const abort = () => this.stopOwner(owner);
+    const timer = setTimeout(() => {
+      owner.fault ??= new Refusal('native_restore_timeout');
+      this.stopOwner(owner);
+      owner.child?.kill();
+    }, 300_000);
+    timer.unref();
+    owner.selection = {
+      operationId,
+      work,
+      cleanup: () => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', abort);
+      },
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+    const { protocolVersion, state, ...checkpoint } = safety.data.checkpoint;
+    try {
+      owner.child.stdin.write(
+        JSON.stringify({
+          protocolVersion: 1,
+          action: 'select-restore',
+          operationId,
+          verificationId: proof.data.verificationId,
+          safety: { ...safety.data, checkpoint },
         }) + '\n',
       );
     } catch {
@@ -590,7 +683,12 @@ export class NativeHost implements NativeRuntime {
     });
   }
   private stopOwner(owner: Owner): void {
-    if (owner.stopping || owner.finished) return;
+    if (owner.finished) return;
+    owner.verifiedRestore = undefined;
+    owner.selection?.work.reject(
+      owner.fault ?? new Refusal('native_restore_cancelled'),
+    );
+    if (owner.stopping) return;
     owner.stopping = true;
     // Keep the operation binding until the cancelled child reply drains.
     owner.checkpoint?.cleanup();
@@ -625,6 +723,16 @@ export class NativeHost implements NativeRuntime {
       owner.fault ?? new Refusal('native_restore_cancelled'),
     );
     owner.restore = undefined;
+    owner.verifiedRestore = undefined;
+    owner.selection?.cleanup();
+    if (owner.selection) {
+      if (owner.fault || !owner.selection.receipt)
+        owner.selection.work.reject(
+          owner.fault ?? new Refusal('native_restore_selection_failed'),
+        );
+      else owner.selection.work.resolve(owner.selection.receipt);
+      owner.selection = undefined;
+    }
     if (owner.fault) {
       owner.ready.reject(owner.fault);
       owner.closed.reject(owner.fault);
@@ -730,7 +838,22 @@ export class NativeHost implements NativeRuntime {
         ).safeParse(value);
         const checkpoint = CheckpointReply.safeParse(value);
         const restore = NativeRestoreReply.safeParse(value);
-        if (running.success && !owner.readySeen && !owner.stoppedSeen) {
+        const selection = NativeRestoreSelectionSchema.safeParse(value);
+        if (selection.success) {
+          const request = owner.selection;
+          if (
+            !owner.readySeen ||
+            owner.stoppedSeen ||
+            owner.mode !== 'restore-prepare' ||
+            !request ||
+            request.receipt ||
+            selection.data.operationId !== request.operationId
+          )
+            return fail('native_host_protocol_invalid');
+          request.receipt = selection.data;
+          owner.stopping = true; // Selection is terminal; close input without sending a second command.
+          owner.child?.stdin.end();
+        } else if (running.success && !owner.readySeen && !owner.stoppedSeen) {
           const expected = this.installation;
           if (
             running.data.manifestSha256 !== expected.manifestSha256 ||
@@ -768,6 +891,8 @@ export class NativeHost implements NativeRuntime {
           )
             return fail('native_host_protocol_invalid');
           if (verifying) owner.verificationIds.add(receipt.verificationId);
+          if (receipt.state === 'restore-verified' && !owner.stopping)
+            owner.verifiedRestore = structuredClone(receipt);
           owner.restore = undefined;
           request.cleanup();
           if (

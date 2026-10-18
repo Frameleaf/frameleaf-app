@@ -80,3 +80,15 @@ export const NativeRestoreReply = z.discriminatedUnion('state', [
     })
     .strict(),
 ]);
+
+export const NativeRestoreSelectionSchema = z
+  .object({
+    protocolVersion: z.literal(1),
+    state: z.literal('restore-activation-pending'),
+    operationId,
+    generation: operationId,
+  })
+  .strict();
+export type NativeRestoreSelection = z.infer<
+  typeof NativeRestoreSelectionSchema
+>;
