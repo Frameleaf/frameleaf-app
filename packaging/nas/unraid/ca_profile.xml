@@ -3,4 +3,12 @@
   <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/brand-kit/frameleaf-app-icon.svg</Icon>
   <WebPage>https://frameleaf.app/docs</WebPage>
   <Forum>https://frameleaf.app/help</Forum>
+  <Discord>https://discord.gg/bMP5vjyC</Discord>
+  <Reddit></Reddit>
+  <Twitter>https://x.com/frameleafapp</Twitter>
+  <Facebook></Facebook>
+  <DonateLink></DonateLink>
+  <DonateText></DonateText>
+  <Photo>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-overview.jpg</Photo>
+  <Video>https://www.youtube.com/watch?v=rNgyZZoZoEg</Video>
 </CommunityApplications>
