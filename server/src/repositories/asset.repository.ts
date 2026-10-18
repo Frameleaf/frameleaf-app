@@ -102,6 +102,7 @@ import {
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
 import { globToPostgresRegex } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
+import { filterNamesPeople } from 'src/utils/search-filter.js';
 import { escapeLikeTerm } from 'src/utils/trash-review.js';
 
 export type AssetStats = Record<AssetType, number>;
@@ -426,6 +427,13 @@ const timelineVisibility = (options: AssetBuilderOptions) => {
   const ruleMatch = hiddenContentAssetIdExists(sql.ref('asset.id'), options.lockedRuleMatches);
   return sql<boolean>`(${visibility} or (${listed} and ${ruleMatch}))`;
 };
+/**
+ * Whether a timeline narrowed by people widens its owner scope to the photos in albums shared with
+ * the viewer: one `personId`, or the Filters panel's people ("all of", "any of", "none of", FL-425).
+ * A Locked request never does: Locked media is owner-private, so other members' items never join it.
+ */
+const widensToSharedAlbums = (options: TimeBucketOptions) =>
+  (!!options.personId || filterNamesPeople(options.filter)) && options.visibility !== AssetVisibility.Locked;
 /**
  * LIB-P3: the owner's own Best Photos, scoped as `BestPhotosRepository.getBestPhotos` scopes them: their
  * own images and videos with a score row of theirs at `minScore` or higher. The owner test stands on its
@@ -2317,10 +2325,8 @@ export class AssetRepository {
           qb.where((eb) => {
             // TODO this should become a shared `hasAccess` style helper once implement sharing in more places
             const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
-            // a person's shared-album media widens the owner scope, except for a Locked request:
-            // Locked media is owner-private, so other members' Locked items never join it
-            const widenToSharedAlbums = !!options.personId && !!auth && options.visibility !== AssetVisibility.Locked;
-            return widenToSharedAlbums ? eb.or([isOwner, inSharedAlbum(eb, auth!.user.id)]) : isOwner;
+            // the people's shared-album media widens the owner scope (`widensToSharedAlbums`)
+            return auth && widensToSharedAlbums(options) ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
           }),
         )
         .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
@@ -2619,9 +2625,8 @@ export class AssetRepository {
           .$if(!!options.userIds, (qb) =>
             qb.where((eb) => {
               const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
-              // see getTimeBuckets: a Locked request never widens to other members' shared-album media
-              const widenToSharedAlbums = !!options.personId && options.visibility !== AssetVisibility.Locked;
-              return widenToSharedAlbums ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
+              // as getTimeBuckets: the people's shared-album media widens the owner scope, never a Locked request
+              return widensToSharedAlbums(options) ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
             }),
           )
           .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
