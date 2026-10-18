@@ -52,6 +52,7 @@ const Bootstrap = z
       .strict(),
     controllerSha256: z.string().regex(/^[a-f0-9]{64}$/),
     backupEngine: BackupEngine,
+    backupKey: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
     name: z.string().trim().min(1).max(120),
     release: releaseTag,
     password: z
@@ -60,7 +61,8 @@ const Bootstrap = z
       .max(256)
       .regex(/^[^\r\n\0]+$/),
   })
-  .strict();
+  .strict()
+  .refine((value) => value.backupKey !== value.password);
 export type NativeBootstrap = z.infer<typeof Bootstrap>;
 
 /** One private inherited pipe from the desktop supervisor; never HTTP, argv, env or a state file. */
@@ -293,6 +295,7 @@ export class NativeService {
   private readonly lifecycle: NativeOperations;
   readonly runtime: NativeRuntime;
   readonly backupCommand: typeof command;
+  readonly backupPassword: () => Promise<string>;
   private readonly tls: NativeBootstrap['tls'];
   private readonly publicInstallation: {
     id: string;
@@ -311,7 +314,8 @@ export class NativeService {
     Object.freeze(bootstrap.backupEngine);
     this.backupCommand = nativeBackupCommand(bootstrap.backupEngine);
     if (store.get('installation')) throw new Refusal('manager_runtime_changed');
-    const { password, tls, ...configuration } = bootstrap;
+    const { password, backupKey, tls, ...configuration } = bootstrap;
+    this.backupPassword = async () => backupKey;
     const descriptor = {
       ...configuration,
       tlsCertificatePemSha256: createHash('sha256')

@@ -59,7 +59,7 @@ const releases = new Releases(join(directory, 'releases'), seed);
 const backupRoot = process.env.MANAGER_BACKUP_ROOT ?? (native ? join(directory, 'backups') : undefined);
 if (!backupRoot || backupRoot !== resolve(backupRoot))
   throw new Error('MANAGER_BACKUP_ROOT must be an absolute mounted directory');
-const backups = new Backups(join(backupRoot, 'frameleaf-database'), join(directory, 'recovery-key'), native?.backupCommand ?? command);
+const backups = new Backups(join(backupRoot, 'frameleaf-database'), native?.backupPassword ?? join(directory, 'recovery-key'), native?.backupCommand ?? command);
 const unraidConfig = '/run/frameleaf-host/docker.cfg';
 async function databaseDefaults() {
   const config = await readFile(unraidConfig, 'utf8').catch((error: NodeJS.ErrnoException) => {

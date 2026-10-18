@@ -48,6 +48,7 @@ async function fixture(run: (f: any) => Promise<void>) {
   };
   const bootstrap = {
     protocolVersion: 2,
+    backupKey: 'k'.repeat(43),
     installation,
     controllerSha256: sha256('synthetic controller'),
     backupEngine: {
@@ -110,6 +111,15 @@ test('native bootstrap is bounded, complete, strict and keeps credentials out of
       runtime: 'native',
     });
     assert.ok(!JSON.stringify(service.installation()).includes(password));
+    assert.equal(await service.backupPassword(), bootstrap.backupKey);
+    assert.ok(
+      !JSON.stringify(service.installation()).includes(bootstrap.backupKey),
+    );
+    assert.ok(
+      !JSON.stringify(store.get('native-installation')).includes(
+        bootstrap.backupKey,
+      ),
+    );
     assert.ok(
       !JSON.stringify(store.get('native-installation')).includes(password),
     );
@@ -127,6 +137,10 @@ test('native bootstrap is bounded, complete, strict and keeps credentials out of
       },
       { ...bootstrap, controllerSha256: '0'.repeat(64) },
       { ...bootstrap, backupEngine: undefined },
+      { ...bootstrap, backupKey: undefined },
+      { ...bootstrap, backupKey: 'short' },
+      { ...bootstrap, password: bootstrap.backupKey },
+      { ...bootstrap, backupKey: 'k'.repeat(42) + '\n' },
       {
         ...bootstrap,
         backupEngine: { executable: 'restic', sha256: 'a'.repeat(64) },

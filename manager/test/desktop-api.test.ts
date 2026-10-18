@@ -63,6 +63,7 @@ async function fixture(run: (f: any) => Promise<void>, native = false) {
         store,
         {
           protocolVersion: 2,
+          backupKey: 'k'.repeat(43),
           tls: {
             certificatePem: 'synthetic certificate',
             privateKeyPem: 'synthetic private key',
