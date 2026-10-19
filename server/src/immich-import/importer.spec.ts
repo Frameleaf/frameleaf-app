@@ -275,3 +275,41 @@ describe('mapped external originals', () => {
     expect(statements.some((sql) => sql.includes("status='activated'"))).toBe(false);
   });
 });
+
+describe('media location', () => {
+  // Stock Immich compose: library mounted at /data, no IMMICH_MEDIA_LOCATION, saved location /data.
+  const stockCompose = (saved: ImportRow[]) => {
+    const { importer } = createImporter();
+    importer.config.mediaRoots = [{ source: '/data', target: '/data' }];
+    importer.config.media = {
+      mode: 'manager-in-place',
+      authority: 'frameleaf-manager',
+      operationId: 'operation-1',
+      deploymentId: 'deployment-1',
+    };
+    vi.spyOn(importer.source, 'batches').mockImplementation(async function* () {});
+    const sourceQuery = importer.source.db.query.bind(importer.source.db);
+    vi.spyOn(importer.source.db, 'query').mockImplementation((sql, args) =>
+      sql.includes("key='MediaLocation'") ? Promise.resolve(saved) : sourceQuery(sql, args),
+    );
+    const writes: unknown[][] = [];
+    const query = importer.destination.query.bind(importer.destination);
+    vi.spyOn(importer.destination, 'query').mockImplementation((sql, args) => {
+      if (sql.includes('MediaLocation')) writes.push(args ?? []);
+      return query(sql, args);
+    });
+    return { importer, writes };
+  };
+
+  it("carries the source's saved media location so the server accepts the imported paths", async () => {
+    const { importer, writes } = stockCompose([{ location: '/data' }]);
+    await importer.run();
+    expect(writes).toEqual([[JSON.stringify({ location: '/data' })]]);
+  });
+
+  it('writes nothing when the source never saved a location', async () => {
+    const { importer, writes } = stockCompose([]);
+    await importer.run();
+    expect(writes).toEqual([]);
+  });
+});
