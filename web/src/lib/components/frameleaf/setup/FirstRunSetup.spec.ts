@@ -140,6 +140,8 @@ describe('FirstRunSetup (FL-176)', () => {
       const { container } = render(FirstRunSetup, { initial: welcome(), authenticated: true });
       await waitFor(() => expect(screen.getByRole('button', { name: /Continue setup/ })).not.toHaveAttribute('inert'));
       land(imported);
+      // one macrotask: the request settles and redraws, before any count-up frame could run
+      await new Promise((resolve) => setTimeout(resolve, 0));
       await tick();
       expect(shown(container)).toEqual(['80', '0', '4', '306 MB']);
     });

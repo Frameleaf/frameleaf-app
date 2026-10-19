@@ -204,14 +204,16 @@
     serverLoading = true;
     // The welcome figures land on their own: the hardware check runs a live benchmark, which right
     // after an import can take seconds, and the figures must not sit behind it.
-    const libraryRequest = (setup.flow === 'existing' ? getFrameleafSetupLibrary() : Promise.resolve(null)).then(
-      (value) => {
+    const libraryRequest = (async () => {
+      try {
+        const value = setup.flow === 'existing' ? await getFrameleafSetupLibrary() : null;
         // Counted up only while the intro is still arriving; once it has settled the totals show at once.
         countLibrary = !introReady;
-        library = value;
-      },
-      () => (library = null),
-    );
+        library = value ?? null;
+      } catch {
+        library = null;
+      }
+    })();
     const [storageResult, configResult, , summary, hardwareResult, usersResult] = await Promise.allSettled([
       getFrameleafSetupStorage(),
       getConfig(),
