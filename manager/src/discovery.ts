@@ -45,7 +45,37 @@ export const COMPATIBLE_SETTINGS = [
   'trash',
   'user',
   'backup',
+  // Immich 2.x/3.x keys Frameleaf's server reads unchanged.
+  'integrityChecks',
+  'nightlyTasks',
+  'oauth',
+  'templates',
+  'theme',
 ];
+export const unsupportedSettings = (settings: Record<string, unknown> | null) =>
+  Object.keys(settings ?? {}).filter((k) => !COMPATIBLE_SETTINGS.includes(k));
+const SECRET_KEY = /secret|password|token|api[_-]?key/i;
+export const MASKED = '[unchanged]';
+/** Secret values never reach the settings editor; saving the placeholder keeps the source value. */
+export function maskSettings(value: unknown, key = ''): unknown {
+  if (Array.isArray(value)) return value.map((item) => maskSettings(item, key));
+  if (value && typeof value === 'object')
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, maskSettings(v, k)]));
+  return SECRET_KEY.test(key) && typeof value === 'string' && value ? MASKED : value;
+}
+export function unmaskSettings(value: unknown, original: unknown, key = ''): unknown {
+  if (value === MASKED && SECRET_KEY.test(key)) {
+    if (typeof original !== 'string') throw new Refusal('masked_secret_missing');
+    return original;
+  }
+  if (Array.isArray(value))
+    return value.map((item, i) => unmaskSettings(item, Array.isArray(original) ? original[i] : undefined, key));
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, unmaskSettings(v, (original as Record<string, unknown> | undefined)?.[k], k)]),
+    );
+  return value;
+}
 export function sourceFingerprint(containers: Container[]): string {
   // Docker returns Mounts (and aliases) in no fixed order: sort every unordered list before hashing.
   // Env, Cmd and Entrypoint keep their order; it is meaningful.
@@ -208,7 +238,7 @@ export class Discovery {
       environment: Object.fromEntries(SAFE_ENV.filter((k) => env[k]).map((k) => [k, env[k]])),
       settings,
       settingsAuthority: env.IMMICH_CONFIG_FILE ? 'file' : 'database',
-      unsupportedSettings: Object.keys(settings ?? {}).filter((k) => !COMPATIBLE_SETTINGS.includes(k)),
+      unsupportedSettings: unsupportedSettings(settings),
       fingerprint: sourceFingerprint([...workers, dbContainer]),
       platform: app.Config.Labels?.['net.unraid.docker.managed'] ? 'unraid' : 'docker',
       postgres: facts.postgres,

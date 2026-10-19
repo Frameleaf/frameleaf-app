@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { Store } from './store.js';
 import { Docker } from './docker.js';
-import { Discovery, COMPATIBLE_SETTINGS } from './discovery.js';
+import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupportedSettings } from './discovery.js';
 import { Releases, type VerifiedRelease } from './releases.js';
 import { Backups, sourceBackups } from './backups.js';
 import { Fencing } from './fencing.js';
@@ -215,7 +215,42 @@ export class Operations {
   async discover() {
     const found = await this.discovery.list();
     for (const source of found.sources) this.store.set(`source:${source.id}`, source);
-    return found;
+    return { ...found, sources: found.sources.map((source) => this.editedSource(source)) };
+  }
+  /** Applies the administrator's settings edit while the source settings it was made against are unchanged. */
+  private editedSource(source: Source): Source {
+    const edit = this.store.get<{ base: string; settings: Record<string, unknown> }>(`source-settings:${source.id}`);
+    if (!edit || edit.base !== digest(source.settings ?? {})) return source;
+    return {
+      ...source,
+      settings: edit.settings,
+      unsupportedSettings: unsupportedSettings(edit.settings),
+      settingsBase: edit.base,
+    };
+  }
+  sourceSettings(id: string) {
+    const source = this.store.get<Source>(`source:${id}`);
+    if (!source) throw new Refusal('select_source_installation');
+    const edited = this.editedSource(source);
+    return {
+      settings: maskSettings(edited.settings ?? {}),
+      supported: COMPATIBLE_SETTINGS,
+      source: publicSource(edited),
+    };
+  }
+  /** `null` discards the edit and returns to the source installation's own settings. */
+  async saveSourceSettings(id: string, settings: Record<string, unknown> | null) {
+    if (this.installation()) throw new Refusal('installation_already_exists');
+    const source = this.store.get<Source>(`source:${id}`);
+    if (!source) throw new Refusal('select_source_installation');
+    await this.discovery.revalidate(source);
+    if (settings === null) this.store.set(`source-settings:${id}`, null);
+    else
+      this.store.set(`source-settings:${id}`, {
+        base: digest(source.settings ?? {}),
+        settings: unmaskSettings(settings, source.settings ?? {}) as Record<string, unknown>,
+      });
+    return this.sourceSettings(id);
   }
   async librarySummary() {
     return JSON.parse(
@@ -225,17 +260,19 @@ export class Operations {
       ),
     );
   }
-  private async reviewedSource(id: string) {
-    const source = this.store.get<Source>(`source:${id}`);
-    if (!source) throw new Refusal('select_source_installation');
-    await this.discovery.revalidate(source);
-    if (source.unsupportedSettings.length) throw new Refusal('incompatible_settings_require_review');
+  private async reviewedSource(id: string, requireCompatible = true) {
+    const stored = this.store.get<Source>(`source:${id}`);
+    if (!stored) throw new Refusal('select_source_installation');
+    await this.discovery.revalidate(stored);
+    const source = this.editedSource(stored);
+    // Review still opens so the administrator can see and edit the settings; cutover cannot start.
+    if (requireCompatible && source.unsupportedSettings.length) throw new Refusal('incompatible_settings_require_review');
     if (source.platform === 'unraid' && !this.autostartFile) throw new Refusal('unraid_autostart_file_required');
     return { source, backup: recentBackup(await sourceBackups(this.docker, source), source) ?? null };
   }
   async sourceReview(id: string) {
     if (this.installation()) throw new Refusal('installation_already_exists');
-    const { source, backup } = await this.reviewedSource(id);
+    const { source, backup } = await this.reviewedSource(id, false);
     return {
       source: publicSource(source),
       backup: backup ? { action: 'reuse', name: backup.name, takenAt: backup.takenAt } : { action: 'create' },
@@ -504,7 +541,7 @@ export class Operations {
     if (source) {
       await this.step(operation, 'capture-fenced-settings', async () => {
         await this.fencing.verify(source);
-        const settings =
+        const fenced =
           source.settingsAuthority === 'database'
             ? JSON.parse(
                 await this.docker.sql(
@@ -513,6 +550,10 @@ export class Operations {
                 ),
               )
             : source.settings;
+        // An edit made against settings that changed before the source stopped is not applied blind.
+        if (source.settingsBase && source.settingsAuthority === 'database' && digest(fenced) !== source.settingsBase)
+          throw new Refusal('source_changed_review_again');
+        const settings = source.settingsBase ? source.settings : fenced;
         if (
           settings &&
           (typeof settings !== 'object' ||

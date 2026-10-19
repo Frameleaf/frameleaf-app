@@ -102,6 +102,7 @@ class Errors implements ExceptionFilter {
           : error instanceof ZodError
             ? 'invalid_request'
             : 'manager_operation_failed',
+      ...(error instanceof Refusal && error.detail ? { detail: error.detail } : {}),
     });
   }
 }
@@ -200,6 +201,18 @@ class Api {
   @Post('source-review') sourceReview(@Body() input: unknown) {
     const { sourceId } = z.object({ sourceId: ReviewInput.shape.sourceId.unwrap() }).strict().parse(input);
     return operations.sourceReview(sourceId);
+  }
+  @Post('source-settings') sourceSettings(@Body() input: unknown) {
+    const { sourceId, settings } = z
+      .object({
+        sourceId: ReviewInput.shape.sourceId.unwrap(),
+        settings: z.record(z.string(), z.unknown()).nullable().optional(),
+      })
+      .strict()
+      .parse(input);
+    return settings === undefined
+      ? operations.sourceSettings(sourceId)
+      : operations.saveSourceSettings(sourceId, settings);
   }
   @Get('storage') async storage() {
     const roots = [

@@ -35,6 +35,8 @@
     backupsLoaded = $state(false);
   let sourceId = $state(''),
     sourceReview = $state<any>(null),
+    advancedSettings = $state(''),
+    advancedOpen = $state(false),
     tag = $state(''),
     review = $state<any>(null);
   let libraryName = $state('Home library');
@@ -224,7 +226,7 @@
         recoveryKey = '';
         dialog?.close();
       }
-      throw new Error(value.code ?? 'request_failed');
+      throw Object.assign(new Error(value.code ?? 'request_failed'), { detail: value.detail });
     }
     if (value.csrf) csrf = value.csrf;
     return value;
@@ -236,7 +238,7 @@
     try {
       await work();
     } catch (e) {
-      error = e instanceof Error ? readable(e.message) : 'Could not complete this request';
+      error = e instanceof Error ? readable(e.message, (e as { detail?: string }).detail) : 'Could not complete this request';
     } finally {
       busy = false;
     }
@@ -339,7 +341,29 @@
   async function inspectSource() {
     sourceReview = await api('source-review', { sourceId });
     sources = sources.map((item) => (item.id === sourceId ? sourceReview.source : item));
+    advancedOpen = sourceReview.source.unsupportedSettings.length > 0;
     step = 1;
+  }
+  function applySourceSettings(result: any) {
+    advancedSettings = JSON.stringify(result.settings, null, 2);
+    sourceReview = { ...sourceReview, source: result.source };
+    sources = sources.map((item) => (item.id === sourceId ? result.source : item));
+  }
+  async function loadSourceSettings() {
+    applySourceSettings(await api('source-settings', { sourceId }));
+  }
+  async function saveSourceSettings(reset = false) {
+    let settings: unknown = null;
+    if (!reset) {
+      try {
+        settings = JSON.parse(advancedSettings);
+      } catch {
+        throw new Error('settings_not_json');
+      }
+      if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('settings_not_json');
+    }
+    applySourceSettings(await api('source-settings', { sourceId, settings }));
+    notify(reset ? 'Using the settings from your Immich installation' : 'Settings saved for this import');
   }
   async function prepare() {
     if (!document.querySelector<HTMLFormElement>('#configuration-form')?.reportValidity()) return;
@@ -620,7 +644,7 @@
           {:else if step === 1}
             {@render heading('Your library, in the same place', 'These exact mappings will be used by Frameleaf so existing photo paths keep working.')}
             <section class="card"><div class="card-header"><h2>Preserved media mappings</h2><span class="badge good">{source.mounts.length} mappings preserved</span></div>{@render mappings(source.mounts)}</section>
-            <section class="card mt16"><div class="card-header"><h2>Settings compatibility</h2></div><div class="settings-row"><span>Users, albums & permissions</span><span>Imported from database</span><span class="badge good">Preserved</span></div><div class="settings-row"><span>Compatible settings</span><span>{source.settingsAuthority === 'file' ? 'Configuration file' : 'Database'}</span><span class="badge good">{source.settings.length} settings</span></div><div class="settings-row"><span>Database connection</span><span>New credentials generated</span><span class="badge">Recreated</span></div>{#if source.unsupportedSettings.length}<div class="card-body">{@render notice('Settings require review', source.unsupportedSettings.join(', '), 'warning')}</div>{/if}<div class="card-body"><p class="meta">External sign-in callbacks and host-specific URLs may need updating for the new Frameleaf address. Compatible settings and credentials are preserved privately.</p></div></section>
+            <section class="card mt16"><div class="card-header"><h2>Settings compatibility</h2></div><div class="settings-row"><span>Users, albums & permissions</span><span>Imported from database</span><span class="badge good">Preserved</span></div><div class="settings-row"><span>Compatible settings</span><span>{source.settingsAuthority === 'file' ? 'Configuration file' : 'Database'}</span><span class="badge good">{source.settings.length} settings</span></div><div class="settings-row"><span>Database connection</span><span>New credentials generated</span><span class="badge">Recreated</span></div>{#if source.unsupportedSettings.length}<div class="card-body">{@render notice('Settings require review', `Frameleaf doesn’t recognise: ${source.unsupportedSettings.join(', ')}. Remove or rename them in Advanced settings below to continue.`, 'warning')}</div>{/if}<details class="disclosure" bind:open={advancedOpen} ontoggle={(event) => event.currentTarget.open && run(loadSourceSettings)}><summary>Advanced settings{source.settingsEdited ? ' · edited' : ''}</summary><p>The settings Frameleaf will start with, as JSON. Changes apply to this import only; your Immich installation is not changed. Passwords and secrets show as <code>[unchanged]</code> and keep their current value.</p><label class="field mt16"><span class="sr-only">Settings JSON</span><textarea class="settings-editor" spellcheck="false" bind:value={advancedSettings}></textarea></label><div class="actions mt16"><button class="button primary" disabled={busy} onclick={() => run(() => saveSourceSettings())}>Save settings</button>{#if source.settingsEdited}<button class="button quiet" disabled={busy} onclick={() => run(() => saveSourceSettings(true))}>Use Immich’s settings</button>{/if}</div></details><div class="card-body"><p class="meta">External sign-in callbacks and host-specific URLs may need updating for the new Frameleaf address. Compatible settings and credentials are preserved privately.</p></div></section>
             <section class="card mt16"><div class="card-header"><h2>Immich database backup</h2></div><div class="list-row"><Icon name="database"/><div><strong>{sourceReview.backup.action === 'reuse' ? 'Recent verified database backup found' : 'A new database backup is needed'}</strong><p>{sourceReview.backup.action === 'reuse' ? new Date(sourceReview.backup.takenAt).toLocaleString() + ' · Same installation · Readable dump verified' : 'No verified dump from the last 24 hours qualifies.'}</p></div><span class="badge" class:good={sourceReview.backup.action === 'reuse'}>{sourceReview.backup.action === 'reuse' ? 'Backup skipped' : 'Backup needed'}</span></div></section>
             <label class="check-row mt24"><input type="checkbox" bind:checked={mappingsAccepted}/><span>I’ve reviewed the mappings and settings that need attention.</span></label>
             <div class="wizard-footer"><button class="button quiet" onclick={() => step = 0}>Back</button><button class="button primary" disabled={!mappingsAccepted || source.unsupportedSettings.length > 0} onclick={() => step = 2}>{lastImportStep === 2 ? 'Review cutover' : 'Review database backup'}</button></div>

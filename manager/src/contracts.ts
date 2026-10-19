@@ -5,6 +5,8 @@ export class Refusal extends Error {
   constructor(
     readonly code: string,
     readonly status = 409,
+    /** Shown to the signed-in administrator beside the code, e.g. which container blocks a folder. */
+    readonly detail?: string,
   ) {
     super(code);
   }
@@ -51,6 +53,8 @@ export type Source = {
   settings: Record<string, unknown> | null;
   settingsAuthority: 'database' | 'file';
   unsupportedSettings: string[];
+  /** Set when the administrator edited the settings: digest of the source settings the edit was made against. */
+  settingsBase?: string;
   fingerprint: string;
   platform: 'docker' | 'unraid';
   postgres: {
@@ -148,9 +152,10 @@ export type NasManifest = {
   minimumVersions: { synologyDsm: string; truenas: string; unraid: string };
 };
 export function publicSource(source: Source) {
-  const { database, environment, settings, restart, ...safe } = source;
+  const { database, environment, settings, restart, settingsBase, ...safe } = source;
   return {
     ...safe,
+    settingsEdited: !!settingsBase,
     database: {
       name: database.name,
       user: database.user,

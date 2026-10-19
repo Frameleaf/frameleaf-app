@@ -119,6 +119,9 @@ const moveRefusals: Record<string, string> = {
   media_copy_still_running: 'The copy helper is still running. Stop safely and wait for it to exit before recovery.',
 };
 const refusals: Record<string, string> = {
+  settings_not_json: 'Settings must be a JSON object. Check for a missing comma or bracket, then save again.',
+  masked_secret_missing: 'A secret value can only be kept as [unchanged] where it already exists. Enter the value, or restore the original line.',
+  incompatible_settings_require_review: 'Some Immich settings aren’t recognised by Frameleaf. Review them in Advanced settings on the next step.',
   release_service_unavailable: 'Manager could not reach GitHub to check Frameleaf releases. Check this server can reach github.com, then try again.',
   release_not_eligible: 'This Frameleaf release is not offered to this server. Choose another release.',
   release_bundle_missing: 'This Frameleaf release is missing installation files Manager needs. Choose a newer release.',
@@ -135,7 +138,9 @@ const refusals: Record<string, string> = {
     'A Docker command did not finish. The Manager container log has the command, exit code and error output. Fix the cause, then resume.',
   docker_unavailable: 'Manager could not run Docker. Check that the Docker socket is mapped into Manager.',
   database_overlaps_existing_container_data:
-    'Another container can write inside this database folder. Choose a folder of its own, such as /mnt/user/appdata/frameleaf-databases. The Manager container log names the container.',
+    'Another container can write inside this database folder. Change that container’s mapping to read-only or a narrower folder, or choose a database folder outside it.',
+  database_path_not_mounted:
+    'Manager can only use a database folder inside one of its mapped database folders. Add the folder to Manager’s “Database parent” mapping and database roots, or choose one listed in the field.',
   source_version_unreachable:
     'Manager found this Immich server but could not ask it for its version. Check that it is running and healthy; Manager uses its IMMICH_PORT and IMMICH_HOST settings.',
   database_connection_ambiguous:
@@ -144,10 +149,11 @@ const refusals: Record<string, string> = {
   operation_failed:
     'This step stopped with an unexpected error. The Manager container log has the details. Completed steps are kept, so you can resume.',
 };
-export const readable = (value: string) => {
+export const readable = (value: string, detail?: string) => {
   const refused = /^server_refused_(\d{3})$/.exec(value);
   if (refused) return `The Frameleaf server refused Manager's request (${refused[1]}). Check the server logs, then resume.`;
-  return stepNames[value] ?? moveRefusals[value] ?? refusals[value] ?? value.replaceAll(/[_-]/g, ' ');
+  const text = stepNames[value] ?? moveRefusals[value] ?? refusals[value] ?? value.replaceAll(/[_-]/g, ' ');
+  return detail ? `${text} ${detail}` : text;
 };
 export function operationProgress(operation: JournalOperation, backupSkipped = false) {
   const ids = [
