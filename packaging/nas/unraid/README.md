@@ -33,9 +33,9 @@ shown are examples, not evidence of a qualified Unraid installation.
    chosen pool; do not assume a pool named `cache`. Database storage must be on
    supported local disk storage outside Docker's data root and `docker.img`.
 2. Leave **Manager HTTPS origin** blank and open Manager from the WebUI link
-   (`https://<NAS IP>:9443` or `https://tower.local:9443`). Only if you reach
+   (`https://<NAS IP>:2282` or `https://tower.local:2282`). Only if you reach
    Manager through a custom DNS name, set **Manager HTTPS origin** to that exact
-   address, for example `https://nas.example:9443`, and set **Advanced View →
+   address, for example `https://nas.example:2282`, and set **Advanced View →
    WebUI** to match; other hostnames are then refused with HTTP 403.
 3. Keep each storage mapping's **Host Path and Container Path identical**. When
    changing a folder, also update its corresponding advanced variable:

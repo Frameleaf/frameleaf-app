@@ -168,12 +168,14 @@ try {
     await gotoWithNetworkChangeRetry(page, origin);
     await page.getByLabel(/^Password/).fill('a new disposable password');
     await page.locator('main').getByRole('button', { name: 'Sign in', exact: true }).click();
-    await page.getByRole('button', { name: 'Local administrator menu' }).waitFor();
+    // Nothing is installed yet, so sign-in lands in the setup shell; its rail reaches Manager settings.
     await page
-      .getByRole('navigation', { name: 'Manager' })
+      .getByRole('complementary', { name: 'Setup progress' })
       .getByRole('button', { name: 'Manager settings', exact: true })
       .click();
     await page.getByRole('heading', { name: 'Manager settings', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Local administrator menu' }).waitFor();
+    await page.getByRole('navigation', { name: 'Manager' }).waitFor();
     assert.ok((await page.locator('main').innerText()).includes('Changed owner'));
     assert.equal(await page.locator('.brand-light').evaluate((image) => image.naturalWidth > 0), true);
     await page.getByRole('button', { name: 'Toggle light or dark theme' }).click();

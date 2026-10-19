@@ -1,9 +1,22 @@
+import { isIP } from 'node:net';
 import { posix } from 'node:path';
 import { Docker, environment, mounts, type Container } from './docker.js';
 import { Refusal, digest, type Source, type Mount } from './contracts.js';
 
-const OFFICIAL = /^(?:ghcr\.io\/immich-app\/immich-(?:server|microservices))(?::|@)/;
-const WORKER = /^(?:ghcr\.io\/immich-app\/immich-(?:server|microservices|machine-learning))(?::|@)/;
+// Recognised by repository name on any registry or owner (forks, mirrors, Docker Hub). Compatibility is
+// decided by the version the running server reports, never by the image name.
+const REPOSITORY = (names: string) =>
+  new RegExp(`^(?:[a-z0-9.-]+(?::\\d+)?\\/)?(?:[a-z0-9._-]+\\/)*immich-(?:${names})(?::|@)`, 'i');
+const OFFICIAL = REPOSITORY('server|microservices');
+const WORKER = REPOSITORY('server|microservices|machine-learning');
+export const isSourceServer = (image: string) => OFFICIAL.test(image);
+/** Where the Immich server listens inside its own container: IMMICH_PORT/IMMICH_HOST, else Immich's defaults. */
+export function versionUrl(env: Record<string, string | undefined>): string {
+  const port = /^\d{1,5}$/.test(env.IMMICH_PORT ?? '') && Number(env.IMMICH_PORT) <= 65535 ? Number(env.IMMICH_PORT) : 2283;
+  const host = env.IMMICH_HOST ?? '';
+  const address = ['', '0.0.0.0', '::', '[::]'].includes(host) || !isIP(host) ? '127.0.0.1' : isIP(host) === 6 ? `[${host}]` : host;
+  return `http://${address}:${port}/api/server/version`;
+}
 const SECRETS = [
   'DB_URL',
   'DB_HOSTNAME',
@@ -134,7 +147,9 @@ export class Discovery {
       user: decodeURIComponent(url?.username || env.DB_USERNAME || 'postgres'),
       password: decodeURIComponent(url?.password || env.DB_PASSWORD || ''),
     };
-    if (database.port !== 5432 || !database.password) throw new Refusal('unsupported_database_connection');
+    // Any port: Manager reaches the database from inside its own container or on its network.
+    if (!Number.isInteger(database.port) || database.port < 1 || database.port > 65535 || !database.password)
+      throw new Refusal('unsupported_database_connection');
     const facts = JSON.parse(
       await this.docker.sql(
         database,
@@ -149,10 +164,15 @@ export class Discovery {
       ),
     );
     const version = (
-      await this.docker.node(
-        app.Id,
-        `fetch('http://127.0.0.1:2283/api/server/version').then(r=>{if(!r.ok)throw Error();return r.json()}).then(v=>process.stdout.write('v'+v.major+'.'+v.minor+'.'+v.patch)).catch(()=>process.exit(1))`,
-      )
+      await this.docker
+        .node(
+          app.Id,
+          `fetch(process.argv[1]).then(r=>{if(!r.ok)throw Error();return r.json()}).then(v=>process.stdout.write('v'+v.major+'.'+v.minor+'.'+v.patch)).catch(()=>process.exit(1))`,
+          [versionUrl(env)],
+        )
+        .catch(() => {
+          throw new Refusal('source_version_unreachable');
+        })
     ).trim();
     if (!/^v\d+\.\d+\.\d+$/.test(version)) throw new Refusal('unknown_source_version');
     const project = app.Config.Labels?.['com.docker.compose.project'] ?? null;

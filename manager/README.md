@@ -16,7 +16,7 @@ Use `launch.sh`, `cosign.pub` and `ghcr.io/frameleaf/frameleaf-manager:latest`; 
 
 ```sh
 sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest "$STATE_FOLDER" "$LIBRARY_FOLDER" \
-  "$DATABASE_BACKUP_FOLDER" "https://server.example:9443" auto "$LAN_ADDRESS"
+  "$DATABASE_BACKUP_FOLDER" "https://server.example:2282" auto "$LAN_ADDRESS"
 ```
 
 `auto` detects Unraid's configured appdata location. On other Linux hosts, pass the desired appdata folder instead of `auto`. An explicit folder overrides the detected default. The launcher binds that folder into Manager at the same absolute host path and passes it as `MANAGER_DATABASE_ROOTS`. To offer more disks in the wizard, bind each approved folder at its identical host path and add it to this colon-separated environment variable. Do not mount the whole host filesystem to make a path picker work.

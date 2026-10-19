@@ -173,6 +173,21 @@ describe('large durable queue query work', () => {
         if (event.level === 'query') captured.push(event.query);
       },
     });
+    // The buffer budgets assume this spec's own VACUUM removed the dead rows it just made. An
+    // autovacuum ANALYZE holding a snapshot across that VACUUM kept them (228 buffers, not 8), and
+    // its samples would also replace the stale statistics checked below. This database is this
+    // file's own clone, so nothing else is affected.
+    for (const table of [
+      'job',
+      'job_attempt',
+      'job_run_item',
+      'job_selection',
+      'job_selection_run',
+      'job_selection_lineage',
+      'job_run',
+    ]) {
+      await sql`alter table ${sql.id(table)} set (autovacuum_enabled = false)`.execute(db);
+    }
   });
   afterAll(async () => db?.destroy());
 

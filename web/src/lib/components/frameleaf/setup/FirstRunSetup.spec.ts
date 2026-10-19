@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '$i18n/en.json';
@@ -104,6 +105,46 @@ describe('FirstRunSetup (FL-176)', () => {
     expect(await screen.findByText('We could not check the file records just now')).toBeInTheDocument();
     expect(screen.queryByText(/look healthy/)).toBeNull();
     expect(screen.queryByRole('link', { name: /Library Care/ })).toBeNull();
+  });
+
+  describe('the welcome figures after an Immich import', () => {
+    const welcome = () => {
+      const state = createSetup('existing');
+      const step = flowSteps('existing').findIndex((entry) => entry.id === 'welcome');
+      return { ...state, step, reached: step };
+    };
+    const imported = { items: 80, people: 0, albums: 4, bytes: 306e6 } as never;
+    // what is on screen: a counting figure's visible digits, or the plain figure
+    const shown = (container: HTMLElement) =>
+      [...container.querySelectorAll(':scope .frs-stats strong')].map(
+        (figure) => (figure.querySelector(':scope [aria-hidden="true"]') ?? figure).textContent,
+      );
+
+    beforeEach(() => {
+      // Right after an import the hardware check (a live benchmark) and the Library Care summary
+      // take seconds; the welcome figures must not wait for them.
+      sdkMock.getHardwareCheck.mockReturnValue(new Promise(() => {}) as never);
+      sdkMock.getSummary.mockReturnValue(new Promise(() => {}) as never);
+      sdkMock.updateFrameleafSetup.mockResolvedValue({} as never);
+    });
+
+    it('shows the real totals while slower checks are still out', async () => {
+      sdkMock.getFrameleafSetupLibrary.mockResolvedValue(imported);
+      const { container } = render(FirstRunSetup, { initial: welcome(), authenticated: true });
+      await waitFor(() => expect(shown(container)).toEqual(['80', '0', '4', '306 MB']));
+    });
+
+    it('shows totals that land after the intro at once, never counting up from 0', async () => {
+      let land!: (value: never) => void;
+      sdkMock.getFrameleafSetupLibrary.mockReturnValue(new Promise((resolve) => (land = resolve)) as never);
+      const { container } = render(FirstRunSetup, { initial: welcome(), authenticated: true });
+      await waitFor(() => expect(screen.getByRole('button', { name: /Continue setup/ })).not.toHaveAttribute('inert'));
+      land(imported);
+      // one macrotask: the request settles and redraws, before any count-up frame could run
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await tick();
+      expect(shown(container)).toEqual(['80', '0', '4', '306 MB']);
+    });
   });
 
   it('asks the existing library admin to sign in once', () => {

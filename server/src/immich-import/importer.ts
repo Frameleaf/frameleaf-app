@@ -110,6 +110,7 @@ export class ImmichImportService {
           });
         }
       }
+      await this.copyMediaLocation();
       await this.destination.query("UPDATE public.frameleaf_immich_import SET status='verifying'");
     });
   }
@@ -306,6 +307,31 @@ export class ImmichImportService {
       `INSERT INTO public.frameleaf_immich_import_checkpoint(table_name,complete)
       VALUES ($1,true) ON CONFLICT(table_name) DO UPDATE SET complete=true`,
       [table],
+    );
+  }
+
+  /** Imported paths start with the source's media root; without its saved location the server assumes the
+   * legacy default on first boot and refuses to start (InconsistentMediaLocation). Overwrites the fresh
+   * destination's own value, which described no assets. */
+  private async copyMediaLocation(): Promise<void> {
+    const [saved] = await this.source.db.query(
+      `SELECT value->>'location' AS location FROM public.system_metadata WHERE key='MediaLocation'`,
+    );
+    const location = saved?.location;
+    if (typeof location !== 'string' || !location) {
+      return;
+    }
+    let target: string;
+    try {
+      target = mapMediaPath(location, this.config.mediaRoots, this.config.media).target;
+    } catch {
+      // ponytail: an unmapped or relative root keeps the server's own path-based inference.
+      return;
+    }
+    await this.destination.query(
+      `INSERT INTO public.system_metadata(key,value) VALUES ('MediaLocation',$1::text::jsonb)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      [JSON.stringify({ location: target })],
     );
   }
 
