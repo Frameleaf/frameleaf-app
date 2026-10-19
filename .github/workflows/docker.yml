@@ -144,7 +144,8 @@ jobs:
   server-publish:
     name: Push Server (tested archive)
     needs: [changes, deploy-test, server]
-    if: needs.changes.outputs.server == 'true' && needs['deploy-test'].result == 'success'
+    # !cancelled(): the other image's build may be skipped, which would otherwise skip this job too.
+    if: ${{ !cancelled() && needs.changes.outputs.server == 'true' && needs.server.result == 'success' && needs['deploy-test'].result == 'success' }}
     uses: ./.github/workflows/local-multi-runner-build.yml
     permissions:
       contents: read
@@ -163,7 +164,7 @@ jobs:
   machine-learning-publish:
     name: Push ML CPU (tested archive)
     needs: [changes, deploy-test, machine-learning]
-    if: needs.changes.outputs['machine-learning'] == 'true' && needs['deploy-test'].result == 'success'
+    if: ${{ !cancelled() && needs.changes.outputs['machine-learning'] == 'true' && needs['machine-learning'].result == 'success' && needs['deploy-test'].result == 'success' }}
     uses: ./.github/workflows/local-multi-runner-build.yml
     permissions:
       contents: read
@@ -184,7 +185,7 @@ jobs:
   machine-learning-hardware:
     name: Build and Push ML hardware variants
     needs: [changes, deploy-test]
-    if: needs.changes.outputs['machine-learning'] == 'true' && needs['deploy-test'].result == 'success'
+    if: ${{ !cancelled() && needs.changes.outputs['machine-learning'] == 'true' && needs['deploy-test'].result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -229,7 +230,7 @@ jobs:
   retag-server:
     name: Re-Tag Server
     needs: [changes, integration, deploy-test]
-    if: needs.changes.outputs.server == 'false' && needs['deploy-test'].result == 'success'
+    if: ${{ !cancelled() && needs.changes.outputs.server == 'false' && needs['deploy-test'].result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -257,7 +258,7 @@ jobs:
   retag-machine-learning:
     name: Re-Tag ML
     needs: [changes, integration, deploy-test]
-    if: needs.changes.outputs['machine-learning'] == 'false' && needs['deploy-test'].result == 'success'
+    if: ${{ !cancelled() && needs.changes.outputs['machine-learning'] == 'false' && needs['deploy-test'].result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
