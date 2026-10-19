@@ -543,7 +543,7 @@ export class AuthService extends BaseService {
       const tokens = parse(headers.cookie || '')[AuthCookie.SharedLinkToken]?.split(',') ?? [];
       await requireSharedLinkUnlocked(
         this.cryptoRepository,
-        identityDirectory(this.configRepository),
+        () => identityDirectory(this.configRepository),
         authDto.sharedLink,
         tokens,
       );

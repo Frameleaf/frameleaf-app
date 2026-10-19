@@ -90,7 +90,7 @@ export class SharedLinkService extends BaseService {
     const sharedLink = await this.findOrFail(auth.user.id, auth.sharedLink.id, this.visitorOptions(auth));
     await requireSharedLinkUnlocked(
       this.cryptoRepository,
-      identityDirectory(this.configRepository),
+      () => identityDirectory(this.configRepository),
       sharedLink,
       authTokens,
     );

@@ -14,14 +14,14 @@ export const getSharedLinkToken = (
 
 export const requireSharedLinkUnlocked = async (
   crypto: CryptoRepository,
-  directory: string,
+  directory: () => string,
   sharedLink: { id: string; password: string | null },
   tokens: string[],
 ): Promise<void> => {
   if (!sharedLink.password) {
     return;
   }
-  const expected = await getSharedLinkToken(crypto, directory, { id: sharedLink.id, password: sharedLink.password });
+  const expected = await getSharedLinkToken(crypto, directory(), { id: sharedLink.id, password: sharedLink.password });
   if (tokens.every((token) => !sharedLinkSecretEqual(token, expected))) {
     throw new UnauthorizedException('Password required');
   }
