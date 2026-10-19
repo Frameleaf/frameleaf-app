@@ -123,6 +123,10 @@ export async function transferImportedWork(
         where id = ${runId}::uuid) is not null then 'ready' else 'enumerating' end`
     : undefined;
 
+  // The importer bulk-loads the journal and the freezes below bulk-load the run's memberships.
+  // Plan their reads from fresh statistics rather than whatever sample autovacuum last took;
+  // SKIP_LOCKED leaves a table alone while autovacuum is already analyzing it.
+  await sql`analyze (skip_locked) frameleaf_immich_import_work`.execute(db);
   const stages = IMPORT_DERIVED_STAGES.map(([kind, name]) => {
     const intent = intentFor(name);
     // Regenerating unverified vectors must not discard retained source face identities.
@@ -156,6 +160,7 @@ export async function transferImportedWork(
       and i.selection = ${JSON.stringify(personIntent.data)}::text::jsonb || p.data || jsonb_build_object('id', p.id)
   ) limit 1`.execute(db);
   if (missingPeople.length > 0) throw new ImportRefused('DERIVED_PERSON_WORK_MANIFEST_MISMATCH');
+  await sql`analyze (skip_locked) job_run_item, job_selection, job_selection_run`.execute(db);
 
   const stageNames = sql.join(
     stages.map(
