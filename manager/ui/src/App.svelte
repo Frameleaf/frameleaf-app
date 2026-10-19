@@ -159,8 +159,14 @@
   );
   const lastImportStep = $derived(importSteps.length - 1);
   // Setup follows the prototype's first-run flow: full-screen, dark, step rail instead of the admin shell.
+  // Maintenance on an existing installation (moves, updates, restores) stays in the admin shell.
   const setupMode = $derived(
-    !signedIn || ((screen === 'welcome' || setupScreens.includes(screen)) && !(installation && dashboard?.onboardingFinished)),
+    !signedIn ||
+      (installation
+        ? !dashboard?.onboardingFinished &&
+          (['success', 'profile', 'downloads', 'phone'].includes(screen) ||
+            (screen === 'progress' && ['install', 'import'].includes(operation?.kind)))
+        : ['welcome', 'import', 'fresh', 'restore', 'progress', 'setup-complete'].includes(screen)),
   );
   const onboardingSteps = ['Server ready', 'Your details', 'Get the app', 'Finish setup'];
   const flowSteps = $derived(
@@ -530,11 +536,13 @@
     <aside class="setup-rail" aria-label="Setup progress">
       <img class="setup-rail-logo" src="/assets/frameleaf-logo-white.svg" alt="Frameleaf"/>
       <p class="setup-rail-meta"><span class="status-dot" class:offline={disconnected}></span>{dashboard?.host?.name ?? 'This server'} · Manager</p>
-      <ol style="--setup-progress: {chapter / (chapters.length - 1)}">{#each chapters as item, index}<li data-status={index < chapter ? 'done' : index === chapter ? 'current' : 'next'} aria-current={index === chapter ? 'step' : undefined}><span class="setup-rail-row"><span class="setup-rail-dot">{#if index < chapter}<Icon name="check"/>{:else}{index + 1}{/if}</span>{item.label}</span>{#if index === chapter && item.items.length}<ul>{#each item.items as sub, subIndex}<li class:done={subIndex < item.current} aria-current={subIndex === item.current ? 'step' : undefined}>{sub}</li>{/each}</ul>{/if}</li>{/each}</ol>
+      <ol style="--setup-progress: {chapter / (chapters.length - 1)}">{#each chapters as item, index}<li data-status={index < chapter ? 'done' : index === chapter ? 'current' : 'next'} aria-current={index === chapter ? 'step' : undefined}>{#if index === 1 && chapter > 1 && !installation && !activeOperation}<button class="setup-rail-row" disabled={busy} onclick={() => run(() => go('welcome'))}><span class="setup-rail-dot"><Icon name="check"/></span>{item.label}</button>{:else}<span class="setup-rail-row"><span class="setup-rail-dot">{#if index < chapter}<Icon name="check"/>{:else}{index + 1}{/if}</span>{item.label}</span>{/if}{#if index === chapter && item.items.length}<ul>{#each item.items as sub, subIndex}<li class:done={subIndex < item.current} aria-current={subIndex === item.current ? 'step' : undefined}>{sub}</li>{/each}</ul>{/if}</li>{/each}</ol>
       <div class="setup-rail-foot">
+        <button class="text-button" disabled={busy} onclick={() => run(async () => { await refresh(); await go(screen); })} aria-label="Refresh Manager"><Icon name="update"/>Refresh</button>
         <button class="text-button" onclick={() => showModal('help')}><Icon name="help"/>Manager guide</button>
-        {#if installation}<button class="text-button" onclick={() => run(() => go('overview'))}><Icon name="grid"/>Open Manager overview</button>{/if}
-        <button class="text-button" onclick={() => run(signOut)}><Icon name="user"/>Sign out</button>
+        <button class="text-button" disabled={busy} onclick={() => run(() => go('settings'))}><Icon name="settings"/>Manager settings</button>
+        {#if installation}<button class="text-button" disabled={busy} onclick={() => run(() => go('overview'))}><Icon name="grid"/>Open Manager overview</button>{/if}
+        <button class="text-button" disabled={busy} onclick={() => run(signOut)}><Icon name="user"/>Sign out</button>
       </div>
     </aside>
   {/if}
