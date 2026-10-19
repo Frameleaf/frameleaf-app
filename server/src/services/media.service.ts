@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ThumbnailOutput } from 'src/queue/sharp-operations.js';
@@ -145,6 +145,7 @@ type ThumbnailAsset = NonNullable<Awaited<ReturnType<AssetJobRepository['getForG
 
 type VideoThumbnailAsset = ThumbnailPathEntity & {
   originalPath: string;
+  checksum: Buffer;
   videoStream: VideoStreamInfo;
   format: VideoFormat;
 };
@@ -439,6 +440,7 @@ export class MediaService extends BaseService {
           id: asset.id,
           ownerId: asset.ownerId,
           originalPath: asset.originalPath,
+          checksum: asset.checksum,
           videoStream,
           format,
         },
@@ -1018,7 +1020,6 @@ export class MediaService extends BaseService {
         file.path = path.join(parsed.dir, `${parsed.name}_${options.pathSuffix}${parsed.ext}`);
       }
     }
-    options.candidates?.push(previewFile.path, thumbnailFile.path);
     const { videoStream, format } = asset;
     if (!videoStream || !format) {
       throw new Error(`Missing video metadata for asset ${asset.id}`);
@@ -1058,6 +1059,23 @@ export class MediaService extends BaseService {
       undefined,
       format,
     );
+
+    if (!isEdited) {
+      // A later cover choice must never overwrite a rendition another asset still shares.
+      const renditionIdentity = createHash('sha256')
+        .update(
+          JSON.stringify(['frameleaf-video-cover/1', asset.checksum.toString('hex'), previewOptions, thumbnailOptions]),
+        )
+        .digest('hex');
+      for (const file of [previewFile, thumbnailFile]) {
+        const parsed = path.parse(file.path);
+        Object.assign(file, {
+          renditionIdentity,
+          path: path.join(parsed.dir, `${parsed.name}_${renditionIdentity}${parsed.ext}`),
+        });
+      }
+    }
+    options.candidates?.push(previewFile.path, thumbnailFile.path);
 
     await this.mediaRepository.transcode(sourcePath, previewFile.path, previewOptions);
     await this.mediaRepository.transcode(sourcePath, thumbnailFile.path, thumbnailOptions);
@@ -1359,6 +1377,7 @@ export class MediaService extends BaseService {
       id: asset.id,
       ownerId: asset.ownerId,
       originalPath: asset.originalPath,
+      checksum: asset.checksum,
       videoStream,
       format,
     };

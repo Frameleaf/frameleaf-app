@@ -355,7 +355,12 @@ interface AssetGetByChecksumOptions {
   libraryId?: string;
 }
 type UpsertAssetFile = Pick<Insertable<AssetFileTable>, 'assetId' | 'path' | 'type'> &
-  Partial<Pick<Insertable<AssetFileTable>, 'physicalFileId' | 'isEdited' | 'isProgressive' | 'isTransparent'>>;
+  Partial<
+    Pick<
+      Insertable<AssetFileTable>,
+      'physicalFileId' | 'renditionIdentity' | 'isEdited' | 'isProgressive' | 'isTransparent'
+    >
+  >;
 interface GetByIdsRelations {
   exifInfo?: boolean;
   faces?: {
@@ -2844,7 +2849,10 @@ export class AssetRepository {
       .onConflict((oc) =>
         oc.columns(['assetId', 'type', 'isEdited']).doUpdateSet((eb) => ({
           path: eb.ref('excluded.path'),
-          physicalFileId: sql`coalesce(${eb.ref('excluded.physicalFileId')}, ${eb.ref('asset_file.physicalFileId')})`,
+          physicalFileId: sql`CASE WHEN ${eb.ref('asset_file.path')} = ${eb.ref('excluded.path')}
+            THEN coalesce(${eb.ref('excluded.physicalFileId')}, ${eb.ref('asset_file.physicalFileId')})
+            ELSE ${eb.ref('excluded.physicalFileId')} END`,
+          renditionIdentity: eb.ref('excluded.renditionIdentity'),
         })),
       )
       .execute();
@@ -2859,7 +2867,10 @@ export class AssetRepository {
       .onConflict((oc) =>
         oc.columns(['assetId', 'type', 'isEdited']).doUpdateSet((eb) => ({
           path: eb.ref('excluded.path'),
-          physicalFileId: sql`coalesce(${eb.ref('excluded.physicalFileId')}, ${eb.ref('asset_file.physicalFileId')})`,
+          physicalFileId: sql`CASE WHEN ${eb.ref('asset_file.path')} = ${eb.ref('excluded.path')}
+            THEN coalesce(${eb.ref('excluded.physicalFileId')}, ${eb.ref('asset_file.physicalFileId')})
+            ELSE ${eb.ref('excluded.physicalFileId')} END`,
+          renditionIdentity: eb.ref('excluded.renditionIdentity'),
           isProgressive: eb.ref('excluded.isProgressive'),
           isTransparent: eb.ref('excluded.isTransparent'),
         })),

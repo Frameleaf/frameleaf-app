@@ -139,6 +139,10 @@ export class SearchService extends BaseService {
   }
 
   async searchMetadata(auth: AuthDto, dto: MetadataSearchDto, withTotal = false): Promise<SearchResponseDto> {
+    // Metadata filters and counts can reveal EXIF even when result fields are stripped.
+    if (auth.sharedLink && !auth.sharedLink.showExif) {
+      throw new BadRequestException('This link does not allow metadata search');
+    }
     if (isNewShapeRequest(dto)) {
       return this.searchMetadataV3(auth, dto, withTotal);
     }

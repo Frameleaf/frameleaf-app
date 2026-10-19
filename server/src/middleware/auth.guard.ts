@@ -19,7 +19,7 @@ import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
 
 type AdminRoute = { admin?: true };
-type SharedLinkRoute = { sharedLink?: true };
+type SharedLinkRoute = { sharedLink: true; sharedLinkPassword?: false };
 type AuthorizedRoute = {
   permission?: Permission | false;
   public?: never;
@@ -38,7 +38,9 @@ type ReflectorTarget = Parameters<Reflector['get']>[1];
 /** Resolves the `@Authenticated()` options of a route handler, with the defaults applied. */
 export const getAuthenticatedOptions = (reflector: Reflector, target: ReflectorTarget) => {
   const options = reflector.getAllAndOverride<AuthenticatedOptions | undefined>(MetadataKey.AuthRoute, [target]);
-  return options && { sharedLink: false, admin: false, public: false, setup: false, ...options };
+  return (
+    options && { sharedLink: false, sharedLinkPassword: true, admin: false, public: false, setup: false, ...options }
+  );
 };
 
 export const Authenticated = (options: AuthenticatedOptions = {}): MethodDecorator => {
@@ -169,7 +171,7 @@ export class AuthGuard implements CanActivate {
       return true;
     }
 
-    const { admin: adminRoute, sharedLink: sharedLinkRoute, permission } = options;
+    const { admin: adminRoute, sharedLink: sharedLinkRoute, sharedLinkPassword, permission } = options;
     const refreshElevation = (options as { refreshElevation?: boolean }).refreshElevation !== false;
     const request = context.switchToHttp().getRequest<AuthRequest>();
 
@@ -182,6 +184,7 @@ export class AuthGuard implements CanActivate {
       metadata: {
         adminRoute,
         sharedLinkRoute,
+        sharedLinkPassword,
         permission,
         uri: request.path,
         refreshElevation,

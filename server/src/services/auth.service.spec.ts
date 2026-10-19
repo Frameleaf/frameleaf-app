@@ -4,7 +4,7 @@ import type { UserMetadataItem } from 'src/types.js';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { UserAdmin } from 'src/database.js';
 import { AuthDto, SignUpDto } from 'src/dtos/auth.dto.js';
-import { AdminAuditAction, AuthType, Permission, SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
+import { AdminAuditAction, AuthCookie, AuthType, Permission, SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
 import { AuthService, emailVerificationProblem } from 'src/services/auth.service.js';
 import { ApiKeyFactory } from 'test/factories/api-key.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -604,6 +604,65 @@ describe(AuthService.name, () => {
           hasElevatedPermission: false,
         },
       });
+    });
+  });
+
+  describe('protected shared-link requests', () => {
+    const link = { ...sharedLinkStub.valid, password: 'password-hash' };
+    const authenticate = (cookie?: string, sharedLinkPassword?: false) =>
+      sut.authenticate({
+        headers: { 'x-immich-share-key': 'key', ...(cookie && { cookie }) },
+        queryParams: {},
+        metadata: {
+          adminRoute: false,
+          sharedLinkRoute: true,
+          sharedLinkPassword,
+          permission: Permission.AssetRead,
+          uri: '/assets/known-id',
+        },
+      });
+
+    beforeEach(() => {
+      mocks.sharedLink.getByKey.mockResolvedValue(link);
+      mocks.crypto.serverKeyedHash.mockResolvedValue('current-unlock-token');
+    });
+
+    it.each([undefined, '', 'wrong-token', 'previous-password-token'])(
+      'refuses an absent or invalid unlock cookie: %s',
+      async (token) => {
+        await expect(
+          authenticate(token === undefined ? undefined : `${AuthCookie.SharedLinkToken}=${token}`),
+        ).rejects.toThrow('Password required');
+      },
+    );
+
+    it('allows a current unlock token among cookies for other links', async () => {
+      await expect(
+        authenticate(`${AuthCookie.SharedLinkToken}=other-link-token,current-unlock-token`),
+      ).resolves.toMatchObject({ sharedLink: { id: link.id } });
+    });
+
+    it('checks the current password when a previously unlocked link changes', async () => {
+      await expect(authenticate(`${AuthCookie.SharedLinkToken}=current-unlock-token`)).resolves.toBeDefined();
+      mocks.crypto.serverKeyedHash.mockResolvedValue('changed-password-token');
+      await expect(authenticate(`${AuthCookie.SharedLinkToken}=current-unlock-token`)).rejects.toThrow(
+        'Password required',
+      );
+    });
+
+    it('also refuses protected links authenticated by slug', async () => {
+      mocks.sharedLink.getBySlug.mockResolvedValue(link);
+      await expect(
+        sut.authenticate({
+          headers: {},
+          queryParams: { slug: 'private-link' },
+          metadata: { adminRoute: false, sharedLinkRoute: true, uri: '/assets/known-id' },
+        }),
+      ).rejects.toThrow('Password required');
+    });
+
+    it('lets the explicit password challenge exemption reach the landing and login handlers', async () => {
+      await expect(authenticate(undefined, false)).resolves.toMatchObject({ sharedLink: { id: link.id } });
     });
   });
 

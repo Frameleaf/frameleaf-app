@@ -193,6 +193,23 @@ describe(AssetMediaService.name, () => {
       await expect(sut.getUploadAssetIdByChecksum(authStub.admin)).resolves.toBe(undefined);
     });
 
+    it.each([undefined, file1.toString('hex')])(
+      'refuses checksum preflight when a link forbids uploads: %s',
+      async (checksum) => {
+        const auth = AuthFactory.from().sharedLink({ allowUpload: false }).build();
+        mocks.asset.getUploadAssetIdByChecksum.mockResolvedValue('private-library-id');
+        await expect(sut.getUploadAssetIdByChecksum(auth, checksum)).rejects.toBeInstanceOf(UnauthorizedException);
+        expect(mocks.asset.getUploadAssetIdByChecksum).not.toHaveBeenCalled();
+      },
+    );
+
+    it('lets upload-enabled links continue without exposing owner-wide duplicate ids', async () => {
+      const auth = AuthFactory.from().sharedLink({ allowUpload: true }).build();
+      mocks.asset.getUploadAssetIdByChecksum.mockResolvedValue('private-library-id');
+      await expect(sut.getUploadAssetIdByChecksum(auth, file1.toString('hex'))).resolves.toBeUndefined();
+      expect(mocks.asset.getUploadAssetIdByChecksum).not.toHaveBeenCalled();
+    });
+
     it('should handle a non-existent asset', async () => {
       await expect(sut.getUploadAssetIdByChecksum(authStub.admin, file1.toString('hex'))).resolves.toBeUndefined();
       expect(mocks.asset.getUploadAssetIdByChecksum).toHaveBeenCalledWith(authStub.admin.user.id, file1);

@@ -372,6 +372,33 @@ describe(SearchService.name, () => {
       );
     });
 
+    it.each([
+      { albumIds: ['00000000-0000-4000-a000-000000000001'] },
+      { albumIds: ['00000000-0000-4000-a000-000000000001'], withExif: true },
+      { albumIds: ['00000000-0000-4000-a000-000000000001'], city: 'Private city', size: 1, page: 2 },
+      { filter: { albumIds: { any: ['00000000-0000-4000-a000-000000000001'] } }, withExif: true },
+      {
+        filter: { albumIds: { any: ['00000000-0000-4000-a000-000000000001'] }, make: { eq: 'Private camera' } },
+        size: 1,
+      },
+    ])('refuses metadata search and counts for links that hide metadata: %j', async (dto) => {
+      const auth = AuthFactory.from().sharedLink({ showExif: false }).build();
+      const albumId = '00000000-0000-4000-a000-000000000001';
+      const mapped = getForAsset(AssetFactory.from().exif({ latitude: 51.05, longitude: -114.07 }).build());
+      const asset = { ...mapped, exifInfo: mapped.exifInfo!, faces: [] };
+      mocks.access.album.checkSharedLinkAccess.mockResolvedValue(new Set([albumId]));
+      mocks.search.searchMetadata.mockResolvedValue({ hasNextPage: false, items: [asset] });
+      mocks.search.searchMetadataV3.mockResolvedValue({ hasNextPage: false, items: [asset] });
+      mocks.search.searchStatistics.mockResolvedValue({ total: 1 });
+      mocks.search.searchStatisticsV3.mockResolvedValue({ total: 1 });
+
+      await expect(sut.searchMetadata(auth, dto, true)).rejects.toThrow('This link does not allow metadata search');
+      expect(mocks.search.searchMetadata).not.toHaveBeenCalled();
+      expect(mocks.search.searchMetadataV3).not.toHaveBeenCalled();
+      expect(mocks.search.searchStatistics).not.toHaveBeenCalled();
+      expect(mocks.search.searchStatisticsV3).not.toHaveBeenCalled();
+    });
+
     it('should reject a shared link whose filter is not confined to albums everywhere', async () => {
       const auth = AuthFactory.from().sharedLink().build();
       const albumId = newUuid();

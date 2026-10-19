@@ -1,5 +1,6 @@
 import { Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   FileTrashListQueryDto,
@@ -7,7 +8,7 @@ import {
   FileTrashRestoreResponseDto,
 } from 'src/dtos/physical-file-trash.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Authenticated } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { PhysicalFileTrashService } from 'src/services/physical-file-trash.service.js';
 import { UUIDParamDto } from 'src/validation.js';
 
@@ -24,8 +25,8 @@ export class PhysicalFileTrashController {
       'Originals no library references any more, newest first, with the total disk space the file trash holds. Nothing here is deleted automatically.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
-  getFileTrash(@Query() dto: FileTrashListQueryDto): Promise<FileTrashResponseDto> {
-    return this.service.list(dto);
+  getFileTrash(@Auth() auth: AuthDto, @Query() dto: FileTrashListQueryDto): Promise<FileTrashResponseDto> {
+    return this.service.list(auth, dto);
   }
 
   @Post(':id/restore')
@@ -37,8 +38,8 @@ export class PhysicalFileTrashController {
       'Re-import the file as a new asset in the library it was last in, reading its metadata again. Answers 400 when that account is unknown or gone and 409 when its library already holds the file.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
-  restoreFileTrashItem(@Param() { id }: UUIDParamDto): Promise<FileTrashRestoreResponseDto> {
-    return this.service.restore(id);
+  restoreFileTrashItem(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<FileTrashRestoreResponseDto> {
+    return this.service.restore(auth, id);
   }
 
   @Delete(':id')
@@ -49,7 +50,7 @@ export class PhysicalFileTrashController {
     description: 'Delete the file from disk for good. This cannot be undone.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
-  deleteFileTrashItem(@Param() { id }: UUIDParamDto): Promise<void> {
-    return this.service.purge(id);
+  deleteFileTrashItem(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.purge(auth, id);
   }
 }

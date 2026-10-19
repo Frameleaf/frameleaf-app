@@ -21,6 +21,8 @@ docker compose -f docker-compose.yml -f docker-compose.ml-isolated.yml up -d fra
 
 Stage each configured task and model, including fallback models. Use the task's existing options, especially image-description acceleration. Description caches use the exact resolved repository identity and backend, with built-in artifacts in an immutable revision subdirectory. Existing legacy description directories remain preserved and need one-time restaging. Staging calls acquisition and verification only, without loading a model, custom repository Python or processing media. Existing built-in Florence allowlists, immutable revisions, hashes and attribution are preserved. If a chosen mirror does not serve the pinned files, acquisition fails; it never falls back to another source. For private/custom repositories, use an exact worker-side trust decision where required; inference API selection alone does not grant trust.
 
+NSFW caches also use the full repository name, so two repositories with the same model name cannot reuse each other's weights. After upgrading from a build with the older NSFW cache layout, stage the configured `nsfw-detection` model once before starting offline inference. The older files remain untouched and are not reused automatically.
+
 | Task                        | Types                      | Example model                              |
 | --------------------------- | -------------------------- | ------------------------------------------ |
 | `clip`                      | `visual`, `textual`        | `ViT-B-16-SigLIP-384__webli`               |

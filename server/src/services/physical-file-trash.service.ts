@@ -8,16 +8,25 @@ import type {
 import { StorageCore } from 'src/cores/storage.core.js';
 import { Asset } from 'src/database.js';
 import { OnEvent } from 'src/decorators.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
 import {
   FileTrashItemResponseDto,
   FileTrashListQueryDto,
   FileTrashResponseDto,
   FileTrashRestoreResponseDto,
 } from 'src/dtos/physical-file-trash.dto.js';
-import { AssetVisibility, ChecksumAlgorithm, FrameleafWorker, JobName, StorageFolder } from 'src/enum.js';
+import {
+  AssetLockReason,
+  AssetVisibility,
+  ChecksumAlgorithm,
+  FrameleafWorker,
+  JobName,
+  StorageFolder,
+} from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { moveFileWithin, storedCopyChecks } from 'src/utils/file-trash.js';
+import { getLockedOwnerId } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 /**
@@ -50,10 +59,11 @@ export class PhysicalFileTrashService extends BaseService {
     return this.physicalFileTrashRepository.trash(input, (from, to) => this.move(from, to));
   }
 
-  async list({ page, size }: FileTrashListQueryDto): Promise<FileTrashResponseDto> {
+  async list(auth: AuthDto, { page, size }: FileTrashListQueryDto): Promise<FileTrashResponseDto> {
     const { items, total, totalBytes } = await this.physicalFileTrashRepository.list({
       skip: (page - 1) * size,
       take: size,
+      lockedOwnerId: getLockedOwnerId(auth),
     });
     const ownerIds = [...new Set(items.map(({ lastOwnerId }) => lastOwnerId).filter((id): id is string => !!id))];
     const names = new Map<string, string>();
@@ -66,16 +76,23 @@ export class PhysicalFileTrashService extends BaseService {
     return { items: items.map((entry) => this.toResponse(entry, names)), total, totalBytes: Number(totalBytes) };
   }
 
+  private requireVisible(
+    auth: AuthDto,
+    entry: PhysicalFileTrashEntry | undefined,
+  ): asserts entry is PhysicalFileTrashEntry {
+    if (!entry || (entry.wasLocked !== false && getLockedOwnerId(auth) !== entry.lastOwnerId)) {
+      throw new NotFoundException('File not found in the file trash');
+    }
+  }
+
   /**
    * Re-imports a trashed original as a new asset in its last owner's library; metadata is read from the
    * file again. Refused when that account is unknown or gone, and when its library already holds the
    * same content (the file then goes back to the trash).
    */
-  async restore(id: string): Promise<FileTrashRestoreResponseDto> {
+  async restore(auth: AuthDto, id: string): Promise<FileTrashRestoreResponseDto> {
     const entry = await this.physicalFileTrashRepository.getById(id);
-    if (!entry) {
-      throw new NotFoundException('File not found in the file trash');
-    }
+    this.requireVisible(auth, entry);
     if (!entry.lastOwnerId) {
       throw new BadRequestException('The library this file was last in is not known');
     }
@@ -118,7 +135,8 @@ export class PhysicalFileTrashService extends BaseService {
             throw error;
           }
         },
-        async (trx) => {
+        async (trx, current) => {
+          this.requireVisible(auth, current);
           asset = await this.assetRepository.create(
             {
               id: assetId,
@@ -138,7 +156,7 @@ export class PhysicalFileTrashService extends BaseService {
               livePhotoVideoId: null,
               originalFileName: entry.originalFileName,
             },
-            undefined,
+            current.wasLocked === false ? undefined : { reason: AssetLockReason.Marked, lockedBy: owner.id },
             trx,
           );
           await this.assetRepository.upsertExif(
@@ -185,8 +203,12 @@ export class PhysicalFileTrashService extends BaseService {
   }
 
   /** Deletes a trashed original from disk for good. The only way an original leaves disk. */
-  async purge(id: string): Promise<void> {
-    const entry = await this.physicalFileTrashRepository.purge(id, (path) => this.storageRepository.unlink(path));
+  async purge(auth: AuthDto, id: string): Promise<void> {
+    this.requireVisible(auth, await this.physicalFileTrashRepository.getById(id));
+    const entry = await this.physicalFileTrashRepository.purge(id, (path, current) => {
+      this.requireVisible(auth, current);
+      return this.storageRepository.unlink(path);
+    });
     if (!entry) {
       throw new NotFoundException('File not found in the file trash');
     }

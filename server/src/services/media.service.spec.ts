@@ -289,53 +289,56 @@ describe(MediaService.name, () => {
       vi.mocked(renderRawWithLibRaw).mockResolvedValue(renderedRawBuffer);
     });
 
-    it('persists HDR identity only in the durable publication transaction', async () => {
-      const context = {
-        claim: { id: 'job', token: 'attempt', name: JobName.AssetGenerateThumbnails },
-        signal: new AbortController().signal,
-        adoptions: [],
-        afterCommit: [],
-        followups: [],
-        buffering: false,
-      } as unknown as QueueExecution;
-      const identity = 'aa'.repeat(32);
-      const db = new Kysely({
-        dialect: {
-          createDriver: () => new DummyDriver(),
-          createAdapter: () => new PostgresAdapter(),
-          createIntrospector: (db) => new PostgresIntrospector(db),
-          createQueryCompiler: () => new PostgresQueryCompiler(),
-        },
-      });
-      const execute = vi.spyOn(db.getExecutor(), 'executeQuery').mockResolvedValue({ rows: [] });
-      await queueExecution.run(context, () =>
-        sut['stageGeneratedFiles'](
-          [],
-          [
-            {
-              assetId: newUuid(),
-              type: AssetFileType.HdrPreview,
-              path: '/hdr.jpg',
-              isEdited: false,
-              isProgressive: false,
-              isTransparent: false,
-              renditionIdentity: identity,
-            },
-          ],
-        ),
-      );
-      expect(execute).not.toHaveBeenCalled();
-      expect(context.adoptions).toHaveLength(1);
-      await context.adoptions[0](db as never);
-      expect(execute).toHaveBeenCalledWith(
-        expect.objectContaining({
-          sql: expect.stringContaining('"renditionIdentity" = excluded."renditionIdentity"'),
-          parameters: expect.arrayContaining([identity]),
-        }),
-        undefined,
-      );
-      await db.destroy();
-    });
+    it.each([AssetFileType.HdrPreview, AssetFileType.Preview, AssetFileType.Thumbnail])(
+      'persists rendition identity only in the durable publication transaction (%s)',
+      async (type) => {
+        const context = {
+          claim: { id: 'job', token: 'attempt', name: JobName.AssetGenerateThumbnails },
+          signal: new AbortController().signal,
+          adoptions: [],
+          afterCommit: [],
+          followups: [],
+          buffering: false,
+        } as unknown as QueueExecution;
+        const identity = 'aa'.repeat(32);
+        const db = new Kysely({
+          dialect: {
+            createDriver: () => new DummyDriver(),
+            createAdapter: () => new PostgresAdapter(),
+            createIntrospector: (db) => new PostgresIntrospector(db),
+            createQueryCompiler: () => new PostgresQueryCompiler(),
+          },
+        });
+        const execute = vi.spyOn(db.getExecutor(), 'executeQuery').mockResolvedValue({ rows: [] });
+        await queueExecution.run(context, () =>
+          sut['stageGeneratedFiles'](
+            [],
+            [
+              {
+                assetId: newUuid(),
+                type,
+                path: '/rendition.jpg',
+                isEdited: false,
+                isProgressive: false,
+                isTransparent: false,
+                renditionIdentity: identity,
+              },
+            ],
+          ),
+        );
+        expect(execute).not.toHaveBeenCalled();
+        expect(context.adoptions).toHaveLength(1);
+        await context.adoptions[0](db as never);
+        expect(execute).toHaveBeenCalledWith(
+          expect.objectContaining({
+            sql: expect.stringContaining('"renditionIdentity" = excluded."renditionIdentity"'),
+            parameters: expect.arrayContaining([identity]),
+          }),
+          undefined,
+        );
+        await db.destroy();
+      },
+    );
 
     it('keeps full resolution available for web images with unknown encoding', async () => {
       const asset = getForGenerateThumbnail(AssetFactory.from({ originalFileName: 'image.png' }).exif().build());
@@ -667,6 +670,7 @@ describe(MediaService.name, () => {
           assetId: asset.id,
           type: AssetFileType.Preview,
           path: expect.any(String),
+          renditionIdentity: expect.stringMatching(/^[a-f0-9]{64}$/),
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -675,6 +679,7 @@ describe(MediaService.name, () => {
           assetId: asset.id,
           type: AssetFileType.Thumbnail,
           path: expect.any(String),
+          renditionIdentity: expect.stringMatching(/^[a-f0-9]{64}$/),
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -701,6 +706,7 @@ describe(MediaService.name, () => {
           assetId: asset.id,
           type: AssetFileType.Preview,
           path: expect.any(String),
+          renditionIdentity: expect.stringMatching(/^[a-f0-9]{64}$/),
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -709,6 +715,7 @@ describe(MediaService.name, () => {
           assetId: asset.id,
           type: AssetFileType.Thumbnail,
           path: expect.any(String),
+          renditionIdentity: expect.stringMatching(/^[a-f0-9]{64}$/),
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -833,6 +840,29 @@ describe(MediaService.name, () => {
           }),
         );
       }
+    });
+
+    it('gives changed canonical covers independent paths while matching video renders share identity', async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
+      const render = async (coverTimestampMs: number) => {
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(asset),
+          ...probeStub.videoStream2160p,
+          format: { ...probeStub.videoStream2160p.format, duration: 120 },
+          coverTimestampMs,
+        });
+        await sut.handleGenerateThumbnails({ id: asset.id });
+        return mocks.asset.upsertFiles.mock.calls.at(-1)![0];
+      };
+      const first = await render(1000),
+        changed = await render(64_500),
+        matching = await render(64_500);
+      expect(first[0].path).not.toBe(changed[0].path);
+      expect(first[1].path).not.toBe(changed[1].path);
+      expect(first[0].renditionIdentity).toMatch(/^[a-f0-9]{64}$/);
+      expect(changed[0].renditionIdentity).not.toBe(first[0].renditionIdentity);
+      expect(matching[0].renditionIdentity).toBe(changed[0].renditionIdentity);
+      expect(matching[0].path).toBe(changed[0].path);
     });
 
     it('keeps a cover chosen near the end of a video clear of its final stretch (FL-59)', async () => {
@@ -1129,6 +1159,7 @@ describe(MediaService.name, () => {
           assetId: asset.id,
           type: AssetFileType.Preview,
           path: expect.any(String),
+          renditionIdentity: expect.stringMatching(/^[a-f0-9]{64}$/),
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -1137,6 +1168,7 @@ describe(MediaService.name, () => {
           assetId: asset.id,
           type: AssetFileType.Thumbnail,
           path: expect.any(String),
+          renditionIdentity: expect.stringMatching(/^[a-f0-9]{64}$/),
           isEdited: false,
           isProgressive: false,
           isTransparent: false,

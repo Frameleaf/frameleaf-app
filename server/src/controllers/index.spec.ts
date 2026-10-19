@@ -267,6 +267,11 @@ describe('controllers', () => {
     expect(new Set(sharedLinkRoutes)).toEqual(SHARED_LINK_ROUTES);
   });
 
+  it('lets only the shared-link landing and password login skip the unlock cookie', () => {
+    const exemptions = routes.filter((route) => route.auth?.sharedLinkPassword === false).map((route) => route.id);
+    expect(new Set(exemptions)).toEqual(new Set(['GET shared-links/me', 'POST shared-links/login']));
+  });
+
   it('should only require admin access on expected routes outside /admin', () => {
     const adminRoutes = routes
       .filter((route) => route.auth?.admin && route.path !== 'admin' && !route.path.startsWith('admin/'))
