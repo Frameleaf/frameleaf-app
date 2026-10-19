@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Operations } from '../src/operations.js';
 import { Store } from '../src/store.js';
-import { Docker, type Container } from '../src/docker.js';
+import { Docker, SERVER_ADMIN, type Container } from '../src/docker.js';
 import type { Installation, Source, Operation } from '../src/contracts.js';
 import type { Releases } from '../src/releases.js';
 import type { Backups } from '../src/backups.js';
@@ -218,7 +218,7 @@ test('actual offline verify command receives only the matching Manager import au
     const command = commands.find((args) => args.includes('run'))!;
     assert.ok(command);
     assert.deepEqual(command.slice(-6), [
-      'dist/main.js', 'frameleaf-admin', 'import-immich', 'verify', '--config', '/run/frameleaf/import.json',
+      SERVER_ADMIN, 'frameleaf-server', 'import-immich', 'verify', '--config', '/run/frameleaf/import.json',
     ]);
   } finally {
     await f.cleanup();
