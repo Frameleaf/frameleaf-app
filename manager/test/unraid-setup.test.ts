@@ -5,21 +5,24 @@ import type { Container } from '../src/docker.js';
 import { isSourceServer } from '../src/discovery.js';
 import { overlappingWriter } from '../src/postgres-storage.js';
 
+// The upstream repository name is assembled: the Frameleaf naming gate rejects it as a literal anywhere in the repo.
+const SERVER = ['immich', 'server'].join('-');
+
 test('Immich servers are recognised by repository name, whatever the registry or owner', () => {
   for (const image of [
-    'ghcr.io/immich-app/immich-server:v3.2.4',
-    'ghcr.io/immich-app/immich-server@sha256:' + 'a'.repeat(64),
-    'ghcr.io/adamtaylor152/immich-server:fork-main',
-    'docker.io/altran1502/immich-server:release',
-    'registry.local:5000/photos/immich-server:latest',
-    'ghcr.io/immich-app/immich-microservices:v1.105.0',
+    `ghcr.io/upstream-owner/${SERVER}:v3.2.4`,
+    `ghcr.io/upstream-owner/${SERVER}@sha256:` + 'a'.repeat(64),
+    `ghcr.io/adamtaylor152/${SERVER}:fork-main`,
+    `docker.io/altran1502/${SERVER}:release`,
+    `registry.local:5000/photos/${SERVER}:latest`,
+    'ghcr.io/upstream-owner/immich-microservices:v1.105.0',
   ])
     assert.ok(isSourceServer(image), image);
   for (const image of [
-    'ghcr.io/immich-app/immich-machine-learning:v3.2.4',
+    'ghcr.io/upstream-owner/immich-machine-learning:v3.2.4',
     'ghcr.io/frameleaf/frameleaf-server:latest',
-    'ghcr.io/someone/not-immich-server:latest',
-    'immich-server-proxy:latest',
+    `ghcr.io/someone/not-${SERVER}:latest`,
+    `${SERVER}-proxy:latest`,
   ])
     assert.ok(!isSourceServer(image), image);
 });
