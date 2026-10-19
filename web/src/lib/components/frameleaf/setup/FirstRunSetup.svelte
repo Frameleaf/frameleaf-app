@@ -66,6 +66,7 @@
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { Route } from '$lib/route';
   import { lang, locale } from '$lib/stores/preferences.store';
+  import { getByteUnitString } from '$lib/utils/byte-units';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { convertBCP47, langs } from '$lib/utils/i18n';
   import {
@@ -173,6 +174,8 @@
   let storage = $state<FrameleafSetupStorageResponseDto | null>(null);
   let config = $state<AdminConfigDto | null>(null);
   let library = $state<FrameleafSetupLibraryResponseDto | null>(null);
+  /** Whether the welcome figures count up: only when they arrive while the intro is still running. */
+  let countLibrary = $state(true);
   let health = $state<{ missing: number; damaged: number } | null>(null);
   let hardware = $state<HardwareCheckResponseDto | null>(null);
   let users = $state<UserAdminResponseDto[]>([]);
@@ -199,19 +202,28 @@
 
   const loadServerData = async () => {
     serverLoading = true;
-    const [storageResult, configResult, libraryResult, summary, hardwareResult, usersResult] = await Promise.allSettled(
-      [
-        getFrameleafSetupStorage(),
-        getConfig(),
-        setup.flow === 'existing' ? getFrameleafSetupLibrary() : Promise.resolve(null),
-        setup.flow === 'existing' ? getSummary({ allAccounts: true }) : Promise.resolve(null),
-        getHardwareCheck(),
-        setup.flow === 'existing' ? searchUsersAdmin({}) : Promise.resolve([]),
-      ],
-    );
+    // The welcome figures land on their own: the hardware check runs a live benchmark, which right
+    // after an import can take seconds, and the figures must not sit behind it.
+    const libraryRequest = (async () => {
+      try {
+        const value = setup.flow === 'existing' ? await getFrameleafSetupLibrary() : null;
+        // Counted up only while the intro is still arriving; once it has settled the totals show at once.
+        countLibrary = !introReady;
+        library = value ?? null;
+      } catch {
+        library = null;
+      }
+    })();
+    const [storageResult, configResult, , summary, hardwareResult, usersResult] = await Promise.allSettled([
+      getFrameleafSetupStorage(),
+      getConfig(),
+      libraryRequest,
+      setup.flow === 'existing' ? getSummary({ allAccounts: true }) : Promise.resolve(null),
+      getHardwareCheck(),
+      setup.flow === 'existing' ? searchUsersAdmin({}) : Promise.resolve([]),
+    ]);
     storage = storageResult.status === 'fulfilled' ? storageResult.value : null;
     config = configResult.status === 'fulfilled' ? configResult.value : null;
-    library = libraryResult.status === 'fulfilled' ? libraryResult.value : null;
     if (summary.status === 'fulfilled' && summary.value) {
       const queues = summary.value.queues;
       health = { missing: queues.missing, damaged: queues.damagedConfirmed + queues.damagedSuspected };
@@ -556,6 +568,8 @@
   const hours = $derived(reindexHours(items, choices.model, perHour));
   const options = $derived(processingOptions(setup));
   const formatCount = (value: number) => new Intl.NumberFormat($locale).format(Math.round(value));
+  /** Originals in the unit that fits: an imported library of a few hundred MB never reads as "0.0 TB". */
+  const formatSize = (bytes: number) => getByteUnitString(bytes, $locale);
   const hardwareName = (entry: HardwareCheckResponseDto['ml'] | undefined) =>
     entry ? [entry.vendor, entry.model].filter(Boolean).join(' ') || entry.backend.toUpperCase() : '';
 
@@ -694,8 +708,10 @@
   <div class="frs-stat">
     <Icon {icon} size="20" aria-hidden={true} />
     <strong>
-      {#if value !== undefined}
+      {#if value !== undefined && countLibrary}
         <CountUp {value} {format} {delay} />
+      {:else if value !== undefined}
+        <span class="fl-tabular">{(format ?? formatCount)(value)}</span>
       {:else if serverLoading}
         <span class="frs-skeleton" aria-hidden="true"></span>
       {:else}
@@ -834,7 +850,7 @@
                   library?.bytes,
                   $t('frameleaf_setup_stat_originals'),
                   countDelay(3),
-                  formatTb,
+                  formatSize,
                 )}
               </div>
               <p class="frs-safe-note">
