@@ -14,6 +14,8 @@ services:
     ports: ['2282:9443']
     environment:
       MANAGER_ORIGIN: https://nas.example:2282
+      # Publish the installed Frameleaf app on the network, not only on this server.
+      MANAGER_BIND_ADDRESS: 0.0.0.0
       MANAGER_DATA: /mnt/pool/frameleaf/manager
       MANAGER_STORAGE_ROOTS: /mnt/pool/frameleaf/media
       MANAGER_DATABASE_ROOTS: /mnt/pool/frameleaf/databases
