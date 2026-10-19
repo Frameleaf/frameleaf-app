@@ -248,6 +248,11 @@ export type WorkloadRow = {
   cloud: boolean;
   /** GPU memory a local run needs, for work without a model ladder. */
   localGb: number;
+  /**
+   * The work builds one index for the whole library (search, faces), so it runs in one place and is
+   * never "Both": results from two different models can't be mixed.
+   */
+  index?: true;
 };
 
 /**
@@ -257,8 +262,8 @@ export type WorkloadRow = {
  * and their consent is on (FL-455).
  */
 export const mlWorkloads: readonly WorkloadRow[] = Object.freeze([
-  { id: 'search', cloud: false, localGb: 2 },
-  { id: 'faces', cloud: false, localGb: 2 },
+  { id: 'search', cloud: false, localGb: 2, index: true },
+  { id: 'faces', cloud: false, localGb: 2, index: true },
   { id: 'ocr', cloud: false, localGb: 2 },
   { id: 'descriptions', cloud: true, localGb: 8 },
   { id: 'upscale', cloud: true, localGb: 6 },
@@ -286,6 +291,9 @@ export const routingModes: readonly { id: RouteMode; labelKey: Translations }[] 
   { id: 'both', labelKey: 'admin.frameleaf_routing_mode_both' },
   { id: 'cloud', labelKey: 'admin.frameleaf_routing_mode_cloud' },
 ];
+
+/** Work that runs in one place only, at home or on Frameleaf Cloud, never "Both" (see `WorkloadRow.index`). */
+export const isIndexWork = (id: string) => !!mlWorkloads.find((row) => row.id === id)?.index;
 
 export const isRoutedWorkload = (id: string): id is RoutedWorkload =>
   (ROUTED_WORKLOADS as readonly string[]).includes(id);

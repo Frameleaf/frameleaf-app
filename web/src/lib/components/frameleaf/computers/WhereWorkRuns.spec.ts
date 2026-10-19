@@ -199,6 +199,47 @@ describe('Where work runs (FL-364)', () => {
     expect(store.draft.frameleafCloud.cloudMl.routing.descriptions).toBe(CloudRouteMode.Local);
   });
 
+  it('offers search one place, Frameleaf Cloud included, never Ask, and agrees with its destination route', async () => {
+    const fc = {
+      id: 'fc',
+      name: 'Frameleaf Cloud',
+      kind: MlDestinationKind.FrameleafCloud,
+      enabled: true,
+      workloads: [MlWorkload.Clip],
+      consent: { required: true, acknowledgedAt: '2026-10-01T00:00:00Z', version: '1', requiredVersion: '1' },
+    };
+    const saved = cloudMl();
+    const store = {
+      baseline: { frameleafCloud: { cloudMl: saved } },
+      draft: { frameleafCloud: { cloudMl: structuredClone(saved) } },
+      saveKeys: vi.fn().mockResolvedValue(true),
+    };
+    draft.store = store;
+    sdkMock.listMlDestinations.mockResolvedValue([server, fc] as never);
+    sdkMock.getMlWorkloadRoutes.mockResolvedValue(routes({ ...HOME, [MlWorkload.Clip]: 'fc' }) as never);
+    sdkMock.getCloudMlStatus.mockResolvedValue({ connection: CloudMlConnection.Ready } as never);
+    sdkMock.setMlWorkloadRoute.mockResolvedValue(routes(HOME) as never);
+    render(WhereWorkRuns);
+
+    const name = en.frameleaf_workruns_name_search;
+    const picker = await screen.findByRole('combobox', { name: `Where ${name} runs` });
+    expect(picker).toHaveValue('cloud');
+    expect([...(picker as HTMLSelectElement).options].map((option) => option.value)).toEqual(['srv', 'cloud', 'none']);
+    expect(row(name)).toHaveTextContent('Runs in one place only, so results never mix two models.');
+
+    await fireEvent.change(picker, { target: { value: 'srv' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() =>
+      expect(sdkMock.setMlWorkloadRoute).toHaveBeenCalledWith({
+        workload: MlWorkload.Clip,
+        mlWorkloadRouteUpdateDto: { destinationId: 'srv' },
+      }),
+    );
+    // Search has no cloud routing mode to save.
+    expect(store.saveKeys).not.toHaveBeenCalled();
+  });
+
   it('says a helper is not answering, and that its work waits', async () => {
     sdkMock.listMlDestinations.mockResolvedValue([server, office] as never);
     sdkMock.getMlWorkloadRoutes.mockResolvedValue(routes({ ...HOME, [MlWorkload.Enrichment]: 'office' }) as never);

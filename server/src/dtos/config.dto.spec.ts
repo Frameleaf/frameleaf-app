@@ -111,6 +111,32 @@ describe('config visibility', () => {
   });
 });
 
+describe('search and faces run in one place', () => {
+  // Their index comes from one model, so a "both" route for them is never kept: it is dropped where the
+  // settings are saved (the admin schema) and where they are read back. Their one place is the destination route.
+  const routing = { ...defaults.frameleafCloud.cloudMl.routing, search: 'both', faces: 'both', clip: 'both' };
+
+  it('drops a both route for search or faces when the settings are saved', () => {
+    const parsed = AdminConfigSchema.safeParse({
+      ...defaults,
+      frameleafCloud: { ...defaults.frameleafCloud, cloudMl: { ...defaults.frameleafCloud.cloudMl, routing } },
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.frameleafCloud.cloudMl.routing).toEqual(defaults.frameleafCloud.cloudMl.routing);
+  });
+
+  it('drops a both route for search or faces when the settings are read, keeping the rest', () => {
+    const warn = vi.fn();
+    const read = readFrameleafCloudConfig(
+      { cloudMl: { ...defaults.frameleafCloud.cloudMl, enabled: true, routing } },
+      warn,
+    );
+    expect(read.cloudMl.enabled).toBe(true);
+    expect(read.cloudMl.routing).toEqual(defaults.frameleafCloud.cloudMl.routing);
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
 describe('Frameleaf Cloud models (FL-146, FL-183, FL-186)', () => {
   it('has no model setting: the model is the SKU saved on the workload route or the catalogue default', () => {
     expect(defaults.frameleafCloud.cloudMl).not.toHaveProperty('models');

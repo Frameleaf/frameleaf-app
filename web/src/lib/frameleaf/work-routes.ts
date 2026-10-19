@@ -10,6 +10,8 @@
  * On screen a row has one choice: a computer at home, "Ask me each time", Frameleaf Cloud, or
  * nowhere. "Ask" and "Frameleaf Cloud" are the cloud record's `both` and `cloud`; a computer or
  * nowhere is the home record with the cloud record set to home only. A choice is saved to both.
+ * Search and faces build one index for the library, so they run in one place and never "ask": their
+ * "Frameleaf Cloud" is the home record routed to the Frameleaf Cloud destination (FL-455).
  * One saved record on the server is the follow-up; until then this module is the single reading.
  */
 import {
@@ -19,7 +21,8 @@ import {
   type MlDestinationResponseDto,
   type MlWorkloadRouteDto,
 } from '@frameleaf/sdk';
-import { isRoutedWorkload, mlWorkloads, type RoutedWorkload } from '$lib/frameleaf/cloud-ml';
+import { isIndexWork, isRoutedWorkload, mlWorkloads, type RoutedWorkload } from '$lib/frameleaf/cloud-ml';
+import { canRouteTo } from '$lib/frameleaf/ml-destinations';
 import type { WorkKind } from '$lib/frameleaf/work-places';
 
 /** The server workload behind each row. Studio export is not routed: connected computers take it. */
@@ -65,11 +68,26 @@ export const homePlaces = (workload: MlWorkload, { destinations }: Pick<RouteFac
     .filter((destination) => isHome(destination) && destination.enabled && destination.workloads.includes(workload))
     .sort((a, b) => Number(b.kind === MlDestinationKind.Local) - Number(a.kind === MlDestinationKind.Local));
 
-const homeRoute = (workload: MlWorkload, { destinations, routes }: Pick<RouteFacts, 'destinations' | 'routes'>) => {
+const routedTo = (workload: MlWorkload, { destinations, routes }: Pick<RouteFacts, 'destinations' | 'routes'>) => {
   const id = routes.find((route) => route.workload === workload)?.destinationId;
-  const destination = destinations.find((item) => item.id === id);
+  return destinations.find((item) => item.id === id);
+};
+
+const homeRoute = (workload: MlWorkload, facts: Pick<RouteFacts, 'destinations' | 'routes'>) => {
+  const destination = routedTo(workload, facts);
   // A route to Frameleaf Cloud in the home record is not a computer at home: the cloud record decides.
   return destination && isHome(destination) ? destination.id : NONE;
+};
+
+/** The Frameleaf Cloud destination search or faces may be routed to now, if any. */
+const cloudPlace = (kind: Exclude<WorkKind, 'render'>, { destinations }: Pick<RouteFacts, 'destinations'>) =>
+  isIndexWork(kind)
+    ? destinations.find((destination) => !isHome(destination) && canRouteTo(destination, ROW_WORKLOAD[kind]))
+    : undefined;
+
+const indexOnCloud = (kind: Exclude<WorkKind, 'render'>, facts: Pick<RouteFacts, 'destinations' | 'routes'>) => {
+  const destination = isIndexWork(kind) ? routedTo(ROW_WORKLOAD[kind], facts) : undefined;
+  return !!destination && !isHome(destination);
 };
 
 const canGoToCloud = (kind: WorkKind, facts: Pick<RouteFacts, 'cloudOn'>) =>
@@ -77,6 +95,9 @@ const canGoToCloud = (kind: WorkKind, facts: Pick<RouteFacts, 'cloudOn'>) =>
 
 /** What a row is set to now, from both records. */
 export const currentChoice = (kind: Exclude<WorkKind, 'render'>, facts: RouteFacts): RouteChoice => {
+  if (indexOnCloud(kind, facts)) {
+    return CLOUD;
+  }
   if (canGoToCloud(kind, facts) && isRoutedWorkload(kind)) {
     const mode = facts.cloudRouting?.[kind];
     if (mode === CloudRouteMode.Cloud) {
@@ -97,7 +118,9 @@ export const currentChoice = (kind: Exclude<WorkKind, 'render'>, facts: RouteFac
 export const choicesFor = (kind: Exclude<WorkKind, 'render'>, facts: RouteFacts): RouteChoice[] => {
   const home = homePlaces(ROW_WORKLOAD[kind], facts).map(({ id }) => id);
   const cloud = canGoToCloud(kind, facts);
-  const places = [...home, ...(cloud ? [...(home.length > 0 ? [ASK] : []), CLOUD] : [])];
+  // Search and faces: one place only, so Frameleaf Cloud is a place of its own and never "ask".
+  const index = !!cloudPlace(kind, facts) || indexOnCloud(kind, facts);
+  const places = [...home, ...(cloud ? [...(home.length > 0 ? [ASK] : []), CLOUD] : []), ...(index ? [CLOUD] : [])];
   if (places.length === 0) {
     return [];
   }
@@ -152,7 +175,16 @@ export const routeWrites = (
     if (routed && (facts.cloudRouting?.[kind] ?? CloudRouteMode.Local) !== mode) {
       writes.cloud[kind] = mode;
     }
+    const cloudId = choice === CLOUD ? cloudPlace(kind, facts)?.id : undefined;
+    if (cloudId && routedTo(ROW_WORKLOAD[kind], facts)?.id !== cloudId) {
+      writes.routes.push({ workload: ROW_WORKLOAD[kind], destinationId: cloudId });
+    }
     if (choice === CLOUD || choice === ASK) {
+      continue;
+    }
+    if (indexOnCloud(kind, facts) && choice === NONE) {
+      // Off from Frameleaf Cloud: the cloud route is the one to clear.
+      writes.routes.push({ workload: ROW_WORKLOAD[kind], destinationId: null });
       continue;
     }
     setHome(ROW_WORKLOAD[kind], choice);

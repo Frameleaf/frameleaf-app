@@ -80,6 +80,19 @@ describe('the check-in settings snapshot (FL-159, FC-61)', () => {
   });
 
   describe(cloudMlSettingsOf.name, () => {
+    it('never reports a route for search or faces: they run in one place, set by their destination route', () => {
+      const settings = cloudMlSettingsOf(
+        {
+          ...cloud.cloudMl,
+          routing: { ...cloud.cloudMl.routing, search: 'both', faces: 'both' } as typeof cloud.cloudMl.routing,
+        },
+        null,
+      );
+      expect(Object.keys(settings?.routing ?? {})).toEqual(
+        expect.not.arrayContaining(['search', 'faces', 'clip', 'face']),
+      );
+    });
+
     it('maps each route to the canonical workloads, Studio AI to transcription, and autoDescribe to autoBatch', () => {
       const settings = cloudMlSettingsOf(
         {

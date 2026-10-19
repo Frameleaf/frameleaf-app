@@ -25,6 +25,7 @@ import {
   STOPS_CREATED_CLOUD_JOB,
   accelerationOf,
   clipTextDestinationId,
+  cloudRouteAllows,
   evaluateAdmission,
   frameleafCloudEligibility,
   hardwareFromProbe,
@@ -228,6 +229,22 @@ describe('Frameleaf Cloud downstream model/budget mechanics (workload-policy moc
           localModels: { [MlWorkload.Clip]: 'ms_clip', [MlWorkload.Face]: 'ms_face' },
         },
       },
+    });
+
+    it('never reads a cloud routing mode for them: their one place is the destination route, never "both"', () => {
+      const routing = {
+        descriptions: 'local',
+        upscale: 'local',
+        restoration: 'local',
+        studio: 'local',
+        interpolation: 'local',
+      } as const;
+      for (const workload of [MlWorkload.Clip, MlWorkload.Face]) {
+        expect(cloudRouteAllows({ routing }, workload)).toBe(true);
+        expect(
+          cloudRouteAllows({ routing: { ...routing, search: 'local', faces: 'local' } as typeof routing }, workload),
+        ).toBe(true);
+      }
     });
 
     it('admits them with a model matching this server, their consent on and the cloud offering them', () => {

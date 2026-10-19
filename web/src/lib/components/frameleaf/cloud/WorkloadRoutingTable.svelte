@@ -21,11 +21,16 @@
    * only while the cloud offers it (`cloudMatchedWorkloads`: the status's matched work, or the
    * catalogue). It shows the model in use; that model is chosen in Search & intelligence, so the
    * slider here cannot change it. Search text is always read on this server.
+   *
+   * Search and faces build one index for the library, so they run in one place and never offer "Both"
+   * (results from two different models can't be mixed). Their row shows where the index is built now,
+   * read from the same destination route Where work runs saves (`work-routes.ts`), and links there.
    */
   import './frameleaf-cloud.css';
   import ModelSlider from '$lib/components/frameleaf/cloud/ModelSlider.svelte';
   import WorkloadModelPickers from '$lib/components/frameleaf/cloud/WorkloadModelPickers.svelte';
   import {
+    isIndexWork,
     isRoutedWorkload,
     localCapability,
     localGbNeeded,
@@ -48,6 +53,7 @@
   import { isMatchedWorkload, ladderFor, type MatchedWorkload, type RouteMode } from '$lib/frameleaf/gpu-model-catalog';
   import { localModelsFor } from '$lib/frameleaf/local-models';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
+  import { CLOUD, currentChoice, ROW_WORKLOAD } from '$lib/frameleaf/work-routes';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
   import {
@@ -55,8 +61,12 @@
     CloudRouteMode,
     getCloudMlStatus,
     getHardwareCheck,
+    getMlWorkloadRoutes,
+    listMlDestinations,
     type CloudMlStatusResponseDto,
     type HardwareCheckResponseDto,
+    type MlDestinationResponseDto,
+    type MlWorkloadRouteDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiAlertOutline, mdiCheckCircleOutline, mdiExpansionCard, mdiSourceBranch } from '@mdi/js';
@@ -74,6 +84,8 @@
   let hardware = $state<HardwareCheckResponseDto | null>(null);
   let models = $state<CloudModelData>({ catalog: null, catalogFailed: false, choices: {} });
   let notice = $state('');
+  let destinations = $state<MlDestinationResponseDto[]>([]);
+  let routes = $state<MlWorkloadRouteDto[]>([]);
   /** The catalogue was read for the current linked and turned-on state. */
   let modelsRequested = false;
   /** Only the latest read is shown, whatever order the answers arrive in. */
@@ -86,6 +98,12 @@
     void getHardwareCheck()
       .then((next) => (hardware = next))
       .catch(() => (hardware = null));
+    void Promise.all([listMlDestinations(), getMlWorkloadRoutes()])
+      .then(([places, saved]) => {
+        destinations = places ?? [];
+        routes = saved?.routes ?? [];
+      })
+      .catch(() => {});
   });
 
   const settingsDraft = getSystemConfigDraft();
@@ -128,6 +146,20 @@
       }
     });
   });
+
+  /** Search or faces: built on Frameleaf Cloud when its destination route says so, else at home. */
+  const indexRoute = (id: 'search' | 'faces'): RouteMode =>
+    currentChoice(id, { destinations, routes, cloudRouting: cloudMl?.routing, cloudOn }) === CLOUD ? 'cloud' : 'local';
+  /** The places a row can really use: search and faces never "Both", and Frameleaf Cloud only once it offers them. */
+  const modesFor = (id: string, route: RouteMode) =>
+    isIndexWork(id)
+      ? routingModes.filter(
+          (mode) =>
+            mode.id === 'local' ||
+            (mode.id === 'cloud' &&
+              (route === 'cloud' || cloudMatched.includes(ROW_WORKLOAD[id as 'search' | 'faces']))),
+        )
+      : routingModes;
 
   const setRoute = (id: string, mode: RouteMode) => {
     if (cloudMl && isRoutedWorkload(id)) {
@@ -173,7 +205,8 @@
   {/if}
   <ul class="fc-routing-list">
     {#each mlWorkloads as row (row.id)}
-      {@const route = workloadRoute(cloudMl?.routing, row.id)}
+      {@const index = isIndexWork(row.id)}
+      {@const route = index ? indexRoute(row.id as 'search' | 'faces') : workloadRoute(cloudMl?.routing, row.id)}
       {@const local = localCapability(row.id, worker)}
       {@const summary = row.cloud ? routeSummary(route, local) : null}
       <li>
@@ -193,15 +226,16 @@
           use:rovingFocus
           aria-label={$t('admin.frameleaf_routing_where_label', { values: { name: $t(workloadNameKey(row.id)) } })}
         >
-          {#each routingModes as mode (mode.id)}
-            {@const off = disabled || (mode.id !== 'local' && (!row.cloud || !cloudOn))}
+          {#each modesFor(row.id, route) as mode (mode.id)}
+            <!-- Search and faces are chosen in Where work runs, where their one place is saved. -->
+            {@const off = index || disabled || (mode.id !== 'local' && (!row.cloud || !cloudOn))}
             <button
               type="button"
               role="radio"
               aria-checked={route === mode.id}
               class:is-on={route === mode.id}
               disabled={off}
-              title={!row.cloud && mode.id !== 'local' ? $t(workloadWhyKey(row.id)) : undefined}
+              title={!index && !row.cloud && mode.id !== 'local' ? $t(workloadWhyKey(row.id)) : undefined}
               onclick={() => setRoute(row.id, mode.id)}
             >
               {$t(mode.labelKey)}
@@ -217,6 +251,14 @@
             {$t(workloadWhyKey(row.id))}
           {/if}
         </p>
+        {#if index}
+          <p class="fc-routing-summary">
+            {$t('frameleaf_index_one_place')}
+            <a class="fc-link" href={Route.systemProcessingDestinations()}
+              >{$t('admin.frameleaf_routing_change_index')}</a
+            >
+          </p>
+        {/if}
         {#if showModels && isMatchedWorkload(row.id) && matchedModel(row.id)}
           {@const workload = row.id as MatchedWorkload}
           <div class="fc-routing-models">
