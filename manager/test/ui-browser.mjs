@@ -118,7 +118,14 @@ await page.route('**/manager-api/**', async (route) => {
       source: sources.find((s) => s.id === body.sourceId),
       backup: { action: backupAction, takenAt: Date.now() - 3600000 },
     };
-  else if (path === 'storage')
+  else if (path === 'source-settings') {
+    const settings = body.settings ?? { forkOnly: {}, oauth: { clientSecret: '[unchanged]' } };
+    const current = sources.find((s) => s.id === body.sourceId);
+    value = {
+      settings,
+      source: { ...current, unsupportedSettings: Object.keys(settings).filter((k) => k === 'forkOnly'), settingsEdited: !!body.settings },
+    };
+  } else if (path === 'storage')
     value = [
       { path: '/fixture/media', totalBytes: 4 * 1024 ** 4, freeBytes: 3 * 1024 ** 4, availableBytes: 3 * 1024 ** 4 },
     ];
@@ -396,6 +403,26 @@ try {
     await page.getByRole('checkbox').check();
     await mainButton('Review database backup').click();
     await page.getByRole('heading', { name: 'Back up the Immich database' }).waitFor();
+    sources = [{ ...source, settings: ['forkOnly', 'oauth'], unsupportedSettings: ['forkOnly'] }];
+    await nav('Set up Frameleaf');
+    await mainButton('Review import').click();
+    await mainButton('Review library & settings').click();
+    await page.getByText('Settings require review', { exact: true }).waitFor();
+    const editor = page.getByLabel('Settings JSON');
+    await page.waitForFunction(() => document.querySelector('.settings-editor')?.value.includes('forkOnly'));
+    assert.match(await editor.inputValue(), /\[unchanged\]/);
+    await page.getByRole('checkbox').check();
+    assert.equal(await page.locator('.wizard-footer .button.primary').isDisabled(), true);
+    await editor.fill('{"oauth":{"clientSecret":"[unchanged]"}}');
+    await mainButton('Save settings').click();
+    await page.getByText('Advanced settings · edited').waitFor();
+    assert.equal(await page.getByText('Settings require review', { exact: true }).count(), 0);
+    assert.equal(await page.locator('.wizard-footer .button.primary').isDisabled(), false);
+    await editor.fill('{oops');
+    await mainButton('Save settings').click();
+    await page.getByText('Settings must be a JSON object', { exact: false }).first().waitFor();
+    await page.getByLabel('Settings JSON').scrollIntoViewIfNeeded();
+    await screenshot('import-advanced-settings');
     sources = [];
     refused = [{ code: 'unsupported_source' }];
     await nav('Set up Frameleaf');

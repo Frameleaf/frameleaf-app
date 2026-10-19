@@ -196,6 +196,18 @@ class Api {
     const { sourceId } = z.object({ sourceId: ReviewInput.shape.sourceId.unwrap() }).strict().parse(input);
     return operations.sourceReview(sourceId);
   }
+  @Post('source-settings') sourceSettings(@Body() input: unknown) {
+    const { sourceId, settings } = z
+      .object({
+        sourceId: ReviewInput.shape.sourceId.unwrap(),
+        settings: z.record(z.string(), z.unknown()).nullable().optional(),
+      })
+      .strict()
+      .parse(input);
+    return settings === undefined
+      ? operations.sourceSettings(sourceId)
+      : operations.saveSourceSettings(sourceId, settings);
+  }
   @Get('storage') async storage() {
     const roots = [
       ...new Set([

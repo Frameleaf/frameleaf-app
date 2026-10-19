@@ -30,3 +30,4 @@
 progress.progress,progress.meter{appearance:none;border:0;display:block;width:100%;height:7px;overflow:hidden;border-radius:20px;background:var(--border)}progress::-webkit-progress-bar{background:var(--border);border-radius:20px}progress::-webkit-progress-value{background:var(--accent);border-radius:20px}progress::-moz-progress-bar{background:var(--accent);border-radius:20px}
 
 #toast.visible{pointer-events:auto}
+.settings-editor{min-height:320px;padding:12px;background:var(--raised);border:1px solid var(--border);border-radius:9px;color:var(--text);font:12px/1.6 ui-monospace,SFMono-Regular,monospace!important;resize:vertical}

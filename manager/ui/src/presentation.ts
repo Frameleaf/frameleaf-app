@@ -119,6 +119,9 @@ const moveRefusals: Record<string, string> = {
   media_copy_still_running: 'The copy helper is still running. Stop safely and wait for it to exit before recovery.',
 };
 const refusals: Record<string, string> = {
+  settings_not_json: 'Settings must be a JSON object. Check for a missing comma or bracket, then save again.',
+  masked_secret_missing: 'A secret value can only be kept as [unchanged] where it already exists. Enter the value, or restore the original line.',
+  incompatible_settings_require_review: 'Some Immich settings aren’t recognised by Frameleaf. Review them in Advanced settings on the next step.',
   release_service_unavailable: 'Manager could not reach GitHub to check Frameleaf releases. Check this server can reach github.com, then try again.',
   release_not_eligible: 'This Frameleaf release is not offered to this server. Choose another release.',
   release_bundle_missing: 'This Frameleaf release is missing installation files Manager needs. Choose a newer release.',
