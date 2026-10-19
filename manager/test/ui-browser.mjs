@@ -244,7 +244,16 @@ const nav = async (name) => {
     });
   }
 };
-const refresh = () => button('Refresh Manager').click();
+const refresh = async () => {
+  await button('Refresh Manager').click();
+  await page.locator('main[aria-busy="false"]').waitFor();
+};
+// Before anything is installed, setup runs in its own shell; its rail returns to the chooser.
+const chooser = async () => {
+  if (!(await page.locator('.setup-rail').count())) return nav('Set up Frameleaf');
+  await page.locator('.setup-rail').getByRole('button', { name: 'Choose how to begin', exact: true }).click();
+  await page.locator('main[aria-busy="false"]').waitFor();
+};
 const check = async (name, action) => {
   await action();
   assert.deepEqual(errors, [], name + ': browser errors');
@@ -369,11 +378,11 @@ try {
     dashboard.operations = [];
     dashboard.onboardingFinished = false;
     await refresh();
-    await nav('Set up Frameleaf');
+    await chooser();
     await mainButton('Review import').click();
     await mainButton('Review library & settings').click();
     await page.getByRole('heading', { name: 'Your library, in the same place' }).waitFor();
-    assert.equal(await page.locator('.steps li').count(), 3);
+    assert.equal(await page.locator('.setup-rail ul li').count(), 3);
     await page.getByRole('checkbox').check();
     await mainButton('Review cutover').click();
     await page.getByLabel('Library name', { exact: true }).fill('Family library');
@@ -383,7 +392,7 @@ try {
     assert.equal(await mainButton('Start import').isDisabled(), true);
     await page.getByRole('checkbox').check();
     await screenshot('import-cutover');
-    await nav('Set up Frameleaf');
+    await chooser();
     backupAction = 'create';
     sources = [source, { ...source, id: 'e'.repeat(64), project: 'another-library' }];
     await mainButton('Review import').click();
@@ -392,13 +401,13 @@ try {
     await page.getByRole('radio').last().check();
     await mainButton('Review library & settings').click();
     await page.getByRole('heading', { name: 'Your library, in the same place' }).waitFor();
-    assert.equal(await page.locator('.steps li').count(), 4);
+    assert.equal(await page.locator('.setup-rail ul li').count(), 4);
     await page.getByRole('checkbox').check();
     await mainButton('Review database backup').click();
     await page.getByRole('heading', { name: 'Back up the Immich database' }).waitFor();
     sources = [];
     refused = [{ code: 'unsupported_source' }];
-    await nav('Set up Frameleaf');
+    await chooser();
     await mainButton('Find installations').click();
     await page.getByText('unsupported source', { exact: true }).waitFor();
     assert.equal(await mainButton('Review import').count(), 0);
