@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { operationProgress, canCancel, serviceState, formatBytes, readable } from '../ui/src/presentation.js';
+import { operationProgress, canCancel, serviceState, formatBytes, readable, hasGpu, processorName } from '../ui/src/presentation.js';
 
 test('operation timelines use journal steps and never infer successful completion from an error', () => {
   const operation = {
@@ -44,4 +44,15 @@ test('release refusals read as sentences', () => {
 test('a refusal detail names what blocked the request', () => {
   const text = readable('database_overlaps_existing_container_data', 'Blocking container: krusader, which can write to /mnt/user.');
   assert.match(text, /choose a database folder outside it\. Blocking container: krusader, which can write to \/mnt\/user\.$/);
+});
+
+test('setup names the detected graphics card and treats only GPUs as accelerated', () => {
+  assert.equal(processorName('openvino'), 'Intel GPU');
+  assert.equal(processorName('cuda'), 'NVIDIA GPU');
+  assert.equal(processorName('rocm'), 'AMD GPU');
+  assert.equal(processorName('cpu'), 'CPU processing');
+  assert.equal(processorName(undefined), 'CPU processing');
+  assert.equal(hasGpu('openvino'), true);
+  assert.equal(hasGpu('cpu'), false);
+  assert.equal(hasGpu(undefined), false);
 });

@@ -71,3 +71,20 @@ it.each([
   expect(handleFetch).not.toHaveBeenCalled();
   expect(respondWith).not.toHaveBeenCalled();
 });
+
+it.each([
+  ['Range', 'bytes=4-7'],
+  ['If-Range', '"version-1"'],
+  ['If-Match', '"version-1"'],
+  ['If-None-Match', '"version-1"'],
+  ['If-Modified-Since', 'Mon, 19 Oct 2026 00:00:00 GMT'],
+  ['If-Unmodified-Since', 'Mon, 19 Oct 2026 00:00:00 GMT'],
+])('leaves %s requests to the browser instead of sharing another response', (name, value) => {
+  const request = new Request('https://frameleaf.test/api/assets/a/original', { headers: { [name]: value } });
+  const respondWith = vi.fn();
+
+  listeners.get('fetch')!({ request, respondWith } as unknown as Event);
+
+  expect(handleFetch).not.toHaveBeenCalled();
+  expect(respondWith).not.toHaveBeenCalled();
+});

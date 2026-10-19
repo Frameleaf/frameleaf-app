@@ -23,6 +23,8 @@ sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest "$STATE_FOLDER" "$LIBRAR
 
 The launcher mounts `/proc/1/mountinfo` read only so Manager can compare the host filesystem identities of appdata and Docker storage, including bind aliases. It also mounts Unraid's Docker configuration read only and, when present, its exact autostart file for source cutover. It never sources the configuration as shell code. The first administrator is created from the home network while Manager has no administrator; no claim key is needed.
 
+When machine learning is on, Manager picks the hardware variant on amd64 hosts: CUDA when Docker has the `nvidia` runtime, ROCm for an AMD render node with `/sys/class/kfd`, OpenVINO for an Intel render node, otherwise CPU. It reads the host's read-only sysfs, so Manager itself needs no `/dev` mappings; the device passthrough from `docker/hwaccel.ml.yml` goes on the machine learning container only. Set `MANAGER_ML_ACCELERATION` to `cpu`, `cuda`, `rocm` or `openvino` to override detection. The setup screen names the detected GPU and turns machine learning on by default when one is found.
+
 ## Import authority
 
 Manager owns media mappings and service lifecycle. It preserves the reviewed bind paths or named volumes, destinations and access modes. The offline import container mounts those same locations read-only; ordinary Frameleaf access begins only after canonical import verification and source fencing succeed. It neither copies nor relocates media.

@@ -1,5 +1,8 @@
 import { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { AssetMediaController } from 'src/controllers/asset-media.controller.js';
+import { SharedLinkController } from 'src/controllers/shared-link.controller.js';
+import { AuthCookie } from 'src/enum.js';
 import {
   AuthGuard,
   Authenticated,
@@ -9,6 +12,7 @@ import {
 } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AuthService } from 'src/services/auth.service.js';
+import { sharedLinkStub } from 'test/fixtures/shared-link.stub.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -37,7 +41,7 @@ class TestController {
   logoutRoute() {}
 }
 
-const contextFor = (handler: () => void, request: Record<string, unknown> = {}) =>
+const contextFor = (handler: (...args: any[]) => unknown, request: Record<string, unknown> = {}) =>
   ({
     getHandler: () => handler,
     getClass: () => TestController,
@@ -52,6 +56,41 @@ describe(AuthGuard.name, () => {
   beforeEach(() => {
     ({ sut: authService, mocks } = newTestService(AuthService));
     sut = new AuthGuard(mocks.logger as unknown as LoggingRepository, new Reflector(), authService);
+  });
+
+  describe('protected shared links', () => {
+    beforeEach(() => {
+      mocks.sharedLink.getByKey.mockResolvedValue({ ...sharedLinkStub.valid, password: 'password-hash' });
+      mocks.crypto.serverKeyedHash.mockResolvedValue('current-unlock-token');
+    });
+
+    it('refuses a thumbnail before its protected link is unlocked', async () => {
+      await expect(
+        sut.canActivate(
+          contextFor(AssetMediaController.prototype.viewAsset, {
+            query: { key: 'protected-link' },
+          }),
+        ),
+      ).rejects.toThrow('Password required');
+    });
+
+    it('allows media after its protected link is unlocked', async () => {
+      await expect(
+        sut.canActivate(
+          contextFor(AssetMediaController.prototype.viewAsset, {
+            query: { key: 'protected-link' },
+            headers: { cookie: `${AuthCookie.SharedLinkToken}=current-unlock-token` },
+          }),
+        ),
+      ).resolves.toBe(true);
+    });
+
+    it.each([SharedLinkController.prototype.getMySharedLink, SharedLinkController.prototype.sharedLinkLogin])(
+      'allows the protected-link landing and login challenge: %s',
+      async (handler) => {
+        await expect(sut.canActivate(contextFor(handler, { query: { key: 'protected-link' } }))).resolves.toBe(true);
+      },
+    );
   });
 
   describe('setup routes', () => {

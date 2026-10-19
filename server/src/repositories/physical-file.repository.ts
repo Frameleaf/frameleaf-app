@@ -10,6 +10,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import {
   AssetFileType,
   AssetStatus,
+  AssetType,
   DatabaseLock,
   MediaOperationCheckpointState,
   PhysicalFileType,
@@ -1064,6 +1065,8 @@ export class PhysicalFileRepository {
   async getCanonicalGeneratedFile(assetId: string, type: AssetFileType, renditionIdentity?: string | null) {
     const hdr = type === AssetFileType.HdrPreview || type === AssetFileType.HdrFullSize;
     if (hdr && !renditionIdentity) return;
+    const videoCover = type === AssetFileType.Preview || type === AssetFileType.Thumbnail;
+    const identified = hdr || !!renditionIdentity;
     const physicalType = this.toPhysicalFileType(type);
     const registered = await this.db
       .selectFrom('asset as duplicateAsset')
@@ -1073,7 +1076,7 @@ export class PhysicalFileRepository {
           .onRef('generatedPhysical.canonicalAssetId', '=', 'originalPhysical.canonicalAssetId')
           .on('generatedPhysical.type', '=', physicalType),
       )
-      .$if(hdr, (query) =>
+      .$if(identified, (query) =>
         query
           .innerJoin('asset_file as generatedFile', (join) =>
             join.onRef('generatedFile.physicalFileId', '=', 'generatedPhysical.id').on('generatedFile.type', '=', type),
@@ -1082,6 +1085,7 @@ export class PhysicalFileRepository {
       )
       .select(['generatedPhysical.id', 'generatedPhysical.path', 'generatedPhysical.canonicalAssetId'])
       .where('duplicateAsset.id', '=', asUuid(assetId))
+      .$if(videoCover && !renditionIdentity, (query) => query.where('duplicateAsset.type', '!=', AssetType.Video))
       .whereRef('duplicateAsset.id', '!=', 'originalPhysical.canonicalAssetId')
       .executeTakeFirst();
     if (registered) {
@@ -1094,14 +1098,21 @@ export class PhysicalFileRepository {
       .innerJoin('asset_file as generated', 'generated.assetId', 'originalPhysical.canonicalAssetId')
       .select(['generated.physicalFileId as id', 'generated.path', 'originalPhysical.canonicalAssetId'])
       .where('duplicateAsset.id', '=', asUuid(assetId))
+      .$if(videoCover && !renditionIdentity, (query) => query.where('duplicateAsset.type', '!=', AssetType.Video))
       .whereRef('duplicateAsset.id', '!=', 'originalPhysical.canonicalAssetId')
       .where('generated.type', '=', type)
       .where('generated.isEdited', '=', false)
-      .$if(hdr, (query) => query.where('generated.renditionIdentity', '=', renditionIdentity!))
+      .$if(identified, (query) => query.where('generated.renditionIdentity', '=', renditionIdentity!))
       .executeTakeFirst();
   }
   // Same aliasing hazard as linkAssetToOriginalPhysicalFile, for derivatives.
-  async linkGeneratedFile(assetId: string, type: AssetFileType, physicalFileId: string, path: string) {
+  async linkGeneratedFile(
+    assetId: string,
+    type: AssetFileType,
+    physicalFileId: string,
+    path: string,
+    expected?: { path: string; renditionIdentity?: string | null },
+  ) {
     await this.withPathLock(path, (trx) =>
       trx
         .updateTable('asset_file')
@@ -1109,6 +1120,11 @@ export class PhysicalFileRepository {
         .where('assetId', '=', asUuid(assetId))
         .where('type', '=', type)
         .where('isEdited', '=', false)
+        .$if(!!expected, (query) =>
+          query
+            .where('path', '=', expected!.path)
+            .where(sql<boolean>`"renditionIdentity" IS NOT DISTINCT FROM ${expected!.renditionIdentity ?? null}`),
+        )
         .execute(),
     );
   }
@@ -1500,18 +1516,36 @@ export class PhysicalFileRepository {
   getGeneratedFile(assetId: string, type: AssetFileType) {
     return this.db
       .selectFrom('asset_file')
-      .select(['id', 'assetId', 'type', 'path', 'physicalFileId', 'renditionIdentity'])
-      .where('assetId', '=', asUuid(assetId))
-      .where('type', '=', type)
-      .where('isEdited', '=', false)
+      .innerJoin('asset', 'asset.id', 'asset_file.assetId')
+      .select([
+        'asset_file.id',
+        'asset_file.assetId',
+        'asset_file.type',
+        'asset_file.path',
+        'asset_file.physicalFileId',
+        'asset_file.renditionIdentity',
+        'asset.type as assetType',
+      ])
+      .where('asset_file.assetId', '=', asUuid(assetId))
+      .where('asset_file.type', '=', type)
+      .where('asset_file.isEdited', '=', false)
       .executeTakeFirst();
   }
   getGeneratedFiles(assetId: string) {
     return this.db
       .selectFrom('asset_file')
-      .select(['id', 'assetId', 'type', 'path', 'physicalFileId', 'renditionIdentity'])
-      .where('assetId', '=', asUuid(assetId))
-      .where('type', 'in', [
+      .innerJoin('asset', 'asset.id', 'asset_file.assetId')
+      .select([
+        'asset_file.id',
+        'asset_file.assetId',
+        'asset_file.type',
+        'asset_file.path',
+        'asset_file.physicalFileId',
+        'asset_file.renditionIdentity',
+        'asset.type as assetType',
+      ])
+      .where('asset_file.assetId', '=', asUuid(assetId))
+      .where('asset_file.type', 'in', [
         AssetFileType.Thumbnail,
         AssetFileType.Preview,
         AssetFileType.FullSize,
@@ -1519,7 +1553,7 @@ export class PhysicalFileRepository {
         AssetFileType.HdrFullSize,
         AssetFileType.EncodedVideo,
       ])
-      .where('isEdited', '=', false)
+      .where('asset_file.isEdited', '=', false)
       .execute();
   }
   private toPhysicalFileType(type: AssetFileType) {

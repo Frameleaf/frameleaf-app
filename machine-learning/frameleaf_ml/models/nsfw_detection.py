@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from functools import cached_property
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, cast
 
@@ -10,7 +11,7 @@ from huggingface_hub import snapshot_download
 from numpy.typing import NDArray
 from PIL import Image
 
-from frameleaf_ml.config import model_repository_url, model_source_token
+from frameleaf_ml.config import model_repository_url, model_source_token, settings
 from frameleaf_ml.models.base import InferenceModel
 from frameleaf_ml.schemas import ModelSession, ModelTask, ModelType
 from frameleaf_ml.sessions.ort import OrtSession
@@ -25,6 +26,15 @@ class NsfwDetectionModel(InferenceModel):
         self.threshold = float(model_kwargs.get("threshold", 0.85))
         self.device = str(model_kwargs.get("device", "AUTO") or "AUTO")
         super().__init__(model_name, **model_kwargs)
+
+    @property
+    def _cache_dir_default(self) -> Path:
+        return (
+            settings.cache_folder
+            / self.model_task.value
+            / "repositories"
+            / sha256(self.hf_model_name.encode()).hexdigest()
+        )
 
     def configure(self, **kwargs: Any) -> None:
         if "threshold" in kwargs:

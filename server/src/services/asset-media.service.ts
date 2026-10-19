@@ -68,7 +68,9 @@ export interface AssetMediaRedirectResponse {
 @Injectable()
 export class AssetMediaService extends BaseService {
   async getUploadAssetIdByChecksum(auth: AuthDto, checksum?: string): Promise<AssetMediaResponseDto | undefined> {
-    if (!checksum) {
+    requireUploadAccess(auth);
+    // A link visitor may upload, but may not probe the owner's private library before sending a file.
+    if (auth.sharedLink || !checksum) {
       return;
     }
 

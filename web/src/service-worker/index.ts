@@ -22,6 +22,14 @@ const handleFetch = (event: FetchEvent): void => {
   if (url.origin !== sw.location.origin || !ASSET_REQUEST_REGEX.test(url.pathname)) {
     return;
   }
+  // The browser owns byte ranges and preconditions; a URL alone cannot identify their responses.
+  if (
+    ['range', 'if-range', 'if-match', 'if-none-match', 'if-modified-since', 'if-unmodified-since'].some((name) =>
+      event.request.headers.has(name),
+    )
+  ) {
+    return;
+  }
   event.respondWith(handleAssetFetch(event.request));
 };
 

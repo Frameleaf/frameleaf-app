@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, realpath, statfs, access } from 'node:fs/promises';
+import { readFile, readdir, writeFile, mkdir, realpath, statfs, access } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { load } from 'js-yaml';
@@ -6,6 +6,40 @@ import { z } from 'zod';
 import { Refusal, imageDigest, type Installation, type Mount, type Source } from './contracts.js';
 import type { VerifiedRelease } from './releases.js';
 import { atomicJson } from './files.js';
+import { command } from './docker.js';
+
+export type Acceleration = 'cpu' | 'cuda' | 'rocm' | 'openvino';
+/** Device passthrough per variant, matching docker/hwaccel.ml.yml. */
+const ACCELERATION_SERVICE: Record<Exclude<Acceleration, 'cpu'>, Record<string, unknown>> = {
+  cuda: { deploy: { resources: { reservations: { devices: [{ driver: 'nvidia', count: 1, capabilities: ['gpu'] }] } } } },
+  rocm: { group_add: ['video'], devices: ['/dev/dri:/dev/dri', '/dev/kfd:/dev/kfd'] },
+  openvino: { device_cgroup_rules: ['c 189:* rmw'], devices: ['/dev/dri:/dev/dri'] },
+};
+/**
+ * Picks the ML variant for this host: NVIDIA (Docker has the nvidia runtime), then AMD (render node + ROCm
+ * kfd), then Intel (render node). Docker mounts host sysfs read-only in every container, so Manager needs
+ * no /dev mapping to detect; only the ML container gets the devices. The CUDA, ROCm and OpenVINO images
+ * are amd64 only. MANAGER_ML_ACCELERATION overrides detection.
+ */
+export async function detectAcceleration(
+  sys = '/sys',
+  runtimes = () => command('docker', ['info', '--format', '{{json .Runtimes}}'], { timeout: 10_000 }),
+  arch = process.arch,
+): Promise<Acceleration> {
+  const forced = process.env.MANAGER_ML_ACCELERATION;
+  if (forced === 'cpu' || forced === 'cuda' || forced === 'rocm' || forced === 'openvino') return forced;
+  if (arch !== 'x64') return 'cpu';
+  const docker = await runtimes().then((r) => JSON.parse(r || '{}') ?? {}, () => ({}));
+  if (Object.hasOwn(docker, 'nvidia')) return 'cuda';
+  const nodes = (await readdir(join(sys, 'class/drm')).catch(() => [])).filter((n) => n.startsWith('renderD'));
+  const vendors = await Promise.all(
+    nodes.map((n) => readFile(join(sys, 'class/drm', n, 'device/vendor'), 'utf8').then((v) => v.trim(), () => '')),
+  );
+  const kfd = await access(join(sys, 'class/kfd')).then(() => true, () => false);
+  if (kfd && vendors.includes('0x1002')) return 'rocm';
+  if (vendors.includes('0x8086')) return 'openvino';
+  return 'cpu';
+}
 
 export const ApplicationConfig = z
   .object({
@@ -59,6 +93,7 @@ export async function renderCompose(
   password: string,
   directory: string,
   config?: ApplicationConfig,
+  acceleration?: Acceleration,
 ): Promise<void> {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const template = load(await readFile(join(release.directory, 'docker-compose.yml'), 'utf8')) as any;
@@ -174,10 +209,15 @@ export async function renderCompose(
       healthcheck: template.services['frameleaf-server'].healthcheck,
     },
   };
-  if (installation.ml)
+  if (installation.ml) {
+    const accel = acceleration ?? (await detectAcceleration());
+    // A release without the attested variant digest keeps the CPU image rather than an unverified tag.
+    const variant = accel === 'cpu' ? undefined : release.nas.images.machineLearningVariants?.[accel];
+    if (variant) imageDigest.parse(variant);
     services['frameleaf-machine-learning'] = {
       networks: { default: { aliases: ['immich-machine-learning'] } },
-      image: machineLearning,
+      image: variant ?? machineLearning,
+      ...(variant && ACCELERATION_SERVICE[accel as Exclude<Acceleration, 'cpu'>]),
       labels,
       restart: 'unless-stopped',
       volumes: [
@@ -185,6 +225,7 @@ export async function renderCompose(
         { type: 'volume', source: STUDIO_WORKER_VOLUME, target: STUDIO_WORKER_TARGET, read_only: true },
       ],
     };
+  }
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const compose = JSON.parse(
     JSON.stringify(

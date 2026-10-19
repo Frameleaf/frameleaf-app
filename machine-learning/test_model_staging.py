@@ -18,7 +18,7 @@ from frameleaf_ml.models.florence_manifest import FLORENCE_MODELS
 from frameleaf_ml.models.image_description import ImageDescriptionModel
 from frameleaf_ml.models.nsfw_detection import NsfwDetectionModel
 from frameleaf_ml.privacy import _download_client
-from frameleaf_ml.schemas import ModelTask, ModelType
+from frameleaf_ml.schemas import ModelFormat, ModelTask, ModelType
 from frameleaf_ml.staging import RECEIPT, cache_hashes, stage_model, verify_staged
 
 
@@ -146,6 +146,44 @@ def test_empty_cache_can_be_staged(model: SyntheticModel) -> None:
     model.cache_dir.mkdir()
     stage_model(model)
     verify_staged(model.cache_dir)
+
+
+def test_nsfw_repository_switch_downloads_the_selected_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "cache_folder", tmp_path)
+    monkeypatch.setattr(settings, "model_downloads", True)
+    original = NsfwDetectionModel("onnx-community/nsfw_image_detection-ONNX", model_format=ModelFormat.ONNX)
+    selected = NsfwDetectionModel("private-team/nsfw_image_detection-ONNX", model_format=ModelFormat.ONNX)
+
+    def acquire(repo: str, **kwargs: Any) -> None:
+        destination = Path(kwargs["local_dir"]) / "onnx/model.onnx"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(repo.encode())
+
+    with patch("frameleaf_ml.models.nsfw_detection.snapshot_download", side_effect=acquire):
+        original.download()
+        selected.download()
+
+    assert selected.model_path.read_bytes() == b"private-team/nsfw_image_detection-ONNX"
+    assert original.model_path.read_bytes() == b"onnx-community/nsfw_image_detection-ONNX"
+
+
+def test_nsfw_offline_loading_does_not_adopt_a_legacy_basename_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "cache_folder", tmp_path)
+    monkeypatch.setattr(settings, "model_downloads", False)
+    legacy = tmp_path / "nsfw-detection/nsfw_image_detection-ONNX"
+    (legacy / "onnx").mkdir(parents=True)
+    (legacy / "onnx/model.onnx").write_bytes(b"unidentified legacy weights")
+    (legacy / RECEIPT).write_text(json.dumps(cache_hashes(legacy)))
+    selected = NsfwDetectionModel("private-team/nsfw_image_detection-ONNX", model_format=ModelFormat.ONNX)
+
+    with pytest.raises(ModelUnavailableError, match="model-staging"):
+        selected.download()
+
+    assert (legacy / "onnx/model.onnx").read_bytes() == b"unidentified legacy weights"
 
 
 def test_refresh_does_not_restore_obsolete_paths_for_the_selected_model(

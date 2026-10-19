@@ -3,11 +3,13 @@ import { PhysicalFileTrashController } from 'src/controllers/physical-file-trash
 import { Permission } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhysicalFileTrashService } from 'src/services/physical-file-trash.service.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
 import { ControllerContext, automock, controllerSetup, mockBaseService } from 'test/utils.js';
 
 describe(PhysicalFileTrashController.name, () => {
   let ctx: ControllerContext;
   const service = mockBaseService(PhysicalFileTrashService);
+  const auth = authStub.adminWithElevatedPermission;
   const id = '9c3c4b8a-6a3e-4d8f-9a39-6f0c3f4b2a11';
   const adminOnly = expect.objectContaining({
     metadata: expect.objectContaining({ adminRoute: true, permission: Permission.Maintenance }),
@@ -24,6 +26,7 @@ describe(PhysicalFileTrashController.name, () => {
   beforeEach(() => {
     service.resetAllMocks();
     ctx.reset();
+    ctx.authenticate.mockResolvedValue(auth);
   });
 
   it('GET /admin/file-trash lists the file trash for an administrator', async () => {
@@ -33,7 +36,7 @@ describe(PhysicalFileTrashController.name, () => {
 
     expect(status).toBe(200);
     expect(body).toEqual({ items: [], total: 0, totalBytes: 0 });
-    expect(service.list).toHaveBeenCalledWith({ page: 2, size: 100 });
+    expect(service.list).toHaveBeenCalledWith(auth, { page: 2, size: 100 });
     expect(ctx.authenticate).toHaveBeenCalledWith(adminOnly);
   });
 
@@ -44,6 +47,7 @@ describe(PhysicalFileTrashController.name, () => {
 
     expect(status).toBe(200);
     expect(body).toEqual({ assetId: 'asset-id' });
+    expect(service.restore).toHaveBeenCalledWith(auth, id);
     expect(ctx.authenticate).toHaveBeenCalledWith(adminOnly);
   });
 
@@ -51,7 +55,7 @@ describe(PhysicalFileTrashController.name, () => {
     const { status } = await request(ctx.getHttpServer()).delete(`/admin/file-trash/${id}`);
 
     expect(status).toBe(204);
-    expect(service.purge).toHaveBeenCalledWith(id);
+    expect(service.purge).toHaveBeenCalledWith(auth, id);
     expect(ctx.authenticate).toHaveBeenCalledWith(adminOnly);
   });
 

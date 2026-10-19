@@ -33,10 +33,12 @@ import { Refusal, publicSource, redact } from './contracts.js';
 import { appdataDefaults } from './appdata.js';
 import { nativeListener } from './runtime/native-listener.js';
 import { PostgresStorage } from './postgres-storage.js';
+import { detectAcceleration } from './compose.js';
 import { sharePortWithRedirect } from './http-redirect.js';
 
 const directory = process.env.MANAGER_DATA;
 const runtime = process.env.MANAGER_RUNTIME ?? 'docker';
+let acceleration: ReturnType<typeof detectAcceleration> | undefined;
 // Docker: optional; without it Manager answers on any IP, localhost, .local or single-label address.
 const origin = process.env.MANAGER_ORIGIN || undefined;
 if (!directory || directory !== resolve(directory) || (runtime === 'native' && !origin))
@@ -168,6 +170,8 @@ class Api {
         version: host?.version ?? 'Unavailable',
         memory: host?.memory,
         processors: host?.processors,
+        // ponytail: probed once per Manager start; a new GPU or driver shows after Manager restarts.
+        acceleration: runtime === 'docker' ? await (acceleration ??= detectAcceleration()) : 'cpu',
       },
       summary: installation ? await operations.librarySummary().catch(() => null) : null,
       services: containers.map((c) => ({
