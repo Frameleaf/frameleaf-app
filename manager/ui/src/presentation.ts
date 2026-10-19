@@ -206,3 +206,9 @@ export function formatBytes(value: number | null | undefined) {
   const unit = Math.min(4, Math.max(0, Math.floor(Math.log(Math.max(value, 1)) / Math.log(1024))));
   return `${Number((value / 1024 ** unit).toFixed(1)).toLocaleString()} ${['B', 'KB', 'MB', 'GB', 'TB'][unit]}`;
 }
+
+const processors: Record<string, string> = { cuda: 'NVIDIA GPU', rocm: 'AMD GPU', openvino: 'Intel GPU' };
+/** The ML accelerator Manager detected on the host (see detectAcceleration). */
+export const hasGpu = (acceleration: string | undefined) => !!acceleration && Object.hasOwn(processors, acceleration);
+export const processorName = (acceleration: string | undefined) =>
+  (hasGpu(acceleration) && processors[acceleration!]) || 'CPU processing';

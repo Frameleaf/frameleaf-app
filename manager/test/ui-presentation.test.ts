@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { operationProgress, canCancel, serviceState, formatBytes, readable } from '../ui/src/presentation.js';
+import { operationProgress, canCancel, serviceState, formatBytes, readable, hasGpu, processorName } from '../ui/src/presentation.js';
 
 test('operation timelines use journal steps and never infer successful completion from an error', () => {
   const operation = {
@@ -39,4 +39,15 @@ test('release refusals read as sentences', () => {
   assert.match(readable('release_bundle_missing'), /^This Frameleaf release is missing installation files/);
   assert.equal(readable('download-images'), 'Download the verified image set');
   assert.match(readable('server_refused_403'), /refused Manager's request \(403\)/);
+});
+
+test('setup names the detected graphics card and treats only GPUs as accelerated', () => {
+  assert.equal(processorName('openvino'), 'Intel GPU');
+  assert.equal(processorName('cuda'), 'NVIDIA GPU');
+  assert.equal(processorName('rocm'), 'AMD GPU');
+  assert.equal(processorName('cpu'), 'CPU processing');
+  assert.equal(processorName(undefined), 'CPU processing');
+  assert.equal(hasGpu('openvino'), true);
+  assert.equal(hasGpu('cpu'), false);
+  assert.equal(hasGpu(undefined), false);
 });

@@ -83,6 +83,7 @@ const dashboard = {
     available: true,
     memory: 16 * 1024 ** 3,
     processors: 8,
+    acceleration: 'openvino',
   },
   backupRoot: '/fixture/backup',
   storageRoots: ['/fixture/media', '/fixture/new-drive'],
@@ -415,6 +416,13 @@ try {
   await check('new library native validation, configuration checks and reviewed install', async () => {
     await mainButton('Set up Frameleaf').click();
     await page.getByLabel(/^Media location/).selectOption('/fixture/media');
+    // A detected GPU is named and turns machine learning on by default.
+    await page.getByText('Intel GPU', { exact: true }).waitFor();
+    assert.equal(await page.getByRole('checkbox', { name: 'Enable' }).isChecked(), true);
+    if (process.env.MANAGER_SCREENSHOTS)
+      await page
+        .locator('section.card', { has: page.getByRole('heading', { name: 'Processing' }) })
+        .screenshot({ path: join(process.env.MANAGER_SCREENSHOTS, 'install-processing.png') });
     await page.getByRole('checkbox', { name: 'Docker or Unraid', exact: false }).check();
     await page.getByLabel('Frameleaf port').fill('12');
     const count = requests.filter((r) => r.path === 'review').length;
@@ -424,6 +432,8 @@ try {
     await mainButton('Check this configuration').click();
     await mainButton('Review installation').click();
     await screenshot('install-review');
+    await page.getByText('Intel GPU · Machine learning on', { exact: true }).waitFor();
+    assert.equal(requests.findLast((r) => r.path === 'review').body.ml, true);
     await mainButton('Install Frameleaf').click();
     await mainButton('Resume safely').waitFor();
     assert.ok(requests.findLast((r) => r.path === 'install').body.key);
