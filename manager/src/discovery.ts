@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { posix } from 'node:path';
 import { Docker, environment, mounts, type Container } from './docker.js';
 import { Refusal, digest, type Source, type Mount } from './contracts.js';
@@ -9,6 +10,13 @@ const REPOSITORY = (names: string) =>
 const OFFICIAL = REPOSITORY('server|microservices');
 const WORKER = REPOSITORY('server|microservices|machine-learning');
 export const isSourceServer = (image: string) => OFFICIAL.test(image);
+/** Where the Immich server listens inside its own container: IMMICH_PORT/IMMICH_HOST, else Immich's defaults. */
+export function versionUrl(env: Record<string, string | undefined>): string {
+  const port = /^\d{1,5}$/.test(env.IMMICH_PORT ?? '') && Number(env.IMMICH_PORT) <= 65535 ? Number(env.IMMICH_PORT) : 2283;
+  const host = env.IMMICH_HOST ?? '';
+  const address = ['', '0.0.0.0', '::', '[::]'].includes(host) || !isIP(host) ? '127.0.0.1' : isIP(host) === 6 ? `[${host}]` : host;
+  return `http://${address}:${port}/api/server/version`;
+}
 const SECRETS = [
   'DB_URL',
   'DB_HOSTNAME',
@@ -156,10 +164,15 @@ export class Discovery {
       ),
     );
     const version = (
-      await this.docker.node(
-        app.Id,
-        `fetch('http://127.0.0.1:2283/api/server/version').then(r=>{if(!r.ok)throw Error();return r.json()}).then(v=>process.stdout.write('v'+v.major+'.'+v.minor+'.'+v.patch)).catch(()=>process.exit(1))`,
-      )
+      await this.docker
+        .node(
+          app.Id,
+          `fetch(process.argv[1]).then(r=>{if(!r.ok)throw Error();return r.json()}).then(v=>process.stdout.write('v'+v.major+'.'+v.minor+'.'+v.patch)).catch(()=>process.exit(1))`,
+          [versionUrl(env)],
+        )
+        .catch(() => {
+          throw new Refusal('source_version_unreachable');
+        })
     ).trim();
     if (!/^v\d+\.\d+\.\d+$/.test(version)) throw new Refusal('unknown_source_version');
     const project = app.Config.Labels?.['com.docker.compose.project'] ?? null;
