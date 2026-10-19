@@ -20,6 +20,7 @@
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { OpenQueryParam } from '$lib/constants';
+  import { isIndexWork } from '$lib/frameleaf/cloud-ml';
   import { aiState, canRunStudioWork, computersFrom, entryState } from '$lib/frameleaf/computers';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
@@ -224,7 +225,7 @@
       return $t('frameleaf_workruns_why_ask');
     }
     if (current === CLOUD) {
-      return $t('frameleaf_workruns_why_cloud');
+      return $t(isIndexWork(kind) ? 'frameleaf_workruns_why_index_cloud' : 'frameleaf_workruns_why_cloud');
     }
     if (silent(current)) {
       return $t('frameleaf_workruns_why_silent', { values: { name: placeName(current) } });
@@ -371,7 +372,13 @@
         {@const fixed = options.length === 0}
         <Row
           label={workName(kind)}
-          help={`${$t(`frameleaf_workruns_use_${kind}` as Translations)} ${reason(kind, current, fixed)}`}
+          help={[
+            $t(`frameleaf_workruns_use_${kind}` as Translations),
+            reason(kind, current, fixed),
+            isIndexWork(kind) && current !== NONE ? $t('frameleaf_index_one_place') : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
         >
           <div class="runs">
             {#if current !== ASK && current !== CLOUD && current !== NONE && silent(current)}
@@ -390,8 +397,12 @@
                 onchange={(event) => (picked = { ...picked, [kind]: event.currentTarget.value })}
               >
                 {#each options as option (option)}
-                  <!-- The cloud record is part of the settings file when one manages them. -->
-                  <option value={option} disabled={locked && (option === ASK || option === CLOUD)}>
+                  <!-- The cloud record is part of the settings file when one manages them; search and faces
+                       reach Frameleaf Cloud through their own route instead. -->
+                  <option
+                    value={option}
+                    disabled={locked && (option === ASK || (option === CLOUD && !isIndexWork(kind)))}
+                  >
                     {choiceLabel(option)}
                   </option>
                 {/each}

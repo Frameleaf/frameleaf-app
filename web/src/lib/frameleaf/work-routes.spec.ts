@@ -123,6 +123,55 @@ describe('what a row offers', () => {
   });
 });
 
+describe('search and faces run in one place (FL-455)', () => {
+  const indexCloud = destination({
+    id: 'fc',
+    name: 'Frameleaf Cloud',
+    kind: MlDestinationKind.FrameleafCloud,
+    workloads: [MlWorkload.Clip, MlWorkload.Face],
+    consent: { required: true, acknowledgedAt: '2026-10-01T00:00:00Z', version: '1', requiredVersion: '1' },
+  } as Partial<MlDestinationResponseDto>);
+  const offered = (overrides: Partial<RouteFacts> = {}) =>
+    facts({ destinations: [server, office, indexCloud], cloudOn: true, ...overrides });
+
+  it('offers Frameleaf Cloud as a place of its own, never Ask me each time', () => {
+    expect(choicesFor('search', offered())).toEqual(['srv', CLOUD, NONE]);
+    expect(choicesFor('faces', offered())).toEqual(['srv', 'office', CLOUD, NONE]);
+    for (const kind of ['search', 'faces'] as const) {
+      expect(choicesFor(kind, offered())).not.toContain(ASK);
+    }
+  });
+
+  it('does not offer Frameleaf Cloud before its consent is recorded', () => {
+    const unconsented = { ...indexCloud, consent: { ...indexCloud.consent, acknowledgedAt: null } };
+    expect(choicesFor('search', offered({ destinations: [server, unconsented] }))).toEqual([]);
+  });
+
+  it('reads Frameleaf Cloud from the destination route, as Workload destinations shows it', () => {
+    const onCloud = offered({ routes: routes({ [MlWorkload.Clip]: 'fc', [MlWorkload.Face]: 'srv' }) });
+    expect(currentChoice('search', onCloud)).toBe(CLOUD);
+    expect(currentChoice('faces', onCloud)).toBe('srv');
+  });
+
+  it('saves Frameleaf Cloud as the destination route and never writes a cloud routing mode', () => {
+    expect(routeWrites({ search: CLOUD }, {}, offered())).toEqual({
+      routes: [{ workload: MlWorkload.Clip, destinationId: 'fc' }],
+      cloud: {},
+    });
+    expect(routeWrites({ search: ASK }, {}, offered()).cloud).toEqual({});
+  });
+
+  it('moves back home, or off, by replacing the cloud route', () => {
+    const onCloud = offered({ routes: routes({ [MlWorkload.Clip]: 'fc' }) });
+    expect(routeWrites({ search: 'srv' }, {}, onCloud).routes).toEqual([
+      { workload: MlWorkload.Clip, destinationId: 'srv' },
+    ]);
+    expect(routeWrites({ search: NONE }, {}, onCloud).routes).toEqual([
+      { workload: MlWorkload.Clip, destinationId: null },
+    ]);
+  });
+});
+
 describe('finer choices', () => {
   it('a follower is "same" while it runs where its row does', () => {
     expect(followerChoice('pets', facts())).toBe(SAME);

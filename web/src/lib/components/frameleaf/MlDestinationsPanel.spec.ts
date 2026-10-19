@@ -157,6 +157,21 @@ describe('MlDestinationsPanel (FL-110)', () => {
     expect(screen.getAllByText('Not routed: jobs are refused').length).toBeGreaterThan(0);
   });
 
+  it('gives search and faces one destination each, Frameleaf Cloud included, and never a both choice', () => {
+    const consented = {
+      ...cloud,
+      workloads: [MlWorkload.Clip, MlWorkload.Face],
+      consent: { ...cloud.consent, acknowledgedAt: '2026-10-01T00:00:00.000Z', version: '2026-10-01' },
+    };
+    render(MlDestinationsPanel, { destinations: [destination(), consented], routes });
+
+    for (const label of ['Search and similarity', 'Face recognition']) {
+      const picker = screen.getByLabelText(label) as HTMLSelectElement;
+      expect(picker.multiple).toBe(false);
+      expect([...picker.options].map((option) => option.value)).toEqual(['', destination().id, consented.id]);
+    }
+  });
+
   it('records the version Frameleaf Cloud requires, only after the acknowledgement is ticked (FL-159)', async () => {
     sdkMock.getCloudMlStatus.mockResolvedValue(cloudStatus);
     sdkMock.grantMlDestinationConsent.mockResolvedValue(cloud);

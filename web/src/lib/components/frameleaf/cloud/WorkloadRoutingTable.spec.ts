@@ -1,6 +1,7 @@
 import {
   CloudMlConnection,
   CloudMlModelGroup,
+  MlDestinationKind,
   MlWorkload,
   type AdminConfigDto,
   type CloudMlModelChoiceDto,
@@ -8,6 +9,7 @@ import {
   type CloudMlModelDto,
   type CloudMlStatusResponseDto,
   type HardwareCheckResponseDto,
+  type MlDestinationResponseDto,
 } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
@@ -205,13 +207,59 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
     sdkMock.getCloudMlStatus.mockResolvedValue(status(CloudMlConnection.Ready));
     render(WorkloadRoutingTable);
 
-    for (const name of ['Smart search', 'Face recognition', 'Text in photos', 'Studio export']) {
+    for (const name of ['Text in photos', 'Studio export']) {
       const group = await screen.findByRole('radiogroup', { name: `Where ${name} runs` });
       expect(within(group).getByRole('radio', { name: 'Both' })).toBeDisabled();
     }
     expect(
       screen.getByText(/Frameleaf Cloud can find faces too when it offers this server's own face model/),
     ).toBeInTheDocument();
+  });
+
+  it('never offers Both for search or faces, and says they run in one place', async () => {
+    useDraft(true);
+    sdkMock.getCloudMlStatus.mockResolvedValue(status(CloudMlConnection.Ready));
+    render(WorkloadRoutingTable);
+
+    for (const name of ['Smart search', 'Face recognition']) {
+      const group = await screen.findByRole('radiogroup', { name: `Where ${name} runs` });
+      // Frameleaf Cloud does not offer this server's models, so this server is the only place.
+      expect(
+        within(group)
+          .getAllByRole('radio')
+          .map((radio) => radio.textContent?.trim()),
+      ).toEqual(['Local only']);
+      expect(within(group).getByRole('radio', { name: 'Local only' })).toHaveAttribute('aria-checked', 'true');
+    }
+    expect(screen.getAllByText(/Runs in one place only, so results never mix two models\./)).toHaveLength(2);
+    expect(screen.getAllByRole('link', { name: 'Change where it runs' })).toHaveLength(2);
+  });
+
+  it('shows search on Frameleaf Cloud when its destination route says so, as Where work runs does', async () => {
+    useDraft(true);
+    sdkMock.getCloudMlStatus.mockResolvedValue({ ...cloudReady(), matchedModelWorkloads: [MlWorkload.Clip] });
+    const cloudPlace = {
+      id: 'cloud-1',
+      kind: MlDestinationKind.FrameleafCloud,
+      enabled: true,
+      workloads: [MlWorkload.Clip],
+      consent: { required: true, acknowledgedAt: '2026-10-01T00:00:00Z', version: '1', requiredVersion: '1' },
+    } as unknown as MlDestinationResponseDto;
+    sdkMock.listMlDestinations.mockResolvedValue([cloudPlace]);
+    sdkMock.getMlWorkloadRoutes.mockResolvedValue({
+      routes: [{ workload: MlWorkload.Clip, destinationId: 'cloud-1' }],
+    });
+    render(WorkloadRoutingTable);
+
+    const search = await screen.findByRole('radiogroup', { name: 'Where Smart search runs' });
+    await vi.waitFor(() =>
+      expect(within(search).getByRole('radio', { name: 'Cloud only' })).toHaveAttribute('aria-checked', 'true'),
+    );
+    expect(within(search).queryByRole('radio', { name: 'Both' })).not.toBeInTheDocument();
+    // The choice is saved in Where work runs; here it only shows.
+    for (const radio of within(search).getAllByRole('radio')) {
+      expect(radio).toBeDisabled();
+    }
   });
 
   it('routes work in the settings draft once cloud processing is on, and sets where jobs start', async () => {
@@ -358,7 +406,8 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
       expect(
         within(faithful).getByText(/This server's model for this work comes with the worker that runs it/),
       ).toBeInTheDocument();
-      expect(sdkMock.getMlWorkloadRoutes).not.toHaveBeenCalled();
+      // The routes are read once, for where search and faces run; the model choices never need them.
+      expect(sdkMock.getMlWorkloadRoutes).toHaveBeenCalledTimes(1);
     });
 
     it('gives Studio AI a speech to text and a speech model, and always asks for them', async () => {
