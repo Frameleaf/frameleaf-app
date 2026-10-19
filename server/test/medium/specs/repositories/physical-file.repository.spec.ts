@@ -1,6 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { AssetFileType, PhysicalFileType } from 'src/enum.js';
+import { AssetFileType, AssetType, PhysicalFileType } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
@@ -689,6 +689,116 @@ describe(PhysicalFileRepository.name, () => {
   });
 
   describe('getCanonicalGeneratedFile', () => {
+    it('does not overwrite a cover published after migration reviewed its file', async () => {
+      const { ctx, sut, assets } = setup();
+      const { user } = await ctx.newUser();
+      const asset = await newAssetWithSize(ctx, user.id, { type: AssetType.Video });
+      const master = await newAssetWithSize(ctx, user.id, { type: AssetType.Video });
+      const primary = await sut.upsertPhysicalFile({
+        canonicalAssetId: master.id,
+        checksum: randomBytes(32),
+        path: `/data/thumbs/${randomUUID()}-primary.jpg`,
+        sizeInBytes: 10,
+        type: PhysicalFileType.Preview,
+      });
+      const path = `/data/thumbs/${randomUUID()}-new-cover.jpg`;
+      await assets.upsertFile({
+        assetId: asset.id,
+        type: AssetFileType.Preview,
+        path,
+        renditionIdentity: 'bb'.repeat(32),
+      });
+      await sut.linkGeneratedFile(asset.id, AssetFileType.Preview, primary.id, primary.path, {
+        path: '/reviewed-old-cover.jpg',
+        renditionIdentity: 'aa'.repeat(32),
+      });
+      await expect(
+        defaultDatabase
+          .selectFrom('asset_file')
+          .select('path')
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow(),
+      ).resolves.toEqual({ path });
+    });
+
+    it('publishes a new cover identity without retaining the old shared physical binding', async () => {
+      const { ctx, sut, assets } = setup();
+      const { user } = await ctx.newUser();
+      const asset = await newAssetWithSize(ctx, user.id, { type: AssetType.Video });
+      await sut.ensureOriginalPhysicalFile(asset.id);
+      const old = await sut.upsertPhysicalFile({
+        canonicalAssetId: asset.id,
+        checksum: randomBytes(32),
+        path: `/data/thumbs/${randomUUID()}-old.jpg`,
+        sizeInBytes: 10,
+        type: PhysicalFileType.Preview,
+      });
+      await assets.upsertFile({
+        assetId: asset.id,
+        type: AssetFileType.Preview,
+        path: old.path,
+        physicalFileId: old.id,
+        renditionIdentity: 'aa'.repeat(32),
+      });
+      const path = `/data/thumbs/${randomUUID()}-new.jpg`;
+      await assets.upsertFiles([
+        {
+          assetId: asset.id,
+          type: AssetFileType.Preview,
+          path,
+          physicalFileId: null,
+          renditionIdentity: 'bb'.repeat(32),
+        },
+      ]);
+      await expect(
+        defaultDatabase
+          .selectFrom('asset_file')
+          .select(['path', 'physicalFileId', 'renditionIdentity'])
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow(),
+      ).resolves.toEqual({ path, physicalFileId: null, renditionIdentity: 'bb'.repeat(32) });
+    });
+
+    it('requires matching video cover identity for both registered and legacy generated files', async () => {
+      const { ctx, sut, assets } = setup();
+      const { user } = await ctx.newUser();
+      const master = await newAssetWithSize(ctx, user.id, { type: AssetType.Video });
+      const duplicate = await newAssetWithSize(ctx, user.id, { type: AssetType.Video });
+      const original = (await sut.ensureOriginalPhysicalFile(master.id))!;
+      await sut.linkAssetToOriginalPhysicalFile(duplicate.id, original);
+      const path = `/data/thumbs/${randomUUID()}-cover.jpg`,
+        identity = 'aa'.repeat(32);
+      await assets.upsertFile({ assetId: master.id, type: AssetFileType.Preview, path, renditionIdentity: identity });
+      await expect(sut.getCanonicalGeneratedFile(duplicate.id, AssetFileType.Preview)).resolves.toBeUndefined();
+      await expect(
+        sut.getCanonicalGeneratedFile(duplicate.id, AssetFileType.Preview, 'bb'.repeat(32)),
+      ).resolves.toBeUndefined();
+      await expect(sut.getCanonicalGeneratedFile(duplicate.id, AssetFileType.Preview, identity)).resolves.toMatchObject(
+        { path },
+      );
+      const generated = await sut.upsertPhysicalFile({
+        canonicalAssetId: master.id,
+        checksum: randomBytes(32),
+        path,
+        sizeInBytes: 10,
+        type: PhysicalFileType.Preview,
+      });
+      await assets.upsertFile({
+        assetId: master.id,
+        type: AssetFileType.Preview,
+        path,
+        physicalFileId: generated.id,
+        renditionIdentity: identity,
+      });
+      await expect(sut.getCanonicalGeneratedFile(duplicate.id, AssetFileType.Preview)).resolves.toBeUndefined();
+      await expect(
+        sut.getCanonicalGeneratedFile(duplicate.id, AssetFileType.Preview, 'bb'.repeat(32)),
+      ).resolves.toBeUndefined();
+      await expect(sut.getCanonicalGeneratedFile(duplicate.id, AssetFileType.Preview, identity)).resolves.toMatchObject(
+        { id: generated.id, path },
+      );
+    });
+
     it('resolves the master-owned generated file only for linked duplicates', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

@@ -914,7 +914,10 @@ export class PhysicalDeduplicationService extends BaseService {
         continue;
       }
       if (
-        (duplicateFile.type === AssetFileType.HdrPreview || duplicateFile.type === AssetFileType.HdrFullSize) &&
+        (duplicateFile.type === AssetFileType.HdrPreview ||
+          duplicateFile.type === AssetFileType.HdrFullSize ||
+          ((duplicateFile.assetType === AssetType.Video || masterFile.assetType === AssetType.Video) &&
+            [AssetFileType.Preview, AssetFileType.Thumbnail].includes(duplicateFile.type))) &&
         (!duplicateFile.renditionIdentity || duplicateFile.renditionIdentity !== masterFile.renditionIdentity)
       ) {
         continue;
@@ -936,6 +939,7 @@ export class PhysicalDeduplicationService extends BaseService {
         duplicateFile.type,
         masterPhysicalFile.id,
         masterPhysicalFile.path,
+        { path: duplicateFile.path, renditionIdentity: duplicateFile.renditionIdentity },
       );
       const { deleted } = await this.physicalFileRepository.deleteUnreferencedPath(duplicateFile.path, () =>
         this.storageRepository.unlink(duplicateFile.path),
@@ -1099,7 +1103,10 @@ export class PhysicalDeduplicationService extends BaseService {
         continue;
       }
       if (
-        (duplicateFile.type === AssetFileType.HdrPreview || duplicateFile.type === AssetFileType.HdrFullSize) &&
+        (duplicateFile.type === AssetFileType.HdrPreview ||
+          duplicateFile.type === AssetFileType.HdrFullSize ||
+          ((duplicateFile.assetType === AssetType.Video || masterFile.assetType === AssetType.Video) &&
+            [AssetFileType.Preview, AssetFileType.Thumbnail].includes(duplicateFile.type))) &&
         (!duplicateFile.renditionIdentity || duplicateFile.renditionIdentity !== masterFile.renditionIdentity)
       ) {
         continue;

@@ -327,7 +327,10 @@ describe(PhysicalFileTrashRepository.name, () => {
       await expect(sut.getById(first.result.entry.id)).resolves.toBeUndefined();
 
       await expect(sut.purge(second.result.entry.id, unlink)).resolves.toMatchObject({ id: second.result.entry.id });
-      expect(unlink).toHaveBeenCalledWith(second.result.entry.path);
+      expect(unlink).toHaveBeenCalledWith(
+        second.result.entry.path,
+        expect.objectContaining({ id: second.result.entry.id }),
+      );
       await expect(sut.getById(second.result.entry.id)).resolves.toBeUndefined();
     });
   });

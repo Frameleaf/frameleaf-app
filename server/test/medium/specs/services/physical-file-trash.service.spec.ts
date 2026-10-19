@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { ChecksumAlgorithm } from 'src/enum.js';
+import { AssetLockReason, AssetType, AssetVisibility, ChecksumAlgorithm } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -19,6 +20,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { PhysicalFileTrashService } from 'src/services/physical-file-trash.service.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB, newTestService } from 'test/utils.js';
 
@@ -76,9 +78,87 @@ const setup = async () => {
 };
 
 // FL-412: a stored file is stood in for by its path: proven to hold the content, with a fixed identity
+const ownerAuth = (ownerId: string) => ({
+  ...authStub.adminWithElevatedPermission,
+  user: { ...authStub.admin.user, id: ownerId },
+});
 const onDisk = (path: string) => Promise.resolve(`identity:${path}`);
 
 describe(PhysicalFileTrashService.name, () => {
+  it('keeps an active motion original private when its still supplies the lock', async () => {
+    const { ctx, entry, user, trash } = await setup();
+    const { asset: motion } = await ctx.newAsset({
+      ownerId: user.id,
+      type: AssetType.Video,
+      visibility: AssetVisibility.Hidden,
+      checksum: entry.checksum,
+      originalPath: `/data/upload/${randomUUID()}.mp4`,
+    });
+    const { asset: photo } = await ctx.newAsset({
+      ownerId: user.id,
+      livePhotoVideoId: motion.id,
+      originalPath: `/data/upload/${randomUUID()}.jpg`,
+    });
+    await database
+      .insertInto('asset_lock')
+      .values({ assetId: photo.id, reason: AssetLockReason.Marked, lockedBy: user.id })
+      .execute();
+    await sql`UPDATE public.physical_file_trash SET "lastAssetId"=${motion.id}::uuid WHERE id=${entry.id}::uuid`.execute(
+      database,
+    );
+    await expect(trash.getById(entry.id)).resolves.toMatchObject({ wasLocked: true });
+  });
+  it.each(['owner', 'checksum'])('does not trust deletion evidence for a different %s', async (mismatch) => {
+    const { ctx, entry, user, trash } = await setup();
+    const { user: other } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({
+      ownerId: mismatch === 'owner' ? other.id : user.id,
+      checksum: mismatch === 'checksum' ? randomBytes(32) : entry.checksum,
+      originalPath: `/data/upload/${randomUUID()}.jpg`,
+    });
+    await ctx.get(AssetRepository).remove({ id: asset.id });
+    await sql`UPDATE public.physical_file_trash SET "lastAssetId"=${asset.id}::uuid WHERE id=${entry.id}::uuid`.execute(
+      database,
+    );
+    await expect(trash.getById(entry.id)).resolves.toMatchObject({ wasLocked: null });
+  });
+  it.each([true, null])('keeps deleted Locked or unknown originals private through restore (%s)', async (locked) => {
+    const { sut, ctx, entry, user, trash } = await setup();
+    if (locked) {
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        checksum: entry.checksum,
+        originalPath: `/data/upload/${randomUUID()}.jpg`,
+      });
+      await ctx.get(AssetRepository).lock([asset.id], AssetLockReason.Marked, user.id);
+      await ctx.get(AssetRepository).remove({ id: asset.id });
+      await sql`UPDATE public.physical_file_trash SET "lastAssetId"=${asset.id}::uuid WHERE id=${entry.id}::uuid`.execute(
+        database,
+      );
+    }
+    await expect(trash.getById(entry.id)).resolves.toMatchObject({ wasLocked: locked });
+    const ordinary = { ...authStub.admin, user: { ...authStub.admin.user, id: user.id } },
+      elevated = ownerAuth(user.id);
+    await expect(sut.list(ordinary, { page: 1, size: 100 })).resolves.toMatchObject({
+      items: [],
+      total: 0,
+      totalBytes: 0,
+    });
+    await expect(sut.restore(ordinary, entry.id)).rejects.toThrow('File not found');
+    await expect(sut.restore(ownerAuth(randomUUID()), entry.id)).rejects.toThrow('File not found');
+    await expect(sut.list(elevated, { page: 1, size: 100 })).resolves.toMatchObject({
+      total: 1,
+      totalBytes: entry.sizeInBytes,
+    });
+    const { assetId } = await sut.restore(elevated, entry.id);
+    await expect(
+      database.selectFrom('asset_lock').select('reason').where('assetId', '=', assetId).execute(),
+    ).resolves.toEqual([{ reason: AssetLockReason.Marked }]);
+    const access = new AccessRepository(database);
+    await expect(access.asset.checkOwnerAccess(user.id, new Set([assetId]), false)).resolves.toEqual(new Set());
+    await expect(access.asset.checkOwnerAccess(user.id, new Set([assetId]), true)).resolves.toEqual(new Set([assetId]));
+  });
+
   it.each([
     ['imported-photo.jpg', 'sha1', ChecksumAlgorithm.sha1File],
     ['extracted-motion.mp4', 'sha1', ChecksumAlgorithm.sha1File],
@@ -131,7 +211,7 @@ describe(PhysicalFileTrashService.name, () => {
       storage.stat.mockResolvedValue({ mtime: new Date() } as never);
       ctx.getMock(JobRepository).queue.mockResolvedValue(undefined);
       ctx.getMock(EventRepository).emit.mockResolvedValue(undefined);
-      const { assetId } = await sut.restore(entry.id);
+      const { assetId } = await sut.restore(ownerAuth(user.id), entry.id);
       const restored = await database
         .selectFrom('asset')
         .selectAll()
@@ -189,7 +269,7 @@ describe(PhysicalFileTrashService.name, () => {
     const inspectionError = new Error('inspection failed');
     storage.stat.mockRejectedValueOnce(inspectionError);
 
-    await expect(sut.restore(entry.id)).rejects.toBe(inspectionError);
+    await expect(sut.restore(ownerAuth(user.id), entry.id)).rejects.toBe(inspectionError);
 
     await expect(trash.getById(entry.id)).resolves.toEqual(entry);
     await expect(readFile(entry.path)).resolves.toEqual(bytes);
@@ -197,7 +277,7 @@ describe(PhysicalFileTrashService.name, () => {
       [],
     );
 
-    const { assetId } = await sut.restore(entry.id);
+    const { assetId } = await sut.restore(ownerAuth(user.id), entry.id);
     const asset = await database.selectFrom('asset').selectAll().where('id', '=', assetId).executeTakeFirstOrThrow();
     await expect(trash.getById(entry.id)).resolves.toBeUndefined();
     await expect(readFile(asset.originalPath)).resolves.toEqual(bytes);
@@ -221,7 +301,7 @@ describe(PhysicalFileTrashService.name, () => {
     // the move back keeps failing: the inline compensation and the journal's own recovery attempt
     storage.rename.mockImplementationOnce(rename).mockRejectedValue(compensationError);
 
-    await expect(sut.restore(entry.id)).rejects.toMatchObject({
+    await expect(sut.restore(ownerAuth(user.id), entry.id)).rejects.toMatchObject({
       errors: [inspectionError, compensationError],
       cause: compensationError,
     });

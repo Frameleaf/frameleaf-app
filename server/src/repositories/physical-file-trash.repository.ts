@@ -21,6 +21,8 @@ export type PhysicalFileTrashEntry = {
   lastAssetId: string | null;
   originalFileName: string;
   trashedAt: Date;
+  /** Null means the original's privacy lineage cannot be proved. */
+  wasLocked: boolean | null;
 };
 export type PhysicalFileTrashInput = {
   /** The original's physical file row, deleted once the file is in the trash; null for an unregistered original. */
@@ -47,9 +49,20 @@ export type PhysicalFileTrashResult =
       status: 'missing';
     };
 export type { PhysicalFileTrashMove } from 'src/repositories/physical-file.repository.js';
+const LOCK_EVIDENCE = sql<boolean | null>`coalesce(
+  (SELECT EXISTS (SELECT 1 FROM public.asset_lock locked WHERE locked."assetId" = original.id)
+    OR (original.visibility = 'hidden' AND EXISTS (
+      SELECT 1 FROM public.asset parent JOIN public.asset_lock locked ON locked."assetId" = parent.id
+      WHERE parent."livePhotoVideoId" = original.id AND parent."ownerId" = original."ownerId"))
+    FROM public.asset original WHERE original.id = physical_file_trash."lastAssetId"
+      AND original."ownerId" = physical_file_trash."lastOwnerId" AND original.checksum = physical_file_trash.checksum),
+  (SELECT deleted."wasLocked" FROM public.asset_backup_deletion deleted
+    WHERE deleted."assetId" = physical_file_trash."lastAssetId"
+      AND deleted."ownerId" = physical_file_trash."lastOwnerId" AND deleted.checksum = physical_file_trash.checksum
+      AND deleted."evidenceVersion" = 1))`;
 const ENTRY_COLUMNS = sql`
   id, "physicalFileId", path, checksum, "sizeInBytes"::float8 AS "sizeInBytes", "lastOwnerId", "lastAssetId",
-  "originalFileName", "trashedAt"`;
+  "originalFileName", "trashedAt", ${LOCK_EVIDENCE} AS "wasLocked"`;
 const isMissing = (error: unknown) => (error as NodeJS.ErrnoException)?.code === 'ENOENT';
 /** Library Care file trash (universal storage, spec §3.5). */
 @Injectable()
@@ -137,9 +150,11 @@ export class PhysicalFileTrashRepository {
       SELECT ${ENTRY_COLUMNS} FROM public.physical_file_trash WHERE id = ${id}::uuid`.execute(this.db);
     return rows[0];
   }
-  async list({ skip, take }: { skip: number; take: number }) {
+  async list({ skip, take, lockedOwnerId }: { skip: number; take: number; lockedOwnerId?: string }) {
+    const visible = sql`${LOCK_EVIDENCE} IS FALSE OR "lastOwnerId" = ${lockedOwnerId ?? null}::uuid`;
     const { rows } = await sql<PhysicalFileTrashEntry>`
       SELECT ${ENTRY_COLUMNS} FROM public.physical_file_trash
+      WHERE ${visible}
       ORDER BY "trashedAt" DESC, id
       LIMIT ${take} OFFSET ${skip}`.execute(this.db);
     const totals = await sql<{
@@ -147,7 +162,7 @@ export class PhysicalFileTrashRepository {
       totalBytes: number;
     }>`
       SELECT count(*)::int AS total, coalesce(sum("sizeInBytes"), 0)::float8 AS "totalBytes"
-      FROM public.physical_file_trash`.execute(this.db);
+      FROM public.physical_file_trash WHERE ${visible}`.execute(this.db);
     return { items: rows, total: totals.rows[0].total, totalBytes: totals.rows[0].totalBytes };
   }
   /**
@@ -182,14 +197,17 @@ export class PhysicalFileTrashRepository {
     );
   }
   /** Permanently deletes a trashed file: `unlink` runs under the path lock, then the row goes. */
-  async purge(id: string, unlink: (path: string) => Promise<void>): Promise<PhysicalFileTrashEntry | undefined> {
+  async purge(
+    id: string,
+    unlink: (path: string, entry: PhysicalFileTrashEntry) => Promise<void>,
+  ): Promise<PhysicalFileTrashEntry | undefined> {
     return this.db.transaction().execute(async (trx) => {
       const entry = await this.getForUpdate(trx, id);
       if (!entry) {
         return;
       }
       await lockFilePath(trx, entry.path);
-      await unlink(entry.path).catch((error: unknown) => {
+      await unlink(entry.path, entry).catch((error: unknown) => {
         if (!isMissing(error)) {
           throw error;
         }

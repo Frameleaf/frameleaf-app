@@ -4,6 +4,7 @@ import type { PhysicalDeduplicationMigrationState } from 'src/types.js';
 import {
   AssetFileType,
   AssetStatus,
+  AssetType,
   DatabaseLock,
   JobName,
   JobStatus,
@@ -839,6 +840,68 @@ describe(PhysicalDeduplicationService.name, () => {
     });
 
     it.each([null, 'bb'.repeat(32)])(
+      'keeps video covers with missing or different render identity (%s)',
+      async (identity) => {
+        const { sut, mocks } = setup();
+        mocks.physicalFile.getGeneratedFiles.mockResolvedValue([
+          {
+            type: AssetFileType.Thumbnail,
+            path: '/copy-cover.jpg',
+            assetType: AssetType.Video,
+            renditionIdentity: identity,
+          },
+        ] as never);
+        mocks.physicalFile.getGeneratedFile.mockResolvedValue({
+          type: AssetFileType.Thumbnail,
+          path: '/primary-cover.jpg',
+          assetType: AssetType.Video,
+          renditionIdentity: 'aa'.repeat(32),
+        } as never);
+        mocks.physicalFile.getCanonicalGeneratedFile.mockResolvedValue({
+          id: 'primary-cover',
+          path: '/primary-cover.jpg',
+          canonicalAssetId: MASTER_ID,
+        });
+        mocks.physicalFile.deleteUnreferencedPath.mockResolvedValue({ deleted: true, references: 0 });
+        await sut.linkToPrimary(COPY_1, MASTER_ID);
+        expect(mocks.physicalFile.linkGeneratedFile).not.toHaveBeenCalled();
+        expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
+      },
+    );
+    it('shares matching video covers', async () => {
+      const { sut, mocks } = setup();
+      const identity = 'aa'.repeat(32);
+      mocks.physicalFile.getGeneratedFiles.mockResolvedValue([
+        {
+          type: AssetFileType.Thumbnail,
+          path: '/copy-cover.jpg',
+          assetType: AssetType.Video,
+          renditionIdentity: identity,
+        },
+      ] as never);
+      mocks.physicalFile.getGeneratedFile.mockResolvedValue({
+        type: AssetFileType.Thumbnail,
+        path: '/primary-cover.jpg',
+        assetType: AssetType.Video,
+        renditionIdentity: identity,
+      } as never);
+      mocks.physicalFile.getCanonicalGeneratedFile.mockResolvedValue({
+        id: 'cover-file',
+        path: '/primary-cover.jpg',
+        canonicalAssetId: MASTER_ID,
+      });
+      mocks.physicalFile.deleteUnreferencedPath.mockResolvedValue({ deleted: true, references: 0 });
+      await sut.linkToPrimary(COPY_1, MASTER_ID);
+      expect(mocks.physicalFile.linkGeneratedFile).toHaveBeenCalledWith(
+        COPY_1,
+        AssetFileType.Thumbnail,
+        'cover-file',
+        '/primary-cover.jpg',
+        { path: '/copy-cover.jpg', renditionIdentity: identity },
+      );
+    });
+
+    it.each([null, 'bb'.repeat(32)])(
       'keeps HDR renditions with missing or different identity (%s)',
       async (identity) => {
         const { sut, mocks } = setup();
@@ -888,6 +951,7 @@ describe(PhysicalDeduplicationService.name, () => {
         AssetFileType.HdrPreview,
         'hdr-physical',
         '/primary-hdr.jpg',
+        { path: '/copy-hdr.jpg', renditionIdentity: identity },
       );
       expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith('/copy-hdr.jpg', expect.any(Function));
     });
