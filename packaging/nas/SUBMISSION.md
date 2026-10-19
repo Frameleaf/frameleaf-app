@@ -1,7 +1,7 @@
 # Frameleaf NAS release and submission
 
 Frameleaf application releases start at **1.0.0**, independently of Immich.
-Manager is a separate component (`manager-v0.2.2`); the native Synology shell
+Manager is a separate component (`manager-v0.2.3`); the native Synology shell
 has its own version in the private `Frameleaf/frameleaf-synology` repository.
 Unraid and TrueNAS installers reference `:latest` images and never pin a release.
 Native Synology source and SPKs must stay in the private repository.
