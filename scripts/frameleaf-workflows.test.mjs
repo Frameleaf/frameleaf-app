@@ -1949,3 +1949,22 @@ test("action upgrades preserve later mise authentication and the existing uv cac
   );
   assert.equal(scanner.with["enable-cache"], false);
 });
+
+// FL-464: a main push that changed only one image skipped the other image's build, and GitHub's implicit
+// success() then skipped every publish and re-tag job after it, so Deploy went red with nothing published.
+test("image publish and re-tag jobs survive the other image's skipped build", () => {
+  const jobs = workflow("docker.yml").jobs;
+  for (const name of [
+    "server-publish",
+    "machine-learning-publish",
+    "machine-learning-hardware",
+    "retag-server",
+    "retag-machine-learning",
+  ]) {
+    const condition = String(jobs[name].if);
+    assert.match(condition, /!cancelled\(\)/, `${name} needs a status function`);
+    assert.match(condition, /needs\['deploy-test'\]\.result == 'success'/, `${name} still requires the deployment test`);
+  }
+  assert.match(String(jobs["server-publish"].if), /needs\.server\.result == 'success'/);
+  assert.match(String(jobs["machine-learning-publish"].if), /needs\['machine-learning'\]\.result == 'success'/);
+});

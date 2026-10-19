@@ -33,6 +33,7 @@ import { Refusal, publicSource, redact } from './contracts.js';
 import { appdataDefaults } from './appdata.js';
 import { nativeListener } from './runtime/native-listener.js';
 import { PostgresStorage } from './postgres-storage.js';
+import { sharePortWithRedirect } from './http-redirect.js';
 
 const directory = process.env.MANAGER_DATA;
 const runtime = process.env.MANAGER_RUNTIME ?? 'docker';
@@ -463,7 +464,12 @@ async function main() {
   }
   app.use(express.static(ui, { index: 'index.html', dotfiles: 'deny' }));
   app.enableShutdownHooks();
-  await app.listen(nativeAddress?.port ?? 9443, nativeAddress?.host ?? '0.0.0.0');
+  if (native) await app.listen(nativeAddress!.port, nativeAddress!.host);
+  else {
+    // Docker: browsers send a typed "IP:port" as http://, so redirect it instead of an empty reply.
+    await app.init();
+    await new Promise<void>((done) => sharePortWithRedirect(app.getHttpServer()).listen(9443, '0.0.0.0', done));
+  }
   if (native) process.stdout.write(JSON.stringify(native.ready(origin!)) + '\n');
 }
 main().catch(() => {

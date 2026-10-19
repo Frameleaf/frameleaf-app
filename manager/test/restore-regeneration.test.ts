@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Operations } from '../src/operations.js';
 import { Store } from '../src/store.js';
-import { Docker, type Container } from '../src/docker.js';
+import { Docker, SERVER_ADMIN, type Container } from '../src/docker.js';
 import type { Installation, Operation } from '../src/contracts.js';
 import type { Releases, VerifiedRelease } from '../src/releases.js';
 import type { Backups } from '../src/backups.js';
@@ -279,7 +279,7 @@ test('offline reconstruction uses the real command environment and refuses a run
   const command = calls.find((args) => args[0] === 'compose')!;
   assert.ok(command.includes(`FRAMELEAF_MANAGER_RESTORE_OPERATION_ID=${operation}`));
   assert.ok(command.includes(`app.frameleaf.manager.restore=${operation}`));
-  assert.deepEqual(command.slice(-4), ['frameleaf-server', 'dist/main.js', 'frameleaf-admin', 'restore-state']);
+  assert.deepEqual(command.slice(-3), [SERVER_ADMIN, 'frameleaf-server', 'restore-state']);
   assert.ok(command.includes('--no-deps'));
   assert.ok(command.includes('never'));
   containers.push({

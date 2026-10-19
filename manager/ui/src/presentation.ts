@@ -137,6 +137,13 @@ const refusals: Record<string, string> = {
   docker_operation_failed:
     'A Docker command did not finish. The Manager container log has the command, exit code and error output. Fix the cause, then resume.',
   docker_unavailable: 'Manager could not run Docker. Check that the Docker socket is mapped into Manager.',
+  database_overlaps_existing_container_data:
+    'Another container can write inside this database folder. Choose a folder of its own, such as /mnt/user/appdata/frameleaf-databases. The Manager container log names the container.',
+  source_version_unreachable:
+    'Manager found this Immich server but could not ask it for its version. Check that it is running and healthy; Manager uses its IMMICH_PORT and IMMICH_HOST settings.',
+  database_connection_ambiguous:
+    'Manager could not tell which container holds this Immich database. Its DB_HOSTNAME must name or address the database container.',
+  unsupported_database_connection: 'This Immich database connection is not supported yet: it needs a password.',
   operation_failed:
     'This step stopped with an unexpected error. The Manager container log has the details. Completed steps are kept, so you can resume.',
 };

@@ -47,6 +47,8 @@ test('NAS Manager packages authenticate the component, both architectures and ex
     const xml = await fs.readFile(path.join(output, 'unraid/templates/frameleaf-manager.xml'), 'utf8');
     assert(xml.includes('<Repository>ghcr.io/frameleaf/frameleaf-manager:latest</Repository>'));
     assert(xml.includes('MANAGER_PLATFORM'));
+    // Without it Manager publishes the Frameleaf app on 127.0.0.1 only, unreachable from other devices.
+    assert(xml.includes('Target="MANAGER_BIND_ADDRESS" Default="0.0.0.0"'));
     // Unraid creates mapped folders as nobody:users; without these Manager cannot lock or chmod its state.
     assert(xml.includes('--cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER</ExtraParams>'));
     assert(xml.includes('Target="/run/frameleaf-host/unraid-autostart" Default="" Mode="rw"'));
@@ -93,6 +95,7 @@ for template in templates:
     assert.equal(compose.services.manager.image, 'ghcr.io/frameleaf/frameleaf-manager:latest');
     assert.equal(compose.services.manager.privileged, undefined);
     assert.deepEqual(compose.services.manager.cap_add, ['CHOWN', 'DAC_OVERRIDE', 'FOWNER']);
+    assert.equal(compose.services.manager.environment.MANAGER_BIND_ADDRESS, '0.0.0.0');
     for (const bind of compose.services.manager.volumes.filter(bind => bind.source.startsWith('/mnt/')))
       assert.equal(bind.source, bind.target);
     assert(!compose.services.manager.volumes.some(bind => bind.target.startsWith('/var/lib/postgresql')));

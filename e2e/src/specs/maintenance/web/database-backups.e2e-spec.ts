@@ -131,7 +131,8 @@ test.describe('Database Backups', () => {
   });
 
   test('rollback to restore point if backup is missing admin', async ({ context, page }) => {
-    test.setTimeout(120_000);
+    // Two full restores (the bad backup, then the rollback): about 60 s on a hosted amd64 runner.
+    test.setTimeout(210_000);
 
     await utils.resetBackups(admin.accessToken);
     await utils.prepareTestBackup('empty', admin.accessToken);
@@ -142,7 +143,7 @@ test.describe('Database Backups', () => {
     await confirmRestore(page);
 
     await page.waitForURL('/maintenance?**');
-    await expect(page.getByText('Server health check failed, no admin exists.')).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByText('Server health check failed, no admin exists.')).toBeVisible({ timeout: 150_000 });
     await page.getByRole('button', { name: 'End maintenance' }).click();
     // The server restarts out of maintenance here: 8 to 10 s on a hosted runner, so 10 s was a coin toss.
     await expect(page.getByRole('heading', { name: 'Maintenance is finished', exact: true })).toBeVisible({

@@ -113,6 +113,9 @@ export async function command(
 }
 
 const STDERR_TAIL = 2048;
+// The server image's admin CLI wrapper (server/bin/frameleaf-admin → start.sh → node <server>/dist/main.js).
+// test/server-image-layout.test.ts ties this to server/Dockerfile's final stage.
+export const SERVER_ADMIN = '/usr/src/app/server/bin/frameleaf-admin';
 const SECRET_ARGUMENT = /^([A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|KEY)[A-Z0-9_]*)=(.*)$/is;
 /** One redacted line for the container log: what ran, how it ended and the end of stderr. */
 function logFailure(binary: string, args: string[], exit: string, stderr: string, error: unknown): void {
@@ -226,6 +229,8 @@ export class Docker {
         'psql',
         '-X',
         '--no-password',
+        '--port',
+        String(db.port ?? 5432),
         '--username',
         db.user,
         '--dbname',
@@ -248,6 +253,8 @@ export class Docker {
         db.container,
         'pg_dump',
         '--no-password',
+        '--port',
+        String(db.port ?? 5432),
         '--username',
         db.user,
         '--dbname',
@@ -272,6 +279,8 @@ export class Docker {
         db.container,
         'pg_restore',
         '--no-password',
+        '--port',
+        String(db.port ?? 5432),
         '--username',
         db.user,
         '--dbname',
@@ -375,10 +384,8 @@ export class Docker {
         '--no-deps',
         '-T',
         '--entrypoint',
-        'node',
+        SERVER_ADMIN,
         'frameleaf-server',
-        'dist/main.js',
-        'frameleaf-admin',
         'import-immich',
         action,
         '--config',
@@ -439,10 +446,8 @@ export class Docker {
         '--env',
         `FRAMELEAF_MANAGER_RESTORE_OPERATION_ID=${operationId}`,
         '--entrypoint',
-        'node',
+        SERVER_ADMIN,
         'frameleaf-server',
-        'dist/main.js',
-        'frameleaf-admin',
         'restore-state',
       ],
       { cwd: directory, timeout: 7_200_000 },
