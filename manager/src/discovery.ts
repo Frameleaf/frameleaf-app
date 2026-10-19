@@ -2,8 +2,13 @@ import { posix } from 'node:path';
 import { Docker, environment, mounts, type Container } from './docker.js';
 import { Refusal, digest, type Source, type Mount } from './contracts.js';
 
-const OFFICIAL = /^(?:ghcr\.io\/immich-app\/immich-(?:server|microservices))(?::|@)/;
-const WORKER = /^(?:ghcr\.io\/immich-app\/immich-(?:server|microservices|machine-learning))(?::|@)/;
+// Recognised by repository name on any registry or owner (forks, mirrors, Docker Hub). Compatibility is
+// decided by the version the running server reports, never by the image name.
+const REPOSITORY = (names: string) =>
+  new RegExp(`^(?:[a-z0-9.-]+(?::\\d+)?\\/)?(?:[a-z0-9._-]+\\/)*immich-(?:${names})(?::|@)`, 'i');
+const OFFICIAL = REPOSITORY('server|microservices');
+const WORKER = REPOSITORY('server|microservices|machine-learning');
+export const isSourceServer = (image: string) => OFFICIAL.test(image);
 const SECRETS = [
   'DB_URL',
   'DB_HOSTNAME',
@@ -134,7 +139,9 @@ export class Discovery {
       user: decodeURIComponent(url?.username || env.DB_USERNAME || 'postgres'),
       password: decodeURIComponent(url?.password || env.DB_PASSWORD || ''),
     };
-    if (database.port !== 5432 || !database.password) throw new Refusal('unsupported_database_connection');
+    // Any port: Manager reaches the database from inside its own container or on its network.
+    if (!Number.isInteger(database.port) || database.port < 1 || database.port > 65535 || !database.password)
+      throw new Refusal('unsupported_database_connection');
     const facts = JSON.parse(
       await this.docker.sql(
         database,
