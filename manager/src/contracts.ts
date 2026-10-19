@@ -5,6 +5,8 @@ export class Refusal extends Error {
   constructor(
     readonly code: string,
     readonly status = 409,
+    /** Shown to the signed-in administrator beside the code, e.g. which container blocks a folder. */
+    readonly detail?: string,
   ) {
     super(code);
   }

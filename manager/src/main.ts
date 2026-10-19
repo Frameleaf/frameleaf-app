@@ -100,6 +100,7 @@ class Errors implements ExceptionFilter {
           : error instanceof ZodError
             ? 'invalid_request'
             : 'manager_operation_failed',
+      ...(error instanceof Refusal && error.detail ? { detail: error.detail } : {}),
     });
   }
 }

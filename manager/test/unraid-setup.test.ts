@@ -53,6 +53,11 @@ test('only another container that can write to the database folder blocks it, an
   assert.deepEqual(overlappingWriter([manager, writer], path, manager.Id), { container: 'file-manager', source: '/mnt/user' });
   // A stopped container still counts: it can be started later and write into the database.
   assert.equal(writer.State.Running, false);
+  // A stopped or older Manager container maps the database parent too; it never writes PGDATA.
+  const oldManager = container('frameleaf-manager-old', [{ Type: 'bind', Source: path, Destination: path, RW: true }], {
+    'app.frameleaf.manager.role': 'controller',
+  });
+  assert.equal(overlappingWriter([manager, oldManager], path + '/frameleaf-x-postgres-y', manager.Id), undefined);
 });
 
 test('psql and pg_dump use the Immich database port, not only 5432', async () => {

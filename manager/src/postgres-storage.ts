@@ -17,7 +17,13 @@ export function overlappingWriter(
   installationId?: string,
 ): { container: string; source: string } | undefined {
   for (const c of containers) {
-    if (c.Id === managerId || (installationId && c.Config.Labels?.['app.frameleaf.manager'] === installationId)) continue;
+    // Any Manager container (a stopped older copy too) maps the database parent itself; Manager never writes PGDATA.
+    if (
+      c.Id === managerId ||
+      c.Config.Labels?.['app.frameleaf.manager.role'] === 'controller' ||
+      (installationId && c.Config.Labels?.['app.frameleaf.manager'] === installationId)
+    )
+      continue;
     const mount = c.Mounts.find((m) => m.RW && m.Source.startsWith('/') && within(path, m.Source));
     if (mount) return { container: c.Name.replace(/^\//, ''), source: mount.Source };
   }
@@ -136,11 +142,7 @@ export class PostgresStorage {
     )
       throw new Refusal('host_mount_information_required');
     const hostMounts = filesystemMounts(await readFile('/run/frameleaf-host/mountinfo', 'utf8'));
-    const writer = overlappingWriter(containers, path, controllers[0].Id, installationId);
-    if (writer) {
-      console.error(`manager: database folder ${path} is inside ${writer.source}, which container ${writer.container} can write to`);
-      throw new Refusal('database_overlaps_existing_container_data');
-    }
+    // Mapping checks first: a folder Manager cannot use should say so, not blame another container.
     const mount = databaseMount(
       path,
       this.roots,
@@ -150,6 +152,15 @@ export class PostgresStorage {
       hostMounts,
       this.unraid,
     );
+    const writer = overlappingWriter(containers, path, controllers[0].Id, installationId);
+    if (writer) {
+      console.error(`manager: database folder ${path} is inside ${writer.source}, which container ${writer.container} can write to`);
+      throw new Refusal(
+        'database_overlaps_existing_container_data',
+        409,
+        `Blocking container: ${writer.container}, which can write to ${writer.source}.`,
+      );
+    }
     return mount;
   }
   async validate(

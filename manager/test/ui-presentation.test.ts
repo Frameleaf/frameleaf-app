@@ -40,3 +40,8 @@ test('release refusals read as sentences', () => {
   assert.equal(readable('download-images'), 'Download the verified image set');
   assert.match(readable('server_refused_403'), /refused Manager's request \(403\)/);
 });
+
+test('a refusal detail names what blocked the request', () => {
+  const text = readable('database_overlaps_existing_container_data', 'Blocking container: krusader, which can write to /mnt/user.');
+  assert.match(text, /choose a database folder outside it\. Blocking container: krusader, which can write to \/mnt\/user\.$/);
+});

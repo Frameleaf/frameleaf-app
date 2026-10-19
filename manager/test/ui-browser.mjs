@@ -413,7 +413,7 @@ try {
     await mainButton('Review database backup').click();
     await page.getByRole('heading', { name: 'Back up the Immich database' }).waitFor();
     sources = [{ ...source, settings: ['forkOnly', 'oauth'], unsupportedSettings: ['forkOnly'] }];
-    await nav('Set up Frameleaf');
+    await chooser();
     await mainButton('Review import').click();
     await mainButton('Review library & settings').click();
     await page.getByText('Settings require review', { exact: true }).waitFor();

@@ -226,7 +226,7 @@
         recoveryKey = '';
         dialog?.close();
       }
-      throw new Error(value.code ?? 'request_failed');
+      throw Object.assign(new Error(value.code ?? 'request_failed'), { detail: value.detail });
     }
     if (value.csrf) csrf = value.csrf;
     return value;
@@ -238,7 +238,7 @@
     try {
       await work();
     } catch (e) {
-      error = e instanceof Error ? readable(e.message) : 'Could not complete this request';
+      error = e instanceof Error ? readable(e.message, (e as { detail?: string }).detail) : 'Could not complete this request';
     } finally {
       busy = false;
     }
