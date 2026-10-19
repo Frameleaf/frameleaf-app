@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { Store } from '../src/store.js';
 import { Fencing } from '../src/fencing.js';
-import { Docker, type Container } from '../src/docker.js';
+import { Docker, SERVER_ADMIN, type Container } from '../src/docker.js';
 import { sourceFingerprint } from '../src/discovery.js';
 import { type Source, type Mount, type Installation } from '../src/contracts.js';
 import { copyVerified, fileHash } from '../src/files.js';
@@ -464,7 +464,7 @@ test('offline importer command refuses a surviving runner and never accepts arbi
   const command = calls.find((args) => args.includes('run'))!;
   assert.deepEqual(
     command.slice(-6),
-    ['dist/main.js', 'frameleaf-admin', 'import-immich', 'status', '--config', '/run/frameleaf/import.json'].slice(-7),
+    [SERVER_ADMIN, 'frameleaf-server', 'import-immich', 'status', '--config', '/run/frameleaf/import.json'],
   );
 });
 test('source recovery restores a default (empty) restart policy as "no" instead of refusing', async () => {
