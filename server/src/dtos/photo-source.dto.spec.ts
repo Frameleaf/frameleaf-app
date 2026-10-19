@@ -1,7 +1,7 @@
 import { PhotoSourceCreateDto, PhotoSourceItemDto, PhotoSourceRunDto } from 'src/dtos/photo-source.dto.js';
 
 const id = '11111111-1111-4111-8111-111111111111';
-it('accepts only explicit folder-copy scope with opaque bounded fingerprints', () => {
+it('accepts explicit folder-copy scope with opaque bounded fingerprints', () => {
   const valid = {
     id,
     deviceId: id,
@@ -45,5 +45,25 @@ it('bounds whole-run reservations and separates source identity from content', (
     { sourceIdentity: { kind: 'icloud' } },
   ]) {
     expect(PhotoSourceItemDto.schema.safeParse({ ...item, ...extra }).success).toBe(false);
+  }
+});
+
+it('accepts Apple Photos copy provenance without asset identifiers, paths, or external-reference authority', () => {
+  const source = {
+    id,
+    deviceId: id,
+    kind: 'apple-photos',
+    mode: 'copy',
+    name: 'Apple Photos originals',
+    scopeFingerprint: 'a'.repeat(64),
+  };
+  expect(PhotoSourceCreateDto.schema.parse(source)).toEqual(source);
+  for (const extra of [
+    { mode: 'reference' },
+    { mode: 'external' },
+    { assetId: 'opaque-local-id' },
+    { root: '/Users/private/Photos.photoslibrary' },
+  ]) {
+    expect(PhotoSourceCreateDto.schema.safeParse({ ...source, ...extra }).success).toBe(false);
   }
 });

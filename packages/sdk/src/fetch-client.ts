@@ -33469,7 +33469,8 @@ export enum PetObservationState {
     Rejected = "rejected"
 }
 export enum PhotoSourceKind {
-    Folder = "folder"
+    Folder = "folder",
+    ApplePhotos = "apple-photos"
 }
 export enum PhotoSourceCopyMode {
     Copy = "copy"

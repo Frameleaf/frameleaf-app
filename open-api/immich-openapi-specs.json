@@ -94368,7 +94368,8 @@
       },
       "PhotoSourceKind": {
         "enum": [
-          "folder"
+          "folder",
+          "apple-photos"
         ],
         "type": "string"
       },

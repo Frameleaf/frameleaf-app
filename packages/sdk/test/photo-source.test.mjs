@@ -12,7 +12,7 @@ const client = readFileSync(
 );
 test("photo source schemas use named enums without renumbering existing client exports", () => {
   for (const [name, values] of Object.entries({
-    PhotoSourceKind: ["folder"],
+    PhotoSourceKind: ["folder", "apple-photos"],
     PhotoSourceCopyMode: ["copy"],
     PhotoSourceRunState: ["open", "paused", "cancelled", "complete"],
     PhotoSourceItemState: ["planned", "verified"],
@@ -25,6 +25,7 @@ test("photo source schemas use named enums without renumbering existing client e
     client,
     /export enum Mode2 \{\s+EditedDelivery = "edited-delivery"/,
   );
+  assert.match(client, /ApplePhotos = "apple-photos"/);
   assert.match(client, /export enum Kind9 \{\s+Print = "print"/);
   assert.deepEqual(
     spec.components.schemas.PhotoSourceCreateDto.properties.mode,
