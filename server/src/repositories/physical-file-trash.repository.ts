@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Kysely, Transaction, sql } from 'kysely';
+import { Expression, Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import {
   PhysicalFileTrashMove,
@@ -50,28 +50,38 @@ export type PhysicalFileTrashResult =
     };
 export type { PhysicalFileTrashMove } from 'src/repositories/physical-file.repository.js';
 // A hidden motion can outlive its still; without trusted parent evidence its privacy is unknown.
+const motionParentLockEvidence = (motionId: Expression<unknown>, ownerId: Expression<unknown>) => sql<
+  boolean | null
+>`CASE
+  WHEN EXISTS (
+    SELECT 1 FROM public.asset parent JOIN public.asset_lock locked ON locked."assetId" = parent.id
+    WHERE parent."livePhotoVideoId" = ${motionId} AND parent."ownerId" = ${ownerId})
+    OR EXISTS (SELECT 1 FROM public.asset_backup_deletion parent
+      WHERE parent."livePhotoVideoId" = ${motionId} AND parent."ownerId" = ${ownerId}
+        AND parent."evidenceVersion" = 1 AND parent."wasLocked") THEN true
+  WHEN EXISTS (SELECT 1 FROM public.asset_backup_deletion parent
+    WHERE parent."livePhotoVideoId" = ${motionId}
+      AND (parent."ownerId" <> ${ownerId} OR parent."evidenceVersion" <> 1)) THEN null
+  WHEN EXISTS (SELECT 1 FROM public.asset parent
+    WHERE parent."livePhotoVideoId" = ${motionId} AND parent."ownerId" = ${ownerId})
+    OR EXISTS (SELECT 1 FROM public.asset_backup_deletion parent
+      WHERE parent."livePhotoVideoId" = ${motionId} AND parent."ownerId" = ${ownerId}
+        AND parent."evidenceVersion" = 1) THEN false
+  ELSE null END`;
+const liveMotionParentLock = motionParentLockEvidence(sql.ref('original.id'), sql.ref('original.ownerId'));
+const deletedMotionParentLock = motionParentLockEvidence(sql.ref('deleted.assetId'), sql.ref('deleted.ownerId'));
 const LOCK_EVIDENCE = sql<boolean | null>`coalesce(
   (SELECT EXISTS (SELECT 1 FROM public.asset_lock locked WHERE locked."assetId" = original.id)
     OR CASE
       WHEN original.visibility <> 'hidden' THEN false
-      WHEN EXISTS (
-        SELECT 1 FROM public.asset parent JOIN public.asset_lock locked ON locked."assetId" = parent.id
-        WHERE parent."livePhotoVideoId" = original.id AND parent."ownerId" = original."ownerId")
-        OR EXISTS (SELECT 1 FROM public.asset_backup_deletion parent
-          WHERE parent."livePhotoVideoId" = original.id AND parent."ownerId" = original."ownerId"
-            AND parent."evidenceVersion" = 1 AND parent."wasLocked") THEN true
-      WHEN EXISTS (SELECT 1 FROM public.asset_backup_deletion parent
-        WHERE parent."livePhotoVideoId" = original.id
-          AND (parent."ownerId" <> original."ownerId" OR parent."evidenceVersion" <> 1)) THEN null
-      WHEN EXISTS (SELECT 1 FROM public.asset parent
-        WHERE parent."livePhotoVideoId" = original.id AND parent."ownerId" = original."ownerId")
-        OR EXISTS (SELECT 1 FROM public.asset_backup_deletion parent
-          WHERE parent."livePhotoVideoId" = original.id AND parent."ownerId" = original."ownerId"
-            AND parent."evidenceVersion" = 1) THEN false
-      ELSE null END
+      ELSE ${liveMotionParentLock} END
     FROM public.asset original WHERE original.id = physical_file_trash."lastAssetId"
       AND original."ownerId" = physical_file_trash."lastOwnerId" AND original.checksum = physical_file_trash.checksum),
-  (SELECT deleted."wasLocked" FROM public.asset_backup_deletion deleted
+  (SELECT CASE
+      WHEN deleted.visibility <> 'hidden' THEN deleted."wasLocked"
+      WHEN ${deletedMotionParentLock} IS FALSE THEN deleted."wasLocked"
+      ELSE ${deletedMotionParentLock} END
+    FROM public.asset_backup_deletion deleted
     WHERE deleted."assetId" = physical_file_trash."lastAssetId"
       AND deleted."ownerId" = physical_file_trash."lastOwnerId" AND deleted.checksum = physical_file_trash.checksum
       AND deleted."evidenceVersion" = 1
