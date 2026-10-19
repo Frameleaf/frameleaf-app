@@ -449,6 +449,30 @@ async function requireTestQualification(sha, request = github, expected) {
     );
   return evidence;
 }
+// GitHub's generated notes otherwise compare from the newest release of any kind, which can be a
+// manager-v* release. The previous app release is the highest published frameleaf-v* below this one.
+function previousReleaseTag(tag, releases) {
+  const parse = (value) => {
+    const match = /^frameleaf-v(\d+)\.(\d+)\.(\d+)(?:-(.+))?$/.exec(value);
+    return match && [...match.slice(1, 4).map(Number), match[4]];
+  };
+  const compare = (a, b) => {
+    for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] - b[i];
+    if (a[3] === b[3]) return 0;
+    if (a[3] === undefined) return 1;
+    if (b[3] === undefined) return -1;
+    return a[3].localeCompare(b[3], "en", { numeric: true });
+  };
+  const current = parse(tag);
+  assert(current, "Invalid release tag");
+  return (
+    releases
+      .filter((release) => !release.draft && !release.prerelease)
+      .map((release) => [release.tag_name, parse(release.tag_name)])
+      .filter(([, version]) => version && compare(version, current) < 0)
+      .sort(([, a], [, b]) => compare(b, a))[0]?.[0] ?? null
+  );
+}
 function chooseTag(version, releases, refs, sha) {
   assert(SHA.test(sha), "Invalid source SHA");
   assert(
@@ -1611,14 +1635,23 @@ async function release(env = process.env) {
     tag,
     images,
     reserve: async () => {
+      const previous = previousReleaseTag(tag, releases);
+      const notes = await github("releases/generate-notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tag_name: tag,
+          target_commitish: env.SOURCE_SHA,
+          ...(previous ? { previous_tag_name: previous } : {}),
+        }),
+      });
       const body = {
         tag_name: tag,
         target_commitish: env.SOURCE_SHA,
         name: tag,
         draft: true,
-        generate_release_notes: true,
         body: releaseFlagsBody(
-          `Source: ${env.SOURCE_SHA}\n\nBuild evidence: ${manifest.buildRun}\n\nUse the attached version-matched installation files and release-manifest.json. Verify an image with: cosign verify --key ${COSIGN_PUBLIC_KEY} <image>@<digest>`,
+          `Source: ${env.SOURCE_SHA}\n\nBuild evidence: ${manifest.buildRun}\n\nUse the attached version-matched installation files and release-manifest.json. Verify an image with: cosign verify --key ${COSIGN_PUBLIC_KEY} <image>@<digest>\n\n${notes.body ?? ""}`,
           { rolloutPercent },
         ),
       };
@@ -1708,6 +1741,7 @@ module.exports = {
   trustedRun,
   requireTestQualification,
   chooseTag,
+  previousReleaseTag,
   verifyImage,
   createBundle,
   DEPENDENCY_IMAGES,

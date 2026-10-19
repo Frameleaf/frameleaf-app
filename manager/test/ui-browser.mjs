@@ -137,10 +137,13 @@ await page.route('**/manager-api/**', async (route) => {
       {
         tag: 'frameleaf-v3.2.1-1',
         publishedAt: '2026-10-07T01:00:00Z',
-        notes: 'Verified release notes <script>never execute</script>',
+        notes: 'Verified release notes <script>never execute</script>\n<!-- Release notes generated using configuration in .github/release.yml -->\n**Full Changelog**: compare',
       },
+      // Older than the running frameleaf-v3.2.0-1: never offered as an update.
+      { tag: 'frameleaf-v3.1.0', publishedAt: '2026-10-06T01:00:00Z', notes: 'Older release' },
     ];
-  else if (path === 'logs') value = { logs: 'Application ready\npassword=[redacted]' };
+  else if (path === 'logs')
+    value = { logs: [...Array.from({ length: 200 }, (_, i) => `Mapped route ${i}`), 'Application ready\npassword=[redacted]'].join('\n') };
   else if (path === 'review-move')
     value = { available: true, id: '019aa111-1111-7111-8111-111111111111', root: body.root, files: 2, bytes: 4096 };
   else if (path === 'move-library') {
@@ -286,6 +289,11 @@ try {
     await nav('Services');
     await mainButton('Logs').first().click();
     await page.getByText('password=[redacted]', { exact: false }).waitFor();
+    // The newest lines are what an owner opens logs for.
+    await page.waitForFunction(() => {
+      const log = document.querySelector('pre.log');
+      return log.scrollHeight > log.clientHeight && log.scrollTop + log.clientHeight >= log.scrollHeight - 2;
+    });
     await mainButton('Stop stack').click();
     assert.equal(await page.locator('dialog').isVisible(), true);
     await button('Cancel').click();
@@ -323,14 +331,24 @@ try {
     await page.getByRole('checkbox').check();
     assert.equal(await mainButton('Restore database').isEnabled(), true);
     await screenshot('restore-review');
+    assert.equal(await page.locator('.nav-item.active > span').first().innerText(), 'Backups');
   });
   await check('eligible update notes, confirmation, interrupted operation, resume and activity', async () => {
     await nav('Updates');
+    assert.deepEqual(await page.getByLabel('Eligible release').locator('option').allInnerTexts(), [
+      'Select a release',
+      'frameleaf-v3.2.1-1 · ' + new Date('2026-10-07T01:00:00Z').toLocaleDateString(),
+    ]);
+    assert.equal(await page.locator('.nav-badge').innerText(), '1');
     await page.getByLabel('Eligible release').selectOption('frameleaf-v3.2.1-1');
+    const notes = await page.locator('main pre.log').innerText();
+    assert.ok(notes.includes('<script>never execute</script>') && notes.includes('Full Changelog: compare'));
+    assert.ok(!notes.includes('<!--') && !notes.includes('**'));
     await mainButton('Verify and review update').click();
     await mainButton('Update Frameleaf').click();
     await page.locator('dialog').getByRole('button', { name: 'Update Frameleaf', exact: true }).click();
     await mainButton('Resume safely').waitFor();
+    assert.equal(await page.locator('.nav-item.active > span').first().innerText(), 'Updates');
     assert.equal(await page.getByRole('progressbar').getAttribute('value'), '0');
     await screenshot('interrupted-update');
     await mainButton('Resume safely').click();
@@ -339,6 +357,12 @@ try {
     await nav('Activity');
     await mainButton('Details').click();
     await mainButton('Continue').click();
+    installation.release = 'frameleaf-v3.2.1-1';
+    await refresh();
+    await nav('Overview');
+    await page.getByRole('heading', { name: 'Up to date', exact: true }).waitFor();
+    assert.equal(await page.locator('.nav-badge').count(), 0);
+    installation.release = 'frameleaf-v3.2.0-1';
   });
   await check('administrator errors clear password, editing and recovery procedure', async () => {
     await nav('Manager settings');

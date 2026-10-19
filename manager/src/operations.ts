@@ -6,6 +6,7 @@ import { Store } from './store.js';
 import { Docker } from './docker.js';
 import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupportedSettings } from './discovery.js';
 import { Releases, type VerifiedRelease } from './releases.js';
+import { isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
 import { Fencing } from './fencing.js';
 import { ApplicationConfig, renderCompose, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
@@ -906,7 +907,8 @@ export class Operations {
   }
   async reviewUpdate(tag: string) {
     const current = this.installation();
-    if (!current || current.release === tag) throw new Refusal('select_a_new_release');
+    // ponytail: an older release is reached by restoring a recovery point taken on it (Backups), never as an update.
+    if (!current || !isNewerRelease(tag, current.release)) throw new Refusal('select_a_new_release');
     const compatibility = await this.docker.compatibility();
     const release = await this.releases.acquire(tag);
     const existingCompose = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8'));

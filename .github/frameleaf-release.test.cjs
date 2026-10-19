@@ -16,6 +16,7 @@ const {
   trustedRun,
   requireTestQualification,
   chooseTag,
+  previousReleaseTag,
   deployTestImages,
   verifyImage,
   createBundle,
@@ -629,6 +630,30 @@ test("promotion revalidation rejects a different Test attempt than the captured 
   assert.deepEqual(
     await requireTestQualification(sha, fixture.request, unchanged),
     unchanged,
+  );
+});
+
+test("release notes compare from the previous app release, never a manager release", () => {
+  const releases = [
+    { tag_name: "manager-v0.2.2" },
+    { tag_name: "frameleaf-v1.1.0" },
+    { tag_name: "frameleaf-v1.1.1" },
+    { tag_name: "frameleaf-v1.2.0-rc.1", prerelease: true },
+    { tag_name: "frameleaf-v1.1.3", draft: true },
+    { tag_name: "frameleaf-v1.10.0" },
+  ];
+  assert.equal(
+    previousReleaseTag("frameleaf-v1.1.2", releases),
+    "frameleaf-v1.1.1",
+  );
+  assert.equal(
+    previousReleaseTag("frameleaf-v1.11.0", releases),
+    "frameleaf-v1.10.0",
+  );
+  assert.equal(previousReleaseTag("frameleaf-v1.0.0", releases), null);
+  assert.throws(
+    () => previousReleaseTag("manager-v0.2.3", releases),
+    /Invalid/,
   );
 });
 
