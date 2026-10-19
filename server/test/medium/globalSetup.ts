@@ -37,12 +37,6 @@ const globalSetup = async () => {
       'full_page_writes=off',
       '-c',
       'synchronous_commit=off',
-      // Statistics and VACUUM must happen where a spec asks for them, not when autovacuum gets to
-      // a table: the queue tables auto-analyze after 50 rows, so a bulk-loaded scale fixture was
-      // planned from whichever partial sample had landed, and an autovacuum snapshot open across a
-      // spec's own VACUUM left the dead rows its buffer budgets assume are gone.
-      '-c',
-      'autovacuum=off',
     ])
     .withWaitStrategy(Wait.forAll([Wait.forLogMessage('database system is ready to accept connections', 2)]))
     .start();
