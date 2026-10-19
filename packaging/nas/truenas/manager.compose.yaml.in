@@ -11,9 +11,9 @@ services:
     cap_drop: [ALL]
     # Root must write NAS folders it does not own (Unraid nobody:users, TrueNAS apps).
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
-    ports: ['9443:9443']
+    ports: ['2282:9443']
     environment:
-      MANAGER_ORIGIN: https://nas.example:9443
+      MANAGER_ORIGIN: https://nas.example:2282
       MANAGER_DATA: /mnt/pool/frameleaf/manager
       MANAGER_STORAGE_ROOTS: /mnt/pool/frameleaf/media
       MANAGER_DATABASE_ROOTS: /mnt/pool/frameleaf/databases
