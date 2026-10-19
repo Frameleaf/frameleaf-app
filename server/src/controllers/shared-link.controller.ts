@@ -68,7 +68,7 @@ export class SharedLinkController {
   }
 
   @Post('login')
-  @Authenticated({ sharedLink: true })
+  @Authenticated({ sharedLink: true, sharedLinkPassword: false })
   @RateLimited(RATE_LIMITS.sharedLinkLogin)
   @Endpoint({
     summary: 'Shared link login',
@@ -91,7 +91,7 @@ export class SharedLinkController {
   }
 
   @Get('me')
-  @Authenticated({ sharedLink: true })
+  @Authenticated({ sharedLink: true, sharedLinkPassword: false })
   @Endpoint({
     summary: 'Retrieve current shared link',
     description: 'Retrieve the current shared link associated with authentication method.',

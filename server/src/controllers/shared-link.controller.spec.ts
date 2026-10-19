@@ -24,7 +24,22 @@ describe(SharedLinkController.name, () => {
     it('should be a shared link route', async () => {
       await request(ctx.getHttpServer()).get('/shared-links/me');
       expect(ctx.authenticate).toHaveBeenCalledWith(
-        expect.objectContaining({ metadata: expect.objectContaining({ sharedLinkRoute: true }) }),
+        expect.objectContaining({
+          metadata: expect.objectContaining({ sharedLinkRoute: true, sharedLinkPassword: false }),
+        }),
+      );
+    });
+  });
+
+  describe('POST /shared-links/login', () => {
+    it('lets a protected link reach its password challenge', async () => {
+      service.login.mockResolvedValue({ sharedLink: {} as never, token: 'unlocked-token' });
+      const { status } = await request(ctx.getHttpServer()).post('/shared-links/login').send({ password: 'secret' });
+      expect(status).toBe(201);
+      expect(ctx.authenticate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ sharedLinkRoute: true, sharedLinkPassword: false }),
+        }),
       );
     });
   });

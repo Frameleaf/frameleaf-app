@@ -32,7 +32,7 @@ import { OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
 import { DecimalSize } from 'src/utils/bytes.js';
-import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
+import { identityDirectory, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { type SetupClient, whileClaimable } from 'src/utils/frameleaf-setup-gate.js';
 import {
   FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS,
@@ -50,6 +50,7 @@ import { getPreferences } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
 import { createSession } from 'src/utils/session.js';
+import { requireSharedLinkUnlocked } from 'src/utils/shared-link.js';
 import { allowedOrigins, requestHosts, websocketOriginAllowed } from 'src/utils/websocket-origin.js';
 
 export interface LoginDetails {
@@ -104,6 +105,8 @@ export type ValidateRequest = {
   queryParams: Record<string, string>;
   metadata: {
     sharedLinkRoute: boolean;
+    /** Only the landing challenge and password login may skip the shared-link unlock cookie. */
+    sharedLinkPassword?: boolean;
     adminRoute: boolean;
     /** `false` explicitly means no permission is required, which otherwise defaults to `all` */
     permission?: Permission | false;
@@ -534,6 +537,16 @@ export class AuthService extends BaseService {
     if (authDto.sharedLink && !sharedLinkRoute) {
       this.logger.warn(`Denied access to non-shared route: ${uri}`);
       throw new ForbiddenException('Forbidden');
+    }
+
+    if (authDto.sharedLink && metadata.sharedLinkPassword !== false) {
+      const tokens = parse(headers.cookie || '')[AuthCookie.SharedLinkToken]?.split(',') ?? [];
+      await requireSharedLinkUnlocked(
+        this.cryptoRepository,
+        identityDirectory(this.configRepository),
+        authDto.sharedLink,
+        tokens,
+      );
     }
 
     if (

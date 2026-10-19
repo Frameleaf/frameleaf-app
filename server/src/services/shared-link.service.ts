@@ -1,5 +1,4 @@
 import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
-import { createHash, timingSafeEqual } from 'node:crypto';
 import { PostgresError } from 'postgres';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { SALT_ROUNDS } from 'src/constants.js';
@@ -24,14 +23,11 @@ import {
   getHiddenContentQueryOptions,
 } from 'src/utils/hidden-content.js';
 import { OpenGraphTags, findOrFail, getExternalDomain } from 'src/utils/misc.js';
+import { getSharedLinkToken, requireSharedLinkUnlocked, sharedLinkSecretEqual } from 'src/utils/shared-link.js';
 
 /** A bcrypt hash as stored for a shared-link password (FL-161); anything else is a legacy plaintext value. */
 const BCRYPT_HASH = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
 export const isBcryptHash = (value: string) => BCRYPT_HASH.test(value);
-
-/** Compare two secrets in constant time, whatever their lengths. */
-const safeEqual = (a: string, b: string) =>
-  timingSafeEqual(createHash('sha256').update(a).digest(), createHash('sha256').update(b).digest());
 
 /**
  * FL-161: shared-link passwords are stored as bcrypt hashes (migration 2100000000660 hashed the
@@ -69,7 +65,7 @@ export class SharedLinkService extends BaseService {
 
     const legacy = !isBcryptHash(password);
     const valid = legacy
-      ? safeEqual(dto.password, password)
+      ? sharedLinkSecretEqual(dto.password, password)
       : await this.cryptoRepository.compareBcrypt(dto.password, password);
     if (!valid) {
       throw new UnauthorizedException('Invalid password');
@@ -79,7 +75,10 @@ export class SharedLinkService extends BaseService {
 
     return {
       sharedLink: await this.mapSharedLink(auth, sharedLink, { stripAssetMetadata: !sharedLink.showExif }),
-      token: await this.asToken({ id, password: stored }),
+      token: await getSharedLinkToken(this.cryptoRepository, identityDirectory(this.configRepository), {
+        id,
+        password: stored,
+      }),
     };
   }
 
@@ -89,12 +88,12 @@ export class SharedLinkService extends BaseService {
     }
 
     const sharedLink = await this.findOrFail(auth.user.id, auth.sharedLink.id, this.visitorOptions(auth));
-    const { id, password } = sharedLink;
-
-    const expected = password ? await this.asToken({ id, password }) : null;
-    if (expected && authTokens.every((token) => !safeEqual(token, expected))) {
-      throw new UnauthorizedException('Password required');
-    }
+    await requireSharedLinkUnlocked(
+      this.cryptoRepository,
+      identityDirectory(this.configRepository),
+      sharedLink,
+      authTokens,
+    );
 
     return this.mapSharedLink(auth, sharedLink, { stripAssetMetadata: !sharedLink.showExif });
   }
@@ -349,15 +348,6 @@ export class SharedLinkService extends BaseService {
       return current;
     }
     throw new UnauthorizedException('Invalid password');
-  }
-
-  /** The unlock token kept in the viewer's cookie: an HMAC under this server's own key (see above). */
-  private asToken(sharedLink: { id: string; password: string }) {
-    return this.cryptoRepository.serverKeyedHash(
-      identityDirectory(this.configRepository),
-      'shared-link-unlock',
-      `${sharedLink.id}-${sharedLink.password}`,
-    );
   }
 
   /**
