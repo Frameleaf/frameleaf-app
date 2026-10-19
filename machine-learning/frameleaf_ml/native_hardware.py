@@ -20,7 +20,15 @@ def fingerprint(value: Any) -> str:
     ).hexdigest()
 
 
-def snapshot() -> dict[str, Any]:
+def snapshot(device_facts: dict[str, Any] | None = None) -> dict[str, Any]:
+    from .native_device import validate_facts
+    from .native_ort import current_policy
+
+    policy = current_policy()
+    if device_facts is None and policy is not None and policy.observer is not None:
+        device_facts = policy.observer.facts()
+    if device_facts is not None:
+        validate_facts(device_facts)
     versions = {}
     for package in ("onnxruntime", "onnxruntime-gpu", "onnxruntime-openvino", "numpy", "Pillow", "tokenizers"):
         try:
@@ -64,6 +72,8 @@ def snapshot() -> dict[str, Any]:
         "gpus": gpus,
         "totalMemoryBytes": psutil.virtual_memory().total,
     }
+    if device_facts is not None:
+        stable["deviceEvidence"] = device_facts
     return {
         "fingerprint": fingerprint(stable),
         "facts": stable,

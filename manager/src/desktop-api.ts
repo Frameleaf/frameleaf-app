@@ -7,6 +7,7 @@ import { Security } from './security.js';
 import { Store } from './store.js';
 import type { NativeService } from './runtime/native-service.js';
 
+import { NativeUpdateApprovalRequest } from './runtime/native-update-approval.js';
 const NATIVE = '/manager-api/desktop/';
 const BROWSER = '/manager-api/desktop-grants';
 const nativePaths = new Set(
@@ -22,6 +23,7 @@ const nativePaths = new Set(
     'restore',
     'restore-operation',
     'resume-restore',
+    'approve-update',
   ].map((name) => NATIVE + name),
 );
 const browserPaths = new Set([
@@ -43,7 +45,11 @@ export function desktopApi(
   operations: ManagerLifecycle,
   recovery?: Pick<
     NativeService,
-    'listRestoreBackups' | 'reviewRestore' | 'restoreReview' | 'restore'
+    | 'listRestoreBackups'
+    | 'reviewRestore'
+    | 'restoreReview'
+    | 'restore'
+    | 'approveUpdate'
   >,
 ) {
   const router = express.Router({ caseSensitive: true, strict: true });
@@ -236,6 +242,12 @@ export function desktopApi(
     response.json({
       id: operations.control(value.action, value.key, current.id).id,
     });
+  });
+  router.post(NATIVE + 'approve-update', async (request, response) => {
+    const input = NativeUpdateApprovalRequest.parse(request.body);
+    const current = authorize(request, 'update');
+    if (!recovery) throw new Refusal('native_update_approval_unavailable');
+    response.json(await recovery.approveUpdate(input, current.id));
   });
   router.post(NATIVE + 'backups', async (request, response) => {
     Empty.parse(request.body);

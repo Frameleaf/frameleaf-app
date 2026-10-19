@@ -36,6 +36,7 @@ const manifestSchema = z.strictObject({
   sourceRevision: z.string().regex(/^[a-f0-9]{40}$/),
   python: relative,
   moduleNamespace: z.enum(['immich_ml', 'frameleaf_ml']).optional(),
+  deviceObserver: z.strictObject({ kind: z.literal('metal-v1') }).optional(),
   files: z.record(relative, z.strictObject({ sha256: digest, bytes: safeInteger.max(16 * 1024 ** 3) })),
 });
 const policySchema = z
@@ -120,6 +121,28 @@ export const verifyDesktopRuntimeAttestation = (input: unknown, profile: Desktop
     Object.values(manifest.files).reduce((sum, file) => sum + file.bytes, 0) > 32 * 1024 ** 3
   )
     throw new Error('desktop_runtime_incompatible');
+  let collectorSha256: string | undefined;
+  if (manifest.deviceObserver) {
+    const required = [
+      '__init__.py',
+      'entry.py',
+      'metal_observer.py',
+      'metal_inference.py',
+      '_frameleaf_coreml_observer.dylib',
+    ];
+    if (
+      manifest.provider !== 'CoreMLExecutionProvider' ||
+      manifest.platform !== 'macos' ||
+      manifest.architecture !== 'aarch64' ||
+      manifest.moduleNamespace !== 'frameleaf_ml' ||
+      required.some((name) => {
+        const file = manifest.files[`private/frameleaf_desktop_ml/${name}`];
+        return !file || file.bytes === 0 || file.bytes > 4 * 1024 ** 2;
+      })
+    )
+      throw new Error('desktop_runtime_device_observer_invalid');
+    collectorSha256 = manifest.files['private/frameleaf_desktop_ml/_frameleaf_coreml_observer.dylib'].sha256;
+  }
   return {
     manifestSha256: createHash('sha256').update(raw).digest('hex'),
     sourceRevision: manifest.sourceRevision,
@@ -127,6 +150,7 @@ export const verifyDesktopRuntimeAttestation = (input: unknown, profile: Desktop
     epoch: manifest.epoch,
     platform: manifest.platform,
     architecture: manifest.architecture,
+    ...(collectorSha256 ? { collectorSha256 } : {}),
   };
 };
 

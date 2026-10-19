@@ -68,6 +68,23 @@ def test_accelerator_cache_does_not_write_to_staged_weights(
     assert list(staged_model.parent.iterdir()) == [staged_model]
 
 
+@pytest.mark.parametrize("native", [False, True])
+def test_native_coreml_keeps_float32_accumulation_and_bounded_specialization(
+    staged_model: Path, monkeypatch: pytest.MonkeyPatch, native: bool
+) -> None:
+    monkeypatch.setattr("frameleaf_ml.sessions.ort.current_policy", lambda: object() if native else None)
+    session = OrtSession.__new__(OrtSession)
+    session.model_path = staged_model
+    session.providers = ["CoreMLExecutionProvider", "CPUExecutionProvider"]
+    options, cpu = session._provider_options_default
+    assert options["ModelFormat"] == "MLProgram"
+    assert options["MLComputeUnits"] == ("CPUAndGPU" if native else "ALL")
+    assert options["SpecializationStrategy"] == ("Default" if native else "FastPrediction")
+    assert options["AllowLowPrecisionAccumulationOnGPU"] == ("0" if native else "1")
+    assert not Path(options["ModelCacheDirectory"]).is_relative_to(staged_model.parent)
+    assert cpu == {"arena_extend_strategy": "kSameAsRequested"}
+
+
 def test_armnn_tuning_and_compiled_cache_are_writable_outside_staged_models(staged_model: Path) -> None:
     with patch("frameleaf_ml.sessions.ann.Ann", return_value=Mock()) as ann:
         ann.return_value.load.return_value = 1

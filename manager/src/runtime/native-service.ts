@@ -23,8 +23,14 @@ import {
   nativeRestoreReviewStatus,
 } from './native-restore-review.js';
 import { nativeListener } from './native-listener.js';
-import { NativeHost, NativeOperations, type NativeRuntime } from './native.js';
+import {
+  NativeHost,
+  NativeOperations,
+  SecureInstallationIdSchema,
+  type NativeRuntime,
+} from './native.js';
 
+import { approveNativeUpdate } from './native-update-approval.js';
 const path = z
   .string()
   .min(1)
@@ -35,6 +41,7 @@ const Installation = z
   .object({
     runtime: z.literal('native'),
     id: z.string().regex(/^[a-f0-9]{12}$/),
+    secureInstallationId: SecureInstallationIdSchema,
     controller: path,
     candidate: path,
     state: path,
@@ -52,27 +59,46 @@ const BackupEngine = z
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .strict();
-const Bootstrap = z
+const Configuration = z
   .object({
     protocolVersion: z.literal(2),
     installation: Installation,
-    tls: z
-      .object({
-        certificatePem: z.string().min(1).max(8192),
-        privateKeyPem: z.string().min(1).max(8192),
-      })
-      .strict(),
     controllerSha256: z.string().regex(/^[a-f0-9]{64}$/),
     backupEngine: BackupEngine,
-    backupKey: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
     name: z.string().trim().min(1).max(120),
     release: releaseTag,
-    password: z
-      .string()
-      .min(24)
-      .max(256)
-      .regex(/^[^\r\n\0]+$/),
   })
+  .strict();
+const Transition = z
+  .object({
+    operationId: SecureInstallationIdSchema,
+    fromFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+const Descriptor = Configuration.extend({
+  tlsCertificatePemSha256: z.string().regex(/^[a-f0-9]{64}$/),
+});
+const Binding = z
+  .object({
+    fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+    descriptor: Descriptor,
+  })
+  .strict();
+const Bootstrap = Configuration.extend({
+  tls: z
+    .object({
+      certificatePem: z.string().min(1).max(8192),
+      privateKeyPem: z.string().min(1).max(8192),
+    })
+    .strict(),
+  backupKey: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+  password: z
+    .string()
+    .min(24)
+    .max(256)
+    .regex(/^[^\r\n\0]+$/),
+  installationTransition: Transition.optional(),
+})
   .strict()
   .refine((value) => value.backupKey !== value.password);
 export type NativeBootstrap = z.infer<typeof Bootstrap>;
@@ -310,12 +336,72 @@ export function nativeBackupCommand(
   };
 }
 
+/** Only the inherited supervisor bootstrap can request this; it must hold source process exclusion. */
+function transitionInstallation(
+  store: Store,
+  descriptor: z.infer<typeof Descriptor>,
+  transition: z.infer<typeof Transition>,
+): void {
+  const fingerprint = digest(descriptor);
+  const receipt = { ...transition, toFingerprint: fingerprint };
+  const receiptKey = `native-transition:${transition.operationId}`;
+  store.db.exec('BEGIN IMMEDIATE');
+  try {
+    const parsed = Binding.safeParse(store.get('native-installation'));
+    if (
+      !parsed.success ||
+      digest(parsed.data.descriptor) !== parsed.data.fingerprint ||
+      store.get('installation') ||
+      store.get('native-library-id') !== descriptor.installation.id
+    )
+      throw new Refusal('native_installation_changed');
+    if (
+      store.db.prepare('SELECT 1 FROM operations WHERE active=1 LIMIT 1').get()
+    )
+      throw new Refusal('operation_in_progress');
+    const prior = store.get(receiptKey);
+    if (prior !== null) {
+      if (
+        digest(prior) !== digest(receipt) ||
+        parsed.data.fingerprint !== fingerprint
+      )
+        throw new Refusal('native_installation_changed');
+    } else {
+      const source = parsed.data.descriptor;
+      if (
+        transition.fromFingerprint === fingerprint ||
+        parsed.data.fingerprint !== transition.fromFingerprint ||
+        source.protocolVersion !== descriptor.protocolVersion ||
+        source.name !== descriptor.name ||
+        source.tlsCertificatePemSha256 !== descriptor.tlsCertificatePemSha256 ||
+        ['id', 'secureInstallationId', 'state', 'databasePort', 'apiPort'].some(
+          (key) =>
+            source.installation[key as keyof typeof source.installation] !==
+            descriptor.installation[
+              key as keyof typeof descriptor.installation
+            ],
+        )
+      )
+        throw new Refusal('native_installation_changed');
+      store.set('native-installation', { fingerprint, descriptor });
+      store.set(receiptKey, receipt);
+    }
+    store.db.exec('COMMIT');
+  } catch (error) {
+    store.db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 /** The installed supervisor owns bootstrap authority; Manager owns the existing operation journal. */
 export class NativeService {
   private readonly lifecycle: NativeOperations;
   private readonly recoveryContext: Parameters<
     typeof prepareNativeRestoreReview
   >[2];
+  private readonly updateApproval: (
+    input: unknown,
+  ) => ReturnType<typeof approveNativeUpdate>;
   private reviewPending = false;
   private activeReview?: string;
   readonly runtime: NativeRuntime;
@@ -340,7 +426,13 @@ export class NativeService {
     Object.freeze(bootstrap.backupEngine);
     this.backupCommand = nativeBackupCommand(bootstrap.backupEngine);
     if (store.get('installation')) throw new Refusal('manager_runtime_changed');
-    const { password, backupKey, tls, ...configuration } = bootstrap;
+    const {
+      password,
+      backupKey,
+      tls,
+      installationTransition,
+      ...configuration
+    } = bootstrap;
     this.backupPassword = async () => backupKey;
     const descriptor = {
       ...configuration,
@@ -360,7 +452,9 @@ export class NativeService {
       );
     if (supplied.identity.installationId !== bootstrap.installation.id)
       throw new Refusal('native_installation_changed');
-    store.createOnce('native-installation', { fingerprint, descriptor });
+    if (installationTransition)
+      transitionInstallation(store, descriptor, installationTransition);
+    else store.createOnce('native-installation', { fingerprint, descriptor });
     if (
       store.get<{ fingerprint: string }>('native-installation')?.fingerprint !==
       fingerprint
@@ -377,6 +471,14 @@ export class NativeService {
       name: bootstrap.name,
       release: bootstrap.release,
     };
+    this.updateApproval = (input) =>
+      approveNativeUpdate(
+        store,
+        this.runtime,
+        { ...context, managerFingerprint: fingerprint },
+        backupKey,
+        input,
+      );
     this.recoveryContext = {
       installation: context.installation,
       libraryId,
@@ -424,6 +526,11 @@ export class NativeService {
   }
   installation() {
     return this.publicInstallation;
+  }
+  async approveUpdate(input: unknown, installationId: string) {
+    if (installationId !== this.publicInstallation.id)
+      throw new Refusal('installation_changed');
+    return this.updateApproval(input);
   }
   async listRestoreBackups(installationId: string) {
     if (installationId !== this.publicInstallation.id)

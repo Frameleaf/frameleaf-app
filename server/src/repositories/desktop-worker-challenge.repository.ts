@@ -21,6 +21,10 @@ type Challenge = Selectable<DesktopWorkerChallengeTable>;
 const sha = (value: string) => createHash('sha256').update(value).digest('hex');
 const runtimeSchema = z.strictObject({
   manifestSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  collectorSha256: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
   sourceRevision: z.string().regex(/^[a-f0-9]{40}$/),
   provider: z.string().min(1).max(64),
   platform: z.enum(['macos', 'windows', 'linux']),

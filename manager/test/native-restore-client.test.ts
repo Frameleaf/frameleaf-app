@@ -67,6 +67,7 @@ async function fixture(
   const installation: NativeInstallation = {
     runtime: 'native',
     id: binding.installationId,
+    secureInstallationId: '11111111-1111-4111-8111-111111111111',
     controller: join(root, 'controller.mjs'),
     candidate: join(root, 'candidate'),
     state: join(root, 'state'),
@@ -82,7 +83,7 @@ async function fixture(
 import {createInterface} from 'node:readline';
 const lines=createInterface({input:process.stdin})[Symbol.asyncIterator]();const config=JSON.parse((await lines.next()).value);
 const emit=value=>process.stdout.write(JSON.stringify(value)+'\\n');const scenario=${JSON.stringify(scenario)};
-emit({protocolVersion:1,state:config.mode==='restore-prepare'?'restore-prepare-ready':'running',manifestSha256:config.manifestSha256,sourceRevision:'c'.repeat(40),certified:false});
+emit({protocolVersion:1,state:config.mode==='restore-prepare'?'restore-prepare-ready':'running',secureInstallationId:config.secureInstallationId,manifestSha256:config.manifestSha256,sourceRevision:'c'.repeat(40),certified:false});
 let pending;
 for await(const line of {[Symbol.asyncIterator]:()=>lines}){
  if(line==='stop'){if(pending)emit(scenario==='verify-hold'?{protocolVersion:1,state:'restore-verify-failed',operationId:pending,code:'host_restore_verification_failed',verificationId:'55555555-5555-4555-8555-555555555555'}:{protocolVersion:1,state:'restore-prepare-failed',operationId:pending,code:'host_restore_failed'});emit({protocolVersion:1,state:'stopped'});break;}
@@ -149,6 +150,7 @@ test('restore client refuses detached, foreign and malformed requests before eff
     {
       runtime: 'native',
       id: binding.installationId,
+      secureInstallationId: '11111111-1111-4111-8111-111111111111',
       controller: process.execPath,
       candidate: root,
       state: root,

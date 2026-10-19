@@ -36,6 +36,7 @@ async function fixture(run) {
     installation: {
       runtime: 'native',
       id: 'a'.repeat(12),
+      secureInstallationId: '11111111-1111-4111-8111-111111111111',
       controller: join(root, 'controller'),
       candidate: join(root, 'candidate'),
       state: join(root, 'profile'),
@@ -603,6 +604,7 @@ async function operationFixture(run) {
         return {
           protocolVersion: 1,
           state: 'restore-prepare-ready',
+          secureInstallationId: '11111111-1111-4111-8111-111111111111',
           manifestSha256: f.context.installation.manifestSha256,
           sourceRevision: f.context.installation.sourceRevision,
           certified: false,
@@ -794,7 +796,7 @@ test('restore preparation retains a successful target across unconfirmed shutdow
 
 test('restore preparation rejects wrong readiness and malformed or foreign prepared targets while draining its owner', async () => {
   const run = restoreRunner();
-  for (const condition of ['ready', 'binding', 'schema', 'extra']) {
+  for (const condition of ['ready', 'secure-identity', 'binding', 'schema', 'extra']) {
     await operationFixture(
       async ({ store, context, operation, runtime, calls, cancellation }) => {
         if (condition === 'ready') {
@@ -802,6 +804,12 @@ test('restore preparation rejects wrong readiness and malformed or foreign prepa
           runtime.startRestorePreparation = async () => ({
             ...(await original()),
             state: 'database-ready',
+          });
+        } else if (condition === 'secure-identity') {
+          const original = runtime.startRestorePreparation;
+          runtime.startRestorePreparation = async () => ({
+            ...(await original()),
+            secureInstallationId: '22222222-2222-4222-8222-222222222222',
           });
         } else {
           const original = runtime.prepareRestore;
@@ -1207,6 +1215,7 @@ test('restore preparation accepts a bound cold quiescent receipt but rejects a f
     const inspection = {
       protocolVersion: 1,
       state: 'quiescent',
+      secureInstallationId: '11111111-1111-4111-8111-111111111111',
       installationId: f.context.installation.id,
       manifestSha256: f.context.installation.manifestSha256,
       sourceRevision: f.context.installation.sourceRevision,
@@ -1430,6 +1439,7 @@ async function preBackupOwnerFixture(run) {
       return {
         protocolVersion: 1,
         state,
+        secureInstallationId: f.context.installation.secureInstallationId,
         manifestSha256: f.context.installation.manifestSha256,
         sourceRevision: f.context.installation.sourceRevision,
         certified: f.context.installation.certified,
@@ -1829,6 +1839,7 @@ async function executionFixture(run) {
     const ready = (state) => ({
       protocolVersion: 1,
       state,
+      secureInstallationId: f.context.installation.secureInstallationId,
       manifestSha256: f.context.installation.manifestSha256,
       sourceRevision: f.context.installation.sourceRevision,
       certified: false,

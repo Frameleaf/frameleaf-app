@@ -4,6 +4,64 @@ import sys
 from pathlib import Path
 
 
+def test_native_startup_preloads_before_health() -> None:
+    from fastapi.testclient import TestClient
+
+    from frameleaf_ml.native_runtime import create_native_app
+
+    class Binding:
+        loaded = False
+
+        async def preload(self):
+            self.loaded = True
+
+    binding = Binding()
+    with TestClient(create_native_app(binding)) as client:
+        assert binding.loaded
+        assert client.get("/ping").status_code == 200
+
+
+def test_failed_native_preload_prevents_readiness() -> None:
+    import pytest
+    from fastapi.testclient import TestClient
+
+    from frameleaf_ml.native_runtime import create_native_app
+
+    class Binding:
+        async def preload(self):
+            raise ValueError("native_staged_hash_mismatch")
+
+    with pytest.raises(ValueError, match="native_staged_hash_mismatch"):
+        with TestClient(create_native_app(Binding())):
+            raise AssertionError("startup published readiness after preload failure")
+
+
+def test_native_settings_pin_models_and_refuse_conflicting_preload_aliases(tmp_path: Path, monkeypatch) -> None:
+    from frameleaf_ml.config import Settings
+    from frameleaf_ml.native_runtime import NativeRuntimeOptions, configure_runtime
+
+    environment = {"FRAMELEAF_ML_AUTH_TOKEN": "x" * 48}
+    for key, value in {
+        "MACHINE_LEARNING_MODEL_DOWNLOADS": "true",
+        "MACHINE_LEARNING_MODEL_TTL": "1",
+        "MACHINE_LEARNING_PRELOAD__CLIP__VISUAL": "unapproved",
+        "MACHINE_LEARNING_CACHE_FOLDER": "/unapproved",
+    }.items():
+        environment[key] = environment[key.lower()] = value
+    configured = configure_runtime(NativeRuntimeOptions(tmp_path, 34219), environment)
+    assert not any(key.upper().startswith("MACHINE_LEARNING_PRELOAD") for key in configured)
+    for key in list(os.environ):
+        if key.upper().startswith("MACHINE_LEARNING_"):
+            monkeypatch.delenv(key)
+    for key, value in configured.items():
+        monkeypatch.setenv(key, value)
+    actual = Settings()
+    assert actual.model_downloads is False
+    assert actual.model_ttl == 0
+    assert actual.cache_folder == tmp_path.resolve()
+    assert actual.preload is None
+
+
 def test_shared_config_does_not_import_unix_worker_dependencies() -> None:
     script = """
 import importlib.abc
@@ -156,6 +214,9 @@ def test_bound_native_app_refuses_changed_request_and_changed_runtime(monkeypatc
         calls = 0
         changed = False
 
+        async def preload(self):
+            pass
+
         def check(self, entries, kind):
             self.calls += 1
             if entries != {"clip": {"textual": {"modelName": "ViT-B-32__openai"}}} or kind != "text":
@@ -192,7 +253,16 @@ def test_binding_set_cli_is_explicit_and_checks_pair_counts_before_imports(tmp_p
         (["--binding-set"], "native_binding_pair_required"),
     ]:
         result = subprocess.run(
-            [sys.executable, "-m", "frameleaf_ml.native_runtime", "--cache-dir", str(tmp_path), "--port", "19999", *args],
+            [
+                sys.executable,
+                "-m",
+                "frameleaf_ml.native_runtime",
+                "--cache-dir",
+                str(tmp_path),
+                "--port",
+                "19999",
+                *args,
+            ],
             cwd=Path(__file__).parent,
             capture_output=True,
             text=True,

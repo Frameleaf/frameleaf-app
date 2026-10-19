@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from contextlib import nullcontext
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -146,22 +147,25 @@ class OrtSession:
         input_feed: dict[str, NDArray[np.float32]] | dict[str, NDArray[np.int32]] | dict[str, NDArray[np.uint8]],
         run_options: Any = None,
     ) -> list[NDArray[np.float32]]:
-        if "MIGraphXExecutionProvider" in self.providers:
-            model_key = self.model_path.resolve().as_posix()
-            input_key = (model_key, _migraphx_input_signature(input_feed))
-            if not _migraphx_has_compiled_input(input_key):
-                model_lock = _migraphx_get_model_lock(model_key)
-                with model_lock:
-                    if not _migraphx_has_compiled_input(input_key):
-                        outputs: list[NDArray[np.float32]] = self.session.run(output_names, input_feed, run_options)
-                        _migraphx_mark_compiled_input(input_key)
-                        return outputs
+        native = current_policy()
+        observer = native.observer if native is not None else None
+        with observer.observe(self.source_model_path) if observer is not None else nullcontext():
+            if "MIGraphXExecutionProvider" in self.providers:
+                model_key = self.model_path.resolve().as_posix()
+                input_key = (model_key, _migraphx_input_signature(input_feed))
+                if not _migraphx_has_compiled_input(input_key):
+                    model_lock = _migraphx_get_model_lock(model_key)
+                    with model_lock:
+                        if not _migraphx_has_compiled_input(input_key):
+                            outputs: list[NDArray[np.float32]] = self.session.run(output_names, input_feed, run_options)
+                            _migraphx_mark_compiled_input(input_key)
+                            return outputs
+
+                outputs = self.session.run(output_names, input_feed, run_options)
+                return outputs
 
             outputs = self.session.run(output_names, input_feed, run_options)
             return outputs
-
-        outputs = self.session.run(output_names, input_feed, run_options)
-        return outputs
 
     @property
     def providers(self) -> list[str]:
@@ -189,6 +193,7 @@ class OrtSession:
 
     @property
     def _provider_options_default(self) -> list[dict[str, Any]]:
+        native = current_policy() is not None
         provider_options = []
         for provider in self.providers:
             match provider:
@@ -214,11 +219,12 @@ class OrtSession:
                         "cache_dir": (runtime_cache_dir(self.model_path) / "openvino").as_posix(),
                     }
                 case "CoreMLExecutionProvider":
+                    # Native fixtures need float32 accuracy without the expensive prediction specialization.
                     options = {
                         "ModelFormat": "MLProgram",
-                        "MLComputeUnits": "ALL",
-                        "SpecializationStrategy": "FastPrediction",
-                        "AllowLowPrecisionAccumulationOnGPU": "1",
+                        "MLComputeUnits": "CPUAndGPU" if native else "ALL",
+                        "SpecializationStrategy": "Default" if native else "FastPrediction",
+                        "AllowLowPrecisionAccumulationOnGPU": "0" if native else "1",
                         "ModelCacheDirectory": (runtime_cache_dir(self.model_path) / "coreml").as_posix(),
                     }
                 case _:

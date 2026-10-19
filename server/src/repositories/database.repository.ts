@@ -8,7 +8,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as semver from 'semver';
 import z from 'zod';
 import type { DB } from 'src/schema/index.js';
-import { EXTENSION_NAMES, POSTGRES_VERSION_RANGE, VECTOR_INDEX_TABLES, VECTOR_VERSION_RANGE } from 'src/constants.js';
+import {
+  CLIP_MODEL_INFO,
+  EXTENSION_NAMES,
+  POSTGRES_VERSION_RANGE,
+  VECTOR_INDEX_TABLES,
+  VECTOR_VERSION_RANGE,
+} from 'src/constants.js';
 import { GenerateSql } from 'src/decorators.js';
 import { DatabaseExtension, DatabaseLock, VectorIndex } from 'src/enum.js';
 import { resetQueueAfterRestore } from 'src/queue/store.js';
@@ -158,6 +164,24 @@ export class DatabaseRepository {
       excludeMigrationTables: true,
     });
     if (target.warnings.length > 0) throw new Error(`Canonical schema reader warnings: ${target.warnings.join('; ')}`);
+
+    // Configuration resizes these stores together; only their supported vector width is runtime managed.
+    const embeddings = CLIP_TABLES.map((name) =>
+      target.tables.find((table) => table.name === name)?.columns.find((column) => column.name === 'embedding'),
+    );
+    const dimension = embeddings[0]?.length;
+    if (
+      dimension !== undefined &&
+      Object.values(CLIP_MODEL_INFO).some(({ dimSize }) => dimSize === dimension) &&
+      embeddings.every((column) => column?.type === 'vector' && column.length === dimension)
+    ) {
+      for (const name of CLIP_TABLES) {
+        const column = source.tables
+          .find((table) => table.name === name)
+          ?.columns.find(({ name }) => name === 'embedding');
+        if (column) column.length = dimension;
+      }
+    }
 
     const drift = schemaDiff(source, target, {
       tables: { ignoreExtra: false },

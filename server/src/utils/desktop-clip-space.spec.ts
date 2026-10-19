@@ -21,8 +21,8 @@ const key = (space: { visualModelKey: string; textModelKeys: string[] }) =>
 it('maps every released exact text/image producer to its explicit space without joining old and new preprocessing', () => {
   const catalogue = models();
   const spaces = parseDesktopClipSpaces(raw(), catalogue);
-  expect(spaces.spaces).toHaveLength(4);
-  expect(new Set(spaces.spaces.map((space) => space.spaceKey)).size).toBe(4);
+  expect(spaces.spaces).toHaveLength(5);
+  expect(new Set(spaces.spaces.map((space) => space.spaceKey)).size).toBe(5);
   for (const profile of catalogue.profiles) {
     if (profile.workload !== 'clip') {
       expect(findDesktopClipSpace(spaces, profile.modelKey)).toBeUndefined();

@@ -8,6 +8,36 @@ import pytest
 from frameleaf_ml import native_binding as module
 
 
+@pytest.mark.asyncio
+async def test_native_preload_rechecks_binding_around_loading(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from frameleaf_ml import main
+
+    entry = {"name": "fixture", "type": "textual", "task": "clip", "options": {"language": "en"}}
+    spec = SimpleNamespace(entries={"clip": {}}, fixture_kind="text")
+    binding = module.NativeBinding(spec, tmp_path, "d" * 64)
+    events = []
+    binding.check = Mock(side_effect=lambda *args: (events.append("check") or [entry], []))
+    model = object()
+
+    async def get(*args, **kwargs):
+        assert args == ("fixture", "textual", "clip")
+        assert kwargs == {"ttl": main.settings.model_ttl, "language": "en"}
+        events.append("get")
+        return model
+
+    async def load(value):
+        assert value is model
+        events.append("load")
+
+    monkeypatch.setattr(main.model_cache, "get", get)
+    monkeypatch.setattr(main, "load", load)
+    await binding.preload()
+    assert events == ["check", "get", "load", "check"]
+
+
 def test_one_native_binding_set_selects_exact_roles_and_rechecks_live_authority(tmp_path, monkeypatch):
     def binding(key, kind, options):
         model_type = "textual" if kind == "text" else "visual"
@@ -105,7 +135,12 @@ def test_one_native_binding_set_selects_exact_roles_and_rechecks_live_authority(
         return main.ORJSONResponse({"role": kwargs["entries"][0][0]})
 
     monkeypatch.setattr(main, "predict", predict)
+    from unittest.mock import AsyncMock
+
+    preload = AsyncMock()
+    monkeypatch.setattr(module.NativeBinding, "preload", preload)
     with TestClient(create_native_app(loaded)) as client:
+        assert preload.await_count == 3
         for item in [default, english, visual, default]:
             data = {"entries": json.dumps(item.spec.entries)}
             if item is visual:

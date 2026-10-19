@@ -63,6 +63,7 @@ test(
     assert.ok(
       isAbsolute(root) && isAbsolute(candidate) && isAbsolute(controller),
     );
+    assert.ok(process.env.FRAMELEAF_NATIVE_INSTALLATION_ID, 'requires an enrolled disposable test identity');
     await assert.rejects(access(root));
     await mkdir(root, { mode: 0o700 });
     const raw = await readFile(join(candidate, 'manifest.json'));
@@ -73,6 +74,7 @@ test(
     const descriptor = {
       runtime: 'native' as const,
       id: 'a'.repeat(12),
+      secureInstallationId: process.env.FRAMELEAF_NATIVE_INSTALLATION_ID!,
       controller,
       candidate,
       state: join(root, 'host'),
