@@ -555,12 +555,15 @@ describe('offline import derived-work durable ownership', () => {
     const feed = (store: SqlQueueStore, queue: QueueName) =>
       diagnostics.run('share-feed', () => store.feedManifest(queue));
     await diagnostics.run('seed', () => seed(SCALE_ITEMS));
+    // Medium Postgres runs without autovacuum: plan each phase from the statistics it starts with.
+    await sql`analyze frameleaf_immich_import_work`.execute(db);
     const observed = observe();
     const started = performance.now();
     await diagnostics.run('dispatch', () =>
       repositoryFor(diagnosticDb.withPlugin(observed.plugin)).dispatchImportedWork(),
     );
     const transferredMs = performance.now() - started;
+    await sql`analyze`.execute(db);
     expect(await diagnostics.run('counts', counts)).toEqual({
       runs: 1,
       stages: 5,
