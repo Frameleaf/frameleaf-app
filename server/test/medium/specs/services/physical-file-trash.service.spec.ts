@@ -38,6 +38,7 @@ afterAll(async () => {
 });
 
 afterEach(async () => {
+  await sql`DELETE FROM public.physical_file_trash`.execute(database);
   for (const directory of directories) {
     await rm(directory, { recursive: true, force: true });
   }
@@ -84,29 +85,140 @@ const ownerAuth = (ownerId: string) => ({
 });
 const onDisk = (path: string) => Promise.resolve(`identity:${path}`);
 
-describe(PhysicalFileTrashService.name, () => {
-  it('keeps an active motion original private when its still supplies the lock', async () => {
-    const { ctx, entry, user, trash } = await setup();
-    const { asset: motion } = await ctx.newAsset({
-      ownerId: user.id,
-      type: AssetType.Video,
-      visibility: AssetVisibility.Hidden,
-      checksum: entry.checksum,
-      originalPath: `/data/upload/${randomUUID()}.mp4`,
-    });
-    const { asset: photo } = await ctx.newAsset({
-      ownerId: user.id,
-      livePhotoVideoId: motion.id,
-      originalPath: `/data/upload/${randomUUID()}.jpg`,
-    });
+const setupMotionTrash = async (locked = true) => {
+  const fixture = await setup();
+  const { ctx, entry, user } = fixture;
+  const { asset: motion } = await ctx.newAsset({
+    ownerId: user.id,
+    type: AssetType.Video,
+    visibility: AssetVisibility.Hidden,
+    checksum: entry.checksum,
+    originalPath: `/data/upload/${randomUUID()}.mp4`,
+  });
+  const { asset: photo } = await ctx.newAsset({
+    ownerId: user.id,
+    livePhotoVideoId: motion.id,
+    originalPath: `/data/upload/${randomUUID()}.jpg`,
+  });
+  if (locked) {
     await database
       .insertInto('asset_lock')
       .values({ assetId: photo.id, reason: AssetLockReason.Marked, lockedBy: user.id })
       .execute();
-    await sql`UPDATE public.physical_file_trash SET "lastAssetId"=${motion.id}::uuid WHERE id=${entry.id}::uuid`.execute(
-      database,
-    );
+  }
+  await sql`UPDATE public.physical_file_trash SET "lastAssetId"=${motion.id}::uuid WHERE id=${entry.id}::uuid`.execute(
+    database,
+  );
+  return { ...fixture, motion, photo };
+};
+
+describe(PhysicalFileTrashService.name, () => {
+  it('keeps an active motion original private when its still supplies the lock', async () => {
+    const { entry, trash } = await setupMotionTrash();
     await expect(trash.getById(entry.id)).resolves.toMatchObject({ wasLocked: true });
+  });
+  it('retains the deleted still lock while the motion deletion remains queued', async () => {
+    const { sut, ctx, entry, user, trash, bytes, storage, photo, motion } = await setupMotionTrash();
+    const assets = ctx.get(AssetRepository);
+    await assets.remove({ id: photo.id });
+    await expect(
+      database.selectFrom('asset_backup_deletion').selectAll().where('assetId', '=', photo.id).executeTakeFirst(),
+    ).resolves.toMatchObject({ ownerId: user.id, livePhotoVideoId: motion.id, wasLocked: true, evidenceVersion: 1 });
+    await expect(
+      database.selectFrom('asset_lock').selectAll().where('assetId', '=', motion.id).execute(),
+    ).resolves.toEqual([]);
+    await expect(trash.getById(entry.id)).resolves.toMatchObject({ wasLocked: true });
+    const ordinary = { ...authStub.admin, user: { ...authStub.admin.user, id: user.id } };
+    for (const auth of [ordinary, ownerAuth(randomUUID())]) {
+      await expect(sut.list(auth, { page: 1, size: 100 })).resolves.toMatchObject({
+        items: [],
+        total: 0,
+        totalBytes: 0,
+      });
+      await expect(sut.purge(auth, entry.id)).rejects.toThrow('File not found');
+      await expect(sut.restore(auth, entry.id)).rejects.toThrow('File not found');
+    }
+    expect(storage.rename).not.toHaveBeenCalled();
+    expect(storage.unlink).not.toHaveBeenCalled();
+    await expect(readFile(entry.path)).resolves.toEqual(bytes);
+    await expect(sut.list(ownerAuth(user.id), { page: 1, size: 100 })).resolves.toMatchObject({
+      items: [expect.objectContaining({ id: entry.id })],
+      total: 1,
+      totalBytes: entry.sizeInBytes,
+    });
+
+    // Once the queued motion deletion finishes, its capture must carry the same parent lock into restore.
+    await assets.remove({ id: motion.id });
+    await expect(trash.getById(entry.id)).resolves.toMatchObject({ wasLocked: true });
+    const { assetId } = await sut.restore(ownerAuth(user.id), entry.id);
+    await expect(
+      database.selectFrom('asset_lock').select('reason').where('assetId', '=', assetId).execute(),
+    ).resolves.toEqual([{ reason: AssetLockReason.Marked }]);
+    const access = new AccessRepository(database);
+    await expect(access.asset.checkOwnerAccess(user.id, new Set([assetId]), false)).resolves.toEqual(new Set());
+    await expect(access.asset.checkOwnerAccess(user.id, new Set([assetId]), true)).resolves.toEqual(new Set([assetId]));
+  });
+  it.each(['owner', 'version', 'missing', 'stale motion'])(
+    'keeps ambiguous hidden motion private with %s parent evidence',
+    async (kind) => {
+      const { sut, ctx, entry, user, trash, storage, photo, motion } = await setupMotionTrash();
+      await ctx.get(AssetRepository).remove({ id: photo.id });
+      if (kind === 'stale motion') {
+        const parent = await database
+          .selectFrom('asset_backup_deletion')
+          .selectAll()
+          .where('assetId', '=', photo.id)
+          .executeTakeFirstOrThrow();
+        await database
+          .insertInto('asset_backup_deletion')
+          .values({ ...parent, assetId: motion.id, checksum: entry.checksum, livePhotoVideoId: null, wasLocked: false })
+          .execute();
+      }
+      if (kind === 'missing' || kind === 'stale motion') {
+        await database.deleteFrom('asset_backup_deletion').where('assetId', '=', photo.id).execute();
+      } else {
+        await database
+          .updateTable('asset_backup_deletion')
+          .set(kind === 'owner' ? { ownerId: randomUUID() } : { evidenceVersion: 0 })
+          .where('assetId', '=', photo.id)
+          .execute();
+      }
+      await expect(trash.getById(entry.id)).resolves.toMatchObject({ wasLocked: null });
+      const ordinary = { ...authStub.admin, user: { ...authStub.admin.user, id: user.id } };
+      for (const auth of [ordinary, ownerAuth(randomUUID())]) {
+        await expect(sut.list(auth, { page: 1, size: 100 })).resolves.toMatchObject({
+          items: [],
+          total: 0,
+          totalBytes: 0,
+        });
+        await expect(sut.purge(auth, entry.id)).rejects.toThrow('File not found');
+        await expect(sut.restore(auth, entry.id)).rejects.toThrow('File not found');
+      }
+      expect(storage.rename).not.toHaveBeenCalled();
+      expect(storage.unlink).not.toHaveBeenCalled();
+      await expect(sut.list(ownerAuth(user.id), { page: 1, size: 100 })).resolves.toMatchObject({ total: 1 });
+    },
+  );
+  it('keeps known unlocked motion recoverable after its still is deleted', async () => {
+    const { sut, ctx, entry, user, trash, photo, motion } = await setupMotionTrash(false);
+    const assets = ctx.get(AssetRepository);
+    await assets.remove({ id: photo.id });
+    await expect(trash.getById(entry.id)).resolves.toMatchObject({ wasLocked: false });
+    const ordinary = { ...authStub.admin, user: { ...authStub.admin.user, id: user.id } };
+    await expect(sut.list(ordinary, { page: 1, size: 100 })).resolves.toMatchObject({
+      items: [expect.objectContaining({ id: entry.id })],
+      total: 1,
+      totalBytes: entry.sizeInBytes,
+    });
+    await assets.remove({ id: motion.id });
+    const { assetId } = await sut.restore(ordinary, entry.id);
+    await expect(
+      database.selectFrom('asset_lock').selectAll().where('assetId', '=', assetId).execute(),
+    ).resolves.toEqual([]);
+    const access = new AccessRepository(database);
+    await expect(access.asset.checkOwnerAccess(user.id, new Set([assetId]), false)).resolves.toEqual(
+      new Set([assetId]),
+    );
   });
   it.each(['owner', 'checksum'])('does not trust deletion evidence for a different %s', async (mismatch) => {
     const { ctx, entry, user, trash } = await setup();
