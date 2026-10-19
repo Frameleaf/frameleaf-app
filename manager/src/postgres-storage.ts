@@ -6,6 +6,22 @@ import { environment, overlap, type Container, type Docker } from './docker.js';
 
 const within = (path: string, parent: string) =>
   path === parent || path.startsWith(parent === '/' ? '/' : parent + '/');
+/**
+ * Another container (running or stopped: it can start later) that can write into the database folder.
+ * Read-only mappings cannot corrupt PostgreSQL, so they never block it.
+ */
+export function overlappingWriter(
+  containers: Container[],
+  path: string,
+  managerId: string,
+  installationId?: string,
+): { container: string; source: string } | undefined {
+  for (const c of containers) {
+    if (c.Id === managerId || (installationId && c.Config.Labels?.['app.frameleaf.manager'] === installationId)) continue;
+    const mount = c.Mounts.find((m) => m.RW && m.Source.startsWith('/') && within(path, m.Source));
+    if (mount) return { container: c.Name.replace(/^\//, ''), source: mount.Source };
+  }
+}
 const unescapeMount = (value: string) =>
   value.replace(/\\(040|011|012|134)/g, (_, octal) => String.fromCharCode(Number.parseInt(octal, 8)));
 export type FilesystemMount = {
@@ -120,15 +136,11 @@ export class PostgresStorage {
     )
       throw new Refusal('host_mount_information_required');
     const hostMounts = filesystemMounts(await readFile('/run/frameleaf-host/mountinfo', 'utf8'));
-    if (
-      containers.some(
-        (c) =>
-          c.Id !== controllers[0].Id &&
-          (!installationId || c.Config.Labels?.['app.frameleaf.manager'] !== installationId) &&
-          c.Mounts.some((m) => m.Source.startsWith('/') && within(path, m.Source)),
-      )
-    )
+    const writer = overlappingWriter(containers, path, controllers[0].Id, installationId);
+    if (writer) {
+      console.error(`manager: database folder ${path} is inside ${writer.source}, which container ${writer.container} can write to`);
       throw new Refusal('database_overlaps_existing_container_data');
+    }
     const mount = databaseMount(
       path,
       this.roots,
