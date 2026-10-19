@@ -23,10 +23,15 @@ const localPath = z
   .min(1)
   .max(4096)
   .refine((value) => isAbsolute(value) && resolve(value) === value);
+export const SecureInstallationIdSchema = z
+  .string()
+  .regex(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/)
+  .refine((value) => value !== '00000000-0000-0000-0000-000000000000');
 const Installation = z
   .object({
     runtime: z.literal('native'),
     id: z.string().regex(/^[a-f0-9]{12}$/),
+    secureInstallationId: SecureInstallationIdSchema,
     controller: localPath,
     candidate: localPath,
     state: localPath,
@@ -44,6 +49,7 @@ const Running = z
   .object({
     protocolVersion: z.literal(1),
     state: z.literal('running'),
+    secureInstallationId: SecureInstallationIdSchema,
     manifestSha256: z.string().regex(/^[a-f0-9]{64}$/),
     sourceRevision: z.string().regex(/^[a-f0-9]{40}$/),
     certified: z.boolean(),
@@ -152,6 +158,7 @@ export function nativeStopped(
     !parsed.success ||
     (inspection &&
       (inspection.installationId !== installation.id ||
+        inspection.secureInstallationId !== installation.secureInstallationId ||
         inspection.manifestSha256 !== installation.manifestSha256 ||
         inspection.sourceRevision !== installation.sourceRevision ||
         inspection.certified !== installation.certified))
@@ -642,11 +649,13 @@ export class NativeHost implements NativeRuntime {
   }
   private async probe(): Promise<StopReceipt> {
     await this.authorizeController();
-    const { id, candidate, state, manifestSha256 } = this.installation;
+    const { id, secureInstallationId, candidate, state, manifestSha256 } =
+      this.installation;
     const wire =
       JSON.stringify({
         protocolVersion: 1,
         installationId: id,
+        secureInstallationId,
         candidate,
         state,
         manifestSha256,
@@ -718,6 +727,7 @@ export class NativeHost implements NativeRuntime {
         const expected = this.installation;
         if (
           result.data.installationId !== id ||
+          result.data.secureInstallationId !== secureInstallationId ||
           result.data.manifestSha256 !== manifestSha256 ||
           result.data.sourceRevision !== expected.sourceRevision ||
           result.data.certified !== expected.certified
@@ -822,12 +832,20 @@ export class NativeHost implements NativeRuntime {
       owner.fault = new Refusal('native_credentials_unavailable');
       throw owner.fault;
     }
-    const { id, candidate, state, manifestSha256, databasePort, apiPort } =
-      this.installation;
+    const {
+      id,
+      secureInstallationId,
+      candidate,
+      state,
+      manifestSha256,
+      databasePort,
+      apiPort,
+    } = this.installation;
     const wire =
       JSON.stringify({
         protocolVersion: 1,
         installationId: id,
+        secureInstallationId,
         candidate,
         state,
         manifestSha256,
@@ -910,6 +928,8 @@ export class NativeHost implements NativeRuntime {
           const expected = this.installation;
           if (
             running.data.manifestSha256 !== expected.manifestSha256 ||
+            running.data.secureInstallationId !==
+              expected.secureInstallationId ||
             running.data.sourceRevision !== expected.sourceRevision ||
             running.data.certified !== expected.certified
           )

@@ -24,6 +24,7 @@ async function fixture(work: (f: any) => Promise<void>) {
   const installation = {
     runtime: 'native' as const,
     id: 'aaaaaaaaaaaa',
+    secureInstallationId: '11111111-1111-4111-8111-111111111111',
     controller: join(root, 'controller'),
     candidate: join(root, 'runtime'),
     state: join(root, 'state'),

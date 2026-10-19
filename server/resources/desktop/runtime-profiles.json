@@ -6,7 +6,22 @@
       "uv": "0.11.2",
       "extra": "cpu",
       "provider": "CPUExecutionProvider",
-      "targets": ["macos-aarch64", "macos-x86_64", "windows-x86_64", "linux-x86_64", "linux-aarch64"]
+      "targets": [
+        "macos-aarch64",
+        "macos-x86_64",
+        "windows-x86_64",
+        "linux-x86_64",
+        "linux-aarch64"
+      ]
+    },
+    "coreml-ort": {
+      "python": "3.12.13",
+      "uv": "0.11.2",
+      "extra": "cpu",
+      "provider": "CoreMLExecutionProvider",
+      "targets": [
+        "macos-aarch64"
+      ]
     }
   }
 }

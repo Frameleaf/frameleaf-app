@@ -27,6 +27,7 @@ async function fixture(run, initiallyRunning = false) {
   const installation = {
     runtime: 'native',
     id: 'a'.repeat(12),
+    secureInstallationId: '11111111-1111-4111-8111-111111111111',
     controller: join(root, 'controller'),
     candidate: join(root, 'runtime'),
     state: join(root, 'state'),
@@ -76,6 +77,7 @@ async function fixture(run, initiallyRunning = false) {
       return {
         protocolVersion: 1,
         state: 'checkpoint-cleanup-ready',
+        secureInstallationId: '11111111-1111-4111-8111-111111111111',
         manifestSha256: installation.manifestSha256,
         sourceRevision: installation.sourceRevision,
         certified: false,
@@ -94,6 +96,7 @@ async function fixture(run, initiallyRunning = false) {
       return {
         protocolVersion: 1,
         state: 'database-ready',
+        secureInstallationId: '11111111-1111-4111-8111-111111111111',
         manifestSha256: installation.manifestSha256,
         sourceRevision: installation.sourceRevision,
         certified: false,

@@ -38,7 +38,7 @@ def cache_hashes(cache: Path) -> dict[str, str]:
     return files
 
 
-def verify_staged(cache: Path) -> None:
+def verify_staged(cache: Path) -> dict[str, str]:
     """Detect changes since acquisition; model-specific manifests remain the upstream trust roots."""
     try:
         receipt = cache / RECEIPT
@@ -46,8 +46,10 @@ def verify_staged(cache: Path) -> None:
         if cache.is_symlink() or not stat.S_ISREG(info.st_mode) or info.st_size > 4 * 1024 * 1024:
             raise ValueError("Invalid staging receipt")
         expected = json.loads(receipt.read_text())
-        if not expected or expected != cache_hashes(cache):
+        actual = cache_hashes(cache)
+        if not expected or expected != actual:
             raise ValueError("Staged files changed")
+        return actual
     except (OSError, ValueError) as error:
         raise ModelUnavailableError(
             "Model cache is absent, incomplete or changed; stop inference and run the model-staging command"

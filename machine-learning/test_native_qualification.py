@@ -140,6 +140,41 @@ def test_fixture_output_allows_only_bounded_numeric_backend_tolerance() -> None:
         compare_output({"clip": "[0.8,0.3]"}, {"clip": "[0.5,0.3]"})
 
 
+@pytest.mark.parametrize("require_staged", [True, False])
+def test_verified_model_uses_one_fresh_hash_scan_for_receipt_and_approved_manifest(
+    tmp_path, monkeypatch, synthetic_clip_cache, require_staged
+):
+    from frameleaf_ml import staging
+    from frameleaf_ml.config import settings
+    from frameleaf_ml.native_qualification import ModelBindingSpec, preprocessing_identity, verify_models
+
+    name, cache, hashes = synthetic_clip_cache
+    monkeypatch.setattr(settings, "cache_folder", tmp_path / "cache")
+    spec = ModelBindingSpec.model_validate(
+        {
+            "protocolVersion": 1,
+            "modelKey": "fixture",
+            "preprocessingSha256": preprocessing_identity(),
+            "entries": {"clip": {"textual": {"modelName": name}}},
+            "models": [{"name": name, "task": "clip", "type": "textual", "artifacts": hashes}],
+        }
+    )
+    calls = []
+    original = staging.cache_hashes
+
+    def observed(path):
+        calls.append(path)
+        return original(path)
+
+    monkeypatch.setattr(staging, "cache_hashes", observed)
+    verify_models(spec, tmp_path / "cache", require_staged=require_staged)
+    assert calls == [cache]
+    (cache / "unapproved.bin").write_bytes(b"not approved")
+    (cache / staging.RECEIPT).write_text(json.dumps(original(cache)))
+    with pytest.raises(ValueError, match="native_staged_hash_mismatch"):
+        verify_models(spec, tmp_path / "cache", require_staged=require_staged)
+
+
 def test_driver_changes_invalidate_fingerprint_without_using_free_memory() -> None:
     from frameleaf_ml.native_hardware import fingerprint
 
@@ -217,6 +252,10 @@ def test_production_text_pipeline_qualification_binds_artifacts_fixture_and_runt
         patch.setattr(settings, "model_downloads", False)
         binding = NativeBinding.load(spec_path, report, tmp_path / "cache", "CPUExecutionProvider")
         with TestClient(create_native_app(binding)) as client:
+            from frameleaf_ml import main
+
+            assert main.model_cache.cache._cache
+            assert all(model.loaded for model in main.model_cache.cache._cache.values())
             data = {"entries": json.dumps(spec["entries"]), "text": "frameleaf fixture"}
             response = client.post("/predict", data=data)
             assert response.status_code == 200, response.text
@@ -282,7 +321,7 @@ def test_qualification_watchdog_terminates_blocked_inference(tmp_path: Path) -> 
     script = """
 import asyncio
 from frameleaf_ml import native_qualification as module
-async def blocked(*args):
+async def blocked(*args, **kwargs):
     await asyncio.Event().wait()
 module.qualify = blocked
 module.main()

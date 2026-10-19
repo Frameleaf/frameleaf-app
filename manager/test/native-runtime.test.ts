@@ -23,6 +23,7 @@ async function fixture(
     start: async () => ({
       protocolVersion: 1,
       state: 'running',
+      secureInstallationId: '11111111-1111-4111-8111-111111111111',
       manifestSha256: 'c'.repeat(64),
       sourceRevision: 'd'.repeat(40),
       certified: false,
@@ -74,6 +75,7 @@ test('native effects have durable intent and public receipts in the existing Man
       return {
         protocolVersion: 1,
         state: 'running',
+        secureInstallationId: '11111111-1111-4111-8111-111111111111',
         manifestSha256: 'c'.repeat(64),
         sourceRevision: 'd'.repeat(40),
         certified: false,

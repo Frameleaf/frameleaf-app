@@ -59,6 +59,32 @@ import { clearConfigCache } from 'src/utils/config.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { controllerSetup, getKyselyDB } from 'test/utils.js';
 
+// Explicit opt-in authority for the synthetic CoreML fixture only; production resources are unchanged.
+vi.mock('node:fs', async (original) => {
+  const fs = await original<typeof import('node:fs')>();
+  return {
+    ...fs,
+    readFileSync: (...args: Parameters<typeof fs.readFileSync>) => {
+      if (
+        process.env.FRAMELEAF_TEST_COREML_NAS === '1' &&
+        String(args[0]).endsWith('/resources/desktop/release-trust.json')
+      ) {
+        return JSON.stringify({
+          schemaVersion: 1,
+          minimumRuntimeEpoch: 1,
+          keys: [
+            {
+              id: 'coreml-nas-fixture',
+              publicKeyHex: 'e28a8970753332bd72fef413e6b0b2ef1b4aadda7aa2c141f233712a6876b351',
+            },
+          ],
+        });
+      }
+      return fs.readFileSync(...args);
+    },
+  };
+});
+
 const desktop = process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT;
 const pack = process.env.FRAMELEAF_FACTORY_TEST_PACK;
 const cache = process.env.FRAMELEAF_FACTORY_MODEL_CACHE;
@@ -66,7 +92,7 @@ const workload = process.env.FRAMELEAF_FACTORY_TEST_WORKLOAD ?? 'clip';
 const ocr = workload === 'ocr';
 const face = workload === 'face';
 const automatic = !!process.env.FRAMELEAF_FACTORY_AUTOMATIC_SETUP;
-if (automatic && !ocr) throw new Error('automatic fixture requires OCR');
+if (automatic && !ocr && workload !== 'clip') throw new Error('automatic fixture requires OCR or CLIP');
 const port = async () => {
   const socket = createTcpServer();
   await new Promise<void>((resolve) => socket.listen(0, '127.0.0.1', resolve));
@@ -97,6 +123,10 @@ it.skipIf(!desktop || !pack || !cache)(
     clearConfigCache();
     try {
       const runtime = JSON.parse(await readFile(join(pack!, 'manifest.json'), 'utf8'));
+      if (process.env.FRAMELEAF_TEST_COREML_NAS === '1') {
+        expect(workload).toBe('clip');
+        expect(runtime).toMatchObject({ provider: 'CoreMLExecutionProvider', deviceObserver: { kind: 'metal-v1' } });
+      }
       const moduleNamespace = runtime.moduleNamespace ?? 'immich_ml';
       expect(['immich_ml', 'frameleaf_ml']).toContain(moduleNamespace);
       const catalogue = JSON.parse(readFileSync('resources/desktop/model-catalogue.json', 'utf8'));
@@ -550,7 +580,16 @@ it.skipIf(!desktop || !pack || !cache)(
         } else {
           const row = await search.getEmbedding(asset.id!);
           expect(row?.producerModelKey).toBe(profile.modelKey);
-          expect(JSON.parse(row!.embedding)).toHaveLength(768);
+          const actual: number[] = JSON.parse(row!.embedding);
+          const expected: number[] = JSON.parse(profile.spec.expectedOutput.clip);
+          expect(actual).toHaveLength(768);
+          expect(actual).toHaveLength(expected.length);
+          for (const [index, value] of actual.entries()) {
+            expect(Number.isFinite(value)).toBe(true);
+            expect(Math.abs(value - expected[index])).toBeLessThanOrEqual(
+              Math.max(1e-4, 1e-3 * Math.max(Math.abs(value), Math.abs(expected[index]))),
+            );
+          }
         }
         if (existingFace)
           expect(

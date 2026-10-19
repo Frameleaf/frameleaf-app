@@ -3,6 +3,11 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import z from 'zod';
 import type { verifyDesktopRuntimeAttestation } from 'src/utils/desktop-runtime-attestation.js';
+import {
+  desktopDeviceExecutionSchema,
+  desktopDeviceFactsSchema,
+  validateDesktopDeviceExecution,
+} from 'src/utils/desktop-device-execution.js';
 import { type DesktopModelProfile, createDesktopModelChallenge } from 'src/utils/desktop-model-catalogue.js';
 import { canonicalJson } from 'src/utils/object.js';
 
@@ -34,6 +39,7 @@ const factsSchema = z.strictObject({
     )
     .max(64),
   totalMemoryBytes: integer.positive(),
+  deviceEvidence: desktopDeviceFactsSchema.optional(),
 });
 const state = z.enum(['ready-cpu', 'ready-accelerator', 'ready-mixed']);
 const reportSchema = z.strictObject({
@@ -45,6 +51,7 @@ const reportSchema = z.strictObject({
   bindingSha256: digest,
   runtimeFingerprint: digest,
   runtime: factsSchema,
+  deviceExecution: desktopDeviceExecutionSchema.optional(),
   coldMilliseconds: z.number().min(0).max(600_000),
   warmMilliseconds: z.number().min(0).max(600_000),
   reason: z.null(),
@@ -137,7 +144,17 @@ export class DesktopQualificationReceipt {
     )
       throw invalid();
     const provider = report.provider;
-    if (!['CPUExecutionProvider', 'CUDAExecutionProvider'].includes(provider)) throw invalid();
+    if (!['CPUExecutionProvider', 'CUDAExecutionProvider', 'CoreMLExecutionProvider'].includes(provider))
+      throw invalid();
+    if (provider === 'CoreMLExecutionProvider') {
+      if (facts.system !== 'Darwin' || !['arm64', 'aarch64'].includes(facts.architecture)) throw invalid();
+      validateDesktopDeviceExecution(
+        report.deviceExecution,
+        facts.deviceEvidence,
+        profile.spec.models,
+        runtime.collectorSha256,
+      );
+    } else if (report.deviceExecution || facts.deviceEvidence || runtime.collectorSha256) throw invalid();
     let mixed = false;
     for (const execution of report.execution) {
       const providers = Object.keys(execution.nodes).sort();
@@ -150,7 +167,7 @@ export class DesktopQualificationReceipt {
       const itemState =
         provider === 'CPUExecutionProvider'
           ? 'ready-cpu'
-          : execution.nodes.CPUExecutionProvider
+          : provider === 'CoreMLExecutionProvider' || execution.nodes.CPUExecutionProvider
             ? 'ready-mixed'
             : 'ready-accelerator';
       if (execution.state !== itemState) throw invalid();

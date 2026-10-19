@@ -17,6 +17,7 @@ const context = {
   installation: {
     runtime: 'native' as const,
     id: 'aaaaaaaaaaaa',
+    secureInstallationId: '11111111-1111-4111-8111-111111111111',
     controller: '/private/controller',
     candidate: '/private/runtime',
     state: '/private/state',

@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createDesktopModelChallenge, parseDesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
 import { DesktopQualificationReceipt } from 'src/utils/desktop-qualification.js';
+import { canonicalJson } from 'src/utils/object.js';
 
 const profile = parseDesktopModelCatalogue(
   JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8')),
@@ -132,3 +134,91 @@ it.skipIf(!process.env.FRAMELEAF_FACTORY_QUALIFICATION)(
     expect(validated.manifestSha256).toBe('556efcbc7e9fa3c6d53d637ac651872dc5d93cca916006ad48cb2d0207a0b415');
   },
 );
+
+it('accepts signed-collector CoreML participation only as mixed and refuses altered or incomplete proof', () => {
+  const selected = { ...profile, spec: { ...profile.spec, provider: 'CoreMLExecutionProvider' as const } };
+  const issued = createDesktopModelChallenge(selected, id);
+  const identity = { ...runtime, provider: selected.spec.provider, collectorSha256: 'c'.repeat(64) };
+  const device = {
+    abiVersion: 1,
+    collectorSha256: 'c'.repeat(64),
+    osBuild: 'fixture build',
+    devices: [{ name: 'fixture GPU', identitySha256: 'd'.repeat(64) }],
+  };
+  const hardware = { ...facts, providers: ['CPUExecutionProvider', 'CoreMLExecutionProvider'], deviceEvidence: device };
+  const proof = {
+    provider: selected.spec.provider,
+    facts: device,
+    models: [
+      {
+        sha256: selected.spec.models[0].artifacts[`${selected.spec.models[0].type}/model.onnx`],
+        calls: 2,
+        computeBuffers: 2,
+        computeDispatches: 2,
+        gpuNanoseconds: 1000,
+      },
+    ],
+  };
+  const value = {
+    ...report(),
+    provider: selected.spec.provider,
+    bindingSha256: issued.bindingSha256,
+    runtime: hardware,
+    runtimeFingerprint: createHash('sha256')
+      .update(
+        canonicalJson(hardware).replaceAll(
+          // eslint-disable-next-line unicorn/prefer-unicode-code-point-escapes
+          /[\u007F-\uFFFF]/g,
+          (ch) => String.raw`\u` + ch.codePointAt(0)!.toString(16).padStart(4, '0'),
+        ),
+      )
+      .digest('hex'),
+    state: 'ready-mixed',
+    execution: [
+      {
+        state: 'ready-mixed',
+        reason: null,
+        nodes: { CoreMLExecutionProvider: 1 },
+        microseconds: { CoreMLExecutionProvider: 10 },
+      },
+    ],
+    deviceExecution: proof,
+  };
+  expect(DesktopQualificationReceipt.validate(value, selected, issued, identity).modelKey).toBe(selected.modelKey);
+  for (const changed of [
+    { ...value, deviceExecution: undefined },
+    { ...value, deviceExecution: { ...proof, models: [] } },
+    { ...value, deviceExecution: { ...proof, models: [...proof.models, ...proof.models] } },
+    { ...value, deviceExecution: { ...proof, facts: { ...device, osBuild: 'other' } } },
+    { ...value, deviceExecution: { ...proof, extra: true } },
+    { ...value, state: 'ready-accelerator' },
+    { ...value, execution: [{ ...value.execution[0], state: 'ready-accelerator' }] },
+    {
+      ...value,
+      execution: [
+        { ...value.execution[0], nodes: { CPUExecutionProvider: 1 }, microseconds: { CPUExecutionProvider: 10 } },
+      ],
+    },
+    ...[
+      { calls: 1 },
+      { computeBuffers: 1 },
+      { computeDispatches: 1 },
+      { sha256: 'f'.repeat(64) },
+      { gpuNanoseconds: 600_000_000_000 * proof.models[0].calls + 1 },
+    ].map((change) => ({ ...value, deviceExecution: { ...proof, models: [{ ...proof.models[0], ...change }] } })),
+    ...['sha256', 'calls', 'computeBuffers', 'computeDispatches', 'gpuNanoseconds'].flatMap((field) =>
+      [0, -1, true, 'changed', Infinity].map((bad) => ({
+        ...value,
+        deviceExecution: { ...proof, models: [{ ...proof.models[0], [field]: bad }] },
+      })),
+    ),
+  ])
+    expect(() => DesktopQualificationReceipt.validate(changed, selected, issued, identity)).toThrow();
+  for (const collectorSha256 of [undefined, 'f'.repeat(64)])
+    expect(() =>
+      DesktopQualificationReceipt.validate(value, selected, issued, { ...identity, collectorSha256 }),
+    ).toThrow();
+  expect(() =>
+    DesktopQualificationReceipt.validate({ ...report(), deviceExecution: proof }, profile, challenge, runtime),
+  ).toThrow();
+});
