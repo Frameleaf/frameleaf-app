@@ -2,7 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 
 const fingerprint = z.string().regex(/^[a-f0-9]{64}$/);
-const sourceKind = z.enum(['folder']).meta({ id: 'PhotoSourceKind' });
+const sourceKind = z.enum(['folder', 'apple-photos']).meta({ id: 'PhotoSourceKind' });
 const copyMode = z.enum(['copy']).meta({ id: 'PhotoSourceCopyMode' });
 const runState = z.enum(['open', 'paused', 'cancelled', 'complete']).meta({ id: 'PhotoSourceRunState' });
 const itemState = z.enum(['planned', 'verified']).meta({ id: 'PhotoSourceItemState' });
