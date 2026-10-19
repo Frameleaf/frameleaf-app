@@ -1,3 +1,5 @@
+import { isNewerRelease } from '../../src/release-order.js';
+
 export type JournalOperation = {
   kind: string;
   state: string;
@@ -123,7 +125,8 @@ const refusals: Record<string, string> = {
   masked_secret_missing: 'A secret value can only be kept as [unchanged] where it already exists. Enter the value, or restore the original line.',
   incompatible_settings_require_review: 'Some Immich settings aren’t recognised by Frameleaf. Review them in Advanced settings on the next step.',
   release_service_unavailable: 'Manager could not reach GitHub to check Frameleaf releases. Check this server can reach github.com, then try again.',
-  release_not_eligible: 'This Frameleaf release is not offered to this server. Choose another release.',
+  select_a_new_release: 'Choose a release newer than the one this server runs. To go back to an older release, restore a database recovery point taken on it from Backups.',
+  release_not_eligible:'This Frameleaf release is not offered to this server. Choose another release.',
   release_bundle_missing: 'This Frameleaf release is missing installation files Manager needs. Choose a newer release.',
   release_download_failed: 'Manager could not download this release. Check the network connection, then try again.',
   release_asset_size_mismatch: 'A release file did not download completely. Try again.',
@@ -218,3 +221,51 @@ const processors: Record<string, string> = { cuda: 'NVIDIA GPU', rocm: 'AMD GPU'
 export const hasGpu = (acceleration: string | undefined) => !!acceleration && Object.hasOwn(processors, acceleration);
 export const processorName = (acceleration: string | undefined) =>
   (hasGpu(acceleration) && processors[acceleration!]) || 'CPU processing';
+
+export const plural = (count: number, one: string, many = `${one}s`) =>
+  `${count.toLocaleString()} ${count === 1 ? one : many}`;
+
+/** Only releases newer than the running one are updates; going back is a database restore (Backups). */
+export const newerReleases = <T extends { tag: string }>(releases: T[], running: string | undefined) =>
+  running ? releases.filter((release) => isNewerRelease(release.tag, running)) : [];
+
+/**
+ * GitHub's generated notes are markdown with an HTML comment. Shown as plain text (Svelte escapes it),
+ * so markup never renders; only the markdown syntax that reads as noise is removed.
+ */
+export const releaseNotesText = (notes: string) =>
+  notes
+    .replaceAll(/<!--[\s\S]*?(?:-->|$)/g, '')
+    .replaceAll(/\*\*(.+?)\*\*/g, '$1')
+    .replaceAll(/^#{1,6}[ \t]+/gm, '')
+    .replaceAll(/^[ \t]*[*-][ \t]+/gm, '• ')
+    .replaceAll(/\n{3,}/g, '\n\n')
+    .trim();
+
+export const setupScreens = [
+  'import',
+  'fresh',
+  'restore',
+  'progress',
+  'success',
+  'profile',
+  'downloads',
+  'phone',
+  'setup-complete',
+];
+const operationSections: Record<string, string> = {
+  backup: 'backups',
+  restore: 'backups',
+  update: 'updates',
+  start: 'services',
+  stop: 'services',
+  restart: 'services',
+  'move-library': 'storage',
+};
+/** The navigation entry for the open screen; maintenance on an installed server belongs to its own section. */
+export function navSection(screen: string, installed: boolean, operationKind?: string) {
+  if (installed && screen === 'restore') return 'backups';
+  if (installed && screen === 'progress' && operationKind && operationSections[operationKind])
+    return operationSections[operationKind];
+  return setupScreens.includes(screen) ? 'welcome' : screen;
+}
