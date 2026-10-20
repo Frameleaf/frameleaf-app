@@ -234,7 +234,7 @@ export class NotificationService extends BaseService {
       this.websocketRepository.clientSend(
         'on_asset_update',
         userId,
-        mapAsset(asset, { auth: { user: { id: userId } } as AuthDto }),
+        await this.withLandmarks(mapAsset(asset, { auth: { user: { id: userId } } as AuthDto })),
       );
     }
   }

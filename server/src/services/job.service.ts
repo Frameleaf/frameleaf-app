@@ -305,7 +305,11 @@ export class JobService extends BaseService {
           if (!item.data.versionId || (version?.status === 'ready' && version.purpose !== 'export')) {
             const [updatedAsset] = await this.assetRepository.getByIdsWithAllRelationsButStacks([asset.id]);
             if (updatedAsset) {
-              this.websocketRepository.clientSend('on_asset_update', updatedAsset.ownerId, mapAsset(updatedAsset));
+              this.websocketRepository.clientSend(
+                'on_asset_update',
+                updatedAsset.ownerId,
+                await this.withLandmarks(mapAsset(updatedAsset)),
+              );
             }
           }
         }

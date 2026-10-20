@@ -565,8 +565,11 @@ export const removeSearchToken = (input: string, raw: string) => {
   return `${input.slice(0, index)}${input.slice(index + raw.length)}`.replaceAll(/\s+/g, ' ').trim();
 };
 
-/** A completed operator token (followed by a space) becomes a chip; a trailing one stays editable. */
-const COMPLETE_TOKEN = /(^|\s)(-?[a-z]+:(?:"[^"]*"|\S+))\s/i;
+/**
+ * A completed operator token (followed by a space) becomes a chip; a trailing one stays editable. An
+ * unquoted value never starts with a quote, so `place:"Lake Louise` waits for its closing quote.
+ */
+const COMPLETE_TOKEN = /(^|\s)(-?[a-z]+:(?:"[^"]*"|[^"\s]\S*))\s/i;
 
 /**
  * Moves every completed, resolvable operator out of the typed text into chips, as the prototype's
