@@ -14,9 +14,9 @@ and container paths identical. Map additional source media/database folders
 before import. Manager has Docker socket access to coordinate its library.
 For an Unraid import, fill the autostart file field with the existing
 `unraid-autostart` file beneath the exact `DockerRootDir` returned by
-`docker info --format '{{.DockerRootDir}}'`, and set **Autostart controller path**
-to `/run/frameleaf-host/unraid-autostart`. Leave both fields blank when no file
-is mounted. Its writable mount lets Manager
+`docker info --format '{{.DockerRootDir}}'` (usually
+`/var/lib/docker/unraid-autostart`); Manager finds it once mounted. Leave it blank
+when no file exists. Its writable mount lets Manager
 preserve other entries while preventing the source from starting during import.
 
 The older direct-stack catalog builder below is retained for existing release

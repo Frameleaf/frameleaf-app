@@ -142,6 +142,8 @@ const refusals: Record<string, string> = {
   docker_unavailable: 'Manager could not run Docker. Check that the Docker socket is mapped into Manager.',
   database_overlaps_existing_container_data:
     'Another container can write inside this database folder. Change that container’s mapping to read-only or a narrower folder, or choose a database folder outside it.',
+  unraid_autostart_file_required:
+    'Importing on Unraid needs Unraid’s autostart list, so Immich can’t start again at boot. Edit the Frameleaf Manager container and set “Unraid autostart file” to the existing unraid-autostart file in Docker’s data folder (usually /var/lib/docker/unraid-autostart; check with docker info --format "{{.DockerRootDir}}"), then apply and try again.',
   database_path_not_mounted:
     'Manager can only use a database folder inside one of its mapped database folders. Add the folder to Manager’s “Database parent” mapping and database roots, or choose one listed in the field.',
   source_version_unreachable:

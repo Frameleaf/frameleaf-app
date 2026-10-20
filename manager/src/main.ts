@@ -72,6 +72,14 @@ async function databaseDefaults() {
   return appdataDefaults(process.env, config);
 }
 const defaults = native ? { roots: [], platform: 'native' as const } : await databaseDefaults();
+// The Unraid template mounts the host's unraid-autostart file here; MANAGER_UNRAID_AUTOSTART only overrides the path.
+const mountedAutostart = '/run/frameleaf-host/unraid-autostart';
+const autostart = process.env.MANAGER_UNRAID_AUTOSTART || mountedAutostart;
+const autostartStat = native ? null : await stat(autostart).catch(() => null);
+// Docker creates a directory when the host file is missing; that is not Unraid's autostart list.
+if (autostartStat?.isDirectory()) console.error(`manager: ${autostart} is a directory, not Unraid's unraid-autostart file`);
+if (autostartStat?.isFile()) process.env.MANAGER_UNRAID_AUTOSTART = autostart;
+else delete process.env.MANAGER_UNRAID_AUTOSTART;
 const databaseStorage = new PostgresStorage(docker, directory, defaults.roots, defaults.platform === 'unraid');
 const operations = new Operations(
   store,
