@@ -564,3 +564,20 @@ test('a server refusal of the in-container Manager request names its HTTP status
     await rm(directory, { recursive: true });
   }
 });
+test('a setup whose server container never started stays cancellable after a failed start', async () => {
+  const id = 'c'.repeat(12);
+  const server = (startedAt: string, running = false) => {
+    const c = container('c', running);
+    c.State.StartedAt = startedAt;
+    c.Config.Labels = { 'app.frameleaf.manager': id, 'com.docker.compose.service': 'frameleaf-server' };
+    return c;
+  };
+  const started = (containers: Container[]) =>
+    Object.assign(Object.create(Operations.prototype), { docker: { inventory: async () => containers } }).serverStarted({
+      id,
+    } as Installation);
+  assert.equal(await started([]), false);
+  assert.equal(await started([server('0001-01-01T00:00:00Z')]), false);
+  assert.equal(await started([server('2026-10-20T19:00:00Z')]), true);
+  assert.equal(await started([server('0001-01-01T00:00:00Z', true)]), true);
+});

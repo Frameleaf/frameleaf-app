@@ -28,13 +28,50 @@ for (const service of ['immich-machine-learning', 'frameleaf-machine-learning'])
   });
 }
 
+const image = (c: string) => `ghcr.io/frameleaf/frameleaf-machine-learning@sha256:${c.repeat(64)}`;
+async function stack(services: Record<string, { image: string }>) {
+  const directory = await mkdtemp(join(tmpdir(), 'frameleaf-compose-up-'));
+  await writeFile(join(directory, 'compose.json'), JSON.stringify({ services }));
+  return directory;
+}
+
 test('managed startup removes the stopped old worker without deleting its volumes', async () => {
+  const directory = await stack({ database: { image: image('a') } });
   let command: string[] = [];
   const docker = new Docker((_binary, args) => {
     command = args;
-    return Promise.resolve('');
+    return Promise.resolve(image('a'));
   });
-  await docker.compose('/fixture/stack', project, 'up');
-  assert.ok(command.includes('--remove-orphans'));
-  assert.ok(!command.includes('--volumes'));
+  try {
+    await docker.compose(directory, project, 'up');
+    assert.ok(command.includes('--remove-orphans'));
+    assert.ok(!command.includes('--volumes'));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('starting pulls only the pinned images this host is missing, so a resumed setup can start', async () => {
+  const directory = await stack({
+    database: { image: image('a') },
+    'frameleaf-server': { image: image('b') },
+    'frameleaf-machine-learning': { image: image('c') },
+  });
+  const calls: string[][] = [];
+  const docker = new Docker((_binary, args) => {
+    calls.push(args);
+    return Promise.resolve(args[1] === 'ls' ? `${image('a')}\n${image('b')}\n` : '');
+  });
+  try {
+    await docker.compose(directory, project, 'up');
+    assert.deepEqual(calls.filter((a) => a[0] === 'pull'), [['pull', image('c')]]);
+    assert.equal(calls.at(-1)?.[0], 'compose');
+
+    // Starting only the database looks at the database image alone.
+    calls.length = 0;
+    await docker.compose(directory, project, 'up', ['database']);
+    assert.deepEqual(calls.filter((a) => a[0] === 'pull'), []);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

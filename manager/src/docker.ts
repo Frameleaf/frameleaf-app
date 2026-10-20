@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
-import { open, rename, rm } from 'node:fs/promises';
-import { isAbsolute, resolve } from 'node:path';
+import { open, readFile, rename, rm } from 'node:fs/promises';
+import { isAbsolute, join, resolve } from 'node:path';
 import { Refusal, containerId, imageDigest, redact, type Database, type Mount } from './contracts.js';
 import { publishFile } from './files.js';
 
@@ -10,7 +10,7 @@ export type Container = {
   Id: string;
   Name: string;
   Image: string;
-  State: { Running: boolean; Health?: { Status: string } };
+  State: { Running: boolean; StartedAt?: string; Health?: { Status: string } };
   Config: {
     Image: string;
     Env: string[];
@@ -334,6 +334,7 @@ export class Docker {
       )
     )
       throw new Refusal('invalid_managed_project');
+    if (action === 'up') await this.pullMissing(directory, services);
     await this.execute(
       'docker',
       [
@@ -348,6 +349,23 @@ export class Docker {
       ],
       { cwd: directory, timeout: 1_200_000 },
     );
+  }
+  /**
+   * Pulls the digest-pinned images compose.json runs that this host lacks. `up --pull never` never fetches,
+   * and a resumed setup skips its finished download step, so an image missing then stays missing.
+   */
+  private async pullMissing(directory: string, services: string[]): Promise<void> {
+    const compose = JSON.parse(await readFile(join(directory, 'compose.json'), 'utf8')) as {
+      services: Record<string, { image: string }>;
+    };
+    const wanted = Object.entries(compose.services)
+      .filter(([name]) => !services.length || services.includes(name))
+      .map(([, service]) => imageDigest.parse(service.image));
+    const present = new Set(
+      (await this.execute('docker', ['image', 'ls', '--digests', '--format', '{{.Repository}}@{{.Digest}}'])).split('\n'),
+    );
+    for (const image of new Set(wanted))
+      if (!present.has(image)) await this.execute('docker', ['pull', image], { timeout: 3_600_000 });
   }
   /** Fixed offline command only; container identity survives a Manager restart. */
   async importCommand(
