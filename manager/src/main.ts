@@ -29,7 +29,7 @@ import { Security } from './security.js';
 import { Backups } from './backups.js';
 import { Releases } from './releases.js';
 import { Operations, ReviewInput } from './operations.js';
-import { Refusal, publicSource, redact } from './contracts.js';
+import { Refusal, publicSource, redact, secretEnvironmentValues } from './contracts.js';
 import { appdataDefaults } from './appdata.js';
 import { nativeListener } from './runtime/native-listener.js';
 import { PostgresStorage } from './postgres-storage.js';
@@ -346,10 +346,11 @@ class Api {
       installation = operations.installation();
     if (!installation || container.Config.Labels?.['app.frameleaf.manager'] !== installation.id)
       throw new Refusal('not_a_managed_container', 403);
-    // Exact environment values are removed in addition to generic token and credential patterns.
+    // Exact values of secret-named environment variables are removed in addition to generic token and
+    // credential patterns. Other values (NODE_ENV=production, NVIDIA_DRIVER_CAPABILITIES=all) are not secrets.
     return {
       logs: redact(await docker.logs(id), [
-        ...container.Config.Env.map((e) => e.slice(e.indexOf('=') + 1)),
+        ...secretEnvironmentValues(container.Config.Env),
         store.get<string>('database-password') ?? '',
       ]),
     };
