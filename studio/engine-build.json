@@ -699,7 +699,12 @@
       "path": "patches/0142-trackless-video-export-audio.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "20795289c8cf5095275e6c400324e19853be6a69534f4e90dfc9308cc3bd40f6"
+    },
+    {
+      "path": "patches/0143-headless-trackless-audio-validation.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "6dfc1b91a3f955b705d2aa441b20b199daf9e0fd6c8a971acfae0d0b865abd3a"
     }
   ],
-  "sourceSha256": "f5286bea04f872a00911cd5c87694319675ae0385d1b259005b496a9dad4a36c"
+  "sourceSha256": "dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a"
 }
