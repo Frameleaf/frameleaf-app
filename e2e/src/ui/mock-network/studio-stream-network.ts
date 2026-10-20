@@ -143,6 +143,8 @@ export const setupStudioStreamMocks = async (context: BrowserContext, page: Page
         studio: {
           gpuWorker: true,
           renderWorker: true,
+          previewWorker: true,
+          previewStreamWorker: true,
           restorationWorker: false,
           transcriptionWorker: false,
           render: [],

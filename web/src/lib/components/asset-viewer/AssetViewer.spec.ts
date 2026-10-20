@@ -12,7 +12,7 @@ import {
   updateAsset,
   type AssetResponseDto,
 } from '@frameleaf/sdk';
-import { modalManager } from '@frameleaf/ui';
+import { modalManager, toastManager } from '@frameleaf/ui';
 import { fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import { getAnimateMock } from '$lib/__mocks__/animate.mock';
@@ -148,7 +148,7 @@ describe('AssetViewer', () => {
     vi.stubGlobal('ResizeObserver', getResizeObserverMock());
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     setSharedLink(undefined);
     alwaysLoadOriginalVideo.set(false);
     sessionStorage.clear();
@@ -156,6 +156,8 @@ describe('AssetViewer', () => {
     assetCacheManager.invalidate();
     authManager.reset();
     resetPlaybackRevisions();
+    // Toasts mount outside Testing Library's render tree; retire their effects before DOM teardown.
+    await toastManager.unmount();
     vi.clearAllMocks();
   });
 
