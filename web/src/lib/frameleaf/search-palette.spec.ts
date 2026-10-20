@@ -198,6 +198,22 @@ describe('token editing', () => {
     });
   });
 
+  it('keeps a quoted value whole while it is typed or pasted', () => {
+    // Typing: the quote is still open, so nothing becomes a chip yet
+    expect(commitCompletedTokens('place:"Lake Louise', catalog)).toEqual({ tokens: [], rest: 'place:"Lake Louise' });
+    expect(commitCompletedTokens('place:"Lake ', catalog)).toEqual({ tokens: [], rest: 'place:"Lake ' });
+    // Pasted with no space after it: it stays editable, never split into `"Lake` and `Louise"`
+    expect(commitCompletedTokens('place:"Lake Louise"', catalog)).toEqual({ tokens: [], rest: 'place:"Lake Louise"' });
+    expect(commitCompletedTokens('place:"Lake Louise" ', catalog)).toEqual({
+      tokens: ['place:"Lake Louise"'],
+      rest: '',
+    });
+    expect(commitCompletedTokens('-person:"Robin Lee" beach', catalog)).toEqual({
+      tokens: ['-person:"Robin Lee"'],
+      rest: 'beach',
+    });
+  });
+
   it('replaces a typed chip when a graphical pick sets the same field', () => {
     const tokens = ['person:Jamie', 'place:Banff', 'year:2026', 'after:2026-01-02'];
     expect(withoutTokensForFields(tokens, ['personIds'], catalog)).toEqual([

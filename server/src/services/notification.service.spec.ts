@@ -21,7 +21,7 @@ import { UserFactory } from 'test/factories/user.factory.js';
 import { notificationStub } from 'test/fixtures/notification.stub.js';
 import localeFixtures from 'test/fixtures/system-notification-locale.json' with { type: 'json' };
 import { userStub } from 'test/fixtures/user.stub.js';
-import { getForAlbum } from 'test/mappers.js';
+import { getForAlbum, getForAsset } from 'test/mappers.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -406,6 +406,25 @@ describe(NotificationService.name, () => {
     it('should send connected clients an event', () => {
       sut.onAssetHide({ assetId: 'asset-id', userId: 'user-id' });
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_asset_hidden', 'user-id', 'asset-id');
+    });
+  });
+
+  describe('onAssetMetadataExtracted', () => {
+    it('keeps the landmarks in the update a location edit sends back (LIB-12)', async () => {
+      const asset = AssetFactory.from().exif({ latitude: 51.4254, longitude: -116.1773 }).build();
+      const landmark = { id: 'Q41858', name: 'Banff National Park', kind: 'park' };
+      mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([getForAsset(asset)] as never);
+      mocks.search.getAssetLandmarks.mockResolvedValue([landmark]);
+      mocks.map.getLandmarkIcons.mockReturnValue(new Map());
+
+      await sut.onAssetMetadataExtracted({ assetId: asset.id, userId: asset.ownerId, source: 'sidecar-write' });
+
+      expect(mocks.search.getAssetLandmarks).toHaveBeenCalledWith(asset.id);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith(
+        'on_asset_update',
+        asset.ownerId,
+        expect.objectContaining({ id: asset.id, landmarks: [{ ...landmark, icon: undefined }] }),
+      );
     });
   });
 

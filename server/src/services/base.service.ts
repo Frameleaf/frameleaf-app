@@ -9,7 +9,7 @@ import type { MailConnectionDeps } from 'src/utils/mail-connection.js';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { UserAdmin } from 'src/database.js';
-import { mapAsset } from 'src/dtos/asset-response.dto.js';
+import { AssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { DatabaseLock, MlWorkload } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -532,9 +532,27 @@ export class BaseService {
       this.websocketRepository.clientSend(
         'on_asset_update',
         ownerId,
+        // ponytail: no landmarks here, a Locked move never changes where an item was taken and the
+        // viewer closes on it anyway; add `withLandmarks` if an unlock ever keeps the viewer open
         mapAsset(asset, { auth: { user: { id: ownerId } } as AuthDto }),
       );
     }
+  }
+
+  /**
+   * FL-353: names the landmarks a located asset was taken at, when the place pack knows the spot. The
+   * `on_asset_update` after a metadata re-read carries them too, or the info panel drops its "At …" line.
+   */
+  protected async withLandmarks(data: AssetResponseDto): Promise<AssetResponseDto> {
+    const { reverseGeocoding } = await this.getConfig({ withCache: true });
+    if (reverseGeocoding.enabled && typeof data.exifInfo?.latitude === 'number') {
+      const landmarks = await this.searchRepository.getAssetLandmarks(data.id);
+      if (landmarks.length > 0) {
+        const icons = this.mapRepository.getLandmarkIcons();
+        data.landmarks = landmarks.map((landmark) => ({ ...landmark, icon: icons.get(landmark.id) }));
+      }
+    }
+    return data;
   }
 
   /** Gives another profile picture to every user whose picture was copied from a now Locked photo. */
