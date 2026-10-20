@@ -21,6 +21,9 @@ const parse = (version: string): Parsed | undefined => {
   return { core: [Number(match[1]), Number(match[2]), Number(match[3])], prerelease: match[4] };
 };
 
+/** A source branch alone cannot distinguish a promoted release from a development build. */
+export const isPrereleaseVersion = (version: string): boolean => !!parse(version)?.prerelease;
+
 /** Whether `release` is newer than `running`; undefined when either is not a version. */
 export const isNewerVersion = (release: string, running: string): boolean | undefined => {
   const a = parse(release);

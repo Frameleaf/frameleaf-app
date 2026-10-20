@@ -65,6 +65,28 @@ describe('AboutDialog (S-4)', () => {
     await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
+  it.each([
+    ['v1.1.3', false],
+    ['v1.1.3-rc.1', true],
+    ['1.1.3-dev.1', true],
+    ['unknown', false],
+  ])('warns only for a reported prerelease version: %s', (version, warning) => {
+    render(AboutDialog, {
+      onClose: vi.fn(),
+      info: {
+        ...info,
+        version,
+        repository: 'Frameleaf/frameleaf-app',
+        sourceRef: 'main',
+        sourceCommit: 'f98d143',
+        build: '39351137554',
+      },
+      versions: [],
+    });
+    expect(!!screen.queryByText(en.main_branch_warning)).toBe(warning);
+    expect(screen.getByText('main@f98d143')).toBeInTheDocument();
+  });
+
   it('checks for updates now for an administrator and links the release notes', async () => {
     authManager.setUser(userAdminFactory.build({ isAdmin: true }));
     vi.mocked(checkVersionNow).mockResolvedValue({
