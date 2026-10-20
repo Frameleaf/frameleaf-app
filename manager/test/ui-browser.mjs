@@ -176,7 +176,8 @@ await page.route('**/manager-api/**', async (route) => {
       databaseStorage: { root: body.databaseRoot },
       replacesInstallation: true,
     };
-  else if (path === 'review')
+  else if (path === 'review') {
+    await new Promise((done) => setTimeout(done, 300));
     value = {
       id: 'install-review',
       tag: body.tag,
@@ -186,7 +187,7 @@ await page.route('**/manager-api/**', async (route) => {
       backup: { action: backupAction },
       recovery: 'Database only; original media stays in place',
     };
-  else if (['control', 'update', 'restore', 'install'].includes(path)) {
+  } else if (['control', 'update', 'restore', 'install'].includes(path)) {
     const kind =
       path === 'control'
         ? body.action
@@ -481,6 +482,9 @@ try {
     assert.equal(requests.filter((r) => r.path === 'review').length, count);
     await page.getByLabel('Frameleaf port').fill('2283');
     await mainButton('Check this configuration').click();
+    // The slow server check shows it is still working.
+    await page.getByRole('status').filter({ hasText: 'can take up to a minute' }).waitFor();
+    assert.equal(await mainButton('Checking…').getAttribute('aria-busy'), 'true');
     await mainButton('Review installation').click();
     await screenshot('install-review');
     await page.getByText('Intel GPU · Machine learning on', { exact: true }).waitFor();

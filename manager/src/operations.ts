@@ -9,7 +9,7 @@ import { Releases, type VerifiedRelease } from './releases.js';
 import { isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
 import { Fencing } from './fencing.js';
-import { ApplicationConfig, renderCompose, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
+import { ApplicationConfig, releaseImages, renderCompose, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
 import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
 import { LibraryMove, type ServerPauseStatus } from './library-move.js';
@@ -474,7 +474,7 @@ export class Operations {
     });
     await this.step(operation, 'download-images', async () => {
       const release = await this.releases.verify(review.release.directory, review.input.tag);
-      for (const image of Object.values(release.nas.images).filter((v): v is string => typeof v === 'string'))
+      for (const image of await releaseImages(release.nas.images))
         await this.docker.pull(image, review.platform);
       return release.nas.tag;
     });
@@ -956,7 +956,7 @@ export class Operations {
     await this.step(operation, 'download-images', async () => {
       await this.releases.eligible(review.release.nas.tag);
       await this.releases.verify(review.release.directory, review.release.nas.tag);
-      for (const image of Object.values(review.release.nas.images).filter((v): v is string => typeof v === 'string'))
+      for (const image of await releaseImages(review.release.nas.images))
         await this.docker.pull(image, review.platform);
       return true;
     });
@@ -1068,7 +1068,7 @@ export class Operations {
     await this.step(operation, 'download-images', async () => {
       await this.releases.eligible(review.release.nas.tag);
       await this.releases.verify(review.release.directory, review.release.nas.tag);
-      for (const image of Object.values(review.release.nas.images).filter((v): v is string => typeof v === 'string'))
+      for (const image of await releaseImages(review.release.nas.images))
         await this.docker.pull(image, review.platform);
       return true;
     });
