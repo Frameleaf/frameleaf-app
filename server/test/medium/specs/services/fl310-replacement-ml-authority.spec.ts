@@ -251,10 +251,11 @@ describe('FL310 replacement ML authority regression', () => {
         );
         const sourceDestinations = new MlDestinationRepository(source);
         if (!collision) {
+          const { updatedAtToken: _probeVersion, ...storedReplacementRow } = replacementRow;
           await source
             .insertInto('ml_destination')
             .values({
-              ...replacementRow,
+              ...storedReplacementRow,
               workloads: sql`${JSON.stringify([MlWorkload.Face])}::text::jsonb`,
               budgetLimitUsd: null,
               maxRuntimeMinutes: null,
