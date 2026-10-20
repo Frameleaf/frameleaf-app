@@ -8,14 +8,18 @@ const within = (path: string, parent: string) =>
   path === parent || path.startsWith(parent === '/' ? '/' : parent + '/');
 /**
  * Another container (running or stopped: it can start later) that can write into the database folder.
- * Read-only mappings cannot corrupt PostgreSQL, so they never block it.
+ * Read-only mappings cannot corrupt PostgreSQL, so they never block it. Nor does a mapping of a whole
+ * share above an approved database root (an Unraid file manager on /mnt/user): that is browsing access,
+ * not another app's data folder. A mapping at or inside the root still blocks.
  */
 export function overlappingWriter(
   containers: Container[],
   path: string,
   managerId: string,
   installationId?: string,
+  roots: string[] = [],
 ): { container: string; source: string } | undefined {
+  const share = (source: string) => roots.some((root) => within(path, root) && root !== source && within(root, source));
   for (const c of containers) {
     // Any Manager container (a stopped older copy too) maps the database parent itself; Manager never writes PGDATA.
     if (
@@ -24,7 +28,7 @@ export function overlappingWriter(
       (installationId && c.Config.Labels?.['app.frameleaf.manager'] === installationId)
     )
       continue;
-    const mount = c.Mounts.find((m) => m.RW && m.Source.startsWith('/') && within(path, m.Source));
+    const mount = c.Mounts.find((m) => m.RW && m.Source.startsWith('/') && within(path, m.Source) && !share(m.Source));
     if (mount) return { container: c.Name.replace(/^\//, ''), source: mount.Source };
   }
 }
@@ -152,7 +156,7 @@ export class PostgresStorage {
       hostMounts,
       this.unraid,
     );
-    const writer = overlappingWriter(containers, path, controllers[0].Id, installationId);
+    const writer = overlappingWriter(containers, path, controllers[0].Id, installationId, this.roots);
     if (writer) {
       console.error(`manager: database folder ${path} is inside ${writer.source}, which container ${writer.container} can write to`);
       throw new Refusal(

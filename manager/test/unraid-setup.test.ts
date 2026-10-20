@@ -53,6 +53,15 @@ test('only another container that can write to the database folder blocks it, an
   assert.deepEqual(overlappingWriter([manager, writer], path, manager.Id), { container: 'file-manager', source: '/mnt/user' });
   // A stopped container still counts: it can be started later and write into the database.
   assert.equal(writer.State.Running, false);
+  // FL-473: with the approved root known, a share-root file manager is browsing access, not app data.
+  const roots = ['/mnt/user/appdata/frameleaf-databases'];
+  assert.equal(overlappingWriter([manager, writer], path, manager.Id, undefined, roots), undefined);
+  assert.equal(overlappingWriter([manager, writer], path + '/frameleaf-x-postgres-y', manager.Id, undefined, roots), undefined);
+  // An app whose own data folder is the root, or inside it, still blocks.
+  for (const source of [path, path + '/frameleaf-x-postgres-y']) {
+    const app = container('app', [{ Type: 'bind', Source: source, Destination: '/data', RW: true }]);
+    assert.deepEqual(overlappingWriter([manager, app], path + '/frameleaf-x-postgres-y', manager.Id, undefined, roots), { container: 'app', source });
+  }
   // A stopped or older Manager container maps the database parent too; it never writes PGDATA.
   const oldManager = container('frameleaf-manager-old', [{ Type: 'bind', Source: path, Destination: path, RW: true }], {
     'app.frameleaf.manager.role': 'controller',
