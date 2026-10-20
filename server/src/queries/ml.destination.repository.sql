@@ -2,7 +2,8 @@
 
 -- MlDestinationRepository.getAll
 select
-  *
+  *,
+  "updatedAt"::text as "updatedAtToken"
 from
   "ml_destination"
 order by
@@ -11,7 +12,8 @@ order by
 
 -- MlDestinationRepository.getById
 select
-  *
+  *,
+  "updatedAt"::text as "updatedAtToken"
 from
   "ml_destination"
 where
@@ -19,7 +21,8 @@ where
 
 -- MlDestinationRepository.getByUrl
 select
-  *
+  *,
+  "updatedAt"::text as "updatedAtToken"
 from
   "ml_destination"
 where

@@ -8589,6 +8589,10 @@ export type StudioRenderEvidenceDto = {
 export type StudioCapabilitiesDto = {
     /** False until the Studio render worker admission (FL-95, FL-104) reports one */
     gpuWorker: boolean;
+    /** A qualified local session can stream Studio previews */
+    previewStreamWorker?: boolean;
+    /** A qualified local session can render exact Studio preview frames */
+    previewWorker?: boolean;
     /** Per destination, what qualified render sessions verified (memory, codecs, colour precision) */
     render: StudioRenderEvidenceDto[];
     /** False until the Studio render worker admission (FL-95, FL-104) reports one */
@@ -8597,10 +8601,6 @@ export type StudioCapabilitiesDto = {
     restorationWorker: boolean;
     /** A destination can serve the Studio AI workload right now */
     transcriptionWorker: boolean;
-    /** A qualified local session can render exact Studio preview frames */
-    previewWorker?: boolean;
-    /** A qualified local session can stream Studio previews */
-    previewStreamWorker?: boolean;
 };
 export type MlCapabilityDestinationDto = {
     /** CPU or accelerator, from the last check; unknown without facts */
