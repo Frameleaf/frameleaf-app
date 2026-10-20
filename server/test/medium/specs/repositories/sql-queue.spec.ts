@@ -676,6 +676,24 @@ describe('PostgreSQL queue', () => {
     expect(await store.claim(queue, workerB)).toHaveLength(1);
   });
 
+  it('retains a description-backfill wake arriving after an active cron pass found no work', async () => {
+    const repository = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
+    repository['handlers'][JobName.CloudMlDescriptionBatch] = { queueName: queue as QueueName } as never;
+    const wake = { name: JobName.CloudMlDescriptionBatch, data: {} } as const;
+    await repository.queue(wake);
+    const [cron] = await store.claim(queue, workerA);
+    expect(cron).toBeDefined();
+    // The current pass has already inspected the operation queue when the API submits new work.
+    await repository.queue(wake);
+    await repository.queue(wake);
+    await store.complete(cron, []);
+
+    const [backfill] = await store.claim(queue, workerB);
+    expect(backfill?.name).toBe(JobName.CloudMlDescriptionBatch);
+    await store.complete(backfill, []);
+    expect(await store.claim(queue, workerA)).toEqual([]);
+  });
+
   it('deduplicates concurrent arrivals and retains exactly the latest request while active', async () => {
     const options = { deduplication: { id: 'same', keepLastIfActive: true } };
     await Promise.all([store.enqueue([intent({ options })]), store.enqueue([intent({ options })])]);

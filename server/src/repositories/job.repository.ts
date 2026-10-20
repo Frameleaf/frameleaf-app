@@ -925,7 +925,8 @@ export class JobRepository {
         return { deduplication: { id: JobName.FrameleafLicenseRefresh } };
       }
       case JobName.CloudMlDescriptionBatch: {
-        return { deduplication: { id: JobName.CloudMlDescriptionBatch } };
+        // A backfill submitted while a cron pass is active still needs a wake after that pass.
+        return { deduplication: { id: JobName.CloudMlDescriptionBatch, keepLastIfActive: true } };
       }
       case JobName.CloudMlLibraryBatch: {
         return { deduplication: { id: JobName.CloudMlLibraryBatch } };
