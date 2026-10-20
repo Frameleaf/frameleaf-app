@@ -253,10 +253,21 @@ export class Operations {
       });
     return this.sourceSettings(id);
   }
+  private async serverStarted(installation: Installation): Promise<boolean> {
+    return (await this.docker.inventory()).some(
+      (c) =>
+        c.Config.Labels?.['app.frameleaf.manager'] === installation.id &&
+        c.Config.Labels?.['com.docker.compose.service'] === 'frameleaf-server' &&
+        (c.State.Running || !(c.State.StartedAt ?? '').startsWith('0001-')),
+    );
+  }
   async librarySummary() {
+    const database = await this.targetDatabase();
+    // Before the server's first start has run migrations there is no library to count.
+    if ((await this.docker.sql(database, `SELECT to_regclass('public.asset') IS NOT NULL;`)).trim() !== 't') return null;
     return JSON.parse(
       await this.docker.sql(
-        await this.targetDatabase(),
+        database,
         `SELECT json_build_object('assets',(SELECT count(*) FROM public.asset),'users',(SELECT count(*) FROM public.user),'albums',(SELECT count(*) FROM public.album));`,
       ),
     );
@@ -664,7 +675,16 @@ export class Operations {
       await this.releases.eligible(review.input.tag);
       installation.mayHaveWrittenMedia = true;
       this.store.set('installation', installation);
-      await this.docker.compose(this.directory(), installation.project, 'up');
+      try {
+        await this.docker.compose(this.directory(), installation.project, 'up');
+      } catch (error) {
+        // A server that never started wrote no media, so this setup can still be cancelled.
+        if (!(await this.serverStarted(installation))) {
+          installation.mayHaveWrittenMedia = false;
+          this.store.set('installation', installation);
+        }
+        throw error;
+      }
       return true;
     });
     await this.step(operation, 'prepare-library', async () => this.libraryStatus(true));
