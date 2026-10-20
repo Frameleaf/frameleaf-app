@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { detectAcceleration, renderCompose } from '../src/compose.js';
+import { detectAcceleration, releaseImages, renderCompose } from '../src/compose.js';
 import type { Installation } from '../src/contracts.js';
 import type { VerifiedRelease } from '../src/releases.js';
 
@@ -104,4 +104,18 @@ test('the ML service uses the attested variant digest with its device passthroug
   } finally {
     await rm(folder, { recursive: true, force: true });
   }
+});
+
+test('the download step pulls the ML variant the compose file runs', async () => {
+  const digest = (c: string) => `ghcr.io/frameleaf/frameleaf-machine-learning@sha256:${c.repeat(64)}`;
+  const images = {
+    server: digest('a'),
+    machineLearning: digest('b'),
+    machineLearningVariants: { openvino: digest('c') },
+    postgres: digest('f'),
+  };
+  assert.deepEqual(await releaseImages(images, 'openvino'), [digest('a'), digest('b'), digest('f'), digest('c')]);
+  assert.deepEqual(await releaseImages(images, 'cpu'), [digest('a'), digest('b'), digest('f')]);
+  // No attested CUDA digest: compose keeps the CPU image, so nothing extra is pulled.
+  assert.deepEqual(await releaseImages(images, 'cuda'), [digest('a'), digest('b'), digest('f')]);
 });

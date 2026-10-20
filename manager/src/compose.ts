@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { load } from 'js-yaml';
 import { z } from 'zod';
-import { Refusal, imageDigest, type Installation, type Mount, type Source } from './contracts.js';
+import { Refusal, imageDigest, type Installation, type Mount, type NasManifest, type Source } from './contracts.js';
 import type { VerifiedRelease } from './releases.js';
 import { atomicJson } from './files.js';
 import { command } from './docker.js';
@@ -39,6 +39,16 @@ export async function detectAcceleration(
   if (kfd && vendors.includes('0x1002')) return 'rocm';
   if (vendors.includes('0x8086')) return 'openvino';
   return 'cpu';
+}
+
+/** The attested ML variant digest for this acceleration; undefined keeps the CPU image rather than an unverified tag. */
+function mlVariant(images: NasManifest['images'], accel: Acceleration): string | undefined {
+  return accel === 'cpu' ? undefined : images.machineLearningVariants?.[accel];
+}
+/** Every image renderCompose references on this host, so the download step pulls exactly what `up --pull never` runs. */
+export async function releaseImages(images: NasManifest['images'], acceleration?: Acceleration): Promise<string[]> {
+  const variant = mlVariant(images, acceleration ?? (await detectAcceleration()));
+  return [images.server, images.machineLearning, images.postgres, ...(variant ? [variant] : [])];
 }
 
 export const ApplicationConfig = z
@@ -211,8 +221,7 @@ export async function renderCompose(
   };
   if (installation.ml) {
     const accel = acceleration ?? (await detectAcceleration());
-    // A release without the attested variant digest keeps the CPU image rather than an unverified tag.
-    const variant = accel === 'cpu' ? undefined : release.nas.images.machineLearningVariants?.[accel];
+    const variant = mlVariant(release.nas.images, accel);
     if (variant) imageDigest.parse(variant);
     services['frameleaf-machine-learning'] = {
       networks: { default: { aliases: ['immich-machine-learning'] } },
