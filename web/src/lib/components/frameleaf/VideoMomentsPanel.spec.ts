@@ -79,6 +79,49 @@ beforeEach(() => {
 });
 
 describe('VideoMomentsPanel', () => {
+  describe('empty state', () => {
+    it('shows the empty message when no index, frames or moments exist', async () => {
+      sdkMock.getVideoMoments.mockResolvedValue({
+        ...moments(null),
+        state: VideoMomentIndexState.None,
+        frames: [],
+        moments: [],
+      });
+      render(VideoMomentsPanel, { asset, isOwner: true });
+
+      expect(await screen.findByText('No moments yet.')).toBeInTheDocument();
+    });
+
+    it.each([VideoMomentSource.Manual, VideoMomentSource.Generated])(
+      'hides the empty message when a %s moment exists without an index',
+      async (source) => {
+        const response = moments(null);
+        sdkMock.getVideoMoments.mockResolvedValue({
+          ...response,
+          state: VideoMomentIndexState.None,
+          frames: [],
+          moments: [{ ...response.moments[0], source }],
+        });
+        render(VideoMomentsPanel, { asset, isOwner: true });
+
+        expect(await screen.findByText('Candles blown out')).toBeInTheDocument();
+        expect(screen.queryByText('No moments yet.')).not.toBeInTheDocument();
+      },
+    );
+
+    it('hides the empty message when frames exist without an index', async () => {
+      sdkMock.getVideoMoments.mockResolvedValue({
+        ...moments(null),
+        state: VideoMomentIndexState.None,
+        moments: [],
+      });
+      render(VideoMomentsPanel, { asset, isOwner: true });
+
+      expect(await screen.findByRole('button', { name: 'Play from 0:02' })).toBeInTheDocument();
+      expect(screen.queryByText('No moments yet.')).not.toBeInTheDocument();
+    });
+  });
+
   it('makes a chosen frame the cover and shows it as the cover', async () => {
     sdkMock.setVideoMomentCover.mockResolvedValue(moments(1));
     render(VideoMomentsPanel, { asset, isOwner: true });
