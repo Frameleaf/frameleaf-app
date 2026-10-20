@@ -14,15 +14,15 @@ const raw = (): unknown =>
   JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'));
 it('preserves every prior binding and selects the qualified precision-corrected CPU profiles', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(10);
-  expect(catalogue.profiles).toHaveLength(32);
+  expect(catalogue.epoch).toBe(11);
+  expect(catalogue.profiles).toHaveLength(42);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 27)))
       .digest('hex'),
   ).toBe('fa8fd8b562bbe6c66fa6d2ccf01898c61c4b97349988ccb88e7d69eec2abdf4f');
   const legacyKeys = new Set(catalogue.profiles.slice(0, 27).map((profile) => profile.modelKey));
-  const current = catalogue.profiles.slice(27);
+  const current = catalogue.profiles.slice(27, 32);
   for (const profile of current) {
     expect(profile.runtimeSourceRevision).toBe('0d9702c68f31ea3eea068ac59ca1cf36a2b520fc');
     expect(profile.spec.provider).toBe('CPUExecutionProvider');
@@ -30,11 +30,14 @@ it('preserves every prior binding and selects the qualified precision-corrected 
     expect(legacyKeys.has(profile.modelKey)).toBe(false);
   }
   expect(current.map((profile) => profile.workload)).toEqual(['clip', 'clip', 'clip', 'ocr', 'face']);
-  expect(desktopImageModelKeys).toEqual({ ocr: current[3].modelKey, face: current[4].modelKey });
+  expect(desktopImageModelKeys).toEqual({
+    ocr: catalogue.profiles[35].modelKey,
+    face: catalogue.profiles[36].modelKey,
+  });
 });
 it('validates the approved default model and preserves exact config, source and provider identity', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.profiles).toHaveLength(32);
+  expect(catalogue.profiles).toHaveLength(42);
   for (const profile of catalogue.profiles) {
     if (profile.workload !== 'clip') continue;
     expect(profile.modelName).toBe('ViT-B-16-SigLIP-384__webli');
@@ -154,6 +157,16 @@ it('binds a fresh canonical NAS nonce with the same digest as the native contrac
     'fc631cdf02d40fb5a491e6fb0991bf0e5399918b86657e1b9e1ba483d5f02841',
     'f66eb524b80589047de44409de6a19ffa9ca2de18b7b6d8669a692700a625da6',
     '4db2580d36114fce59cea7fafb125c4f82ab93f78e82772bd50d888d14c358fe',
+    '6f146c1d05e93818586ed9fcf70e3ae6de1ff195dbfcf15e96cec4f8a93975c4',
+    'a6d03f7df8104794200ac2c6f7734c77634dd0dd4a119fc24a85015730be0fa7',
+    '2d8945f2b72d68508c39e87b2cbc123cf51723d8b302d67a678d4bd00720b582',
+    '0832de93d79c15053749f2f17dddaae95e2a18b00fa0e86d104b6e0d2d14e438',
+    '1f104316fb10128ad1444d40b1de21b968b52459a9096b7f4163b2613f2ec25e',
+    '4f3f460977c87e1155cca9ad4b47e57cc8c3de3832984bcb5c212a4aaf71f7fb',
+    '354abc377aa6c89a573b2c14468eb2fb94e1030ba1ebeae384dde01612adeb00',
+    'd9eecddc9dbbc61ff126beb62ce35b1e45af0b289f568c3a9b6ca219eb75f93c',
+    '40115f6689e12d4b40e2e456dd4f20b527a29795a17d76c1b79b881b6b3b0f34',
+    '420f5d93f9189e42fad015eec0ff2cb19571e1e5f127e68b6e2770b697f15557',
   ];
   expect(catalogue.profiles).toHaveLength(expected.length);
   for (const [index, profile] of catalogue.profiles.entries()) {
@@ -294,7 +307,7 @@ it('preserves all CPU profiles while admitting only the proved CoreML CLIP sourc
 it('selects current-main CoreML profiles with distinct preprocessing while preserving prior bindings', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
   expect(catalogue.epoch).toBeGreaterThanOrEqual(9);
-  expect(catalogue.profiles).toHaveLength(32);
+  expect(catalogue.profiles).toHaveLength(42);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 24)))
@@ -320,5 +333,39 @@ it('selects current-main CoreML profiles with distinct preprocessing while prese
     expect(
       matchDesktopModelProfile(catalogue, profile.modelName, profile.spec.entries, source, 'CPUExecutionProvider'),
     ).toBeUndefined();
+  }
+});
+
+it('selects exact current CPU and CoreML profiles while preserving all historical bindings', () => {
+  const catalogue = parseDesktopModelCatalogue(raw());
+  expect(catalogue.epoch).toBe(11);
+  expect(catalogue.profiles).toHaveLength(42);
+  expect(
+    createHash('sha256')
+      .update(canonicalJson(catalogue.profiles.slice(0, 32)))
+      .digest('hex'),
+  ).toBe('22b8e3fa22858c0422bed4c4cbee128e44d111775fef176f71bfa499269f5ec8');
+  for (const provider of ['CPUExecutionProvider', 'CoreMLExecutionProvider']) {
+    const selected = catalogue.profiles.filter(
+      (p) => p.runtimeSourceRevision === 'f2c451a6bf71ca3f3aec986e07f0852937268e2f' && p.spec.provider === provider,
+    );
+    expect(selected.map((p) => p.workload)).toEqual(['clip', 'clip', 'clip', 'ocr', 'face']);
+    for (const profile of selected) {
+      expect(profile.spec.preprocessingSha256).toBe('8d9fc77dbb8d8c1ee262ed800a564b7cc82b0160e3c29166f724b84529ec353a');
+      expect(
+        matchDesktopModelProfile(
+          catalogue,
+          profile.modelName,
+          profile.spec.entries,
+          profile.runtimeSourceRevision,
+          provider,
+        ),
+      ).toEqual(profile);
+    }
+  }
+  for (let index = 0; index < 5; index++) {
+    const cpu = catalogue.profiles[32 + index];
+    const gpu = catalogue.profiles[37 + index];
+    expect({ ...gpu, spec: { ...gpu.spec, provider: 'CPUExecutionProvider' } }).toEqual(cpu);
   }
 });

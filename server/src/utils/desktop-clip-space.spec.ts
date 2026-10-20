@@ -21,8 +21,8 @@ const key = (space: { visualModelKey: string; textModelKeys: string[] }) =>
 it('preserves all prior spaces when adding the corrected CPU producer group', () => {
   const catalogue = models();
   const spaces = parseDesktopClipSpaces(raw(), catalogue);
-  expect(spaces.epoch).toBe(5);
-  expect(spaces.spaces).toHaveLength(6);
+  expect(spaces.epoch).toBe(6);
+  expect(spaces.spaces).toHaveLength(7);
   expect(
     createHash('sha256')
       .update(canonicalJson(spaces.spaces.slice(0, 5)))
@@ -36,8 +36,8 @@ it('preserves all prior spaces when adding the corrected CPU producer group', ()
 it('maps every released exact text/image producer to its explicit space without joining old and new preprocessing', () => {
   const catalogue = models();
   const spaces = parseDesktopClipSpaces(raw(), catalogue);
-  expect(spaces.spaces).toHaveLength(6);
-  expect(new Set(spaces.spaces.map((space) => space.spaceKey)).size).toBe(6);
+  expect(spaces.spaces).toHaveLength(7);
+  expect(new Set(spaces.spaces.map((space) => space.spaceKey)).size).toBe(7);
   for (const profile of catalogue.profiles) {
     if (profile.workload !== 'clip') {
       expect(findDesktopClipSpace(spaces, profile.modelKey)).toBeUndefined();
@@ -121,4 +121,20 @@ it('does not pair matching names and dimensions when their approved artifact byt
   spaces.spaces[0].spaceKey = key(spaces.spaces[0]);
   expect(() => parseDesktopModelCatalogue(catalogue)).not.toThrow();
   expect(() => parseDesktopClipSpaces(spaces, catalogue)).toThrow('desktop_clip_space_invalid');
+});
+
+it('binds all new CPU and CoreML roles to a distinct space while preserving historical pairs', () => {
+  const catalogue = models();
+  const spaces = parseDesktopClipSpaces(raw(), catalogue);
+  expect(
+    createHash('sha256')
+      .update(canonicalJson(spaces.spaces.slice(0, 6)))
+      .digest('hex'),
+  ).toBe('f55e21472d358013b69b60350b0a8187b2850898cae155ab0f32a3f9195e6af8');
+  const current = catalogue.profiles.filter(
+    (p) => p.runtimeSourceRevision === 'f2c451a6bf71ca3f3aec986e07f0852937268e2f' && p.workload === 'clip',
+  );
+  for (const profile of current) {
+    expect(findDesktopClipSpace(spaces, profile.modelKey)).toEqual(spaces.spaces[6]);
+  }
 });
