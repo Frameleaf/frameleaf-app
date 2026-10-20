@@ -694,7 +694,12 @@
       "path": "patches/0141-locked-track-drop-refusal.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "dd32a9ac161448d08415996791f9ae63712fb37f59a63f19375adb82872df2d8"
+    },
+    {
+      "path": "patches/0142-trackless-video-export-audio.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "20795289c8cf5095275e6c400324e19853be6a69534f4e90dfc9308cc3bd40f6"
     }
   ],
-  "sourceSha256": "804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6"
+  "sourceSha256": "f5286bea04f872a00911cd5c87694319675ae0385d1b259005b496a9dad4a36c"
 }
