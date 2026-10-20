@@ -8,6 +8,8 @@
    * itself is not changed here), its settings through the store's settings-open flag, the filmstrip
    * preference, the zoom of `assetViewerManager`, the panorama view and the video source.
    */
+  import { sendCopyPermitted } from '$lib/frameleaf/send-copy';
+  import { getSharedLink } from '$lib/utils';
   import { isImageAsset, isPanorama, isVideoAsset } from '$lib/frameleaf/viewer-media';
   import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
   import type { ViewerPosition } from '$lib/frameleaf/viewer-position';
@@ -61,6 +63,8 @@
     onToggleFullscreen,
   }: Props = $props();
 
+  const sharedLink = getSharedLink();
+  const canPlayOriginal = $derived(!sharedLink || sendCopyPermitted(sharedLink));
   const { slideshowState, settingsOpen } = slideshowStore;
   const playing = $derived($slideshowState === SlideshowState.PlaySlideshow);
   // The same gates as the menu's and the shared link's Play slideshow: never Locked, downloads on a link.
@@ -131,7 +135,7 @@
   </span>
 
   <div class="fl-foot-group">
-    {#if isVideoAsset(asset)}
+    {#if isVideoAsset(asset) && canPlayOriginal}
       <div class="fl-segment" role="group" aria-label={$t('frameleaf_viewer_video_source')}>
         <button type="button" aria-pressed={isPlayingOriginalVideo} onclick={() => setPlayOriginalVideo(true)}>
           {$t('frameleaf_viewer_source_original')}

@@ -149,11 +149,11 @@ describe('sendCopyPermitted', () => {
     expect(sendCopyPermitted({ ...link, allowDownload: false })).toBe(false);
   });
 
-  it('lets a signed-in user and a link’s own owner send, and nobody else', () => {
+  it('keeps ordinary signed-in copies available but honors restrictions in the owner’s link preview', () => {
     expect(sendCopyPermitted(undefined)).toBe(false);
     signIn('owner');
     expect(sendCopyPermitted(undefined)).toBe(true);
-    expect(sendCopyPermitted({ allowDownload: false, showMetadata: false, userId: 'owner' })).toBe(true);
+    expect(sendCopyPermitted({ allowDownload: false, showMetadata: false, userId: 'owner' })).toBe(false);
   });
 });
 

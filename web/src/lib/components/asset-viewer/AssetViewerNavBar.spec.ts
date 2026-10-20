@@ -1,6 +1,8 @@
 import { AssetTypeEnum, AssetVisibility } from '@frameleaf/sdk';
+import { commandPaletteManager } from '@frameleaf/ui';
 import '@testing-library/jest-dom';
-import { fireEvent } from '@testing-library/svelte';
+import { fireEvent, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { get } from 'svelte/store';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -277,6 +279,18 @@ describe('AssetViewerNavBar component', () => {
 
     afterEach(() => {
       setSharedLink(undefined);
+    });
+
+    it.each([false, true])('gates the original-video command on share permissions: %s', async (allowDownload) => {
+      setSharedLink(sharedLinkFactory.build({ allowDownload, showMetadata: true }));
+      const asset = assetFactory.build({ type: AssetTypeEnum.Video });
+      renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      await tick();
+      commandPaletteManager.queryUpdate('');
+      commandPaletteManager.loadAllItems();
+      await waitFor(() => expect(commandPaletteManager.results.length).toBeGreaterThan(0));
+      const titles = commandPaletteManager.results.flatMap((group) => group.items.map((item) => item.title));
+      expect(titles.includes('play_original_video')).toBe(allowDownload);
     });
 
     it('offers Play slideshow in the bar when the link allows downloads', async () => {

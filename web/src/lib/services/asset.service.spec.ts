@@ -75,14 +75,14 @@ describe('AssetService', () => {
         ...overrides,
       });
 
-    it('should allow shared link downloads if the user owns the asset and shared link downloads are disabled', () => {
+    it('honors disabled shared-link downloads even in the asset owner’s preview', () => {
       const ownerId = 'owner';
       const user = userAdminFactory.build({ id: ownerId });
       const asset = assetFactory.build({ ownerId });
       authManager.setUser(user);
       setSharedLink(sharedLinkFactory.build({ allowDownload: false }));
       const assetActions = getAssetActions(() => '', asset);
-      expect(assetActions.SharedLinkDownload.$if?.()).toStrictEqual(true);
+      expect(assetActions.SharedLinkDownload.$if?.()).toStrictEqual(false);
     });
 
     it('should not allow shared link downloads if the user does not own the asset and shared link downloads are disabled', () => {
@@ -93,6 +93,27 @@ describe('AssetService', () => {
       setSharedLink(sharedLinkFactory.build({ allowDownload: false }));
       const assetActions = getAssetActions(() => '', asset);
       expect(assetActions.SharedLinkDownload.$if?.()).toStrictEqual(false);
+    });
+
+    it('honors shared-link restrictions in the signed-in download commands', () => {
+      setOwnerUser();
+      const asset = assetFactory.build({ ownerId });
+      expect(getAssetActions(() => '', asset).Download.$if?.()).toBe(true);
+      setSharedLink(sharedLinkFactory.build({ userId: ownerId, allowDownload: false, showMetadata: false }));
+      expect(getAssetActions(() => '', asset).Download.$if?.()).toBe(false);
+    });
+
+    it('hides Send a copy in the owner’s restricted shared-link preview', () => {
+      vitest.stubGlobal('navigator', { share: vitest.fn(), canShare: () => true });
+      try {
+        setOwnerUser();
+        const asset = assetFactory.build({ ownerId, isTrashed: false });
+        expect(getAssetActions(() => '', asset).SendCopy.$if?.()).toBe(true);
+        setSharedLink(sharedLinkFactory.build({ userId: ownerId, allowDownload: false, showMetadata: false }));
+        expect(getAssetActions(() => '', asset).SendCopy.$if?.()).toBe(false);
+      } finally {
+        vitest.unstubAllGlobals();
+      }
     });
 
     it('offers no Share inside a public link, even to a signed-in visitor (FL-56)', () => {
@@ -118,7 +139,7 @@ describe('AssetService', () => {
 
     it('should allow shared link downloads if shared link downloads are enabled regardless of user', () => {
       const asset = assetFactory.build();
-      setSharedLink(sharedLinkFactory.build({ allowDownload: true }));
+      setSharedLink(sharedLinkFactory.build({ allowDownload: true, showMetadata: true }));
       const assetActions = getAssetActions(() => '', asset);
       expect(assetActions.SharedLinkDownload.$if?.()).toStrictEqual(true);
     });
@@ -177,7 +198,7 @@ describe('AssetService', () => {
 
       const assetActions = getAssetActions(() => '', asset);
 
-      expect(assetActions.SharedLinkDownload.$if?.()).toStrictEqual(true);
+      expect(assetActions.SharedLinkDownload.$if?.()).toStrictEqual(false);
       expect(assetActions.Info.$if?.()).toStrictEqual(false);
     });
 

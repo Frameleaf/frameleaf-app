@@ -41,6 +41,7 @@
   import { ocrManager } from '$lib/stores/ocr.svelte';
   import { alwaysLoadOriginalVideo } from '$lib/stores/preferences.store';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
+  import { sendCopyPermitted } from '$lib/frameleaf/send-copy';
   import { getSharedLink, handlePromiseError } from '$lib/utils';
   import type { OnUndoDelete } from '$lib/utils/actions';
   import { navigateToAsset } from '$lib/utils/asset-utils';
@@ -332,11 +333,12 @@
     }
   });
 
-  let isPlayingOriginalVideo = $state($alwaysLoadOriginalVideo);
+  let requestedOriginalVideo = $state($alwaysLoadOriginalVideo);
+  const isPlayingOriginalVideo = $derived(requestedOriginalVideo && (!sharedLink || sendCopyPermitted(sharedLink)));
   let slideshowStartAssetId = $state<string>();
 
   const setPlayOriginalVideo = (value: boolean) => {
-    isPlayingOriginalVideo = value;
+    requestedOriginalVideo = value;
   };
 
   const refreshStack = async () => {

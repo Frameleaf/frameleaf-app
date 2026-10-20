@@ -28,14 +28,16 @@ import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
+import { alwaysLoadOriginalVideo } from '$lib/stores/preferences.store';
 import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 // The application-wide socket subscription the layout loads; the viewer only listens to its events.
 import '$lib/stores/websocket';
-import { getAssetUrls } from '$lib/utils';
+import { getAssetUrls, setSharedLink } from '$lib/utils';
 import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { personFactory } from '@test-data/factories/person-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
+import { sharedLinkFactory } from '@test-data/factories/shared-link-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import { stubFocusVisible } from '@test-data/focus-visible';
 import AssetViewer from './AssetViewer.svelte';
@@ -71,8 +73,8 @@ vi.mock('socket.io-client', () => ({
 }));
 
 vi.mock('$lib/components/asset-viewer/VideoWrapperViewer.svelte', async () => {
-  const { default: MockText } = await import('@test-data/components/MockText.svelte');
-  return { default: MockText };
+  const { default: VideoPlaybackProbe } = await import('@test-data/components/VideoPlaybackProbe.svelte');
+  return { default: VideoPlaybackProbe };
 });
 
 // The photo-sphere viewer loads its image over the network; the gesture tests only need it mounted.
@@ -147,6 +149,8 @@ describe('AssetViewer', () => {
   });
 
   afterEach(() => {
+    setSharedLink(undefined);
+    alwaysLoadOriginalVideo.set(false);
     sessionStorage.clear();
     slideshowStore.slideshowState.set(SlideshowState.None);
     assetCacheManager.invalidate();
@@ -157,6 +161,20 @@ describe('AssetViewer', () => {
 
   afterAll(() => {
     vi.restoreAllMocks();
+  });
+
+  it('ignores the original-video preference in a restricted owner share preview', async () => {
+    const user = userAdminFactory.build();
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    alwaysLoadOriginalVideo.set(true);
+    const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Video });
+    const ordinary = renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false });
+    expect(await ordinary.findByTestId('video-source')).toHaveAttribute('data-original', 'true');
+    ordinary.unmount();
+    setSharedLink(sharedLinkFactory.build({ userId: user.id, allowDownload: false, showMetadata: false }));
+    const view = renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false });
+    expect(await view.findByTestId('video-source')).toHaveAttribute('data-original', 'false');
   });
 
   describe('slideshow continuation ownership', () => {
