@@ -499,8 +499,6 @@ export class BaseHWConfig extends BaseConfig {
   }
 }
 
-const THUMBNAIL_SINGLE_GOP_FRAMES = 250;
-
 export class ThumbnailConfig extends BaseConfig {
   constructor(
     config: ConfigFFmpegDto,
@@ -515,16 +513,15 @@ export class ThumbnailConfig extends BaseConfig {
   }
 
   getBaseInputOptions(videoStream: VideoStreamInfo, format?: VideoFormat): string[] {
-    // skip_frame nointra skips all frames for some MPEG-TS files. Look at ffmpeg tickets 7950 and 7895 for more details.
-    // It also leaves a start time after the last keyframe without a frame, and ffmpeg then writes nothing. A clip
-    // of at most one default GOP (250 frames for x264, x265 and NVENC) may hold a single keyframe, its first
-    // frame, which puts every later start time there: such a clip is cheap to decode in full instead.
-    const singleGop =
-      this.startTime > 0 && videoStream.frameCount > 0 && videoStream.frameCount <= THUMBNAIL_SINGLE_GOP_FRAMES;
+    // Seek before decoding so samples after the last keyframe still have frames, without decoding a long video in full.
+    // skip_frame nointra also skips all frames for some MPEG-TS files (ffmpeg tickets 7950 and 7895).
     const options =
-      format?.formatName === 'mpegts' || singleGop
-        ? ['-sws_flags', 'accurate_rnd+full_chroma_int']
-        : ['-skip_frame', 'nointra', '-sws_flags', 'accurate_rnd+full_chroma_int'];
+      this.startTime > 0
+        ? ['-ss', String(this.startTime)]
+        : format?.formatName === 'mpegts'
+          ? []
+          : ['-skip_frame', 'nointra'];
+    options.push('-sws_flags', 'accurate_rnd+full_chroma_int');
 
     const metadataOverrides = [];
     if (videoStream.colorPrimaries === ColorPrimaries.Reserved) {
@@ -552,10 +549,8 @@ export class ThumbnailConfig extends BaseConfig {
   }
 
   getFilterOptions(videoStream: VideoStreamInfo): string[] {
-    const startTime = this.startTime.toFixed(3).replace(/\.?0+$/, '');
-
     return [
-      `fps=12:start_time=${startTime}:eof_action=pass:round=down`,
+      'fps=12:start_time=0:eof_action=pass:round=down',
       'thumbnail=12',
       String.raw`select=gt(scene\,0.1)-eq(prev_selected_n\,n)+isnan(prev_selected_n)+gt(n\,20)`,
       'trim=end_frame=2',
