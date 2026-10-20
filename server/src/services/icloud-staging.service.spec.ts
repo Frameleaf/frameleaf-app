@@ -7,6 +7,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import { ICloudConnection, ICloudResource } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
+import * as diskUsage from 'src/utils/disk-usage.js';
 
 describe(ICloudStagingService.name, () => {
   let directory: string;
@@ -64,8 +65,16 @@ describe(ICloudStagingService.name, () => {
     sut = new ICloudStagingService(repository as never, transport as never, libraries as never);
   });
   afterEach(async () => {
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
     await rm(directory, { recursive: true, force: true });
+  });
+
+  it('never admits a download when the OS capacity probe fails', async () => {
+    vi.spyOn(diskUsage, 'getDiskUsageBigInt').mockRejectedValueOnce(new Error('Filesystem capacity probe failed'));
+    await expect(sut.download(connection, resource)).rejects.toThrow('Filesystem capacity probe failed');
+    expect(transport.download).not.toHaveBeenCalled();
+    expect(repository.progress).not.toHaveBeenCalled();
   });
 
   it('streams exact bytes, publishes complete only, reuses a crash marker and retains until cleanup', async () => {

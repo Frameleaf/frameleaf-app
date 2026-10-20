@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants, createWriteStream } from 'node:fs';
-import { lstat, mkdir, open, readdir, realpath, rename, rm, stat, statfs } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, realpath, rename, rm, stat } from 'node:fs/promises';
 import { dirname, join, sep } from 'node:path';
 import { Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { StorageFolder } from 'src/enum.js';
+import { getDiskUsage } from 'src/utils/disk-usage.js';
 import { assertExecutionActive, executionSignal, reportExecutionProgress } from 'src/utils/execution-signal.js';
 import {
   PRESERVATION_METADATA_PREFIX,
@@ -504,8 +505,8 @@ export class PreservationFileRepository {
 
   async freeBytes(folder: string): Promise<number> {
     await mkdir(folder, { recursive: true, mode: 0o700 });
-    const stats = await statfs(folder);
-    return stats.bavail * stats.bsize;
+    const stats = await getDiskUsage(folder);
+    return stats.available;
   }
 
   async size(path: string): Promise<number> {

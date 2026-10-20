@@ -18,6 +18,7 @@ import { PassThrough, Readable, Writable } from 'node:stream';
 import { createGunzip, createGzip } from 'node:zlib';
 import { CrawlOptionsDto, WalkOptionsDto } from 'src/dtos/library.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { getDiskUsage } from 'src/utils/disk-usage.js';
 import { LibraryWalkOptions, walkLibraryPaths } from 'src/utils/library-walk.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
@@ -267,12 +268,7 @@ export class StorageRepository {
   }
 
   async checkDiskUsage(folder: string): Promise<DiskUsage> {
-    const stats = await fs.statfs(folder);
-    return {
-      available: stats.bavail * stats.bsize,
-      free: stats.bfree * stats.bsize,
-      total: stats.blocks * stats.bsize,
-    };
+    return getDiskUsage(folder);
   }
 
   /**

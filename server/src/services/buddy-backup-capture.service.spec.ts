@@ -21,18 +21,9 @@ import { BuddyBackupCaptureService } from 'src/services/buddy-backup-capture.ser
 import { createBuddyKeyring, decryptBuddyBlock } from 'src/utils/buddy-backup-crypto.js';
 import { KEY, LINEAGE } from 'test/fixtures/studio-import-retention.js';
 
-vi.mock('node:fs/promises', async (original) => ({
-  ...(await original<typeof import('node:fs/promises')>()),
-  statfs: () =>
-    Promise.resolve({
-      type: 0,
-      bsize: 4096,
-      blocks: 1_000_000_000,
-      bfree: 1_000_000_000,
-      bavail: 1_000_000_000,
-      files: 1_000_000,
-      ffree: 1_000_000,
-    }),
+vi.mock('src/utils/disk-usage.js', () => ({
+  getDiskUsage: () =>
+    Promise.resolve({ total: 4096 * 1_000_000_000, free: 4096 * 1_000_000_000, available: 4096 * 1_000_000_000 }),
 }));
 
 describe('Buddy effective configuration file capture', () => {

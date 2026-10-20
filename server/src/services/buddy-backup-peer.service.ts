@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
-import { readFile, statfs } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import z from 'zod';
@@ -26,6 +26,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { BUDDY_BLOCK_BYTES, BUDDY_SEALED_OVERHEAD } from 'src/utils/buddy-backup-crypto.js';
 import { BuddyJwks, verifyBuddyGrant, verifyBuddyProof } from 'src/utils/buddy-backup-protocol.js';
 import { BuddyVault, buddyDigest, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
+import { getDiskUsage } from 'src/utils/disk-usage.js';
 import { BuddyGrantClaims, BuddyGrantResponse, BuddyPairing } from 'src/utils/frameleaf-buddy.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
@@ -345,11 +346,11 @@ export class BuddyBackupPeerService {
   }
 
   private async capacity(access: BuddyPeerAccess) {
-    const filesystem = await statfs((await this.state.state()).settings!.directory);
+    const filesystem = await getDiskUsage((await this.state.state()).settings!.directory);
     return {
       quotaBytes: access.quotaBytes,
-      freeBytes: filesystem.bavail * filesystem.bsize,
-      totalBytes: filesystem.blocks * filesystem.bsize,
+      freeBytes: filesystem.available,
+      totalBytes: filesystem.total,
     };
   }
 

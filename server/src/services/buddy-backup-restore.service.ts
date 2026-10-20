@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { type Transaction, sql } from 'kysely';
 import { createHash } from 'node:crypto';
-import { lstat, readFile, readdir, rm, statfs } from 'node:fs/promises';
+import { lstat, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { coerce, gt } from 'semver';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -83,6 +83,7 @@ import {
 } from 'src/utils/cloud-backup-owner-restore.js';
 import { ownerBackupHistoryPage } from 'src/utils/cloud-backup-owner.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
+import { getDiskUsage } from 'src/utils/disk-usage.js';
 import { advanceExecutionProgress, assertExecutionActive, executionSignal } from 'src/utils/execution-signal.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { OperationDeadlineError, settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
@@ -441,8 +442,8 @@ export class BuddyBackupRestoreService {
         ...(manifest.library.database ? [manifest.library.database] : []),
       );
     const bytes = selectedFiles.reduce((sum, file) => sum + file.size, 0);
-    const free = await statfs(StorageCore.getMediaLocation());
-    if (bytes + 1024 ** 3 > free.bavail * free.bsize)
+    const free = await getDiskUsage(StorageCore.getMediaLocation());
+    if (bytes + 1024 ** 3 > free.available)
       throw new BadRequestException('More free space is needed to stage and verify this restore.');
     const identities = await this.index.getOwnerRestoreIdentities(ids);
     const albumIds = manifest.metadata
