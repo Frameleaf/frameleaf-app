@@ -54,7 +54,7 @@ describe('the local pin (FL-455)', () => {
           sha256: '4c06341c33c2ca1f86781dab0e829f88ad5b64be9fba56e56bc9ebdefc619e43',
         },
       ],
-      preprocess: 'frameleaf-face/1',
+      preprocess: 'frameleaf-face/2',
       output: { dim: 512, dtype: 'float32', normalized: false },
     });
   });
@@ -66,6 +66,11 @@ describe('the local pin (FL-455)', () => {
 });
 
 describe(sameModelIdentity.name, () => {
+  it('refuses the earlier face alignment preprocessing version', () => {
+    const pin = facePin();
+    expect(pin.preprocess).toBe('frameleaf-face/2');
+    expect(sameModelIdentity({ ...pin, preprocess: 'frameleaf-face/1' }, pin)).toBe(false);
+  });
   it('ignores file order and keys this server does not compare', () => {
     const pin = clipPin();
     const claimed = { ...pin, files: pin.files.toReversed(), upstream: 'elsewhere' } as CloudModelIdentity;

@@ -7,8 +7,8 @@ import { parseBoundOcrResult } from 'src/utils/ocr-result.js';
 
 // Release-owned defaults; legacy keys remain available for already-bound work.
 export const desktopImageModelKeys = Object.freeze({
-  ocr: 'ocr:e33d1e23fd56c65d39bc747bd2a1398978f8e3d370243dfb21f76acfea1d15a1',
-  face: 'face:a4ec942a855e296ec9028c412f308f26f1d2ba41685af7b7233223b529cb4f1f',
+  ocr: 'ocr:60579aee79105e5daf102c1bddec3f7a3e6c84e6cdfce956fa2c8cf55d704eea',
+  face: 'face:97d2d90ebccf7dd8bf5d0422d1443eece11a874f657deb7e76d4b06458185319',
 });
 
 const sha = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');

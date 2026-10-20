@@ -10,7 +10,7 @@ const catalogue = parseDesktopModelCatalogue(
 it.each(['ocr', 'face'] as const)('selects the released %s identity and revalidates exact legacy tasks', (workload) => {
   const profiles = catalogue.profiles.filter((profile) => profile.workload === workload);
   const current = profiles.find(
-    (profile) => profile.runtimeSourceRevision === 'f93c34d196955da3e2760c095c08b27ccbf53315',
+    (profile) => profile.runtimeSourceRevision === '0d9702c68f31ea3eea068ac59ca1cf36a2b520fc',
   )!;
   const select = (key?: string) =>
     workload === 'ocr'

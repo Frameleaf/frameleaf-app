@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import {
   type DesktopModelCatalogue,
   createDesktopModelChallenge,
+  desktopImageModelKeys,
   matchDesktopModelProfile,
   parseDesktopModelCatalogue,
 } from 'src/utils/desktop-model-catalogue.js';
@@ -11,9 +12,29 @@ import { canonicalJson } from 'src/utils/object.js';
 
 const raw = (): unknown =>
   JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'));
+it('preserves every prior binding and selects the qualified precision-corrected CPU profiles', () => {
+  const catalogue = parseDesktopModelCatalogue(raw());
+  expect(catalogue.epoch).toBe(10);
+  expect(catalogue.profiles).toHaveLength(32);
+  expect(
+    createHash('sha256')
+      .update(canonicalJson(catalogue.profiles.slice(0, 27)))
+      .digest('hex'),
+  ).toBe('fa8fd8b562bbe6c66fa6d2ccf01898c61c4b97349988ccb88e7d69eec2abdf4f');
+  const legacyKeys = new Set(catalogue.profiles.slice(0, 27).map((profile) => profile.modelKey));
+  const current = catalogue.profiles.slice(27);
+  for (const profile of current) {
+    expect(profile.runtimeSourceRevision).toBe('0d9702c68f31ea3eea068ac59ca1cf36a2b520fc');
+    expect(profile.spec.provider).toBe('CPUExecutionProvider');
+    expect(profile.spec.preprocessingSha256).toBe('330a3e5ee01610d5f8d41f45cd97089471ad03d4ccc3946f6ee8a43a6082ea5d');
+    expect(legacyKeys.has(profile.modelKey)).toBe(false);
+  }
+  expect(current.map((profile) => profile.workload)).toEqual(['clip', 'clip', 'clip', 'ocr', 'face']);
+  expect(desktopImageModelKeys).toEqual({ ocr: current[3].modelKey, face: current[4].modelKey });
+});
 it('validates the approved default model and preserves exact config, source and provider identity', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.profiles).toHaveLength(27);
+  expect(catalogue.profiles).toHaveLength(32);
   for (const profile of catalogue.profiles) {
     if (profile.workload !== 'clip') continue;
     expect(profile.modelName).toBe('ViT-B-16-SigLIP-384__webli');
@@ -128,6 +149,11 @@ it('binds a fresh canonical NAS nonce with the same digest as the native contrac
     '546549421b4d0dc3f4a8601db9207befd4d82e3ecb9e0ad52849ed3199441be4',
     'b2af0f4cba01a87d6b656a69f4aa7ab3cddba1bfb0bda4d4340c8ce484e16ef0',
     '7b744d6547e885abcfdd845f914fe858bd5e13321783af9c3b26f679fdf95f76',
+    '05fc08742b2b05cebd5bf54302f1c78f8ba16902a502e4815a8a750ecba02a66',
+    '46fc1b58fd122980ee5de68b62d7c431f8f115bb84e2d19933aa55ba08a89cb1',
+    'fc631cdf02d40fb5a491e6fb0991bf0e5399918b86657e1b9e1ba483d5f02841',
+    'f66eb524b80589047de44409de6a19ffa9ca2de18b7b6d8669a692700a625da6',
+    '4db2580d36114fce59cea7fafb125c4f82ab93f78e82772bd50d888d14c358fe',
   ];
   expect(catalogue.profiles).toHaveLength(expected.length);
   for (const [index, profile] of catalogue.profiles.entries()) {
@@ -267,15 +293,15 @@ it('preserves all CPU profiles while admitting only the proved CoreML CLIP sourc
 
 it('selects current-main CoreML profiles with distinct preprocessing while preserving prior bindings', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(9);
-  expect(catalogue.profiles).toHaveLength(27);
+  expect(catalogue.epoch).toBeGreaterThanOrEqual(9);
+  expect(catalogue.profiles).toHaveLength(32);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 24)))
       .digest('hex'),
   ).toBe('6e96b5643ee2da45f19a9ca0a7a2de20645cea56e1811f6a3cb8e12e8e5b9086');
   const source = 'b7b5756a3f9eaeec9e977460ab654cbbadee87e7';
-  for (const [index, profile] of catalogue.profiles.slice(24).entries()) {
+  for (const [index, profile] of catalogue.profiles.slice(24, 27).entries()) {
     expect(profile.runtimeSourceRevision).toBe(source);
     expect(profile.spec.provider).toBe('CoreMLExecutionProvider');
     const old = catalogue.profiles[21 + index];
