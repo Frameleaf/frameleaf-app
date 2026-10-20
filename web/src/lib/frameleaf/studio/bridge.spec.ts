@@ -49,22 +49,28 @@ describe('studio command bridge', () => {
     expect(add).toHaveBeenCalledTimes(1);
   });
 
-  it('does not forward automatic previews to an export-only worker', async () => {
-    const request = vi.fn().mockResolvedValue(4);
-    const bridge = createStudioBridge({
-      context: () => context({ capabilities: { ...emptyStudioCapabilities(), gpuWorker: true, renderWorker: true } }),
-      handlers: { 'preview.request': request },
-    });
-    const [result] = await bridge.submit([
-      createStudioCommandEnvelope(
-        'preview.request',
-        { at: rational(0), quality: 'draft', viewportWidth: 960, viewportHeight: 540 },
-        4,
-      ),
-    ]);
-    expect(result).toMatchObject({ status: 'rejected', reason: 'capability-missing' });
-    expect(request).not.toHaveBeenCalled();
-  });
+  it.each([false, true])(
+    'does not forward exact previews without exact-frame support (stream=%s)',
+    async (previewStreamWorker) => {
+      const request = vi.fn().mockResolvedValue(4);
+      const bridge = createStudioBridge({
+        context: () =>
+          context({
+            capabilities: { ...emptyStudioCapabilities(), gpuWorker: true, renderWorker: true, previewStreamWorker },
+          }),
+        handlers: { 'preview.request': request },
+      });
+      const [result] = await bridge.submit([
+        createStudioCommandEnvelope(
+          'preview.request',
+          { at: rational(0), quality: 'draft', viewportWidth: 960, viewportHeight: 540 },
+          4,
+        ),
+      ]);
+      expect(result).toMatchObject({ status: 'rejected', reason: 'capability-missing' });
+      expect(request).not.toHaveBeenCalled();
+    },
+  );
 
   it('refuses a preview on a deployment with no GPU worker rather than showing nothing', async () => {
     const bridge = createStudioBridge({
