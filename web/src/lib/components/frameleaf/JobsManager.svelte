@@ -728,7 +728,7 @@
 
   // A new queue or tab starts from its first page with its own list.
   $effect(() => {
-    void selected?.definition.name;
+    void selectedName;
     void tab;
     shown = PAGE_SIZE;
     jobsLoaded = false;
