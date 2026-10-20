@@ -532,14 +532,16 @@ export class BaseService {
       this.websocketRepository.clientSend(
         'on_asset_update',
         ownerId,
-        await this.withLandmarks(mapAsset(asset, { auth: { user: { id: ownerId } } as AuthDto })),
+        // ponytail: no landmarks here, a Locked move never changes where an item was taken and the
+        // viewer closes on it anyway; add `withLandmarks` if an unlock ever keeps the viewer open
+        mapAsset(asset, { auth: { user: { id: ownerId } } as AuthDto }),
       );
     }
   }
 
   /**
-   * FL-353: names the landmarks a located asset was taken at, when the place pack knows the spot. Every
-   * `on_asset_update` carries them too, or the info panel drops its "At …" line on the next update.
+   * FL-353: names the landmarks a located asset was taken at, when the place pack knows the spot. The
+   * `on_asset_update` after a metadata re-read carries them too, or the info panel drops its "At …" line.
    */
   protected async withLandmarks(data: AssetResponseDto): Promise<AssetResponseDto> {
     const { reverseGeocoding } = await this.getConfig({ withCache: true });
