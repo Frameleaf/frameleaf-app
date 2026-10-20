@@ -77,10 +77,16 @@ class TextRecognizer(InferenceModel):
             for i, index in enumerate(chunk):
                 crop = self._crop(img, coeffs[index], widths[index], heights[index], upright[index])
                 resized_w = max(1, min(width, math.ceil(REC_HEIGHT * ratios[index])))
+                # Default bilinear rounding differs across CPU architectures and changes OCR confidence.
                 if self.raw_input:
-                    cv2.resize(crop, (resized_w, REC_HEIGHT), dst=images[i, :, :resized_w])
+                    cv2.resize(
+                        crop,
+                        (resized_w, REC_HEIGHT),
+                        dst=images[i, :, :resized_w],
+                        interpolation=cv2.INTER_LINEAR_EXACT,
+                    )
                     continue
-                resized = cv2.resize(crop, (resized_w, REC_HEIGHT))
+                resized = cv2.resize(crop, (resized_w, REC_HEIGHT), interpolation=cv2.INTER_LINEAR_EXACT)
                 view = images[i, :, :, :resized_w]
                 np.multiply(resized.transpose(2, 0, 1)[::-1], SCALE, out=view)  # [::-1] is the RGB -> BGR swap
                 view -= 1.0
