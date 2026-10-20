@@ -57,6 +57,8 @@ def nms(boxes: NDArray[np.float32], scores: NDArray[np.float32], threshold: floa
 
 
 def umeyama(src: NDArray[np.float32], dst: NDArray[np.float32]) -> NDArray[np.float32]:
+    # Keep the fitted transform stable across CPU architectures before rounding to float32.
+    src, dst = src.astype(np.float64), dst.astype(np.float64)
     src_mean, dst_mean = src.mean(0), dst.mean(0)
     src_c, dst_c = src - src_mean, dst - dst_mean
     cov = dst_c.T @ src_c / len(src)
