@@ -714,6 +714,14 @@ export class MediaOperationService {
       throw new BadRequestException('Export the project again from Studio');
     }
 
+    // Preview frames and browser streams belong to their original allocation, not a copied job.
+    if (
+      operation.kind === MediaOperationKind.StudioPreview ||
+      operation.kind === MediaOperationKind.StudioPreviewStream
+    ) {
+      throw new BadRequestException('Request a new preview from Studio');
+    }
+
     if (!canRetryMediaOperation(operation.status as MediaOperationStatus)) {
       throw new BadRequestException('Only a failed or cancelled job can be retried');
     }

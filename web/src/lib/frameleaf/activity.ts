@@ -551,7 +551,7 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     // A library scan is started again from Libraries, which checks its folders and owner first (FL-78).
     // A cloud backup run is started again with "Back up now", which checks the claim and key (FL-160);
     // a restore from the Restore section, which reads the backup and checks the key again (FL-164).
-    // Studio exports and source reversals need fresh project/source authorization, never a copied job.
+    // Studio exports, source reversals and previews need fresh authorization/allocation, never a copied job.
     // An edit that could not be cancelled was never cancelled by its owner, so only a failure retries.
     canRetry:
       operation.kind !== MediaOperationKind.MediaHealth &&
@@ -559,6 +559,8 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
       operation.kind !== MediaOperationKind.StudioExport &&
       operation.kind !== MediaOperationKind.StudioExportPublish &&
       operation.kind !== MediaOperationKind.StudioReverseConform &&
+      operation.kind !== MediaOperationKind.StudioPreview &&
+      operation.kind !== MediaOperationKind.StudioPreviewStream &&
       !CLOUD_WORK_KINDS.has(operation.kind) &&
       !dedup &&
       (status === MediaOperationStatus.Failed ||
@@ -587,6 +589,7 @@ const STUDIO_RENDER_KINDS: ReadonlySet<MediaOperationKind> = new Set([
   MediaOperationKind.StudioExport,
   MediaOperationKind.StudioExportPublish,
   MediaOperationKind.StudioPreview,
+  MediaOperationKind.StudioPreviewStream,
 ]);
 
 /** The server's measured estimate, when it sent one; nothing is invented when it did not. */

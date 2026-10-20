@@ -195,6 +195,8 @@ describe('fromMediaOperation', () => {
     MediaOperationKind.StudioExport,
     MediaOperationKind.StudioExportPublish,
     MediaOperationKind.StudioReverseConform,
+    MediaOperationKind.StudioPreview,
+    MediaOperationKind.StudioPreviewStream,
   ])('never offers a copied retry for a Studio job requiring fresh authorization: %s', (kind) => {
     for (const status of [MediaOperationStatus.Failed, MediaOperationStatus.Cancelled]) {
       expect(fromMediaOperation(operation({ kind, status })).canRetry).toBe(false);
@@ -751,6 +753,9 @@ describe('Studio renders, server estimates and completion (FL-104)', () => {
     ).toBe('project-1');
     expect(
       fromMediaOperation(operation({ kind: MediaOperationKind.StudioPreview, projectId: 'project-1' })).projectId,
+    ).toBe('project-1');
+    expect(
+      fromMediaOperation(operation({ kind: MediaOperationKind.StudioPreviewStream, projectId: 'project-1' })).projectId,
     ).toBe('project-1');
     expect(
       fromMediaOperation(operation({ kind: MediaOperationKind.StudioBundleExport, projectId: 'p' })).projectId,

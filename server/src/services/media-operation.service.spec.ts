@@ -829,6 +829,26 @@ describe(MediaOperationService.name, () => {
       },
     );
 
+    it.each([
+      [MediaOperationKind.StudioPreview, { kind: 'studio-preview', previewFrameId: 'old-frame' }],
+      [
+        MediaOperationKind.StudioPreview,
+        { kind: 'studio-preview', previewFrameId: 'old-frame', consumerRequestId: 'old-consumer' },
+      ],
+      [MediaOperationKind.StudioPreviewStream, { kind: 'studio-preview-stream' }],
+    ])('requires fresh Studio allocation for %s with snapshot %j', async (kind, snapshot) => {
+      vi.mocked(repository.create).mockResolvedValue(
+        operationStub({ kind, status: MediaOperationStatus.Queued, snapshot }),
+      );
+      for (const status of [MediaOperationStatus.Failed, MediaOperationStatus.Cancelled]) {
+        vi.mocked(repository.getForOwner).mockResolvedValue(operationStub({ kind, status, snapshot }));
+        await expect(sut.retry(authStub.user1, 'id')).rejects.toThrow('Request a new preview from Studio');
+      }
+      expect(repository.getActiveRetry).not.toHaveBeenCalled();
+      expect(repository.createRetry).not.toHaveBeenCalled();
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
     it('copies the snapshot and destination into a new row and records the lineage', async () => {
       const failed = operationStub({
         kind: MediaOperationKind.Restoration,
