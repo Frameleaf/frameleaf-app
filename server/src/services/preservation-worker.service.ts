@@ -15,6 +15,7 @@ import {
   AssetLockReason,
   AssetOrder,
   AssetVisibility,
+  ChecksumAlgorithm,
   FrameleafWorker,
   MediaOperationKind,
   MediaOperationStatus,
@@ -515,16 +516,18 @@ export class PreservationWorkerService {
 
       const names = preservationEntryNames(asset.id, asset.originalFileName);
       const destination = join(found.path, names.original);
-      const digests = await this.files.copyOriginal(
-        asset.originalPath,
-        destination,
-        publish,
-        Buffer.from(asset.checksum),
-      );
+      // External-library checksums identify a path, so establish their content digests during the copy.
+      const contentChecksum =
+        asset.checksumAlgorithm === ChecksumAlgorithm.sha1Path ? undefined : Buffer.from(asset.checksum);
+      const digests = await this.files.copyOriginal(asset.originalPath, destination, publish, contentChecksum);
       assertExecutionActive();
-      const expected = Buffer.from(asset.checksum).toString('hex');
-      const measured = asset.checksum.length === 20 ? digests.sha1 : digests.sha256;
-      if (expected !== measured) {
+      const measured =
+        asset.checksumAlgorithm === ChecksumAlgorithm.sha1File
+          ? digests.sha1
+          : asset.checksumAlgorithm === ChecksumAlgorithm.sha256File
+            ? digests.sha256
+            : undefined;
+      if (contentChecksum && contentChecksum.toString('hex') !== measured) {
         await publish(() => this.files.removeFile(destination));
         throw new PreservationPackageError('checksum_mismatch', 'The original does not match its library checksum');
       }
