@@ -112,3 +112,21 @@ it.each([false, true])('does not act on a retired Frameleaf account confirmation
   expect(sdkMock.startFrameleafSignIn).not.toHaveBeenCalled();
   expect(sdkMock.unlinkFrameleafAccount).not.toHaveBeenCalled();
 });
+
+it.each(['account', 'setup'] as const)('shows browser callback setup guidance in the %s caller', async (kind) => {
+  const message =
+    'Set up remote access in Frameleaf Cloud settings, then sign in through this server’s public address.';
+  sdkMock.isHttpError.mockReturnValue(true);
+  sdkMock.startFrameleafSignIn.mockRejectedValue({ status: 400, data: { message } });
+  if (kind === 'account') {
+    render(FrameleafAccountSection);
+  } else {
+    render(SetupFrameleafLink, { mode: 'sign-in', linked: false, onLinked: vi.fn() });
+  }
+  const button = await screen.findByRole('button', {
+    name: kind === 'account' ? 'frameleaf_personal_link' : 'frameleaf_setup_sign_in_frameleaf',
+  });
+  await waitFor(() => expect(button).not.toBeDisabled());
+  await fireEvent.click(button);
+  expect(await screen.findByRole(kind === 'setup' ? 'status' : 'alert')).toHaveTextContent(message);
+});

@@ -589,3 +589,16 @@ it('does not clear a replacement sign-in continuation when an old callback fails
   await tick();
   expect(String(getOAuthContinue('/photos'))).toBe(new URL('/albums?new-sign-in', location.origin).href);
 });
+
+it('shows local browser callback setup guidance without leaving the login page', async () => {
+  const message =
+    'Set up remote access in Frameleaf Cloud settings, then sign in through this server’s public address.';
+  vi.mocked(isHttpError).mockReturnValue(true);
+  vi.mocked(startFrameleafSignIn).mockRejectedValue({ status: 400, data: { message } });
+  const pageData = data(false);
+  pageData.publicConfig.frameleaf.signInAvailable = true;
+  pageData.publicConfig.frameleafCloud.signIn.showOnLocalLogin = true;
+  render(Page, { data: pageData } as never);
+  await fireEvent.click(screen.getByRole('button', { name: 'Sign in with Frameleaf' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(message);
+});

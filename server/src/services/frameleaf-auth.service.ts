@@ -28,13 +28,22 @@ import {
 } from 'src/dtos/frameleaf-auth.dto.js';
 import { mapNotification } from 'src/dtos/notification.dto.js';
 import { mapUserAdmin } from 'src/dtos/user.dto.js';
-import { AdminAuditAction, AuthCookie, DatabaseLock, NotificationLevel, NotificationType } from 'src/enum.js';
+import {
+  AdminAuditAction,
+  AuthCookie,
+  DatabaseLock,
+  NotificationLevel,
+  NotificationType,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { ClientTokenRejection, type OAuthConfig, type OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { type LoginDetails, UNVERIFIED_EMAIL_MESSAGE, emailVerificationProblem } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { DecimalSize } from 'src/utils/bytes.js';
 import { identityDirectory, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
+import { verifiedCustomHost } from 'src/utils/frameleaf-remote-access.js';
 import {
+  FRAMELEAF_APP_CALLBACK,
   FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS,
   FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS,
   FRAMELEAF_EXCHANGE_TOKEN_TYPE,
@@ -46,6 +55,7 @@ import {
   frameleafRedirectUri,
   frameleafRole,
   hasInstanceAccess,
+  httpsOrigin,
 } from 'src/utils/frameleaf-sign-in.js';
 import { publishedLocalOrigins } from 'src/utils/public-url.js';
 import { createSession } from 'src/utils/session.js';
@@ -171,6 +181,31 @@ export class FrameleafAuthService extends BaseService {
     const redirectUri = frameleafRedirectUri(dto.redirectUri);
     if (!redirectUri) {
       throw new BadRequestException('This address is not registered for Sign in with Frameleaf');
+    }
+    if (redirectUri !== FRAMELEAF_APP_CALLBACK) {
+      const deps = { configRepository: this.configRepository, systemMetadataRepository: this.systemMetadataRepository };
+      const { cloudUrl, link } = await readCloudLink(deps);
+      const settings = await this.getConfig({ withCache: false });
+      const state = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess);
+      const enrollment = state?.names;
+      const origins = [httpsOrigin(link?.services?.publicUrl), httpsOrigin(link?.services?.relayOrigin)];
+      if (
+        enrollment &&
+        enrollment.instanceId === link?.instanceId &&
+        enrollment.cloudUrl === cloudUrl &&
+        enrollment.linkedAt === link?.linkedAt
+      ) {
+        origins.push(httpsOrigin(`https://${enrollment.names.relay}`));
+        const custom = verifiedCustomHost(settings.frameleafCloud.remoteAccess);
+        if (custom) {
+          origins.push(httpsOrigin(`https://${custom}`));
+        }
+      }
+      if (!origins.includes(new URL(redirectUri).origin)) {
+        throw new BadRequestException(
+          'This address is not registered for Sign in with Frameleaf. Set up remote access in Frameleaf Cloud settings, then sign in through this server’s public address.',
+        );
+      }
     }
     return this.oauthRepository.authorize(config, redirectUri, dto.state, dto.codeChallenge);
   }

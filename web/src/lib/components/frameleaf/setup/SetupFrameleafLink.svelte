@@ -130,7 +130,7 @@
     <Icon icon={mdiCloudOffOutline} size="22" aria-hidden={true} />
     <div>
       <strong>{$t('frameleaf_setup_cloud_unreachable_title')}</strong>
-      <span>{$t('frameleaf_setup_cloud_unreachable_body')}</span>
+      <span>{error || $t('frameleaf_setup_cloud_unreachable_body')}</span>
     </div>
     {#if onFallback}
       <button type="button" class="button" onclick={onFallback}>{$t('frameleaf_setup_use_local')}</button>
