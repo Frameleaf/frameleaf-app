@@ -10,7 +10,8 @@
     claimed = $state(false),
     signedIn = $state(false),
     loading = $state(true),
-    busy = $state(false);
+    busy = $state(false),
+    checking = $state(false);
   let error = $state(''),
     disconnected = $state(false),
     toast = $state('');
@@ -357,16 +358,21 @@
   }
   async function prepare() {
     if (!document.querySelector<HTMLFormElement>('#configuration-form')?.reportValidity()) return;
-    review = await api('review', {
-      kind,
-      tag,
-      name: libraryName,
-      ...(kind === 'import' ? { sourceId } : { mediaPath }),
-      databaseRoot,
-      port,
-      ml,
-      lifecycle: 'docker-only',
-    });
+    checking = true;
+    try {
+      review = await api('review', {
+        kind,
+        tag,
+        name: libraryName,
+        ...(kind === 'import' ? { sourceId } : { mediaPath }),
+        databaseRoot,
+        port,
+        ml,
+        lifecycle: 'docker-only',
+      });
+    } finally {
+      checking = false;
+    }
     if (kind === 'install') step = 1;
     else step = lastImportStep;
   }
@@ -645,7 +651,7 @@
           {:else}
             {@render heading('Ready to switch to Frameleaf', 'Your library will be unavailable while Manager imports the current stopped database.')}
             {#if !review}{@render configuration()}
-              <button class="button primary mt16" disabled={busy || !lifecycle || !tag} onclick={() => run(prepare)}>Check and review cutover</button>
+              <button class="button primary mt16" disabled={busy || !lifecycle || !tag} aria-busy={checking} onclick={() => run(prepare)}>{#if checking}<span class="spinner" aria-hidden="true"></span>Checking…{:else}Check and review cutover{/if}</button>{#if checking}<p class="muted checking-note" role="status">Checking the server. This can take up to a minute.</p>{/if}
             {:else}
               {#if review.backup.action === 'reuse'}{@render notice('Existing Immich backup reused · Backup step skipped', 'Manager rechecks the backup’s age and usability at cutover.')}{/if}
               <section class="card mt16"><div class="card-header"><h2>The cutover plan</h2><span class="badge good">Preflight passed</span></div><div class="card-body"><ol class="timeline">{#each ['Recheck this installation and its backup', 'Stop Immich and disable automatic restart', ...(review.backup.action === 'create' ? ['Create and verify a database backup'] : []), 'Copy the current database into separate Frameleaf PostgreSQL storage', 'Import, start Frameleaf and verify the library'] as item, index}<li><span class="stage-icon">{index + 1}</span><div><strong>{item}</strong></div></li>{/each}</ol><p class="meta mt16">PostgreSQL root: <code>{review.databaseStorage.root}</code></p></div></section>
@@ -655,7 +661,7 @@
           {/if}
         {:else if screen === 'fresh'}
           {@render steps(['Storage', 'Checks', 'Install'], step)}
-          {#if step === 0}{@render heading('Give your library a home', 'Choose the server locations and connection settings for this installation.')}{@render configuration()}<div class="wizard-footer"><button class="button quiet" onclick={() => run(() => go('welcome'))}>Back</button><button class="button primary" disabled={busy || !mediaPath || !tag || !lifecycle} onclick={() => run(prepare)}>Check this configuration</button></div>
+          {#if step === 0}{@render heading('Give your library a home', 'Choose the server locations and connection settings for this installation.')}{@render configuration()}<div class="wizard-footer"><button class="button quiet" onclick={() => run(() => go('welcome'))}>Back</button>{#if checking}<p class="muted checking-note" role="status">Checking the server. This can take up to a minute.</p>{/if}<button class="button primary" disabled={busy || !mediaPath || !tag || !lifecycle} aria-busy={checking} onclick={() => run(prepare)}>{#if checking}<span class="spinner" aria-hidden="true"></span>Checking…{:else}Check this configuration{/if}</button></div>
           {:else if step === 1}{@render heading('This server is ready', 'Manager checked storage, compatibility, and the complete signed release bundle.')}<section class="card"><div class="card-header"><h2>Preflight checks</h2></div>{#each [['folder', 'Storage permissions and free space', formatBytes(review.requiredBytes) + ' required; selected mounted locations validated'], ['network', 'Frameleaf port', String(port) + ' checked against Docker and Manager ports'], ['server', 'Docker compatibility', dashboard.host?.platform ?? 'Host compatibility checked'], ['shield', 'Release signature and eligibility', review.tag + ' · Verified release bundle'], ['database', 'PostgreSQL host storage', review.databaseStorage.root]] as [icon, title, detail]}<div class="list-row"><Icon name={icon}/><div><strong>{title}</strong><p>{detail}</p></div><span class="badge good">Passed</span></div>{/each}</section><p class="meta mt16">Docker’s final port bind remains authoritative for other host processes.</p><div class="wizard-footer"><button class="button quiet" onclick={() => { step = 0; review = null; }}>Back</button><button class="button primary" onclick={() => step = 2}>Review installation</button></div>
           {:else}{@render heading('Ready to set up Frameleaf', 'Manager will prepare the services and take you into Frameleaf when your server is ready.')}<section class="card"><div class="card-header"><h2>New installation</h2><span class="badge good">{review.tag}</span></div>{#each [['folder', 'Photo library', mediaPath], ['database', 'New PostgreSQL database', databaseRoot], ['shield', 'Encrypted database backups', dashboard.backupRoot], ['network', 'Application port', String(port)], ['cpu', 'Processing', `${processorName(dashboard.host?.acceleration)} · Machine learning ${ml ? 'on' : 'off'}`]] as [icon, title, detail]}<div class="list-row"><Icon name={icon}/><div><strong>{title}</strong><p><code>{detail}</code></p></div></div>{/each}</section><div class="mt16">{@render notice('Managed independently', 'Your photo library keeps running when Manager is unavailable. Keep a protected configuration export for manual recovery.')}</div><div class="wizard-footer"><button class="button quiet" onclick={() => step = 1}>Back</button><button class="button primary" disabled={busy || !!activeOperation} onclick={() => run(() => start('install', { reviewId: review.id }))}>Install Frameleaf</button></div>{/if}
         {:else if screen === 'progress'}
