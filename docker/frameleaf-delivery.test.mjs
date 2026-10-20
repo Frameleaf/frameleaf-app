@@ -48,6 +48,7 @@ for (const [filename, project, rootless] of [
     assert.equal(config.name, project);
     assert.deepEqual(Object.keys(config.services), [
       "frameleaf-server",
+      ...(!rootless ? ["frameleaf-lan-discovery"] : []),
       "frameleaf-machine-learning",
       "database",
     ]);
