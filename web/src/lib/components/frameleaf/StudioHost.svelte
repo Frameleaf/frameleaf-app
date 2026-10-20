@@ -904,7 +904,7 @@
           <span class="fl-studio-label wide">{$t('frameleaf_studio_editing_as', { values: { name: auth.name } })}</span>
         </span>
 
-        {#if capabilities?.renderWorker === true}
+        {#if capabilities?.previewWorker === true}
           <!-- The server preview is opened from here, so nothing floats over the timeline to offer it. -->
           <button
             type="button"
@@ -1107,7 +1107,7 @@
         bind:open={serverPreviewOpen}
         {preview}
         {stream}
-        available={capabilities?.renderWorker === true}
+        available={capabilities?.previewWorker === true}
         onVideoSize={onStreamVideoSize}
       />
     {/if}

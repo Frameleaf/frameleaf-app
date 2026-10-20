@@ -5,7 +5,15 @@ import { AssetTypeSchema } from 'src/enum.js';
 import { STUDIO_INVENTORY_KINDS } from 'src/utils/studio-inventory.js';
 
 const StudioCapabilitySchema = z
-  .enum(['analysisWorker', 'generationWorker', 'gpuWorker', 'renderWorker', 'restorationWorker', 'transcriptionWorker'])
+  .enum([
+    'analysisWorker',
+    'generationWorker',
+    'gpuWorker',
+    'renderWorker',
+    'previewWorker',
+    'restorationWorker',
+    'transcriptionWorker',
+  ])
   .describe('A Studio worker capability, as the command catalogue names it')
   .meta({ id: 'StudioWorkerCapability' });
 

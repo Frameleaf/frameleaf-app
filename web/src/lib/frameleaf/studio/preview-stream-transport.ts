@@ -62,6 +62,7 @@ export const classifyStreamError = (error: unknown): StudioStreamFailure => {
       case 'studio_preview_sources_refused': {
         return { kind: 'revoked' };
       }
+      case 'studio_preview_no_worker':
       case 'studio_preview_stream_worker_lost': {
         return { kind: 'worker-lost' };
       }

@@ -24,6 +24,7 @@ import { StudioPreviewService, studioPreviewFrameFolder } from 'src/services/stu
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { StudioDestination } from 'src/utils/studio-resources.js';
+import { previewWorkerRepositoryStub } from 'test/fixtures/studio-preview-worker.stub.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { automock, getKyselyDB } from 'test/utils.js';
@@ -124,6 +125,7 @@ it.each([
       storage,
       automock(StudioExportRepository, { strict: false }),
       ctx.get(UserRepository),
+      previewWorkerRepositoryStub(),
     );
     const request = (time: number) =>
       sut.requestForManifest(auth, manifest, {

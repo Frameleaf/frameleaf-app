@@ -8597,6 +8597,10 @@ export type StudioCapabilitiesDto = {
     restorationWorker: boolean;
     /** A destination can serve the Studio AI workload right now */
     transcriptionWorker: boolean;
+    /** A qualified local session can render exact Studio preview frames */
+    previewWorker?: boolean;
+    /** A qualified local session can stream Studio previews */
+    previewStreamWorker?: boolean;
 };
 export type MlCapabilityDestinationDto = {
     /** CPU or accelerator, from the last check; unknown without facts */
@@ -34489,6 +34493,7 @@ export enum StudioWorkerCapability {
     GenerationWorker = "generationWorker",
     GpuWorker = "gpuWorker",
     RenderWorker = "renderWorker",
+    PreviewWorker = "previewWorker",
     RestorationWorker = "restorationWorker",
     TranscriptionWorker = "transcriptionWorker"
 }

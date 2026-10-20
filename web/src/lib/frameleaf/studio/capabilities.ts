@@ -29,6 +29,8 @@ export const toStudioCapabilities = (studio: StudioCapabilitiesDto): StudioCapab
   generationWorker: false,
   gpuWorker: confirmed(studio.gpuWorker),
   renderWorker: confirmed(studio.renderWorker),
+  previewWorker: confirmed(studio.previewWorker),
+  previewStreamWorker: confirmed(studio.previewStreamWorker),
   restorationWorker: confirmed(studio.restorationWorker),
   transcriptionWorker: confirmed(studio.transcriptionWorker),
 });

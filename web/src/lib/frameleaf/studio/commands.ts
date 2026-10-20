@@ -637,6 +637,7 @@ export const studioCapabilityIds = [
   'generationWorker',
   'gpuWorker',
   'renderWorker',
+  'previewWorker',
   'restorationWorker',
   'transcriptionWorker',
 ] as const;
@@ -1063,14 +1064,14 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
   define({
     /**
      * Not a graph change and not undoable: asking to look at a frame changes nothing about the
-     * project. It needs the GPU worker, and it is accepted in a read-only review session
+     * project. It needs a preview-qualified worker, and it is accepted in a read-only review session
      * because reviewing without a picture is not reviewing.
      */
     id: 'preview.request',
     scope: 'preview',
     mutatesGraph: false,
     undoable: false,
-    requiresCapability: 'gpuWorker',
+    requiresCapability: 'previewWorker',
   }),
   define({
     id: 'project.applyTemplate',

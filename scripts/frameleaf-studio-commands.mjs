@@ -56,6 +56,7 @@ export const CAPABILITIES = [
   'generationWorker',
   'gpuWorker',
   'renderWorker',
+  'previewWorker',
   'restorationWorker',
   'transcriptionWorker',
 ];
@@ -1021,7 +1022,7 @@ export const catalogue = [
     scope: 'preview',
     mutatesGraph: false,
     undoable: false,
-    capability: 'gpuWorker',
+    capability: 'previewWorker',
     manifestIds: [],
     payload: {
       at: 'time',

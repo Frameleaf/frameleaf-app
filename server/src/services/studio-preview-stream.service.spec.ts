@@ -12,6 +12,7 @@ import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.s
 import { StudioProjectService, StudioRevisionListener } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { STREAM_IDLE_MS, STREAM_MAX_PER_ACCOUNT } from 'src/utils/studio-preview-stream.js';
+import { previewWorkerCapabilities, previewWorkerStub } from 'test/fixtures/studio-preview-worker.stub.js';
 import { getMocks } from 'test/utils.js';
 
 const OWNER = '0195e2a0-0000-7000-8000-00000000000a';
@@ -182,7 +183,12 @@ describe(StudioPreviewStreamService.name, () => {
     return claimed;
   };
 
+  let renderWorkers: ReturnType<typeof getMocks>['renderWorker'];
+
   beforeEach(() => {
+    renderWorkers = getMocks().renderWorker;
+    renderWorkers.listLiveSessions.mockResolvedValue([previewWorkerStub()]);
+    renderWorkers.getSessionCapabilities.mockResolvedValue(previewWorkerCapabilities);
     operations = new FakeOperations();
     head = 3;
     readable = true;
@@ -207,10 +213,19 @@ describe(StudioPreviewStreamService.name, () => {
       operations as unknown as MediaOperationRepository,
       projects as unknown as StudioProjectService,
       { cacheKey: vi.fn().mockReturnValue('cache-key') } as unknown as StudioResourceService,
+      renderWorkers as never,
     );
   });
 
   describe('open', () => {
+    it('refuses a stream without an eligible stream worker', async () => {
+      renderWorkers.listLiveSessions.mockResolvedValue([]);
+      await expect(sut.open(auth(), openDto())).rejects.toMatchObject({
+        response: { code: 'studio_preview_no_worker' },
+      });
+      expect(operations.create).not.toHaveBeenCalled();
+    });
+
     it('opens a queued session bound to the stored head, with bounds by quality and viewport', async () => {
       const stream = await sut.open(auth(), openDto());
 

@@ -479,7 +479,7 @@
   });
 
   $effect(() => {
-    const enabled = serverPreviewOpen && capabilities?.renderWorker === true && !accessLost && !forbidden;
+    const enabled = serverPreviewOpen && capabilities?.previewStreamWorker === true && !accessLost && !forbidden;
     untrack(() => streamClient.setEnabled(enabled));
   });
 

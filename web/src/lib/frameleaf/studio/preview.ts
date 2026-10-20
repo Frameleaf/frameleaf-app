@@ -140,6 +140,7 @@ export type StudioPreviewTransportFailure =
   | { kind: 'not-ready' }
   | { kind: 'forbidden' }
   | { kind: 'offline' }
+  | { kind: 'no-worker' }
   | { kind: 'failed' };
 
 /**
@@ -506,7 +507,11 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
       cache.clear();
       return;
     }
-    setPhase('unavailable', { frame: null, errorCode: code });
+    setPhase('unavailable', {
+      frame: null,
+      errorCode: code,
+      ...(code === 'no-worker' && { messageKey: 'frameleaf_studio_server_preview_no_worker' }),
+    });
   };
 
   const failureOf = (error: unknown): StudioPreviewTransportFailure['kind'] =>

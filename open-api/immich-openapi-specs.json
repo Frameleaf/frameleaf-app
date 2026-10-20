@@ -122831,6 +122831,14 @@
           "transcriptionWorker": {
             "description": "A destination can serve the Studio AI workload right now",
             "type": "boolean"
+          },
+          "previewWorker": {
+            "description": "A qualified local session can render exact Studio preview frames",
+            "type": "boolean"
+          },
+          "previewStreamWorker": {
+            "description": "A qualified local session can stream Studio previews",
+            "type": "boolean"
           }
         },
         "required": [
@@ -126630,6 +126638,7 @@
           "generationWorker",
           "gpuWorker",
           "renderWorker",
+          "previewWorker",
           "restorationWorker",
           "transcriptionWorker"
         ],

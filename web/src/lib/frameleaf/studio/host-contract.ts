@@ -28,6 +28,7 @@
  */
 import type { StudioSourceResolutionRequestDto, StudioSourceResolutionDto } from '@frameleaf/sdk';
 import type { StudioRenderCandidateDto } from '@frameleaf/sdk';
+import { studioCapabilityIds } from './commands';
 import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult, StudioDuration } from './commands';
 import type { StudioGeneratedMedia } from './generated-media';
 import type { StudioPreviewView } from './preview';
@@ -116,6 +117,8 @@ export interface StudioCapabilities {
   generationWorker: boolean;
   gpuWorker: boolean;
   renderWorker: boolean;
+  previewWorker?: boolean;
+  previewStreamWorker?: boolean;
   restorationWorker: boolean;
   transcriptionWorker: boolean;
 }
@@ -138,18 +141,20 @@ export const emptyStudioCapabilities = (): StudioCapabilities => ({
   generationWorker: false,
   gpuWorker: false,
   renderWorker: false,
+  previewWorker: false,
+  previewStreamWorker: false,
   restorationWorker: false,
   transcriptionWorker: false,
 });
 
 export const missingStudioCapabilities = (capabilities: StudioCapabilities): StudioCapabilityId[] =>
-  (Object.keys(capabilities) as StudioCapabilityId[]).filter((id) => !capabilities[id]).sort();
+  studioCapabilityIds.filter((id) => capabilities[id] !== true).sort();
 
 /** The capabilities the editor cannot open at all without. */
 export const requiredStudioCapabilities: readonly StudioCapabilityId[] = ['gpuWorker', 'renderWorker'];
 
 export const unmetRequiredCapabilities = (capabilities: StudioCapabilities): StudioCapabilityId[] =>
-  requiredStudioCapabilities.filter((id) => !capabilities[id]);
+  requiredStudioCapabilities.filter((id) => capabilities[id] !== true);
 
 /**
  * A project the engine opens. `graph` is Freecut's own document, passed through opaquely:

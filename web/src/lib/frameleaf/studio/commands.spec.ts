@@ -65,11 +65,11 @@ describe('studio command vocabulary', () => {
     const request = studioCommandDefinition('preview.request');
 
     // Looking at a frame changes nothing about the project, so it is neither a graph change
-    // nor an undo step — but it does need a GPU worker, so it is never offered without one.
+    // nor an undo step — but it does need a preview-qualified worker, so it is never offered without one.
     expect(request.scope).toBe('preview');
     expect(request.mutatesGraph).toBe(false);
     expect(request.undoable).toBe(false);
-    expect(request.requiresCapability).toBe('gpuWorker');
+    expect(request.requiresCapability).toBe('previewWorker');
     expect(studioCommandDefinition('preview.release').mutatesGraph).toBe(false);
   });
 
