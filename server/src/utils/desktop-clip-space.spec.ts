@@ -18,11 +18,26 @@ const key = (space: { visualModelKey: string; textModelKeys: string[] }) =>
   `clip-space:${createHash('sha256')
     .update(canonicalJson({ visualModelKey: space.visualModelKey, textModelKeys: [...space.textModelKeys].sort() }))
     .digest('hex')}`;
+it('preserves all prior spaces when adding the corrected CPU producer group', () => {
+  const catalogue = models();
+  const spaces = parseDesktopClipSpaces(raw(), catalogue);
+  expect(spaces.epoch).toBe(5);
+  expect(spaces.spaces).toHaveLength(6);
+  expect(
+    createHash('sha256')
+      .update(canonicalJson(spaces.spaces.slice(0, 5)))
+      .digest('hex'),
+  ).toBe('26cb31a9eb7563c2193c5a044b378dfded2016735f7497ffce0c6925d1cf536c');
+  const current = catalogue.profiles.slice(27, 30);
+  for (const profile of current) {
+    expect(findDesktopClipSpace(spaces, profile.modelKey)).toEqual(spaces.spaces[5]);
+  }
+});
 it('maps every released exact text/image producer to its explicit space without joining old and new preprocessing', () => {
   const catalogue = models();
   const spaces = parseDesktopClipSpaces(raw(), catalogue);
-  expect(spaces.spaces).toHaveLength(5);
-  expect(new Set(spaces.spaces.map((space) => space.spaceKey)).size).toBe(5);
+  expect(spaces.spaces).toHaveLength(6);
+  expect(new Set(spaces.spaces.map((space) => space.spaceKey)).size).toBe(6);
   for (const profile of catalogue.profiles) {
     if (profile.workload !== 'clip') {
       expect(findDesktopClipSpace(spaces, profile.modelKey)).toBeUndefined();
