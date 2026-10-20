@@ -376,10 +376,11 @@ export class Operations {
       .catch((error) => {
         operation.state = 'failed';
         operation.error = error instanceof Refusal ? error.code : 'operation_failed';
-        // Codes only reach the journal; the container log says which step failed and why.
+        operation.detail = error instanceof Refusal ? (error.detail ?? null) : null;
+        // Codes and refusal details reach the journal; the container log says which step failed and why.
         console.error(
           redact(`manager: ${operation.kind} failed at ${operation.step ?? 'start'}: ${operation.error}` +
-            (error instanceof Refusal ? '' : ` (${(error as NodeJS.ErrnoException)?.code ?? (error as Error)?.message ?? error})`)),
+            (error instanceof Refusal ? (error.detail ? ` (${error.detail})` : '') : ` (${(error as NodeJS.ErrnoException)?.code ?? (error as Error)?.message ?? error})`)),
         );
         this.store.save(operation);
       })
@@ -391,6 +392,7 @@ export class Operations {
       throw new Refusal('operation_not_recoverable');
     operation.state = 'running';
     operation.error = null;
+    operation.detail = null;
     this.store.save(operation);
     this.launch(operation, async () => {
       if (operation.receipts['cancellation-intent']) return this.cancelOperation(operation);

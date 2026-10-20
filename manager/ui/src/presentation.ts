@@ -6,6 +6,7 @@ export type JournalOperation = {
   step: string | null;
   completed: string[];
   error: string | null;
+  detail?: string | null;
   replacesInstallation?: boolean;
 };
 export const operationNames: Record<string, string> = {

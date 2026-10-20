@@ -49,6 +49,18 @@ test('an unlabelled competing writer, stopped auto-restarting writer and a volum
     );
     other.Config.Labels['app.frameleaf.manager'] = 'owned';
     await fencing.assertMedia(media, { id: 'owned' } as Installation);
+    // FL-473: the blocker is named; a file manager mapping a whole share or pool does not block.
+    delete other.Config.Labels['app.frameleaf.manager'];
+    own.Mounts = [{ Type: 'bind', Source: '/fixture/media', Destination: '/data', RW: true }];
+    await assert.rejects(fencing.assertMedia(media), (error: any) => error.detail?.includes('worker-b'));
+    const shared = [{ Type: 'bind', Source: '/mnt/user/appdata/immich/library', Destination: '/data', RW: true }];
+    own.Mounts = shared;
+    for (const Source of ['/mnt', '/mnt/user', '/mnt/cache']) {
+      other.Mounts = [{ Type: 'bind', Source, Destination: '/srv', RW: true }];
+      await fencing.assertMedia([{ ...media[0], source: shared[0].Source }]);
+    }
+    other.Mounts = [{ Type: 'bind', Source: '/mnt/user/appdata/immich', Destination: '/srv', RW: true }];
+    await assert.rejects(fencing.assertMedia([{ ...media[0], source: shared[0].Source }]), /other_media_writer_detected/);
   } finally {
     store.close();
     await rm(directory, { recursive: true });

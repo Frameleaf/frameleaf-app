@@ -114,6 +114,8 @@ export type Operation = {
   step: string | null;
   completed: string[];
   error: string | null;
+  /** The refusal's detail for the administrator, e.g. which container blocks the step. */
+  detail?: string | null;
   createdAt: number;
   updatedAt: number;
   input: Record<string, unknown>;

@@ -11,6 +11,8 @@ export function removeAutostart(text: string, names: string[]): string {
     .filter((line) => !names.includes(line.trim().split(/\s+/)[0]))
     .join('\n');
 }
+// A whole share or pool (/mnt, /mnt/user, /mnt/cache): a file manager's browsing access, not an app's library.
+const shareRoot = (source: string) => /^\/mnt(?:\/[^/]+)?\/?$/.test(source);
 export class Fencing {
   constructor(
     private docker: Docker,
@@ -77,9 +79,15 @@ export class Fencing {
         c.State.Running ||
         !['', 'no'].includes(c.HostConfig.RestartPolicy.Name) ||
         names.has(c.Name.replace(/^\//, ''));
-      return canStart && sharesMedia(c, media, all) && !workers.includes(c.Id) && !controller && !owned;
+      const writer = { ...c, Mounts: c.Mounts.filter((m) => m.Type !== 'bind' || !shareRoot(m.Source)) };
+      return canStart && sharesMedia(writer, media, all) && !workers.includes(c.Id) && !controller && !owned;
     });
-    if (unexpected.length) throw new Refusal('other_media_writer_detected');
+    if (unexpected.length)
+      throw new Refusal(
+        'other_media_writer_detected',
+        409,
+        `Stop these containers and turn off their autostart, then try again: ${unexpected.map((c) => c.Name.replace(/^\//, '')).join(', ')}.`,
+      );
   }
   async stop(source: Source): Promise<void> {
     // The durable intent permits only our own restart-policy changes on a retry. All other
