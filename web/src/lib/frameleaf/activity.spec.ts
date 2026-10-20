@@ -177,17 +177,28 @@ describe('fromMediaOperation', () => {
   });
 
   it('offers cancel while running and retry only after a failure or cancellation', () => {
-    const running = fromMediaOperation(operation());
+    const retryable = operation({ kind: MediaOperationKind.Restoration });
+    const running = fromMediaOperation(retryable);
     expect(running).toMatchObject({ canCancel: true, canRetry: false, canDismiss: false });
 
-    const failed = fromMediaOperation(operation({ status: MediaOperationStatus.Failed }));
+    const failed = fromMediaOperation({ ...retryable, status: MediaOperationStatus.Failed });
     expect(failed).toMatchObject({ canCancel: false, canRetry: true, canDismiss: true, failed: true });
 
-    const cancelled = fromMediaOperation(operation({ status: MediaOperationStatus.Cancelled }));
+    const cancelled = fromMediaOperation({ ...retryable, status: MediaOperationStatus.Cancelled });
     expect(cancelled).toMatchObject({ canRetry: true, canDismiss: true, failed: false });
 
-    const done = fromMediaOperation(operation({ status: MediaOperationStatus.Completed }));
+    const done = fromMediaOperation({ ...retryable, status: MediaOperationStatus.Completed });
     expect(done).toMatchObject({ canCancel: false, canRetry: false, canDismiss: true, progress: 100 });
+  });
+
+  it.each([
+    MediaOperationKind.StudioExport,
+    MediaOperationKind.StudioExportPublish,
+    MediaOperationKind.StudioReverseConform,
+  ])('never offers a copied retry for a Studio job requiring fresh authorization: %s', (kind) => {
+    for (const status of [MediaOperationStatus.Failed, MediaOperationStatus.Cancelled]) {
+      expect(fromMediaOperation(operation({ kind, status })).canRetry).toBe(false);
+    }
   });
 
   it('titles a deduplication plan, names it and never offers a copied retry (FL-73)', () => {
@@ -734,6 +745,9 @@ describe('Studio renders, server estimates and completion (FL-104)', () => {
   it('carries the project of a Studio export or preview so the row can open it in Studio', () => {
     expect(
       fromMediaOperation(operation({ kind: MediaOperationKind.StudioExport, projectId: 'project-1' })).projectId,
+    ).toBe('project-1');
+    expect(
+      fromMediaOperation(operation({ kind: MediaOperationKind.StudioExportPublish, projectId: 'project-1' })).projectId,
     ).toBe('project-1');
     expect(
       fromMediaOperation(operation({ kind: MediaOperationKind.StudioPreview, projectId: 'project-1' })).projectId,
