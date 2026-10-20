@@ -27,6 +27,7 @@ import { rational } from 'src/utils/rational-time.js';
 import { previewETag } from 'src/utils/studio-preview.js';
 import { StudioDestination } from 'src/utils/studio-resources.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { previewWorkerCapabilities, previewWorkerStub } from 'test/fixtures/studio-preview-worker.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
 
 // eslint-friendly alias: a mock whose implementation may return anything, promises included.
@@ -154,6 +155,8 @@ describe(StudioPreviewService.name, () => {
 
   beforeEach(() => {
     mocks = getMocks();
+    mocks.renderWorker.listLiveSessions.mockResolvedValue([previewWorkerStub()]);
+    mocks.renderWorker.getSessionCapabilities.mockResolvedValue(previewWorkerCapabilities);
     vi.mocked(realpath).mockImplementation((path) => Promise.resolve(String(path)));
     vi.mocked(open).mockResolvedValue({
       stat: () => storage.stat('/preview/frame.png'),
@@ -230,8 +233,24 @@ describe(StudioPreviewService.name, () => {
       storage as unknown as StorageRepository,
       sourceMedia as unknown as StudioExportRepository,
       mocks.user as never,
+      mocks.renderWorker as never,
     );
     mocks.user.get.mockResolvedValue(authStub.user1.user as never);
+  });
+
+  it('refuses new work when no preview worker is eligible', async () => {
+    mocks.renderWorker.listLiveSessions.mockResolvedValue([]);
+    await expect(sut.request(authStub.user1, request())).rejects.toMatchObject({
+      response: { code: 'studio_preview_no_worker' },
+    });
+    expect(operations.create).not.toHaveBeenCalled();
+  });
+
+  it('keeps a ready cached frame usable after the worker disappears', async () => {
+    mocks.renderWorker.listLiveSessions.mockResolvedValue([]);
+    vi.mocked(previews.upsert).mockResolvedValue({ frame: frameStub(), created: false });
+    await expect(sut.request(authStub.user1, request())).resolves.toMatchObject({ preview: { status: 'ready' } });
+    expect(operations.create).not.toHaveBeenCalled();
   });
 
   it('keeps identical preview requests on one binding after a generated declaration is published', async () => {

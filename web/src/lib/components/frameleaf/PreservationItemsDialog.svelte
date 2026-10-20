@@ -119,7 +119,7 @@
             {@const reason = reasonKey(row.reasonKey)}
             <tr>
               <td>
-                {row.name ?? $t('frameleaf_preservation_items_locked_name')}
+                {row.name ?? (row.locked ? $t('frameleaf_preservation_items_locked_name') : row.sourceAssetId)}
               </td>
               <td>
                 {$t(`frameleaf_preservation_item_state_${row.state}`)}

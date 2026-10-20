@@ -346,6 +346,8 @@ const StudioCapabilitiesSchema = z
   .object({
     gpuWorker: z.boolean().describe('False until the Studio render worker admission (FL-95, FL-104) reports one'),
     renderWorker: z.boolean().describe('False until the Studio render worker admission (FL-95, FL-104) reports one'),
+    previewWorker: z.boolean().optional().describe('A qualified local session can render exact Studio preview frames'),
+    previewStreamWorker: z.boolean().optional().describe('A qualified local session can stream Studio previews'),
     restorationWorker: z.boolean().describe('A destination can serve a restoration workload right now'),
     transcriptionWorker: z.boolean().describe('A destination can serve the Studio AI workload right now'),
     // FL-42

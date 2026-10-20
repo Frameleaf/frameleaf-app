@@ -649,7 +649,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          inputOptions: ['-sws_flags', 'accurate_rnd+full_chroma_int'],
+          inputOptions: ['-ss', '0.333', '-sws_flags', 'accurate_rnd+full_chroma_int'],
           outputOptions: expect.arrayContaining([
             '-fps_mode',
             'vfr',
@@ -660,7 +660,7 @@ describe(MediaService.name, () => {
             '-v',
             'verbose',
             '-vf',
-            String.raw`fps=12:start_time=0.333:eof_action=pass:round=down,thumbnail=12,select=gt(scene\,0.1)-eq(prev_selected_n\,n)+isnan(prev_selected_n)+gt(n\,20),trim=end_frame=2,reverse,scale=-2:1440:flags=lanczos+accurate_rnd+full_chroma_int:out_range=pc`,
+            String.raw`fps=12:start_time=0:eof_action=pass:round=down,thumbnail=12,select=gt(scene\,0.1)-eq(prev_selected_n\,n)+isnan(prev_selected_n)+gt(n\,20),trim=end_frame=2,reverse,scale=-2:1440:flags=lanczos+accurate_rnd+full_chroma_int:out_range=pc`,
           ]),
           twoPass: false,
         }),
@@ -796,7 +796,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.stringContaining('_candidate_1'),
         expect.objectContaining({
-          outputOptions: expect.arrayContaining([expect.stringContaining('start_time=42')]),
+          inputOptions: expect.arrayContaining(['-ss', '42']),
         }),
       );
       expect(mocks.media.transcode).toHaveBeenNthCalledWith(
@@ -804,7 +804,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          outputOptions: expect.arrayContaining([expect.stringContaining('start_time=42')]),
+          inputOptions: expect.arrayContaining(['-ss', '42']),
         }),
       );
       expect(mocks.media.transcode).toHaveBeenNthCalledWith(
@@ -812,7 +812,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          outputOptions: expect.arrayContaining([expect.stringContaining('start_time=42')]),
+          inputOptions: expect.arrayContaining(['-ss', '42']),
         }),
       );
     });
@@ -836,7 +836,7 @@ describe(MediaService.name, () => {
           '/original/path.ext',
           expect.any(String),
           expect.objectContaining({
-            outputOptions: expect.arrayContaining([expect.stringContaining('start_time=64.5')]),
+            inputOptions: expect.arrayContaining(['-ss', '64.5']),
           }),
         );
       }
@@ -881,7 +881,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          outputOptions: expect.arrayContaining([expect.stringContaining('start_time=115')]),
+          inputOptions: expect.arrayContaining(['-ss', '115']),
         }),
       );
     });
@@ -907,7 +907,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.stringContaining('_candidate_1'),
         expect.objectContaining({
-          outputOptions: expect.arrayContaining([expect.stringContaining('start_time=378')]),
+          inputOptions: expect.arrayContaining(['-ss', '378']),
         }),
       );
       expect(mocks.media.transcode).toHaveBeenNthCalledWith(
@@ -915,7 +915,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          outputOptions: expect.arrayContaining([expect.stringContaining('start_time=378')]),
+          inputOptions: expect.arrayContaining(['-ss', '378']),
         }),
       );
     });
@@ -938,7 +938,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.stringContaining('_candidate_0'),
         expect.objectContaining({
-          outputOptions: expect.arrayContaining([expect.stringContaining('start_time=2')]),
+          inputOptions: expect.arrayContaining(['-ss', '2']),
         }),
       );
       expect(mocks.media.transcode).toHaveBeenNthCalledWith(
@@ -946,7 +946,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.stringContaining('_candidate_1'),
         expect.objectContaining({
-          outputOptions: expect.arrayContaining([expect.stringContaining('start_time=5')]),
+          inputOptions: expect.arrayContaining(['-ss', '5']),
         }),
       );
       expect(mocks.media.transcode).toHaveBeenNthCalledWith(
@@ -954,7 +954,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.stringContaining('_candidate_2'),
         expect.objectContaining({
-          outputOptions: expect.arrayContaining([expect.stringContaining('start_time=8')]),
+          inputOptions: expect.arrayContaining(['-ss', '8']),
         }),
       );
       expect(mocks.media.transcode).toHaveBeenNthCalledWith(
@@ -962,7 +962,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          outputOptions: expect.arrayContaining([expect.stringContaining('start_time=5')]),
+          inputOptions: expect.arrayContaining(['-ss', '5']),
         }),
       );
       expect(mocks.media.transcode).toHaveBeenNthCalledWith(
@@ -970,7 +970,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          outputOptions: expect.arrayContaining([expect.stringContaining('start_time=5')]),
+          inputOptions: expect.arrayContaining(['-ss', '5']),
         }),
       );
     });
@@ -1000,7 +1000,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.stringContaining('_candidate_0'),
         expect.objectContaining({
-          outputOptions: expect.arrayContaining([expect.stringContaining('start_time=10.605')]),
+          inputOptions: expect.arrayContaining(['-ss', '10.605']),
         }),
       );
       expect(mocks.media.transcode).toHaveBeenNthCalledWith(
@@ -1008,7 +1008,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.stringContaining('_candidate_1'),
         expect.objectContaining({
-          outputOptions: expect.arrayContaining([expect.stringContaining('start_time=16.665')]),
+          inputOptions: expect.arrayContaining(['-ss', '16.665']),
         }),
       );
       expect(mocks.media.transcode).toHaveBeenNthCalledWith(
@@ -1016,7 +1016,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.stringContaining('_candidate_2'),
         expect.objectContaining({
-          outputOptions: expect.arrayContaining([expect.stringContaining('start_time=22.725')]),
+          inputOptions: expect.arrayContaining(['-ss', '22.725']),
         }),
       );
       // Best-scoring candidate (index 1) is rendered for preview + thumbnail.
@@ -1025,7 +1025,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          outputOptions: expect.arrayContaining([expect.stringContaining('start_time=16.665')]),
+          inputOptions: expect.arrayContaining(['-ss', '16.665']),
         }),
       );
       expect(mocks.media.transcode).toHaveBeenNthCalledWith(
@@ -1033,7 +1033,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          outputOptions: expect.arrayContaining([expect.stringContaining('start_time=16.665')]),
+          inputOptions: expect.arrayContaining(['-ss', '16.665']),
         }),
       );
     });
@@ -1069,7 +1069,7 @@ describe(MediaService.name, () => {
       );
     });
 
-    it('should decode every frame of a clip short enough to hold a single keyframe', async () => {
+    it('should seek and decode samples of a clip short enough to hold a single keyframe', async () => {
       // Regression: a 6s clip from x264 (a keyframe every 250 frames) has one
       // keyframe, its first frame. Decoding only keyframes via -skip_frame
       // nointra left every later start time without a frame, so ffmpeg wrote
@@ -1092,14 +1092,14 @@ describe(MediaService.name, () => {
           '/original/path.ext',
           expect.any(String),
           expect.objectContaining({
-            inputOptions: ['-sws_flags', 'accurate_rnd+full_chroma_int'],
-            outputOptions: expect.arrayContaining([expect.stringContaining(`start_time=${startTime}:`)]),
+            inputOptions: ['-ss', String(startTime), '-sws_flags', 'accurate_rnd+full_chroma_int'],
+            outputOptions: expect.arrayContaining([expect.stringContaining('start_time=0:')]),
           }),
         );
       }
     });
 
-    it('should decode only the keyframes of a clip longer than one default GOP', async () => {
+    it('should seek and decode samples of a clip longer than one default GOP', async () => {
       const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),
@@ -1112,13 +1112,13 @@ describe(MediaService.name, () => {
       await sut.handleGenerateThumbnails({ id: asset.id });
 
       expect(mocks.media.transcode).toHaveBeenCalledTimes(5);
-      for (const call of [1, 2, 3, 4, 5]) {
+      for (const [index, timestamp] of [2.092, 5.229, 8.366, 5.229, 5.229].entries()) {
         expect(mocks.media.transcode).toHaveBeenNthCalledWith(
-          call,
+          index + 1,
           '/original/path.ext',
           expect.any(String),
           expect.objectContaining({
-            inputOptions: ['-skip_frame', 'nointra', '-sws_flags', 'accurate_rnd+full_chroma_int'],
+            inputOptions: ['-ss', String(timestamp), '-sws_flags', 'accurate_rnd+full_chroma_int'],
           }),
         );
       }
@@ -1138,7 +1138,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          inputOptions: ['-sws_flags', 'accurate_rnd+full_chroma_int'],
+          inputOptions: ['-ss', '0.333', '-sws_flags', 'accurate_rnd+full_chroma_int'],
           outputOptions: expect.arrayContaining([
             '-fps_mode',
             'vfr',
@@ -1149,7 +1149,7 @@ describe(MediaService.name, () => {
             '-v',
             'verbose',
             '-vf',
-            String.raw`fps=12:start_time=0.333:eof_action=pass:round=down,thumbnail=12,select=gt(scene\,0.1)-eq(prev_selected_n\,n)+isnan(prev_selected_n)+gt(n\,20),trim=end_frame=2,reverse,scale=-2:250:flags=lanczos+accurate_rnd+full_chroma_int:out_range=pc,tonemapx=tonemap=hable:desat=0:p=bt709:t=bt709:m=bt709:r=pc:peak=100:format=yuv420p`,
+            String.raw`fps=12:start_time=0:eof_action=pass:round=down,thumbnail=12,select=gt(scene\,0.1)-eq(prev_selected_n\,n)+isnan(prev_selected_n)+gt(n\,20),trim=end_frame=2,reverse,scale=-2:250:flags=lanczos+accurate_rnd+full_chroma_int:out_range=pc,tonemapx=tonemap=hable:desat=0:p=bt709:t=bt709:m=bt709:r=pc:peak=100:format=yuv420p`,
           ]),
           twoPass: false,
         }),
@@ -1192,7 +1192,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          inputOptions: ['-sws_flags', 'accurate_rnd+full_chroma_int'],
+          inputOptions: ['-ss', '0.333', '-sws_flags', 'accurate_rnd+full_chroma_int'],
           outputOptions: expect.arrayContaining([
             '-fps_mode',
             'vfr',
@@ -1203,7 +1203,7 @@ describe(MediaService.name, () => {
             '-v',
             'verbose',
             '-vf',
-            String.raw`fps=12:start_time=0.333:eof_action=pass:round=down,thumbnail=12,select=gt(scene\,0.1)-eq(prev_selected_n\,n)+isnan(prev_selected_n)+gt(n\,20),trim=end_frame=2,reverse,scale=-2:250:flags=lanczos+accurate_rnd+full_chroma_int:out_range=pc,tonemapx=tonemap=hable:desat=0:p=bt709:t=bt709:m=bt709:r=pc:peak=100:format=yuv420p`,
+            String.raw`fps=12:start_time=0:eof_action=pass:round=down,thumbnail=12,select=gt(scene\,0.1)-eq(prev_selected_n\,n)+isnan(prev_selected_n)+gt(n\,20),trim=end_frame=2,reverse,scale=-2:250:flags=lanczos+accurate_rnd+full_chroma_int:out_range=pc,tonemapx=tonemap=hable:desat=0:p=bt709:t=bt709:m=bt709:r=pc:peak=100:format=yuv420p`,
           ]),
           twoPass: false,
         }),
@@ -1222,7 +1222,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          inputOptions: ['-sws_flags', 'accurate_rnd+full_chroma_int'],
+          inputOptions: ['-ss', '0.333', '-sws_flags', 'accurate_rnd+full_chroma_int'],
           outputOptions: expect.any(Array),
           progress: expect.any(Object),
           twoPass: false,

@@ -122,20 +122,20 @@ export const getAssetActions = (
     title: $t(asset.livePhotoVideoId && showsEdit(asset) ? 'frameleaf_download_edited_still' : 'download'),
     icon: mdiDownload,
     shortcuts: { key: 'd', shift: true },
-    $if: () => !!authUser,
+    $if: () => !!authUser && (!sharedLink || sendCopyPermitted(sharedLink)),
     onAction: () => handleDownloadAsset(asset, { edited: true }),
   };
 
   const DownloadOriginal: ActionItem = {
     title: $t('download_original'),
     icon: mdiDownloadBox,
-    $if: () => !!authUser && showsEdit(asset),
+    $if: () => !!authUser && showsEdit(asset) && (!sharedLink || sendCopyPermitted(sharedLink)),
     onAction: () => handleDownloadAsset(asset, { edited: false }),
   };
 
   const SharedLinkDownload: ActionItem = {
     ...Download,
-    $if: () => isOwner || !!sharedLink?.allowDownload,
+    $if: () => !!sharedLink && sendCopyPermitted(sharedLink),
   };
 
   /**

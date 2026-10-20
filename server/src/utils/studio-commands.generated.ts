@@ -30,7 +30,13 @@ export type StudioCommandScope =
   | 'track';
 
 export type StudioCommandCapability =
-  'analysisWorker' | 'generationWorker' | 'gpuWorker' | 'renderWorker' | 'restorationWorker' | 'transcriptionWorker';
+  | 'analysisWorker'
+  | 'generationWorker'
+  | 'gpuWorker'
+  | 'renderWorker'
+  | 'previewWorker'
+  | 'restorationWorker'
+  | 'transcriptionWorker';
 
 export type StudioPayloadFieldType =
   | 'Array<{id:string,at:Rational,gainDb:number}>'
@@ -783,7 +789,7 @@ export const studioCommandMirror = {
     scope: 'preview',
     mutatesGraph: false,
     undoable: false,
-    capability: 'gpuWorker',
+    capability: 'previewWorker',
     payload: {
       at: 'time',
       quality: 'string',

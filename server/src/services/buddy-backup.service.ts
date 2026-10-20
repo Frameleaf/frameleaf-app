@@ -3,7 +3,7 @@ import { CronTime } from 'cron';
 import { sql } from 'kysely';
 import { createHash, randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
-import { access, readFile, readdir, realpath, rm, stat, statfs } from 'node:fs/promises';
+import { access, readFile, readdir, realpath, rm, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type {
@@ -53,6 +53,7 @@ import {
   createBuddyDirectory,
   writeBuddyFile,
 } from 'src/utils/buddy-backup-vault.js';
+import { getDiskUsage } from 'src/utils/disk-usage.js';
 import {
   advanceExecutionProgress,
   assertExecutionActive,
@@ -172,8 +173,8 @@ export class BuddyBackupService {
         pg_database_size(current_database()) AS database
       FROM asset a LEFT JOIN asset_exif e ON e."assetId" = a.id`.execute(this.repository.db);
     const available = async (path: string) => {
-      const fs = await statfs(path);
-      return Math.max(0, fs.bavail * fs.bsize - Math.max(10 * 1024 ** 3, fs.blocks * fs.bsize * 0.1));
+      const fs = await getDiskUsage(path);
+      return Math.max(0, fs.available - Math.max(10 * 1024 ** 3, fs.total * 0.1));
     };
     let hostingAvailableBytes: number | null = null;
     if (dto.directory && isAbsolute(dto.directory)) {
@@ -919,7 +920,7 @@ export class BuddyBackupService {
       await vault.prune(Date.now());
       return vault.usage();
     });
-    const fs = await statfs(state.settings.directory);
+    const fs = await getDiskUsage(state.settings.directory);
     const alert = async (
       key: string,
       title: string,
@@ -945,7 +946,7 @@ export class BuddyBackupService {
           : 'Buddy Backup has not completed its first restore point after three days. Check the sending status.',
         { version: 1, key: state.lastCompleteAt ? 'buddy-backup-stale' : 'buddy-backup-first-stale', args: {} },
       );
-    if (usage.committedBytes + usage.reservedBytes > hosted.quotaBytes * 0.9 || fs.bavail / fs.blocks < 0.15)
+    if (usage.committedBytes + usage.reservedBytes > hosted.quotaBytes * 0.9 || fs.available / fs.total < 0.15)
       await alert(
         'capacity',
         'Buddy storage is running low',

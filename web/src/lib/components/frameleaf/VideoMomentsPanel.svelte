@@ -305,7 +305,7 @@
 
     {#if moments}
       <div class="space-y-3 text-sm">
-        {#if moments.state === VideoMomentIndexState.None}
+        {#if moments.state === VideoMomentIndexState.None && moments.frames.length === 0 && moments.moments.length === 0}
           <p class="text-xs text-(--fl-muted)">{$t('frameleaf_moments_none')}</p>
         {:else if moments.staleReason}
           <p class="text-xs text-(--fl-warning)" role="status">

@@ -90,7 +90,7 @@ const certificateResponseSchema = z.object({
     .max(64 * 1024),
   activationId: z.string().max(200).optional(),
 });
-/** FL-185: the complete current set, never empty: the plan certificate first, then one per key activation. */
+/** The complete current set: a plan certificate when present, then one per key activation; empty is valid. */
 const refreshResponseSchema = z.object({
   certificates: z
     .array(
@@ -99,12 +99,8 @@ const refreshResponseSchema = z.object({
         .min(1)
         .max(64 * 1024),
     )
-    .min(1)
     .max(10),
 });
-
-/** FL-185: a refresh answer without a plan certificate is not one the contract allows. */
-const REFRESH_WITHOUT_PLAN_MESSAGE = 'Frameleaf Cloud sent licence certificates without a plan certificate';
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
@@ -446,9 +442,8 @@ export class FrameleafLicenseService extends BaseService {
           certificates: [store.key, store.plan].filter(Boolean).map((license) => license!.claims.jti ?? null),
         },
       });
-      // FL-185: the answer is the complete current set (the plan certificate first, then one per usable
-      // key activation on this server, an empty plan certificate for an account without a plan), so it
-      // replaces everything held here: a key certificate it leaves out is dropped, not kept to age out
+      // The answer replaces the complete held set, including omitted plans and keys. An account that
+      // never subscribed may have no plan certificate; an ended plan is represented by a signed empty plan.
       let plan: FrameleafLicense | null = null;
       let key: FrameleafLicense | null = null;
       for (const certificate of response.certificates) {
@@ -476,10 +471,6 @@ export class FrameleafLicenseService extends BaseService {
             break;
           }
         }
-      }
-      if (!plan) {
-        // malformed: keep what is held (it ages out through grace only if this persists) and retry in an hour
-        throw new BadRequestException(REFRESH_WITHOUT_PLAN_MESSAGE);
       }
       if (store.key && !key) {
         this.logger.log(

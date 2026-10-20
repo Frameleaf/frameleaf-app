@@ -315,6 +315,7 @@ const capabilityLabelKeys: Record<StudioCapabilityId, Translations> = {
   generationWorker: 'frameleaf_studio_capability_generation_worker',
   gpuWorker: 'frameleaf_studio_capability_gpu_worker',
   renderWorker: 'frameleaf_studio_capability_render_worker',
+  previewWorker: 'frameleaf_studio_server_preview',
   restorationWorker: 'frameleaf_studio_capability_restoration_worker',
   transcriptionWorker: 'frameleaf_studio_capability_transcription_worker',
 };

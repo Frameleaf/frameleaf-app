@@ -170,6 +170,10 @@ describe(FrameleafAuthService.name, () => {
 
   describe('authorize', () => {
     it('builds a PKCE authorization URL for a registered callback, from the link and not oauth.*', async () => {
+      metadata.set(SystemMetadataKey.FrameleafCloudLink, {
+        ...linkRecord(),
+        services: { publicUrl: 'https://photos.example.test' },
+      });
       const { url, codeVerifier } = await sut.authorize({ redirectUri: 'https://photos.example.test/auth/login' });
       const parsed = new URL(url);
       expect(parsed.origin + parsed.pathname).toBe(`${issuer()}/auth`);
@@ -177,6 +181,73 @@ describe(FrameleafAuthService.name, () => {
       expect(parsed.searchParams.get('scope')).toBe('openid email profile');
       expect(parsed.searchParams.get('code_challenge_method')).toBe('S256');
       expect(codeVerifier).toBeTruthy();
+    });
+
+    it.each(['http://127.0.0.1:2290/auth/login', 'https://evil.test/link'])(
+      'refuses unsupported browser callbacks before contacting identity: %s',
+      async (redirectUri) => {
+        await expect(sut.authorize({ redirectUri })).rejects.toThrow('Set up remote access');
+        expect(cloud.requests).toHaveLength(0);
+      },
+    );
+
+    it('refuses browser sign-in on a linked server without public origins', async () => {
+      await expect(sut.authorize({ redirectUri: 'https://photos.example.test/auth/login' })).rejects.toThrow(
+        'Set up remote access',
+      );
+      expect(cloud.requests).toHaveLength(0);
+    });
+
+    it.each(['/auth/login', '/link', '/user-settings', '/api/oauth/mobile-redirect'])(
+      'preserves an enrolled relay callback even while its transport is disconnected: %s',
+      async (path) => {
+        metadata.set(SystemMetadataKey.FrameleafRemoteAccess, {
+          names: {
+            instanceId: INSTANCE,
+            cloudUrl: cloud.url,
+            linkedAt: linkRecord().linkedAt,
+            names: { relay: 'r.server.frameleaf.net' },
+          },
+          relay: { connected: false },
+        });
+        const { url } = await sut.authorize({ redirectUri: `https://r.server.frameleaf.net${path}` });
+        expect(new URL(url).searchParams.get('redirect_uri')).toBe(`https://r.server.frameleaf.net${path}`);
+      },
+    );
+
+    it.each([true, false])(
+      'uses a verified custom hostname only with the current link enrollment: %s',
+      async (current) => {
+        metadata.set(SystemMetadataKey.FrameleafRemoteAccess, {
+          names: {
+            instanceId: INSTANCE,
+            cloudUrl: cloud.url,
+            linkedAt: current ? linkRecord().linkedAt : 'old-link',
+            names: { relay: 'r.server.frameleaf.net' },
+          },
+        });
+        metadata.set(SystemMetadataKey.SystemConfig, {
+          frameleafCloud: {
+            remoteAccess: {
+              customHostname: { host: 'photos.example.test', status: 'verified' },
+            },
+          },
+        });
+        const attempt = sut.authorize({ redirectUri: 'https://photos.example.test/link' });
+        if (current) {
+          expect(new URL((await attempt).url).searchParams.get('redirect_uri')).toBe(
+            'https://photos.example.test/link',
+          );
+        } else {
+          await expect(attempt).rejects.toThrow('Set up remote access');
+          expect(cloud.requests).toHaveLength(0);
+        }
+      },
+    );
+
+    it('preserves the native callback without public origins', async () => {
+      const { url } = await sut.authorize({ redirectUri: 'frameleaf-auth:///oauth-callback' });
+      expect(new URL(url).searchParams.get('redirect_uri')).toBe('frameleaf-auth:///oauth-callback');
     });
 
     it('refuses an address that is not registered for this server', async () => {

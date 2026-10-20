@@ -63,6 +63,11 @@ it('serves a manifest and editor hello compatible with the current Studio host',
   expect(isStudioFrameHello(hello)).toBe(true);
   expect(hello.protocolVersion).toBe(STUDIO_FRAME_PROTOCOL_VERSION);
   expect(hello.engineRevision).toBe(manifest.json.engineRevision);
+  const { response: capabilities } = await serve(
+    '**/api/ml-destinations/capabilities',
+    'http://localhost/api/ml-destinations/capabilities',
+  );
+  expect(capabilities.json.studio).toMatchObject({ previewWorker: true, previewStreamWorker: true });
 });
 
 it('authorization browser and component checks use the production English read-only label', () => {

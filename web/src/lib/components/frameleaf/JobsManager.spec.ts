@@ -23,13 +23,14 @@ import {
   type QueueResponseDto,
 } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
 import JobsManager from '$lib/components/frameleaf/JobsManager.svelte';
 import { queueManager } from '$lib/managers/queue-manager.svelte';
 import en from '../../../../../i18n/en.json';
 
 const state = vi.hoisted(() => ({ url: new URL('https://example.test/user-settings?area=processing&section=queues') }));
-const queues = vi.hoisted(() => ({ list: [] as QueueResponseDto[] }));
+const queues = vi.hoisted(() => ({ list: [] as QueueResponseDto[], changed: () => {} }));
 
 vi.mock('$app/state', () => ({
   page: {
@@ -74,17 +75,24 @@ vi.mock('$lib/frameleaf/job-history', async (importOriginal) => {
       original.recordJobHistory(entry, storage),
   };
 });
-vi.mock('$lib/managers/queue-manager.svelte', () => ({
-  queueManager: {
-    get queues() {
-      return queues.list;
+vi.mock('$lib/managers/queue-manager.svelte', async () => {
+  const { createSubscriber } = await import('svelte/reactivity');
+  const subscribe = createSubscriber((update) => {
+    queues.changed = update;
+  });
+  return {
+    queueManager: {
+      get queues() {
+        subscribe();
+        return queues.list;
+      },
+      // One answer from the server: the page is past its first load.
+      snapshots: [{ timestamp: 0, snapshot: [] }],
+      listen: () => () => {},
+      refresh: vi.fn(),
     },
-    // One answer from the server: the page is past its first load.
-    snapshots: [{ timestamp: 0, snapshot: [] }],
-    listen: () => () => {},
-    refresh: vi.fn(),
-  },
-}));
+  };
+});
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
   featureFlagsManager: {
     value: { facialRecognition: true, smartSearch: true, duplicateDetection: true, ocr: false, sidecar: true },
@@ -252,6 +260,10 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     expect(within(detail).getByText('Attempt').nextElementSibling).toHaveTextContent('3');
     expect(within(detail).getByRole('heading', { name: 'Last error' })).toBeInTheDocument();
     expect(within(detail).getByText('Machine learning is unreachable')).toBeInTheDocument();
+    queues.list = queues.list.map((item) => ({ ...item, statistics: { ...item.statistics } }));
+    queues.changed();
+    await tick();
+    expect(screen.getByRole('dialog', { name: 'Detect faces' })).toBeVisible();
     await fireEvent.click(within(detail).getByRole('button', { name: 'Done' }));
     await waitFor(() =>
       expect(getQueueJobs).toHaveBeenCalledWith({ name: QueueName.FaceDetection, status: [QueueJobStatus.Failed] }),

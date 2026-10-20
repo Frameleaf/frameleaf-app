@@ -28,6 +28,7 @@ import { authStub } from 'test/fixtures/auth.stub.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
+import { previewWorkerCapabilities, previewWorkerStub } from 'test/fixtures/studio-preview-worker.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 /** The identity key's signer (FL-178): the key the ML token is bound to and every proof is signed with. */
@@ -1125,6 +1126,64 @@ describe(MlDestinationService.name, () => {
         return { gpuWorker: studio.gpuWorker, renderWorker: studio.renderWorker };
       };
 
+      it.each([
+        [
+          MediaOperationKind.StudioExport,
+          MediaOperationKind.StudioExport,
+          MediaOperationDestination.Local,
+          false,
+          false,
+        ],
+        [
+          MediaOperationKind.StudioPreview,
+          MediaOperationKind.StudioPreview,
+          MediaOperationDestination.Local,
+          true,
+          false,
+        ],
+        [
+          MediaOperationKind.StudioPreviewStream,
+          MediaOperationKind.StudioPreviewStream,
+          MediaOperationDestination.Local,
+          false,
+          true,
+        ],
+        [
+          MediaOperationKind.StudioExport,
+          MediaOperationKind.StudioPreview,
+          MediaOperationDestination.Local,
+          false,
+          false,
+        ],
+        [
+          MediaOperationKind.StudioPreview,
+          MediaOperationKind.StudioExport,
+          MediaOperationDestination.Local,
+          false,
+          false,
+        ],
+        [
+          MediaOperationKind.StudioPreview,
+          MediaOperationKind.StudioPreview,
+          MediaOperationDestination.Lan,
+          false,
+          false,
+        ],
+      ])(
+        'reports preview scopes independently for CPU sessions (%s, %s, %s)',
+        async (kind, scope, destination, previewWorker, previewStreamWorker) => {
+          const entry = previewWorkerStub();
+          entry.worker.kinds = [kind];
+          entry.worker.destination = destination;
+          entry.session.scopes = [scope];
+          mocks.renderWorker.listLiveSessions.mockResolvedValue([entry]);
+          mocks.renderWorker.getSessionCapabilities.mockResolvedValue(previewWorkerCapabilities);
+          const { studio } = await sut.getCapabilities();
+          expect(studio).toMatchObject({ previewWorker, previewStreamWorker });
+          if (kind === scope) expect(studio.renderWorker).toBe(true);
+        },
+      );
+
       it('projects Sidecar only from one fresh engine-bound session, preserving ordinary output proof', async () => {
         const profile = 'mp4-h264+srt-sidecar-v1';
         mocks.renderWorker.listLiveSessions.mockResolvedValue([
@@ -1459,6 +1518,8 @@ describe(MlDestinationService.name, () => {
       expect(result.studio).toEqual({
         gpuWorker: false,
         renderWorker: false,
+        previewWorker: false,
+        previewStreamWorker: false,
         restorationWorker: false,
         transcriptionWorker: false,
         render: [],

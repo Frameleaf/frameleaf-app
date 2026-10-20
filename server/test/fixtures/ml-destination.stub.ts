@@ -29,6 +29,7 @@ const row = (overrides: Partial<MlDestinationRow>): MlDestinationRow => ({
   lastProbeCloud: null,
   createdAt: at,
   updatedAt: at,
+  updatedAtToken: at.toISOString(),
   ...overrides,
 });
 

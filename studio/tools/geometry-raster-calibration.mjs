@@ -186,7 +186,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             'e3f7e88e3e38e6ace377a230b47ec41f9197db373cbb5932024dd94b9b67c7e9' ||
           // FL-450 locked-lane drag refusal changes timeline UI only, not the raster producers.
           binding.sourceSha256 ===
-            '804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6')),
+            '804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6' ||
+          // The audio-only repair retains the same raster producers and Chromium version.
+          binding.sourceSha256 ===
+            'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a')),
     'SOURCE_BROWSER',
   )
   check(

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { open, readFile, readdir, realpath, rm, statfs } from 'node:fs/promises';
+import { open, readFile, readdir, realpath, rm } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { FrameleafCloudBackup } from 'src/types.js';
 import type { BuddyMetadata } from 'src/utils/buddy-backup-metadata.js';
@@ -44,6 +44,7 @@ import {
   keyFingerprint,
   parseBackupKey,
 } from 'src/utils/cloud-backup.js';
+import { getDiskUsage } from 'src/utils/disk-usage.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { withDatabaseCleanup } from 'src/utils/execution-database.js';
 import { advanceExecutionProgress, assertExecutionActive, executionSignal } from 'src/utils/execution-signal.js';
@@ -174,8 +175,8 @@ export class BuddyBackupCaptureService {
       if (encrypted.length !== journal.bytes || BuddyVault.receipt(id, encrypted).digest !== journal.digest)
         throw new Error('Buddy encryption journal does not match the immutable source object', { cause: error });
       await createBuddyDirectory(dirname(path));
-      const fs = await statfs(this.repository.root());
-      if (fs.bavail * fs.bsize - encrypted.length < Math.max(10 * 1024 ** 3, fs.blocks * fs.bsize * 0.1))
+      const fs = await getDiskUsage(this.repository.root());
+      if (fs.available - encrypted.length < Math.max(10 * 1024 ** 3, fs.total * 0.1))
         throw new Error('Local Buddy staging needs more free disk space', { cause: error });
       await writeBuddyFile(path, encrypted, true);
     }

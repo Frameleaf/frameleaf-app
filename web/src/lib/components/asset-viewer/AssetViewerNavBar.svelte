@@ -4,6 +4,7 @@
   import RatingAction from '$lib/components/asset-viewer/actions/RatingAction.svelte';
   import ViewerMoreMenu from '$lib/components/frameleaf/ViewerMoreMenu.svelte';
   import ViewerTitle from '$lib/components/frameleaf/ViewerTitle.svelte';
+  import { sendCopyPermitted } from '$lib/frameleaf/send-copy';
   import type { ViewerPosition } from '$lib/frameleaf/viewer-position';
   import LoadingDots from '$lib/components/LoadingDots.svelte';
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
@@ -73,7 +74,7 @@
   const PlayOriginalVideo: ActionItem = $derived({
     title: isPlayingOriginalVideo ? $t('play_transcoded_video') : $t('play_original_video'),
     icon: mdiVideoOutline,
-    $if: () => asset.type === AssetTypeEnum.Video,
+    $if: () => asset.type === AssetTypeEnum.Video && (!sharedLink || sendCopyPermitted(sharedLink)),
     onAction: () => setPlayOriginalVideo(!isPlayingOriginalVideo),
   });
 

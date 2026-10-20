@@ -8589,6 +8589,10 @@ export type StudioRenderEvidenceDto = {
 export type StudioCapabilitiesDto = {
     /** False until the Studio render worker admission (FL-95, FL-104) reports one */
     gpuWorker: boolean;
+    /** A qualified local session can stream Studio previews */
+    previewStreamWorker?: boolean;
+    /** A qualified local session can render exact Studio preview frames */
+    previewWorker?: boolean;
     /** Per destination, what qualified render sessions verified (memory, codecs, colour precision) */
     render: StudioRenderEvidenceDto[];
     /** False until the Studio render worker admission (FL-95, FL-104) reports one */
@@ -34489,6 +34493,7 @@ export enum StudioWorkerCapability {
     GenerationWorker = "generationWorker",
     GpuWorker = "gpuWorker",
     RenderWorker = "renderWorker",
+    PreviewWorker = "previewWorker",
     RestorationWorker = "restorationWorker",
     TranscriptionWorker = "transcriptionWorker"
 }

@@ -132,7 +132,7 @@ export const createStudioBridge = ({ context, handlers = {} }: StudioBridgeOptio
       return studioCommandRejection(envelope.idempotencyKey, 'stale-revision', revision);
     }
 
-    if (definition.requiresCapability && !capabilities[definition.requiresCapability]) {
+    if (definition.requiresCapability && capabilities[definition.requiresCapability] !== true) {
       return reject('capability-missing');
     }
 

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { Stats, constants } from 'node:fs';
-import { FileHandle, link, lstat, mkdir, open, realpath, statfs, unlink } from 'node:fs/promises';
+import { FileHandle, link, lstat, mkdir, open, realpath, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -24,6 +24,7 @@ import {
   MediaIntegrityResult,
   MediaIntegrityService,
 } from 'src/services/media-integrity.service.js';
+import { getDiskUsageBigInt } from 'src/utils/disk-usage.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { appleFingerprintHash, isAppleFingerprint } from 'src/utils/icloud-identity.js';
 import {
@@ -499,9 +500,9 @@ export class ICloudScheduledStagingService {
       if (admission.resource.verification?.auditFreshDownload) {
         throw new Error('scheduled_audit_fresh_receipt_invalid');
       }
-      const free = await this.step(input, () => statfs(directory, { bigint: true }), signal);
+      const free = await this.step(input, () => getDiskUsageBigInt(directory), signal);
       const watermark = BigInt(readAliasedEnv('FRAMELEAF_ICLOUD_FREE_SPACE_BYTES') ?? 1024 ** 3);
-      if (free.bavail * free.bsize < BigInt(admission.resource.expectedSize) + watermark) {
+      if (free.available < BigInt(admission.resource.expectedSize) + watermark) {
         throw new Error('scheduled_audit_staging_full');
       }
       if (!(await this.repository.heartbeat(input, path))) {
@@ -816,12 +817,9 @@ export class ICloudScheduledStagingService {
           if (!stored) throw new Error('scheduled_audit_input_changed');
           envelope = stored;
         };
-        const disk = await this.step(input, () => statfs(directory, { bigint: true }), signal);
+        const disk = await this.step(input, () => getDiskUsageBigInt(directory), signal);
         const minimum = BigInt(readAliasedEnv('FRAMELEAF_ICLOUD_FREE_SPACE_BYTES') ?? 1024 ** 3);
-        if (
-          minimum < 0n ||
-          disk.bavail * disk.bsize - BigInt(planned.payload.current.payload.reservedInputBytes) < minimum
-        ) {
+        if (minimum < 0n || disk.available - BigInt(planned.payload.current.payload.reservedInputBytes) < minimum) {
           throw new Error('scheduled_audit_disk_full');
         }
         const payload = envelope.payload.current.payload;

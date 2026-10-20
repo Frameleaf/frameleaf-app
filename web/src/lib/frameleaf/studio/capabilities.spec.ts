@@ -35,9 +35,25 @@ describe('probeStudioCapabilities (FL-110)', () => {
       generationWorker: false,
       gpuWorker: false,
       renderWorker: false,
+      previewWorker: false,
+      previewStreamWorker: false,
       restorationWorker: true,
       transcriptionWorker: true,
     });
+  });
+
+  it('keeps preview unavailable when an older server only reports export availability', async () => {
+    sdkMock.getMlCapabilities.mockResolvedValue(snapshot({ renderWorker: true, gpuWorker: true }));
+    expect(await probeStudioCapabilities()).toMatchObject({
+      renderWorker: true,
+      previewWorker: false,
+      previewStreamWorker: false,
+    });
+  });
+
+  it('confirms exact-frame and stream support independently', async () => {
+    sdkMock.getMlCapabilities.mockResolvedValue(snapshot({ previewWorker: true, previewStreamWorker: false }));
+    expect(await probeStudioCapabilities()).toMatchObject({ previewWorker: true, previewStreamWorker: false });
   });
 
   it('reports every capability absent when the server cannot be asked', async () => {
@@ -60,6 +76,8 @@ describe('probeStudioCapabilities (FL-110)', () => {
       generationWorker: false,
       gpuWorker: false,
       renderWorker: false,
+      previewWorker: false,
+      previewStreamWorker: false,
       restorationWorker: true,
       transcriptionWorker: false,
     });

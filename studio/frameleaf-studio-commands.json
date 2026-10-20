@@ -4,6 +4,7 @@
     "generationWorker",
     "gpuWorker",
     "renderWorker",
+    "previewWorker",
     "restorationWorker",
     "transcriptionWorker"
   ],
@@ -1071,7 +1072,7 @@
       "undoable": false
     },
     {
-      "capability": "gpuWorker",
+      "capability": "previewWorker",
       "description": "Ask for one frame of the current revision, rendered at an exact rational time.",
       "id": "preview.request",
       "manifestIds": [],

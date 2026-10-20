@@ -39,7 +39,7 @@ export type BuddyReplacementMl = {
   binding: RecoveryMlBinding;
   config: RecoveryMlConfig;
   epoch: number;
-  destinations: MlDestinationRow[];
+  destinations: Omit<MlDestinationRow, 'updatedAtToken'>[];
   routes: MlWorkloadRouteRow[];
   routeIntents?: z.infer<typeof routeIntentsSchema>;
   modelChoices: MlCloudModelChoiceRow[];

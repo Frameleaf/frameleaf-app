@@ -13,7 +13,12 @@
    */
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
-  import { checkForUpdates, releaseNotesUrl, type UpdateCheckResult } from '$lib/frameleaf/version-check';
+  import {
+    checkForUpdates,
+    isPrereleaseVersion,
+    releaseNotesUrl,
+    type UpdateCheckResult,
+  } from '$lib/frameleaf/version-check';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { type ServerAboutResponseDto, type ServerVersionHistoryResponseDto } from '@frameleaf/sdk';
@@ -122,7 +127,7 @@
       </div>
     {/each}
   </dl>
-  {#if info.sourceRef === 'main' && info.repository === 'Frameleaf/frameleaf-app'}
+  {#if info.repository === 'Frameleaf/frameleaf-app' && isPrereleaseVersion(info.version)}
     <p class="about-attribution warning">
       <Icon icon={mdiAlertOutline} size="16" aria-hidden={true} />
       <span>{$t('main_branch_warning')}</span>

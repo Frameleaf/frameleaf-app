@@ -122813,6 +122813,14 @@
             "description": "False until the Studio render worker admission (FL-95, FL-104) reports one",
             "type": "boolean"
           },
+          "previewStreamWorker": {
+            "description": "A qualified local session can stream Studio previews",
+            "type": "boolean"
+          },
+          "previewWorker": {
+            "description": "A qualified local session can render exact Studio preview frames",
+            "type": "boolean"
+          },
           "render": {
             "description": "Per destination, what qualified render sessions verified (memory, codecs, colour precision)",
             "items": {
@@ -126630,6 +126638,7 @@
           "generationWorker",
           "gpuWorker",
           "renderWorker",
+          "previewWorker",
           "restorationWorker",
           "transcriptionWorker"
         ],

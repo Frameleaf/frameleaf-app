@@ -34,6 +34,75 @@ beforeAll(async () => {
 });
 
 describe(MlDestinationRepository.name, () => {
+  it('persists a microsecond-versioned probe and fences concurrent changes within the same millisecond', async () => {
+    const { sut } = setup();
+    const created = await sut.create({
+      kind: MlDestinationKind.Lan,
+      name: `precision ${randomUUID()}`,
+      url: `http://${randomUUID()}.lan:3003`,
+      authToken: null,
+      enabled: true,
+      workloads: [MlWorkload.Clip],
+      budgetLimitUsd: null,
+      maxRuntimeMinutes: null,
+      maxUploadBytes: null,
+    });
+    await sql`UPDATE ml_destination SET "updatedAt" = '2026-10-13 06:45:21.626934+00'::timestamptz
+      WHERE id = ${created.id}::uuid`.execute(defaultDatabase);
+    expect(created.updatedAtToken).toEqual(expect.any(String));
+    const expected = (await sut.getById(created.id))!;
+    expect(expected.updatedAtToken).toContain('.626934');
+    expect((await sut.getByUrl(created.kind, created.url!))?.updatedAtToken).toBe(expected.updatedAtToken);
+    expect((await sut.getAll()).find((row) => row.id === created.id)?.updatedAtToken).toBe(expected.updatedAtToken);
+    expect(expected.updatedAt.toISOString()).toBe('2026-10-13T06:45:21.626Z');
+    const observation = {
+      health: MlDestinationHealth.Healthy,
+      summary: 'fresh precise result',
+      workloads: [MlWorkload.Clip],
+      probedAt: new Date('2026-10-20T00:00:00Z'),
+    };
+    await sut.recordProbe(created.id, observation, expected);
+    expect(await sut.getById(created.id)).toMatchObject({
+      lastProbeHealth: observation.health,
+      lastProbeSummary: observation.summary,
+    });
+
+    // The Date is unchanged, but the database version and policy changed while the probe ran.
+    await sql`UPDATE ml_destination SET "updatedAt" = '2026-10-13 06:45:21.626999+00'::timestamptz,
+      name = 'concurrent policy' WHERE id = ${created.id}::uuid`.execute(defaultDatabase);
+    const current = (await sut.getById(created.id))!;
+    expect(current.updatedAt.getTime()).toBe(expected.updatedAt.getTime());
+    await sut.recordProbe(
+      created.id,
+      {
+        ...observation,
+        health: MlDestinationHealth.Unhealthy,
+        summary: 'stale result',
+        probedAt: new Date(observation.probedAt.getTime() + 1),
+      },
+      expected,
+    );
+    expect(await sut.getById(created.id)).toMatchObject({
+      name: 'concurrent policy',
+      lastProbeHealth: observation.health,
+      lastProbeSummary: observation.summary,
+    });
+    await sut.recordProbe(
+      created.id,
+      { ...observation, summary: 'current result', probedAt: new Date(observation.probedAt.getTime() + 2) },
+      current,
+    );
+    expect((await sut.getById(created.id))?.lastProbeSummary).toBe('current result');
+    const edited = await sut.update(created.id, { name: 'edited' });
+    expect(edited.updatedAtToken).toEqual(expect.any(String));
+    await sut.recordProbe(
+      created.id,
+      { ...observation, summary: 'edited result', probedAt: new Date(observation.probedAt.getTime() + 3) },
+      edited,
+    );
+    expect((await sut.getById(created.id))?.lastProbeSummary).toBe('edited result');
+  });
+
   it('writes a probe once under concurrent admissions and refuses older observations', async () => {
     const { sut } = setup();
     const created = await sut.create({

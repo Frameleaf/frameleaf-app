@@ -596,6 +596,18 @@ describe('createStudioPreviewClient', () => {
     expect(client.view().frame).toBeNull();
   });
 
+  it('explains when a preview worker disappears before allocation', async () => {
+    const transport = stubTransport({ request: vi.fn().mockRejectedValue(transportError({ kind: 'no-worker' })) });
+    const client = createStudioPreviewClient(clientOptions(transport));
+    client.request(intent());
+    await client.idle();
+    expect(client.view()).toMatchObject({
+      phase: 'unavailable',
+      messageKey: 'frameleaf_studio_server_preview_no_worker',
+      errorCode: 'no-worker',
+    });
+  });
+
   it('reports a failed render as unavailable and keeps its code for diagnostics', async () => {
     const transport = stubTransport({
       request: vi.fn(async () => ({

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Mock } from 'vitest';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
-import { AssetVisibility, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import { AssetVisibility, ChecksumAlgorithm, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import {
   PreservationItem,
@@ -16,6 +16,7 @@ import {
   PreservationWorkerService,
 } from 'src/services/preservation-worker.service.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
+import { libraryAssetFromFile } from 'src/utils/library-scan.js';
 import {
   PRESERVATION_FORMAT,
   PRESERVATION_SCHEMA_VERSION,
@@ -254,6 +255,93 @@ describe(PreservationWorkerService.name, () => {
       expect(files.copyOriginal).not.toHaveBeenCalled();
     });
 
+    it('exports a path-hashed external library original with measured content digests', async () => {
+      const item = itemOf();
+      const external = libraryAssetFromFile(
+        { path: '/external/portrait.png', mtime: new Date() },
+        { ownerId, libraryId: newUuid() },
+        (value) => createHash('sha1').update(value).digest(),
+        false,
+      );
+      repository.getExportAsset.mockResolvedValue({ ...external, id: item.sourceAssetId, status: 'active' });
+      files.copyOriginal.mockResolvedValue({ sha1, sha256, bytes: 5 });
+
+      expect(await worker().exportItem(packageOf({ includeMetadata: false }), item, commit)).toBe('copied');
+
+      expect(files.copyOriginal).toHaveBeenCalledWith(
+        external.originalPath,
+        expect.any(String),
+        expect.any(Function),
+        undefined,
+      );
+      expect(repository.finishItem).toHaveBeenCalledWith(
+        item.id,
+        expect.objectContaining({
+          state: 'copied',
+          entry: expect.objectContaining({
+            originalFileName: 'portrait.png',
+            original: expect.objectContaining({ sha1, sha256, bytes: 5 }),
+          }),
+        }),
+      );
+      expect(files.removeFile).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [ChecksumAlgorithm.sha1File, sha1],
+      [ChecksumAlgorithm.sha256File, sha256],
+    ])('exports verified %s content and rejects changed content', async (checksumAlgorithm, expected) => {
+      const item = itemOf();
+      repository.getExportAsset.mockResolvedValue({
+        id: item.sourceAssetId,
+        ownerId,
+        status: 'active',
+        originalFileName: 'lake.jpg',
+        originalPath: '/library/lake.jpg',
+        checksum: Buffer.from(expected, 'hex'),
+        checksumAlgorithm,
+      });
+      files.copyOriginal.mockResolvedValue({ sha1, sha256, bytes: 5 });
+      expect(await worker().exportItem(packageOf({ includeMetadata: false }), item, commit)).toBe('copied');
+      expect(files.copyOriginal).toHaveBeenLastCalledWith(
+        '/library/lake.jpg',
+        expect.any(String),
+        expect.any(Function),
+        Buffer.from(expected, 'hex'),
+      );
+
+      files.copyOriginal.mockResolvedValue({ sha1: 'c'.repeat(40), sha256: 'd'.repeat(64), bytes: 5 });
+      expect(await worker().exportItem(packageOf({ includeMetadata: false }), item, commit)).toBe('failed');
+      expect(repository.finishItem).toHaveBeenLastCalledWith(
+        item.id,
+        expect.objectContaining({ reasonKey: 'checksum_mismatch' }),
+      );
+      expect(files.removeFile).toHaveBeenCalled();
+    });
+
+    it.each([
+      [ChecksumAlgorithm.sha256File, sha1],
+      [undefined, sha256],
+    ])('does not infer content algorithm %s from checksum length', async (checksumAlgorithm, expected) => {
+      const item = itemOf();
+      repository.getExportAsset.mockResolvedValue({
+        id: item.sourceAssetId,
+        ownerId,
+        status: 'active',
+        originalFileName: 'lake.jpg',
+        originalPath: '/library/lake.jpg',
+        checksum: Buffer.from(expected, 'hex'),
+        checksumAlgorithm,
+      });
+      files.copyOriginal.mockResolvedValue({ sha1, sha256, bytes: 5 });
+
+      expect(await worker().exportItem(packageOf({ includeMetadata: false }), item, commit)).toBe('failed');
+      expect(repository.finishItem).toHaveBeenLastCalledWith(
+        item.id,
+        expect.objectContaining({ reasonKey: 'checksum_mismatch' }),
+      );
+    });
+
     it('refuses a copy that does not match the library checksum and removes it', async () => {
       const item = itemOf();
       repository.getExportAsset.mockResolvedValue({
@@ -266,6 +354,7 @@ describe(PreservationWorkerService.name, () => {
         originalFileName: 'lake.jpg',
         originalPath: '/library/lake.jpg',
         checksum: Buffer.from('c'.repeat(64), 'hex'),
+        checksumAlgorithm: ChecksumAlgorithm.sha256File,
       });
       files.copyOriginal.mockResolvedValue({ sha1, sha256, bytes: 5 });
 
@@ -405,6 +494,7 @@ describe(PreservationWorkerService.name, () => {
         originalFileName: 'lake.jpg',
         originalPath: '/library/lake.jpg',
         checksum: Buffer.from(sha256, 'hex'),
+        checksumAlgorithm: ChecksumAlgorithm.sha256File,
       });
       files.copyOriginal.mockRejectedValue(Object.assign(new Error('no space'), { code: 'ENOSPC' }));
 
@@ -466,6 +556,7 @@ describe(PreservationWorkerService.name, () => {
             originalFileName: 'lake.jpg',
             originalPath: `/library/${id}.jpg`,
             checksum: Buffer.from(sha256, 'hex'),
+            checksumAlgorithm: ChecksumAlgorithm.sha256File,
           }),
         );
         repository.listedItems = vi

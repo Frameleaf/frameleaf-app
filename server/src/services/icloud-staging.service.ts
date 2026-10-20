@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { constants } from 'node:fs';
-import { link, lstat, mkdir, open, readdir, realpath, statfs, unlink } from 'node:fs/promises';
+import { link, lstat, mkdir, open, readdir, realpath, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -8,6 +8,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { ICloudConnection, ICloudResource, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
+import { getDiskUsageBigInt } from 'src/utils/disk-usage.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { isWithinDirectory } from 'src/utils/icloud-sync.js';
 
@@ -88,9 +89,9 @@ export class ICloudStagingService {
     ) {
       return target;
     }
-    const free = await statfs(directory, { bigint: true });
+    const free = await getDiskUsageBigInt(directory);
     const watermark = BigInt(readAliasedEnv('FRAMELEAF_ICLOUD_FREE_SPACE_BYTES') ?? 1024 ** 3);
-    if (free.bavail * free.bsize < BigInt(resource.expectedSize) + watermark) {
+    if (free.available < BigInt(resource.expectedSize) + watermark) {
       throw new Error('staging_disk_full');
     }
     const temporary = join(directory, `${resource.leaseToken}.partial`);

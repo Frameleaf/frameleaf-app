@@ -35,6 +35,7 @@ import {
   PREVIEW_CANCEL_UNAVAILABLE,
 } from 'src/utils/studio-preview.js';
 import { StudioDestination } from 'src/utils/studio-resources.js';
+import { previewWorkerRepositoryStub } from 'test/fixtures/studio-preview-worker.stub.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { automock, getKyselyDB } from 'test/utils.js';
@@ -139,6 +140,7 @@ const setup = async () => {
       storage,
       automock(StudioExportRepository, { strict: false }),
       ctx.get(UserRepository),
+      previewWorkerRepositoryStub(),
     );
   const sut = makeService();
   const request = async (consumerRequestId: string = randomUUID(), seekGeneration = 0) =>

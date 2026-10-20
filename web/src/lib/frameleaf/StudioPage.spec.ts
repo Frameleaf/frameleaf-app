@@ -61,6 +61,8 @@ const capable = {
   ...emptyStudioCapabilities(),
   gpuWorker: true,
   renderWorker: true,
+  previewWorker: true,
+  previewStreamWorker: true,
   restorationWorker: true,
   transcriptionWorker: true,
 };
@@ -676,6 +678,27 @@ describe('Studio server preview panel (FL-96)', () => {
     await waitFor(() => expect(engine.module.mount).toHaveBeenCalledTimes(1));
     return engine;
   };
+
+  it('hides the preview toggle and explains an export-only worker', async () => {
+    await mountedWith({
+      capabilities: { ...capable, previewWorker: false, previewStreamWorker: false },
+      serverPreviewOpen: true,
+    });
+    expect(screen.queryByTestId('studio-server-preview-show')).not.toBeInTheDocument();
+    expect(screen.getByTestId('studio-server-preview-status')).toHaveTextContent(
+      'frameleaf_studio_server_preview_no_worker',
+    );
+  });
+
+  it('offers the panel for a stream-only preview worker without claiming no worker is available', async () => {
+    await mountedWith({
+      capabilities: { ...capable, previewWorker: false, previewStreamWorker: true },
+      serverPreviewOpen: true,
+    });
+    expect(screen.getByTestId('studio-server-preview-show')).toBeInTheDocument();
+    expect(screen.getByTestId('studio-server-preview')).toBeInTheDocument();
+    expect(screen.queryByText('frameleaf_studio_server_preview_no_worker')).not.toBeInTheDocument();
+  });
 
   it('offers the panel when a render worker is live, and tells the engine when it is open', async () => {
     const engine = await mountedWith({});

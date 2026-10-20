@@ -18,6 +18,7 @@ import {
 import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus, StudioPreviewQuality } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { StudioProjectService, StudioRevisionEvent } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { RationalError, formatRational, rational } from 'src/utils/rational-time.js';
@@ -38,6 +39,7 @@ import {
   streamState,
   streamWorkerLost,
 } from 'src/utils/studio-preview-stream.js';
+import { hasStudioPreviewWorker } from 'src/utils/studio-preview-worker.js';
 import { StudioDestination } from 'src/utils/studio-resources.js';
 
 /** The recovery pass's code for a claim whose worker stopped heartbeating (FL-104). */
@@ -116,6 +118,7 @@ export class StudioPreviewStreamService {
     private operations: MediaOperationRepository,
     private projects: StudioProjectService,
     private resources: StudioResourceService,
+    private renderWorkers: RenderWorkerRepository,
   ) {
     this.logger.setContext(StudioPreviewStreamService.name);
 
@@ -160,6 +163,12 @@ export class StudioPreviewStreamService {
       });
     }
 
+    if (!(await hasStudioPreviewWorker(this.renderWorkers, MediaOperationKind.StudioPreviewStream))) {
+      throw new ConflictException({
+        code: 'studio_preview_no_worker',
+        message: 'No qualified local preview stream worker is available',
+      });
+    }
     const open = await this.operations.listOpenStreams(auth.user.id);
     const sameProject = open.filter((stream) => stream.projectId === dto.projectId);
     for (const stream of sameProject) {

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { constants, createReadStream, createWriteStream } from 'node:fs';
-import { type FileHandle, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, statfs } from 'node:fs/promises';
+import { type FileHandle, lstat, mkdir, open, readFile, readdir, realpath, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable, Transform, compose } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -9,6 +9,7 @@ import { crc32, createInflateRaw } from 'node:zlib';
 import type { TakeoutSource } from 'src/repositories/takeout.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
+import { getDiskUsage } from 'src/utils/disk-usage.js';
 import {
   TakeoutZipEntry,
   TakeoutZipSource,
@@ -108,8 +109,8 @@ export class TakeoutStagingRepository {
 
   /** Bytes an unprivileged process may still write to the volume holding `directory`. */
   async freeBytes(directory: string) {
-    const stats = await statfs(directory);
-    return stats.bavail * stats.bsize;
+    const stats = await getDiskUsage(directory);
+    return stats.available;
   }
 
   async remove(filePath: string) {

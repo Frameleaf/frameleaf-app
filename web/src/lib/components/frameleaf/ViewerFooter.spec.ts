@@ -4,10 +4,13 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import { setSharedLink } from '$lib/utils';
 import { assetFactory } from '@test-data/factories/asset-factory';
+import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { sharedLinkFactory } from '@test-data/factories/shared-link-factory';
+import { userAdminFactory } from '@test-data/factories/user-factory';
 import ViewerFooter from './ViewerFooter.svelte';
 
 const base = {
@@ -23,6 +26,8 @@ const base = {
 
 describe('ViewerFooter (V-13, MediaViewer.jsx:1693-1797)', () => {
   afterEach(() => {
+    authManager.reset();
+    setSharedLink(undefined);
     slideshowStore.slideshowState.set(SlideshowState.None);
     void slideshowStore.closeSettings();
     assetViewerManager.resetZoomState();
@@ -105,6 +110,17 @@ describe('ViewerFooter (V-13, MediaViewer.jsx:1693-1797)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_viewer_source_original' }));
     expect(setPlayOriginalVideo).toHaveBeenCalledWith(true);
     expect(screen.queryByRole('button', { name: 'frameleaf_viewer_zoom_in' })).toBeNull();
+  });
+
+  it.each([
+    { allowDownload: false, showMetadata: true },
+    { allowDownload: true, showMetadata: false },
+  ])('hides original video source in a restricted owner preview: %o', (permissions) => {
+    authManager.setUser(userAdminFactory.build({ id: 'owner' }));
+    authManager.setPreferences(preferencesFactory.build());
+    setSharedLink(sharedLinkFactory.build({ userId: 'owner', ...permissions }));
+    render(ViewerFooter, { asset: assetFactory.build({ type: AssetTypeEnum.Video }), ...base });
+    expect(screen.queryByRole('button', { name: 'frameleaf_viewer_source_original' })).not.toBeInTheDocument();
   });
 
   it('hides the key hint from assistive technology and names the stack only with one', () => {

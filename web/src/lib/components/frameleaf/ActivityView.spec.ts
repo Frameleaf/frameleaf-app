@@ -102,9 +102,19 @@ describe('Frameleaf Activity page', () => {
 
   it('offers retry only after a failure, and sends it to the server', async () => {
     sdkMock.retryMediaOperation.mockResolvedValue(
-      operation({ id: '0195e2a0-0000-7000-8000-000000000002', status: MediaOperationStatus.Queued }),
+      operation({
+        kind: MediaOperationKind.Restoration,
+        id: '0195e2a0-0000-7000-8000-000000000002',
+        status: MediaOperationStatus.Queued,
+      }),
     );
-    await mount([operation({ status: MediaOperationStatus.Failed, error: 'The worker stopped responding' })]);
+    await mount([
+      operation({
+        kind: MediaOperationKind.Restoration,
+        status: MediaOperationStatus.Failed,
+        error: 'The worker stopped responding',
+      }),
+    ]);
 
     // The request resolving is not the page having rendered its answer: wait for the row first.
     expect(await screen.findByText('The worker stopped responding')).toBeInTheDocument();
@@ -239,6 +249,23 @@ describe('Frameleaf Activity page', () => {
   it('opens a Studio render in Studio (FL-104)', async () => {
     await mount([operation({ kind: MediaOperationKind.StudioExport, projectId: 'project-1' })]);
     await fireEvent.click(await screen.findByRole('button', { name: /open in studio/i }));
+    expect(goto).toHaveBeenCalledWith(expect.stringContaining('project-1'));
+  });
+
+  it.each([
+    [MediaOperationKind.StudioExport, MediaOperationStatus.Failed],
+    [MediaOperationKind.StudioExport, MediaOperationStatus.Cancelled],
+    [MediaOperationKind.StudioExportPublish, MediaOperationStatus.Failed],
+    [MediaOperationKind.StudioExportPublish, MediaOperationStatus.Cancelled],
+    [MediaOperationKind.StudioPreview, MediaOperationStatus.Failed],
+    [MediaOperationKind.StudioPreview, MediaOperationStatus.Cancelled],
+    [MediaOperationKind.StudioPreviewStream, MediaOperationStatus.Failed],
+    [MediaOperationKind.StudioPreviewStream, MediaOperationStatus.Cancelled],
+  ])('opens %s %s in Studio instead of offering a copied retry', async (kind, status) => {
+    await mount([operation({ kind, status, projectId: 'project-1' })]);
+    await fireEvent.click(await screen.findByRole('button', { name: /open in studio/i }));
+    expect(screen.queryByRole('button', { name: /^retry$/i })).not.toBeInTheDocument();
+    expect(sdkMock.retryMediaOperation).not.toHaveBeenCalled();
     expect(goto).toHaveBeenCalledWith(expect.stringContaining('project-1'));
   });
 

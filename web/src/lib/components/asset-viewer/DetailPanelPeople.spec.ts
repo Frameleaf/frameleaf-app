@@ -1,7 +1,9 @@
 import type { AssetFaceResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { DateTime } from 'luxon';
+import { tick } from 'svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { personFactory } from '@test-data/factories/person-factory';
@@ -154,6 +156,49 @@ describe('DetailPanelPeople', () => {
     const crop = screen.getByTestId('unassigned-face').querySelector(':scope [aria-hidden="true"]');
     expect(crop).toHaveClass('fl-squircle');
     expect(container.querySelector(':scope .rounded-full, :scope [class~="rounded-xl"] > img')).toBeNull();
+  });
+
+  it('quietly waits for a missing person thumbnail and retries only when that person is ready', async () => {
+    const { container, unmount } = renderPanel(true);
+    const original = container.querySelector('img')!;
+    const originalUrl = original.getAttribute('src');
+    await fireEvent.error(original);
+    expect(screen.getByTestId('person-avatar-fallback')).toHaveTextContent('A');
+    expect(screen.queryByText('error_loading_image')).not.toBeInTheDocument();
+
+    eventManager.emit('PersonThumbnailReady', { id: 'somebody-else' });
+    await tick();
+    expect(screen.getByTestId('person-avatar-fallback')).toBeInTheDocument();
+    expect(container.querySelector('img')).toBeNull();
+
+    eventManager.emit('PersonThumbnailReady', { id: alex.id });
+    await tick();
+    const replacement = container.querySelector('img')!;
+    expect(replacement).not.toBeNull();
+    expect(replacement.getAttribute('src')).not.toBe(originalUrl);
+    expect(replacement.getAttribute('src')).toContain(alex.id);
+    await fireEvent.load(replacement);
+    expect(screen.queryByTestId('person-avatar-fallback')).not.toBeInTheDocument();
+    expect(eventManager.hasListeners('PersonThumbnailReady')).toBe(true);
+    unmount();
+    expect(eventManager.hasListeners('PersonThumbnailReady')).toBe(false);
+    eventManager.emit('PersonThumbnailReady', { id: alex.id });
+    await tick();
+    expect(container.querySelector('img')).toBeNull();
+  });
+
+  it('never exposes people or starts thumbnail reads on a shared link, including ready events', async () => {
+    const shared = vi.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
+    try {
+      const { container } = renderPanel(true);
+      eventManager.emit('PersonThumbnailReady', { id: alex.id });
+      await tick();
+      expect(container.querySelector('img')).toBeNull();
+      expect(screen.queryByText('Alex')).not.toBeInTheDocument();
+      expect(faces.loadHiddenFaces).not.toHaveBeenCalled();
+    } finally {
+      shared.mockRestore();
+    }
   });
 
   it('re-reads the chips when a person on the photo changes elsewhere (FL-37)', async () => {

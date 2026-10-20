@@ -71,6 +71,9 @@ export const classifyPreviewError = (error: unknown): StudioPreviewTransportFail
 
   if (status === 409) {
     switch (body.code) {
+      case 'studio_preview_no_worker': {
+        return { kind: 'no-worker' };
+      }
       case 'studio_preview_stale_revision': {
         return {
           kind: 'stale-revision',

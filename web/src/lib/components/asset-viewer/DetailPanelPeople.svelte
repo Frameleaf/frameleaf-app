@@ -1,5 +1,5 @@
 <script lang="ts">
-  import ImageThumbnail from '$lib/components/assets/thumbnail/ImageThumbnail.svelte';
+  import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import PersonFaceActions from '$lib/components/frameleaf/PersonFaceActions.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -7,7 +7,7 @@
   import { Route } from '$lib/route';
   import { faceManager } from '$lib/stores/face.svelte';
   import { locale } from '$lib/stores/preferences.store';
-  import { getAssetMediaUrl, getPeopleThumbnailUrl } from '$lib/utils';
+  import { getAssetMediaUrl } from '$lib/utils';
   import { AssetMediaSize, type AssetFaceResponseDto, type AssetResponseDto } from '@frameleaf/sdk';
   import { Button, Icon, Text } from '@frameleaf/ui';
   import { mdiEye, mdiEyeOff, mdiEyeOffOutline, mdiPlus } from '@mdi/js';
@@ -28,7 +28,7 @@
 
   const { asset, isOwner, previousRoute, onFacesChanged }: Props = $props();
 
-  const people = $derived(Array.from(faceManager.people));
+  let people = $derived(Array.from(faceManager.people));
   /**
    * FL-38 (V-22): with the legacy "Edit people" side panel gone, a detected face nobody is
    * assigned to gets its own "Unnamed person" chip and chip menu, as the prototype's
@@ -85,6 +85,12 @@
       void refreshChips();
     }
   };
+  const onPersonThumbnailReady = ({ id }: { id: string }) => {
+    if (!authManager.isSharedLink && people.some((person) => person.id === id)) {
+      const updatedAt = new Date().toISOString();
+      people = people.map((person) => (person.id === id ? { ...person, updatedAt } : person));
+    }
+  };
   const onPersonFacesChange = () => {
     if (!authManager.isSharedLink) {
       void refreshChips();
@@ -136,7 +142,7 @@
   });
 </script>
 
-<OnEvents {onPersonUpdate} {onPersonFacesChange} />
+<OnEvents {onPersonUpdate} {onPersonFacesChange} {onPersonThumbnailReady} />
 
 {#if !authManager.isSharedLink}
   <section class="text-sm">
@@ -206,14 +212,14 @@
                 : ''}"
               data-highlighted={isHighlighted || undefined}
             >
-              <ImageThumbnail
-                url={getPeopleThumbnailUrl(person)}
-                altText={person.name}
-                title={person.name}
-                widthStyle="100%"
-                hidden={person.isHidden}
-                class="fl-squircle"
-              />
+              <span class="block" class:grayscale-50={person.isHidden} class:opacity-50={person.isHidden}>
+                <PersonAvatar {person} size={160} fluid />
+              </span>
+              {#if person.isHidden}
+                <span class="absolute inset-s-1/2 top-1/2 translate-[-50%] transform">
+                  <Icon icon={mdiEyeOffOutline} size="2em" title={person.name} class="text-white" />
+                </span>
+              {/if}
             </span>
             <p class="mt-1 truncate font-medium" title={person.name}>{person.name}</p>
             {#if person.birthDate && person.formattedAge}

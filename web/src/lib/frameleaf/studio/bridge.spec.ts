@@ -9,7 +9,7 @@ const context = (overrides: Partial<StudioBridgeContext> = {}): StudioBridgeCont
   hasLease: true,
   hasAccess: true,
   online: true,
-  capabilities: { ...emptyStudioCapabilities(), gpuWorker: true, renderWorker: true },
+  capabilities: { ...emptyStudioCapabilities(), gpuWorker: true, renderWorker: true, previewWorker: true },
   ...overrides,
 });
 
@@ -48,6 +48,29 @@ describe('studio command bridge', () => {
     expect(result.status).toBe('accepted');
     expect(add).toHaveBeenCalledTimes(1);
   });
+
+  it.each([false, true])(
+    'does not forward exact previews without exact-frame support (stream=%s)',
+    async (previewStreamWorker) => {
+      const request = vi.fn().mockResolvedValue(4);
+      const bridge = createStudioBridge({
+        context: () =>
+          context({
+            capabilities: { ...emptyStudioCapabilities(), gpuWorker: true, renderWorker: true, previewStreamWorker },
+          }),
+        handlers: { 'preview.request': request },
+      });
+      const [result] = await bridge.submit([
+        createStudioCommandEnvelope(
+          'preview.request',
+          { at: rational(0), quality: 'draft', viewportWidth: 960, viewportHeight: 540 },
+          4,
+        ),
+      ]);
+      expect(result).toMatchObject({ status: 'rejected', reason: 'capability-missing' });
+      expect(request).not.toHaveBeenCalled();
+    },
+  );
 
   it('refuses a preview on a deployment with no GPU worker rather than showing nothing', async () => {
     const bridge = createStudioBridge({

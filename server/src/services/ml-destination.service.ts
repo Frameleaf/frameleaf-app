@@ -65,6 +65,7 @@ import {
 } from 'src/utils/ml-destination.js';
 import { SDR_ONLY, provesOutput, requiredOutput } from 'src/utils/render-admission.js';
 import { STUDIO_EXPORT_FORMATS } from 'src/utils/studio-export.js';
+import { supportsLocalRenderKind } from 'src/utils/studio-preview-worker.js';
 
 /**
  * The check summary a local destination carries while it is off because its URL left the
@@ -827,6 +828,10 @@ export class MlDestinationService extends BaseService {
       studio: {
         gpuWorker: qualifiedRenderer,
         renderWorker: qualifiedRenderer,
+        previewWorker: qualified.some((entry) => supportsLocalRenderKind(entry, MediaOperationKind.StudioPreview)),
+        previewStreamWorker: qualified.some((entry) =>
+          supportsLocalRenderKind(entry, MediaOperationKind.StudioPreviewStream),
+        ),
         restorationWorker: available(MlWorkload.RestorationFaithful) || available(MlWorkload.RestorationCreative),
         transcriptionWorker: available(MlWorkload.StudioAi),
         render,

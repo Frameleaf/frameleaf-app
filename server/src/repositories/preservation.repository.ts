@@ -701,6 +701,7 @@ export class PreservationRepository {
         'asset.originalPath',
         'asset.originalFileName',
         'asset.checksum',
+        'asset.checksumAlgorithm',
         'asset.fileCreatedAt',
         'asset.fileModifiedAt',
         'asset.localDateTime',

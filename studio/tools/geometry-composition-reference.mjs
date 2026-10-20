@@ -73,7 +73,9 @@ export function compositionSourcesFor(sourceSha256) {
     sourceSha256 === '11c977ef51aaf616ae0a0e7be1ff1ecf33ba0ebac8e155d3fc2e2454223a5a0d' ||
     sourceSha256 === 'e3f7e88e3e38e6ace377a230b47ec41f9197db373cbb5932024dd94b9b67c7e9' ||
     // FL-450 locked-lane drag refusal leaves the composition producers unchanged.
-    sourceSha256 === '804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6'
+    sourceSha256 === '804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6' ||
+    // Trackless-video audio admission changes no geometry/composition producer bytes.
+    sourceSha256 === 'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a'
   )
     return {
       ...COMPOSITION_SOURCES,

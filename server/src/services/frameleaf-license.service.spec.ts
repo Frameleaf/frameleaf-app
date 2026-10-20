@@ -584,28 +584,104 @@ describe(FrameleafLicenseService.name, () => {
         expect(store()?.plan?.claims.jti).toBe('plan-2');
       });
 
+      it('accepts an empty answer for a never-subscribed account without an expiry notice', async () => {
+        link();
+        serveToken();
+        cloud.on('POST /api/v1/licenses/refresh', () => ({ status: 200, body: { certificates: [] } }));
+
+        await sut.handleRefresh({ force: true });
+
+        await expect(sut.getStatus()).resolves.toMatchObject({
+          state: 'none',
+          licensed: false,
+          plan: null,
+          key: null,
+          refresh: { lastError: null },
+        });
+        expect(mocks.event.emit).not.toHaveBeenCalledWith('AdminNotify', expect.anything());
+        expect(mocks.logger.warn).not.toHaveBeenCalled();
+      });
+
+      it('clears every held certificate when the complete answer is empty', async () => {
+        await holdPlanAndKey();
+        await expect(sut.getStatus()).resolves.toMatchObject({ entitlements: { remoteAccess: true, supporter: true } });
+        mocks.event.emit.mockClear();
+        cloud.on('POST /api/v1/licenses/refresh', () => ({ status: 200, body: { certificates: [] } }));
+
+        await sut.handleRefresh({ force: true });
+
+        expect(store()).toMatchObject({ plan: null, key: null });
+        await expect(sut.getStatus()).resolves.toMatchObject({
+          state: 'none',
+          licensed: false,
+          refresh: { lastError: null },
+          entitlements: { remoteAccess: false, cloudBackup: false, cloudMl: false, supporter: false },
+        });
+        expect(mocks.event.emit).not.toHaveBeenCalledWith('AdminNotify', expect.anything());
+      });
+
+      it('replaces a held plan with a key-only answer and keeps supporter status active', async () => {
+        await holdPlanAndKey();
+        mocks.event.emit.mockClear();
+        cloud.on('POST /api/v1/licenses/refresh', () => ({
+          status: 200,
+          body: { certificates: [keyCertificate({ jti: 'key-2' })] },
+        }));
+
+        await sut.handleRefresh({ force: true });
+
+        expect(store()?.plan).toBeNull();
+        expect(store()?.key).toMatchObject({ claims: { jti: 'key-2' }, activationId: 'activation-1' });
+        await expect(sut.getStatus()).resolves.toMatchObject({
+          state: 'active',
+          licensed: true,
+          kind: 'server',
+          refresh: { lastError: null },
+          entitlements: { remoteAccess: false, cloudBackup: false, cloudMl: false, supporter: true },
+        });
+        expect(mocks.event.emit).not.toHaveBeenCalledWith('AdminNotify', expect.anything());
+      });
+
+      it('still notifies once when a previously held plan is explicitly ended by a signed certificate', async () => {
+        await holdPlanAndKey();
+        mocks.event.emit.mockClear();
+        const ended = certificate({ jti: 'plan-ended', ent: [], lic_exp: now() - 1, grace_days: 0 });
+        cloud.on('POST /api/v1/licenses/refresh', () => ({
+          status: 200,
+          body: { certificates: [ended, keyCertificate()] },
+        }));
+
+        await sut.handleRefresh({ force: true });
+        await sut.handleRefresh({ force: true });
+
+        await expect(sut.getStatus()).resolves.toMatchObject({
+          state: 'expired',
+          entitlements: { remoteAccess: false },
+        });
+        expect(mocks.event.emit).toHaveBeenCalledTimes(1);
+        expect(mocks.event.emit).toHaveBeenCalledWith(
+          'AdminNotify',
+          expect.objectContaining({
+            systemTemplate: { version: 1, key: 'license-expired', args: {} },
+          }),
+        );
+      });
+
       it.each([
-        ['an empty answer', (): string[] => [], 'does not understand'],
-        [
-          'an answer without a plan certificate',
-          (): string[] => [keyCertificate({ jti: 'key-2' })],
-          'without a plan certificate',
-        ],
-      ])('keeps both certificates and records the error for %s, retrying in an hour', async (_, answer, error) => {
+        ['a malformed list', (): unknown => null],
+        ['an invalid certificate', (): unknown => [keyCertificate({ jti: 'key-2' }), 'not-a-certificate']],
+      ])('keeps both certificates and records the error for %s, retrying in an hour', async (_, answer) => {
         await holdPlanAndKey();
         cloud.on('POST /api/v1/licenses/refresh', () => ({ status: 200, body: { certificates: answer() } }));
 
         await expect(sut.handleRefresh({ force: true })).resolves.toBe(JobStatus.Success);
 
         const held = store()!;
-        expect(held.plan).toMatchObject({
-          claims: { jti: 'plan-1' },
-          lastRefreshError: expect.stringContaining(error),
-        });
+        expect(held.plan).toMatchObject({ claims: { jti: 'plan-1' }, lastRefreshError: expect.any(String) });
         expect(held.key).toMatchObject({
           claims: { jti: 'key-1' },
           activationId: 'activation-1',
-          lastRefreshError: expect.stringContaining(error),
+          lastRefreshError: expect.any(String),
         });
         const retryIn = Date.parse(held.plan!.nextRefreshAt!) - Date.now();
         expect(retryIn).toBeGreaterThan(55 * 60 * 1000);

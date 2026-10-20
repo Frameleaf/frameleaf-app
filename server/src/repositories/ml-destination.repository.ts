@@ -26,7 +26,10 @@ import {
   recoveryMlRegistrySchema,
 } from 'src/utils/recovery-ml-authority.js';
 
-export type MlDestinationRow = Selectable<MlDestinationTable>;
+export type MlDestinationRow = Selectable<MlDestinationTable> & {
+  /** Preserve PostgreSQL microseconds across the driver's Date conversion for probe CAS. */
+  updatedAtToken: string;
+};
 export type MlCloudModelChoiceRow = Selectable<MlCloudModelChoiceTable>;
 export type MlWorkloadRouteRow = Selectable<MlWorkloadRouteTable>;
 export type MlWorkloadAccountingRow = Selectable<MlWorkloadAccountingTable>;
@@ -101,6 +104,8 @@ export type MlThroughputSample = {
   durationMs: number;
   spentUsd: number;
 };
+
+const destinationVersion = sql<string>`"updatedAt"::text`.as('updatedAtToken');
 
 /** Through text: a parameter typed `jsonb` is JSON-encoded again by the driver, storing a JSON string. */
 const toJson = (value: unknown) => sql`${JSON.stringify(value)}::text::jsonb`;
@@ -197,6 +202,7 @@ export class MlDestinationRepository {
       const current = await tx
         .selectFrom('ml_destination')
         .selectAll()
+        .select(destinationVersion)
         .where('id', '=', expected.id)
         .forUpdate()
         .executeTakeFirst();
@@ -236,12 +242,23 @@ export class MlDestinationRepository {
 
   @GenerateSql()
   getAll(): Promise<MlDestinationRow[]> {
-    return this.db.selectFrom('ml_destination').selectAll().orderBy('kind', 'asc').orderBy('name', 'asc').execute();
+    return this.db
+      .selectFrom('ml_destination')
+      .selectAll()
+      .select(destinationVersion)
+      .orderBy('kind', 'asc')
+      .orderBy('name', 'asc')
+      .execute();
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
   getById(id: string): Promise<MlDestinationRow | undefined> {
-    return this.db.selectFrom('ml_destination').selectAll().where('id', '=', id).executeTakeFirst();
+    return this.db
+      .selectFrom('ml_destination')
+      .selectAll()
+      .select(destinationVersion)
+      .where('id', '=', id)
+      .executeTakeFirst();
   }
 
   @GenerateSql({ params: [DummyValue.STRING, DummyValue.STRING] })
@@ -249,6 +266,7 @@ export class MlDestinationRepository {
     return this.db
       .selectFrom('ml_destination')
       .selectAll()
+      .select(destinationVersion)
       .where('kind', '=', kind)
       .where('url', '=', url)
       .executeTakeFirst();
@@ -259,7 +277,12 @@ export class MlDestinationRepository {
       ...destination,
       workloads: toJson(destination.workloads) as unknown as MlWorkload[],
     };
-    return this.db.insertInto('ml_destination').values(values).returningAll().executeTakeFirstOrThrow();
+    return this.db
+      .insertInto('ml_destination')
+      .values(values)
+      .returningAll()
+      .returning(destinationVersion)
+      .executeTakeFirstOrThrow();
   }
 
   async update(id: string, patch: MlDestinationPatch): Promise<MlDestinationRow> {
@@ -273,6 +296,7 @@ export class MlDestinationRepository {
       .set(values)
       .where('id', '=', id)
       .returningAll()
+      .returning(destinationVersion)
       .executeTakeFirstOrThrow();
   }
 
@@ -306,7 +330,7 @@ export class MlDestinationRepository {
         query
           .where('kind', '=', expected!.kind)
           .where('enabled', '=', expected!.enabled)
-          .where('updatedAt', '=', expected!.updatedAt)
+          .where(sql<boolean>`"updatedAt" = ${expected!.updatedAtToken}::timestamptz`)
           .where(sql<boolean>`url IS NOT DISTINCT FROM ${expected!.url}`)
           .where(sql<boolean>`"authToken" IS NOT DISTINCT FROM ${expected!.authToken}`),
       )

@@ -29,6 +29,7 @@ import {
   MediaOperationCreate,
   MediaOperationRepository,
 } from 'src/repositories/media-operation.repository.js';
+import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
 import {
@@ -48,6 +49,7 @@ import { FileDownloadResponse } from 'src/utils/file.js';
 import { rational } from 'src/utils/rational-time.js';
 import { StudioExportTiming, declareStudioTiming, studioMediaSources } from 'src/utils/studio-export-contract.js';
 import { isInsideFolder } from 'src/utils/studio-export.js';
+import { hasStudioPreviewWorker } from 'src/utils/studio-preview-worker.js';
 import {
   PREVIEW_CANCEL_CLEANED,
   PREVIEW_CONTENT_TYPES,
@@ -176,6 +178,7 @@ export class StudioPreviewService {
     private storage: StorageRepository,
     private sourceMedia: StudioExportRepository,
     private users: UserRepository,
+    private renderWorkers: RenderWorkerRepository,
   ) {
     this.logger.setContext(StudioPreviewService.name);
 
@@ -927,6 +930,13 @@ export class StudioPreviewService {
     manifest: StudioAuthorizedManifest,
     timing: StudioExportTiming | null,
   ): Promise<StudioPreviewFrame> {
+    if (!(await hasStudioPreviewWorker(this.renderWorkers, MediaOperationKind.StudioPreview))) {
+      await this.dropFrames([frame]);
+      throw new ConflictException({
+        code: 'studio_preview_no_worker',
+        message: 'No qualified local preview worker is available',
+      });
+    }
     const input: MediaOperationCreate = {
       ownerId: binding.ownerId,
       kind: MediaOperationKind.StudioPreview,

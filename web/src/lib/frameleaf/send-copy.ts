@@ -59,17 +59,15 @@ export const canSendCopies = (nav: ShareCapable | undefined = browserNavigator()
 
 /**
  * Whether this session may send copies at all: a signed-in user, or a shared link that allows
- * downloads and shows metadata (its owner always may), as `SharedLinkDownload` and the public
- * shell gate the download.
+ * downloads and shows metadata, including when its owner previews it.
  */
 export const sendCopyPermitted = (
   sharedLink: Pick<SharedLinkResponseDto, 'allowDownload' | 'showMetadata' | 'userId'> | undefined = getSharedLink(),
 ): boolean => {
-  const userId = authManager.authenticated ? authManager.user.id : undefined;
   if (!sharedLink) {
-    return !!userId;
+    return authManager.authenticated;
   }
-  return sharedLink.userId === userId || (sharedLink.allowDownload && sharedLink.showMetadata);
+  return sharedLink.allowDownload && sharedLink.showMetadata;
 };
 
 /**
