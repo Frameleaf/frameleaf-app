@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { recentBackup, redact, publicSource, type Backup, type Source } from '../src/contracts.js';
+import { recentBackup, redact, publicSource, secretEnvironmentValues, type Backup, type Source } from '../src/contracts.js';
 import { databaseCandidates, mediaMappings } from '../src/discovery.js';
 import { offered } from '../src/releases.js';
 import { removeAutostart } from '../src/fencing.js';
@@ -99,4 +99,38 @@ test('withdrawn and malformed staged releases are refused without an override', 
 test('diagnostics remove exact secrets, URL passwords, bearer tokens and ordinary password fields', () => {
   const result = redact('password=hungry Bearer AABBCC https://user:p%40ss@host known-value', ['known-value']);
   for (const secret of ['hungry', 'AABBCC', 'p%40ss', 'known-value']) assert.ok(!result.includes(secret));
+});
+test('log redaction leaves ordinary words and non-secret fields alone', () => {
+  const env = [
+    'NVIDIA_DRIVER_CAPABILITIES=all',
+    'IMMICH_ENV=production',
+    'DB_USERNAME=frameleaf',
+    'FRAMELEAF_MANAGER_TOKEN_FILE=/run/frameleaf/manager-token',
+    'DB_PASSWORD=Zx9vQ2mLp4Rt',
+  ];
+  const secrets = secretEnvironmentValues(env);
+  assert.deepEqual(secrets, ['Zx9vQ2mLp4Rt']);
+  for (const line of [
+    'LOG [Microservices:MetadataService] Installed the landmark icon pack',
+    'LOG [Microservices:Bootstrap] Frameleaf Microservices is running [v1.1.2] [production]',
+  ])
+    assert.equal(redact(line, secrets), line);
+  // Even a short secret value no longer redacts inside words; it still goes as a whole word.
+  assert.equal(redact('Installed all files', ['all']), 'Installed [redacted] files');
+});
+test('log redaction still removes real secrets, inside URLs and JSON too', () => {
+  const password = 'Zx9vQ2mLp4Rt';
+  const result = redact(
+    [
+      `connecting to postgres://frameleaf:${password}@database:5432/frameleaf`,
+      `payload {"user":"a","password":"short1","recoveryKey":"rk-abc123","setup_code":"482913"}`,
+      `prefix${password}suffix`,
+      'linked with fll_AbC123xyz_456',
+      'token=abc12345 api_key: qwe',
+    ].join('\n'),
+    [password],
+  );
+  for (const secret of [password, 'short1', 'rk-abc123', '482913', 'fll_AbC123xyz_456', 'abc12345', 'qwe'])
+    assert.ok(!result.includes(secret), `${secret} leaked: ${result}`);
+  assert.ok(result.includes('"user":"a"'));
 });

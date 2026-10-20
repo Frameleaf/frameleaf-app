@@ -168,18 +168,32 @@ export function publicSource(source: Source) {
     backupScope: 'database-only' as const,
   };
 }
+const SECRET_ENV_NAME = /PASSWORD|PASSWD|SECRET|TOKEN|KEY|CREDENTIAL|CODE|^DB_URL$/i;
+/** Values of a container's environment whose names mark them as secrets (not paths to secret files). */
+export const secretEnvironmentValues = (env: string[]) =>
+  env
+    .map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)])
+    .filter(([name]) => SECRET_ENV_NAME.test(name) && !/_FILE$/i.test(name))
+    .map(([, value]) => value);
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Logs are never a route to Docker inspection output, environment values or command arguments. */
 export function redact(text: string, secrets: string[] = []): string {
   for (const value of secrets
     .filter((v) => v.length >= 3)
     .sort((a, b) => b.length - a.length))
-    text = text.split(value).join('[redacted]');
+    // A value of 8+ characters is removed wherever it appears; a shorter one only as a whole word,
+    // so a short password like "all" cannot turn "Installed" into "Inst[redacted]ed".
+    text =
+      value.length >= 8
+        ? text.split(value).join('[redacted]')
+        : text.replace(new RegExp(`(?<![A-Za-z0-9])${escapeRegExp(value)}(?![A-Za-z0-9])`, 'g'), '[redacted]');
   return text
     .replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi, '$1[redacted]@')
     .replace(
-      /((?:password|secret|token|authorization|cookie|api[_-]?key)\s*[:=]\s*)[^\s,;]+/gi,
+      /((?:password|passwd|secret|token|authorization|cookie|api[_-]?key|recovery[_-]?key|(?:claim|setup)[_-]?code)["']?\s*[:=]\s*["']?)[^\s,;"']+/gi,
       '$1[redacted]',
     )
     .replace(/\b(Bearer|Basic)\s+[^\s]+/gi, '$1 [redacted]')
+    .replace(/\bfll_[A-Za-z0-9_-]+/g, '[redacted]')
     .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
 }
