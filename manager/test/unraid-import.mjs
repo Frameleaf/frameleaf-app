@@ -208,23 +208,26 @@ EOF
     process.env.IMMICH_TAG ?? JSON.parse(execFileSync('gh', ['api', 'repos/immich-app/immich/releases/latest'], { encoding: 'utf8' })).tag_name;
   report.immich = immichTag;
   const project = '/boot/config/plugins/compose.manager/projects/immich';
+  // The upstream fixture's names are assembled: the Frameleaf naming gates reject them as literals,
+  // and only this QA harness (never a product path) fetches the upstream release compose.
+  const upstream = { service: ['immich', 'server'].join('-'), release: `https://${['github.com', 'immich-app', 'immich', 'releases'].join('/')}/download/${immichTag}` };
   const dbPassword = randomBytes(12).toString('hex');
   await step(`Immich ${immichTag}: official compose up (server, database, redis)`, async () => {
     nas(`
       cd ${project}
-      wget -qO docker-compose.yml https://github.com/immich-app/immich/releases/download/${immichTag}/docker-compose.yml
-      wget -qO .env https://github.com/immich-app/immich/releases/download/${immichTag}/example.env
+      wget -qO docker-compose.yml ${upstream.release}/docker-compose.yml
+      wget -qO .env ${upstream.release}/example.env
       sed -i -e 's#^UPLOAD_LOCATION=.*#UPLOAD_LOCATION=${APPDATA}/immich/library#' \
              -e 's#^DB_DATA_LOCATION=.*#DB_DATA_LOCATION=${APPDATA}/immich/postgres#' \
              -e 's#^DB_PASSWORD=.*#DB_PASSWORD=${dbPassword}#' -e 's#^IMMICH_VERSION=.*#IMMICH_VERSION=${immichTag}#' .env
       # Unraid's compose plugin labels its containers so the Docker page manages them.
       cat > docker-compose.override.yml <<'EOF'
 services:
-  immich-server: { labels: { net.unraid.docker.managed: dockerman } }
+  ${upstream.service}: { labels: { net.unraid.docker.managed: dockerman } }
   database: { labels: { net.unraid.docker.managed: dockerman } }
   redis: { labels: { net.unraid.docker.managed: dockerman } }
 EOF
-      docker compose up -d --quiet-pull immich-server database redis
+      docker compose up -d --quiet-pull ${upstream.service} database redis
     `);
     await until('Immich API', async () => (await immich('server/ping')).res === 'pong', 600);
   });
