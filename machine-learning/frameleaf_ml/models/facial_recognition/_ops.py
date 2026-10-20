@@ -73,4 +73,5 @@ def umeyama(src: NDArray[np.float32], dst: NDArray[np.float32]) -> NDArray[np.fl
 
 def align_face(image: NDArray[np.uint8], kps: NDArray[np.float32]) -> NDArray[np.float32]:
     matrix = umeyama(kps, ARCFACE_DST)
-    return cv2.warpAffine(image, matrix, (ALIGNED_SIZE, ALIGNED_SIZE)).astype(np.float32)
+    # Integer interpolation amplifies subpixel landmark differences across backends.
+    return cv2.warpAffine(image.astype(np.float32), matrix, (ALIGNED_SIZE, ALIGNED_SIZE)).astype(np.float32, copy=False)

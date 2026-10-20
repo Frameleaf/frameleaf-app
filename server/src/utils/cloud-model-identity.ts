@@ -46,7 +46,7 @@ export const isCloudIdentityWorkload = (workload: MlWorkload): workload is Cloud
  */
 export const LOCAL_PREPROCESS_VERSIONS: Readonly<Record<CloudIdentityWorkload, string>> = Object.freeze({
   [MlWorkload.Clip]: 'frameleaf-clip-visual/1',
-  [MlWorkload.Face]: 'frameleaf-face/2',
+  [MlWorkload.Face]: 'frameleaf-face/3',
 });
 
 const SNAPSHOT_REF = /^models--[^/]+\/refs\//;
@@ -93,7 +93,7 @@ export const cloudModelIdentitySchema = z.object({
     )
     .min(1)
     .max(64),
-  /** The preprocessing version (`frameleaf-clip-visual/1`, `frameleaf-face/2`). */
+  /** The preprocessing version (`frameleaf-clip-visual/1`, `frameleaf-face/3`). */
   preprocess: z.string().min(1).max(64),
   output: z.object({
     dim: z.number().int().min(1).max(65_536),

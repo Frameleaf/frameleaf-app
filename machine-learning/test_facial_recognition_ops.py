@@ -3,7 +3,18 @@ from fractions import Fraction
 import numpy as np
 import pytest
 
-from frameleaf_ml.models.facial_recognition._ops import ARCFACE_DST, umeyama
+from frameleaf_ml.models.facial_recognition._ops import ARCFACE_DST, align_face, umeyama
+
+
+def test_face_crop_preserves_fractional_interpolation_values() -> None:
+    pattern = ((np.indices((112, 112)).sum(axis=0) % 2) * 255).astype(np.uint8)
+    image = np.repeat(pattern[:, :, None], 3, axis=2)
+    landmarks = ARCFACE_DST + np.array([0.125, 0], dtype=np.float32)
+
+    crop = align_face(image, landmarks)
+
+    assert crop.dtype == np.float32
+    np.testing.assert_allclose(crop[40, 40], [31.875] * 3, atol=1e-3, rtol=0)
 
 
 @pytest.mark.parametrize("offset", [(0, 0), (8000, 5000)])
