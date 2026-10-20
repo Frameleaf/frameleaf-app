@@ -228,6 +228,7 @@ export class ServerService extends BaseService {
       res: 'pong',
       id,
       linked,
+      lanDiscovery: config.server.lanDiscovery,
       name: config.server.name?.trim() || 'Frameleaf server',
       setup: admin || !this.configRepository.getEnv().setup.allow ? 'complete' : 'needed',
       cloud: this.configRepository.getEnv().frameleafCloud.url ? 'available' : 'unavailable',

@@ -119293,6 +119293,10 @@
             "example": "018f5e7a-6b1e-7f6e-9c2e-1a2b3c4d5e6f",
             "type": "string"
           },
+          "lanDiscovery": {
+            "description": "Whether LAN discovery is enabled; a host-network Docker companion must withdraw its announcement when false",
+            "type": "boolean"
+          },
           "linked": {
             "description": "Whether `id` is a Frameleaf Cloud instance id (true) or a local-only id (false)",
             "type": "boolean"

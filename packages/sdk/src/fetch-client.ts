@@ -13471,6 +13471,8 @@ export type ServerPingResponse = {
     cloud: Cloud;
     /** This server's identity: the Frameleaf Cloud instance id while linked, else a stable local id */
     id: string;
+    /** Whether LAN discovery is enabled; a host-network Docker companion must withdraw its announcement when false */
+    lanDiscovery?: boolean;
     /** Whether `id` is a Frameleaf Cloud instance id (true) or a local-only id (false) */
     linked: boolean;
     /** The server's display name (the admin-set server name, or a default) */

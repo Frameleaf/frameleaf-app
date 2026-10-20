@@ -123,3 +123,7 @@ release qualified, retain exact image digests and Unraid versions with fresh
 install, restart, upgrade, failed-upgrade recovery, uninstall-with-data-retention,
 backup restore and supported import/resume evidence. Catalog publication and
 passing package tests do not replace those platform checks.
+
+### Mobile discovery
+
+Manager installations of releases that include `frameleaf-lan-discovery` publish a Bonjour announcement from a separate host-network companion. The Frameleaf server and database stay on their private Docker bridge. The companion follows the published web port and the server's LAN discovery setting; no host Avahi files or manual announcements are needed. A loopback-only installation is not advertised. Older server releases without the companion keep their existing deployment layout.
