@@ -43,7 +43,7 @@ CLIP_MODEL = "ViT-B-16-SigLIP-384__webli"
 FACE_MODEL = "buffalo_l"
 FACE_MIN_SCORE = 0.7
 CLIP_PREPROCESS = "frameleaf-clip-visual/1"
-FACE_PREPROCESS = "frameleaf-face/2"
+FACE_PREPROCESS = "frameleaf-face/3"
 # Only the files each run needs: the CLIP text encoder is not downloaded.
 CLIP_FILES = ["config.json", "visual/model.onnx", "visual/preprocess_cfg.json"]
 FACE_FILES = ["detection/model.onnx", "recognition/model.onnx"]
@@ -149,8 +149,7 @@ def main() -> None:
                 "modelName": FACE_MODEL,
                 "minScore": FACE_MIN_SCORE,
                 "faces": [
-                    {**face, "embedding": orjson.loads(face["embedding"])}
-                    for face in recognized["facial-recognition"]
+                    {**face, "embedding": orjson.loads(face["embedding"])} for face in recognized["facial-recognition"]
                 ],
                 "imageWidth": recognized["imageWidth"],
                 "imageHeight": recognized["imageHeight"],
