@@ -318,7 +318,7 @@ function serviceStates(output) {
 async function waitHealthy(
   list,
   timeoutMs,
-  { now = Date.now, wait = sleep, services = 3 } = {},
+  { now = Date.now, wait = sleep, services } = {},
 ) {
   const deadline = now() + timeoutMs;
   for (;;) {
@@ -331,7 +331,8 @@ async function waitHealthy(
     );
     if (
       states.length === services &&
-      states.every((s) => s.health === "healthy")
+      // A service without a health check (LAN discovery) is ready once it runs.
+      states.every((s) => s.health === "healthy" || s.health === "")
     )
       return states;
     if (now() > deadline)
@@ -574,6 +575,7 @@ async function main(env = process.env) {
     await waitHealthy(
       () => docker("ps", "--all", "--format", "json"),
       Number(env.WAIT_SECONDS || 900) * 1000,
+      { services: docker("config", "--services").trim().split("\n").length },
     );
     const mapped = docker("port", "frameleaf-server", String(EDGE_PORT)).trim();
     assert.match(

@@ -416,13 +416,14 @@ test("each image digest is signed, attested and verified with the committed key,
   );
 });
 
-test("the stack is ready only when all three services are healthy, and a stopped service fails at once", async () => {
+test("the stack is ready only when every service is healthy or has no health check, and a stopped service fails at once", async () => {
   const { serviceStates, waitHealthy } = require("./frameleaf-deploy-test.cjs");
   const row = (Service, Health, State = "running") =>
     JSON.stringify({ Service, State, Health });
   const all = (health) =>
     ["frameleaf-server", "frameleaf-machine-learning", "database"]
       .map((s) => row(s, health))
+      .concat(row("frameleaf-lan-discovery", ""))
       .join("\n");
   assert.deepEqual(serviceStates(`[${row("database", "healthy")}]`), [
     { service: "database", state: "running", health: "healthy" },
@@ -430,8 +431,9 @@ test("the stack is ready only when all three services are healthy, and a stopped
   const outputs = [all("starting"), all("unhealthy"), all("healthy")];
   const states = await waitHealthy(() => outputs.shift(), 60_000, {
     wait: async () => {},
+    services: 4,
   });
-  assert.equal(states.length, 3);
+  assert.equal(states.length, 4);
   await assert.rejects(
     waitHealthy(() => row("frameleaf-server", "", "restarting"), 60_000, {
       wait: async () => {},
@@ -442,6 +444,7 @@ test("the stack is ready only when all three services are healthy, and a stopped
   await assert.rejects(
     waitHealthy(() => all("starting"), 10_000, {
       wait: async () => {},
+      services: 4,
       now: () => (clock += 6_000),
     }),
     /not healthy in time/,
