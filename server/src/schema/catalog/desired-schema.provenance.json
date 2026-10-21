@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "c6d0ceefdbe83ccffede2e2d5073571069ac3ee2",
+  "sourceCommit": "0b8487755ddcdbfbfc7ce5a9c8a03e0e68bac895",
   "sourceHashes": {
     "src/enum.ts": "dc2c50c323ccd08bbcc943ea535988d99c55a4e9e3c3aac6c15175bad362fb66",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -7,7 +7,7 @@
     "src/schema/enums.ts": "6f7ec2f2d59677c4806c85fc069bcd50aa93ed8b9b8cc3c3bc2ab632c9eb5347",
     "src/schema/frameleaf-feature-schema.ts": "dc478c5b3e85e0dbec52300f6c5b2a07f55a5175c96fca7a401c42748c1f081b",
     "src/schema/functions.ts": "7d91c62a7a5c67041b972c816f842be75f74d182f254a594f7d25e721d1d5acc",
-    "src/schema/index.ts": "6b4e269f6ebc425f1040322d77addcd82ef825e2ec4c591f88f5e4aedbde6ff2",
+    "src/schema/index.ts": "85e616c12adc4c781eaaa7e65e4d2dc144d1609b1e203e3f14ccc2aa5dd222a4",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
     "src/schema/tables/admin-audit-event.table.ts": "a7ffe5c6a193a88bd8f474a3436fcd24748f5d25b81b0ae35a5d60196809d8b8",
@@ -108,6 +108,7 @@
     "src/schema/tables/smart-album.table.ts": "cf05f0f1d4bdc60cd581f7c6f90cc3bbcdcc822ef5e9bf986b378bd15088d8e1",
     "src/schema/tables/smart-search-description.table.ts": "5a81ab7fb476378080b9d1b9dfdf46963e60db2f4ad53e75a9a13ceb1940ed3f",
     "src/schema/tables/smart-search.table.ts": "fd8811bd6a4eaeb94073e4af42d8b42ca0ef3d95b950e6fcd733b98cc86e50f2",
+    "src/schema/tables/source-resource.table.ts": "7ed73669f874473c06033206069335260d596ef0d1920960796a0cac945f4011",
     "src/schema/tables/stack-audit.table.ts": "c0f1a2202dabba97fc270ac95c0510dad8f18597abe94a488ba248454076aff1",
     "src/schema/tables/stack.table.ts": "d4aaadc5c5bcd1b25d49172c7e4d77fb03ed96b558709d3257863e86e0a3c1d5",
     "src/schema/tables/studio-export.table.ts": "a19caf2aa0fe338904669a8d0e3f45451d2813e59f94e80e131e87ecee7ffb31",
@@ -138,6 +139,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "a28ca3ea9a763b17aab17e1f18e2fbecdb4f8f50374df854326e21f7de6055a2",
-  "rawMetadataSha256": "7a3836a57e6e86cf928b2e8f0059650adfa2e68cff8841fb224c5e8c744ae14f"
+  "dumpSha256": "a6c4c6bbcc6ab45caf0cdf25db4c3be590e4fdc36a875017ba2db2ffd9f20903",
+  "rawMetadataSha256": "78aa9d3fa05cb86879cd3f57f4a5ab77c5d2354f695e1babeb4de292aef93e76"
 }

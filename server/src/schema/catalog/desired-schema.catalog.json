@@ -3165,20 +3165,20 @@
           "synchronize": true
         },
         {
-          "name": "idx_geodata_places_alternate_names",
-          "definition": "CREATE INDEX idx_geodata_places_alternate_names ON public.geodata_places USING gin (f_unaccent((\"alternateNames\")::text) gin_trgm_ops)",
-          "tableName": "geodata_places",
-          "expression": "f_unaccent((\"alternateNames\")::text)",
-          "using": "gin",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "IDX_geodata_gist_earthcoord",
           "definition": "CREATE INDEX \"IDX_geodata_gist_earthcoord\" ON public.geodata_places USING gist (ll_to_earth_public(latitude, longitude))",
           "tableName": "geodata_places",
           "expression": "ll_to_earth_public(latitude, longitude)",
           "using": "gist",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "idx_geodata_places_alternate_names",
+          "definition": "CREATE INDEX idx_geodata_places_alternate_names ON public.geodata_places USING gin (f_unaccent((\"alternateNames\")::text) gin_trgm_ops)",
+          "tableName": "geodata_places",
+          "expression": "f_unaccent((\"alternateNames\")::text)",
+          "using": "gin",
           "unique": false,
           "synchronize": true
         },
@@ -12168,183 +12168,6 @@
           "tableName": "user_metadata",
           "columnNames": [
             "userId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "library",
-      "columns": [
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "name",
-          "tableName": "library",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "importPaths",
-          "tableName": "library",
-          "nullable": false,
-          "isArray": true,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "library",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "updateId",
-          "tableName": "library",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "deletedAt",
-          "tableName": "library",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "library",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "exclusionPatterns",
-          "tableName": "library",
-          "nullable": false,
-          "isArray": true,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "library",
-          "nullable": false,
-          "isArray": false,
-          "default": "uuid_generate_v4()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "refreshedAt",
-          "tableName": "library",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "library",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "readOnly",
-          "tableName": "library",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "library_updateId_idx",
-          "definition": "CREATE INDEX \"library_updateId_idx\" ON public.library USING btree (\"updateId\")",
-          "tableName": "library",
-          "columnNames": [
-            "updateId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "library_ownerId_idx",
-          "definition": "CREATE INDEX \"library_ownerId_idx\" ON public.library USING btree (\"ownerId\")",
-          "tableName": "library",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [
-        {
-          "name": "library_updatedAt",
-          "definition": "CREATE TRIGGER \"library_updatedAt\" BEFORE UPDATE ON public.library FOR EACH ROW EXECUTE FUNCTION updated_at()",
-          "tableName": "library",
-          "functionName": "updated_at",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "before",
-          "scope": "row"
-        }
-      ],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "library_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "library",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "library_ownerId_fkey",
-          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "library",
-          "columnNames": [
-            "ownerId"
           ],
           "referenceTableName": "user",
           "referenceColumnNames": [
@@ -38960,22 +38783,72 @@
       "synchronize": true
     },
     {
-      "name": "desktop_device",
+      "name": "cloud_backup_selection",
       "columns": [
         {
-          "type": "character varying",
+          "type": "uuid",
           "primary": false,
-          "name": "mode",
-          "tableName": "desktop_device",
+          "name": "tagIds",
+          "tableName": "cloud_backup_selection",
+          "nullable": false,
+          "isArray": true,
+          "default": "'{}'::uuid[]",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "dateRanges",
+          "tableName": "cloud_backup_selection",
+          "nullable": false,
+          "isArray": false,
+          "default": "'[]'::jsonb",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
+          "tableName": "cloud_backup_selection",
           "nullable": false,
           "isArray": false,
           "synchronize": true
         },
         {
+          "type": "uuid",
+          "primary": false,
+          "name": "personIds",
+          "tableName": "cloud_backup_selection",
+          "nullable": false,
+          "isArray": true,
+          "default": "'{}'::uuid[]",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "folders",
+          "tableName": "cloud_backup_selection",
+          "nullable": false,
+          "isArray": true,
+          "default": "'{}'::text[]",
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "favorites",
+          "tableName": "cloud_backup_selection",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
           "type": "timestamp with time zone",
           "primary": false,
-          "name": "createdAt",
-          "tableName": "desktop_device",
+          "name": "updatedAt",
+          "tableName": "cloud_backup_selection",
           "nullable": false,
           "isArray": false,
           "default": "now()",
@@ -38984,17 +38857,308 @@
         {
           "type": "uuid",
           "primary": false,
-          "name": "userId",
-          "tableName": "desktop_device",
+          "name": "albumIds",
+          "tableName": "cloud_backup_selection",
+          "nullable": false,
+          "isArray": true,
+          "default": "'{}'::uuid[]",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "collectionIds",
+          "tableName": "cloud_backup_selection",
+          "nullable": false,
+          "isArray": true,
+          "default": "'{}'::uuid[]",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "destination",
+          "tableName": "cloud_backup_selection",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "cloud_backup_selection_destination_check",
+          "definition": "CHECK ((destination = 'cloud'::text))",
+          "tableName": "cloud_backup_selection",
+          "expression": "((destination = 'cloud'::text))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "cloud_backup_selection_dateRanges_check",
+          "definition": "CHECK ((jsonb_typeof(\"dateRanges\") = 'array'::text))",
+          "tableName": "cloud_backup_selection",
+          "expression": "((jsonb_typeof(\"dateRanges\") = 'array'::text))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "cloud_backup_selection_pkey",
+          "definition": "PRIMARY KEY (\"userId\", destination)",
+          "tableName": "cloud_backup_selection",
+          "columnNames": [
+            "userId",
+            "destination"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "cloud_backup_selection_userId_fkey",
+          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "cloud_backup_selection",
+          "columnNames": [
+            "userId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "cloud_backup_decision_run",
+      "columns": [
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "cloud_backup_decision_run",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "runId",
+          "tableName": "cloud_backup_decision_run",
           "nullable": false,
           "isArray": false,
           "synchronize": true
         },
         {
-          "type": "character varying",
+          "type": "text",
           "primary": false,
-          "name": "architecture",
-          "tableName": "desktop_device",
+          "name": "manifestKey",
+          "tableName": "cloud_backup_decision_run",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "inventoryAt",
+          "tableName": "cloud_backup_decision_run",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "licenceScope",
+          "tableName": "cloud_backup_decision_run",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "cloud_backup_decision_run_manifestKey_idx",
+          "definition": "CREATE INDEX \"cloud_backup_decision_run_manifestKey_idx\" ON public.cloud_backup_decision_run USING btree (\"manifestKey\")",
+          "tableName": "cloud_backup_decision_run",
+          "columnNames": [
+            "manifestKey"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "cloud_backup_decision_run_licenceScope_check",
+          "definition": "CHECK ((\"licenceScope\" = ANY (ARRAY['all'::text, 'users'::text, 'none'::text, 'own-bucket'::text])))",
+          "tableName": "cloud_backup_decision_run",
+          "expression": "((\"licenceScope\" = ANY (ARRAY['all'::text, 'users'::text, 'none'::text, 'own-bucket'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "cloud_backup_decision_run_pkey",
+          "definition": "PRIMARY KEY (\"runId\")",
+          "tableName": "cloud_backup_decision_run",
+          "columnNames": [
+            "runId"
+          ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "cloud_backup_decision_account",
+      "columns": [
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "licenceEligible",
+          "tableName": "cloud_backup_decision_account",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "includedOriginals",
+          "tableName": "cloud_backup_decision_account",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
+          "tableName": "cloud_backup_decision_account",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "selectionHash",
+          "tableName": "cloud_backup_decision_account",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "userFingerprint",
+          "tableName": "cloud_backup_decision_account",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "selectedOriginals",
+          "tableName": "cloud_backup_decision_account",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "totalOriginals",
+          "tableName": "cloud_backup_decision_account",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "runId",
+          "tableName": "cloud_backup_decision_account",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "cloud_backup_decision_account_counts_check",
+          "definition": "CHECK (((\"totalOriginals\" >= 0) AND (\"selectedOriginals\" >= 0) AND (\"selectedOriginals\" <= \"totalOriginals\") AND ((\"includedOriginals\" IS NULL) OR ((\"includedOriginals\" >= 0) AND (\"includedOriginals\" <= \"selectedOriginals\"))) AND (\"licenceEligible\" OR (\"includedOriginals\" IS NULL) OR (\"includedOriginals\" = 0))))",
+          "tableName": "cloud_backup_decision_account",
+          "expression": "(((\"totalOriginals\" >= 0) AND (\"selectedOriginals\" >= 0) AND (\"selectedOriginals\" <= \"totalOriginals\") AND ((\"includedOriginals\" IS NULL) OR ((\"includedOriginals\" >= 0) AND (\"includedOriginals\" <= \"selectedOriginals\"))) AND (\"licenceEligible\" OR (\"includedOriginals\" IS NULL) OR (\"includedOriginals\" = 0))))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "cloud_backup_decision_account_pkey",
+          "definition": "PRIMARY KEY (\"runId\", \"userId\")",
+          "tableName": "cloud_backup_decision_account",
+          "columnNames": [
+            "runId",
+            "userId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "cloud_backup_decision_account_runId_fkey",
+          "definition": "FOREIGN KEY (\"runId\") REFERENCES cloud_backup_decision_run(\"runId\") ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "cloud_backup_decision_account",
+          "columnNames": [
+            "runId"
+          ],
+          "referenceTableName": "cloud_backup_decision_run",
+          "referenceColumnNames": [
+            "runId"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "cloud_backup_decision_asset",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "runId",
+          "tableName": "cloud_backup_decision_asset",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "reason",
+          "tableName": "cloud_backup_decision_asset",
           "nullable": false,
           "isArray": false,
           "synchronize": true
@@ -39002,17 +39166,291 @@
         {
           "type": "uuid",
           "primary": false,
-          "name": "id",
-          "tableName": "desktop_device",
+          "name": "ownerId",
+          "tableName": "cloud_backup_decision_asset",
           "nullable": false,
           "isArray": false,
-          "default": "uuid_generate_v4()",
           "synchronize": true
         },
         {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "cloud_backup_decision_asset",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "cloud_backup_decision_asset_reason_check",
+          "definition": "CHECK ((reason = ANY (ARRAY['included'::text, 'selection'::text, 'licence'::text])))",
+          "tableName": "cloud_backup_decision_asset",
+          "expression": "((reason = ANY (ARRAY['included'::text, 'selection'::text, 'licence'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "cloud_backup_decision_asset_pkey",
+          "definition": "PRIMARY KEY (\"runId\", \"assetId\")",
+          "tableName": "cloud_backup_decision_asset",
+          "columnNames": [
+            "runId",
+            "assetId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "cloud_backup_decision_asset_runId_fkey",
+          "definition": "FOREIGN KEY (\"runId\") REFERENCES cloud_backup_decision_run(\"runId\") ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "cloud_backup_decision_asset",
+          "columnNames": [
+            "runId"
+          ],
+          "referenceTableName": "cloud_backup_decision_run",
+          "referenceColumnNames": [
+            "runId"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "cloud_backup_coverage_report",
+      "columns": [
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "pageCount",
+          "tableName": "cloud_backup_coverage_report",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "snapshot",
+          "tableName": "cloud_backup_coverage_report",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "runReport",
+          "tableName": "cloud_backup_coverage_report",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "revisionId",
+          "tableName": "cloud_backup_coverage_report",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "nextAttemptAt",
+          "tableName": "cloud_backup_coverage_report",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "cloud_backup_coverage_report",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "sequence",
+          "tableName": "cloud_backup_coverage_report",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "attempts",
+          "tableName": "cloud_backup_coverage_report",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "instanceId",
+          "tableName": "cloud_backup_coverage_report",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "accountCount",
+          "tableName": "cloud_backup_coverage_report",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "lastError",
+          "tableName": "cloud_backup_coverage_report",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "publishedAt",
+          "tableName": "cloud_backup_coverage_report",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "pages",
+          "tableName": "cloud_backup_coverage_report",
+          "nullable": false,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "runId",
+          "tableName": "cloud_backup_coverage_report",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "inventoryAt",
+          "tableName": "cloud_backup_coverage_report",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "revisionAccepted",
+          "tableName": "cloud_backup_coverage_report",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "status",
+          "tableName": "cloud_backup_coverage_report",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "cloud_backup_coverage_report_pending_idx",
+          "definition": "CREATE INDEX cloud_backup_coverage_report_pending_idx ON public.cloud_backup_coverage_report USING btree (\"nextAttemptAt\") WHERE (status = 'pending'::text)",
+          "tableName": "cloud_backup_coverage_report",
+          "columnNames": [
+            "nextAttemptAt"
+          ],
+          "using": "btree",
+          "where": "(status = 'pending'::text)",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "cloud_backup_coverage_report_sequence_check",
+          "definition": "CHECK ((sequence >= 1))",
+          "tableName": "cloud_backup_coverage_report",
+          "expression": "((sequence >= 1))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "cloud_backup_coverage_report_pages_check",
+          "definition": "CHECK (((\"accountCount\" >= 0) AND (\"pageCount\" = cardinality(pages)) AND (\"pageCount\" = ((\"accountCount\" + 31) / 32))))",
+          "tableName": "cloud_backup_coverage_report",
+          "expression": "(((\"accountCount\" >= 0) AND (\"pageCount\" = cardinality(pages)) AND (\"pageCount\" = ((\"accountCount\" + 31) / 32))))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "cloud_backup_coverage_report_status_check",
+          "definition": "CHECK ((status = ANY (ARRAY['local'::text, 'pending'::text, 'published'::text, 'rejected'::text, 'expired'::text])))",
+          "tableName": "cloud_backup_coverage_report",
+          "expression": "((status = ANY (ARRAY['local'::text, 'pending'::text, 'published'::text, 'rejected'::text, 'expired'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "cloud_backup_coverage_report_pkey",
+          "definition": "PRIMARY KEY (\"runId\")",
+          "tableName": "cloud_backup_coverage_report",
+          "columnNames": [
+            "runId"
+          ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "desktop_device",
+      "columns": [
+        {
           "type": "character varying",
           "primary": false,
-          "name": "platform",
+          "name": "state",
           "tableName": "desktop_device",
           "nullable": false,
           "isArray": false,
@@ -39037,9 +39475,9 @@
           "synchronize": true
         },
         {
-          "type": "character varying",
+          "type": "uuid",
           "primary": false,
-          "name": "state",
+          "name": "installationId",
           "tableName": "desktop_device",
           "nullable": false,
           "isArray": false,
@@ -39067,9 +39505,56 @@
           "synchronize": true
         },
         {
+          "type": "character varying",
+          "primary": false,
+          "name": "mode",
+          "tableName": "desktop_device",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "architecture",
+          "tableName": "desktop_device",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "platform",
+          "tableName": "desktop_device",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
           "type": "uuid",
           "primary": false,
-          "name": "installationId",
+          "name": "id",
+          "tableName": "desktop_device",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "desktop_device",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
           "tableName": "desktop_device",
           "nullable": false,
           "isArray": false,
@@ -39123,39 +39608,45 @@
       "name": "desktop_worker_challenge",
       "columns": [
         {
-          "type": "integer",
+          "type": "character varying",
           "primary": false,
-          "name": "authorizationEpoch",
+          "name": "modelKey",
           "tableName": "desktop_worker_challenge",
           "nullable": false,
           "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
           "synchronize": true
         },
         {
           "type": "character varying",
           "primary": false,
-          "name": "bindingSha256",
+          "name": "profileSha256",
           "tableName": "desktop_worker_challenge",
           "nullable": false,
           "isArray": false,
           "synchronize": true
         },
         {
-          "type": "timestamp with time zone",
+          "type": "character varying",
           "primary": false,
-          "name": "createdAt",
+          "name": "specJson",
           "tableName": "desktop_worker_challenge",
           "nullable": false,
           "isArray": false,
-          "default": "now()",
           "synchronize": true
         },
         {
-          "type": "jsonb",
+          "type": "character varying",
           "primary": false,
-          "name": "runtime",
+          "name": "reportSha256",
+          "tableName": "desktop_worker_challenge",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sessionId",
           "tableName": "desktop_worker_challenge",
           "nullable": false,
           "isArray": false,
@@ -39164,28 +39655,18 @@
         {
           "type": "uuid",
           "primary": false,
-          "name": "id",
+          "name": "requestId",
           "tableName": "desktop_worker_challenge",
           "nullable": false,
           "isArray": false,
-          "default": "uuid_generate_v4()",
           "synchronize": true
         },
         {
-          "type": "character varying",
+          "type": "timestamp with time zone",
           "primary": false,
-          "name": "runtimeFingerprint",
+          "name": "reportedAt",
           "tableName": "desktop_worker_challenge",
           "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "credentialHash",
-          "tableName": "desktop_worker_challenge",
-          "nullable": false,
           "isArray": false,
           "synchronize": true
         },
@@ -39208,9 +39689,9 @@
           "synchronize": true
         },
         {
-          "type": "uuid",
+          "type": "bytea",
           "primary": false,
-          "name": "sessionId",
+          "name": "credentialHash",
           "tableName": "desktop_worker_challenge",
           "nullable": false,
           "isArray": false,
@@ -39219,52 +39700,56 @@
         {
           "type": "character varying",
           "primary": false,
-          "name": "reportSha256",
+          "name": "runtimeFingerprint",
           "tableName": "desktop_worker_challenge",
           "nullable": true,
           "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "runtime",
+          "tableName": "desktop_worker_challenge",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "desktop_worker_challenge",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "authorizationEpoch",
+          "tableName": "desktop_worker_challenge",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
           "synchronize": true
         },
         {
           "type": "timestamp with time zone",
           "primary": false,
-          "name": "reportedAt",
-          "tableName": "desktop_worker_challenge",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "requestId",
+          "name": "createdAt",
           "tableName": "desktop_worker_challenge",
           "nullable": false,
           "isArray": false,
+          "default": "now()",
           "synchronize": true
         },
         {
           "type": "character varying",
           "primary": false,
-          "name": "specJson",
-          "tableName": "desktop_worker_challenge",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "modelKey",
-          "tableName": "desktop_worker_challenge",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "profileSha256",
+          "name": "bindingSha256",
           "tableName": "desktop_worker_challenge",
           "nullable": false,
           "isArray": false,
@@ -39273,22 +39758,22 @@
       ],
       "indexes": [
         {
-          "name": "desktop_worker_challenge_deviceId_idx",
-          "definition": "CREATE INDEX \"desktop_worker_challenge_deviceId_idx\" ON public.desktop_worker_challenge USING btree (\"deviceId\")",
+          "name": "desktop_worker_challenge_sessionId_idx",
+          "definition": "CREATE INDEX \"desktop_worker_challenge_sessionId_idx\" ON public.desktop_worker_challenge USING btree (\"sessionId\")",
           "tableName": "desktop_worker_challenge",
           "columnNames": [
-            "deviceId"
+            "sessionId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "desktop_worker_challenge_sessionId_idx",
-          "definition": "CREATE INDEX \"desktop_worker_challenge_sessionId_idx\" ON public.desktop_worker_challenge USING btree (\"sessionId\")",
+          "name": "desktop_worker_challenge_deviceId_idx",
+          "definition": "CREATE INDEX \"desktop_worker_challenge_deviceId_idx\" ON public.desktop_worker_challenge USING btree (\"deviceId\")",
           "tableName": "desktop_worker_challenge",
           "columnNames": [
-            "sessionId"
+            "deviceId"
           ],
           "using": "btree",
           "unique": false,
@@ -39395,28 +39880,7 @@
         {
           "type": "uuid",
           "primary": false,
-          "name": "id",
-          "tableName": "desktop_ml_attempt",
-          "nullable": false,
-          "isArray": false,
-          "default": "uuid_generate_v4()",
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "authorizationEpoch",
-          "tableName": "desktop_ml_attempt",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "workerSessionId",
+          "name": "qualificationId",
           "tableName": "desktop_ml_attempt",
           "nullable": true,
           "isArray": false,
@@ -39425,10 +39889,11 @@
         {
           "type": "timestamp with time zone",
           "primary": false,
-          "name": "expiresAt",
+          "name": "createdAt",
           "tableName": "desktop_ml_attempt",
           "nullable": false,
           "isArray": false,
+          "default": "now()",
           "synchronize": true
         },
         {
@@ -39443,21 +39908,20 @@
           "synchronize": true
         },
         {
-          "type": "timestamp with time zone",
+          "type": "uuid",
           "primary": false,
-          "name": "createdAt",
+          "name": "deviceId",
           "tableName": "desktop_ml_attempt",
           "nullable": false,
           "isArray": false,
-          "default": "now()",
           "synchronize": true
         },
         {
           "type": "uuid",
           "primary": false,
-          "name": "qualificationId",
+          "name": "taskId",
           "tableName": "desktop_ml_attempt",
-          "nullable": true,
+          "nullable": false,
           "isArray": false,
           "synchronize": true
         },
@@ -39473,7 +39937,17 @@
         {
           "type": "uuid",
           "primary": false,
-          "name": "taskId",
+          "name": "id",
+          "tableName": "desktop_ml_attempt",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "expiresAt",
           "tableName": "desktop_ml_attempt",
           "nullable": false,
           "isArray": false,
@@ -39482,26 +39956,25 @@
         {
           "type": "uuid",
           "primary": false,
-          "name": "deviceId",
+          "name": "workerSessionId",
+          "tableName": "desktop_ml_attempt",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "authorizationEpoch",
           "tableName": "desktop_ml_attempt",
           "nullable": false,
           "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
           "synchronize": true
         }
       ],
       "indexes": [
-        {
-          "name": "desktop_ml_attempt_deviceid_expiresat_idx",
-          "definition": "CREATE INDEX desktop_ml_attempt_deviceid_expiresat_idx ON public.desktop_ml_attempt USING btree (\"deviceId\", \"expiresAt\")",
-          "tableName": "desktop_ml_attempt",
-          "columnNames": [
-            "deviceId",
-            "expiresAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
         {
           "name": "desktop_ml_attempt_taskid_createdat_idx",
           "definition": "CREATE INDEX desktop_ml_attempt_taskid_createdat_idx ON public.desktop_ml_attempt USING btree (\"taskId\", \"createdAt\")",
@@ -39509,6 +39982,18 @@
           "columnNames": [
             "taskId",
             "createdAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "desktop_ml_attempt_deviceid_expiresat_idx",
+          "definition": "CREATE INDEX desktop_ml_attempt_deviceid_expiresat_idx ON public.desktop_ml_attempt USING btree (\"deviceId\", \"expiresAt\")",
+          "tableName": "desktop_ml_attempt",
+          "columnNames": [
+            "deviceId",
+            "expiresAt"
           ],
           "using": "btree",
           "unique": false,
@@ -39574,271 +40059,8 @@
       "synchronize": true
     },
     {
-      "name": "desktop_worker_qualification",
-      "columns": [
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "profileSha256",
-          "tableName": "desktop_worker_qualification",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "runtime",
-          "tableName": "desktop_worker_qualification",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "desktop_worker_qualification",
-          "nullable": false,
-          "isArray": false,
-          "default": "uuid_generate_v4()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "desktop_worker_qualification",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "reportSha256",
-          "tableName": "desktop_worker_qualification",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "modelKey",
-          "tableName": "desktop_worker_qualification",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "inputKind",
-          "tableName": "desktop_worker_qualification",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "configSha256",
-          "tableName": "desktop_worker_qualification",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "runtimeFingerprint",
-          "tableName": "desktop_worker_qualification",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "sessionId",
-          "tableName": "desktop_worker_qualification",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "authorizationEpoch",
-          "tableName": "desktop_worker_qualification",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "deviceId",
-          "tableName": "desktop_worker_qualification",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "expiresAt",
-          "tableName": "desktop_worker_qualification",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "desktop_worker_qualification_sessionId_idx",
-          "definition": "CREATE INDEX \"desktop_worker_qualification_sessionId_idx\" ON public.desktop_worker_qualification USING btree (\"sessionId\")",
-          "tableName": "desktop_worker_qualification",
-          "columnNames": [
-            "sessionId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "desktop_worker_qualification_deviceId_expiresAt_idx",
-          "definition": "CREATE INDEX \"desktop_worker_qualification_deviceId_expiresAt_idx\" ON public.desktop_worker_qualification USING btree (\"deviceId\", \"expiresAt\")",
-          "tableName": "desktop_worker_qualification",
-          "columnNames": [
-            "deviceId",
-            "expiresAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "desktop_worker_qualification_deviceId_idx",
-          "definition": "CREATE INDEX \"desktop_worker_qualification_deviceId_idx\" ON public.desktop_worker_qualification USING btree (\"deviceId\")",
-          "tableName": "desktop_worker_qualification",
-          "columnNames": [
-            "deviceId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "check",
-          "name": "desktop_worker_qualification_lifetime_check",
-          "definition": "CHECK (((\"expiresAt\" > \"createdAt\") AND (\"expiresAt\" <= (\"createdAt\" + '01:00:00'::interval))))",
-          "tableName": "desktop_worker_qualification",
-          "expression": "(((\"expiresAt\" > \"createdAt\") AND (\"expiresAt\" <= (\"createdAt\" + '01:00:00'::interval))))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "desktop_worker_qualification_kind_check",
-          "definition": "CHECK (((\"inputKind\")::text = ANY (ARRAY[('image'::character varying)::text, ('text'::character varying)::text])))",
-          "tableName": "desktop_worker_qualification",
-          "expression": "(((\"inputKind\")::text = ANY (ARRAY[('image'::character varying)::text, ('text'::character varying)::text])))",
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "desktop_worker_qualification_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "desktop_worker_qualification",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "unique",
-          "name": "desktop_worker_qualification_sessionId_modelKey_uq",
-          "definition": "UNIQUE (\"sessionId\", \"modelKey\")",
-          "tableName": "desktop_worker_qualification",
-          "columnNames": [
-            "sessionId",
-            "modelKey"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "desktop_worker_qualification_deviceId_fkey",
-          "definition": "FOREIGN KEY (\"deviceId\") REFERENCES desktop_device(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "desktop_worker_qualification",
-          "columnNames": [
-            "deviceId"
-          ],
-          "referenceTableName": "desktop_device",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "desktop_worker_qualification_sessionId_fkey",
-          "definition": "FOREIGN KEY (\"sessionId\") REFERENCES desktop_worker_session(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "desktop_worker_qualification",
-          "columnNames": [
-            "sessionId"
-          ],
-          "referenceTableName": "desktop_worker_session",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "ml_workload_route_origin",
       "columns": [
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "ml_workload_route_origin",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "workload",
-          "tableName": "ml_workload_route_origin",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "origin",
-          "tableName": "ml_workload_route_origin",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
         {
           "type": "uuid",
           "primary": false,
@@ -39855,6 +40077,34 @@
           "tableName": "ml_workload_route_origin",
           "nullable": false,
           "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "origin",
+          "tableName": "ml_workload_route_origin",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "workload",
+          "tableName": "ml_workload_route_origin",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "ml_workload_route_origin",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
           "synchronize": true
         }
       ],
@@ -39914,9 +40164,9 @@
       "name": "desktop_clip_index",
       "columns": [
         {
-          "type": "text",
+          "type": "uuid",
           "primary": false,
-          "name": "scope",
+          "name": "revisionId",
           "tableName": "desktop_clip_index",
           "nullable": false,
           "isArray": false,
@@ -39932,9 +40182,9 @@
           "synchronize": true
         },
         {
-          "type": "uuid",
+          "type": "text",
           "primary": false,
-          "name": "revisionId",
+          "name": "scope",
           "tableName": "desktop_clip_index",
           "nullable": false,
           "isArray": false,
@@ -39944,16 +40194,6 @@
       "indexes": [],
       "triggers": [],
       "constraints": [
-        {
-          "type": "primary-key",
-          "name": "desktop_clip_index_pkey",
-          "definition": "PRIMARY KEY (scope)",
-          "tableName": "desktop_clip_index",
-          "columnNames": [
-            "scope"
-          ],
-          "synchronize": true
-        },
         {
           "type": "check",
           "name": "desktop_clip_index_scope_check",
@@ -39969,6 +40209,16 @@
           "tableName": "desktop_clip_index",
           "expression": "((((scope = 'unadmitted'::text) AND (space IS NULL)) OR ((scope = 'clip'::text) AND (space IS NOT NULL) AND (jsonb_typeof(space) = 'object'::text))))",
           "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "desktop_clip_index_pkey",
+          "definition": "PRIMARY KEY (scope)",
+          "tableName": "desktop_clip_index",
+          "columnNames": [
+            "scope"
+          ],
+          "synchronize": true
         }
       ],
       "synchronize": true
@@ -39979,20 +40229,20 @@
         {
           "type": "text",
           "primary": false,
-          "name": "key",
-          "tableName": "desktop_clip_producer",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
           "name": "scope",
           "tableName": "desktop_clip_producer",
           "nullable": false,
           "isArray": false,
           "default": "'unadmitted'::text",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "key",
+          "tableName": "desktop_clip_producer",
+          "nullable": false,
+          "isArray": false,
           "synchronize": true
         }
       ],
@@ -40614,27 +40864,19 @@
       "name": "desktop_worker_session",
       "columns": [
         {
-          "type": "bytea",
+          "type": "timestamp with time zone",
           "primary": false,
-          "name": "tokenHash",
+          "name": "createdAt",
           "tableName": "desktop_worker_session",
           "nullable": false,
           "isArray": false,
+          "default": "now()",
           "synchronize": true
         },
         {
-          "type": "uuid",
+          "type": "timestamp with time zone",
           "primary": false,
-          "name": "photoSessionId",
-          "tableName": "desktop_worker_session",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "deviceId",
+          "name": "expiresAt",
           "tableName": "desktop_worker_session",
           "nullable": false,
           "isArray": false,
@@ -40651,38 +40893,48 @@
           "synchronize": true
         },
         {
-          "type": "timestamp with time zone",
+          "type": "uuid",
           "primary": false,
-          "name": "expiresAt",
+          "name": "deviceId",
           "tableName": "desktop_worker_session",
           "nullable": false,
           "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "desktop_worker_session",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
           "synchronize": true
         },
         {
           "type": "uuid",
           "primary": false,
-          "name": "id",
+          "name": "photoSessionId",
           "tableName": "desktop_worker_session",
           "nullable": false,
           "isArray": false,
-          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "tokenHash",
+          "tableName": "desktop_worker_session",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "lastSequence",
+          "tableName": "desktop_worker_session",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
           "synchronize": true
         },
         {
           "type": "timestamp with time zone",
           "primary": false,
-          "name": "revokedAt",
+          "name": "lastSeenAt",
           "tableName": "desktop_worker_session",
           "nullable": true,
           "isArray": false,
@@ -40702,22 +40954,20 @@
         {
           "type": "timestamp with time zone",
           "primary": false,
-          "name": "lastSeenAt",
+          "name": "revokedAt",
           "tableName": "desktop_worker_session",
           "nullable": true,
           "isArray": false,
           "synchronize": true
         },
         {
-          "type": "integer",
+          "type": "uuid",
           "primary": false,
-          "name": "lastSequence",
+          "name": "id",
           "tableName": "desktop_worker_session",
           "nullable": false,
           "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "default": "0",
+          "default": "uuid_generate_v4()",
           "synchronize": true
         }
       ],
@@ -40803,15 +41053,6 @@
         {
           "type": "character varying",
           "primary": false,
-          "name": "authorityKey",
-          "tableName": "desktop_ml_task",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
           "name": "configSha256",
           "tableName": "desktop_ml_task",
           "nullable": false,
@@ -40821,9 +41062,9 @@
         {
           "type": "character varying",
           "primary": false,
-          "name": "resultSha256",
+          "name": "authorityKey",
           "tableName": "desktop_ml_task",
-          "nullable": true,
+          "nullable": false,
           "isArray": false,
           "synchronize": true
         },
@@ -40831,6 +41072,15 @@
           "type": "jsonb",
           "primary": false,
           "name": "result",
+          "tableName": "desktop_ml_task",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "resultSha256",
           "tableName": "desktop_ml_task",
           "nullable": true,
           "isArray": false,
@@ -41018,6 +41268,15 @@
         {
           "type": "uuid",
           "primary": false,
+          "name": "ownerId",
+          "tableName": "photo_source",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
           "name": "photoSessionId",
           "tableName": "photo_source",
           "nullable": false,
@@ -41034,12 +41293,13 @@
           "synchronize": true
         },
         {
-          "type": "uuid",
+          "type": "timestamp with time zone",
           "primary": false,
-          "name": "ownerId",
+          "name": "createdAt",
           "tableName": "photo_source",
           "nullable": false,
           "isArray": false,
+          "default": "now()",
           "synchronize": true
         },
         {
@@ -41061,13 +41321,12 @@
           "synchronize": true
         },
         {
-          "type": "timestamp with time zone",
+          "type": "character varying",
           "primary": false,
-          "name": "createdAt",
+          "name": "kind",
           "tableName": "photo_source",
           "nullable": false,
           "isArray": false,
-          "default": "now()",
           "synchronize": true
         },
         {
@@ -41092,15 +41351,6 @@
         {
           "type": "character varying",
           "primary": false,
-          "name": "kind",
-          "tableName": "photo_source",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
           "name": "mode",
           "tableName": "photo_source",
           "nullable": false,
@@ -41110,22 +41360,22 @@
       ],
       "indexes": [
         {
-          "name": "photo_source_deviceid_idx",
-          "definition": "CREATE INDEX photo_source_deviceid_idx ON public.photo_source USING btree (\"deviceId\")",
+          "name": "photo_source_ownerid_idx",
+          "definition": "CREATE INDEX photo_source_ownerid_idx ON public.photo_source USING btree (\"ownerId\")",
           "tableName": "photo_source",
           "columnNames": [
-            "deviceId"
+            "ownerId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "photo_source_ownerid_idx",
-          "definition": "CREATE INDEX photo_source_ownerid_idx ON public.photo_source USING btree (\"ownerId\")",
+          "name": "photo_source_deviceid_idx",
+          "definition": "CREATE INDEX photo_source_deviceid_idx ON public.photo_source USING btree (\"deviceId\")",
           "tableName": "photo_source",
           "columnNames": [
-            "ownerId"
+            "deviceId"
           ],
           "using": "btree",
           "unique": false,
@@ -41183,16 +41433,6 @@
       "name": "photo_source_run",
       "columns": [
         {
-          "type": "boolean",
-          "primary": false,
-          "name": "inventoryComplete",
-          "tableName": "photo_source_run",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
           "type": "character varying",
           "primary": false,
           "name": "state",
@@ -41213,13 +41453,13 @@
           "synchronize": true
         },
         {
-          "type": "timestamp with time zone",
+          "type": "boolean",
           "primary": false,
-          "name": "createdAt",
+          "name": "inventoryComplete",
           "tableName": "photo_source_run",
           "nullable": false,
           "isArray": false,
-          "default": "now()",
+          "default": "false",
           "synchronize": true
         },
         {
@@ -41229,6 +41469,17 @@
           "tableName": "photo_source_run",
           "nullable": false,
           "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "maxItems",
+          "tableName": "photo_source_run",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
           "synchronize": true
         },
         {
@@ -41243,14 +41494,13 @@
           "synchronize": true
         },
         {
-          "type": "integer",
+          "type": "timestamp with time zone",
           "primary": false,
-          "name": "maxItems",
+          "name": "createdAt",
           "tableName": "photo_source_run",
           "nullable": false,
           "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
+          "default": "now()",
           "synchronize": true
         }
       ],
@@ -41302,6 +41552,61 @@
       "name": "photo_source_resource",
       "columns": [
         {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "photo_source_resource",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "state",
+          "tableName": "photo_source_resource",
+          "nullable": false,
+          "isArray": false,
+          "default": "'planned'::character varying",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "verifiedAt",
+          "tableName": "photo_source_resource",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "version",
+          "tableName": "photo_source_resource",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "resourceKey",
+          "tableName": "photo_source_resource",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "runId",
+          "tableName": "photo_source_resource",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
           "type": "bigint",
           "primary": false,
           "name": "bytes",
@@ -41310,25 +41615,6 @@
           "isArray": false,
           "numericPrecision": 64,
           "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "checksum",
-          "tableName": "photo_source_resource",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "photo_source_resource",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
           "synchronize": true
         },
         {
@@ -41353,53 +41639,17 @@
         {
           "type": "timestamp with time zone",
           "primary": false,
-          "name": "verifiedAt",
-          "tableName": "photo_source_resource",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "state",
+          "name": "createdAt",
           "tableName": "photo_source_resource",
           "nullable": false,
           "isArray": false,
-          "default": "'planned'::character varying",
+          "default": "now()",
           "synchronize": true
         },
         {
-          "type": "uuid",
+          "type": "bytea",
           "primary": false,
-          "name": "assetId",
-          "tableName": "photo_source_resource",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "runId",
-          "tableName": "photo_source_resource",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "version",
-          "tableName": "photo_source_resource",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "resourceKey",
+          "name": "checksum",
           "tableName": "photo_source_resource",
           "nullable": false,
           "isArray": false,
@@ -41451,52 +41701,266 @@
       "synchronize": true
     },
     {
-      "name": "cloud_backup_selection",
+      "name": "desktop_worker_qualification",
       "columns": [
         {
           "type": "uuid",
           "primary": false,
-          "name": "personIds",
-          "tableName": "cloud_backup_selection",
-          "nullable": false,
-          "isArray": true,
-          "default": "'{}'::uuid[]",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "userId",
-          "tableName": "cloud_backup_selection",
+          "name": "id",
+          "tableName": "desktop_worker_qualification",
           "nullable": false,
           "isArray": false,
+          "default": "uuid_generate_v4()",
           "synchronize": true
         },
         {
           "type": "jsonb",
           "primary": false,
-          "name": "dateRanges",
-          "tableName": "cloud_backup_selection",
+          "name": "runtime",
+          "tableName": "desktop_worker_qualification",
           "nullable": false,
           "isArray": false,
-          "default": "'[]'::jsonb",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "reportSha256",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "modelKey",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "profileSha256",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "authorizationEpoch",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
           "synchronize": true
         },
         {
           "type": "uuid",
           "primary": false,
-          "name": "tagIds",
-          "tableName": "cloud_backup_selection",
+          "name": "sessionId",
+          "tableName": "desktop_worker_qualification",
           "nullable": false,
-          "isArray": true,
-          "default": "'{}'::uuid[]",
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "deviceId",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "expiresAt",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "inputKind",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "configSha256",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "runtimeFingerprint",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "desktop_worker_qualification_deviceId_expiresAt_idx",
+          "definition": "CREATE INDEX \"desktop_worker_qualification_deviceId_expiresAt_idx\" ON public.desktop_worker_qualification USING btree (\"deviceId\", \"expiresAt\")",
+          "tableName": "desktop_worker_qualification",
+          "columnNames": [
+            "deviceId",
+            "expiresAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "desktop_worker_qualification_deviceId_idx",
+          "definition": "CREATE INDEX \"desktop_worker_qualification_deviceId_idx\" ON public.desktop_worker_qualification USING btree (\"deviceId\")",
+          "tableName": "desktop_worker_qualification",
+          "columnNames": [
+            "deviceId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "desktop_worker_qualification_sessionId_idx",
+          "definition": "CREATE INDEX \"desktop_worker_qualification_sessionId_idx\" ON public.desktop_worker_qualification USING btree (\"sessionId\")",
+          "tableName": "desktop_worker_qualification",
+          "columnNames": [
+            "sessionId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "desktop_worker_qualification_lifetime_check",
+          "definition": "CHECK (((\"expiresAt\" > \"createdAt\") AND (\"expiresAt\" <= (\"createdAt\" + '01:00:00'::interval))))",
+          "tableName": "desktop_worker_qualification",
+          "expression": "(((\"expiresAt\" > \"createdAt\") AND (\"expiresAt\" <= (\"createdAt\" + '01:00:00'::interval))))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "desktop_worker_qualification_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "desktop_worker_qualification",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "desktop_worker_qualification_sessionId_modelKey_uq",
+          "definition": "UNIQUE (\"sessionId\", \"modelKey\")",
+          "tableName": "desktop_worker_qualification",
+          "columnNames": [
+            "sessionId",
+            "modelKey"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "desktop_worker_qualification_deviceId_fkey",
+          "definition": "FOREIGN KEY (\"deviceId\") REFERENCES desktop_device(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "desktop_worker_qualification",
+          "columnNames": [
+            "deviceId"
+          ],
+          "referenceTableName": "desktop_device",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "desktop_worker_qualification_sessionId_fkey",
+          "definition": "FOREIGN KEY (\"sessionId\") REFERENCES desktop_worker_session(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "desktop_worker_qualification",
+          "columnNames": [
+            "sessionId"
+          ],
+          "referenceTableName": "desktop_worker_session",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "desktop_worker_qualification_kind_check",
+          "definition": "CHECK (((\"inputKind\")::text = ANY (ARRAY[('image'::character varying)::text, ('text'::character varying)::text])))",
+          "tableName": "desktop_worker_qualification",
+          "expression": "(((\"inputKind\")::text = ANY (ARRAY[('image'::character varying)::text, ('text'::character varying)::text])))",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "library",
+      "columns": [
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "name",
+          "tableName": "library",
+          "nullable": false,
+          "isArray": false,
           "synchronize": true
         },
         {
           "type": "text",
           "primary": false,
-          "name": "destination",
-          "tableName": "cloud_backup_selection",
+          "name": "importPaths",
+          "tableName": "library",
+          "nullable": false,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "library",
           "nullable": false,
           "isArray": false,
           "synchronize": true
@@ -41504,28 +41968,27 @@
         {
           "type": "uuid",
           "primary": false,
-          "name": "collectionIds",
-          "tableName": "cloud_backup_selection",
+          "name": "updateId",
+          "tableName": "library",
           "nullable": false,
-          "isArray": true,
-          "default": "'{}'::uuid[]",
+          "isArray": false,
+          "default": "immich_uuid_v7()",
           "synchronize": true
         },
         {
-          "type": "uuid",
+          "type": "timestamp with time zone",
           "primary": false,
-          "name": "albumIds",
-          "tableName": "cloud_backup_selection",
-          "nullable": false,
-          "isArray": true,
-          "default": "'{}'::uuid[]",
+          "name": "deletedAt",
+          "tableName": "library",
+          "nullable": true,
+          "isArray": false,
           "synchronize": true
         },
         {
           "type": "timestamp with time zone",
           "primary": false,
           "name": "updatedAt",
-          "tableName": "cloud_backup_selection",
+          "tableName": "library",
           "nullable": false,
           "isArray": false,
           "default": "now()",
@@ -41534,8 +41997,8 @@
         {
           "type": "boolean",
           "primary": false,
-          "name": "favorites",
-          "tableName": "cloud_backup_selection",
+          "name": "readOnly",
+          "tableName": "library",
           "nullable": false,
           "isArray": false,
           "default": "false",
@@ -41544,51 +42007,99 @@
         {
           "type": "text",
           "primary": false,
-          "name": "folders",
-          "tableName": "cloud_backup_selection",
+          "name": "exclusionPatterns",
+          "tableName": "library",
           "nullable": false,
           "isArray": true,
-          "default": "'{}'::text[]",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "library",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "refreshedAt",
+          "tableName": "library",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "library",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
           "synchronize": true
         }
       ],
-      "indexes": [],
-      "triggers": [],
+      "indexes": [
+        {
+          "name": "library_updateId_idx",
+          "definition": "CREATE INDEX \"library_updateId_idx\" ON public.library USING btree (\"updateId\")",
+          "tableName": "library",
+          "columnNames": [
+            "updateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "library_ownerId_idx",
+          "definition": "CREATE INDEX \"library_ownerId_idx\" ON public.library USING btree (\"ownerId\")",
+          "tableName": "library",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "library_updatedAt",
+          "definition": "CREATE TRIGGER \"library_updatedAt\" BEFORE UPDATE ON public.library FOR EACH ROW EXECUTE FUNCTION updated_at()",
+          "tableName": "library",
+          "functionName": "updated_at",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        }
+      ],
       "constraints": [
         {
-          "type": "check",
-          "name": "cloud_backup_selection_destination_check",
-          "definition": "CHECK ((destination = 'cloud'::text))",
-          "tableName": "cloud_backup_selection",
-          "expression": "((destination = 'cloud'::text))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "cloud_backup_selection_dateRanges_check",
-          "definition": "CHECK ((jsonb_typeof(\"dateRanges\") = 'array'::text))",
-          "tableName": "cloud_backup_selection",
-          "expression": "((jsonb_typeof(\"dateRanges\") = 'array'::text))",
-          "synchronize": true
-        },
-        {
           "type": "primary-key",
-          "name": "cloud_backup_selection_pkey",
-          "definition": "PRIMARY KEY (\"userId\", destination)",
-          "tableName": "cloud_backup_selection",
+          "name": "library_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "library",
           "columnNames": [
-            "userId",
-            "destination"
+            "id"
           ],
           "synchronize": true
         },
         {
           "type": "foreign-key",
-          "name": "cloud_backup_selection_userId_fkey",
-          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "cloud_backup_selection",
+          "name": "library_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "library",
           "columnNames": [
-            "userId"
+            "ownerId"
           ],
           "referenceTableName": "user",
           "referenceColumnNames": [
@@ -41602,332 +42113,13 @@
       "synchronize": true
     },
     {
-      "name": "cloud_backup_decision_run",
+      "name": "source_resource_grant",
       "columns": [
         {
-          "type": "text",
-          "primary": false,
-          "name": "manifestKey",
-          "tableName": "cloud_backup_decision_run",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "licenceScope",
-          "tableName": "cloud_backup_decision_run",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "inventoryAt",
-          "tableName": "cloud_backup_decision_run",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "cloud_backup_decision_run",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "runId",
-          "tableName": "cloud_backup_decision_run",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "cloud_backup_decision_run_manifestKey_idx",
-          "definition": "CREATE INDEX \"cloud_backup_decision_run_manifestKey_idx\" ON public.cloud_backup_decision_run USING btree (\"manifestKey\")",
-          "tableName": "cloud_backup_decision_run",
-          "columnNames": [
-            "manifestKey"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "check",
-          "name": "cloud_backup_decision_run_licenceScope_check",
-          "definition": "CHECK ((\"licenceScope\" = ANY (ARRAY['all'::text, 'users'::text, 'none'::text, 'own-bucket'::text])))",
-          "tableName": "cloud_backup_decision_run",
-          "expression": "((\"licenceScope\" = ANY (ARRAY['all'::text, 'users'::text, 'none'::text, 'own-bucket'::text])))",
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "cloud_backup_decision_run_pkey",
-          "definition": "PRIMARY KEY (\"runId\")",
-          "tableName": "cloud_backup_decision_run",
-          "columnNames": [
-            "runId"
-          ],
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "cloud_backup_decision_account",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "runId",
-          "tableName": "cloud_backup_decision_account",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
           "type": "integer",
           "primary": false,
-          "name": "totalOriginals",
-          "tableName": "cloud_backup_decision_account",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "selectedOriginals",
-          "tableName": "cloud_backup_decision_account",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "userFingerprint",
-          "tableName": "cloud_backup_decision_account",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "selectionHash",
-          "tableName": "cloud_backup_decision_account",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "userId",
-          "tableName": "cloud_backup_decision_account",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "includedOriginals",
-          "tableName": "cloud_backup_decision_account",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "licenceEligible",
-          "tableName": "cloud_backup_decision_account",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "check",
-          "name": "cloud_backup_decision_account_counts_check",
-          "definition": "CHECK (((\"totalOriginals\" >= 0) AND (\"selectedOriginals\" >= 0) AND (\"selectedOriginals\" <= \"totalOriginals\") AND ((\"includedOriginals\" IS NULL) OR ((\"includedOriginals\" >= 0) AND (\"includedOriginals\" <= \"selectedOriginals\"))) AND (\"licenceEligible\" OR (\"includedOriginals\" IS NULL) OR (\"includedOriginals\" = 0))))",
-          "tableName": "cloud_backup_decision_account",
-          "expression": "(((\"totalOriginals\" >= 0) AND (\"selectedOriginals\" >= 0) AND (\"selectedOriginals\" <= \"totalOriginals\") AND ((\"includedOriginals\" IS NULL) OR ((\"includedOriginals\" >= 0) AND (\"includedOriginals\" <= \"selectedOriginals\"))) AND (\"licenceEligible\" OR (\"includedOriginals\" IS NULL) OR (\"includedOriginals\" = 0))))",
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "cloud_backup_decision_account_pkey",
-          "definition": "PRIMARY KEY (\"runId\", \"userId\")",
-          "tableName": "cloud_backup_decision_account",
-          "columnNames": [
-            "runId",
-            "userId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "cloud_backup_decision_account_runId_fkey",
-          "definition": "FOREIGN KEY (\"runId\") REFERENCES cloud_backup_decision_run(\"runId\") ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "cloud_backup_decision_account",
-          "columnNames": [
-            "runId"
-          ],
-          "referenceTableName": "cloud_backup_decision_run",
-          "referenceColumnNames": [
-            "runId"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "cloud_backup_decision_asset",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "cloud_backup_decision_asset",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "reason",
-          "tableName": "cloud_backup_decision_asset",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "cloud_backup_decision_asset",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "runId",
-          "tableName": "cloud_backup_decision_asset",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "check",
-          "name": "cloud_backup_decision_asset_reason_check",
-          "definition": "CHECK ((reason = ANY (ARRAY['included'::text, 'selection'::text, 'licence'::text])))",
-          "tableName": "cloud_backup_decision_asset",
-          "expression": "((reason = ANY (ARRAY['included'::text, 'selection'::text, 'licence'::text])))",
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "cloud_backup_decision_asset_pkey",
-          "definition": "PRIMARY KEY (\"runId\", \"assetId\")",
-          "tableName": "cloud_backup_decision_asset",
-          "columnNames": [
-            "runId",
-            "assetId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "cloud_backup_decision_asset_runId_fkey",
-          "definition": "FOREIGN KEY (\"runId\") REFERENCES cloud_backup_decision_run(\"runId\") ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "cloud_backup_decision_asset",
-          "columnNames": [
-            "runId"
-          ],
-          "referenceTableName": "cloud_backup_decision_run",
-          "referenceColumnNames": [
-            "runId"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "cloud_backup_coverage_report",
-      "columns": [
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "runReport",
-          "tableName": "cloud_backup_coverage_report",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "pageCount",
-          "tableName": "cloud_backup_coverage_report",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "snapshot",
-          "tableName": "cloud_backup_coverage_report",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "attempts",
-          "tableName": "cloud_backup_coverage_report",
+          "name": "lastSequence",
+          "tableName": "source_resource_grant",
           "nullable": false,
           "isArray": false,
           "numericPrecision": 32,
@@ -41936,76 +42128,56 @@
           "synchronize": true
         },
         {
-          "type": "uuid",
+          "type": "timestamp with time zone",
           "primary": false,
-          "name": "instanceId",
-          "tableName": "cloud_backup_coverage_report",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "sequence",
-          "tableName": "cloud_backup_coverage_report",
+          "name": "expiresAt",
+          "tableName": "source_resource_grant",
           "nullable": false,
           "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
           "synchronize": true
         },
         {
           "type": "timestamp with time zone",
           "primary": false,
           "name": "createdAt",
-          "tableName": "cloud_backup_coverage_report",
+          "tableName": "source_resource_grant",
           "nullable": false,
           "isArray": false,
           "default": "now()",
           "synchronize": true
         },
         {
-          "type": "timestamp with time zone",
+          "type": "uuid",
           "primary": false,
-          "name": "nextAttemptAt",
-          "tableName": "cloud_backup_coverage_report",
-          "nullable": true,
+          "name": "photoSessionId",
+          "tableName": "source_resource_grant",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "tokenHash",
+          "tableName": "source_resource_grant",
+          "nullable": false,
           "isArray": false,
           "synchronize": true
         },
         {
           "type": "uuid",
           "primary": false,
-          "name": "revisionId",
-          "tableName": "cloud_backup_coverage_report",
+          "name": "sourceId",
+          "tableName": "source_resource_grant",
           "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "lastError",
-          "tableName": "cloud_backup_coverage_report",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "publishedAt",
-          "tableName": "cloud_backup_coverage_report",
-          "nullable": true,
           "isArray": false,
           "synchronize": true
         },
         {
           "type": "integer",
           "primary": false,
-          "name": "accountCount",
-          "tableName": "cloud_backup_coverage_report",
+          "name": "authorizationEpoch",
+          "tableName": "source_resource_grant",
           "nullable": false,
           "isArray": false,
           "numericPrecision": 32,
@@ -42015,60 +42187,41 @@
         {
           "type": "timestamp with time zone",
           "primary": false,
-          "name": "inventoryAt",
-          "tableName": "cloud_backup_coverage_report",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "revisionAccepted",
-          "tableName": "cloud_backup_coverage_report",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "status",
-          "tableName": "cloud_backup_coverage_report",
-          "nullable": false,
+          "name": "revokedAt",
+          "tableName": "source_resource_grant",
+          "nullable": true,
           "isArray": false,
           "synchronize": true
         },
         {
           "type": "uuid",
           "primary": false,
-          "name": "runId",
-          "tableName": "cloud_backup_coverage_report",
+          "name": "id",
+          "tableName": "source_resource_grant",
           "nullable": false,
           "isArray": false,
+          "default": "uuid_generate_v4()",
           "synchronize": true
         },
         {
-          "type": "text",
+          "type": "character varying",
           "primary": false,
-          "name": "pages",
-          "tableName": "cloud_backup_coverage_report",
+          "name": "scopeFingerprint",
+          "tableName": "source_resource_grant",
           "nullable": false,
-          "isArray": true,
+          "isArray": false,
           "synchronize": true
         }
       ],
       "indexes": [
         {
-          "name": "cloud_backup_coverage_report_pending_idx",
-          "definition": "CREATE INDEX cloud_backup_coverage_report_pending_idx ON public.cloud_backup_coverage_report USING btree (\"nextAttemptAt\") WHERE (status = 'pending'::text)",
-          "tableName": "cloud_backup_coverage_report",
+          "name": "source_resource_grant_photosessionid_idx",
+          "definition": "CREATE INDEX source_resource_grant_photosessionid_idx ON public.source_resource_grant USING btree (\"photoSessionId\")",
+          "tableName": "source_resource_grant",
           "columnNames": [
-            "nextAttemptAt"
+            "photoSessionId"
           ],
           "using": "btree",
-          "where": "(status = 'pending'::text)",
           "unique": false,
           "synchronize": true
         }
@@ -42076,37 +42229,119 @@
       "triggers": [],
       "constraints": [
         {
-          "type": "check",
-          "name": "cloud_backup_coverage_report_sequence_check",
-          "definition": "CHECK ((sequence >= 1))",
-          "tableName": "cloud_backup_coverage_report",
-          "expression": "((sequence >= 1))",
+          "type": "primary-key",
+          "name": "source_resource_grant_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "source_resource_grant",
+          "columnNames": [
+            "id"
+          ],
           "synchronize": true
         },
         {
-          "type": "check",
-          "name": "cloud_backup_coverage_report_pages_check",
-          "definition": "CHECK (((\"accountCount\" >= 0) AND (\"pageCount\" = cardinality(pages)) AND (\"pageCount\" = ((\"accountCount\" + 31) / 32))))",
-          "tableName": "cloud_backup_coverage_report",
-          "expression": "(((\"accountCount\" >= 0) AND (\"pageCount\" = cardinality(pages)) AND (\"pageCount\" = ((\"accountCount\" + 31) / 32))))",
+          "type": "unique",
+          "name": "source_resource_grant_sourceid_uq",
+          "definition": "UNIQUE (\"sourceId\")",
+          "tableName": "source_resource_grant",
+          "columnNames": [
+            "sourceId"
+          ],
           "synchronize": true
         },
         {
-          "type": "check",
-          "name": "cloud_backup_coverage_report_status_check",
-          "definition": "CHECK ((status = ANY (ARRAY['local'::text, 'pending'::text, 'published'::text, 'rejected'::text, 'expired'::text])))",
-          "tableName": "cloud_backup_coverage_report",
-          "expression": "((status = ANY (ARRAY['local'::text, 'pending'::text, 'published'::text, 'rejected'::text, 'expired'::text])))",
+          "type": "foreign-key",
+          "name": "source_resource_grant_sourceId_fkey",
+          "definition": "FOREIGN KEY (\"sourceId\") REFERENCES photo_source(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "source_resource_grant",
+          "columnNames": [
+            "sourceId"
+          ],
+          "referenceTableName": "photo_source",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
           "synchronize": true
         },
+        {
+          "type": "foreign-key",
+          "name": "source_resource_grant_photoSessionId_fkey",
+          "definition": "FOREIGN KEY (\"photoSessionId\") REFERENCES session(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "source_resource_grant",
+          "columnNames": [
+            "photoSessionId"
+          ],
+          "referenceTableName": "session",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "source_resource_grant_nonce",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sourceId",
+          "tableName": "source_resource_grant_nonce",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "requestId",
+          "tableName": "source_resource_grant_nonce",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "expiresAt",
+          "tableName": "source_resource_grant_nonce",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
         {
           "type": "primary-key",
-          "name": "cloud_backup_coverage_report_pkey",
-          "definition": "PRIMARY KEY (\"runId\")",
-          "tableName": "cloud_backup_coverage_report",
+          "name": "source_resource_grant_nonce_pkey",
+          "definition": "PRIMARY KEY (\"sourceId\", \"requestId\")",
+          "tableName": "source_resource_grant_nonce",
           "columnNames": [
-            "runId"
+            "sourceId",
+            "requestId"
           ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "source_resource_grant_nonce_sourceId_fkey",
+          "definition": "FOREIGN KEY (\"sourceId\") REFERENCES photo_source(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "source_resource_grant_nonce",
+          "columnNames": [
+            "sourceId"
+          ],
+          "referenceTableName": "photo_source",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
           "synchronize": true
         }
       ],
@@ -42214,6 +42449,11 @@
     {
       "name": "asset_backup_deletion_capture",
       "expression": "CREATE OR REPLACE FUNCTION public.asset_backup_deletion_capture()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n  INSERT INTO asset_backup_deletion (\"assetId\", \"ownerId\", \"deletedAt\", visibility, \"wasLocked\", checksum, \"checksumAlgorithm\", \"livePhotoVideoId\", \"evidenceVersion\", \"modernPrivacyEvidenceUnavailable\")\n  VALUES (OLD.id, OLD.\"ownerId\", clock_timestamp(), OLD.visibility::text,\n    EXISTS (SELECT 1 FROM asset_lock WHERE \"assetId\" = OLD.id)\n    OR (OLD.visibility::text = 'hidden' AND (\n      EXISTS (SELECT 1 FROM asset AS parent JOIN asset_lock ON asset_lock.\"assetId\" = parent.id\n        WHERE parent.\"livePhotoVideoId\" = OLD.id AND parent.\"ownerId\" = OLD.\"ownerId\")\n      OR EXISTS (SELECT 1 FROM asset_backup_deletion AS parent\n        WHERE parent.\"livePhotoVideoId\" = OLD.id AND parent.\"ownerId\" = OLD.\"ownerId\" AND parent.\"wasLocked\")\n    )),\n    OLD.checksum, OLD.\"checksumAlgorithm\"::text, OLD.\"livePhotoVideoId\", 1, true)\n  ON CONFLICT (\"assetId\") DO UPDATE SET\n    \"ownerId\" = EXCLUDED.\"ownerId\", \"deletedAt\" = EXCLUDED.\"deletedAt\", visibility = EXCLUDED.visibility,\n    \"wasLocked\" = EXCLUDED.\"wasLocked\", checksum = EXCLUDED.checksum, \"checksumAlgorithm\" = EXCLUDED.\"checksumAlgorithm\",\n    \"livePhotoVideoId\" = EXCLUDED.\"livePhotoVideoId\", \"evidenceVersion\" = EXCLUDED.\"evidenceVersion\",\n    \"modernPrivacyEvidenceUnavailable\" = EXCLUDED.\"modernPrivacyEvidenceUnavailable\";\n  RETURN OLD;\nEND\n  $function$\n",
+      "synchronize": true
+    },
+    {
+      "name": "desktop_clip_producer_guard",
+      "expression": "CREATE OR REPLACE FUNCTION public.desktop_clip_producer_guard()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    DECLARE role text;\n    BEGIN\n      IF TG_TABLE_NAME = 'smart_search_description' THEN role := 'text';\n      ELSIF TG_TABLE_NAME IN ('smart_search', 'asset_video_duplicate_frame', 'video_moment_frame_embedding') THEN role := 'image';\n      ELSE RAISE EXCEPTION 'unsupported_clip_store';\n      END IF;\n      NEW.\"producerAdmissionKey\" := CASE WHEN NEW.\"producerModelKey\" IS NULL THEN 'legacy' ELSE role || ':' || NEW.\"producerModelKey\" END;\n      INSERT INTO public.desktop_clip_producer (key) VALUES (NEW.\"producerAdmissionKey\") ON CONFLICT DO NOTHING;\n      RETURN NEW;\n    END$function$\n",
       "synchronize": true
     },
     {
@@ -42339,11 +42579,6 @@
     {
       "name": "album_asset_delete_audit",
       "expression": "CREATE OR REPLACE FUNCTION public.album_asset_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      INSERT INTO album_asset_audit (\"albumId\", \"assetId\")\n      SELECT \"albumId\", \"assetId\" FROM OLD\n      WHERE \"albumId\" IN (SELECT \"id\" FROM album WHERE \"id\" IN (SELECT \"albumId\" FROM OLD));\n      RETURN NULL;\n    END\n  $function$\n",
-      "synchronize": true
-    },
-    {
-      "name": "desktop_clip_producer_guard",
-      "expression": "CREATE OR REPLACE FUNCTION public.desktop_clip_producer_guard()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    DECLARE role text;\n    BEGIN\n      IF TG_TABLE_NAME = 'smart_search_description' THEN role := 'text';\n      ELSIF TG_TABLE_NAME IN ('smart_search', 'asset_video_duplicate_frame', 'video_moment_frame_embedding') THEN role := 'image';\n      ELSE RAISE EXCEPTION 'unsupported_clip_store';\n      END IF;\n      NEW.\"producerAdmissionKey\" := CASE WHEN NEW.\"producerModelKey\" IS NULL THEN 'legacy' ELSE role || ':' || NEW.\"producerModelKey\" END;\n      INSERT INTO public.desktop_clip_producer (key) VALUES (NEW.\"producerAdmissionKey\") ON CONFLICT DO NOTHING;\n      RETURN NEW;\n    END$function$\n",
       "synchronize": true
     },
     {
