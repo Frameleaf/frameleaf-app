@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path';
 import z from 'zod';
 // eslint-disable-next-line no-restricted-imports -- The schema loads under plain Node before the application alias graph.
 import { FrameleafEnvironmentSchema, LogFormatSchema, LogLevelSchema } from './environment-values.ts';
@@ -16,7 +17,7 @@ enum DatabaseSslMode {
 }
 
 const DatabaseSslModeSchema = z.enum(DatabaseSslMode).describe('Database SSL mode').meta({ id: 'DatabaseSslMode' });
-const absolutePath = z.string().regex(/^\//, 'Must be an absolute path').optional();
+const absolutePath = z.string().refine(isAbsolute, 'Must be an absolute path').optional();
 /**
  * Treat certain strings as booleans and coerce them to boolean
  * Ideal for environment variables that are strings but should be treated as booleans
@@ -71,7 +72,7 @@ export const EnvSchema = z
               .filter(Boolean)
           : [],
       )
-      .pipe(z.array(z.string().regex(/^\//, 'Every import root must be an absolute path'))),
+      .pipe(z.array(z.string().refine(isAbsolute, 'Every import root must be an absolute path'))),
     FRAMELEAF_LOG_LEVEL: LogLevelSchema.optional(),
     FRAMELEAF_LOG_FORMAT: LogFormatSchema.optional(),
     FRAMELEAF_MEDIA_LOCATION: absolutePath,
