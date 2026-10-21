@@ -320,7 +320,7 @@ const getEnv = (): EnvData => {
     },
 
     frameleafCloud: {
-      url: dto.FRAMELEAF_CLOUD_URL ? dto.FRAMELEAF_CLOUD_URL.replace(/\/+$/, '') : null,
+      url: dto.FRAMELEAF_CLOUD_URL.replace(/\/+$/, ''),
       pushUrl: dto.FRAMELEAF_PUSH_URL ? dto.FRAMELEAF_PUSH_URL.replace(/\/+$/, '') : null,
       identityDir: dto.FRAMELEAF_IDENTITY_DIR ?? null,
       linkToken: dto.FRAMELEAF_LINK_TOKEN ?? null,

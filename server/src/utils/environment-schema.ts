@@ -117,10 +117,10 @@ export const EnvSchema = z
     FRAMELEAF_ANDROID_SIGNING_SHA256: z.string().optional(),
     FRAMELEAF_IOS_APP_URL: z.string().optional(),
     /**
-     * FL-159: the Frameleaf Cloud base address (deployment configuration, never a setting and never
-     * hard-coded). Unset means Frameleaf Cloud is not configured and nothing is ever contacted.
+     * The Frameleaf Cloud base address. There is exactly one Frameleaf Cloud, so this defaults to it
+     * (owner decision 2026-10-21); deployments override it only to point at a test fixture.
      */
-    FRAMELEAF_CLOUD_URL: z.url({ protocol: /^https?$/ }).optional(),
+    FRAMELEAF_CLOUD_URL: z.url({ protocol: /^https?$/ }).default('https://api.frameleaf.cloud'),
     FRAMELEAF_PUSH_URL: z.url({ protocol: /^https?$/ }).optional(),
     /**
      * Pre-release integration builds only (owner decision 2026-09-27): an absolute path to a mounted,

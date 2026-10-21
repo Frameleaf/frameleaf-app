@@ -465,9 +465,9 @@ describe('getEnv', () => {
   });
 
   describe('frameleafCloud (FL-154)', () => {
-    it('is not configured by default and never falls back to a default host', () => {
+    it('points at Frameleaf Cloud by default', () => {
       expect(getEnv().frameleafCloud).toEqual({
-        url: null,
+        url: 'https://api.frameleaf.cloud',
         pushUrl: null,
         identityDir: null,
         linkToken: null,
