@@ -335,12 +335,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     file: 'src/lib/components/frameleaf/settings/editing/EditedMasters.svelte',
     evidence: 'editing.trimMode',
   },
-  // FL-488: in-app help server API; the Settings › Server & updates control arrives with FL-489.
+  // FL-489: Ask Frameleaf in the help panel, on the server page.
   {
     pattern: 'help.askEnabled',
-    kind: 'api-only',
-    file: '../server/src/dtos/config.dto.ts',
-    evidence: 'askEnabled: configBool.describe(',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/ServerSettings.svelte',
+    evidence: 'help.askEnabled = value',
   },
   {
     pattern: 'ffmpeg.accel',

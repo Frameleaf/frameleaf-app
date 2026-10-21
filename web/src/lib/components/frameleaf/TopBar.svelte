@@ -6,6 +6,7 @@
   import LockedUnlockDialog from '$lib/components/frameleaf/LockedUnlockDialog.svelte';
   import { clearLocksRevealed, markLocksRevealed } from '$lib/components/timeline/lock-reveal';
   import ActivityIndicator from '$lib/components/frameleaf/ActivityIndicator.svelte';
+  import HelpPalette from '$lib/components/frameleaf/HelpPalette.svelte';
   import FrameleafLogo from '$lib/components/frameleaf/Logo.svelte';
   import UploadMenuButton from '$lib/components/frameleaf/UploadMenuButton.svelte';
   import NotificationPanel from '$lib/components/shared-components/navigation-bar/NotificationPanel.svelte';
@@ -28,6 +29,7 @@
   import { Icon, IconButton, modalManager, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import {
     mdiBellOutline,
+    mdiHelpCircleOutline,
     mdiLockOpenVariantOutline,
     mdiLockOutline,
     mdiMenu,
@@ -78,6 +80,7 @@
   const currentPrimary = $derived(currentPrimaryDestination(page.url.pathname));
 
   let showNotifications = $state(false);
+  let showHelp = $state(false);
   let bellButton = $state<HTMLButtonElement>();
 
   /** Close the panel; from the keyboard (Escape, its close button) focus goes back to the bell. */
@@ -312,6 +315,23 @@
 
       <!-- The one "work in progress" indicator, at every width; on phones it is the ring alone. -->
       <ActivityIndicator />
+
+      <!-- FL-489: help for this screen, every help article and Ask Frameleaf (frameleaf-prototype #5). -->
+      <button
+        type="button"
+        class="fl-topbar-button"
+        onclick={() => (showHelp = true)}
+        title={$t('frameleaf_help_panel_open')}
+        aria-label={$t('frameleaf_help_panel_open')}
+        aria-haspopup="dialog"
+        aria-expanded={showHelp}
+        data-testid="help-button"
+      >
+        <Icon icon={mdiHelpCircleOutline} size="20" aria-hidden="true" />
+      </button>
+      {#if showHelp}
+        <HelpPalette onClose={() => (showHelp = false)} />
+      {/if}
 
       <div
         use:clickOutside={{
