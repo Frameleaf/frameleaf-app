@@ -122,6 +122,8 @@ const moveRefusals: Record<string, string> = {
   media_copy_still_running: 'The copy helper is still running. Stop safely and wait for it to exit before recovery.',
 };
 const refusals: Record<string, string> = {
+  container_settings_invalid: 'Fix the advanced container settings marked below, then check the configuration again.',
+  service_override_conflict: 'An extra folder would replace one Frameleaf manages. Choose another path inside the container.',
   settings_not_json: 'Settings must be a JSON object. Check for a missing comma or bracket, then save again.',
   masked_secret_missing: 'A secret value can only be kept as [unchanged] where it already exists. Enter the value, or restore the original line.',
   incompatible_settings_require_review: 'Some Immich settings aren’t recognised by Frameleaf. Review them in Advanced settings on the next step.',
@@ -271,4 +273,73 @@ export function navSection(screen: string, installed: boolean, operationKind?: s
   if (installed && screen === 'progress' && operationKind && operationSections[operationKind])
     return operationSections[operationKind];
   return setupScreens.includes(screen) ? 'welcome' : screen;
+}
+
+// ---------------------------------------------------------------- advanced container settings
+// What a home-lab administrator types for each container; the server applies the parsed overrides.
+export const CONTAINERS = [
+  { id: 'frameleaf-server', label: 'Frameleaf server', about: 'The photo application. Extra folders appear inside the container at the path you give.' },
+  { id: 'frameleaf-machine-learning', label: 'Machine learning', about: 'Faces and smart search. Only runs while machine learning is on.' },
+  { id: 'database', label: 'Database', about: 'PostgreSQL. Manager owns its data folder and credentials.' },
+] as const;
+export type ContainerId = (typeof CONTAINERS)[number]['id'];
+export type ContainerText = { environment: string; mounts: string; memory: string; cpus: string };
+export type ContainerOverride = {
+  environment: Record<string, string>;
+  mounts: { source: string; target: string; readOnly: boolean }[];
+  memory?: string;
+  cpus?: number;
+};
+const RESERVED_ENVIRONMENT = /^(DB_|POSTGRES_|FRAMELEAF_MANAGER_|IMMICH_CONFIG_FILE$|IMMICH_MEDIA_LOCATION$)/;
+export const emptyContainers = (): Record<ContainerId, ContainerText> =>
+  Object.fromEntries(CONTAINERS.map((c) => [c.id, { environment: '', mounts: '', memory: '', cpus: '' }])) as Record<ContainerId, ContainerText>;
+const lines = (text: string) => text.split('\n').map((line) => line.trim()).filter(Boolean);
+/** Parses one container's text fields; `errors` lists every line that cannot be applied. */
+export function parseContainerSettings(text: ContainerText): ContainerOverride & { errors: string[] } {
+  const errors: string[] = [];
+  const environment: Record<string, string> = {};
+  for (const line of lines(text.environment)) {
+    const at = line.indexOf('=');
+    const name = at > 0 ? line.slice(0, at).trim() : '';
+    if (!/^[A-Z][A-Z0-9_]*$/.test(name)) errors.push(`"${line}" is not NAME=value`);
+    else if (RESERVED_ENVIRONMENT.test(name)) errors.push(`${name} is set by Manager`);
+    else environment[name] = line.slice(at + 1);
+  }
+  const mounts: ContainerOverride['mounts'] = [];
+  for (const line of lines(text.mounts)) {
+    const [source, target, mode, ...rest] = line.split(':');
+    if (!source?.startsWith('/') || !target?.startsWith('/') || rest.length || (mode && mode !== 'ro' && mode !== 'rw'))
+      errors.push(`"${line}" is not /folder/on/server:/folder/in/container[:ro]`);
+    else mounts.push({ source, target, readOnly: mode === 'ro' });
+  }
+  const memory = text.memory.trim();
+  if (memory && !/^\d+(\.\d+)?[kmg]b?$/i.test(memory)) errors.push(`Memory limit "${memory}" should look like 4g or 512m`);
+  const cpus = text.cpus.trim();
+  if (cpus && !(Number(cpus) > 0)) errors.push(`CPU limit "${cpus}" should be a number of cores, like 2 or 0.5`);
+  return { environment, mounts, ...(memory ? { memory } : {}), ...(cpus ? { cpus: Number(cpus) } : {}), errors };
+}
+/** "2 variables · 1 folder · 4g memory", or "" when nothing is set. */
+export function containerSummary(parsed: ContainerOverride): string {
+  const count = (n: number, word: string) => (n ? [`${n} ${word}${n === 1 ? '' : 's'}`] : []);
+  return [
+    ...count(Object.keys(parsed.environment).length, 'variable'),
+    ...count(parsed.mounts.length, 'folder'),
+    ...(parsed.memory ? [`${parsed.memory} memory`] : []),
+    ...(parsed.cpus ? [`${parsed.cpus} CPU${parsed.cpus === 1 ? '' : 's'}`] : []),
+  ].join(' · ');
+}
+/** The review request's `services`: only containers with something set, only when every line parsed. */
+export function containerOverrides(
+  containers: Record<ContainerId, ContainerText>,
+  ml: boolean,
+): { services: Partial<Record<ContainerId, ContainerOverride>>; invalid: boolean } {
+  const services: Partial<Record<ContainerId, ContainerOverride>> = {};
+  let invalid = false;
+  for (const container of CONTAINERS) {
+    if (!ml && container.id === 'frameleaf-machine-learning') continue;
+    const { errors, ...parsed } = parseContainerSettings(containers[container.id]);
+    if (errors.length) invalid = true;
+    else if (containerSummary(parsed)) services[container.id] = parsed;
+  }
+  return { services, invalid };
 }

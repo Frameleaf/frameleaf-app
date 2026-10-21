@@ -9,7 +9,7 @@ import { Releases, type VerifiedRelease } from './releases.js';
 import { isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
 import { Fencing } from './fencing.js';
-import { ApplicationConfig, releaseImages, renderCompose, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
+import { ApplicationConfig, applyServiceOverrides, releaseImages, renderCompose, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
 import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
 import { LibraryMove, type ServerPauseStatus } from './library-move.js';
@@ -41,6 +41,8 @@ export const ReviewInput = z
     port: z.number().int().min(1024).max(65535),
     ml: z.boolean(),
     lifecycle: z.literal('docker-only'),
+    /** Advanced container settings; applied to the generated stack and kept across updates. */
+    services: ServiceOverrides.optional(),
   })
   .strict();
 type Review = {
@@ -302,6 +304,15 @@ export class Operations {
       await storagePath(input.mediaPath, this.roots, 1024 ** 3);
     }
     await this.checkPort(input.port, null, source);
+    // The same conflict check the stack generator runs, against the mounts this installation will have.
+    applyServiceOverrides(
+      {
+        'frameleaf-server': { volumes: (source?.mounts ?? [{ target: '/data' }]).map(({ target }) => ({ target })) },
+        'frameleaf-machine-learning': { volumes: [] },
+        database: { volumes: [] },
+      },
+      input.services ?? {},
+    );
     const databaseStorage = await this.databaseStorage.validate(
       input.databaseRoot,
       (source?.summary.databaseBytes ?? 1024 ** 3) * 3,
@@ -526,6 +537,7 @@ export class Operations {
         environment: review.source?.environment ?? {},
         settings: review.source?.settings ?? null,
         authority: review.source?.settingsAuthority ?? 'database',
+        services: review.input.services ?? {},
       });
       await mkdir(this.directory(), { recursive: true, mode: 0o700 });
       await this.managerToken();
