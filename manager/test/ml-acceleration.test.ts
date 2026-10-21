@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { detectAcceleration, releaseImages, renderCompose } from '../src/compose.js';
+import { configureUnraidCompose, detectAcceleration, detectTranscoding, releaseImages, renderCompose } from '../src/compose.js';
 import type { Installation } from '../src/contracts.js';
 import type { VerifiedRelease } from '../src/releases.js';
 
@@ -27,6 +27,17 @@ test('Manager picks the ML variant from host GPUs and Docker runtimes', async ()
     await sysfs(intel, { renderD128: '0x8086', card0: '0x1af4' });
     await sysfs(amd, { renderD128: '0x8086', renderD129: '0x1002' }, true);
     await sysfs(amdNoKfd, { renderD128: '0x1002' });
+    assert.deepEqual(await detectTranscoding(empty, none), {});
+    assert.deepEqual(await detectTranscoding(intel, none), { devices: ['/dev/dri:/dev/dri'] });
+    assert.deepEqual(await detectTranscoding(amdNoKfd, none), { devices: ['/dev/dri:/dev/dri'] });
+    // An installed NVIDIA runtime alone is not evidence that this host has an NVIDIA GPU.
+    assert.deepEqual(await detectTranscoding(empty, nvidia), {});
+    const nv = join(folder, 'nvidia');
+    await mkdir(join(nv, 'bus/pci/drivers/nvidia/0000:01:00.0'), { recursive: true });
+    assert.deepEqual(await detectTranscoding(nv, none), {});
+    assert.deepEqual(await detectTranscoding(nv, nvidia), {
+      deploy: { resources: { reservations: { devices: [{ driver: 'nvidia', count: 1, capabilities: ['gpu', 'compute', 'video'] }] } } },
+    });
     assert.equal(await detectAcceleration(empty, none, 'x64'), 'cpu');
     assert.equal(await detectAcceleration(intel, none, 'x64'), 'openvino');
     assert.equal(await detectAcceleration(amd, none, 'x64'), 'rocm');
@@ -101,9 +112,48 @@ test('the ML service uses the attested variant digest with its device passthroug
     const fallback = await ml('openvino', older as unknown as VerifiedRelease);
     assert.equal(fallback.image, digest('b'));
     assert.equal(fallback.devices, undefined);
+    process.env.MANAGER_PLATFORM = 'unraid';
+    await ml('openvino');
+    const unraid = JSON.parse(await readFile(join(stack, 'compose.json'), 'utf8'));
+    for (const service of Object.values(unraid.services) as any[]) {
+      assert.equal(service.labels['net.unraid.docker.managed'], 'dockerman');
+      assert.ok(service.labels['net.unraid.docker.icon'].endsWith('/mark.png'));
+      assert.equal(service.labels['app.frameleaf.manager'], installation.id);
+    }
+    assert.equal(unraid.services['frameleaf-server'].labels['net.unraid.docker.webui'], 'http://[IP]:[PORT:2283]');
+    const transcoding = await detectTranscoding();
+    assert.deepEqual(unraid.services['frameleaf-server'].devices, transcoding.devices ?? []);
+    assert.deepEqual(unraid.services['frameleaf-server'].deploy, transcoding.deploy);
   } finally {
+    delete process.env.MANAGER_PLATFORM;
     await rm(folder, { recursive: true, force: true });
   }
+});
+
+test('existing Unraid stacks refresh video devices without changing storage or ML configuration', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-existing-gpu-'));
+  const server = { labels: { 'app.frameleaf.manager': 'a'.repeat(12) },
+    devices: ['/dev/dri:/dev/dri', '/dev/custom:/dev/custom'], volumes: [{ source: '/appdata/media', target: '/data' }],
+    environment: { DB_PASSWORD: 'literal$$password' }, deploy: { resources: { limits: { cpus: '2' },
+      reservations: { devices: [{ driver: 'nvidia', count: 1, capabilities: ['gpu'] }] } } } };
+  try {
+    const path = join(directory, 'compose.json');
+    const ml = { labels: { 'app.frameleaf.manager': 'a'.repeat(12) }, devices: ['/dev/kfd:/dev/kfd'], image: 'fixture/rocm' };
+    await writeFile(path, JSON.stringify({ name: 'frameleaf-' + 'a'.repeat(12), services: { 'frameleaf-server': server, 'frameleaf-machine-learning': ml } }));
+    for (const hardware of [{}, { devices: ['/dev/dri:/dev/dri'] }, {
+      deploy: { resources: { reservations: { devices: [{ driver: 'nvidia', count: 1, capabilities: ['gpu', 'compute', 'video'] }] } } },
+    }]) {
+      await configureUnraidCompose(directory, hardware);
+      const compose = JSON.parse(await readFile(path, 'utf8'));
+      const actual = compose.services['frameleaf-server'];
+      assert.deepEqual(actual.devices, ['/dev/custom:/dev/custom', ...((hardware as any).devices ?? [])]);
+      assert.deepEqual(actual.deploy.resources.reservations.devices, (hardware as any).deploy?.resources.reservations.devices ?? []);
+      assert.equal(actual.deploy.resources.limits.cpus, '2');
+      assert.deepEqual(actual.volumes, server.volumes);
+      assert.deepEqual(actual.environment, server.environment);
+      assert.deepEqual(compose.services['frameleaf-machine-learning'].devices, ml.devices);
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 test('the download step pulls the ML variant the compose file runs', async () => {

@@ -8,7 +8,7 @@
   <Support>https://github.com/Frameleaf/frameleaf-app/issues</Support>
   <Overview>Install and manage a self-hosted Frameleaf photo and video library. Manager coordinates sibling services through the Docker socket. Encrypted recovery covers the database and configuration, not media originals. Before applying, create the storage folders and follow the linked setup guide for the storage mappings. Create the administrator from your home network on first open.</Overview>
   <Category>MediaApp:Photos</Category>
-  <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/brand-kit/frameleaf-app-icon.svg</Icon>
+  <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png</Icon>
   <TemplateURL>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/frameleaf-manager.xml</TemplateURL>
   <ReadMe>https://github.com/Frameleaf/unraid-apps#readme</ReadMe>
   <License>https://github.com/Frameleaf/unraid-apps/blob/main/LICENSE</License>
@@ -28,6 +28,7 @@
   <Config Name="Frameleaf address" Target="MANAGER_BIND_ADDRESS" Default="0.0.0.0" Description="Where the Frameleaf app it installs is published. 0.0.0.0 makes it reachable from other devices on your network; 127.0.0.1 limits it to this server." Type="Variable" Display="advanced" Required="true" Mask="false">0.0.0.0</Config>
   <Config Name="Platform" Target="MANAGER_PLATFORM" Default="unraid" Description="Unraid host integration; keep this value." Type="Variable" Display="advanced" Required="true" Mask="false">unraid</Config>
   <Config Name="Docker socket" Target="/var/run/docker.sock" Default="/var/run/docker.sock" Mode="rw" Description="Allows Manager to create and control sibling containers on this host." Type="Path" Display="advanced" Required="true" Mask="false">/var/run/docker.sock</Config>
+  <Config Name="DockerMan templates" Target="/run/frameleaf-host/templates-user" Default="/boot/config/plugins/dockerMan/templates-user" Mode="rw" Description="Saves per-container templates so Frameleaf services can also be edited and recreated by Unraid DockerMan." Type="Path" Display="advanced" Required="true" Mask="false">/boot/config/plugins/dockerMan/templates-user</Config>
   <Config Name="Host mount information" Target="/run/frameleaf-host/mountinfo" Default="/proc/1/mountinfo" Mode="ro" Description="Read-only host filesystem evidence for database storage checks." Type="Path" Display="advanced" Required="true" Mask="false">/proc/1/mountinfo</Config>
   <Config Name="Unraid Docker configuration" Target="/run/frameleaf-host/docker.cfg" Default="/boot/config/docker.cfg" Mode="ro" Description="Read-only Unraid appdata and Docker storage configuration." Type="Path" Display="advanced" Required="true" Mask="false">/boot/config/docker.cfg</Config>
   <Config Name="Unraid autostart file" Target="/run/frameleaf-host/unraid-autostart" Default="" Mode="rw" Description="Required for imports: select the existing unraid-autostart file in Docker's data folder, usually /var/lib/docker/unraid-autostart (check with docker info --format {{.DockerRootDir}}). Manager uses it so Immich cannot start again at boot. Do not point it at a file that does not exist; leave blank for a fresh install." Type="Path" Display="always" Required="false" Mask="false"></Config>

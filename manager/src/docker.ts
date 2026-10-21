@@ -1,10 +1,12 @@
 import { spawn } from 'node:child_process';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
-import { open, readFile, rename, rm } from 'node:fs/promises';
+import { access, open, readFile, rename, rm } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { Refusal, containerId, imageDigest, redact, type Database, type Mount } from './contracts.js';
 import { publishFile } from './files.js';
+import { DOCKERMAN_TEMPLATES, saveDockermanTemplates } from './dockerman.js';
+import { configureUnraidCompose } from './compose.js';
 
 export type Container = {
   Id: string;
@@ -334,7 +336,13 @@ export class Docker {
       )
     )
       throw new Refusal('invalid_managed_project');
-    if (action === 'up') await this.pullMissing(directory, services);
+    if (action === 'up') {
+      if (process.env.MANAGER_PLATFORM === 'unraid') {
+        await access(DOCKERMAN_TEMPLATES).catch(() => { throw new Refusal('unraid_dockerman_templates_mount_required'); });
+        await configureUnraidCompose(directory);
+      }
+      await this.pullMissing(directory, services);
+    }
     await this.execute(
       'docker',
       [
@@ -349,6 +357,14 @@ export class Docker {
       ],
       { cwd: directory, timeout: 1_200_000 },
     );
+    if (action === 'up' && process.env.MANAGER_PLATFORM === 'unraid') {
+      const ids = (await this.execute('docker', ['ps', '--all', '--quiet', '--no-trunc',
+        '--filter', `label=com.docker.compose.project=${project}`, '--filter', 'label=com.docker.compose.oneoff=False']))
+        .trim().split(/\s+/).filter(Boolean);
+      ids.forEach((id) => containerId.parse(id));
+      if (!ids.length) throw new Refusal('dockerman_containers_missing');
+      await saveDockermanTemplates(JSON.parse(await this.execute('docker', ['inspect', ...ids])), project);
+    }
   }
   /**
    * Pulls the digest-pinned images compose.json runs that this host lacks. `up --pull never` never fetches,

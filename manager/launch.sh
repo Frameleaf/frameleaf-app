@@ -57,6 +57,10 @@ cosign verify --key "$script_dir/cosign.pub" "$image" >/dev/null
 set --
 if test "$platform" = unraid; then
   set -- --mount type=bind,source=/boot/config/docker.cfg,target=/run/frameleaf-host/docker.cfg,readonly
+  set -- "$@" --mount type=bind,source=/boot/config/plugins/dockerMan/templates-user,target=/run/frameleaf-host/templates-user \
+    --label net.unraid.docker.managed=dockerman \
+    --label net.unraid.docker.icon=https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png \
+    --label 'net.unraid.docker.webui=https://[IP]:[PORT:9443]'
   if test -f "$docker_root/unraid-autostart"; then
     set -- "$@" --mount "type=bind,source=$docker_root/unraid-autostart,target=/run/frameleaf-host/unraid-autostart" \
       --env MANAGER_UNRAID_AUTOSTART=/run/frameleaf-host/unraid-autostart

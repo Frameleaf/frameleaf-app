@@ -47,6 +47,8 @@ test('NAS Manager packages authenticate the component, both architectures and ex
     const xml = await fs.readFile(path.join(output, 'unraid/templates/frameleaf-manager.xml'), 'utf8');
     assert(xml.includes('<Repository>ghcr.io/frameleaf/frameleaf-manager:latest</Repository>'));
     assert(xml.includes('MANAGER_PLATFORM'));
+    assert(xml.includes('Target="/run/frameleaf-host/templates-user"'));
+    assert(xml.includes('design/frameleaf/mark.png'));
     // Without it Manager publishes the Frameleaf app on 127.0.0.1 only, unreachable from other devices.
     assert(xml.includes('Target="MANAGER_BIND_ADDRESS" Default="0.0.0.0"'));
     // Unraid creates mapped folders as nobody:users; without these Manager cannot lock or chmod its state.
