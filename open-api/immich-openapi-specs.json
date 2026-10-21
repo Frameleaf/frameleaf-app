@@ -22027,6 +22027,168 @@
         "x-immich-state": "Stable"
       }
     },
+    "/help/articles/{section}/{slug}": {
+      "get": {
+        "description": "One help article as Markdown, from the help website. Only articles in the help index can be read.",
+        "operationId": "getHelpArticle",
+        "parameters": [
+          {
+            "name": "section",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelpArticleResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a help article",
+        "tags": [
+          "Help"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.3.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/help/ask": {
+      "post": {
+        "description": "Sends a question, the conversation so far and this server's hardware to frameleaf.app's Ask service and returns its answer, with the help articles it rests on. Nothing is stored on this server.",
+        "operationId": "askHelp",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HelpAskDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelpAskResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Ask Frameleaf",
+        "tags": [
+          "Help"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.3.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/help/index": {
+      "get": {
+        "description": "Every frameleaf.app help article as plain text, with the app screens each one helps on, whether Ask Frameleaf is on and the hardware its answers take into account. Served from the copy on this server, which is refreshed from the help website once a day.",
+        "operationId": "getHelpIndex",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelpIndexResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the help articles",
+        "tags": [
+          "Help"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.3.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/icloud-sync/claims": {
       "post": {
         "description": "Up to 500 items. A claim covers the whole item (still, Live Photo motion, RAW and the current edit) for 10 minutes, renewable to 4 hours. An item a healthy sync connection covers is the sync's to fetch; one an unhealthy connection covers is the device's after 72 hours, or at once with takeOver. An upload naming an item someone else claimed is refused with 409 icloud_claimed. Send each item's filename and capture date: without them the server cannot confirm a sync covers it. The claim stays until it is released or runs out, so all of an item's roles come from one path. The device key must be one of the caller's backup devices.",
@@ -55225,6 +55387,10 @@
       "description": "An asset file is a file associated with an asset, including edited versions, thumbnails, etc."
     },
     {
+      "name": "Help",
+      "description": "In-app help: the frameleaf.app help articles, kept on this server so help opens offline, and Ask Frameleaf, relayed to frameleaf.app with this server’s hardware."
+    },
+    {
       "name": "Attention (admin)",
       "description": "What needs an administrator on this server: a drive filling up, a missed backup, background work that stopped or a new version."
     },
@@ -55955,6 +56121,9 @@
           },
           "frameleafCloud": {
             "$ref": "#/components/schemas/AdminConfigFrameleafCloudDto"
+          },
+          "help": {
+            "$ref": "#/components/schemas/AdminConfigHelpDto"
           },
           "image": {
             "$ref": "#/components/schemas/AdminConfigImageDto"
@@ -56818,6 +56987,18 @@
           "format",
           "quality",
           "size"
+        ],
+        "type": "object"
+      },
+      "AdminConfigHelpDto": {
+        "properties": {
+          "askEnabled": {
+            "description": "Ask Frameleaf in the help panel: questions go from this server to frameleaf.app's Ask service",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "askEnabled"
         ],
         "type": "object"
       },
@@ -68067,6 +68248,7 @@
                     "FRAMELEAF_IOS_APP_URL",
                     "FRAMELEAF_CLOUD_URL",
                     "FRAMELEAF_PUSH_URL",
+                    "FRAMELEAF_HELP_ORIGIN",
                     "FRAMELEAF_LICENSE_EXTRA_JWKS_FILE",
                     "FRAMELEAF_IDENTITY_DIR",
                     "FRAMELEAF_LINK_TOKEN",
@@ -68094,7 +68276,7 @@
                   ],
                   "type": "string"
                 },
-                "maxItems": 61,
+                "maxItems": 62,
                 "type": "array"
               },
               "version": {
@@ -68553,6 +68735,7 @@
                         "FRAMELEAF_IOS_APP_URL",
                         "FRAMELEAF_CLOUD_URL",
                         "FRAMELEAF_PUSH_URL",
+                        "FRAMELEAF_HELP_ORIGIN",
                         "FRAMELEAF_LICENSE_EXTRA_JWKS_FILE",
                         "FRAMELEAF_IDENTITY_DIR",
                         "FRAMELEAF_LINK_TOKEN",
@@ -68580,7 +68763,7 @@
                       ],
                       "type": "string"
                     },
-                    "maxItems": 61,
+                    "maxItems": 62,
                     "type": "array"
                   },
                   "version": {
@@ -80354,6 +80537,309 @@
         },
         "required": [
           "version"
+        ],
+        "type": "object"
+      },
+      "HelpAnswerBlockDto": {
+        "properties": {
+          "sourceIds": {
+            "description": "Sources this paragraph rests on",
+            "items": {
+              "maxLength": 160,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "text": {
+            "maxLength": 3000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceIds",
+          "text"
+        ],
+        "type": "object"
+      },
+      "HelpAnswerKind": {
+        "enum": [
+          "answer",
+          "clarification",
+          "fallback"
+        ],
+        "type": "string"
+      },
+      "HelpAnswerSourceDto": {
+        "properties": {
+          "id": {
+            "maxLength": 160,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "url": {
+            "description": "Path on the help website",
+            "maxLength": 300,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "url"
+        ],
+        "type": "object"
+      },
+      "HelpArticleDto": {
+        "properties": {
+          "appScreens": {
+            "description": "App screens this guide helps on, most useful guides first",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "description": {
+            "type": "string"
+          },
+          "headings": {
+            "items": {
+              "$ref": "#/components/schemas/HelpHeadingDto"
+            },
+            "type": "array"
+          },
+          "id": {
+            "description": "The guide, such as using/sharing",
+            "pattern": "^[a-z0-9-]+\\/[a-z0-9-]+$",
+            "type": "string"
+          },
+          "intro": {
+            "description": "The opening paragraph, as plain text",
+            "type": "string"
+          },
+          "section": {
+            "type": "string"
+          },
+          "sectionTitle": {
+            "type": "string"
+          },
+          "text": {
+            "description": "Plain text of the guide for searching, possibly shortened",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "description": "Path of the guide on the help website",
+            "pattern": "^\\/docs\\/[a-z0-9/-]+\\/$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "appScreens",
+          "description",
+          "headings",
+          "id",
+          "intro",
+          "section",
+          "sectionTitle",
+          "text",
+          "title",
+          "url"
+        ],
+        "type": "object"
+      },
+      "HelpArticleResponseDto": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "markdown": {
+            "description": "The guide as Markdown, from the help website",
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "markdown",
+          "url"
+        ],
+        "type": "object"
+      },
+      "HelpAskDto": {
+        "properties": {
+          "question": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "screen": {
+            "description": "The app screen the help panel was opened on",
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "turns": {
+            "default": [],
+            "description": "The conversation so far, oldest first",
+            "items": {
+              "$ref": "#/components/schemas/HelpAskTurnDto"
+            },
+            "maxItems": 6,
+            "type": "array"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "type": "object"
+      },
+      "HelpAskResponseDto": {
+        "properties": {
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/HelpAnswerBlockDto"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/HelpAnswerKind"
+          },
+          "questions": {
+            "description": "What Ask needs to know to answer better",
+            "items": {
+              "maxLength": 300,
+              "type": "string"
+            },
+            "maxItems": 3,
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/HelpAnswerSourceDto"
+            },
+            "maxItems": 8,
+            "type": "array"
+          }
+        },
+        "required": [
+          "blocks",
+          "kind",
+          "questions",
+          "sources"
+        ],
+        "type": "object"
+      },
+      "HelpAskRole": {
+        "enum": [
+          "user",
+          "assistant"
+        ],
+        "type": "string"
+      },
+      "HelpAskStatusDto": {
+        "properties": {
+          "enabled": {
+            "description": "Ask Frameleaf is on (help.askEnabled)",
+            "type": "boolean"
+          },
+          "hardware": {
+            "description": "The hardware answers take into account, as shown to people, or null when unknown",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "hardware"
+        ],
+        "type": "object"
+      },
+      "HelpAskTurnDto": {
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/HelpAskRole"
+          },
+          "text": {
+            "maxLength": 4000,
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "text"
+        ],
+        "type": "object"
+      },
+      "HelpHeadingDto": {
+        "properties": {
+          "text": {
+            "description": "The opening paragraph of the section, as plain text",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "title"
+        ],
+        "type": "object"
+      },
+      "HelpIndexResponseDto": {
+        "properties": {
+          "articles": {
+            "items": {
+              "$ref": "#/components/schemas/HelpArticleDto"
+            },
+            "type": "array"
+          },
+          "ask": {
+            "$ref": "#/components/schemas/HelpAskStatusDto"
+          },
+          "builtAt": {
+            "description": "When the website built this index",
+            "type": "string"
+          },
+          "offline": {
+            "description": "The last attempt to reach the help website failed",
+            "type": "boolean"
+          },
+          "origin": {
+            "description": "The help website, such as https://frameleaf.app",
+            "type": "string"
+          },
+          "screens": {
+            "description": "Every app screen key the website knows",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "updatedAt": {
+            "description": "When this server last fetched it; null for the copy in the image",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "articles",
+          "ask",
+          "builtAt",
+          "offline",
+          "origin",
+          "screens",
+          "updatedAt"
         ],
         "type": "object"
       },

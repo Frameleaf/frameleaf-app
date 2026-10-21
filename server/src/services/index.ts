@@ -59,6 +59,7 @@ import { FrameleafLicenseService } from 'src/services/frameleaf-license.service.
 import { FrameleafRemoteAccessService } from 'src/services/frameleaf-remote-access.service.js';
 import { FrameleafServerSetupService } from 'src/services/frameleaf-server-setup.service.js';
 import { HardwareCheckService } from 'src/services/hardware-check.service.js';
+import { HelpService } from 'src/services/help.service.js';
 import { HlsService } from 'src/services/hls.service.js';
 import { ICloudAlbumService } from 'src/services/icloud-album.service.js';
 import { ICloudAuditService } from 'src/services/icloud-audit.service.js';
@@ -211,6 +212,7 @@ export const services = [
   FrameleafLicenseService,
   FrameleafRemoteAccessService,
   HardwareCheckService,
+  HelpService,
   ICloudMetadataService,
   ICloudRelationsService,
   ICloudAlbumService,

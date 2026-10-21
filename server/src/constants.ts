@@ -78,9 +78,9 @@ export const JOBS_UNSAFE_TO_RERUN_AFTER_STOP: ReadonlySet<JobName> =
 
 export const ErrorMessages = {
   InconsistentMediaLocation:
-    'Detected an inconsistent media location. For more information, see https://help.frameleaf.app/administration/system-integrity',
-  SchemaDrift: `Detected schema drift. For more information, see https://help.frameleaf.app/administration/server-commands`,
-  TypeOrmUpgrade: 'Invalid upgrade path. For more information, see https://help.frameleaf.app',
+    'Detected an inconsistent media location. For more information, see https://frameleaf.app/docs/admin/system-integrity/',
+  SchemaDrift: `Detected schema drift. For more information, see https://frameleaf.app/docs/admin/server-commands/`,
+  TypeOrmUpgrade: 'Invalid upgrade path. For more information, see https://frameleaf.app/docs/admin/upgrading/',
 };
 
 export const POSTGRES_VERSION_RANGE = '>=19.0.0 <20.0.0';
@@ -255,6 +255,8 @@ export const endpointTags: Record<ApiTag, string> = {
   [ApiTag.ApiKeys]: 'An api key can be used to programmatically access the Frameleaf API.',
   [ApiTag.Assets]: 'An asset is an image or video that has been uploaded to Frameleaf.',
   [ApiTag.AssetFiles]: 'An asset file is a file associated with an asset, including edited versions, thumbnails, etc.',
+  [ApiTag.Help]:
+    'In-app help: the frameleaf.app help articles, kept on this server so help opens offline, and Ask Frameleaf, relayed to frameleaf.app with this server’s hardware.',
   [ApiTag.Attention]:
     'What needs an administrator on this server: a drive filling up, a missed backup, background work that stopped or a new version.',
   [ApiTag.Authentication]: 'Endpoints related to user authentication, including OAuth.',

@@ -15,6 +15,7 @@
   "scripts": {
     "build": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && nest build",
     "format": "prettier --cache --check .",
+    "help:snapshot": "curl -sf https://frameleaf.app/help-index.json -o resources/help/help-index.json",
     "format:fix": "prettier --cache --write --list-different .",
     "start": "pnpm run start:dev",
     "nest": "nest",

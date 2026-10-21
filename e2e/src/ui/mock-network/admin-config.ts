@@ -415,6 +415,8 @@ export const adminConfigDefaults = {
     trimMode: 'precise',
     restoration: { style: 'faithful' },
   },
+  // FL-488: in-app help.
+  help: { askEnabled: true },
   // FL-159: Frameleaf Cloud processing replaced the previous GPU provider settings.
   frameleafCloud: {
     cloudMl: {

@@ -203,6 +203,8 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   // CLD-004: a one-time link code from the account site is limited like a key
   'POST license/link-code': RATE_LIMITS.licenseActivation,
   'POST admin/cloud/link': RATE_LIMITS.linkStart,
+  // FL-488: Ask Frameleaf is relayed to frameleaf.app, bounded per person and address
+  'POST help/ask': RATE_LIMITS.helpAsk,
   // FL-430: the public home-network identity proof apps ask for before each session
   'POST server/identity/challenge': { bucket: 'server-identity-challenge', limit: 120, windowSeconds: 60 },
 };

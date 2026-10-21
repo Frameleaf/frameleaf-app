@@ -20,7 +20,7 @@ import { moveFileWithin } from 'src/utils/file-trash.js';
 import { discoverMediaLocation } from 'src/utils/media-location.js';
 import { FrameleafStartupError } from 'src/utils/misc.js';
 
-const docsMessage = `Please see https://help.frameleaf.app/administration/system-integrity#folder-checks for more information.`;
+const docsMessage = `Please see https://frameleaf.app/docs/admin/system-integrity/#folder-checks-at-start-up for more information.`;
 
 @Injectable()
 export class StorageService extends BaseService {

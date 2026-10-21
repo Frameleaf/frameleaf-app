@@ -144,6 +144,9 @@ export interface EnvData {
     trustDir: string;
   };
 
+  /** FL-488: in-app help comes from this website (`FRAMELEAF_HELP_ORIGIN`, default https://frameleaf.app). */
+  help: { origin: string };
+
   /** FL-159: Frameleaf Cloud deployment configuration. `url` null means not configured. */
   frameleafCloud: {
     url: string | null;
@@ -318,6 +321,8 @@ const getEnv = (): EnvData => {
       enabled: dto.FRAMELEAF_STUDIO_WORKER ?? true,
       trustDir: dto.FRAMELEAF_STUDIO_WORKER_TRUST_DIR ?? '/run/frameleaf/studio-worker',
     },
+
+    help: { origin: (dto.FRAMELEAF_HELP_ORIGIN ?? 'https://frameleaf.app').replace(/\/+$/, '') },
 
     frameleafCloud: {
       url: dto.FRAMELEAF_CLOUD_URL ? dto.FRAMELEAF_CLOUD_URL.replace(/\/+$/, '') : null,

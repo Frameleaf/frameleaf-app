@@ -317,6 +317,9 @@ const editingDefaults = {
   restoration: { style: RestorationStyle.Faithful },
 };
 
+/** FL-488: in-app help. The help articles are always there; Ask Frameleaf can be turned off. */
+const helpDefaults = { askEnabled: true };
+
 const smartAlbumRulesDefaults = {
   visualCategories: true,
   defaultAction: ClassificationRuleAction.Review,
@@ -844,6 +847,14 @@ const AdminConfigEditingSchema = z
   })
   .meta({ id: 'AdminConfigEditingDto' });
 
+const AdminConfigHelpSchema = z
+  .object({
+    askEnabled: configBool.describe(
+      "Ask Frameleaf in the help panel: questions go from this server to frameleaf.app's Ask service",
+    ),
+  })
+  .meta({ id: 'AdminConfigHelpDto' });
+
 const AdminConfigGeneratedImageSchema = z
   .object({
     format: ImageFormatSchema,
@@ -1298,6 +1309,7 @@ const AdminConfigSchemaWithVisibility = z
     frameleafCloud: AdminConfigFrameleafCloudSchema.default(frameleafCloudDefaults),
     libraryCare: AdminConfigLibraryCareSchema.default(libraryCareDefaults),
     editing: AdminConfigEditingSchema.default(editingDefaults),
+    help: AdminConfigHelpSchema.default(helpDefaults),
   })
   .describe('Configuration properties that are visible to the admin')
   .meta({ id: 'AdminConfigDto' });
@@ -1815,4 +1827,5 @@ export const defaults = Object.freeze<SystemConfig>({
   frameleafCloud: frameleafCloudDefaults,
   libraryCare: libraryCareDefaults,
   editing: editingDefaults,
+  help: helpDefaults,
 });

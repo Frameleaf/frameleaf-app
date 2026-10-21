@@ -1444,6 +1444,10 @@ export type AdminConfigFrameleafCloudDto = {
     remoteAccess?: AdminConfigFrameleafRemoteAccessDto;
     signIn?: AdminConfigFrameleafSignInDto;
 };
+export type AdminConfigHelpDto = {
+    /** Ask Frameleaf in the help panel: questions go from this server to frameleaf.app's Ask service */
+    askEnabled: boolean;
+};
 export type AdminConfigEnhancedRawImageDto = {
     /** Enhanced RAW rendering */
     enabled: boolean;
@@ -1933,6 +1937,7 @@ export type AdminConfigDto = {
     editing?: AdminConfigEditingDto;
     ffmpeg: AdminConfigFFmpegDto;
     frameleafCloud?: AdminConfigFrameleafCloudDto;
+    help?: AdminConfigHelpDto;
     image: AdminConfigImageDto;
     integrityChecks: AdminConfigIntegrityChecksDto;
     job: AdminConfigJobDto;
@@ -6971,6 +6976,83 @@ export type AssetFaceCorrectionDto = {
 export type FaceDto = {
     /** Face ID */
     id: string;
+};
+export type HelpArticleResponseDto = {
+    id: string;
+    /** The guide as Markdown, from the help website */
+    markdown: string;
+    url: string;
+};
+export type HelpAskTurnDto = {
+    role: HelpAskRole;
+    text: string;
+};
+export type HelpAskDto = {
+    question: string;
+    /** The app screen the help panel was opened on */
+    screen?: string;
+    /** The conversation so far, oldest first */
+    turns?: HelpAskTurnDto[];
+};
+export type HelpAnswerBlockDto = {
+    /** Sources this paragraph rests on */
+    sourceIds: string[];
+    text: string;
+};
+export type HelpAnswerSourceDto = {
+    id: string;
+    title: string;
+    /** Path on the help website */
+    url: string;
+};
+export type HelpAskResponseDto = {
+    blocks: HelpAnswerBlockDto[];
+    kind: HelpAnswerKind;
+    /** What Ask needs to know to answer better */
+    questions: string[];
+    sources: HelpAnswerSourceDto[];
+};
+export type HelpHeadingDto = {
+    /** The opening paragraph of the section, as plain text */
+    text: string;
+    title: string;
+};
+export type HelpArticleDto = {
+    /** App screens this guide helps on, most useful guides first */
+    appScreens: string[];
+    description: string;
+    headings: HelpHeadingDto[];
+    /** The guide, such as using/sharing */
+    id: string;
+    /** The opening paragraph, as plain text */
+    intro: string;
+    section: string;
+    sectionTitle: string;
+    /** Plain text of the guide for searching, possibly shortened */
+    text: string;
+    title: string;
+    /** Path of the guide on the help website */
+    url: string;
+};
+export type HelpAskStatusDto = {
+    /** Ask Frameleaf is on (help.askEnabled) */
+    enabled: boolean;
+    /** The hardware answers take into account, as shown to people, or null when unknown */
+    hardware: string | null;
+};
+export type HelpIndexResponseDto = {
+    articles: HelpArticleDto[];
+    ask: HelpAskStatusDto;
+    /** When the website built this index */
+    builtAt: string;
+    /** The last attempt to reach the help website failed */
+    offline: boolean;
+    /** The help website, such as https://frameleaf.app */
+    origin: string;
+    /** Every app screen key the website knows */
+    screens: string[];
+    /** When this server last fetched it; null for the copy in the image */
+    updatedAt: string | null;
 };
 export type ICloudClaimItemDto = {
     /** PHCloudIdentifier.stringValue, as the device reports it */
@@ -23170,6 +23252,46 @@ export function reassignFacesById({ id, faceDto }: {
     })));
 }
 /**
+ * Get a help article
+ */
+export function getHelpArticle({ section, slug }: {
+    section: string;
+    slug: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: HelpArticleResponseDto;
+    }>(`/help/articles/${encodeURIComponent(section)}/${encodeURIComponent(slug)}`, {
+        ...opts
+    }));
+}
+/**
+ * Ask Frameleaf
+ */
+export function askHelp({ helpAskDto }: {
+    helpAskDto: HelpAskDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: HelpAskResponseDto;
+    }>("/help/ask", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: helpAskDto
+    })));
+}
+/**
+ * Get the help articles
+ */
+export function getHelpIndex(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: HelpIndexResponseDto;
+    }>("/help/index", {
+        ...opts
+    }));
+}
+/**
  * Claim iCloud items for this device to fetch and upload
  */
 export function claimICloudItems({ iCloudClaimDto }: {
@@ -31337,6 +31459,7 @@ export enum EnvironmentKeys {
     FrameleafIosAppUrl = "FRAMELEAF_IOS_APP_URL",
     FrameleafCloudUrl = "FRAMELEAF_CLOUD_URL",
     FrameleafPushUrl = "FRAMELEAF_PUSH_URL",
+    FrameleafHelpOrigin = "FRAMELEAF_HELP_ORIGIN",
     FrameleafLicenseExtraJwksFile = "FRAMELEAF_LICENSE_EXTRA_JWKS_FILE",
     FrameleafIdentityDir = "FRAMELEAF_IDENTITY_DIR",
     FrameleafLinkToken = "FRAMELEAF_LINK_TOKEN",
@@ -32955,6 +33078,15 @@ export enum SourceType {
     MachineLearning = "machine-learning",
     Exif = "exif",
     Manual = "manual"
+}
+export enum HelpAskRole {
+    User = "user",
+    Assistant = "assistant"
+}
+export enum HelpAnswerKind {
+    Answer = "answer",
+    Clarification = "clarification",
+    Fallback = "fallback"
 }
 export enum ICloudClaimHolder {
     Device = "device",

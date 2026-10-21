@@ -481,6 +481,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
     trimMode: VideoTrimMode.Precise,
     restoration: { style: RestorationStyle.Faithful },
   },
+  help: { askEnabled: true },
 });
 
 describe(SystemConfigService.name, () => {
