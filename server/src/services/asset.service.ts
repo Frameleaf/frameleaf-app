@@ -827,6 +827,7 @@ export class AssetService extends BaseService {
       files: AssetFile[];
       originalPath: string;
       physicalOriginalFileId?: string | null;
+      libraryReadOnly: boolean | null;
     };
   }) {
     const { sidecarFile: sourceFile } = getAssetFiles(sourceAsset.files);
@@ -839,12 +840,16 @@ export class AssetService extends BaseService {
     const isSharedNonCanonical =
       !!targetAsset.physicalOriginalFileId &&
       !(await this.physicalFileRepository.isOriginalCanonical(targetAsset.id, targetAsset.physicalOriginalFileId));
-    const targetPath = isSharedNonCanonical
-      ? StorageCore.getNestedPath(StorageFolder.Upload, targetAsset.ownerId, `${targetAsset.id}.xmp`)
-      : `${targetAsset.originalPath}.xmp`;
+    const targetPath =
+      targetAsset.libraryReadOnly || isSharedNonCanonical
+        ? StorageCore.getNestedPath(StorageFolder.Upload, targetAsset.ownerId, `${targetAsset.id}.xmp`)
+        : `${targetAsset.originalPath}.xmp`;
 
     const { sidecarFile: targetFile } = getAssetFiles(targetAsset.files ?? []);
 
+    if (targetAsset.libraryReadOnly || isSharedNonCanonical) {
+      this.storageCore.ensureFolders(targetPath);
+    }
     await this.storageRepository.copyFile(sourceFile.path, targetPath);
     await this.assetRepository.upsertFile({
       assetId: targetAsset.id,
@@ -852,7 +857,7 @@ export class AssetService extends BaseService {
       type: AssetFileType.Sidecar,
     });
     // the replaced sidecar is released through the reference-counted FileDelete, never unlinked here
-    if (targetFile?.path && targetFile.path !== targetPath) {
+    if (targetFile?.path && targetFile.path !== targetPath && !targetAsset.libraryReadOnly) {
       await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [targetFile.path] } });
     }
     await this.jobRepository.queue({ name: JobName.AssetExtractMetadata, data: { id: targetAsset.id } });
@@ -952,6 +957,14 @@ export class AssetService extends BaseService {
         // folder whatever happens to the item; its sidecar there is the owner's too. Generated files
         // above are Frameleaf's own and go either way.
         const ownsOriginal = deleteOnDisk && !asset.isOffline && !asset.libraryId;
+        if (
+          asset.libraryId &&
+          assetFiles.sidecarFile &&
+          assetFiles.sidecarFile.path ===
+            StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, `${asset.id}.xmp`)
+        ) {
+          files.push(assetFiles.sidecarFile.path);
+        }
         if (ownsOriginal) {
           files.push(assetFiles.sidecarFile?.path, removed.originalPath, removed.reservationTemporaryPath ?? undefined);
           removedOriginalPath = removed.originalPath;

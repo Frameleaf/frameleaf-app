@@ -17,6 +17,7 @@ async function fixture(
   const installation: NativeInstallation = {
     runtime: 'native',
     id: 'a'.repeat(12),
+    secureInstallationId: '11111111-1111-4111-8111-111111111111',
     controller: join(root, 'controller.mjs'),
     candidate: join(root, 'candidate'),
     state: join(root, 'state'),
@@ -33,7 +34,7 @@ import { createInterface } from 'node:readline';
 const lines=createInterface({input:process.stdin})[Symbol.asyncIterator]();
 const config=JSON.parse((await lines.next()).value), scenario=${JSON.stringify(scenario)};
 const emit=value=>process.stdout.write(JSON.stringify(value)+'\\n');
-emit({protocolVersion:1,state:scenario==='wrong-database'?'running':scenario==='wrong-server'?'database-ready':config.mode==='checkpoint-cleanup'?'checkpoint-cleanup-ready':config.mode==='database'?'database-ready':'running',manifestSha256:config.manifestSha256,sourceRevision:'c'.repeat(40),certified:false});
+emit({protocolVersion:1,state:scenario==='wrong-database'?'running':scenario==='wrong-server'?'database-ready':config.mode==='checkpoint-cleanup'?'checkpoint-cleanup-ready':config.mode==='database'?'database-ready':'running',secureInstallationId:config.secureInstallationId,manifestSha256:config.manifestSha256,sourceRevision:'c'.repeat(40),certified:false});
 if(scenario==='unsolicited')emit({protocolVersion:1,state:'checkpoint-failed',operationId:'${operation}',code:'host_checkpoint_failed'});
 let pending=null;
 for await(const line of {[Symbol.asyncIterator]:()=>lines}){
@@ -93,6 +94,7 @@ test('checkpoint refuses invalid identities and detached owners without launchin
     {
       runtime: 'native',
       id: 'a'.repeat(12),
+      secureInstallationId: '11111111-1111-4111-8111-111111111111',
       controller: process.execPath,
       candidate: root,
       state: root,

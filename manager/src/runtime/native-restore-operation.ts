@@ -105,6 +105,7 @@ export async function runNativeRestorePrebackup(
         !isDeepStrictEqual(ready, {
           protocolVersion: 1,
           state: cleanup ? 'checkpoint-cleanup-ready' : 'database-ready',
+          secureInstallationId: context.installation.secureInstallationId,
           manifestSha256: context.installation.manifestSha256,
           sourceRevision: context.installation.sourceRevision,
           certified: context.installation.certified,
@@ -245,6 +246,7 @@ export async function runNativeRestorePreparation(
         !isDeepStrictEqual(ready, {
           protocolVersion: 1,
           state: 'restore-prepare-ready',
+          secureInstallationId: context.installation.secureInstallationId,
           manifestSha256: context.installation.manifestSha256,
           sourceRevision: context.installation.sourceRevision,
           certified: context.installation.certified,
@@ -460,6 +462,7 @@ async function runNativeRestoreAdmission(
       !isDeepStrictEqual(ready, {
         protocolVersion: 1,
         state: 'restore-prepare-ready',
+        secureInstallationId: context.installation.secureInstallationId,
         manifestSha256: context.installation.manifestSha256,
         sourceRevision: context.installation.sourceRevision,
         certified: context.installation.certified,
@@ -648,6 +651,7 @@ export async function runNativeRestore(
     !isDeepStrictEqual(ready, {
       protocolVersion: 1,
       state: 'running',
+      secureInstallationId: context.installation.secureInstallationId,
       manifestSha256: context.installation.manifestSha256,
       sourceRevision: context.installation.sourceRevision,
       certified: context.installation.certified,

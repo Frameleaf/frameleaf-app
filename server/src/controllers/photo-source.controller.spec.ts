@@ -1,8 +1,53 @@
 import { EventEmitter } from 'node:events';
+import request from 'supertest';
 import { PhotoSourceController } from 'src/controllers/photo-source.controller.js';
+import { PhotoSourceService } from 'src/services/photo-source.service.js';
+import { controllerSetup } from 'test/utils.js';
 
 const dto = { uploadResourceId: '11111111-1111-4111-8111-111111111111' };
 const params = { id: dto.uploadResourceId, runId: dto.uploadResourceId, itemId: dto.uploadResourceId };
+it('keeps folder and Apple registration responses separate and rejects crossed source kinds before creation', async () => {
+  const create = vi.fn((_auth, input) =>
+    Promise.resolve({ ...input, revokedAt: null, createdAt: '2026-10-21T00:00:00.000Z' }),
+  );
+  const http = await controllerSetup(PhotoSourceController, [{ provide: PhotoSourceService, useValue: { create } }]);
+  try {
+    for (const [path, kind] of [
+      ['/photo-sources', 'folder'],
+      ['/photo-sources/apple-photos', 'apple-photos'],
+    ]) {
+      const input = {
+        id: dto.uploadResourceId,
+        deviceId: dto.uploadResourceId,
+        kind,
+        mode: 'copy',
+        name: 'Fixture',
+        scopeFingerprint: 'a'.repeat(64),
+      };
+      const response = await request(http.getHttpServer()).post(path).send(input);
+      expect(response.status).toBe(201);
+      expect(response.body.kind).toBe(kind);
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      create.mockClear();
+      for (const invalid of [
+        { kind: kind === 'folder' ? 'apple-photos' : 'folder' },
+        { mode: 'reference' },
+        { root: '/private' },
+      ]) {
+        expect(
+          (
+            await request(http.getHttpServer())
+              .post(path)
+              .send({ ...input, ...invalid })
+          ).status,
+        ).toBe(400);
+        expect(create).not.toHaveBeenCalled();
+      }
+    }
+  } finally {
+    await http.close();
+  }
+});
 it('disconnect cancels verification and removes its response listener without masking unrelated errors', async () => {
   for (const unrelated of [false, true]) {
     const response = Object.assign(new EventEmitter(), { destroyed: false });

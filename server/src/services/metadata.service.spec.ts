@@ -2,6 +2,9 @@ import { BinaryField, ExifDateTime } from 'exiftool-vendored';
 import { DateTime } from 'luxon';
 import { randomBytes } from 'node:crypto';
 import { Stats } from 'node:fs';
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { LockableProperty } from 'src/database.js';
 import type { QueueExecution } from 'src/queue/types.js';
 import { LANDMARK_ICON_PACK } from 'src/constants.js';
@@ -21,7 +24,8 @@ import {
   StorageFolder,
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
-import { ImmichTags } from 'src/repositories/metadata.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { ImmichTags, MetadataRepository } from 'src/repositories/metadata.repository.js';
 import { MetadataService, firstDateTime } from 'src/services/metadata.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { PersonGroupFactory } from 'test/factories/person-group.factory.js';
@@ -31,7 +35,7 @@ import { tagStub } from 'test/fixtures/tag.stub.js';
 import { getForMetadataExtraction, getForSidecarWrite } from 'test/mappers.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { factory } from 'test/small.factory.js';
-import { ServiceMocks, newTestService } from 'test/utils.js';
+import { ServiceMocks, automock, newTestService } from 'test/utils.js';
 
 const forSidecarJob = (
   asset: {
@@ -2637,6 +2641,78 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleSidecarWrite', () => {
+    it('preserves source XMP fields through a real managed-sidecar edit and read', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'frameleaf-readonly-xmp-'));
+      const source = join(root, 'source.jpg.xmp');
+      const original = join(root, 'source.jpg');
+      const managed = join(root, 'managed', 'asset.xmp');
+      const metadata = new MetadataRepository(
+        automock(LoggingRepository, { args: [undefined, { getEnv: () => ({}) }], strict: false }),
+      );
+      const path = vi.spyOn(StorageCore, 'getNestedPath').mockReturnValue(managed);
+      try {
+        await mkdir(join(root, 'managed'));
+        await writeFile(original, 'synthetic original bytes');
+        await metadata.writeTags(source, { Artist: 'Source author', Credit: 'Source credit', Rating: 4 });
+        const sourceBytes = await readFile(source);
+        const originalBytes = await readFile(original);
+        const asset = AssetFactory.from({ originalPath: original })
+          .file({ type: AssetFileType.Sidecar, path: source })
+          .exif({ description: 'Managed edit' })
+          .build();
+        mocks.assetJob.getForSidecarWriteJob.mockResolvedValue({ ...getForSidecarWrite(asset), libraryReadOnly: true });
+        mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['description']);
+        mocks.storage.copyFile.mockImplementation(async (from, to) => copyFile(from, to));
+        mocks.metadata.writeTags.mockImplementation((file, tags) => metadata.writeTags(file, tags));
+
+        await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+        const tags = await metadata.readTags(managed);
+        expect(tags).toMatchObject({
+          Artist: 'Source author',
+          Credit: 'Source credit',
+          Rating: 4,
+          Description: 'Managed edit',
+        });
+        expect(await readFile(source)).toEqual(sourceBytes);
+        expect(await readFile(original)).toEqual(originalBytes);
+        expect(mocks.asset.upsertFile).toHaveBeenCalledWith(
+          { assetId: asset.id, type: AssetFileType.Sidecar, path: managed },
+          undefined,
+        );
+      } finally {
+        path.mockRestore();
+        await metadata.teardown();
+        await rm(root, { recursive: true, force: true });
+      }
+    }, 20_000);
+
+    it.each([null, 'physical-file-id'])(
+      'keeps a read-only library sidecar in managed storage (%s)',
+      async (physicalOriginalFileId) => {
+        const asset = AssetFactory.from({ originalPath: '/source/original.jpg', physicalOriginalFileId })
+          .file({ type: AssetFileType.Sidecar, path: '/source/original.jpg.xmp' })
+          .exif({ description: 'Frameleaf-only metadata' })
+          .build();
+        const row = { ...getForSidecarWrite(asset), libraryReadOnly: true };
+        mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(row);
+        mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['description']);
+        mocks.physicalFile.isOriginalCanonical.mockResolvedValue(true);
+        const ownPath = StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, `${asset.id}.xmp`);
+
+        await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.metadata.writeTags).toHaveBeenCalledExactlyOnceWith(ownPath, {
+          Description: 'Frameleaf-only metadata',
+          ImageDescription: 'Frameleaf-only metadata',
+        });
+        expect(mocks.storage.copyFile).toHaveBeenCalledExactlyOnceWith('/source/original.jpg.xmp', ownPath);
+        expect(mocks.storage.copyFile.mock.invocationCallOrder[0]).toBeLessThan(
+          mocks.metadata.writeTags.mock.invocationCallOrder[0],
+        );
+        expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      },
+    );
+
     it('should skip assets that no longer exist on the sidecar lock connection', async () => {
       const connection = { lockConnection: true } as never;
       mocks.database.withAssetSidecarLock.mockImplementation(async (_id, fn) => fn(connection));

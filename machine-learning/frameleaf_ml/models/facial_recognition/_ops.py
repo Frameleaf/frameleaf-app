@@ -57,6 +57,8 @@ def nms(boxes: NDArray[np.float32], scores: NDArray[np.float32], threshold: floa
 
 
 def umeyama(src: NDArray[np.float32], dst: NDArray[np.float32]) -> NDArray[np.float32]:
+    # Keep the fitted transform stable across CPU architectures before rounding to float32.
+    src, dst = src.astype(np.float64), dst.astype(np.float64)
     src_mean, dst_mean = src.mean(0), dst.mean(0)
     src_c, dst_c = src - src_mean, dst - dst_mean
     cov = dst_c.T @ src_c / len(src)
@@ -71,4 +73,5 @@ def umeyama(src: NDArray[np.float32], dst: NDArray[np.float32]) -> NDArray[np.fl
 
 def align_face(image: NDArray[np.uint8], kps: NDArray[np.float32]) -> NDArray[np.float32]:
     matrix = umeyama(kps, ARCFACE_DST)
-    return cv2.warpAffine(image, matrix, (ALIGNED_SIZE, ALIGNED_SIZE)).astype(np.float32)
+    # Integer interpolation amplifies subpixel landmark differences across backends.
+    return cv2.warpAffine(image.astype(np.float32), matrix, (ALIGNED_SIZE, ALIGNED_SIZE)).astype(np.float32, copy=False)

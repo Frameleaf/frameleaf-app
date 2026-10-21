@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type {
-  PhotoSourceCreateDto,
+  PhotoSourceCreateInput,
   PhotoSourceItemDto,
   PhotoSourceRunDto,
   PhotoSourceRunStateDto,
@@ -96,7 +96,7 @@ export class PhotoSourceRepository {
     if (transaction) await check(transaction);
     else await this.db.transaction().execute(check);
   }
-  create(auth: SourceAuthority, dto: PhotoSourceCreateDto) {
+  create(auth: SourceAuthority, dto: PhotoSourceCreateInput) {
     return this.db.transaction().execute(async (tx) => {
       await this.owner(tx, auth);
       const device = await tx

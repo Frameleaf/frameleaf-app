@@ -57,6 +57,7 @@ const user = userAdminFactory.build({
 const statistics: AssetStatsResponseDto = { images: 120, videos: 4, total: 124 };
 
 const library = (overrides: Partial<LibraryResponseDto>): LibraryResponseDto => ({
+  readOnly: false,
   id: 'lib-1',
   name: 'Library',
   ownerId: user.id,

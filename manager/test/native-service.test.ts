@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { test } from 'node:test';
-import { Refusal, sha256 } from '../src/contracts.js';
+import { digest, Refusal, sha256 } from '../src/contracts.js';
 import { Store } from '../src/store.js';
 import {
   NativeService,
@@ -37,6 +37,7 @@ async function fixture(run: (f: any) => Promise<void>) {
   const installation = {
     runtime: 'native',
     id: 'a'.repeat(12),
+    secureInstallationId: '11111111-1111-4111-8111-111111111111',
     controller,
     candidate: join(root, 'runtime'),
     state: join(root, 'state'),
@@ -76,6 +77,7 @@ async function fixture(run: (f: any) => Promise<void>) {
       return {
         protocolVersion: 1,
         state: 'running',
+        secureInstallationId: '11111111-1111-4111-8111-111111111111',
         manifestSha256: installation.manifestSha256,
         sourceRevision: installation.sourceRevision,
         certified: false,
@@ -155,6 +157,27 @@ test('native bootstrap is bounded, complete, strict and keeps credentials out of
     );
     for (const value of [
       { ...bootstrap, extra: true },
+      {
+        ...bootstrap,
+        installation: {
+          ...bootstrap.installation,
+          secureInstallationId: undefined,
+        },
+      },
+      {
+        ...bootstrap,
+        installation: {
+          ...bootstrap.installation,
+          secureInstallationId: '00000000-0000-0000-0000-000000000000',
+        },
+      },
+      {
+        ...bootstrap,
+        installation: {
+          ...bootstrap.installation,
+          secureInstallationId: 'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA',
+        },
+      },
       { ...bootstrap, password: 'x\nsecret' },
       {
         ...bootstrap,
@@ -704,5 +727,254 @@ test('restore service requires a fresh compatible review and preserves the same 
       /request_key_reused/,
     );
     assert.deepEqual(effects, []);
+  });
+});
+
+function updatedBootstrap(bootstrap: any, store: Store) {
+  return {
+    ...bootstrap,
+    release: 'frameleaf-v3.0.0-2',
+    installation: {
+      ...bootstrap.installation,
+      candidate: bootstrap.installation.candidate + '-next',
+      manifestSha256: 'e'.repeat(64),
+      sourceRevision: 'f'.repeat(40),
+    },
+    installationTransition: {
+      operationId: randomUUID(),
+      fromFingerprint: store.get<any>('native-installation').fingerprint,
+    },
+  };
+}
+test('explicit binding transition preserves library, sessions and secrets and exactly replays', async () => {
+  await fixture(async ({ store, bootstrap, runtime, effects }) => {
+    new NativeService(store, bootstrap, runtime);
+    store.set('synthetic-backup-setting', { retained: true });
+    store.db
+      .prepare('INSERT INTO sessions VALUES (?,?,?)')
+      .run('hash', 'csrf', Date.now() + 60000);
+    const target = updatedBootstrap(bootstrap, store);
+    const parsed = await read(target);
+    const old = store.get<any>('native-installation');
+    const service = new NativeService(store, parsed, runtime);
+    const current = store.get<any>('native-installation');
+    assert.notEqual(current.fingerprint, old.fingerprint);
+    assert.equal(current.fingerprint, digest(current.descriptor));
+    assert.equal(current.descriptor.installationTransition, undefined);
+    assert.equal(service.installation().release, target.release);
+    assert.equal(await service.backupPassword(), bootstrap.backupKey);
+    assert.equal(store.get('native-library-id'), bootstrap.installation.id);
+    assert.deepEqual(store.get('synthetic-backup-setting'), { retained: true });
+    assert.equal(store.db.prepare('SELECT * FROM sessions').all().length, 1);
+    new NativeService(store, parsed, runtime);
+    const { installationTransition, ...ordinary } = target;
+    new NativeService(store, ordinary, runtime);
+    assert.throws(
+      () => new NativeService(store, bootstrap, runtime),
+      /native_installation_changed/,
+    );
+    assert.deepEqual(effects, []);
+    const snapshot = JSON.stringify(
+      store.db.prepare('SELECT * FROM settings ORDER BY key').all(),
+    );
+    for (const secret of [
+      bootstrap.password,
+      bootstrap.backupKey,
+      bootstrap.tls.privateKeyPem,
+    ])
+      assert.ok(!snapshot.includes(secret));
+    for (const changed of [
+      { ...target, release: 'frameleaf-v3.0.0-3' },
+      {
+        ...target,
+        installationTransition: {
+          ...installationTransition,
+          fromFingerprint: '0'.repeat(64),
+        },
+      },
+      {
+        ...target,
+        installationTransition: {
+          ...installationTransition,
+          operationId: randomUUID(),
+        },
+      },
+    ]) {
+      assert.throws(() => new NativeService(store, changed, runtime));
+      assert.equal(
+        JSON.stringify(
+          store.db.prepare('SELECT * FROM settings ORDER BY key').all(),
+        ),
+        snapshot,
+      );
+    }
+  });
+});
+test('binding transition refuses immutable drift and incomplete operations without writing settings', async () => {
+  await fixture(async ({ store, bootstrap, runtime }) => {
+    new NativeService(store, bootstrap, runtime);
+    const target = updatedBootstrap(bootstrap, store);
+    const before = JSON.stringify(
+      store.db.prepare('SELECT * FROM settings ORDER BY key').all(),
+    );
+    for (const value of [
+      { ...target, name: 'different' },
+      { ...target, tls: { ...target.tls, certificatePem: 'another' } },
+      ...['id', 'secureInstallationId', 'state', 'databasePort', 'apiPort'].map(
+        (key) => ({
+          ...target,
+          installation: {
+            ...target.installation,
+            [key]:
+              key === 'id'
+                ? 'c'.repeat(12)
+                : key === 'secureInstallationId'
+                  ? '22222222-2222-4222-8222-222222222222'
+                  : key === 'state'
+                    ? target.installation.state + '-other'
+                    : 60000,
+          },
+        }),
+      ),
+      {
+        ...target,
+        installationTransition: {
+          ...target.installationTransition,
+          fromFingerprint: '0'.repeat(64),
+        },
+      },
+      { ...bootstrap, installationTransition: target.installationTransition },
+    ]) {
+      assert.throws(() => new NativeService(store, value, runtime));
+      assert.equal(
+        JSON.stringify(
+          store.db.prepare('SELECT * FROM settings ORDER BY key').all(),
+        ),
+        before,
+      );
+    }
+    const { operation } = store.start('start', 'synthetic-active', {});
+    for (const state of ['running', 'interrupted', 'failed'] as const) {
+      operation.state = state;
+      store.save(operation);
+      assert.throws(
+        () => new NativeService(store, target, runtime),
+        /operation_in_progress/,
+      );
+      assert.equal(
+        JSON.stringify(
+          store.db.prepare('SELECT * FROM settings ORDER BY key').all(),
+        ),
+        before,
+      );
+    }
+    operation.state = 'complete';
+    store.save(operation);
+    new NativeService(store, target, runtime);
+    const history = JSON.stringify(store.history());
+    new NativeService(store, target, runtime);
+    assert.equal(JSON.stringify(store.history()), history);
+  });
+});
+test('binding transition requires valid enrollment and rolls back failed receipt publication', async () => {
+  await fixture(async ({ store, bootstrap, runtime }) => {
+    assert.throws(
+      () =>
+        new NativeService(
+          store,
+          {
+            ...bootstrap,
+            installationTransition: {
+              operationId: randomUUID(),
+              fromFingerprint: 'b'.repeat(64),
+            },
+          },
+          runtime,
+        ),
+    );
+    assert.equal(store.get('native-installation'), null);
+    new NativeService(store, bootstrap, runtime);
+    const original = store.get<any>('native-installation');
+    const target = updatedBootstrap(bootstrap, store);
+    const before = JSON.stringify(
+      store.db.prepare('SELECT * FROM settings ORDER BY key').all(),
+    );
+    store.set('native-installation', {
+      ...original,
+      descriptor: { ...original.descriptor, name: 'corrupt' },
+    });
+    assert.throws(() => new NativeService(store, target, runtime));
+    store.set('native-installation', original);
+    store.db.exec(
+      "CREATE TRIGGER deny_transition BEFORE INSERT ON settings WHEN NEW.key LIKE 'native-transition:%' BEGIN SELECT RAISE(ABORT, 'synthetic receipt failure'); END",
+    );
+    assert.throws(
+      () => new NativeService(store, target, runtime),
+      /synthetic receipt failure/,
+    );
+    assert.equal(
+      JSON.stringify(
+        store.db.prepare('SELECT * FROM settings ORDER BY key').all(),
+      ),
+      before,
+    );
+    store.db.exec('DROP TRIGGER deny_transition');
+    new NativeService(store, target, runtime);
+  });
+});
+
+test('transition bootstrap rejects malformed authority and prior receipts cannot rebind later versions', async () => {
+  await fixture(async ({ store, bootstrap, runtime }) => {
+    new NativeService(store, bootstrap, runtime);
+    const first = updatedBootstrap(bootstrap, store);
+    for (const change of [
+      {
+        ...first.installationTransition,
+        operationId: '00000000-0000-0000-0000-000000000000',
+      },
+      {
+        ...first.installationTransition,
+        operationId: randomUUID().toUpperCase(),
+      },
+      { ...first.installationTransition, fromFingerprint: 'foreign' },
+      { ...first.installationTransition, extra: true },
+    ])
+      await assert.rejects(read({ ...first, installationTransition: change }));
+    const original = store.get<any>('native-installation');
+    const { password, backupKey, tls, ...unused } = bootstrap;
+    void password;
+    void backupKey;
+    void unused;
+    assert.equal(
+      original.fingerprint,
+      digest({
+        protocolVersion: 2,
+        installation: bootstrap.installation,
+        controllerSha256: bootstrap.controllerSha256,
+        backupEngine: bootstrap.backupEngine,
+        name: bootstrap.name,
+        release: bootstrap.release,
+        tlsCertificatePemSha256: sha256(tls.certificatePem),
+      }),
+    );
+    new NativeService(store, first, runtime);
+    const second = {
+      ...updatedBootstrap(first, store),
+      release: 'frameleaf-v3.0.0-3',
+    };
+    new NativeService(store, second, runtime);
+    const snapshot = JSON.stringify(
+      store.db.prepare('SELECT * FROM settings ORDER BY key').all(),
+    );
+    assert.throws(() => new NativeService(store, first, runtime));
+    assert.equal(
+      JSON.stringify(
+        store.db.prepare('SELECT * FROM settings ORDER BY key').all(),
+      ),
+      snapshot,
+    );
+    store.set('native-library-id', '0'.repeat(12));
+    assert.throws(() => new NativeService(store, second, runtime));
+    assert.equal(store.get('native-library-id'), '0'.repeat(12));
   });
 });

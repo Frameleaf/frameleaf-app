@@ -21,7 +21,7 @@ export class PhotoSourceTable {
   @ForeignKeyColumn(() => DesktopDeviceTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE' }) deviceId!: string;
   // Keep provenance after logout; a fresh photo session must explicitly rebind the grant.
   @Column({ type: 'uuid' }) photoSessionId!: string;
-  @Column() kind!: 'folder';
+  @Column() kind!: 'folder' | 'apple-photos';
   @Column() mode!: 'copy';
   @Column() name!: string;
   @Column() scopeFingerprint!: string;

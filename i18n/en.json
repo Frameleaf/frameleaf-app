@@ -8158,6 +8158,8 @@
   "frameleaf_libraries_paths_exclusions": "Exclusion patterns",
   "frameleaf_libraries_paths_import": "Import folders",
   "frameleaf_libraries_paths_while_scanning": "Saving new folders or exclusions stops the scan in progress.",
+  "frameleaf_libraries_readonly_hint": "When enabled, originals and source sidecars stay unchanged; Frameleaf stores metadata edits separately. This choice is fixed after creation.",
+  "frameleaf_libraries_readonly_label": "Keep source files read-only",
   "frameleaf_libraries_reason_contains_upload_folder": "This folder contains the upload folder Frameleaf manages",
   "frameleaf_libraries_reason_duplicate": "This folder is listed more than once",
   "frameleaf_libraries_reason_invalid_characters": "Remove control characters from the path",

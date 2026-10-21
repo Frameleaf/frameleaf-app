@@ -380,6 +380,15 @@ describe(LibraryService.name, () => {
 
   describe('create', () => {
     describe('external library', () => {
+      it('persists and reports the explicit read-only policy', async () => {
+        const library = { ...factory.library(), readOnly: true };
+        mocks.library.create.mockResolvedValue(library);
+        const dto = { ownerId: authStub.admin.user.id, readOnly: true };
+
+        await expect(sut.create(dto)).resolves.toMatchObject({ readOnly: true });
+        expect(mocks.library.create).toHaveBeenCalledWith(expect.objectContaining({ readOnly: true }));
+      });
+
       it('should create with default settings', async () => {
         const library = factory.library();
 

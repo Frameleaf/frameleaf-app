@@ -354,3 +354,99 @@ it('accepted evidence cannot be read by a different authenticated worker', async
   expect(await sut.readAccepted(grant, row.id)).toMatchObject({ id: row.id });
   expect(await sut.readAccepted(other.grant, row.id)).toBeUndefined();
 });
+
+it('retains the verified CoreML collector through JSONB readback and binds its receipt without granting scope', async () => {
+  const { sut, grant } = await setup();
+  const selected = { ...profile, spec: { ...profile.spec, provider: 'CoreMLExecutionProvider' as const } };
+  const identity = { ...runtime, provider: selected.spec.provider, collectorSha256: 'c'.repeat(64) };
+  const row = (await sut.issue(grant, randomUUID(), selected, identity))!;
+  const stored = (await sut.read(grant, row.id))!;
+  expect(stored.runtime).toEqual(identity);
+  expect(
+    (
+      await challengeDb
+        .selectFrom('desktop_worker_challenge')
+        .select('runtime')
+        .where('id', '=', row.id)
+        .executeTakeFirstOrThrow()
+    ).runtime,
+  ).toEqual(identity);
+  const device = {
+    abiVersion: 1,
+    collectorSha256: identity.collectorSha256,
+    osBuild: 'fixture build',
+    devices: [{ name: 'fixture GPU', identitySha256: 'd'.repeat(64) }],
+  };
+  const facts = {
+    system: 'Darwin',
+    release: 'fixture',
+    architecture: 'arm64',
+    processor: 'fixture',
+    python: '3.12.13',
+    ort: '1.31.0',
+    packages: { onnxruntime: '1.31.0' },
+    providers: ['CPUExecutionProvider', 'CoreMLExecutionProvider'],
+    gpus: [],
+    totalMemoryBytes: 8 * 1024 ** 3,
+    deviceEvidence: device,
+  };
+  const value = {
+    protocolVersion: 1,
+    modelKey: selected.modelKey,
+    provider: selected.spec.provider,
+    preprocessingSha256: selected.spec.preprocessingSha256,
+    fixtureSha256: selected.spec.fixtureSha256,
+    bindingSha256: stored.bindingSha256,
+    runtime: facts,
+    runtimeFingerprint: createHash('sha256').update(canonicalJson(facts)).digest('hex'),
+    coldMilliseconds: 120,
+    warmMilliseconds: 10,
+    reason: null,
+    state: 'ready-mixed',
+    execution: [
+      {
+        state: 'ready-mixed',
+        reason: null,
+        nodes: { CoreMLExecutionProvider: 1 },
+        microseconds: { CoreMLExecutionProvider: 10 },
+      },
+    ],
+    deviceExecution: {
+      provider: selected.spec.provider,
+      facts: device,
+      models: [
+        {
+          sha256: selected.spec.models[0].artifacts[`${selected.spec.models[0].type}/model.onnx`],
+          calls: 2,
+          computeBuffers: 2,
+          computeDispatches: 2,
+          gpuNanoseconds: 1000,
+        },
+      ],
+    },
+  };
+  const challenge = {
+    specJson: stored.specJson,
+    bindingSha256: stored.bindingSha256,
+    fixtureBase64: selected.fixtureBase64,
+  };
+  const validated = DesktopQualificationReceipt.validate(value, selected, challenge, stored.runtime);
+  expect(() =>
+    DesktopQualificationReceipt.validate(value, selected, challenge, {
+      ...stored.runtime,
+      collectorSha256: 'f'.repeat(64),
+    }),
+  ).toThrow();
+  expect(await sut.record(grant, row.id, validated)).toBe(true);
+  expect((await sut.read(grant, row.id))!.runtime).toEqual(identity);
+  expect(await sut.readAccepted(grant, row.id)).toMatchObject({ id: row.id, reportSha256: validated.reportSha256 });
+  expect(
+    (
+      await challengeDb
+        .selectFrom('desktop_worker_session')
+        .select('modelKeys')
+        .where('id', '=', grant.sessionId)
+        .executeTakeFirstOrThrow()
+    ).modelKeys,
+  ).toEqual([]);
+});

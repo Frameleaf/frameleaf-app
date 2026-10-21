@@ -17,6 +17,7 @@ async function fixture(
   const installation: NativeInstallation = {
     runtime: 'native',
     id: 'a'.repeat(12),
+    secureInstallationId: '11111111-1111-4111-8111-111111111111',
     controller,
     candidate: join(root, 'candidate'),
     state: join(root, 'state'),
@@ -33,22 +34,24 @@ import { createInterface } from 'node:readline';
 const lines=createInterface({input:process.stdin})[Symbol.asyncIterator]();
 const config=JSON.parse((await lines.next()).value);
 if(process.argv[2]==='--inspect-owner'){
- if('password' in config)process.exit(9);
+ if('password' in config || config.secureInstallationId!==${JSON.stringify(installation.secureInstallationId)} || process.argv.includes(config.secureInstallationId) || Object.values(process.env).includes(config.secureInstallationId))process.exit(9);
  const fs=await import('node:fs/promises');
  await fs.appendFile(${JSON.stringify(join(root, 'probe-count'))},'p');
  if(await fs.access(${JSON.stringify(join(root, 'other-owner'))}).then(()=>true,()=>false)){
   process.stdout.write(JSON.stringify({protocolVersion:1,state:'failed',code:'host_controller_already_owned'})+'\\n');
   process.exit(1);
  }
- const proof={protocolVersion:1,state:'quiescent',installationId:config.installationId,manifestSha256:config.manifestSha256,
+ const proof={protocolVersion:1,state:'quiescent',installationId:config.installationId,secureInstallationId:config.secureInstallationId,manifestSha256:config.manifestSha256,
  sourceRevision:${JSON.stringify(installation.sourceRevision)},certified:false,profileIdentity:'e'.repeat(64),generation:'11111111-1111-4111-8111-111111111111'};
  if(${JSON.stringify(scenario)}==='inspection-id')proof.installationId='f'.repeat(12);
+ if(${JSON.stringify(scenario)}==='inspection-secure-id')proof.secureInstallationId='22222222-2222-4222-8222-222222222222';
+ if(${JSON.stringify(scenario)}==='inspection-missing-secure-id')delete proof.secureInstallationId;
  if(${JSON.stringify(scenario)}==='inspection-extra')proof.secret='synthetic-private-protocol';
  await new Promise(resolve=>process.stdout.write(JSON.stringify(proof)+'\\n',resolve));
  if(${JSON.stringify(scenario)}==='inspection-signal')process.kill(process.pid,'SIGTERM');
  process.exit(${JSON.stringify(scenario)}==='inspection-exit'?1:0);
 }
-if(config.password!==${JSON.stringify(password)} || process.argv[2]!=='--owner-pipe' || process.argv.some(v=>v.includes(config.password)) || Object.values(process.env).includes(config.password)) process.exit(9);
+if(config.secureInstallationId!==${JSON.stringify(installation.secureInstallationId)} || process.argv.includes(config.secureInstallationId) || Object.values(process.env).includes(config.secureInstallationId) || config.password!==${JSON.stringify(password)} || process.argv[2]!=='--owner-pipe' || process.argv.some(v=>v.includes(config.password)) || Object.values(process.env).includes(config.password)) process.exit(9);
 const scenario=${JSON.stringify(scenario)};
 if(scenario==='no-ready'){
  for await(const line of {[Symbol.asyncIterator]:()=>lines}){
@@ -58,8 +61,10 @@ if(scenario==='no-ready'){
   }
  }
 }
-const ready={protocolVersion:1,state:'running',manifestSha256:config.manifestSha256,sourceRevision:${JSON.stringify(installation.sourceRevision)},certified:false};
+const ready={protocolVersion:1,state:'running',secureInstallationId:config.secureInstallationId,manifestSha256:config.manifestSha256,sourceRevision:${JSON.stringify(installation.sourceRevision)},certified:false};
 if(scenario==='identity')ready.manifestSha256='d'.repeat(64);
+if(scenario==='secure-identity')ready.secureInstallationId='22222222-2222-4222-8222-222222222222';
+if(scenario==='missing-secure-identity')delete ready.secureInstallationId;
 if(scenario==='extra')ready.secret='synthetic-private-protocol';
 process.stderr.write('synthetic-private-stderr');
 process.stdout.write((scenario==='oversized'?'x'.repeat(16385):JSON.stringify(ready))+'\\n');
@@ -89,6 +94,7 @@ test('native ownership is unknown until attached, without asking for credentials
     {
       runtime: 'native',
       id: 'a'.repeat(12),
+      secureInstallationId: '11111111-1111-4111-8111-111111111111',
       controller: process.execPath,
       candidate: root,
       state: root,
@@ -142,6 +148,8 @@ test(
 
 for (const scenario of [
   'inspection-id',
+  'inspection-secure-id',
+  'inspection-missing-secure-id',
   'inspection-extra',
   'inspection-exit',
   'inspection-signal',
@@ -157,7 +165,7 @@ for (const scenario of [
         await assert.rejects(
           host.stop(),
           new RegExp(
-            scenario === 'inspection-id'
+            ['inspection-id','inspection-secure-id'].includes(scenario)
               ? 'native_host_identity_changed'
               : 'native_host_inspection_failed',
           ),
@@ -174,6 +182,7 @@ test('native descriptors reject traversal and unknown authority fields', async (
   const descriptor = {
     runtime: 'native',
     id: 'a'.repeat(12),
+    secureInstallationId: '11111111-1111-4111-8111-111111111111',
     controller: process.execPath,
     candidate: root,
     state: root,
@@ -201,6 +210,7 @@ test('credential errors never reach public status or errors', async () => {
     {
       runtime: 'native',
       id: 'a'.repeat(12),
+      secureInstallationId: '11111111-1111-4111-8111-111111111111',
       controller: process.execPath,
       candidate: root,
       state: root,
@@ -274,6 +284,8 @@ test(
 
 for (const [scenario, code] of [
   ['identity', 'native_host_identity_changed'],
+  ['secure-identity', 'native_host_identity_changed'],
+  ['missing-secure-identity', 'native_host_protocol_invalid'],
   ['extra', 'native_host_protocol_invalid'],
   ['oversized', 'native_host_protocol_invalid'],
 ]) {

@@ -38,6 +38,7 @@ const scanOf = (overrides: Partial<LibraryScanResponseDto>): LibraryScanResponse
 });
 
 const libraryOf = (scan: LibraryScanResponseDto | null) => ({
+  readOnly: false,
   id: 'lib-1',
   name: 'Family photo archive',
   ownerId: 'owner-1',

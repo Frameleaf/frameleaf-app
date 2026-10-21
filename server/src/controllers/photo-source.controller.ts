@@ -4,6 +4,8 @@ import type { Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  ApplePhotosSourceCreateDto,
+  ApplePhotosSourceResponseDto,
   PhotoSourceCreateDto,
   PhotoSourceCursorDto,
   PhotoSourceItemDto,
@@ -33,8 +35,19 @@ export class PhotoSourceController {
   @Authenticated({ permission: Permission.AssetUpload })
   @ApiResponse({ status: 201, type: PhotoSourceResponseDto })
   @Endpoint({ summary: 'Approve an owner-scoped desktop folder-copy source', history: history() })
-  createPhotoSource(@Auth() auth: AuthDto, @Body() dto: PhotoSourceCreateDto): Promise<PhotoSourceResponseDto> {
-    return this.service.create(auth, dto);
+  async createPhotoSource(@Auth() auth: AuthDto, @Body() dto: PhotoSourceCreateDto): Promise<PhotoSourceResponseDto> {
+    return PhotoSourceResponseDto.schema.parse(await this.service.create(auth, dto));
+  }
+  @Post('apple-photos')
+  @Header('Cache-Control', 'private, no-store')
+  @Authenticated({ permission: Permission.AssetUpload })
+  @ApiResponse({ status: 201, type: ApplePhotosSourceResponseDto })
+  @Endpoint({ summary: 'Approve an owner-scoped Apple Photos copy source', history: history() })
+  async createApplePhotosSource(
+    @Auth() auth: AuthDto,
+    @Body() dto: ApplePhotosSourceCreateDto,
+  ): Promise<ApplePhotosSourceResponseDto> {
+    return ApplePhotosSourceResponseDto.schema.parse(await this.service.create(auth, dto));
   }
   @Delete(':id')
   @HttpCode(204)

@@ -1,12 +1,47 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import cv2
 import numpy as np
 import pytest
 from PIL import Image
 
 from frameleaf_ml.models.ocr.recognition import TextRecognizer
 from frameleaf_ml.models.ocr.schemas import TextDetectionOutput
+
+
+@pytest.mark.parametrize("raw_input", [False, True])
+def test_recognition_resizing_has_bit_exact_pixels(raw_input: bool) -> None:
+    session = Mock()
+    session.get_inputs.return_value = [
+        SimpleNamespace(name="input", shape=(None, 48, None, 3) if raw_input else (None, 3, 48, None))
+    ]
+    session.run.return_value = [np.zeros((1, 2, 2), dtype=np.float32)]
+    recognizer = TextRecognizer("PP-OCRv5_mobile", session=session)
+    recognizer.decoder = Mock()
+    recognizer.decoder.decode.return_value = (["fixture"], np.array([0.99], dtype=np.float32))
+    pixels = (np.arange(17 * 31 * 3, dtype=np.uint16).reshape(17, 31, 3) * 37 % 256).astype(np.uint8)
+    image = Image.fromarray(pixels)
+    texts: TextDetectionOutput = {
+        "boxes": np.array([[[0, 0], [31, 0], [31, 17], [0, 17]]], dtype=np.float32),
+        "scores": np.array([0.99], dtype=np.float32),
+    }
+
+    recognizer._predict(image, texts)
+
+    expected = cv2.resize(pixels, (88, 48), interpolation=cv2.INTER_LINEAR_EXACT)
+    tensor = session.run.call_args.args[1]["input"]
+    if raw_input:
+        assert tensor.shape == (1, 48, 320, 3)
+        np.testing.assert_array_equal(tensor[0, :, :88], expected)
+        assert np.all(tensor[0, :, 88:] == 127)
+    else:
+        assert tensor.shape == (1, 3, 48, 320)
+        normalized = expected[:, :, ::-1].transpose(2, 0, 1).astype(np.float32)
+        normalized *= np.float32(1 / 127.5)
+        normalized -= 1.0
+        np.testing.assert_array_equal(tensor[0, :, :, :88], normalized)
+        assert np.all(tensor[0, :, :, 88:] == 0)
 
 
 @pytest.mark.parametrize("raw_input", [False, True])

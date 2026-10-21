@@ -19,13 +19,14 @@ export const desktopFaceProfile = (
   catalogue ??= parseDesktopModelCatalogue(
     JSON.parse(readFileSync(join(import.meta.dirname, '../../resources/desktop/model-catalogue.json'), 'utf8')),
   );
-  const candidates = catalogue.profiles.filter(
+  // Provider-specific qualification shares one logical model identity.
+  const profile = catalogue.profiles.find(
     (profile) =>
       profile.workload === 'face' &&
       profile.modelKey === modelKey &&
       profile.modelName === options.modelName &&
       canonicalJson(profile.spec.entries) === canonicalJson(faceEntries(options)),
   );
-  if (candidates.length !== 1) throw new Error('desktop_pool_model_unavailable');
-  return candidates[0];
+  if (!profile) throw new Error('desktop_pool_model_unavailable');
+  return profile;
 };

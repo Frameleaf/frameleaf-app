@@ -3175,10 +3175,10 @@
         },
         {
           "name": "IDX_geodata_gist_earthcoord",
-          "definition": "CREATE INDEX \"IDX_geodata_gist_earthcoord\" ON public.geodata_places USING btree (ll_to_earth_public(latitude, longitude))",
+          "definition": "CREATE INDEX \"IDX_geodata_gist_earthcoord\" ON public.geodata_places USING gist (ll_to_earth_public(latitude, longitude))",
           "tableName": "geodata_places",
           "expression": "ll_to_earth_public(latitude, longitude)",
-          "using": "btree",
+          "using": "gist",
           "unique": false,
           "synchronize": true
         },
@@ -12275,6 +12275,16 @@
           "nullable": false,
           "isArray": false,
           "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "readOnly",
+          "tableName": "library",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
           "synchronize": true
         }
       ],
@@ -39737,9 +39747,9 @@
         {
           "type": "check",
           "name": "desktop_worker_qualification_kind_check",
-          "definition": "CHECK (((\"inputKind\")::text = ANY ((ARRAY['image'::character varying, 'text'::character varying])::text[])))",
+          "definition": "CHECK (((\"inputKind\")::text = ANY (ARRAY[('image'::character varying)::text, ('text'::character varying)::text])))",
           "tableName": "desktop_worker_qualification",
-          "expression": "(((\"inputKind\")::text = ANY ((ARRAY['image'::character varying, 'text'::character varying])::text[])))",
+          "expression": "(((\"inputKind\")::text = ANY (ARRAY[('image'::character varying)::text, ('text'::character varying)::text])))",
           "synchronize": true
         },
         {

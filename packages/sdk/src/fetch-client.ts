@@ -7774,6 +7774,8 @@ export type LibraryResponseDto = {
     name: string;
     /** Owner user ID */
     ownerId: string;
+    /** Source originals and sidecars are read-only; generated metadata is managed. */
+    readOnly: boolean;
     /** Last refresh date */
     refreshedAt: string | null;
     /** The latest scan, or null if the library was never scanned */
@@ -7790,6 +7792,8 @@ export type CreateLibraryDto = {
     name?: string;
     /** Owner user ID. Fixed once the library exists. */
     ownerId: string;
+    /** Keep source originals and sidecars read-only. Fixed once created. */
+    readOnly?: boolean;
 };
 export type ManagedUploadsStatsResponseDto = {
     /** Account whose uploads these are */
@@ -9408,6 +9412,24 @@ export type PhotoSourceResponseDto = {
     deviceId: string;
     id: string;
     kind: PhotoSourceKind;
+    mode: PhotoSourceCopyMode;
+    name: string;
+    revokedAt: string | null;
+    scopeFingerprint: string;
+};
+export type ApplePhotosSourceCreateDto = {
+    deviceId: string;
+    id: string;
+    kind: ApplePhotosSourceKind;
+    mode: PhotoSourceCopyMode;
+    name: string;
+    scopeFingerprint: string;
+};
+export type ApplePhotosSourceResponseDto = {
+    createdAt: string;
+    deviceId: string;
+    id: string;
+    kind: ApplePhotosSourceKind;
     mode: PhotoSourceCopyMode;
     name: string;
     revokedAt: string | null;
@@ -25663,6 +25685,21 @@ export function createPhotoSource({ photoSourceCreateDto }: {
     })));
 }
 /**
+ * Approve an owner-scoped Apple Photos copy source
+ */
+export function createApplePhotosSource({ applePhotosSourceCreateDto }: {
+    applePhotosSourceCreateDto: ApplePhotosSourceCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ApplePhotosSourceResponseDto;
+    }>("/photo-sources/apple-photos", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: applePhotosSourceCreateDto
+    })));
+}
+/**
  * Revoke a photo source while retaining its managed copies and associations
  */
 export function revokePhotoSource({ id }: {
@@ -33614,6 +33651,9 @@ export enum PhotoSourceKind {
 }
 export enum PhotoSourceCopyMode {
     Copy = "copy"
+}
+export enum ApplePhotosSourceKind {
+    ApplePhotos = "apple-photos"
 }
 export enum PhotoSourceRunState {
     Open = "open",

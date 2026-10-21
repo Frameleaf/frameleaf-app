@@ -29,6 +29,9 @@ export class LibraryTable {
   @Column({ type: 'text', array: true })
   exclusionPatterns!: string[];
 
+  @Column({ type: 'boolean', default: false })
+  readOnly!: Generated<boolean>;
+
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;
 

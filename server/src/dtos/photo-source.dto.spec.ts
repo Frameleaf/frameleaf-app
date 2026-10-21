@@ -1,7 +1,14 @@
-import { PhotoSourceCreateDto, PhotoSourceItemDto, PhotoSourceRunDto } from 'src/dtos/photo-source.dto.js';
+import {
+  ApplePhotosSourceCreateDto,
+  ApplePhotosSourceResponseDto,
+  PhotoSourceCreateDto,
+  PhotoSourceItemDto,
+  PhotoSourceResponseDto,
+  PhotoSourceRunDto,
+} from 'src/dtos/photo-source.dto.js';
 
 const id = '11111111-1111-4111-8111-111111111111';
-it('accepts only explicit folder-copy scope with opaque bounded fingerprints', () => {
+it('accepts explicit folder-copy scope with opaque bounded fingerprints', () => {
   const valid = {
     id,
     deviceId: id,
@@ -11,6 +18,7 @@ it('accepts only explicit folder-copy scope with opaque bounded fingerprints', (
     scopeFingerprint: 'a'.repeat(64),
   };
   expect(PhotoSourceCreateDto.schema.parse(valid)).toEqual(valid);
+  expect(PhotoSourceCreateDto.schema.safeParse({ ...valid, kind: 'apple-photos' }).success).toBe(false);
   for (const extra of [
     { mode: 'reference' },
     { kind: 'icloud' },
@@ -45,5 +53,30 @@ it('bounds whole-run reservations and separates source identity from content', (
     { sourceIdentity: { kind: 'icloud' } },
   ]) {
     expect(PhotoSourceItemDto.schema.safeParse({ ...item, ...extra }).success).toBe(false);
+  }
+});
+
+it('accepts Apple Photos copy provenance without asset identifiers, paths, or external-reference authority', () => {
+  const source = {
+    id,
+    deviceId: id,
+    kind: 'apple-photos',
+    mode: 'copy',
+    name: 'Apple Photos originals',
+    scopeFingerprint: 'a'.repeat(64),
+  };
+  expect(ApplePhotosSourceCreateDto.schema.parse(source)).toEqual(source);
+  expect(ApplePhotosSourceCreateDto.schema.safeParse({ ...source, kind: 'folder' }).success).toBe(false);
+  const response = { ...source, revokedAt: null, createdAt: '2026-10-21T00:00:00.000Z' };
+  expect(ApplePhotosSourceResponseDto.schema.parse(response)).toEqual(response);
+  expect(PhotoSourceResponseDto.schema.safeParse(response).success).toBe(false);
+  expect(PhotoSourceResponseDto.schema.parse({ ...response, kind: 'folder' }).kind).toBe('folder');
+  for (const extra of [
+    { mode: 'reference' },
+    { mode: 'external' },
+    { assetId: 'opaque-local-id' },
+    { root: '/Users/private/Photos.photoslibrary' },
+  ]) {
+    expect(ApplePhotosSourceCreateDto.schema.safeParse({ ...source, ...extra }).success).toBe(false);
   }
 });

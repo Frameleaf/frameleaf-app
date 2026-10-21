@@ -48,6 +48,7 @@
 
   let open = $state(true);
   let name = $state(library?.name ?? '');
+  let readOnly = $state(library ? (library.readOnly ?? false) : true);
   let owner = $state(library?.ownerId ?? ownerId ?? owners[0]?.id ?? '');
   let importPaths = $state<string[]>([...(library?.importPaths ?? [])]);
   let exclusionPatterns = $state<string[]>([...(library?.exclusionPatterns ?? DEFAULT_EXCLUSION_PATTERNS)]);
@@ -135,7 +136,13 @@
             updateLibraryDto: { name: name.trim(), importPaths: paths, exclusionPatterns: exclusions },
           })
         : await createLibrary({
-            createLibraryDto: { ownerId: owner, name: name.trim(), importPaths: paths, exclusionPatterns: exclusions },
+            createLibraryDto: {
+              ownerId: owner,
+              readOnly,
+              name: name.trim(),
+              importPaths: paths,
+              exclusionPatterns: exclusions,
+            },
           });
       onSaved(saved);
       open = false;
@@ -222,6 +229,11 @@
         </div>
       </div>
       <p class="resource-notice">{$t('frameleaf_libraries_form_notice')}</p>
+      <label class="resource-check">
+        <input type="checkbox" bind:checked={readOnly} disabled={editing} aria-describedby="{idPrefix}-readonly-hint" />
+        <span>{$t('frameleaf_libraries_readonly_label')}</span>
+      </label>
+      <p id="{idPrefix}-readonly-hint" class="resource-footnote">{$t('frameleaf_libraries_readonly_hint')}</p>
 
       {@render pathList(
         $t('frameleaf_libraries_paths_import'),

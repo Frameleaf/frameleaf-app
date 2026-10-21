@@ -14,7 +14,7 @@ const spaces = parseDesktopClipSpaces(
   JSON.parse(readFileSync('resources/desktop/model-spaces.json', 'utf8')),
   catalogue,
 );
-const request = { provider: 'CPUExecutionProvider', runtimeSourceRevision: 'f93c34d196955da3e2760c095c08b27ccbf53315' };
+const request = { provider: 'CPUExecutionProvider', runtimeSourceRevision: 'f2c451a6bf71ca3f3aec986e07f0852937268e2f' };
 const setup = () => ({
   ...request,
   catalogue,
@@ -28,22 +28,27 @@ const setup = () => ({
   })),
   destinations: [{ ...structuredClone(mlDestinationStub.local), id: 'nas', authToken: 'private-destination-token' }],
 });
-it('advertises complete compiled groups and reports unqualified enrichment without exposing destinations', () => {
-  const input = setup();
-  const original = structuredClone(input);
-  const result = selectDesktopModelInventory(input);
-  expect(result.map(({ workload, state, modelKeys }) => [workload, state, modelKeys.length])).toEqual([
-    [MlWorkload.Clip, 'eligible', 3],
-    [MlWorkload.Ocr, 'eligible', 1],
-    [MlWorkload.Face, 'eligible', 1],
-    [MlWorkload.Enrichment, 'unsupported', 0],
-  ]);
-  expect(JSON.stringify(result)).not.toMatch(
-    /private-destination-token|localhost|frameleaf-machine-learning|destinationId/,
-  );
-  expect(input).toEqual(original);
-  expect(DesktopModelInventoryDto.schema.parse({ protocolVersion: 1, ...request, workloads: result })).toBeDefined();
-});
+it.each(['CPUExecutionProvider', 'CoreMLExecutionProvider'])(
+  'advertises complete compiled groups for %s without exposing destinations',
+  (provider) => {
+    const input = { ...setup(), provider };
+    const original = structuredClone(input);
+    const result = selectDesktopModelInventory(input);
+    expect(result.map(({ workload, state, modelKeys }) => [workload, state, modelKeys.length])).toEqual([
+      [MlWorkload.Clip, 'eligible', 3],
+      [MlWorkload.Ocr, 'eligible', 1],
+      [MlWorkload.Face, 'eligible', 1],
+      [MlWorkload.Enrichment, 'unsupported', 0],
+    ]);
+    expect(JSON.stringify(result)).not.toMatch(
+      /private-destination-token|localhost|frameleaf-machine-learning|destinationId/,
+    );
+    expect(input).toEqual(original);
+    expect(
+      DesktopModelInventoryDto.schema.parse({ protocolVersion: 1, ...request, provider, workloads: result }),
+    ).toBeDefined();
+  },
+);
 it.each(['pinned', 'legacy'] as const)('preserves %s routes without blocking other workloads', (origin) => {
   const input = setup();
   input.routes[2].origin = origin;
@@ -126,22 +131,23 @@ it('rejects protocol/request additions and keys in a refused inventory entry', (
   expect(() => DesktopModelInventoryDto.schema.parse({ protocolVersion: 1, ...request, workloads })).toThrow();
 });
 
-it.each(['25b22c16e47a27a2eb50017d838497abce850d11', '1ca4d52e2b8158d89d8de8b17e1e6535e17691f4'])(
-  'retains legacy CLIP spaces but refuses outdated default image producer %s',
-  (source) => {
-    const input = setup();
-    input.runtimeSourceRevision = source;
-    expect(
-      selectDesktopModelInventory(input)
-        .slice(0, 3)
-        .map(({ state }) => state),
-    ).toEqual(['eligible', 'unsupported', 'unsupported']);
-  },
-);
+it.each([
+  '25b22c16e47a27a2eb50017d838497abce850d11',
+  '1ca4d52e2b8158d89d8de8b17e1e6535e17691f4',
+  'f93c34d196955da3e2760c095c08b27ccbf53315',
+])('retains legacy CLIP spaces but refuses outdated default image producer %s', (source) => {
+  const input = setup();
+  input.runtimeSourceRevision = source;
+  expect(
+    selectDesktopModelInventory(input)
+      .slice(0, 3)
+      .map(({ state }) => state),
+  ).toEqual(['eligible', 'unsupported', 'unsupported']);
+});
 
 it('offers all qualified current-main CPU groups without changing routes or model configuration', () => {
   const input = setup();
-  input.runtimeSourceRevision = 'f93c34d196955da3e2760c095c08b27ccbf53315';
+  input.runtimeSourceRevision = 'f2c451a6bf71ca3f3aec986e07f0852937268e2f';
   const original = structuredClone(input);
   const result = selectDesktopModelInventory(input);
   expect(result.slice(0, 3).map(({ state, modelKeys }) => [state, modelKeys.length])).toEqual([

@@ -81,6 +81,7 @@ async function fixture(
           installation: {
             runtime: 'native',
             id: installationId,
+            secureInstallationId: '11111111-1111-4111-8111-111111111111',
             controller: join(root, 'controller'),
             candidate: join(root, 'runtime'),
             state: join(root, 'state'),
@@ -102,6 +103,7 @@ async function fixture(
             return {
               protocolVersion: 1,
               state: 'running',
+              secureInstallationId: '11111111-1111-4111-8111-111111111111',
               manifestSha256: 'b'.repeat(64),
               sourceRevision: 'c'.repeat(40),
               certified: false,
@@ -818,4 +820,72 @@ test('native restore execution never dispatches Docker or accepts lifecycle oper
       native,
       true,
     );
+});
+
+test('native update approval requires update scope, recent authentication and explicit migration consent', async () => {
+  await fixture(
+    async ({ operations, pair, signed, call, browser, effects, store }) => {
+      const path = '/manager-api/desktop/approve-update';
+      const value = {
+        backupOperationId: randomUUID(),
+        targetManifestSha256: '1'.repeat(64),
+        migrationsApproved: true,
+        key: randomUUID(),
+      };
+      const body = JSON.stringify(value);
+      operations.approveUpdate = async (input, id) => {
+        assert.deepEqual(input, value);
+        assert.equal(id, installationId);
+        effects.push('approve-update');
+        return { approval: 'synthetic-sealed-receipt' };
+      };
+      const read = await pair(['status']);
+      assert.equal(
+        (await call(path, body, signed(read, path, body, 'update'))).status,
+        403,
+      );
+      assert.deepEqual(effects, []);
+      const grant = await pair(['status', 'update']);
+      assert.equal(
+        (
+          await call(path, body, {
+            ...signed(grant, path, body, 'update'),
+            ...browser,
+          })
+        ).status,
+        403,
+      );
+      const refused = JSON.stringify({ ...value, migrationsApproved: false });
+      assert.equal(
+        (await call(path, refused, signed(grant, path, refused, 'update')))
+          .status,
+        400,
+      );
+      assert.deepEqual(effects, []);
+      const approved = await call(
+        path,
+        body,
+        signed(grant, path, body, 'update'),
+      );
+      assert.equal(approved.status, 200);
+      assert.deepEqual(approved.body, { approval: 'synthetic-sealed-receipt' });
+      // Grants are durable records; expire reauthentication without changing the proof key.
+      const stored = store.db
+        .prepare('SELECT id,value FROM desktop_grants')
+        .all() as any[];
+      for (const item of stored) {
+        const record = JSON.parse(item.value);
+        record.recentUntil = Date.now() - 1;
+        store.db
+          .prepare('UPDATE desktop_grants SET value=? WHERE id=?')
+          .run(JSON.stringify(record), item.id);
+      }
+      assert.equal(
+        (await call(path, body, signed(grant, path, body, 'update'))).status,
+        401,
+      );
+      assert.deepEqual(effects, ['approve-update']);
+    },
+    true,
+  );
 });

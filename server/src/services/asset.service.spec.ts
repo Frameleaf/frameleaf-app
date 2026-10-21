@@ -1,5 +1,9 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
+import { mkdirSync } from 'node:fs';
+import { copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFile } from 'src/database.js';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
@@ -1963,6 +1967,40 @@ describe(AssetService.name, () => {
       expect(mocks.user.updateUsage).not.toHaveBeenCalled();
     });
 
+    it.each([false, true])('removes only the exact managed library sidecar (deleteOnDisk=%s)', async (deleteOnDisk) => {
+      const id = newUuid();
+      const ownerId = newUuid();
+      const ownPath = StorageCore.getNestedPath(StorageFolder.Upload, ownerId, `${id}.xmp`);
+      for (const path of [ownPath, '/source/original.jpg.xmp']) {
+        mocks.job.queue.mockClear();
+        const asset = AssetFactory.from({ id, ownerId, libraryId: newUuid(), isExternal: true })
+          .file({ type: AssetFileType.Sidecar, path })
+          .build();
+        mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+
+        await sut.handleAssetDeletion({ id, deleteOnDisk });
+
+        const deleted = mocks.job.queue.mock.calls.flatMap(([item]) => (item.data as { files?: string[] }).files ?? []);
+        expect(deleted).not.toContain(asset.originalPath);
+        expect(deleted).not.toContain('/source/original.jpg.xmp');
+        expect(deleted.includes(ownPath)).toBe(path === ownPath);
+      }
+    });
+
+    it('deletes a managed asset without resolving an unrelated external sidecar path', async () => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+      const path = vi.spyOn(StorageCore, 'getNestedPath').mockImplementation(() => {
+        throw new Error('No external sidecar storage configured');
+      });
+      try {
+        await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+        expect(path).not.toHaveBeenCalled();
+      } finally {
+        path.mockRestore();
+      }
+    });
+
     it('leaves the stack change to the removal, so a removal that rolls back leaves the stack (FL-179)', async () => {
       const asset = AssetFactory.from()
         .stack({}, (builder) => builder.asset())
@@ -2323,6 +2361,46 @@ describe(AssetService.name, () => {
 
     beforeEach(() => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['source', 'target']));
+    });
+
+    it('copies into a fresh managed directory without deleting a read-only library source sidecar', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'frameleaf-readonly-copy-'));
+      const sourcePath = join(root, 'source.xmp');
+      const ownPath = join(root, 'managed', 'nested', 'target.xmp');
+      const path = vi.spyOn(StorageCore, 'getNestedPath').mockReturnValue(ownPath);
+      try {
+        await writeFile(sourcePath, 'synthetic metadata bytes');
+        const source = forCopy('source', { files: [sidecar('source', sourcePath)] });
+        const target = forCopy('target', {
+          libraryReadOnly: true,
+          physicalOriginalFileId: 'physical-file-id',
+          files: [sidecar('target', '/source/original.jpg.xmp')],
+        });
+        mocks.asset.getForCopy.mockResolvedValueOnce(source as never).mockResolvedValueOnce(target as never);
+        mocks.physicalFile.isOriginalCanonical.mockResolvedValue(true);
+        mocks.storage.mkdirSync.mockImplementation((directory) => {
+          mkdirSync(directory, { recursive: true });
+        });
+        mocks.storage.copyFile.mockImplementation(async (from, to) => copyFile(from, to));
+
+        await sut.copy(authStub.user1, {
+          sourceId: 'source',
+          targetId: 'target',
+          albums: false,
+          sharedLinks: false,
+          stack: false,
+          favorite: false,
+        });
+
+        expect(await readFile(ownPath, 'utf8')).toBe('synthetic metadata bytes');
+        expect(await readFile(sourcePath, 'utf8')).toBe('synthetic metadata bytes');
+        expect(mocks.storage.copyFile).toHaveBeenCalledExactlyOnceWith(sourcePath, ownPath);
+        expect(mocks.storage.unlink).not.toHaveBeenCalled();
+        expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
+      } finally {
+        path.mockRestore();
+        await rm(root, { recursive: true, force: true });
+      }
     });
 
     it("writes a non-primary target's sidecar to its own upload path, not the primary owner's", async () => {

@@ -576,14 +576,8 @@ export class MapRepository {
     }
 
     await this.db.transaction().execute(async (manager) => {
-      await sql`CREATE TABLE naturalearth_countries_tmp
-                (
-                  LIKE naturalearth_countries INCLUDING ALL EXCLUDING INDEXES
-                )`.execute(manager);
-      await manager.insertInto('naturalearth_countries_tmp').values(entities).execute();
-      await manager.schema.dropTable('naturalearth_countries').execute();
-      await manager.schema.alterTable('naturalearth_countries_tmp').renameTo('naturalearth_countries').execute();
-      await sql`ALTER TABLE naturalearth_countries ADD PRIMARY KEY (id) WITH (FILLFACTOR = 100)`.execute(manager);
+      await manager.deleteFrom('naturalearth_countries').execute();
+      await manager.insertInto('naturalearth_countries').values(entities).execute();
     });
   }
 

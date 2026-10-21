@@ -325,6 +325,7 @@ export class LibraryService extends BaseService {
 
     const library = await this.libraryRepository.create({
       ownerId: dto.ownerId,
+      readOnly: dto.readOnly ?? false,
       name: dto.name ?? 'New External Library',
       importPaths,
       exclusionPatterns,

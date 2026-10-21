@@ -97,6 +97,7 @@ export async function runNativeDatabaseBackup(
         !isDeepStrictEqual(ready, {
           protocolVersion: 1,
           state: cleanupOnly ? 'checkpoint-cleanup-ready' : 'database-ready',
+          secureInstallationId: context.installation.secureInstallationId,
           manifestSha256: context.installation.manifestSha256,
           sourceRevision: context.installation.sourceRevision,
           certified: context.installation.certified,

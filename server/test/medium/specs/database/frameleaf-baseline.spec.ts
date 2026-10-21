@@ -1,6 +1,9 @@
 import { readOrder } from '@frameleaf/sql-tools';
 import { sql } from 'kysely';
 import { fileURLToPath } from 'node:url';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { getKyselyDB } from 'test/utils.js';
 
 it('boots one canonical PG19 database with one Frameleaf ledger and HNSW', async () => {
@@ -50,6 +53,38 @@ it('boots one canonical PG19 database with one Frameleaf ledger and HNSW', async
       FROM pg_class c JOIN pg_am a ON a.oid = c.relam WHERE c.relname IN ('clip_index', 'face_index')`.execute(db);
     expect(indexes.rows).toHaveLength(2);
     expect(indexes.rows.every(({ method }) => method === 'hnsw')).toBe(true);
+  } finally {
+    await db.destroy();
+  }
+});
+
+it('accepts the migrated catalog and supported CLIP widths without hiding other schema drift', async () => {
+  const db = await getKyselyDB();
+  try {
+    const config = new ConfigRepository();
+    const env = config.getEnv();
+    const { rows } = await sql<{ name: string }>`SELECT current_database() AS name`.execute(db);
+    const url = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
+    url.pathname = `/${rows[0].name}`;
+    vi.spyOn(config, 'getEnv').mockReturnValue({
+      ...env,
+      database: { ...env.database, config: { connectionType: 'url', url: url.href } },
+    });
+    const repository = new DatabaseRepository(db, LoggingRepository.create(), config);
+    expect((await repository.getSchemaDrift()).items).toEqual([]);
+    for (const size of [768, 1024, 512]) {
+      for (const table of [
+        'smart_search',
+        'smart_search_description',
+        'asset_video_duplicate_frame',
+        'video_moment_frame_embedding',
+      ]) {
+        await sql`ALTER TABLE ${sql.table(table)} ALTER COLUMN embedding TYPE vector(${sql.lit(size)})`.execute(db);
+      }
+      expect((await repository.getSchemaDrift()).items, `CLIP width ${size}`).toEqual([]);
+    }
+    await sql`ALTER TABLE asset ADD COLUMN native_fixture_unexpected text`.execute(db);
+    expect((await repository.getSchemaDrift()).items.length).toBeGreaterThan(0);
   } finally {
     await db.destroy();
   }

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from contextlib import nullcontext
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from threading import Lock
 from typing import Any
 from uuid import uuid4
@@ -99,6 +101,17 @@ class OrtSession:
         self.model_path = Path(model_path)
         self.source_model_path = self.model_path
         native = current_policy()
+        self._coreml_lock = (
+            Lock()
+            if native is not None
+            and native.provider == "CoreMLExecutionProvider"
+            and sess_options is None
+            and provider_options is None
+            else None
+        )
+        self._coreml_input_shapes: list[tuple[str, tuple[int | str | None, ...]]] | None = None
+        self._coreml_shape: tuple[tuple[str, tuple[int, ...]], ...] | None = None
+        self._coreml_cache: TemporaryDirectory[str] | None = None
         if native is not None:
             requested = [native.provider] + (
                 [] if native.provider == "CPUExecutionProvider" else ["CPUExecutionProvider"]
@@ -146,22 +159,90 @@ class OrtSession:
         input_feed: dict[str, NDArray[np.float32]] | dict[str, NDArray[np.int32]] | dict[str, NDArray[np.uint8]],
         run_options: Any = None,
     ) -> list[NDArray[np.float32]]:
-        if "MIGraphXExecutionProvider" in self.providers:
-            model_key = self.model_path.resolve().as_posix()
-            input_key = (model_key, _migraphx_input_signature(input_feed))
-            if not _migraphx_has_compiled_input(input_key):
-                model_lock = _migraphx_get_model_lock(model_key)
-                with model_lock:
-                    if not _migraphx_has_compiled_input(input_key):
-                        outputs: list[NDArray[np.float32]] = self.session.run(output_names, input_feed, run_options)
-                        _migraphx_mark_compiled_input(input_key)
-                        return outputs
+        native = current_policy()
+        observer = native.observer if native is not None else None
+        if self._coreml_lock is not None:
+            with self._coreml_lock:
+                self._specialize_coreml(input_feed)
+                with observer.observe(self.source_model_path) if observer is not None else nullcontext():
+                    coreml_outputs: list[NDArray[np.float32]] = self.session.run(output_names, input_feed, run_options)
+                    return coreml_outputs
+        with observer.observe(self.source_model_path) if observer is not None else nullcontext():
+            if "MIGraphXExecutionProvider" in self.providers:
+                model_key = self.model_path.resolve().as_posix()
+                input_key = (model_key, _migraphx_input_signature(input_feed))
+                if not _migraphx_has_compiled_input(input_key):
+                    model_lock = _migraphx_get_model_lock(model_key)
+                    with model_lock:
+                        if not _migraphx_has_compiled_input(input_key):
+                            outputs: list[NDArray[np.float32]] = self.session.run(output_names, input_feed, run_options)
+                            _migraphx_mark_compiled_input(input_key)
+                            return outputs
+
+                outputs = self.session.run(output_names, input_feed, run_options)
+                return outputs
 
             outputs = self.session.run(output_names, input_feed, run_options)
             return outputs
 
-        outputs = self.session.run(output_names, input_feed, run_options)
-        return outputs
+    def _specialize_coreml(self, input_feed: dict[str, NDArray[Any]]) -> None:
+        signature = tuple((name, tuple(value.shape)) for name, value in sorted(input_feed.items()))
+        if signature == self._coreml_shape:
+            return
+        native = current_policy()
+        if native is None:
+            raise RuntimeError("native_backend_requires_fresh_process")
+        if self._coreml_shape is not None and native.profile_dir is not None:
+            # Keep the complete execution trace for the qualification fixture.
+            raise ValueError("native_profile_input_shape_changed")
+        if self._coreml_input_shapes is None:
+            self._coreml_input_shapes = [(item.name, tuple(item.shape)) for item in self.get_inputs()]
+        dimensions: dict[str, int] = {}
+        for name, shape in self._coreml_input_shapes:
+            actual = input_feed[name].shape
+            if len(actual) != len(shape):
+                raise ValueError("native_input_shape_conflict")
+            for dimension, size in zip(shape, actual, strict=True):
+                if isinstance(dimension, str) and dimension:
+                    if size <= 0 or dimension in dimensions and dimensions[dimension] != size:
+                        raise ValueError("native_input_shape_conflict")
+                    dimensions[dimension] = int(size)
+        if not dimensions:
+            self._coreml_shape = signature
+            return
+        options = self._sess_options_default
+        for dimension, size in dimensions.items():
+            options.add_free_dimension_override_by_name(dimension, size)
+        if native.profile_dir is not None:
+            options.enable_profiling = True
+            options.profile_file_prefix = str(native.profile_dir / f"native-{uuid4().hex}")
+        cache_root = runtime_cache_dir(self.model_path) / "coreml"
+        cache_root.mkdir(parents=True, exist_ok=True)
+        cache = TemporaryDirectory(prefix="shape-", dir=cache_root)
+        providers = [dict(value) for value in self.provider_options]
+        for provider, value in zip(self.providers, providers, strict=True):
+            if provider == "CoreMLExecutionProvider":
+                value["ModelCacheDirectory"] = cache.name
+        try:
+            session = ort.InferenceSession(
+                self.model_path.as_posix(),
+                providers=self.providers,
+                provider_options=providers,
+                sess_options=options,
+            )
+            session.disable_fallback()
+            if "CoreMLExecutionProvider" not in session.get_providers():
+                raise RuntimeError("native_provider_not_loaded")
+            if native.profile_dir is not None:
+                self.session.end_profiling()
+        except BaseException:
+            cache.cleanup()
+            raise
+        previous_cache = self._coreml_cache
+        self.session, self.sess_options = session, options
+        self._coreml_cache, self._coreml_shape = cache, signature
+        if previous_cache is not None:
+            previous_cache.cleanup()
 
     @property
     def providers(self) -> list[str]:
@@ -189,6 +270,7 @@ class OrtSession:
 
     @property
     def _provider_options_default(self) -> list[dict[str, Any]]:
+        native = current_policy() is not None
         provider_options = []
         for provider in self.providers:
             match provider:
@@ -214,11 +296,12 @@ class OrtSession:
                         "cache_dir": (runtime_cache_dir(self.model_path) / "openvino").as_posix(),
                     }
                 case "CoreMLExecutionProvider":
+                    # Native fixtures need float32 accuracy without the expensive prediction specialization.
                     options = {
                         "ModelFormat": "MLProgram",
-                        "MLComputeUnits": "ALL",
-                        "SpecializationStrategy": "FastPrediction",
-                        "AllowLowPrecisionAccumulationOnGPU": "1",
+                        "MLComputeUnits": "CPUAndGPU" if native else "ALL",
+                        "SpecializationStrategy": "Default" if native else "FastPrediction",
+                        "AllowLowPrecisionAccumulationOnGPU": "0" if native else "1",
                         "ModelCacheDirectory": (runtime_cache_dir(self.model_path) / "coreml").as_posix(),
                     }
                 case _:

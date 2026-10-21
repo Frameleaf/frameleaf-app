@@ -1,15 +1,19 @@
 """Foreground inference sidecar owned by the desktop supervisor."""
 
+from __future__ import annotations
+
 import argparse
 import hmac
 import os
 import sys
 import tempfile
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .native_binding import NativeBinding, NativeBindingSet
+    from .native_device import DeviceObserver
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,17 +38,24 @@ def configure_runtime(options: NativeRuntimeOptions, environment: Mapping[str, s
         raise ValueError("auth_token_required: provide a random alphanumeric token of at least 48 characters")
     if not 1024 <= options.port <= 65535:
         raise ValueError("invalid_native_port")
-    configured = {key: value for key, value in environment.items() if not key.startswith("MACHINE_LEARNING_PRELOAD")}
-    configured.update(
-        MACHINE_LEARNING_MODEL_DOWNLOADS="false",
-        MACHINE_LEARNING_CACHE_FOLDER=str(options.cache_dir.resolve()),
-        MACHINE_LEARNING_WORKERS="1",
-        MACHINE_LEARNING_ANN="false",
-        MACHINE_LEARNING_RKNN="false",
-        MACHINE_LEARNING_REQUEST_THREADS="1",
-        FRAMELEAF_HOST="127.0.0.1",
-        FRAMELEAF_PORT=str(options.port),
-    )
+    # Keep admitted models resident until their supervisor stops this process.
+    enforced = {
+        "MACHINE_LEARNING_MODEL_DOWNLOADS": "false",
+        "MACHINE_LEARNING_CACHE_FOLDER": str(options.cache_dir.resolve()),
+        "MACHINE_LEARNING_WORKERS": "1",
+        "MACHINE_LEARNING_ANN": "false",
+        "MACHINE_LEARNING_RKNN": "false",
+        "MACHINE_LEARNING_REQUEST_THREADS": "1",
+        "MACHINE_LEARNING_MODEL_TTL": "0",
+        "FRAMELEAF_HOST": "127.0.0.1",
+        "FRAMELEAF_PORT": str(options.port),
+    }
+    configured = {
+        key: value
+        for key, value in environment.items()
+        if key.upper() not in enforced and not key.upper().startswith("MACHINE_LEARNING_PRELOAD")
+    }
+    configured.update(enforced)
     return configured
 
 
@@ -92,7 +103,14 @@ class NativeScope:
 def create_native_app(binding: "NativeBinding | NativeBindingSet | None") -> FastAPI:
     from . import main
 
-    app = FastAPI(lifespan=main.lifespan)
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        async with main.lifespan(app):
+            if binding is not None:
+                await binding.preload()
+            yield
+
+    app = FastAPI(lifespan=lifespan)
     app.get("/ping")(main.ping)
 
     @app.post("/predict", dependencies=[Depends(main.update_state)])
@@ -126,7 +144,7 @@ def create_native_app(binding: "NativeBinding | NativeBindingSet | None") -> Fas
     return app
 
 
-def main() -> None:
+def main(observer: DeviceObserver | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache-dir", type=Path, required=True)
     parser.add_argument("--port", type=int, required=True)
@@ -152,7 +170,7 @@ def main() -> None:
 
     from .native_ort import configure
 
-    configure(options.provider)
+    configure(options.provider, observer=observer)
     from .native_binding import NativeBindingSet
 
     binding = (

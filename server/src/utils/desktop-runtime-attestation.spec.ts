@@ -2,7 +2,7 @@ import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
-import { parseDesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
+import { matchDesktopModelProfile, parseDesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
 import { verifyDesktopRuntimeAttestation } from 'src/utils/desktop-runtime-attestation.js';
 
 const authority = vi.hoisted(() => ({ policy: '' }));
@@ -126,3 +126,133 @@ it.each(['immich_ml', 'frameleaf_ml'])('accepts signed allowlisted module namesp
 it.each(['foreign', null, 1])('rejects unsupported signed module namespace %s', (moduleNamespace) => {
   expect(() => verifyDesktopRuntimeAttestation(envelope({ ...manifest(), moduleNamespace }), profile)).toThrow();
 });
+
+it('binds an owned CoreML collector to its signed complete inventory', () => {
+  const coreml = { ...profile, spec: { ...profile.spec, provider: 'CoreMLExecutionProvider' as const } };
+  const files = Object.fromEntries(
+    ['__init__.py', 'entry.py', 'metal_observer.py', 'metal_inference.py', '_frameleaf_coreml_observer.dylib'].map(
+      (name) => [`private/frameleaf_desktop_ml/${name}`, { bytes: 10, sha256: 'c'.repeat(64) }],
+    ),
+  );
+  const value = {
+    ...manifest(),
+    provider: coreml.spec.provider,
+    moduleNamespace: 'frameleaf_ml',
+    deviceObserver: { kind: 'metal-v1' },
+    files: { ...manifest().files, ...files },
+  };
+  expect(verifyDesktopRuntimeAttestation(envelope(value), coreml)).toMatchObject({ collectorSha256: 'c'.repeat(64) });
+  for (const changed of [
+    { ...value, moduleNamespace: 'immich_ml' },
+    { ...value, platform: 'linux' },
+    { ...value, architecture: 'x86_64' },
+    { ...value, deviceObserver: { kind: 'other' } },
+    { ...value, deviceObserver: { kind: 'metal-v1', path: 'other' } },
+    { ...value, files: manifest().files },
+    ...Object.keys(files).flatMap((name) => [
+      { ...value, files: { ...value.files, [name]: { bytes: 0, sha256: 'c'.repeat(64) } } },
+      { ...value, files: { ...value.files, [name]: { bytes: 4 * 1024 ** 2 + 1, sha256: 'c'.repeat(64) } } },
+    ]),
+  ])
+    expect(() => verifyDesktopRuntimeAttestation(envelope(changed), coreml)).toThrow();
+  expect(() =>
+    verifyDesktopRuntimeAttestation(envelope({ ...value, provider: profile.spec.provider }), profile),
+  ).toThrow();
+});
+
+it.skipIf(!process.env.FRAMELEAF_COREML_NAS_FIXTURE)(
+  'validates an actual signed CoreML runtime and fresh catalogue challenge report under fixture authority',
+  async () => {
+    const root = process.env.FRAMELEAF_COREML_NAS_FIXTURE!;
+    const fs = await vi.importActual<typeof import('node:fs')>('node:fs');
+    const crypto = await import('node:crypto');
+    const { DesktopQualificationReceipt } = await import('src/utils/desktop-qualification.js');
+    const selected = parseDesktopModelCatalogue({
+      schemaVersion: 1,
+      epoch: 1,
+      profiles: [JSON.parse(fs.readFileSync(join(root, 'profile.json'), 'utf8'))],
+    }).profiles[0];
+    const compiled = parseDesktopModelCatalogue(
+      JSON.parse(fs.readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8')),
+    );
+    expect(
+      matchDesktopModelProfile(
+        compiled,
+        selected.modelName,
+        selected.spec.entries,
+        selected.runtimeSourceRevision,
+        selected.spec.provider,
+      ),
+    ).toEqual(selected);
+    const challenge = JSON.parse(fs.readFileSync(join(root, 'challenge.json'), 'utf8'));
+    const report = JSON.parse(fs.readFileSync(join(root, 'qualified-report.json'), 'utf8'));
+    const manifest = fs.readFileSync(join(root, 'candidate/manifest.json'));
+    const signature = fs.readFileSync(join(root, 'candidate/manifest.sig'));
+    const fixtureKey = crypto.createPrivateKey({
+      key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), Buffer.alloc(32, 71)]),
+      format: 'der',
+      type: 'pkcs8',
+    });
+    const previous = authority.policy;
+    try {
+      authority.policy = JSON.stringify({
+        schemaVersion: 1,
+        minimumRuntimeEpoch: 1,
+        keys: [
+          {
+            id: 'sealed-coreml-fixture',
+            publicKeyHex: crypto
+              .createPublicKey(fixtureKey)
+              .export({ format: 'der', type: 'spki' })
+              .subarray(-32)
+              .toString('hex'),
+          },
+        ],
+      });
+      const identity = verifyDesktopRuntimeAttestation(
+        { manifestGzipBase64: gzipSync(manifest).toString('base64'), signatureBase64: signature.toString('base64') },
+        selected,
+      );
+      const receipt = DesktopQualificationReceipt.validate(report, selected, challenge, identity);
+      expect(receipt.bindingSha256).toBe(challenge.bindingSha256);
+      expect(receipt.runtimeFingerprint).toBe(report.runtimeFingerprint);
+      expect(report.state).toBe('ready-mixed');
+      expect(() =>
+        DesktopQualificationReceipt.validate(report, selected, challenge, {
+          ...identity,
+          collectorSha256: 'f'.repeat(64),
+        }),
+      ).toThrow();
+      expect(() =>
+        DesktopQualificationReceipt.validate(
+          report,
+          selected,
+          { ...challenge, bindingSha256: 'f'.repeat(64) },
+          identity,
+        ),
+      ).toThrow();
+      fs.writeFileSync(
+        join(root, 'nas-validation-result.json'),
+        JSON.stringify(
+          {
+            fixtureOnly: true,
+            releaseAuthorityUsed: false,
+            signatureVerified: true,
+            catalogueIdentityParsed: true,
+            receiptValidated: true,
+            manifestSha256: receipt.manifestSha256,
+            bindingSha256: receipt.bindingSha256,
+            modelKey: receipt.modelKey,
+            reportSha256: receipt.reportSha256,
+            runtimeFingerprint: receipt.runtimeFingerprint,
+            state: report.state,
+          },
+          null,
+          2,
+        ) + '\n',
+      );
+    } finally {
+      authority.policy = previous;
+    }
+  },
+);

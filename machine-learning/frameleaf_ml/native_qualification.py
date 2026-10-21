@@ -27,6 +27,7 @@ from frameleaf_ml.schemas import InferenceEntries, ModelTask, ModelType, ORJSONR
 
 if TYPE_CHECKING:
     from frameleaf_ml.models.base import InferenceModel
+    from frameleaf_ml.native_device import DeviceObserver
     from frameleaf_ml.sessions.ort import OrtSession
 
 
@@ -146,9 +147,8 @@ def verify_models(
             raise ValueError("native_model_name_not_canonical")
         if not model.cache_dir.resolve().is_relative_to(cache_dir.resolve()):
             raise ValueError("native_cache_directory_invalid")
-        if require_staged:
-            verify_staged(model.cache_dir)
-        if cache_hashes(model.cache_dir) != item.artifacts:
+        actual = verify_staged(model.cache_dir) if require_staged else cache_hashes(model.cache_dir)
+        if actual != item.artifacts:
             raise ValueError("native_staged_hash_mismatch")
         if model.model_path.suffix != ".onnx":
             raise ValueError("native_engine_qualification_not_supported")
@@ -157,17 +157,27 @@ def verify_models(
     return entries, models
 
 
-async def qualify(spec: QualificationSpec, cache_dir: Path, fixture_root: Path, spec_sha256: str) -> dict[str, Any]:
+async def qualify(
+    spec: QualificationSpec,
+    cache_dir: Path,
+    fixture_root: Path,
+    spec_sha256: str,
+    *,
+    observer: DeviceObserver | None = None,
+) -> dict[str, Any]:
     if "frameleaf_ml.main" in sys.modules:
         raise RuntimeError("native_qualification_requires_fresh_process")
     from frameleaf_ml.config import settings
+    from frameleaf_ml.native_device import confirm_coreml_execution, model_bindings
     from frameleaf_ml.staging import cache_hashes
 
     if cache_dir.is_symlink():
         raise ValueError("native_cache_directory_invalid")
     if preprocessing_identity() != spec.preprocessing_sha256:
         raise ValueError("native_preprocessing_changed")
-    before = snapshot()
+    if observer is not None and (spec.provider != "CoreMLExecutionProvider" or observer.provider != spec.provider):
+        raise ValueError("native_device_observer_invalid")
+    before = snapshot(observer.facts()) if observer is not None else snapshot()
     if before["availableMemoryBytes"] < spec.min_memory_bytes:
         raise ValueError("native_memory_insufficient")
     settings.model_downloads = False
@@ -191,7 +201,10 @@ async def qualify(spec: QualificationSpec, cache_dir: Path, fixture_root: Path, 
     with tempfile.TemporaryDirectory(prefix="frameleaf-qualification-") as temporary:
         tempfile.tempdir = temporary
         try:
-            policy = configure(spec.provider, Path(temporary) / "profiles")
+            policy = configure(spec.provider, Path(temporary) / "profiles", observer=observer)
+            bindings = model_bindings(spec, models) if observer is not None else {}
+            if observer is not None:
+                observer.bind(bindings)
             from frameleaf_ml import main
             from frameleaf_ml.models.transforms import decode_pil
 
@@ -224,6 +237,12 @@ async def qualify(spec: QualificationSpec, cache_dir: Path, fixture_root: Path, 
             after = snapshot()
             if before["fingerprint"] != after["fingerprint"]:
                 raise ValueError("native_runtime_or_driver_changed")
+            device_evidence = None
+            if observer is not None:
+                device_evidence = observer.evidence()
+                evidence = confirm_coreml_execution(
+                    device_evidence, set(bindings.values()), before["facts"]["deviceEvidence"], evidence
+                )
             state = (
                 "ready-cpu"
                 if spec.provider == "CPUExecutionProvider"
@@ -238,6 +257,8 @@ async def qualify(spec: QualificationSpec, cache_dir: Path, fixture_root: Path, 
                 spec.provider == "CUDAExecutionProvider" and not before["facts"]["gpus"]
             ):
                 state, reason = "incompatible", "native_device_execution_evidence_required"
+            if device_evidence is not None:
+                state, reason = "ready-mixed", None
             return {
                 "protocolVersion": 1,
                 "modelKey": spec.model_key,
@@ -252,6 +273,7 @@ async def qualify(spec: QualificationSpec, cache_dir: Path, fixture_root: Path, 
                 "execution": evidence,
                 "coldMilliseconds": latencies[0],
                 "warmMilliseconds": latencies[1],
+                **({"deviceExecution": device_evidence} if device_evidence is not None else {}),
             }
         finally:
             tempfile.tempdir = previous_temp
@@ -264,7 +286,7 @@ async def qualify(spec: QualificationSpec, cache_dir: Path, fixture_root: Path, 
                 loaded_main.model_cache.cache._cache.clear()
 
 
-def main() -> None:
+def main(observer: DeviceObserver | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--spec", type=Path, required=True)
     parser.add_argument("--cache-dir", type=Path, required=True)
@@ -283,7 +305,9 @@ def main() -> None:
     watchdog.start()
     try:
         try:
-            report = asyncio.run(qualify(spec, args.cache_dir, args.spec.parent, hashlib.sha256(raw_spec).hexdigest()))
+            report = asyncio.run(
+                qualify(spec, args.cache_dir, args.spec.parent, hashlib.sha256(raw_spec).hexdigest(), observer=observer)
+            )
         except Exception as error:
             reason = (
                 str(error)

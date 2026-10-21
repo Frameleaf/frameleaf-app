@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { MlWorkload } from 'src/enum.js';
 import {
@@ -54,7 +56,7 @@ describe('the local pin (FL-455)', () => {
           sha256: '4c06341c33c2ca1f86781dab0e829f88ad5b64be9fba56e56bc9ebdefc619e43',
         },
       ],
-      preprocess: 'frameleaf-face/1',
+      preprocess: 'frameleaf-face/3',
       output: { dim: 512, dtype: 'float32', normalized: false },
     });
   });
@@ -66,6 +68,16 @@ describe('the local pin (FL-455)', () => {
 });
 
 describe(sameModelIdentity.name, () => {
+  it.each(['frameleaf-face/1', 'frameleaf-face/2'])('refuses the earlier face preprocessing %s', (preprocess) => {
+    const pin = facePin();
+    expect(pin.preprocess).toBe('frameleaf-face/3');
+    expect(sameModelIdentity({ ...pin, preprocess }, pin)).toBe(false);
+  });
+
+  it('uses the same face preprocessing version as the golden-set producer', () => {
+    const producer = readFileSync(join(import.meta.dirname, '../../../machine-learning/scripts/golden_set.py'), 'utf8');
+    expect(producer.match(/^FACE_PREPROCESS = "([^"]+)"$/m)?.[1]).toBe(facePin().preprocess);
+  });
   it('ignores file order and keys this server does not compare', () => {
     const pin = clipPin();
     const claimed = { ...pin, files: pin.files.toReversed(), upstream: 'elsewhere' } as CloudModelIdentity;

@@ -40,6 +40,7 @@ const scanning = {
 } as const;
 
 const library = (overrides: Partial<LibraryResponseDto> = {}): LibraryResponseDto => ({
+  readOnly: false,
   id: 'lib-1',
   name: 'Family photo archive',
   ownerId: 'owner-1',
@@ -93,6 +94,47 @@ describe('LibraryFormDialog (FL-78)', () => {
     expect(onSaved).toHaveBeenCalled();
   });
 
+  it.each([true, false])('shows immutable read-only policy %s without sending it in updates', async (readOnly) => {
+    const current = library({ readOnly });
+    sdkMock.updateLibrary.mockResolvedValue(current);
+    render(LibraryFormDialog, { library: current, owners, onSaved: vi.fn(), onClose: vi.fn() });
+    const policy = screen.getByRole('checkbox', { name: 'Keep source files read-only' });
+    expect(policy).toBeDisabled();
+    expect((policy as HTMLInputElement).checked).toBe(readOnly);
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_libraries_save }));
+    expect(sdkMock.updateLibrary.mock.lastCall?.[0].updateLibraryDto).not.toHaveProperty('readOnly');
+  });
+
+  it('shows an older library without the policy field as writable and fixed', () => {
+    const current: Partial<LibraryResponseDto> = library();
+    delete current.readOnly;
+    render(LibraryFormDialog, { library: current as LibraryResponseDto, owners, onSaved: vi.fn(), onClose: vi.fn() });
+    const policy = screen.getByRole('checkbox', { name: 'Keep source files read-only' });
+    expect(policy).toBeDisabled();
+    expect(policy).not.toBeChecked();
+  });
+
+  it('lets the administrator explicitly allow source writes when creating a library', async () => {
+    sdkMock.createLibrary.mockResolvedValue(library());
+    render(LibraryFormDialog, { owners, onSaved: vi.fn(), onClose: vi.fn() });
+    const policy = screen.getByRole('checkbox', { name: 'Keep source files read-only' });
+    expect(policy).toBeChecked();
+    await fireEvent.click(policy);
+    await fireEvent.input(screen.getByLabelText(en.frameleaf_libraries_field_name), { target: { value: 'Writable' } });
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_libraries_add_folder }));
+    await fireEvent.input(folderInput(1), { target: { value: '/mnt/photos' } });
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_libraries_create }));
+    expect(sdkMock.createLibrary).toHaveBeenCalledWith({
+      createLibraryDto: {
+        ownerId: 'owner-1',
+        readOnly: false,
+        name: 'Writable',
+        importPaths: ['/mnt/photos'],
+        exclusionPatterns: [...DEFAULT_EXCLUSION_PATTERNS],
+      },
+    });
+  });
+
   it('shows what the server says about each folder', async () => {
     sdkMock.validate.mockResolvedValue({
       importPaths: [
@@ -139,6 +181,7 @@ describe('LibraryFormDialog (FL-78)', () => {
     expect(sdkMock.createLibrary).toHaveBeenCalledWith({
       createLibraryDto: {
         ownerId: 'owner-2',
+        readOnly: true,
         name: 'Trail cam',
         importPaths: ['/mnt/photos/jamie'],
         exclusionPatterns: [...DEFAULT_EXCLUSION_PATTERNS],
