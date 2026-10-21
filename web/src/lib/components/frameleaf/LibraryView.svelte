@@ -71,7 +71,12 @@
   import { searchQueryForTimeline, timelineQueryOptions } from '$lib/frameleaf/library-query-options';
   import { locale } from '$lib/stores/preferences.store';
   import { librarySession, type LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
-  import type { LibraryGrouping, LibrarySessionAction, LibrarySort } from '$lib/frameleaf/library-session';
+  import type {
+    LibraryGrouping,
+    LibraryLayout,
+    LibrarySessionAction,
+    LibrarySort,
+  } from '$lib/frameleaf/library-session';
   import {
     describeFilterFields,
     filterFieldEntityIds,
@@ -1638,6 +1643,18 @@
         // that unit. Grouping is page state: it travels in a link and survives a layout switch.
         event.preventDefault();
         showTimeline(shortcut.id.replace('group-', '') as LibraryGrouping);
+        return;
+      }
+      case 'layout-timeline':
+      case 'layout-browse':
+      case 'layout-work': {
+        // LIB-01: the tabs scroll away with the header, so the keys switch from anywhere in the
+        // library and keep the place as the tabs do. Locked offers the Timeline only.
+        if (surface !== 'timeline' || publicView || firstRun || lockedView) {
+          break;
+        }
+        event.preventDefault();
+        showLibraryLayout(session, shortcut.id.replace('layout-', '') as LibraryLayout);
         return;
       }
       case 'go-to-date': {

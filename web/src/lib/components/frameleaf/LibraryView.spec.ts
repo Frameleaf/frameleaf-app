@@ -349,6 +349,36 @@ describe('LibraryView', () => {
       expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
     });
 
+    it('switches layout from the keyboard, so the switch works mid-library (LIB-01)', async () => {
+      await setup(false);
+      const library = screen.getByTestId('frameleaf-library');
+      await fireEvent.keyDown(document, { key: 'B', shiftKey: true });
+      await waitFor(() => expect(library).toHaveAttribute('data-layout', 'browse'));
+      await fireEvent.keyDown(document, { key: 'T', shiftKey: true });
+      await waitFor(() => expect(library).toHaveAttribute('data-layout', 'timeline'));
+      await fireEvent.keyDown(document, { key: 'W', shiftKey: true });
+      await waitFor(() => expect(library).toHaveAttribute('data-layout', 'work'));
+      // the tabs name their keys
+      expect(screen.getByRole('button', { name: 'frameleaf_library_layout_browse' })).toHaveAttribute(
+        'aria-keyshortcuts',
+        'Shift+B',
+      );
+    });
+
+    it('keeps the Locked view on the Timeline when a layout key is pressed', async () => {
+      render(LibraryView, {
+        options: { visibility: AssetVisibility.Locked },
+        syncUrl: false,
+        noSelectionBar: true,
+        bulkContext: { locked: true },
+      });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+      await fireEvent.keyDown(document, { key: 'W', shiftKey: true });
+      expect(screen.getByTestId('frameleaf-library')).toHaveAttribute('data-layout', 'timeline');
+      // nor does it change the layout this device remembers for the rest of the library
+      expect(librarySession.layout).toBe('browse');
+    });
+
     it('offers only the Timeline in the Locked view, whatever this device last chose', async () => {
       render(LibraryView, {
         options: { visibility: AssetVisibility.Locked },
