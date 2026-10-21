@@ -12276,6 +12276,16 @@
           "isArray": false,
           "default": "now()",
           "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "readOnly",
+          "tableName": "library",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
         }
       ],
       "indexes": [
