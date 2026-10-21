@@ -349,6 +349,7 @@ describe(ServerService.name, () => {
       linked?: boolean;
       instanceId?: string | null;
       serverName?: string;
+      lanDiscovery?: boolean;
       storedServerId?: { id: string; createdAt: string } | null;
     }) => {
       const env = mockEnvData({});
@@ -367,7 +368,10 @@ describe(ServerService.name, () => {
               }
             : null,
         ],
-        [SystemMetadataKey.SystemConfig, { server: { name: options.serverName ?? '' } }],
+        [
+          SystemMetadataKey.SystemConfig,
+          { server: { name: options.serverName ?? '', lanDiscovery: options.lanDiscovery ?? true } },
+        ],
         [SystemMetadataKey.FrameleafServerId, options.storedServerId ?? null],
       ]);
       mocks.systemMetadata.get.mockImplementation((key) => Promise.resolve((metadata.get(key) ?? null) as never));
@@ -387,6 +391,11 @@ describe(ServerService.name, () => {
       expect(JSON.stringify(needed)).not.toMatch(/code/i);
       mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }) as never);
       await expect(sut.ping()).resolves.toMatchObject({ setup: 'complete' });
+    });
+
+    it.each([true, false])('reports the discovery setting (%s) to the host-network companion', async (enabled) => {
+      setupPing({ linked: false, lanDiscovery: enabled });
+      await expect(sut.ping()).resolves.toMatchObject({ lanDiscovery: enabled });
     });
 
     it('returns the Frameleaf Cloud instance id, marked linked, while linked', async () => {

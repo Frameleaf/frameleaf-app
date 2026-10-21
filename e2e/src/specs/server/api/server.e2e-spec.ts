@@ -78,6 +78,8 @@ describe('/server', () => {
         res: 'pong',
         id: expect.any(String),
         linked: false,
+        // FL-484: the host-network Docker discovery companion reads this to withdraw its announcement
+        lanDiscovery: expect.any(Boolean),
         name: expect.any(String),
         // FL-292: the e2e server has its administrator; whether Frameleaf Cloud is configured varies
         setup: 'complete',

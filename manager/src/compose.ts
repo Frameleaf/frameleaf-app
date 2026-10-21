@@ -219,6 +219,40 @@ export async function renderCompose(
       healthcheck: template.services['frameleaf-server'].healthcheck,
     },
   };
+  // Older signed bundles do not contain the companion. Loopback-only installations stay private.
+  const bindAddress = process.env.MANAGER_BIND_ADDRESS ?? '127.0.0.1';
+  if (
+    template.services['frameleaf-lan-discovery'] &&
+    !(/^(127\.|::ffff:127\.)/.test(bindAddress) || bindAddress === '::1')
+  ) {
+    const host =
+      bindAddress === '0.0.0.0'
+        ? '127.0.0.1'
+        : bindAddress === '::'
+          ? '[::1]'
+          : bindAddress.includes(':')
+            ? `[${bindAddress}]`
+            : bindAddress;
+    services['frameleaf-lan-discovery'] = {
+      image: server,
+      labels,
+      entrypoint: [
+        'node',
+        '/usr/src/app/server/bin/frameleaf-lan-discovery.mjs',
+      ],
+      network_mode: 'host',
+      user: '65534:65534',
+      restart: 'unless-stopped',
+      read_only: true,
+      cap_drop: ['ALL'],
+      security_opt: ['no-new-privileges:true'],
+      environment: {
+        FRAMELEAF_DISCOVERY_URL: `http://${host}:${installation.port}`,
+      },
+      healthcheck: { disable: true },
+      depends_on: { 'frameleaf-server': { condition: 'service_started' } },
+    };
+  }
   if (installation.ml) {
     const accel = acceleration ?? (await detectAcceleration());
     const variant = mlVariant(release.nas.images, accel);

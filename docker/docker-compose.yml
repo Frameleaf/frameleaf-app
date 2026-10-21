@@ -36,6 +36,22 @@ services:
     healthcheck:
       disable: false
 
+  # Bonjour must use the host network to reach phones; the application and database remain isolated.
+  frameleaf-lan-discovery:
+    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}
+    entrypoint: ["node", "/usr/src/app/server/bin/frameleaf-lan-discovery.mjs"]
+    network_mode: host
+    user: "65534:65534"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      FRAMELEAF_DISCOVERY_URL: http://127.0.0.1:2283
+    depends_on: [frameleaf-server]
+    restart: always
+    healthcheck:
+      disable: true
+
   frameleaf-machine-learning:
     networks:
       default:

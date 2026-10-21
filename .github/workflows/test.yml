@@ -70,6 +70,8 @@ jobs:
         run: node --test scripts/frameleaf-branding.test.mjs
       - name: Verify Frameleaf workspace packages
         run: node --test scripts/frameleaf-packages.test.mjs
+      - name: Docker LAN discovery companion
+        run: node --test server/test/lan-discovery-bridge.test.mjs
       - name: Validate Frameleaf variable and command names
         run: node --test scripts/frameleaf-legacy-names.test.mjs
       - name: Validate public storage URLs (FL-325)
