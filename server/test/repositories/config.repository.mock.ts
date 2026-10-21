@@ -84,7 +84,6 @@ export const envData: EnvData = {
 
   appReleases: {},
   studioWorker: { enabled: true, trustDir: '/run/frameleaf/studio-worker' },
-  help: { origin: 'https://frameleaf.app' },
   frameleafCloud: {
     url: null,
     pushUrl: null,

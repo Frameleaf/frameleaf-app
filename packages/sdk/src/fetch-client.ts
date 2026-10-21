@@ -31463,7 +31463,6 @@ export enum EnvironmentKeys {
     FrameleafIosAppUrl = "FRAMELEAF_IOS_APP_URL",
     FrameleafCloudUrl = "FRAMELEAF_CLOUD_URL",
     FrameleafPushUrl = "FRAMELEAF_PUSH_URL",
-    FrameleafHelpOrigin = "FRAMELEAF_HELP_ORIGIN",
     FrameleafLicenseExtraJwksFile = "FRAMELEAF_LICENSE_EXTRA_JWKS_FILE",
     FrameleafIdentityDir = "FRAMELEAF_IDENTITY_DIR",
     FrameleafLinkToken = "FRAMELEAF_LINK_TOKEN",

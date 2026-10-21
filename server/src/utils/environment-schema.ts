@@ -121,8 +121,6 @@ export const EnvSchema = z
      */
     FRAMELEAF_CLOUD_URL: z.url({ protocol: /^https?$/ }).optional(),
     FRAMELEAF_PUSH_URL: z.url({ protocol: /^https?$/ }).optional(),
-    /** FL-488: the website in-app help is loaded from (help index, articles, Ask). */
-    FRAMELEAF_HELP_ORIGIN: z.url({ protocol: /^https?$/ }).optional(),
     /**
      * Pre-release integration builds only (owner decision 2026-09-27): an absolute path to a mounted,
      * read-only JWKS whose Ed25519 keys may also sign licence certificates. Release builds ignore it.

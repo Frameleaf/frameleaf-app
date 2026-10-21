@@ -28,6 +28,7 @@ import { handlePromiseError } from 'src/utils/misc.js';
 
 /** `resources` sits beside `src` in a checkout and beside `dist` in a deployment. */
 const SNAPSHOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../resources/help/help-index.json');
+const HELP_ORIGIN = 'https://frameleaf.app';
 const REFRESH_AFTER_MS = 24 * 60 * 60 * 1000;
 /** After a failed fetch, wait this long before trying the website again. */
 const RETRY_AFTER_MS = 15 * 60 * 1000;
@@ -93,9 +94,8 @@ export class HelpService extends BaseService {
   private lastFailed = false;
   private articles = new Map<string, { builtAt: string; markdown: string }>();
 
-  private get origin() {
-    return this.configRepository.getEnv().help.origin;
-  }
+  // ponytail: one help website; an environment variable can point it elsewhere when a staging site needs testing
+  private readonly origin = HELP_ORIGIN;
 
   async getIndex(): Promise<HelpIndexResponseDto> {
     const stored = await this.loadIndex();

@@ -68248,7 +68248,6 @@
                     "FRAMELEAF_IOS_APP_URL",
                     "FRAMELEAF_CLOUD_URL",
                     "FRAMELEAF_PUSH_URL",
-                    "FRAMELEAF_HELP_ORIGIN",
                     "FRAMELEAF_LICENSE_EXTRA_JWKS_FILE",
                     "FRAMELEAF_IDENTITY_DIR",
                     "FRAMELEAF_LINK_TOKEN",
@@ -68276,7 +68275,7 @@
                   ],
                   "type": "string"
                 },
-                "maxItems": 62,
+                "maxItems": 61,
                 "type": "array"
               },
               "version": {
@@ -68735,7 +68734,6 @@
                         "FRAMELEAF_IOS_APP_URL",
                         "FRAMELEAF_CLOUD_URL",
                         "FRAMELEAF_PUSH_URL",
-                        "FRAMELEAF_HELP_ORIGIN",
                         "FRAMELEAF_LICENSE_EXTRA_JWKS_FILE",
                         "FRAMELEAF_IDENTITY_DIR",
                         "FRAMELEAF_LINK_TOKEN",
@@ -68763,7 +68761,7 @@
                       ],
                       "type": "string"
                     },
-                    "maxItems": 62,
+                    "maxItems": 61,
                     "type": "array"
                   },
                   "version": {

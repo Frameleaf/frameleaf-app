@@ -56,7 +56,7 @@ const RAW_FETCH = {
   'repositories/oauth.repository.ts': 'OIDC profile picture',
   // the public release feed: anonymous on purpose, no instance identity is ever sent (FL-80, FL-192)
   'repositories/server-info.repository.ts': 'public release feed',
-  // FL-488: in-app help from the help website (FRAMELEAF_HELP_ORIGIN, default frameleaf.app): the article
+  // FL-488: in-app help from the help website (frameleaf.app): the article
   // index, an article's Markdown and Ask Frameleaf. Anonymous; no instance token or identity is sent.
   'services/help.service.ts': 'help website articles and Ask',
   // FL-283: fixed api.stripe.com checkout/reconciliation with the studio's Stripe key; never a Cloud/media call.
