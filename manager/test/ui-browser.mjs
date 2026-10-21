@@ -105,6 +105,9 @@ let backupAction = 'reuse',
   refused = [],
   failCredential = false;
 const snapshot = { id: 'd'.repeat(64), time: '2026-10-07T02:00:00Z' };
+const containerSettings = {
+  'frameleaf-server': { environment: { TZ: 'America/Toronto' }, mounts: [{ source: '/fixture/archive', target: '/old-archive', readOnly: true }], memory: '4g' },
+};
 await page.route('**/manager-api/**', async (route) => {
   const req = route.request(),
     path = new URL(req.url()).pathname.split('/').at(-1),
@@ -142,6 +145,8 @@ await page.route('**/manager-api/**', async (route) => {
       // Older than the running frameleaf-v3.2.0-1: never offered as an update.
       { tag: 'frameleaf-v3.1.0', publishedAt: '2026-10-06T01:00:00Z', notes: 'Older release' },
     ];
+  else if (path === 'container-settings' && !body)
+    value = { services: containerSettings };
   else if (path === 'logs')
     value = { logs: [...Array.from({ length: 200 }, (_, i) => `Mapped route ${i}`), 'Application ready\npassword=[redacted]'].join('\n') };
   else if (path === 'review-move')
@@ -187,10 +192,12 @@ await page.route('**/manager-api/**', async (route) => {
       backup: { action: backupAction },
       recovery: 'Database only; original media stays in place',
     };
-  } else if (['control', 'update', 'restore', 'install'].includes(path)) {
+  } else if (['control', 'update', 'restore', 'install', 'container-settings'].includes(path)) {
     const kind =
       path === 'control'
         ? body.action
+        : path === 'container-settings'
+          ? 'reconfigure'
         : path === 'install'
           ? dashboard.installation
             ? 'install'
@@ -200,7 +207,7 @@ await page.route('**/manager-api/**', async (route) => {
       id: 'operation-' + requests.length,
       kind,
       state: 'failed',
-      step: kind === 'update' ? 'database-checkpoint' : 'download-images',
+      step: kind === 'update' ? 'database-checkpoint' : kind === 'reconfigure' ? 'start' : 'download-images',
       completed: [],
       error: 'fixture_interruption',
       createdAt: Date.now(),
@@ -298,6 +305,28 @@ try {
     await mainButton('Stop stack').click();
     assert.equal(await page.locator('dialog').isVisible(), true);
     await button('Cancel').click();
+    // Advanced container settings: pre-filled from the installed stack, saved through a journaled restart.
+    await page.getByText('Frameleaf server: 1 variable · 1 folder · 4g memory', { exact: true }).waitFor();
+    await page.getByText('Advanced container settings', { exact: true }).click();
+    const installedEnvironment = page.getByLabel('Environment variables').first();
+    assert.equal(await installedEnvironment.inputValue(), 'TZ=America/Toronto');
+    assert.equal(await page.getByLabel('Extra folders').first().inputValue(), '/fixture/archive:/old-archive:ro');
+    await installedEnvironment.fill('TZ=UTC\nPOSTGRES_DB=nope');
+    const before = requests.length;
+    await mainButton('Save and restart Frameleaf').click();
+    await page.getByText('POSTGRES_DB is set by Manager', { exact: true }).waitFor();
+    assert.equal(requests.length, before);
+    await installedEnvironment.fill('TZ=UTC');
+    await page.getByLabel('Memory limit').first().fill('');
+    await screenshot('services-advanced');
+    await mainButton('Save and restart Frameleaf').click();
+    await page.getByRole('heading', { name: 'Applying container settings' }).waitFor();
+    assert.deepEqual(requests.findLast((r) => r.path === 'container-settings').body.services, {
+      'frameleaf-server': { environment: { TZ: 'UTC' }, mounts: [{ source: '/fixture/archive', target: '/old-archive', readOnly: true }] },
+    });
+    await mainButton('Resume safely').click();
+    await mainButton('Continue').click();
+    await page.getByRole('heading', { name: 'Services', exact: true }).waitFor();
     await nav('Storage');
     assert.equal(await page.getByRole('progressbar').count(), 1);
     await screenshot('storage');
