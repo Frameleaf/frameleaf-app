@@ -176,6 +176,7 @@ import { SmartAlbumExclusionTable } from 'src/schema/tables/smart-album-exclusio
 import { SmartAlbumTable } from 'src/schema/tables/smart-album.table.js';
 import { SmartSearchDescriptionTable } from 'src/schema/tables/smart-search-description.table.js';
 import { SmartSearchTable } from 'src/schema/tables/smart-search.table.js';
+import { SourceResourceGrantNonceTable, SourceResourceGrantTable } from 'src/schema/tables/source-resource.table.js';
 import { StackAuditTable } from 'src/schema/tables/stack-audit.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
 import {
@@ -240,6 +241,8 @@ export class ImmichDatabase {
     PhotoSourceTable,
     PhotoSourceRunTable,
     PhotoSourceResourceTable,
+    SourceResourceGrantTable,
+    SourceResourceGrantNonceTable,
     DesktopWorkerSessionTable,
     DesktopWorkerChallengeTable,
     DesktopWorkerQualificationTable,
@@ -458,6 +461,8 @@ export interface DB extends QueueDatabase {
   photo_source: PhotoSourceTable;
   photo_source_run: PhotoSourceRunTable;
   photo_source_resource: PhotoSourceResourceTable;
+  source_resource_grant: SourceResourceGrantTable;
+  source_resource_grant_nonce: SourceResourceGrantNonceTable;
   asset_local_effect_stream: AssetLocalEffectStreamTable;
   asset_local_effect: AssetLocalEffectTable;
   asset_local_effect_cursor: AssetLocalEffectCursorTable;
