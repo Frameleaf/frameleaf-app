@@ -9,6 +9,8 @@
     browse: 'frameleaf_library_layout_browse',
     work: 'frameleaf_library_layout_work',
   };
+  /** LIB-01: ⇧T, ⇧B and ⇧W (library-shortcuts.ts) switch from anywhere, the header scrolled away or not. */
+  export const LAYOUT_KEYS: Record<LibraryLayout, string> = { timeline: 'T', browse: 'B', work: 'W' };
 
   /**
    * Show a layout. As in the prototype the Timeline opens grouped by day rather than as one "All"
@@ -59,6 +61,8 @@
       class="fl-layout"
       class:fl-current={current === layout}
       aria-pressed={current === layout}
+      aria-keyshortcuts={shown.length > 1 ? `Shift+${LAYOUT_KEYS[layout]}` : undefined}
+      title={shown.length > 1 ? `${$t(LAYOUT_LABELS[layout])} (⇧${LAYOUT_KEYS[layout]})` : undefined}
       onclick={() => {
         if (shown.length === 1) {
           return;

@@ -137,9 +137,7 @@ describe('getAltText', () => {
     });
 
   const originalDate = (item: TimelineAsset) =>
-    fromTimelinePlainDateTime(item.localDateTime)
-      .toJSDate()
-      .toLocaleString(get(locale), { dateStyle: 'long', timeZone: 'UTC' });
+    fromTimelinePlainDateTime(item.localDateTime).toJSDate().toLocaleString(get(locale), { dateStyle: 'long' });
 
   it('reads formatting locale on every call, independently of the translation store', () => {
     const alt = get(getAltText);
@@ -160,6 +158,21 @@ describe('getAltText', () => {
   ])('preserves Luxon conversion and invalid dates for %j', (localDateTime) => {
     const item = asset({ localDateTime: { hour: 0, minute: 0, second: 0, millisecond: 0, ...localDateTime } });
     expect(get(getAltText)(item)).toBe(`Image taken on ${originalDate(item)}`);
+  });
+
+  it('names the day the photo was taken there, as the day header does, west of UTC (LIB-01)', () => {
+    const zone = process.env.TZ;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      // a fresh locale so the label builds its formatter in this zone
+      locale.set('en');
+      const evening = asset({
+        localDateTime: { year: 2026, month: 8, day: 22, hour: 18, minute: 44, second: 0, millisecond: 0 },
+      });
+      expect(get(getAltText)(evening)).toBe('Image taken on August 22, 2026');
+    } finally {
+      process.env.TZ = zone;
+    }
   });
 
   it('preserves malformed locale errors and recovers after a valid locale is restored', () => {

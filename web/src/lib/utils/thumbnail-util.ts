@@ -7,7 +7,9 @@ import { fromTimelinePlainDateTime } from '$lib/utils/timeline-util';
 export const getAltText = derived(t, ($t) => {
   let formatter: Intl.DateTimeFormat | undefined;
   let formatterLocale: string | undefined;
-  const dateOptions = { dateStyle: 'long', timeZone: 'UTC' } as const;
+  // The plain date-time is built in the local zone (`fromTimelinePlainDateTime`), so it is formatted
+  // there too: formatting it in UTC moved evening photos west of UTC to the next day (LIB-01).
+  const dateOptions = { dateStyle: 'long' } as const;
   const peopleSuffixes = ['', '_1_person', '_2_people', '_3_people', '_4_or_more_people'] as const;
 
   return (asset: TimelineAsset) => {
