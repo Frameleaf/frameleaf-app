@@ -204,6 +204,7 @@ export const getForDetectedFaces = (asset: ReturnType<AssetFactory['build']>) =>
 });
 
 export const getForSidecarWrite = (asset: ReturnType<AssetFactory['build']>) => ({
+  libraryReadOnly: null,
   id: asset.id,
   ownerId: asset.ownerId,
   originalPath: asset.originalPath,

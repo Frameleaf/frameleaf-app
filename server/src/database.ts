@@ -43,6 +43,7 @@ export type AssetFile = {
 };
 
 export type Library = {
+  readOnly: boolean;
   id: string;
   ownerId: string;
   createdAt: Date;

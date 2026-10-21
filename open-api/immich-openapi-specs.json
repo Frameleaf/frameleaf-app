@@ -73743,6 +73743,10 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "readOnly": {
+            "description": "Keep source originals and sidecars read-only. Fixed once created.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -85087,6 +85091,10 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "readOnly": {
+            "description": "Source originals and sidecars are read-only; generated metadata is managed.",
+            "type": "boolean"
+          },
           "refreshedAt": {
             "description": "Last refresh date",
             "example": "2024-01-01T00:00:00.000Z",
@@ -85121,6 +85129,7 @@
           "importPaths",
           "name",
           "ownerId",
+          "readOnly",
           "refreshedAt",
           "scan",
           "updatedAt"

@@ -38,6 +38,14 @@ select
   "physicalOriginalFileId",
   (
     select
+      "readOnly"
+    from
+      "library"
+    where
+      "library"."id" = "asset"."libraryId"
+  ) as "libraryReadOnly",
+  (
+    select
       coalesce(json_agg(agg), '[]')
     from
       (

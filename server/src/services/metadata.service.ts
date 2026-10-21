@@ -594,7 +594,9 @@ export class MetadataService extends BaseService {
 
     const { sidecarFile } = getAssetFiles(asset.files);
     const sidecarPath =
-      sidecarFile?.path && (await this.canUseExistingSidecarPath(asset, sidecarFile.path, kysely))
+      !asset.libraryReadOnly &&
+      sidecarFile?.path &&
+      (await this.canUseExistingSidecarPath(asset, sidecarFile.path, kysely))
         ? sidecarFile.path
         : await this.getSidecarWritePath(asset, kysely);
 
@@ -635,6 +637,15 @@ export class MetadataService extends BaseService {
     }
 
     this.storageCore.ensureFolders(sidecarPath);
+    if (
+      asset.libraryReadOnly &&
+      sidecarFile?.path &&
+      sidecarFile.path !== sidecarPath &&
+      (await this.canUseExistingSidecarPath(asset, sidecarFile.path, kysely))
+    ) {
+      // Preserve unedited source-XMP fields while applying edits only to our independent copy.
+      await this.storageRepository.copyFile(sidecarFile.path, sidecarPath);
+    }
     await this.metadataRepository.writeTags(sidecarPath, exif);
 
     if (!sidecarFile || sidecarFile.path !== sidecarPath) {
@@ -669,9 +680,13 @@ export class MetadataService extends BaseService {
       ownerId: string;
       originalPath: string;
       physicalOriginalFileId?: string | null;
+      libraryReadOnly: boolean | null;
     },
     kysely?: Kysely<DB>,
   ) {
+    if (asset.libraryReadOnly) {
+      return StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, `${asset.id}.xmp`);
+    }
     if (!asset.physicalOriginalFileId) {
       return `${asset.originalPath}.xmp`;
     }

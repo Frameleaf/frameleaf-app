@@ -1505,6 +1505,13 @@ export class AssetRepository {
     return this.db
       .selectFrom('asset')
       .select(['id', 'ownerId', 'stackId', 'originalPath', 'physicalOriginalFileId', 'isFavorite'])
+      .select((eb) =>
+        eb
+          .selectFrom('library')
+          .select('readOnly')
+          .whereRef('library.id', '=', 'asset.libraryId')
+          .as('libraryReadOnly'),
+      )
       .select(withFiles)
       .where('id', '=', asUuid(id))
       .limit(1)

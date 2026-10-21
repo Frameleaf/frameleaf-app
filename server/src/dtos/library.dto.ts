@@ -17,6 +17,7 @@ const stringArrayMax128 = z
 const CreateLibrarySchema = z
   .object({
     ownerId: z.uuidv4().describe('Owner user ID. Fixed once the library exists.'),
+    readOnly: z.boolean().optional().describe('Keep source originals and sidecars read-only. Fixed once created.'),
     name: z.string().min(1).max(LIBRARY_NAME_MAX_LENGTH).optional().describe('Library name'),
     importPaths: stringArrayMax128.optional().describe('Import paths (max 128)'),
     exclusionPatterns: stringArrayMax128.optional().describe('Exclusion patterns (max 128)'),
@@ -114,6 +115,7 @@ const LibraryResponseSchema = z
   .object({
     id: z.uuidv4().describe('Library ID'),
     ownerId: z.uuidv4().describe('Owner user ID'),
+    readOnly: z.boolean().describe('Source originals and sidecars are read-only; generated metadata is managed.'),
     name: z.string().describe('Library name'),
     assetCount: z.int().describe('Number of assets'),
     importPaths: z.array(z.string()).describe('Import paths'),
@@ -195,6 +197,7 @@ export function mapLibrary(entity: Library, scan: LibraryScanResponseDto | null 
   return {
     id: entity.id,
     ownerId: entity.ownerId,
+    readOnly: entity.readOnly,
     name: entity.name,
     createdAt: entity.createdAt,
     updatedAt: entity.updatedAt,

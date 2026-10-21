@@ -58,6 +58,13 @@ export class AssetJobRepository {
       .selectFrom('asset')
       .where('asset.id', '=', asUuid(id))
       .select(['id', 'ownerId', 'originalPath', 'physicalOriginalFileId'])
+      .select((eb) =>
+        eb
+          .selectFrom('library')
+          .select('readOnly')
+          .whereRef('library.id', '=', 'asset.libraryId')
+          .as('libraryReadOnly'),
+      )
       .select((eb) => withFiles(eb, AssetFileType.Sidecar))
       .$call(withExifInner)
       .limit(1)

@@ -7688,6 +7688,8 @@ export type LibraryResponseDto = {
     name: string;
     /** Owner user ID */
     ownerId: string;
+    /** Source originals and sidecars are read-only; generated metadata is managed. */
+    readOnly: boolean;
     /** Last refresh date */
     refreshedAt: string | null;
     /** The latest scan, or null if the library was never scanned */
@@ -7704,6 +7706,8 @@ export type CreateLibraryDto = {
     name?: string;
     /** Owner user ID. Fixed once the library exists. */
     ownerId: string;
+    /** Keep source originals and sidecars read-only. Fixed once created. */
+    readOnly?: boolean;
 };
 export type ManagedUploadsStatsResponseDto = {
     /** Account whose uploads these are */
