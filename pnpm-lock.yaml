@@ -1140,6 +1140,9 @@ importers:
       maplibre-gl:
         specifier: ^6.14.0
         version: 6.14.0
+      marked:
+        specifier: ^16.4.2
+        version: 16.4.2
       media-chrome:
         specifier: ^4.19.3
         version: 4.19.3(react@19.3.0)

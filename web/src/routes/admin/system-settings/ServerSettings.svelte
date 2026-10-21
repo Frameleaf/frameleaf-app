@@ -40,6 +40,8 @@
   const disabled = $derived(featureFlagsManager.value.configFile);
   const settingsDraft = requireSystemConfigDraft();
   const server = $derived(settingsDraft.draft.server);
+  // the server always returns the help group (FL-488); the SDK marks it optional because it has a default
+  const help = $derived(settingsDraft.draft.help!);
 
   /** The zone of the computer Frameleaf runs on, which "Same as this computer" means. */
   let computerZone = $state<string>();
@@ -151,6 +153,18 @@
           <Button onclick={() => goto(commandCenterUrl('sharing'))}>{$t('frameleaf_server_identity_find_open')}</Button>
         </Row>
       </Section>
+
+      <!-- FL-489: Ask Frameleaf in the help panel; the help articles are always there. -->
+      <Section title={$t('frameleaf_help_panel_open')}>
+        <Row label={$t('frameleaf_help_ask_setting')} help={$t('frameleaf_help_ask_setting_description')}>
+          <Switch
+            label={$t('frameleaf_help_ask_setting')}
+            checked={help.askEnabled}
+            held={disabled}
+            onChange={(value) => (help.askEnabled = value)}
+          />
+        </Row>
+      </Section>
     </div>
 
     <aside class="preview fl-continuous-corners" aria-label={$t('frameleaf_server_identity_preview')}>
@@ -185,7 +199,7 @@
     </aside>
   </div>
 
-  <SettingActions keys={['server']} {disabled} />
+  <SettingActions keys={['server', 'help']} {disabled} />
 </KitPage>
 
 <style>

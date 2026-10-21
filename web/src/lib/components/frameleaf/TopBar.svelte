@@ -28,6 +28,7 @@
   import { Icon, IconButton, modalManager, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import {
     mdiBellOutline,
+    mdiHelpCircleOutline,
     mdiLockOpenVariantOutline,
     mdiLockOutline,
     mdiMenu,
@@ -78,6 +79,7 @@
   const currentPrimary = $derived(currentPrimaryDestination(page.url.pathname));
 
   let showNotifications = $state(false);
+  let showHelp = $state(false);
   let bellButton = $state<HTMLButtonElement>();
 
   /** Close the panel; from the keyboard (Escape, its close button) focus goes back to the bell. */
@@ -312,6 +314,26 @@
 
       <!-- The one "work in progress" indicator, at every width; on phones it is the ring alone. -->
       <ActivityIndicator />
+
+      <!-- FL-489: help for this screen, every help article and Ask Frameleaf (frameleaf-prototype #5). -->
+      <button
+        type="button"
+        class="fl-topbar-button"
+        onclick={() => (showHelp = true)}
+        title={$t('frameleaf_help_panel_open')}
+        aria-label={$t('frameleaf_help_panel_open')}
+        aria-haspopup="dialog"
+        aria-expanded={showHelp}
+        data-testid="help-button"
+      >
+        <Icon icon={mdiHelpCircleOutline} size="20" aria-hidden="true" />
+      </button>
+      {#if showHelp}
+        <!-- Loaded on first use: the panel, its Markdown renderer and sanitizer stay out of every page's bundle (FL-139). -->
+        {#await import('$lib/components/frameleaf/HelpPalette.svelte') then { default: HelpPalette }}
+          <HelpPalette onClose={() => (showHelp = false)} />
+        {/await}
+      {/if}
 
       <div
         use:clickOutside={{
