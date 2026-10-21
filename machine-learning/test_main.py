@@ -3280,6 +3280,77 @@ def test_hardware_report_falls_back_to_the_processor_and_lists_render_nodes(
     assert set(report["host"]) == {"kernel", "gpus", "dxg", "groups", "root"}
 
 
+def test_hardware_report_names_the_amd_gpus_migraphx_uses_without_torch(monkeypatch: MonkeyPatch) -> None:
+    from frameleaf_ml import hardware_report
+
+    monkeypatch.setattr(hardware_report, "_torch_gpus", lambda: ([], None, None))
+    monkeypatch.setattr(hardware_report, "_nvidia_smi", lambda: None)
+    monkeypatch.setattr(hardware_report, "_render_nodes", lambda: [])
+    monkeypatch.setattr(
+        hardware_report,
+        "_rocm_smi",
+        lambda: [{"name": "Navi 31 [Radeon RX 7900 XTX]", "vendor": "AMD", "memoryTotalBytes": 24 * 1024**3}],
+    )
+    monkeypatch.setenv("DEVICE", "rocm")
+
+    report = hardware_report.container_report(["MIGraphXExecutionProvider", "CPUExecutionProvider"], [])
+
+    assert report["backend"] == "ROCm"
+    assert report["gpus"] == [
+        {"name": "Navi 31 [Radeon RX 7900 XTX]", "vendor": "AMD", "memoryTotalBytes": 24 * 1024**3}
+    ]
+    assert report["rocm"] is not None
+
+
+def test_hardware_report_reads_rocm_smi_json(monkeypatch: MonkeyPatch) -> None:
+    from frameleaf_ml import hardware_report
+
+    cards = {
+        "card1": {"Card Series": "Radeon RX 6800 XT", "VRAM Total Memory (B)": "17163091968"},
+        "card0": {"Device Name": "AMD Radeon Graphics", "VRAM Total Memory (B)": "536870912"},
+        "system": {"Driver version": "6.12.12"},
+    }
+    monkeypatch.setattr(hardware_report.shutil, "which", lambda name: "/opt/rocm/bin/rocm-smi")
+    monkeypatch.setattr(
+        hardware_report.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=json.dumps(cards), stderr=""),
+    )
+
+    assert hardware_report._rocm_smi() == [
+        {"name": "AMD Radeon Graphics", "vendor": "AMD", "memoryTotalBytes": 536870912},
+        {"name": "Radeon RX 6800 XT", "vendor": "AMD", "memoryTotalBytes": 17163091968},
+    ]
+
+    monkeypatch.setattr(hardware_report.shutil, "which", lambda name: None)
+    assert hardware_report._rocm_smi() == []
+
+
+def test_hardware_report_names_amd_render_nodes_when_rocm_smi_is_missing(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    from frameleaf_ml import hardware_report
+
+    sys_drm = tmp_path / "drm"
+    (sys_drm / "renderD129" / "device").mkdir(parents=True)
+    (sys_drm / "renderD129" / "device" / "product_name").write_text("Radeon RX 7600\n")
+    (sys_drm / "renderD130" / "device").mkdir(parents=True)
+    nodes = [
+        {"node": "renderD128", "vendor": "Intel", "accessible": True, "memoryTotalBytes": None},
+        {"node": "renderD129", "vendor": "AMD", "accessible": True, "memoryTotalBytes": 8 * 1024**3},
+        {"node": "renderD130", "vendor": "AMD", "accessible": True, "memoryTotalBytes": None},
+    ]
+    monkeypatch.setattr(hardware_report, "_rocm_smi", lambda: [])
+    monkeypatch.setattr(
+        hardware_report, "rocm_facts", lambda: {"gfxTargets": ["gfx1102", "gfx1036"], "hsaOverride": None}
+    )
+
+    assert hardware_report._amd_gpus(nodes, sys_drm) == [
+        {"name": "Radeon RX 7600", "vendor": "AMD", "memoryTotalBytes": 8 * 1024**3},
+        {"name": "AMD gfx1036", "vendor": "AMD", "memoryTotalBytes": None},
+    ]
+
+
 def test_hardware_report_lists_the_host_gpus_from_the_pci_list(tmp_path: Path) -> None:
     from frameleaf_ml import hardware_report
 
