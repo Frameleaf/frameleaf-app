@@ -10,13 +10,27 @@ const catalogue = parseDesktopModelCatalogue(
 it.each(['ocr', 'face'] as const)('selects the released %s identity and revalidates exact legacy tasks', (workload) => {
   const profiles = catalogue.profiles.filter((profile) => profile.workload === workload);
   const current = profiles.find(
-    (profile) => profile.runtimeSourceRevision === '0d9702c68f31ea3eea068ac59ca1cf36a2b520fc',
+    (profile) => profile.runtimeSourceRevision === 'f2c451a6bf71ca3f3aec986e07f0852937268e2f',
   )!;
   const select = (key?: string) =>
     workload === 'ocr'
       ? desktopOcrProfile(defaults.machineLearning.ocr, key)
       : desktopFaceProfile(defaults.machineLearning.facialRecognition, key);
+  const currentVariants = profiles.filter((profile) => profile.modelKey === current.modelKey);
+  expect(currentVariants.map((profile) => profile.spec.provider)).toEqual([
+    'CPUExecutionProvider',
+    'CoreMLExecutionProvider',
+  ]);
   expect(select().modelKey).toBe(current.modelKey);
+  if (workload === 'ocr') {
+    expect(() =>
+      desktopOcrProfile({ ...defaults.machineLearning.ocr, minDetectionScore: 0.6 }, current.modelKey),
+    ).toThrow('desktop_pool_model_unavailable');
+  } else {
+    expect(() =>
+      desktopFaceProfile({ ...defaults.machineLearning.facialRecognition, minScore: 0.8 }, current.modelKey),
+    ).toThrow('desktop_pool_model_unavailable');
+  }
   for (const profile of profiles) expect(select(profile.modelKey).modelKey).toBe(profile.modelKey);
   expect(() => select(`${workload}:${'0'.repeat(64)}`)).toThrow('desktop_pool_model_unavailable');
   const other = catalogue.profiles.find((profile) => profile.workload !== workload)!;
