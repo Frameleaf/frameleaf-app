@@ -1987,6 +1987,20 @@ describe(AssetService.name, () => {
       }
     });
 
+    it('deletes a managed asset without resolving an unrelated external sidecar path', async () => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+      const path = vi.spyOn(StorageCore, 'getNestedPath').mockImplementation(() => {
+        throw new Error('No external sidecar storage configured');
+      });
+      try {
+        await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+        expect(path).not.toHaveBeenCalled();
+      } finally {
+        path.mockRestore();
+      }
+    });
+
     it('leaves the stack change to the removal, so a removal that rolls back leaves the stack (FL-179)', async () => {
       const asset = AssetFactory.from()
         .stack({}, (builder) => builder.asset())

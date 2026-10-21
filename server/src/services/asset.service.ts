@@ -847,7 +847,9 @@ export class AssetService extends BaseService {
 
     const { sidecarFile: targetFile } = getAssetFiles(targetAsset.files ?? []);
 
-    this.storageCore.ensureFolders(targetPath);
+    if (targetAsset.libraryReadOnly || isSharedNonCanonical) {
+      this.storageCore.ensureFolders(targetPath);
+    }
     await this.storageRepository.copyFile(sourceFile.path, targetPath);
     await this.assetRepository.upsertFile({
       assetId: targetAsset.id,
@@ -955,9 +957,13 @@ export class AssetService extends BaseService {
         // folder whatever happens to the item; its sidecar there is the owner's too. Generated files
         // above are Frameleaf's own and go either way.
         const ownsOriginal = deleteOnDisk && !asset.isOffline && !asset.libraryId;
-        const managedSidecar = StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, `${asset.id}.xmp`);
-        if (asset.libraryId && assetFiles.sidecarFile?.path === managedSidecar) {
-          files.push(managedSidecar);
+        if (
+          asset.libraryId &&
+          assetFiles.sidecarFile &&
+          assetFiles.sidecarFile.path ===
+            StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, `${asset.id}.xmp`)
+        ) {
+          files.push(assetFiles.sidecarFile.path);
         }
         if (ownsOriginal) {
           files.push(assetFiles.sidecarFile?.path, removed.originalPath, removed.reservationTemporaryPath ?? undefined);
