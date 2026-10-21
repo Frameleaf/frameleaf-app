@@ -8,7 +8,7 @@
   <Support>https://github.com/Frameleaf/frameleaf-app/issues</Support>
   <Overview>Self-hosted Frameleaf photo and video library. Requires the Frameleaf PostgreSQL 19 container on the frameleaf network.</Overview>
   <Category>MediaApp:Photos</Category>
-  <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/brand-kit/frameleaf-app-icon.svg</Icon>
+  <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png</Icon>
   <WebUI>http://[IP]:[PORT:2283]</WebUI>
   <ExtraParams>--stop-timeout=10</ExtraParams>
   <TemplateURL>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/frameleaf-server.xml</TemplateURL>

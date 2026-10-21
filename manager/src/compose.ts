@@ -7,8 +7,54 @@ import { Refusal, imageDigest, type Installation, type Mount, type NasManifest, 
 import type { VerifiedRelease } from './releases.js';
 import { atomicJson } from './files.js';
 import { command } from './docker.js';
+import { UNRAID_ICON } from './dockerman.js';
 
 export type Acceleration = 'cpu' | 'cuda' | 'rocm' | 'openvino';
+/** Match hwaccel.transcoding.yml; video acceleration does not require an ML variant or AMD's KFD. */
+export async function detectTranscoding(
+  sys = '/sys',
+  runtimes = () => command('docker', ['info', '--format', '{{json .Runtimes}}'], { timeout: 10_000 }),
+): Promise<Record<string, unknown>> {
+  const nvidia = (await readdir(join(sys, 'bus/pci/drivers/nvidia')).catch(() => []))
+    .some((node) => /^[a-f0-9]{4}:[a-f0-9]{2}:[a-f0-9]{2}\.[0-7]$/i.test(node));
+  const docker = nvidia ? await runtimes().then((value) => JSON.parse(value || '{}') ?? {}, () => ({})) : {};
+  if (nvidia && Object.hasOwn(docker, 'nvidia')) return {
+    deploy: { resources: { reservations: { devices: [{ driver: 'nvidia', count: 1, capabilities: ['gpu', 'compute', 'video'] }] } } },
+  };
+  const nodes = (await readdir(join(sys, 'class/drm')).catch(() => [])).filter((node) => /^renderD\d+$/.test(node));
+  const vendors = await Promise.all(nodes.map((node) => readFile(join(sys, 'class/drm', node, 'device/vendor'), 'utf8')
+    .then((value) => value.trim(), () => '')));
+  return vendors.some((vendor) => vendor === '0x8086' || vendor === '0x1002') ? { devices: ['/dev/dri:/dev/dri'] } : {};
+}
+
+/** Refresh saved installations too; starting an older stack must not retain missing or stale GPU mappings. */
+export async function configureUnraidCompose(directory: string, hardware?: Record<string, unknown>): Promise<void> {
+  const path = join(directory, 'compose.json');
+  const compose = JSON.parse(await readFile(path, 'utf8'));
+  if (!/^frameleaf-[a-f0-9]{12}$/.test(compose.name)) throw new Refusal('invalid_managed_project');
+  for (const [name, service] of Object.entries(compose.services) as [string, any][]) {
+    if (service.labels?.['app.frameleaf.manager'] !== compose.name.slice(10)) throw new Refusal('invalid_managed_project');
+    service.labels = { ...service.labels, 'net.unraid.docker.managed': 'dockerman', 'net.unraid.docker.icon': UNRAID_ICON,
+      ...(name === 'frameleaf-server' ? { 'net.unraid.docker.webui': 'http://[IP]:[PORT:2283]' } : {}) };
+  }
+  const server = compose.services['frameleaf-server'];
+  if (server) {
+    const detected: any = hardware ?? await detectTranscoding();
+    server.devices = [...(server.devices ?? []).filter((device: any) =>
+      (typeof device === 'string' ? device.split(':')[0] : device.source) !== '/dev/dri'), ...(detected.devices ?? [])];
+    const reservations = server.deploy?.resources?.reservations;
+    if (reservations?.devices) reservations.devices = reservations.devices.filter((device: any) => device.driver !== 'nvidia');
+    if (detected.deploy) {
+      server.deploy ??= {};
+      server.deploy.resources ??= {};
+      server.deploy.resources.reservations ??= {};
+      server.deploy.resources.reservations.devices = [
+        ...(reservations?.devices ?? []), ...detected.deploy.resources.reservations.devices,
+      ];
+    }
+  }
+  await atomicJson(path, compose);
+}
 /** Device passthrough per variant, matching docker/hwaccel.ml.yml. */
 const ACCELERATION_SERVICE: Record<Exclude<Acceleration, 'cpu'>, Record<string, unknown>> = {
   cuda: { deploy: { resources: { reservations: { devices: [{ driver: 'nvidia', count: 1, capabilities: ['gpu'] }] } } } },
@@ -18,7 +64,7 @@ const ACCELERATION_SERVICE: Record<Exclude<Acceleration, 'cpu'>, Record<string, 
 /**
  * Picks the ML variant for this host: NVIDIA (Docker has the nvidia runtime), then AMD (render node + ROCm
  * kfd), then Intel (render node). Docker mounts host sysfs read-only in every container, so Manager needs
- * no /dev mapping to detect; only the ML container gets the devices. The CUDA, ROCm and OpenVINO images
+ * no /dev mapping to detect. Unraid also passes visible DRI devices to the server for video acceleration. The CUDA, ROCm and OpenVINO images
  * are amd64 only. MANAGER_ML_ACCELERATION overrides detection.
  */
 export async function detectAcceleration(
@@ -277,4 +323,5 @@ export async function renderCompose(
     ),
   );
   await atomicJson(join(directory, 'compose.json'), compose);
+  if (process.env.MANAGER_PLATFORM === 'unraid') await configureUnraidCompose(directory);
 }

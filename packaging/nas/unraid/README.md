@@ -26,6 +26,26 @@ shown are examples, not evidence of a qualified Unraid installation.
 ![Manager storage mappings with demo data](https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-storage.jpg)
 ![Manager database backups with demo data](https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-backups.jpg)
 
+Manager detects host GPUs through sysfs. It maps `/dev/dri` into the Frameleaf
+server for Intel/AMD video acceleration, or reserves an NVIDIA GPU with compute
+and video capabilities when the NVIDIA driver and Docker runtime are present.
+This also works when ML is disabled. Hosts without a supported GPU keep their CPU
+configuration. Accelerated ML services receive their own device mappings from Manager.
+
+Keep **DockerMan templates** mapped to
+`/boot/config/plugins/dockerMan/templates-user`. Manager writes private XML
+templates for its running database, server and ML containers after starting them.
+They retain the same container names, Compose labels, network aliases, storage,
+device mappings and credentials, allowing DockerMan to edit and recreate them.
+Use Manager for coordinated upgrades, backup and recovery. Manager operations
+regenerate the templates from the running configuration; upgrades may replace
+settings edited directly in DockerMan. Do not run operations in both interfaces
+at the same time. These templates contain credentials: do not share or commit them.
+
+For an existing installation, add the **DockerMan templates** mapping from the
+current Manager template and apply it in DockerMan. Start the
+library from Manager to generate the service templates.
+
 ## Manager installation
 
 1. Create the state, media, database parent and backup folders on the intended
