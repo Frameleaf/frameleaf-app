@@ -593,6 +593,8 @@ export enum SystemMetadataKey {
   FrameleafRemoteAccessTest = 'frameleaf-remote-access-test',
   /** FL-159: the last Hardware & GPU check of the server and ML containers. */
   HardwareCheck = 'hardware-check',
+  /** FL-488: the last good copy of the help website's article index, kept for in-app help offline. */
+  HelpIndex = 'help-index',
   /**
    * FL-159: set by migration 2100000000620 when it removed destinations of the previous cloud
    * provider, so administrators are told once, in plain language, what changed.
@@ -3182,6 +3184,7 @@ export enum ApiTag {
   Push = 'Push',
   Queues = 'Queues',
   Search = 'Search',
+  Help = 'Help',
   Server = 'Server',
   Sessions = 'Sessions',
   SharedLinks = 'Shared links',

@@ -379,6 +379,9 @@
   "frameleafCloud.signIn.showOnLocalLogin": {
     "type": "boolean"
   },
+  "help.askEnabled": {
+    "type": "boolean"
+  },
   "image.colorspace": {
     "type": "string",
     "enum": [

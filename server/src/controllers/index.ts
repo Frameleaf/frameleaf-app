@@ -46,6 +46,7 @@ import {
 import { FrameleafLibrarySetupController } from 'src/controllers/frameleaf-library-setup.controller.js';
 import { FrameleafServerSetupController } from 'src/controllers/frameleaf-server-setup.controller.js';
 import { HardwareCheckController } from 'src/controllers/hardware-check.controller.js';
+import { HelpController } from 'src/controllers/help.controller.js';
 import { ICloudIdentityController } from 'src/controllers/icloud-identity.controller.js';
 import { ICloudSyncController } from 'src/controllers/icloud-sync.controller.js';
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
@@ -140,6 +141,7 @@ export const controllers = [
   CastController,
   CloudBackupOwnerController,
   HardwareCheckController,
+  HelpController,
   ICloudSyncController,
   ICloudIdentityController,
   ApiKeyController,

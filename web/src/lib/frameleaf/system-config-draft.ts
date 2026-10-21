@@ -93,7 +93,8 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
   // Queue concurrency, edited in the Job manager's concurrency dialog (FL-71).
   queues: ['job'],
   notifications: ['notifications', 'templates'],
-  server: ['server'],
+  // FL-488: Ask Frameleaf in the help panel is set on the server page.
+  server: ['server', 'help'],
   'smart-albums': ['smartAlbums'],
   'storage-template': ['storageTemplate'],
   theme: ['theme'],
