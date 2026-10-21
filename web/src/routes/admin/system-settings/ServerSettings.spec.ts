@@ -33,6 +33,7 @@ const config = (lanDiscovery: boolean, server: Partial<AdminConfigDto['server']>
       lanDiscovery,
       ...server,
     },
+    help: { askEnabled: true },
   }) as AdminConfigDto;
 const open = (saved: AdminConfigDto) => {
   const store = new SystemConfigDraftStore(
@@ -135,6 +136,27 @@ it('edits LAN discovery in the shared draft, saves it against the revision and r
   expect(save).toHaveBeenCalledWith({ expectedRevision: 'r1', config: config(false) });
   store.resetSection(['server']);
   expect(store.draft.server.lanDiscovery).toBe(true);
+});
+
+it('turns Ask Frameleaf off in the shared draft and saves it with the server page (FL-489)', async () => {
+  const save = vi.fn().mockResolvedValue({ config: config(true), revision: 'r2' });
+  const store = new SystemConfigDraftStore(
+    { config: config(true), revision: 'r1' },
+    { defaults: config(true), load: vi.fn(), save },
+  );
+  draft.store = store;
+  render(ServerSettings);
+  const toggle = screen.getByRole('switch', { name: 'Ask Frameleaf' });
+  expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await fireEvent.click(toggle);
+  expect(store.changes).toEqual([{ path: 'help.askEnabled', before: true, after: false }]);
+  await store.save();
+  expect(save).toHaveBeenCalledWith({
+    expectedRevision: 'r1',
+    config: { ...config(true), help: { askEnabled: false } },
+  });
+  store.resetSection(['server', 'help']);
+  expect(store.draft.help!.askEnabled).toBe(true);
 });
 
 it('keeps the actual controls disabled when configuration is managed by a file', async () => {
