@@ -7049,6 +7049,10 @@ export type HelpIndexResponseDto = {
     offline: boolean;
     /** The help website, such as https://frameleaf.app */
     origin: string;
+    /** The guides for each app screen, by article id, most useful first */
+    screenGuides: {
+        [key: string]: string[];
+    };
     /** Every app screen key the website knows */
     screens: string[];
     /** When this server last fetched it; null for the copy in the image */

@@ -80819,6 +80819,16 @@
             "description": "The help website, such as https://frameleaf.app",
             "type": "string"
           },
+          "screenGuides": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "description": "The guides for each app screen, by article id, most useful first",
+            "type": "object"
+          },
           "screens": {
             "description": "Every app screen key the website knows",
             "items": {
@@ -80838,6 +80848,7 @@
           "builtAt",
           "offline",
           "origin",
+          "screenGuides",
           "screens",
           "updatedAt"
         ],

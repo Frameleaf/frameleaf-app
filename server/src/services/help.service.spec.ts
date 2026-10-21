@@ -30,6 +30,7 @@ const fresh: HelpIndex = {
   source: 'https://frameleaf.app',
   builtAt: '2026-10-22T00:00:00.000Z',
   screens: ['albums'],
+  screenGuides: { albums: ['using/sharing'] },
   articles: [article('using/sharing')],
 };
 
@@ -93,6 +94,7 @@ describe(HelpService.name, () => {
       });
       const second = await sut.getIndex();
       expect(second.articles.map((item) => item.id)).toEqual(['using/sharing']);
+      expect(second.screenGuides).toEqual({ albums: ['using/sharing'] });
       expect(second.offline).toBe(false);
       expect(fetchSpy).toHaveBeenCalledTimes(1);
     });
@@ -110,6 +112,12 @@ describe(HelpService.name, () => {
       expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
       // a failure waits before trying again
       expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('reads an index from before screenGuides existed', async () => {
+      const { screenGuides: _guides, ...older } = fresh;
+      metadata[SystemMetadataKey.HelpIndex] = { index: older, etag: null, fetchedAt: new Date().toISOString() };
+      expect((await sut.getIndex()).screenGuides).toEqual({});
     });
 
     it('refuses an index that does not look like one', async () => {

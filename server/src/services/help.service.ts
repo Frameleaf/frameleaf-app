@@ -116,6 +116,7 @@ export class HelpService extends BaseService {
       updatedAt: fetchedAt,
       offline: this.lastFailed,
       screens: index.screens,
+      screenGuides: index.screenGuides,
       articles: index.articles,
       ask: { enabled: config.help.askEnabled, hardware: askHardware(check).label },
     };

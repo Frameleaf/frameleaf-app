@@ -40,6 +40,8 @@ export const HelpIndexSchema = z.object({
   source: z.string(),
   builtAt: z.string(),
   screens: z.array(z.string()),
+  // FL-489: each screen's guides, most useful first; an index from before it existed has none
+  screenGuides: z.record(z.string(), z.array(z.string())).default({}),
   articles: z.array(HelpArticleSchema).min(1),
 });
 export type HelpIndex = z.infer<typeof HelpIndexSchema>;
@@ -51,6 +53,9 @@ const HelpIndexResponseSchema = z
     updatedAt: z.string().nullable().describe('When this server last fetched it; null for the copy in the image'),
     offline: z.boolean().describe('The last attempt to reach the help website failed'),
     screens: z.array(z.string()).describe('Every app screen key the website knows'),
+    screenGuides: z
+      .record(z.string(), z.array(z.string()))
+      .describe('The guides for each app screen, by article id, most useful first'),
     articles: z.array(HelpArticleSchema),
     ask: z
       .object({
