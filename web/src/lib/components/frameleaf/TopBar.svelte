@@ -6,7 +6,6 @@
   import LockedUnlockDialog from '$lib/components/frameleaf/LockedUnlockDialog.svelte';
   import { clearLocksRevealed, markLocksRevealed } from '$lib/components/timeline/lock-reveal';
   import ActivityIndicator from '$lib/components/frameleaf/ActivityIndicator.svelte';
-  import HelpPalette from '$lib/components/frameleaf/HelpPalette.svelte';
   import FrameleafLogo from '$lib/components/frameleaf/Logo.svelte';
   import UploadMenuButton from '$lib/components/frameleaf/UploadMenuButton.svelte';
   import NotificationPanel from '$lib/components/shared-components/navigation-bar/NotificationPanel.svelte';
@@ -330,7 +329,10 @@
         <Icon icon={mdiHelpCircleOutline} size="20" aria-hidden="true" />
       </button>
       {#if showHelp}
-        <HelpPalette onClose={() => (showHelp = false)} />
+        <!-- Loaded on first use: the panel, its Markdown renderer and sanitizer stay out of every page's bundle (FL-139). -->
+        {#await import('$lib/components/frameleaf/HelpPalette.svelte') then { default: HelpPalette }}
+          <HelpPalette onClose={() => (showHelp = false)} />
+        {/await}
       {/if}
 
       <div
