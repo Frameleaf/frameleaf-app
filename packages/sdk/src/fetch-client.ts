@@ -9331,6 +9331,24 @@ export type PhotoSourceResponseDto = {
     revokedAt: string | null;
     scopeFingerprint: string;
 };
+export type ApplePhotosSourceCreateDto = {
+    deviceId: string;
+    id: string;
+    kind: ApplePhotosSourceKind;
+    mode: PhotoSourceCopyMode;
+    name: string;
+    scopeFingerprint: string;
+};
+export type ApplePhotosSourceResponseDto = {
+    createdAt: string;
+    deviceId: string;
+    id: string;
+    kind: ApplePhotosSourceKind;
+    mode: PhotoSourceCopyMode;
+    name: string;
+    revokedAt: string | null;
+    scopeFingerprint: string;
+};
 export type PhotoSourceRunDto = {
     id: string;
     maxBytes: number;
@@ -25541,6 +25559,21 @@ export function createPhotoSource({ photoSourceCreateDto }: {
     })));
 }
 /**
+ * Approve an owner-scoped Apple Photos copy source
+ */
+export function createApplePhotosSource({ applePhotosSourceCreateDto }: {
+    applePhotosSourceCreateDto: ApplePhotosSourceCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ApplePhotosSourceResponseDto;
+    }>("/photo-sources/apple-photos", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: applePhotosSourceCreateDto
+    })));
+}
+/**
  * Revoke a photo source while retaining its managed copies and associations
  */
 export function revokePhotoSource({ id }: {
@@ -33479,11 +33512,13 @@ export enum PetObservationState {
     Rejected = "rejected"
 }
 export enum PhotoSourceKind {
-    Folder = "folder",
-    ApplePhotos = "apple-photos"
+    Folder = "folder"
 }
 export enum PhotoSourceCopyMode {
     Copy = "copy"
+}
+export enum ApplePhotosSourceKind {
+    ApplePhotos = "apple-photos"
 }
 export enum PhotoSourceRunState {
     Open = "open",

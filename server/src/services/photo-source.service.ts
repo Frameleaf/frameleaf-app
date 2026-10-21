@@ -7,16 +7,18 @@ import {
 } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import {
-  PhotoSourceCreateDto,
+  type PhotoSourceCreateInput,
+  type PhotoSourceCreateResult,
   PhotoSourceItemDto,
   PhotoSourceItemResponseDto,
   PhotoSourceReceiptDto,
-  PhotoSourceResponseDto,
   PhotoSourceRunDto,
   PhotoSourceRunResponseDto,
   PhotoSourceRunStateDto,
   PhotoSourceSnapshotDto,
   PhotoSourceVerifyDto,
+  photoSourceCreateSchema,
+  photoSourceViewSchema,
 } from 'src/dtos/photo-source.dto.js';
 import { Permission } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -48,9 +50,9 @@ export class PhotoSourceService {
       throw new ForbiddenException('photo_source_photo_session_required');
     return { ownerId: auth.user.id, sessionId: auth.session.id };
   }
-  async create(auth: AuthDto, input: PhotoSourceCreateDto): Promise<PhotoSourceResponseDto> {
-    const row = await this.repository.create(this.authority(auth), PhotoSourceCreateDto.schema.parse(input));
-    return PhotoSourceResponseDto.schema.parse({
+  async create(auth: AuthDto, input: PhotoSourceCreateInput): Promise<PhotoSourceCreateResult> {
+    const row = await this.repository.create(this.authority(auth), photoSourceCreateSchema.parse(input));
+    return photoSourceViewSchema.parse({
       ...row,
       createdAt: iso(row.createdAt),
       revokedAt: row.revokedAt ? iso(row.revokedAt) : null,

@@ -1,4 +1,11 @@
-import { PhotoSourceCreateDto, PhotoSourceItemDto, PhotoSourceRunDto } from 'src/dtos/photo-source.dto.js';
+import {
+  ApplePhotosSourceCreateDto,
+  ApplePhotosSourceResponseDto,
+  PhotoSourceCreateDto,
+  PhotoSourceItemDto,
+  PhotoSourceResponseDto,
+  PhotoSourceRunDto,
+} from 'src/dtos/photo-source.dto.js';
 
 const id = '11111111-1111-4111-8111-111111111111';
 it('accepts explicit folder-copy scope with opaque bounded fingerprints', () => {
@@ -11,6 +18,7 @@ it('accepts explicit folder-copy scope with opaque bounded fingerprints', () => 
     scopeFingerprint: 'a'.repeat(64),
   };
   expect(PhotoSourceCreateDto.schema.parse(valid)).toEqual(valid);
+  expect(PhotoSourceCreateDto.schema.safeParse({ ...valid, kind: 'apple-photos' }).success).toBe(false);
   for (const extra of [
     { mode: 'reference' },
     { kind: 'icloud' },
@@ -57,13 +65,18 @@ it('accepts Apple Photos copy provenance without asset identifiers, paths, or ex
     name: 'Apple Photos originals',
     scopeFingerprint: 'a'.repeat(64),
   };
-  expect(PhotoSourceCreateDto.schema.parse(source)).toEqual(source);
+  expect(ApplePhotosSourceCreateDto.schema.parse(source)).toEqual(source);
+  expect(ApplePhotosSourceCreateDto.schema.safeParse({ ...source, kind: 'folder' }).success).toBe(false);
+  const response = { ...source, revokedAt: null, createdAt: '2026-10-21T00:00:00.000Z' };
+  expect(ApplePhotosSourceResponseDto.schema.parse(response)).toEqual(response);
+  expect(PhotoSourceResponseDto.schema.safeParse(response).success).toBe(false);
+  expect(PhotoSourceResponseDto.schema.parse({ ...response, kind: 'folder' }).kind).toBe('folder');
   for (const extra of [
     { mode: 'reference' },
     { mode: 'external' },
     { assetId: 'opaque-local-id' },
     { root: '/Users/private/Photos.photoslibrary' },
   ]) {
-    expect(PhotoSourceCreateDto.schema.safeParse({ ...source, ...extra }).success).toBe(false);
+    expect(ApplePhotosSourceCreateDto.schema.safeParse({ ...source, ...extra }).success).toBe(false);
   }
 });

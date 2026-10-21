@@ -5,6 +5,7 @@ from typing import Any
 
 import orjson
 
+from .config import settings
 from .models.base import ModelUnavailableError
 from .native_hardware import snapshot
 from .native_qualification import QualificationSpec, preprocessing_identity, verify_models
@@ -24,7 +25,7 @@ class NativeBinding:
         for group in entries:
             for entry in group:
                 model = await main.model_cache.get(
-                    entry["name"], entry["type"], entry["task"], ttl=main.settings.model_ttl, **entry["options"]
+                    entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl, **entry["options"]
                 )
                 await main.load(model)
         await main.run(self.check, self.spec.entries, self.spec.fixture_kind)
@@ -83,7 +84,7 @@ class NativeBinding:
         if self.cache.is_symlink():
             raise ValueError("native_cache_directory_invalid")
         try:
-            entries, models = verify_models(self.spec, self.cache)
+            verified_entries, models = verify_models(self.spec, self.cache)
             from .native_device import model_bindings
             from .native_ort import current_policy
 
@@ -92,7 +93,7 @@ class NativeBinding:
                 if policy.provider != self.spec.provider:
                     raise ValueError("native_device_observer_invalid")
                 policy.observer.bind(model_bindings(self.spec, models))
-            return entries
+            return verified_entries
         except (ModelUnavailableError, OSError) as error:
             raise ValueError("native_staged_model_unavailable") from error
 

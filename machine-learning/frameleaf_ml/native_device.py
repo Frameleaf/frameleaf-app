@@ -57,7 +57,7 @@ def validate_facts(value: Any) -> None:
 
 
 def model_bindings(spec: ModelBindingSpec, models: Sequence[InferenceModel]) -> dict[Path, str]:
-    result = {}
+    result: dict[Path, str] = {}
     for item, model in zip(spec.models, models, strict=True):
         relative = model.model_path.relative_to(model.cache_dir).as_posix()
         digest = item.artifacts[relative]

@@ -2,27 +2,32 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 
 const fingerprint = z.string().regex(/^[a-f0-9]{64}$/);
-const sourceKind = z.enum(['folder', 'apple-photos']).meta({ id: 'PhotoSourceKind' });
+const folderKind = z.enum(['folder']).meta({ id: 'PhotoSourceKind' });
+const applePhotosKind = z.enum(['apple-photos']).meta({ id: 'ApplePhotosSourceKind' });
+const sourceKind = z.union([folderKind, applePhotosKind]);
 const copyMode = z.enum(['copy']).meta({ id: 'PhotoSourceCopyMode' });
 const runState = z.enum(['open', 'paused', 'cancelled', 'complete']).meta({ id: 'PhotoSourceRunState' });
 const itemState = z.enum(['planned', 'verified']).meta({ id: 'PhotoSourceItemState' });
 const storage = z.enum(['managed']).meta({ id: 'PhotoSourceStorage' });
-export class PhotoSourceCreateDto extends createZodDto(
-  z
-    .object({
-      id: z.uuid(),
-      deviceId: z.uuid(),
-      kind: sourceKind,
-      mode: copyMode,
-      name: z
-        .string()
-        .trim()
-        .min(1)
-        .max(128)
-        .refine((value) => !/\p{Cc}/u.test(value)),
-      scopeFingerprint: fingerprint,
-    })
-    .strict(),
+export const photoSourceCreateSchema = z
+  .object({
+    id: z.uuid(),
+    deviceId: z.uuid(),
+    kind: sourceKind,
+    mode: copyMode,
+    name: z
+      .string()
+      .trim()
+      .min(1)
+      .max(128)
+      .refine((value) => !/\p{Cc}/u.test(value)),
+    scopeFingerprint: fingerprint,
+  })
+  .strict();
+export type PhotoSourceCreateInput = z.infer<typeof photoSourceCreateSchema>;
+export class PhotoSourceCreateDto extends createZodDto(photoSourceCreateSchema.extend({ kind: folderKind })) {}
+export class ApplePhotosSourceCreateDto extends createZodDto(
+  photoSourceCreateSchema.extend({ kind: applePhotosKind }),
 ) {}
 export class PhotoSourceRunDto extends createZodDto(
   z
@@ -56,7 +61,7 @@ export class PhotoSourceVerifyDto extends createZodDto(z.object({ uploadResource
 export class PhotoSourceRunStateDto extends createZodDto(
   z.object({ state: runState, inventoryComplete: z.boolean() }).strict(),
 ) {}
-const sourceView = z.object({
+export const photoSourceViewSchema = z.object({
   id: z.uuid(),
   deviceId: z.uuid(),
   kind: sourceKind,
@@ -85,7 +90,11 @@ const itemView = z.object({
   state: itemState,
   verifiedAt: z.iso.datetime().nullable(),
 });
-export class PhotoSourceResponseDto extends createZodDto(sourceView) {}
+export type PhotoSourceCreateResult = z.infer<typeof photoSourceViewSchema>;
+export class PhotoSourceResponseDto extends createZodDto(photoSourceViewSchema.extend({ kind: folderKind })) {}
+export class ApplePhotosSourceResponseDto extends createZodDto(
+  photoSourceViewSchema.extend({ kind: applePhotosKind }),
+) {}
 export class PhotoSourceRunResponseDto extends createZodDto(runView) {}
 export class PhotoSourceItemResponseDto extends createZodDto(itemView) {}
 export class PhotoSourceSnapshotDto extends createZodDto(
