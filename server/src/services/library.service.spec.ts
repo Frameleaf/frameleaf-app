@@ -83,7 +83,8 @@ describe(LibraryService.name, () => {
       expect(mocks.cron.update).toHaveBeenCalledWith({
         name: CronJob.LibraryScan,
         expression: '0 1 * * *',
-        start: true,
+        // FL-363: the overnight schedule checks added folders
+        start: false,
       });
     });
 
@@ -159,7 +160,7 @@ describe(LibraryService.name, () => {
       expect(mocks.cron.update).toHaveBeenCalledWith({
         name: CronJob.LibraryScan,
         expression: systemConfigStub.libraryScan.library.scan.cronExpression,
-        start: systemConfigStub.libraryScan.library.scan.enabled,
+        start: false,
       });
     });
 
@@ -180,7 +181,7 @@ describe(LibraryService.name, () => {
       expect(mocks.cron.update).toHaveBeenCalledWith({
         name: CronJob.LibraryScan,
         expression: systemConfigStub.libraryScan.library.scan.cronExpression,
-        start: systemConfigStub.libraryScan.library.scan.enabled,
+        start: false,
       });
     });
   });

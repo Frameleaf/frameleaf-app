@@ -70,15 +70,12 @@ export class IntegrityService extends BaseService {
   private integrityLock = false;
 
   /**
-   * Library care → "Audit database and file references" (FL-69, settings-catalog.mjs:926-931): the
-   * scheduled missing-file and untracked-file checks are that audit. Each keeps its own switch and
-   * schedule; turning the audit off stops both schedules without losing them. Asking for a check
+   * FL-363: the three checks no longer start on timers of their own. The overnight schedule's
+   * "Check files" step (`OvernightService`) queues each one that is switched on; the missing-file and
+   * untracked-file checks also need Library care → "Audit database and file references" (FL-69).
+   * The timers are kept, stopped, so an expression set before still reads back. Asking for a check
    * from the job manager still runs it.
    */
-  private static referenceAudit(enabled: boolean, config: ArgOf<'ConfigInit'>['newConfig']) {
-    return enabled && config.libraryCare.integrityAudit;
-  }
-
   @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
   async onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
     const {
@@ -97,7 +94,8 @@ export class IntegrityService extends BaseService {
           this.jobRepository.queue({ name: JobName.IntegrityUntrackedFilesQueueAll, data: {} }),
           this.logger,
         ),
-      start: IntegrityService.referenceAudit(untrackedFiles.enabled, newConfig),
+      // FL-363: the overnight schedule runs the file checks
+      start: false,
     });
 
     this.cronRepository.create({
@@ -108,7 +106,7 @@ export class IntegrityService extends BaseService {
           this.jobRepository.queue({ name: JobName.IntegrityMissingFilesQueueAll, data: {} }),
           this.logger,
         ),
-      start: IntegrityService.referenceAudit(missingFiles.enabled, newConfig),
+      start: false,
     });
 
     this.cronRepository.create({
@@ -116,7 +114,7 @@ export class IntegrityService extends BaseService {
       expression: checksumFiles.cronExpression,
       onTick: () =>
         handlePromiseError(this.jobRepository.queue({ name: JobName.IntegrityChecksumFiles, data: {} }), this.logger),
-      start: checksumFiles.enabled,
+      start: false,
     });
   }
 
@@ -132,19 +130,20 @@ export class IntegrityService extends BaseService {
     this.cronRepository.update({
       name: 'integrityUntrackedFiles',
       expression: untrackedFiles.cronExpression,
-      start: IntegrityService.referenceAudit(untrackedFiles.enabled, newConfig),
+      // FL-363: the overnight schedule runs the file checks
+      start: false,
     });
 
     this.cronRepository.update({
       name: 'integrityMissingFiles',
       expression: missingFiles.cronExpression,
-      start: IntegrityService.referenceAudit(missingFiles.enabled, newConfig),
+      start: false,
     });
 
     this.cronRepository.update({
       name: 'integrityChecksumFiles',
       expression: checksumFiles.cronExpression,
-      start: checksumFiles.enabled,
+      start: false,
     });
   }
 

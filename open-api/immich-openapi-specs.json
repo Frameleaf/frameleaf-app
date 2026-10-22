@@ -336,16 +336,16 @@
         "x-immich-state": "Alpha"
       }
     },
-    "/admin/auth/oauth-check": {
-      "post": {
-        "description": "Asks the provider at the issuer URL for its sign-in details and says whether it answered. Nothing is saved.",
-        "operationId": "checkOAuthProvider",
+    "/admin/attention/dismissed": {
+      "put": {
+        "description": "Dismisses an Overview item so it no longer counts as needing attention, or brings it back. It stays in the list of what was checked.",
+        "operationId": "setAttentionDismissed",
         "parameters": [],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/OAuthCheckDto"
+                "$ref": "#/components/schemas/AttentionDismissDto"
               }
             }
           },
@@ -356,7 +356,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OAuthCheckResponseDto"
+                  "$ref": "#/components/schemas/AttentionResponseDto"
                 }
               }
             },
@@ -374,9 +374,9 @@
             "api_key": []
           }
         ],
-        "summary": "Check a sign-in provider",
+        "summary": "Dismiss an attention item",
         "tags": [
-          "Authentication (admin)"
+          "Attention (admin)"
         ],
         "x-immich-admin-only": true,
         "x-immich-history": [
@@ -389,7 +389,7 @@
             "state": "Alpha"
           }
         ],
-        "x-immich-permission": "systemConfig.update",
+        "x-immich-permission": "server.statistics",
         "x-immich-state": "Alpha"
       }
     },
@@ -7167,6 +7167,147 @@
           }
         ],
         "x-immich-state": "Stable"
+      }
+    },
+    "/admin/overnight": {
+      "get": {
+        "description": "When the night’s work starts next, which steps are on, the run in progress and what the last few nights did",
+        "operationId": "getOvernight",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OvernightResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the overnight schedule",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/overnight/run": {
+      "post": {
+        "description": "Starts every step that is on, one after another, including steps that run only when started",
+        "operationId": "runOvernight",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OvernightResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Run the overnight work now",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/overnight/stop": {
+      "post": {
+        "description": "Ends the run in progress; the steps it did not reach run on the next night",
+        "operationId": "stopOvernight",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OvernightResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Stop the overnight work",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
+        "x-immich-state": "Alpha"
       }
     },
     "/admin/physical-deduplication/applies/{id}/restore": {
@@ -58555,6 +58696,29 @@
             "description": "Database cleanup",
             "type": "boolean"
           },
+          "days": {
+            "default": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ],
+            "description": "Days of the week the night’s work starts on, Sunday 0 to Saturday 6",
+            "items": {
+              "maximum": 6,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "emptyTrash": {
+            "description": "The tidy-up step empties Trash and removes deleted accounts; off leaves Trash alone",
+            "type": "boolean"
+          },
           "generateMemories": {
             "description": "Generate memories",
             "type": "boolean"
@@ -58568,9 +58732,42 @@
             "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
             "type": "string"
           },
+          "steps": {
+            "$ref": "#/components/schemas/AdminConfigOvernightStepsDto",
+            "default": {
+              "cleanup": "nightly",
+              "fileChecks": "nightly",
+              "folders": "nightly",
+              "icloud": "nightly"
+            },
+            "description": "When each step runs: every night, once a week, or only when started"
+          },
+          "stopTime": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  ""
+                ]
+              },
+              {
+                "type": "string",
+                "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+              }
+            ],
+            "default": "06:00",
+            "description": "No step starts after this time (HH:MM); empty runs every step to the end"
+          },
           "syncQuotaUsage": {
             "description": "Sync quota usage",
             "type": "boolean"
+          },
+          "weeklyDay": {
+            "default": 0,
+            "description": "The day a step set to run once a week runs on, Sunday 0 to Saturday 6",
+            "maximum": 6,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -58797,6 +58994,27 @@
           "minRecognitionScore",
           "modelName"
         ],
+        "type": "object"
+      },
+      "AdminConfigOvernightStepsDto": {
+        "properties": {
+          "cleanup": {
+            "$ref": "#/components/schemas/OvernightStepTiming",
+            "default": "nightly"
+          },
+          "fileChecks": {
+            "$ref": "#/components/schemas/OvernightStepTiming",
+            "default": "nightly"
+          },
+          "folders": {
+            "$ref": "#/components/schemas/OvernightStepTiming",
+            "default": "nightly"
+          },
+          "icloud": {
+            "$ref": "#/components/schemas/OvernightStepTiming",
+            "default": "nightly"
+          }
+        },
         "type": "object"
       },
       "AdminConfigPasswordLoginDto": {
@@ -61598,12 +61816,6 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
-          "lastUsedAt": {
-            "description": "When the key was last used to reach the server; null when it never has been",
-            "format": "date-time",
-            "nullable": true,
-            "type": "string"
-          },
           "name": {
             "description": "API key name",
             "type": "string"
@@ -61631,7 +61843,6 @@
           "apiKey",
           "createdAt",
           "id",
-          "lastUsedAt",
           "name",
           "permissions",
           "secret",
@@ -61652,12 +61863,6 @@
             "description": "API key ID",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          },
-          "lastUsedAt": {
-            "description": "When the key was last used to reach the server; null when it never has been",
-            "format": "date-time",
-            "nullable": true,
             "type": "string"
           },
           "name": {
@@ -61682,7 +61887,6 @@
         "required": [
           "createdAt",
           "id",
-          "lastUsedAt",
           "name",
           "permissions",
           "updatedAt"
@@ -67259,6 +67463,26 @@
         ],
         "type": "string"
       },
+      "AttentionDismissDto": {
+        "properties": {
+          "dismissed": {
+            "description": "True dismisses it; false brings it back",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "The item to dismiss or bring back",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9:-]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dismissed",
+          "id"
+        ],
+        "type": "object"
+      },
       "AttentionItemDto": {
         "properties": {
           "backup": {
@@ -67376,6 +67600,13 @@
             },
             "type": "array"
           },
+          "dismissed": {
+            "description": "Overview items an administrator dismissed (FL-363); they stop counting as needing attention",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "items": {
             "description": "What needs attention, the most urgent first",
             "items": {
@@ -67387,6 +67618,7 @@
         "required": [
           "checkedAt",
           "checks",
+          "dismissed",
           "items"
         ],
         "type": "object"
@@ -69250,6 +69482,9 @@
             "minimum": 0,
             "nullable": true,
             "type": "integer"
+          },
+          "canConfirm": {
+            "type": "boolean"
           },
           "capacityUpdatedAt": {
             "nullable": true,
@@ -84990,6 +85225,7 @@
           "CloudMlLibraryBatch",
           "CloudBackupSchedule",
           "BackupSequence",
+          "OvernightSequence",
           "CloudBackupVerify",
           "PushDeliver",
           "PushBackupStaleCheck",
@@ -93764,57 +94000,6 @@
         ],
         "type": "object"
       },
-      "OAuthCheckDto": {
-        "properties": {
-          "allowInsecureRequests": {
-            "description": "Allow a provider without a valid certificate",
-            "type": "boolean"
-          },
-          "clientId": {
-            "description": "Client ID given by the provider",
-            "minLength": 1,
-            "type": "string"
-          },
-          "clientSecret": {
-            "description": "Client secret; empty to use the saved one",
-            "type": "string"
-          },
-          "issuerUrl": {
-            "description": "The provider address (issuer URL)",
-            "format": "uri",
-            "type": "string"
-          }
-        },
-        "required": [
-          "clientId",
-          "issuerUrl"
-        ],
-        "type": "object"
-      },
-      "OAuthCheckResponseDto": {
-        "properties": {
-          "error": {
-            "description": "Why the check failed, when it did",
-            "nullable": true,
-            "type": "string"
-          },
-          "issuer": {
-            "description": "The issuer the provider names, when it answered",
-            "nullable": true,
-            "type": "string"
-          },
-          "ok": {
-            "description": "Whether the provider answered",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "error",
-          "issuer",
-          "ok"
-        ],
-        "type": "object"
-      },
       "OAuthConfigDto": {
         "properties": {
           "codeChallenge": {
@@ -93880,6 +94065,169 @@
           "isOnboarded"
         ],
         "type": "object"
+      },
+      "OvernightNightDto": {
+        "properties": {
+          "finishedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "manual": {
+            "type": "boolean"
+          },
+          "results": {
+            "$ref": "#/components/schemas/OvernightResultsDto"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "finishedAt",
+          "manual",
+          "results",
+          "startedAt"
+        ],
+        "type": "object"
+      },
+      "OvernightResponseDto": {
+        "properties": {
+          "nextRunAt": {
+            "description": "When the next run starts",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "nights": {
+            "description": "The most recent runs, newest first",
+            "items": {
+              "$ref": "#/components/schemas/OvernightNightDto"
+            },
+            "type": "array"
+          },
+          "run": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OvernightRunDto"
+              }
+            ],
+            "description": "The run in progress",
+            "nullable": true
+          },
+          "steps": {
+            "description": "The steps, in the order a night runs them",
+            "items": {
+              "$ref": "#/components/schemas/OvernightStepStatusDto"
+            },
+            "type": "array"
+          },
+          "timezone": {
+            "description": "The server time zone the schedule runs in",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nextRunAt",
+          "nights",
+          "run",
+          "steps",
+          "timezone"
+        ],
+        "type": "object"
+      },
+      "OvernightResultsDto": {
+        "properties": {
+          "cleanup": {
+            "$ref": "#/components/schemas/OvernightStepResult"
+          },
+          "fileChecks": {
+            "$ref": "#/components/schemas/OvernightStepResult"
+          },
+          "folders": {
+            "$ref": "#/components/schemas/OvernightStepResult"
+          },
+          "icloud": {
+            "$ref": "#/components/schemas/OvernightStepResult"
+          }
+        },
+        "type": "object"
+      },
+      "OvernightRunDto": {
+        "properties": {
+          "manual": {
+            "description": "Started with Run now",
+            "type": "boolean"
+          },
+          "results": {
+            "$ref": "#/components/schemas/OvernightResultsDto"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "step": {
+            "$ref": "#/components/schemas/OvernightStep"
+          }
+        },
+        "required": [
+          "manual",
+          "results",
+          "startedAt",
+          "step"
+        ],
+        "type": "object"
+      },
+      "OvernightStep": {
+        "description": "A step of the overnight schedule",
+        "enum": [
+          "cleanup",
+          "folders",
+          "icloud",
+          "fileChecks"
+        ],
+        "type": "string"
+      },
+      "OvernightStepResult": {
+        "description": "What a step did: done; off (switched off or not set up); skipped (not its night); stopped (the stop time came first); failed (it did not start); unfinished (still running when the run moved on)",
+        "enum": [
+          "done",
+          "off",
+          "skipped",
+          "stopped",
+          "failed",
+          "unfinished"
+        ],
+        "type": "string"
+      },
+      "OvernightStepStatusDto": {
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/OvernightStep"
+          },
+          "on": {
+            "description": "Whether the step is set up and switched on",
+            "type": "boolean"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/OvernightStepTiming"
+          }
+        },
+        "required": [
+          "id",
+          "on",
+          "timing"
+        ],
+        "type": "object"
+      },
+      "OvernightStepTiming": {
+        "description": "When the step runs",
+        "enum": [
+          "nightly",
+          "weekly",
+          "manual"
+        ],
+        "type": "string"
       },
       "OwnerBackupDeletionDateState": {
         "enum": [

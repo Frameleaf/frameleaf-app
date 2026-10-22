@@ -15,9 +15,10 @@
    * it, then "Clear this list" (forgets the findings, touches nothing), then the destructive action
    * named for what it does, whose confirmation carries the count.
    *
-   * The schedule lives in the overnight schedule; the start times the server still keeps
-   * (`integrityChecks.*.cronExpression`, `libraryCare.healthScanCronExpression`) stay editable as
-   * plain times inside Advanced, never as expressions. `?report=<type>` opens one check's
+   * When the checks run is the overnight schedule's "Check files" step (FL-363): the start times the
+   * server still keeps (`missingFiles.cronExpression`, `checksumFiles.cronExpression`,
+   * `untrackedFiles.cronExpression`, `libraryCare.healthScanCronExpression`) no longer start
+   * anything, so they are not shown. `?report=<type>` opens one check's
    * path-by-path list (Details for support).
    */
   import { goto } from '$app/navigation';
@@ -29,9 +30,6 @@
     shareOf,
     SHARES,
     splitPath,
-    startCron,
-    startTime,
-    startTimes,
     STOP_AFTER_MINUTES,
     stopAfterMinutes,
     stopAfterMs,
@@ -51,7 +49,6 @@
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import TextLink from '$lib/components/frameleaf/settings/kit/TextLink.svelte';
   import { backupWhen } from '$lib/frameleaf/backup-overview';
-  import { clockTime } from '$lib/frameleaf/backup-schedule';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { utilitiesUrl } from '$lib/frameleaf/utilities';
@@ -370,27 +367,7 @@
   const shown = (type: IntegrityReport) => (found[type]?.items ?? []).slice(0, SHOWN);
   const more = (type: IntegrityReport) => Math.max(0, count(type) - shown(type).length);
 
-  // ---- Advanced: start times, stop after, how much each night ----
-  const timeOptions = (cron: string) => {
-    const current = startTime(cron);
-    return [
-      ...startTimes(current).map((time) => ({ value: time, label: clockTime(time, $locale) })),
-      ...(current === 'custom' ? [{ value: 'custom', label: $t('frameleaf_care_fc_start_custom') }] : []),
-    ];
-  };
-  const setStart = (target: { cronExpression: string }, value: string) => {
-    if (value !== 'custom') {
-      target.cronExpression = startCron(value);
-    }
-  };
-  const healthScanStart = $derived(care?.healthScanCronExpression ?? '');
-  const setHealthScanStart = (value: string) => {
-    const draft = settingsDraft.draft;
-    if (draft.libraryCare && value !== 'custom') {
-      draft.libraryCare.healthScanCronExpression = startCron(value);
-    }
-  };
-
+  // ---- Advanced: stop after, how much each night (FL-363: the overnight schedule decides when) ----
   const stopAfter = $derived(stopAfterMinutes(checks.checksumFiles.timeLimit));
   const stopLabel = (minutes: number) =>
     minutes % 60 === 0
@@ -594,45 +571,6 @@
             onChange={setShare}
           />
         </Row>
-        <p class="hint">{$t('frameleaf_care_fc_starts_hint')}</p>
-        <Row label={$t('frameleaf_care_fc_missing_starts')}>
-          <Select
-            label={$t('frameleaf_care_fc_missing_starts')}
-            value={startTime(checks.missingFiles.cronExpression)}
-            options={timeOptions(checks.missingFiles.cronExpression)}
-            disabled={held}
-            onChange={(value) => setStart(settingsDraft.draft.integrityChecks.missingFiles, value)}
-          />
-        </Row>
-        <Row label={$t('frameleaf_care_fc_damaged_starts')}>
-          <Select
-            label={$t('frameleaf_care_fc_damaged_starts')}
-            value={startTime(checks.checksumFiles.cronExpression)}
-            options={timeOptions(checks.checksumFiles.cronExpression)}
-            disabled={held}
-            onChange={(value) => setStart(settingsDraft.draft.integrityChecks.checksumFiles, value)}
-          />
-        </Row>
-        <Row label={$t('frameleaf_care_fc_stray_starts')}>
-          <Select
-            label={$t('frameleaf_care_fc_stray_starts')}
-            value={startTime(checks.untrackedFiles.cronExpression)}
-            options={timeOptions(checks.untrackedFiles.cronExpression)}
-            disabled={held}
-            onChange={(value) => setStart(settingsDraft.draft.integrityChecks.untrackedFiles, value)}
-          />
-        </Row>
-        {#if care}
-          <Row label={$t('frameleaf_care_fc_scan_starts')} help={$t('frameleaf_care_fc_scan_starts_help')}>
-            <Select
-              label={$t('frameleaf_care_fc_scan_starts')}
-              value={startTime(healthScanStart)}
-              options={timeOptions(healthScanStart)}
-              disabled={held}
-              onChange={setHealthScanStart}
-            />
-          </Row>
-        {/if}
       </Advanced>
       <Advanced summary={$t('frameleaf_care_fc_support')}>
         <p class="hint">{$t('frameleaf_care_fc_support_hint')}</p>

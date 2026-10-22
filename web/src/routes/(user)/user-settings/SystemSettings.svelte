@@ -19,7 +19,6 @@
   import LoggingSettings from '../../admin/system-settings/LoggingSettings.svelte';
   import MapSettings from '../../admin/system-settings/MapSettings.svelte';
   import NewVersionCheckSettings from '../../admin/system-settings/NewVersionCheckSettings.svelte';
-  import NightlyTasksSettings from '../../admin/system-settings/NightlyTasksSettings.svelte';
   import NotificationSettings from '../../admin/system-settings/NotificationSettings.svelte';
   import ServerSettings from '../../admin/system-settings/ServerSettings.svelte';
   import ThemeSettings from '../../admin/system-settings/ThemeSettings.svelte';
@@ -28,6 +27,7 @@
   import DeletedItems from '$lib/components/frameleaf/settings/storage/DeletedItems.svelte';
   import FolderLayout from '$lib/components/frameleaf/settings/storage/FolderLayout.svelte';
   import MoveOrExport from '$lib/components/frameleaf/settings/storage/MoveOrExport.svelte';
+  import OvernightSchedule from '$lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte';
   import Descriptions from '$lib/components/frameleaf/settings/intelligence/Descriptions.svelte';
   import Faces from '$lib/components/frameleaf/settings/intelligence/Faces.svelte';
   import LockedDetection from '$lib/components/frameleaf/settings/intelligence/LockedDetection.svelte';
@@ -300,7 +300,7 @@
     },
     {
       admin: true,
-      component: NightlyTasksSettings,
+      component: OvernightSchedule,
       title: $t('frameleaf_computers_page_overnight'),
       subtitle: $t('frameleaf_computers_page_overnight_description'),
       key: 'nightly-tasks',

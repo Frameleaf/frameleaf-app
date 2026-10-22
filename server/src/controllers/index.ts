@@ -12,6 +12,7 @@ import { AssetRestorationController } from 'src/controllers/asset-restoration.co
 import { AssetUploadResourceController } from 'src/controllers/asset-upload-resource.controller.js';
 import { AssetController } from 'src/controllers/asset.controller.js';
 import { AttentionController } from 'src/controllers/attention.controller.js';
+import { OvernightController } from 'src/controllers/overnight.controller.js';
 import { AuthAdminController } from 'src/controllers/auth-admin.controller.js';
 import { AuthController } from 'src/controllers/auth.controller.js';
 import { BackupDeviceAdminController, BackupDeviceController } from 'src/controllers/backup-device.controller.js';
@@ -158,6 +159,7 @@ export const controllers = [
   AssetMediaController,
   AssetRestorationController,
   AttentionController,
+  OvernightController,
   AuthController,
   AuthAdminController,
   AnalyticsController,

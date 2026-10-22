@@ -535,6 +535,7 @@ export type JobItem =
   // Backups
   | { name: JobName.DatabaseBackup; data?: IBaseJob }
   | { name: JobName.BackupSequence; data?: IBaseJob }
+  | { name: JobName.OvernightSequence; data?: { manual?: boolean } }
 
   // Transcoding
   | { name: JobName.AssetEncodeVideoQueueAll; data: IBaseJob }
@@ -1509,6 +1510,8 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.BackupRestoreVerification]: BackupRestoreVerification;
   [SystemMetadataKey.BackupSequence]: BackupSequenceState;
   [SystemMetadataKey.ApiKeyLastUsed]: Record<string, string>;
+  [SystemMetadataKey.OvernightSequence]: import('src/utils/overnight.js').OvernightState;
+  [SystemMetadataKey.OverviewDismissed]: { ids: string[] };
   [SystemMetadataKey.FrameleafSetup]: FrameleafSetupState;
   [SystemMetadataKey.FrameleafMailConnection]: FrameleafMailConnection;
   [SystemMetadataKey.FrameleafMailSignIn]: FrameleafMailSignIn;

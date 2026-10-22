@@ -641,6 +641,10 @@ export enum SystemMetadataKey {
   BackupSequence = 'backup-sequence',
   /** FL-367: when each API key was last used, by key id (recorded at most every few minutes). */
   ApiKeyLastUsed = 'api-key-last-used',
+  /** FL-363: the overnight run in progress, and the last few nights' results. */
+  OvernightSequence = 'overnight-sequence',
+  /** FL-363: the Overview items an administrator dismissed, so they stop counting as needing attention. */
+  OverviewDismissed = 'overview-dismissed',
   /**
    * FL-176: Frameleaf first-run setup — whether it is complete, which flow it runs (a new server or
    * the first Frameleaf launch on an existing library) and the saved per-step progress. Never a
@@ -2386,6 +2390,8 @@ export enum JobName {
   CloudBackupSchedule = 'CloudBackupSchedule',
   /** FL-362: the one backup schedule's tick: back up each place that is on, one after another. */
   BackupSequence = 'BackupSequence',
+  /** FL-363: the overnight schedule's tick: run each night step that is due, one after another. */
+  OvernightSequence = 'OvernightSequence',
   /** FL-164: the hourly check that queues the weekly sample or the monthly full verification when due. */
   CloudBackupVerify = 'CloudBackupVerify',
   /** FL-228: one push notice, encrypted per device and handed to the Frameleaf push gateway. */
@@ -2559,6 +2565,10 @@ export enum DatabaseLock {
   FrameleafMailConnection = 975,
   /** Serialize backup run state changes across the schedule owner and job workers. */
   BackupSequenceRun = 976,
+  /** FL-363: one server watches the overnight run and moves it from one step to the next. */
+  OvernightSequence = 977,
+  /** FL-363: overnight run state changes happen one at a time. */
+  OvernightSequenceRun = 978,
   /**
    * Universal storage: linking an upload to the server's one file for its content, or registering a new
    * one, happens one upload at a time per checksum (taken with the checksum as the second key), so two
@@ -3173,6 +3183,18 @@ export enum VersionCheckFrequency {
   Daily = 'daily',
   Weekly = 'weekly',
 }
+
+/** FL-363: when one overnight step runs: every night with the others, once a week, or only when started. */
+export enum OvernightStepTiming {
+  Nightly = 'nightly',
+  Weekly = 'weekly',
+  Manual = 'manual',
+}
+
+export const OvernightStepTimingSchema = z
+  .enum(OvernightStepTiming)
+  .describe('When the step runs')
+  .meta({ id: 'OvernightStepTiming' });
 
 export const VersionCheckFrequencySchema = z
   .enum(VersionCheckFrequency)

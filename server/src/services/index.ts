@@ -13,6 +13,7 @@ import { AssetUploadDirectService } from 'src/services/asset-upload-direct.servi
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { AttentionService } from 'src/services/attention.service.js';
+import { OvernightService } from 'src/services/overnight.service.js';
 import { AuthAdminService } from 'src/services/auth-admin.service.js';
 import { AuthService } from 'src/services/auth.service.js';
 import { BackupDeviceService } from 'src/services/backup-device.service.js';
@@ -234,6 +235,7 @@ export const services = [
   AssetRestorationService,
   AssetService,
   AttentionService,
+  OvernightService,
   AuthService,
   AuthAdminService,
   AnalyticsService,

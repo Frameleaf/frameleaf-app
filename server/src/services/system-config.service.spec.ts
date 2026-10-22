@@ -25,6 +25,7 @@ import {
   VersionCheckFrequency,
   VideoCodec,
   VideoContainer,
+  OvernightStepTiming,
 } from 'src/enum.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
 import { DeepPartial } from 'src/types.js';
@@ -265,6 +266,16 @@ const updatedConfig = Object.freeze<SystemConfig>({
     missingThumbnails: true,
     generateMemories: true,
     syncQuotaUsage: true,
+    stopTime: '06:00',
+    days: [0, 1, 2, 3, 4, 5, 6],
+    emptyTrash: true,
+    weeklyDay: 0,
+    steps: {
+      cleanup: OvernightStepTiming.Nightly,
+      folders: OvernightStepTiming.Nightly,
+      icloud: OvernightStepTiming.Nightly,
+      fileChecks: OvernightStepTiming.Nightly,
+    },
   },
   reverseGeocoding: {
     enabled: true,

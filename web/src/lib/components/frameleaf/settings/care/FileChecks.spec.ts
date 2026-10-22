@@ -191,15 +191,8 @@ describe('File checks (FL-366)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Half' }));
     expect(store.draft.integrityChecks.checksumFiles.percentageLimit).toBe(0.5);
 
-    const start = screen.getByRole('combobox', { name: 'Damaged files check starts at' });
-    expect(start).toHaveValue('03:00');
-    await fireEvent.change(start, { target: { value: '04:00' } });
-    expect(store.draft.integrityChecks.checksumFiles.cronExpression).toBe('0 4 * * *');
-
-    await fireEvent.change(screen.getByRole('combobox', { name: 'File health scan starts at' }), {
-      target: { value: '01:00' },
-    });
-    expect(store.draft.libraryCare?.healthScanCronExpression).toBe('0 1 * * *');
+    // FL-363: the overnight schedule decides when the checks run, so no start time is offered here
+    expect(screen.queryByRole('combobox', { name: 'Damaged files check starts at' })).not.toBeInTheDocument();
     // no expression is ever shown
     expect(screen.queryByText(/\* \* \*/)).not.toBeInTheDocument();
   });

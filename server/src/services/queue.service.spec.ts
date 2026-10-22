@@ -85,6 +85,26 @@ describe(QueueService.name, () => {
 
       expect(mocks.job.queueAll).toHaveBeenCalledWith(expect.not.arrayContaining([{ name: JobName.AnalyticsCollect }]));
     });
+
+    it('leaves Trash alone while emptying it is off (FL-363)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ nightlyTasks: { emptyTrash: false } });
+
+      await sut.handleNightlyJobs();
+
+      const [jobs] = mocks.job.queueAll.mock.calls[0];
+      expect(jobs).not.toContainEqual({ name: JobName.AssetDeleteCheck });
+      expect(jobs).not.toContainEqual({ name: JobName.UserDeleteCheck });
+      expect(jobs).toContainEqual({ name: JobName.PersonCleanup });
+    });
+
+    it('queues only the nightly counts on a night the tidy-up does not run (FL-363)', async () => {
+      await sut.handleNightlyJobs({ cleanup: false });
+
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.AnalyticsCollect },
+        { name: JobName.PushBackupStaleCheck },
+      ]);
+    });
   });
 
   describe('getAllJobStatus', () => {

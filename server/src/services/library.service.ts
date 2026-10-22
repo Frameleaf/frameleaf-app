@@ -95,7 +95,9 @@ export class LibraryService extends BaseService {
         name: CronJob.LibraryScan,
         expression: scan.cronExpression,
         onTick: () => handlePromiseError(this.jobRepository.queue({ name: JobName.LibraryScanQueueAll }), this.logger),
-        start: scan.enabled,
+        // FL-363: added folders are checked by the overnight schedule (`OvernightService`), so this
+        // timer no longer starts; `scan.enabled` decides whether the overnight step runs.
+        start: false,
       });
     }
 
@@ -113,7 +115,7 @@ export class LibraryService extends BaseService {
     this.cronRepository.update({
       name: CronJob.LibraryScan,
       expression: library.scan.cronExpression,
-      start: library.scan.enabled,
+      start: false,
     });
 
     if (library.watch.enabled !== this.watchLibraries) {

@@ -958,6 +958,10 @@ export class JobRepository {
       case JobName.BackupSequence: {
         return { deduplication: { id: JobName.BackupSequence } };
       }
+      // FL-363: one start of the overnight schedule at a time
+      case JobName.OvernightSequence: {
+        return { deduplication: { id: JobName.OvernightSequence } };
+      }
       // FL-164: one schedule tick and one verification check at a time
       case JobName.CloudBackupSchedule: {
         return { deduplication: { id: JobName.CloudBackupSchedule } };

@@ -25,7 +25,6 @@
    */
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import BackupSummary from '$lib/components/frameleaf/cloud/BackupSummary.svelte';
   import AnalyticsChart from '$lib/components/frameleaf/analytics/AnalyticsChart.svelte';
   import AnalyticsDataTable from '$lib/components/frameleaf/analytics/AnalyticsDataTable.svelte';
   import LibraryHero from '$lib/components/frameleaf/analytics/LibraryHero.svelte';
@@ -48,7 +47,13 @@
   import { locale } from '$lib/stores/preferences.store';
   import { downloadBlob } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { AnalyticsRange, AnalyticsScopeKind, type AnalyticsReportResponseDto } from '@frameleaf/sdk';
+  import {
+    AnalyticsRange,
+    AnalyticsScopeKind,
+    createJob,
+    ManualJobName,
+    type AnalyticsReportResponseDto,
+  } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight, mdiDownload } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
@@ -96,6 +101,21 @@
     report.insights?.peopleAndPlaces ? $t('frameleaf_analytics_your_library') : selectedLabel,
   );
   const settingsArea = (area: SettingsAreaId) => commandCenterUrl(area);
+
+  // FL-363: "Count now" on the "No history yet" banner starts tonight's count straight away.
+  let counting = $state(false);
+  let counted = $state('');
+  const countNow = async () => {
+    counting = true;
+    try {
+      await createJob({ jobCreateDto: { name: ManualJobName.AnalyticsCollect } });
+      counted = $t('frameleaf_analytics_counting');
+    } catch {
+      counted = $t('frameleaf_analytics_count_failed');
+    } finally {
+      counting = false;
+    }
+  };
 
   /** The route's load reads the report for the new address; this page never fetches on its own. */
   const load = async (next: { range?: AnalyticsRange }) => {
@@ -164,6 +184,11 @@
       {$t('frameleaf_analytics_as_of', { values: { date: dateTime(report.generatedAt) } })}
       {#if notice === 'unknown'}
         {$t('frameleaf_analytics_history_unknown')}
+        <!-- FL-363: the count that starts the charts, here instead of under another name in Jobs. -->
+        <button type="button" class="text-button count-now" disabled={counting} onclick={countNow}
+          >{$t('frameleaf_analytics_count_now')}</button
+        >
+        {#if counted}<span role="status">{counted}</span>{/if}
       {:else if notice === 'stale' && report.history.lastObservedAt}
         {$t('frameleaf_analytics_history_stale', { values: { date: dateTime(report.history.lastObservedAt) } })}
       {:else if notice === 'gaps'}
@@ -258,7 +283,13 @@
     </figure>
   </div>
 
-  <BackupSummary analytics />
+  <!-- FL-363: backup status lives in Backup; this page no longer keeps a third copy of it. -->
+  <p class="backup-note">
+    {$t('frameleaf_analytics_backup_elsewhere')}
+    <a class="text-button" href={settingsArea('backups')}
+      >{$t('frameleaf_analytics_open_backup')}<Icon icon={mdiChevronRight} size="14" /></a
+    >
+  </p>
 
   {#if report.insights}
     {#if report.insights.hiddenItems > 0}
@@ -417,11 +448,12 @@
     </section>
   </div>
 
-  <section class="card fl-continuous-corners">
-    {@render cardHeading($t('frameleaf_analytics_under_the_hood'), $t('frameleaf_analytics_under_the_hood_caption'), {
-      href: settingsArea('care'),
-      label: $t('frameleaf_analytics_library_care'),
-    })}
+  <!-- FL-363: "Technical details", closed until asked for; exact bytes stay in the export. -->
+  <details class="card technical fl-continuous-corners">
+    <summary>
+      <span>{$t('frameleaf_analytics_under_the_hood')}</span>
+      <small>{$t('frameleaf_analytics_under_the_hood_caption')}</small>
+    </summary>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <div class="scroll" tabindex="0" role="region" aria-label={$t('frameleaf_analytics_under_the_hood')}>
       <table class="geek">
@@ -438,9 +470,7 @@
             <tr>
               <th scope="row">{$t(`frameleaf_analytics_inventory_${row.id}` as Translations)}</th>
               <td>
-                {row.unit === 'bytes'
-                  ? $t('frameleaf_analytics_bytes', { values: { value: number(row.value) } })
-                  : number(row.value)}
+                {row.unit === 'bytes' ? f.size(row.value) : number(row.value)}
               </td>
               <td>{$t(`frameleaf_analytics_definition_${row.id}` as Translations)}</td>
             </tr>
@@ -470,7 +500,10 @@
         </tbody>
       </table>
     </div>
-  </section>
+    <a class="text-button" href={settingsArea('care')}
+      >{$t('frameleaf_analytics_library_care')}<Icon icon={mdiChevronRight} size="14" /></a
+    >
+  </details>
 
   <footer class="footnote">
     <strong>{$t('frameleaf_analytics_about')}</strong>
@@ -878,5 +911,35 @@
       flex-wrap: wrap;
       gap: 8px;
     }
+  }
+  .count-now {
+    margin-inline-start: var(--fl-space-2);
+  }
+  .backup-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--fl-space-2);
+    margin: 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .technical > summary {
+    display: grid;
+    gap: var(--fl-space-1);
+    cursor: pointer;
+    list-style-position: inside;
+  }
+  .technical > summary span {
+    font-weight: 600;
+  }
+  .technical > summary small {
+    color: var(--fl-muted);
+  }
+  .technical[open] > summary {
+    margin-bottom: var(--fl-space-4);
+  }
+  .technical > .text-button {
+    margin-top: var(--fl-space-4);
   }
 </style>

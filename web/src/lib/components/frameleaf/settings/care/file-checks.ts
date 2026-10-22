@@ -2,28 +2,10 @@
  * File checks (FL-366) in plain words: the pieces of the page that are not drawing, kept apart so
  * they can be tested on their own.
  *
- * - When a check starts: the server keeps a schedule expression; the page offers a time of night.
  * - How much the damage check reads: "Stop after" (the server keeps milliseconds) and "Check each
  *   night" (the server keeps a share from 0 to 1).
  * - "A drive is unplugged": many missing files that all sit in one folder.
  */
-import { cronToSchedule, scheduleToCron } from '$lib/frameleaf/backup-schedule';
-
-/** The value of a "Starts at" choice: a clock time ("03:00"), or `custom` for a schedule the choices cannot say. */
-export const startTime = (cron: string) => {
-  const schedule = cronToSchedule(cron);
-  return schedule.every === 'day' ? schedule.time : 'custom';
-};
-
-/** The schedule expression that starts a check every night at `time` ("03:00"). */
-export const startCron = (time: string) => scheduleToCron({ every: 'day', time });
-
-/** Every hour of the day as a "Starts at" choice, plus the saved time when it is not on the hour. */
-export const startTimes = (current: string) => {
-  const hours = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}:00`);
-  return current === 'custom' || hours.includes(current) ? hours : [...hours, current].sort();
-};
-
 const MINUTE_MS = 60_000;
 /** "Stop after": how long one night's damage check may read files, in minutes. */
 export const STOP_AFTER_MINUTES = [30, 60, 120, 240, 480] as const;

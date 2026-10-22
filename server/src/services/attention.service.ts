@@ -3,7 +3,12 @@ import { DateTime } from 'luxon';
 import type { SystemConfig } from 'src/config.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { ATTENTION_KINDS, type AttentionKind, type AttentionResponseDto } from 'src/dtos/attention.dto.js';
+import {
+  ATTENTION_KINDS,
+  type AttentionDismissDto,
+  type AttentionKind,
+  type AttentionResponseDto,
+} from 'src/dtos/attention.dto.js';
 import { QueueName, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -70,7 +75,25 @@ export class AttentionService {
       checkedAt: now.toISOString(),
       items: sortAttention(ATTENTION_KINDS.flatMap((kind) => results[kind].items)),
       checks: ATTENTION_KINDS.map((kind) => ({ kind, state: results[kind].state })),
+      dismissed: await this.dismissed(),
     };
+  }
+
+  private async dismissed(): Promise<string[]> {
+    const stored = await this.systemMetadataRepository.get(SystemMetadataKey.OverviewDismissed).catch(() => null);
+    return stored?.ids ?? [];
+  }
+
+  /** FL-363: dismiss an Overview item so it stops counting, or bring it back. Kept for every administrator. */
+  async setDismissed({ id, dismissed }: AttentionDismissDto): Promise<AttentionResponseDto> {
+    const ids = new Set(await this.dismissed());
+    if (dismissed) {
+      ids.add(id);
+    } else {
+      ids.delete(id);
+    }
+    await this.systemMetadataRepository.set(SystemMetadataKey.OverviewDismissed, { ids: [...ids].slice(0, 32) });
+    return this.getAttention();
   }
 
   private async check(kind: AttentionKind, read: () => Promise<SignalResult>): Promise<SignalResult> {

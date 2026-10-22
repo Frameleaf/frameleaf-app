@@ -112,26 +112,16 @@ export type AttentionResponseDto = {
     checkedAt: string;
     /** How each kind of check came out, in a fixed order */
     checks: AttentionCheckDto[];
+    /** Overview items an administrator dismissed (FL-363); they stop counting as needing attention */
+    dismissed: string[];
     /** What needs attention, the most urgent first */
     items: AttentionItemDto[];
 };
-export type OAuthCheckDto = {
-    /** Allow a provider without a valid certificate */
-    allowInsecureRequests?: boolean;
-    /** Client ID given by the provider */
-    clientId: string;
-    /** Client secret; empty to use the saved one */
-    clientSecret?: string;
-    /** The provider address (issuer URL) */
-    issuerUrl: string;
-};
-export type OAuthCheckResponseDto = {
-    /** Why the check failed, when it did */
-    error: string | null;
-    /** The issuer the provider names, when it answered */
-    issuer: string | null;
-    /** Whether the provider answered */
-    ok: boolean;
+export type AttentionDismissDto = {
+    /** True dismisses it; false brings it back */
+    dismissed: boolean;
+    /** The item to dismiss or bring back */
+    id: string;
 };
 export type BackupDeviceDto = {
     appVersion: string;
@@ -153,6 +143,7 @@ export type BackupDeviceListDto = {
 };
 export type BuddyStatusDto = {
     availableBytes: number | null;
+    canConfirm?: boolean;
     capacityUpdatedAt: string | null;
     configured: boolean;
     connection: string | null;
@@ -1764,19 +1755,35 @@ export type AdminConfigNewVersionCheckDto = {
     enabled: boolean;
     frequency?: VersionCheckFrequency;
 };
+export type AdminConfigOvernightStepsDto = {
+    cleanup?: OvernightStepTiming;
+    fileChecks?: OvernightStepTiming;
+    folders?: OvernightStepTiming;
+    icloud?: OvernightStepTiming;
+};
 export type AdminConfigNightlyTasksDto = {
     /** Cluster new faces */
     clusterNewFaces: boolean;
     /** Database cleanup */
     databaseCleanup: boolean;
+    /** Days of the week the night’s work starts on, Sunday 0 to Saturday 6 */
+    days?: number[];
+    /** The tidy-up step empties Trash and removes deleted accounts; off leaves Trash alone */
+    emptyTrash?: boolean;
     /** Generate memories */
     generateMemories: boolean;
     /** Missing thumbnails */
     missingThumbnails: boolean;
     /** Start time (HH:MM) */
     startTime: string;
+    /** When each step runs: every night, once a week, or only when started */
+    steps?: AdminConfigOvernightStepsDto;
+    /** No step starts after this time (HH:MM); empty runs every step to the end */
+    stopTime?: "" | string;
     /** Sync quota usage */
     syncQuotaUsage: boolean;
+    /** The day a step set to run once a week runs on, Sunday 0 to Saturday 6 */
+    weeklyDay?: number;
 };
 export type AdminConfigSmtpTransportDto = {
     /** SMTP server hostname */
@@ -2558,6 +2565,43 @@ export type TemplateResponseDto = {
 export type TestEmailResponseDto = {
     /** Email message ID */
     messageId: string;
+};
+export type OvernightResultsDto = {
+    cleanup?: OvernightStepResult;
+    fileChecks?: OvernightStepResult;
+    folders?: OvernightStepResult;
+    icloud?: OvernightStepResult;
+};
+export type OvernightNightDto = {
+    finishedAt: string;
+    manual: boolean;
+    results: OvernightResultsDto;
+    startedAt: string;
+};
+export type OvernightRunDto = {
+    /** Started with Run now */
+    manual: boolean;
+    results: OvernightResultsDto;
+    startedAt: string;
+    step: OvernightStep;
+};
+export type OvernightStepStatusDto = {
+    id: OvernightStep;
+    /** Whether the step is set up and switched on */
+    on: boolean;
+    timing: OvernightStepTiming;
+};
+export type OvernightResponseDto = {
+    /** When the next run starts */
+    nextRunAt: string | null;
+    /** The most recent runs, newest first */
+    nights: OvernightNightDto[];
+    /** The run in progress */
+    run: (OvernightRunDto) | null;
+    /** The steps, in the order a night runs them */
+    steps: OvernightStepStatusDto[];
+    /** The server time zone the schedule runs in */
+    timezone: string;
 };
 export type PhysicalDeduplicationRestoreRequestDto = {
     /** A copy of the applied plan whose own file is still on disk */
@@ -4283,8 +4327,6 @@ export type ApiKeyResponseDto = {
     createdAt: string;
     /** API key ID */
     id: string;
-    /** When the key was last used to reach the server; null when it never has been */
-    lastUsedAt: string | null;
     /** API key name */
     name: string;
     /** List of permissions */
@@ -4304,8 +4346,6 @@ export type ApiKeyCreateResponseDto = {
     createdAt: string;
     /** API key ID */
     id: string;
-    /** When the key was last used to reach the server; null when it never has been */
-    lastUsedAt: string | null;
     /** API key name */
     name: string;
     /** List of permissions */
@@ -18217,18 +18257,18 @@ export function getAttention(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
- * Check a sign-in provider
+ * Dismiss an attention item
  */
-export function checkOAuthProvider({ oAuthCheckDto }: {
-    oAuthCheckDto: OAuthCheckDto;
+export function setAttentionDismissed({ attentionDismissDto }: {
+    attentionDismissDto: AttentionDismissDto;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: OAuthCheckResponseDto;
-    }>("/admin/auth/oauth-check", oazapfts.json({
+        data: AttentionResponseDto;
+    }>("/admin/attention/dismissed", oazapfts.json({
         ...opts,
-        method: "POST",
-        body: oAuthCheckDto
+        method: "PUT",
+        body: attentionDismissDto
     })));
 }
 /**
@@ -19934,6 +19974,41 @@ export function sendTestEmailAdmin({ adminConfigSmtpDto }: {
         method: "POST",
         body: adminConfigSmtpDto
     })));
+}
+/**
+ * Get the overnight schedule
+ */
+export function getOvernight(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OvernightResponseDto;
+    }>("/admin/overnight", {
+        ...opts
+    }));
+}
+/**
+ * Run the overnight work now
+ */
+export function runOvernight(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OvernightResponseDto;
+    }>("/admin/overnight/run", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Stop the overnight work
+ */
+export function stopOvernight(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OvernightResponseDto;
+    }>("/admin/overnight/stop", {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * Restore a copy of an applied physical deduplication plan
@@ -32260,6 +32335,11 @@ export enum VersionCheckFrequency {
     Daily = "daily",
     Weekly = "weekly"
 }
+export enum OvernightStepTiming {
+    Nightly = "nightly",
+    Weekly = "weekly",
+    Manual = "manual"
+}
 export enum MailTransportType {
     Smtp = "smtp",
     Gmail = "gmail",
@@ -32452,6 +32532,20 @@ export enum MailSignInUnavailableReason {
     NotConfigured = "not-configured",
     NotLinked = "not-linked",
     CloudUnreachable = "cloud-unreachable"
+}
+export enum OvernightStepResult {
+    Done = "done",
+    Off = "off",
+    Skipped = "skipped",
+    Stopped = "stopped",
+    Failed = "failed",
+    Unfinished = "unfinished"
+}
+export enum OvernightStep {
+    Cleanup = "cleanup",
+    Folders = "folders",
+    Icloud = "icloud",
+    FileChecks = "fileChecks"
 }
 export enum PhysicalDeduplicationCopyFile {
     Removed = "removed",
@@ -34773,6 +34867,7 @@ export enum JobName {
     CloudMlLibraryBatch = "CloudMlLibraryBatch",
     CloudBackupSchedule = "CloudBackupSchedule",
     BackupSequence = "BackupSequence",
+    OvernightSequence = "OvernightSequence",
     CloudBackupVerify = "CloudBackupVerify",
     PushDeliver = "PushDeliver",
     PushBackupStaleCheck = "PushBackupStaleCheck",

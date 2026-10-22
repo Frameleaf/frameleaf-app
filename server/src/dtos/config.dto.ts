@@ -33,6 +33,8 @@ import {
   MailTransportTypeSchema,
   OAuthTokenEndpointAuthMethod,
   OAuthTokenEndpointAuthMethodSchema,
+  OvernightStepTiming,
+  OvernightStepTimingSchema,
   ReleaseChannel,
   ReleaseChannelSchema,
   ToneMapping,
@@ -1206,6 +1208,47 @@ const AdminConfigSchemaWithVisibility = z
         clusterNewFaces: configBool.describe('Cluster new faces'),
         generateMemories: configBool.describe('Generate memories'),
         syncQuotaUsage: configBool.describe('Sync quota usage'),
+        // FL-363: one overnight schedule. Defaulted, so a stored configuration, a config file or an
+        // older client that does not name them keeps today's behaviour plus the new order.
+        stopTime: z
+          .union([
+            z.literal(''),
+            z.iso.time({
+              precision: -1,
+              error: (iss) => `Invalid input: expected string in HH:MM format, received ${typeof iss.input}`,
+            }),
+          ])
+          .default('06:00')
+          .describe('No step starts after this time (HH:MM); empty runs every step to the end'),
+        days: z
+          .array(z.int().min(0).max(6))
+          .min(1)
+          .default([0, 1, 2, 3, 4, 5, 6])
+          .describe('Days of the week the night’s work starts on, Sunday 0 to Saturday 6'),
+        emptyTrash: configBool
+          .default(true)
+          .describe('The tidy-up step empties Trash and removes deleted accounts; off leaves Trash alone'),
+        weeklyDay: z
+          .int()
+          .min(0)
+          .max(6)
+          .default(0)
+          .describe('The day a step set to run once a week runs on, Sunday 0 to Saturday 6'),
+        steps: z
+          .object({
+            cleanup: OvernightStepTimingSchema.default(OvernightStepTiming.Nightly),
+            folders: OvernightStepTimingSchema.default(OvernightStepTiming.Nightly),
+            icloud: OvernightStepTimingSchema.default(OvernightStepTiming.Nightly),
+            fileChecks: OvernightStepTimingSchema.default(OvernightStepTiming.Nightly),
+          })
+          .meta({ id: 'AdminConfigOvernightStepsDto' })
+          .default({
+            cleanup: OvernightStepTiming.Nightly,
+            folders: OvernightStepTiming.Nightly,
+            icloud: OvernightStepTiming.Nightly,
+            fileChecks: OvernightStepTiming.Nightly,
+          })
+          .describe('When each step runs: every night, once a week, or only when started'),
       })
       .meta({ id: 'AdminConfigNightlyTasksDto' }),
     // FL-365: Storage & originals › "Warn me when the disk is nearly full". Defaulted, so a stored
@@ -1780,6 +1823,16 @@ export const defaults = Object.freeze<SystemConfig>({
     syncQuotaUsage: true,
     missingThumbnails: true,
     clusterNewFaces: true,
+    stopTime: '06:00',
+    days: [0, 1, 2, 3, 4, 5, 6],
+    emptyTrash: true,
+    weeklyDay: 0,
+    steps: {
+      cleanup: OvernightStepTiming.Nightly,
+      folders: OvernightStepTiming.Nightly,
+      icloud: OvernightStepTiming.Nightly,
+      fileChecks: OvernightStepTiming.Nightly,
+    },
   },
   storageWarning: {
     percent: 90,
