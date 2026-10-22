@@ -12,6 +12,9 @@ import { containerText, parseContainerSettings } from '../ui/src/presentation.js
 
 // Changing the advanced container settings of an installed stack: journaled, re-rendered, cancellable.
 
+// Rendering probes the host's GPU via `docker info` on x64 (up to 10 s on CI runners); keep the test off the host.
+process.env.MANAGER_ML_ACCELERATION = 'cpu';
+
 const image = 'ghcr.io/frameleaf/server@sha256:' + 'a'.repeat(64);
 const installation = {
   id: 'a'.repeat(12),
