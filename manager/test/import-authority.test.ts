@@ -80,7 +80,7 @@ async function fixture() {
   const internal = operations as unknown as {
     configureImport(operation: Operation, review: { source: Source }, installation: Installation): Promise<void>;
     cancelOperation(operation: Operation): Promise<void>;
-    fencing: { recover(): Promise<void> };
+    fencing: { recover(): Promise<void>; retiredServices(): null };
   };
   store.set('installation', installation);
   store.set('database-password', 'fixture-destination-password');
@@ -314,6 +314,7 @@ for (const revokeFails of [false, true]) {
         recover: async () => {
           f.events.push('recover-source');
         },
+        retiredServices: () => null,
       };
       f.docker.sql = async (_database, sql) => {
         f.events.push(sql);
@@ -382,7 +383,7 @@ test('resumed cutover captures fenced settings and applies the reviewed ML choic
     };
     const internal = f.operations as unknown as {
       install(operation: Operation, review: unknown): Promise<void>;
-      fencing: { verify(): Promise<void>; assertMedia(): Promise<void> };
+      fencing: { verify(): Promise<void>; assertMedia(): Promise<void>; retireSourceServices(): Promise<unknown[]> };
       releases: { eligible(): Promise<void> };
     };
     internal.fencing = {
@@ -391,6 +392,10 @@ test('resumed cutover captures fenced settings and applies the reviewed ML choic
       },
       assertMedia: async () => {
         f.events.push('assert-media');
+      },
+      retireSourceServices: async () => {
+        f.events.push('retire-source-services');
+        return [];
       },
     };
     internal.releases = { eligible: async () => {} };
@@ -424,6 +429,9 @@ test('resumed cutover captures fenced settings and applies the reviewed ML choic
     assert.ok(f.events.indexOf('capture-settings') < f.events.indexOf('apply-settings'));
     assert.ok(f.events.indexOf('apply-settings') < f.events.indexOf('start-frameleaf'));
     assert.ok(f.events.indexOf('revoke-reader') < f.events.indexOf('start-frameleaf'));
+    // FL-476: the source database retires only after its last use (the reader revocation), before Frameleaf starts.
+    assert.ok(f.events.indexOf('revoke-reader') < f.events.indexOf('retire-source-services'));
+    assert.ok(f.events.indexOf('retire-source-services') < f.events.indexOf('start-frameleaf'));
     assert.deepEqual(f.operation.receipts['capture-fenced-settings'], {
       environment: {},
       settings: liveSettings,
