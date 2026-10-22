@@ -848,6 +848,7 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
         tags: ['Parent'],
+        timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
       });
       mockReadTags({ TagsList: ['Parent'] });
@@ -863,6 +864,7 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
         tags: ['Parent/Child'],
+        timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
       });
       mockReadTags({ TagsList: ['Parent/Child'] });
@@ -888,6 +890,7 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
         tags: ['Parent'],
+        timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
       });
       mockReadTags({ Keywords: 'Parent' });
@@ -903,6 +906,7 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
         tags: ['Parent'],
+        timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
       });
       mockReadTags({ Keywords: ['Parent'] });
@@ -918,6 +922,7 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
         tags: ['Parent', '2024'],
+        timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
       });
       mockReadTags({ Keywords: ['Parent', 2024] });
@@ -934,6 +939,7 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
         tags: ['Parent/Child'],
+        timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
       });
       mockReadTags({ Keywords: 'Parent/Child' });
@@ -957,6 +963,7 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
         tags: ['Parent/Child', 'Child'],
+        timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
       });
       mockReadTags({ Keywords: 'Child', TagsList: ['Parent/Child'] });
@@ -981,6 +988,7 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
         tags: ['Parent/Child', 'TagA'],
+        timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
       });
       mockReadTags({ HierarchicalSubject: ['Parent|Child', 'TagA'] });
@@ -1013,7 +1021,11 @@ describe(MetadataService.name, () => {
     ])('preserves raw hierarchy delimiters and empty-list precedence: $tags', async ({ tags, expected }) => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: expected, updateId: 'fixture' });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: expected,
+        timeZone: null,
+        updateId: 'fixture',
+      });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
       mockReadTags(tags);
       await sut.handleMetadataExtraction({ id: asset.id });
@@ -1029,6 +1041,7 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
         tags: ['Parent', '2024'],
+        timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
       });
       mockReadTags({ HierarchicalSubject: ['Parent', 2024] });
@@ -1045,6 +1058,7 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
         tags: ['Mom|Dad'],
+        timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
       });
       mockReadTags({ HierarchicalSubject: ['Mom/Dad'] });
@@ -1064,6 +1078,7 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
         tags: ['Parent/Child', 'Parent2/Child2'],
+        timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
       });
       mockReadTags({ HierarchicalSubject: ['Parent2|Child2'], TagsList: ['Parent/Child'] });
@@ -1087,8 +1102,12 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags
-        .mockResolvedValueOnce({ tags: ['Parent/Child', 'Kept'], updateId: '00000000-0000-0000-0000-000000000001' })
-        .mockResolvedValueOnce({ tags: ['Kept'], updateId: '00000000-0000-0000-0000-000000000001' });
+        .mockResolvedValueOnce({
+          tags: ['Parent/Child', 'Kept'],
+          timeZone: null,
+          updateId: '00000000-0000-0000-0000-000000000001',
+        })
+        .mockResolvedValueOnce({ tags: ['Kept'], timeZone: null, updateId: '00000000-0000-0000-0000-000000000001' });
       mockReadTags({ TagsList: ['Kept'] });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
 
@@ -1678,6 +1697,37 @@ describe(MetadataService.name, () => {
           fileCreatedAt: dateForTest,
           localDateTime: DateTime.fromISO('1970-01-01T00:00:00.000Z').toJSDate(),
         }),
+      );
+    });
+
+    // LIB-02: a zone picked in Edit date and time came back as the zone the GPS position is in (America/Vancouver
+    // instead of America/Edmonton) once the sidecar was read again, and the local time moved an hour with it
+    it('keeps a locked time zone over the one the file suggests', async () => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['timeZone']);
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: null,
+        updateId: 'revision',
+        timeZone: 'America/Edmonton',
+      });
+      mockReadTags({
+        DateTimeOriginal: ExifDateTime.fromISO('2026-06-21T16:56:00.000-06:00'),
+        zone: 'America/Vancouver',
+      });
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: expect.objectContaining({
+            dateTimeOriginal: new Date('2026-06-21T22:56:00.000Z'),
+            timeZone: 'America/Edmonton',
+          }),
+        }),
+      );
+      expect(mocks.asset.update).toHaveBeenCalledWith(
+        expect.objectContaining({ localDateTime: new Date('2026-06-21T16:56:00.000Z') }),
       );
     });
 
@@ -2779,9 +2829,10 @@ describe(MetadataService.name, () => {
         GPSLatitude: gps,
         GPSLongitude: gps,
       });
+      // LIB-02: the sidecar holds only an offset, so a time zone set in Frameleaf stays locked
       expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(
         asset.id,
-        ['description', 'latitude', 'longitude', 'dateTimeOriginal', 'timeZone'],
+        ['description', 'latitude', 'longitude', 'dateTimeOriginal'],
         undefined,
       );
     });
