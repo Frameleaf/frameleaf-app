@@ -11,6 +11,8 @@ import { JOBS_LIBRARY_PAGINATION_SIZE } from 'src/constants.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   CreateLibraryDto,
+  LibraryFolderBrowseDto,
+  LibraryFolderBrowseResponseDto,
   LibraryRemovalDto,
   LibraryRemovalReviewDto,
   LibraryResponseDto,
@@ -35,10 +37,12 @@ import {
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
+  DEFAULT_LIBRARY_EXCLUSION_PATTERNS,
   type ImportPathNeighbour,
   checkImportPathOnDisk,
   checkImportPaths,
   invalidExclusionPatterns,
+  isBrowsableFolder,
   isSameOrInside,
   normalizeImportPath,
   resolvesIntoMediaStorage,
@@ -52,6 +56,9 @@ import { tryPromise } from 'src/utils/promise.js';
  * One entry for the administrator audit trail about a library (FL-76), listed in its owner's
  * account history. `auth` is absent when a library changes without an administrator's request.
  */
+/** FL-365: how many folders one browse lists at most. */
+const BROWSE_FOLDER_LIMIT = 500;
+
 const libraryEvent = (
   auth: AuthDto | undefined,
   library: { id: string; name: string; ownerId: string },
@@ -314,14 +321,7 @@ export class LibraryService extends BaseService {
     await this.requireValidImportPaths(dto.importPaths ?? []);
     const importPaths = (dto.importPaths ?? []).map((importPath) => normalizeImportPath(importPath));
 
-    const exclusionPatterns = dto.exclusionPatterns ?? [
-      '**/@eaDir/**',
-      '**/._*',
-      '**/#recycle/**',
-      '**/#snapshot/**',
-      '**/.stversions/**',
-      '**/.stfolder/**',
-    ];
+    const exclusionPatterns = dto.exclusionPatterns ?? [...DEFAULT_LIBRARY_EXCLUSION_PATTERNS];
     this.requireValidExclusionPatterns(exclusionPatterns);
 
     const library = await this.libraryRepository.create({
@@ -336,6 +336,38 @@ export class LibraryService extends BaseService {
       await this.notifyWatchers(library.id);
     }
     return mapLibrary(library);
+  }
+
+  /**
+   * FL-365: the folders this server can see under `path`, for an administrator choosing a folder of
+   * photos to add. Only names are read; hidden, system and NAS folders are left out.
+   */
+  async browseFolders({ path: requested }: LibraryFolderBrowseDto): Promise<LibraryFolderBrowseResponseDto> {
+    const raw = requested?.trim() || '/';
+    const folder = normalizeImportPath(raw);
+    if (!path.isAbsolute(raw) || raw.split('/').includes('..')) {
+      throw new BadRequestException('Choose a whole path, starting with a slash, with no .. in it');
+    }
+    const parent = folder === '/' ? null : path.posix.dirname(folder);
+    let readable = true;
+    let folders: { name: string; path: string }[] = [];
+    try {
+      const entries = await this.storageRepository.readdirWithTypes(folder);
+      folders = entries
+        .filter((entry) => entry.isDirectory() && isBrowsableFolder(entry.name))
+        .map((entry) => ({ name: entry.name, path: path.posix.join(folder, entry.name) }))
+        .toSorted((a, b) => a.name.localeCompare(b.name));
+    } catch {
+      readable = false;
+    }
+    return {
+      path: folder,
+      parent,
+      folders: folders.slice(0, BROWSE_FOLDER_LIMIT),
+      truncated: folders.length > BROWSE_FOLDER_LIMIT,
+      readable,
+      defaultExclusionPatterns: [...DEFAULT_LIBRARY_EXCLUSION_PATTERNS],
+    };
   }
 
   /** Every account's managed uploads, for the Libraries list (FL-78). */

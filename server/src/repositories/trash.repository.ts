@@ -167,6 +167,30 @@ export class TrashRepository {
       pendingDeletion: Number(deleted.count),
     };
   }
+  /**
+   * FL-365: what waits in every account's trash, per account (counts and sizes only, never the
+   * items), and how many were deleted before `before`: what a shorter keep time removes tonight.
+   */
+  getEveryone(before: Date) {
+    return this.db
+      .selectFrom('asset')
+      .innerJoin('user', 'user.id', 'asset.ownerId')
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .where('asset.status', '=', AssetStatus.Trashed)
+      .where('asset.deletedAt', 'is not', null)
+      .where('asset.visibility', '!=', AssetVisibility.Hidden)
+      .groupBy(['user.id', 'user.name'])
+      .select((eb) => [
+        'user.id as userId',
+        'user.name as name',
+        eb.fn.countAll<string>().as('count'),
+        sql<string>`coalesce(sum(asset_exif."fileSizeInByte"), 0)`.as('bytes'),
+        sql<Date | null>`min(asset."deletedAt")`.as('oldestDeletedAt'),
+        sql<string>`count(*) filter (where asset."deletedAt" < ${before})`.as('older'),
+      ])
+      .orderBy(sql`count(*)`, 'desc')
+      .execute();
+  }
   /** One page of the owner's trash, filtered and ordered as the page asks, with the matching total. */
   async getItems(userId: string, options: TrashItemsOptions) {
     const filtered = this.scope(this.db, userId, 'listed', options)

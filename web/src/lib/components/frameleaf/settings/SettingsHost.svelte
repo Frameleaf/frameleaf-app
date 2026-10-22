@@ -27,9 +27,10 @@
   import BackLink from '$lib/components/frameleaf/settings/kit/BackLink.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import CloudTourHost from '$lib/components/frameleaf/cloud/CloudTourHost.svelte';
-  import Button from '$lib/components/frameleaf/Button.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import LibraryCareLanding from '$lib/components/frameleaf/settings/care/LibraryCareLanding.svelte';
+  import ImportLanding from '$lib/components/frameleaf/settings/imports/ImportLanding.svelte';
+  import StorageLanding from '$lib/components/frameleaf/settings/storage/StorageLanding.svelte';
   import MaintenanceLanding from '$lib/components/frameleaf/settings/care/MaintenanceLanding.svelte';
   import EditingLanding from '$lib/components/frameleaf/settings/editing/EditingLanding.svelte';
   import SearchLanding from '$lib/components/frameleaf/settings/intelligence/SearchLanding.svelte';
@@ -347,6 +348,10 @@
     'routing',
     'cloud-processing',
     'hardware',
+    // FL-365: the Storage & originals pages draw their own kit cards.
+    'storage-template',
+    'trash',
+    'migration',
     // FL-155..FL-158: the Frameleaf Cloud pages draw their own cards (frameleaf-cloud.css:3-7).
     'cloud-account',
     'cloud-plan',
@@ -978,15 +983,6 @@
                     class:cc-manager={MANAGER_SECTIONS.includes(selected.key) || isPlainArea(area)}
                     id="setting-{selected.key}"
                   >
-                    {#if area === 'storage' && selected.key === 'trash'}
-                      <!-- The template's Storage → Trash & retention links to the account's own trash. -->
-                      <div class="cc-section-link">
-                        <Button onclick={() => navigate('trash', 'contents')}>
-                          <Icon icon={mdiDeleteOutline} size="1rem" aria-hidden />
-                          {$t('frameleaf_cc_open_trash')}
-                        </Button>
-                      </div>
-                    {/if}
                     {#if selected.component}
                       <selected.component />
                     {:else}
@@ -1002,6 +998,10 @@
                 <PreferencesLanding sections={areaSections} />
               {:else if area === 'care'}
                 <LibraryCareLanding />
+              {:else if area === 'storage'}
+                <StorageLanding />
+              {:else if area === 'backup'}
+                <ImportLanding />
               {:else if area === 'intelligence'}
                 <SearchLanding sections={areaSections} />
               {:else if area === 'editing'}
@@ -1401,9 +1401,6 @@
     padding: 0;
     background: none;
     border: 0;
-  }
-  .cc-section-link {
-    margin: 14px 0;
   }
   .cc-section + .cc-section {
     margin-top: 16px;

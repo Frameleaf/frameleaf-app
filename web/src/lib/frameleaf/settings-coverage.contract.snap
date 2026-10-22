@@ -1333,6 +1333,11 @@
   "storageTemplate.template": {
     "type": "string"
   },
+  "storageWarning.percent": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 99
+  },
   "templates.email.albumInviteTemplate": {
     "type": "string"
   },

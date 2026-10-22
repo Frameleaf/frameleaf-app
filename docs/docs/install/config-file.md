@@ -240,6 +240,9 @@ Part of the default configuration looks like this (the file can hold any setting
     "hashVerificationEnabled": true,
     "template": "{{y}}/{{y}}-{{MM}}-{{dd}}/{{filename}}"
   },
+  "storageWarning": {
+    "percent": 90
+  },
   "templates": {
     "email": {
       "albumInviteTemplate": "",

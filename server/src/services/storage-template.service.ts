@@ -139,11 +139,12 @@ export class StorageTemplateService extends BaseService {
   async getMigrationStatus(): Promise<StorageMigrationStatusResponseDto> {
     const { storageTemplate } = await this.getConfig({ withCache: false });
     const name = QueueName.StorageTemplateMigration;
-    const [isActive, isPaused, hasUnfinishedWork, statistics] = await Promise.all([
+    const [isActive, isPaused, hasUnfinishedWork, statistics, candidates] = await Promise.all([
       this.jobRepository.isActive(name),
       this.jobRepository.isPaused(name),
       this.jobRepository.hasUnfinishedWork(name),
       this.jobRepository.getJobCounts(name),
+      this.assetRepository.countUploadedOriginals(),
     ]);
     return {
       enabled: storageTemplate.enabled,
@@ -152,6 +153,7 @@ export class StorageTemplateService extends BaseService {
       isPaused,
       hasUnfinishedWork,
       statistics,
+      candidates,
     };
   }
 

@@ -98,8 +98,8 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
   'smart-albums': ['smartAlbums'],
   'storage-template': ['storageTemplate'],
   theme: ['theme'],
-  trash: ['trash'],
-  'user-settings': ['user'],
+  // FL-365: Deleted items holds deleted accounts' delay; Storage & originals' disk warning is saved with it.
+  trash: ['trash', 'user', 'storageWarning'],
   'version-check': ['newVersionCheck'],
   'video-transcoding': ['ffmpeg'],
   // FL-422: Edited masters holds the editing group; its restoration style is on AI restoration.

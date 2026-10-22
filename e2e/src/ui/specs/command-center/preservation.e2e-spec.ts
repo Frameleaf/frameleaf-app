@@ -337,7 +337,7 @@ const setupPreservationMocks = async (context: BrowserContext) => {
 };
 
 const exportSearch = async (page: Page) => {
-  await page.getByRole('button', { name: 'Preview preservation manifest' }).click();
+  await page.getByRole('button', { name: 'Export a copy…' }).click();
   const dialog = page.getByRole('dialog', { name: 'Preservation export' });
   await dialog.getByRole('button', { name: 'Search', exact: true }).click();
   await dialog.getByRole('searchbox', { name: /^Items matching/ }).fill('Harbour Street');
@@ -401,7 +401,7 @@ test.describe('Preservation packages', () => {
     await exportSearch(page);
 
     await page.getByRole('button', { name: 'Restore…' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Restore from a package' });
+    const dialog = page.getByRole('dialog', { name: 'Restore from an exported copy' });
     await dialog.getByRole('button', { name: 'Check package' }).click();
 
     // The review job finishes on the next poll and lands on the differences.
@@ -442,7 +442,7 @@ test.describe('Preservation packages', () => {
 
     const restorations = page.locator('section', { hasText: 'Restorations in progress' });
     await restorations.locator('li', { hasText: 'Old laptop package' }).getByRole('button', { name: 'Open' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Restore from a package' });
+    const dialog = page.getByRole('dialog', { name: 'Restore from an exported copy' });
     await expect(dialog.getByRole('alert')).toHaveText('The package is no longer available.');
     await expect(dialog.getByRole('button', { name: 'Restore', exact: true })).toHaveCount(0);
     expect(mocks.state.applies).toEqual([]);

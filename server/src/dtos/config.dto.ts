@@ -1208,6 +1208,18 @@ const AdminConfigSchemaWithVisibility = z
         syncQuotaUsage: configBool.describe('Sync quota usage'),
       })
       .meta({ id: 'AdminConfigNightlyTasksDto' }),
+    // FL-365: Storage & originals › "Warn me when the disk is nearly full". Defaulted, so a stored
+    // configuration or a config file that does not name it keeps today's 90%.
+    storageWarning: z
+      .object({
+        percent: z
+          .int()
+          .min(0)
+          .max(99)
+          .describe('Warn when the drive the library is on is this full, in per cent; 0 turns the warning off'),
+      })
+      .meta({ id: 'AdminConfigStorageWarningDto' })
+      .default({ percent: 90 }),
     trash: z
       .object({
         enabled: configBool.describe('Enabled').meta({ visibility: User }),
@@ -1768,6 +1780,9 @@ export const defaults = Object.freeze<SystemConfig>({
     syncQuotaUsage: true,
     missingThumbnails: true,
     clusterNewFaces: true,
+  },
+  storageWarning: {
+    percent: 90,
   },
   trash: {
     enabled: true,

@@ -76,7 +76,8 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   {
     id: 'storage',
     group: 'library',
-    sections: ['storage-template', 'trash', 'user-settings', 'migration'],
+    // FL-365: Deleted items (`trash`) holds deleted accounts too; the area opens on its landing page.
+    sections: ['storage-template', 'trash', 'migration'],
   },
   // FL-74 / FL-65: imports and "Originals & preservation" belong to every account; database backups
   // are the server's. One mount of each, in the template's order.
@@ -278,6 +279,9 @@ export const PLAIN_AREAS: readonly SettingsAreaId[] = Object.freeze([
   'intelligence',
   'editing',
   'maintenance',
+  // FL-365
+  'storage',
+  'backup',
 ]);
 export const isPlainArea = (area: SettingsAreaId) => PLAIN_AREAS.includes(area);
 
@@ -434,6 +438,12 @@ export const analyticsAreaUrl = (params: { scope?: string; range?: string } = {}
  * and Render workers are one page, Computers (FL-364).
  */
 const SERVER_ALIASES: Record<string, string> = {
+  // FL-365: Deleted items is one page for deleted photos and deleted accounts; the prototype's addresses.
+  'user-settings': 'trash',
+  'deleted-items': 'trash',
+  retention: 'trash',
+  'retention-policy': 'trash',
+  organization: 'storage-template',
   job: 'queues',
   workers: 'computers',
   'render-workers': 'computers',
@@ -656,7 +666,6 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     'storage-template': 'storage',
     migration: 'storage',
     trash: 'trash',
-    'user-settings': 'trash',
   },
   backup: { takeout: 'import', backup: 'protection', preservation: 'protection', 'cloud-backup-choice': 'protection' },
   intelligence: {

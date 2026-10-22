@@ -68,6 +68,13 @@ vi.mock('$lib/components/frameleaf/settings/care/MaintenanceLanding.svelte', asy
 vi.mock('$lib/components/frameleaf/settings/intelligence/SearchLanding.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
+// FL-365: Storage & originals and Import & export open on landing pages of their own.
+vi.mock('$lib/components/frameleaf/settings/storage/StorageLanding.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+}));
+vi.mock('$lib/components/frameleaf/settings/imports/ImportLanding.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+}));
 vi.mock('$lib/components/frameleaf/settings/editing/EditingLanding.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
@@ -123,6 +130,7 @@ const sections = [
   serverSection('notifications', 'Email delivery'),
   serverSection('queues', 'Job manager'),
   serverSection('accounts', 'People with server access'),
+  serverSection('cloud-account', 'Account & link'),
   serverSection('cloud-remote', 'Remote access', ['Public server URL']),
   accountSection('account', 'Your profile'),
   accountSection('takeout', 'Google Photos imports'),
@@ -180,9 +188,9 @@ describe('the Command Center (FL-71)', () => {
       screen.getByRole('button', { name }).querySelector<HTMLElement>('.tile')!.style.getPropertyValue('--tile');
     expect(tile('Overview')).toBe('#0a84ff');
     expect(tile('Library analytics')).toBe('#bf5af2');
-    // Backup keeps the teal tile; Import & protection no longer shares it (design review finding 66).
+    // Backup keeps the teal tile; Import & export no longer shares it (design review finding 66).
     expect(tile('Backup')).toBe('#30b0c7');
-    expect(tile('Import & protection')).toBe('#64d2ff');
+    expect(tile('Import & export')).toBe('#64d2ff');
     expect(tile('Library care')).toBe('#30d158');
     expect(tile('Notifications')).toBe('#ff453a');
     for (const button of screen
@@ -193,36 +201,32 @@ describe('the Command Center (FL-71)', () => {
   });
 
   it('shows an area as a section directory and one section at a time with its breadcrumb', async () => {
-    open('/user-settings?area=storage');
+    open('/user-settings?area=cloud');
     const { container } = render(SettingsHost, { sections });
-    expect(screen.getByRole('heading', { level: 1, name: 'Storage & originals' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Frameleaf Cloud' })).toBeInTheDocument();
     expect(container.querySelector('.cc-section')).toBeNull();
     await userEvent.click(
-      within(container.querySelector<HTMLElement>('.cc-directory')!).getByRole('button', { name: /Trash settings/ }),
+      within(container.querySelector<HTMLElement>('.cc-directory')!).getByRole('button', { name: /Account & link/ }),
     );
-    expect(state.goto).toHaveBeenCalledWith('/user-settings?area=storage&section=trash', expect.any(Object));
+    expect(state.goto).toHaveBeenCalledWith('/user-settings?area=cloud&section=cloud-account', expect.any(Object));
 
-    state.url.searchParams.set('section', 'trash');
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Trash settings' })).toBeInTheDocument());
-    expect(container.querySelector('#setting-trash')).not.toBeNull();
-    expect(container.querySelector('#setting-storage-template')).toBeNull();
-    const pages = screen.getByLabelText('Storage & originals pages');
-    expect(within(pages).getByRole('button', { name: 'Trash settings' })).toHaveAttribute('aria-current', 'page');
+    state.url.searchParams.set('section', 'cloud-account');
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Account & link' })).toBeInTheDocument());
+    expect(container.querySelector('#setting-cloud-account')).not.toBeNull();
+    expect(container.querySelector('#setting-cloud-remote')).toBeNull();
+    const pages = screen.getByLabelText('Frameleaf Cloud pages');
+    expect(within(pages).getByRole('button', { name: 'Account & link' })).toHaveAttribute('aria-current', 'page');
     // The breadcrumb returns to the directory.
     const breadcrumb = screen.getByRole('heading', { level: 1 }).parentElement!;
-    await userEvent.click(within(breadcrumb).getByRole('button', { name: 'Storage & originals' }));
-    expect(state.goto).toHaveBeenLastCalledWith('/user-settings?area=storage', expect.any(Object));
+    await userEvent.click(within(breadcrumb).getByRole('button', { name: 'Frameleaf Cloud' }));
+    expect(state.goto).toHaveBeenLastCalledWith('/user-settings?area=cloud', expect.any(Object));
   });
 
   it('draws an area directory as grouped lists, every row with its own icon (FL-71, FL-10, FL-168)', () => {
-    open('/user-settings?area=storage');
+    open('/user-settings?area=cloud');
     const { container } = render(SettingsHost, { sections });
     const directory = container.querySelector<HTMLElement>('.cc-directory')!;
-    expect(
-      within(directory)
-        .getAllByRole('heading', { level: 2 })
-        .map((heading) => heading.textContent),
-    ).toEqual(['Storage', 'Trash']);
+    expect(within(directory).getAllByRole('heading', { level: 2 }).length).toBe(2);
     // The section's own icon and the chevron; no area icon repeated on every row.
     for (const row of within(directory).getAllByRole('button')) {
       expect(row.querySelectorAll('svg')).toHaveLength(2);
@@ -364,17 +368,17 @@ describe('the Command Center (FL-71)', () => {
     });
   });
 
-  it('keeps an ordinary settings page as one grouped list', () => {
-    open('/user-settings?area=storage&section=trash');
+  it('opens Storage & originals and Import & export on landing pages, and Deleted items at its old addresses (FL-365)', () => {
+    for (const area of ['storage', 'backup']) {
+      open(`/user-settings?area=${area}`);
+      const { container, unmount } = render(SettingsHost, { sections });
+      expect(container.querySelector('.cc-directory')).toBeNull();
+      unmount();
+    }
+    open('/user-settings?area=storage&section=user-settings');
     const { container } = render(SettingsHost, { sections });
-    expect(container.querySelector('#setting-trash')).not.toHaveClass('cc-manager');
-  });
-
-  it("links Storage → Trash & retention to the account's own trash", async () => {
-    open('/user-settings?area=storage&section=trash');
-    render(SettingsHost, { sections });
-    await userEvent.click(screen.getByRole('button', { name: 'Open your trash' }));
-    expect(state.goto).toHaveBeenCalledWith('/user-settings?area=trash&section=contents', expect.any(Object));
+    expect(container.querySelector('#setting-trash')).not.toBeNull();
+    expect(container.querySelector('#setting-trash')).toHaveClass('cc-manager');
   });
 
   it('names the server as its administrator set it, and never shows its host and port (CC-4)', () => {
@@ -426,7 +430,7 @@ describe('the Command Center (FL-71)', () => {
     open('/user-settings?area=storage', false);
     render(SettingsHost, { sections: sections.filter((section) => !section.admin) });
     expect(areaNames()).toEqual([
-      'Import & protection',
+      'Import & export',
       'People & sharing',
       // Library care always lists the repair tools the account may run.
       'Library care',
@@ -438,7 +442,7 @@ describe('the Command Center (FL-71)', () => {
       'Change history',
     ]);
     // A server area falls back to the first area the account may open.
-    expect(screen.getByRole('button', { name: 'Import & protection' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'Import & export' })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByRole('button', { name: /Backup schedule/ })).toBeNull();
     expect(screen.queryByRole('combobox', { name: 'Account or library scope' })).toBeNull();
     expect(screen.getByText('Ada’s library')).toBeInTheDocument();
@@ -566,7 +570,7 @@ describe('the Command Center (FL-71)', () => {
     });
 
     it.each([
-      ['/user-settings?area=backup&section=backup', 'schedule', 'Import & protection'],
+      ['/user-settings?area=backup&section=backup', 'schedule', 'Import & export'],
       ['/user-settings?area=maintenance&section=backups', 'local', 'Maintenance'],
       ['/user-settings?area=cloud&section=cloud-backup', 'cloud', 'Frameleaf Cloud'],
     ])('shows %s under Backup, at the address it always had', (address, shown, formerArea) => {

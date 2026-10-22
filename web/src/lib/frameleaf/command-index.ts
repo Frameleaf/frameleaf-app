@@ -482,12 +482,6 @@ export const ADMIN_SETTINGS_AREAS: readonly {
     icon: mdiTrashCanOutline,
   },
   {
-    key: 'user-settings',
-    titleKey: 'admin.user_settings',
-    descriptionKey: 'admin.user_settings_description',
-    icon: mdiAccountOutline,
-  },
-  {
     key: 'version-check',
     titleKey: 'frameleaf_cc_section_versions',
     descriptionKey: 'frameleaf_cc_section_versions_description',

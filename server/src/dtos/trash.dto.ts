@@ -47,6 +47,52 @@ const TrashSummaryResponseSchema = z
   })
   .meta({ id: 'TrashSummaryResponseDto' });
 
+/** FL-365: Deleted items, for an administrator: what waits in everyone's trash, counts and sizes only. */
+const TrashEveryoneQuerySchema = z
+  .object({
+    days: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(36_500)
+      .optional()
+      .describe(
+        'A proposed keep time in days; removedTonight counts what it would remove. Defaults to the saved value',
+      ),
+  })
+  .meta({ id: 'TrashEveryoneQueryDto' });
+
+const TrashEveryoneAccountSchema = z
+  .object({
+    userId: z.uuidv4().describe('Account ID'),
+    name: z.string().describe('Account name'),
+    count: z.int().min(0).describe('Items waiting in this account’s trash'),
+    bytes: z.int().min(0).describe('Combined size of their originals, in bytes'),
+    oldestDeletedAt: z
+      .string()
+      .meta({ format: 'date-time' })
+      .nullable()
+      .describe('When the item that has waited longest was deleted'),
+  })
+  .meta({ id: 'TrashEveryoneAccountDto' });
+
+const TrashEveryoneResponseSchema = z
+  .object({
+    count: z.int().min(0).describe('Items waiting in every account’s trash'),
+    bytes: z.int().min(0).describe('Combined size of their originals, in bytes'),
+    days: z.int().min(0).describe('The keep time removedTonight was counted for'),
+    removedTonight: z
+      .int()
+      .min(0)
+      .describe('Items already older than days, removed for good the next time the overnight tidy-up runs'),
+    trashEnabled: z.boolean().describe('Whether the trash is on'),
+    tidyUpOn: z
+      .boolean()
+      .describe('Whether the overnight tidy-up empties the trash; while it is off nothing is removed'),
+    accounts: z.array(TrashEveryoneAccountSchema).describe('Each account with something waiting, most first'),
+  })
+  .meta({ id: 'TrashEveryoneResponseDto' });
+
 const TrashItemsSchema = z
   .object({
     query: z.string().max(255).optional().describe('Words that must all appear in the file name'),
@@ -171,3 +217,5 @@ export class TrashApplyDto extends createZodDto(TrashApplySchema) {}
 export class UtilityActivityQueryDto extends createZodDto(UtilityActivityQuerySchema) {}
 export class UtilityActivityEntryDto extends createZodDto(UtilityActivityEntrySchema) {}
 export class UtilityActivityResponseDto extends createZodDto(UtilityActivityResponseSchema) {}
+export class TrashEveryoneQueryDto extends createZodDto(TrashEveryoneQuerySchema) {}
+export class TrashEveryoneResponseDto extends createZodDto(TrashEveryoneResponseSchema) {}

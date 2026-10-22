@@ -18,17 +18,16 @@
   import LibrarySettings from '../../admin/system-settings/LibrarySettings.svelte';
   import LoggingSettings from '../../admin/system-settings/LoggingSettings.svelte';
   import MapSettings from '../../admin/system-settings/MapSettings.svelte';
-  import MigrationSettingsSection from '$lib/components/frameleaf/settings/MigrationSettingsSection.svelte';
   import NewVersionCheckSettings from '../../admin/system-settings/NewVersionCheckSettings.svelte';
   import NightlyTasksSettings from '../../admin/system-settings/NightlyTasksSettings.svelte';
   import NotificationSettings from '../../admin/system-settings/NotificationSettings.svelte';
   import ServerSettings from '../../admin/system-settings/ServerSettings.svelte';
-  import StorageTemplateSettings from '$lib/components/admin-settings/StorageTemplateSettings.svelte';
   import ThemeSettings from '../../admin/system-settings/ThemeSettings.svelte';
-  import TrashSettings from '../../admin/system-settings/TrashSettings.svelte';
-  import UserSettings from '../../admin/system-settings/UserSettings.svelte';
   import Duplicates from '$lib/components/frameleaf/settings/care/Duplicates.svelte';
   import FileChecks from '$lib/components/frameleaf/settings/care/FileChecks.svelte';
+  import DeletedItems from '$lib/components/frameleaf/settings/storage/DeletedItems.svelte';
+  import FolderLayout from '$lib/components/frameleaf/settings/storage/FolderLayout.svelte';
+  import MoveOrExport from '$lib/components/frameleaf/settings/storage/MoveOrExport.svelte';
   import Descriptions from '$lib/components/frameleaf/settings/intelligence/Descriptions.svelte';
   import Faces from '$lib/components/frameleaf/settings/intelligence/Faces.svelte';
   import LockedDetection from '$lib/components/frameleaf/settings/intelligence/LockedDetection.svelte';
@@ -66,7 +65,6 @@
   import { CommandPaletteDefaultProvider, modalManager } from '@frameleaf/ui';
   import {
     mdiAccountMultipleOutline,
-    mdiAccountOutline,
     mdiAutoFix,
     mdiContentCopy,
     mdiFaceRecognition,
@@ -295,7 +293,7 @@
     },
     {
       admin: true,
-      component: MigrationSettingsSection,
+      component: MoveOrExport,
       title: $t('admin.frameleaf_migration_settings_title'),
       subtitle: $t('admin.frameleaf_migration_settings_subtitle'),
       key: 'migration',
@@ -335,7 +333,7 @@
     },
     {
       admin: true,
-      component: StorageTemplateSettings,
+      component: FolderLayout,
       title: $t('frameleaf_cc_section_organization'),
       subtitle: $t('frameleaf_cc_section_organization_description'),
       key: 'storage-template',
@@ -351,19 +349,11 @@
     },
     {
       admin: true,
-      component: TrashSettings,
+      component: DeletedItems,
       title: $t('frameleaf_cc_section_retention'),
       subtitle: $t('frameleaf_cc_section_retention_description'),
       key: 'trash',
       icon: mdiTrashCanOutline,
-    },
-    {
-      admin: true,
-      component: UserSettings,
-      title: $t('admin.user_settings'),
-      subtitle: $t('admin.user_settings_description'),
-      key: 'user-settings',
-      icon: mdiAccountOutline,
     },
     {
       admin: true,

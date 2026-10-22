@@ -286,12 +286,10 @@ test.describe('Settings area directories', () => {
     await page.goto('/user-settings?area=storage');
 
     await expect(page.getByRole('heading', { level: 1, name: 'Storage & originals' })).toBeVisible();
-    const directory = page.locator('.cc-directory');
-    await expect(directory.getByRole('heading', { level: 2, name: 'Storage', exact: true })).toBeVisible();
-    await expect(directory.getByRole('heading', { level: 2, name: 'Trash', exact: true })).toBeVisible();
-    await expect(directory.getByRole('heading', { level: 2, name: 'Identical files' })).toHaveCount(0);
-    // FL-168: each row carries its own section icon and the chevron, never the area icon again.
-    await expect(directory.getByRole('button').first().locator('svg')).toHaveCount(2);
+    // FL-365: Storage & originals opens on its landing page, its pages grouped by outcome.
+    await expect(page.locator('.cc-directory')).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 2, name: 'Where photos are kept' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'When things are deleted' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Library analytics' }).locator('.tile')).toBeVisible();
     await page.getByRole('button', { name: 'Library care', exact: true }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Library care' })).toBeVisible();

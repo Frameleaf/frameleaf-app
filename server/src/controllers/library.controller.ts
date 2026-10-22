@@ -4,6 +4,8 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   CreateLibraryDto,
+  LibraryFolderBrowseDto,
+  LibraryFolderBrowseResponseDto,
   LibraryRemovalDto,
   LibraryRemovalReviewDto,
   LibraryResponseDto,
@@ -53,6 +55,19 @@ export class LibraryController {
   })
   getManagedUploadStatistics(): Promise<ManagedUploadsStatsResponseDto[]> {
     return this.service.getManagedUploads();
+  }
+
+  // FL-365: the folder chooser of "Add a folder of photos". Before `:id`.
+  @Get('folders')
+  @Authenticated({ permission: Permission.LibraryCreate, admin: true })
+  @Endpoint({
+    summary: 'Browse folders on the server',
+    description:
+      'For an administrator choosing a folder of photos to add: the folders under a path the server can see (names only; hidden, system and NAS folders are left out), and what a new folder skips by default.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  browseLibraryFolders(@Query() dto: LibraryFolderBrowseDto): Promise<LibraryFolderBrowseResponseDto> {
+    return this.service.browseFolders(dto);
   }
 
   @Post()

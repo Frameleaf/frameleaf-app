@@ -23947,6 +23947,64 @@
         "x-immich-state": "Stable"
       }
     },
+    "/libraries/folders": {
+      "get": {
+        "description": "For an administrator choosing a folder of photos to add: the folders under a path the server can see (names only; hidden, system and NAS folders are left out), and what a new folder skips by default.",
+        "operationId": "browseLibraryFolders",
+        "parameters": [
+          {
+            "name": "path",
+            "required": false,
+            "in": "query",
+            "description": "An absolute folder; defaults to the top of the disk",
+            "schema": {
+              "maxLength": 4096,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryFolderBrowseResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Browse folders on the server",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "library.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/libraries/managed-uploads": {
       "get": {
         "description": "Retrieve, for every active account, the photos, videos and original sizes it keeps in managed upload storage rather than in external libraries.",
@@ -52232,6 +52290,65 @@
         "x-immich-state": "Stable"
       }
     },
+    "/trash/everyone": {
+      "get": {
+        "description": "For an administrator: how many items wait in each account’s trash and their size (never the items), and how many a keep time of `days` would remove at the next overnight tidy-up.",
+        "operationId": "getTrashEveryone",
+        "parameters": [
+          {
+            "name": "days",
+            "required": false,
+            "in": "query",
+            "description": "A proposed keep time in days; removedTonight counts what it would remove. Defaults to the saved value",
+            "schema": {
+              "minimum": 0,
+              "maximum": 36500,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashEveryoneResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get what waits in every trash",
+        "tags": [
+          "Trash"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "server.statistics",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/trash/items": {
       "get": {
         "description": "One page of your own trash, filtered by file name and media type and ordered by deletion time, size or name. Locked media is listed only in an unlocked session.",
@@ -56292,6 +56409,12 @@
           "storageTemplate": {
             "$ref": "#/components/schemas/AdminConfigStorageTemplateDto"
           },
+          "storageWarning": {
+            "$ref": "#/components/schemas/AdminConfigStorageWarningDto",
+            "default": {
+              "percent": 90
+            }
+          },
           "templates": {
             "$ref": "#/components/schemas/AdminConfigTemplatesDto"
           },
@@ -58498,6 +58621,20 @@
           "enabled",
           "hashVerificationEnabled",
           "template"
+        ],
+        "type": "object"
+      },
+      "AdminConfigStorageWarningDto": {
+        "properties": {
+          "percent": {
+            "description": "Warn when the drive the library is on is this full, in per cent; 0 turns the warning off",
+            "maximum": 99,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "percent"
         ],
         "type": "object"
       },
@@ -85519,6 +85656,75 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "LibraryFolderBrowseDto": {
+        "properties": {
+          "path": {
+            "description": "An absolute folder; defaults to the top of the disk",
+            "maxLength": 4096,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LibraryFolderBrowseResponseDto": {
+        "properties": {
+          "defaultExclusionPatterns": {
+            "description": "What a new folder skips by default: NAS thumbnails, recycle bins, snapshots and the like",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "folders": {
+            "description": "Its folders, sorted by name; hidden, system and NAS folders are left out",
+            "items": {
+              "$ref": "#/components/schemas/LibraryFolderEntryDto"
+            },
+            "type": "array"
+          },
+          "parent": {
+            "description": "The folder above it; null at the top",
+            "nullable": true,
+            "type": "string"
+          },
+          "path": {
+            "description": "The folder that was listed",
+            "type": "string"
+          },
+          "readable": {
+            "description": "Whether the folder could be read",
+            "type": "boolean"
+          },
+          "truncated": {
+            "description": "Whether there were more folders than listed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "defaultExclusionPatterns",
+          "folders",
+          "parent",
+          "path",
+          "readable",
+          "truncated"
+        ],
+        "type": "object"
+      },
+      "LibraryFolderEntryDto": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path"
+        ],
         "type": "object"
       },
       "LibraryImportPathReason": {
@@ -123073,6 +123279,12 @@
       },
       "StorageMigrationStatusResponseDto": {
         "properties": {
+          "candidates": {
+            "description": "Uploaded originals a re-file checks; those already in place are not moved (FL-365)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "enabled": {
             "description": "Whether the storage template is turned on; a run moves nothing while it is off",
             "type": "boolean"
@@ -123098,6 +123310,7 @@
           }
         },
         "required": [
+          "candidates",
           "enabled",
           "hasUnfinishedWork",
           "isActive",
@@ -132847,6 +133060,110 @@
         "required": [
           "action",
           "token"
+        ],
+        "type": "object"
+      },
+      "TrashEveryoneAccountDto": {
+        "properties": {
+          "bytes": {
+            "description": "Combined size of their originals, in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "count": {
+            "description": "Items waiting in this account’s trash",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "description": "Account name",
+            "type": "string"
+          },
+          "oldestDeletedAt": {
+            "description": "When the item that has waited longest was deleted",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "userId": {
+            "description": "Account ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "bytes",
+          "count",
+          "name",
+          "oldestDeletedAt",
+          "userId"
+        ],
+        "type": "object"
+      },
+      "TrashEveryoneQueryDto": {
+        "properties": {
+          "days": {
+            "description": "A proposed keep time in days; removedTonight counts what it would remove. Defaults to the saved value",
+            "maximum": 36500,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "TrashEveryoneResponseDto": {
+        "properties": {
+          "accounts": {
+            "description": "Each account with something waiting, most first",
+            "items": {
+              "$ref": "#/components/schemas/TrashEveryoneAccountDto"
+            },
+            "type": "array"
+          },
+          "bytes": {
+            "description": "Combined size of their originals, in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "count": {
+            "description": "Items waiting in every account’s trash",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "days": {
+            "description": "The keep time removedTonight was counted for",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removedTonight": {
+            "description": "Items already older than days, removed for good the next time the overnight tidy-up runs",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tidyUpOn": {
+            "description": "Whether the overnight tidy-up empties the trash; while it is off nothing is removed",
+            "type": "boolean"
+          },
+          "trashEnabled": {
+            "description": "Whether the trash is on",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accounts",
+          "bytes",
+          "count",
+          "days",
+          "removedTonight",
+          "tidyUpOn",
+          "trashEnabled"
         ],
         "type": "object"
       },

@@ -335,6 +335,9 @@ const updatedConfig = Object.freeze<SystemConfig>({
     channel: ReleaseChannel.Stable,
     frequency: VersionCheckFrequency.Daily,
   },
+  storageWarning: {
+    percent: 90,
+  },
   trash: {
     enabled: true,
     days: 10,

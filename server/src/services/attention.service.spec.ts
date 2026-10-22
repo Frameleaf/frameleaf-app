@@ -28,6 +28,7 @@ const setup = () => {
     },
     frameleafCloud: { cloudBackup: { enabled: true, target: 'managed', schedule: { cronExpression: '0 3 * * *' } } },
     newVersionCheck: { enabled: true, channel: 'stable' },
+    storageWarning: { percent: 90 },
   };
   const mocks = {
     logger: { setContext: vi.fn(), warn: vi.fn(), log: vi.fn(), debug: vi.fn(), error: vi.fn() },

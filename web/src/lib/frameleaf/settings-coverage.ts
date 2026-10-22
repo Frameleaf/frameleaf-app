@@ -632,7 +632,8 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   },
   {
     pattern: 'library.scan.cronExpression',
-    kind: 'control',
+    // FL-365: folder checks run in the overnight schedule; the stored time is kept, not shown
+    kind: 'api-only',
     file: 'src/routes/admin/system-settings/LibrarySettings.svelte',
     evidence: 'scan.cronExpression',
   },
@@ -1390,23 +1391,30 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     file: 'src/lib/components/frameleaf/settings/intelligence/SmartAlbums.svelte',
     evidence: 'rules.visualCategories',
   },
+  // FL-365: Storage & originals › "Warn me when the disk is nearly full".
+  {
+    pattern: 'storageWarning.percent',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/storage/StorageLanding.svelte',
+    evidence: 'draft.storageWarning = { percent: Number(value) }',
+  },
   {
     pattern: 'storageTemplate.enabled',
     kind: 'control',
-    file: 'src/lib/components/admin-settings/StorageTemplateSettings.svelte',
-    evidence: 'storageTemplate.enabled',
+    file: 'src/lib/components/frameleaf/settings/storage/FolderLayout.svelte',
+    evidence: 'draft.storageTemplate.enabled = on',
   },
   {
     pattern: 'storageTemplate.hashVerificationEnabled',
     kind: 'control',
-    file: 'src/lib/components/admin-settings/StorageTemplateSettings.svelte',
-    evidence: 'storageTemplate.hashVerificationEnabled',
+    file: 'src/lib/components/frameleaf/settings/storage/FolderLayout.svelte',
+    evidence: 'draft.storageTemplate.hashVerificationEnabled = on',
   },
   {
     pattern: 'storageTemplate.template',
     kind: 'control',
-    file: 'src/lib/components/admin-settings/StorageTemplateSettings.svelte',
-    evidence: 'storageTemplate.template',
+    file: 'src/lib/components/frameleaf/settings/storage/FolderLayout.svelte',
+    evidence: 'draft.storageTemplate.template =',
   },
   {
     // ADMIN-P3: "The emails themselves", each email's wording in plain words (EmailWordingDialog).
@@ -1456,20 +1464,20 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   {
     pattern: 'trash.days',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/TrashSettings.svelte',
-    evidence: 'trash.days',
+    file: 'src/lib/components/frameleaf/settings/storage/DeletedItems.svelte',
+    evidence: 'draft.trash.days =',
   },
   {
     pattern: 'trash.enabled',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/TrashSettings.svelte',
-    evidence: 'trash.enabled',
+    file: 'src/lib/components/frameleaf/settings/storage/DeletedItems.svelte',
+    evidence: 'draft.trash.enabled = true',
   },
   {
     pattern: 'user.deleteDelay',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/UserSettings.svelte',
-    evidence: 'user.deleteDelay',
+    file: 'src/lib/components/frameleaf/settings/storage/DeletedItems.svelte',
+    evidence: 'draft.user.deleteDelay =',
   },
 ]);
 
