@@ -1444,12 +1444,12 @@ export class FrameleafCloudService extends BaseService {
   }
 
   /**
-   * FL-434 (owner decision 2026-10-10, FC-147): Buddy Backup needs Server licences, not a plan, as long as
-   * the two servers connect directly; only the relay needs the plan. Without a plan this server has no
-   * Cloud-issued certificate, so the direct address is the one the owner set up themselves: the HTTPS
-   * external domain. It is published only while a Buddy pairing can use it (active, or ended and still
-   * readable). Cloud hands it only to the buddy's grant; the apps' reads for a server without a plan keep
-   * only home-network entries.
+   * FL-434 (owner decision 2026-10-10, FC-147): a Buddy pairing needs Server licences. The direct address
+   * published here is the one the owner set up themselves: the HTTPS external domain. It is published only
+   * while a Buddy pairing can use it (active, or ended and still readable). Cloud decides who receives it:
+   * since FL-513 (FC-139, 2026-10-21) the buddy's grant carries this server's WAN, IPv6, custom and relay
+   * entries only while its owner has REMOTE_ACCESS (active or grace), otherwise only home-network entries;
+   * the apps' reads for a server without a plan keep only home-network entries too.
    */
   private async withBuddyDirect(
     endpoints: Array<{ kind: string; url: string }>,

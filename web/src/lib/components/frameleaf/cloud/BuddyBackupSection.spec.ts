@@ -157,12 +157,11 @@ it.each([
   }
 });
 
-it('lets only the inviter confirm: the server that accepted the invitation never calls confirm (FL-434)', async () => {
+it('treats the pairing as active after accept and never calls confirm (FL-513)', async () => {
   Object.assign(status, { pairing: null });
   sdkMock.acceptBackupBuddy.mockResolvedValue({
     ...status,
-    pairing: { version: 1, pairId: 'pair', state: State.Pending, readUntil: null, vaults: [] },
-    canConfirm: false,
+    pairing: { version: 1, pairId: 'pair', state: State.Active, readUntil: null, vaults: [] },
   });
   render(BuddyBackupSection, { view: 'status' });
   await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_buddy_set_up_buddy_backup }));
@@ -171,8 +170,7 @@ it('lets only the inviter confirm: the server that accepted the invitation never
     target: { value: 'a'.repeat(43) },
   });
   await fireEvent.click(dialog.getByRole('button', { name: en.frameleaf_buddy_accept_invitation }));
-  expect(await dialog.findByText(en.frameleaf_buddy_waiting_for_inviter_confirmation)).toBeVisible();
-  await fireEvent.click(dialog.getByRole('button', { name: en.frameleaf_buddy_confirm_agreement }));
+  await fireEvent.click(await dialog.findByRole('button', { name: en.frameleaf_buddy_confirm_agreement }));
   expect(await dialog.findByRole('button', { name: en.frameleaf_buddy_generate_recovery_kit })).toBeVisible();
   expect(sdkMock.changeBuddyRelationship).not.toHaveBeenCalled();
 });

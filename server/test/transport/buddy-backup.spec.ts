@@ -482,12 +482,8 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
       },
       201,
     );
-    // Only the inviter confirms (Frameleaf Cloud refuses the invitee); the invitee checks again.
-    expect((await status(b)).canConfirm).toBe(false);
-    await json(b, `${adminRoute}/relationship`, 'POST', b.admin.token, { action: 'confirm' }, 400);
-    await json(a, `${adminRoute}/refresh`, 'POST', a.admin.token, undefined, 201);
-    expect((await status(a)).canConfirm).toBe(true);
-    await json(a, `${adminRoute}/relationship`, 'POST', a.admin.token, { action: 'confirm' }, 201);
+    // Accepting activates the pairing (FL-513): neither side confirms.
+    expect((await status(b)).pairing?.state).toBe('active');
     for (const app of apps) {
       await json(app, `${adminRoute}/refresh`, 'POST', app.admin.token, undefined, 201);
     }
