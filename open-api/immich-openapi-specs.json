@@ -336,6 +336,63 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/auth/oauth-check": {
+      "post": {
+        "description": "Asks the provider at the issuer URL for its sign-in details and says whether it answered. Nothing is saved.",
+        "operationId": "checkOAuthProvider",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthCheckDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthCheckResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check a sign-in provider",
+        "tags": [
+          "Authentication (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/auth/unlink-all": {
       "post": {
         "description": "Unlinks all OAuth accounts associated with user accounts in the system.",
@@ -60981,6 +61038,12 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "lastUsedAt": {
+            "description": "When the key was last used to reach the server; null when it never has been",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "name": {
             "description": "API key name",
             "type": "string"
@@ -61008,6 +61071,7 @@
           "apiKey",
           "createdAt",
           "id",
+          "lastUsedAt",
           "name",
           "permissions",
           "secret",
@@ -61028,6 +61092,12 @@
             "description": "API key ID",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "description": "When the key was last used to reach the server; null when it never has been",
+            "format": "date-time",
+            "nullable": true,
             "type": "string"
           },
           "name": {
@@ -61052,6 +61122,7 @@
         "required": [
           "createdAt",
           "id",
+          "lastUsedAt",
           "name",
           "permissions",
           "updatedAt"
@@ -92624,6 +92695,57 @@
         },
         "required": [
           "url"
+        ],
+        "type": "object"
+      },
+      "OAuthCheckDto": {
+        "properties": {
+          "allowInsecureRequests": {
+            "description": "Allow a provider without a valid certificate",
+            "type": "boolean"
+          },
+          "clientId": {
+            "description": "Client ID given by the provider",
+            "minLength": 1,
+            "type": "string"
+          },
+          "clientSecret": {
+            "description": "Client secret; empty to use the saved one",
+            "type": "string"
+          },
+          "issuerUrl": {
+            "description": "The provider address (issuer URL)",
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clientId",
+          "issuerUrl"
+        ],
+        "type": "object"
+      },
+      "OAuthCheckResponseDto": {
+        "properties": {
+          "error": {
+            "description": "Why the check failed, when it did",
+            "nullable": true,
+            "type": "string"
+          },
+          "issuer": {
+            "description": "The issuer the provider names, when it answered",
+            "nullable": true,
+            "type": "string"
+          },
+          "ok": {
+            "description": "Whether the provider answered",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "error",
+          "issuer",
+          "ok"
         ],
         "type": "object"
       },

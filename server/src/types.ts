@@ -1528,6 +1528,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;
   [SystemMetadataKey.BackupRestoreVerification]: BackupRestoreVerification;
   [SystemMetadataKey.BackupSequence]: BackupSequenceState;
+  [SystemMetadataKey.ApiKeyLastUsed]: Record<string, string>;
   [SystemMetadataKey.FrameleafSetup]: FrameleafSetupState;
   [SystemMetadataKey.FrameleafMailConnection]: FrameleafMailConnection;
   [SystemMetadataKey.FrameleafMailSignIn]: FrameleafMailSignIn;

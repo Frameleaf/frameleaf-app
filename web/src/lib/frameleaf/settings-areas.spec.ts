@@ -79,7 +79,7 @@ describe('Frameleaf settings areas', () => {
     for (const key of ['account', 'app-settings', 'download-settings', 'feature']) {
       expect(areaForPersonalSection(key)).toBe('preferences');
     }
-    // Sign-in, Locked tags & people, devices and API keys: Access & security.
+    // Sign-in, Locked tags & people, devices and API keys: Your sign-in & privacy (FL-367).
     for (const key of [
       'password',
       'user-pin-code-settings',
@@ -88,7 +88,7 @@ describe('Frameleaf settings areas', () => {
       'api-keys',
       'authorized-devices',
     ]) {
-      expect(areaForPersonalSection(key)).toBe('security');
+      expect(areaForPersonalSection(key)).toBe('privacy');
     }
     // The account's email notifications, under their old name too: Notifications.
     expect(areaForPersonalSection('email-preferences')).toBe('notifications');
@@ -178,6 +178,7 @@ describe('Frameleaf settings areas', () => {
       'server',
       'maintenance',
       'preferences',
+      'privacy',
       'users',
       'libraries',
       'utilities',
@@ -211,9 +212,10 @@ describe('Frameleaf settings areas', () => {
         'backup',
         'sharing',
         'care',
-        'security',
         'notifications',
         'preferences',
+        // FL-367: a person's own sign-in; Who can sign in is for administrators.
+        'privacy',
         'utilities',
         'trash',
         // FL-71 (CC-10): every account's own preference history.
@@ -247,8 +249,11 @@ describe('Frameleaf settings areas', () => {
     it('reads a bare key as the account section, as the old personal settings page did', () => {
       expect(resolveSettingsArea({ isOpen: 'notifications' })).toBe('notifications');
       expect(resolveSettingsSection('notifications', { isOpen: 'notifications' })).toBe('email-preferences');
-      expect(resolveSettingsArea({ isOpen: 'oauth' })).toBe('security');
-      expect(resolveSettingsSection('security', { isOpen: 'oauth' })).toBe('oauth');
+      expect(resolveSettingsArea({ isOpen: 'oauth' })).toBe('privacy');
+      expect(resolveSettingsSection('privacy', { isOpen: 'oauth' })).toBe('oauth');
+      // FL-367: an address written before the split still opens the person's own page.
+      expect(resolveSettingsArea({ area: 'security', section: 'api-keys' })).toBe('privacy');
+      expect(resolveSettingsArea({ area: 'security', section: 'authentication' })).toBe('security');
       expect(resolveSettingsSection('notifications', { section: 'notifications' })).toBe('notifications');
     });
   });
@@ -372,7 +377,7 @@ describe('Frameleaf settings areas', () => {
     it("groups each area's sections as the template's directory does, with More for strays and none for Maintenance", () => {
       expect(directoryGroup('storage', 'storage-template')).toBe('storage');
       expect(directoryGroup('care', 'deduplication')).toBe('identical_files');
-      expect(directoryGroup('security', 'suppressed-content')).toBe('locked_content');
+      expect(directoryGroup('privacy', 'suppressed-content')).toBe('locked_content');
       expect(directoryGroup('storage', 'something-new')).toBe('more');
       expect(directoryGroup('maintenance', 'mode')).toBeUndefined();
       // Every section an area lists has a group of its own, not More.

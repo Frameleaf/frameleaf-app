@@ -263,7 +263,7 @@ export const adminConfigDefaults = {
   oauth: {
     autoLaunch: false,
     autoRegister: true,
-    buttonText: 'Login with OAuth',
+    buttonText: 'Sign in with your provider',
     clientId: '',
     clientSecret: '',
     defaultStorageQuota: null,

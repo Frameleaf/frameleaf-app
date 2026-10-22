@@ -1228,6 +1228,28 @@ describe(AuthService.name, () => {
       expect(mocks.apiKey.getKey).toHaveBeenCalledWith(Buffer.from('auth_token (hashed)'));
     });
 
+    it('records when an API key was last used, at most every few minutes (FL-367)', async () => {
+      const authUser = UserFactory.create();
+      const authApiKey = ApiKeyFactory.create({ permissions: [Permission.All] });
+      mocks.apiKey.getKey.mockResolvedValue({ ...authApiKey, user: authUser });
+      mocks.systemMetadata.get.mockResolvedValue({});
+      const request = () =>
+        sut.authenticate({
+          headers: { 'x-api-key': 'auth_token' },
+          queryParams: {},
+          metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
+        });
+
+      await request();
+      await request();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(mocks.systemMetadata.set).toHaveBeenCalledTimes(1);
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.ApiKeyLastUsed, {
+        [authApiKey.id]: expect.any(String),
+      });
+    });
+
     it('should throw an error if api key has insufficient permissions', async () => {
       const authUser = UserFactory.create();
       const authApiKey = ApiKeyFactory.create({ permissions: [] });

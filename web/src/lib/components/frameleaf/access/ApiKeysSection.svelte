@@ -1,19 +1,20 @@
 <script lang="ts">
   /**
    * API keys, from the `api-keys` section of the design template's `PersonalAccess`: Create API
-   * key, and for each key its name, permissions and last update with Edit, Rotate and Delete.
+   * key, and for each key its name, what it is for, when it was last used (FL-367) and when it was
+   * made, with Edit, Replace and Delete.
    * Creating or rotating shows the new value once; rotating stops the old value at once.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import ApiKeyDialog from '$lib/components/frameleaf/access/ApiKeyDialog.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
-  import { summarizePermissions } from '$lib/frameleaf/personal-access';
+  import { keyPurpose, summarizePermissions } from '$lib/frameleaf/personal-access';
   import { handleDeleteApiKey, handleRotateApiKey } from '$lib/services/api-key.service';
   import { locale } from '$lib/stores/preferences.store';
   import { getApiKeys, Permission, type ApiKeyResponseDto } from '@frameleaf/sdk';
   import { modalManager } from '@frameleaf/ui';
   import { DateTime } from 'luxon';
-  import { t } from 'svelte-i18n';
+  import { t, type Translations } from 'svelte-i18n';
   import './access.css';
 
   let { keys = $bindable([]) }: { keys?: ApiKeyResponseDto[] } = $props();
@@ -26,12 +27,23 @@
     }
   };
 
-  const updated = (key: ApiKeyResponseDto) =>
-    DateTime.fromISO(key.updatedAt, { locale: $locale }).toLocaleString(DateTime.DATE_MED);
+  const made = (key: ApiKeyResponseDto) =>
+    DateTime.fromISO(key.createdAt, { locale: $locale }).toLocaleString(DateTime.DATE_MED);
+  /** FL-367: "Last used 2 days ago" or "Never used", from what the server records. */
+  const lastUsed = (key: ApiKeyResponseDto) =>
+    key.lastUsedAt
+      ? $t('frameleaf_access_key_last_used', {
+          values: { when: DateTime.fromISO(key.lastUsedAt).toRelative({ locale: $locale }) ?? '' },
+        })
+      : $t('frameleaf_access_key_never_used');
 
   const permissionText = (key: ApiKeyResponseDto) => {
     if (key.permissions.includes(Permission.All)) {
       return $t('frameleaf_access_key_full_access');
+    }
+    const purpose = keyPurpose(key.permissions);
+    if (purpose !== 'custom') {
+      return $t(`frameleaf_access_key_purpose_${purpose.replace('-', '_')}_row` as Translations);
     }
     const { shown, more } = summarizePermissions(key.permissions);
     const list = shown.join(' · ');
@@ -69,7 +81,7 @@
           <div>
             <strong>{key.name}</strong>
             <small>{permissionText(key)}</small>
-            <small>{$t('frameleaf_access_key_updated', { values: { date: updated(key) } })}</small>
+            <small>{lastUsed(key)} · {$t('frameleaf_access_key_made', { values: { date: made(key) } })}</small>
           </div>
           <div class="fl-access-actions">
             <Button onclick={() => modalManager.show(ApiKeyDialog, { apiKey: key })}>

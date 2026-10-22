@@ -601,7 +601,7 @@ describe(ServerService.name, () => {
         loginPageMessage: '',
         loginPageMessageFormat: 'plain',
         serverName: '',
-        oauthButtonText: 'Login with OAuth',
+        oauthButtonText: 'Sign in with your provider',
         oauthAccountManagementUrl: '',
         trashDays: 30,
         userDeleteDelay: 7,
