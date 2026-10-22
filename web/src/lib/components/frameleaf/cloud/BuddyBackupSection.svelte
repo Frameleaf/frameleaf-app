@@ -59,7 +59,8 @@
   let status = $state<BuddyStatusDto | null>(null);
   let coverage = $state<BuddyPreflightDto | null>(null);
   const linked = $derived(cloudManager.status?.state === 'linked');
-  // A new pairing needs a Server licence on both servers; no plan, unless the buddies use the relay (FL-434).
+  // A new pairing needs a Server licence on both servers (FL-434). Without a plan, Cloud hands a buddy only this
+  // server's home-network addresses; away from home (direct address, Public server URL, relay) needs one (FL-513).
   const serverLicensed = $derived.by(() => {
     const key = cloudManager.license?.key;
     return (
@@ -496,7 +497,7 @@
                 disabled={busy}
                 onclick={() => {
                   setup = true;
-                  step = status?.pairing?.state === 'pending' ? 2 : 3;
+                  step = 3;
                 }}>{$t('frameleaf_buddy_recovery_kit_pairing')}</Button
               >
             </div>
@@ -886,22 +887,9 @@
           </div>
         </dl>{/if}
       <p>{$t('frameleaf_buddy_each_direction_keeps_30_days_and_12_monthly_restore_points_both_sides_enforce_thei')}</p>
-      {#if status?.pairing?.state === 'pending' && !status.canConfirm}
-        <p class="explain">{$t('frameleaf_buddy_waiting_for_inviter_confirmation')}</p>
-      {/if}
-      <Button
-        variant="primary"
-        disabled={busy || !status?.pairing}
-        onclick={() =>
-          action(async () => {
-            // Only the server that sent the invitation confirms; the one that accepted it waits (FL-434).
-            if (status?.pairing?.state === 'pending' && status.canConfirm) {
-              status = await changeBuddyRelationship({
-                buddyRelationshipDto: { action: BuddyRelationshipAction.Confirm },
-              });
-            }
-            step = 3;
-          })}>{$t('frameleaf_buddy_confirm_agreement')}</Button
+      <!-- Accepting the invitation activates the pairing; neither server confirms it in Cloud (FL-513). -->
+      <Button variant="primary" disabled={busy || !status?.pairing} onclick={() => (step = 3)}
+        >{$t('frameleaf_buddy_confirm_agreement')}</Button
       >
     {:else if step === 3}
       <p>{$t('frameleaf_buddy_this_recovery_kit_unlocks_your_backups_save_it_somewhere_other_than_this_server_th')}</p>

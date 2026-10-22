@@ -3,8 +3,9 @@ import type { Translations } from 'svelte-i18n';
 
 /**
  * Presentation only. The server validates grants, licences and identity for every operation. An existing
- * pairing needs no Frameleaf Cloud plan: the servers back up over a direct connection, and only the relay
- * needs a plan (FL-434). A licence is checked when a new pairing is made, not for every backup.
+ * pairing needs no Frameleaf Cloud plan on the same home network. Away from home, Cloud hands a buddy this
+ * server's direct, custom or relay address only while its owner has a plan (FL-513). A licence is checked
+ * when a new pairing is made, not for every backup (FL-434).
  */
 export const buddyBackupPresentation = (status: BuddyStatusDto | null, linked: boolean, now = Date.now()) => {
   const pairing = status?.pairing;

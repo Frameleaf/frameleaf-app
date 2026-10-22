@@ -112,7 +112,6 @@ export class BuddyBackupService {
       instanceId: identity.instanceId,
       settings: state.settings,
       pairing: state.pairing,
-      canConfirm: state.pairing?.state === 'pending' && state.acceptedPairId !== state.pairing.pairId,
       recoveryVerified: state.recoveryVerified,
       keyFingerprint: ring ? createHash('sha256').update(JSON.stringify(ring)).digest('hex').slice(0, 16) : null,
       lastCompleteAt: state.lastCompleteAt,
@@ -375,9 +374,13 @@ export class BuddyBackupService {
   async relationship(action: 'confirm' | 'end' | 'block') {
     const pairing = await this.peer.pairing();
     if (!pairing) throw new BadRequestException('No Buddy pairing is configured');
-    // Cloud lets only the inviter confirm; the server that accepted the invitation waits for it.
-    if (action === 'confirm' && (await this.repository.state()).acceptedPairId === pairing.pairId)
-      throw new BadRequestException('Your buddy confirms this pairing from their server.');
+    if (action === 'confirm') {
+      // Accepting an invitation activates the pairing (FL-513), so confirming is a no-op for current pairs.
+      // Only a legacy pending pairing still needs the inviter's confirmation; the invitee waits for it.
+      if (pairing.state === 'active') return this.status();
+      if ((await this.repository.state()).acceptedPairId === pairing.pairId)
+        throw new BadRequestException('Your buddy confirms this pairing from their server.');
+    }
     const changed = await this.peer.cloud(BuddyPairing, `pairings/${pairing.pairId}/${action}`, { version: 1 });
     await this.repository.locked('peer-access', (trx) =>
       this.repository.update((state) => ({ ...state, pairing: changed }), trx),

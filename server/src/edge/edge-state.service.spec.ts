@@ -352,7 +352,8 @@ describe(EdgeStateService.name, () => {
         expect(remoteState()!.candidates.some((candidate) => candidate.kind === 'local')).toBe(true);
         expect(portMapping.keep).toHaveBeenCalled();
 
-        // A Server licence without a plan keeps Buddy Backup on the direct address (FL-437): only the relay needs a plan.
+        // A Server licence without a plan keeps its own direct address (FL-437) but no relay. Cloud hands that
+        // address to a Buddy partner only while the owner has a plan (FL-513); home-network entries otherwise.
         metadata.set(SystemMetadataKey.FrameleafLicense, {
           key: { ...license(['SUPPORTER_SERVER'], now), kind: 'server', source: 'key' } as FrameleafLicense,
           plan: null,

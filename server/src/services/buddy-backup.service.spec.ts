@@ -711,7 +711,7 @@ describe('Buddy production run controls and checkpoints', () => {
   });
 });
 
-describe('Buddy pairing confirmation (FL-434)', () => {
+describe('Buddy pairing confirmation (FL-434, FL-513)', () => {
   let directory: string;
 
   beforeEach(async () => {
@@ -741,7 +741,34 @@ describe('Buddy pairing confirmation (FL-434)', () => {
     return { ...fixture, pending: state.pairing!, cloud, instanceId };
   };
 
-  it('never asks Cloud to confirm from the invitee: only the inviter confirms', async () => {
+  it('treats a pairing as active straight after accept: nobody confirms (FL-513)', async () => {
+    const { service, repository, pending, cloud, instanceId } = await pendingFixture();
+    const active = { ...pending, state: 'active' as const };
+    cloud.mockResolvedValue(active);
+    // Like BuddyBackupPeerService.pairing(): refreshes the stored pairing from Cloud.
+    vi.mocked(service.peer.pairing).mockImplementation(async () => {
+      await repository.update((current) => ({ ...current, pairing: active }));
+      return active;
+    });
+    await service.accept({
+      version: 1,
+      token: 'a'.repeat(43),
+      instanceId,
+      quotaBytes: 10 * 1024 ** 3,
+      retention: { days: 30, monthly: 12 },
+    });
+    expect(cloud).toHaveBeenCalledTimes(1);
+    expect(cloud).toHaveBeenCalledWith(expect.anything(), 'invitations/accept', expect.anything());
+    const status = await service.status();
+    expect(status).not.toHaveProperty('canConfirm');
+    cloud.mockClear();
+
+    // Older clients may still send confirm: either side gets the active pairing without a Cloud call.
+    await expect(service.relationship('confirm')).resolves.toMatchObject({ pairing: { state: 'active' } });
+    expect(cloud).not.toHaveBeenCalled();
+  });
+
+  it('never asks Cloud to confirm a legacy pending pairing from the invitee', async () => {
     const { service, pending, cloud, instanceId } = await pendingFixture();
     cloud.mockResolvedValue(pending);
     await service.accept({
@@ -751,22 +778,17 @@ describe('Buddy pairing confirmation (FL-434)', () => {
       quotaBytes: 10 * 1024 ** 3,
       retention: { days: 30, monthly: 12 },
     });
-    await expect(service.status()).resolves.toMatchObject({ canConfirm: false });
     cloud.mockClear();
 
     await expect(service.relationship('confirm')).rejects.toThrow('Your buddy confirms this pairing');
     expect(cloud).not.toHaveBeenCalled();
   });
 
-  it('confirms through Cloud on the inviter’s server', async () => {
+  it('still confirms a legacy pending pairing through Cloud on the inviter’s server', async () => {
     const { service, pending, cloud } = await pendingFixture();
-    await expect(service.status()).resolves.toMatchObject({ canConfirm: true });
     cloud.mockResolvedValue({ ...pending, state: 'active' });
 
-    await expect(service.relationship('confirm')).resolves.toMatchObject({
-      canConfirm: false,
-      pairing: { state: 'active' },
-    });
+    await expect(service.relationship('confirm')).resolves.toMatchObject({ pairing: { state: 'active' } });
     expect(cloud).toHaveBeenCalledWith(expect.anything(), `pairings/${pending.pairId}/confirm`, { version: 1 });
   });
 });

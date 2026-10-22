@@ -68620,9 +68620,6 @@
             "nullable": true,
             "type": "integer"
           },
-          "canConfirm": {
-            "type": "boolean"
-          },
           "capacityUpdatedAt": {
             "nullable": true,
             "type": "string"
