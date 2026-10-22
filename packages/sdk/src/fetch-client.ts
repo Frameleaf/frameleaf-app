@@ -115,6 +115,24 @@ export type AttentionResponseDto = {
     /** What needs attention, the most urgent first */
     items: AttentionItemDto[];
 };
+export type OAuthCheckDto = {
+    /** Allow a provider without a valid certificate */
+    allowInsecureRequests?: boolean;
+    /** Client ID given by the provider */
+    clientId: string;
+    /** Client secret; empty to use the saved one */
+    clientSecret?: string;
+    /** The provider address (issuer URL) */
+    issuerUrl: string;
+};
+export type OAuthCheckResponseDto = {
+    /** Why the check failed, when it did */
+    error: string | null;
+    /** The issuer the provider names, when it answered */
+    issuer: string | null;
+    /** Whether the provider answered */
+    ok: boolean;
+};
 export type BackupDeviceDto = {
     appVersion: string;
     deviceKey: string;
@@ -8902,24 +8920,6 @@ export type OAuthCallbackDto = {
     state?: string;
     /** OAuth callback URL */
     url: string;
-};
-export type OAuthCheckDto = {
-    /** Allow a provider without a valid certificate */
-    allowInsecureRequests?: boolean;
-    /** Client ID given by the provider */
-    clientId: string;
-    /** Client secret; empty to use the saved one */
-    clientSecret?: string;
-    /** The provider address (issuer URL) */
-    issuerUrl: string;
-};
-export type OAuthCheckResponseDto = {
-    /** Why the check failed, when it did */
-    error: string | null;
-    /** The issuer the provider names, when it answered */
-    issuer: string | null;
-    /** Whether the provider answered */
-    ok: boolean;
 };
 export type FrameleafTokenExchangeDto = {
     rememberMe?: boolean;
@@ -18061,6 +18061,21 @@ export function getAttention(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Check a sign-in provider
+ */
+export function checkOAuthProvider({ oAuthCheckDto }: {
+    oAuthCheckDto: OAuthCheckDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthCheckResponseDto;
+    }>("/admin/auth/oauth-check", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: oAuthCheckDto
+    })));
+}
+/**
  * Unlink all OAuth accounts
  */
 export function unlinkAllOAuthAccountsAdmin(opts?: Oazapfts.RequestOpts) {
@@ -24966,21 +24981,6 @@ export function finishOAuth({ oAuthCallbackDto }: {
         ...opts,
         method: "POST",
         body: oAuthCallbackDto
-    })));
-}
-/**
- * Check a sign-in provider
- */
-export function checkOAuthProvider({ oAuthCheckDto }: {
-    oAuthCheckDto: OAuthCheckDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: OAuthCheckResponseDto;
-    }>("/oauth/check", oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: oAuthCheckDto
     })));
 }
 /**

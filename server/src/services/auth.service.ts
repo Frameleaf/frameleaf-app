@@ -19,8 +19,6 @@ import {
   LogoutResponseDto,
   OAuthBackchannelLogoutDto,
   OAuthCallbackDto,
-  OAuthCheckDto,
-  OAuthCheckResponseDto,
   OAuthConfigDto,
   PinCodeChangeDto,
   PinCodeResetDto,
@@ -730,27 +728,6 @@ export class AuthService extends BaseService {
   /** The Frameleaf app's counterpart of {@link getMobileRedirect} (FL-131). */
   getFrameleafMobileRedirect(url: string) {
     return `${FRAMELEAF_MOBILE_REDIRECT}?${url.split('?', 2)[1] || ''}`;
-  }
-
-  /**
-   * FL-367: "Check" on Sign-in methods. Asks the provider for its discovery document with the
-   * details typed so far (the saved secret when none is typed) and says what it found.
-   */
-  async checkOAuthProvider(dto: OAuthCheckDto): Promise<OAuthCheckResponseDto> {
-    const { oauth } = await this.getConfig({ withCache: false });
-    try {
-      const { issuer } = await this.oauthRepository.check({
-        ...oauth,
-        issuerUrl: dto.issuerUrl,
-        clientId: dto.clientId,
-        clientSecret: dto.clientSecret || oauth.clientSecret,
-        allowInsecureRequests: dto.allowInsecureRequests ?? oauth.allowInsecureRequests,
-      });
-      return { ok: true, issuer, error: null };
-    } catch (error) {
-      const cause = error instanceof Error && error.cause instanceof Error ? error.cause : error;
-      return { ok: false, issuer: null, error: cause instanceof Error ? cause.message : String(cause) };
-    }
   }
 
   async authorize(dto: OAuthConfigDto) {

@@ -1348,31 +1348,6 @@ describe(AuthService.name, () => {
     });
   });
 
-  describe('checkOAuthProvider (FL-367)', () => {
-    it('says what the provider answered', async () => {
-      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
-      mocks.oauth.check.mockResolvedValue({ issuer: 'https://accounts.example.test' });
-
-      await expect(
-        sut.checkOAuthProvider({ issuerUrl: 'https://accounts.example.test', clientId: 'frameleaf' }),
-      ).resolves.toEqual({ ok: true, issuer: 'https://accounts.example.test', error: null });
-      expect(mocks.oauth.check).toHaveBeenCalledWith(
-        expect.objectContaining({ issuerUrl: 'https://accounts.example.test', clientId: 'frameleaf' }),
-      );
-    });
-
-    it('says why the provider did not answer', async () => {
-      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
-      mocks.oauth.check.mockRejectedValue(
-        new Error('Error in OAuth discovery', { cause: new Error('getaddrinfo ENOTFOUND') }),
-      );
-
-      await expect(
-        sut.checkOAuthProvider({ issuerUrl: 'https://nowhere.example.test', clientId: 'frameleaf' }),
-      ).resolves.toEqual({ ok: false, issuer: null, error: 'getaddrinfo ENOTFOUND' });
-    });
-  });
-
   describe('authorize', () => {
     it('should fail if oauth is disabled', async () => {
       mocks.systemMetadata.get.mockResolvedValue({ oauth: { enabled: false } });
