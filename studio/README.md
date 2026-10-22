@@ -421,6 +421,20 @@ Patch 0032 adds the float route and the explicit output conversion (FL-97, FL-10
   probes and decodes the result back. Matrix/range conversion uses FFmpeg's libzimg
   `zscale` filter in both directions; an RGB round trip through `scale` alone can
   hide shifted native ten-bit Y/Cb/Cr codes.
+- **Bundled worker (FL-107).** The machine-learning container's Studio worker writes
+  `mp4-hevc-main10` as an HDR10 master (`hdr10` colour, or PQ sources kept) or an HLG
+  master (HLG sources kept). `tools/bundled-worker-hdr.mjs` streams the engine's
+  `renderFrameSignal` frames into the `hdr-master.mjs` encoder one at a time. A PQ master
+  renders twice: the first pass measures MaxCLL/MaxFALL, and the encoding pass must
+  measure the same light. Before upload the file is decoded back. Every frame must be
+  ten-bit 4:2:0 BT.2020 NCL limited range with the promised transfer, and the sampled
+  frames' luma must match the render. At admission the worker proves each transfer on its
+  own ffmpeg: a lossless patch fixture within the two-code limit, then a ten-bit ramp
+  through the production path. It advertises `mp4-hevc-main10+pq` / `+hlg` and its
+  colour precision only for the transfers that passed. The server offers an HLG export
+  only to a session naming `+hlg`, and a kept PQ picture only to one that verified HDR10.
+  HDR masters are written at the project size, with captions burned in. The sound comes
+  from the engine's ordinary render.
 
 Tests:
 

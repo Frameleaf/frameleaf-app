@@ -43,7 +43,7 @@ test.describe('User Administration', () => {
     await expect(page).toHaveTitle(/Settings/);
     await expect(page.locator('.resource-heading').getByText('Your server')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Users', level: 1 })).toBeVisible();
-    await expect(page.getByText('Manage profiles, features, preferences, storage and sign-in.')).toBeVisible();
+    await expect(page.getByText('Everyone with an account, and how much space each has.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Create account', exact: true })).toBeVisible();
   });
 

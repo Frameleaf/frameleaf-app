@@ -163,7 +163,7 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
         serverName: '',
         trashDays: 30,
         userDeleteDelay: 7,
-        oauthButtonText: 'Login with OAuth',
+        oauthButtonText: 'Sign in with your provider',
         isInitialized: true,
         isOnboarded: true,
         externalDomain: '',

@@ -77,7 +77,7 @@ export const handleRotateApiKey = async (apiKey: ApiKeyResponseDto) => {
   const confirmed = await confirmFrameleaf({
     title: $t('frameleaf_access_key_rotate_title', { values: { name: apiKey.name } }),
     prompt: $t('frameleaf_access_key_rotate_prompt', { values: { name: apiKey.name } }),
-    confirmText: $t('frameleaf_access_key_rotate'),
+    confirmText: $t('frameleaf_access_key_replace'),
   });
   if (!confirmed) {
     return;

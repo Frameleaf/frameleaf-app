@@ -273,7 +273,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
     accountManagementUrl: '',
     autoLaunch: true,
     autoRegister: true,
-    buttonText: 'Login with OAuth',
+    buttonText: 'Sign in with your provider',
     clientId: '',
     clientSecret: '',
     defaultStorageQuota: null,

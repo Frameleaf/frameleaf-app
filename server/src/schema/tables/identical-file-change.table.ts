@@ -3,7 +3,7 @@ import type { Generated, Int8, Timestamp } from '@frameleaf/sql-tools';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 
 /**
- * FL-413: the identical-files journal. Mirrors migration 2100000003008-IdenticalFileChange.
+ * FL-413: the identical-files journal. Mirrors migration 2100000003009-IdenticalFileChange.
  *
  * One row per photo the identical-files run pointed at another person's identical file (`link`): its own
  * former path and content, and the Unused files entry its own file went to. That is what "Restore own

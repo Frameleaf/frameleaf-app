@@ -50,8 +50,6 @@ export const BuddyStatusSchema = z.object({
   instanceId: z.string(),
   settings: BuddySettingsSchema.nullable(),
   pairing: BuddyPairing.nullable(),
-  /** The pairing waits for this server's confirmation: it sent the invitation (only the inviter confirms). */
-  canConfirm: z.boolean().optional(),
   recoveryVerified: z.boolean(),
   keyFingerprint: z.string().nullable(),
   lastCompleteAt: z.string().nullable(),

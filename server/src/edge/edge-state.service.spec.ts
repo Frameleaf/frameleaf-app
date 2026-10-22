@@ -8,10 +8,12 @@ import { EdgePortMappingService } from 'src/edge/edge-port-mapping.service.js';
 import { EdgeProxyService } from 'src/edge/edge-proxy.service.js';
 import { EdgeRelayService } from 'src/edge/edge-relay.service.js';
 import { EdgeStateService, carrierGradeNat } from 'src/edge/edge-state.service.js';
-import { DatabaseLock, SystemMetadataKey } from 'src/enum.js';
+import { DatabaseLock, SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
+import { NOTIFICATION_CATALOGS, type NotificationCatalogs } from 'src/utils/notification-locale.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
+import localeFixtures from 'test/fixtures/system-notification-locale.json' with { type: 'json' };
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, automock, getMocks } from 'test/utils.js';
 
@@ -352,7 +354,8 @@ describe(EdgeStateService.name, () => {
         expect(remoteState()!.candidates.some((candidate) => candidate.kind === 'local')).toBe(true);
         expect(portMapping.keep).toHaveBeenCalled();
 
-        // A Server licence without a plan keeps Buddy Backup on the direct address (FL-437): only the relay needs a plan.
+        // A Server licence without a plan keeps its own direct address (FL-437) but no relay. Cloud hands that
+        // address to a Buddy partner only while the owner has a plan (FL-513); home-network entries otherwise.
         metadata.set(SystemMetadataKey.FrameleafLicense, {
           key: { ...license(['SUPPORTER_SERVER'], now), kind: 'server', source: 'key' } as FrameleafLicense,
           plan: null,
@@ -638,6 +641,29 @@ describe(EdgeStateService.name, () => {
           description: expect.stringContaining('internal'),
         });
       });
+
+      it('tells each administrator in their own language (FL-406)', async () => {
+        issueWith(wildcard);
+        const since = new Date(now).toISOString();
+        relay.state = { connected: false, disconnectedSince: since, lastError: 'internal' };
+        mocks.user.getMetadata.mockResolvedValue([
+          { key: UserMetadataKey.Preferences, value: { notifications: { locale: 'en-XA' } } },
+        ]);
+        NOTIFICATION_CATALOGS['en-XA'] = (localeFixtures.catalogs as NotificationCatalogs)['en-XA'];
+        try {
+          await sut.tick(now + 16 * 60 * 1000);
+        } finally {
+          delete NOTIFICATION_CATALOGS['en-XA'];
+        }
+        expect(mocks.notification.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            userId: 'admin-1',
+            title: '[Fixture Remote access relay disconnected]',
+            description: `[Fixture This server has not been connected to the Frameleaf relay since ${since}. It keeps trying; at home it works as before. The last problem was: internal]`,
+            data: { dedupeKey: 'frameleaf-remote:relay' },
+          }),
+        );
+      });
     });
 
     it('does not issue again until the renewal window, and checks daily', async () => {
@@ -665,6 +691,11 @@ describe(EdgeStateService.name, () => {
       expect(mocks.notification.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: { dedupeKey: 'frameleaf-remote:certificate:wildcard' } }),
       );
+      // FL-406: the English catalog renders exactly the producer's text
+      expect(mocks.notification.create.mock.calls[0][0]).toMatchObject({
+        title: 'Remote access certificate could not be renewed',
+        description: `The certificate for this server’s Frameleaf address could not be issued (rate limited). It is retried automatically, next at ${remoteState()!.certificateIssuance!.nextAttemptAt}.`,
+      });
 
       // not retried before the hour
       await sut.tick(now + 30 * 60 * 1000);

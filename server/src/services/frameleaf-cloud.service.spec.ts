@@ -51,7 +51,7 @@ import {
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
-import { ServiceMocks, newTestService } from 'test/utils.js';
+import { ServiceMocks, expectLocalisedSystemNotices, newTestService } from 'test/utils.js';
 
 /** The RFC 7638 kid of an Ed25519 private key. */
 const kidOf = (privateKey: KeyObject) => {
@@ -231,6 +231,8 @@ describe(FrameleafCloudService.name, () => {
   });
 
   afterEach(async () => {
+    // FL-406: every notice and push carries a system template whose English matches the supplied text
+    expectLocalisedSystemNotices(mocks.event.emit);
     await cloud.close();
     await rm(identityDir, { recursive: true, force: true });
   });

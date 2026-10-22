@@ -339,6 +339,15 @@ jobs:
       - name: Run ci-unit
         run: mise run ci-unit
         if: ${{ !cancelled() }}
+      # The UI fixture specs import web code that extends the SvelteKit-generated tsconfig
+      # ($app/tsconfig), so the web workspace needs installing and syncing first (FL-449).
+      - name: Setup web for the UI fixture specs
+        run: pnpm install --frozen-lockfile && pnpm exec svelte-kit sync
+        working-directory: ./web
+        if: ${{ !cancelled() }}
+      - name: Run UI fixture specs
+        run: pnpm test:ui-fixtures
+        if: ${{ !cancelled() }}
       - name: Capture automatic E2E formatting fixes
         if: failure()
         run: |

@@ -8,6 +8,7 @@ import type { InstanceIdentityRepository } from 'src/repositories/instance-ident
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import type { FrameleafCloudLink, FrameleafInstanceIdentity, FrameleafMlSuspension } from 'src/types.js';
+import type { SystemNotificationTemplate } from 'src/utils/notification-locale.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { DatabaseLock, MlAdmissionRefusal, NotificationLevel, NotificationType, SystemMetadataKey } from 'src/enum.js';
 import { FrameleafCloudError, isRegionMismatch, regionalGateway } from 'src/utils/frameleaf-cloud.js';
@@ -40,6 +41,7 @@ export const CLONE_SUSPECTED_NOTICE = Object.freeze({
   title: 'Two servers are using this server’s identity',
   description:
     'Frameleaf Cloud saw this server’s key start from two places. If you copied this server, give the copy its own identity folder. Cloud backup and cloud processing pause until this is resolved: the account owner can confirm this server in the Frameleaf account, or it clears on its own after 24 hours without a restart.',
+  systemTemplate: { version: 1, key: 'cloud-clone-suspected', args: {} } satisfies SystemNotificationTemplate,
   dedupeKey: 'frameleaf-cloud:clone-suspected',
   dedupeDays: 1,
 });
@@ -60,6 +62,7 @@ export const REGION_MISMATCH_NOTICE = Object.freeze({
   level: NotificationLevel.Error,
   title: 'Cloud processing is using the wrong region',
   description: ML_REGION_MISMATCH_DETAIL,
+  systemTemplate: { version: 1, key: 'cloud-region-mismatch', args: {} } satisfies SystemNotificationTemplate,
   dedupeKey: 'frameleaf-cloud:region-mismatch',
   dedupeDays: 1,
 });

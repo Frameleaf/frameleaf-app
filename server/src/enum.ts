@@ -639,6 +639,8 @@ export enum SystemMetadataKey {
   BackupRestoreVerification = 'backup-restore-verification',
   /** FL-362: the backup run in progress: which place it has reached, and a start that is still due. */
   BackupSequence = 'backup-sequence',
+  /** FL-367: when each API key was last used, by key id (recorded at most every few minutes). */
+  ApiKeyLastUsed = 'api-key-last-used',
   /**
    * FL-176: Frameleaf first-run setup — whether it is complete, which flow it runs (a new server or
    * the first Frameleaf launch on an existing library) and the saved per-step progress. Never a
