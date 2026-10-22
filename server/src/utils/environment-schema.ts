@@ -121,6 +121,11 @@ export const EnvSchema = z
      * (owner decision 2026-10-21); deployments override it only to point at a test fixture.
      */
     FRAMELEAF_CLOUD_URL: z.url({ protocol: /^https?$/ }).default('https://api.frameleaf.cloud'),
+    /**
+     * Overrides the push gateway address Frameleaf Cloud publishes in its discovery document
+     * (`endpoints.push`, `https://push.frameleaf.cloud`). Unset is the normal case; push is only off
+     * when neither names an address.
+     */
     FRAMELEAF_PUSH_URL: z.url({ protocol: /^https?$/ }).optional(),
     /**
      * Pre-release integration builds only (owner decision 2026-09-27): an absolute path to a mounted,
