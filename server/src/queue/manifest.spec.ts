@@ -1,12 +1,13 @@
 import { DummyDriver, Kysely, PostgresAdapter, PostgresIntrospector, PostgresQueryCompiler } from 'kysely';
+import type { DB } from 'src/schema/index.js';
 import { queueExecution } from 'src/queue/context.js';
 import { shareSelections } from 'src/queue/manifest.js';
 
 describe('selection sharing cancellation', () => {
-  let db: Kysely<any>;
+  let db: Kysely<DB>;
 
   beforeEach(() => {
-    db = new Kysely<any>({
+    db = new Kysely<DB>({
       dialect: {
         createAdapter: () => new PostgresAdapter(),
         createDriver: () => new DummyDriver(),
