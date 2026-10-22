@@ -816,8 +816,12 @@ describe(StudioExportService.name, () => {
 
     describe('FL-105 export matrix', () => {
       /** What the bundled worker advertises after its admission encodes (studio/tools/bundled-worker-formats.mjs). */
-      const matrixSession = () =>
+      const matrixSession = (
+        hdrFormats: string[] = [],
+        colorPrecision: { maxBitDepth: number; hdr10: boolean; dolbyVision: boolean } | null = null,
+      ) =>
         liveSession({
+          colorPrecision,
           codecs: [
             'webcodecs-avc',
             'aac',
@@ -848,6 +852,7 @@ describe(StudioExportService.name, () => {
             'audio-wav',
             'srt-sidecar-v2',
             'embedded-text-v2',
+            ...hdrFormats,
           ],
         });
       const captionGraph = () => ({
@@ -908,6 +913,48 @@ describe(StudioExportService.name, () => {
         ]);
         expect(await refusalOf({ format: 'mkv-vp9' })).toMatchObject({ reason: 'incompatible-color' });
         expect(repository.createWithRender).not.toHaveBeenCalled();
+      });
+
+      it('queues HDR10 and HLG masters only on a session that wrote and decoded them back (FL-107)', async () => {
+        studio.authorizeRevision.mockResolvedValue(authorized());
+        const hlgSources = [
+          { ...facts(CLIP), video: { timeBase: 30_000, pixelFormat: 'yuv420p10le', colorTransfer: 18 } },
+        ];
+        const hlg = { format: 'mp4-hevc-main10', color: 'preserve' };
+        const mastering = { primaries: 'bt2020', maxNits: 1000, minNits: 0.005 };
+        const hdr10 = { format: 'mp4-hevc-main10', color: 'hdr10', mastering };
+        const hdr10Precision = { maxBitDepth: 10, hdr10: true, dolbyVision: false };
+        const withEvidence = (formats: string[], colorPrecision = hdr10Precision) => {
+          const session = matrixSession(['mp4-hevc-main10', ...formats], colorPrecision);
+          renderWorkers.listLiveSessions.mockResolvedValue([session]);
+          renderWorkers.getSessionCapabilities.mockResolvedValue(session.capabilities);
+        };
+
+        // Ten-bit HDR10 evidence alone does not prove an HLG master.
+        withEvidence(['mp4-hevc-main10+pq']);
+        repository.getSourceMediaFacts.mockResolvedValue(hlgSources);
+        expect(await refusalOf(hlg)).toMatchObject({ code: 'studio_export_unsupported', reason: 'incompatible-color' });
+        expect(repository.createWithRender).not.toHaveBeenCalled();
+
+        withEvidence(['mp4-hevc-main10+pq', 'mp4-hevc-main10+hlg']);
+        await sut.create(auth(), PROJECT, { ...dto, ...hlg } as never);
+        expect(repository.createWithRender.mock.calls.at(-1)![0].snapshot.contract.video).toEqual({
+          minBitDepth: 10,
+          transfer: 'arib-std-b67',
+        });
+
+        repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP)]);
+        await sut.create(auth(), PROJECT, { ...dto, ...hdr10 } as never);
+        expect(repository.createWithRender.mock.calls.at(-1)![0].snapshot.contract.video).toEqual({
+          minBitDepth: 10,
+          transfer: 'smpte2084',
+          mastering,
+        });
+        // Without verified HDR10 the same master is refused before any job exists.
+        withEvidence(['mp4-hevc-main10+hlg'], { maxBitDepth: 10, hdr10: false, dolbyVision: false });
+        const queued = repository.createWithRender.mock.calls.length;
+        expect(await refusalOf(hdr10)).toMatchObject({ reason: 'incompatible-color' });
+        expect(repository.createWithRender).toHaveBeenCalledTimes(queued);
       });
 
       it('explains a sound-only export the project cannot fill before queueing it', async () => {
