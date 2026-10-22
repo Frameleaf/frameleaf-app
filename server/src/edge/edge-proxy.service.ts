@@ -264,12 +264,19 @@ export class EdgeProxyService {
       this.refuse(response, 403, 'This address only serves its Buddy vault.');
       return;
     }
+    const headers = upstreamHeaders(request.headers, arrival, secret);
+    // A chunked body goes on chunked. Unframed, Node would send a GET, HEAD, DELETE or OPTIONS body as
+    // raw bytes, and the API would read them on the pooled socket as a request of its own, without the
+    // via contract. A Content-Length body keeps its forwarded Content-Length.
+    if (request.headers['transfer-encoding'] !== undefined) {
+      headers['transfer-encoding'] = 'chunked';
+    }
     const outgoing = http.request({
       host,
       port,
       method: request.method,
       path: request.url,
-      headers: upstreamHeaders(request.headers, arrival, secret),
+      headers,
       agent: this.agent,
     });
     outgoing.on('information', (answer) => {
