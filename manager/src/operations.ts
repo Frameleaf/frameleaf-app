@@ -490,7 +490,7 @@ export class Operations {
     });
     await this.step(operation, 'download-images', async () => {
       const release = await this.releases.verify(review.release.directory, review.input.tag);
-      for (const image of await releaseImages(release.nas.images))
+      for (const image of await releaseImages(release.nas.images, review.input))
         await this.docker.pull(image, review.platform);
       return release.nas.tag;
     });
@@ -1025,7 +1025,7 @@ export class Operations {
     await this.step(operation, 'download-images', async () => {
       await this.releases.eligible(review.release.nas.tag);
       await this.releases.verify(review.release.directory, review.release.nas.tag);
-      for (const image of await releaseImages(review.release.nas.images))
+      for (const image of await releaseImages(review.release.nas.images, review.current))
         await this.docker.pull(image, review.platform);
       return true;
     });
@@ -1137,7 +1137,7 @@ export class Operations {
     await this.step(operation, 'download-images', async () => {
       await this.releases.eligible(review.release.nas.tag);
       await this.releases.verify(review.release.directory, review.release.nas.tag);
-      for (const image of await releaseImages(review.release.nas.images))
+      for (const image of await releaseImages(review.release.nas.images, review.recovery.installation))
         await this.docker.pull(image, review.platform);
       return true;
     });
