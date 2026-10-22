@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { CronTime } from 'cron';
 import { sql } from 'kysely';
 import { createHash, randomBytes } from 'node:crypto';
@@ -35,12 +35,16 @@ import { BuddyBackupCaptureService } from 'src/services/buddy-backup-capture.ser
 import { BuddyBackupPeerService } from 'src/services/buddy-backup-peer.service.js';
 import { BuddyBackupClient, BuddyExecutionError, BuddyPeerUnavailable } from 'src/utils/buddy-backup-client.js';
 import {
+  type BuddyEscrow,
+  BuddyEscrowError,
   type BuddyKeyring,
   buddyObjectId,
   createBuddyKeyring,
   decryptBuddyBlock,
   encryptBuddyBlock,
   parseBuddyKeyring,
+  unwrapBuddyKeyring,
+  wrapBuddyKeyring,
 } from 'src/utils/buddy-backup-crypto.js';
 import { assertBuddyCommitReceipt } from 'src/utils/buddy-backup-protocol.js';
 import { BuddyBackupReader } from 'src/utils/buddy-backup-reader.js';
@@ -69,12 +73,44 @@ import {
   BuddyPairing,
   BuddyStatusResponse,
 } from 'src/utils/frameleaf-buddy.js';
-import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
+import { FrameleafCloudError, cloudErrorCode } from 'src/utils/frameleaf-cloud.js';
 import { OperationDeadlineError, settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
 
 const KINDS = [MediaOperationKind.BuddyBackup, MediaOperationKind.BuddyRestore];
 const LEASE_MS = 300_000;
 class BuddyStopped extends Error {}
+
+/** Frameleaf Cloud refusals the owner can act on; anything else stays a server error. */
+const BUDDY_CLIENT_STATUSES = new Set([400, 402, 403, 404, 409, 410, 422, 429]);
+const BUDDY_STATUS_NAMES: Record<number, string> = {
+  400: 'Bad Request',
+  402: 'Payment Required',
+  403: 'Forbidden',
+  404: 'Not Found',
+  409: 'Conflict',
+  410: 'Gone',
+  422: 'Unprocessable Entity',
+  429: 'Too Many Requests',
+};
+
+/**
+ * FL-506: an invitation or accept that Frameleaf Cloud refuses keeps Cloud's status, `code` and message
+ * (402 entitlement-missing, 403/404 denied, 409/410 used or expired) instead of reading as a 500. A Cloud
+ * 401 is about this server's link, not the admin's session, so it is answered as 403.
+ */
+export const buddyCloudClientError = (error: unknown): unknown => {
+  if (!(error instanceof FrameleafCloudError) || error.status === null) {
+    return error;
+  }
+  const status = error.status === 401 ? HttpStatus.FORBIDDEN : error.status;
+  if (!BUDDY_CLIENT_STATUSES.has(status)) {
+    return error;
+  }
+  return new HttpException(
+    { message: error.message, error: BUDDY_STATUS_NAMES[status], statusCode: status, code: cloudErrorCode(error) },
+    status,
+  );
+};
 
 @Injectable()
 export class BuddyBackupService {
@@ -308,6 +344,21 @@ export class BuddyBackupService {
     return this.status();
   }
 
+  /** Unlock an escrowed recovery package locally; a wrong passphrase or bad package is the owner's 400. */
+  async unlockKit(escrow: BuddyEscrow, passphrase: string) {
+    const ring = await unwrapBuddyKeyring(escrow, passphrase).catch((error: unknown) => {
+      throw error instanceof BuddyEscrowError ? new BadRequestException(error.message) : error;
+    });
+    return this.importKit(ring);
+  }
+
+  /** Encrypt this server's recovery kit locally; a passphrase outside the limits is the owner's 400. */
+  async wrapKit(passphrase: string) {
+    return wrapBuddyKeyring(await this.keyring(), passphrase).catch((error: unknown) => {
+      throw error instanceof BuddyEscrowError ? new BadRequestException(error.message) : error;
+    });
+  }
+
   async importKit(dto: BuddyKitDto) {
     const pairing = await this.peer.pairing();
     const identity = await this.peer.identity();
@@ -361,13 +412,20 @@ export class BuddyBackupService {
     const status = await this.status();
     if (!status.settings || dto.instanceId !== status.instanceId || dto.quotaBytes !== status.settings.quotaBytes)
       throw new BadRequestException('Configure your hosting capacity before sending this invitation.');
-    return this.peer.cloud(BuddyInviteResponse, 'invitations', dto);
+    const accountId = await this.peer.accountId();
+    if (accountId && dto.targetAccountId.toLowerCase() === accountId.toLowerCase())
+      throw new BadRequestException('Invite your buddy’s Frameleaf account, not your own.');
+    return this.peer.cloud(BuddyInviteResponse, 'invitations', dto).catch((error: unknown) => {
+      throw buddyCloudClientError(error);
+    });
   }
   async accept(dto: BuddyAcceptRequest) {
     const status = await this.status();
     if (!status.settings || dto.instanceId !== status.instanceId || dto.quotaBytes !== status.settings.quotaBytes)
       throw new BadRequestException('Configure your hosting capacity before accepting this invitation.');
-    const accepted = await this.peer.cloud(BuddyPairing, 'invitations/accept', dto);
+    const accepted = await this.peer.cloud(BuddyPairing, 'invitations/accept', dto).catch((error: unknown) => {
+      throw buddyCloudClientError(error);
+    });
     await this.repository.update((state) => ({ ...state, acceptedPairId: accepted.pairId }));
     await this.peer.pairing();
     return this.status();

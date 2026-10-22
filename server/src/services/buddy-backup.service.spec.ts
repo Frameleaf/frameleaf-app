@@ -1,3 +1,4 @@
+import { HttpException } from '@nestjs/common';
 import { createHash, randomUUID, sign } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,6 +8,7 @@ import {
   DatabaseLock,
   MediaOperationKind,
   MediaOperationStatus,
+  MlAdmissionRefusal,
   NotificationLevel,
   NotificationType,
 } from 'src/enum.js';
@@ -18,11 +20,17 @@ import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { BuddyBackupCaptureService, type BuddyCapture } from 'src/services/buddy-backup-capture.service.js';
 import { BuddyBackupPeerService } from 'src/services/buddy-backup-peer.service.js';
 import { BuddyBackupService } from 'src/services/buddy-backup.service.js';
-import { buddyObjectId, createBuddyKeyring, encryptBuddyBlock } from 'src/utils/buddy-backup-crypto.js';
+import {
+  buddyObjectId,
+  createBuddyKeyring,
+  encryptBuddyBlock,
+  wrapBuddyKeyring,
+} from 'src/utils/buddy-backup-crypto.js';
 import { buddyCommitReceipt } from 'src/utils/buddy-backup-protocol.js';
 import { type BuddySignedSnapshot, BuddyVault } from 'src/utils/buddy-backup-vault.js';
 import { CLOUD_BACKUP_MANIFEST_FORMAT } from 'src/utils/cloud-backup.js';
 import { BuddyGrantResponse, BuddyPairing } from 'src/utils/frameleaf-buddy.js';
+import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { type FrameleafKeySigner, jwsSigningInput } from 'src/utils/frameleaf-dpop.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { makeLicenseSigner } from 'test/fixtures/frameleaf-license.fixture.js';
@@ -768,5 +776,108 @@ describe('Buddy pairing confirmation (FL-434)', () => {
       pairing: { state: 'active' },
     });
     expect(cloud).toHaveBeenCalledWith(expect.anything(), `pairings/${pending.pairId}/confirm`, { version: 1 });
+  });
+});
+
+describe('Buddy invitation errors (FL-506) and escrow passphrases (FL-507)', () => {
+  let directory: string;
+
+  beforeEach(async () => {
+    vi.stubEnv('FRAMELEAF_BUDDY_BACKUP', 'true');
+    directory = await mkdtemp(join(tmpdir(), 'buddy-errors-'));
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  const setup = async () => {
+    const fixture = await createRunFixture(directory);
+    const { service, repository } = fixture;
+    vi.mocked(service.status).mockRestore();
+    const state = await repository.state();
+    await mkdir(state.settings!.directory, { recursive: true });
+    const instanceId = (await service.peer.identity()).instanceId;
+    const common = {
+      version: 1 as const,
+      instanceId,
+      quotaBytes: state.settings!.quotaBytes,
+      retention: { days: 30 as const, monthly: 12 as const },
+    };
+    return { ...fixture, cloud: vi.mocked(service.peer.cloud), common };
+  };
+  const refusal = (status: number, code: string, message: string) =>
+    new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, status, message, {
+      code,
+      message,
+      retryable: false,
+      refusal: null,
+      detail: null,
+      data: null,
+      requestId: null,
+    });
+  const answer = async (promise: Promise<unknown>) => {
+    const error = await promise.then(() => null).catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(HttpException);
+    const http = error as HttpException;
+    return { status: http.getStatus(), body: http.getResponse() };
+  };
+
+  it.each([
+    [402, 'entitlement-missing', 'This server needs an active Server licence'],
+    [403, 'forbidden', 'Not allowed'],
+    [404, 'not-found', 'No such invitation'],
+    [409, 'invitation-used', 'This invitation was already used'],
+    [410, 'invitation-expired', 'This invitation has expired'],
+  ])('keeps a Cloud %s refusal of an invitation and an accept', async (status, code, message) => {
+    const { service, cloud, common } = await setup();
+    cloud.mockRejectedValue(refusal(status, code, message));
+    const expected = { status, body: { statusCode: status, code, message, error: expect.any(String) } };
+
+    await expect(
+      answer(service.invite({ ...common, targetAccountId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e99' })),
+    ).resolves.toEqual(expected);
+    await expect(answer(service.accept({ ...common, token: 'a'.repeat(43) }))).resolves.toEqual(expected);
+  });
+
+  it('answers a Cloud 401 about this server’s link as 403, never as a session 401', async () => {
+    const { service, cloud, common } = await setup();
+    cloud.mockRejectedValue(refusal(401, 'invalid-token', 'Token rejected'));
+    await expect(answer(service.accept({ ...common, token: 'a'.repeat(43) }))).resolves.toMatchObject({
+      status: 403,
+      body: { code: 'invalid-token' },
+    });
+  });
+
+  it('leaves Cloud outages and other failures as server errors', async () => {
+    const { service, cloud, common } = await setup();
+    const outage = refusal(503, 'service-paused', 'Paused');
+    cloud.mockRejectedValue(outage);
+    await expect(service.accept({ ...common, token: 'a'.repeat(43) })).rejects.toBe(outage);
+  });
+
+  it('refuses a self-invitation with 400 before asking Cloud', async () => {
+    const { service, cloud, common } = await setup();
+    const own = '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e98';
+    vi.mocked(service.peer.accountId).mockResolvedValue(own);
+    await expect(answer(service.invite({ ...common, targetAccountId: own.toUpperCase() }))).resolves.toMatchObject({
+      status: 400,
+    });
+    expect(cloud).not.toHaveBeenCalled();
+  });
+
+  it('answers a wrong escrow passphrase with 400 and a clear message', async () => {
+    const { service } = await setup();
+    const escrow = await wrapBuddyKeyring(createBuddyKeyring(randomUUID()), 'correct horse battery staple');
+    await expect(answer(service.unlockKit(escrow, 'correct horse battery staple-wrong'))).resolves.toMatchObject({
+      status: 400,
+      body: { message: 'That passphrase doesn’t unlock this recovery package' },
+    });
+    await expect(
+      answer(service.unlockKit({ ...escrow, blob: escrow.blob.slice(0, 40) }, 'correct horse battery staple')),
+    ).resolves.toMatchObject({ status: 400, body: { message: 'Invalid encrypted recovery package' } });
+    await expect(answer(service.unlockKit(escrow, 'short'))).resolves.toMatchObject({ status: 400 });
   });
 });
