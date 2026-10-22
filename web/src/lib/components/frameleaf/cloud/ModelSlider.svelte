@@ -196,9 +196,11 @@
       {#if bandsPresent.has('gpu')}
         <li class="is-gpu">
           <Icon icon={mdiExpansionCard} size="14" aria-hidden={true} />
-          {gpu
-            ? $t('frameleaf_model_key_gpu_named', { values: { gpu: gpu.name, memory: gpu.vramGb } })
-            : $t('frameleaf_model_key_gpu')}
+          {gpu?.integrated
+            ? $t('frameleaf_model_key_gpu_integrated', { values: { gpu: gpu.name } })
+            : gpu
+              ? $t('frameleaf_model_key_gpu_named', { values: { gpu: gpu.name, memory: gpu.vramGb } })
+              : $t('frameleaf_model_key_gpu')}
         </li>
       {/if}
       {#if bandsPresent.has('cloud')}

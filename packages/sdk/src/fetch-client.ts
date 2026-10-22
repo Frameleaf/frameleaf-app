@@ -2180,6 +2180,8 @@ export type HardwareContainerCheckDto = {
     /** Driver and runtime, or what the driver reported instead */
     driver: string | null;
     gpu: HardwareGpuFactsDto;
+    /** The GPU is an integrated one sharing the computer's memory; null when not known */
+    integrated: boolean | null;
     model: string | null;
     /** The container answered the check */
     reachable: boolean;
