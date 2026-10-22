@@ -184,6 +184,8 @@ export class MapRepository {
       }
 
       const index: Record<string, LandmarkIcon> = {};
+      // Node 22's pipeline can reject with its own AbortError while tearing down; report the line that failed instead.
+      let malformed: Error | undefined;
       const unpack = async (line: string) => {
         if (!line) {
           return;
@@ -191,7 +193,7 @@ export class MapRepository {
         const { id, background, tile, png } = JSON.parse(line);
         // The id becomes a file name, so it is checked even though the whole file already was.
         if (!LANDMARK_ID.test(id) || !HEX_COLOUR.test(background) || typeof tile !== 'boolean') {
-          throw new Error('The icon pack has a malformed line');
+          throw (malformed = new Error('The icon pack has a malformed line'));
         }
         await writeFile(join(staging, `${id}.png`), Buffer.from(png, 'base64'));
         index[id] = { background, tile };
@@ -207,6 +209,8 @@ export class MapRepository {
           }
         }
         await unpack(rest);
+      }).catch((error) => {
+        throw malformed ?? error;
       });
 
       await rm(download);

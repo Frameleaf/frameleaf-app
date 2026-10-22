@@ -17,6 +17,7 @@ import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { type MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -114,7 +115,7 @@ describe('restoration operation ownership', () => {
         previewRegion: { x: 0, y: 0, w: 1, h: 1 },
       });
       const bind = () =>
-        Promise.try(() => ({
+        tryPromise(() => ({
           operation: {
             ownerId: user.id,
             kind: stage === 'preview' ? MediaOperationKind.RestorationPreview : MediaOperationKind.Restoration,

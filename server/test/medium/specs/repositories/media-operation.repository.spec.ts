@@ -20,6 +20,7 @@ import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit, JOB_QUEUE_CLAIMANT, editOperationCreate } from 'src/utils/edit-operation.js';
 import { resetMediaOperationsAfterRestore } from 'src/utils/media-operation-restore.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -2222,7 +2223,7 @@ describe(MediaOperationRepository.name, () => {
         try {
           await expect(
             sut.createCloudDescriptionBatches(rows, () =>
-              Promise.try(() => {
+              tryPromise(() => {
                 acknowledged = true;
               }),
             ),

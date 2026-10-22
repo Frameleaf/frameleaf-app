@@ -3,6 +3,7 @@ import { AssetType, AssetVisibility } from 'src/enum.js';
 import { LivePhotoRepository } from 'src/repositories/live-photo.repository.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
@@ -414,7 +415,7 @@ describe(LivePhotoService.name, () => {
       );
       mocks.asset.getLivePhotoCount.mockResolvedValue(0);
       mocks.asset.update.mockImplementation((patch) =>
-        Promise.try(() => {
+        tryPromise(() => {
           const role = patch.id === 'photo-1' ? 'photo' : 'video';
           state[role] = { ...state[role], ...patch } as never;
           if (failing === role) throw new Error('write failed');
@@ -422,7 +423,7 @@ describe(LivePhotoService.name, () => {
         }),
       );
       mocks.album.removeAssetsFromAll.mockImplementation(() =>
-        Promise.try(() => {
+        tryPromise(() => {
           state.inAlbum = false;
           if (failing === 'albums') throw new Error('write failed');
         }),
@@ -465,7 +466,7 @@ describe(LivePhotoService.name, () => {
 
     it('announces the link only after its writes commit', async () => {
       mocks.event.emit.mockImplementation(() =>
-        Promise.try(() => {
+        tryPromise(() => {
           expect(committed).toBe(true);
         }),
       );

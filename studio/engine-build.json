@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-  "node": "26.11.1",
+  "node": "22.23.4",
   "npm": "12.2.0",
-  "lockfileSha256": "68562af46bc9b127c50012bc165cdf2380aeefc7200b0b30c5bbfd1a513c8ac1",
+  "lockfileSha256": "e9dfcda92f7df43421ec8a1e2c4f65b8b2d8d0be413adef2ad328d3702759ea1",
   "patches": [
     {
       "path": "patches/0001-isolated-package.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "eb23cb96777b44a5b37cf099babec9bcdff31fb002010713f07fe8d739fa73b9"
+      "sha256": "3c5a0cb372549e387ae57b98ac5f92f4210481cd7fd96eb9a60e39fba655db86"
     },
     {
       "path": "patches/0002-stable-worker-sourcemaps.patch",
@@ -672,7 +672,7 @@
     },
     {
       "path": "patches/0139-latest-studio-dependencies.patch",
-      "sha256": "61a0d02f54b7510cda14860e5f59ab8124c80f28722ba2f0ce0895ce78c131dd",
+      "sha256": "2764b26660683aef8f0330d82b681aeb1fe11bc527e7f902e5b3789130616e8a",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
     },
     {
@@ -706,5 +706,5 @@
       "sha256": "6dfc1b91a3f955b705d2aa441b20b199daf9e0fd6c8a971acfae0d0b865abd3a"
     }
   ],
-  "sourceSha256": "dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a"
+  "sourceSha256": "9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf"
 }

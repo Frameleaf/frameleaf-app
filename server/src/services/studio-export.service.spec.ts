@@ -36,6 +36,7 @@ import {
 import { StudioExportService, settleStudioExportPublication } from 'src/services/studio-export.service.js';
 import { StudioAuthorizedEntry } from 'src/services/studio-resource.service.js';
 import * as ownerPaths from 'src/utils/cloud-backup-owner-path.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { sealStudioEmbeddedSubtitles } from 'src/utils/studio-embedded-subtitles.js';
 import { studioExportStagingFolder } from 'src/utils/studio-export.js';
 import { StudioResourceKind } from 'src/utils/studio-resources.js';
@@ -1892,7 +1893,7 @@ describe(StudioExportService.name, () => {
     it('admits the render-finished notification inside the publication transaction', async () => {
       const tx = { isTransaction: true };
       repository.publish.mockImplementation((_input, _metadata, notification) =>
-        Promise.try(() => notification!(tx as never, published().version, 'Lake trip')).then(() => published()),
+        tryPromise(() => notification!(tx as never, published().version, 'Lake trip')).then(() => published()),
       );
       await sut.run(job());
       expect(jobs.queueInTransaction).toHaveBeenCalledWith(tx, {
@@ -1988,7 +1989,7 @@ describe(StudioExportService.name, () => {
 
     it('verifies the file, moves it into the library and publishes it with the sources re-checked', async () => {
       repository.publish.mockImplementation((_input, metadata) =>
-        Promise.try(() => metadata!({ isTransaction: true } as never, 'asset-new')).then(() => published()),
+        tryPromise(() => metadata!({ isTransaction: true } as never, 'asset-new')).then(() => published()),
       );
 
       await sut.run(job());

@@ -14,6 +14,7 @@ import {
 } from 'src/enum.js';
 import { NotificationService } from 'src/services/notification.service.js';
 import { NOTIFICATION_CATALOGS, type NotificationCatalogs } from 'src/utils/notification-locale.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -288,7 +289,7 @@ describe(NotificationService.name, () => {
       const failure = new Error('Remote configuration reconciliation failed');
       const reconcile = vi.fn().mockRejectedValue(failure);
       Reflect.set(mocks.websocket, 'awaitConfigUpdate', reconcile);
-      await expect(Promise.try(() => sut.onConfigUpdate({ oldConfig: defaults, newConfig: defaults }))).rejects.toBe(
+      await expect(tryPromise(() => sut.onConfigUpdate({ oldConfig: defaults, newConfig: defaults }))).rejects.toBe(
         failure,
       );
     });

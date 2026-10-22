@@ -22,6 +22,7 @@ import { UploadBody } from 'src/types.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -342,7 +343,7 @@ describe(AssetMediaService.name, () => {
       mocks.asset.create.mockResolvedValue(assetEntity);
       Object.assign(mocks.asset, {
         createLivePhotoUpload: vitest.fn(() =>
-          Promise.try(() => {
+          tryPromise(() => {
             committed = true;
             return { asset: assetEntity, hiddenId: 'motion', lockedIds: [] };
           }),
@@ -375,7 +376,7 @@ describe(AssetMediaService.name, () => {
 
     it('emits the motion hide only after the repository commits the still and motion', async () => {
       mocks.event.emit.mockImplementation((...[name]) =>
-        Promise.try(() => {
+        tryPromise(() => {
           if (name === 'AssetHide') expect(committed).toBe(true);
         }),
       );
@@ -402,7 +403,7 @@ describe(AssetMediaService.name, () => {
     it('passes the explicit Locked decision through without requiring a PIN and follows up after commit', async () => {
       Object.assign(mocks.asset, {
         createLivePhotoUpload: vitest.fn(() =>
-          Promise.try(() => {
+          tryPromise(() => {
             committed = true;
             return { asset: assetEntity, hiddenId: 'motion', lockedIds: ['id_1', 'motion'] };
           }),
@@ -411,7 +412,7 @@ describe(AssetMediaService.name, () => {
       mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
       mocks.user.getLockedProfileImageSources.mockResolvedValue([]);
       mocks.event.emit.mockImplementation(() =>
-        Promise.try(() => {
+        tryPromise(() => {
           expect(committed).toBe(true);
         }),
       );
