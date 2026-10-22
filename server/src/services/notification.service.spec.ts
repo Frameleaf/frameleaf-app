@@ -427,6 +427,32 @@ describe(NotificationService.name, () => {
         expect.objectContaining({ id: asset.id, landmarks: [{ ...landmark, icon: undefined }] }),
       );
     });
+
+    it('sends the saved capture time, zone and people after a date edit (LIB-02)', async () => {
+      const dateTimeOriginal = new Date('2026-06-22T23:30:00.000Z');
+      const asset = AssetFactory.from()
+        .exif({ dateTimeOriginal, timeZone: 'America/Edmonton' })
+        .face({}, (face) => face.person({ name: 'Jamie' }))
+        .build();
+      mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([getForAsset(asset)] as never);
+      mocks.search.getAssetLandmarks.mockResolvedValue([]);
+
+      await sut.onAssetMetadataExtracted({ assetId: asset.id, userId: asset.ownerId, source: 'sidecar-write' });
+
+      expect(mocks.asset.getByIdsWithAllRelationsButStacks).toHaveBeenCalledWith([asset.id], asset.ownerId);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith(
+        'on_asset_update',
+        asset.ownerId,
+        expect.objectContaining({
+          id: asset.id,
+          exifInfo: expect.objectContaining({
+            dateTimeOriginal: dateTimeOriginal.toISOString(),
+            timeZone: 'America/Edmonton',
+          }),
+          people: [expect.objectContaining({ name: 'Jamie' })],
+        }),
+      );
+    });
   });
 
   describe('onAssetShow', () => {
