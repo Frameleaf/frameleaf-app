@@ -44,6 +44,7 @@
     type BuddyKitDto,
     type BuddySettingsDto,
     EnvironmentKeys,
+    isHttpError,
     LicenseKind,
     LicenseState,
     Version,
@@ -72,6 +73,8 @@
   const presentation = $derived(buddyBackupPresentation(status, linked));
   const place = $derived(buddyPlaceState(status, { linked }, new Date()));
   let failure = $state('');
+  // Frameleaf Cloud refused an invitation or accept for a missing Server licence (402, FL-506).
+  let licencePrompt = $state(false);
   let notice = $state('');
   let busy = $state(false);
   /** The first read of the status failed: the section says so and offers to try again. */
@@ -204,31 +207,40 @@
     });
   const pair = (accept: boolean) =>
     action(async () => {
-      if (!status?.settings) {
-        return;
-      }
-      const common = {
-        version: 1 as const,
-        instanceId: status.instanceId,
-        quotaBytes: status.settings.quotaBytes,
-        retention: { days: 30 as const, monthly: 12 as const },
-      };
-      if (accept) {
-        let token = invitation.trim();
-        try {
-          const url = new URL(token);
-          token = url.searchParams.get('invite') ?? url.hash.slice(1);
-        } catch {
-          /* a copied invitation code is also accepted */
-        }
-        status = await acceptBackupBuddy({ buddyAcceptDto: { ...common, token } });
-        step = 2;
-      } else {
-        const invite = await inviteBackupBuddy({ buddyInviteDto: { ...common, targetAccountId: buddyAccount.trim() } });
-        invitationLink = `https://frameleaf.cloud/buddy?invite=${encodeURIComponent(invite.token)}`;
-        notice = $t('frameleaf_buddy_send_this_private_invitation_to_your_buddy_it_expires_in_24_hours');
+      licencePrompt = false;
+      try {
+        await sendPairing(accept);
+      } catch (error) {
+        licencePrompt = isHttpError(error) && error.status === 402;
+        throw error;
       }
     });
+  const sendPairing = async (accept: boolean) => {
+    if (!status?.settings) {
+      return;
+    }
+    const common = {
+      version: 1 as const,
+      instanceId: status.instanceId,
+      quotaBytes: status.settings.quotaBytes,
+      retention: { days: 30 as const, monthly: 12 as const },
+    };
+    if (accept) {
+      let token = invitation.trim();
+      try {
+        const url = new URL(token);
+        token = url.searchParams.get('invite') ?? url.hash.slice(1);
+      } catch {
+        /* a copied invitation code is also accepted */
+      }
+      status = await acceptBackupBuddy({ buddyAcceptDto: { ...common, token } });
+      step = 2;
+    } else {
+      const invite = await inviteBackupBuddy({ buddyInviteDto: { ...common, targetAccountId: buddyAccount.trim() } });
+      invitationLink = `https://frameleaf.cloud/buddy?invite=${encodeURIComponent(invite.token)}`;
+      notice = $t('frameleaf_buddy_send_this_private_invitation_to_your_buddy_it_expires_in_24_hours');
+    }
+  };
   const savePackage = (value: unknown, filename: string) => {
     const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }));
     const link = document.createElement('a');
@@ -825,6 +837,14 @@
       ][step]}
     </p>
     {#if failure}<InlineError compact message={failure} />{/if}
+    {#if licencePrompt}
+      <p class="explain">{$t('frameleaf_buddy_server_licence_required')}</p>
+      <div class="fc-actions">
+        <a class="fc-button" href={commandCenterUrl('cloud', 'cloud-license')}
+          >{$t('frameleaf_buddy_server_licence_action')}</a
+        >
+      </div>
+    {/if}
     {#if step === 0}{@render storageForm()}
     {:else if step === 1}
       <p>{$t('frameleaf_buddy_both_servers_need_a_compatible_frameleaf_version_cloud_sign_in_and_an_active_subsc')}</p>

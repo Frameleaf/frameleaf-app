@@ -70,6 +70,11 @@ export class BuddyBackupPeerService {
     return this.instanceIdentityRepository.currentSigner();
   }
 
+  /** The Frameleaf account this server is linked to, when the link recorded it. */
+  async accountId() {
+    return (await readCloudLink(this.deps())).link?.accountId ?? null;
+  }
+
   async cloudTarget() {
     const { linked, link, cloudUrl } = await readCloudLink(this.deps());
     if (!linked || !cloudUrl || !link?.instanceId || link.heartbeat?.cloneSuspected)
