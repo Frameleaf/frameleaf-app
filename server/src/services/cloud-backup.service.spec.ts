@@ -79,7 +79,7 @@ import {
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
-import { getMocks } from 'test/utils.js';
+import { expectLocalisedSystemNotices, getMocks } from 'test/utils.js';
 
 vi.mock('src/utils/backup-location-selection.js', () => ({ selectBackupLocation: vi.fn() }));
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -481,6 +481,8 @@ describe(CloudBackupService.name, () => {
     sut.keyAskMs = 0;
   });
   afterEach(() => sut.onShutdown());
+  // FL-406: every cloud backup notice carries a system template whose English matches the supplied text
+  afterEach(() => expectLocalisedSystemNotices(mocks.event.emit));
 
   describe('metadata update races', () => {
     const internal = () =>

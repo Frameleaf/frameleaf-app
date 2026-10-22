@@ -1,5 +1,6 @@
 import z from 'zod';
 import type { FrameleafCloudLink, FrameleafCloudLinkRefusal, FrameleafCloudPermissions } from 'src/types.js';
+import type { SystemNotificationTemplate } from 'src/utils/notification-locale.js';
 import {
   type HeartbeatSettings,
   cloudBackupSettingsSchema,
@@ -390,6 +391,8 @@ export type BackupPlanNotice = {
   audience: 'owner' | 'admins';
   title: string;
   body: string;
+  /** FL-406: the same notice in the recipient's language; `body`/`title` stay the English fallback. */
+  systemTemplate: SystemNotificationTemplate;
   data: Record<string, string | boolean | null>;
 };
 
@@ -397,6 +400,11 @@ export type BackupPlanNotice = {
  * FL-301: the full plan's push text by action. `ask-organiser` is a Family Sharing member's plan: only the family
  * organiser can change it, so no upgrade is offered (the cloud contract's generic wording).
  */
+const PLAN_FULL_TEMPLATE = {
+  upgrade: { version: 1, key: 'plan-full-upgrade', args: {} },
+  'ask-organiser': { version: 1, key: 'plan-full-ask-organiser', args: {} },
+} as const satisfies Record<NonNullable<BackupPlanSignal['planFull']>['action'], SystemNotificationTemplate>;
+
 const PLAN_FULL_BODY: Record<NonNullable<BackupPlanSignal['planFull']>['action'], string> = {
   upgrade:
     'Backups no longer fit the Frameleaf plan, so new items wait until it is upgraded. Your library is untouched and restores keep working.',
@@ -414,25 +422,30 @@ export const backupPlanNotices = (signal: BackupPlanSignal | undefined): BackupP
   if (overflow) {
     const current = tierLabel(overflow.currentTier);
     const suggested = tierLabel(overflow.suggestedTier);
-    const text = {
+    const texts: Record<typeof overflow.status, Pick<BackupPlanNotice, 'title' | 'body' | 'systemTemplate'>> = {
       asked: {
         title: 'Your backups have outgrown your plan',
         body: `Your backups no longer fit the ${current} plan. Open the Frameleaf app to move to ${suggested}.`,
+        systemTemplate: { version: 1, key: 'plan-tier-asked', args: { current, suggested } },
       },
       accepted: {
         title: 'Your Frameleaf plan was upgraded',
         body: `Your plan is now ${suggested}. Backups carry on with the room it gives them.`,
+        systemTemplate: { version: 1, key: 'plan-tier-accepted', args: { suggested } },
       },
       declined: overflow.backupPaused
         ? {
             title: 'Backups are paused: plan full',
             body: `Your backups no longer fit the ${current} plan, so new items wait. Upgrade in the Frameleaf app to back them up.`,
+            systemTemplate: { version: 1, key: 'plan-tier-declined-paused', args: { current } },
           }
         : {
             title: 'Your plan stays the same',
             body: `Your plan stays at ${current}. Backups that do not fit wait until the plan is upgraded.`,
+            systemTemplate: { version: 1, key: 'plan-tier-declined', args: { current } },
           },
-    }[overflow.status];
+    };
+    const text = texts[overflow.status];
     notices.push({
       key: `${BACKUP_PLAN_NOTICE_PREFIX}${overflow.id}:${overflow.status}`,
       audience: 'owner',
@@ -456,6 +469,7 @@ export const backupPlanNotices = (signal: BackupPlanSignal | undefined): BackupP
       title: 'Backups are paused: plan full',
       // the server's own words, never the cloud's `message`, so nothing about the tier can reach the administrators
       body: PLAN_FULL_BODY[full.action],
+      systemTemplate: PLAN_FULL_TEMPLATE[full.action],
       data: { reason: 'plan-full', screen: 'plan', action: full.action },
     });
   }

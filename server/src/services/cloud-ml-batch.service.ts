@@ -668,6 +668,7 @@ export class CloudMlBatchService extends BaseService {
       level: NotificationLevel.Info,
       title: 'Automatic descriptions paused for today',
       description: `Describing new photos with Frameleaf Cloud reached today's budget of $${dailyBudgetUsd.toFixed(2)}. New photos wait and are described from tomorrow; nothing is sent to another destination.`,
+      systemTemplate: { version: 1, key: 'cloud-description-budget', args: { budget: dailyBudgetUsd.toFixed(2) } },
       dedupeKey: `frameleaf-cloud:description-budget:${serverDay(now, await this.serverZone())}`,
       dedupeDays: 1,
     });
