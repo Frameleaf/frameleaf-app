@@ -176,8 +176,8 @@ import { SmartAlbumExclusionTable } from 'src/schema/tables/smart-album-exclusio
 import { SmartAlbumTable } from 'src/schema/tables/smart-album.table.js';
 import { SmartSearchDescriptionTable } from 'src/schema/tables/smart-search-description.table.js';
 import { SmartSearchTable } from 'src/schema/tables/smart-search.table.js';
-import { SourceResourceGrantNonceTable, SourceResourceGrantTable } from 'src/schema/tables/source-resource.table.js';
 import { SourceOriginalTable, SourceResourceReadTable } from 'src/schema/tables/source-resource-read.table.js';
+import { SourceResourceGrantNonceTable, SourceResourceGrantTable } from 'src/schema/tables/source-resource.table.js';
 import { StackAuditTable } from 'src/schema/tables/stack-audit.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
 import {

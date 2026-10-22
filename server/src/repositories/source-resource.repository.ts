@@ -199,9 +199,8 @@ export class SourceResourceRepository {
         if (!authority || !(await liveGrant.executeTakeFirst())) throw expired;
         return result;
       })
-      .catch((error) => {
+      .catch((error): undefined => {
         if (error !== expired) throw error;
-        return undefined;
       });
   }
 
