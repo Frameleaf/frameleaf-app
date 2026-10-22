@@ -187,7 +187,8 @@ jobs:
           test -x "$PLAYWRIGHT_BROWSERS_PATH/ffmpeg-1013/ffmpeg-linux"
           npx --no-install playwright install-deps chromium
       - name: Cross-browser harness and driver tests (FL-112)
-        run: node --test studio/tools/lib/cross-browser-harness.test.mjs studio/tools/lib/browser-driver.test.mjs studio/tools/lib/browser-driver.chromium.test.mjs studio/tools/effects-matrix-dispatch.test.mjs studio/tools/photometric-goldens.test.mjs studio/tools/render-goldens.test.mjs studio/tools/ascii-reference.test.mjs studio/tools/pixelate-reference.test.mjs studio/tools/geometry-reference.test.mjs studio/tools/conformance.test.mjs scripts/frameleaf-studio-evidence.test.mjs
+        # Node 22 ships Float16Array (used by the CPU oracles) only behind this V8 flag.
+        run: node --js-float16array --test studio/tools/lib/cross-browser-harness.test.mjs studio/tools/lib/browser-driver.test.mjs studio/tools/lib/browser-driver.chromium.test.mjs studio/tools/effects-matrix-dispatch.test.mjs studio/tools/photometric-goldens.test.mjs studio/tools/render-goldens.test.mjs studio/tools/ascii-reference.test.mjs studio/tools/pixelate-reference.test.mjs studio/tools/geometry-reference.test.mjs studio/tools/conformance.test.mjs scripts/frameleaf-studio-evidence.test.mjs
       - name: Build shared server contracts for render-worker tests
         run: |
           mise run //server:install
@@ -268,9 +269,9 @@ jobs:
       # OpenAPI client and other generated artifacts in this repo.
       - name: Record Studio browser-conformance evidence (FL-112)
         run: |
-          node scripts/frameleaf-studio-evidence.mjs --family effect --report "$RUNNER_TEMP/effects-matrix-report.json" --write
-          node scripts/frameleaf-studio-evidence.mjs --family blend --report "$RUNNER_TEMP/blend-matrix-report.json" --write
-          node scripts/frameleaf-studio-evidence.mjs --family transition --report "$RUNNER_TEMP/transition-matrix-report.json" --write
+          node --js-float16array scripts/frameleaf-studio-evidence.mjs --family effect --report "$RUNNER_TEMP/effects-matrix-report.json" --write
+          node --js-float16array scripts/frameleaf-studio-evidence.mjs --family blend --report "$RUNNER_TEMP/blend-matrix-report.json" --write
+          node --js-float16array scripts/frameleaf-studio-evidence.mjs --family transition --report "$RUNNER_TEMP/transition-matrix-report.json" --write
           git diff --exit-code -- studio/conformance.json
       - name: Upstream unit and Node headless contracts
         env:
@@ -340,7 +341,7 @@ jobs:
           path: ${{ runner.temp }}
       - name: Record Studio command-matrix evidence (FL-112)
         run: |
-          node scripts/frameleaf-studio-evidence.mjs --command-matrix-report "$RUNNER_TEMP/command-matrix-report.json" --command-matrix-report "$RUNNER_TEMP/studio-lifecycle-report.json" --write
+          node --js-float16array scripts/frameleaf-studio-evidence.mjs --command-matrix-report "$RUNNER_TEMP/command-matrix-report.json" --command-matrix-report "$RUNNER_TEMP/studio-lifecycle-report.json" --write
           git diff --exit-code -- studio/conformance.json
       - name: Reproduce from a fresh generated workspace
         run: |
