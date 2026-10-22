@@ -144,7 +144,16 @@ export class DesktopQualificationReceipt {
     )
       throw invalid();
     const provider = report.provider;
-    if (!['CPUExecutionProvider', 'CUDAExecutionProvider', 'CoreMLExecutionProvider'].includes(provider))
+    // OpenVINO (Intel graphics and NPUs) qualifies like CUDA: a plain accelerator report with no signed
+    // device collector; CoreML keeps its signed-collector proof and stays macOS-only.
+    if (
+      ![
+        'CPUExecutionProvider',
+        'CUDAExecutionProvider',
+        'CoreMLExecutionProvider',
+        'OpenVINOExecutionProvider',
+      ].includes(provider)
+    )
       throw invalid();
     if (provider === 'CoreMLExecutionProvider') {
       if (facts.system !== 'Darwin' || !['arm64', 'aarch64'].includes(facts.architecture)) throw invalid();
