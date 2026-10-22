@@ -256,6 +256,11 @@ describe(StorageTemplateService.name, () => {
 
         expect(await movedOriginals()).toEqual([]);
         expect(sidecarMoves()).toEqual([]);
+        // FL-417: the photo shows its own template path, in its owner's folder
+        expect(mocks.asset.update).toHaveBeenCalledWith({
+          id: asset.id,
+          libraryPath: expect.stringContaining(`/data/library/${asset.ownerId}/2022/2022-06-19/`),
+        });
       });
 
       it("never moves its sidecar onto the primary owner's sidecar beside the shared original", async () => {

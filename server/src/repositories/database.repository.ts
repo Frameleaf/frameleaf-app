@@ -391,7 +391,8 @@ export class DatabaseRepository {
       targetFolder = targetFolder.slice(0, -1);
     }
 
-    type PathColumn = 'asset.originalPath' | 'asset_file.path' | 'person.thumbnailPath' | 'user.profileImagePath';
+    type PathColumn =
+      'asset.originalPath' | 'asset.libraryPath' | 'asset_file.path' | 'person.thumbnailPath' | 'user.profileImagePath';
     const replacement = (column: PathColumn) =>
       sql<string>`${targetFolder} || substring(${sql.ref(column)} from char_length(${sourceFolder}) + 1)`;
     const matches = (column: PathColumn) => {
@@ -410,6 +411,13 @@ export class DatabaseRepository {
         .updateTable('asset')
         .set({ originalPath: replacement('asset.originalPath') })
         .where(matches('asset.originalPath'))
+        .execute();
+
+      // FL-417: a shared photo's own path moves with the media location too
+      await tx
+        .updateTable('asset')
+        .set({ libraryPath: replacement('asset.libraryPath') })
+        .where(matches('asset.libraryPath'))
         .execute();
 
       await tx
