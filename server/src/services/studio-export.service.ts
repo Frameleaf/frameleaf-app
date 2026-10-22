@@ -407,9 +407,14 @@ export class StudioExportService {
     if (audioProblem) {
       throw new ConflictException({ code: 'studio_export_audio_unsupported', message: audioProblem });
     }
-    if (contract.video.minBitDepth > (studioExportFormatSpec(dto.format)?.bitDepth ?? 8)) {
-      // The sources keep an HDR picture: only a worker that verified that precision can take it.
-      await this.requireRenderableOutput(dto.destination, { ...settings, minBitDepth: contract.video.minBitDepth });
+    if (contract.video.minBitDepth > (studioExportFormatSpec(dto.format)?.bitDepth ?? 8) || contract.video.transfer) {
+      // The sources keep (or the colour asks for) an HDR picture: only a worker that verified that
+      // precision, and for HLG that exact HLG master (FL-107), can take it.
+      await this.requireRenderableOutput(dto.destination, {
+        ...settings,
+        minBitDepth: contract.video.minBitDepth,
+        transfer: contract.video.transfer,
+      });
     }
     const pairedCaptions = dto.subtitleMode === 'sidecar' || dto.subtitleMode === 'embedded';
     if (
