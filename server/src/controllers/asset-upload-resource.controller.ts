@@ -30,6 +30,7 @@ import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { AssetUploadDirectService } from 'src/services/asset-upload-direct.service.js';
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { ASSET_UPLOAD_LIMITS } from 'src/utils/asset-upload-resource.js';
+import { writeInformation } from 'src/utils/response.js';
 import { UUIDParamDto } from 'src/validation.js';
 
 @ApiTags(ApiTag.Assets)
@@ -167,10 +168,7 @@ export class AssetUploadResourceController {
       this.headers(res, row);
       const location = `${req.originalUrl.split('?', 1)[0]}/${row.id}`;
       res.setHeader('Location', location);
-      const information = res as Response & {
-        writeInformation?: (status: number, headers: Record<string, string>) => void;
-      };
-      information.writeInformation?.(104, {
+      writeInformation(res, 104, {
         Location: location,
         'Upload-Draft-Interop-Version': '9',
         'Upload-Complete': '?0',

@@ -46,6 +46,7 @@ import {
 import { libraryAssetFromFile, libraryPathsFingerprint } from 'src/utils/library-scan.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, findOrFail, handlePromiseError } from 'src/utils/misc.js';
+import { tryPromise } from 'src/utils/promise.js';
 
 /**
  * One entry for the administrator audit trail about a library (FL-76), listed in its owner's
@@ -200,7 +201,7 @@ export class LibraryService extends BaseService {
     const close = () => {
       active = false;
       ready.resolve();
-      closing ??= Promise.try(stop).catch((error: unknown) => {
+      closing ??= tryPromise(stop).catch((error: unknown) => {
         closing = undefined;
         throw error;
       });

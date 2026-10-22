@@ -131,6 +131,7 @@ import { SharedLinkService } from 'src/services/shared-link.service.js';
 import { SharedSpaceService } from 'src/services/shared-space.service.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
+import { SourceResourceAuthService } from 'src/services/source-resource-auth.service.js';
 import { StackService } from 'src/services/stack.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
@@ -174,6 +175,7 @@ export const services = [
   DesktopAssistancePolicyService,
   DesktopDeviceService,
   PhotoSourceService,
+  SourceResourceAuthService,
   DesktopMlService,
   DesktopNasProducerService,
   DesktopQualificationService,

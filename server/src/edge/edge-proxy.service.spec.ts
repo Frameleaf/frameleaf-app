@@ -5,6 +5,7 @@ import { EdgeArrival, EdgeProxyService, downstreamHeaders, upstreamHeaders } fro
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MAX_CONNECTIONS_PER_ADDRESS, REQUEST_TIMEOUT_MS } from 'src/utils/frameleaf-remote-access.js';
+import { writeInformation } from 'src/utils/response.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 
 const SECRET = 'edge-secret-0123456789abcdef';
@@ -276,12 +277,7 @@ describe(EdgeProxyService.name, () => {
       front.on('connection', (socket) => sut.accept(socket, { ...arrival, via }));
       upstream.removeAllListeners('request');
       upstream.on('request', (_request, response) => {
-        // Node24.18 added this public API; the pinned Node type package predates it.
-        (
-          response as http.ServerResponse & {
-            writeInformation(statusCode: number, headers: http.OutgoingHttpHeaders): void;
-          }
-        ).writeInformation(104, {
+        writeInformation(response, 104, {
           location: '/api/uploads/owned-resource',
           'upload-draft-interop-version': '9',
           'upload-offset': '0',

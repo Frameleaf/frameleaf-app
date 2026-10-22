@@ -4,6 +4,7 @@ import { ExitCode } from 'src/enum.js';
 import { PostgresSocketTransport } from 'src/middleware/websocket.adapter.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { AppRestartEvent } from 'src/repositories/event.repository.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { RESTART_BUDGET } from 'src/utils/shutdown.js';
 
 @Injectable()
@@ -45,7 +46,7 @@ export class AppRepository {
     // in exceptional circumstance, the application may hang
     setTimeout(() => process.exit(failureExitCode), workerDeadlineMs);
 
-    void Promise.try(() => this.closeFn?.(graceMs))
+    void tryPromise(() => this.closeFn?.(graceMs))
       .catch((error) => {
         completedExitCode = failureExitCode;
         console.error(`Unable to stop gracefully: ${error}`);
