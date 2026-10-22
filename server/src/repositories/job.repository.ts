@@ -128,7 +128,7 @@ export class JobRepository {
     private configRepository: ConfigRepository,
     private eventRepository: EventRepository,
     private logger: LoggingRepository,
-    @InjectKysely() db: Kysely<any>,
+    @InjectKysely() db: Kysely<DB>,
   ) {
     this.logger.setContext(JobRepository.name);
     this.store = new SqlQueueStore(db);
@@ -507,7 +507,7 @@ export class JobRepository {
     }
     const context = queueExecution.getStore();
     context?.signal.throwIfAborted();
-    const admit = (tx: Transaction<any>) => this.store.admitRun(id, kind, selection, admission.intents, tx);
+    const admit = (tx: Transaction<DB>) => this.store.admitRun(id, kind, selection, admission.intents, tx);
     if (context?.buffering) {
       // The run and its parent-dependent intents become visible only with successful publication.
       context.adoptions.push(admit);
@@ -754,7 +754,7 @@ export class JobRepository {
   }
 
   /** Database-only producer already holding its domain claim; admission commits with that publication. */
-  async queueInTransaction(tx: Transaction<any>, item: JobItem, runId?: string): Promise<void> {
+  async queueInTransaction(tx: Transaction<DB>, item: JobItem, runId?: string): Promise<void> {
     if (runAdmission.getStore()) throw new Error('Run admission cannot use an independent transaction');
     const context = queueExecution.getStore();
     const committedEffect = item.name === JobName.DuplicateResolutionLifecycle;

@@ -86,6 +86,7 @@ import { ServerController } from 'src/controllers/server.controller.js';
 import { SessionController } from 'src/controllers/session.controller.js';
 import { SharedLinkController } from 'src/controllers/shared-link.controller.js';
 import { SharedSpaceController } from 'src/controllers/shared-space.controller.js';
+import { SourceResourceController } from 'src/controllers/source-resource.controller.js';
 import { StackController } from 'src/controllers/stack.controller.js';
 import { StorageMigrationAdminController } from 'src/controllers/storage-migration-admin.controller.js';
 import { StudioBundleController } from 'src/controllers/studio-bundle.controller.js';
@@ -116,6 +117,7 @@ import { WorkflowController } from 'src/controllers/workflow.controller.js';
 export const controllers = [
   DesktopDeviceController,
   PhotoSourceController,
+  SourceResourceController,
   DesktopWorkerController,
   FrameleafLibraryMoveAdminController,
   FrameleafLibraryMoveController,
