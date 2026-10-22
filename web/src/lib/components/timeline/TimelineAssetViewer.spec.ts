@@ -1,6 +1,7 @@
 import { getAssetInfo } from '@frameleaf/sdk';
 import { fireEvent, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { SvelteMap } from 'svelte/reactivity';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import type { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
@@ -15,6 +16,16 @@ vi.mock('$lib/components/asset-viewer/AssetViewer.svelte', async () => {
   const { default: MockViewerControls } = await import('@test-data/components/MockViewerControls.svelte');
   return { default: MockViewerControls };
 });
+const { socketListeners } = vi.hoisted(() => ({ socketListeners: new Map<string, (...args: unknown[]) => void>() }));
+vi.mock('$lib/stores/websocket', async () => ({
+  ...(await vi.importActual<typeof import('$lib/stores/websocket')>('$lib/stores/websocket')),
+  websocketEvents: {
+    on: (name: string, handler: (...args: unknown[]) => void) => {
+      socketListeners.set(name, handler);
+      return () => socketListeners.delete(name);
+    },
+  },
+}));
 vi.mock('$lib/utils/navigation', async () => ({
   ...(await vi.importActual<typeof import('$lib/utils/navigation')>('$lib/utils/navigation')),
   navigate: vi.fn(),
@@ -172,3 +183,41 @@ it.each(['none', 'unmount', 'session', 'replacement', 'close'] as const)(
     }
   },
 );
+
+it('keeps the saved capture time when the timeline moves the item after an update (LIB-02)', async () => {
+  vi.clearAllMocks();
+  const opened = assetFactory.build();
+  opened.exifInfo = {
+    ...opened.exifInfo,
+    dateTimeOriginal: '2026-06-21T23:56:00+00:00',
+    timeZone: 'America/Vancouver',
+  };
+  const saved = {
+    ...opened,
+    exifInfo: { ...opened.exifInfo, dateTimeOriginal: '2026-07-10T00:30:00+00:00', timeZone: 'America/Edmonton' },
+  };
+  // The real lookup reads the timeline's months, so a change there re-ran the viewer's lookup effect.
+  const monthOf = new SvelteMap([[opened.id, '2026-06']]);
+  const manager = {
+    months: [],
+    getTimelineMonthByAssetId: vi.fn(),
+    getEarlierAsset: vi.fn(({ id }: { id: string }) => Promise.resolve(void monthOf.get(id))),
+    getLaterAsset: vi.fn().mockResolvedValue(undefined),
+  };
+  assetViewerManager.setAsset(opened);
+  const view = renderWithTooltips(TimelineAssetViewer, {
+    timelineManager: manager as unknown as TimelineManager,
+    invisible: false,
+  });
+  const captureTime = await view.findByTestId('viewer-capture-time');
+  expect(captureTime).toHaveTextContent(opened.exifInfo.dateTimeOriginal!);
+
+  // The server's update after the date save, then the timeline moving the item to its new month.
+  socketListeners.get('on_asset_update')?.(saved);
+  await waitFor(() => expect(captureTime).toHaveTextContent(saved.exifInfo.dateTimeOriginal));
+  monthOf.set(opened.id, '2026-07');
+  await tick();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  expect(captureTime).toHaveTextContent(saved.exifInfo.dateTimeOriginal);
+});
