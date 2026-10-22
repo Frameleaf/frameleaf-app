@@ -57,6 +57,7 @@ import {
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { DATABASE_POOL_SIZE, boundExecutionReservations } from 'src/utils/execution-database.js';
+import { displayPathSql } from 'src/utils/library-path.js';
 import {
   isDefaultVisible,
   isLocked,
@@ -687,11 +688,7 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
           .where('asset_file.path', '=', options.encodedVideoPath!),
       )
       .$if(!!options.originalPath, (qb) =>
-        qb.where(
-          sql`f_unaccent(asset."originalPath")`,
-          'ilike',
-          sql`'%' || f_unaccent(${options.originalPath}) || '%'`,
-        ),
+        qb.where(sql`f_unaccent(${displayPathSql()})`, 'ilike', sql`'%' || f_unaccent(${options.originalPath}) || '%'`),
       )
       .$if(!!options.originalFileName, (qb) =>
         qb.where(
@@ -935,8 +932,9 @@ function stringPatternPredicates(eb: AssetExpressionBuilder, column: StringColum
   if (filter === undefined) {
     return [];
   }
-  const ref = sql.ref(column);
-  const predicates = comparisonPredicates(eb, column, filter);
+  // FL-417: path search follows the photo's own path, never the folder a shared file is kept in
+  const ref = column === 'asset.originalPath' ? displayPathSql() : sql.ref(column);
+  const predicates = comparisonPredicates(eb, ref, filter);
   if (filter.like !== undefined) {
     predicates.push(sql<SqlBool>`f_unaccent(${ref}) ilike ('%' || f_unaccent(${filter.like}) || '%')`);
   }

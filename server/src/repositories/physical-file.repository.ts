@@ -22,6 +22,7 @@ import { DB } from 'src/schema/index.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { sweepAttemptOutputs } from 'src/utils/attempt-sweep.js';
 import { anyUuid, asUuid } from 'src/utils/database.js';
+import { libraryPathOnRelink } from 'src/utils/library-path.js';
 
 type PhysicalFile = Selectable<PhysicalFileTable>;
 /** `linkUploadedOriginal`: the candidate is not the file that was proven; prove it and try again. */
@@ -533,7 +534,11 @@ export class PhysicalFileRepository {
           // the candidate may have had no physical file yet: it becomes the primary of the one just made
           await trx
             .updateTable('asset')
-            .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
+            .set({
+              physicalOriginalFileId: physicalFile.id,
+              originalPath: physicalFile.path,
+              libraryPath: libraryPathOnRelink(physicalFile.path, false),
+            })
             .where('physicalOriginalFileId', 'is', null)
             .where((eb) => eb.or([eb('id', '=', asUuid(candidate.id)), eb('id', '=', asUuid(asset.id))]))
             .execute();
@@ -572,7 +577,11 @@ export class PhysicalFileRepository {
             });
             await trx
               .updateTable('asset')
-              .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
+              .set({
+                physicalOriginalFileId: physicalFile.id,
+                originalPath: physicalFile.path,
+                libraryPath: libraryPathOnRelink(physicalFile.path, true),
+              })
               .where('id', '=', asUuid(asset.id))
               .execute();
             return { physicalFile, linked: true };
@@ -909,7 +918,11 @@ export class PhysicalFileRepository {
         .executeTakeFirstOrThrow();
       await trx
         .updateTable('asset')
-        .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
+        .set({
+          physicalOriginalFileId: physicalFile.id,
+          originalPath: physicalFile.path,
+          libraryPath: libraryPathOnRelink(physicalFile.path, physicalFile.canonicalAssetId === asset.id),
+        })
         .where('id', '=', asUuid(asset.id))
         .execute();
       return physicalFile;
@@ -981,7 +994,11 @@ export class PhysicalFileRepository {
       }
       const linked = await trx
         .updateTable('asset')
-        .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
+        .set({
+          physicalOriginalFileId: physicalFile.id,
+          originalPath: physicalFile.path,
+          libraryPath: libraryPathOnRelink(physicalFile.path, false),
+        })
         .where('id', '=', asUuid(assetId))
         .$if(!!expected, (qb) =>
           qb
@@ -1036,7 +1053,11 @@ export class PhysicalFileRepository {
         .executeTakeFirstOrThrow();
       await trx
         .updateTable('asset')
-        .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
+        .set({
+          physicalOriginalFileId: physicalFile.id,
+          originalPath: physicalFile.path,
+          libraryPath: libraryPathOnRelink(physicalFile.path, physicalFile.canonicalAssetId === assetId),
+        })
         .where('id', '=', asUuid(assetId))
         .execute();
       return physicalFile;

@@ -827,6 +827,8 @@ export type StorageAsset = {
   timeZone: string | null;
   fileCreatedAt: Date;
   originalPath: string;
+  /** FL-417: the photo's own path while it shares a file kept elsewhere */
+  libraryPath?: string | null;
   physicalOriginalFileId?: string | null;
   originalFileName: string;
   fileSizeInByte: number | null;
