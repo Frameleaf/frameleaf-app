@@ -1,6 +1,7 @@
 import { lookup } from 'node:dns';
 import { type RequestOptions, request } from 'node:https';
 import { BlockList, type LookupFunction, isIP } from 'node:net';
+import { tryPromise } from 'src/utils/promise.js';
 import type { BackupLocation } from 'src/utils/frameleaf-cloud-backup.js';
 
 const failure = () => new Error('No backup location could be reached reliably. Try setup again.');
@@ -118,7 +119,7 @@ const boundedProbe = async (location: BackupLocation, probe: Probe, overall: Abo
         cancel();
         return;
       }
-      Promise.try(() => probe(location, controller.signal))
+      tryPromise(() => probe(location, controller.signal))
         .then((value) => resolve(value !== null && Number.isFinite(value) && value >= 0 ? value : null))
         .catch(() => resolve(null));
     });

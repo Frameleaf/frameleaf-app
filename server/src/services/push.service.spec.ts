@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ZodError } from 'zod';
+import { tryPromise } from 'src/utils/promise.js';
 import type { PushDeviceWithActivities } from 'src/repositories/push-device.repository.js';
 import {
   JobName,
@@ -479,7 +480,7 @@ describe(PushService.name, () => {
       });
       devices.getDeliveryTargets.mockResolvedValue([target]);
       gateway.send.mockImplementationOnce((_target, request) =>
-        Promise.try(() => {
+        tryPromise(() => {
           expect(request.token).toBe(token);
           target.pushToken = replacement;
           target.pushToStartToken = replacement;

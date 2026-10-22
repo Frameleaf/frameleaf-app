@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, open, readFile, realpath, rename, rm, symlink, writeFil
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { crc32, deflateRawSync } from 'node:zlib';
+import { tryPromise } from 'src/utils/promise.js';
 import type { TakeoutSource } from 'src/repositories/takeout.repository.js';
 import type { TakeoutZipEntry } from 'src/utils/takeout-zip.js';
 import { TakeoutStagingRepository } from 'src/repositories/takeout-staging.repository.js';
@@ -89,7 +90,7 @@ describe(TakeoutStagingRepository.name, () => {
     await writeFile(staged, 'data');
     await expect(
       sut.copyToLibrary(staged, 4, destination, signal(), () =>
-        Promise.try(() => {
+        tryPromise(() => {
           throw new Error('recording ownership failed');
         }),
       ),
@@ -166,7 +167,7 @@ describe(TakeoutStagingRepository.name, () => {
       path,
       {
         size: bytes.length,
-        read: (position, length) => Promise.try(() => bytes.subarray(position, position + length)),
+        read: (position, length) => tryPromise(() => bytes.subarray(position, position + length)),
       },
       {
         name: 'photo.jpg',
@@ -223,7 +224,7 @@ describe(TakeoutStagingRepository.name, () => {
         path,
         {
           size: bytes.length,
-          read: (position, length) => Promise.try(() => bytes.subarray(position, position + length)),
+          read: (position, length) => tryPromise(() => bytes.subarray(position, position + length)),
         },
         entry,
         destination,

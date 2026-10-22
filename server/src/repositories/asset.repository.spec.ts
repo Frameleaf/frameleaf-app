@@ -1,4 +1,5 @@
 import { DummyDriver, Kysely, PostgresDialect } from 'kysely';
+import { tryPromise } from 'src/utils/promise.js';
 import type { DB } from 'src/schema/index.js';
 import { AssetLockReason, AssetType, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -39,7 +40,7 @@ describe('Live Photo asset-edit transaction', () => {
         const connection = ++connections;
         return Promise.resolve({
           executeQuery: (query: { sql: string; parameters: readonly unknown[] }) =>
-            Promise.try(() => {
+            tryPromise(() => {
               queries.push({ ...query, connection });
               if (query.sql.includes('for update nowait') && contended)
                 throw Object.assign(new Error('busy'), { code: '55P03' });
@@ -102,7 +103,7 @@ describe('Live Photo asset-edit transaction', () => {
       const error = Object.assign(new Error('write failed'), { code });
       await expect(
         sut.withLivePhotoUpdate('photo', null, () =>
-          Promise.try(() => {
+          tryPromise(() => {
             throw error;
           }),
         ),

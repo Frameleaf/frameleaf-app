@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { tryPromise } from 'src/utils/promise.js';
 import { AssetVisibility, MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -95,7 +96,7 @@ const requestService = (repository: TakeoutRepository) =>
   new TakeoutService(
     { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
     repository,
-    { prepare: () => Promise.resolve('/staging/admission'), freeBytes: () => Promise.try(() => 1024 ** 4) } as never,
+    { prepare: () => Promise.resolve('/staging/admission'), freeBytes: () => tryPromise(() => 1024 ** 4) } as never,
     {} as never,
     {} as never,
     {} as never,

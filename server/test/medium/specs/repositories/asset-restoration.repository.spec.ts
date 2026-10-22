@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { tryPromise } from 'src/utils/promise.js';
 import type { DB } from 'src/schema/index.js';
 import { AssetRestorationMode, AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
 import {
@@ -114,7 +115,7 @@ describe('restoration operation ownership', () => {
         previewRegion: { x: 0, y: 0, w: 1, h: 1 },
       });
       const bind = () =>
-        Promise.try(() => ({
+        tryPromise(() => ({
           operation: {
             ownerId: user.id,
             kind: stage === 'preview' ? MediaOperationKind.RestorationPreview : MediaOperationKind.Restoration,

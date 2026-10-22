@@ -1,4 +1,5 @@
 import { performance } from 'node:perf_hooks';
+import { tryPromise } from 'src/utils/promise.js';
 import {
   type BackupGrantResponse,
   type BackupOperation,
@@ -67,7 +68,7 @@ export const managedBackupSession = (
     ) {
       return grant.capability.credentials;
     }
-    pending = Promise.try(async () => {
+    pending = tryPromise(async () => {
       try {
         const next = await renew();
         validate(next);
@@ -100,7 +101,7 @@ export const managedBackupReadSession = (
   return (failedAccessKeyId?: string): Promise<BackupCredentials> => {
     if (pending) return pending;
     if (failure && now() < retryAt) return Promise.reject(failure);
-    pending = Promise.try(async () => {
+    pending = tryPromise(async () => {
       session ??= managedBackupSession(await renew(), 'restore', renew, now, binding);
       const credentials = await session(failedAccessKeyId);
       failure = undefined;

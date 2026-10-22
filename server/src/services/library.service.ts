@@ -3,6 +3,7 @@ import { Insertable } from 'kysely';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import picomatch from 'picomatch';
+import { tryPromise } from 'src/utils/promise.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { LibraryRemovalCounts } from 'src/repositories/library.repository.js';
@@ -200,7 +201,7 @@ export class LibraryService extends BaseService {
     const close = () => {
       active = false;
       ready.resolve();
-      closing ??= Promise.try(stop).catch((error: unknown) => {
+      closing ??= tryPromise(stop).catch((error: unknown) => {
         closing = undefined;
         throw error;
       });

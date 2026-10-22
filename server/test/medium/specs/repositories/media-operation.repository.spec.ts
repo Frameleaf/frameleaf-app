@@ -1,5 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
+import { tryPromise } from 'src/utils/promise.js';
 import {
   AssetVisibility,
   DatabaseLock,
@@ -2222,7 +2223,7 @@ describe(MediaOperationRepository.name, () => {
         try {
           await expect(
             sut.createCloudDescriptionBatches(rows, () =>
-              Promise.try(() => {
+              tryPromise(() => {
                 acknowledged = true;
               }),
             ),

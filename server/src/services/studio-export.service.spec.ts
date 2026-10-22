@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs/promises';
 import { PassThrough } from 'node:stream';
+import { tryPromise } from 'src/utils/promise.js';
 import type { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
@@ -1892,7 +1893,7 @@ describe(StudioExportService.name, () => {
     it('admits the render-finished notification inside the publication transaction', async () => {
       const tx = { isTransaction: true };
       repository.publish.mockImplementation((_input, _metadata, notification) =>
-        Promise.try(() => notification!(tx as never, published().version, 'Lake trip')).then(() => published()),
+        tryPromise(() => notification!(tx as never, published().version, 'Lake trip')).then(() => published()),
       );
       await sut.run(job());
       expect(jobs.queueInTransaction).toHaveBeenCalledWith(tx, {
@@ -1988,7 +1989,7 @@ describe(StudioExportService.name, () => {
 
     it('verifies the file, moves it into the library and publishes it with the sources re-checked', async () => {
       repository.publish.mockImplementation((_input, metadata) =>
-        Promise.try(() => metadata!({ isTransaction: true } as never, 'asset-new')).then(() => published()),
+        tryPromise(() => metadata!({ isTransaction: true } as never, 'asset-new')).then(() => published()),
       );
 
       await sut.run(job());

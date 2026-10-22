@@ -1,3 +1,4 @@
+import { tryPromise } from 'src/utils/promise.js';
 import type { AdminNotice } from 'src/repositories/event.repository.js';
 import type { JobItem } from 'src/types.js';
 import { AdminConfigDto, SystemConfig, defaults } from 'src/dtos/config.dto.js';
@@ -288,7 +289,7 @@ describe(NotificationService.name, () => {
       const failure = new Error('Remote configuration reconciliation failed');
       const reconcile = vi.fn().mockRejectedValue(failure);
       Reflect.set(mocks.websocket, 'awaitConfigUpdate', reconcile);
-      await expect(Promise.try(() => sut.onConfigUpdate({ oldConfig: defaults, newConfig: defaults }))).rejects.toBe(
+      await expect(tryPromise(() => sut.onConfigUpdate({ oldConfig: defaults, newConfig: defaults }))).rejects.toBe(
         failure,
       );
     });

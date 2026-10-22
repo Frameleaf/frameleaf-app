@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, HttpException } from '@nestjs/common';
 import { DummyDriver, Kysely, PostgresDialect, Transaction } from 'kysely';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { tryPromise } from 'src/utils/promise.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import type { DB } from 'src/schema/index.js';
@@ -1704,7 +1705,7 @@ describe(CloudMlJobService.name, () => {
         rendering();
         mocks.crypto.hashFileDigests.mockClear();
         mocks.crypto.hashFileDigests.mockImplementation((file) =>
-          Promise.try(() => {
+          tryPromise(() => {
             const path = file.toString();
             const cached = path.includes('/out-');
             const first = path.endsWith('out-v1-s0.mp4');

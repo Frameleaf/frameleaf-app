@@ -19,6 +19,7 @@ set -eu
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends ffmpeg fontconfig fonts-dejavu-core fonts-liberation libvulkan1 mesa-vulkan-drivers ca-certificates
+test ! -e /etc/ssl/certs/emSign_ECC_Root_CA_-_G3.pem && test ! -e /etc/ssl/certs/Comodo_AAA_Services_root.pem
 case "$ID" in
   debian)
     apt-get install -y --no-install-recommends chromium

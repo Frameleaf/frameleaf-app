@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { tryPromise } from 'src/utils/promise.js';
 import { TakeoutNotFound, TakeoutRepository } from 'src/repositories/takeout.repository.js';
 import { scriptedKysely } from 'test/scripted-kysely.js';
 
@@ -32,7 +33,7 @@ describe('Takeout account admission transaction', () => {
     const f = fixture();
     try {
       await expect(
-        f.sut.withImport('owner', 'import', (_tx, _row, _operation, quota) => Promise.try(() => quota)),
+        f.sut.withImport('owner', 'import', (_tx, _row, _operation, quota) => tryPromise(() => quota)),
       ).resolves.toEqual(f.quota);
       const owner = f.queries.findIndex((query) => query.sql.includes('from "user"'));
       const imported = f.queries.findIndex((query) => query.sql.includes('from takeout_import'));
@@ -75,7 +76,7 @@ describe('Takeout account admission transaction', () => {
     try {
       await expect(
         f.sut.withImport('owner', 'import', () =>
-          Promise.try(() => {
+          tryPromise(() => {
             throw new Error('admission failed');
           }),
         ),

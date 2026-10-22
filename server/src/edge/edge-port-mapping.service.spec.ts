@@ -1,3 +1,4 @@
+import { tryPromise } from 'src/utils/promise.js';
 import {
   EdgePortMappingService,
   MAPPING_LEASE_SEC,
@@ -263,12 +264,12 @@ describe(EdgePortMappingService.name, () => {
       let stopped = false;
       let removed = false;
       gateway.stop.mockImplementation(() =>
-        Promise.try(() => {
+        tryPromise(() => {
           stopped = true;
         }),
       );
       gateway.unmap.mockImplementation(() =>
-        Promise.try(() => {
+        tryPromise(() => {
           if (stopped) throw new Error('socket closed');
           removed = true;
         }),

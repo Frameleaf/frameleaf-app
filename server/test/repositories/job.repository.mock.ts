@@ -1,4 +1,5 @@
 import { Mocked, vitest } from 'vitest';
+import { tryPromise } from 'src/utils/promise.js';
 import type { RepositoryInterface } from 'src/types.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 
@@ -6,7 +7,7 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
   return {
     setup: vitest.fn(),
     ensureProducerRun: vitest.fn().mockResolvedValue(undefined),
-    prepareCheckpoint: vitest.fn().mockImplementation((_key, prepare) => Promise.try(prepare)),
+    prepareCheckpoint: vitest.fn().mockImplementation((_key, prepare) => tryPromise(prepare)),
     settleTerminalLibrarySources: vi.fn().mockResolvedValue(0),
     prepareLibraryScanSource: vitest
       .fn()

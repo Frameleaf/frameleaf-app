@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Server as SocketIO } from 'socket.io';
+import { tryPromise } from 'src/utils/promise.js';
 import { ExitCode } from 'src/enum.js';
 import { PostgresSocketTransport } from 'src/middleware/websocket.adapter.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -45,7 +46,7 @@ export class AppRepository {
     // in exceptional circumstance, the application may hang
     setTimeout(() => process.exit(failureExitCode), workerDeadlineMs);
 
-    void Promise.try(() => this.closeFn?.(graceMs))
+    void tryPromise(() => this.closeFn?.(graceMs))
       .catch((error) => {
         completedExitCode = failureExitCode;
         console.error(`Unable to stop gracefully: ${error}`);

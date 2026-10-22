@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { tryPromise } from 'src/utils/promise.js';
 import { AssetType, MediaOperationStatus } from 'src/enum.js';
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import { ScheduledAuditAuthority } from 'src/repositories/icloud-scheduled-authority.js';
@@ -207,7 +208,7 @@ export class ICloudScheduledWorkerService {
               throw new Error('scheduled_audit_unavailable');
             }
           } finally {
-            await Promise.allSettled(heldFiles.map((files) => Promise.try(() => files.release()))).then((releases) => {
+            await Promise.allSettled(heldFiles.map((files) => tryPromise(() => files.release()))).then((releases) => {
               const failures = releases
                 .filter((release) => release.status === 'rejected')
                 .map((release) => release.reason);

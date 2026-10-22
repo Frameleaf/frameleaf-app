@@ -6,6 +6,7 @@ authors = [{ name = "Hau Tran", email = "alex.tran1502@gmail.com" }]
 requires-python = ">=3.12,<4.0"
 readme = "README.md"
 dependencies = [
+    "certifi>=2026.10.19",
     "aiocache>=0.12.3,<1.0",
     "fastapi>=0.143.0,<1.0",
     "gunicorn>=26.2.0",

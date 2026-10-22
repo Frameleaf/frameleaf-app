@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { tryPromise } from 'src/utils/promise.js';
 import {
   DARKTABLE_RENDERER_VERSION,
   DARKTABLE_TIMEOUT_MS,
@@ -33,7 +34,7 @@ vi.mock('node:child_process', async () => {
         const child = Object.assign(new EventEmitter(), { kill: vi.fn().mockReturnValue(true) });
         mocks.children.push(child);
         mocks.onSpawn?.();
-        const execution = Promise.try(() => mocks.exec(...args));
+        const execution = tryPromise(() => mocks.exec(...args));
         const close = () => {
           if (mocks.autoClose) {
             child.emit('close');
