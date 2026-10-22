@@ -402,7 +402,7 @@ test.describe('Preservation packages', () => {
 
     await page.getByRole('button', { name: 'Restore…' }).click();
     const dialog = page.getByRole('dialog', { name: 'Restore from an exported copy' });
-    await dialog.getByRole('button', { name: 'Check package' }).click();
+    await dialog.getByRole('button', { name: 'Check this copy' }).click();
 
     // The review job finishes on the next poll and lands on the differences.
     await expect(dialog.getByText('receipt.jpg')).toBeVisible({ timeout: 15_000 });
@@ -411,7 +411,7 @@ test.describe('Preservation packages', () => {
     await expect(dialog.getByText(/Generated moment captions/)).toBeVisible();
 
     const description = dialog.getByRole('group', { name: 'Description' });
-    await description.getByRole('button', { name: 'Use package' }).click();
+    await description.getByRole('button', { name: 'Use what is in the copy' }).click();
     await expect
       .poll(() => mocks.state.decisions)
       .toEqual([{ items: [{ id: 'item-conflict', decisions: { description: 'replace' } }] }]);
@@ -432,7 +432,7 @@ test.describe('Preservation packages', () => {
     });
     await dialog.getByRole('button', { name: 'Differences' }).click();
     await expect(
-      dialog.getByRole('group', { name: 'Description' }).getByRole('button', { name: 'Use package' }),
+      dialog.getByRole('group', { name: 'Description' }).getByRole('button', { name: 'Use what is in the copy' }),
     ).toHaveAttribute('aria-pressed', 'true');
   });
 

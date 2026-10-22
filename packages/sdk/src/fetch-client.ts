@@ -2250,6 +2250,24 @@ export type IntegrityReportSummaryResponseDto = {
     missing_file: number;
     untracked_file: number;
 };
+export type LibraryFolderEntryDto = {
+    name: string;
+    path: string;
+};
+export type LibraryFolderBrowseResponseDto = {
+    /** What a new folder skips by default: NAS thumbnails, recycle bins, snapshots and the like */
+    defaultExclusionPatterns: string[];
+    /** Its folders, sorted by name; hidden, system and NAS folders are left out */
+    folders: LibraryFolderEntryDto[];
+    /** The folder above it; null at the top */
+    parent: string | null;
+    /** The folder that was listed */
+    path: string;
+    /** Whether the folder could be read */
+    readable: boolean;
+    /** Whether there were more folders than listed */
+    truncated: boolean;
+};
 export type LibraryMovePauseStatusDto = {
     /** Background jobs still running */
     activeJobs: number;
@@ -3015,6 +3033,34 @@ export type StorageMigrationStatusResponseDto = {
     statistics: QueueStatisticsDto;
     /** The storage template originals are moved to */
     template: string;
+};
+export type TrashEveryoneAccountDto = {
+    /** Combined size of their originals, in bytes */
+    bytes: number;
+    /** Items waiting in this account’s trash */
+    count: number;
+    /** Account name */
+    name: string;
+    /** When the item that has waited longest was deleted */
+    oldestDeletedAt: string | null;
+    /** Account ID */
+    userId: string;
+};
+export type TrashEveryoneResponseDto = {
+    /** Each account with something waiting, most first */
+    accounts: TrashEveryoneAccountDto[];
+    /** Combined size of their originals, in bytes */
+    bytes: number;
+    /** Items waiting in every account’s trash */
+    count: number;
+    /** The keep time removedTonight was counted for */
+    days: number;
+    /** Items already older than days, removed for good the next time the overnight tidy-up runs */
+    removedTonight: number;
+    /** Whether the overnight tidy-up empties the trash; while it is off nothing is removed */
+    tidyUpOn: boolean;
+    /** Whether the trash is on */
+    trashEnabled: boolean;
 };
 export type UserLicense = {
     /** Activation date */
@@ -7803,24 +7849,6 @@ export type CreateLibraryDto = {
     ownerId: string;
     /** Keep source originals and sidecars read-only. Fixed once created. */
     readOnly?: boolean;
-};
-export type LibraryFolderEntryDto = {
-    name: string;
-    path: string;
-};
-export type LibraryFolderBrowseResponseDto = {
-    /** What a new folder skips by default: NAS thumbnails, recycle bins, snapshots and the like */
-    defaultExclusionPatterns: string[];
-    /** Its folders, sorted by name; hidden, system and NAS folders are left out */
-    folders: LibraryFolderEntryDto[];
-    /** The folder above it; null at the top */
-    parent: string | null;
-    /** The folder that was listed */
-    path: string;
-    /** Whether the folder could be read */
-    readable: boolean;
-    /** Whether there were more folders than listed */
-    truncated: boolean;
 };
 export type ManagedUploadsStatsResponseDto = {
     /** Account whose uploads these are */
@@ -15636,34 +15664,6 @@ export type TrashResponseDto = {
     /** Number of items in trash */
     count: number;
 };
-export type TrashEveryoneAccountDto = {
-    /** Combined size of their originals, in bytes */
-    bytes: number;
-    /** Items waiting in this account’s trash */
-    count: number;
-    /** Account name */
-    name: string;
-    /** When the item that has waited longest was deleted */
-    oldestDeletedAt: string | null;
-    /** Account ID */
-    userId: string;
-};
-export type TrashEveryoneResponseDto = {
-    /** Each account with something waiting, most first */
-    accounts: TrashEveryoneAccountDto[];
-    /** Combined size of their originals, in bytes */
-    bytes: number;
-    /** Items waiting in every account’s trash */
-    count: number;
-    /** The keep time removedTonight was counted for */
-    days: number;
-    /** Items already older than days, removed for good the next time the overnight tidy-up runs */
-    removedTonight: number;
-    /** Whether the overnight tidy-up empties the trash; while it is off nothing is removed */
-    tidyUpOn: boolean;
-    /** Whether the trash is on */
-    trashEnabled: boolean;
-};
 export type TrashItemResponseDto = {
     /** Size of the original, in bytes, when known */
     fileSizeInByte: number | null;
@@ -19494,6 +19494,21 @@ export function getIntegrityReportSummary(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Browse folders on the server
+ */
+export function browseLibraryFolders({ path }: {
+    path?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryFolderBrowseResponseDto;
+    }>(`/admin/libraries/folders${QS.query(QS.explode({
+        path
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Library move pause status
  */
 export function getLibraryMovePause(opts?: Oazapfts.RequestOpts) {
@@ -19973,6 +19988,21 @@ export function runStorageMigrationInBackground(opts?: Oazapfts.RequestOpts) {
     }>("/admin/storage-migration", {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * Get what waits in every trash
+ */
+export function getTrashEveryone({ days }: {
+    days?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TrashEveryoneResponseDto;
+    }>(`/admin/trash/everyone${QS.query(QS.explode({
+        days
+    }))}`, {
+        ...opts
     }));
 }
 /**
@@ -23818,21 +23848,6 @@ export function createLibrary({ createLibraryDto }: {
         method: "POST",
         body: createLibraryDto
     })));
-}
-/**
- * Browse folders on the server
- */
-export function browseLibraryFolders({ path }: {
-    path?: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: LibraryFolderBrowseResponseDto;
-    }>(`/libraries/folders${QS.query(QS.explode({
-        path
-    }))}`, {
-        ...opts
-    }));
 }
 /**
  * Retrieve managed upload statistics
@@ -30691,21 +30706,6 @@ export function emptyTrash(opts?: Oazapfts.RequestOpts) {
     }>("/trash/empty", {
         ...opts,
         method: "POST"
-    }));
-}
-/**
- * Get what waits in every trash
- */
-export function getTrashEveryone({ days }: {
-    days?: number;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: TrashEveryoneResponseDto;
-    }>(`/trash/everyone${QS.query(QS.explode({
-        days
-    }))}`, {
-        ...opts
     }));
 }
 /**

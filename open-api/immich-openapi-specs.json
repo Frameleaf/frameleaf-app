@@ -5895,6 +5895,64 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/libraries/folders": {
+      "get": {
+        "description": "For an administrator choosing a folder of photos to add: the folders under a path the server can see (names only; hidden, system and NAS folders are left out), and what a new folder skips by default.",
+        "operationId": "browseLibraryFolders",
+        "parameters": [
+          {
+            "name": "path",
+            "required": false,
+            "in": "query",
+            "description": "An absolute folder; defaults to the top of the disk",
+            "schema": {
+              "maxLength": 4096,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryFolderBrowseResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Browse folders on the server",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "library.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/library-move": {
       "get": {
         "operationId": "getLibraryMovePause",
@@ -7805,6 +7863,65 @@
           }
         ],
         "x-immich-permission": "queue.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/trash/everyone": {
+      "get": {
+        "description": "For an administrator: how many items wait in each account’s trash and their size (never the items), and how many a keep time of `days` would remove at the next overnight tidy-up.",
+        "operationId": "getTrashEveryone",
+        "parameters": [
+          {
+            "name": "days",
+            "required": false,
+            "in": "query",
+            "description": "A proposed keep time in days; removedTonight counts what it would remove. Defaults to the saved value",
+            "schema": {
+              "minimum": 0,
+              "maximum": 36500,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashEveryoneResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get what waits in every trash",
+        "tags": [
+          "Trash"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "server.statistics",
         "x-immich-state": "Alpha"
       }
     },
@@ -23945,64 +24062,6 @@
         ],
         "x-immich-permission": "library.create",
         "x-immich-state": "Stable"
-      }
-    },
-    "/libraries/folders": {
-      "get": {
-        "description": "For an administrator choosing a folder of photos to add: the folders under a path the server can see (names only; hidden, system and NAS folders are left out), and what a new folder skips by default.",
-        "operationId": "browseLibraryFolders",
-        "parameters": [
-          {
-            "name": "path",
-            "required": false,
-            "in": "query",
-            "description": "An absolute folder; defaults to the top of the disk",
-            "schema": {
-              "maxLength": 4096,
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LibraryFolderBrowseResponseDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Browse folders on the server",
-        "tags": [
-          "Libraries"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v3",
-            "state": "Added"
-          },
-          {
-            "version": "v3",
-            "state": "Alpha"
-          }
-        ],
-        "x-immich-permission": "library.create",
-        "x-immich-state": "Alpha"
       }
     },
     "/libraries/managed-uploads": {
@@ -52288,65 +52347,6 @@
         ],
         "x-immich-permission": "asset.delete",
         "x-immich-state": "Stable"
-      }
-    },
-    "/trash/everyone": {
-      "get": {
-        "description": "For an administrator: how many items wait in each account’s trash and their size (never the items), and how many a keep time of `days` would remove at the next overnight tidy-up.",
-        "operationId": "getTrashEveryone",
-        "parameters": [
-          {
-            "name": "days",
-            "required": false,
-            "in": "query",
-            "description": "A proposed keep time in days; removedTonight counts what it would remove. Defaults to the saved value",
-            "schema": {
-              "minimum": 0,
-              "maximum": 36500,
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TrashEveryoneResponseDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Get what waits in every trash",
-        "tags": [
-          "Trash"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v3",
-            "state": "Added"
-          },
-          {
-            "version": "v3",
-            "state": "Alpha"
-          }
-        ],
-        "x-immich-permission": "server.statistics",
-        "x-immich-state": "Alpha"
       }
     },
     "/trash/items": {

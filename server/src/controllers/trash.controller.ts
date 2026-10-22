@@ -37,19 +37,6 @@ export class TrashController {
     return this.service.getSummary(auth);
   }
 
-  // FL-365: Storage & originals › Deleted items. Before `items`.
-  @Get('everyone')
-  @Authenticated({ permission: Permission.ServerStatistics, admin: true })
-  @Endpoint({
-    summary: 'Get what waits in every trash',
-    description:
-      'For an administrator: how many items wait in each account’s trash and their size (never the items), and how many a keep time of `days` would remove at the next overnight tidy-up.',
-    history: new HistoryBuilder().added('v3').alpha('v3'),
-  })
-  getTrashEveryone(@Query() dto: TrashEveryoneQueryDto): Promise<TrashEveryoneResponseDto> {
-    return this.service.getEveryone(dto);
-  }
-
   @Get('items')
   @Authenticated({ permission: Permission.AssetRead })
   @Endpoint({
@@ -137,5 +124,24 @@ export class TrashController {
   })
   restoreAssets(@Auth() auth: AuthDto, @Body() dto: BulkIdsDto): Promise<TrashResponseDto> {
     return this.service.restoreAssets(auth, dto);
+  }
+}
+
+/** FL-365: Storage & originals › Deleted items, for administrators: every account's trash, counts only. */
+@ApiTags(ApiTag.Trash)
+@Controller('admin/trash')
+export class TrashAdminController {
+  constructor(private service: TrashService) {}
+
+  @Get('everyone')
+  @Authenticated({ permission: Permission.ServerStatistics, admin: true })
+  @Endpoint({
+    summary: 'Get what waits in every trash',
+    description:
+      'For an administrator: how many items wait in each account’s trash and their size (never the items), and how many a keep time of `days` would remove at the next overnight tidy-up.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  getTrashEveryone(@Query() dto: TrashEveryoneQueryDto): Promise<TrashEveryoneResponseDto> {
+    return this.service.getEveryone(dto);
   }
 }

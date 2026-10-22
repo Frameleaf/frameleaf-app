@@ -57,19 +57,6 @@ export class LibraryController {
     return this.service.getManagedUploads();
   }
 
-  // FL-365: the folder chooser of "Add a folder of photos". Before `:id`.
-  @Get('folders')
-  @Authenticated({ permission: Permission.LibraryCreate, admin: true })
-  @Endpoint({
-    summary: 'Browse folders on the server',
-    description:
-      'For an administrator choosing a folder of photos to add: the folders under a path the server can see (names only; hidden, system and NAS folders are left out), and what a new folder skips by default.',
-    history: new HistoryBuilder().added('v3').alpha('v3'),
-  })
-  browseLibraryFolders(@Query() dto: LibraryFolderBrowseDto): Promise<LibraryFolderBrowseResponseDto> {
-    return this.service.browseFolders(dto);
-  }
-
   @Post()
   @Authenticated({ permission: Permission.LibraryCreate, admin: true })
   @Endpoint({
@@ -209,5 +196,24 @@ export class LibraryController {
   })
   removeLibrary(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto, @Body() dto: LibraryRemovalDto): Promise<void> {
     return this.service.remove(auth, id, dto);
+  }
+}
+
+/** FL-365: the folder chooser of "Add a folder of photos", for administrators. */
+@ApiTags(ApiTag.Libraries)
+@Controller('admin/libraries')
+export class LibraryAdminController {
+  constructor(private service: LibraryService) {}
+
+  @Get('folders')
+  @Authenticated({ permission: Permission.LibraryCreate, admin: true })
+  @Endpoint({
+    summary: 'Browse folders on the server',
+    description:
+      'For an administrator choosing a folder of photos to add: the folders under a path the server can see (names only; hidden, system and NAS folders are left out), and what a new folder skips by default.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  browseLibraryFolders(@Query() dto: LibraryFolderBrowseDto): Promise<LibraryFolderBrowseResponseDto> {
+    return this.service.browseFolders(dto);
   }
 }
