@@ -157,7 +157,7 @@ connectivity, complete database replacement/restart and
 real two-network acceptance remain required. This source bridge does not establish
 full replacement readiness or enable Buddy Backup by default.
 
-Unlock with your PIN and choose a dated restore point. Owners can restore their own permitted images, videos and albums. Administrators can also restore the library, settings or a complete server. Preview the selection and conflicts before starting. The default fills missing items and preserves current changes; replacement keeps a rollback copy. Partial restoration does not reinstate historical sharing grants.
+Unlock with your PIN and choose a dated restore point. Owners can restore their own permitted images, videos and albums. Administrators can also restore the library, settings or a complete server. Preview the selection and conflicts before starting. The default fills missing items and preserves current changes; replacement keeps a rollback copy. Partial restoration does not reinstate historical sharing grants. On a replacement server that does not have the backed-up accounts, an administrator's library, album or item restore places those accounts' items in the administrator's own account and does not recreate their albums. Use complete server recovery to bring the accounts back.
 
 Full recovery stages and verifies the files before entering maintenance mode. Restore the original storage mounts, verify version compatibility, then apply the database and files. Recovery preserves the replacement server's Cloud identity and invalidates restored sessions and transient jobs. Maintenance remains active if recovery fails.
 
