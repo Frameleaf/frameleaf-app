@@ -73,6 +73,7 @@ import { PhotoSourceController } from 'src/controllers/photo-source.controller.j
 import { PhotoToolsController } from 'src/controllers/photo-tools.controller.js';
 import { PhotographyWorkflowController } from 'src/controllers/photography-workflow.controller.js';
 import { PhotographyWorkspaceController } from 'src/controllers/photography-workspace.controller.js';
+import { PhysicalDeduplicationController } from 'src/controllers/physical-deduplication.controller.js';
 import { PhysicalFileTrashController } from 'src/controllers/physical-file-trash.controller.js';
 import { PluginController } from 'src/controllers/plugin.controller.js';
 import { PreservationController } from 'src/controllers/preservation.controller.js';
@@ -196,6 +197,7 @@ export const controllers = [
   PersonController,
   PetController,
   IdenticalFilesController,
+  PhysicalDeduplicationController,
   PhysicalFileTrashController,
   PluginController,
   PreservationController,

@@ -52,6 +52,12 @@ const asJobItem = (dto: JobCreateDto): JobItem => {
       return { name: JobName.BestPhotosScoreQueueAll, data: { force: true } };
     }
 
+    case ManualJobName.PhysicalDeduplicationDryRun:
+    case ManualJobName.PhysicalDeduplicationApply: {
+      // FL-413: the per-account merge is retired; identical files merge automatically
+      throw new BadRequestException('Replaced by identical-files-check');
+    }
+
     case ManualJobName.IdenticalFilesCheck: {
       return { name: JobName.IdenticalFilesCheck };
     }

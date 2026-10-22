@@ -728,6 +728,10 @@ export enum ManualJobName {
   MemoryCreate = 'memory-create',
   BackupDatabase = 'backup-database',
   BestPhotosBackfill = 'best-photos-backfill',
+  /** @deprecated FL-413: retired; refused. Use `identical-files-check`. */
+  PhysicalDeduplicationDryRun = 'physical-deduplication-dry-run',
+  /** @deprecated FL-413: retired; refused. Use `identical-files-check`. */
+  PhysicalDeduplicationApply = 'physical-deduplication-apply',
   /** FL-413: "Check again" for identical files. */
   IdenticalFilesCheck = 'identical-files-check',
   IntegrityMissingFiles = `integrity-missing-files`,
@@ -2528,6 +2532,40 @@ export const MaintenanceActionSchema = z
   .enum(MaintenanceAction)
   .describe('Maintenance action')
   .meta({ id: 'MaintenanceAction' });
+
+/** @deprecated FL-413: kept only for the deprecated physical deduplication endpoints. */
+export enum PhysicalDeduplicationDecision {
+  Share = 'share',
+  Skip = 'skip',
+}
+
+export const PhysicalDeduplicationDecisionSchema = z
+  .enum(PhysicalDeduplicationDecision)
+  .describe('Physical deduplication plan decision for a duplicate copy')
+  .meta({ id: 'PhysicalDeduplicationDecision' });
+
+export enum PhysicalDeduplicationSkipReason {
+  ExternalLibrary = 'external-library',
+  MissingSize = 'missing-size',
+  NoRetainedMatch = 'no-retained-match',
+  AlreadyShared = 'already-shared',
+  RetainedFileMissing = 'retained-file-missing',
+}
+
+export const PhysicalDeduplicationSkipReasonSchema = z
+  .enum(PhysicalDeduplicationSkipReason)
+  .describe('Why a duplicate copy is skipped by the physical deduplication plan')
+  .meta({ id: 'PhysicalDeduplicationSkipReason' });
+
+export enum PhysicalDeduplicationPlanMode {
+  DryRun = 'dry-run',
+  Apply = 'apply',
+}
+
+export const PhysicalDeduplicationPlanModeSchema = z
+  .enum(PhysicalDeduplicationPlanMode)
+  .describe('Whether the physical deduplication plan was a preview or an applied run')
+  .meta({ id: 'PhysicalDeduplicationPlanMode' });
 
 export enum ExitCode {
   AppRestart = 7,

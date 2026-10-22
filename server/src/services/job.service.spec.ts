@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import type { QueueExecution } from 'src/queue/types.js';
 import type { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
 import type { JobItem } from 'src/types.js';
@@ -26,6 +27,14 @@ describe(JobService.name, () => {
   });
 
   describe('create', () => {
+    it.each([ManualJobName.PhysicalDeduplicationDryRun, ManualJobName.PhysicalDeduplicationApply])(
+      'refuses the retired %s (FL-413)',
+      async (name) => {
+        await expect(sut.create({ name })).rejects.toBeInstanceOf(BadRequestException);
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      },
+    );
+
     it('queues an identical-files check (FL-413)', async () => {
       await sut.create({ name: ManualJobName.IdenticalFilesCheck });
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.IdenticalFilesCheck });
