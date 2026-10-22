@@ -59,13 +59,13 @@ describe('FL-417 library path', () => {
         libraryPath: '/data/upload/bob/ab/cd/own.jpg',
       }).build();
       expect(displayPath(asset)).toBe('/data/upload/bob/ab/cd/own.jpg');
-      expect(mapAsset(asset).originalPath).toBe('/data/upload/bob/ab/cd/own.jpg');
-      expect(JSON.stringify(mapAsset(asset))).not.toContain('alice');
+      expect(mapAsset(asset as never).originalPath).toBe('/data/upload/bob/ab/cd/own.jpg');
+      expect(JSON.stringify(mapAsset(asset as never))).not.toContain('alice');
     });
 
     it('shows the original path when it is the photo’s own', () => {
       const asset = AssetFactory.from({ originalPath: '/data/library/bob/own.jpg' }).build();
-      expect(mapAsset(asset).originalPath).toBe('/data/library/bob/own.jpg');
+      expect(mapAsset(asset as never).originalPath).toBe('/data/library/bob/own.jpg');
     });
   });
 });
