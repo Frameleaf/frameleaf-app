@@ -4148,6 +4148,8 @@ export type ApiKeyResponseDto = {
     createdAt: string;
     /** API key ID */
     id: string;
+    /** When the key was last used to reach the server; null when it never has been */
+    lastUsedAt: string | null;
     /** API key name */
     name: string;
     /** List of permissions */
@@ -4167,6 +4169,8 @@ export type ApiKeyCreateResponseDto = {
     createdAt: string;
     /** API key ID */
     id: string;
+    /** When the key was last used to reach the server; null when it never has been */
+    lastUsedAt: string | null;
     /** API key name */
     name: string;
     /** List of permissions */
@@ -8898,6 +8902,24 @@ export type OAuthCallbackDto = {
     state?: string;
     /** OAuth callback URL */
     url: string;
+};
+export type OAuthCheckDto = {
+    /** Allow a provider without a valid certificate */
+    allowInsecureRequests?: boolean;
+    /** Client ID given by the provider */
+    clientId: string;
+    /** Client secret; empty to use the saved one */
+    clientSecret?: string;
+    /** The provider address (issuer URL) */
+    issuerUrl: string;
+};
+export type OAuthCheckResponseDto = {
+    /** Why the check failed, when it did */
+    error: string | null;
+    /** The issuer the provider names, when it answered */
+    issuer: string | null;
+    /** Whether the provider answered */
+    ok: boolean;
 };
 export type FrameleafTokenExchangeDto = {
     rememberMe?: boolean;
@@ -24944,6 +24966,21 @@ export function finishOAuth({ oAuthCallbackDto }: {
         ...opts,
         method: "POST",
         body: oAuthCallbackDto
+    })));
+}
+/**
+ * Check a sign-in provider
+ */
+export function checkOAuthProvider({ oAuthCheckDto }: {
+    oAuthCheckDto: OAuthCheckDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthCheckResponseDto;
+    }>("/oauth/check", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: oAuthCheckDto
     })));
 }
 /**

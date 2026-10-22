@@ -1228,6 +1228,28 @@ describe(AuthService.name, () => {
       expect(mocks.apiKey.getKey).toHaveBeenCalledWith(Buffer.from('auth_token (hashed)'));
     });
 
+    it('records when an API key was last used, at most every few minutes (FL-367)', async () => {
+      const authUser = UserFactory.create();
+      const authApiKey = ApiKeyFactory.create({ permissions: [Permission.All] });
+      mocks.apiKey.getKey.mockResolvedValue({ ...authApiKey, user: authUser });
+      mocks.systemMetadata.get.mockResolvedValue({});
+      const request = () =>
+        sut.authenticate({
+          headers: { 'x-api-key': 'auth_token' },
+          queryParams: {},
+          metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
+        });
+
+      await request();
+      await request();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(mocks.systemMetadata.set).toHaveBeenCalledTimes(1);
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.ApiKeyLastUsed, {
+        [authApiKey.id]: expect.any(String),
+      });
+    });
+
     it('should throw an error if api key has insufficient permissions', async () => {
       const authUser = UserFactory.create();
       const authApiKey = ApiKeyFactory.create({ permissions: [] });
@@ -1323,6 +1345,31 @@ describe(AuthService.name, () => {
 
     it('works without query params', () => {
       expect(sut.getFrameleafMobileRedirect('https://immich.app')).toEqual('frameleaf-auth:///oauth-callback?');
+    });
+  });
+
+  describe('checkOAuthProvider (FL-367)', () => {
+    it('says what the provider answered', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
+      mocks.oauth.check.mockResolvedValue({ issuer: 'https://accounts.example.test' });
+
+      await expect(
+        sut.checkOAuthProvider({ issuerUrl: 'https://accounts.example.test', clientId: 'frameleaf' }),
+      ).resolves.toEqual({ ok: true, issuer: 'https://accounts.example.test', error: null });
+      expect(mocks.oauth.check).toHaveBeenCalledWith(
+        expect.objectContaining({ issuerUrl: 'https://accounts.example.test', clientId: 'frameleaf' }),
+      );
+    });
+
+    it('says why the provider did not answer', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
+      mocks.oauth.check.mockRejectedValue(
+        new Error('Error in OAuth discovery', { cause: new Error('getaddrinfo ENOTFOUND') }),
+      );
+
+      await expect(
+        sut.checkOAuthProvider({ issuerUrl: 'https://nowhere.example.test', clientId: 'frameleaf' }),
+      ).resolves.toEqual({ ok: false, issuer: null, error: 'getaddrinfo ENOTFOUND' });
     });
   });
 

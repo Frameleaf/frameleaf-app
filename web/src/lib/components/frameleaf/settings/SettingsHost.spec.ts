@@ -168,7 +168,9 @@ describe('the Command Center (FL-71)', () => {
       'Libraries',
       'Utilities',
     ]);
-    expect(names.at(-2)).toBe('Your preferences');
+    expect(names.at(-3)).toBe('Your preferences');
+    // FL-367
+    expect(names.at(-2)).toBe('Your sign-in & privacy');
     expect(names.at(-1)).toBe('Change history');
     expect(screen.getByRole('button', { name: 'Storage & originals' })).toHaveAttribute('aria-current', 'page');
   });
@@ -432,9 +434,9 @@ describe('the Command Center (FL-71)', () => {
       'Library care',
       'Utilities',
       'Trash',
-      'Access & security',
       'Notifications',
       'Your preferences',
+      'Your sign-in & privacy',
       'Change history',
     ]);
     // A server area falls back to the first area the account may open.

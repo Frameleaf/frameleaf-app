@@ -166,6 +166,26 @@ export class SessionUnlockDto extends createZodDto(SessionUnlockSchema) {}
 export class PinCodeChangeDto extends createZodDto(PinCodeChangeSchema) {}
 export class ValidateAccessTokenResponseDto extends createZodDto(ValidateAccessTokenResponseSchema) {}
 export class OAuthCallbackDto extends createZodDto(OAuthCallbackSchema) {}
+/** FL-367: the details a provider check reads; nothing is saved. */
+const OAuthCheckSchema = z
+  .object({
+    issuerUrl: z.url().describe('The provider address (issuer URL)'),
+    clientId: z.string().min(1).describe('Client ID given by the provider'),
+    clientSecret: z.string().optional().describe('Client secret; empty to use the saved one'),
+    allowInsecureRequests: z.boolean().optional().describe('Allow a provider without a valid certificate'),
+  })
+  .meta({ id: 'OAuthCheckDto' });
+
+const OAuthCheckResponseSchema = z
+  .object({
+    ok: z.boolean().describe('Whether the provider answered'),
+    issuer: z.string().nullable().describe('The issuer the provider names, when it answered'),
+    error: z.string().nullable().describe('Why the check failed, when it did'),
+  })
+  .meta({ id: 'OAuthCheckResponseDto' });
+
+export class OAuthCheckDto extends createZodDto(OAuthCheckSchema) {}
+export class OAuthCheckResponseDto extends createZodDto(OAuthCheckResponseSchema) {}
 export class OAuthConfigDto extends createZodDto(OAuthConfigSchema) {}
 export class OAuthAuthorizeResponseDto extends createZodDto(OAuthAuthorizeResponseSchema) {}
 export class OAuthBackchannelLogoutDto extends createZodDto(OAuthBackchannelLogoutSchema) {}

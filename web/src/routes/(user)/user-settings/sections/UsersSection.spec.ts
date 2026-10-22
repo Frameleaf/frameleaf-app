@@ -47,7 +47,7 @@ describe('Users manager (FL-71, AccountsLibraries.jsx)', () => {
 
     expect(screen.getByText('Your server')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Users' })).toBeInTheDocument();
-    expect(screen.getByText('Manage profiles, features, preferences, storage and sign-in.')).toBeInTheDocument();
+    expect(screen.getByText('Everyone with an account, and how much space each has.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
     expect(state.goto).toHaveBeenCalledWith('/user-settings?area=users&section=accounts&new=1');
   });

@@ -19,6 +19,8 @@ import {
   LogoutResponseDto,
   OAuthBackchannelLogoutDto,
   OAuthCallbackDto,
+  OAuthCheckDto,
+  OAuthCheckResponseDto,
   OAuthConfigDto,
   PinCodeChangeDto,
   PinCodeResetDto,
@@ -27,7 +29,16 @@ import {
   SignUpDto,
 } from 'src/dtos/auth.dto.js';
 import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
-import { AdminAuditAction, AuthCookie, AuthType, JobName, Permission, RequestHeader, RequestQuery } from 'src/enum.js';
+import {
+  AdminAuditAction,
+  AuthCookie,
+  AuthType,
+  JobName,
+  Permission,
+  RequestHeader,
+  RequestQuery,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
@@ -89,6 +100,10 @@ type PinAttemptState = { failureCount: number; lastFailureAt: number; lockedUnti
 const pinAttemptsByUser = new Map<string, PinAttemptState>();
 // Keep PIN backoff admission serial while bcrypt runs outside the event loop.
 const pinChecksByUser = new Map<string, Promise<void>>();
+
+/** FL-367: API key uses recorded by this process, so "last used" is written at most every few minutes. */
+const API_KEY_USE_INTERVAL_MS = 5 * 60 * 1000;
+const apiKeyUseRecorded = new Map<string, number>();
 
 function lookupPinLockoutMs(failureCount: number): number {
   let lockout = 0;
@@ -717,6 +732,27 @@ export class AuthService extends BaseService {
     return `${FRAMELEAF_MOBILE_REDIRECT}?${url.split('?', 2)[1] || ''}`;
   }
 
+  /**
+   * FL-367: "Check" on Sign-in methods. Asks the provider for its discovery document with the
+   * details typed so far (the saved secret when none is typed) and says what it found.
+   */
+  async checkOAuthProvider(dto: OAuthCheckDto): Promise<OAuthCheckResponseDto> {
+    const { oauth } = await this.getConfig({ withCache: false });
+    try {
+      const { issuer } = await this.oauthRepository.check({
+        ...oauth,
+        issuerUrl: dto.issuerUrl,
+        clientId: dto.clientId,
+        clientSecret: dto.clientSecret || oauth.clientSecret,
+        allowInsecureRequests: dto.allowInsecureRequests ?? oauth.allowInsecureRequests,
+      });
+      return { ok: true, issuer, error: null };
+    } catch (error) {
+      const cause = error instanceof Error && error.cause instanceof Error ? error.cause : error;
+      return { ok: false, issuer: null, error: cause instanceof Error ? cause.message : String(cause) };
+    }
+  }
+
   async authorize(dto: OAuthConfigDto) {
     const { oauth } = await this.getConfig({ withCache: false });
 
@@ -1004,6 +1040,7 @@ export class AuthService extends BaseService {
     const hashed = this.cryptoRepository.hashSha256(key);
     const apiKey = await this.apiKeyRepository.getKey(hashed);
     if (apiKey?.user) {
+      void this.recordApiKeyUse(apiKey.id);
       return {
         user: apiKey.user,
         apiKey,
@@ -1011,6 +1048,27 @@ export class AuthService extends BaseService {
     }
 
     throw new UnauthorizedException('Invalid API key');
+  }
+
+  /**
+   * FL-367: "Last used" for API keys. Kept in system metadata rather than on the key, so a request
+   * never writes to the key's row; recorded at most once every few minutes per key and process.
+   */
+  private async recordApiKeyUse(id: string): Promise<void> {
+    const now = Date.now();
+    if (now - (apiKeyUseRecorded.get(id) ?? 0) < API_KEY_USE_INTERVAL_MS) {
+      return;
+    }
+    apiKeyUseRecorded.set(id, now);
+    try {
+      const used = (await this.systemMetadataRepository.get(SystemMetadataKey.ApiKeyLastUsed)) ?? {};
+      await this.systemMetadataRepository.set(SystemMetadataKey.ApiKeyLastUsed, {
+        ...used,
+        [id]: new Date(now).toISOString(),
+      });
+    } catch (error) {
+      this.logger.warn(`Could not record when an API key was last used: ${error}`);
+    }
   }
 
   private async validateSecret(inputSecret: string, existingHash?: string | null): Promise<boolean> {

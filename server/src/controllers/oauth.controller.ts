@@ -8,10 +8,12 @@ import {
   OAuthAuthorizeResponseDto,
   OAuthBackchannelLogoutDto,
   OAuthCallbackDto,
+  OAuthCheckDto,
+  OAuthCheckResponseDto,
   OAuthConfigDto,
 } from 'src/dtos/auth.dto.js';
 import { UserAdminResponseDto } from 'src/dtos/user.dto.js';
-import { ApiTag, AuthCookie, AuthType } from 'src/enum.js';
+import { ApiTag, AuthCookie, AuthType, Permission } from 'src/enum.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { AuthService, type LoginDetails } from 'src/services/auth.service.js';
@@ -21,6 +23,20 @@ import { respondWithCookie } from 'src/utils/response.js';
 @Controller('oauth')
 export class OAuthController {
   constructor(private service: AuthService) {}
+
+  // FL-367: Sign-in methods' "Check" button. Reads the provider; saves nothing.
+  @Post('check')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.SystemConfigUpdate, admin: true })
+  @Endpoint({
+    summary: 'Check a sign-in provider',
+    description:
+      'Asks the provider at the issuer URL for its sign-in details and says whether it answered. Nothing is saved.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  checkOAuthProvider(@Body() dto: OAuthCheckDto): Promise<OAuthCheckResponseDto> {
+    return this.service.checkOAuthProvider(dto);
+  }
 
   @Get('mobile-redirect')
   @Authenticated({ public: true })
