@@ -2218,6 +2218,71 @@ export type HardwareCheckResponseDto = {
     /** Render and restoration workers, from their reported evidence */
     workers: HardwareWorkerCheckDto[];
 };
+export type IdenticalFilesCountsDto = {
+    /** Bytes moved to Unused files */
+    bytesMovedToUnused: number;
+    /** Damaged orphans moved to Unused files */
+    damaged: number;
+    /** Extra copies moved to Unused files */
+    filesMovedToUnused: number;
+    /** Photos pointed at another person’s identical file */
+    linked: number;
+    /** Orphans whose content the owner already had */
+    orphanDuplicates: number;
+    /** Media files nothing pointed at */
+    orphansFound: number;
+    /** Identical photos in one library sent to the Trash by a merge */
+    photosMerged: number;
+    /** Orphans brought back as photos */
+    photosRecovered: number;
+    /** Problems found, including those past the listed ones */
+    problems: number;
+    /** Originals given a storage record */
+    registered: number;
+    /** Originals read from disk */
+    scanned: number;
+    /** SHA-1 records upgraded to SHA-256 */
+    upgraded: number;
+};
+export type IdenticalFilesProblemDto = {
+    /** The photo concerned, when there is one */
+    assetId: string | null;
+    /** More about it, such as the reason a merge was held back */
+    detail: string | null;
+    kind: IdenticalFilesProblemKind;
+    /** An orphaned file, relative to the media location */
+    path: string | null;
+};
+export type IdenticalFilesStatusDto = {
+    counts: IdenticalFilesCountsDto;
+    finishedAt: string | null;
+    /** The first problems found (at most 200) */
+    problems: IdenticalFilesProblemDto[];
+    /** Photos recovered per owner */
+    recovered: {
+        /** The owner’s Recovered Media album */
+        albumId: string | null;
+        ownerId: string;
+        photos: number;
+    }[];
+    stage: (IdenticalFilesStage) | null;
+    startedAt: string | null;
+    status: IdenticalFilesRunStatus;
+    /** Managed originals when the run started (scan progress total) */
+    totalOriginals: number;
+    trigger: (IdenticalFilesTrigger) | null;
+};
+export type IdenticalFilesChangeDto = {
+    createdAt: string;
+    /** Change id */
+    id: string;
+    /** The photo whose file was kept */
+    keptAssetId: string | null;
+    kind: IdenticalFilesChangeKind;
+    /** The photo’s own file waits in Unused files and can be restored */
+    restorable: boolean;
+    undoneAt: string | null;
+};
 export type IntegrityReportResponseDto = {
     items: {
         /** Integrity report item id */
@@ -2453,338 +2518,6 @@ export type TemplateResponseDto = {
 export type TestEmailResponseDto = {
     /** Email message ID */
     messageId: string;
-};
-export type PhysicalDeduplicationRestoreRequestDto = {
-    /** A copy of the applied plan whose own file is still on disk */
-    assetId: string;
-};
-export type PhysicalDeduplicationVerificationItemDto = {
-    assetId: string;
-    /** Whether the requesting administrator may view this asset and its thumbnail */
-    canView: boolean;
-    copyFile: PhysicalDeduplicationCopyFile;
-    /** Whether the asset still resolves to the retained original */
-    linked: boolean;
-    originalFileName: string;
-    ownerName: string;
-    /** Whether the asset can go back to its own file: it is linked and that file still holds the reviewed bytes */
-    restorable: boolean;
-    /** Whether the asset is back on its own former file */
-    restored: boolean;
-    retainedFile: PhysicalDeduplicationRetainedFile;
-    "type": AssetTypeEnum;
-};
-export type PhysicalDeduplicationVerificationDto = {
-    /** Copies the plan applied, listed or not */
-    copies: number;
-    /** Copies that are Locked media of another account; counted, never named */
-    hiddenCopies: number;
-    items: PhysicalDeduplicationVerificationItemDto[];
-    /** Copies that no longer resolve to the retained original */
-    notLinked: number;
-    operationId: string;
-    planId: string;
-    /** Copies whose own file is gone: that cannot be undone */
-    removed: number;
-    restorable: number;
-    restored: number;
-    retainedChanged: number;
-    retainedIntact: number;
-    retainedMissing: number;
-    retainedOriginals: number;
-    /** Copies that resolve to a retained original still holding the reviewed bytes */
-    verified: number;
-    verifiedAt: string;
-};
-export type PhysicalDeduplicationApplyRequestDto = {
-    /** `APPLY <planId>`, typed by the administrator */
-    confirmation: string;
-    /** Retained originals whose group the administrator decided to leave as they are */
-    excludedRetainedAssetIds?: string[];
-    /** The fingerprint of the plan on screen, from the preview */
-    fingerprint: string;
-    /** From the review of this plan */
-    reviewToken: string;
-};
-export type MediaOperationBulkSummaryDto = {
-    action: MediaOperationBulkAction;
-    /** Items the server attempted and could not apply; a retry covers these */
-    failed: number;
-    itemsTruncated: boolean;
-    /** Items in the frozen set */
-    requested: number;
-    /** Items that failed and were given their one automatic retry */
-    retried: number;
-    /** Items refused before anything changed, e.g. no access */
-    skipped: number;
-    snapshotTruncated: boolean;
-    succeeded: number;
-};
-export type CloudMlJobCostDto = {
-    /** The likely total the owner confirmed, USD */
-    estimatedP50Usd: number;
-    /** The high end the owner confirmed, USD */
-    estimatedP90Usd: number;
-    /** What the AI Wallet holds for the job, USD */
-    holdUsd: number;
-    /** Frameleaf Cloud’s note on the settlement */
-    note: string | null;
-    /** not_charged: the hold went back in full (a failure on the cloud side, or a job that never ran) */
-    outcome: (CloudMlJobCostOutcome) | null;
-    /** What the job was charged once settled, USD; null until then */
-    settledUsd: number | null;
-    /** Metered so far, never above the hold, USD; null before a worker starts */
-    soFarUsd: number | null;
-};
-export type CloudMlJobActivityDto = {
-    activityStage: CloudMlJobActivityStage;
-    /** Frameleaf Cloud’s own state of the job, or null before it was sent */
-    cloudStatus: string | null;
-    cost: CloudMlJobCostDto;
-    /** The catalogue name of the model the job runs */
-    model: string;
-    modelSku: string;
-    plannedWorkers: number;
-    /** items, seconds or segments, when Frameleaf Cloud reports progress */
-    progressUnit: string | null;
-    purpose: CloudMlJobPurpose;
-    stage: CloudMlJobStage;
-    /** Workers started so far */
-    workers: number;
-};
-export type MediaOperationEstimateDto = {
-    /** Configured cloud rate detail, when one applies */
-    cloudCost: {
-        [key: string]: any;
-    } | null;
-    /** Measured estimate of remaining work */
-    seconds: number;
-    /** Estimated output size */
-    sizeBytes: string | null;
-};
-export type MediaOperationDto = {
-    /** Source asset, when the workload has exactly one */
-    assetId: string | null;
-    attempt: number;
-    /** Automatic retries this job has used; every job gets one before a failure is reported */
-    autoRetries: number;
-    bulk: (MediaOperationBulkSummaryDto) | null;
-    cancelAcknowledgedAt: string | null;
-    cancelRequestedAt: string | null;
-    cloudJob?: (CloudMlJobActivityDto) | null;
-    createdAt: string;
-    destination: MediaOperationDestination;
-    /** Which worker or endpoint the destination resolved to */
-    destinationDetail: string | null;
-    /** Operator detail about a failure; on a queued job, the failure it is being retried after */
-    error: string | null;
-    /** Stable code the client turns into a message */
-    errorCode: string | null;
-    estimate: (MediaOperationEstimateDto) | null;
-    finishedAt: string | null;
-    /** Media operation ID */
-    id: string;
-    kind: MediaOperationKind;
-    /** What the person sees in Activity; empty when withheld */
-    label: string;
-    /** Why the last render worker that looked at this queued job did not take it; null when none has refused it since it was last claimed */
-    lastAdmissionRefusalReason?: (RenderWorkerRefusalReason) | null;
-    /** When that worker refused it; null with lastAdmissionRefusalReason */
-    lastAdmissionRefusedAt?: string | null;
-    maxAttempts: number;
-    /** Whether this kind of job can pause and carry on later; one-shot kinds cannot */
-    pausable: boolean;
-    /** When the owner asked to pause; a running job keeps working until its next checkpoint */
-    pauseRequestedAt: string | null;
-    processedUnits: string;
-    /** Percent complete, from counted work */
-    progress: number;
-    projectId: string | null;
-    /** The asset a completed job published */
-    resultAssetId: string | null;
-    /** When a job waiting for its automatic retry may run again */
-    retryAt: string | null;
-    /** The job this one retries */
-    retryOfId: string | null;
-    revisionId: string | null;
-    /** User-visible render settings */
-    settings: {
-        [key: string]: any;
-    };
-    startedAt: string | null;
-    status: MediaOperationStatus;
-    totalUnits: string | null;
-    updatedAt: string;
-    /** The job is about a Locked item this session has not unlocked; its label and snapshot are withheld */
-    withheld: boolean;
-};
-export type PhysicalDeduplicationReviewRequestDto = {
-    /** Retained originals whose group the administrator decided to leave as they are */
-    excludedRetainedAssetIds?: string[];
-    /** The fingerprint of the plan on screen, from the preview */
-    fingerprint: string;
-};
-export type PhysicalDeduplicationReviewResponseDto = {
-    /** The phrase to type to apply this plan */
-    confirmation: string;
-    /** Copies the reviewed plan will share */
-    copies: number;
-    estimatedBytes: number;
-    excludedRetainedAssetIds: string[];
-    fingerprint: string;
-    /** Copies in the reviewed plan that are Locked media of another account; counted, never named */
-    hiddenCopies: number;
-    planId: string;
-    retainedOriginals: number;
-    /** Binds the plan to these per-group decisions; applying must present it */
-    reviewToken: string;
-    reviewedAt: string;
-};
-export type PhysicalDeduplicationApplyDto = {
-    alreadyApplied: number;
-    applied: number;
-    createdAt: string;
-    error: string | null;
-    estimatedBytes: number;
-    failed: number;
-    fingerprint: string;
-    finishedAt: string | null;
-    /** Whether the requesting administrator applied it */
-    mine: boolean;
-    /** The media operation applying the plan */
-    operationId: string;
-    pauseRequested: boolean;
-    planId: string;
-    processed: number;
-    progress: number;
-    /** Bytes actually removed from disk so far */
-    reclaimedBytes: number;
-    /** Administrator who applied the plan; the job is theirs to pause or cancel */
-    requestedById: string;
-    requestedByName: string;
-    /** Waiting for its one automatic retry */
-    retrying: boolean;
-    /** Copies left alone because their evidence changed */
-    skipped: number;
-    status: MediaOperationStatus;
-    /** Copies in the reviewed plan */
-    total: number;
-};
-export type PhysicalDeduplicationCopyDto = {
-    /** Duplicate asset owned by a non-retained account */
-    assetId: string;
-    /** Whether the requesting administrator may view this asset and its thumbnail */
-    canView: boolean;
-    /** Hex-encoded SHA-1 checksum of the original file */
-    checksum: string;
-    /** Whether checksum and byte size match a retained original */
-    checksumMatch: boolean;
-    decision: PhysicalDeduplicationDecision;
-    /** Video length in milliseconds, when known */
-    duration: number | null;
-    /** Height in pixels, when known */
-    height: number | null;
-    originalFileName: string;
-    /** Path of the duplicate copy on disk */
-    originalPath: string;
-    ownerId: string;
-    /** Display name of the copy owner */
-    ownerName: string;
-    /** Present when the decision is skip */
-    reason: (PhysicalDeduplicationSkipReason) | null;
-    /** Retained original this copy matches, if any */
-    retainedAssetId: string | null;
-    sizeInBytes: number;
-    "type": AssetTypeEnum;
-    /** Width in pixels, when known */
-    width: number | null;
-};
-export type PhysicalDeduplicationRetainedDto = {
-    /** Asset that keeps the original file */
-    assetId: string;
-    /** Whether the requesting administrator may view this asset and its thumbnail */
-    canView: boolean;
-    /** Hex-encoded SHA-1 checksum of the original file */
-    checksum: string;
-    /** Video length in milliseconds, when known */
-    duration: number | null;
-    /** Whether the retained original file is on disk now, checked on every read (FL-71 UT-24) */
-    fileAvailable: boolean;
-    /** Height in pixels, when known */
-    height: number | null;
-    /** Copies this retained original would share that are Locked media of another account; counted, never named (FL-73) */
-    hiddenCopies: number;
-    originalFileName: string;
-    /** Path of the retained original file */
-    originalPath: string;
-    /** Owner of the retained asset (the retained account) */
-    ownerId: string;
-    /** Display name of the retained account */
-    ownerName: string;
-    /** Assets that would reference this original after the plan is applied */
-    referencesAfter: number;
-    /** Assets that reference this original before the plan is applied (including the retained asset) */
-    referencesBefore: number;
-    sizeInBytes: number;
-    "type": AssetTypeEnum;
-    /** Width in pixels, when known */
-    width: number | null;
-};
-export type PhysicalDeduplicationPlanDto = {
-    /** Copies listed with a share decision: the most this plan can apply. Copies past the list limit wait for a later plan */
-    applicableCopies: number;
-    copies: PhysicalDeduplicationCopyDto[];
-    /** True when more copies were reviewed than the stored preview keeps; totals still cover all of them */
-    copiesTruncated: boolean;
-    /** Measured: bytes actually removed from disk by applying this plan so far */
-    deletedBytes: number;
-    eligibleAssets: number;
-    /** Digest over the plan evidence; changes with every preview (FL-73) */
-    fingerprint: string;
-    /** Copies left out of the rows because they are Locked media of another account; counted, never named */
-    hiddenCopies: number;
-    linkedAssets: number;
-    /** Logical asset bytes (FL-73): the sizes of every asset that references a shared original once this plan is applied, counted once per asset */
-    logicalBytes: number;
-    /** Account whose originals are retained by this plan */
-    masterUserId: string;
-    /** Display name of the retained account */
-    masterUserName: string;
-    mode: PhysicalDeduplicationPlanMode;
-    /** Short name of this plan, typed to confirm applying it (FL-73) */
-    planId: string;
-    /** When the plan was produced */
-    ranAt: string;
-    /** Estimate: bytes of the copies to share, with their generated files, that applying would free */
-    reclaimableBytes: number;
-    retained: PhysicalDeduplicationRetainedDto[];
-    /** When set, only copies owned by this account were reviewed; null means every account */
-    scopeUserId: string | null;
-    scopeUserName: string | null;
-    /** Physical shared-original bytes (FL-73): the retained originals those assets share, counted once per file */
-    sharedOriginalBytes: number;
-    skippedExternal: number;
-    skippedMissingMaster: number;
-};
-export type PhysicalDeduplicationPreviewResponseDto = {
-    /** Recently applied plans, newest first (FL-73) */
-    applies: PhysicalDeduplicationApplyDto[];
-    /** Whether a reviewed plan is being applied (FL-73) */
-    applying: boolean;
-    /** The saved `physicalDeduplication.enabled` */
-    enabled: boolean;
-    /** The latest plan, or null when none has run */
-    plan: (PhysicalDeduplicationPlanDto) | null;
-    /** Whether a deduplication preview is queued or active */
-    running: boolean;
-    /** The saved `physicalDeduplication.masterUserId` */
-    savedMasterUserId: string | null;
-};
-export type PhysicalDeduplicationPreviewRequestDto = {
-    /** Account to retain originals in for this preview; defaults to the saved master account */
-    masterUserId?: string;
-    /** Limit the review to copies owned by this account */
-    scopeUserId?: string;
 };
 export type RenderWorkerDto = {
     /** Operations the worker currently holds */
@@ -5929,6 +5662,38 @@ export type CloudMlJobEstimateResponseDto = {
     upscale: (CloudMlJobUpscaleDto) | null;
     workload: MlWorkload;
 };
+export type CloudMlJobCostDto = {
+    /** The likely total the owner confirmed, USD */
+    estimatedP50Usd: number;
+    /** The high end the owner confirmed, USD */
+    estimatedP90Usd: number;
+    /** What the AI Wallet holds for the job, USD */
+    holdUsd: number;
+    /** Frameleaf Cloud’s note on the settlement */
+    note: string | null;
+    /** not_charged: the hold went back in full (a failure on the cloud side, or a job that never ran) */
+    outcome: (CloudMlJobCostOutcome) | null;
+    /** What the job was charged once settled, USD; null until then */
+    settledUsd: number | null;
+    /** Metered so far, never above the hold, USD; null before a worker starts */
+    soFarUsd: number | null;
+};
+export type CloudMlJobActivityDto = {
+    activityStage: CloudMlJobActivityStage;
+    /** Frameleaf Cloud’s own state of the job, or null before it was sent */
+    cloudStatus: string | null;
+    cost: CloudMlJobCostDto;
+    /** The catalogue name of the model the job runs */
+    model: string;
+    modelSku: string;
+    plannedWorkers: number;
+    /** items, seconds or segments, when Frameleaf Cloud reports progress */
+    progressUnit: string | null;
+    purpose: CloudMlJobPurpose;
+    stage: CloudMlJobStage;
+    /** Workers started so far */
+    workers: number;
+};
 export type ClusterGroupRequestResponseDto = {
     /** Cluster group the user is invited to join */
     clusterGroupId: string;
@@ -6781,6 +6546,86 @@ export type EnrichmentPlanItemDto = {
     retryPending: boolean;
     stages: EnrichmentPlanStageOutcomeDto[];
     state: EnrichmentItemState;
+};
+export type MediaOperationBulkSummaryDto = {
+    action: MediaOperationBulkAction;
+    /** Items the server attempted and could not apply; a retry covers these */
+    failed: number;
+    itemsTruncated: boolean;
+    /** Items in the frozen set */
+    requested: number;
+    /** Items that failed and were given their one automatic retry */
+    retried: number;
+    /** Items refused before anything changed, e.g. no access */
+    skipped: number;
+    snapshotTruncated: boolean;
+    succeeded: number;
+};
+export type MediaOperationEstimateDto = {
+    /** Configured cloud rate detail, when one applies */
+    cloudCost: {
+        [key: string]: any;
+    } | null;
+    /** Measured estimate of remaining work */
+    seconds: number;
+    /** Estimated output size */
+    sizeBytes: string | null;
+};
+export type MediaOperationDto = {
+    /** Source asset, when the workload has exactly one */
+    assetId: string | null;
+    attempt: number;
+    /** Automatic retries this job has used; every job gets one before a failure is reported */
+    autoRetries: number;
+    bulk: (MediaOperationBulkSummaryDto) | null;
+    cancelAcknowledgedAt: string | null;
+    cancelRequestedAt: string | null;
+    cloudJob?: (CloudMlJobActivityDto) | null;
+    createdAt: string;
+    destination: MediaOperationDestination;
+    /** Which worker or endpoint the destination resolved to */
+    destinationDetail: string | null;
+    /** Operator detail about a failure; on a queued job, the failure it is being retried after */
+    error: string | null;
+    /** Stable code the client turns into a message */
+    errorCode: string | null;
+    estimate: (MediaOperationEstimateDto) | null;
+    finishedAt: string | null;
+    /** Media operation ID */
+    id: string;
+    kind: MediaOperationKind;
+    /** What the person sees in Activity; empty when withheld */
+    label: string;
+    /** Why the last render worker that looked at this queued job did not take it; null when none has refused it since it was last claimed */
+    lastAdmissionRefusalReason?: (RenderWorkerRefusalReason) | null;
+    /** When that worker refused it; null with lastAdmissionRefusalReason */
+    lastAdmissionRefusedAt?: string | null;
+    maxAttempts: number;
+    /** Whether this kind of job can pause and carry on later; one-shot kinds cannot */
+    pausable: boolean;
+    /** When the owner asked to pause; a running job keeps working until its next checkpoint */
+    pauseRequestedAt: string | null;
+    processedUnits: string;
+    /** Percent complete, from counted work */
+    progress: number;
+    projectId: string | null;
+    /** The asset a completed job published */
+    resultAssetId: string | null;
+    /** When a job waiting for its automatic retry may run again */
+    retryAt: string | null;
+    /** The job this one retries */
+    retryOfId: string | null;
+    revisionId: string | null;
+    /** User-visible render settings */
+    settings: {
+        [key: string]: any;
+    };
+    startedAt: string | null;
+    status: MediaOperationStatus;
+    totalUnits: string | null;
+    updatedAt: string;
+    /** The job is about a Locked item this session has not unlocked; its label and snapshot are withheld */
+    withheld: boolean;
 };
 export type EnrichmentPlanResponseDto = {
     /** Stages run only because a chosen stage needs them */
@@ -19330,6 +19175,56 @@ export function runHardwareCheck(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Get the identical files status
+ */
+export function getIdenticalFilesStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IdenticalFilesStatusDto;
+    }>("/admin/identical-files", {
+        ...opts
+    }));
+}
+/**
+ * List a photo’s identical-file changes
+ */
+export function getIdenticalFileChanges({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IdenticalFilesChangeDto[];
+    }>(`/admin/identical-files/assets/${encodeURIComponent(id)}/changes`, {
+        ...opts
+    }));
+}
+/**
+ * Restore a photo’s own file
+ */
+export function undoIdenticalFileChange({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IdenticalFilesChangeDto;
+    }>(`/admin/identical-files/changes/${encodeURIComponent(id)}/undo`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Check identical files again
+ */
+export function checkIdenticalFiles(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IdenticalFilesStatusDto;
+    }>("/admin/identical-files/check", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Get integrity report by type
  */
 export function getIntegrityReport({ cursor, limit, $type }: {
@@ -19675,89 +19570,6 @@ export function sendTestEmailAdmin({ adminConfigSmtpDto }: {
         ...opts,
         method: "POST",
         body: adminConfigSmtpDto
-    })));
-}
-/**
- * Restore a copy of an applied physical deduplication plan
- */
-export function restorePhysicalDeduplicationCopy({ id, physicalDeduplicationRestoreRequestDto }: {
-    id: string;
-    physicalDeduplicationRestoreRequestDto: PhysicalDeduplicationRestoreRequestDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: PhysicalDeduplicationVerificationDto;
-    }>(`/admin/physical-deduplication/applies/${encodeURIComponent(id)}/restore`, oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: physicalDeduplicationRestoreRequestDto
-    })));
-}
-/**
- * Verify an applied physical deduplication plan
- */
-export function verifyPhysicalDeduplicationApply({ id }: {
-    id: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: PhysicalDeduplicationVerificationDto;
-    }>(`/admin/physical-deduplication/applies/${encodeURIComponent(id)}/verify`, {
-        ...opts,
-        method: "POST"
-    }));
-}
-/**
- * Apply a reviewed physical deduplication plan
- */
-export function applyPhysicalDeduplicationPlan({ physicalDeduplicationApplyRequestDto }: {
-    physicalDeduplicationApplyRequestDto: PhysicalDeduplicationApplyRequestDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 201;
-        data: MediaOperationDto;
-    }>("/admin/physical-deduplication/plan/apply", oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: physicalDeduplicationApplyRequestDto
-    })));
-}
-/**
- * Review a physical deduplication plan
- */
-export function reviewPhysicalDeduplicationPlan({ physicalDeduplicationReviewRequestDto }: {
-    physicalDeduplicationReviewRequestDto: PhysicalDeduplicationReviewRequestDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: PhysicalDeduplicationReviewResponseDto;
-    }>("/admin/physical-deduplication/plan/review", oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: physicalDeduplicationReviewRequestDto
-    })));
-}
-/**
- * Get physical deduplication preview
- */
-export function getPhysicalDeduplicationPreview(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: PhysicalDeduplicationPreviewResponseDto;
-    }>("/admin/physical-deduplication/preview", {
-        ...opts
-    }));
-}
-/**
- * Request physical deduplication preview
- */
-export function requestPhysicalDeduplicationPreview({ physicalDeduplicationPreviewRequestDto }: {
-    physicalDeduplicationPreviewRequestDto: PhysicalDeduplicationPreviewRequestDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchText("/admin/physical-deduplication/preview", oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: physicalDeduplicationPreviewRequestDto
     })));
 }
 /**
@@ -32032,6 +31844,37 @@ export enum HardwareWorkerKind {
     Render = "render",
     Restoration = "restoration"
 }
+export enum IdenticalFilesProblemKind {
+    Missing = "missing",
+    Unreadable = "unreadable",
+    Changed = "changed",
+    Undone = "undone",
+    CheckBeforeMerging = "check-before-merging",
+    KeptForNow = "kept-for-now",
+    Damaged = "damaged",
+    OverQuota = "over-quota",
+    NeedsALook = "needs-a-look",
+    Failed = "failed"
+}
+export enum IdenticalFilesStage {
+    Scan = "scan",
+    Link = "link",
+    Merge = "merge",
+    Orphans = "orphans",
+    Done = "done"
+}
+export enum IdenticalFilesRunStatus {
+    NeverRun = "never-run",
+    Running = "running",
+    Completed = "completed"
+}
+export enum IdenticalFilesTrigger {
+    Manual = "manual",
+    ImmichImport = "immich-import"
+}
+export enum IdenticalFilesChangeKind {
+    Link = "link"
+}
 export enum IntegrityReport {
     UntrackedFile = "untracked_file",
     MissingFile = "missing_file",
@@ -32107,79 +31950,33 @@ export enum MailSignInUnavailableReason {
     NotLinked = "not-linked",
     CloudUnreachable = "cloud-unreachable"
 }
-export enum PhysicalDeduplicationCopyFile {
-    Removed = "removed",
-    Present = "present",
-    Changed = "changed"
-}
-export enum PhysicalDeduplicationRetainedFile {
-    Intact = "intact",
-    Missing = "missing",
-    Changed = "changed"
-}
-export enum AssetTypeEnum {
-    Image = "IMAGE",
-    Video = "VIDEO",
-    Audio = "AUDIO",
-    Other = "OTHER"
-}
-export enum MediaOperationBulkAction {
-    Favorite = "favorite",
-    Unfavorite = "unfavorite",
-    Archive = "archive",
-    Unarchive = "unarchive",
-    AddToAlbum = "add-to-album",
-    RemoveFromAlbum = "remove-from-album",
-    Tag = "tag",
-    Untag = "untag",
-    ChangeDate = "change-date",
-    ChangeDescription = "change-description",
-    ChangeLocation = "change-location",
-    MarkSensitive = "mark-sensitive",
-    UnmarkSensitive = "unmark-sensitive",
-    Delete = "delete",
-    DeletePermanently = "delete-permanently",
-    Restore = "restore",
-    Stack = "stack",
-    Unstack = "unstack",
-    RefreshThumbnails = "refresh-thumbnails",
-    RefreshMetadata = "refresh-metadata",
-    RefreshEncoded = "refresh-encoded",
-    RefreshFaces = "refresh-faces",
-    RelinkLivePhoto = "relink-live-photo",
-    ResolveDuplicates = "resolve-duplicates",
-    UndoDuplicates = "undo-duplicates",
-    RelinkMissingMedia = "relink-missing-media",
-    RecoverDamagedMedia = "recover-damaged-media",
-    TrashDamagedMedia = "trash-damaged-media",
-    ApplyClassificationRule = "apply-classification-rule"
-}
-export enum CloudMlJobActivityStage {
-    Queued = "queued",
-    Starting = "starting",
-    Running = "running",
-    Paused = "paused",
-    Done = "done",
-    Failed = "failed",
-    Cancelled = "cancelled"
-}
-export enum CloudMlJobCostOutcome {
-    Charged = "charged",
-    NotCharged = "not_charged",
-    Refunded = "refunded"
-}
-export enum CloudMlJobPurpose {
-    Restoration = "restoration",
-    SmoothMotion = "smooth-motion"
-}
-export enum CloudMlJobStage {
-    Preview = "preview",
-    Full = "full"
-}
 export enum MediaOperationDestination {
     Local = "local",
     Lan = "lan",
     FrameleafCloud = "frameleaf-cloud"
+}
+export enum GpuWorkingBudgetBindingMethod {
+    SameExportDevice = "same-export-device"
+}
+export enum GpuWorkingBudgetBackend {
+    Hardware = "hardware"
+}
+export enum GpuWorkingBudgetHeadroomBytes {
+    $536870912 = "536870912"
+}
+export enum GpuWorkingBudgetMeasuredBytes {
+    $2147483648 = "2147483648"
+}
+export enum GpuWorkingBudgetMetric {
+    MeasuredUsableGpuWorkingBudgetV1 = "measured-usable-gpu-working-budget-v1"
+}
+export enum GpuWorkingBudgetStatus {
+    Passed = "passed"
+}
+export enum GpuWorkingBudgetTopology {
+    Unified = "unified",
+    Dedicated = "dedicated",
+    Unknown = "unknown"
 }
 export enum MediaOperationKind {
     StudioExport = "studio_export",
@@ -32212,6 +32009,20 @@ export enum MediaOperationKind {
     BuddyBackup = "buddy_backup",
     BuddyRestore = "buddy_restore"
 }
+export enum RenderWorkerStatus {
+    Active = "active",
+    Revoked = "revoked"
+}
+export enum RenderWorkerAuditEvent {
+    Enrolled = "enrolled",
+    Admitted = "admitted",
+    Refused = "refused",
+    ClaimRefused = "claim_refused",
+    LimitExceeded = "limit_exceeded",
+    Revoked = "revoked",
+    Updated = "updated",
+    DeviceLost = "device_lost"
+}
 export enum RenderWorkerRefusalReason {
     InvalidCredential = "invalid_credential",
     WorkerRevoked = "worker_revoked",
@@ -32231,69 +32042,6 @@ export enum RenderWorkerRefusalReason {
     DestinationUnavailable = "destination_unavailable",
     ManifestIncomplete = "manifest_incomplete",
     CodecUnsupported = "codec_unsupported"
-}
-export enum MediaOperationStatus {
-    Queued = "queued",
-    Preparing = "preparing",
-    Rendering = "rendering",
-    Validating = "validating",
-    Completed = "completed",
-    Cancelling = "cancelling",
-    Cancelled = "cancelled",
-    Failed = "failed",
-    Paused = "paused"
-}
-export enum PhysicalDeduplicationDecision {
-    Share = "share",
-    Skip = "skip"
-}
-export enum PhysicalDeduplicationSkipReason {
-    ExternalLibrary = "external-library",
-    MissingSize = "missing-size",
-    NoRetainedMatch = "no-retained-match",
-    AlreadyShared = "already-shared",
-    RetainedFileMissing = "retained-file-missing"
-}
-export enum PhysicalDeduplicationPlanMode {
-    DryRun = "dry-run",
-    Apply = "apply"
-}
-export enum GpuWorkingBudgetBindingMethod {
-    SameExportDevice = "same-export-device"
-}
-export enum GpuWorkingBudgetBackend {
-    Hardware = "hardware"
-}
-export enum GpuWorkingBudgetHeadroomBytes {
-    $536870912 = "536870912"
-}
-export enum GpuWorkingBudgetMeasuredBytes {
-    $2147483648 = "2147483648"
-}
-export enum GpuWorkingBudgetMetric {
-    MeasuredUsableGpuWorkingBudgetV1 = "measured-usable-gpu-working-budget-v1"
-}
-export enum GpuWorkingBudgetStatus {
-    Passed = "passed"
-}
-export enum GpuWorkingBudgetTopology {
-    Unified = "unified",
-    Dedicated = "dedicated",
-    Unknown = "unknown"
-}
-export enum RenderWorkerStatus {
-    Active = "active",
-    Revoked = "revoked"
-}
-export enum RenderWorkerAuditEvent {
-    Enrolled = "enrolled",
-    Admitted = "admitted",
-    Refused = "refused",
-    ClaimRefused = "claim_refused",
-    LimitExceeded = "limit_exceeded",
-    Revoked = "revoked",
-    Updated = "updated",
-    DeviceLost = "device_lost"
 }
 export enum Kind2 {
     Individual = "individual"
@@ -32409,6 +32157,12 @@ export enum SmartAlbumBuiltInKind {
     Food = "food",
     Pets = "pets",
     Nature = "nature"
+}
+export enum AssetTypeEnum {
+    Image = "IMAGE",
+    Video = "VIDEO",
+    Audio = "AUDIO",
+    Other = "OTHER"
 }
 export enum AnalyticsRange {
     $90Days = "90days",
@@ -32993,9 +32747,31 @@ export enum ClassificationReviewDecision {
     Accepted = "accepted",
     Rejected = "rejected"
 }
+export enum CloudMlJobStage {
+    Preview = "preview",
+    Full = "full"
+}
+export enum CloudMlJobPurpose {
+    Restoration = "restoration",
+    SmoothMotion = "smooth-motion"
+}
 export enum Unit {
     Photo = "photo",
     Minute = "minute"
+}
+export enum CloudMlJobActivityStage {
+    Queued = "queued",
+    Starting = "starting",
+    Running = "running",
+    Paused = "paused",
+    Done = "done",
+    Failed = "failed",
+    Cancelled = "cancelled"
+}
+export enum CloudMlJobCostOutcome {
+    Charged = "charged",
+    NotCharged = "not_charged",
+    Refunded = "refunded"
 }
 export enum DesktopEnrollmentPolicy {
     Administrators = "administrators",
@@ -33096,6 +32872,37 @@ export enum DocumentEditAction {
     Correct = "correct",
     Dismiss = "dismiss"
 }
+export enum MediaOperationBulkAction {
+    Favorite = "favorite",
+    Unfavorite = "unfavorite",
+    Archive = "archive",
+    Unarchive = "unarchive",
+    AddToAlbum = "add-to-album",
+    RemoveFromAlbum = "remove-from-album",
+    Tag = "tag",
+    Untag = "untag",
+    ChangeDate = "change-date",
+    ChangeDescription = "change-description",
+    ChangeLocation = "change-location",
+    MarkSensitive = "mark-sensitive",
+    UnmarkSensitive = "unmark-sensitive",
+    Delete = "delete",
+    DeletePermanently = "delete-permanently",
+    Restore = "restore",
+    Stack = "stack",
+    Unstack = "unstack",
+    RefreshThumbnails = "refresh-thumbnails",
+    RefreshMetadata = "refresh-metadata",
+    RefreshEncoded = "refresh-encoded",
+    RefreshFaces = "refresh-faces",
+    RelinkLivePhoto = "relink-live-photo",
+    ResolveDuplicates = "resolve-duplicates",
+    UndoDuplicates = "undo-duplicates",
+    RelinkMissingMedia = "relink-missing-media",
+    RecoverDamagedMedia = "recover-damaged-media",
+    TrashDamagedMedia = "trash-damaged-media",
+    ApplyClassificationRule = "apply-classification-rule"
+}
 export enum DuplicateDecisionKind {
     Keepers = "keepers",
     KeepAll = "keep-all",
@@ -33136,6 +32943,17 @@ export enum EnrichmentItemState {
     Failed = "failed",
     Completed = "completed",
     Cancelled = "cancelled"
+}
+export enum MediaOperationStatus {
+    Queued = "queued",
+    Preparing = "preparing",
+    Rendering = "rendering",
+    Validating = "validating",
+    Completed = "completed",
+    Cancelling = "cancelling",
+    Cancelled = "cancelled",
+    Failed = "failed",
+    Paused = "paused"
 }
 export enum EnrichmentPreviewStatus {
     Success = "success",
@@ -33279,8 +33097,7 @@ export enum ManualJobName {
     MemoryCreate = "memory-create",
     BackupDatabase = "backup-database",
     BestPhotosBackfill = "best-photos-backfill",
-    PhysicalDeduplicationDryRun = "physical-deduplication-dry-run",
-    PhysicalDeduplicationApply = "physical-deduplication-apply",
+    IdenticalFilesCheck = "identical-files-check",
     IntegrityMissingFiles = "integrity-missing-files",
     IntegrityUntrackedFiles = "integrity-untracked-files",
     IntegrityChecksumMismatch = "integrity-checksum-mismatch",
@@ -34405,6 +34222,7 @@ export enum JobName {
     StorageTemplateMigrationSingle = "StorageTemplateMigrationSingle",
     PhysicalDeduplicationMigrationDryRun = "PhysicalDeduplicationMigrationDryRun",
     PhysicalDeduplicationMigrationApply = "PhysicalDeduplicationMigrationApply",
+    IdenticalFilesCheck = "IdenticalFilesCheck",
     TagCleanup = "TagCleanup",
     VersionCheck = "VersionCheck",
     FrameleafHeartbeat = "FrameleafHeartbeat",

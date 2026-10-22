@@ -109,6 +109,8 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.SmartAlbumReevaluateAll,
   JobName.SmartAlbumReevaluate,
   JobName.LandmarkMatchAll,
+  // FL-413: every batch saves the run's cursor; a retry carries on from it
+  JobName.IdenticalFilesCheck,
 ]);
 // A dependency that stays down defers every job behind it; say so once per queue and reason, not per job.
 const DEFERRAL_WARNING_INTERVAL_MS = 10 * 60_000;
@@ -858,6 +860,10 @@ export class JobRepository {
     switch (item.name) {
       case JobName.ICloudSync: {
         return { deduplication: { id: `${JobName.ICloudSync}:${item.data.id}`, keepLastIfActive: true } };
+      }
+      case JobName.IdenticalFilesCheck: {
+        // FL-413: one run at a time; a check asked for while one runs is the same run carrying on
+        return { deduplication: { id: JobName.IdenticalFilesCheck, keepLastIfActive: true } };
       }
       case JobName.LibraryScanRun: {
         // FL-78: one waiting wake-up is enough; a scan queued while one drains is picked up after it

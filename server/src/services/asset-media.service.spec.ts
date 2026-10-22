@@ -568,7 +568,6 @@ describe(AssetMediaService.name, () => {
         await sut.uploadAsset(authStub.user1, createDto, file);
 
         expect(mocks.physicalFile.linkUploadedOriginal).toHaveBeenCalled();
-        expect(mocks.physicalFile.getMasterOriginalCandidate).not.toHaveBeenCalled();
       });
 
       it('registers new content as its own primary file and keeps the upload', async () => {

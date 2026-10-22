@@ -15,7 +15,7 @@
   import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { commandCenterUrl, type SettingsAreaId } from '$lib/frameleaf/settings-areas';
   import { backupStamp, backupTime } from '$lib/components/frameleaf/settings/backup-time';
-  import { formatBytes } from '$lib/frameleaf/physical-dedup';
+  import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { Route } from '$lib/route';
   import { jobQueue } from '$lib/frameleaf/job-queues';
   import { cloudGlance, gpuStudioState, mlEndpointState } from '$lib/frameleaf/overview-readiness';

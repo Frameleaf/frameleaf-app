@@ -325,22 +325,8 @@ describe('the Command Center (FL-71)', () => {
     const care = () => [
       ...sections,
       serverSection('duplicates', 'Duplicates'),
-      serverSection('deduplication', 'Merge older copies'),
       serverSection('integrity', 'File checks'),
     ];
-
-    it('takes Merge older copies back to Duplicates, and names Duplicates above the heading', () => {
-      open('/user-settings?area=care&section=deduplication');
-      render(SettingsHost, { sections: care() });
-
-      const heading = screen.getByRole('heading', { level: 1, name: 'Merge older copies' }).parentElement!;
-      expect(heading.querySelector('.cc-overline')).toHaveTextContent('Duplicates');
-      expect(screen.getByRole('link', { name: 'Duplicates' })).toHaveAttribute(
-        'href',
-        '/user-settings?area=care&section=duplicates',
-      );
-      expect(screen.queryByRole('link', { name: 'Library care' })).toBeNull();
-    });
 
     it("takes one check's list back to File checks on the page it was opened from", () => {
       open('/user-settings?area=maintenance&section=integrity&report=missing_file');

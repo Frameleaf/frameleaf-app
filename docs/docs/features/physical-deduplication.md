@@ -14,6 +14,16 @@ Administrators can open **Settings > Utilities > File trash** to review stored o
 
 Restore returns a file to its last library. Files whose account has been deleted cannot be restored there. Permanent deletion asks for confirmation.
 
-New uploads need no plan: matching content is reused when it is stored. Copies stored before universal storage can still be merged from **Settings > Library care > Merge older copies**, which previews a plan for the account you pick on the page before anything is applied.
+New uploads need no plan: matching content is reused when it is stored.
+
+## Identical files
+
+Frameleaf also checks the whole server for identical files, with no account to pick. Files are identical when their SHA-256 and size, read from disk, match. A check reads every managed original again and then:
+
+- **Across people**, every person keeps their own photo, and all of them point at one file: the oldest copy. The other copies move to File trash once nothing uses them. Each photo still shows its own folder.
+- **Inside one library**, two identical photos become one. The oldest is kept, and it takes the other's albums, tags, favourite, rating and description. The other goes to the Trash as a duplicate decision that you can undo. A photo with edits, a stack, shares, face corrections or a different Locked state is left for Duplicate review instead.
+- **Orphaned files** in the storage folders that no photo points at are recovered for the owner of their folder, into an album called **Recovered Media**. Content the owner already has, and damaged files, go to File trash.
+
+No check deletes a file, and external libraries are never touched. An administrator can undo one link, which restores that photo's own file from File trash. A link or merge that was undone is never redone automatically.
 
 Keep an independent, verified backup: reusing one stored file does not protect it against disk loss.

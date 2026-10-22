@@ -104,6 +104,7 @@ import {
   ICloudEditDecisionTable,
   ICloudEditVersionTable,
 } from 'src/schema/tables/icloud-edit-authority.table.js';
+import { IdenticalFileChangeTable } from 'src/schema/tables/identical-file-change.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { AssetLandmarkTable, LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
@@ -347,6 +348,7 @@ export class ImmichDatabase {
     PartnerTable,
     PersonTable,
     PersonAuditTable,
+    IdenticalFileChangeTable,
     PhysicalFileTable,
     PersonGroupTable,
     PersonGroupAuditTable,
@@ -587,6 +589,7 @@ export interface DB extends QueueDatabase {
   cluster_group: ClusterGroupTable;
   cluster_group_request: ClusterGroupRequestTable;
 
+  identical_file_change: IdenticalFileChangeTable;
   physical_file: PhysicalFileTable;
 
   preservation_package: PreservationPackageTable;

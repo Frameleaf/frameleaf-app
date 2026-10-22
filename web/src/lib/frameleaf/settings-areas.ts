@@ -111,10 +111,10 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   {
     id: 'care',
     group: 'library',
-    // universal storage: the deduplication history and verification live in Library Care
-    sections: ['integrity-checks', 'duplicates', 'deduplication', 'enrichment-care'],
+    // FL-413: identical files merge automatically; the per-account Merge older copies is retired
+    sections: ['integrity-checks', 'duplicates', 'enrichment-care'],
     personal: ['repair'],
-    order: ['integrity-checks', 'repair', 'duplicates', 'deduplication', 'enrichment-care'],
+    order: ['integrity-checks', 'repair', 'duplicates', 'enrichment-care'],
   },
   // Computers & background work (FL-364; before it "Compute & jobs", FL-71): a landing page that says
   // how the computers and the background work are doing, then Computers, Where work runs, Background
@@ -443,7 +443,8 @@ const SERVER_ALIASES: Record<string, string> = {
   'advanced-integrity-budget': 'integrity-checks',
   'integrity-schedules': 'integrity-checks',
   'advanced-duplicate-matching': 'duplicates',
-  'exact-copies': 'deduplication',
+  'exact-copies': 'duplicates',
+  deduplication: 'duplicates',
   metadata: 'faces',
   pets: 'faces',
   'advanced-recognition-models': 'faces',

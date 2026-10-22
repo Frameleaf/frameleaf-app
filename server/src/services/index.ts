@@ -72,6 +72,7 @@ import { ICloudScheduledWorkerService } from 'src/services/icloud-scheduled-work
 import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
 import { ICloudSyncService } from 'src/services/icloud-sync.service.js';
 import { ICloudWeeklyService } from 'src/services/icloud-weekly.service.js';
+import { IdenticalFilesService } from 'src/services/identical-files.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { ItemShareService } from 'src/services/item-share.service.js';
@@ -110,8 +111,6 @@ import { PhotoSourceService } from 'src/services/photo-source.service.js';
 import { PhotoToolsService } from 'src/services/photo-tools.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
-import { PhysicalDeduplicationPlanService } from 'src/services/physical-deduplication-plan.service.js';
-import { PhysicalDeduplicationService } from 'src/services/physical-deduplication.service.js';
 import { PhysicalFileTrashService } from 'src/services/physical-file-trash.service.js';
 import { PinnedCollectionService } from 'src/services/pinned-collection.service.js';
 import { PluginService } from 'src/services/plugin.service.js';
@@ -288,8 +287,7 @@ export const services = [
   PinnedCollectionService,
   PetRecognitionService,
   PetService,
-  PhysicalDeduplicationPlanService,
-  PhysicalDeduplicationService,
+  IdenticalFilesService,
   PhysicalFileTrashService,
   PluginService,
   PreservationService,

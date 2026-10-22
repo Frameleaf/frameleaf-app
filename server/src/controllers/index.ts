@@ -49,6 +49,7 @@ import { HardwareCheckController } from 'src/controllers/hardware-check.controll
 import { HelpController } from 'src/controllers/help.controller.js';
 import { ICloudIdentityController } from 'src/controllers/icloud-identity.controller.js';
 import { ICloudSyncController } from 'src/controllers/icloud-sync.controller.js';
+import { IdenticalFilesController } from 'src/controllers/identical-files.controller.js';
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
 import { ItemShareController } from 'src/controllers/item-share.controller.js';
 import { JobController } from 'src/controllers/job.controller.js';
@@ -72,7 +73,6 @@ import { PhotoSourceController } from 'src/controllers/photo-source.controller.j
 import { PhotoToolsController } from 'src/controllers/photo-tools.controller.js';
 import { PhotographyWorkflowController } from 'src/controllers/photography-workflow.controller.js';
 import { PhotographyWorkspaceController } from 'src/controllers/photography-workspace.controller.js';
-import { PhysicalDeduplicationController } from 'src/controllers/physical-deduplication.controller.js';
 import { PhysicalFileTrashController } from 'src/controllers/physical-file-trash.controller.js';
 import { PluginController } from 'src/controllers/plugin.controller.js';
 import { PreservationController } from 'src/controllers/preservation.controller.js';
@@ -195,7 +195,7 @@ export const controllers = [
   PartnerController,
   PersonController,
   PetController,
-  PhysicalDeduplicationController,
+  IdenticalFilesController,
   PhysicalFileTrashController,
   PluginController,
   PreservationController,

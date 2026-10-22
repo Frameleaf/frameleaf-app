@@ -52,13 +52,8 @@ const asJobItem = (dto: JobCreateDto): JobItem => {
       return { name: JobName.BestPhotosScoreQueueAll, data: { force: true } };
     }
 
-    case ManualJobName.PhysicalDeduplicationDryRun: {
-      return { name: JobName.PhysicalDeduplicationMigrationDryRun };
-    }
-
-    case ManualJobName.PhysicalDeduplicationApply: {
-      // FL-73: applying needs one specific reviewed plan, never a whole-server queue button.
-      throw new BadRequestException('Apply a reviewed plan from the Physical deduplication page');
+    case ManualJobName.IdenticalFilesCheck: {
+      return { name: JobName.IdenticalFilesCheck };
     }
 
     case ManualJobName.IntegrityMissingFiles: {
