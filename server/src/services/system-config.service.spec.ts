@@ -16,6 +16,7 @@ import {
   MachineLearningHardwareAcceleration,
   MailTransportType,
   OAuthTokenEndpointAuthMethod,
+  OvernightStepTiming,
   QueueName,
   ReleaseChannel,
   SystemMetadataKey,
@@ -25,7 +26,6 @@ import {
   VersionCheckFrequency,
   VideoCodec,
   VideoContainer,
-  OvernightStepTiming,
 } from 'src/enum.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
 import { DeepPartial } from 'src/types.js';
