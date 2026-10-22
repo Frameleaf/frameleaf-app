@@ -285,12 +285,15 @@ export class MetadataService extends BaseService {
     const { tags: exifTags, originalTags, cameraEvidence, audio, video, packets, format } = exifResult;
     this.logger.verbose('Exif Tags', exifTags);
 
-    const dates = this.getDates(asset, exifTags, stats);
-
-    const { width, height } = this.getImageDimensions(exifTags);
     // FL-51: coordinates the owner set or removed are locked; the place names then stay as stored
     // instead of being read from the file's own coordinates
     const lockedProperties = (await this.assetJobRepository.getLockedPropertiesForMetadataExtraction(asset.id)) ?? [];
+    // LIB-02: a time zone set in Frameleaf stays locked (the sidecar holds only an offset), and the file's
+    // date is read in it rather than in the zone its GPS position suggests
+    const lockedTimeZone = lockedProperties.includes('timeZone') ? previous?.timeZone : undefined;
+    const dates = this.getDates(asset, exifTags, stats, lockedTimeZone);
+
+    const { width, height } = this.getImageDimensions(exifTags);
     const locationLocked = lockedProperties.includes('latitude');
     // Persisted locks can include camera fields beyond the public editable-property union.
     const cameraLocked = lockedProperties.some((property: string) => property === 'make' || property === 'model');
@@ -660,9 +663,12 @@ export class MetadataService extends BaseService {
     // Tags set in Frameleaf stay locked too. The sidecar is written by a job that can run behind the tag
     // edits, so the next metadata read may find an older list in it; unlocked, that read took the
     // older list as the file's and dropped the tags added since.
+    // LIB-02: so does a time zone set in Frameleaf: the sidecar holds only an offset, and the next read would
+    // take the zone of the GPS position instead.
     const keptLocked = new Set<string>([
       ...placeProperties,
       'tags',
+      'timeZone',
       ...(locationRemoved ? ['latitude', 'longitude'] : []),
     ]);
     await this.assetRepository.unlockProperties(
@@ -1194,6 +1200,7 @@ export class MetadataService extends BaseService {
     asset: { id: string; originalPath: string; fileCreatedAt: Date },
     exifTags: ImmichTags,
     stats: Stats,
+    lockedTimeZone?: string | null,
   ) {
     const result = firstDateTime(exifTags);
     const tag = result?.tag;
@@ -1207,7 +1214,7 @@ export class MetadataService extends BaseService {
     }
 
     // timezone
-    let timeZone = exifTags.zone ?? null;
+    let timeZone = lockedTimeZone ?? exifTags.zone ?? null;
     if (timeZone === null && (dateTime?.rawValue?.endsWith('Z') || dateTime?.rawValue?.endsWith('+00:00'))) {
       // exiftool-vendored returns "no timezone" information even though "+00:00" might be set explicitly
       // https://github.com/photostructure/exiftool-vendored.js/issues/203

@@ -1560,7 +1560,8 @@ where
 -- AssetRepository.getForMetadataExtractionTags
 select
   "asset_exif"."tags",
-  "asset_exif"."updateId"
+  "asset_exif"."updateId",
+  "asset_exif"."timeZone"
 from
   "asset_exif"
 where

@@ -7144,7 +7144,7 @@
   "frameleaf_info_accept_description": "Accept",
   "frameleaf_info_add_capture_time": "Add a capture time",
   "frameleaf_info_add_tag": "Add a tag",
-  "frameleaf_info_capture_time_becomes": "Capture time becomes {date} · {time}.",
+  "frameleaf_info_capture_time_becomes": "Capture time becomes {date} · {time}",
   "frameleaf_info_captured": "Captured",
   "frameleaf_info_check_again": "Check again with AI",
   "frameleaf_info_check_again_short": "Check again",
