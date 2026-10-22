@@ -96,7 +96,7 @@ These environment variables are used by the `docker-compose.yml` file and do **N
 
 \*2: The key is created once, readable by the server only. Losing it gives the server a new identity: every link and licence tied to the old one stops working until you link and activate again.
 
-\*3: Create the token in your Frameleaf account under Servers → Add server. It works once and expires within an hour; the server never sends a token it already used. Remove it after the server shows as linked. A malformed token, port or network stops the server at startup.
+\*3: Create the token in your Frameleaf account under Servers → Add server. It works once and expires within an hour; the server never sends a token it already used. Remove it, or leave it empty, after the server shows as linked. A malformed token, port or network stops the server at startup.
 
 ## Help links
 
