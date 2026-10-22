@@ -1,5 +1,5 @@
-import { tryPromise } from 'src/utils/promise.js';
 import { ICloudMetadataService } from 'src/services/icloud-metadata.service.js';
+import { tryPromise } from 'src/utils/promise.js';
 
 describe('iCloud metadata immediate lock followup', () => {
   it('follows up an earlier committed lock even when a later connection fails', async () => {

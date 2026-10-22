@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { Server as SocketIO } from 'socket.io';
-import { tryPromise } from 'src/utils/promise.js';
 import { ExitCode } from 'src/enum.js';
 import { PostgresSocketTransport } from 'src/middleware/websocket.adapter.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { AppRestartEvent } from 'src/repositories/event.repository.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { RESTART_BUDGET } from 'src/utils/shutdown.js';
 
 @Injectable()

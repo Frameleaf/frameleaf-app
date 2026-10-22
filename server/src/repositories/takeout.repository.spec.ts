@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { tryPromise } from 'src/utils/promise.js';
 import { TakeoutNotFound, TakeoutRepository } from 'src/repositories/takeout.repository.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { scriptedKysely } from 'test/scripted-kysely.js';
 
 describe('Takeout account admission transaction', () => {

@@ -1,9 +1,9 @@
 import { DummyDriver, Kysely, PostgresDialect } from 'kysely';
-import { tryPromise } from 'src/utils/promise.js';
 import type { DB } from 'src/schema/index.js';
 import { AssetLockReason, AssetType, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { mediumFactory } from 'test/medium.factory.js';
 import { scriptedKysely } from 'test/scripted-kysely.js';
 

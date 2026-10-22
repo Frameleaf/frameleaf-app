@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { tryPromise } from 'src/utils/promise.js';
 import { AssetType, AssetVisibility } from 'src/enum.js';
 import { LivePhotoRepository } from 'src/repositories/live-photo.repository.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';

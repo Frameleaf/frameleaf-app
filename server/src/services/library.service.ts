@@ -3,7 +3,6 @@ import { Insertable } from 'kysely';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import picomatch from 'picomatch';
-import { tryPromise } from 'src/utils/promise.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { LibraryRemovalCounts } from 'src/repositories/library.repository.js';
@@ -47,6 +46,7 @@ import {
 import { libraryAssetFromFile, libraryPathsFingerprint } from 'src/utils/library-scan.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, findOrFail, handlePromiseError } from 'src/utils/misc.js';
+import { tryPromise } from 'src/utils/promise.js';
 
 /**
  * One entry for the administrator audit trail about a library (FL-76), listed in its owner's

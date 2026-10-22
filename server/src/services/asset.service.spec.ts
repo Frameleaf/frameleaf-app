@@ -4,7 +4,6 @@ import { mkdirSync } from 'node:fs';
 import { copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { tryPromise } from 'src/utils/promise.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFile } from 'src/database.js';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
@@ -25,6 +24,7 @@ import {
 } from 'src/enum.js';
 import { AssetStats, RemovedAsset } from 'src/repositories/asset.repository.js';
 import { AssetService } from 'src/services/asset.service.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';

@@ -1,8 +1,8 @@
 import { lookup } from 'node:dns';
 import { type RequestOptions, request } from 'node:https';
 import { BlockList, type LookupFunction, isIP } from 'node:net';
-import { tryPromise } from 'src/utils/promise.js';
 import type { BackupLocation } from 'src/utils/frameleaf-cloud-backup.js';
+import { tryPromise } from 'src/utils/promise.js';
 
 const failure = () => new Error('No backup location could be reached reliably. Try setup again.');
 const createProbeAddressLists = () => {

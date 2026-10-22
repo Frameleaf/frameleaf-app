@@ -1,4 +1,3 @@
-import { tryPromise } from 'src/utils/promise.js';
 import type { AdminNotice } from 'src/repositories/event.repository.js';
 import type { JobItem } from 'src/types.js';
 import { AdminConfigDto, SystemConfig, defaults } from 'src/dtos/config.dto.js';
@@ -15,6 +14,7 @@ import {
 } from 'src/enum.js';
 import { NotificationService } from 'src/services/notification.service.js';
 import { NOTIFICATION_CATALOGS, type NotificationCatalogs } from 'src/utils/notification-locale.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';

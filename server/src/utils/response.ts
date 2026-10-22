@@ -1,4 +1,5 @@
 import { CookieOptions, Response } from 'express';
+import { OutgoingHttpHeaders, STATUS_CODES, ServerResponse, validateHeaderName, validateHeaderValue } from 'node:http';
 import { Writable } from 'node:stream';
 import { CookieResponse } from 'src/dtos/auth.dto.js';
 import { AuthCookie } from 'src/enum.js';
@@ -42,6 +43,29 @@ export const waitForDrain = (response: Writable) =>
       onClose();
     }
   });
+
+type InformationResponse = ServerResponse & {
+  writeInformation?: (statusCode: number, headers: OutgoingHttpHeaders) => void;
+  _writeRaw: (data: string, encoding: BufferEncoding) => void;
+};
+
+/** Sends a 1xx interim response. Node 22 has no public writeInformation, so it writes the head as writeEarlyHints does. */
+export const writeInformation = (response: ServerResponse, statusCode: number, headers: OutgoingHttpHeaders) => {
+  const target = response as InformationResponse;
+  if (target.writeInformation) {
+    target.writeInformation(statusCode, headers);
+    return;
+  }
+  let head = `HTTP/1.1 ${statusCode} ${STATUS_CODES[statusCode] ?? ''}\r\n`;
+  for (const [name, value] of Object.entries(headers)) {
+    for (const item of [value ?? []].flat()) {
+      validateHeaderName(name);
+      validateHeaderValue(name, String(item));
+      head += `${name}: ${item}\r\n`;
+    }
+  }
+  target._writeRaw(head + '\r\n', 'latin1');
+};
 
 export const respondWithCookie = <T>(res: Response, body: T, { isSecure, values, rememberMe }: CookieResponse) => {
   const defaults: CookieOptions = {

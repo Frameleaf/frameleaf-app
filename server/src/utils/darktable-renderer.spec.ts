@@ -3,7 +3,6 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { tryPromise } from 'src/utils/promise.js';
 import {
   DARKTABLE_RENDERER_VERSION,
   DARKTABLE_TIMEOUT_MS,
@@ -12,6 +11,7 @@ import {
   translateDarktableExposure,
   verifyDarktableVersion,
 } from 'src/utils/darktable-renderer.js';
+import { tryPromise } from 'src/utils/promise.js';
 
 const mocks = vi.hoisted(() => ({
   exec: vi.fn(),

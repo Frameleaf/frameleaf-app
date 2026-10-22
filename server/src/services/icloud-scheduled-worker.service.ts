@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { tryPromise } from 'src/utils/promise.js';
 import { AssetType, MediaOperationStatus } from 'src/enum.js';
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import { ScheduledAuditAuthority } from 'src/repositories/icloud-scheduled-authority.js';
@@ -10,6 +9,7 @@ import { MediaOperation, MediaOperationRepository } from 'src/repositories/media
 import { ICloudScheduledStagingService } from 'src/services/icloud-scheduled-staging.service.js';
 import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
 import { scheduledAuditClaimHolder } from 'src/utils/icloud-weekly.js';
+import { tryPromise } from 'src/utils/promise.js';
 
 /** Source seam only. Qualification and actual scheduler registration are separate deployment gates. */
 export const scheduledAuditExecutionEnabled = () => process.env.FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION === 'true';

@@ -1,7 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, HttpException } from '@nestjs/common';
 import { DummyDriver, Kysely, PostgresDialect, Transaction } from 'kysely';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { tryPromise } from 'src/utils/promise.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import type { DB } from 'src/schema/index.js';
@@ -42,6 +41,7 @@ import {
   jobViewSchema,
 } from 'src/utils/frameleaf-cloud.js';
 import { stripsVideoMetadata } from 'src/utils/media-privacy.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';

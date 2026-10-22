@@ -25,6 +25,7 @@ import {
   addressBucket,
 } from 'src/utils/frameleaf-remote-access.js';
 import { type FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
+import { writeInformation } from 'src/utils/response.js';
 
 /** How one connection reached the edge worker: the via tag and the visitor's own address. */
 export type EdgeArrival = { via: FrameleafVia; clientIp: string; host: string | null; buddyRecovery?: boolean };
@@ -276,12 +277,7 @@ export class EdgeProxyService {
       if (answer.statusCode < 102 || response.destroyed || response.headersSent) {
         return;
       }
-      // Public in Node24.18; the pinned Node type package predates this method.
-      (
-        response as ServerResponse & {
-          writeInformation(statusCode: number, headers: OutgoingHttpHeaders): void;
-        }
-      ).writeInformation(answer.statusCode, downstreamHeaders(answer.headers));
+      writeInformation(response, answer.statusCode, downstreamHeaders(answer.headers));
     });
     outgoing.on('response', (answer) => {
       response.writeHead(answer.statusCode ?? 502, answer.statusMessage, downstreamHeaders(answer.headers));

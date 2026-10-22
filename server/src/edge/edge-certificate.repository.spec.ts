@@ -1,9 +1,9 @@
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { tryPromise } from 'src/utils/promise.js';
 import { AcmeClient, EdgeCertificateRepository } from 'src/edge/edge-certificate.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { automock } from 'test/utils.js';
 
 /** Test-only self-signed certificates and keys (openssl, P-256), never used anywhere else. */

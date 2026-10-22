@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
-import { tryPromise } from 'src/utils/promise.js';
 import { DatabaseLock } from 'src/enum.js';
 import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { scriptedKysely } from 'test/scripted-kysely.js';
 
 vi.mock('node:fs/promises', async (importOriginal) => {

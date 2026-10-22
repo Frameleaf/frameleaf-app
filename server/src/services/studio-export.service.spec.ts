@@ -3,7 +3,6 @@ import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs/promises';
 import { PassThrough } from 'node:stream';
-import { tryPromise } from 'src/utils/promise.js';
 import type { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
@@ -37,6 +36,7 @@ import {
 import { StudioExportService, settleStudioExportPublication } from 'src/services/studio-export.service.js';
 import { StudioAuthorizedEntry } from 'src/services/studio-resource.service.js';
 import * as ownerPaths from 'src/utils/cloud-backup-owner-path.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { sealStudioEmbeddedSubtitles } from 'src/utils/studio-embedded-subtitles.js';
 import { studioExportStagingFolder } from 'src/utils/studio-export.js';
 import { StudioResourceKind } from 'src/utils/studio-resources.js';

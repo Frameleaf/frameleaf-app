@@ -1,11 +1,11 @@
 import { performance } from 'node:perf_hooks';
-import { tryPromise } from 'src/utils/promise.js';
 import {
   type BackupGrantResponse,
   type BackupOperation,
   backupGrantProblem,
   managedBackupRefusal,
 } from 'src/utils/frameleaf-cloud-backup.js';
+import { tryPromise } from 'src/utils/promise.js';
 
 export type BackupCredentials = { accessKeyId: string; secretAccessKey: string; sessionToken?: string };
 

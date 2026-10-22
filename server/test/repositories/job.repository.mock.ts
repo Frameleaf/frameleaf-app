@@ -1,7 +1,7 @@
 import { Mocked, vitest } from 'vitest';
-import { tryPromise } from 'src/utils/promise.js';
 import type { RepositoryInterface } from 'src/types.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { tryPromise } from 'src/utils/promise.js';
 
 export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository>> => {
   return {

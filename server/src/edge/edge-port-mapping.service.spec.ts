@@ -1,4 +1,3 @@
-import { tryPromise } from 'src/utils/promise.js';
 import {
   EdgePortMappingService,
   MAPPING_LEASE_SEC,
@@ -7,6 +6,7 @@ import {
   type MappingGateway,
 } from 'src/edge/edge-port-mapping.service.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { automock } from 'test/utils.js';
 
 const fakeGateway = (method: MappingGateway['method'], options: { refuse?: string; ip?: string } = {}) => {

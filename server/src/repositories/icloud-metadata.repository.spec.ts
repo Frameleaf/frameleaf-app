@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { tryPromise } from 'src/utils/promise.js';
 import { AssetVisibility } from 'src/enum.js';
 import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ICloudMetadataRepository } from 'src/repositories/icloud-metadata.repository.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { scriptedKysely } from 'test/scripted-kysely.js';
 
 describe('iCloud metadata lock effect transaction', () => {

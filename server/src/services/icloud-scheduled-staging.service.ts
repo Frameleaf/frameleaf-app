@@ -5,7 +5,6 @@ import { FileHandle, link, lstat, mkdir, open, realpath, unlink } from 'node:fs/
 import { join } from 'node:path';
 import { Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { tryPromise } from 'src/utils/promise.js';
 import { OnEvent } from 'src/decorators.js';
 import { AssetType } from 'src/enum.js';
 import {
@@ -35,6 +34,7 @@ import {
   validPrivateCopy,
   validValidationInputs,
 } from 'src/utils/icloud-private-copy.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 
 class ScheduledReadonlyUnsettledError extends Error {}

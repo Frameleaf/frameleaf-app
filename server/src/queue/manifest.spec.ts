@@ -1,7 +1,7 @@
 import { DummyDriver, Kysely, PostgresAdapter, PostgresIntrospector, PostgresQueryCompiler } from 'kysely';
-import { tryPromise } from 'src/utils/promise.js';
 import { queueExecution } from 'src/queue/context.js';
 import { shareSelections } from 'src/queue/manifest.js';
+import { tryPromise } from 'src/utils/promise.js';
 
 describe('selection sharing cancellation', () => {
   let db: Kysely<any>;

@@ -9,7 +9,6 @@ import {
 import { stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { vitest } from 'vitest';
-import { tryPromise } from 'src/utils/promise.js';
 import { AssetFile } from 'src/database.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import { AssetMediaStatus, AssetRejectReason, AssetUploadAction } from 'src/dtos/asset-media-response.dto.js';
@@ -23,6 +22,7 @@ import { UploadBody } from 'src/types.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';

@@ -1,7 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { tryPromise } from 'src/utils/promise.js';
 import { AssetVisibility, MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -9,6 +8,7 @@ import { TakeoutConflict, TakeoutRepository } from 'src/repositories/takeout.rep
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { TakeoutService } from 'src/services/takeout.service.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { TAKEOUT_DEFAULT_OPTIONS, takeoutStableId } from 'src/utils/takeout.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { newMediumService } from 'test/medium.factory.js';

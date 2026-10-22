@@ -4,10 +4,10 @@ import { mkdir, mkdtemp, open, readFile, realpath, rename, rm, symlink, writeFil
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { crc32, deflateRawSync } from 'node:zlib';
-import { tryPromise } from 'src/utils/promise.js';
 import type { TakeoutSource } from 'src/repositories/takeout.repository.js';
 import type { TakeoutZipEntry } from 'src/utils/takeout-zip.js';
 import { TakeoutStagingRepository } from 'src/repositories/takeout-staging.repository.js';
+import { tryPromise } from 'src/utils/promise.js';
 
 vi.mock('node:fs', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:fs')>();
