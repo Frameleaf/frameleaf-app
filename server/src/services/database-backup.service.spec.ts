@@ -315,6 +315,7 @@ describe(DatabaseBackupService.name, () => {
           "--if-exists",
           "--exclude-table-data=public.landmark",
           "--exclude-table-data=public.landmark_area",
+          "--exclude-table=public.geodata_places_tmp",
         ]
       `);
     });
@@ -450,6 +451,7 @@ describe(DatabaseBackupService.name, () => {
               "--if-exists",
               "--exclude-table-data=public.landmark",
               "--exclude-table-data=public.landmark_area",
+              "--exclude-table=public.geodata_places_tmp",
             ],
             "bin": "/usr/lib/postgresql/19/bin/pg_dump",
             "databaseMajorVersion": 19,
@@ -561,6 +563,7 @@ describe(DatabaseBackupService.name, () => {
               "--if-exists",
               "--exclude-table-data=public.landmark",
               "--exclude-table-data=public.landmark_area",
+              "--exclude-table=public.geodata_places_tmp",
             ],
             "bin": "/usr/lib/postgresql/19/bin/pg_dump",
             "databaseMajorVersion": 19,
@@ -631,6 +634,7 @@ describe(DatabaseBackupService.name, () => {
               "--if-exists",
               "--exclude-table-data=public.landmark",
               "--exclude-table-data=public.landmark_area",
+              "--exclude-table=public.geodata_places_tmp",
             ],
             "bin": "/usr/lib/postgresql/19/bin/pg_dump",
             "databaseMajorVersion": 19,
@@ -737,6 +741,7 @@ describe(DatabaseBackupService.name, () => {
               "--if-exists",
               "--exclude-table-data=public.landmark",
               "--exclude-table-data=public.landmark_area",
+              "--exclude-table=public.geodata_places_tmp",
             ],
             "bin": "/usr/lib/postgresql/19/bin/pg_dump",
             "databaseMajorVersion": 19,
@@ -1035,6 +1040,68 @@ describe(DatabaseBackupService.name, () => {
         ).rejects.toThrow('Server health check failed, no admin exists.');
 
         expect(mocks.storage.unlink).not.toHaveBeenCalledWith(restorePoint);
+      });
+    });
+
+    describe('safety copy racing the first-boot place import (FL-511)', () => {
+      const vanished =
+        'pg_dump: error: query failed: ERROR:  relation "public.geodata_places_tmp" does not exist\npg_dump: detail: Query was: LOCK TABLE public.frameleaf_migrations';
+      const pgDumpCalls = () =>
+        mocks.process.spawnDuplexStream.mock.calls.filter(([command]) => command.endsWith('/pg_dump'));
+      const failPgDump = (times: number, stderr: string) => {
+        let failures = 0;
+        // each attempt writes its own file: a stream destroyed by the failed dump stays failed
+        mocks.storage.createWriteStream.mockImplementation(() => new PassThrough());
+        mocks.process.spawnDuplexStream.mockImplementation((command) =>
+          command.endsWith('/pg_dump') && failures++ < times
+            ? mockDuplex()(command, 1, '', stderr)
+            : mockDuplex()(command, 0, 'data', ''),
+        );
+      };
+
+      it('leaves the import staging table out of the safety copy', async () => {
+        mocks.user.hasAdmin.mockResolvedValue(true);
+
+        await sut.restoreDatabaseBackup('development-filename.sql');
+
+        expect(pgDumpCalls()[0][1]).toContain('--exclude-table=public.geodata_places_tmp');
+      });
+
+      it('takes the safety copy once more when a listed table vanished, then restores', async () => {
+        mocks.user.hasAdmin.mockResolvedValue(true);
+        failPgDump(1, vanished);
+
+        await sut.restoreDatabaseBackup('development-filename.sql');
+
+        expect(pgDumpCalls()).toHaveLength(2);
+        expect(mocks.process.spawnDuplexStream).toHaveBeenCalledWith(
+          expect.stringContaining('psql'),
+          expect.anything(),
+          expect.anything(),
+        );
+      });
+
+      it('stops with a plain retry message when the table vanishes twice', async () => {
+        failPgDump(2, vanished);
+
+        await expect(sut.restoreDatabaseBackup('development-filename.sql')).rejects.toThrow(
+          'Wait a few minutes, then run the restore again.',
+        );
+
+        expect(pgDumpCalls()).toHaveLength(2);
+        expect(mocks.process.spawnDuplexStream).not.toHaveBeenCalledWith(
+          expect.stringContaining('psql'),
+          expect.anything(),
+          expect.anything(),
+        );
+      });
+
+      it('does not retry other dump failures', async () => {
+        failPgDump(1, 'pg_dump: error: connection refused');
+
+        await expect(sut.restoreDatabaseBackup('development-filename.sql')).rejects.toThrow('connection refused');
+
+        expect(pgDumpCalls()).toHaveLength(1);
       });
     });
 
