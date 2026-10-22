@@ -60,6 +60,8 @@ cpu = [
 cuda = [
     # PyPI >=1.27 uses CUDA 13; the stable CUDA 12 feed ends at 1.29 (Pascal support).
     "onnxruntime-gpu==1.29.0",
+    # TensorRT-RTX plugin provider for GeForce RTX cards (consumer GPUs); registered in sessions/ort.py.
+    "onnxruntime-ep-nv-tensorrt-rtx-cu12>=0.4.0,<0.5 ; platform_machine == 'x86_64'",
     "qwen-vl-utils>=0.0.14,<1",
     "torch==2.14.1",
     # Qwen imports its video processor for still images, so Torchvision must match Torch.

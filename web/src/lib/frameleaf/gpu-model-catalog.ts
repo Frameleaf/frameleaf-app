@@ -729,7 +729,8 @@ export const matchedLadders: Readonly<Record<MatchedWorkload, readonly ModelPosi
  * sliders are `matchedLadders`).
  */
 export const localOnlyModels = Object.freeze({
-  search: Object.freeze([{ id: 'clip-vit-b-32', name: 'CLIP ViT-B-32', licence: 'MIT' }]),
+  // The release default (`machineLearning.clip.modelName` in config.dto.ts), as the cloud stop above names it.
+  search: Object.freeze([{ id: 'siglip-vit-b-16-384', name: 'SigLIP ViT-B-16 384', licence: 'Apache-2.0' }]),
   faces: Object.freeze([{ id: 'insightface-buffalo_l', name: 'InsightFace buffalo_l', licence: 'commercial' }]),
   ocr: Object.freeze([{ id: 'pp-ocrv5-mobile', name: 'PP-OCRv5 mobile', licence: 'Apache-2.0' }]),
 });
@@ -793,8 +794,18 @@ export const BANDS: Readonly<Record<Band, Readonly<{ id: Band; color: string; ic
     none: { id: 'none', color: 'none', icon: 'mdiCancel', labelKey: 'frameleaf_model_band_none' },
   });
 
-/** A GPU a container can use, as the hardware check reports it. */
-export type DetectedGpu = { name: string; vramGb: number; backend: string; profile: GpuProfileId | null };
+/**
+ * A GPU a container can use, as the hardware check reports it. An integrated GPU shares the
+ * computer's memory and reports none of its own (`vramGb` 0), so memory checks treat it like the
+ * processor while the work still runs on it.
+ */
+export type DetectedGpu = {
+  name: string;
+  vramGb: number;
+  backend: string;
+  profile: GpuProfileId | null;
+  integrated?: boolean;
+};
 
 /** Speed class of a model on a GPU; falls back to a memory check for profiles the research does not rate. */
 export const speedOn = (item: ModelPosition, gpu: DetectedGpu | null): SpeedClass => {

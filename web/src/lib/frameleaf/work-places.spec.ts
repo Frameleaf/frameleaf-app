@@ -12,6 +12,7 @@ const container = (overrides: Partial<HardwareCheckResponseDto['ml']> = {}): Har
   vendor: null,
   model: null,
   vramGb: null,
+  integrated: null,
   driver: null,
   backend: HardwareBackend.Cpu,
   test: null,

@@ -79335,6 +79335,11 @@
           "gpu": {
             "$ref": "#/components/schemas/HardwareGpuFactsDto"
           },
+          "integrated": {
+            "description": "The GPU is an integrated one sharing the computer's memory; null when not known",
+            "nullable": true,
+            "type": "boolean"
+          },
           "model": {
             "nullable": true,
             "type": "string"
@@ -79365,6 +79370,7 @@
           "backend",
           "driver",
           "gpu",
+          "integrated",
           "model",
           "reachable",
           "test",
