@@ -42346,6 +42346,466 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "source_original",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "source_original",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "authorizationEpoch",
+          "tableName": "source_original",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "scopeFingerprint",
+          "tableName": "source_original",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "resourceId",
+          "tableName": "source_original",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "source_original_epoch_check",
+          "definition": "CHECK ((\"authorizationEpoch\" > 0))",
+          "tableName": "source_original",
+          "expression": "((\"authorizationEpoch\" > 0))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "source_original_pkey",
+          "definition": "PRIMARY KEY (\"assetId\")",
+          "tableName": "source_original",
+          "columnNames": [
+            "assetId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "source_original_resourceId_uq",
+          "definition": "UNIQUE (\"resourceId\")",
+          "tableName": "source_original",
+          "columnNames": [
+            "resourceId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "source_original_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "source_original",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "source_original_resourceId_fkey",
+          "definition": "FOREIGN KEY (\"resourceId\") REFERENCES photo_source_resource(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "source_original",
+          "columnNames": [
+            "resourceId"
+          ],
+          "referenceTableName": "photo_source_resource",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "source_resource_read",
+      "columns": [
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "source_resource_read",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "deviceId",
+          "tableName": "source_resource_read",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "claimTokenHash",
+          "tableName": "source_resource_read",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "claimCredentialHash",
+          "tableName": "source_resource_read",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "source_resource_read",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "state",
+          "tableName": "source_resource_read",
+          "nullable": false,
+          "isArray": false,
+          "default": "'pending'::character varying",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "source_resource_read",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuidv7()",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "claimFence",
+          "tableName": "source_resource_read",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "authorizationEpoch",
+          "tableName": "source_resource_read",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "scopeFingerprint",
+          "tableName": "source_resource_read",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "source_resource_read",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "leaseUntil",
+          "tableName": "source_resource_read",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "deadline",
+          "tableName": "source_resource_read",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "resourceId",
+          "tableName": "source_resource_read",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sourceId",
+          "tableName": "source_resource_read",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "source_resource_read_resourceId_idx",
+          "definition": "CREATE INDEX \"source_resource_read_resourceId_idx\" ON public.source_resource_read USING btree (\"resourceId\")",
+          "tableName": "source_resource_read",
+          "columnNames": [
+            "resourceId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "source_resource_read_sourceId_state_createdAt_idx",
+          "definition": "CREATE INDEX \"source_resource_read_sourceId_state_createdAt_idx\" ON public.source_resource_read USING btree (\"sourceId\", state, \"createdAt\")",
+          "tableName": "source_resource_read",
+          "columnNames": [
+            "sourceId",
+            "state",
+            "createdAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "source_resource_read_deviceId_idx",
+          "definition": "CREATE INDEX \"source_resource_read_deviceId_idx\" ON public.source_resource_read USING btree (\"deviceId\")",
+          "tableName": "source_resource_read",
+          "columnNames": [
+            "deviceId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "source_resource_read_ownerId_idx",
+          "definition": "CREATE INDEX \"source_resource_read_ownerId_idx\" ON public.source_resource_read USING btree (\"ownerId\")",
+          "tableName": "source_resource_read",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "source_resource_read_active_uq",
+          "definition": "CREATE UNIQUE INDEX source_resource_read_active_uq ON public.source_resource_read USING btree (\"assetId\", \"resourceId\", \"scopeFingerprint\", \"authorizationEpoch\") WHERE ((state)::text = ANY ((ARRAY['pending'::character varying, 'claimed'::character varying, 'delivering'::character varying])::text[]))",
+          "tableName": "source_resource_read",
+          "columnNames": [
+            "assetId",
+            "resourceId",
+            "scopeFingerprint",
+            "authorizationEpoch"
+          ],
+          "using": "btree",
+          "where": "((state)::text = ANY ((ARRAY['pending'::character varying, 'claimed'::character varying, 'delivering'::character varying])::text[]))",
+          "unique": true,
+          "synchronize": true
+        },
+        {
+          "name": "source_resource_read_assetId_idx",
+          "definition": "CREATE INDEX \"source_resource_read_assetId_idx\" ON public.source_resource_read USING btree (\"assetId\")",
+          "tableName": "source_resource_read",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "source_resource_read_claimed_source_uq",
+          "definition": "CREATE UNIQUE INDEX source_resource_read_claimed_source_uq ON public.source_resource_read USING btree (\"sourceId\") WHERE ((state)::text = ANY ((ARRAY['claimed'::character varying, 'delivering'::character varying])::text[]))",
+          "tableName": "source_resource_read",
+          "columnNames": [
+            "sourceId"
+          ],
+          "using": "btree",
+          "where": "((state)::text = ANY ((ARRAY['claimed'::character varying, 'delivering'::character varying])::text[]))",
+          "unique": true,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "source_resource_read_claim_check",
+          "definition": "CHECK ((((\"claimTokenHash\" IS NULL) OR (octet_length(\"claimTokenHash\") = 32)) AND ((\"claimCredentialHash\" IS NULL) OR (octet_length(\"claimCredentialHash\") = 32)) AND (((state)::text <> ALL ((ARRAY['claimed'::character varying, 'delivering'::character varying])::text[])) OR ((\"claimFence\" > 0) AND (\"claimTokenHash\" IS NOT NULL) AND (\"claimCredentialHash\" IS NOT NULL) AND (\"leaseUntil\" IS NOT NULL)))))",
+          "tableName": "source_resource_read",
+          "expression": "((((\"claimTokenHash\" IS NULL) OR (octet_length(\"claimTokenHash\") = 32)) AND ((\"claimCredentialHash\" IS NULL) OR (octet_length(\"claimCredentialHash\") = 32)) AND (((state)::text <> ALL ((ARRAY['claimed'::character varying, 'delivering'::character varying])::text[])) OR ((\"claimFence\" > 0) AND (\"claimTokenHash\" IS NOT NULL) AND (\"claimCredentialHash\" IS NOT NULL) AND (\"leaseUntil\" IS NOT NULL)))))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "source_resource_read_epoch_check",
+          "definition": "CHECK (((\"authorizationEpoch\" > 0) AND (\"claimFence\" >= 0)))",
+          "tableName": "source_resource_read",
+          "expression": "(((\"authorizationEpoch\" > 0) AND (\"claimFence\" >= 0)))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "source_resource_read_state_check",
+          "definition": "CHECK (((state)::text = ANY ((ARRAY['pending'::character varying, 'claimed'::character varying, 'delivering'::character varying, 'ready'::character varying, 'unavailable'::character varying])::text[])))",
+          "tableName": "source_resource_read",
+          "expression": "(((state)::text = ANY ((ARRAY['pending'::character varying, 'claimed'::character varying, 'delivering'::character varying, 'ready'::character varying, 'unavailable'::character varying])::text[])))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "source_resource_read_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "source_resource_read",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "source_resource_read_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "source_resource_read",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "source_resource_read_resourceId_fkey",
+          "definition": "FOREIGN KEY (\"resourceId\") REFERENCES photo_source_resource(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "source_resource_read",
+          "columnNames": [
+            "resourceId"
+          ],
+          "referenceTableName": "photo_source_resource",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "source_resource_read_sourceId_fkey",
+          "definition": "FOREIGN KEY (\"sourceId\") REFERENCES photo_source(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "source_resource_read",
+          "columnNames": [
+            "sourceId"
+          ],
+          "referenceTableName": "photo_source",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "source_resource_read_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "source_resource_read",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "source_resource_read_deviceId_fkey",
+          "definition": "FOREIGN KEY (\"deviceId\") REFERENCES desktop_device(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "source_resource_read",
+          "columnNames": [
+            "deviceId"
+          ],
+          "referenceTableName": "desktop_device",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [
