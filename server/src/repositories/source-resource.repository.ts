@@ -154,6 +154,57 @@ export class SourceResourceRepository {
     return { ...live, grantId, credentialHash: tokenHash, expiresAt: new Date(grant.expiresAt) };
   }
 
+  async withGrant<T>(grant: SourceResourceGrant, action: (tx: Transaction<DB>) => Promise<T>): Promise<T | undefined> {
+    const credential = await this.session(grant.grantId, grant.credentialHash);
+    if (
+      !credential ||
+      credential.sourceId !== grant.sourceId ||
+      credential.ownerId !== grant.ownerId ||
+      credential.deviceId !== grant.deviceId ||
+      credential.scopeFingerprint !== grant.scopeFingerprint ||
+      credential.authorizationEpoch !== grant.authorizationEpoch
+    )
+      return;
+    const expired = new Error('source_grant_expired');
+    return this.db
+      .transaction()
+      .execute(async (tx) => {
+        const source = await this.lockedAuthority(tx, { ...credential, request: credential });
+        if (
+          !source ||
+          source.authorizationEpoch !== credential.authorizationEpoch ||
+          source.publicKey !== credential.publicKey
+        )
+          return;
+        const liveGrant = tx
+          .selectFrom('source_resource_grant')
+          .select('id')
+          .where('id', '=', grant.grantId)
+          .where('sourceId', '=', grant.sourceId)
+          .where('photoSessionId', '=', credential.photoSessionId)
+          .where('tokenHash', '=', grant.credentialHash)
+          .where('scopeFingerprint', '=', grant.scopeFingerprint)
+          .where('authorizationEpoch', '=', grant.authorizationEpoch)
+          .where('revokedAt', 'is', null)
+          .where('expiresAt', '>', sql<Date>`clock_timestamp()`)
+          .forShare();
+        if (!(await liveGrant.executeTakeFirst())) return;
+        // Keep scoped database work atomic with revocation; never perform network or file IO in this callback.
+        const result = await action(tx);
+        const authority = await this.authority(tx, { ...credential, request: credential })
+          .where('device.authorizationEpoch', '=', credential.authorizationEpoch)
+          .where('device.publicKey', '=', credential.publicKey)
+          .executeTakeFirst();
+        // Row locks do not stop time; expiry must roll back writes made after a lock wait.
+        if (!authority || !(await liveGrant.executeTakeFirst())) throw expired;
+        return result;
+      })
+      .catch((error) => {
+        if (error !== expired) throw error;
+        return undefined;
+      });
+  }
+
   consume(credential: SourceResourceCredential, sequence: number): Promise<SourceResourceGrant | undefined> {
     return this.db.transaction().execute(async (tx) => {
       if (!Number.isSafeInteger(sequence) || sequence < 1 || sequence > 2_147_483_647) return;

@@ -92,6 +92,39 @@ it('serializes duplicate issuance and rotates credentials without restoring old 
   expect(await sut.consume((await sut.session(first.grantId, replacement.tokenHash))!, 1)).toBeTruthy();
   expect(await sut.issue(input)).toBeUndefined();
 });
+it('pins live source authority around a scoped transaction and refuses a rotated or paused grant', async () => {
+  const { sut, input, device } = await setup();
+  const grant = (await sut.issue(input))!;
+  const action = vi.fn(async (tx: Kysely<DB>) => {
+    const { rows } = await sql<{ id: string }>`SELECT id FROM photo_source WHERE id=${grant.sourceId}::uuid`.execute(
+      tx,
+    );
+    return rows[0].id;
+  });
+  expect(await sut.withGrant(grant, action)).toBe(grant.sourceId);
+  expect(action).toHaveBeenCalledTimes(1);
+  for (const change of [
+    { ownerId: randomUUID() },
+    { deviceId: randomUUID() },
+    { sourceId: randomUUID() },
+    { scopeFingerprint: 'f'.repeat(64) },
+    { authorizationEpoch: grant.authorizationEpoch + 1 },
+  ]) {
+    expect(await sut.withGrant({ ...grant, ...change }, action)).toBeUndefined();
+  }
+  expect(action).toHaveBeenCalledTimes(1);
+  await sut.issue({ ...input, request: { ...input.request, requestId: randomUUID() }, tokenHash: randomBytes(32) });
+  expect(await sut.withGrant(grant, action)).toBeUndefined();
+  expect(action).toHaveBeenCalledTimes(1);
+  const replacement = (await sut.issue({
+    ...input,
+    request: { ...input.request, requestId: randomUUID() },
+    tokenHash: randomBytes(32),
+  }))!;
+  await db.updateTable('desktop_device').set({ state: 'paused' }).where('id', '=', device.id).execute();
+  expect(await sut.withGrant(replacement, action)).toBeUndefined();
+  expect(action).toHaveBeenCalledTimes(1);
+});
 it.each([
   'source-revoked',
   'source-scope',
@@ -196,4 +229,31 @@ it('limits recent issuance nonces without forgetting a still-valid replay', asyn
       .where('sourceId', '=', input.request.sourceId)
       .execute(),
   ).toHaveLength(8);
+});
+
+it.each(['grant', 'photo-session'])('rolls back scoped changes when %s expires during the action', async (expiry) => {
+  const { sut, input, session, source } = await setup();
+  const grant = (await sut.issue(input))!;
+  const result = await sut.withGrant(grant, async (tx) => {
+    if (expiry === 'grant') {
+      await tx
+        .updateTable('source_resource_grant')
+        .set({ expiresAt: sql`clock_timestamp()+interval '10 milliseconds'` })
+        .where('id', '=', grant.grantId)
+        .execute();
+    } else {
+      await tx
+        .updateTable('session')
+        .set({ expiresAt: sql`clock_timestamp()+interval '10 milliseconds'` })
+        .where('id', '=', session.id)
+        .execute();
+    }
+    await sql`SELECT pg_sleep(0.03)`.execute(tx);
+    await tx.updateTable('photo_source').set({ name: 'Must roll back' }).where('id', '=', source.id).execute();
+    return true;
+  });
+  expect(result).toBeUndefined();
+  expect(
+    (await db.selectFrom('photo_source').select('name').where('id', '=', source.id).executeTakeFirst())?.name,
+  ).toBe(source.name);
 });
