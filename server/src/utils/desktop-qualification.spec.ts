@@ -222,3 +222,103 @@ it('accepts signed-collector CoreML participation only as mixed and refuses alte
     DesktopQualificationReceipt.validate({ ...report(), deviceExecution: proof }, profile, challenge, runtime),
   ).toThrow();
 });
+
+it('accepts an OpenVINO accelerator report like CUDA, with no device collector and no GPU list required', () => {
+  const selected = { ...profile, spec: { ...profile.spec, provider: 'OpenVINOExecutionProvider' as const } };
+  const issued = createDesktopModelChallenge(selected, id);
+  const identity = { ...runtime, provider: selected.spec.provider, platform: 'linux', architecture: 'x86_64' } as const;
+  const hardware = {
+    ...facts,
+    system: 'Linux',
+    architecture: 'x86_64',
+    packages: { 'onnxruntime-gpu': '1.30.0' },
+    providers: ['CPUExecutionProvider', 'OpenVINOExecutionProvider'],
+  };
+  const fingerprintOf = (value: unknown) =>
+    createHash('sha256')
+      .update(
+        canonicalJson(value).replaceAll(
+          // eslint-disable-next-line unicorn/prefer-unicode-code-point-escapes
+          /[\u007F-￿]/g,
+          (ch) => String.raw`\u` + ch.codePointAt(0)!.toString(16).padStart(4, '0'),
+        ),
+      )
+      .digest('hex');
+  const value = {
+    ...report(),
+    provider: selected.spec.provider,
+    bindingSha256: issued.bindingSha256,
+    runtime: hardware,
+    runtimeFingerprint: fingerprintOf(hardware),
+    state: 'ready-accelerator',
+    execution: [
+      {
+        state: 'ready-accelerator',
+        reason: null,
+        nodes: { OpenVINOExecutionProvider: 12 },
+        microseconds: { OpenVINOExecutionProvider: 10 },
+      },
+    ],
+  };
+  const receipt = DesktopQualificationReceipt.validate(value, selected, issued, identity);
+  expect(receipt.modelKey).toBe(selected.modelKey);
+  // nodes left on the processor make it a mixed qualification, as for CUDA
+  const mixed = {
+    ...value,
+    state: 'ready-mixed',
+    execution: [
+      {
+        ...value.execution[0],
+        state: 'ready-mixed',
+        nodes: { OpenVINOExecutionProvider: 12, CPUExecutionProvider: 1 },
+        microseconds: { OpenVINOExecutionProvider: 10, CPUExecutionProvider: 1 },
+      },
+    ],
+  };
+  expect(DesktopQualificationReceipt.validate(mixed, selected, issued, identity).modelKey).toBe(selected.modelKey);
+  const macos = { ...hardware, system: 'Darwin', architecture: 'arm64' };
+  for (const changed of [
+    // a processor-only or wrongly stated execution never passes as an accelerator
+    { ...value, state: 'ready-cpu', execution: [{ ...value.execution[0], state: 'ready-cpu' }] },
+    { ...value, execution: [{ ...value.execution[0], state: 'ready-mixed' }] },
+    { ...value, execution: [{ ...value.execution[0], nodes: { CUDAExecutionProvider: 1 } }] },
+    // a CoreML-style device collector has no place in an OpenVINO report
+    { ...value, deviceExecution: { provider: selected.spec.provider, facts: {}, models: [] } },
+    // the runtime must list the provider it reports
+    {
+      ...value,
+      runtime: { ...hardware, providers: ['CPUExecutionProvider'] },
+      runtimeFingerprint: fingerprintOf({ ...hardware, providers: ['CPUExecutionProvider'] }),
+    },
+    // no approved OpenVINO runtime targets macOS
+    { ...value, runtime: macos, runtimeFingerprint: fingerprintOf(macos) },
+  ])
+    expect(() => DesktopQualificationReceipt.validate(changed, selected, issued, identity)).toThrow();
+  // a provider outside the approved list stays refused
+  const other = { ...profile, spec: { ...profile.spec, provider: 'MIGraphXExecutionProvider' as const } };
+  const otherIssued = createDesktopModelChallenge(other, id);
+  expect(() =>
+    DesktopQualificationReceipt.validate(
+      {
+        ...value,
+        provider: other.spec.provider,
+        bindingSha256: otherIssued.bindingSha256,
+        runtime: { ...hardware, providers: ['CPUExecutionProvider', 'MIGraphXExecutionProvider'] },
+        runtimeFingerprint: fingerprintOf({
+          ...hardware,
+          providers: ['CPUExecutionProvider', 'MIGraphXExecutionProvider'],
+        }),
+        execution: [
+          {
+            ...value.execution[0],
+            nodes: { MIGraphXExecutionProvider: 1 },
+            microseconds: { MIGraphXExecutionProvider: 1 },
+          },
+        ],
+      },
+      other,
+      otherIssued,
+      { ...identity, provider: other.spec.provider },
+    ),
+  ).toThrow();
+});

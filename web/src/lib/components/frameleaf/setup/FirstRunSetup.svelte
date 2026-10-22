@@ -43,6 +43,7 @@
     modelTiers,
     needsReindex,
     processingOptions,
+    recommendedTier,
     reindexHours,
     saveLocalSetup,
     setLinked,
@@ -51,6 +52,7 @@
     themeAfterSetup,
     toProgress,
     validateStep,
+    withDefaultTier,
     type SetupChoices,
     type SetupState,
   } from '$lib/frameleaf/first-run-setup';
@@ -232,6 +234,9 @@
     }
     hardware = hardwareResult.status === 'fulfilled' ? hardwareResult.value : null;
     users = usersResult.status === 'fulfilled' ? usersResult.value : [];
+    // A2: the tier starts from what the hardware runs well (a new server) or from the models the
+    // library already uses (an existing one), unless the administrator already took that decision.
+    setup = withDefaultTier(setup, { hardware, currentModel: config?.machineLearning.clip.modelName });
     serverLoading = false;
   };
 
@@ -540,6 +545,8 @@
   const preset = $derived(layoutPresets.find((entry) => entry.id === choices.layout) ?? layoutPresets[0]);
   const pathParts = $derived(examplePath(choices.layout).split('/'));
   const tier = $derived(modelTiers.find((entry) => entry.id === choices.model) ?? modelTiers[1]);
+  /** The tier this hardware is recommended (A2); shown as such on the tier step whatever is chosen. */
+  const recommendedTierId = $derived(recommendedTier(hardware));
   const gpu = $derived(!!hardware && hardware.ml.backend !== HardwareBackend.Cpu && hardware.ml.reachable);
   const perHour = $derived(itemsPerHour(gpu, hardware?.benchmark?.embeddingMs));
   const existing = $derived(setup.flow === 'existing');
@@ -581,7 +588,7 @@
     (current.id === 'sign-in-choice' && choices.signIn === (frameleafAvailable === false ? 'local' : 'frameleaf')) ||
       (current.id === 'library-check' && choices.layout === KEEP_LAYOUT) ||
       (current.id === 'account' && existing) ||
-      (current.id === 'processing' && choices.processing === 'local' && choices.model === 'balanced') ||
+      (current.id === 'processing' && choices.processing === 'local' && choices.model === recommendedTierId) ||
       (current.id === 'protection' && choices.nightlyBackup) ||
       current.id === 'privacy',
   );
@@ -1326,7 +1333,7 @@
                   {#snippet summary()}
                     <strong>
                       {$t('frameleaf_setup_tier_models', { values: { tier: $t(tier.label) } })}
-                      {#if tier.recommended}<SetupRecommended />{/if}
+                      {#if tier.id === recommendedTierId}<SetupRecommended />{/if}
                     </strong>
                     <span>{$t(tier.summary)}</span>
                   {/snippet}
@@ -1339,7 +1346,7 @@
                         onchange={() => choose({ model: entry.id })}
                         title={$t('frameleaf_setup_tier_models', { values: { tier: $t(entry.label) } })}
                         detail={$t(entry.summary)}
-                        recommended={entry.recommended}
+                        recommended={entry.id === recommendedTierId}
                       />
                     {/each}
                   </div>

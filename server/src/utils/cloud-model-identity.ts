@@ -11,6 +11,12 @@ import {
   parseDesktopModelCatalogue,
 } from 'src/utils/desktop-model-catalogue.js';
 import { parseBoundFaceResult } from 'src/utils/face-result.js';
+import {
+  type LocalModelPins,
+  type LocalPinnedModel,
+  parseLocalModelPins,
+  pinnedModelOf,
+} from 'src/utils/local-model-pins.js';
 import { canonicalJson } from 'src/utils/object.js';
 
 /**
@@ -26,7 +32,10 @@ import { canonicalJson } from 'src/utils/object.js';
  * The local pin is the release-owned model catalogue the desktop helpers already bind to
  * (`resources/desktop/model-catalogue.json`, `model-spaces.json`), so a Cloud result is ingested
  * exactly like a bound desktop or home-network result (`parseBoundClipResult`,
- * `parseBoundFaceResult`), carrying the same producer model key.
+ * `parseBoundFaceResult`), carrying the same producer model key. A model the release pins for the
+ * Cloud before its desktop qualification profile exists is read from `model-pins.json`
+ * (`local-model-pins`), with the same identity fields and producer key; a catalogue profile for the
+ * same model comes first.
  *
  * The wire shape is the Cloud contract's `ModelIdentity` (frameleaf-cloud `docs/ml/clip-and-faces.md`
  * §2); it lives only in `cloudModelIdentitySchema` below. Which models may run on the Cloud is data:
@@ -103,8 +112,8 @@ export const cloudModelIdentitySchema = z.object({
 });
 export type CloudModelIdentity = z.infer<typeof cloudModelIdentitySchema>;
 
-/** The identity of a release-owned local profile for `workload`, in the Cloud's terms. */
-export const modelIdentityOf = (workload: CloudIdentityWorkload, profile: DesktopModelProfile): CloudModelIdentity => {
+/** The identity of a release-owned local profile or pin for `workload`, in the Cloud's terms. */
+export const modelIdentityOf = (workload: CloudIdentityWorkload, profile: LocalPinnedModel): CloudModelIdentity => {
   const artifacts = profile.spec.models[0].artifacts;
   return {
     name: profile.modelName,
@@ -152,29 +161,28 @@ export const identityDifference = (claimed: CloudModelIdentity, pin: CloudModelI
   return null;
 };
 
-export type ReleasedModels = { catalogue: DesktopModelCatalogue; spaces: DesktopClipSpaces };
+export type ReleasedModels = { catalogue: DesktopModelCatalogue; spaces: DesktopClipSpaces; pins: LocalModelPins };
 let released: ReleasedModels | undefined;
 const releasedModels = (): ReleasedModels => {
   if (!released) {
     const read = (name: string): unknown =>
       JSON.parse(readFileSync(join(import.meta.dirname, '../../resources/desktop', name), 'utf8'));
     const catalogue = parseDesktopModelCatalogue(read('model-catalogue.json'));
-    released = { catalogue, spaces: parseDesktopClipSpaces(read('model-spaces.json'), catalogue) };
+    released = {
+      catalogue,
+      spaces: parseDesktopClipSpaces(read('model-spaces.json'), catalogue),
+      pins: parseLocalModelPins(read('model-pins.json')),
+    };
   }
   return released;
 };
 
-/**
- * This server's pinned profile for Cloud work of `workload` with the configured `modelName`, or null
- * when the release does not pin that model (then the Cloud is never offered for it). Smart search uses
- * the image profile of the newest released CLIP space; faces use the release's face model key.
- */
-export const localPinnedProfile = (
+/** The release's qualified desktop profile for `workload` with `modelName`, if the catalogue has one. */
+const qualifiedProfile = (
   workload: CloudIdentityWorkload,
   modelName: string,
-  models: ReleasedModels = releasedModels(),
+  { catalogue, spaces }: ReleasedModels,
 ): DesktopModelProfile | null => {
-  const { catalogue, spaces } = models;
   if (workload === MlWorkload.Face) {
     return (
       catalogue.profiles.find(
@@ -198,6 +206,25 @@ export const localPinnedProfile = (
     }
   }
   return null;
+};
+
+/**
+ * This server's pinned model for Cloud work of `workload` with the configured `modelName`, or null
+ * when the release does not pin that model (then the Cloud is never offered for it). Smart search uses
+ * the image profile of the newest released CLIP space; faces use the release's face model key. A
+ * model without a qualified profile is read from the release's Cloud pins (`model-pins.json`).
+ */
+export const localPinnedProfile = (
+  workload: CloudIdentityWorkload,
+  modelName: string,
+  models: ReleasedModels = releasedModels(),
+): LocalPinnedModel | null => {
+  const qualified = qualifiedProfile(workload, modelName, models);
+  if (qualified) {
+    return qualified;
+  }
+  const pin = models.pins.pins.find((item) => item.workload === workload && item.modelName === modelName);
+  return pin ? pinnedModelOf(pin) : null;
 };
 
 /** The pinned identity for `workload` with `modelName`, or null when the release pins none. */
@@ -252,7 +279,7 @@ export class CloudModelIdentityMismatchError extends Error {
 /** Why a claimed identity is not the local pin for `workload`, or null when it is. */
 export const cloudIdentityProblem = (
   workload: CloudIdentityWorkload,
-  profile: DesktopModelProfile | null,
+  profile: LocalPinnedModel | null,
   claimed: unknown,
 ): string | null => {
   if (!profile) {
@@ -272,7 +299,7 @@ export type CloudModelResult = { identity: unknown; result: unknown };
  * Accept a Cloud smart-search result only when it was made by the pinned image model; it is then the
  * same `{ embedding, modelKey }` a bound local or desktop result is, and is stored the same way.
  */
-export const acceptCloudClipResult = (profile: DesktopModelProfile | null, value: CloudModelResult) => {
+export const acceptCloudClipResult = (profile: LocalPinnedModel | null, value: CloudModelResult) => {
   const problem = cloudIdentityProblem(MlWorkload.Clip, profile, value.identity);
   if (problem || !profile) {
     throw new CloudModelIdentityMismatchError(MlWorkload.Clip, problem ?? 'this server pins no model for it');
@@ -281,7 +308,7 @@ export const acceptCloudClipResult = (profile: DesktopModelProfile | null, value
 };
 
 /** Accept a Cloud face result only when it was made by the pinned face model (see above). */
-export const acceptCloudFaceResult = (profile: DesktopModelProfile | null, value: CloudModelResult) => {
+export const acceptCloudFaceResult = (profile: LocalPinnedModel | null, value: CloudModelResult) => {
   const problem = cloudIdentityProblem(MlWorkload.Face, profile, value.identity);
   if (problem || !profile) {
     throw new CloudModelIdentityMismatchError(MlWorkload.Face, problem ?? 'this server pins no model for it');
