@@ -950,7 +950,7 @@ export class SqlQueueStore {
 /** Restore runs with all workers stopped. Only audited repeatable work retains its existing retry budget.
  * Operation-owned jobs are never resumed here; the media-operation dispatcher owns their retry.
  */
-export async function resetQueueAfterRestore(db: Executor) {
+export async function resetQueueAfterRestore(db: Kysely<any>) {
   // Older dumps serialized this audited local job as unsafe. Its current handler publishes a
   // unique verified dump per attempt; retain the same one-retry budget and operation exclusions.
   const backup = sql`(name = ${JobName.DatabaseBackup} and queue = ${QueueName.BackupDatabase})`;

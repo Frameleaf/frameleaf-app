@@ -14024,6 +14024,26 @@ export type SharedSpacePersonLinkDto = {
     /** A person of the caller's own to publish into the shared space */
     personId: string;
 };
+export type SourceGrantRequestDto = {
+    deviceId: string;
+    requestId: string;
+    scopeFingerprint: string;
+    signature: string;
+    sourceId: string;
+    timestamp: number;
+};
+export type SourceGrantDto = {
+    authorizationEpoch: number;
+    deviceId: string;
+    expiresAt: string;
+    grantId: string;
+    ownerId: string;
+    scopeFingerprint: string;
+    scopes: SourceResourceScope[];
+    serverId: string;
+    sourceId: string;
+    sourceToken: string;
+};
 export type StackResponseDto = {
     assets: AssetResponseDto[];
     /** Stack ID */
@@ -28580,6 +28600,21 @@ export function markSharedSpaceVisited({ id }: {
     }));
 }
 /**
+ * Issue a source-only credential for an approved desktop reference source
+ */
+export function createSourceResourceGrant({ sourceGrantRequestDto }: {
+    sourceGrantRequestDto: SourceGrantRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: SourceGrantDto;
+    }>("/source-resources/grants", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: sourceGrantRequestDto
+    })));
+}
+/**
  * Delete stacks
  */
 export function deleteStacks({ bulkIdsDto }: {
@@ -34536,6 +34571,9 @@ export enum SharedSpaceEventType {
     Comment = "Comment",
     Reply = "Reply",
     Like = "Like"
+}
+export enum SourceResourceScope {
+    SourceOriginalRead = "source-original-read"
 }
 export enum StudioMediaColorTransfer {
     Sdr = "sdr",

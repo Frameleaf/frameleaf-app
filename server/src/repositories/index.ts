@@ -104,6 +104,7 @@ import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
+import { SourceResourceRepository } from 'src/repositories/source-resource.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
@@ -133,6 +134,7 @@ export const repositories = [
   DesktopClipIndexRepository,
   DesktopDeviceRepository,
   PhotoSourceRepository,
+  SourceResourceRepository,
   DesktopMlRepository,
   DesktopWorkerRepository,
   DesktopWorkerChallengeRepository,

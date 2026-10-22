@@ -1,4 +1,5 @@
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { SourceGrantRequestDto, sourceGrantMessage, sourceResourceMessage } from 'src/dtos/source-resource.dto.js';
 import { SourceResourceAuthService } from 'src/services/source-resource-auth.service.js';
@@ -122,4 +123,32 @@ it('requires fresh atomic sequence consumption after cryptographic verification'
   );
   expect(await service.authenticate('Bearer ' + token, proof(), 'poll', '{}')).toMatchObject(binding);
   expect(repository.consume).toHaveBeenLastCalledWith(credential, 1);
+});
+
+it('verifies the shared native wire vector byte for byte, including its UTF-8 payload', async () => {
+  const wire = JSON.parse(
+    readFileSync(new URL('../../test/fixtures/source-resource/wire-v1.json', import.meta.url), 'utf8'),
+  );
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(wire.request.timestamp);
+  const stored = {
+    ...wire.response,
+    publicKey: wire.publicKey,
+    photoSessionId: id,
+    credentialHash: createHash('sha256').update(wire.response.sourceToken).digest(),
+    expiresAt: new Date(wire.response.expiresAt),
+  };
+  repository.device.mockResolvedValue(stored);
+  repository.issue.mockResolvedValue(stored);
+  repository.session.mockResolvedValue(stored);
+  repository.consume.mockResolvedValue(stored);
+  metadata.get.mockResolvedValueOnce({ id: wire.serverId }).mockResolvedValueOnce({ id: wire.serverId });
+  try {
+    expect(sourceGrantMessage(wire.serverId, wire.ownerId, wire.request)).toBe(wire.grantMessage);
+    expect((await service.issue(auth, wire.request)).sourceId).toBe(wire.request.sourceId);
+    expect(
+      await service.authenticate('Bearer ' + wire.response.sourceToken, wire.proofHeader, wire.operation, wire.payload),
+    ).toMatchObject({ grantId: wire.proof.grantId });
+  } finally {
+    clock.mockRestore();
+  }
 });
