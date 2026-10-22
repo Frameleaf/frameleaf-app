@@ -123,6 +123,24 @@ export type AttentionDismissDto = {
     /** The item to dismiss or bring back */
     id: string;
 };
+export type OAuthCheckDto = {
+    /** Allow a provider without a valid certificate */
+    allowInsecureRequests?: boolean;
+    /** Client ID given by the provider */
+    clientId: string;
+    /** Client secret; empty to use the saved one */
+    clientSecret?: string;
+    /** The provider address (issuer URL) */
+    issuerUrl: string;
+};
+export type OAuthCheckResponseDto = {
+    /** Why the check failed, when it did */
+    error: string | null;
+    /** The issuer the provider names, when it answered */
+    issuer: string | null;
+    /** Whether the provider answered */
+    ok: boolean;
+};
 export type BackupDeviceDto = {
     appVersion: string;
     deviceKey: string;
@@ -143,7 +161,6 @@ export type BackupDeviceListDto = {
 };
 export type BuddyStatusDto = {
     availableBytes: number | null;
-    canConfirm?: boolean;
     capacityUpdatedAt: string | null;
     configured: boolean;
     connection: string | null;
@@ -4327,6 +4344,8 @@ export type ApiKeyResponseDto = {
     createdAt: string;
     /** API key ID */
     id: string;
+    /** When the key was last used to reach the server; null when it never has been */
+    lastUsedAt: string | null;
     /** API key name */
     name: string;
     /** List of permissions */
@@ -4346,6 +4365,8 @@ export type ApiKeyCreateResponseDto = {
     createdAt: string;
     /** API key ID */
     id: string;
+    /** When the key was last used to reach the server; null when it never has been */
+    lastUsedAt: string | null;
     /** API key name */
     name: string;
     /** List of permissions */
@@ -18269,6 +18290,21 @@ export function setAttentionDismissed({ attentionDismissDto }: {
         ...opts,
         method: "PUT",
         body: attentionDismissDto
+    })));
+}
+/**
+ * Check a sign-in provider
+ */
+export function checkOAuthProvider({ oAuthCheckDto }: {
+    oAuthCheckDto: OAuthCheckDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthCheckResponseDto;
+    }>("/admin/auth/oauth-check", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: oAuthCheckDto
     })));
 }
 /**
