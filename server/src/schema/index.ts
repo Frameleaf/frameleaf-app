@@ -119,6 +119,7 @@ import {
   MlWorkloadAccountingTable,
   MlWorkloadRouteTable,
 } from 'src/schema/tables/ml-destination.table.js';
+import { MlProcessingOrderTable } from 'src/schema/tables/ml-processing-order.table.js';
 import { MlWorkloadRouteOriginTable } from 'src/schema/tables/ml-workload-route-origin.table.js';
 import { MoveTable } from 'src/schema/tables/move.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
@@ -238,6 +239,7 @@ export class ImmichDatabase {
     DesktopClipIndexTable,
     DesktopClipProducerTable,
     MlWorkloadRouteOriginTable,
+    MlProcessingOrderTable,
     DesktopDeviceTable,
     PhotoSourceTable,
     PhotoSourceRunTable,
@@ -556,6 +558,7 @@ export interface DB extends QueueDatabase {
   ml_destination: MlDestinationTable;
   ml_workload_route: MlWorkloadRouteTable;
   ml_workload_route_origin: MlWorkloadRouteOriginTable;
+  ml_processing_order: MlProcessingOrderTable;
   ml_workload_accounting: MlWorkloadAccountingTable;
   ml_cloud_model_choice: MlCloudModelChoiceTable;
   operational_metric_sample: OperationalMetricSampleTable;

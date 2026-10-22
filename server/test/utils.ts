@@ -514,6 +514,8 @@ export const getMocks = () => {
     Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() }),
   );
   mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+  // FL-456: no processing-order plan unless a test gives one, so admission falls back to `getRoute` above
+  mocks.mlDestination.resolveRoute.mockResolvedValue([]);
   // no route names a restoration endpoint for library work unless a test says otherwise (FL-72)
   mocks.mlDestination.getRoutes.mockResolvedValue([]);
   mocks.mlDestination.getSpend.mockResolvedValue(0);

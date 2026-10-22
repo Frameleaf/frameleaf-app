@@ -26,15 +26,26 @@
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { runsHere, staysHome, WORK_KINDS, workKindNameKey, type WorkKind } from '$lib/frameleaf/work-places';
   import {
+    moveSource,
+    sameOrder,
+    SOURCE_HELP_KEY,
+    SOURCE_NAME_KEY,
+    STATE_KEY,
+    STATE_TONE,
+    statusOf,
+  } from '$lib/frameleaf/processing-order';
+  import {
     ASK,
     choicesFor,
     CLOUD,
     currentChoice,
+    FOLLOW,
     followerChoice,
     followerChoices,
     FOLLOWERS,
     hasWrites,
     NONE,
+    ROW_WORKLOAD,
     routeWrites,
     SAME,
     type Follower,
@@ -49,23 +60,35 @@
     CloudMlConnection,
     getCloudMlStatus,
     getHardwareCheck,
+    getMlProcessingOrder,
     getMlWorkloadRoutes,
     getRenderWorkerCompatibility,
     getWorkerInventory,
     listMlDestinations,
     MlDestinationKind,
+    setMlProcessingOrder,
+    setMlWorkloadProcessingOrder,
     setMlWorkloadRoute,
     StartWith,
     WorkerInventorySource,
     type CloudMlStatusResponseDto,
     type HardwareCheckResponseDto,
     type MlDestinationResponseDto,
+    type MlProcessingOrderResponseDto,
+    type MlProcessingSource,
     type MlWorkloadRouteDto,
     type RenderWorkerCompatibilityResponseDto,
     type WorkerInventoryResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiLanDisconnect, mdiPlus, mdiServerOutline, mdiTransitConnectionVariant } from '@mdi/js';
+  import {
+    mdiChevronDown,
+    mdiChevronUp,
+    mdiLanDisconnect,
+    mdiPlus,
+    mdiServerOutline,
+    mdiTransitConnectionVariant,
+  } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
 
@@ -78,6 +101,8 @@
   let compatibility = $state<RenderWorkerCompatibilityResponseDto | null>(null);
   let hardware = $state<HardwareCheckResponseDto | null>(null);
   let cloud = $state<CloudMlStatusResponseDto | null>(null);
+  /** FL-456: the processing order; null on a server without one, which then shows no order. */
+  let processing = $state<MlProcessingOrderResponseDto | null>(null);
   let loadError = $state(false);
   let unread = $state(false);
 
@@ -95,11 +120,12 @@
     unread = false;
     try {
       const [places, saved] = await Promise.all([listMlDestinations(), getMlWorkloadRoutes()]);
-      [inventory, compatibility, hardware, cloud] = await Promise.all([
+      [inventory, compatibility, hardware, cloud, processing] = await Promise.all([
         read(getWorkerInventory),
         read(getRenderWorkerCompatibility),
         read(getHardwareCheck),
         read(getCloudMlStatus),
+        read(getMlProcessingOrder),
       ]);
       routes = saved.routes;
       destinations = places;
@@ -140,11 +166,20 @@
   const writes = $derived(routeWrites(picked, pickedFollowers, facts));
   const suggestChanged = $derived(suggest !== undefined && suggest !== savedCloudMl?.startWith);
   const changedRows = $derived(ROUTED.filter((kind) => choice(kind) !== currentChoice(kind, facts)));
-  const dirty = $derived(hasWrites(writes) || suggestChanged);
+
+  // FL-456: the order is part of the same draft and the same Save.
+  let pickedOrder = $state<MlProcessingSource[]>();
+  const order = $derived(pickedOrder ?? processing?.order ?? []);
+  const orderChanged = $derived(!!processing && !!pickedOrder && !sameOrder(pickedOrder, processing.order));
+  const move = (index: number, step: -1 | 1) => (pickedOrder = moveSource(order, index, step));
+  const sourceName = (source: MlProcessingSource) => $t(SOURCE_NAME_KEY[source]);
+
+  const dirty = $derived(hasWrites(writes) || suggestChanged || orderChanged);
 
   const undo = () => {
     picked = {};
     pickedFollowers = {};
+    pickedOrder = undefined;
     suggest = undefined;
     failed = '';
   };
@@ -154,8 +189,21 @@
     said = '';
     failed = '';
     try {
+      if (orderChanged && pickedOrder) {
+        processing = await setMlProcessingOrder({ mlProcessingOrderUpdateDto: { order: pickedOrder } });
+      }
       for (const { workload, destinationId } of writes.routes) {
         ({ routes } = await setMlWorkloadRoute({ workload, mlWorkloadRouteUpdateDto: { destinationId } }));
+      }
+      for (const workload of writes.follow) {
+        processing = await setMlWorkloadProcessingOrder({
+          workload,
+          mlWorkloadProcessingOrderUpdateDto: { sources: null },
+        });
+      }
+      if (orderChanged || writes.follow.length > 0) {
+        // where each row runs now depends on the order: read it back
+        ({ routes } = await getMlWorkloadRoutes());
       }
       const cloudChanges = Object.entries(writes.cloud);
       if (settingsDraft && cloudMl && (cloudChanges.length > 0 || suggestChanged)) {
@@ -178,6 +226,7 @@
         : $t('frameleaf_workruns_save_failed_unknown');
       // What was saved before the failure stays saved; read it back so the rows are true.
       routes = (await read(getMlWorkloadRoutes))?.routes ?? routes;
+      processing = (await read(getMlProcessingOrder)) ?? processing;
     } finally {
       saving = false;
     }
@@ -202,15 +251,17 @@
   const choiceLabel = (id: RouteChoice, leader?: string) =>
     id === ASK
       ? $t('frameleaf_workruns_choice_ask')
-      : id === CLOUD
-        ? $t('frameleaf_workruns_choice_cloud')
-        : id === NONE
-          ? $t('frameleaf_workruns_choice_none')
-          : id === SAME
-            ? $t('frameleaf_workruns_choice_same', { values: { name: leader ?? '' } })
-            : silent(id)
-              ? $t('frameleaf_workruns_choice_silent', { values: { name: placeName(id) } })
-              : placeName(id);
+      : id === FOLLOW
+        ? $t('frameleaf_workruns_choice_order')
+        : id === CLOUD
+          ? $t('frameleaf_workruns_choice_cloud')
+          : id === NONE
+            ? $t('frameleaf_workruns_choice_none')
+            : id === SAME
+              ? $t('frameleaf_workruns_choice_same', { values: { name: leader ?? '' } })
+              : silent(id)
+                ? $t('frameleaf_workruns_choice_silent', { values: { name: placeName(id) } })
+                : placeName(id);
 
   const ai = $derived(aiState(inventory));
   const here = (kind: WorkKind) => runsHere(kind, { check: hardware, compatibility });
@@ -223,6 +274,9 @@
     }
     if (current === ASK) {
       return $t('frameleaf_workruns_why_ask');
+    }
+    if (current === FOLLOW) {
+      return $t('frameleaf_workruns_why_order');
     }
     if (current === CLOUD) {
       return $t(isIndexWork(kind) ? 'frameleaf_workruns_why_index_cloud' : 'frameleaf_workruns_why_cloud');
@@ -258,8 +312,17 @@
   const computers = $derived(computersFrom(inventory));
   const helpers = $derived(computers.filter((computer) => computer.place === 'home'));
   const solo = $derived(helpers.length === 0 && !cloudOn);
+  /** Where a row's work goes now: for a row that follows the order, the place the server picked from it. */
+  const where = (kind: Routed): RouteChoice => {
+    const at = currentChoice(kind, facts);
+    if (at !== FOLLOW) {
+      return at;
+    }
+    const goesTo = place(routes.find((route) => route.workload === ROW_WORKLOAD[kind])?.destinationId ?? '');
+    return goesTo ? (goesTo.kind === MlDestinationKind.FrameleafCloud ? CLOUD : goesTo.id) : NONE;
+  };
   const hero = $derived.by(() => {
-    const now = ROUTED.map((kind) => ({ kind, at: currentChoice(kind, facts) }));
+    const now = ROUTED.map((kind) => ({ kind, at: where(kind) }));
     const stuck = now.filter(({ at }) => at !== ASK && at !== CLOUD && at !== NONE && silent(at));
     if (stuck.length > 0) {
       return {
@@ -316,7 +379,9 @@
       ? $t('frameleaf_workruns_change_off', { values: { name } })
       : to === ASK
         ? $t('frameleaf_workruns_change_ask', { values: { name } })
-        : $t('frameleaf_workruns_change_place', { values: { name, place: choiceLabel(to) } });
+        : to === FOLLOW
+          ? $t('frameleaf_workruns_change_order', { values: { name } })
+          : $t('frameleaf_workruns_change_place', { values: { name, place: choiceLabel(to) } });
   };
   const anyAsk = $derived(ROUTED.some((kind) => choice(kind) === ASK));
 </script>
@@ -358,6 +423,47 @@
         {/if}
       {/snippet}
     </Hero>
+
+    {#if processing}
+      <!-- FL-456: no prototype screen yet; kept to the kit's rows, one per place, moved with up and down. -->
+      <Section title={$t('frameleaf_order_title')} description={$t('frameleaf_order_description')}>
+        <ol class="order" aria-label={$t('frameleaf_order_title')}>
+          {#each order as source, index (source)}
+            {@const status = statusOf(processing.sources, source)}
+            <li>
+              <Row
+                label={`${index + 1}. ${sourceName(source)}`}
+                help={`${$t(SOURCE_HELP_KEY[source])}${
+                  status.total > 1 ? ` ${$t('frameleaf_order_count', { values: { ...status } })}` : ''
+                }`}
+              >
+                <div class="runs">
+                  <Pill tone={STATE_TONE[status.state]}>{$t(STATE_KEY[status.state])}</Pill>
+                  <span class="moves">
+                    <Button
+                      variant="quiet"
+                      disabled={saving || index === 0}
+                      label={$t('frameleaf_order_up', { values: { name: sourceName(source) } })}
+                      onclick={() => move(index, -1)}
+                    >
+                      <Icon icon={mdiChevronUp} size="18" aria-hidden />
+                    </Button>
+                    <Button
+                      variant="quiet"
+                      disabled={saving || index === order.length - 1}
+                      label={$t('frameleaf_order_down', { values: { name: sourceName(source) } })}
+                      onclick={() => move(index, 1)}
+                    >
+                      <Icon icon={mdiChevronDown} size="18" aria-hidden />
+                    </Button>
+                  </span>
+                </div>
+              </Row>
+            </li>
+          {/each}
+        </ol>
+      </Section>
+    {/if}
 
     <Section
       title={$t('frameleaf_workruns_table')}
@@ -473,6 +579,9 @@
       {#if dirty}
         <Notice tone="info" title={$t('frameleaf_workruns_changes', { values: { count: changedRows.length || 1 } })}>
           {[
+            orderChanged
+              ? $t('frameleaf_order_changed', { values: { names: list(order.map((source) => sourceName(source))) } })
+              : '',
             ...changedRows.map((kind) => changeWords(kind)),
             suggestChanged ? $t('frameleaf_workruns_change_suggest') : '',
           ]
@@ -480,7 +589,7 @@
             .join(' ')}
         </Notice>
       {/if}
-      {#if facts.destinations.length > 1 || cloudOn || dirty}
+      {#if facts.destinations.length > 1 || cloudOn || dirty || processing}
         <div class="actions">
           <Button variant="primary" disabled={!dirty || saving} onclick={() => void save()}>
             {$t('frameleaf_workruns_save')}
@@ -589,6 +698,15 @@
   .value {
     font-size: var(--fl-font-callout);
     font-weight: 600;
+  }
+  .order {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .moves {
+    display: inline-flex;
+    gap: var(--fl-space-2);
   }
   .hint {
     margin: 0;

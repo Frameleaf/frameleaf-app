@@ -8753,9 +8753,40 @@ export type MlCapabilitiesResponseDto = {
     studio: StudioCapabilitiesDto;
     workloads: MlWorkloadCapabilityDto[];
 };
+export type MlProcessingSourceStatusDto = {
+    /** How many computers of this kind can take work now */
+    ready: number;
+    source: MlProcessingSource;
+    state: MlProcessingSourceState;
+    /** How many computers of this kind are set up */
+    total: number;
+};
+export type MlWorkloadProcessingOrderDto = {
+    /** The workload's own list, first to last; empty keeps the workload off */
+    sources: MlProcessingSource[];
+    workload: MlWorkload;
+};
+export type MlProcessingOrderResponseDto = {
+    /** The places processing tries, first to last, for every workload without a list of its own */
+    order: MlProcessingSource[];
+    /** Whether each place can take work now */
+    sources: MlProcessingSourceStatusDto[];
+    /** Workloads with a list of their own */
+    workloads: MlWorkloadProcessingOrderDto[];
+};
+export type MlProcessingOrderUpdateDto = {
+    /** The places to try, first to last; each of this server, your computers and Frameleaf Cloud once */
+    order: MlProcessingSource[];
+};
+export type MlWorkloadProcessingOrderUpdateDto = {
+    /** The workload's own list, first to last; empty keeps it off; null makes it follow the main order again */
+    sources: MlProcessingSource[] | null;
+};
 export type MlWorkloadRouteDto = {
-    /** Destination the workload is routed to, or null when unrouted */
+    /** Where the workload's jobs go now: the first available place in its processing order (FL-456), else the first place in it; null when its order names nowhere it could run */
     destinationId: string | null;
+    /** FL-456: true when the workload follows the main processing order, false when it has its own list */
+    followsOrder?: boolean;
     /** Recorded route intent; null means no route or recorded intent. Missing on older servers means unknown. */
     origin?: (MlRouteOrigin) | null;
     /** Recorded intent incarnation, or null when intent is unknown */
@@ -24716,6 +24747,48 @@ export function getMlCapabilities(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Get the processing order
+ */
+export function getMlProcessingOrder(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MlProcessingOrderResponseDto;
+    }>("/ml-destinations/processing-order", {
+        ...opts
+    }));
+}
+/**
+ * Set the processing order
+ */
+export function setMlProcessingOrder({ mlProcessingOrderUpdateDto }: {
+    mlProcessingOrderUpdateDto: MlProcessingOrderUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MlProcessingOrderResponseDto;
+    }>("/ml-destinations/processing-order", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: mlProcessingOrderUpdateDto
+    })));
+}
+/**
+ * Set the processing order of one workload
+ */
+export function setMlWorkloadProcessingOrder({ workload, mlWorkloadProcessingOrderUpdateDto }: {
+    workload: MlWorkload;
+    mlWorkloadProcessingOrderUpdateDto: MlWorkloadProcessingOrderUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MlProcessingOrderResponseDto;
+    }>(`/ml-destinations/processing-order/${encodeURIComponent(workload)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: mlWorkloadProcessingOrderUpdateDto
+    })));
+}
+/**
  * List workload routes
  */
 export function getMlWorkloadRoutes(opts?: Oazapfts.RequestOpts) {
@@ -33601,6 +33674,18 @@ export enum StudioExportFormat {
     AudioMp3 = "audio-mp3",
     AudioAac = "audio-aac",
     AudioWav = "audio-wav"
+}
+export enum MlProcessingSource {
+    Local = "local",
+    Desktops = "desktops",
+    Cloud = "cloud"
+}
+export enum MlProcessingSourceState {
+    Ready = "ready",
+    NotAnswering = "not-answering",
+    TurnedOff = "turned-off",
+    NeedsPermission = "needs-permission",
+    NotSetUp = "not-set-up"
 }
 export enum MlRouteOrigin {
     Default = "default",
