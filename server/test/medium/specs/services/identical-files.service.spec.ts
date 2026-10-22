@@ -316,29 +316,33 @@ describe(IdenticalFilesService.name, () => {
     );
   });
 
-  it('keeps the photo linked but its own file in place when its folder is read-only', async () => {
-    const { photo, user, row, unused, run, sut } = setup();
-    const alice = await user('alice');
-    const bob = await user('bob');
-    const bytes = Buffer.from('read-only folder');
-    const bobFolder = join(media, 'library', bob.storageLabel!, 'locked');
-    const bobPath = join(bobFolder, 'b.jpg');
-    await photo(alice.id, join(media, 'library', alice.storageLabel!, 'a.jpg'), bytes, new Date('2020-01-01'));
-    const linked = await photo(bob.id, bobPath, bytes, new Date('2021-01-01'));
-    await chmod(bobFolder, 0o555);
-    try {
-      await run();
-    } finally {
-      await chmod(bobFolder, 0o755);
-    }
+  // chmod cannot make a folder read-only for root (CI's medium runner); a real read-only mount would.
+  it.skipIf(process.getuid?.() === 0)(
+    'keeps the photo linked but its own file in place when its folder is read-only',
+    async () => {
+      const { photo, user, row, unused, run, sut } = setup();
+      const alice = await user('alice');
+      const bob = await user('bob');
+      const bytes = Buffer.from('read-only folder');
+      const bobFolder = join(media, 'library', bob.storageLabel!, 'locked');
+      const bobPath = join(bobFolder, 'b.jpg');
+      await photo(alice.id, join(media, 'library', alice.storageLabel!, 'a.jpg'), bytes, new Date('2020-01-01'));
+      const linked = await photo(bob.id, bobPath, bytes, new Date('2021-01-01'));
+      await chmod(bobFolder, 0o555);
+      try {
+        await run();
+      } finally {
+        await chmod(bobFolder, 0o755);
+      }
 
-    expect((await row(linked.id)).libraryPath).toBe(bobPath);
-    expect(await readFile(bobPath)).toEqual(bytes);
-    expect(await unused()).toEqual([]);
-    expect((await sut.getStatus()).problems).toContainEqual(
-      expect.objectContaining({ kind: 'kept-for-now', assetId: linked.id }),
-    );
-  });
+      expect((await row(linked.id)).libraryPath).toBe(bobPath);
+      expect(await readFile(bobPath)).toEqual(bytes);
+      expect(await unused()).toEqual([]);
+      expect((await sut.getStatus()).problems).toContainEqual(
+        expect.objectContaining({ kind: 'kept-for-now', assetId: linked.id }),
+      );
+    },
+  );
 
   it('merges identical photos in one library through the owner’s duplicate decision, keeping the oldest', async () => {
     const { photo, user, row, run, createBulk, sut } = setup();
