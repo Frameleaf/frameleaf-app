@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { DB } from 'src/schema/index.js';
 import { MlDestinationHealth, MlDestinationKind, MlProcessingSource, MlWorkload, SystemMetadataKey } from 'src/enum.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
-import { up } from 'src/schema/migrations/2100000003007-MlProcessingOrder.js';
+import { up } from 'src/schema/migrations/2100000003008-MlProcessingOrder.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let db: Kysely<DB>;
@@ -152,7 +152,7 @@ describe('where work goes (FL-456)', () => {
   });
 });
 
-describe('migration 2100000003007 keeps what upgrades see (FL-456)', () => {
+describe('migration 2100000003008 keeps what upgrades see (FL-456)', () => {
   /** Run the migration again over the routes saved now, inside a transaction that is rolled back. */
   const migrate = async (setup: (tx: Kysely<DB>) => Promise<void>) => {
     let rows: { scope: string; sources: unknown }[] = [];
