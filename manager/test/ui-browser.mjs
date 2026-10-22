@@ -481,6 +481,16 @@ try {
     await mainButton('Check this configuration').click();
     assert.equal(requests.filter((r) => r.path === 'review').length, count);
     await page.getByLabel('Frameleaf port').fill('2283');
+    // Advanced container settings reach the review as structured overrides; a bad line keeps the review local.
+    await page.getByText('Advanced container settings', { exact: true }).click();
+    const serverEnvironment = page.getByLabel('Environment variables').first();
+    await serverEnvironment.fill('TZ=America/Toronto\nDB_PASSWORD=nope');
+    await page.getByLabel('Memory limit').first().fill('4g');
+    await mainButton('Check this configuration').click();
+    await page.getByText('DB_PASSWORD is set by Manager', { exact: true }).waitFor();
+    assert.equal(requests.filter((r) => r.path === 'review').length, count);
+    await serverEnvironment.fill('TZ=America/Toronto');
+    await screenshot('install-advanced');
     await mainButton('Check this configuration').click();
     // The slow server check shows it is still working.
     await page.getByRole('status').filter({ hasText: 'can take up to a minute' }).waitFor();
@@ -488,7 +498,11 @@ try {
     await mainButton('Review installation').click();
     await screenshot('install-review');
     await page.getByText('Intel GPU · Machine learning on', { exact: true }).waitFor();
+    await page.getByText('1 variable · 4g memory', { exact: true }).waitFor();
     assert.equal(requests.findLast((r) => r.path === 'review').body.ml, true);
+    assert.deepEqual(requests.findLast((r) => r.path === 'review').body.services, {
+      'frameleaf-server': { environment: { TZ: 'America/Toronto' }, mounts: [], memory: '4g' },
+    });
     await mainButton('Install Frameleaf').click();
     await mainButton('Resume safely').waitFor();
     assert.ok(requests.findLast((r) => r.path === 'install').body.key);

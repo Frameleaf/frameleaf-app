@@ -428,6 +428,7 @@ test('resumed cutover captures fenced settings and applies the reviewed ML choic
       environment: {},
       settings: liveSettings,
       authority: 'database',
+      services: {},
     });
     assert.equal(f.store.get<Installation>('installation')?.mayHaveWrittenMedia, true);
   } finally {
