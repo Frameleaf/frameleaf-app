@@ -163,6 +163,17 @@ export function applyServiceOverrides(services: Record<string, unknown>, overrid
   }
 }
 export type ApplicationConfig = z.infer<typeof ApplicationConfig>;
+/** The conflict check renderCompose runs, against the media targets this installation has, before anything is journaled. */
+export function checkServiceOverrides(mediaTargets: string[], overrides: ServiceOverrides): void {
+  applyServiceOverrides(
+    {
+      'frameleaf-server': { volumes: mediaTargets.map((target) => ({ target })) },
+      'frameleaf-machine-learning': { volumes: [] },
+      database: { volumes: [] },
+    },
+    overrides,
+  );
+}
 
 /** Paths are explicitly mounted into Manager at the same absolute host path by the launcher. */
 export async function storagePath(path: string, roots: string[], bytes: number): Promise<string> {

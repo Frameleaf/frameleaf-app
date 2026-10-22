@@ -4,7 +4,7 @@
   import MoveLibrary from './MoveLibrary.svelte';
   import { encodeQr, qrPath } from './qr.mjs';
   import { regenerationPresentation } from './regeneration';
-  import { operationNames, operationProgress, canCancel, serviceState, readable, formatBytes, hasGpu, processorName, plural, newerReleases, releaseNotesText, navSection, CONTAINERS, emptyContainers, parseContainerSettings, containerSummary, containerOverrides } from './presentation';
+  import { operationNames, operationProgress, canCancel, serviceState, readable, formatBytes, hasGpu, processorName, plural, newerReleases, releaseNotesText, navSection, CONTAINERS, emptyContainers, parseContainerSettings, containerSummary, containerOverrides, containerText } from './presentation';
 
   let csrf = '',
     claimed = $state(false),
@@ -48,7 +48,8 @@
     port = $state(2283),
     ml = $state(false),
     containers = $state(emptyContainers()),
-    containersOpen = $state(false);
+    containersOpen = $state(false),
+    containersSaved = $state<Record<string, unknown>>({});
   let lifecycle = $state(false),
     mappingsAccepted = $state(false),
     cutoverAccepted = $state(false),
@@ -194,8 +195,10 @@
   const availableUpdates = $derived(newerReleases(releases, installation?.release));
   const activeSection = $derived(navSection(screen, !!installation, operation?.kind));
   const latestBackup = $derived(snapshots[0]);
+  // Setup follows the machine learning toggle; an installed server follows what it was installed with.
+  const containersMl = $derived(installation ? !!installation.ml : ml);
   const containerRows = $derived(
-    CONTAINERS.filter((container) => ml || container.id !== 'frameleaf-machine-learning')
+    CONTAINERS.filter((container) => containersMl || container.id !== 'frameleaf-machine-learning')
       .map((container) => ({ ...container, ...parseContainerSettings(containers[container.id]) }))
       .map((parsed) => ({ ...parsed, summary: containerSummary(parsed) }))
       .filter((parsed) => parsed.summary || parsed.errors.length),
@@ -256,6 +259,7 @@
     document.querySelector<HTMLElement>('#main h1')?.focus();
     if (value === 'welcome' && !installation) await loadSources();
     if (value === 'backups') await loadBackups();
+    if (value === 'services' && installation) await loadContainerSettings();
     if (value === 'updates') await loadReleases();
     if (['storage', 'overview', 'welcome'].includes(value)) {
       storage = await api('storage');
@@ -368,7 +372,7 @@
   }
   async function prepare() {
     if (!document.querySelector<HTMLFormElement>('#configuration-form')?.reportValidity()) return;
-    const overrides = containerOverrides(containers, ml);
+    const overrides = containerOverrides(containers, containersMl);
     if (overrides.invalid) {
       containersOpen = true;
       throw new Error('container_settings_invalid');
@@ -408,6 +412,21 @@
   }
   async function control(action: string) {
     await start('control', { action });
+  }
+  async function loadContainerSettings() {
+    containersSaved = (await api('container-settings')).services ?? {};
+    containers = containerText(containersSaved);
+    containersOpen = false;
+  }
+  async function saveContainerSettings() {
+    const overrides = containerOverrides(containers, containersMl);
+    if (overrides.invalid) {
+      containersOpen = true;
+      throw new Error('container_settings_invalid');
+    }
+    // Machine learning off hides its settings; saving must not discard what was stored for it.
+    const kept = !containersMl && containersSaved['frameleaf-machine-learning'] ? { 'frameleaf-machine-learning': containersSaved['frameleaf-machine-learning'] } : {};
+    await start('container-settings', { services: { ...kept, ...overrides.services } });
   }
   async function saveProfile() {
     await api('profile', { firstName, lastName, email, account });
@@ -707,7 +726,7 @@
           <div class="metric-grid mt16"><section class="card metric"><span class="label"><Icon name="image"/>Photos & videos</span><strong>{dashboard.summary?.assets?.toLocaleString() ?? 'Unavailable'}</strong><small>{dashboard.summary ? plural(dashboard.summary.albums, 'album') + ' · ' + plural(dashboard.summary.users, 'account') : 'Library counts require the database'}</small></section><section class="card metric"><span class="label"><Icon name="drive"/>Storage available</span><strong>{formatBytes(storage.find(item => item.availableBytes != null)?.availableBytes)}</strong><small>Mounted library storage</small></section><section class="card metric"><span class="label"><Icon name="shield"/>Latest backup</span><strong>{latestBackup ? new Date(latestBackup.time).toLocaleDateString() : 'None'}</strong><small>{latestBackup ? 'Encrypted database recovery point' : 'Create a database backup'}</small></section></div>
           <section class="card mt24"><div class="card-header"><h2>Services</h2><button class="button quiet" onclick={() => run(() => go('services'))}>Manage</button></div>{@render services()}</section><div class="two-cols mt16"><section class="card"><div class="card-body"><div class="row mb16"><Icon name="shield"/><h2>Database recovery points</h2></div><p class="muted">Encrypted database dumps. Media is excluded.</p><div class="spread mt16"><span class="meta">{snapshots.length} snapshots</span><button class="text-button" onclick={() => run(() => go('backups'))}>View backups</button></div></div></section><section class="card"><div class="card-body"><div class="row mb16"><Icon name="update"/><h2>{releasesLoaded ? availableUpdates.length ? 'Updates available' : 'Up to date' : 'Choose when to update'}</h2></div><p class="muted">Running {installation.release}. Review eligibility and recovery before applying a release.</p><button class="text-button mt16" onclick={() => run(() => go('updates'))}>Review updates</button></div></section></div>{@render regeneration()}
         {:else if screen === 'services'}
-          {@render heading('Services', 'Manager owns this stack. Your library runs independently of the Manager container.')}<div class="actions mb16"><button class="button" class:primary={!running} disabled={busy || !!activeOperation} onclick={() => running ? showModal('control', 'stop') : run(() => control('start'))}><Icon name={running ? 'stop' : 'play'}/>{running ? 'Stop stack' : 'Start stack'}</button><button class="button quiet" disabled={busy || !!activeOperation} onclick={() => showModal('control', 'restart')}><Icon name="update"/>Restart stack</button></div><section class="card"><div class="card-header"><h2>Frameleaf · {installation.project}</h2></div>{@render services()}</section>
+          {@render heading('Services', 'Manager owns this stack. Your library runs independently of the Manager container.')}<div class="actions mb16"><button class="button" class:primary={!running} disabled={busy || !!activeOperation} onclick={() => running ? showModal('control', 'stop') : run(() => control('start'))}><Icon name={running ? 'stop' : 'play'}/>{running ? 'Stop stack' : 'Start stack'}</button><button class="button quiet" disabled={busy || !!activeOperation} onclick={() => showModal('control', 'restart')}><Icon name="update"/>Restart stack</button></div><section class="card"><div class="card-header"><h2>Frameleaf · {installation.project}</h2></div>{@render services()}</section>{@render advancedContainers()}
           <section class="card mt16"><div class="card-header"><h2>Recent server logs</h2><div class="actions"><button class="button quiet" disabled={busy || !logService} onclick={() => run(() => showLogs(logService))}>Refresh logs</button><button class="button quiet" disabled={!logs} onclick={downloadLogs}><Icon name="document"/>Download logs</button></div></div><div class="card-body">{#if logs}<pre class="log" {@attach (node) => { void logs; node.scrollTop = node.scrollHeight; }}>{logs}</pre>{:else}<p class="muted">Choose Logs on a managed service to load its sanitized output.</p>{/if}</div></section><p class="quiet-note"><Icon name="lock"/>Logs are sanitized before they reach this browser.</p>
         {:else if screen === 'storage'}
           {@render heading('Storage', 'The exact paths your library uses, and available space on mounted storage.')}<div class="stack">{#each storage as disk}<section class="card"><div class="card-header"><h2><code>{disk.path}</code></h2><span class="badge" class:warning={disk.availableBytes == null}>{disk.availableBytes == null ? 'Unavailable' : 'Mounted'}</span></div><div class="card-body">{#if disk.totalBytes != null}<div class="spread"><strong>{formatBytes(disk.totalBytes - disk.freeBytes)} used of {formatBytes(disk.totalBytes)}</strong><span class="muted">{formatBytes(disk.availableBytes)} available</span></div><progress class="meter mt16" aria-label={disk.path + ' storage used'} value={disk.totalBytes - disk.freeBytes} max={disk.totalBytes}></progress>{:else}<p class="muted">Manager cannot read capacity for this mounted location.</p>{/if}</div></section>{/each}</div><section class="card mt16"><div class="card-header"><h2>Media mappings</h2><span class="badge">Exact access modes</span></div>{@render mappings(installation.mounts)}</section><section class="card mt16"><div class="card-header"><h2>Separate Frameleaf database</h2></div><div class="card-body"><code>{installation.databasePath}</code><p class="meta mt16">PostgreSQL uses a dedicated folder on the host disk. The source database and earlier recovery folders are retained.</p></div></section>
@@ -738,7 +757,7 @@
 {#snippet advancedContainers()}
   <details class="card mt16 containers" bind:open={containersOpen}>
     <summary class="card-header"><div><h2>Advanced container settings</h2><p class="meta">{containerRows.length ? containerRows.map((row) => `${row.label}: ${row.summary || 'needs attention'}`).join(' · ') : 'Environment variables, extra folders and limits for each container. Optional.'}</p></div><Icon name="chevron"/></summary>
-    {#each CONTAINERS.filter((container) => ml || container.id !== 'frameleaf-machine-learning') as container (container.id)}
+    {#each CONTAINERS.filter((container) => containersMl || container.id !== 'frameleaf-machine-learning') as container (container.id)}
       {@const parsed = parseContainerSettings(containers[container.id])}
       <section class="card-body container" aria-labelledby={`container-${container.id}`}>
         <h3 id={`container-${container.id}`}>{container.label} <code>{container.id}</code></h3><p class="meta">{container.about}</p>
@@ -751,7 +770,7 @@
         {#if parsed.errors.length}<ul class="field-error container-errors" role="alert">{#each parsed.errors as message}<li>{message}</li>{/each}</ul>{/if}
       </section>
     {/each}
-    <div class="disclosure"><p>One entry per line. Manager keeps these settings when it updates Frameleaf. The database connection, ports and library folders come from this setup; passwords and tokens never go here.</p></div>
+    <div class="disclosure"><p>One entry per line. Manager keeps these settings when it updates Frameleaf. The database connection, ports and library folders come from {installation ? 'the installation' : 'this setup'}; passwords and tokens never go here.</p>{#if installation}<p>Saving rewrites the stack and restarts the containers whose settings changed. Photo access pauses for about a minute; Manager records each step.</p><div class="actions mt16"><button class="button primary" disabled={busy || !!activeOperation} onclick={() => run(saveContainerSettings)}>Save and restart Frameleaf</button><button class="button quiet" disabled={busy} onclick={() => run(loadContainerSettings)}>Discard changes</button></div>{/if}</div>
   </details>
 {/snippet}
 {#snippet containerReview()}

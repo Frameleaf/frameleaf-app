@@ -9,7 +9,7 @@ import { Releases, type VerifiedRelease } from './releases.js';
 import { isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
 import { Fencing } from './fencing.js';
-import { ApplicationConfig, applyServiceOverrides, releaseImages, renderCompose, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
+import { ApplicationConfig, checkServiceOverrides, releaseImages, renderCompose, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
 import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
 import { LibraryMove, type ServerPauseStatus } from './library-move.js';
@@ -114,7 +114,7 @@ type RestoreReview = {
 };
 type UpdateReview = { expires: number; current: Installation; release: VerifiedRelease; platform: string };
 type Cancellation = {
-  kind: 'backup' | 'update' | 'source' | 'restore';
+  kind: 'backup' | 'update' | 'source' | 'restore' | 'reconfigure';
   installation: Installation | null;
   archive: string;
 };
@@ -305,14 +305,7 @@ export class Operations {
     }
     await this.checkPort(input.port, null, source);
     // The same conflict check the stack generator runs, against the mounts this installation will have.
-    applyServiceOverrides(
-      {
-        'frameleaf-server': { volumes: (source?.mounts ?? [{ target: '/data' }]).map(({ target }) => ({ target })) },
-        'frameleaf-machine-learning': { volumes: [] },
-        database: { volumes: [] },
-      },
-      input.services ?? {},
-    );
+    checkServiceOverrides((source?.mounts ?? [{ target: '/data' }]).map(({ target }) => target), input.services ?? {});
     const databaseStorage = await this.databaseStorage.validate(
       input.databaseRoot,
       (source?.summary.databaseBytes ?? 1024 ** 3) * 3,
@@ -425,6 +418,7 @@ export class Operations {
         return this.applyUpdate(operation, review);
       }
       if (['start', 'stop', 'restart', 'backup'].includes(operation.kind)) return this.runControl(operation);
+      if (operation.kind === 'reconfigure') return this.applyReconfigure(operation);
       const restoring = operation.kind === 'restore';
       const review = this.store.get<Review | RestoreReview>(
         `${restoring ? 'restore' : 'review'}:${operation.input.reviewId}`,
@@ -929,15 +923,58 @@ export class Operations {
         return this.backups.snapshot(checkpoint, operation.id);
       });
     } else if (kind === 'start' || kind === 'stop' || kind === 'restart') {
-      await this.step(operation, kind, async () => {
-        if (kind !== 'stop') await this.databaseStorage.verify(installation);
-        if (kind !== 'stop' && installation.sourceId)
-          await this.fencing.verify(this.store.get<Source>(`source:${installation.sourceId}`)!, installation);
-        if (kind !== 'stop') await this.fencing.assertMedia(installation.mounts, installation);
-        await this.docker.compose(this.directory(), installation.project, kind === 'start' ? 'up' : kind);
-        return true;
-      });
+      await this.step(operation, kind, () => this.composeAction(installation, kind));
     } else throw new Refusal('invalid_control_operation');
+  }
+  /** Storage, source fencing and media ownership are rechecked before anything that can start containers. */
+  private async composeAction(installation: Installation, kind: 'start' | 'stop' | 'restart'): Promise<boolean> {
+    if (kind !== 'stop') await this.databaseStorage.verify(installation);
+    if (kind !== 'stop' && installation.sourceId)
+      await this.fencing.verify(this.store.get<Source>(`source:${installation.sourceId}`)!, installation);
+    if (kind !== 'stop') await this.fencing.assertMedia(installation.mounts, installation);
+    await this.docker.compose(this.directory(), installation.project, kind === 'start' ? 'up' : kind);
+    return true;
+  }
+  /** The advanced container settings the installed stack was last rendered with. */
+  containerSettings(): { services: ServiceOverrides } {
+    if (!this.installation()) throw new Refusal('no_installation');
+    return { services: this.application().services };
+  }
+  /**
+   * Replaces the advanced container settings of the installed stack. The previous settings are journaled
+   * before anything changes so a failed apply can be cancelled back to them; either way the stack is
+   * brought up with `compose up`, which recreates only the containers whose definition changed.
+   */
+  reconfigure(services: ServiceOverrides, key: string): Operation {
+    const installation = this.installation();
+    if (!installation) throw new Refusal('no_installation');
+    const input = { services };
+    const prior = this.store.request('reconfigure', key, input);
+    if (prior) return prior;
+    checkServiceOverrides(installation.mounts.map(({ target }) => target), services);
+    const { operation, created } = this.store.start('reconfigure', key, input);
+    if (created) this.launch(operation, () => this.applyReconfigure(operation));
+    return operation;
+  }
+  private async renderServices(installation: Installation, services: ServiceOverrides): Promise<void> {
+    checkServiceOverrides(installation.mounts.map(({ target }) => target), services);
+    const application = ApplicationConfig.parse({ ...this.application(), services });
+    const release = await this.releases.acquire(installation.release);
+    await renderCompose(release, installation, this.store.get<string>('database-password')!, this.directory(), application);
+    this.store.set('application-config', application);
+  }
+  private async applyReconfigure(operation: Operation): Promise<void> {
+    const installation = this.installation();
+    if (!installation) throw new Refusal('no_installation');
+    if (!operation.receipts['previous-container-settings']) {
+      operation.receipts['previous-container-settings'] = this.application().services;
+      this.store.save(operation);
+    }
+    await this.step(operation, 'apply-container-settings', async () => {
+      await this.renderServices(installation, ServiceOverrides.parse(operation.input.services));
+      return true;
+    });
+    await this.step(operation, 'start', () => this.composeAction(installation, 'start'));
   }
   async reviewUpdate(tag: string) {
     const current = this.installation();
@@ -1230,7 +1267,9 @@ export class Operations {
                   !operation.completed.includes('apply-release') &&
                   operation.step !== 'apply-release'
                 ? 'update'
-                : 'source';
+                : operation.kind === 'reconfigure'
+                  ? 'reconfigure'
+                  : 'source';
         if (kind === 'source' && installation?.mayHaveWrittenMedia) throw new Refusal('manual_media_recovery_required');
         const restoreReview =
           kind === 'restore' ? this.store.get<RestoreReview>(`restore:${operation.input.reviewId}`) : null;
@@ -1340,6 +1379,20 @@ export class Operations {
       operation.receipts['cancelled'] = 'update_cancelled_previous_release_running';
       return;
     }
+    if (intent.kind === 'reconfigure') {
+      if (!installation) throw new Refusal('no_installation');
+      await this.step(operation, 'restore-container-settings', async () => {
+        // Absent when the apply never began: nothing changed, and the current settings are the previous ones.
+        await this.renderServices(
+          installation,
+          ServiceOverrides.parse(operation.receipts['previous-container-settings'] ?? this.application().services),
+        );
+        return true;
+      });
+      await this.step(operation, 'start', () => this.composeAction(installation, 'start'));
+      operation.receipts['cancelled'] = 'reconfigure_cancelled_previous_settings_running';
+      return;
+    }
     if (installation) {
       await this.step(operation, 'cancel-stop-target', async () => {
         // Configuration may not have been published when setup failed. Reconcile exact owned
@@ -1417,6 +1470,7 @@ export class Operations {
         (operation.kind === 'move-library'
           ? !receipts['move-writes-intent']
           : operation.kind === 'backup' ||
+            operation.kind === 'reconfigure' ||
             (operation.kind === 'update' &&
               operation.step !== 'apply-release' &&
               !operation.completed.includes('apply-release')) ||

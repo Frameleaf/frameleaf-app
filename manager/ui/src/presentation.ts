@@ -19,6 +19,7 @@ export const operationNames: Record<string, string> = {
   start: 'Starting services',
   stop: 'Stopping services',
   restart: 'Restarting services',
+  reconfigure: 'Applying container settings',
 };
 export const stepNames: Record<string, string> = {
   'move-stop-writers': 'Stop uploads and background writers',
@@ -51,6 +52,9 @@ export const stepNames: Record<string, string> = {
   'reconstruct-execution-state': 'Reconcile restored background work',
   'stop-previous-installation': 'Stop and retain the previous installation',
   'archive-previous-installation': 'Preserve the previous recovery configuration',
+  'apply-container-settings': 'Write the container settings into the stack',
+  'restore-container-settings': 'Restore the previous container settings',
+  start: 'Start Frameleaf',
 };
 const plans: Record<string, string[]> = {
   'move-library': [
@@ -96,6 +100,7 @@ const plans: Record<string, string[]> = {
   start: ['start'],
   stop: ['stop'],
   restart: ['restart'],
+  reconfigure: ['apply-container-settings', 'start'],
 };
 const moveRefusals: Record<string, string> = {
   media_quiescence_unavailable:
@@ -122,7 +127,7 @@ const moveRefusals: Record<string, string> = {
   media_copy_still_running: 'The copy helper is still running. Stop safely and wait for it to exit before recovery.',
 };
 const refusals: Record<string, string> = {
-  container_settings_invalid: 'Fix the advanced container settings marked below, then check the configuration again.',
+  container_settings_invalid: 'Fix the advanced container settings marked below, then try again.',
   service_override_conflict: 'An extra folder would replace one Frameleaf manages. Choose another path inside the container.',
   settings_not_json: 'Settings must be a JSON object. Check for a missing comma or bracket, then save again.',
   masked_secret_missing: 'A secret value can only be kept as [unchanged] where it already exists. Enter the value, or restore the original line.',
@@ -198,6 +203,7 @@ export function canCancel(operation: JournalOperation, installation: { mayHaveWr
   if (!['failed', 'interrupted'].includes(operation.state)) return false;
   return (
     operation.kind === 'backup' ||
+    operation.kind === 'reconfigure' ||
     (operation.kind === 'update' &&
       operation.step !== 'apply-release' &&
       !operation.completed.includes('apply-release')) ||
@@ -265,6 +271,7 @@ const operationSections: Record<string, string> = {
   start: 'services',
   stop: 'services',
   restart: 'services',
+  reconfigure: 'services',
   'move-library': 'storage',
 };
 /** The navigation entry for the open screen; maintenance on an installed server belongs to its own section. */
@@ -317,6 +324,21 @@ export function parseContainerSettings(text: ContainerText): ContainerOverride &
   const cpus = text.cpus.trim();
   if (cpus && !(Number(cpus) > 0)) errors.push(`CPU limit "${cpus}" should be a number of cores, like 2 or 0.5`);
   return { environment, mounts, ...(memory ? { memory } : {}), ...(cpus ? { cpus: Number(cpus) } : {}), errors };
+}
+/** The stored overrides as the text fields show them; the inverse of parseContainerSettings. */
+export function containerText(services: Partial<Record<ContainerId, ContainerOverride>>): Record<ContainerId, ContainerText> {
+  const containers = emptyContainers();
+  for (const { id } of CONTAINERS) {
+    const override = services[id];
+    if (!override) continue;
+    containers[id] = {
+      environment: Object.entries(override.environment ?? {}).map(([name, value]) => `${name}=${value}`).join('\n'),
+      mounts: (override.mounts ?? []).map((m) => `${m.source}:${m.target}${m.readOnly ? ':ro' : ''}`).join('\n'),
+      memory: override.memory ?? '',
+      cpus: override.cpus === undefined ? '' : String(override.cpus),
+    };
+  }
+  return containers;
 }
 /** "2 variables · 1 folder · 4g memory", or "" when nothing is set. */
 export function containerSummary(parsed: ContainerOverride): string {
