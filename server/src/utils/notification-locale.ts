@@ -50,6 +50,52 @@ const argumentsOf = {
   'buddy-storage-low': z.object({}).strict(),
   'buddy-pairing-ended': z.object({ readUntil: z.iso.datetime() }).strict(),
   'buddy-access-blocked': z.object({}).strict(),
+  // FL-406: the remaining system notices (FL-329 residue)
+  'cloud-ml-migration': z.object({}).strict(),
+  'cloud-ml-migration-removed-one': z.object({ names: name }).strict(),
+  'cloud-ml-migration-removed-many': z.object({ names: name }).strict(),
+  'cloud-ml-migration-jobs-one': z.object({}).strict(),
+  'cloud-ml-migration-jobs-many': z.object({ count }).strict(),
+  'cloud-ml-migration-workers-one': z.object({}).strict(),
+  'cloud-ml-migration-workers-many': z.object({ count }).strict(),
+  'admin-granted': z.object({ name }).strict(),
+  'cloud-description-budget': z.object({ budget: name }).strict(),
+  'buddy-backup-incomplete': z.object({ error: name }).strict(),
+  'relay-disconnected': z.object({ since: name }).strict(),
+  'relay-disconnected-error': z.object({ since: name, error: name }).strict(),
+  'edge-certificate-address': z.object({ error: name, nextAttemptAt: name }).strict(),
+  'edge-certificate-address-expiring': z.object({ error: name, nextAttemptAt: name, until: name }).strict(),
+  'edge-certificate-domain': z.object({ error: name, nextAttemptAt: name }).strict(),
+  'edge-certificate-domain-expiring': z.object({ error: name, nextAttemptAt: name, until: name }).strict(),
+  'cloud-region-mismatch': z.object({}).strict(),
+  'cloud-clone-suspected': z.object({}).strict(),
+  'mail-needs-sign-in': z.object({ provider: name }).strict(),
+  'cloud-linked': z.object({ account: name }).strict(),
+  'cloud-linked-unnamed': z.object({}).strict(),
+  'cloud-unlinked': z.object({}).strict(),
+  'cloud-revoked': z.object({ reason: name }).strict(),
+  'cloud-message': z.object({ message: name }).strict(),
+  'cloud-hostname-failing': z.object({ host: name, problem: name }).strict(),
+  'cloud-relink-key': z.object({}).strict(),
+  'cloud-relink-command': z.object({}).strict(),
+  'cloud-identity-key-damaged': z.object({}).strict(),
+  'cloud-identity-key-expired': z.object({}).strict(),
+  'plan-tier-asked': z.object({ current: name, suggested: name }).strict(),
+  'plan-tier-accepted': z.object({ suggested: name }).strict(),
+  'plan-tier-declined': z.object({ current: name }).strict(),
+  'plan-tier-declined-paused': z.object({ current: name }).strict(),
+  'plan-full-upgrade': z.object({}).strict(),
+  'plan-full-ask-organiser': z.object({}).strict(),
+  'cloud-backup-failed': z.object({ error: name }).strict(),
+  'cloud-backup-key-locked': z.object({}).strict(),
+  'cloud-backup-check-problems': z.object({ missing: count, damaged: count, incomplete: count }).strict(),
+  'cloud-backup-check-failed': z.object({ error: name }).strict(),
+  'cloud-backup-cleanup-failed': z.object({ error: name }).strict(),
+  'cloud-restore-failed': z.object({ error: name }).strict(),
+  'studio-export-cancelled': z.object({}).strict(),
+  'studio-export-cancelled-named': z.object({ label: name }).strict(),
+  'studio-render-progress': z.object({ percent: count }).strict(),
+  'studio-render-progress-named': z.object({ label: name, percent: count }).strict(),
 } as const;
 
 type TemplateKey = keyof typeof argumentsOf;
@@ -155,6 +201,187 @@ export const NOTIFICATION_CATALOGS: NotificationCatalogs = {
       'buddy-access-blocked': {
         title: 'Buddy access was blocked',
         body: 'The hosted encrypted vault remains on disk. Contact your buddy to arrange recovery.',
+      },
+      // FL-406: the remaining system notices (FL-329 residue)
+      'cloud-ml-migration': {
+        title: 'Cloud processing moved to Frameleaf Cloud',
+        body: 'Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.',
+      },
+      'cloud-ml-migration-removed-one': {
+        title: 'Cloud processing moved to Frameleaf Cloud',
+        body: 'The cloud processing destination {names} was removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.',
+      },
+      'cloud-ml-migration-removed-many': {
+        title: 'Cloud processing moved to Frameleaf Cloud',
+        body: 'The cloud processing destinations {names} were removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.',
+      },
+      'cloud-ml-migration-jobs-one': {
+        title: 'Cloud processing moved to Frameleaf Cloud',
+        body: '1 unfinished job stopped and can be started again.',
+      },
+      'cloud-ml-migration-jobs-many': {
+        title: 'Cloud processing moved to Frameleaf Cloud',
+        body: '{count} unfinished jobs stopped and can be started again.',
+      },
+      'cloud-ml-migration-workers-one': {
+        title: 'Cloud processing moved to Frameleaf Cloud',
+        body: '1 render worker was signed out.',
+      },
+      'cloud-ml-migration-workers-many': {
+        title: 'Cloud processing moved to Frameleaf Cloud',
+        body: '{count} render workers were signed out.',
+      },
+      'admin-granted': {
+        title: 'New administrator',
+        body: '{name} became an administrator through Frameleaf Cloud',
+      },
+      'cloud-description-budget': {
+        title: 'Automatic descriptions paused for today',
+        body: "Describing new photos with Frameleaf Cloud reached today's budget of ${budget}. New photos wait and are described from tomorrow; nothing is sent to another destination.",
+      },
+      'buddy-backup-incomplete': {
+        title: 'Buddy Backup needs attention',
+        body: '{error}',
+      },
+      'relay-disconnected': {
+        title: 'Remote access relay disconnected',
+        body: 'This server has not been connected to the Frameleaf relay since {since}. It keeps trying; at home it works as before.',
+      },
+      'relay-disconnected-error': {
+        title: 'Remote access relay disconnected',
+        body: 'This server has not been connected to the Frameleaf relay since {since}. It keeps trying; at home it works as before. The last problem was: {error}',
+      },
+      'edge-certificate-address': {
+        title: 'Remote access certificate could not be renewed',
+        body: 'The certificate for this server’s Frameleaf address could not be issued ({error}). It is retried automatically, next at {nextAttemptAt}.',
+      },
+      'edge-certificate-address-expiring': {
+        title: 'Remote access certificate could not be renewed',
+        body: 'The certificate for this server’s Frameleaf address could not be issued ({error}). It is retried automatically, next at {nextAttemptAt}. The current certificate works until {until}.',
+      },
+      'edge-certificate-domain': {
+        title: 'Remote access certificate could not be renewed',
+        body: 'The certificate for your custom domain could not be issued ({error}). It is retried automatically, next at {nextAttemptAt}.',
+      },
+      'edge-certificate-domain-expiring': {
+        title: 'Remote access certificate could not be renewed',
+        body: 'The certificate for your custom domain could not be issued ({error}). It is retried automatically, next at {nextAttemptAt}. The current certificate works until {until}.',
+      },
+      'cloud-region-mismatch': {
+        title: 'Cloud processing is using the wrong region',
+        body: 'Frameleaf Cloud refused cloud processing because this server is using another region than its Frameleaf account’s data region, even after reading Frameleaf Cloud’s service list and this server’s link again. Cloud processing stays off until this is fixed: check that FRAMELEAF_CLOUD_URL points to Frameleaf Cloud, then link the server again in Administration > Frameleaf Cloud.',
+      },
+      'cloud-clone-suspected': {
+        title: 'Two servers are using this server’s identity',
+        body: 'Frameleaf Cloud saw this server’s key start from two places. If you copied this server, give the copy its own identity folder. Cloud backup and cloud processing pause until this is resolved: the account owner can confirm this server in the Frameleaf account, or it clears on its own after 24 hours without a restart.',
+      },
+      'mail-needs-sign-in': {
+        title: 'Email stopped: sign in to {provider} again',
+        body: '{provider} is asking you to sign in again, because the account’s password changed or Frameleaf’s access was removed. Emails are not sent until you do; invitations and album updates appear in the app only. Open Settings > Notifications > Email delivery and choose Sign in again.',
+      },
+      'cloud-linked': {
+        title: 'Server linked to Frameleaf',
+        body: 'This server is linked to {account}. Cloud features you turn on use this link.',
+      },
+      'cloud-linked-unnamed': {
+        title: 'Server linked to Frameleaf',
+        body: 'This server is linked to a Frameleaf account. Cloud features you turn on use this link.',
+      },
+      'cloud-unlinked': {
+        title: 'Server unlinked from Frameleaf',
+        body: 'Cloud features on this server stopped. Local photos, accounts and sign-in are unchanged.',
+      },
+      'cloud-revoked': {
+        title: 'Frameleaf Cloud ended this server’s link',
+        body: '{reason} Cloud features stopped; local photos, accounts and sign-in are unchanged. Link again from Settings → Frameleaf Cloud.',
+      },
+      'cloud-message': {
+        title: 'Message from Frameleaf Cloud',
+        body: '{message}',
+      },
+      'cloud-hostname-failing': {
+        title: 'Custom hostname needs attention',
+        body: '{host} is not fully verified by Frameleaf Cloud. {problem}',
+      },
+      'cloud-relink-key': {
+        title: 'Link this server to Frameleaf again',
+        body: 'Frameleaf Cloud no longer accepts this server’s key. Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed.',
+      },
+      'cloud-relink-command': {
+        title: 'Link this server to Frameleaf again',
+        body: 'Frameleaf Cloud asked for this server to be linked again. Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed.',
+      },
+      'cloud-identity-key-damaged': {
+        title: 'This server’s new identity key could not be read',
+        body: 'The key Frameleaf Cloud accepted in the last key rotation could not be read, so it was set aside and this server keeps using its previous key. A new rotation is under way. If it does not finish before the previous key expires (within a day of that rotation), the link to Frameleaf Cloud stops working and this server must be linked again. This rotation runs whatever the cloud command permissions are set to.',
+      },
+      'cloud-identity-key-expired': {
+        title: 'Link this server to Frameleaf again',
+        body: 'This server’s identity key could not be replaced before its previous key expired, so Frameleaf Cloud no longer accepts it. Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed.',
+      },
+      'plan-tier-asked': {
+        title: 'Your backups have outgrown your plan',
+        body: 'Your backups no longer fit the {current} plan. Open the Frameleaf app to move to {suggested}.',
+      },
+      'plan-tier-accepted': {
+        title: 'Your Frameleaf plan was upgraded',
+        body: 'Your plan is now {suggested}. Backups carry on with the room it gives them.',
+      },
+      'plan-tier-declined': {
+        title: 'Your plan stays the same',
+        body: 'Your plan stays at {current}. Backups that do not fit wait until the plan is upgraded.',
+      },
+      'plan-tier-declined-paused': {
+        title: 'Backups are paused: plan full',
+        body: 'Your backups no longer fit the {current} plan, so new items wait. Upgrade in the Frameleaf app to back them up.',
+      },
+      'plan-full-upgrade': {
+        title: 'Backups are paused: plan full',
+        body: 'Backups no longer fit the Frameleaf plan, so new items wait until it is upgraded. Your library is untouched and restores keep working.',
+      },
+      'plan-full-ask-organiser': {
+        title: 'Backups are paused: plan full',
+        body: "Your family's plan is full. Ask your family organiser to upgrade.",
+      },
+      'cloud-backup-failed': {
+        title: 'Cloud backup failed',
+        body: 'The last cloud backup stopped: {error}',
+      },
+      'cloud-backup-key-locked': {
+        title: 'Cloud backup is waiting for its key',
+        body: 'This server does not keep the backup key. Load it in Settings › Frameleaf Cloud › Cloud backup.',
+      },
+      'cloud-backup-check-problems': {
+        title: 'Cloud backup check found problems',
+        body: '{missing} backed-up files are missing and {damaged} are damaged. The next backup uploads them again from this server; {incomplete} earlier backups are marked incomplete.',
+      },
+      'cloud-backup-check-failed': {
+        title: 'Cloud backup check failed',
+        body: '{error}',
+      },
+      'cloud-backup-cleanup-failed': {
+        title: 'Cloud backup clean-up failed',
+        body: '{error}',
+      },
+      'cloud-restore-failed': {
+        title: 'Restore from cloud backup failed',
+        body: '{error}',
+      },
+      'studio-export-cancelled': {
+        title: 'Render cancelled',
+        body: 'Your Studio export was cancelled',
+      },
+      'studio-export-cancelled-named': {
+        title: 'Render cancelled',
+        body: '{label} was cancelled',
+      },
+      'studio-render-progress': {
+        title: 'Rendering',
+        body: 'Your Studio export · {percent}%',
+      },
+      'studio-render-progress-named': {
+        title: 'Rendering',
+        body: '{label} · {percent}%',
       },
     },
   },

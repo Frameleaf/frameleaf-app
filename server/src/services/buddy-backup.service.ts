@@ -902,6 +902,7 @@ export class BuddyBackupService {
           level: NotificationLevel.Warning,
           title: 'Buddy Backup needs attention',
           description: message,
+          systemTemplate: { version: 1, key: 'buddy-backup-incomplete', args: { error: message } },
           dedupeKey: 'buddy:incomplete',
           dedupeDays: 1,
         });

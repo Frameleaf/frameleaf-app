@@ -1121,6 +1121,9 @@ export class StudioExportService {
         userIds: [version.ownerId],
         title: 'Rendering',
         body: `${name} · ${percent}%`,
+        systemTemplate: operation.label?.trim()
+          ? { version: 1, key: 'studio-render-progress-named', args: { label: name, percent } }
+          : { version: 1, key: 'studio-render-progress', args: { percent } },
         // native apps: `kind` names the payload, `progress` is 0..1, `job` is the render's media operation
         data: {
           kind: 'render',
@@ -2024,16 +2027,27 @@ export class StudioExportService {
             : status === 'cancelled'
               ? `${name} was cancelled`
               : `${name} could not be finished`,
-        systemTemplate:
-          status === 'cancelled'
-            ? undefined
-            : label?.trim()
-              ? {
-                  version: 1,
-                  key: status === 'published' ? 'studio-export-ready-named' : 'studio-export-failed-named',
-                  args: { label: name },
-                }
-              : { version: 1, key: status === 'published' ? 'studio-export-ready' : 'studio-export-failed', args: {} },
+        systemTemplate: label?.trim()
+          ? {
+              version: 1,
+              key:
+                status === 'published'
+                  ? 'studio-export-ready-named'
+                  : status === 'cancelled'
+                    ? 'studio-export-cancelled-named'
+                    : 'studio-export-failed-named',
+              args: { label: name },
+            }
+          : {
+              version: 1,
+              key:
+                status === 'published'
+                  ? 'studio-export-ready'
+                  : status === 'cancelled'
+                    ? 'studio-export-cancelled'
+                    : 'studio-export-failed',
+              args: {},
+            },
         // Studio operations cannot use generic Retry; reopen this project/version for a new export.
         data: {
           versionId: version.id,

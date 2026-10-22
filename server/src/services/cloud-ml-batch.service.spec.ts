@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Transaction } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { QueueExecution } from 'src/queue/types.js';
+import type { AdminNotice } from 'src/repositories/event.repository.js';
 import type { CloudDescriptionBatchCreate, MediaOperation } from 'src/repositories/media-operation.repository.js';
 import type { DB } from 'src/schema/index.js';
 import type { CloudDescriptionEstimateRecord } from 'src/utils/cloud-description-batch.js';
@@ -49,6 +50,7 @@ import {
   jobViewSchema,
   uploadTargetSchema,
 } from 'src/utils/frameleaf-cloud.js';
+import { renderSystemNotification } from 'src/utils/notification-locale.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
@@ -1307,8 +1309,15 @@ describe(CloudMlBatchService.name, () => {
         level: NotificationLevel.Info,
         title: 'Automatic descriptions paused for today',
         description: expect.stringContaining('$0.50'),
+        systemTemplate: { version: 1, key: 'cloud-description-budget', args: { budget: '0.50' } },
         dedupeKey: expect.stringMatching(/^frameleaf-cloud:description-budget:\d{4}-\d{2}-\d{2}$/),
         dedupeDays: 1,
+      });
+      // FL-406: the English catalog renders exactly the producer's text
+      const [, notice] = mocks.event.emit.mock.calls.find(([name]) => name === 'AdminNotify')! as [string, AdminNotice];
+      expect(renderSystemNotification(notice.systemTemplate, 'en', { title: '', body: '' })).toEqual({
+        title: notice.title,
+        body: notice.description,
       });
       expect(written()).toMatchObject({ phase: CloudDescriptionPhase.Queued, submission: null });
       expect(mocks.mediaOperation.requeue).toHaveBeenCalledWith(batch.id, 'claim-1', {

@@ -41,6 +41,7 @@ import { sealStudioEmbeddedSubtitles } from 'src/utils/studio-embedded-subtitles
 import { studioExportStagingFolder } from 'src/utils/studio-export.js';
 import { StudioResourceKind } from 'src/utils/studio-resources.js';
 import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
+import { expectLocalisedSystemNotices } from 'test/utils.js';
 
 vi.mock('src/utils/config.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/utils/config.js')>()),
@@ -294,6 +295,9 @@ describe(StudioExportService.name, () => {
   };
   let restorations: { queueExportSmoothMotion: ReturnType<typeof vi.fn> };
   let events: { emit: ReturnType<typeof vi.fn> };
+
+  // FL-406: every Studio notice carries a system template whose English matches the supplied text
+  afterEach(() => expectLocalisedSystemNotices(events.emit));
   let mlDestinations: { getById: ReturnType<typeof vi.fn> };
   let staged: string;
 

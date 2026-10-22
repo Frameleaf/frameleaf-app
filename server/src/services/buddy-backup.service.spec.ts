@@ -413,6 +413,15 @@ describe('Buddy production run controls and checkpoints', () => {
         { retry: true },
       );
       expect(await readFile(capturePath)).toEqual(captureBytes);
+      // FL-406: the attention notice carries its template; the error text itself stays verbatim
+      const notice = fixture.events.emit.mock.calls
+        .filter(([event]) => event === 'AdminNotify')
+        .map(([, body]) => body as { dedupeKey?: string; description?: string })
+        .find((body) => body.dedupeKey === 'buddy:incomplete');
+      expect(notice).toMatchObject({
+        title: 'Buddy Backup needs attention',
+        systemTemplate: { version: 1, key: 'buddy-backup-incomplete', args: { error: notice?.description } },
+      });
     },
   );
 
