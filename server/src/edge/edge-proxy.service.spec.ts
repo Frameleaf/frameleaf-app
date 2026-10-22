@@ -1,6 +1,7 @@
 import http, { type IncomingHttpHeaders } from 'node:http';
 import net, { type AddressInfo } from 'node:net';
 import { PassThrough } from 'node:stream';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { EdgeArrival, EdgeProxyService, downstreamHeaders, upstreamHeaders } from 'src/edge/edge-proxy.service.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -271,6 +272,38 @@ describe(EdgeProxyService.name, () => {
       expect(range).toMatchObject({ status: 206, body: '234' });
       expect(range.headers['content-range']).toBe('bytes 2-4/10');
     });
+
+    it.each(['GET', 'HEAD', 'DELETE', 'OPTIONS'])(
+      'frames a chunked %s body so it never reaches the API as a second request',
+      async (method) => {
+        // Node sends these methods' bodies unframed unless told to; on the pooled loopback socket the
+        // bytes would be read as a request of their own, without the via contract
+        const smuggled =
+          'POST /api/smuggled HTTP/1.1\r\nHost: localhost\r\nX-Forwarded-For: 192.168.1.9\r\nContent-Length: 0\r\n\r\n';
+        const answer = await new Promise<string>((resolve, reject) => {
+          const socket = net.connect(frontPort, '127.0.0.1');
+          let text = '';
+          socket.on('data', (chunk: Buffer) => {
+            text += chunk.toString();
+            if (text.includes('\r\n\r\n')) {
+              socket.destroy();
+              resolve(text);
+            }
+          });
+          socket.on('error', reject);
+          socket.write(
+            `${method} /api/outer HTTP/1.1\r\nHost: r.u225vlzhsdlhwh4l.frameleaf.net\r\nTransfer-Encoding: chunked\r\n\r\n` +
+              `${Buffer.byteLength(smuggled).toString(16)}\r\n${smuggled}\r\n0\r\n\r\n`,
+          );
+        });
+        expect(answer).toMatch(/^HTTP\/1\.1 200 /);
+        // a smuggled request is answered right after the first one: give it that chance
+        await sleep(100);
+        expect(seen.map(({ url }) => url)).toEqual(['/api/outer']);
+        expect(seen[0]).toMatchObject({ method, body: smuggled });
+        expect(seen[0].headers['transfer-encoding']).toBe('chunked');
+      },
+    );
 
     it.each(['wan', 'relay'] as const)('forwards informational upload responses on %s arrivals', async (via) => {
       front.removeAllListeners('connection');
