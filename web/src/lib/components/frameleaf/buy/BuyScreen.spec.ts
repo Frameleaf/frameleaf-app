@@ -66,7 +66,7 @@ const licenseStatus = (overrides: Record<string, unknown> = {}) =>
 
 /** Type (or paste) a key into "Already have a key?": the only way a key reaches this screen. */
 const typeKey = async (value: string) => {
-  const input = await screen.findByLabelText('Product key');
+  const input = await screen.findByLabelText('Licence key');
   await fireEvent.input(input, { target: { value } });
   return input;
 };
@@ -196,7 +196,7 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
     render(BuyScreen);
     expect(await screen.findByText('$9.49')).toBeInTheDocument();
     expect(screen.getByText('$94.90')).toBeInTheDocument();
-    expect(screen.getByText(/Your supporter key takes 5% off plan prices/)).toBeInTheDocument();
+    expect(screen.getByText(/Your Individual licence takes 5% off plan prices/)).toBeInTheDocument();
     expect(screen.queryByText(/This server is licensed/)).not.toBeInTheDocument();
   });
 
@@ -235,7 +235,7 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
     render(BuyScreen);
     await typeKey('IMCL-0KEY-AAAA-BBBB');
 
-    const input = await screen.findByLabelText('Product key');
+    const input = await screen.findByLabelText('Licence key');
     expect(input).toHaveAttribute('placeholder', 'FL-XXXX-XXXX-XXXX');
     await fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
     expect(await screen.findByText(/not a Frameleaf licence key/)).toBeInTheDocument();
@@ -258,7 +258,7 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
     render(BuyScreen);
     await typeKey('FL-IC8Q-BT2Q-8EL6');
 
-    expect(await screen.findByLabelText('Product key')).toHaveValue('FL-IC8Q-BT2Q-8EL6');
+    expect(await screen.findByLabelText('Licence key')).toHaveValue('FL-IC8Q-BT2Q-8EL6');
     expect(screen.getByText('Individual key recognised')).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
 
@@ -305,7 +305,7 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
     );
     expect(await screen.findByText(/ends in J583/)).toBeInTheDocument();
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Remove key' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove licence' }));
     expect(screen.getByText('Remove this key from this server?')).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Yes, remove' }));
     await waitFor(() => expect(sdkMock.removeLicenseKey).toHaveBeenCalled());
@@ -359,7 +359,7 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
       render(BuyScreen, { linkCode: code });
 
       expect(await screen.findByRole('alert')).toHaveTextContent(/expired/);
-      expect(screen.getByLabelText('Product key')).toHaveValue('');
+      expect(screen.getByLabelText('Licence key')).toHaveValue('');
     });
 
     it('asks for the key after a link code that is not shaped like one, never sending it', async () => {
@@ -377,7 +377,7 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
       expect(
         await screen.findByText(/keys are no longer accepted in links\. Paste your key below/),
       ).toBeInTheDocument();
-      expect(screen.getByLabelText('Product key')).toHaveValue('');
+      expect(screen.getByLabelText('Licence key')).toHaveValue('');
       expect(sdkMock.redeemLicenseLinkCode).not.toHaveBeenCalled();
       expect(sdkMock.setUserLicense).not.toHaveBeenCalled();
       expect(sdkMock.activateLicense).not.toHaveBeenCalled();

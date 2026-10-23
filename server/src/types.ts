@@ -1637,6 +1637,10 @@ export type UserPreferences = {
   recentlyAdded: {
     sidebarWeb: boolean;
   };
+  /** FL-517: how long Locked photos stay open after the PIN unlocks them (5, 15 or 60 minutes). */
+  lockedPin: {
+    relockMinutes: number;
+  };
   /** FL-49: named searches from the search palette; `query` is the client's own search body */
   savedSearches: SavedSearch[];
 };

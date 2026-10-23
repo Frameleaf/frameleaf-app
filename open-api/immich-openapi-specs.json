@@ -89275,6 +89275,32 @@
         ],
         "type": "object"
       },
+      "LockedPinResponse": {
+        "properties": {
+          "relockMinutes": {
+            "description": "How long Locked photos stay open after the PIN unlocks them, in minutes",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "relockMinutes"
+        ],
+        "type": "object"
+      },
+      "LockedPinUpdate": {
+        "description": "Locked PIN preferences (FL-517). Only the account itself can change them",
+        "properties": {
+          "relockMinutes": {
+            "description": "How long Locked photos stay open after the PIN unlocks them: 5, 15 or 60 minutes",
+            "maximum": 60,
+            "minimum": 5,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "LogLevel": {
         "description": "Log level",
         "enum": [
@@ -137817,6 +137843,9 @@
           "folders": {
             "$ref": "#/components/schemas/FoldersResponse"
           },
+          "lockedPin": {
+            "$ref": "#/components/schemas/LockedPinResponse"
+          },
           "lockedRulesRevealed": {
             "description": "Whether privacy.suppression names the account's Locked people, pets and tags. False when they were blanked (a session that is not unlocked, or an administrator); such rules must never be edited and saved back (FL-67)",
             "type": "boolean"
@@ -137940,6 +137969,9 @@
           },
           "folders": {
             "$ref": "#/components/schemas/FoldersUpdate"
+          },
+          "lockedPin": {
+            "$ref": "#/components/schemas/LockedPinUpdate"
           },
           "memories": {
             "$ref": "#/components/schemas/MemoriesUpdate"

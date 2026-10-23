@@ -1700,6 +1700,12 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'ratings.enabled',
   },
   {
+    pattern: 'lockedPin.relockMinutes',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/access/PinSection.svelte',
+    evidence: 'lockedPin: { relockMinutes',
+  },
+  {
     pattern: 'recentlyAdded.sidebarWeb',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',

@@ -79,7 +79,7 @@ describe('CloudAccountSection (FL-154, FL-155)', () => {
     sdkMock.getCloudStatus.mockResolvedValue(status({ state: CloudLinkState.NotConfigured, configured: false }));
     render(CloudAccountSection);
 
-    expect(await screen.findByText('Frameleaf Cloud is not set up on this server')).toBeInTheDocument();
+    expect(await screen.findByText('Frameleaf Cloud is turned off for this server')).toBeInTheDocument();
     expect(screen.getByText('Not set up')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Link to Frameleaf/ })).not.toBeInTheDocument();
   });
