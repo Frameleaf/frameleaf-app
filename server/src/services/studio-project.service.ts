@@ -483,8 +483,9 @@ export class StudioProjectService {
   }
 
   /**
-   * A new project of the owner's whose revision 1 is this project's head, byte for byte. The copy
-   * is not shared with the original's space: review is something the owner grants per project.
+   * A new project of the owner's whose revision 1 is this project's head, byte for byte, with the
+   * imports and generated media that head names (the repository copies them in the same commit).
+   * The copy is not shared with the original's space: review is something the owner grants per project.
    */
   async duplicate(auth: AuthDto, id: string, dto: StudioProjectDuplicateDto): Promise<StudioProjectDto> {
     const { project } = await this.requireOwner(auth, id);

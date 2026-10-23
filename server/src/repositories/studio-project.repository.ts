@@ -1,10 +1,13 @@
 import { BadRequestException, ConflictException, Injectable, PayloadTooLargeException } from '@nestjs/common';
 import { sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { isAbsolute } from 'node:path';
+import { constants } from 'node:fs';
+import { copyFile, link, mkdir, unlink } from 'node:fs/promises';
+import { extname, isAbsolute, join } from 'node:path';
 import type { Kysely, RawBuilder, Selectable, Transaction } from 'kysely';
 import type { StudioDeclaredGenerated, StudioDeclaredImport } from 'src/services/studio-resource.service.js';
-import { AlbumKind } from 'src/enum.js';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { AlbumKind, StorageFolder } from 'src/enum.js';
 import { PhysicalFileRepository, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import {
   STUDIO_REVISION_MAX_BYTES,
@@ -283,6 +286,11 @@ export class StudioProjectRepository {
    *
    * Without a supplied lease, duplicated and imported projects stay free for the first editor.
    * An import carries its job id; a retry returns that job's existing project.
+   *
+   * A duplicate with a document also takes the original's project-scoped declarations, since the
+   * copied graph names them: its generated media (shared files, never deleted per project) and its
+   * imports, each linked into the copy's own import folder so either project's cleanup leaves the
+   * other's file alone. The imports count against the owner's quota again.
    */
   async createWithRevision(seed: StudioProjectSeed): Promise<{
     project: StudioProject;
@@ -300,12 +308,25 @@ export class StudioProjectRepository {
         return { project: existing, created: false };
       }
     }
+    const linked: string[] = [];
     try {
       const project = await this.db.transaction().execute(async (trx) => {
         // A duplicate's FK admission locks its existing source project. Take that
         // project before quota so the INSERT cannot wait project-after-owner.
         if (seed.duplicatedFromId) await lockStudioImportProject(trx, seed.duplicatedFromId);
-        await assertStudioStorageAdmission(trx, seed.ownerId, seed.revision?.graphBytes ?? 0);
+        const imports =
+          seed.duplicatedFromId && seed.revision
+            ? (
+                await sql<StudioProjectImport>`SELECT ${studioImportColumns} FROM public.studio_project_import item
+                  WHERE item."projectId"=${seed.duplicatedFromId}::uuid AND item."ownerId"=${seed.ownerId}::uuid
+                  ORDER BY item.id`.execute(trx)
+              ).rows
+            : [];
+        await assertStudioStorageAdmission(
+          trx,
+          seed.ownerId,
+          (seed.revision?.graphBytes ?? 0) + imports.reduce((sum, item) => sum + item.sizeBytes, 0),
+        );
         const row = await trx
           .insertInto('studio_project')
           .values({
@@ -342,10 +363,32 @@ export class StudioProjectRepository {
               restoredFromRevision: null,
             })
             .execute();
+        if (seed.duplicatedFromId && seed.revision) {
+          await sql`INSERT INTO public.studio_generated_resource
+              ("projectId", id, "ownerId", "sourceRevision", producer, checksum, path, "derivedFrom")
+            SELECT ${row.id}::uuid, id, "ownerId", "sourceRevision", producer, checksum, path, "derivedFrom"
+            FROM public.studio_generated_resource
+            WHERE "projectId"=${seed.duplicatedFromId}::uuid AND "ownerId"=${seed.ownerId}::uuid`.execute(trx);
+          const folder = join(StorageCore.getFolderLocation(StorageFolder.Exports, seed.ownerId), 'studio-imports', row.id);
+          for (const item of imports) {
+            // ponytail: a restored import's name may carry no plain extension; its type is the row's.
+            const extension = /^\.[a-zA-Z0-9]+$/.test(extname(item.path)) ? extname(item.path) : '.bin';
+            const path = join(folder, `${item.id}${extension}`);
+            await lockFilePath(trx, path);
+            await mkdir(folder, { recursive: true, mode: 0o700 });
+            // A hard link costs no space; another filesystem gets a copy.
+            await link(item.path, path).catch((error: NodeJS.ErrnoException) =>
+              error.code === 'EXDEV' ? copyFile(item.path, path, constants.COPYFILE_EXCL) : Promise.reject(error),
+            );
+            linked.push(path);
+            await insertStudioImport(trx, { ...item, projectId: row.id, path });
+          }
+        }
         return row as unknown as StudioProject;
       });
       return { project, created: true };
     } catch (error) {
+      await Promise.all(linked.map((path) => unlink(path).catch(() => {})));
       if (seed.importOperationId && isUniqueViolation(error)) {
         const existing = await this.getByImportOperation(seed.importOperationId);
         if (existing) {
@@ -736,8 +779,8 @@ export class StudioProjectRepository {
         operation.snapshot -> 'sourceEpochs' AS "sourceEpochs"
       FROM public.studio_generated_resource resource
       JOIN studio_project project ON project.id = resource."projectId" AND project."ownerId" = resource."ownerId"
+      -- The producing job is the one the generated id names, also for a duplicate's copy of it.
       LEFT JOIN media_operation operation ON operation."ownerId" = resource."ownerId"
-        AND operation."projectId" = resource."projectId"::text
         AND operation.kind = 'studio_reverse_conform' AND operation.status = 'completed'
         AND operation.snapshot ->> 'revision' = resource."sourceRevision"::text
         AND (
