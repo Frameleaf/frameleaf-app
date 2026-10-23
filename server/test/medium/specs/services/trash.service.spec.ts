@@ -1,6 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { UtilityActivityAction, UtilityActivityTool } from 'src/dtos/trash.dto.js';
+import { TrashItemSort, UtilityActivityAction, UtilityActivityTool } from 'src/dtos/trash.dto.js';
 import { AssetLockReason, AssetStatus, AssetVisibility, PhysicalFileType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -249,6 +249,28 @@ describe(TrashService.name, () => {
         count: 1,
         retainedOriginals: 1,
       });
+    });
+  });
+
+  describe('going soon (FL-519)', () => {
+    it('lists only what goes within the days asked, the one going first at the top', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
+      const trashed = (days: number) =>
+        ctx.newAsset({ ownerId: user.id, originalPath: own(), status: AssetStatus.Trashed, deletedAt: daysAgo(days) });
+      const { asset: fresh } = await trashed(1);
+      const { asset: older } = await trashed(25);
+      const { asset: oldest } = await trashed(29);
+
+      // the default keep time is 30 days: deleted 25 and 29 days ago go within a week
+      const soon = await sut.getItems(auth, { goingWithinDays: 7, sort: TrashItemSort.Soonest });
+      expect(soon.items.map(({ id }) => id)).toEqual([oldest.id, older.id]);
+      expect(soon.total).toBe(2);
+
+      const all = await sut.getItems(auth, { sort: TrashItemSort.Soonest });
+      expect(all.items.map(({ id }) => id)).toEqual([oldest.id, older.id, fresh.id]);
     });
   });
 

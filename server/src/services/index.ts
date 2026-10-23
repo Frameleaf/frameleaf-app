@@ -163,6 +163,7 @@ import { TranscodingService } from 'src/services/transcoding.service.js';
 import { TrashService } from 'src/services/trash.service.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
 import { UserService } from 'src/services/user.service.js';
+import { UtilitiesService } from 'src/services/utilities.service.js';
 import { VersionService } from 'src/services/version.service.js';
 import { VideoMomentIndexService } from 'src/services/video-moment-index.service.js';
 import { ViewService } from 'src/services/view.service.js';
@@ -260,6 +261,7 @@ export const services = [
   LibraryScanService,
   LibraryService,
   LivePhotoService,
+  UtilitiesService,
   MaintenanceService,
   MapService,
   MediaHealthOperationService,

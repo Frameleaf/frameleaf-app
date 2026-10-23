@@ -53496,6 +53496,17 @@
         "operationId": "getTrashItems",
         "parameters": [
           {
+            "name": "goingWithinDays",
+            "required": false,
+            "in": "query",
+            "description": "Only items removed for good within this many days (FL-519). With the trash off, every item goes tonight",
+            "schema": {
+              "minimum": 0,
+              "maximum": 36500,
+              "type": "integer"
+            }
+          },
+          {
             "name": "page",
             "required": false,
             "in": "query",
@@ -55993,6 +56004,52 @@
         ],
         "x-immich-permission": "userProfileImage.read",
         "x-immich-state": "Stable"
+      }
+    },
+    "/utilities/summary": {
+      "get": {
+        "description": "Counts for the Utilities directory: look-alike groups and photos with no place for your library, and for an administrator the missing, damaged and unused files across the server.",
+        "operationId": "getUtilitiesSummary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UtilitiesSummaryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get what each utility has waiting",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/view/folder": {
@@ -135661,8 +135718,9 @@
         "type": "object"
       },
       "TrashItemSort": {
-        "description": "Trash order: most recently deleted, largest original, or file name",
+        "description": "Trash order: going soonest, most recently deleted, largest original, or file name",
         "enum": [
+          "soonest",
           "recent",
           "size",
           "name"
@@ -135671,6 +135729,12 @@
       },
       "TrashItemsDto": {
         "properties": {
+          "goingWithinDays": {
+            "description": "Only items removed for good within this many days (FL-519). With the trash off, every item goes tonight",
+            "maximum": 36500,
+            "minimum": 0,
+            "type": "integer"
+          },
           "page": {
             "default": 1,
             "description": "Page number, from 1",
@@ -137548,6 +137612,59 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "UtilitiesSummaryResponseDto": {
+        "properties": {
+          "damagedFiles": {
+            "description": "Photos whose original file is damaged, across the server; null unless an administrator asks",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "duplicateGroups": {
+            "description": "Groups of look-alike photos waiting for a decision",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "missingFiles": {
+            "description": "Photos whose original file is missing, across the server; null unless an administrator asks",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "unusedBytes": {
+            "description": "Combined size of those unused originals, in bytes; null unless an administrator asks",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "unusedFiles": {
+            "description": "Originals no library uses any more; null unless an administrator asks",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "withoutPlace": {
+            "description": "Photos and videos on the timeline with no place",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "damagedFiles",
+          "duplicateGroups",
+          "missingFiles",
+          "unusedBytes",
+          "unusedFiles",
+          "withoutPlace"
+        ],
         "type": "object"
       },
       "UtilityActivityAction": {

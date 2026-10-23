@@ -17,6 +17,8 @@ export class TrashResponseDto extends createZodDto(TrashResponseSchema) {}
 /* -------------------------------------------------------------------------- */
 
 export enum TrashItemSort {
+  /** FL-519: the item removed for good first (deleted longest ago) leads. */
+  Soonest = 'soonest',
   Recent = 'recent',
   Size = 'size',
   Name = 'name',
@@ -24,7 +26,7 @@ export enum TrashItemSort {
 
 const TrashItemSortSchema = z
   .enum(TrashItemSort)
-  .describe('Trash order: most recently deleted, largest original, or file name')
+  .describe('Trash order: going soonest, most recently deleted, largest original, or file name')
   .meta({ id: 'TrashItemSort' });
 
 export const TrashReviewActionSchema = z
@@ -98,6 +100,15 @@ const TrashItemsSchema = z
     query: z.string().max(255).optional().describe('Words that must all appear in the file name'),
     type: AssetTypeSchema.optional(),
     sort: TrashItemSortSchema.optional(),
+    goingWithinDays: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(36_500)
+      .optional()
+      .describe(
+        'Only items removed for good within this many days (FL-519). With the trash off, every item goes tonight',
+      ),
     page: z.coerce.number().int().min(1).default(1).optional().describe('Page number, from 1'),
     size: z.coerce.number().int().min(1).max(1000).default(200).optional().describe('Items per page'),
   })
