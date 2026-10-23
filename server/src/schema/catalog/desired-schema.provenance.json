@@ -1,13 +1,13 @@
 {
-  "sourceCommit": "0f0aefb9c71f46acc92f4d8f40cffe98f4fb02a6",
+  "sourceCommit": "16cd2cf200f5c94777c2828eea0d614808d21783",
   "sourceHashes": {
-    "src/enum.ts": "843f59a77b6d3823631e4098eed9805123b4a2adb7cbfb62d387f3f360ace96c",
+    "src/enum.ts": "940a37b01135a6abdbc52e0a74796ce35d0c86c918872379a628df56b45bf074",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/queue/schema.ts": "6093d34aad84f8926892a0a0b17a7824c676470e1a25607a358936495a8651a2",
     "src/schema/enums.ts": "6f7ec2f2d59677c4806c85fc069bcd50aa93ed8b9b8cc3c3bc2ab632c9eb5347",
     "src/schema/frameleaf-feature-schema.ts": "dc478c5b3e85e0dbec52300f6c5b2a07f55a5175c96fca7a401c42748c1f081b",
     "src/schema/functions.ts": "7d91c62a7a5c67041b972c816f842be75f74d182f254a594f7d25e721d1d5acc",
-    "src/schema/index.ts": "6750ef1c66fc735d042c029f63c6b00af93d6aed73d4a74c616b2a7db5464d2a",
+    "src/schema/index.ts": "373e6f0c30deb5a8c5d44091b100a3a9e76b24257442b9b36c79bd516a943e7c",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
     "src/schema/tables/admin-audit-event.table.ts": "a7ffe5c6a193a88bd8f474a3436fcd24748f5d25b81b0ae35a5d60196809d8b8",
@@ -69,6 +69,7 @@
     "src/schema/tables/memory-export.table.ts": "cecab6b74e04f7da31b59644663ae13b89b391f5afca571f46bb9e92da37ec13",
     "src/schema/tables/memory.table.ts": "6c563388fd136727eec376f3df23e487f1eb6c543444affa68e90e5ed3b7711a",
     "src/schema/tables/ml-destination.table.ts": "36c14a543a97321261843201448ec030aeb5d8672c21128f150ccc98f4af6bd9",
+    "src/schema/tables/ml-processing-order.table.ts": "f6338c02fe7c998933822548b2173b48c3edb02ad7e518d94031e2530b80155e",
     "src/schema/tables/ml-workload-route-origin.table.ts": "f5f4b57506681ed8a8d150dfd9ca6df2a6261f83cd11a44645674c679973530f",
     "src/schema/tables/move.table.ts": "85b22f54d11e38e513e1ef55f179497a3130de07be3dd844bbd7b13274c26360",
     "src/schema/tables/natural-earth-countries.table.ts": "acc461f0604797521c9e84a6c39ec3b469a47e91a0e6b1a155610c531264046b",
@@ -140,6 +141,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "366f6ed8afac3b3f5ba33f04841dead991ba90630e2b1526b60f5936c488e32a",
-  "rawMetadataSha256": "fcfb0cf07cf7b06cfccf3ef051a62c7dbd8a997b7a151cff701c954dac80932f"
+  "dumpSha256": "8c6feb97ac4a076b16dc68436a8cfef8bb5c27d12c82cdd8e100a5888e077c72",
+  "rawMetadataSha256": "de51ad67709b161d2e133c6608438028659079ec12633144c9bbfd19a6c96d0a"
 }

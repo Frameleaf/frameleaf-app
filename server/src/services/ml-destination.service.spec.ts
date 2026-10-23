@@ -10,12 +10,15 @@ import {
   RestorationModelState,
 } from 'src/dtos/restoration-inference.dto.js';
 import {
+  DEFAULT_ML_PROCESSING_ORDER,
   FrameleafWorker,
   MediaOperationDestination,
   MediaOperationKind,
   MlAdmissionRefusal,
   MlDestinationHealth,
   MlDestinationKind,
+  MlProcessingSource,
+  MlProcessingSourceState,
   MlWorkload,
   RenderWorkerStatus,
   SystemMetadataKey,
@@ -62,6 +65,14 @@ describe(MlDestinationService.name, () => {
       { workload: MlWorkload.Face, destinationId: mlDestinationStub.local.id, origin: 'legacy', revisionId: null },
     ]);
     mocks.mlDestination.clearRoute.mockResolvedValue();
+    mocks.mlDestination.setCloudMlSettings.mockReturnValue();
+    mocks.mlDestination.getProcessingOrder.mockResolvedValue({
+      order: [...DEFAULT_ML_PROCESSING_ORDER],
+      overrides: {},
+    });
+    mocks.mlDestination.setProcessingOrder.mockResolvedValue();
+    mocks.mlDestination.restoreDefaultRoute.mockResolvedValue();
+    mocks.mlDestination.getDesktopCounts.mockResolvedValue({ approved: 0, ready: 0 });
     mocks.mlDestination.getCloudModelChoices.mockResolvedValue([]);
     mocks.mlDestination.create.mockImplementation((row) =>
       Promise.resolve({ ...mlDestinationStub.local, ...row, id: 'created' } as never),
@@ -75,7 +86,7 @@ describe(MlDestinationService.name, () => {
     });
     it('creates a local destination for each configured ML URL and routes unrouted library workloads to the first', async () => {
       mocks.mlDestination.getByUrl.mockResolvedValue(undefined);
-      mocks.mlDestination.getRoute.mockResolvedValue(undefined);
+      mocks.mlDestination.getStoredRoute.mockResolvedValue(undefined);
       (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(FrameleafWorker.Microservices);
 
       await sut.onConfigInit({
@@ -117,7 +128,7 @@ describe(MlDestinationService.name, () => {
 
     it('allows pet recognition on this server’s existing local destination as it routes it there (FL-58)', async () => {
       mocks.mlDestination.getByUrl.mockResolvedValue(mlDestinationStub.local);
-      mocks.mlDestination.getRoute.mockImplementation((workload) =>
+      mocks.mlDestination.getStoredRoute.mockImplementation((workload) =>
         Promise.resolve(
           workload === MlWorkload.PetRecognition
             ? undefined
@@ -148,7 +159,7 @@ describe(MlDestinationService.name, () => {
 
     it('keeps an explicit unrouted choice without expanding the local workload allow-list', async () => {
       mocks.mlDestination.getByUrl.mockResolvedValue(mlDestinationStub.local);
-      mocks.mlDestination.getRoute.mockImplementation((workload) =>
+      mocks.mlDestination.getStoredRoute.mockImplementation((workload) =>
         Promise.resolve(
           workload === MlWorkload.PetRecognition
             ? undefined
@@ -175,7 +186,7 @@ describe(MlDestinationService.name, () => {
 
     it('never creates a cloud destination or routes restoration and Studio work on its own', async () => {
       mocks.mlDestination.getByUrl.mockResolvedValue(mlDestinationStub.local);
-      mocks.mlDestination.getRoute.mockResolvedValue(undefined);
+      mocks.mlDestination.getStoredRoute.mockResolvedValue(undefined);
       (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(FrameleafWorker.Microservices);
 
       await sut.onConfigInit({
@@ -211,7 +222,7 @@ describe(MlDestinationService.name, () => {
       const second = { ...mlDestinationStub.local, id: 'ml-destination-second', url: 'http://second:3003' };
       mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, second, mlDestinationStub.lan]);
       mocks.mlDestination.getByUrl.mockResolvedValue(mlDestinationStub.local);
-      mocks.mlDestination.getRoute.mockResolvedValue({
+      mocks.mlDestination.getStoredRoute.mockResolvedValue({
         workload: MlWorkload.Face,
         destinationId: second.id,
         modelId: null,
@@ -237,7 +248,7 @@ describe(MlDestinationService.name, () => {
       const removed = { ...mlDestinationStub.local, enabled: false, lastProbeSummary: ML_URL_REMOVED_SUMMARY };
       mocks.mlDestination.getAll.mockResolvedValue([removed]);
       mocks.mlDestination.getByUrl.mockResolvedValue(removed);
-      mocks.mlDestination.getRoute.mockResolvedValue({
+      mocks.mlDestination.getStoredRoute.mockResolvedValue({
         workload: MlWorkload.Face,
         destinationId: removed.id,
         modelId: null,
@@ -252,7 +263,7 @@ describe(MlDestinationService.name, () => {
       const adminOff = { ...mlDestinationStub.local, enabled: false, lastProbeSummary: 'Serves face' };
       mocks.mlDestination.getAll.mockResolvedValue([adminOff]);
       mocks.mlDestination.getByUrl.mockResolvedValue(adminOff);
-      mocks.mlDestination.getRoute.mockResolvedValue({
+      mocks.mlDestination.getStoredRoute.mockResolvedValue({
         workload: MlWorkload.Face,
         destinationId: adminOff.id,
         modelId: null,
@@ -265,7 +276,7 @@ describe(MlDestinationService.name, () => {
 
     it('leaves existing routes alone', async () => {
       mocks.mlDestination.getByUrl.mockResolvedValue(mlDestinationStub.local);
-      mocks.mlDestination.getRoute.mockResolvedValue({
+      mocks.mlDestination.getStoredRoute.mockResolvedValue({
         workload: MlWorkload.Face,
         destinationId: 'ml-destination-lan',
         modelId: null,
@@ -639,8 +650,33 @@ describe(MlDestinationService.name, () => {
         mlDestinationStub.frameleafCloudConsented.id,
       );
 
+      // FL-456: one place, alone, is the workload's own processing order
+      expect(mocks.mlDestination.setProcessingOrder).toHaveBeenCalledWith(MlWorkload.Enrichment, [
+        MlProcessingSource.Cloud,
+      ]);
+
       await sut.setRoute(MlWorkload.Enrichment, { destinationId: null });
       expect(mocks.mlDestination.clearRoute).toHaveBeenCalledWith(MlWorkload.Enrichment);
+      // nowhere: an empty list keeps the workload off
+      expect(mocks.mlDestination.setProcessingOrder).toHaveBeenLastCalledWith(MlWorkload.Enrichment, []);
+    });
+
+    it('pins a computer added by address as "your computers" (FL-456)', async () => {
+      mocks.mlDestination.getById.mockResolvedValue({ ...mlDestinationStub.lan, workloads: [MlWorkload.Ocr] });
+      await sut.setRoute(MlWorkload.Ocr, { destinationId: mlDestinationStub.lan.id });
+      expect(mocks.mlDestination.setProcessingOrder).toHaveBeenCalledWith(MlWorkload.Ocr, [
+        MlProcessingSource.Desktops,
+      ]);
+    });
+
+    it('says which workloads follow the main processing order (FL-456)', async () => {
+      mocks.mlDestination.getProcessingOrder.mockResolvedValue({
+        order: [...DEFAULT_ML_PROCESSING_ORDER],
+        overrides: { [MlWorkload.Enrichment]: [MlProcessingSource.Cloud] },
+      });
+      const { routes } = await sut.getRoutes();
+      expect(routes.find((route) => route.workload === MlWorkload.Face)?.followsOrder).toBe(true);
+      expect(routes.find((route) => route.workload === MlWorkload.Enrichment)?.followsOrder).toBe(false);
     });
 
     it('moves a route without touching the chosen Frameleaf Cloud model (FL-186)', async () => {
@@ -663,6 +699,60 @@ describe(MlDestinationService.name, () => {
         mlDestinationStub.local.id,
       );
       expect(routes.find((route) => route.workload === MlWorkload.StudioAi)?.destinationId).toBeNull();
+    });
+  });
+
+  describe('processing order (FL-456)', () => {
+    it('reads the order, the workloads with their own list and what each place can do now', async () => {
+      mocks.mlDestination.getProcessingOrder.mockResolvedValue({
+        order: [MlProcessingSource.Local, MlProcessingSource.Desktops, MlProcessingSource.Cloud],
+        overrides: { [MlWorkload.Clip]: [MlProcessingSource.Cloud] },
+      });
+      mocks.mlDestination.getAll.mockResolvedValue([
+        { ...mlDestinationStub.local, lastProbeHealth: MlDestinationHealth.Healthy },
+        mlDestinationStub.frameleafCloud,
+      ]);
+      mocks.mlDestination.getDesktopCounts.mockResolvedValue({ approved: 2, ready: 1 });
+
+      const result = await sut.getProcessingOrder();
+
+      expect(result.order).toEqual([MlProcessingSource.Local, MlProcessingSource.Desktops, MlProcessingSource.Cloud]);
+      expect(result.workloads).toEqual([{ workload: MlWorkload.Clip, sources: [MlProcessingSource.Cloud] }]);
+      expect(result.sources).toEqual([
+        { source: MlProcessingSource.Local, state: MlProcessingSourceState.Ready, ready: 1, total: 1 },
+        { source: MlProcessingSource.Desktops, state: MlProcessingSourceState.Ready, ready: 1, total: 2 },
+        // Frameleaf Cloud processing is off in the default settings
+        { source: MlProcessingSource.Cloud, state: MlProcessingSourceState.TurnedOff, ready: 0, total: 1 },
+      ]);
+    });
+
+    it('saves the main order', async () => {
+      const order = [MlProcessingSource.Cloud, MlProcessingSource.Local, MlProcessingSource.Desktops];
+      await sut.setProcessingOrder({ order });
+      expect(mocks.mlDestination.setProcessingOrder).toHaveBeenCalledWith('default', order);
+    });
+
+    it('gives a workload its own list without touching the route this server made', async () => {
+      await sut.setWorkloadProcessingOrder(MlWorkload.Enrichment, { sources: [MlProcessingSource.Desktops] });
+      expect(mocks.mlDestination.setProcessingOrder).toHaveBeenCalledWith(MlWorkload.Enrichment, [
+        MlProcessingSource.Desktops,
+      ]);
+      expect(mocks.mlDestination.restoreDefaultRoute).not.toHaveBeenCalled();
+    });
+
+    it('lets a workload follow the main order again, restoring the route the desktop helpers use', async () => {
+      await sut.setWorkloadProcessingOrder(MlWorkload.Face, { sources: null });
+      expect(mocks.mlDestination.setProcessingOrder).toHaveBeenCalledWith(MlWorkload.Face, null);
+      expect(mocks.mlDestination.restoreDefaultRoute).toHaveBeenCalledWith(MlWorkload.Face);
+    });
+
+    it('keeps routing current with the Frameleaf Cloud processing settings', async () => {
+      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(FrameleafWorker.Microservices);
+      mocks.mlDestination.getByUrl.mockResolvedValue(mlDestinationStub.local);
+      mocks.mlDestination.getRouteStates.mockResolvedValue([]);
+      mocks.mlDestination.getStoredRoute.mockResolvedValue(undefined);
+      await sut.onConfigUpdate({ newConfig: defaults, oldConfig: defaults } as never);
+      expect(mocks.mlDestination.setCloudMlSettings).toHaveBeenCalledWith(defaults.frameleafCloud.cloudMl);
     });
   });
 

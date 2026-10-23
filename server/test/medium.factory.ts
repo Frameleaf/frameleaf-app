@@ -165,6 +165,8 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
         Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() }),
       );
       mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+      // FL-456: no processing-order plan unless a test gives one, so admission falls back to `getRoute` above
+      mlDestination.resolveRoute.mockResolvedValue([]);
       // Synthetic healthy destinations have no restored authority; fence tests override this mock.
       mlDestination.assertRecoveryAuthority.mockResolvedValue();
       mlDestination.getRoutes.mockResolvedValue([]);
@@ -729,6 +731,7 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
         ],
       });
       mock.collectFollowups.mockImplementation((action) => action());
+      mock.pinnedDestination.mockResolvedValue(null);
       return mock;
     }
 
