@@ -285,9 +285,14 @@ export interface IBaseJob {
   force?: boolean;
 }
 
-/** FL-413: `resume` carries on the run in progress; without it (the manual job) a fresh run starts. */
+/**
+ * FL-413: `resume` carries on the run in progress; without it (the manual job) a fresh run starts.
+ * FL-414: `importRunId` is an Immich import's derived run: its own run starts once, after activation.
+ */
 export interface IIdenticalFilesCheckJob {
   resume?: boolean;
+  importRunId?: string;
+  id?: string;
 }
 
 /** Retried independently after a duplicate decision commits; no original media is carried. */

@@ -619,6 +619,19 @@ export class Operations {
           const checkpoint = await this.checkpoint(operation, dump);
           return this.backups.snapshot(checkpoint, operation.id);
         });
+      // FL-414: after the import, Frameleaf stores identical files once and recovers orphaned files in
+      // place, so every media folder it keeps must be writable. Checked before anything is imported.
+      await this.step(operation, 'check-media-writable', async () => {
+        const targets = installation.mounts.filter((mount) => !mount.readOnly).map((mount) => mount.target);
+        const blocked = await this.docker.unwritableMedia(this.directory(), installation.project, targets);
+        if (blocked.length > 0)
+          throw new Refusal(
+            'media_folder_not_writable',
+            409,
+            `Frameleaf must be able to write to every media folder: after the import it stores identical files once and recovers orphaned files where they are. Make these folders writable for the Frameleaf server, then try again: ${blocked.join(', ')}.`,
+          );
+        return { writable: targets };
+      });
       await this.step(operation, 'configure-offline-import', async () => {
         await this.fencing.verify(source);
         await this.configureImport(operation, review, installation);

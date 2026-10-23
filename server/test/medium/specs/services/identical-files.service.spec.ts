@@ -465,6 +465,57 @@ describe(IdenticalFilesService.name, () => {
     expect(rows[0].count).toBe(1);
   });
 
+  it('upgrades an imported Immich library after activation, once, leaving the Immich source untouched (FL-414)', async () => {
+    const { photo, user, row, unused, sut } = setup();
+    const alice = await user('alice');
+    const bob = await user('bob');
+    // independent-copy mode: the Immich source media sits outside Frameleaf's media location
+    const source = join(media, '..', `${media.split('/').at(-1)}-immich-source`);
+    const bytes = Buffer.from('a photo both people uploaded to Immich');
+    await write(join(source, 'library', 'alice', 'a.jpg'), bytes);
+    const sourceBefore = await stat(join(source, 'library', 'alice', 'a.jpg'), { bigint: true });
+    // what the importer left: SHA-1 records, no storage records, an orphan in Bob's folder
+    const kept = await photo(
+      alice.id,
+      join(media, 'library', alice.storageLabel!, 'a.jpg'),
+      bytes,
+      new Date('2020-01-01'),
+    );
+    const twin = await photo(bob.id, join(media, 'library', bob.storageLabel!, 'b.jpg'), bytes, new Date('2021-01-01'));
+    await write(join(media, 'library', bob.storageLabel!, 'untracked.jpg'), Buffer.from('an Immich untracked file'));
+
+    try {
+      await expect(sut.handleCheck({ importRunId: 'import-run', id: 'identical-files' })).resolves.toBe(
+        JobStatus.Success,
+      );
+      // the import's item retried after its run finished changes nothing
+      await expect(sut.handleCheck({ importRunId: 'import-run', id: 'identical-files' })).resolves.toBe(
+        JobStatus.Skipped,
+      );
+
+      expect(await sut.getStatus()).toMatchObject({
+        status: 'completed',
+        trigger: 'immich-import',
+        counts: { scanned: 2, upgraded: 2, linked: 1, photosRecovered: 1 },
+      });
+      expect(await row(kept.id)).toMatchObject({ checksumAlgorithm: ChecksumAlgorithm.sha256File, libraryPath: null });
+      expect((await row(twin.id)).originalPath).toBe((await row(kept.id)).originalPath);
+      expect(await unused()).toHaveLength(1);
+      const registered = await sql<{ count: number }>`SELECT count(*)::int AS count FROM public.asset
+        WHERE "physicalOriginalFileId" IS NULL`.execute(database);
+      expect(registered.rows[0].count).toBe(0);
+      const sourceAfter = await stat(join(source, 'library', 'alice', 'a.jpg'), { bigint: true });
+      expect([sourceAfter.ino, sourceAfter.size, sourceAfter.mtimeNs]).toEqual([
+        sourceBefore.ino,
+        sourceBefore.size,
+        sourceBefore.mtimeNs,
+      ]);
+      expect(await readFile(join(source, 'library', 'alice', 'a.jpg'))).toEqual(bytes);
+    } finally {
+      await rm(source, { recursive: true, force: true });
+    }
+  });
+
   it('never touches an external library', async () => {
     const { ctx, photo, user, row, run } = setup();
     const gina = await user('gina');
