@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { link } from 'node:fs/promises';
-import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import type { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -155,6 +155,16 @@ export const restoredDumpName = (key: string) => {
 };
 
 /**
+ * A name next to `path` for an asset whose old path another asset holds now (a storage template reuses a
+ * freed path). The same asset always gets the same name, so a resumed restore plans the same target.
+ * ponytail: a second collision on this name is not checked; the occupant would be moved aside as usual.
+ */
+const besidePath = (path: string, assetId: string) => {
+  const ext = extname(path);
+  return `${path.slice(0, path.length - ext.length)}+${safeName(assetId, 'asset').slice(0, 8)}${ext}`;
+};
+
+/**
  * The files a restore writes, in a fixed order (`fileKey`), from the manifest and the scope. In-place
  * targets outside the media folder (a manifest from another layout) go to the restore folder instead;
  * an asset's original goes back to where the library expects it now, which a storage template may have
@@ -167,6 +177,8 @@ export const restorePlan = (options: {
   operationId: string;
   mediaLocation: string;
   currentOriginals: ReadonlyMap<string, string>;
+  /** Per asset made again from this backup, its backed-up paths another asset holds now. */
+  takenPaths?: ReadonlyMap<string, ReadonlySet<string>>;
 }): { files: CloudBackupRestoreFile[]; destination: string | null } => {
   const { manifest, scope, operationId, mediaLocation } = options;
   if (scope === 'database') {
@@ -188,7 +200,8 @@ export const restorePlan = (options: {
       let target = inFolder;
       if (inPlace) {
         const current = file.role === 'original' ? options.currentOriginals.get(assetId) : undefined;
-        const wanted = current ?? file.path;
+        const wanted =
+          current ?? (options.takenPaths?.get(assetId)?.has(file.path) ? besidePath(file.path, assetId) : file.path);
         target = isInside(mediaLocation, wanted) ? wanted : inFolder;
       }
       files.push({
