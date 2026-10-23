@@ -559,11 +559,16 @@ export class JobRepository {
       QueueName.Ocr,
       QueueName.PetRecognition,
     ].includes(queue);
+    const options = this.getNamedJobOptions(item) ?? undefined;
+    const subject = String(data.id ?? data.assetId ?? createHash('sha256').update(JSON.stringify(data)).digest('hex'));
+    // A job with its own identity (one per workflow execution, one per album recipient) is its own run item:
+    // keyed by subject alone, the second one would hit job_run_stage and be dropped.
+    const identity = options?.deduplication?.id ?? options?.jobId;
     return {
       name: item.name,
       data,
       queue,
-      options: this.getNamedJobOptions(item) ?? undefined,
+      options,
       safeToRetry:
         !data.operationId &&
         !(
@@ -577,7 +582,8 @@ export class JobRepository {
       deadlineMs: isMl ? QUEUE_TIMING.mlDeadline : QUEUE_TIMING.opaqueDeadline,
       runId,
       itemKey: runId
-        ? String(data.id ?? data.assetId ?? createHash('sha256').update(JSON.stringify(data)).digest('hex')) +
+        ? subject +
+          (identity && identity !== subject ? `/${identity}` : '') +
           (item.name === JobName.FacialRecognition && data.deferred ? '/deferred' : '')
         : undefined,
       rootItemKey: context?.claim.rootItemKey ?? null,
@@ -858,7 +864,9 @@ export class JobRepository {
   }
 
   async removeJob(name: JobName, jobID: string): Promise<void> {
-    await sql`update job set state = 'cancelled', data = '{}'::jsonb, "finishedAt" = now()
+    // The removed job gives up its run stage, so the replacement queued in the same run takes over the run item.
+    await sql`update job set state = 'cancelled', data = '{}'::jsonb, "finishedAt" = now(),
+        "runId" = null, "itemKey" = null, "rootItemKey" = null
       where queue = ${this.getQueueName(name)} and "externalId" = ${jobID} and state in ('pending','waiting')`.execute(
       this.store.db,
     );

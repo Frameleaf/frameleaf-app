@@ -159,6 +159,30 @@ const setup = () => {
 };
 
 describe(IdenticalFilesService.name, () => {
+  it('counts extra copies on the drive from what was recorded, without reading a file (FL-520)', async () => {
+    const { photo, user, sut } = setup();
+    const alice = await user('alice');
+    const bob = await user('bob');
+    const bytes = Buffer.from('the same photo twice');
+    const repository = new IdenticalFilesRepository(database);
+    for (const [owner, name] of [
+      [alice, 'one.jpg'],
+      [bob, 'two.jpg'],
+    ] as const) {
+      const path = join(media, 'library', owner.storageLabel!, name);
+      const asset = await photo(owner.id, path, bytes, old);
+      await repository.recordDigests({
+        assetId: asset.id,
+        sha1: sha1(bytes),
+        sha256: sha256(bytes),
+        sizeInBytes: bytes.length,
+        path,
+      });
+    }
+
+    await expect(sut.getExtraCopies()).resolves.toEqual({ files: 1, contents: 1, bytes: bytes.length });
+  });
+
   it('reads every original, upgrades SHA-1 records and registers their files', async () => {
     const { photo, user, row, run, sut } = setup();
     const alice = await user('alice');
