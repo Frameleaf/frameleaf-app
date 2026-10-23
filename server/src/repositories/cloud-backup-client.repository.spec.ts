@@ -208,6 +208,16 @@ describe('client-encrypted storage and independent recovery', () => {
     expect((await readdir(directory)).some((name) => name.includes('.part-'))).toBe(false);
   });
 
+  it('reports a client object truncated to an impossible encrypted length as damaged', async () => {
+    const bytes = Buffer.from('object later truncated at the provider');
+    const key = keyFor(bytes);
+    await store.put(connection, key, bytes, legacy);
+    const object = s3.current.get(key)!;
+    object.bytes = object.bytes.subarray(0, 10);
+
+    await expect(store.head(connection, key, legacy)).rejects.toMatchObject({ code: 'ChecksumMismatch' });
+  });
+
   it('resumes an interrupted multipart upload in another worker with the same ciphertext and completed parts', async () => {
     const bytes = randomBytes(CLOUD_BACKUP_PART_BYTES + 91);
     const key = keyFor(bytes);

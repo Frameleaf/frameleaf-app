@@ -435,11 +435,16 @@ export class CloudBackupStoreRepository {
       return null;
     }
     const stored = Number(response.headers.get('content-length') ?? 0);
-    return {
-      key,
-      size: clientBackupContext(connection.bucket, key, connection.vaultId) ? clientBackupPlainSize(stored) : stored,
-      etag: response.headers.get('etag'),
-    };
+    let size = stored;
+    if (clientBackupContext(connection.bucket, key, connection.vaultId)) {
+      try {
+        size = clientBackupPlainSize(stored);
+      } catch {
+        // no sealed object has this length: it was truncated or replaced at the provider
+        throw new CloudBackupStoreError('The backup object is damaged.', null, 'ChecksumMismatch');
+      }
+    }
+    return { key, size, etag: response.headers.get('etag') };
   }
 
   /**
