@@ -53,7 +53,7 @@ import { IdenticalFilesController } from 'src/controllers/identical-files.contro
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
 import { ItemShareController } from 'src/controllers/item-share.controller.js';
 import { JobController } from 'src/controllers/job.controller.js';
-import { LibraryController } from 'src/controllers/library.controller.js';
+import { LibraryAdminController, LibraryController } from 'src/controllers/library.controller.js';
 import { LicenseAdminController, LicenseController } from 'src/controllers/license-admin.controller.js';
 import { LivePhotoController } from 'src/controllers/live-photo.controller.js';
 import { MailConnectionController } from 'src/controllers/mail-connection.controller.js';
@@ -107,7 +107,7 @@ import { SystemMetadataController } from 'src/controllers/system-metadata.contro
 import { TagController } from 'src/controllers/tag.controller.js';
 import { TakeoutController } from 'src/controllers/takeout.controller.js';
 import { TimelineController } from 'src/controllers/timeline.controller.js';
-import { TrashController } from 'src/controllers/trash.controller.js';
+import { TrashAdminController, TrashController } from 'src/controllers/trash.controller.js';
 import { UserAdminController } from 'src/controllers/user-admin.controller.js';
 import { UserController } from 'src/controllers/user.controller.js';
 import { VideoStreamController } from 'src/controllers/video-stream.controller.js';
@@ -177,6 +177,7 @@ export const controllers = [
   IntegrityAdminController,
   JobController,
   LibraryController,
+  LibraryAdminController,
   LivePhotoController,
   MaintenanceController,
   MapController,
@@ -228,6 +229,7 @@ export const controllers = [
   TakeoutController,
   TimelineController,
   TrashController,
+  TrashAdminController,
   UserAdminController,
   UserController,
   VideoStreamController,

@@ -209,3 +209,28 @@ export function mapLibrary(entity: Library, scan: LibraryScanResponseDto | null 
     scan,
   };
 }
+
+/** FL-365: browse the folders this server can see, to choose one to add. */
+const LibraryFolderBrowseSchema = z
+  .object({
+    path: z.string().max(4096).optional().describe('An absolute folder; defaults to the top of the disk'),
+  })
+  .meta({ id: 'LibraryFolderBrowseDto' });
+
+const LibraryFolderBrowseResponseSchema = z
+  .object({
+    path: z.string().describe('The folder that was listed'),
+    parent: z.string().nullable().describe('The folder above it; null at the top'),
+    folders: z
+      .array(z.object({ name: z.string(), path: z.string() }).meta({ id: 'LibraryFolderEntryDto' }))
+      .describe('Its folders, sorted by name; hidden, system and NAS folders are left out'),
+    truncated: z.boolean().describe('Whether there were more folders than listed'),
+    readable: z.boolean().describe('Whether the folder could be read'),
+    defaultExclusionPatterns: z
+      .array(z.string())
+      .describe('What a new folder skips by default: NAS thumbnails, recycle bins, snapshots and the like'),
+  })
+  .meta({ id: 'LibraryFolderBrowseResponseDto' });
+
+export class LibraryFolderBrowseDto extends createZodDto(LibraryFolderBrowseSchema) {}
+export class LibraryFolderBrowseResponseDto extends createZodDto(LibraryFolderBrowseResponseSchema) {}

@@ -2204,6 +2204,16 @@ export class AssetRepository {
       .executeTakeFirst();
     return asset?.id;
   }
+  /** FL-365: the uploaded originals a re-file into the folder layout checks (not in an added folder, not deleted). */
+  async countUploadedOriginals(): Promise<number> {
+    const row = await this.db
+      .selectFrom('asset')
+      .select((eb) => eb.fn.countAll<string>().as('count'))
+      .where('libraryId', 'is', null)
+      .where('deletedAt', 'is', null)
+      .executeTakeFirstOrThrow();
+    return Number(row.count);
+  }
   findLivePhotoMatch(options: LivePhotoSearchOptions) {
     const { ownerId, otherAssetId, livePhotoCID, type } = options;
     return this.db

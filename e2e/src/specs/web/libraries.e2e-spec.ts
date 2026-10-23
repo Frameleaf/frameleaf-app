@@ -41,7 +41,7 @@ test.describe('Libraries (FL-78)', () => {
     await page.goto('/admin/library-management');
     await page.waitForURL('**/user-settings?area=libraries');
     await expect(page.getByRole('heading', { name: 'Libraries', level: 1 })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Add external library', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add a folder of photos', exact: true })).toBeVisible();
   });
 
   // FL-78: add a library with an import folder, scan it, and see the scan complete with what it found.
@@ -50,7 +50,7 @@ test.describe('Libraries (FL-78)', () => {
     utils.createImageFile(`${testAssetDir}/temp/fl78-web-add/asset.png`);
 
     await page.goto(librariesArea);
-    await page.getByRole('button', { name: 'Add external library', exact: true }).click();
+    await page.getByRole('button', { name: 'Add a folder of photos', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Add external library' });
     await dialog.getByLabel('Library name').fill(name);
     await dialog.getByRole('button', { name: 'Add folder', exact: true }).click();
@@ -64,7 +64,7 @@ test.describe('Libraries (FL-78)', () => {
     const message = detail.getByTestId('library-scan-message');
     await expect(message).toHaveText('Check folders for new, changed and missing items.');
 
-    await detail.getByRole('button', { name: 'Scan library', exact: true }).click();
+    await detail.getByRole('button', { name: 'Check now', exact: true }).click();
     await expect(page.getByText('Library scan queued', { exact: true })).toBeVisible();
 
     // the page polls while the scan moves, and settles on the completed summary
@@ -87,7 +87,7 @@ test.describe('Libraries (FL-78)', () => {
 
     await page.goto(viewLibrary(library.id));
     const detail = libraryDetail(page, name);
-    await detail.getByRole('button', { name: 'Scan library', exact: true }).click();
+    await detail.getByRole('button', { name: 'Check now', exact: true }).click();
 
     // the retrying and the final failure both open with this sentence and carry the server's error
     const failure = /^A folder could not be read, so no items were marked missing\./;

@@ -61,7 +61,7 @@ export class AttentionService {
     const config = await this.readConfig();
     const [backup, storage, work, version] = await Promise.all([
       this.check('backup', () => this.backup(config, now)),
-      this.check('storage', () => this.storage()),
+      this.check('storage', () => this.storage(config)),
       this.check('work', () => this.work()),
       this.check('version', () => this.version(config)),
     ]);
@@ -82,8 +82,11 @@ export class AttentionService {
     }
   }
 
-  private async storage(): Promise<SignalResult> {
-    return storageSignal(await this.storageRepository.checkDiskUsage(StorageCore.getBaseFolder(StorageFolder.Library)));
+  private async storage(config: SystemConfig): Promise<SignalResult> {
+    return storageSignal(
+      await this.storageRepository.checkDiskUsage(StorageCore.getBaseFolder(StorageFolder.Library)),
+      config.storageWarning.percent,
+    );
   }
 
   /**

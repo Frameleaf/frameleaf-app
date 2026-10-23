@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { DateTime } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { DuplicateUndoClaim } from 'src/repositories/duplicate-undo-authority.js';
 import type { DuplicateUndoEffects } from 'src/repositories/duplicate-undo-completion.js';
@@ -7,6 +8,8 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import {
   TrashApplyDto,
+  TrashEveryoneQueryDto,
+  TrashEveryoneResponseDto,
   TrashItemSort,
   TrashItemsDto,
   TrashItemsResponseDto,
@@ -54,6 +57,33 @@ export class TrashService extends BaseService {
 
   async getSummary(auth: AuthDto): Promise<TrashSummaryResponseDto> {
     return this.trashRepository.getSummary(auth.user.id, this.scopeOf(auth));
+  }
+
+  /**
+   * FL-365: Deleted items, for an administrator: what waits in every account's trash and how much a
+   * keep time of `days` (default the saved one) would remove at the next overnight tidy-up.
+   */
+  async getEveryone(dto: TrashEveryoneQueryDto): Promise<TrashEveryoneResponseDto> {
+    const config = await this.getConfig({ withCache: false });
+    const days = dto.days ?? (config.trash.enabled ? config.trash.days : 0);
+    const before = DateTime.now().minus({ days }).toJSDate();
+    const rows = await this.trashRepository.getEveryone(before);
+    const accounts = rows.map((row) => ({
+      userId: row.userId,
+      name: row.name,
+      count: Number(row.count),
+      bytes: toByteCount(row.bytes),
+      oldestDeletedAt: row.oldestDeletedAt ? new Date(row.oldestDeletedAt).toISOString() : null,
+    }));
+    return {
+      count: accounts.reduce((sum, account) => sum + account.count, 0),
+      bytes: accounts.reduce((sum, account) => sum + account.bytes, 0),
+      days,
+      removedTonight: rows.reduce((sum, row) => sum + Number(row.older), 0),
+      trashEnabled: config.trash.enabled,
+      tidyUpOn: config.nightlyTasks.databaseCleanup,
+      accounts,
+    };
   }
 
   async getItems(auth: AuthDto, dto: TrashItemsDto): Promise<TrashItemsResponseDto> {

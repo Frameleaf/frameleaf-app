@@ -91,7 +91,7 @@ test('ordinary account has no server-wide backup summary or backup requests', as
     return route.fulfill({ status: 503, json: {} });
   });
   await page.goto('/user-settings?area=overview');
-  await expect(page.getByRole('heading', { name: 'Import & protection', exact: true })).toBeVisible({
+  await expect(page.getByRole('heading', { name: 'Import & export', exact: true })).toBeVisible({
     timeout: 30_000,
   });
   await expect(

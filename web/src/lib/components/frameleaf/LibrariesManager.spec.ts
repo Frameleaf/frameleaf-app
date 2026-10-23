@@ -132,7 +132,7 @@ describe('LibrariesManager (FL-78)', () => {
     sdkMock.scanLibrary.mockResolvedValue(undefined as never);
     setup(null, { selectedKey: null });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Scan 1 library' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Check 1 folder now' }));
 
     expect(sdkMock.scanLibrary).toHaveBeenCalledWith({ id: 'lib-1' });
   });

@@ -345,6 +345,9 @@ export const adminConfigDefaults = {
     missingThumbnails: true,
     clusterNewFaces: true,
   },
+  storageWarning: {
+    percent: 90,
+  },
   trash: {
     enabled: true,
     days: 30,

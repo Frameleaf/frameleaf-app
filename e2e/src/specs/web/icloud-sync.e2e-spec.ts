@@ -146,7 +146,7 @@ const openICloud = async (page: Page) => {
 const dialog = (page: Page) => page.getByRole('dialog', { name: 'iCloud connection' });
 const badge = (page: Page) => page.locator('.ic-connection .ic-badge');
 const runPanel = (page: Page) => page.getByRole('region', { name: 'Sync progress' });
-const results = (page: Page) => page.getByRole('region', { name: 'Reconciliation' });
+const results = (page: Page) => page.getByRole('region', { name: 'Results' });
 const notice = (page: Page) => page.locator('.ic-message[role="status"]');
 const thumbnails = (page: Page) => page.locator('[data-asset-id]');
 /** A run control in the page toolbar (not the dialog's own buttons). */
@@ -326,7 +326,7 @@ test.describe('iCloud Photos sync with a fake bridge (FL-68, FL-144)', () => {
 
     // Include hidden photos: the consent dialog, then the PIN, because they arrive Locked.
     await page.getByLabel('Hidden photos').check();
-    await page.getByRole('button', { name: 'Save sync preferences' }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
     await page.getByRole('button', { name: 'Allow and save' }).click();
     await page.waitForURL(/\/auth\/pin-prompt/);
     await page.locator('.pin-input').first().focus();
@@ -337,7 +337,7 @@ test.describe('iCloud Photos sync with a fake bridge (FL-68, FL-144)', () => {
     // Back on the connection, the preferences come back and are saved.
     await expect(notice(page)).toContainText('Unlocked. Your sync preferences are back; save them to finish.');
     await expect(page.getByLabel('Hidden photos')).toBeChecked();
-    await page.getByRole('button', { name: 'Save sync preferences' }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(notice(page)).toContainText('Connection updated.');
     const saved = await onlyConnection(user);
     expect(saved.config.includeHidden).toBe(true);

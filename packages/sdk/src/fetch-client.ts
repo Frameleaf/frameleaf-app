@@ -1917,6 +1917,10 @@ export type AdminConfigStorageTemplateDto = {
     /** Template */
     template: string;
 };
+export type AdminConfigStorageWarningDto = {
+    /** Warn when the drive the library is on is this full, in per cent; 0 turns the warning off */
+    percent: number;
+};
 export type AdminConfigTemplateEmailsDto = {
     /** Album invite template */
     albumInviteTemplate: string;
@@ -1974,6 +1978,7 @@ export type AdminConfigDto = {
     server: AdminConfigServerDto;
     smartAlbums?: AdminConfigSmartAlbumsDto;
     storageTemplate: AdminConfigStorageTemplateDto;
+    storageWarning?: AdminConfigStorageWarningDto;
     templates: AdminConfigTemplatesDto;
     theme: AdminConfigThemeDto;
     trash: AdminConfigTrashDto;
@@ -2326,6 +2331,24 @@ export type IntegrityReportSummaryResponseDto = {
     checksum_mismatch: number;
     missing_file: number;
     untracked_file: number;
+};
+export type LibraryFolderEntryDto = {
+    name: string;
+    path: string;
+};
+export type LibraryFolderBrowseResponseDto = {
+    /** What a new folder skips by default: NAS thumbnails, recycle bins, snapshots and the like */
+    defaultExclusionPatterns: string[];
+    /** Its folders, sorted by name; hidden, system and NAS folders are left out */
+    folders: LibraryFolderEntryDto[];
+    /** The folder above it; null at the top */
+    parent: string | null;
+    /** The folder that was listed */
+    path: string;
+    /** Whether the folder could be read */
+    readable: boolean;
+    /** Whether there were more folders than listed */
+    truncated: boolean;
 };
 export type LibraryMovePauseStatusDto = {
     /** Background jobs still running */
@@ -3079,6 +3102,8 @@ export type QueueStatisticsDto = {
     waiting: number;
 };
 export type StorageMigrationStatusResponseDto = {
+    /** Uploaded originals a re-file checks; those already in place are not moved (FL-365) */
+    candidates: number;
     /** Whether the storage template is turned on; a run moves nothing while it is off */
     enabled: boolean;
     /** Whether durable work remains, including delayed, paused and unadmitted work */
@@ -3090,6 +3115,34 @@ export type StorageMigrationStatusResponseDto = {
     statistics: QueueStatisticsDto;
     /** The storage template originals are moved to */
     template: string;
+};
+export type TrashEveryoneAccountDto = {
+    /** Combined size of their originals, in bytes */
+    bytes: number;
+    /** Items waiting in this account’s trash */
+    count: number;
+    /** Account name */
+    name: string;
+    /** When the item that has waited longest was deleted */
+    oldestDeletedAt: string | null;
+    /** Account ID */
+    userId: string;
+};
+export type TrashEveryoneResponseDto = {
+    /** Each account with something waiting, most first */
+    accounts: TrashEveryoneAccountDto[];
+    /** Combined size of their originals, in bytes */
+    bytes: number;
+    /** Items waiting in every account’s trash */
+    count: number;
+    /** The keep time removedTonight was counted for */
+    days: number;
+    /** Items already older than days, removed for good the next time the overnight tidy-up runs */
+    removedTonight: number;
+    /** Whether the overnight tidy-up empties the trash; while it is off nothing is removed */
+    tidyUpOn: boolean;
+    /** Whether the trash is on */
+    trashEnabled: boolean;
 };
 export type UserLicense = {
     /** Activation date */
@@ -16882,6 +16935,10 @@ export type LargeAssetSearchDto = {
     /** Include EXIF data in response */
     withExif?: boolean;
 };
+export type LibraryFolderBrowseDto = {
+    /** An absolute folder; defaults to the top of the disk */
+    path?: string;
+};
 export type LibrarySearchDto = {
     /** Include libraries whose removal is still in progress */
     withDeleted?: boolean;
@@ -18040,6 +18097,10 @@ export type TimelineOrderedDto = {
     withCoordinates?: boolean;
     /** Include stacked assets in the response. When true, only primary assets from stacks are returned. */
     withStacked?: boolean;
+};
+export type TrashEveryoneQueryDto = {
+    /** A proposed keep time in days; removedTonight counts what it would remove. Defaults to the saved value */
+    days?: number;
 };
 export type TrashItemsDto = {
     /** Page number, from 1 */
@@ -19615,6 +19676,21 @@ export function getIntegrityReportSummary(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Browse folders on the server
+ */
+export function browseLibraryFolders({ path }: {
+    path?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryFolderBrowseResponseDto;
+    }>(`/admin/libraries/folders${QS.query(QS.explode({
+        path
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Library move pause status
  */
 export function getLibraryMovePause(opts?: Oazapfts.RequestOpts) {
@@ -20094,6 +20170,21 @@ export function runStorageMigrationInBackground(opts?: Oazapfts.RequestOpts) {
     }>("/admin/storage-migration", {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * Get what waits in every trash
+ */
+export function getTrashEveryone({ days }: {
+    days?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TrashEveryoneResponseDto;
+    }>(`/admin/trash/everyone${QS.query(QS.explode({
+        days
+    }))}`, {
+        ...opts
     }));
 }
 /**

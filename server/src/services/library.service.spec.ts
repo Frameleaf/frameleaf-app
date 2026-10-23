@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { Stats } from 'node:fs';
+import { Dirent, Stats } from 'node:fs';
 import { vitest } from 'vitest';
 import type { LibraryRemovalCounts } from 'src/repositories/library.repository.js';
 import type { WatchEvents } from 'src/repositories/storage.repository.js';
@@ -375,6 +375,41 @@ describe(LibraryService.name, () => {
       });
 
       expect(mocks.library.getStatistics).toHaveBeenCalledWith(library.id);
+    });
+  });
+
+  describe('browseFolders (FL-365)', () => {
+    const dirent = (name: string, directory = true) => ({ name, isDirectory: () => directory }) as unknown as Dirent;
+
+    it('lists the folders under a path, leaving out hidden, system and NAS folders', async () => {
+      mocks.storage.readdirWithTypes.mockResolvedValue([
+        dirent('Photos'),
+        dirent('@eaDir'),
+        dirent('.cache'),
+        dirent('#recycle'),
+        dirent('notes.txt', false),
+        dirent('Archive'),
+      ]);
+      await expect(sut.browseFolders({ path: '/volume1/' })).resolves.toEqual({
+        path: '/volume1',
+        parent: '/',
+        folders: [
+          { name: 'Archive', path: '/volume1/Archive' },
+          { name: 'Photos', path: '/volume1/Photos' },
+        ],
+        truncated: false,
+        readable: true,
+        defaultExclusionPatterns: expect.arrayContaining(['**/@eaDir/**', '**/#recycle/**']),
+      });
+    });
+
+    it('starts at the top, says when a folder cannot be read, and refuses a relative path', async () => {
+      mocks.storage.readdirWithTypes.mockRejectedValue(new Error('EACCES'));
+      await expect(sut.browseFolders({})).resolves.toEqual(
+        expect.objectContaining({ path: '/', parent: null, readable: false, folders: [] }),
+      );
+      await expect(sut.browseFolders({ path: '/photos/../etc' })).rejects.toThrow();
+      await expect(sut.browseFolders({ path: 'photos' })).rejects.toThrow();
     });
   });
 

@@ -54,6 +54,7 @@ describe(StorageTemplateService.name, () => {
       mocks.job.isPaused.mockResolvedValue(false);
       mocks.job.hasUnfinishedWork.mockResolvedValue(true);
       mocks.job.getJobCounts.mockResolvedValue({ ...counts, active: 1 });
+      mocks.asset.countUploadedOriginals.mockResolvedValue(31_920);
 
       await expect(sut.getMigrationStatus()).resolves.toEqual({
         enabled: true,
@@ -62,6 +63,8 @@ describe(StorageTemplateService.name, () => {
         isPaused: false,
         hasUnfinishedWork: true,
         statistics: { ...counts, active: 1 },
+        // FL-365: what a re-file checks
+        candidates: 31_920,
       });
       expect(mocks.job.getJobCounts).toHaveBeenCalledWith(QueueName.StorageTemplateMigration);
     });

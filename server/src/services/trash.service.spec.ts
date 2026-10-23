@@ -55,6 +55,37 @@ describe(TrashService.name, () => {
       Promise.resolve(verify(rows) ? rows.map((row) => row.id) : null),
     );
 
+  describe('getEveryone (FL-365)', () => {
+    it('adds up every account and counts what a shorter keep time removes tonight', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ trash: { enabled: true, days: 30 } });
+      mocks.trash.getEveryone.mockResolvedValue([
+        { userId: 'user-1', name: 'Taylor', count: '8', bytes: '62000000', oldestDeletedAt: trashedAt, older: '3' },
+        { userId: 'user-2', name: 'Morgan', count: '2', bytes: '1000', oldestDeletedAt: trashedAt, older: '1' },
+      ]);
+
+      await expect(sut.getEveryone({ days: 7 })).resolves.toEqual({
+        count: 10,
+        bytes: 62_001_000,
+        days: 7,
+        removedTonight: 4,
+        trashEnabled: true,
+        tidyUpOn: true,
+        accounts: [
+          expect.objectContaining({ userId: 'user-1', count: 8, oldestDeletedAt: trashedAt.toISOString() }),
+          expect.objectContaining({ userId: 'user-2', count: 2, bytes: 1000 }),
+        ],
+      });
+      const [before] = mocks.trash.getEveryone.mock.calls[0];
+      expect(Date.now() - before.getTime()).toBeGreaterThan(6.9 * 86_400_000);
+    });
+
+    it('uses the saved keep time when none is proposed', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ trash: { enabled: true, days: 30 } });
+      mocks.trash.getEveryone.mockResolvedValue([]);
+      await expect(sut.getEveryone({})).resolves.toEqual(expect.objectContaining({ days: 30, count: 0 }));
+    });
+  });
+
   describe('restoreAssets', () => {
     it('should require asset restore access for all ids', async () => {
       await expect(
