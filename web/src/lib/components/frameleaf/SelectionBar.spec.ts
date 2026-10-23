@@ -2,6 +2,7 @@ import { SharedLinkType } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
 import { handleCreateSharedLink } from '$lib/services/shared-link.service';
 import en from '../../../../../i18n/en.json';
 import SelectionBar from './SelectionBar.svelte';
@@ -164,6 +165,34 @@ describe('actions started from the library keys and tiles (FL-33, T-5)', () => {
     await fireEvent.click(within(again).getByRole('button', { name: en.frameleaf_bulk_delete_permanently }));
     expect(onAction).toHaveBeenCalledWith('delete-permanently', undefined);
     expect(onDialogSettled).toHaveBeenLastCalledWith('delete-permanently', true);
+  });
+
+  it('asks before Delete when the server has no trash, from the key too (FL-529)', async () => {
+    addMessages('dev', en);
+    sdkMock.getServerFeatures.mockResolvedValue({ trash: false } as Awaited<
+      ReturnType<typeof sdkMock.getServerFeatures>
+    >);
+    await featureFlagsManager.init();
+    const onAction = vi.fn();
+    render(SelectionBar, {
+      props: {
+        count: 1,
+        assets: [{ id: 'a', ownerId: 'me' }],
+        context: { currentUserId: 'me' },
+        onAction,
+        onClear: vi.fn(),
+      },
+    });
+
+    await fireEvent.keyDown(window, { key: 'Delete' });
+    const dialog = await screen.findByRole('dialog', { name: en.frameleaf_bulk_delete_permanently });
+    expect(onAction).not.toHaveBeenCalled();
+    await fireEvent.click(within(dialog).getByRole('button', { name: en.frameleaf_bulk_delete_permanently }));
+    expect(onAction).toHaveBeenCalledWith('delete-permanently', undefined);
+    sdkMock.getServerFeatures.mockResolvedValue({ trash: true } as Awaited<
+      ReturnType<typeof sdkMock.getServerFeatures>
+    >);
+    await featureFlagsManager.init();
   });
 
   it('never runs an action the bar does not offer (favorite on the Locked page)', () => {
