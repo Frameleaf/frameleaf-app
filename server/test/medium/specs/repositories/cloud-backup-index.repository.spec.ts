@@ -280,6 +280,35 @@ describe(CloudBackupIndexRepository.name, () => {
     );
   });
 
+  it('finds and clears the transfer receipts of ended operations, and names the ones still going', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const transfer = { kind: 'download', partial: '/data/.frameleaf-part-x' };
+    const insert = async (status: string) => {
+      const { rows } = await sql<{ id: string }>`INSERT INTO media_operation
+        ("ownerId", kind, destination, label, snapshot, settings, status, result)
+        VALUES (${user.id}::uuid, 'cloud_restore', 'local', 'Restore', '{}'::jsonb, '{}'::jsonb, ${status},
+          ${{ task: 'restore', backupTransfer: transfer }}::jsonb) RETURNING id`.execute(defaultDatabase);
+      return rows[0].id;
+    };
+    const ended = await insert('cancelled');
+    const queued = await insert('queued');
+
+    const found = (await sut.getEndedTransfers()).filter(({ id }) => id === ended || id === queued);
+    expect(found).toEqual([{ id: ended, transfer }]);
+    await expect(sut.getUnfinishedOperationIds([ended, queued, randomUUID()])).resolves.toEqual(new Set([queued]));
+
+    await sut.clearEndedTransfer(ended);
+    await sut.clearEndedTransfer(queued);
+    expect((await sut.getEndedTransfers()).some(({ id }) => id === ended)).toBe(false);
+    const { rows } = await sql<{ id: string; result: Record<string, unknown> }>`SELECT id, result FROM media_operation
+      WHERE id = any(${[ended, queued]}::uuid[])`.execute(defaultDatabase);
+    expect(Object.fromEntries(rows.map(({ id, result }) => [id, result]))).toEqual({
+      [ended]: { task: 'restore' },
+      [queued]: { task: 'restore', backupTransfer: transfer },
+    });
+  });
+
   it('names the paths another asset holds now, as its original or one of its files', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();

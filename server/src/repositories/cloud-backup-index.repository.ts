@@ -660,6 +660,41 @@ export class CloudBackupIndexRepository {
       ]),
     );
   }
+  /** Cloud backup and restore operations that ended still holding a transfer receipt (FL-525). */
+  @GenerateSql()
+  async getEndedTransfers(): Promise<Array<{ id: string; transfer: unknown }>> {
+    return this.db
+      .selectFrom('media_operation')
+      .select(['id', sql<unknown>`result -> 'backupTransfer'`.as('transfer')])
+      .where('kind', 'in', [MediaOperationKind.CloudBackup, MediaOperationKind.CloudRestore])
+      .where('status', 'in', FINISHED_OPERATIONS)
+      .where(sql<boolean>`jsonb_typeof(result -> 'backupTransfer') = 'object'`)
+      .execute();
+  }
+  /** Drop an ended operation's transfer receipt once its partial file is gone. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async clearEndedTransfer(id: string): Promise<void> {
+    await this.db
+      .updateTable('media_operation')
+      .set({ result: sql`result - 'backupTransfer'` })
+      .where('id', '=', id)
+      .where('status', 'in', FINISHED_OPERATIONS)
+      .execute();
+  }
+  /** Which of these operations have not ended: their transfer folders are still in use. */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  async getUnfinishedOperationIds(ids: string[]): Promise<Set<string>> {
+    if (ids.length === 0) {
+      return new Set();
+    }
+    const rows = await this.db
+      .selectFrom('media_operation')
+      .select('id')
+      .where('id', '=', sql<string>`any(${ids}::uuid[])`)
+      .where('status', 'not in', FINISHED_OPERATIONS)
+      .execute();
+    return new Set(rows.map(({ id }) => id));
+  }
   /** Which of `paths` an asset other than `except` holds now, as its original or one of its files. */
   @GenerateSql({ params: [[DummyValue.STRING], [DummyValue.UUID]] })
   async getTakenPaths(paths: string[], except: string[]): Promise<Set<string>> {

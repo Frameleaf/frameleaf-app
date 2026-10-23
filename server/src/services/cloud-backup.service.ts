@@ -360,6 +360,8 @@ const runState = (status: MediaOperationStatus, pauseRequested: boolean): CloudB
   }
 };
 
+const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 const asIso = (value: Date | string | null | undefined): string | null =>
@@ -1863,6 +1865,7 @@ export class CloudBackupService {
       connection = this.ownBucketConnection(metadata, settings);
     }
 
+    await this.removeEndedTransfers();
     const journal: BackupTransferJournal = {
       current: readBackupTransfer(operation.result),
       directory: join(identityDirectory(this.configRepository), 'cloud-backup-transfers', operation.id),
@@ -2345,6 +2348,29 @@ export class CloudBackupService {
       await this.storageRepository.unlink(path);
     }
     return proceed;
+  }
+
+  /**
+   * Partial downloads and transfer folders of operations that ended (cancelled, failed after their retries)
+   * are never resumed: the next bucket operation removes them, including a partial left in a library folder.
+   */
+  private async removeEndedTransfers() {
+    for (const { id, transfer } of await this.index.getEndedTransfers()) {
+      const partial = readBackupTransfer({ backupTransfer: transfer });
+      if (partial?.kind === 'download' && basename(partial.partial).startsWith('.frameleaf-part-')) {
+        await this.storageRepository.unlink(partial.partial).catch(() => {});
+      }
+      await this.index.clearEndedTransfer(id);
+    }
+    const root = join(identityDirectory(this.configRepository), 'cloud-backup-transfers');
+    const names = await this.storageRepository.readdir(root).catch((): string[] => []);
+    const ids = names.filter((name) => UUID.test(name));
+    const unfinished = await this.index.getUnfinishedOperationIds(ids);
+    for (const id of ids) {
+      if (!unfinished.has(id)) {
+        await this.storageRepository.unlinkDir(join(root, id), { recursive: true, force: true });
+      }
+    }
   }
 
   /**

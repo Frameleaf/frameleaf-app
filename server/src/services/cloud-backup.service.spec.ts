@@ -432,6 +432,9 @@ describe(CloudBackupService.name, () => {
       getOwnerHistoryState: vi.fn().mockResolvedValue(new Map()),
       getLibraryState: vi.fn().mockResolvedValue(new Map()),
       getTakenPaths: vi.fn().mockResolvedValue(new Set()),
+      getEndedTransfers: vi.fn().mockResolvedValue([]),
+      clearEndedTransfer: vi.fn().mockResolvedValue(undefined),
+      getUnfinishedOperationIds: vi.fn().mockResolvedValue(new Set()),
       getOwnerNames: vi.fn().mockResolvedValue(new Map()),
       endAbandonedManifests: vi.fn().mockResolvedValue(0),
       countAssets: vi.fn().mockResolvedValue(3),
@@ -1647,6 +1650,41 @@ describe(CloudBackupService.name, () => {
         }
       },
     );
+
+    it('removes the partial downloads and transfer folders of operations that ended', async () => {
+      const ended = '00000000-0000-4000-8000-0000000000e1';
+      const running = '00000000-0000-4000-8000-0000000000e2';
+      const partial = '/data/library/owner-1/2026/.frameleaf-part-abc';
+      index.getEndedTransfers.mockResolvedValue([
+        {
+          id: ended,
+          transfer: {
+            kind: 'download',
+            key: `o/${SHA_A}`,
+            partial,
+            expectedSha256: SHA_A,
+            etag: '"e"',
+            size: 100,
+            offset: 10,
+            completed: null,
+          },
+        },
+      ]);
+      mocks.storage.readdir.mockImplementation((folder) =>
+        Promise.resolve(folder.endsWith('cloud-backup-transfers') ? [ended, running, 'notes'] : []),
+      );
+      index.getUnfinishedOperationIds.mockResolvedValue(new Set([running]));
+
+      await sut.run(operationOf(), 'claim-1');
+
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(partial);
+      expect(index.clearEndedTransfer).toHaveBeenCalledWith(ended);
+      expect(mocks.storage.unlinkDir).toHaveBeenCalledOnce();
+      expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`cloud-backup-transfers/${ended}$`)), {
+        recursive: true,
+        force: true,
+      });
+    });
 
     it('keeps BYO multipart permission requirements and avoids Cloud capability calls', async () => {
       await sut.run(operationOf(), 'claim-1');
@@ -4557,7 +4595,8 @@ describe(CloudBackupService.name, () => {
       expect(store.uploadFile.mock.calls[1].slice(1)).toEqual(firstRequest.slice(1));
       expect(databaseBackup.createDatabaseBackup).toHaveBeenCalledOnce();
       expect(mocks.crypto.hashFile).toHaveBeenCalledOnce();
-      expect(mocks.storage.readdir).toHaveBeenCalledOnce();
+      // the backups folder is read once for leftover dumps (the transfer folders are swept on every open)
+      expect(mocks.storage.readdir.mock.calls.filter(([folder]) => !folder.endsWith('cloud-backup-transfers'))).toHaveLength(1);
       expect(checkpoint).toMatchObject({ phase: 'reconcile', database: { key: firstRequest[1] } });
     });
   });
