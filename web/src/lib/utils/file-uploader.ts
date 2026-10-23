@@ -19,6 +19,7 @@ import { AbortError, cancelUploadRequests, uploadRequest } from '$lib/utils';
 import { ExecutorQueue } from '$lib/utils/executor-queue';
 import { generateId } from '$lib/utils/generate-id';
 import { asQueryString } from '$lib/utils/shared-links';
+import type { HashAlgorithm } from '$lib/workers/hash-file';
 import { handleError } from './handle-error';
 
 export const uploadExecutionQueue = new ExecutorQueue({ concurrency: 2 });
@@ -181,7 +182,7 @@ function getDeviceAssetId(asset: File) {
   return `web-${asset.name}-${asset.lastModified}-${generateId()}`;
 }
 
-async function hashFile(file: File, signal: AbortSignal): Promise<string> {
+async function hashFile(file: File, signal: AbortSignal, algorithm: HashAlgorithm): Promise<string> {
   signal.throwIfAborted();
   const worker = new Worker(new URL('$lib/workers/hash-file.ts', import.meta.url), { type: 'module' });
   let abort: () => void;
@@ -204,7 +205,7 @@ async function hashFile(file: File, signal: AbortSignal): Promise<string> {
       );
       worker.addEventListener('error', (event) => reject(new Error(event.message)), { once: true });
       worker.addEventListener('messageerror', () => reject(new Error('Unable to read file checksum')), { once: true });
-      worker.postMessage(file);
+      worker.postMessage({ file, algorithm });
     });
   } finally {
     signal.removeEventListener('abort', abort!);
@@ -257,17 +258,29 @@ async function fileUploader(
       await tick();
       try {
         assertCurrent();
-        const checksum = await hashFile(assetFile, signal);
+        // New rows store SHA-256 and rows adopted from Immich keep SHA-1, so check both (FL-529).
+        const [sha256, sha1] = await Promise.all([
+          hashFile(assetFile, signal, 'SHA-256'),
+          hashFile(assetFile, signal, 'SHA-1'),
+        ]);
         assertCurrent();
 
-        const {
-          results: [checkUploadResult],
-        } = await checkBulkUpload(
-          { assetBulkUploadCheckDto: { assets: [{ id: assetFile.name, checksum }] } },
+        const { results } = await checkBulkUpload(
+          {
+            assetBulkUploadCheckDto: {
+              assets: [
+                { id: assetFile.name, checksum: sha256 },
+                { id: assetFile.name, checksum: sha1 },
+              ],
+            },
+          },
           { signal },
         );
         assertCurrent();
-        if (checkUploadResult.action === AssetUploadAction.Reject && checkUploadResult.assetId) {
+        const checkUploadResult = results.find(
+          (result) => result.action === AssetUploadAction.Reject && result.assetId,
+        );
+        if (checkUploadResult?.assetId) {
           responseData = {
             status: AssetMediaStatus.Duplicate,
             id: checkUploadResult.assetId,
@@ -311,11 +324,6 @@ async function fileUploader(
 
     // An acknowledged upload is saved; cancelling the batch cannot undo it.
     assertCurrent(false);
-    if (responseData.status === AssetMediaStatus.Duplicate) {
-      uploadAssetsStore.track('duplicate');
-    } else {
-      uploadAssetsStore.track('success');
-    }
 
     if (albumId && !context.sharedLink && responseData.id) {
       uploadAssetsStore.updateItem(deviceAssetId, { message: $t('asset_adding_to_album') });
@@ -325,6 +333,8 @@ async function fileUploader(
       if (!added) {
         // FL-53: the file is safely in the library, but it is not in the album. Say exactly that,
         // rather than "added to album"; retrying finds the uploaded original and only adds it.
+        // It counts as a failure, so the panel offers Retry and Dismiss (FL-529).
+        uploadAssetsStore.track('error');
         uploadAssetsStore.updateItem(deviceAssetId, {
           state: UploadState.ERROR,
           assetId: responseData.id,
@@ -334,6 +344,8 @@ async function fileUploader(
       }
       uploadAssetsStore.updateItem(deviceAssetId, { message: $t('asset_added_to_album') });
     }
+
+    uploadAssetsStore.track(responseData.status === AssetMediaStatus.Duplicate ? 'duplicate' : 'success');
 
     uploadAssetsStore.updateItem(deviceAssetId, {
       state: responseData.status === AssetMediaStatus.Duplicate ? UploadState.DUPLICATED : UploadState.DONE,
