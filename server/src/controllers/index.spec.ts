@@ -46,6 +46,10 @@ const ADMIN_ROUTES = new Set([
   'PUT ml-destinations/:id',
   'PUT ml-destinations/:id/consent',
   'PUT ml-destinations/routes/:workload',
+  // FL-456: the processing order is admin configuration like the routes it replaces.
+  'GET ml-destinations/processing-order',
+  'PUT ml-destinations/processing-order',
+  'PUT ml-destinations/processing-order/:workload',
   'GET system-config/image-description/requeue-estimate',
   'GET system-config/machine-learning/hardware',
   'GET system-config/smart-albums/reevaluate-estimate',

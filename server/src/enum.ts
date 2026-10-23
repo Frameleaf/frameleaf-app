@@ -936,9 +936,9 @@ export const MediaHealthStatusSchema = z
   .meta({ id: 'MediaHealthStatus' });
 
 /**
- * Where a machine-learning workload may run (FL-110). A destination is always named
- * explicitly by the caller; the server never picks one on the caller's behalf and never
- * moves work from one kind to another when the chosen destination is unavailable.
+ * Where a machine-learning workload may run (FL-110). Since FL-456 a library job goes to the first
+ * available place in its processing order (`MlProcessingSource`), which the person sets; work never
+ * goes to a place outside that order, and a destination a caller names explicitly is never swapped.
  */
 export enum MlDestinationKind {
   /** The deployment's own machine-learning container (the configured ML URLs). */
@@ -997,6 +997,50 @@ export enum MlWorkload {
 }
 
 export const MlWorkloadSchema = z.enum(MlWorkload).describe('Machine-learning workload').meta({ id: 'MlWorkload' });
+
+/**
+ * FL-456: the places processing can run, in the order a person puts them. A job runs on the first one
+ * that is available and allowed to do its work; when none is, it waits.
+ */
+export enum MlProcessingSource {
+  /** This server's own machine learning (`local` destinations). */
+  Local = 'local',
+  /** The person's own computers: Frameleaf Desktop helpers and computers added by address (`lan`). */
+  Desktops = 'desktops',
+  /** Frameleaf Cloud. */
+  Cloud = 'cloud',
+}
+
+export const MlProcessingSourceSchema = z
+  .enum(MlProcessingSource)
+  .describe('Where processing can run')
+  .meta({ id: 'MlProcessingSource' });
+
+/** FL-456 (owner 2026-10-18): this server first, then the person's computers, then Frameleaf Cloud. */
+export const DEFAULT_ML_PROCESSING_ORDER: readonly MlProcessingSource[] = [
+  MlProcessingSource.Local,
+  MlProcessingSource.Desktops,
+  MlProcessingSource.Cloud,
+];
+
+/** FL-456: what the settings page says about one place in the processing order. */
+export enum MlProcessingSourceState {
+  /** It can take work now. */
+  Ready = 'ready',
+  /** It is set up but did not answer when last checked. */
+  NotAnswering = 'not-answering',
+  /** It is set up and turned off. */
+  TurnedOff = 'turned-off',
+  /** Frameleaf Cloud is linked but nobody has agreed to send photos there yet. */
+  NeedsPermission = 'needs-permission',
+  /** Nothing is set up for it yet. */
+  NotSetUp = 'not-set-up',
+}
+
+export const MlProcessingSourceStateSchema = z
+  .enum(MlProcessingSourceState)
+  .describe('Whether a place in the processing order can take work now')
+  .meta({ id: 'MlProcessingSourceState' });
 
 /** The workloads the ordinary `/predict` container serves; restoration and Studio need dedicated workers. */
 export const LIBRARY_ML_WORKLOADS: readonly MlWorkload[] = [

@@ -28065,6 +28065,174 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/ml-destinations/processing-order": {
+      "get": {
+        "description": "The order processing tries its places in (this server, your computers, Frameleaf Cloud), the workloads with a list of their own, and whether each place can take work now. A job runs on the first available place in its list and waits when none is.",
+        "operationId": "getMlProcessingOrder",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlProcessingOrderResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the processing order",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.read",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Save the order every workload without a list of its own tries its places in.",
+        "operationId": "setMlProcessingOrder",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MlProcessingOrderUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlProcessingOrderResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Set the processing order",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/ml-destinations/processing-order/{workload}": {
+      "put": {
+        "description": "Give a workload a list of its own (an empty list keeps it off), or send null to make it follow the main order again.",
+        "operationId": "setMlWorkloadProcessingOrder",
+        "parameters": [
+          {
+            "name": "workload",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/MlWorkload"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MlWorkloadProcessingOrderUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlProcessingOrderResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Set the processing order of one workload",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/ml-destinations/routes": {
       "get": {
         "description": "The destination each workload is routed to. A workload without a route is refused, never sent anywhere.",
@@ -92593,6 +92761,103 @@
         },
         "type": "object"
       },
+      "MlProcessingOrderResponseDto": {
+        "properties": {
+          "order": {
+            "description": "The places processing tries, first to last, for every workload without a list of its own",
+            "items": {
+              "$ref": "#/components/schemas/MlProcessingSource"
+            },
+            "maxItems": 3,
+            "type": "array"
+          },
+          "sources": {
+            "description": "Whether each place can take work now",
+            "items": {
+              "$ref": "#/components/schemas/MlProcessingSourceStatusDto"
+            },
+            "type": "array"
+          },
+          "workloads": {
+            "description": "Workloads with a list of their own",
+            "items": {
+              "$ref": "#/components/schemas/MlWorkloadProcessingOrderDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "order",
+          "sources",
+          "workloads"
+        ],
+        "type": "object"
+      },
+      "MlProcessingOrderUpdateDto": {
+        "properties": {
+          "order": {
+            "description": "The places to try, first to last; each of this server, your computers and Frameleaf Cloud once",
+            "items": {
+              "$ref": "#/components/schemas/MlProcessingSource"
+            },
+            "maxItems": 3,
+            "type": "array"
+          }
+        },
+        "required": [
+          "order"
+        ],
+        "type": "object"
+      },
+      "MlProcessingSource": {
+        "description": "Where processing can run",
+        "enum": [
+          "local",
+          "desktops",
+          "cloud"
+        ],
+        "type": "string"
+      },
+      "MlProcessingSourceState": {
+        "description": "Whether a place in the processing order can take work now",
+        "enum": [
+          "ready",
+          "not-answering",
+          "turned-off",
+          "needs-permission",
+          "not-set-up"
+        ],
+        "type": "string"
+      },
+      "MlProcessingSourceStatusDto": {
+        "properties": {
+          "ready": {
+            "description": "How many computers of this kind can take work now",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "source": {
+            "$ref": "#/components/schemas/MlProcessingSource"
+          },
+          "state": {
+            "$ref": "#/components/schemas/MlProcessingSourceState"
+          },
+          "total": {
+            "description": "How many computers of this kind are set up",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ready",
+          "source",
+          "state",
+          "total"
+        ],
+        "type": "object"
+      },
       "MlRestorationModelsResponseDto": {
         "properties": {
           "checkedAt": {
@@ -92777,14 +93042,55 @@
         ],
         "type": "object"
       },
+      "MlWorkloadProcessingOrderDto": {
+        "properties": {
+          "sources": {
+            "description": "The workload's own list, first to last; empty keeps the workload off",
+            "items": {
+              "$ref": "#/components/schemas/MlProcessingSource"
+            },
+            "maxItems": 3,
+            "type": "array"
+          },
+          "workload": {
+            "$ref": "#/components/schemas/MlWorkload"
+          }
+        },
+        "required": [
+          "sources",
+          "workload"
+        ],
+        "type": "object"
+      },
+      "MlWorkloadProcessingOrderUpdateDto": {
+        "properties": {
+          "sources": {
+            "description": "The workload's own list, first to last; empty keeps it off; null makes it follow the main order again",
+            "items": {
+              "$ref": "#/components/schemas/MlProcessingSource"
+            },
+            "maxItems": 3,
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "required": [
+          "sources"
+        ],
+        "type": "object"
+      },
       "MlWorkloadRouteDto": {
         "properties": {
           "destinationId": {
-            "description": "Destination the workload is routed to, or null when unrouted",
+            "description": "Where the workload's jobs go now: the first available place in its processing order (FL-456), else the first place in it; null when its order names nowhere it could run",
             "format": "uuid",
             "nullable": true,
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "followsOrder": {
+            "description": "FL-456: true when the workload follows the main processing order, false when it has its own list",
+            "type": "boolean"
           },
           "origin": {
             "allOf": [

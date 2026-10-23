@@ -735,6 +735,23 @@ export class JobRepository {
   }
 
   /** Persist before admission. A retry keeps its original destination even if routing changes. */
+  /**
+   * FL-456: the destination this job already pinned for `workload`, if any, without pinning one. Outside
+   * a queued job there is none.
+   */
+  async pinnedDestination(workload: string): Promise<string | null> {
+    const context = queueExecution.getStore();
+    if (!context) {
+      return null;
+    }
+    context.signal.throwIfAborted();
+    const {
+      rows: [row],
+    } = await sql<{ destination: string | null }>`select data->'_queueDestinations'->>${workload}::text as destination
+      from job where id = ${context.claim.id}::uuid and token = ${context.claim.token}::uuid`.execute(this.store.db);
+    return row?.destination ?? null;
+  }
+
   async pinDestination(workload: string, destinationId: string): Promise<string> {
     const context = queueExecution.getStore();
     if (!context) {
