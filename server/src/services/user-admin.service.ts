@@ -22,6 +22,7 @@ import { AdminAuditAction, AssetVisibility, JobName, UserMetadataKey, UserStatus
 import { UserFindOptions } from 'src/repositories/user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getCalendarHeatmap } from 'src/services/shared/user-methods.js';
+import { DecimalSize } from 'src/utils/bytes.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import { findOrFail } from 'src/utils/misc.js';
@@ -58,7 +59,17 @@ export class UserAdminService extends BaseService {
       throw new BadRequestException('password is required');
     }
 
-    const user = await this.createUser(userDto);
+    // FL-516: an account added without a space of its own starts with "Space for new people"
+    const newUserStorageQuota = config.user.newUserStorageQuota ?? null;
+    const user = await this.createUser({
+      ...userDto,
+      quotaSizeInBytes:
+        userDto.quotaSizeInBytes === undefined
+          ? newUserStorageQuota === null
+            ? null
+            : newUserStorageQuota * DecimalSize.GB
+          : userDto.quotaSizeInBytes,
+    });
 
     await this.eventRepository.emit('UserSignup', {
       notify: !!notify,

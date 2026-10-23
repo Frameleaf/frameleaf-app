@@ -746,7 +746,7 @@ export class AuthService extends BaseService {
   }
 
   async callback(dto: OAuthCallbackDto, headers: IncomingHttpHeaders, loginDetails: LoginDetails) {
-    const { oauth } = await this.getConfig({ withCache: false });
+    const { oauth, user: userConfig } = await this.getConfig({ withCache: false });
     if (!oauth.enabled) {
       throw new BadRequestException('OAuth is not enabled');
     }
@@ -825,7 +825,9 @@ export class AuthService extends BaseService {
       });
       const storageQuota = this.getClaim(profile, {
         key: storageQuotaClaim,
-        default: defaultStorageQuota,
+        // FL-516: "Space for new people" decides, however the account is made; the older sign-in
+        // provider default applies only while it is unset
+        default: userConfig.newUserStorageQuota ?? defaultStorageQuota,
         isValid: (value: unknown) => Number(value) >= 0,
       });
 

@@ -265,8 +265,8 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   {
     pattern: 'frameleafCloud.signIn.invitedStorageQuota',
     kind: 'control',
-    file: 'src/lib/components/frameleaf/cloud/FrameleafSignInSection.svelte',
-    evidence: 'setInvitedStorageQuota',
+    file: 'src/routes/(user)/user-settings/sections/UsersSection.svelte',
+    evidence: 'signIn.invitedStorageQuota = value',
   },
   {
     pattern: 'libraryCare.checksumScan',
@@ -1234,8 +1234,8 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   {
     pattern: 'oauth.defaultStorageQuota',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/AuthSettings.svelte',
-    evidence: 'oauth.defaultStorageQuota',
+    file: 'src/routes/(user)/user-settings/sections/UsersSection.svelte',
+    evidence: 'draft.oauth.defaultStorageQuota = value',
   },
   {
     pattern: 'oauth.enabled',
@@ -1513,6 +1513,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     kind: 'control',
     file: 'src/lib/components/frameleaf/settings/storage/DeletedItems.svelte',
     evidence: 'draft.user.deleteDelay =',
+  },
+  {
+    pattern: 'user.newUserStorageQuota',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/sections/UsersSection.svelte',
+    evidence: 'draft.user.newUserStorageQuota = value',
   },
 ]);
 

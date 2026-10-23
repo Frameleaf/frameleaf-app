@@ -1975,6 +1975,8 @@ export type AdminConfigTrashDto = {
 export type AdminConfigUserDto = {
     /** Delete delay */
     deleteDelay: number;
+    /** Space each new account starts with, in GB (1 GB = 1,000,000,000 bytes); null is no limit */
+    newUserStorageQuota?: number | null;
 };
 export type AdminConfigDto = {
     analytics?: AdminConfigAnalyticsDto;
