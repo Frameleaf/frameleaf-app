@@ -73,7 +73,8 @@
         return $t('frameleaf_users_status_deleted');
       }
       case 'active': {
-        return $t('frameleaf_users_status_active');
+        // FL-538: an administrator paused this person's new uploads
+        return user.uploadsPaused ? $t('frameleaf_users_status_paused') : $t('frameleaf_users_status_active');
       }
     }
   };
@@ -168,7 +169,7 @@
             <Badge
               value={statusLabel(user)}
               label={statusLabel(user)}
-              tone={accountLifecycle(user) === 'active' ? 'neutral' : 'warning'}
+              tone={accountLifecycle(user) === 'active' && !user.uploadsPaused ? 'neutral' : 'warning'}
             />
           </td>
         </tr>

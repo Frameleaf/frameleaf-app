@@ -56,9 +56,18 @@ export const describeAdminEvent = (
         : $t('frameleaf_account_history_storage_label_automatic');
     }
     case AdminAuditAction.PasswordReset: {
+      if (detail === 'link') {
+        return $t('frameleaf_account_history_password_link');
+      }
       return detail === 'change-required'
         ? $t('frameleaf_account_history_password_reset_change_required')
         : $t('frameleaf_account_history_password_reset');
+    }
+    case AdminAuditAction.UploadsPaused: {
+      return $t('frameleaf_account_history_uploads_paused');
+    }
+    case AdminAuditAction.UploadsResumed: {
+      return $t('frameleaf_account_history_uploads_resumed');
     }
     case AdminAuditAction.PinSet: {
       return $t('frameleaf_account_history_pin_set');
