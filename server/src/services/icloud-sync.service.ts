@@ -441,6 +441,9 @@ export class ICloudSyncService {
 
   /** Queue a run through the one locked path, turning a refusal into a stable code for the client. */
   private async queue(connection: ICloudConnection, trigger: ICloudRunTrigger, retryOfId: string | null = null) {
+    if (await this.repository.ownerUploadsPaused(connection.ownerId)) {
+      throw new BadRequestException('icloud_uploads_paused');
+    }
     const queued = await this.repository.queueOperation(connection.id, connection.ownerId, { trigger, retryOfId });
     switch (queued.outcome) {
       case 'created':
@@ -681,6 +684,11 @@ export class ICloudSyncService {
       await this.settle(claim, connectionId, 'icloud_disabled');
       return;
     }
+    if (await this.repository.ownerUploadsPaused(ownerId)) {
+      // FL-538: nothing new is imported while an administrator has paused this account's uploads
+      await this.settle(claim, connectionId, 'icloud_uploads_paused');
+      return;
+    }
     if (connection.state === 'authenticating') {
       // The owner is signing in again right now; the answer decides, not this claim.
       await this.wait(claim, connectionId, ICLOUD_SIGN_IN_WAIT_MS, idleWaits);
@@ -898,7 +906,8 @@ export class ICloudSyncService {
       // The run record ends with the run; the next run starts a fresh inventory pass.
       await this.repository.endRun(connectionId, 'failed').catch(() => {});
     }
-    if (outcome === 'failed' && !SIGN_IN_CODES.has(code)) {
+    // FL-538: a pause the administrator chose is not a failure to warn the owner about
+    if (outcome === 'failed' && !SIGN_IN_CODES.has(code) && code !== 'icloud_uploads_paused') {
       await this.repository
         .notify(
           claim.operation.ownerId,

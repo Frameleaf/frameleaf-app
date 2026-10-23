@@ -94,4 +94,15 @@ export class UserTable {
 
   @ForeignKeyColumn(() => ClusterGroupTable, { onUpdate: 'CASCADE', nullable: false })
   clusterGroupId!: string;
+
+  /** FL-538: an administrator paused new uploads for this person; what they have stays. */
+  @Column({ type: 'boolean', default: false })
+  uploadsPaused!: Generated<boolean>;
+
+  /** FL-538: SHA-256 of the single-use link emailed to choose a password, while it can be used. */
+  @Column({ type: 'bytea', nullable: true })
+  passwordLinkHash!: Buffer | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  passwordLinkExpiresAt!: Timestamp | null;
 }

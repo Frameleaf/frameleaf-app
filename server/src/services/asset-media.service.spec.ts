@@ -282,6 +282,18 @@ describe(AssetMediaService.name, () => {
       );
       expect(sut.canUploadFile(uploadFile.filename(UploadFieldName.ASSET_DATA, pathFilename, body))).toEqual(true);
     });
+
+    it('refuses a photo or video while new uploads are paused, but not a profile picture (FL-538)', () => {
+      const paused = { ...authStub.admin, user: { ...authStub.admin.user, uploadsPaused: true } };
+      const request = (fieldName: UploadFieldName, name: string) => ({
+        ...uploadFile.filename(fieldName, name),
+        auth: paused,
+      });
+      expect(() => sut.canUploadFile(request(UploadFieldName.ASSET_DATA, 'photo.jpg'))).toThrowError(
+        ForbiddenException,
+      );
+      expect(sut.canUploadFile(request(UploadFieldName.PROFILE_DATA, 'me.jpg'))).toEqual(true);
+    });
   });
 
   describe('getUploadFilename', () => {

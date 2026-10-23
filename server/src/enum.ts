@@ -3001,7 +3001,10 @@ export enum AdminAuditAction {
   QuotaChanged = 'quota-changed',
   /** `detail` is the new storage label, or null for automatic. */
   StorageLabelChanged = 'storage-label-changed',
-  /** `detail` is `change-required` when the account must choose a new password at sign-in. */
+  /**
+   * `detail` is `change-required` when the account must choose a new password at sign-in, or `link`
+   * when they were emailed a single-use link to choose one (FL-538).
+   */
   PasswordReset = 'password-reset',
   PinSet = 'pin-set',
   PinReset = 'pin-reset',
@@ -3043,6 +3046,10 @@ export enum AdminAuditAction {
   FrameleafAccountLinked = 'frameleaf-account-linked',
   /** FL-158: the account's Frameleaf account link was removed. */
   FrameleafAccountUnlinked = 'frameleaf-account-unlinked',
+  /** FL-538: an administrator paused new uploads for the account. */
+  UploadsPaused = 'uploads-paused',
+  /** FL-538: an administrator let the account add new photos and videos again. */
+  UploadsResumed = 'uploads-resumed',
 }
 
 export const AdminAuditActionSchema = z

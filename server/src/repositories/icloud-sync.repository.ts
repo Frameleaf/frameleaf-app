@@ -638,6 +638,13 @@ export class ICloudSyncRepository {
       }
     });
   }
+
+  /** FL-538: an administrator paused new uploads for this account, so a run adds nothing. */
+  async ownerUploadsPaused(ownerId: string): Promise<boolean> {
+    const row = await this.db.selectFrom('user').select('uploadsPaused').where('id', '=', ownerId).executeTakeFirst();
+    return row?.uploadsPaused === true;
+  }
+
   /**
    * Connections a scheduled run is due for (FL-68): signed in, past any provider back-off, with no
    * unfinished run and none started or finished within the connection's interval. Counting from the
