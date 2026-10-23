@@ -520,14 +520,15 @@ export class IntegrityService extends BaseService {
     return status;
   }
 
-  /** Whether the path exists, or undefined when it cannot be read (EACCES, EIO …): one such path must not fail its batch. */
+  /** Whether the path exists, or undefined when it cannot be checked (EACCES, EIO, ENOTDIR …): such a path is never reported
+   * missing, and must not fail its batch. */
   private async pathExists(path: string): Promise<boolean | undefined> {
     try {
       await this.storageRepository.stat(path);
       return true;
     } catch (error) {
       const code = (error as NodeJS.ErrnoException)?.code;
-      if (code === 'ENOENT' || code === 'ENOTDIR') {
+      if (code === 'ENOENT') {
         return false;
       }
       this.logger.warn(`Could not check ${path}: ${code ?? error}`);

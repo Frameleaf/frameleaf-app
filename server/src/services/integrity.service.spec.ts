@@ -411,9 +411,7 @@ describe(IntegrityService.name, () => {
           ],
         }),
       ).resolves.toBe(JobStatus.Success);
-      expect(mocks.integrityReport.create).toHaveBeenCalledWith([
-        { type: IntegrityReport.MissingFile, path: '/under-a-file/a.jpg', assetId: 'b', fileAssetId: null },
-      ]);
+      expect(mocks.integrityReport.create).not.toHaveBeenCalled();
       expect(mocks.integrityReport.deleteByIds).toHaveBeenCalledWith(['fixed']);
       expect(mocks.systemMetadata.completeIntegrityRun).toHaveBeenCalledWith(
         IntegrityReport.MissingFile,
