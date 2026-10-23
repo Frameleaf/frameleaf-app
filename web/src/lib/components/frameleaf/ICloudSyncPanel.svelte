@@ -706,19 +706,8 @@
           {$t('frameleaf_icloud_connection_name')}
           <input bind:value={draft.label} maxlength={100} disabled={busy} aria-invalid={problems.includes('label')} />
         </label>
-        <label>
-          {$t('frameleaf_icloud_interval')}
-          <input
-            type="number"
-            min="1"
-            max="8760"
-            step="1"
-            value={draft.intervalHours}
-            oninput={(event) => (draft.intervalHours = event.currentTarget.value)}
-            disabled={busy}
-            aria-invalid={problems.includes('interval')}
-          />
-        </label>
+        <!-- FL-518: no interval any more; the overnight run checks every connection. -->
+        <p class="ic-run-note">{$t('frameleaf_icloud_checked_nightly')}</p>
         <label>
           {$t('frameleaf_icloud_concurrency')}
           <input

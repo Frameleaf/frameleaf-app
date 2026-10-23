@@ -29,6 +29,8 @@ export type OvernightRun = {
   /** When the step was begun; the run waits for it to finish before moving on. */
   begunAt: string | null;
   results: Partial<Record<OvernightStep, OvernightStepResult>>;
+  /** FL-518: items in Trash already past their keep time when the run started, and that cut-off. */
+  trashDue?: { cutoff: string; count: number };
 };
 
 export type OvernightNight = {
@@ -36,6 +38,10 @@ export type OvernightNight = {
   finishedAt: string;
   manual: boolean;
   results: Partial<Record<OvernightStep, OvernightStepResult>>;
+  /** FL-518: items that left Trash for good during the run; null when not measured. */
+  removedFromTrash?: number | null;
+  /** FL-518: photos and videos that came in during the run (folders, iCloud, phones). */
+  newFiles?: number | null;
 };
 
 export type OvernightState = {

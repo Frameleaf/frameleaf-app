@@ -35,6 +35,7 @@ const setup = (overrides: { stopTime?: string; steps?: Partial<Record<string, Ov
       },
     },
     library: { scan: { enabled: true } },
+    trash: { enabled: true, days: 30 },
     integrityChecks: {
       untrackedFiles: { enabled: true },
       missingFiles: { enabled: true },
@@ -80,6 +81,11 @@ const setup = (overrides: { stopTime?: string; steps?: Partial<Record<string, Ov
     },
     queue: { handleNightlyJobs: vi.fn().mockResolvedValue(undefined) },
     mediaHealth: { startScheduledScans: vi.fn().mockResolvedValue(1) },
+    // 12 items past their keep time when the run starts, none left after the tidy-up; 214 came in
+    trash: {
+      countTrashedBefore: vi.fn().mockResolvedValueOnce(12).mockResolvedValue(0),
+      countAddedSince: vi.fn().mockResolvedValue(214),
+    },
   };
   const sut = new OvernightService(
     mocks.logger as never,
@@ -91,6 +97,7 @@ const setup = (overrides: { stopTime?: string; steps?: Partial<Record<string, Ov
     mocks.icloud as never,
     mocks.queue as never,
     mocks.mediaHealth as never,
+    mocks.trash as never,
   );
   (sut as unknown as { readConfig: () => Promise<unknown> }).readConfig = () => Promise.resolve(config);
   return { sut, mocks, stored, busy, config };
@@ -117,6 +124,17 @@ describe(OvernightService.name, () => {
       icloud: 'done',
       fileChecks: 'done',
     });
+    // FL-518: what the night removed from Trash and what came in while it ran
+    expect(stored.state?.nights[0]).toMatchObject({ removedFromTrash: 12, newFiles: 214 });
+  });
+
+  it('still records the night when the counts cannot be read (FL-518)', async () => {
+    const { sut, mocks, stored } = setup();
+    mocks.trash.countTrashedBefore.mockReset().mockRejectedValue(new Error('offline'));
+    mocks.trash.countAddedSince.mockRejectedValue(new Error('offline'));
+    await sut.handleStart();
+
+    expect(stored.state?.nights[0]).toMatchObject({ removedFromTrash: null, newFiles: null });
   });
 
   it('compares look-alike photos again once when "Save and start tonight" asked for it (FL-520)', async () => {

@@ -240,6 +240,30 @@ export class TrashRepository {
     rows.splice(options.size);
     return { items: rows, hasNextPage, total: Number(count) };
   }
+  /** FL-518: items in every account's Trash deleted before `cutoff` (what the tidy-up removes). */
+  @GenerateSql({ params: [DummyValue.DATE] })
+  async countTrashedBefore(cutoff: Date): Promise<number> {
+    const { count } = await this.db
+      .selectFrom('asset')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('status', '=', AssetStatus.Trashed)
+      .where('deletedAt', '<', cutoff)
+      .executeTakeFirstOrThrow();
+    return Number(count);
+  }
+
+  /** FL-518: photos and videos added to any library since `since` and still there. */
+  @GenerateSql({ params: [DummyValue.DATE] })
+  async countAddedSince(since: Date): Promise<number> {
+    const { count } = await this.db
+      .selectFrom('asset')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('createdAt', '>=', since)
+      .where('deletedAt', 'is', null)
+      .executeTakeFirstOrThrow();
+    return Number(count);
+  }
+
   /**
    * The set an action would change, with what the review shows about each item. `ids` names the
    * items for the actions that take them; without it the whole visible trash is the set.

@@ -40,6 +40,7 @@
   import { attentionView, type AttentionSayings, type Words } from '$lib/frameleaf/attention';
   import { cloudGlance, gpuStudioState, mlEndpointState } from '$lib/frameleaf/overview-readiness';
   import { formatBytes } from '$lib/frameleaf/format-bytes';
+  import { phonesBehind } from '$lib/components/frameleaf/settings/overview/overview';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
@@ -54,11 +55,13 @@
     getOvernight,
     getRenderWorkerCompatibility,
     getStorage,
+    listAllBackupDevices,
     listMlDestinations,
     ManualJobName,
     setAttentionDismissed,
     type AnalyticsReportResponseDto,
     type AttentionResponseDto,
+    type BackupDeviceDto,
     type BackupRestoreVerificationResponseDto,
     type MlDestinationResponseDto,
     type MlWorkloadRouteDto,
@@ -70,6 +73,7 @@
   import { Icon } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
+    mdiCellphone,
     mdiCheckCircleOutline,
     mdiChevronRight,
     mdiCloudOutline,
@@ -93,6 +97,8 @@
   let compatibility = $state<RenderWorkerCompatibilityResponseDto | null>(null);
   let ml = $state<{ destinations: MlDestinationResponseDto[]; routes: MlWorkloadRouteDto[] } | null>(null);
   let overnight = $state<OvernightResponseDto | null>(null);
+  /** FL-518: every account's phones that send photos here (the app's backup report). */
+  let phones = $state<BackupDeviceDto[] | null>(null);
   let loading = $state(true);
   let failed = $state(false);
   let said = $state('');
@@ -110,6 +116,7 @@
       listMlDestinations(),
       getMlWorkloadRoutes(),
       getOvernight(),
+      listAllBackupDevices({ limit: 200 }),
     ]);
     attention = settled(results[0]);
     report = settled(results[1]);
@@ -121,6 +128,7 @@
     const routes = settled(results[7]);
     ml = destinations && routes ? { destinations, routes: routes.routes } : null;
     overnight = settled(results[8]);
+    phones = settled(results[9])?.devices ?? null;
     failed = !attention && !storage;
     loading = false;
   };
@@ -185,6 +193,19 @@
         title: $t('frameleaf_overview_need_restore'),
         body: $t('frameleaf_overview_need_restore_body'),
         actions: [{ label: $t('frameleaf_overview_open_backup'), href: commandCenterUrl('backups', 'restore') }],
+      });
+    }
+    // FL-518: a phone that stopped sending photos (the app may be signed out, or waiting for Wi-Fi).
+    for (const phone of phonesBehind(phones ?? [])) {
+      found.push({
+        id: `phone-${phone.id}`,
+        icon: mdiCellphone,
+        level: 'look',
+        title: $t('frameleaf_overview_need_phone', {
+          values: { name: phone.displayName, count: phone.quietForDays ?? 0 },
+        }),
+        body: $t('frameleaf_overview_need_phone_body'),
+        actions: [{ label: $t('frameleaf_overview_open_phones'), href: commandCenterUrl('utilities', 'downloads') }],
       });
     }
     if (aiState === 'unreachable') {
@@ -311,6 +332,7 @@
   };
   const unread = $derived($t('frameleaf_overview_unread'));
   const lastNight = $derived(overnight?.nights[0]);
+  const behind = $derived(phonesBehind(phones ?? []));
   const checks = $derived.by((): Check[] => {
     const backupItem = itemOf('backup');
     const disk = storage;
@@ -396,6 +418,30 @@
             : $t(`frameleaf_cc_cloud_link_${cloud.link}` as Translations),
         note: cloud?.configured ? $t(`frameleaf_cc_cloud_plan_${cloud.plan}` as Translations) : undefined,
         href: commandCenterUrl('cloud'),
+      },
+      {
+        id: 'phones',
+        icon: mdiCellphone,
+        name: $t('frameleaf_overview_check_phones'),
+        detail: $t('frameleaf_overview_check_phones_detail'),
+        tone: !phones || phones.length === 0 ? 'off' : behind.length > 0 ? 'warn' : 'good',
+        status: !phones
+          ? unread
+          : phones.length === 0
+            ? $t('frameleaf_overview_phones_none')
+            : behind.length > 0
+              ? $t('frameleaf_overview_phones_behind', { values: { count: behind.length } })
+              : $t('frameleaf_overview_up_to_date'),
+        note: !phones
+          ? undefined
+          : phones.length === 0
+            ? $t('frameleaf_overview_phones_none_note')
+            : behind.length > 0
+              ? $t('frameleaf_overview_phones_behind_note', {
+                  values: { name: behind[0].displayName, count: behind[0].quietForDays ?? 0 },
+                })
+              : $t('frameleaf_overview_phones_ok_note', { values: { count: phones.length } }),
+        href: commandCenterUrl('utilities', 'downloads'),
       },
       {
         id: 'night',
