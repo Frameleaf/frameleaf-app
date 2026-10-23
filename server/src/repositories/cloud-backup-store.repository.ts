@@ -343,6 +343,9 @@ type ClientUploadState = {
 
 type Part = { partNumber: number; etag: string };
 
+/** An ETag without its quotes, as a HEAD and an XML completion answer may each spell it. */
+const bareEtag = (etag: string | null) => etag?.replaceAll(/&quot;|"/g, '');
+
 @Injectable()
 export class CloudBackupStoreRepository {
   /** Waits before the second and third attempt of a request that failed for a transient reason. */
@@ -1139,6 +1142,26 @@ export class CloudBackupStoreRepository {
     }
   }
 
+  /** Whether the bucket still holds the object an upload receipt names (same version, or same ETag). */
+  private async stillStored(
+    connection: CloudBackupConnection,
+    key: string,
+    root: Buffer,
+    receipt: { etag: string; versionId?: string },
+  ) {
+    const raw = { ...connection, trustedManifests: undefined };
+    try {
+      const head = await this.send(raw, { method: 'HEAD', key, headers: this.objectHeaders(raw, key, root) });
+      const versionId = head.headers.get('x-amz-version-id');
+      return receipt.versionId && versionId
+        ? receipt.versionId === versionId
+        : bareEtag(head.headers.get('etag')) === bareEtag(receipt.etag);
+    } catch (error) {
+      if (error instanceof CloudBackupStoreError && error.status === 404) return false;
+      throw error;
+    }
+  }
+
   private clientStage(connection: CloudBackupConnection, key: string) {
     if (!connection.stagingDirectory) throw new Error('Client encryption requires durable local staging');
     return join(connection.stagingDirectory, sha256Hex(`${connection.bucket}/${key}`));
@@ -1207,8 +1230,14 @@ export class CloudBackupStoreRepository {
     )
       throw new Error('Encrypted upload staging identity mismatch');
     if (state?.completed) {
+      // An object's receipt outlives its upload only when the run stopped right after it; the object may be
+      // pruned, deleted or replaced since, so it is trusted only while the bucket still answers with it.
+      const kept =
+        context.kind !== 'object' || (await this.stillStored(connection, key, root, state.completed));
       if (connection.transfer) await connection.transfer.save(null);
-      return { ...state.completed, size: state.size, ciphertextSha256: state.ciphertextSha256 };
+      if (context.kind === 'object') await this.finishClientUpload(connection, key);
+      if (kept) return { ...state.completed, size: state.size, ciphertextSha256: state.ciphertextSha256 };
+      state = null;
     }
     if (!state) {
       const input = await open(path, 'r');
@@ -1688,6 +1717,7 @@ export class CloudBackupStoreRepository {
     parts: AsyncIterable<Buffer>,
     beforeComplete?: () => void,
     identity?: { source: string | null; sourceStamp: string | null; expectedSha256: string | null },
+    restarted = false,
   ): Promise<string> {
     identity ??= { source: null, sourceStamp: null, expectedSha256: null };
     const journal = connection.transfer;
@@ -1749,11 +1779,17 @@ export class CloudBackupStoreRepository {
       const uploadId = state.uploadId;
       const found = journal
         ? await this.multipartParts(connection, key, uploadId).catch((error: unknown) => {
-            if (state!.completing && error instanceof CloudBackupStoreError && error.code === 'NoSuchUpload')
-              return state!.parts;
+            if (!(error instanceof CloudBackupStoreError) || error.code !== 'NoSuchUpload') throw error;
+            if (state!.completing) return state!.parts;
+            // the provider expired the saved upload (an abort-incomplete lifecycle rule): start a new one once
+            if (!restarted) return null;
             throw error;
           })
         : [];
+      if (!found) {
+        await journal!.save(null);
+        return await this.multipart(connection, key, bucketKey, contentType, parts, beforeComplete, identity, true);
+      }
       let size = 0;
       const receipts = state.parts;
       for await (const body of parts) {

@@ -230,10 +230,24 @@ export class CloudBackupIndexRepository {
       .where('sha256', 'in', [...new Set(hashes)])
       .execute();
   }
-  /** Forget everything recorded for a bucket: a new claim starts from the bucket as it is now. */
+  /**
+   * Forget everything recorded for a bucket: a new claim starts from the bucket as it is now. Its
+   * manifests go too (their original memberships cascade), or prune, the restore lists and the safety
+   * proofs would keep trusting backups the emptied bucket no longer holds.
+   */
   @GenerateSql({ params: [DummyValue.STRING] })
   async deleteBucket(bucket: string): Promise<void> {
-    await this.db.deleteFrom('cloud_backup_object').where('bucket', '=', bucket).execute();
+    await this.db.transaction().execute(async (trx) => {
+      await trx.deleteFrom('cloud_backup_object').where('bucket', '=', bucket).execute();
+      await trx.deleteFrom('cloud_backup_object_verification').where('bucket', '=', bucket).execute();
+      await trx
+        .deleteFrom('cloud_backup_manifest_entry')
+        .where('manifestId', 'in', (eb) =>
+          eb.selectFrom('cloud_backup_manifest').select('id').where('bucket', '=', bucket),
+        )
+        .execute();
+      await trx.deleteFrom('cloud_backup_manifest').where('bucket', '=', bucket).execute();
+    });
   }
   /**
    * The database's clock, which stamps `lastSeenAt`, as ISO 8601 text with its microseconds. A `Date`
@@ -602,6 +616,28 @@ export class CloudBackupIndexRepository {
         },
       ]),
     );
+  }
+  /** Which of `paths` an asset other than `except` holds now, as its original or one of its files. */
+  @GenerateSql({ params: [[DummyValue.STRING], [DummyValue.UUID]] })
+  async getTakenPaths(paths: string[], except: string[]): Promise<Set<string>> {
+    if (paths.length === 0) {
+      return new Set();
+    }
+    const wanted = [...new Set(paths)];
+    const rows = await this.db
+      .selectFrom('asset')
+      .select('originalPath as path')
+      .where('originalPath', '=', sql<string>`any(${wanted}::text[])`)
+      .where('id', '!=', sql<string>`all(${except}::uuid[])`)
+      .union(
+        this.db
+          .selectFrom('asset_file')
+          .select('path')
+          .where('path', '=', sql<string>`any(${wanted}::text[])`)
+          .where('assetId', '!=', sql<string>`all(${except}::uuid[])`),
+      )
+      .execute();
+    return new Set(rows.map(({ path }) => path));
   }
   /** Presence and caller privacy from one snapshot, including non-active rows that cannot be treated as absent. */
   async getOwnerHistoryState(auth: AuthDto, assetIds: string[]): Promise<Map<string, OwnerBackupState>> {

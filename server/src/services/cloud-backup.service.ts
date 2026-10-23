@@ -3311,6 +3311,17 @@ export class CloudBackupService {
       const currentOriginals = new Map(
         [...library].filter(([, asset]) => !asset.isExternal).map(([id, asset]) => [id, asset.originalPath]),
       );
+      // a missing item goes back beside a path another item took since (a storage template reuses freed paths)
+      const missing = inPlace
+        ? (snapshot.assetIds ?? Object.keys(manifest.assets)).filter((id) => manifest.assets[id] && !library.has(id))
+        : [];
+      const taken = await this.index.getTakenPaths(
+        missing.flatMap((id) => manifest.assets[id].files.map((file) => file.path)),
+        missing,
+      );
+      const takenPaths = new Map(
+        missing.map((id) => [id, new Set(manifest.assets[id].files.map((file) => file.path).filter((path) => taken.has(path)))]),
+      );
       const mediaLocation = StorageCore.getMediaLocation();
       const plan = restorePlan({
         manifest,
@@ -3319,6 +3330,7 @@ export class CloudBackupService {
         operationId: operation.id,
         mediaLocation,
         currentOriginals,
+        takenPaths,
       });
       if (snapshot.owner) {
         plan.files = plan.files.filter((file) => file.role === 'original' || file.role === 'sidecar');

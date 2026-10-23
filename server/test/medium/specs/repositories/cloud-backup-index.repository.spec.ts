@@ -228,6 +228,33 @@ describe(CloudBackupIndexRepository.name, () => {
     await expect(sut.getUsage(bucket)).resolves.toEqual({ objects: 0, bytes: 0 });
   });
 
+  it('forgets a bucket’s manifests too, so a fresh claim keeps no backup the bucket no longer holds', async () => {
+    const { sut } = setup();
+    const bucket = `https://s3.example.test/${randomUUID()}`;
+    const other = `https://s3.example.test/${randomUUID()}`;
+    const old = await sut.createManifest({ bucket, key: 'm/20260920T030000Z.json.gz', operationId: randomUUID() });
+    await sut.finishManifest(old.id, { status: 'complete' });
+    const kept = await sut.createManifest({ bucket: other, key: 'm/20260920T030000Z.json.gz', operationId: randomUUID() });
+    await sut.finishManifest(kept.id, { status: 'complete' });
+
+    await sut.deleteBucket(bucket);
+
+    await expect(sut.listKeptManifests(bucket)).resolves.toEqual([]);
+    await expect(sut.listKeptManifests(other)).resolves.toHaveLength(1);
+  });
+
+  it('names the paths another asset holds now, as its original or one of its files', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const folder = `/data/library/${randomUUID()}`;
+    const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: `${folder}/IMG_1.jpg` });
+    await ctx.newAssetFile({ assetId: asset.id, path: `${folder}/IMG_1.jpg.xmp`, type: AssetFileType.Sidecar });
+    const paths = [`${folder}/IMG_1.jpg`, `${folder}/IMG_1.jpg.xmp`, `${folder}/IMG_2.jpg`];
+
+    await expect(sut.getTakenPaths(paths, [randomUUID()])).resolves.toEqual(new Set(paths.slice(0, 2)));
+    await expect(sut.getTakenPaths(paths, [asset.id])).resolves.toEqual(new Set());
+  });
+
   it('records manifests found in the bucket once, and never over one it already knows (FL-164)', async () => {
     const { sut } = setup();
     const bucket = `https://s3.example.test/${randomUUID()}`;

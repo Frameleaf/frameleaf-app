@@ -251,6 +251,34 @@ describe('client-encrypted storage and independent recovery', () => {
     expect((await store.get(connection, key, legacy)).equals(bytes)).toBe(true);
   });
 
+  it('uploads an object again when its left-behind receipt names an object the bucket no longer holds', async () => {
+    const bytes = Buffer.from('object pruned after a lost checkpoint');
+    const key = keyFor(bytes);
+    const path = join(directory, 'source');
+    await writeFile(path, bytes);
+    let lost = true;
+    const journal = {
+      current: null,
+      directory: join(directory, 'journal'),
+      save: vi.fn((transfer: unknown) => {
+        if (transfer === null && lost) {
+          lost = false;
+          return Promise.reject(new Error('claim lost'));
+        }
+        return Promise.resolve();
+      }),
+    };
+    await expect(store.uploadFile({ ...connection, transfer: journal }, key, path, legacy, sha(bytes))).rejects.toThrow(
+      'claim lost',
+    );
+    s3.current.delete(key);
+
+    await store.uploadFile({ ...connection, transfer: journal }, key, path, legacy, sha(bytes));
+
+    expect((await store.get(connection, key, legacy)).equals(bytes)).toBe(true);
+    expect(await readdir(connection.stagingDirectory!)).toEqual([]);
+  });
+
   it('retains a completed database receipt until its worker checkpoint commits', async () => {
     const bytes = Buffer.from('completed database dump');
     const key = keyFor(bytes, 'cloud-backup-frameleaf-db-backup-receipt.sql.gz');

@@ -372,6 +372,26 @@ describe('temporary backup capability storage integration', () => {
     expect(sha(provider.objects.get(`o/${sha(bytes)}`)!)).toBe(sha(bytes));
   });
 
+  it('starts a new multipart upload when the provider expired the saved one before the run resumed', async () => {
+    const bytes = Buffer.alloc(25 * 1024 * 1024, 4);
+    const path = join(folder, 'video');
+    await writeFile(path, bytes);
+    provider.failPart = 3;
+    await expect(
+      store.uploadFile(provider.connection('upload', journal()), `o/${sha(bytes)}`, path, key, sha(bytes)),
+    ).rejects.toBeInstanceOf(ManagedBackupAuthorizationError);
+    expect(durable).toMatchObject({ kind: 'upload', completing: false });
+    // an abort-incomplete-multipart lifecycle rule removes the upload while the run waits
+    provider.uploads.clear();
+    provider.failPart = 0;
+    provider.unavailable = false;
+
+    await store.uploadFile(provider.connection('upload', journal()), `o/${sha(bytes)}`, path, key, sha(bytes));
+
+    expect(sha(provider.objects.get(`o/${sha(bytes)}`)!)).toBe(sha(bytes));
+    expect(durable).toBeNull();
+  });
+
   it('resumes the same encrypted multipart bytes across renewal, outage and a replacement worker', async () => {
     const bytes = Buffer.alloc(25 * 1024 * 1024, 3);
     const objectKey = encryptedKey(bytes);
