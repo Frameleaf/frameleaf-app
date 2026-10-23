@@ -3424,3 +3424,25 @@ def test_hardware_report_reads_the_compute_capability_for_cuda(monkeypatch: Monk
 
     assert report["computeCapability"] == "7.5"
     assert report["rocm"] is None
+
+
+def test_hardware_endpoint_needs_a_cuda_device_not_just_the_provider(
+    deployed_app: TestClient, monkeypatch: MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "frameleaf_ml.main.ort.get_available_providers",
+        lambda: ["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    monkeypatch.setattr("frameleaf_ml.main._torch_cuda_info", lambda: (False, 0))
+
+    response = deployed_app.get("http://localhost:3003/hardware")
+
+    assert response.status_code == 200
+    assert response.json()["preferredAcceleration"] == "auto"
+
+
+def test_semantic_mask_requests_leave_the_device_to_the_worker_setting() -> None:
+    from frameleaf_ml.schemas import ModelTask, ModelType, validate_options
+
+    assert validate_options(ModelTask.SEMANTIC_MASK, ModelType.VISUAL, {"target": "sky"}) == {"target": "sky"}
+    assert validate_options(ModelTask.SEMANTIC_MASK, ModelType.VISUAL, {"device": "cuda"})["device"] == "cuda"

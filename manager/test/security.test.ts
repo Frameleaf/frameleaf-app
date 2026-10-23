@@ -191,3 +191,42 @@ test('without MANAGER_ORIGIN, Manager accepts local addresses only and still che
     assert.throws(() => new Security(store, undefined, 'https://tower:5001'));
   } finally { store.close(); await rm(directory, { recursive: true, force: true }); }
 });
+
+test('a signed-in session polling the dashboard never runs out of the per-address budget', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-rate-'));
+  const store = new Store(directory);
+  try {
+    const security = new Security(store, 'https://manager.test:9443');
+    await security.claim('Owner', 'a private test password', '::ffff:192.168.1.5');
+    const session = await security.login('a private test password');
+    const statuses: number[] = [];
+    const response = {
+      set: () => {},
+      status: (value: number) => {
+        statuses.push(value);
+        return response;
+      },
+      json: () => {},
+    } as unknown as Response;
+    const get = (cookie: string) =>
+      security.guard(
+        {
+          headers: { host: 'manager.test:9443', cookie },
+          method: 'GET',
+          path: '/manager-api/dashboard',
+          socket: { remoteAddress: '192.168.1.5' },
+        } as unknown as Request,
+        response,
+        () => {},
+      );
+    // Two visible tabs polling every 10 s for 10 minutes.
+    for (let i = 0; i < 130; i++) get(`__Host-frameleaf-manager=${session.session}`);
+    assert.deepEqual(statuses, []);
+    // Requests without a session still share the address's budget.
+    for (let i = 0; i < 121; i++) get('');
+    assert.equal(statuses.at(-1), 429);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
