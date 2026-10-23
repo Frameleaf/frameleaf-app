@@ -39,7 +39,7 @@
   import { nightOutcome } from '$lib/components/frameleaf/settings/overnight/overnight';
   import { attentionView, type AttentionSayings, type Words } from '$lib/frameleaf/attention';
   import { cloudGlance, gpuStudioState, mlEndpointState } from '$lib/frameleaf/overview-readiness';
-  import { formatBytes } from '$lib/frameleaf/physical-dedup';
+  import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
