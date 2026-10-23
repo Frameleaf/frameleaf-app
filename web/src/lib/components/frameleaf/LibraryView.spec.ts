@@ -266,6 +266,43 @@ describe('LibraryView', () => {
     libraryGridPreferences.showFileNames = false;
   });
 
+  it('hides the timeline and its year scrubber while Compare is open (LIB-09)', async () => {
+    await setup(false);
+    librarySession.patchView({ view: 'compare' });
+    await tick();
+    try {
+      const compare = screen.getByTestId('frameleaf-library-compare');
+      expect(compare.closest('[inert]')).toBeNull();
+      // the scrubber and the sticky toolbar live in the timeline; nothing in it may draw over Compare
+      expect(screen.getByTestId('frameleaf-results-toolbar').closest('[inert]')).toHaveClass('fl-behind-compare');
+    } finally {
+      librarySession.patchView({ view: 'grid' });
+    }
+  });
+
+  it('says why Compare and Quick edit are off while everything matching is selected (LIB-09)', async () => {
+    render(LibraryView, {
+      options: { albumId: 'album-1' },
+      destination: { kind: 'album', id: 'album-1' },
+      syncUrl: false,
+      viewer: createRawSnippet(() => ({ render: () => '<div></div>' })),
+    });
+    await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+    librarySession.dispatch({ type: 'selection', ids: ['a', 'b'], allMatching: true });
+    await tick();
+    try {
+      // this spec renders translation keys
+      const reason = 'frameleaf_selection_needs_picked_items';
+      for (const name of ['frameleaf_compare_title', 'frameleaf_selection_quick_edit']) {
+        const action = screen.getByRole('button', { name });
+        expect(action).toHaveAttribute('aria-disabled', 'true');
+        expect(action).toHaveAttribute('title', reason);
+      }
+    } finally {
+      librarySession.dispatch({ type: 'selection', ids: [] });
+    }
+  });
+
   it('draws no layout switch, Filter menu or Work panel on a public shared-link page', async () => {
     await setup(true);
     expect(screen.queryByTestId('frameleaf-results-toolbar')).not.toBeInTheDocument();

@@ -259,7 +259,8 @@
     if (chip.count > 1) {
       return `${base} (${chip.count})`;
     }
-    return chip.detail ? `${base}: ${chip.detail}` : base;
+    const detail = chip.detailText ? $t(chip.detailText.key, { values: chip.detailText.values }) : chip.detail;
+    return detail ? `${base}: ${detail}` : base;
   };
 
   /** Prototype "Clear all": the search text and every filter. */

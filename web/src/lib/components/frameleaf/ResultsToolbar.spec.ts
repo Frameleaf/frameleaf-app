@@ -1,4 +1,6 @@
+import { ImageEnrichmentFilter } from '@frameleaf/sdk';
 import { render, screen, waitFor } from '@testing-library/svelte';
+import { init, register, waitLocale } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
@@ -50,5 +52,52 @@ describe('ResultsToolbar people chip', () => {
     await waitFor(() => expect(chipImages()).toHaveLength(1));
     eventManager.emit('SessionLocked');
     await waitFor(() => expect(chipImages()).toHaveLength(0));
+  });
+});
+
+/** LIB-09: a chip reads like the filter panel choice that made it, never the stored value. */
+describe('ResultsToolbar chip wording', () => {
+  beforeAll(async () => {
+    await init({ fallbackLocale: 'en-US' });
+    register('en-US', () => import('$i18n/en.json'));
+    await waitLocale('en-US');
+  });
+
+  const chipText = (filter: Record<string, unknown>, imageEnrichment?: ImageEnrichmentFilter) => {
+    const session = new LibrarySessionStore({ storage: null });
+    session.setQuery({ ...emptyDiscoveryQuery(), filter, ...(imageEnrichment && { imageEnrichment }) } as never);
+    const { unmount } = render(ResultsToolbar, { session });
+    const text = [...screen.getByTestId('frameleaf-filter-chips').querySelectorAll('.fl-chip-list > *')].map((chip) =>
+      chip.textContent?.replaceAll(/\s+/g, ' ').trim(),
+    );
+    unmount();
+    return text;
+  };
+
+  it.each([
+    [{ type: { eq: 'IMAGE' } }, 'Media type: Photos'],
+    [{ type: { eq: 'VIDEO' } }, 'Media type: Videos'],
+    [{ rating: { gte: 4 } }, 'Star rating: 4 stars or more'],
+    [{ rating: { gte: 1 } }, 'Star rating: 1 star or more'],
+    [{ rating: { eq: 4 } }, 'Star rating: Exactly 4 stars'],
+    [{ rating: { eq: 0 } }, 'Star rating: Exactly 0 stars'],
+    [{ rating: { eq: null } }, 'Star rating: Not rated'],
+    [{ rating: { eq: -1 } }, 'Star rating: Rejected'],
+    [{ visibility: { eq: 'archive' } }, 'Visibility: Archived'],
+    [{ hasAlbums: { eq: false } }, 'Not in any album'],
+    [{ hasTags: { eq: false } }, 'Untagged'],
+    [{ hasPeople: { eq: true } }, 'Has people'],
+    [{ hasPeople: { eq: false } }, 'Has people: No'],
+    [{ localDateTime: { gte: '2026-01-01', lte: '2026-03-31' } }, 'Capture date: Jan 1, 2026 – Mar 31, 2026'],
+    [{ localDateTime: { gte: '2026-01-01' } }, 'Capture date: From Jan 1, 2026'],
+    [{ city: { eq: 'Banff' } }, 'City: Banff'],
+    [{ make: { eq: 'Canon' } }, 'Camera brand: Canon'],
+  ])('%j reads %s', (filter, expected) => {
+    expect(chipText(filter)).toEqual([expected]);
+  });
+
+  it('draws a chip for the Text & descriptions and Sensitivity review choices', () => {
+    expect(chipText({}, ImageEnrichmentFilter.MissingImageDescription)).toEqual(['Description: No description']);
+    expect(chipText({}, ImageEnrichmentFilter.NsfwReview)).toEqual(['Review status: Needs review']);
   });
 });

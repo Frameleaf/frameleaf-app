@@ -830,7 +830,11 @@
         }
       }
     }
-    return [chip.detail ?? $t(chip.labelKey)];
+    return [
+      chip.detailText
+        ? $t(chip.detailText.key, { values: chip.detailText.values })
+        : (chip.detail ?? $t(chip.labelKey)),
+    ];
   };
 
   /**
@@ -1152,7 +1156,11 @@
       label: $t('frameleaf_compare_title'),
       icon: mdiCompare,
       disabled: session.selection.length < 2 || !!snapshot,
-      disabledReason: session.selection.length < 2 ? $t('frameleaf_selection_compare_needs_two') : undefined,
+      disabledReason: snapshot
+        ? $t('frameleaf_selection_needs_picked_items')
+        : session.selection.length < 2
+          ? $t('frameleaf_selection_compare_needs_two')
+          : undefined,
       onClick: () => session.patchView({ view: 'compare' }),
     },
     ...(viewer
@@ -1162,6 +1170,7 @@
             label: $t('frameleaf_selection_quick_edit'),
             icon: mdiPencilOutline,
             disabled: !canQuickEdit,
+            disabledReason: snapshot ? $t('frameleaf_selection_needs_picked_items') : undefined,
             onClick: openQuickEdit,
           },
         ]
@@ -1703,84 +1712,89 @@
 
   <div class="fl-library-body" class:has-panel={showInfoPanel}>
     <div class="fl-library-main" bind:this={main}>
-      <LibraryTimeline
-        timelineManager={manager}
-        {session}
-        {ratingFor}
-        sensitiveFor={lockedView ? isLockedRuleMatch : undefined}
-        {tileLayout}
-        thumbnailSize={libraryGridPreferences.thumbnailSize}
-        showFileNames={libraryGridPreferences.showFileNames}
-        onThumbnailSizeChange={publicView ? undefined : (size) => (libraryGridPreferences.thumbnailSize = size)}
-        showDayHeaders={gridLayout === 'timeline'}
-        grouping={gridLayout === 'timeline' ? session.state.grouping : 'days'}
-        onGroupingChange={gridLayout === 'timeline' && !firstRun
-          ? (grouping) => session.patchView({ grouping })
-          : undefined}
-        {enableRouting}
-        {selectionMode}
-        {singleSelect}
-        {onSelect}
-        {onTileClick}
-        {tileOverlay}
-        {onOpen}
-        quickActions={quickActionsFor}
-        timelineCaptions={gridLayout === 'timeline'}
-        empty={emptyState}
-        {gutter}
-      >
-        {#snippet header()}
-          <!-- Prototype `.collection-header`: the page's own header and the layout switch beside it. -->
-          <div class="fl-library-header" class:has-title={!!title} class:has-toolbar={!publicView && !firstRun}>
-            <div class="fl-library-header-content">
-              {#if title}
-                <h1 class="fl-library-title">{title}</h1>
-              {/if}
-              {@render children?.()}
-            </div>
-            <!-- LIB-P5: phones too show Timeline, Browse and Work beside the title, as the template does. -->
-            {#if !publicView && !firstRun}
-              <LibraryLayoutSwitch {session} layouts={lockedView ? ['timeline'] : undefined} />
-            {/if}
-          </div>
-          {#if subheader}
-            <div class="fl-library-subheader">{@render subheader()}</div>
-          {/if}
-          {#if !publicView && !firstRun}
-            <div class="fl-library-toolbar" bind:this={toolbarStrip}>
-              <!-- Compare, Quick edit and Open in Studio live on the selection bar (September 24). -->
-              <ResultsToolbar
-                {session}
-                onOpenFilterPanel={openFilterPanel}
-                {filterPanelOpen}
-                onCloseFilterPanel={closeFilterPanel}
-                count={resultCount}
-                onSlideshow={canSlideshow ? () => void startSlideshow() : undefined}
-                inspectorOpen={canShowInfoPanel ? inspectorOpen : undefined}
-                onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
-                {sorts}
-                sort={shownSort}
-                onSortChange={albumSortId || ranked ? changeAlbumSort : undefined}
-                unappliedFields={queryApplied.unapplied}
-                view={toolbarView}
-                onViewChange={changeView}
-                onMoreActions={libraryChrome ? () => (moreActionsOpen = true) : undefined}
-                leading={toolbarStart}
-              >
-                {@render toolbar?.()}
-                <!-- FL-33: Work's file-name toggle lives in the sticky toolbar, in Work only. -->
-                {#if gridLayout === 'work' && !listView}
-                  <WorkFileNamesToggle />
+      <!-- LIB-09: the year scrubber and the stuck toolbar stack above Compare's overlay, so the
+           timeline is hidden (and out of the tab order) while Compare is open. It stays mounted,
+           so the scroll position survives Done. -->
+      <div class="fl-behind-compare" inert={comparing}>
+        <LibraryTimeline
+          timelineManager={manager}
+          {session}
+          {ratingFor}
+          sensitiveFor={lockedView ? isLockedRuleMatch : undefined}
+          {tileLayout}
+          thumbnailSize={libraryGridPreferences.thumbnailSize}
+          showFileNames={libraryGridPreferences.showFileNames}
+          onThumbnailSizeChange={publicView ? undefined : (size) => (libraryGridPreferences.thumbnailSize = size)}
+          showDayHeaders={gridLayout === 'timeline'}
+          grouping={gridLayout === 'timeline' ? session.state.grouping : 'days'}
+          onGroupingChange={gridLayout === 'timeline' && !firstRun
+            ? (grouping) => session.patchView({ grouping })
+            : undefined}
+          {enableRouting}
+          {selectionMode}
+          {singleSelect}
+          {onSelect}
+          {onTileClick}
+          {tileOverlay}
+          {onOpen}
+          quickActions={quickActionsFor}
+          timelineCaptions={gridLayout === 'timeline'}
+          empty={emptyState}
+          {gutter}
+        >
+          {#snippet header()}
+            <!-- Prototype `.collection-header`: the page's own header and the layout switch beside it. -->
+            <div class="fl-library-header" class:has-title={!!title} class:has-toolbar={!publicView && !firstRun}>
+              <div class="fl-library-header-content">
+                {#if title}
+                  <h1 class="fl-library-title">{title}</h1>
                 {/if}
-              </ResultsToolbar>
+                {@render children?.()}
+              </div>
+              <!-- LIB-P5: phones too show Timeline, Browse and Work beside the title, as the template does. -->
+              {#if !publicView && !firstRun}
+                <LibraryLayoutSwitch {session} layouts={lockedView ? ['timeline'] : undefined} />
+              {/if}
             </div>
-          {/if}
-        {/snippet}
-      </LibraryTimeline>
+            {#if subheader}
+              <div class="fl-library-subheader">{@render subheader()}</div>
+            {/if}
+            {#if !publicView && !firstRun}
+              <div class="fl-library-toolbar" bind:this={toolbarStrip}>
+                <!-- Compare, Quick edit and Open in Studio live on the selection bar (September 24). -->
+                <ResultsToolbar
+                  {session}
+                  onOpenFilterPanel={openFilterPanel}
+                  {filterPanelOpen}
+                  onCloseFilterPanel={closeFilterPanel}
+                  count={resultCount}
+                  onSlideshow={canSlideshow ? () => void startSlideshow() : undefined}
+                  inspectorOpen={canShowInfoPanel ? inspectorOpen : undefined}
+                  onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
+                  {sorts}
+                  sort={shownSort}
+                  onSortChange={albumSortId || ranked ? changeAlbumSort : undefined}
+                  unappliedFields={queryApplied.unapplied}
+                  view={toolbarView}
+                  onViewChange={changeView}
+                  onMoreActions={libraryChrome ? () => (moreActionsOpen = true) : undefined}
+                  leading={toolbarStart}
+                >
+                  {@render toolbar?.()}
+                  <!-- FL-33: Work's file-name toggle lives in the sticky toolbar, in Work only. -->
+                  {#if gridLayout === 'work' && !listView}
+                    <WorkFileNamesToggle />
+                  {/if}
+                </ResultsToolbar>
+              </div>
+            {/if}
+          {/snippet}
+        </LibraryTimeline>
 
-      {#if onShowMore}
-        <ShowMore {session} {onShowMore} {loading} />
-      {/if}
+        {#if onShowMore}
+          <ShowMore {session} {onShowMore} {loading} />
+        {/if}
+      </div>
 
       {#if comparing}
         <div class="fl-library-compare">
@@ -2135,6 +2149,12 @@
     to {
       opacity: 0.2;
     }
+  }
+  .fl-behind-compare {
+    display: contents;
+  }
+  .fl-behind-compare[inert] {
+    visibility: hidden;
   }
   .fl-library-compare {
     position: absolute;
