@@ -35,7 +35,7 @@
     RECOMMENDED_ACCOUNT_DAYS,
     RECOMMENDED_PHOTO_DAYS,
   } from '$lib/components/frameleaf/settings/storage/storage';
-  import { formatBytes } from '$lib/frameleaf/physical-dedup';
+  import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
