@@ -208,6 +208,8 @@ describe('/server', () => {
         publicUsers: true,
         isOnboarded: false,
         maintenanceMode: false,
+        // FL-402: the worker may still be putting the place data back from its first start
+        placesRestoring: expect.any(Boolean),
         mapDarkStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/dark.json',
         mapLightStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/light.json',
         minFaces: 3,

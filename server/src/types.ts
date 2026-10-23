@@ -1471,7 +1471,12 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafLibraryMovePause]: LibraryMovePauseState;
   [SystemMetadataKey.MediaLocation]: MediaLocation;
   [SystemMetadataKey.IdenticalFiles]: IdenticalFilesState;
-  [SystemMetadataKey.ReverseGeocodingState]: { lastUpdate?: string; lastImportFileName?: string };
+  [SystemMetadataKey.ReverseGeocodingState]: {
+    lastUpdate?: string;
+    lastImportFileName?: string;
+    /** FL-402: set while the place data is being put back (first boot or after a restore), until items are re-matched */
+    restoring?: boolean;
+  };
   [SystemMetadataKey.SystemConfig]: DeepPartial<SystemConfig>;
   [SystemMetadataKey.EffectiveConfigEpoch]: {
     format: 1;

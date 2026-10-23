@@ -173,6 +173,9 @@ export class MetadataService extends BaseService {
       await this.jobRepository.resume(QueueName.MetadataExtraction);
       if (imported) {
         await this.jobRepository.queue({ name: JobName.LandmarkMatchAll });
+      } else {
+        // FL-402: nothing to re-match, so the place data is complete (also clears a flag a crash left behind)
+        await this.mapRepository.setPlacesRestoring(false);
       }
       // Not awaited: a download of tens of megabytes must not hold up the worker's start.
       void this.syncLandmarkIcons();
@@ -207,7 +210,12 @@ export class MetadataService extends BaseService {
 
   @OnJob({ name: JobName.LandmarkMatchAll, queue: QueueName.BackgroundTask })
   async handleLandmarkMatchAll(): Promise<JobStatus> {
-    await this.mapRepository.matchAllLandmarks();
+    try {
+      await this.mapRepository.matchAllLandmarks();
+    } finally {
+      // FL-402: places are back once items are matched to them again; a failure must not leave the notice up
+      await this.mapRepository.setPlacesRestoring(false);
+    }
     return JobStatus.Success;
   }
 
