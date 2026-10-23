@@ -63,6 +63,28 @@ describe(JobRepository.name, () => {
     ]);
   });
 
+  it('keys same-subject jobs with their own identity as separate run items', async () => {
+    const execution = context();
+    await queueExecution.run(execution, () =>
+      sut.collectFollowups(() =>
+        sut.queueAll([
+          { name: JobName.WorkflowAssetTrigger, data: { workflowId: 'w1', assetId: 'asset', executionId: 'e1' } },
+          { name: JobName.WorkflowAssetTrigger, data: { workflowId: 'w2', assetId: 'asset', executionId: 'e2' } },
+          { name: JobName.NotifyAlbumUpdate, data: { id: 'album', recipientId: 'u1' } },
+          { name: JobName.NotifyAlbumUpdate, data: { id: 'album', recipientId: 'u2' } },
+          { name: JobName.AssetGenerateThumbnails, data: { id: 'asset' } },
+        ] as never),
+      ),
+    );
+    expect(execution.followups.map(({ itemKey }) => itemKey)).toEqual([
+      'asset/workflow-e1',
+      'asset/workflow-e2',
+      'album/album/u1',
+      'album/album/u2',
+      'asset',
+    ]);
+  });
+
   it('does not silently turn an explicit Failed result into success', async () => {
     sut['handlers'][JobName.AssetGenerateThumbnails]!.handler = vi.fn().mockResolvedValue(JobStatus.Failed);
     const execution = context();
