@@ -81,6 +81,11 @@ export class AlbumService extends BaseService {
     let albums: MapAlbumDto[] = assetId
       ? await this.albumRepository.getByAssetId(ownerId, assetId, privacyOptions)
       : await this.albumRepository.getAll(ownerId, rest);
+    // FL-522: a smart album the person hid stays out of their own album list (it keeps filling)
+    const hidden = await this.smartAlbumRepository.getHiddenAlbumIds(ownerId);
+    if (hidden.size > 0) {
+      albums = albums.filter((album) => !hidden.has(album.id));
+    }
 
     if (albums.length === 0) {
       return [];

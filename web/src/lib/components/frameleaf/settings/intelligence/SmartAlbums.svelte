@@ -10,10 +10,15 @@
    * photo must have (`tagTriggers`), a phrase is a description compared with what the photo looks
    * like (`clipQueries`). Advanced shows and edits the two lists as they are.
    *
-   * Left for later (server work): how many photos each album holds and sample pictures, how many
-   * people show it and each person hiding an album for themselves (the member view), the count and
-   * samples of what a change would add or remove before saving, "Make a category" from this page and
-   * "Pick out your best shots", which has no server setting.
+   * FL-522: each album says how many photos it holds across the household and how many people show it,
+   * with a few pictures from your own album (`getSmartAlbumOverview`; nobody else's photos are shown).
+   * Changing an album's words or strictness can show what the change would add and take out of your
+   * album before saving (`previewSmartAlbumRule`). "Your smart albums" (`MySmartAlbums`, also under Your
+   * preferences › Tools for every account) shows each album as you see it, with a switch to hide it from
+   * your own library.
+   *
+   * Left for later: "Make a category" from this page and "Pick out your best shots", which has no
+   * server setting.
    */
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -30,7 +35,9 @@
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import TextArea from '$lib/components/frameleaf/settings/kit/TextArea.svelte';
+  import Thumbs from '$lib/components/frameleaf/settings/kit/Thumbs.svelte';
   import Explain from '$lib/components/frameleaf/settings/intelligence/Explain.svelte';
+  import MySmartAlbums from '$lib/components/frameleaf/settings/intelligence/MySmartAlbums.svelte';
   import Figure from '$lib/components/frameleaf/settings/intelligence/Figure.svelte';
   import Words from '$lib/components/frameleaf/settings/intelligence/Words.svelte';
   import {
@@ -44,7 +51,17 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import SmartAlbumReevaluateModal from '$lib/modals/SmartAlbumReevaluateModal.svelte';
   import { locale } from '$lib/stores/preferences.store';
-  import { ClassificationRuleAction, SmartAlbumBuiltInKind, type AdminConfigSmartAlbumKindDto } from '@frameleaf/sdk';
+  import { handleError } from '$lib/utils/handle-error';
+  import {
+    ClassificationRuleAction,
+    getSmartAlbumOverview,
+    previewSmartAlbumRule,
+    SmartAlbumBuiltInKind,
+    type AdminConfigSmartAlbumKindDto,
+    type SmartAlbumOverviewResponseDto,
+    type SmartAlbumPreviewResponseDto,
+  } from '@frameleaf/sdk';
+  import { onMount } from 'svelte';
   import { modalManager, toastManager } from '@frameleaf/ui';
   import {
     mdiAirplane,
@@ -105,6 +122,56 @@
     };
   });
 
+  // FL-522: counts across the household and a few pictures from your own album ───────────────────
+  let overview = $state<SmartAlbumOverviewResponseDto>();
+  onMount(() => {
+    void (async () => {
+      try {
+        overview = await getSmartAlbumOverview();
+      } catch {
+        // the rows then say only whether each album is offered
+      }
+    })();
+  });
+  const countsOf = (kind: Kind) => overview?.albums.find((item) => item.kind === kind);
+  const usesOf = (kind: Kind) => {
+    const counts = countsOf(kind);
+    return counts && overview
+      ? $t('frameleaf_intel_album_uses', {
+          values: { count: Math.max(0, overview.people - counts.hiddenBy), total: overview.people },
+        })
+      : undefined;
+  };
+
+  // FL-522: what a change would add and take out, before saving ─────────────────────────────────
+  let preview = $state<SmartAlbumPreviewResponseDto>();
+  let previewing = $state(false);
+  const showChange = async () => {
+    if (!album || !kindConfig) {
+      return;
+    }
+    previewing = true;
+    try {
+      preview = await previewSmartAlbumRule({
+        smartAlbumPreviewDto: {
+          kind: album.kind,
+          tagTriggers: [...kindConfig.tagTriggers],
+          clipQueries: [...kindConfig.clipQueries],
+          threshold: kindConfig.threshold,
+        },
+      });
+    } catch (error) {
+      handleError(error, $t('frameleaf_intel_album_preview_failed'));
+    } finally {
+      previewing = false;
+    }
+  };
+  // a preview is of the words it was made with; changing them again asks again
+  $effect(() => {
+    void JSON.stringify(kindConfig);
+    preview = undefined;
+  });
+
   const reevaluate = async (kind?: Kind) => {
     const label = kind ? kindName(kind, smartAlbums.builtIn[kind]) : undefined;
     const result = await modalManager.show(
@@ -153,7 +220,15 @@
         ? $t('frameleaf_intel_album_offered', { values: { name } })
         : $t('frameleaf_intel_album_not_offered', { values: { name } })}
       body={kindConfig.enabled
-        ? $t(`frameleaf_intel_album_what_${album.kind}` as Translations)
+        ? [
+            $t(`frameleaf_intel_album_what_${album.kind}` as Translations),
+            countsOf(album.kind)
+              ? $t('frameleaf_intel_album_holds', { values: { count: countsOf(album.kind)!.count } })
+              : '',
+            usesOf(album.kind) ?? '',
+          ]
+            .filter(Boolean)
+            .join(' ')
         : $t('frameleaf_intel_album_not_offered_body')}
       label={$t('frameleaf_intel_album_status')}
     />
@@ -228,6 +303,33 @@
               <Button onclick={undoAlbum}>{$t('frameleaf_intel_undo')}</Button>
             {/snippet}
           </Notice>
+          <Row label={$t('frameleaf_intel_album_preview')} help={$t('frameleaf_intel_album_preview_help')}>
+            <Button disabled={previewing} onclick={showChange}>{$t('frameleaf_intel_album_preview_button')}</Button>
+          </Row>
+          {#if preview}
+            <div class="change" aria-live="polite">
+              <p>
+                {$t('frameleaf_intel_album_preview_result', {
+                  values: { adds: preview.adds, removes: preview.removes, matched: preview.matched },
+                })}
+                {#if !preview.looksChecked}
+                  {$t('frameleaf_intel_album_preview_words_only')}
+                {/if}
+              </p>
+              {#if preview.adds > 0}
+                <div class="samples">
+                  <span>{$t('frameleaf_intel_album_preview_join')}</span>
+                  <Thumbs ids={preview.addSamples} label={$t('frameleaf_intel_album_preview_join')} />
+                </div>
+              {/if}
+              {#if preview.removes > 0}
+                <div class="samples">
+                  <span>{$t('frameleaf_intel_album_preview_leave')}</span>
+                  <Thumbs ids={preview.removeSamples} label={$t('frameleaf_intel_album_preview_leave')} />
+                </div>
+              {/if}
+            </div>
+          {/if}
         {/if}
         <Row
           label={$t('frameleaf_intel_album_update')}
@@ -310,9 +412,20 @@
               {name}
               detail={$t(`frameleaf_intel_album_what_${kind}` as Translations)}
               tone={config.enabled ? 'good' : 'off'}
-              status={config.enabled ? $t('frameleaf_intel_albums_offered') : $t('frameleaf_intel_albums_not_offered')}
+              status={config.enabled
+                ? countsOf(kind)
+                  ? $t('frameleaf_intel_album_photos', { values: { count: countsOf(kind)!.count } })
+                  : $t('frameleaf_intel_albums_offered')
+                : $t('frameleaf_intel_albums_not_offered')}
+              note={config.enabled ? usesOf(kind) : undefined}
             >
               {#snippet measure()}
+                {#if config.enabled}
+                  <Thumbs
+                    ids={countsOf(kind)?.samples ?? []}
+                    label={$t('frameleaf_my_albums_samples', { values: { name } })}
+                  />
+                {/if}
                 <Switch
                   label={$t('frameleaf_intel_albums_offer', { values: { name } })}
                   checked={config.enabled}
@@ -372,10 +485,33 @@
         {/if}
       </Section>
     {/if}
+
+    <MySmartAlbums />
   {/if}
 </KitPage>
 
 <style>
+  .change {
+    display: grid;
+    gap: var(--fl-space-3);
+    padding: var(--fl-space-4);
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+  }
+  .change p {
+    margin: 0;
+    font-size: var(--fl-font-callout);
+    line-height: 1.5;
+  }
+  .samples {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--fl-space-3);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
   /* The kit's quiet "Open" button, as a link so the album page has an address. */
   .open {
     display: inline-flex;

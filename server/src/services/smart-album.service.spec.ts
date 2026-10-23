@@ -612,4 +612,113 @@ describe(SmartAlbumService.name, () => {
       expect(mocks.smartAlbum.ensureForUser).not.toHaveBeenCalled();
     });
   });
+
+  describe('previews, counts and hiding (FL-522)', () => {
+    const auth = { user: { id: ownerId, isAdmin: true } } as never;
+    const mine = (kind: string, hidden = false) => ({
+      kind,
+      albumId: newUuid(),
+      hidden,
+      count: 12,
+      samples: ['a', 'b'],
+    });
+
+    beforeEach(() => {
+      const kinds = Object.keys(defaults.smartAlbums.builtIn);
+      mocks.smartAlbum.getAllSmartAlbumIdsForOwner.mockResolvedValue(new Map(kinds.map((kind) => [kind, newUuid()])));
+    });
+
+    it('lists the person’s own albums as they see them, only the kinds that are offered', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        smartAlbums: { enabled: true, builtIn: { food: { enabled: false } } },
+      });
+      mocks.smartAlbum.listForOwner.mockResolvedValue([mine('pets'), mine('food'), mine('travel', true)]);
+
+      const result = await sut.getMine(auth);
+
+      expect(result.enabled).toBe(true);
+      expect(result.albums.map((album) => album.kind)).toEqual(expect.arrayContaining(['pets', 'travel']));
+      expect(result.albums.map((album) => album.kind)).not.toContain('food');
+      expect(result.albums.find((album) => album.kind === 'travel')).toEqual(
+        expect.objectContaining({ hidden: true, name: defaults.smartAlbums.builtIn.travel.name }),
+      );
+      expect(mocks.smartAlbum.listForOwner).toHaveBeenCalledWith(ownerId, expect.anything());
+    });
+
+    it('says smart albums are off without reading any album', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ smartAlbums: { enabled: false } });
+      await expect(sut.getMine(auth)).resolves.toEqual({ enabled: false, albums: [] });
+      expect(mocks.smartAlbum.listForOwner).not.toHaveBeenCalled();
+    });
+
+    it('hides an album for this person only, and refuses a kind they do not have', async () => {
+      mocks.smartAlbum.setHidden.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+      mocks.smartAlbum.listForOwner.mockResolvedValue([]);
+
+      await sut.setMineHidden(auth, 'pets', true);
+      expect(mocks.smartAlbum.setHidden).toHaveBeenCalledWith(ownerId, 'pets', true);
+      await expect(sut.setMineHidden(auth, 'unknown', true)).rejects.toThrow('no smart album');
+    });
+
+    it('gives an administrator household counts with samples from their own album only', async () => {
+      mocks.smartAlbum.getHouseholdCounts.mockResolvedValue([{ kind: 'pets', count: 900, people: 3, hiddenBy: 1 }]);
+      mocks.smartAlbum.listForOwner.mockResolvedValue([mine('pets')]);
+      mocks.user.getList.mockResolvedValue([{}, {}, {}, {}] as never);
+
+      const overview = await sut.getOverview(auth);
+
+      expect(overview.people).toBe(4);
+      expect(overview.albums.find((album) => album.kind === 'pets')).toEqual({
+        kind: 'pets',
+        count: 900,
+        people: 3,
+        hiddenBy: 1,
+        samples: ['a', 'b'],
+      });
+      expect(overview.albums.find((album) => album.kind === 'food')).toEqual(
+        expect.objectContaining({ count: 0, samples: [] }),
+      );
+    });
+
+    it('previews a rule with the words alone when the phrases cannot be compared', async () => {
+      withClipConfig(mocks, 'preview-model-down');
+      mocks.machineLearning.encodeText.mockRejectedValue(new Error('ml down'));
+      const preview = { current: 10, matched: 12, adds: 3, removes: 1, addSamples: ['x'], removeSamples: ['y'] };
+      mocks.smartAlbum.previewRule.mockResolvedValue(preview);
+
+      await expect(
+        sut.previewRule(auth, { kind: 'pets', tagTriggers: ['Dog'], clipQueries: ['a dog'], threshold: 0.3 }),
+      ).resolves.toEqual({ ...preview, looksChecked: false });
+      expect(mocks.smartAlbum.previewRule).toHaveBeenCalledWith(
+        ownerId,
+        'pets',
+        { tags: ['Dog'], embeddings: [], threshold: 0.3 },
+        expect.anything(),
+      );
+    });
+
+    it('compares the phrases when Visual search answers', async () => {
+      withClipConfig(mocks, 'preview-model-up');
+      mocks.machineLearning.encodeText.mockResolvedValue(unitVector(0));
+      mocks.smartAlbum.previewRule.mockResolvedValue({
+        current: 0,
+        matched: 0,
+        adds: 0,
+        removes: 0,
+        addSamples: [],
+        removeSamples: [],
+      });
+
+      const result = await sut.previewRule(auth, {
+        kind: 'pets',
+        tagTriggers: [],
+        clipQueries: ['a dog'],
+        threshold: 0.3,
+      });
+
+      expect(result.looksChecked).toBe(true);
+      const [, , rule] = mocks.smartAlbum.previewRule.mock.calls[0];
+      expect(rule.embeddings).toHaveLength(1);
+    });
+  });
 });

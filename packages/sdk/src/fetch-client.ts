@@ -3148,6 +3148,45 @@ export type RenderWorkerUpdateDto = {
     maxWallClockMs?: string | null;
     name?: string;
 };
+export type SmartAlbumOverviewItemDto = {
+    /** Photos held across the household, each counted once */
+    count: number;
+    /** People who hid it from their library */
+    hiddenBy: number;
+    kind: string;
+    /** People whose album holds at least one photo */
+    people: number;
+    /** A few of the newest from the administrator’s own album */
+    samples: string[];
+};
+export type SmartAlbumOverviewResponseDto = {
+    albums: SmartAlbumOverviewItemDto[];
+    /** People on this server */
+    people: number;
+};
+export type SmartAlbumPreviewDto = {
+    /** Phrases: a photo that looks like one joins */
+    clipQueries: string[];
+    kind: string;
+    /** Words: a photo whose tags include one joins */
+    tagTriggers: string[];
+    /** How alike a photo must look */
+    threshold: number;
+};
+export type SmartAlbumPreviewResponseDto = {
+    addSamples: string[];
+    /** Photos the change would add */
+    adds: number;
+    /** Photos in your album now */
+    current: number;
+    /** False when the phrases could not be compared (Visual search off or not answering): only words were used */
+    looksChecked: boolean;
+    /** Photos in your library the rule would hold */
+    matched: number;
+    removeSamples: string[];
+    /** Photos the change would take out */
+    removes: number;
+};
 export type QueueStatisticsDto = {
     /** Number of active jobs */
     active: number;
@@ -14259,6 +14298,27 @@ export type SharedSpacePersonLinkDto = {
     /** A person of the caller's own to publish into the shared space */
     personId: string;
 };
+export type MySmartAlbumDto = {
+    albumId: string;
+    /** Photos and videos in it that this person can see */
+    count: number;
+    /** This person hid it from their library; it keeps filling */
+    hidden: boolean;
+    /** The built-in album: pets, food, travel and so on */
+    kind: string;
+    name: string;
+    /** A few of the newest, to show as small pictures */
+    samples: string[];
+};
+export type MySmartAlbumsResponseDto = {
+    albums: MySmartAlbumDto[];
+    /** Smart albums are on for this server */
+    enabled: boolean;
+};
+export type SmartAlbumHiddenDto = {
+    /** Hide the album from your own library, or show it again */
+    hidden: boolean;
+};
 export type SourceGrantRequestDto = {
     deviceId: string;
     requestId: string;
@@ -17244,6 +17304,9 @@ export type SharedLinkSearchDto = {
     albumId?: string;
     /** Filter by shared link ID */
     id?: string;
+};
+export type SmartAlbumKindParamDto = {
+    kind: string;
 };
 export type StackSearchDto = {
     /** Filter by primary asset ID */
@@ -20260,6 +20323,32 @@ export function updateRenderWorker({ id, renderWorkerUpdateDto }: {
         ...opts,
         method: "PUT",
         body: renderWorkerUpdateDto
+    })));
+}
+/**
+ * Get the smart albums across the household
+ */
+export function getSmartAlbumOverview(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SmartAlbumOverviewResponseDto;
+    }>("/admin/smart-albums", {
+        ...opts
+    }));
+}
+/**
+ * Preview a smart album rule
+ */
+export function previewSmartAlbumRule({ smartAlbumPreviewDto }: {
+    smartAlbumPreviewDto: SmartAlbumPreviewDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SmartAlbumPreviewResponseDto;
+    }>("/admin/smart-albums/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: smartAlbumPreviewDto
     })));
 }
 /**
@@ -29028,6 +29117,33 @@ export function markSharedSpaceVisited({ id }: {
         ...opts,
         method: "POST"
     }));
+}
+/**
+ * List your smart albums
+ */
+export function getMySmartAlbums(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MySmartAlbumsResponseDto;
+    }>("/smart-albums/mine", {
+        ...opts
+    }));
+}
+/**
+ * Hide or show one of your smart albums
+ */
+export function setMySmartAlbumHidden({ kind, smartAlbumHiddenDto }: {
+    kind: string;
+    smartAlbumHiddenDto: SmartAlbumHiddenDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MySmartAlbumsResponseDto;
+    }>(`/smart-albums/mine/${encodeURIComponent(kind)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: smartAlbumHiddenDto
+    })));
 }
 /**
  * Issue a source-only credential for an approved desktop reference source

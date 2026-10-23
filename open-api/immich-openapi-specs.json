@@ -8284,6 +8284,110 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/smart-albums": {
+      "get": {
+        "description": "For each smart album: photos held across the household, how many people have it with photos in it, how many hid it, and a few pictures from your own album.",
+        "operationId": "getSmartAlbumOverview",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartAlbumOverviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the smart albums across the household",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/smart-albums/preview": {
+      "post": {
+        "description": "What a rule would add to and take out of your own album before it is saved, with a few pictures of each. Nothing is changed.",
+        "operationId": "previewSmartAlbumRule",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmartAlbumPreviewDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartAlbumPreviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Preview a smart album rule",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/storage-migration": {
       "get": {
         "description": "Whether the storage template is on, which template originals are moved to, and where the storage template migration queue stands: running, paused, unfinished work and job counts.",
@@ -44340,6 +44444,119 @@
           }
         ],
         "x-immich-permission": "album.read"
+      }
+    },
+    "/smart-albums/mine": {
+      "get": {
+        "description": "The smart albums offered on this server, each with how many of your photos it holds as you see them, a few of the newest, and whether you hid it.",
+        "operationId": "getMySmartAlbums",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MySmartAlbumsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List your smart albums",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/smart-albums/mine/{kind}": {
+      "put": {
+        "description": "Hide a smart album from your own library, or show it again. It keeps filling while hidden, and nobody else is affected.",
+        "operationId": "setMySmartAlbumHidden",
+        "parameters": [
+          {
+            "name": "kind",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmartAlbumHiddenDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MySmartAlbumsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Hide or show one of your smart albums",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.update",
+        "x-immich-state": "Alpha"
       }
     },
     "/source-resources/grants": {
@@ -93679,6 +93896,69 @@
         ],
         "type": "object"
       },
+      "MySmartAlbumDto": {
+        "properties": {
+          "albumId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "count": {
+            "description": "Photos and videos in it that this person can see",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hidden": {
+            "description": "This person hid it from their library; it keeps filling",
+            "type": "boolean"
+          },
+          "kind": {
+            "description": "The built-in album: pets, food, travel and so on",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "samples": {
+            "description": "A few of the newest, to show as small pictures",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "albumId",
+          "count",
+          "hidden",
+          "kind",
+          "name",
+          "samples"
+        ],
+        "type": "object"
+      },
+      "MySmartAlbumsResponseDto": {
+        "properties": {
+          "albums": {
+            "items": {
+              "$ref": "#/components/schemas/MySmartAlbumDto"
+            },
+            "type": "array"
+          },
+          "enabled": {
+            "description": "Smart albums are on for this server",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "albums",
+          "enabled"
+        ],
+        "type": "object"
+      },
       "NotificationCreateDto": {
         "properties": {
           "data": {
@@ -123038,6 +123318,193 @@
           "nature"
         ],
         "type": "string"
+      },
+      "SmartAlbumHiddenDto": {
+        "properties": {
+          "hidden": {
+            "description": "Hide the album from your own library, or show it again",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hidden"
+        ],
+        "type": "object"
+      },
+      "SmartAlbumKindParamDto": {
+        "properties": {
+          "kind": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "SmartAlbumOverviewItemDto": {
+        "properties": {
+          "count": {
+            "description": "Photos held across the household, each counted once",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hiddenBy": {
+            "description": "People who hid it from their library",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "people": {
+            "description": "People whose album holds at least one photo",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "samples": {
+            "description": "A few of the newest from the administrator’s own album",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "hiddenBy",
+          "kind",
+          "people",
+          "samples"
+        ],
+        "type": "object"
+      },
+      "SmartAlbumOverviewResponseDto": {
+        "properties": {
+          "albums": {
+            "items": {
+              "$ref": "#/components/schemas/SmartAlbumOverviewItemDto"
+            },
+            "type": "array"
+          },
+          "people": {
+            "description": "People on this server",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "albums",
+          "people"
+        ],
+        "type": "object"
+      },
+      "SmartAlbumPreviewDto": {
+        "properties": {
+          "clipQueries": {
+            "description": "Phrases: a photo that looks like one joins",
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "kind": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "tagTriggers": {
+            "description": "Words: a photo whose tags include one joins",
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "maxItems": 200,
+            "type": "array"
+          },
+          "threshold": {
+            "description": "How alike a photo must look",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "clipQueries",
+          "kind",
+          "tagTriggers",
+          "threshold"
+        ],
+        "type": "object"
+      },
+      "SmartAlbumPreviewResponseDto": {
+        "properties": {
+          "addSamples": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "adds": {
+            "description": "Photos the change would add",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "current": {
+            "description": "Photos in your album now",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "looksChecked": {
+            "description": "False when the phrases could not be compared (Visual search off or not answering): only words were used",
+            "type": "boolean"
+          },
+          "matched": {
+            "description": "Photos in your library the rule would hold",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removeSamples": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removes": {
+            "description": "Photos the change would take out",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "addSamples",
+          "adds",
+          "current",
+          "looksChecked",
+          "matched",
+          "removeSamples",
+          "removes"
+        ],
+        "type": "object"
       },
       "SmartAlbumReevaluateEstimateDto": {
         "properties": {
