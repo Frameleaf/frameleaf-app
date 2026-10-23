@@ -369,7 +369,6 @@
     'cloud-remote',
     'cloud-backup',
     'frameleaf-signin',
-    'deduplication',
     'mode',
     'backups',
     'integrity',

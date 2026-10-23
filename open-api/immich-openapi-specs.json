@@ -5506,6 +5506,219 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/identical-files": {
+      "get": {
+        "description": "Where the latest identical-files run stands: its stage, what started it, the counts (files read, files stored once, photos merged, orphans recovered per owner, space moved to Unused files) and the first problems found.",
+        "operationId": "getIdenticalFilesStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdenticalFilesStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the identical files status",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/identical-files/assets/{id}/changes": {
+      "get": {
+        "description": "The links the identical-files run made for one photo, newest first, and whether each can be undone.",
+        "operationId": "getIdenticalFileChanges",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IdenticalFilesChangeDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List a photo’s identical-file changes",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/identical-files/changes/{id}/undo": {
+      "post": {
+        "description": "Undo one link: the photo’s own file comes back out of Unused files to where it was, is checked to hold the same bytes, and the photo uses it again. The photo is never linked again automatically. Answers 409 when the file is no longer in Unused files or another file now sits at its place.",
+        "operationId": "undoIdenticalFileChange",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdenticalFilesChangeDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Restore a photo’s own file",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/identical-files/check": {
+      "post": {
+        "description": "Queue a full identical-files run: every managed original is read again, identical files across people share the oldest, identical photos in one library are merged into the oldest, and orphaned files are recovered into each owner’s Recovered Media album. A run already in progress carries on instead of starting again.",
+        "operationId": "checkIdenticalFiles",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdenticalFilesStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check identical files again",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/integrity/report": {
       "get": {
         "description": "Get all flagged items by integrity report type",
@@ -6900,6 +7113,7 @@
     },
     "/admin/physical-deduplication/applies/{id}/restore": {
       "post": {
+        "deprecated": true,
         "description": "Point one copy back at its own former file, only while that file is still on disk with the reviewed checksum and size, and answer with the plan verified again. A copy whose own file was removed cannot be restored.",
         "operationId": "restorePhysicalDeduplicationCopy",
         "parameters": [
@@ -6949,7 +7163,8 @@
         ],
         "summary": "Restore a copy of an applied physical deduplication plan",
         "tags": [
-          "Maintenance (admin)"
+          "Maintenance (admin)",
+          "Deprecated"
         ],
         "x-immich-admin-only": true,
         "x-immich-history": [
@@ -6960,14 +7175,20 @@
           {
             "version": "v3.0.0",
             "state": "Alpha"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Deprecated",
+            "replacementId": "getIdenticalFilesStatus"
           }
         ],
         "x-immich-permission": "job.create",
-        "x-immich-state": "Alpha"
+        "x-immich-state": "Deprecated"
       }
     },
     "/admin/physical-deduplication/applies/{id}/verify": {
       "post": {
+        "deprecated": true,
         "description": "Hash every retained original the applied plan shares again and check that every copy it changed still resolves to one. Reports, per copy, whether its own former file is gone (which cannot be undone) or still on disk (which can be restored). Nothing is written.",
         "operationId": "verifyPhysicalDeduplicationApply",
         "parameters": [
@@ -7007,7 +7228,8 @@
         ],
         "summary": "Verify an applied physical deduplication plan",
         "tags": [
-          "Maintenance (admin)"
+          "Maintenance (admin)",
+          "Deprecated"
         ],
         "x-immich-admin-only": true,
         "x-immich-history": [
@@ -7018,14 +7240,20 @@
           {
             "version": "v3.0.0",
             "state": "Alpha"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Deprecated",
+            "replacementId": "getIdenticalFilesStatus"
           }
         ],
         "x-immich-permission": "job.read",
-        "x-immich-state": "Alpha"
+        "x-immich-state": "Deprecated"
       }
     },
     "/admin/physical-deduplication/plan/apply": {
       "post": {
+        "deprecated": true,
         "description": "Queue exactly the reviewed copies as a durable, pausable job. Requires the review token and the typed confirmation. Answers 409 when another plan is being applied or anything changed since the review.",
         "operationId": "applyPhysicalDeduplicationPlan",
         "parameters": [],
@@ -7064,7 +7292,8 @@
         ],
         "summary": "Apply a reviewed physical deduplication plan",
         "tags": [
-          "Maintenance (admin)"
+          "Maintenance (admin)",
+          "Deprecated"
         ],
         "x-immich-admin-only": true,
         "x-immich-history": [
@@ -7075,14 +7304,20 @@
           {
             "version": "v3.0.0",
             "state": "Alpha"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Deprecated",
+            "replacementId": "getIdenticalFilesStatus"
           }
         ],
         "x-immich-permission": "job.create",
-        "x-immich-state": "Alpha"
+        "x-immich-state": "Deprecated"
       }
     },
     "/admin/physical-deduplication/plan/review": {
       "post": {
+        "deprecated": true,
         "description": "Check the plan on screen against the library again and bind the per-group decisions to it. Answers 409 when a newer preview replaced the plan, it was applied, or any checksum, ownership, path or reference evidence changed. Nothing is written.",
         "operationId": "reviewPhysicalDeduplicationPlan",
         "parameters": [],
@@ -7121,7 +7356,8 @@
         ],
         "summary": "Review a physical deduplication plan",
         "tags": [
-          "Maintenance (admin)"
+          "Maintenance (admin)",
+          "Deprecated"
         ],
         "x-immich-admin-only": true,
         "x-immich-history": [
@@ -7132,14 +7368,20 @@
           {
             "version": "v3.0.0",
             "state": "Alpha"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Deprecated",
+            "replacementId": "getIdenticalFilesStatus"
           }
         ],
         "x-immich-permission": "job.create",
-        "x-immich-state": "Alpha"
+        "x-immich-state": "Deprecated"
       }
     },
     "/admin/physical-deduplication/preview": {
       "get": {
+        "deprecated": true,
         "description": "Return the latest physical deduplication plan with per-copy evidence, and the plans being applied or applied recently. Thumbnail visibility is the asset access of the requesting administrator, evaluated on every read.",
         "operationId": "getPhysicalDeduplicationPreview",
         "parameters": [],
@@ -7168,7 +7410,8 @@
         ],
         "summary": "Get physical deduplication preview",
         "tags": [
-          "Maintenance (admin)"
+          "Maintenance (admin)",
+          "Deprecated"
         ],
         "x-immich-admin-only": true,
         "x-immich-history": [
@@ -7179,12 +7422,18 @@
           {
             "version": "v3.0.0",
             "state": "Alpha"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Deprecated",
+            "replacementId": "getIdenticalFilesStatus"
           }
         ],
         "x-immich-permission": "job.read",
-        "x-immich-state": "Alpha"
+        "x-immich-state": "Deprecated"
       },
       "post": {
+        "deprecated": true,
         "description": "Queue a dry run that may retain originals in an account chosen for the preview and may review the copies of one account. Applying needs a reviewed plan and the saved master account.",
         "operationId": "requestPhysicalDeduplicationPreview",
         "parameters": [],
@@ -7216,7 +7465,8 @@
         ],
         "summary": "Request physical deduplication preview",
         "tags": [
-          "Maintenance (admin)"
+          "Maintenance (admin)",
+          "Deprecated"
         ],
         "x-immich-admin-only": true,
         "x-immich-history": [
@@ -7227,10 +7477,15 @@
           {
             "version": "v3.0.0",
             "state": "Alpha"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Deprecated",
+            "replacementId": "getIdenticalFilesStatus"
           }
         ],
         "x-immich-permission": "job.create",
-        "x-immich-state": "Alpha"
+        "x-immich-state": "Deprecated"
       }
     },
     "/admin/render-workers": {
@@ -83451,6 +83706,303 @@
         },
         "type": "object"
       },
+      "IdenticalFilesChangeDto": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Change id",
+            "type": "string"
+          },
+          "keptAssetId": {
+            "description": "The photo whose file was kept",
+            "nullable": true,
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/IdenticalFilesChangeKind"
+          },
+          "restorable": {
+            "description": "The photo’s own file waits in Unused files and can be restored",
+            "type": "boolean"
+          },
+          "undoneAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "id",
+          "keptAssetId",
+          "kind",
+          "restorable",
+          "undoneAt"
+        ],
+        "type": "object"
+      },
+      "IdenticalFilesChangeKind": {
+        "description": "`link`: the photo was pointed at another person’s identical file",
+        "enum": [
+          "link"
+        ],
+        "type": "string"
+      },
+      "IdenticalFilesCountsDto": {
+        "properties": {
+          "bytesMovedToUnused": {
+            "description": "Bytes moved to Unused files",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "damaged": {
+            "description": "Damaged orphans moved to Unused files",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "filesMovedToUnused": {
+            "description": "Extra copies moved to Unused files",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "linked": {
+            "description": "Photos pointed at another person’s identical file",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "orphanDuplicates": {
+            "description": "Orphans whose content the owner already had",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "orphansFound": {
+            "description": "Media files nothing pointed at",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "photosMerged": {
+            "description": "Identical photos in one library sent to the Trash by a merge",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "photosRecovered": {
+            "description": "Orphans brought back as photos",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "problems": {
+            "description": "Problems found, including those past the listed ones",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "registered": {
+            "description": "Originals given a storage record",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scanned": {
+            "description": "Originals read from disk",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "upgraded": {
+            "description": "SHA-1 records upgraded to SHA-256",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytesMovedToUnused",
+          "damaged",
+          "filesMovedToUnused",
+          "linked",
+          "orphanDuplicates",
+          "orphansFound",
+          "photosMerged",
+          "photosRecovered",
+          "problems",
+          "registered",
+          "scanned",
+          "upgraded"
+        ],
+        "type": "object"
+      },
+      "IdenticalFilesProblemDto": {
+        "properties": {
+          "assetId": {
+            "description": "The photo concerned, when there is one",
+            "nullable": true,
+            "type": "string"
+          },
+          "detail": {
+            "description": "More about it, such as the reason a merge was held back",
+            "nullable": true,
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/IdenticalFilesProblemKind"
+          },
+          "path": {
+            "description": "An orphaned file, relative to the media location",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "detail",
+          "kind",
+          "path"
+        ],
+        "type": "object"
+      },
+      "IdenticalFilesProblemKind": {
+        "description": "What went wrong",
+        "enum": [
+          "missing",
+          "unreadable",
+          "changed",
+          "undone",
+          "check-before-merging",
+          "kept-for-now",
+          "damaged",
+          "over-quota",
+          "needs-a-look",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "IdenticalFilesRunStatus": {
+        "description": "Where the latest run stands",
+        "enum": [
+          "never-run",
+          "running",
+          "completed"
+        ],
+        "type": "string"
+      },
+      "IdenticalFilesStage": {
+        "description": "The stage the latest run is in or ended in",
+        "enum": [
+          "scan",
+          "link",
+          "merge",
+          "orphans",
+          "done"
+        ],
+        "type": "string"
+      },
+      "IdenticalFilesStatusDto": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/IdenticalFilesCountsDto"
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "problems": {
+            "description": "The first problems found (at most 200)",
+            "items": {
+              "$ref": "#/components/schemas/IdenticalFilesProblemDto"
+            },
+            "type": "array"
+          },
+          "recovered": {
+            "description": "Photos recovered per owner",
+            "items": {
+              "properties": {
+                "albumId": {
+                  "description": "The owner’s Recovered Media album",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "ownerId": {
+                  "type": "string"
+                },
+                "photos": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "ownerId",
+                "photos",
+                "albumId"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "stage": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/IdenticalFilesStage"
+              }
+            ],
+            "nullable": true
+          },
+          "startedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/IdenticalFilesRunStatus"
+          },
+          "totalOriginals": {
+            "description": "Managed originals when the run started (scan progress total)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "trigger": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/IdenticalFilesTrigger"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "counts",
+          "finishedAt",
+          "problems",
+          "recovered",
+          "stage",
+          "startedAt",
+          "status",
+          "totalOriginals",
+          "trigger"
+        ],
+        "type": "object"
+      },
+      "IdenticalFilesTrigger": {
+        "description": "What started the latest run",
+        "enum": [
+          "manual",
+          "immich-import"
+        ],
+        "type": "string"
+      },
       "IdsFilter": {
         "properties": {
           "all": {
@@ -84292,6 +84844,7 @@
           "StorageTemplateMigrationSingle",
           "PhysicalDeduplicationMigrationDryRun",
           "PhysicalDeduplicationMigrationApply",
+          "IdenticalFilesCheck",
           "TagCleanup",
           "VersionCheck",
           "FrameleafHeartbeat",
@@ -87568,6 +88121,7 @@
           "best-photos-backfill",
           "physical-deduplication-dry-run",
           "physical-deduplication-apply",
+          "identical-files-check",
           "integrity-missing-files",
           "integrity-untracked-files",
           "integrity-checksum-mismatch",

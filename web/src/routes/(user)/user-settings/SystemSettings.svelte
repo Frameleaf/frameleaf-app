@@ -79,7 +79,6 @@
     mdiEarth,
     mdiExpansionCard,
     mdiLinkVariant,
-    mdiContentDuplicate,
     mdiDesktopTowerMonitor,
     mdiTransitConnectionVariant,
     mdiShieldAccountOutline,
@@ -418,7 +417,6 @@
     // FL-71: the old administration pages, as sections drawn by `sections/SectionBody.svelte`.
     ...(
       [
-        ['deduplication', 'frameleaf_cc_section_deduplication', mdiContentDuplicate],
         ['enrichment-care', 'frameleaf_cc_section_enrichment', mdiAutoFix],
         // FL-421: Notifications → What needs your attention.
         ['signals', 'frameleaf_cc_section_signals', mdiBellAlertOutline],

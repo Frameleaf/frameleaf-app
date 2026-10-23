@@ -539,7 +539,8 @@ export enum SystemMetadataKey {
   SystemConfig = 'system-config',
   SystemFlags = 'system-flags',
   VersionCheckState = 'version-check-state',
-  PhysicalDeduplicationMigration = 'physical-deduplication-migration',
+  /** FL-413: the identical-files run's stage, cursor, counts and problems, and every owner's Recovered Media album. */
+  IdenticalFiles = 'identical-files',
   /** FL-159: the Frameleaf Cloud link written by linking the server (FL-155); read by cloud processing. */
   FrameleafCloudLink = 'frameleaf-cloud-link',
   /** FL-159: this server's Ed25519 identity (public part only; the private key is a 0600 file). */
@@ -729,8 +730,12 @@ export enum ManualJobName {
   MemoryCreate = 'memory-create',
   BackupDatabase = 'backup-database',
   BestPhotosBackfill = 'best-photos-backfill',
+  /** @deprecated FL-413: retired; refused. Use `identical-files-check`. */
   PhysicalDeduplicationDryRun = 'physical-deduplication-dry-run',
+  /** @deprecated FL-413: retired; refused. Use `identical-files-check`. */
   PhysicalDeduplicationApply = 'physical-deduplication-apply',
+  /** FL-413: "Check again" for identical files. */
+  IdenticalFilesCheck = 'identical-files-check',
   IntegrityMissingFiles = `integrity-missing-files`,
   IntegrityUntrackedFiles = `integrity-untracked-files`,
   IntegrityChecksumFiles = `integrity-checksum-mismatch`,
@@ -2355,8 +2360,12 @@ export enum JobName {
 
   StorageTemplateMigration = 'StorageTemplateMigration',
   StorageTemplateMigrationSingle = 'StorageTemplateMigrationSingle',
+  /** @deprecated FL-413 retired the per-account deduplication: a queued job changes nothing. */
   PhysicalDeduplicationMigrationDryRun = 'PhysicalDeduplicationMigrationDryRun',
+  /** @deprecated FL-413 retired the per-account deduplication: a queued job changes nothing. */
   PhysicalDeduplicationMigrationApply = 'PhysicalDeduplicationMigrationApply',
+  /** FL-413: identical files stored once, photos merged, orphans recovered; resumable, on the storage queue. */
+  IdenticalFilesCheck = 'IdenticalFilesCheck',
 
   TagCleanup = 'TagCleanup',
 
@@ -2474,7 +2483,7 @@ export enum DatabaseLock {
   Migrations = 200,
   SystemFileMounts = 300,
   StorageTemplateMigration = 420,
-  /** One reviewed physical deduplication plan at a time (FL-73): held while the job row is created. */
+  /** @deprecated FL-73's one-plan-at-a-time lock; the plans were retired by FL-413. Kept so the id is never reused. */
   PhysicalDeduplicationApply = 425,
   VersionHistory = 500,
   CLIPDimSize = 512,
@@ -2570,6 +2579,7 @@ export const MaintenanceActionSchema = z
   .describe('Maintenance action')
   .meta({ id: 'MaintenanceAction' });
 
+/** @deprecated FL-413: kept only for the deprecated physical deduplication endpoints. */
 export enum PhysicalDeduplicationDecision {
   Share = 'share',
   Skip = 'skip',

@@ -49,6 +49,7 @@ import { HardwareCheckController } from 'src/controllers/hardware-check.controll
 import { HelpController } from 'src/controllers/help.controller.js';
 import { ICloudIdentityController } from 'src/controllers/icloud-identity.controller.js';
 import { ICloudSyncController } from 'src/controllers/icloud-sync.controller.js';
+import { IdenticalFilesController } from 'src/controllers/identical-files.controller.js';
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
 import { ItemShareController } from 'src/controllers/item-share.controller.js';
 import { JobController } from 'src/controllers/job.controller.js';
@@ -195,6 +196,7 @@ export const controllers = [
   PartnerController,
   PersonController,
   PetController,
+  IdenticalFilesController,
   PhysicalDeduplicationController,
   PhysicalFileTrashController,
   PluginController,

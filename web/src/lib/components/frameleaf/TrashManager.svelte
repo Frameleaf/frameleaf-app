@@ -25,7 +25,7 @@
   import { matchesTyped } from '$lib/components/frameleaf/settings/typed-confirmation';
   import { animateFlip, canAnimate, dock, leave } from '$lib/frameleaf/motion';
   import { OpenQueryParam } from '$lib/constants';
-  import { formatBytes } from '$lib/frameleaf/physical-dedup';
+  import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
   import {
     allSelected,

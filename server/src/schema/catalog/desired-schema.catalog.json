@@ -3,294 +3,6 @@
   "schemaName": "public",
   "tables": [
     {
-      "name": "asset_user_share",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "asset_user_share",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "asset_user_share",
-          "nullable": false,
-          "isArray": false,
-          "default": "clock_timestamp()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "asset_user_share",
-          "nullable": false,
-          "isArray": false,
-          "default": "gen_random_uuid()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "asset_user_share",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "sharedWithId",
-          "tableName": "asset_user_share",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "asset_user_share_owner_idx",
-          "definition": "CREATE INDEX asset_user_share_owner_idx ON public.asset_user_share USING btree (\"ownerId\", \"assetId\")",
-          "tableName": "asset_user_share",
-          "columnNames": [
-            "ownerId",
-            "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_user_share_recipient_idx",
-          "definition": "CREATE INDEX asset_user_share_recipient_idx ON public.asset_user_share USING btree (\"sharedWithId\", \"createdAt\")",
-          "tableName": "asset_user_share",
-          "columnNames": [
-            "sharedWithId",
-            "createdAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "unique",
-          "name": "asset_user_share_asset_recipient_key",
-          "definition": "UNIQUE (\"assetId\", \"sharedWithId\")",
-          "tableName": "asset_user_share",
-          "columnNames": [
-            "assetId",
-            "sharedWithId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "asset_user_share_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "asset_user_share",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "buddy_backup_reference",
-      "columns": [
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "buddy_backup_reference",
-          "nullable": false,
-          "isArray": false,
-          "default": "clock_timestamp()",
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "deleteRequested",
-          "tableName": "buddy_backup_reference",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "path",
-          "tableName": "buddy_backup_reference",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "released",
-          "tableName": "buddy_backup_reference",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "runId",
-          "tableName": "buddy_backup_reference",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "buddy_backup_reference_path_idx",
-          "definition": "CREATE INDEX buddy_backup_reference_path_idx ON public.buddy_backup_reference USING btree (path)",
-          "tableName": "buddy_backup_reference",
-          "columnNames": [
-            "path"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "buddy_backup_reference_pkey",
-          "definition": "PRIMARY KEY (\"runId\", path)",
-          "tableName": "buddy_backup_reference",
-          "columnNames": [
-            "runId",
-            "path"
-          ],
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "cloud_backup_manifest_entry",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "manifestId",
-          "tableName": "cloud_backup_manifest_entry",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "fileKey",
-          "tableName": "cloud_backup_manifest_entry",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "cloud_backup_manifest_entry",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "cloud_backup_manifest_entry",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "role",
-          "tableName": "cloud_backup_manifest_entry",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "path",
-          "tableName": "cloud_backup_manifest_entry",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "sha256",
-          "tableName": "cloud_backup_manifest_entry",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bigint",
-          "primary": false,
-          "name": "size",
-          "tableName": "cloud_backup_manifest_entry",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 64,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "mtime",
-          "tableName": "cloud_backup_manifest_entry",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "cloud_backup_manifest_entry_pkey",
-          "definition": "PRIMARY KEY (\"manifestId\", \"fileKey\")",
-          "tableName": "cloud_backup_manifest_entry",
-          "columnNames": [
-            "manifestId",
-            "fileKey"
-          ],
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "album_audit",
       "columns": [
         {
@@ -1655,6 +1367,294 @@
           "tableName": "asset_origin",
           "columnNames": [
             "assetId"
+          ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "asset_user_share",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_user_share",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "asset_user_share",
+          "nullable": false,
+          "isArray": false,
+          "default": "clock_timestamp()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "asset_user_share",
+          "nullable": false,
+          "isArray": false,
+          "default": "gen_random_uuid()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "asset_user_share",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sharedWithId",
+          "tableName": "asset_user_share",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "asset_user_share_owner_idx",
+          "definition": "CREATE INDEX asset_user_share_owner_idx ON public.asset_user_share USING btree (\"ownerId\", \"assetId\")",
+          "tableName": "asset_user_share",
+          "columnNames": [
+            "ownerId",
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_user_share_recipient_idx",
+          "definition": "CREATE INDEX asset_user_share_recipient_idx ON public.asset_user_share USING btree (\"sharedWithId\", \"createdAt\")",
+          "tableName": "asset_user_share",
+          "columnNames": [
+            "sharedWithId",
+            "createdAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "unique",
+          "name": "asset_user_share_asset_recipient_key",
+          "definition": "UNIQUE (\"assetId\", \"sharedWithId\")",
+          "tableName": "asset_user_share",
+          "columnNames": [
+            "assetId",
+            "sharedWithId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "asset_user_share_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "asset_user_share",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "buddy_backup_reference",
+      "columns": [
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "buddy_backup_reference",
+          "nullable": false,
+          "isArray": false,
+          "default": "clock_timestamp()",
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "deleteRequested",
+          "tableName": "buddy_backup_reference",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "path",
+          "tableName": "buddy_backup_reference",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "released",
+          "tableName": "buddy_backup_reference",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "runId",
+          "tableName": "buddy_backup_reference",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "buddy_backup_reference_path_idx",
+          "definition": "CREATE INDEX buddy_backup_reference_path_idx ON public.buddy_backup_reference USING btree (path)",
+          "tableName": "buddy_backup_reference",
+          "columnNames": [
+            "path"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "buddy_backup_reference_pkey",
+          "definition": "PRIMARY KEY (\"runId\", path)",
+          "tableName": "buddy_backup_reference",
+          "columnNames": [
+            "runId",
+            "path"
+          ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "cloud_backup_manifest_entry",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "manifestId",
+          "tableName": "cloud_backup_manifest_entry",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "fileKey",
+          "tableName": "cloud_backup_manifest_entry",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "cloud_backup_manifest_entry",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "cloud_backup_manifest_entry",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "role",
+          "tableName": "cloud_backup_manifest_entry",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "path",
+          "tableName": "cloud_backup_manifest_entry",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "sha256",
+          "tableName": "cloud_backup_manifest_entry",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "size",
+          "tableName": "cloud_backup_manifest_entry",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "mtime",
+          "tableName": "cloud_backup_manifest_entry",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "cloud_backup_manifest_entry_pkey",
+          "definition": "PRIMARY KEY (\"manifestId\", \"fileKey\")",
+          "tableName": "cloud_backup_manifest_entry",
+          "columnNames": [
+            "manifestId",
+            "fileKey"
           ],
           "synchronize": true
         }
@@ -42867,6 +42867,195 @@
           "columnNames": [
             "scope"
           ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "identical_file_change",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "identical_file_change",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "runId",
+          "tableName": "identical_file_change",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "kind",
+          "tableName": "identical_file_change",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "identical_file_change",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "keptAssetId",
+          "tableName": "identical_file_change",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "ownPath",
+          "tableName": "identical_file_change",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "checksum",
+          "tableName": "identical_file_change",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "sizeInBytes",
+          "tableName": "identical_file_change",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "trashEntryId",
+          "tableName": "identical_file_change",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "identical_file_change",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "undoneAt",
+          "tableName": "identical_file_change",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "identical_file_change_runId_idx",
+          "definition": "CREATE INDEX \"identical_file_change_runId_idx\" ON public.identical_file_change USING btree (\"runId\")",
+          "tableName": "identical_file_change",
+          "columnNames": [
+            "runId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "identical_file_change_keptAssetId_idx",
+          "definition": "CREATE INDEX \"identical_file_change_keptAssetId_idx\" ON public.identical_file_change USING btree (\"keptAssetId\")",
+          "tableName": "identical_file_change",
+          "columnNames": [
+            "keptAssetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "identical_file_change_assetId_idx",
+          "definition": "CREATE INDEX \"identical_file_change_assetId_idx\" ON public.identical_file_change USING btree (\"assetId\")",
+          "tableName": "identical_file_change",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "identical_file_change_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "identical_file_change",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "identical_file_change_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "identical_file_change",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "identical_file_change_keptAssetId_fkey",
+          "definition": "FOREIGN KEY (\"keptAssetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "identical_file_change",
+          "columnNames": [
+            "keptAssetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
           "synchronize": true
         }
       ],

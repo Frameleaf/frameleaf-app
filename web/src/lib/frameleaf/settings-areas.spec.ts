@@ -306,20 +306,16 @@ describe('Frameleaf settings areas', () => {
         'repair',
         'enrichment-care',
       ]);
-      expect(areaSectionKeys('care')).toEqual([
-        'integrity-checks',
-        'repair',
-        'duplicates',
-        'deduplication',
-        'enrichment-care',
-      ]);
+      expect(areaSectionKeys('care')).toEqual(['integrity-checks', 'repair', 'duplicates', 'enrichment-care']);
       expect(sectionsForArea([care[1]], 'care').map((s) => s.key)).toEqual(['repair']);
     });
 
     it('opens the prototype addresses and the folded tuning pages on the page that took them (FL-366)', () => {
       expect(resolveSettingsSection('care', { section: 'health' })).toBe('integrity-checks');
       expect(resolveSettingsSection('care', { section: 'advanced-integrity-budget' })).toBe('integrity-checks');
-      expect(resolveSettingsSection('care', { section: 'exact-copies' })).toBe('deduplication');
+      expect(resolveSettingsSection('care', { section: 'exact-copies' })).toBe('duplicates');
+      // FL-413: the retired Merge older copies opens Duplicates
+      expect(resolveSettingsSection('care', { section: 'deduplication' })).toBe('duplicates');
       expect(resolveSettingsSection('care', { section: 'advanced-duplicate-matching' })).toBe('duplicates');
       expect(resolveSettingsSection('intelligence', { section: 'metadata' })).toBe('faces');
       expect(resolveSettingsSection('intelligence', { section: 'smart-album-pets' })).toBe('smart-albums');

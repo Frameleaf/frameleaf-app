@@ -16,8 +16,8 @@
    *   originals are always suggested first, so it is said as a promise, not a switch.
    *
    * Storing identical files once has no off position in the app (owner, 10 October: "Take no action"),
-   * so it is a promise too. There is no saved account that holds shared copies (the old
-   * `physicalDeduplication` settings are retired); that choice is made on Merge older copies.
+   * so it is a promise too. FL-413 merges identical files automatically for the whole server; the old
+   * per-account "Merge older copies" is retired, and its status block comes with FL-416.
    *
    * Left for later (server work): a count of look-alike groups for each choice, a time estimate for
    * comparing again, and starting that comparison from the save.
@@ -40,18 +40,11 @@
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
-  import { applyForPlan, formatBytes, planMetrics } from '$lib/frameleaf/physical-dedup';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
-  import {
-    getPhysicalDeduplicationPreview,
-    getSummary,
-    MediaOperationStatus,
-    PhysicalDeduplicationPlanMode,
-    type PhysicalDeduplicationPreviewResponseDto,
-  } from '@frameleaf/sdk';
+  import { getSummary } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
     mdiCheckCircleOutline,
@@ -76,42 +69,18 @@
   const alike = $derived(alikeChoiceOf(dupes.maxDistance));
   const distanceChanged = $derived(dupes.maxDistance !== saved.maxDistance);
 
-  /** Look-alike groups waiting in this account's review, and the last search for older exact copies. */
+  /** Look-alike groups waiting in this account's review. */
   let groups = $state<number | null>(null);
-  let older = $state<PhysicalDeduplicationPreviewResponseDto | null>(null);
 
   onMount(() => {
     getSummary({})
       .then((summary) => (groups = summary.queues.duplicates))
       .catch(() => (groups = null));
-    getPhysicalDeduplicationPreview()
-      .then((preview) => (older = preview))
-      .catch(() => (older = null));
   });
 
-  /** Extra copies the last search found that have not been merged yet. */
-  const found = $derived.by(() => {
-    const plan = older?.plan;
-    if (!plan || plan.mode === PhysicalDeduplicationPlanMode.Apply) {
-      return null;
-    }
-    const apply = applyForPlan(older?.applies ?? [], plan);
-    if (apply?.status === MediaOperationStatus.Completed) {
-      return null;
-    }
-    const metrics = planMetrics(plan);
-    return metrics.copiesToShare > 0 ? metrics : null;
-  });
   const waiting = $derived(looking && groups ? groups : 0);
 
   const hero = $derived.by(() => {
-    if (found) {
-      return {
-        icon: mdiContentCopy,
-        title: $t('frameleaf_dupes_hero_older', { values: { count: found.copiesToShare } }),
-        body: $t('frameleaf_dupes_hero_older_body', { values: { size: formatBytes(found.reclaimableBytes) } }),
-      };
-    }
     if (waiting > 0) {
       return {
         icon: mdiContentCopy,
@@ -133,8 +102,6 @@
     };
   });
 
-  const mergeUrl = commandCenterUrl('care', 'deduplication');
-  const openMerge = () => goto(mergeUrl);
   const openReview = () => goto(Route.duplicatesUtility());
 
   const setLooking = (value: boolean) => {
@@ -152,37 +119,20 @@
       : $t(`frameleaf_dupes_how_alike_${alike}_help` as Translations),
   );
 
-  const olderHelp = $derived(
-    found
-      ? $t('frameleaf_dupes_older_found_help', {
-          values: {
-            count: found.copiesToShare,
-            originals: found.retainedOriginals,
-            size: formatBytes(found.reclaimableBytes),
-          },
-        })
-      : older?.plan
-        ? $t('frameleaf_dupes_older_none_help')
-        : $t('frameleaf_dupes_older_unknown_help'),
-  );
-
   const advancedOpen = $derived(page.url.searchParams.get('section') === 'advanced-duplicate-matching');
 </script>
 
 <KitPage>
   <Hero
-    tone={found || waiting > 0 ? 'warn' : 'good'}
+    tone={waiting > 0 ? 'warn' : 'good'}
     icon={hero.icon}
     title={hero.title}
     body={hero.body}
     label={$t('frameleaf_dupes_status')}
   >
     {#snippet actions()}
-      {#if found}
-        <Button variant="primary" onclick={openMerge}>{$t('frameleaf_dupes_show_me')}</Button>
-      {/if}
       {#if waiting > 0}
-        <Button variant={found ? 'default' : 'primary'} onclick={openReview}>{$t('frameleaf_dupes_review')}</Button>
+        <Button variant="primary" onclick={openReview}>{$t('frameleaf_dupes_review')}</Button>
       {/if}
     {/snippet}
     <Coverage
@@ -191,13 +141,9 @@
           icon: mdiContentCopy,
           name: $t('frameleaf_dupes_exact'),
           detail: $t('frameleaf_dupes_exact_detail'),
-          tone: found ? 'off' : 'good',
-          value: found
-            ? $t('frameleaf_dupes_exact_to_merge', { values: { count: found.copiesToShare } })
-            : $t('frameleaf_dupes_exact_stored_once'),
-          note: found
-            ? $t('frameleaf_dupes_exact_gets_back', { values: { size: formatBytes(found.reclaimableBytes) } })
-            : $t('frameleaf_dupes_exact_automatic'),
+          tone: 'good',
+          value: $t('frameleaf_dupes_exact_stored_once'),
+          note: $t('frameleaf_dupes_exact_automatic'),
         },
         {
           icon: mdiImageMultipleOutline,
@@ -230,16 +176,6 @@
         },
       ]}
     />
-    <Row label={$t('frameleaf_dupes_older_row')} help={olderHelp}>
-      {#if found}
-        <Button variant="primary" onclick={openMerge}>
-          {$t('frameleaf_dupes_show_me')}
-          <Icon icon={mdiChevronRight} size="1em" aria-hidden={true} />
-        </Button>
-      {:else}
-        <Button onclick={openMerge}>{$t('frameleaf_dupes_look_again')}</Button>
-      {/if}
-    </Row>
   </Section>
 
   <Section title={$t('frameleaf_dupes_alike')} description={$t('frameleaf_dupes_alike_description')}>

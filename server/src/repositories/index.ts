@@ -60,6 +60,7 @@ import { ICloudScheduledWorkerRepository } from 'src/repositories/icloud-schedul
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
+import { IdenticalFilesRepository } from 'src/repositories/identical-files.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
@@ -222,6 +223,7 @@ export const repositories = [
   PetRepository,
   PhotoToolsRepository,
   PhysicalFileRepository,
+  IdenticalFilesRepository,
   PhysicalFileTrashRepository,
   RateLimitRepository,
   RawSupportRepository,

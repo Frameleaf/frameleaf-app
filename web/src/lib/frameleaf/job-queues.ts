@@ -397,17 +397,7 @@ export const MANUAL_JOBS: readonly ManualJobDefinition[] = Object.freeze([
   { name: ManualJobName.BackupDatabase, queue: QueueName.BackupDatabase },
   { name: ManualJobName.BestPhotosBackfill, queue: QueueName.BackgroundTask },
   { name: ManualJobName.AnalyticsCollect, queue: QueueName.BackgroundTask },
-  {
-    name: ManualJobName.PhysicalDeduplicationDryRun,
-    queue: QueueName.StorageTemplateMigration,
-    opensDeduplication: true,
-  },
-  {
-    name: ManualJobName.PhysicalDeduplicationApply,
-    queue: QueueName.StorageTemplateMigration,
-    dangerous: true,
-    opensDeduplication: true,
-  },
+  { name: ManualJobName.IdenticalFilesCheck, queue: QueueName.StorageTemplateMigration },
   { name: ManualJobName.IntegrityMissingFiles, queue: QueueName.IntegrityCheck },
   { name: ManualJobName.IntegrityUntrackedFiles, queue: QueueName.IntegrityCheck },
   { name: ManualJobName.IntegrityChecksumMismatch, queue: QueueName.IntegrityCheck },

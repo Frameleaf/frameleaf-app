@@ -2235,6 +2235,71 @@ export type HardwareCheckResponseDto = {
     /** Render and restoration workers, from their reported evidence */
     workers: HardwareWorkerCheckDto[];
 };
+export type IdenticalFilesCountsDto = {
+    /** Bytes moved to Unused files */
+    bytesMovedToUnused: number;
+    /** Damaged orphans moved to Unused files */
+    damaged: number;
+    /** Extra copies moved to Unused files */
+    filesMovedToUnused: number;
+    /** Photos pointed at another person’s identical file */
+    linked: number;
+    /** Orphans whose content the owner already had */
+    orphanDuplicates: number;
+    /** Media files nothing pointed at */
+    orphansFound: number;
+    /** Identical photos in one library sent to the Trash by a merge */
+    photosMerged: number;
+    /** Orphans brought back as photos */
+    photosRecovered: number;
+    /** Problems found, including those past the listed ones */
+    problems: number;
+    /** Originals given a storage record */
+    registered: number;
+    /** Originals read from disk */
+    scanned: number;
+    /** SHA-1 records upgraded to SHA-256 */
+    upgraded: number;
+};
+export type IdenticalFilesProblemDto = {
+    /** The photo concerned, when there is one */
+    assetId: string | null;
+    /** More about it, such as the reason a merge was held back */
+    detail: string | null;
+    kind: IdenticalFilesProblemKind;
+    /** An orphaned file, relative to the media location */
+    path: string | null;
+};
+export type IdenticalFilesStatusDto = {
+    counts: IdenticalFilesCountsDto;
+    finishedAt: string | null;
+    /** The first problems found (at most 200) */
+    problems: IdenticalFilesProblemDto[];
+    /** Photos recovered per owner */
+    recovered: {
+        /** The owner’s Recovered Media album */
+        albumId: string | null;
+        ownerId: string;
+        photos: number;
+    }[];
+    stage: (IdenticalFilesStage) | null;
+    startedAt: string | null;
+    status: IdenticalFilesRunStatus;
+    /** Managed originals when the run started (scan progress total) */
+    totalOriginals: number;
+    trigger: (IdenticalFilesTrigger) | null;
+};
+export type IdenticalFilesChangeDto = {
+    createdAt: string;
+    /** Change id */
+    id: string;
+    /** The photo whose file was kept */
+    keptAssetId: string | null;
+    kind: IdenticalFilesChangeKind;
+    /** The photo’s own file waits in Unused files and can be restored */
+    restorable: boolean;
+    undoneAt: string | null;
+};
 export type IntegrityReportResponseDto = {
     items: {
         /** Integrity report item id */
@@ -19397,6 +19462,56 @@ export function runHardwareCheck(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Get the identical files status
+ */
+export function getIdenticalFilesStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IdenticalFilesStatusDto;
+    }>("/admin/identical-files", {
+        ...opts
+    }));
+}
+/**
+ * List a photo’s identical-file changes
+ */
+export function getIdenticalFileChanges({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IdenticalFilesChangeDto[];
+    }>(`/admin/identical-files/assets/${encodeURIComponent(id)}/changes`, {
+        ...opts
+    }));
+}
+/**
+ * Restore a photo’s own file
+ */
+export function undoIdenticalFileChange({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IdenticalFilesChangeDto;
+    }>(`/admin/identical-files/changes/${encodeURIComponent(id)}/undo`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Check identical files again
+ */
+export function checkIdenticalFiles(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IdenticalFilesStatusDto;
+    }>("/admin/identical-files/check", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Get integrity report by type
  */
 export function getIntegrityReport({ cursor, limit, $type }: {
@@ -32141,6 +32256,37 @@ export enum HardwareWorkerKind {
     Render = "render",
     Restoration = "restoration"
 }
+export enum IdenticalFilesProblemKind {
+    Missing = "missing",
+    Unreadable = "unreadable",
+    Changed = "changed",
+    Undone = "undone",
+    CheckBeforeMerging = "check-before-merging",
+    KeptForNow = "kept-for-now",
+    Damaged = "damaged",
+    OverQuota = "over-quota",
+    NeedsALook = "needs-a-look",
+    Failed = "failed"
+}
+export enum IdenticalFilesStage {
+    Scan = "scan",
+    Link = "link",
+    Merge = "merge",
+    Orphans = "orphans",
+    Done = "done"
+}
+export enum IdenticalFilesRunStatus {
+    NeverRun = "never-run",
+    Running = "running",
+    Completed = "completed"
+}
+export enum IdenticalFilesTrigger {
+    Manual = "manual",
+    ImmichImport = "immich-import"
+}
+export enum IdenticalFilesChangeKind {
+    Link = "link"
+}
 export enum IntegrityReport {
     UntrackedFile = "untracked_file",
     MissingFile = "missing_file",
@@ -33390,6 +33536,7 @@ export enum ManualJobName {
     BestPhotosBackfill = "best-photos-backfill",
     PhysicalDeduplicationDryRun = "physical-deduplication-dry-run",
     PhysicalDeduplicationApply = "physical-deduplication-apply",
+    IdenticalFilesCheck = "identical-files-check",
     IntegrityMissingFiles = "integrity-missing-files",
     IntegrityUntrackedFiles = "integrity-untracked-files",
     IntegrityChecksumMismatch = "integrity-checksum-mismatch",
@@ -34526,6 +34673,7 @@ export enum JobName {
     StorageTemplateMigrationSingle = "StorageTemplateMigrationSingle",
     PhysicalDeduplicationMigrationDryRun = "PhysicalDeduplicationMigrationDryRun",
     PhysicalDeduplicationMigrationApply = "PhysicalDeduplicationMigrationApply",
+    IdenticalFilesCheck = "IdenticalFilesCheck",
     TagCleanup = "TagCleanup",
     VersionCheck = "VersionCheck",
     FrameleafHeartbeat = "FrameleafHeartbeat",

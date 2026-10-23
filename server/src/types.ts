@@ -2,6 +2,7 @@ import { ShallowDehydrateObject } from 'kysely';
 import { Mocked } from 'vitest';
 import type { HardwareCheck } from 'src/dtos/hardware-check.dto.js';
 import type { HelpIndex } from 'src/dtos/help.dto.js';
+import type { IdenticalFilesState } from 'src/dtos/identical-files.dto.js';
 import type { CloudDescriptionEstimateRecord } from 'src/utils/cloud-description-batch.js';
 import type { CloudMlJobEstimateRecord } from 'src/utils/cloud-ml-job.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
@@ -15,10 +16,6 @@ import { AuthDto } from 'src/dtos/auth.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import { SetMaintenanceModeDto } from 'src/dtos/maintenance.dto.js';
-import {
-  PhysicalDeduplicationCopyState,
-  PhysicalDeduplicationRetainedState,
-} from 'src/dtos/physical-deduplication.dto.js';
 import {
   AacProfile,
   AssetOrder,
@@ -288,6 +285,11 @@ export interface IBaseJob {
   force?: boolean;
 }
 
+/** FL-413: `resume` carries on the run in progress; without it (the manual job) a fresh run starts. */
+export interface IIdenticalFilesCheckJob {
+  resume?: boolean;
+}
+
 /** Retried independently after a duplicate decision commits; no original media is carried. */
 export type IDuplicateResolutionLifecycleJob = {
   id: string;
@@ -301,12 +303,6 @@ export type IDuplicateResolutionLifecycleJob = {
 /** FL-79: `attempt` is 1 for the one automatic retry a failed collection gets. */
 export interface IAnalyticsCollectJob {
   attempt?: number;
-}
-
-/** FL-71: a preview may retain originals in an account chosen on the page and review one account's copies. */
-export interface IPhysicalDeduplicationDryRunJob extends IBaseJob {
-  masterUserId?: string;
-  scopeUserId?: string;
 }
 
 export interface IDelayedJob extends IBaseJob {
@@ -571,8 +567,9 @@ export type JobItem =
   // Storage Template
   | { name: JobName.StorageTemplateMigration; data?: IBaseJob }
   | { name: JobName.StorageTemplateMigrationSingle; data: IEntityJob }
-  | { name: JobName.PhysicalDeduplicationMigrationDryRun; data?: IPhysicalDeduplicationDryRunJob }
+  | { name: JobName.PhysicalDeduplicationMigrationDryRun; data?: IBaseJob }
   | { name: JobName.PhysicalDeduplicationMigrationApply; data?: IBaseJob }
+  | { name: JobName.IdenticalFilesCheck; data?: IIdenticalFilesCheckJob }
 
   // Migration
   | { name: JobName.FileMigrationQueueAll; data?: IBaseJob }
@@ -851,23 +848,6 @@ export type VersionCheckMetadata = {
   rolloutSeed?: string;
 };
 export type SystemFlags = { mountChecks: Record<StorageFolder, boolean> };
-export type PhysicalDeduplicationMigrationState = {
-  mode: 'dry-run' | 'apply';
-  ranAt: string;
-  masterUserId: string;
-  eligibleAssets: number;
-  linkedAssets: number;
-  skippedExternal: number;
-  skippedMissingMaster: number;
-  reclaimableBytes: number;
-  deletedBytes: number;
-  samples: string[];
-  /** FL-71 preview evidence; absent on records written before the preview contract existed. */
-  scopeUserId?: string | null;
-  retained?: PhysicalDeduplicationRetainedState[];
-  copies?: PhysicalDeduplicationCopyState[];
-  copiesTruncated?: boolean;
-};
 export type MaintenanceModeState =
   { isMaintenanceMode: true; secret: string; action?: SetMaintenanceModeDto } | { isMaintenanceMode: false };
 /** FL-360: the pause a Frameleaf Manager library move holds; `queues` are the ones it paused. */
@@ -1484,7 +1464,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.MaintenanceMode]: MaintenanceModeState;
   [SystemMetadataKey.FrameleafLibraryMovePause]: LibraryMovePauseState;
   [SystemMetadataKey.MediaLocation]: MediaLocation;
-  [SystemMetadataKey.PhysicalDeduplicationMigration]: PhysicalDeduplicationMigrationState;
+  [SystemMetadataKey.IdenticalFiles]: IdenticalFilesState;
   [SystemMetadataKey.ReverseGeocodingState]: { lastUpdate?: string; lastImportFileName?: string };
   [SystemMetadataKey.SystemConfig]: DeepPartial<SystemConfig>;
   [SystemMetadataKey.EffectiveConfigEpoch]: {

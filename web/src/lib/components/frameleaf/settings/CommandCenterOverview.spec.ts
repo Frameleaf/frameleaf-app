@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
 import { SvelteURL } from 'svelte/reactivity';
 import { analyticsReportFixture } from '$lib/frameleaf/analytics.fixture';
-import { formatBytes } from '$lib/frameleaf/physical-dedup';
+import { formatBytes } from '$lib/frameleaf/format-bytes';
 import en from '../../../../../../i18n/en.json';
 import CommandCenterOverview from './CommandCenterOverview.svelte';
 

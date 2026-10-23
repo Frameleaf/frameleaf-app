@@ -1,4 +1,3 @@
-import { PhysicalDeduplicationPlanMode, type PhysicalDeduplicationPreviewResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { goto } from '$app/navigation';
@@ -44,21 +43,6 @@ const makeDraft = (overrides: Parameters<typeof config>[0] = {}) => {
 };
 
 const summary = (duplicates: number) => ({ queues: { duplicates } }) as never;
-const noPlan = { plan: null, applies: [], enabled: true, running: false, applying: false, savedMasterUserId: null };
-const foundPlan = {
-  ...noPlan,
-  plan: {
-    mode: PhysicalDeduplicationPlanMode.DryRun,
-    fingerprint: 'f',
-    eligibleAssets: 214,
-    reclaimableBytes: 3.2 * 1024 ** 3,
-    copies: [],
-    retained: [],
-    skippedExternal: 0,
-    skippedMissingMaster: 0,
-  },
-} as unknown as PhysicalDeduplicationPreviewResponseDto;
-
 const hero = () => within(screen.getByRole('region', { name: en.frameleaf_dupes_status }));
 
 describe('Library care › Duplicates (FL-366)', () => {
@@ -66,7 +50,6 @@ describe('Library care › Duplicates (FL-366)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sdkMock.getSummary.mockResolvedValue(summary(0));
-    sdkMock.getPhysicalDeduplicationPreview.mockResolvedValue(noPlan as never);
   });
 
   it('answers first: look-alike groups waiting, exact copies stored once', async () => {
@@ -82,14 +65,13 @@ describe('Library care › Duplicates (FL-366)', () => {
     expect(goto).toHaveBeenCalledWith(expect.stringContaining('duplicates'));
   });
 
-  it('says older copies can be merged and links to Merge older copies', async () => {
+  it('says identical files are stored once automatically, with nothing to merge by hand (FL-413)', async () => {
     makeDraft();
-    sdkMock.getPhysicalDeduplicationPreview.mockResolvedValue(foundPlan);
     render(Duplicates);
 
-    expect(await hero().findByRole('heading', { name: '214 older copies can be merged' })).toBeInTheDocument();
-    await fireEvent.click(hero().getByRole('button', { name: en.frameleaf_dupes_show_me }));
-    expect(goto).toHaveBeenCalledWith(expect.stringContaining('section=deduplication'));
+    expect(await hero().findByText(en.frameleaf_dupes_exact_automatic)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: en.frameleaf_dupes_show_me })).toBeNull();
+    expect(screen.queryByRole('button', { name: en.frameleaf_dupes_look_again })).toBeNull();
   });
 
   it('says storing identical files once as a promise, with no switch', () => {
