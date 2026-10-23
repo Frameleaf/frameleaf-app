@@ -196,6 +196,20 @@ export class CloudBackupIndexRepository {
       .execute();
     return new Set(rows.map(({ sha256 }) => sha256));
   }
+  /** The size and ETag recorded for each of these hashes that the index knows. */
+  @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })
+  async getRecorded(bucket: string, hashes: string[]): Promise<Map<string, { size: number; etag: string | null }>> {
+    if (hashes.length === 0) {
+      return new Map();
+    }
+    const rows = await this.db
+      .selectFrom('cloud_backup_object')
+      .select(['sha256', 'size', 'etag'])
+      .where('bucket', '=', bucket)
+      .where('sha256', 'in', [...new Set(hashes)])
+      .execute();
+    return new Map(rows.map(({ sha256, size, etag }) => [sha256, { size: Number(size), etag }]));
+  }
   /** Record objects that are in the bucket (uploaded, or found by the listing). Recording twice is harmless. */
   @GenerateSql({
     params: [DummyValue.STRING, [{ sha256: DummyValue.STRING, size: DummyValue.NUMBER, etag: DummyValue.STRING }]],
@@ -238,7 +252,11 @@ export class CloudBackupIndexRepository {
   @GenerateSql({ params: [DummyValue.STRING] })
   async deleteBucket(bucket: string): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
-      await trx.deleteFrom('cloud_backup_object').where('bucket', '=', bucket).execute();
+      // the bucket's own rows and its client upload receipts (`<bucket>#client-v<n>`)
+      await trx
+        .deleteFrom('cloud_backup_object')
+        .where((eb) => eb.or([eb('bucket', '=', bucket), sql<boolean>`starts_with(bucket, ${`${bucket}#`})`]))
+        .execute();
       await trx.deleteFrom('cloud_backup_object_verification').where('bucket', '=', bucket).execute();
       await trx
         .deleteFrom('cloud_backup_manifest_entry')
@@ -624,9 +642,10 @@ export class CloudBackupIndexRepository {
     if (hashes.length === 0) {
       return;
     }
+    // a client upload receipt (`<bucket>#client-v<n>`) for a bad object goes too, or the next run skips it
     await this.db
       .deleteFrom('cloud_backup_object')
-      .where('bucket', '=', bucket)
+      .where((eb) => eb.or([eb('bucket', '=', bucket), sql<boolean>`starts_with(bucket, ${`${bucket}#`})`]))
       .where('sha256', 'in', [...new Set(hashes)])
       .execute();
   }

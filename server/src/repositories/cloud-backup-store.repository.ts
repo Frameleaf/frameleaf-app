@@ -344,7 +344,7 @@ type ClientUploadState = {
 type Part = { partNumber: number; etag: string };
 
 /** An ETag without its quotes, as a HEAD and an XML completion answer may each spell it. */
-const bareEtag = (etag: string | null) => etag?.replaceAll(/&quot;|"/g, '');
+export const bareEtag = (etag: string | null) => etag?.replaceAll(/&quot;|"/g, '');
 
 @Injectable()
 export class CloudBackupStoreRepository {

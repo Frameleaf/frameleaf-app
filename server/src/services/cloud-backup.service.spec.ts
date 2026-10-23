@@ -406,6 +406,7 @@ describe(CloudBackupService.name, () => {
     };
     index = {
       getExisting: vi.fn().mockResolvedValue(new Set()),
+      getRecorded: vi.fn().mockResolvedValue(new Map()),
       record: vi.fn().mockResolvedValue(undefined),
       touch: vi.fn().mockResolvedValue(undefined),
       getUsage: vi.fn().mockResolvedValue({ objects: 2, bytes: 200 }),
@@ -4406,12 +4407,40 @@ describe(CloudBackupService.name, () => {
         return Promise.resolve({ size: 100, etag: 'etag' });
       });
       await sut['backUpFiles'](batch(true), fileBatch());
-      expect(index.record).not.toHaveBeenCalled();
+      // a client upload leaves only this server's receipt, never a row of the bucket's shared index
+      expect(index.record).not.toHaveBeenCalledWith(ref, expect.anything());
       await sut['backUpFiles'](batch(false), fileBatch());
       expect(uploadedKeys()).toEqual([
         clientBackupObjectKey(Buffer.from(fixture.file.client.keys[1], 'base64'), fixture.vaultId, 1, SHA_A),
         `o/${SHA_A}`,
       ]);
+    });
+
+    it('skips a client object its own upload receipt still names, without downloading it again', async () => {
+      const run = batch(true);
+      const object = clientBackupObjectKey(
+        Buffer.from(fixture.file.client.keys[1], 'base64'),
+        fixture.vaultId,
+        1,
+        SHA_A,
+      );
+      index.getRecorded.mockResolvedValue(new Map([[SHA_A, { size: 100, etag: '"uploaded"' }]]));
+      store.head = vi.fn().mockResolvedValue({ key: object, size: 100, etag: '"uploaded"' });
+      store.hashObject = vi.fn();
+
+      await sut['backUpFiles'](run, fileBatch());
+
+      expect(index.getRecorded).toHaveBeenCalledWith(`${ref}#client-v1`, [SHA_A]);
+      expect(store.head).toHaveBeenCalledWith(run.connection, object, key);
+      expect(store.hashObject).not.toHaveBeenCalled();
+      expect(store.uploadFile).not.toHaveBeenCalled();
+
+      // a replaced object (another ETag) is read in full again
+      store.head = vi.fn().mockResolvedValue({ key: object, size: 100, etag: '"replaced"' });
+      store.hashObject = vi.fn().mockResolvedValue({ size: 100, sha256: SHA_A });
+      await sut['backUpFiles'](batch(true), fileBatch());
+      expect(store.hashObject).toHaveBeenCalledOnce();
+      expect(index.record).toHaveBeenCalledWith(`${ref}#client-v1`, [{ sha256: SHA_A, size: 100, etag: '"replaced"' }]);
     });
 
     it('repairs failed client authentication even when a same-size object still exists', async () => {
@@ -4442,7 +4471,7 @@ describe(CloudBackupService.name, () => {
       await sut['backUpFiles'](run, fileBatch());
       expect(index.forget).toHaveBeenCalledWith(ref, [SHA_A]);
       expect(uploadedKeys()).toEqual([object]);
-      expect(index.record).not.toHaveBeenCalled();
+      expect(index.record).not.toHaveBeenCalledWith(ref, expect.anything());
       store.hashObject.mockResolvedValue({ size: 100, sha256: SHA_A });
       await sut['backUpFiles'](batch(true), fileBatch());
       expect(store.uploadFile).toHaveBeenCalledOnce();

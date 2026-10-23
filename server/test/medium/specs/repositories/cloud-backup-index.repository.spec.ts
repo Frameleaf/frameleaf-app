@@ -228,6 +228,27 @@ describe(CloudBackupIndexRepository.name, () => {
     await expect(sut.getUsage(bucket)).resolves.toEqual({ objects: 0, bytes: 0 });
   });
 
+  it('keeps client upload receipts apart from the bucket, and forgets them with it', async () => {
+    const { sut } = setup();
+    const bucket = `https://s3.example.test/${randomUUID()}`;
+    const receipts = `${bucket}#client-v1`;
+    await sut.record(receipts, [
+      { sha256: sha('bad'), size: 1, etag: '"b"' },
+      { sha256: sha('good'), size: 2, etag: '"g"' },
+    ]);
+    await expect(sut.getUsage(bucket)).resolves.toEqual({ objects: 0, bytes: 0 });
+    await expect(sut.getRecorded(receipts, [sha('good'), sha('none')])).resolves.toEqual(
+      new Map([[sha('good'), { size: 2, etag: '"g"' }]]),
+    );
+
+    await sut.forget(bucket, [sha('bad')]);
+    await expect(sut.getRecorded(receipts, [sha('bad'), sha('good')])).resolves.toEqual(
+      new Map([[sha('good'), { size: 2, etag: '"g"' }]]),
+    );
+    await sut.deleteBucket(bucket);
+    await expect(sut.getRecorded(receipts, [sha('good')])).resolves.toEqual(new Map());
+  });
+
   it('forgets a bucket’s manifests too, so a fresh claim keeps no backup the bucket no longer holds', async () => {
     const { sut } = setup();
     const bucket = `https://s3.example.test/${randomUUID()}`;

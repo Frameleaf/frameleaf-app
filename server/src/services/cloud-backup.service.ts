@@ -86,12 +86,14 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import {
   CloudBackupAsset,
   CloudBackupEntry,
+  CloudBackupIndexedObject,
   CloudBackupIndexRepository,
   CloudBackupLibraryAsset,
 } from 'src/repositories/cloud-backup-index.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { CloudBackupSelectionRepository } from 'src/repositories/cloud-backup-selection.repository.js';
 import {
+  bareEtag,
   CloudBackupClaimError,
   CloudBackupConnection,
   CloudBackupFileChangedError,
@@ -2579,27 +2581,42 @@ export class CloudBackupService {
       hashed.map(({ sha256 }) => sha256),
     );
     if (client) {
-      // Presence in the legacy index or a same-size HEAD cannot authenticate an opaque copy.
+      // Presence in the legacy index or a same-size HEAD cannot authenticate an opaque copy. This server's own
+      // upload receipt can: the object is still the one it wrote while a HEAD answers with the same ETag.
+      // Anything else is read and checked in full once, then gets a receipt (the full verify still reads it).
       existing.clear();
+      const receipts = await this.index.getRecorded(
+        this.clientReceipts(run),
+        hashed.map(({ sha256 }) => sha256),
+      );
+      const fresh: CloudBackupIndexedObject[] = [];
       for (const file of hashed) {
         if (existing.has(file.sha256) || run.uploadedNow.has(file.sha256)) continue;
+        const key = clientBackupObjectKey(
+          this.clientWriteRoot(run),
+          run.metadata.instanceId,
+          this.clientWriteVersion(run),
+          file.sha256,
+        );
         try {
-          const stored = await this.store.hashObject(
-            run.connection,
-            clientBackupObjectKey(
-              this.clientWriteRoot(run),
-              run.metadata.instanceId,
-              this.clientWriteVersion(run),
-              file.sha256,
-            ),
-            run.bucketKey,
-          );
-          if (stored.size === file.size && stored.sha256 === file.sha256) existing.add(file.sha256);
+          const receipt = receipts.get(file.sha256);
+          const head = receipt?.etag && receipt.size === file.size ? await this.store.head(run.connection, key, run.bucketKey) : null;
+          if (head && head.size === file.size && bareEtag(head.etag) === bareEtag(receipt!.etag)) {
+            existing.add(file.sha256);
+            continue;
+          }
+          const stored = await this.store.hashObject(run.connection, key, run.bucketKey);
+          if (stored.size === file.size && stored.sha256 === file.sha256) {
+            existing.add(file.sha256);
+            const found = await this.store.head(run.connection, key, run.bucketKey);
+            if (found?.etag) fresh.push({ sha256: file.sha256, size: file.size, etag: found.etag });
+          }
         } catch (error) {
           if (!(error instanceof CloudBackupStoreError) || (error.status !== 404 && error.code !== 'ChecksumMismatch'))
             throw error;
         }
       }
+      await this.index.record(this.clientReceipts(run), fresh);
     } else if (run.clientKeys) {
       // Old client-format runs could populate the shared index without a legacy copy.
       for (const file of hashed) {
@@ -2676,8 +2693,10 @@ export class CloudBackupService {
           run.bucketKey,
           current.sha256,
         );
-        if (!run.progress.result.manifestKey!.startsWith('m/v1/'))
-          await this.index.record(run.metadata.bucketRef, [{ sha256: current.sha256, size, etag }]);
+        await this.index.record(
+          run.progress.result.manifestKey!.startsWith('m/v1/') ? this.clientReceipts(run) : run.metadata.bucketRef,
+          [{ sha256: current.sha256, size, etag }],
+        );
         run.uploadedNow.add(current.sha256);
         run.progress.result = {
           ...run.progress.result,
@@ -2699,6 +2718,14 @@ export class CloudBackupService {
     this.logger.warn(`Cloud backup run ${run.id}: a file kept changing while it uploaded; the next run backs it up`);
     run.progress.result = { ...run.progress.result, changed: run.progress.result.changed + 1 };
     return null;
+  }
+
+  /**
+   * Where this server keeps receipts of the client-format objects it uploaded, per key version (FL-525).
+   * Kept apart from the bucket's own index rows, so they never count as the bucket's objects.
+   */
+  private clientReceipts(run: Run) {
+    return `${run.metadata.bucketRef}#client-v${this.clientWriteVersion(run)}`;
   }
 
   private entryOf(file: HashedFile): CloudBackupEntry {
