@@ -717,7 +717,7 @@ describe(SmartAlbumService.name, () => {
       });
 
       expect(result.looksChecked).toBe(true);
-      const [, , rule] = mocks.smartAlbum.previewRule.mock.calls[0];
+      const rule = mocks.smartAlbum.previewRule.mock.calls[0][2];
       expect(rule.embeddings).toHaveLength(1);
     });
   });
