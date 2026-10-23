@@ -6,6 +6,7 @@ import type { PhotographySite, PhotographyStudioPreset } from 'src/dtos/photogra
 import type { PhotographyWorkflow } from 'src/services/photography-workflow.service.js';
 import { AlbumUserRole, AssetFileType, AssetStatus, AssetType, UserStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
+import { hiddenByOwnerRules } from 'src/utils/database.js';
 import { isNotLocked, lockedAssetIdExists } from 'src/utils/locked.js';
 
 export type WorkflowRow = {
@@ -206,6 +207,8 @@ export class PhotographyWorkflowRepository {
       .where('album_asset.albumId', '=', albumId)
       .where('asset.type', '=', AssetType.Image)
       .where(isNotLocked())
+      // FL-446: what the owner's Locked rules hide reaches partners only, never a gallery or portfolio
+      .where(sql<boolean>`not ${hiddenByOwnerRules()}`)
       .where('asset.status', '=', AssetStatus.Active)
       .where('asset.deletedAt', 'is', null)
       .orderBy('asset.fileCreatedAt')
@@ -230,6 +233,7 @@ export class PhotographyWorkflowRepository {
       .where('asset.type', '=', AssetType.Image)
       .where('asset.isOffline', '=', false)
       .where(isNotLocked())
+      .where(sql<boolean>`not ${hiddenByOwnerRules()}`)
       .where('asset.status', '=', AssetStatus.Active)
       .where('asset.deletedAt', 'is', null)
       .where('asset_exif.fileSizeInByte', '<=', 512_000)
@@ -244,7 +248,7 @@ export class PhotographyWorkflowRepository {
       JOIN public.album_asset membership ON membership."assetId"=asset.id
       WHERE revision.id=ANY(${ids}::uuid[]) AND revision."ownerId"=${row.ownerId}::uuid
       AND asset."ownerId"=${row.ownerId}::uuid AND membership."albumId"=${row.albumId}::uuid
-      AND ${isNotLocked()} AND asset.status='active' AND asset."deletedAt" IS NULL AND NOT asset."isOffline"
+      AND ${isNotLocked()} AND NOT ${hiddenByOwnerRules()} AND asset.status='active' AND asset."deletedAt" IS NULL AND NOT asset."isOffline"
       AND revision.status='rendered' AND revision."masterPath" IS NOT NULL
       AND (revision."sourceChecksum" IS NULL OR revision."sourceChecksum"=asset.checksum)`.execute(this.db);
     return new Set(rows.map((r) => r.id));

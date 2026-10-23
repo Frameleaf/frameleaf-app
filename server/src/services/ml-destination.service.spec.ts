@@ -86,6 +86,7 @@ describe(MlDestinationService.name, () => {
     });
     it('creates a local destination for each configured ML URL and routes unrouted library workloads to the first', async () => {
       mocks.mlDestination.getByUrl.mockResolvedValue(undefined);
+      mocks.mlDestination.getAll.mockResolvedValue([]);
       mocks.mlDestination.getStoredRoute.mockResolvedValue(undefined);
       (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(FrameleafWorker.Microservices);
 
@@ -272,6 +273,25 @@ describe(MlDestinationService.name, () => {
 
       await bootWith(['http://frameleaf-machine-learning:3003']);
       expect(mocks.mlDestination.update).not.toHaveBeenCalled();
+    });
+
+    it('turns the same destination back on when its URL returns spelled differently', async () => {
+      const removed = { ...mlDestinationStub.local, enabled: false, lastProbeSummary: ML_URL_REMOVED_SUMMARY };
+      mocks.mlDestination.getAll.mockResolvedValue([removed]);
+      mocks.mlDestination.getByUrl.mockResolvedValue(undefined);
+      mocks.mlDestination.update.mockResolvedValue({ ...removed, enabled: true });
+      mocks.mlDestination.getStoredRoute.mockResolvedValue({
+        workload: MlWorkload.Face,
+        destinationId: removed.id,
+        modelId: null,
+        updatedAt: new Date(),
+      });
+      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(FrameleafWorker.Microservices);
+
+      await bootWith(['http://Frameleaf-Machine-Learning:3003/']);
+
+      expect(mocks.mlDestination.update).toHaveBeenCalledWith(removed.id, { enabled: true });
+      expect(mocks.mlDestination.create).not.toHaveBeenCalled();
     });
 
     it('leaves existing routes alone', async () => {

@@ -892,7 +892,7 @@ export class BulkOperationService {
       return answer === 'archived' || answer === 'undone';
     });
     if (changed.length > 0) {
-      await this.assets.notifyVisibilityChanged(changed, auth.user.id);
+      await this.assets.recordVisibilityEdit(changed, auth.user.id);
     }
     return batch.map((id) => {
       const { status, reasonKey } = archiveAnswerOutcome(answers.get(id) ?? 'missing');

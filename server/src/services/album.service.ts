@@ -985,6 +985,10 @@ export class AlbumService extends BaseService {
       }
     }
 
+    if (album.albumUsers.every(({ user }) => user.id !== userId)) {
+      throw new BadRequestException('Album not shared with user');
+    }
+
     await this.albumUserRepository.update({ albumId: id, userId }, { role: dto.role });
     this.sendAccessChange(album, userId, dto.role);
     // FL-228: the member's access changed

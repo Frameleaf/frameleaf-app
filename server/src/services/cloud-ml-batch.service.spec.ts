@@ -428,7 +428,7 @@ describe(CloudMlBatchService.name, () => {
           BATCH_ID,
           'claim-1',
           expect.objectContaining({ errorCode: 'cloud_description_consent_version_outdated' }),
-          { retry: false },
+          { retry: false, resumable: true },
         );
       },
     );
@@ -918,9 +918,12 @@ describe(CloudMlBatchService.name, () => {
     it('estimates, checks the wallet and submits one job with its pack key and idempotency key', async () => {
       const batch = operation({ assetIds: ['a-1', 'a-2', 'a-3'] });
       mocks.mediaOperation.getLockedAssetIds.mockResolvedValue(new Set(['a-3']));
+      mocks.asset.getById.mockResolvedValue({ checksum: Buffer.from('aa', 'hex') } as never);
 
       await sut.step(batch, 'claim-1', now);
 
+      // each photo sent records its original, so a result for a replaced original is never written
+      expect(written().items).toMatchObject([{ checksum: 'aa' }, { checksum: 'aa' }, { refused: 'locked' }]);
       // the Locked photo is never prepared or sent (each other photo is prepared to be digested, then
       // again to be uploaded, and must match its digest)
       expect(mocks.media.writeCloudUpload.mock.calls.map(([preview]) => preview)).toEqual([
@@ -1045,7 +1048,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_photos_changed' }),
-        { retry: false },
+        { retry: false, resumable: true },
       );
     });
 
@@ -1067,7 +1070,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_wallet_insufficient' }),
-        { retry: false },
+        { retry: false, resumable: true },
       );
     });
 
@@ -1117,7 +1120,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_wallet_insufficient' }),
-        { retry: false },
+        { retry: false, resumable: true },
       );
     });
 
@@ -1152,7 +1155,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_idempotency_key_reused' }),
-        { retry: false },
+        { retry: false, resumable: true },
       );
     });
 
@@ -1173,7 +1176,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_cloud_unavailable' }),
-        { retry: true },
+        { retry: true, resumable: true },
       );
     });
 
@@ -1188,7 +1191,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         { error: 'Frameleaf Cloud has no capacity now', errorCode: 'cloud_description_destination_unhealthy' },
-        { retry: true },
+        { retry: true, resumable: true },
       );
       expect(mocks.machineLearning.describeImage).not.toHaveBeenCalled();
       expect(mocks.mediaOperation.setRemoteJobId).not.toHaveBeenCalled();
@@ -1232,7 +1235,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_wallet_insufficient' }),
-        { retry: false },
+        { retry: false, resumable: true },
       );
     });
 
@@ -1244,7 +1247,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_estimate_increased' }),
-        { retry: false },
+        { retry: false, resumable: true },
       );
     });
 
@@ -1260,7 +1263,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_budget_exceeded' }),
-        { retry: false },
+        { retry: false, resumable: true },
       );
     });
 
@@ -1504,7 +1507,7 @@ describe(CloudMlBatchService.name, () => {
           BATCH_ID,
           'claim-1',
           expect.objectContaining({ errorCode: 'cloud_description_consent_version_outdated' }),
-          { retry: false },
+          { retry: false, resumable: true },
         );
       } else {
         expect(mocks.frameleafCloudMl.uploadInput).toHaveBeenCalled();
@@ -1525,7 +1528,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_consent_unconfirmed' }),
-        { retry: true },
+        { retry: true, resumable: true },
       );
     });
 
@@ -1548,7 +1551,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_consent_unconfirmed' }),
-        { retry: true },
+        { retry: true, resumable: true },
       );
     });
 
@@ -1598,7 +1601,7 @@ describe(CloudMlBatchService.name, () => {
           BATCH_ID,
           'claim-1',
           expect.objectContaining({ errorCode: code }),
-          { retry: false },
+          { retry: false, resumable: true },
         );
       },
     );
@@ -1641,7 +1644,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_photos_changed' }),
-        { retry: false },
+        { retry: false, resumable: true },
       );
     });
 
@@ -1659,8 +1662,27 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_photos_changed' }),
-        { retry: false },
+        { retry: false, resumable: true },
       );
+    });
+
+    it('never writes the old image description of a photo whose original changed meanwhile, and describes it again', async () => {
+      mocks.frameleafCloudMl.getJobView.mockResolvedValue(answer(completedView));
+      mocks.asset.getById.mockImplementation((id: string) =>
+        Promise.resolve({ id, checksum: Buffer.from(id === 'a-1' ? 'cd' : 'aa', 'hex') } as never),
+      );
+      const batch = submitted();
+      const items = (batch.result as { items: Array<Record<string, unknown>> }).items;
+      (batch.result as { items: unknown[] }).items = items.map((item) => ({ ...item, checksum: 'aa' }));
+
+      await expect(sut.step(batch, 'claim-1', now)).resolves.toBe(true);
+
+      expect(publish).toHaveBeenCalledWith(
+        'a-1',
+        expect.anything(),
+        expect.objectContaining({ failure: expect.stringContaining('changed while Frameleaf Cloud described it') }),
+      );
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.ImageDescription, data: { id: 'a-1' } }]);
     });
 
     it('writes each photo its own result with the model and cost share; one failure does not fail the batch', async () => {
@@ -1949,7 +1971,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_output_sha256_mismatch' }),
-        { retry: true },
+        { retry: true, resumable: true },
       );
     });
 

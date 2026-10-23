@@ -184,7 +184,13 @@ export class MlDestinationService extends BaseService {
     if (await this.mlDestinationRepository.recoveryRegistry()) return;
     let first: MlDestinationRow | undefined;
     for (const url of urls) {
-      let row = await this.mlDestinationRepository.getByUrl(MlDestinationKind.Local, url);
+      // The same endpoint spelled differently (a trailing slash, an upper-case host) is the same row,
+      // as the sweep below that turns rows off decides.
+      let row =
+        (await this.mlDestinationRepository.getByUrl(MlDestinationKind.Local, url)) ??
+        (await this.mlDestinationRepository.getAll()).find(
+          (local) => local.kind === MlDestinationKind.Local && local.url !== null && sameEndpointUrl(url, local.url),
+        );
       if (row && !row.enabled && row.lastProbeSummary === ML_URL_REMOVED_SUMMARY) {
         row = await this.mlDestinationRepository.update(row.id, { enabled: true });
         await this.mlDestinationRepository.recordProbe(row.id, {

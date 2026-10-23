@@ -1005,6 +1005,22 @@ describe(AlbumService.name, () => {
   });
 
   describe('updateUser', () => {
+    it('refuses somebody who is not a member, and tells nobody', async () => {
+      const stranger = UserFactory.create();
+      const album = AlbumFactory.from().albumUser().build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+
+      await expect(
+        sut.updateUser(AuthFactory.create(owner), album.id, stranger.id, { role: AlbumUserRole.Viewer }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.albumUser.update).not.toHaveBeenCalled();
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('PushNotify', expect.anything());
+    });
+
     it('should update user role', async () => {
       const user = UserFactory.create();
       const album = AlbumFactory.from().albumUser({ userId: user.id }).build();

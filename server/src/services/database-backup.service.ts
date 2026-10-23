@@ -77,6 +77,7 @@ const isVanishedRelationError = (error: unknown) =>
 const DUMP_COMPLETE = /-- PostgreSQL database dump complete/;
 /** Newer `pg_dump` versions write an `unrestrict` meta-command line after it; this much of the end is checked. */
 const DUMP_TAIL_BYTES = 4096;
+const FAILED_BACKUP_IDLE_MS = 60 * 60 * 1000;
 
 export class DatabaseBackupVerificationError extends Error {
   constructor(reason: string) {
@@ -599,8 +600,14 @@ export class DatabaseBackupService {
       if (isValidDatabaseRoutineBackupName(filename)) {
         backups.push(filename);
       }
+      // Routine dumps can run at the same time (the backup schedule and "Take a snapshot now"), so a
+      // temporary file still being written belongs to another dump. Only an idle one has failed.
+      // ponytail: idle time, not a lock; a dump that writes nothing for an hour is treated as failed.
       if (isFailedDatabaseBackupName(filename)) {
-        failedBackups.push(filename);
+        const stats = await this.storageRepository.stat(path.join(backupsFolder, filename)).catch(() => null);
+        if (stats && Date.now() - stats.mtimeMs > FAILED_BACKUP_IDLE_MS) {
+          failedBackups.push(filename);
+        }
       }
     }
     backups.sort().reverse();
