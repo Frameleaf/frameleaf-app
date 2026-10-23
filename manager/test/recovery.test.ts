@@ -512,6 +512,7 @@ test('import verification uses the fenced dump receipt instead of earlier discov
     'start-database',
     'capture-fenced-settings',
     'copy-current-database',
+    'check-media-writable',
     'configure-offline-import',
     'import-canonical-database',
     'import-settings',

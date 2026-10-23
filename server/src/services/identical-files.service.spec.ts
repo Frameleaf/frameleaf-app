@@ -141,6 +141,25 @@ describe(IdenticalFilesService.name, () => {
     });
   });
 
+  it('starts an Immich import its own run, whatever ran before (FL-414)', async () => {
+    const { sut, saved } = setup({
+      status: 'running',
+      stage: 'link',
+      cursor: 'abc',
+      runId: 'manual',
+      recoveredAlbums: {},
+    });
+    await expect(sut.handleCheck({ importRunId: 'import-run' })).resolves.toBe(JobStatus.Success);
+    expect(saved()).toMatchObject({ trigger: 'immich-import', importRunId: 'import-run', status: 'completed' });
+    expect(saved()?.runId).not.toBe('manual');
+  });
+
+  it('changes nothing when the import item is retried after its run finished (FL-414)', async () => {
+    const { sut, metadata } = setup({ status: 'completed', importRunId: 'import-run' });
+    await expect(sut.handleCheck({ importRunId: 'import-run' })).resolves.toBe(JobStatus.Skipped);
+    expect(metadata.set).not.toHaveBeenCalled();
+  });
+
   it('skips the retired per-account jobs', async () => {
     const { sut } = setup(null);
     await expect(sut.handleRetiredDryRun()).resolves.toBe(JobStatus.Skipped);

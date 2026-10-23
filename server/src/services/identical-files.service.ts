@@ -184,12 +184,13 @@ export class IdenticalFilesService {
   }
 
   /** Starts a fresh run's state (keeping the Recovered Media albums), for `check` and the import stage. */
-  async start(trigger: IdenticalFilesTrigger, requestedBy: string | null) {
+  async start(trigger: IdenticalFilesTrigger, requestedBy: string | null, importRunId: string | null = null) {
     const previous = await this.getState();
     await this.saveState({
       runId: randomUUID(),
       trigger,
       requestedBy,
+      importRunId,
       status: 'running',
       stage: 'scan',
       cursor: null,
@@ -283,6 +284,14 @@ export class IdenticalFilesService {
   @OnJob({ name: JobName.IdenticalFilesCheck, queue: QueueName.StorageTemplateMigration })
   async handleCheck(job?: JobOf<JobName.IdenticalFilesCheck>): Promise<JobStatus> {
     let state = await this.getState();
+    if (job?.importRunId && state?.importRunId !== job.importRunId) {
+      // FL-414: an Immich import was activated: a full run of its own, whatever ran before
+      await this.start('immich-import', null, job.importRunId);
+      state = (await this.getState())!;
+    } else if (job?.importRunId && state?.status === 'completed') {
+      // this import's run finished already: a retried item changes nothing
+      return JobStatus.Skipped;
+    }
     if (state?.status !== 'running') {
       if (job?.resume) {
         // the run this job was queued to carry on has finished

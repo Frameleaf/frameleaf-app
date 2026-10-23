@@ -137,6 +137,8 @@ export type IdenticalFilesState = {
   trigger: IdenticalFilesTrigger;
   /** The administrator who asked for the run; orphans in a deleted user's folder become theirs. */
   requestedBy: string | null;
+  /** FL-414: the Immich import's derived run this run was started for. */
+  importRunId?: string | null;
   status: 'running' | 'completed';
   stage: IdenticalFilesStage;
   /** Where the current stage stopped: an asset id, a content key, or null at its start. */

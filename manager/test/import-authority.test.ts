@@ -409,6 +409,7 @@ test('resumed cutover captures fenced settings and applies the reviewed ML choic
       'start-database',
       'copy-current-database',
       'database-backup',
+      'check-media-writable',
       'configure-offline-import',
       'import-canonical-database',
       'verify-import',
@@ -439,6 +440,72 @@ test('resumed cutover captures fenced settings and applies the reviewed ML choic
       services: {},
     });
     assert.equal(f.store.get<Installation>('installation')?.mayHaveWrittenMedia, true);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('the media check asks the server image, with its own mounts and user, which folders it cannot write (FL-414)', async () => {
+  const commands: string[][] = [];
+  const docker = new Docker(async (binary, args, options) => {
+    assert.equal(binary, 'docker');
+    assert.equal(options?.cwd, '/fixture/manager');
+    commands.push(args);
+    return '/data/library\nnoise from the entrypoint\n';
+  });
+  assert.deepEqual(
+    await docker.unwritableMedia('/fixture/manager', `frameleaf-${'a'.repeat(12)}`, ['/data', '/data/library']),
+    ['/data/library'],
+  );
+  const [command] = commands;
+  assert.deepEqual(command.slice(0, 12), [
+    'compose', '--project-name', `frameleaf-${'a'.repeat(12)}`, '--file', 'compose.json', 'run', '--rm',
+    '--no-deps', '-T', '--entrypoint', 'sh', 'frameleaf-server',
+  ]);
+  assert.deepEqual(command.slice(-3), ['sh', '/data', '/data/library']);
+  await assert.rejects(docker.unwritableMedia('/fixture/manager', 'not-a-project', ['/data']), /invalid_media_check/);
+  await assert.rejects(
+    docker.unwritableMedia('/fixture/manager', `frameleaf-${'a'.repeat(12)}`, ['relative']),
+    /invalid_media_check/,
+  );
+  assert.deepEqual(await docker.unwritableMedia('/fixture/manager', `frameleaf-${'a'.repeat(12)}`, []), []);
+});
+
+test('an in-place import stops before any grant or import when a media folder is not writable (FL-414)', async () => {
+  const f = await fixture();
+  try {
+    const checked: string[][] = [];
+    (f.docker as unknown as { unwritableMedia: (d: string, p: string, t: string[]) => Promise<string[]> }).unwritableMedia =
+      async (_directory, _project, targets) => {
+        checked.push(targets);
+        return ['/data/library'];
+      };
+    const internal = f.operations as unknown as {
+      install(operation: Operation, review: unknown): Promise<void>;
+      fencing: { verify(): Promise<void>; assertMedia(): Promise<void> };
+    };
+    internal.fencing = { verify: async () => {}, assertMedia: async () => {} };
+    f.operation.completed = [
+      'preflight',
+      'download-images',
+      'configure',
+      'review-source',
+      'fence-source',
+      'start-database',
+      'capture-fenced-settings',
+      'copy-current-database',
+      'database-backup',
+    ];
+    f.operation.receipts.configure = f.installation;
+    await assert.rejects(
+      internal.install(f.operation, { input: { tag: 'v1.0.0' }, source: f.source, backup: { verified: true } }),
+      (error: Error & { code?: string; detail?: string }) =>
+        error.code === 'media_folder_not_writable' && !!error.detail?.includes('/data/library'),
+    );
+    assert.deepEqual(checked, [['/data', '/data/library']]);
+    // nothing was granted on the source and no import ran
+    assert.deepEqual(f.events, []);
+    assert.equal(f.operation.completed.includes('configure-offline-import'), false);
   } finally {
     await f.cleanup();
   }

@@ -24,6 +24,6 @@ Frameleaf also checks the whole server for identical files, with no account to p
 - **Inside one library**, two identical photos become one. The oldest is kept, and it takes the other's albums, tags, favourite, rating and description. The other goes to the Trash as a duplicate decision that you can undo. A photo with edits, a stack, shares, face corrections or a different Locked state is left for Duplicate review instead.
 - **Orphaned files** in the storage folders that no photo points at are recovered for the owner of their folder, into an album called **Recovered Media**. Content the owner already has, and damaged files, go to File trash.
 
-No check deletes a file, and external libraries are never touched. An administrator can undo one link, which restores that photo's own file from File trash. A link or merge that was undone is never redone automatically.
+The check runs by itself after every library import (see [One-time offline import](../administration/import-immich.md)). No check deletes a file, and external libraries are never touched. An administrator can undo one link, which restores that photo's own file from File trash. A link or merge that was undone is never redone automatically.
 
 Keep an independent, verified backup: reusing one stored file does not protect it against disk loss.
