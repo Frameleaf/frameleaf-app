@@ -1082,7 +1082,14 @@ export class StudioBundleService {
         actor &&
         (await this.crypto.hashFile(retried.path, 'sha256')).toString('hex') === snapshot.digest
       ) {
-        const refused = await this.keepCarriedImports(actor, retried.path, this.storedManifest(retried), existing.id);
+        // The last attempt: a file that still cannot be kept is reported rather than failing the job.
+        const refused = await this.keepCarriedImports(
+          actor,
+          retried.path,
+          this.storedManifest(retried),
+          existing.id,
+          true,
+        );
         const listed = new Set(recovered.missing.map((item) => item.key));
         recovered.missing.push(...refused.filter((item) => !listed.has(item.key)));
       }
@@ -1348,13 +1355,16 @@ export class StudioBundleService {
    * the bytes, runs every check an upload gets (size, quota, graphics scan, caption and LUT
    * validation) and stores it as `<import id><extension>`. Nothing the manifest says about the file
    * reaches the disk: its name is a label and its type only settles what the bytes leave open, as
-   * a browser's does. Returns the files the checks refused; anything else that fails throws.
+   * a browser's does. Returns the files the checks refused; anything else that fails throws, so the
+   * job's retry can keep it, except with `settle` (the retry itself), where a file the import step
+   * still cannot keep is returned too: the project already exists and failing again would strand it.
    */
   private async keepCarriedImports(
     owner: AuthDto,
     bundlePath: string,
     manifest: StudioBundleManifest,
     projectId: string,
+    settle = false,
   ): Promise<StudioBundleMissingSource[]> {
     const carried = studioBundleImportSources(manifest.sources)
       .values()
@@ -1448,10 +1458,13 @@ export class StudioBundleService {
               lineage ? { publicationId, processingProvenance: JSON.stringify(lineage) } : undefined,
             );
           } catch (error) {
-            if (!(error instanceof BadRequestException || error instanceof PayloadTooLargeException)) {
+            if (error instanceof BadRequestException || error instanceof PayloadTooLargeException) {
+              this.logger.warn(`Studio bundle import: project file ${item.id} was not kept: ${errorMessage(error)}`);
+            } else if (settle) {
+              this.logger.error(`Studio bundle import: project file ${item.id} could not be kept: ${errorMessage(error)}`);
+            } else {
               throw error;
             }
-            this.logger.warn(`Studio bundle import: project file ${item.id} was not kept: ${errorMessage(error)}`);
             refused.push({ key: item.key, kind: item.kind, id: item.id, fileName: item.fileName, embedded: true });
           }
         } finally {
