@@ -337,7 +337,16 @@ export class ClassificationService extends BaseService {
       }));
     }
     await this.classificationRepository.markApplied(rule.id);
-    return assetIds.map((id) => ({ id, status: MediaOperationItemStatus.Ok }));
+    // an item the rule could not touch (locked, or no longer the owner's live media) was not done
+    const locked = new Set(outcome.locked);
+    const missing = new Set(outcome.missing);
+    return assetIds.map((id) =>
+      locked.has(id)
+        ? { id, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_locked' }
+        : missing.has(id)
+          ? { id, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_not_found' }
+          : { id, status: MediaOperationItemStatus.Ok },
+    );
   }
 
   async getMatches(auth: AuthDto, id: string, dto: ClassificationMatchQueryDto): Promise<ClassificationMatchPageDto> {

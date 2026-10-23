@@ -145,7 +145,7 @@ export class Operations {
       store,
       docker,
       this.fencing,
-      new PostgresStorage(docker, store.directory, roots, !!autostartFile),
+      new PostgresStorage(docker, store.directory, roots, !!databaseStorage?.unraid),
       store.directory,
       process.env.MANAGER_BACKUP_ROOT ?? join(store.directory, 'backups'),
       undefined,

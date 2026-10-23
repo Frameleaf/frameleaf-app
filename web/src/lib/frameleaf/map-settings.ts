@@ -39,6 +39,26 @@ export const mapDateWindow = (
 
 export type MapArea = { west: number; south: number; east: number; north: number };
 
+type MapView = { getWest(): number; getEast(): number; getSouth(): number; getNorth(): number };
+
+const wrapLongitude = (lon: number) => (lon > 180 ? lon - 360 : lon < -180 ? lon + 360 : lon);
+
+/**
+ * The visible map as an area in -180..180. MapLibre does not wrap its bounds, so a view across the
+ * date line reads e.g. 145..205; that becomes west 145, east -155 (west > east crosses the date line).
+ */
+export const toMapArea = (view: MapView): MapArea => {
+  const south = Math.max(-90, view.getSouth());
+  const north = Math.min(90, view.getNorth());
+  if (view.getEast() - view.getWest() >= 360) {
+    return { west: -180, south, east: 180, north };
+  }
+  return { west: wrapLongitude(view.getWest()), south, east: wrapLongitude(view.getEast()), north };
+};
+
+export const isInMapArea = ({ west, south, east, north }: MapArea, lon: number, lat: number) =>
+  lat >= south && lat <= north && (west <= east ? lon >= west && lon <= east : lon >= west || lon <= east);
+
 const round = (value: number, direction: 'down' | 'up') =>
   Number(((direction === 'down' ? Math.floor : Math.ceil)(value * 1e5) / 1e5).toFixed(5));
 

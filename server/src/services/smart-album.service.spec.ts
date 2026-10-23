@@ -101,6 +101,18 @@ describe(SmartAlbumService.name, () => {
       expect(mocks.smartAlbum.addAssetToSmartAlbum).not.toHaveBeenCalled();
     });
 
+    it('keeps the existing members of a disabled kind: it neither adds nor removes them', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        smartAlbums: { enabled: true, builtIn: { travel: { enabled: false } } },
+      });
+      mocks.smartAlbum.getMatchingKinds.mockResolvedValue(['travel']);
+      mocks.smartAlbum.getAllSmartAlbumIdsForOwner.mockResolvedValue(albumMap({ travel: travelAlbumId }));
+
+      await sut.evaluate({ assetId, ownerId, tags: ['sunset'] });
+
+      expect(mocks.smartAlbum.removeAssetFromSmartAlbum).not.toHaveBeenCalled();
+    });
+
     it('should skip when exclusion exists for the asset in that smart album', async () => {
       mocks.smartAlbum.getAllSmartAlbumIdsForOwner.mockResolvedValue(albumMap({ travel: travelAlbumId }));
       mocks.smartAlbum.getExcludedSmartAlbumIds.mockResolvedValue(new Set([travelAlbumId]));

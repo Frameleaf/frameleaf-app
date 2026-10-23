@@ -17,7 +17,7 @@ import {
 import { UserResponseDto, mapUser } from 'src/dtos/user.dto.js';
 import { AssetVisibility } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
-import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { everyOwnersRules, getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { resolveShareBaseUrl } from 'src/utils/public-url.js';
 
 /** Where a recipient opens what was shared with them: the Sharing page's "Shared with you" section. */
@@ -202,9 +202,11 @@ export class ItemShareService extends BaseService {
       throw new BadRequestException(ITEM_SHARE_HIDDEN);
     }
     const locked = await repository.getLockedAssetIds(assetIds);
-    const suppressed = auth.suppressedContent
-      ? await repository.getHiddenContentAssetIds(assetIds, { hiddenContent: auth.suppressedContent })
-      : new Set<string>();
+    // FL-447: `everyOwnersRules` also refuses a Studio export made from a source the rules hide
+    const suppressed = await repository.getHiddenContentAssetIds(assetIds, {
+      hiddenContent: auth.suppressedContent,
+      ...everyOwnersRules,
+    });
     if (locked.size > 0 || suppressed.size > 0) {
       throw new BadRequestException(ITEM_SHARE_LOCKED);
     }

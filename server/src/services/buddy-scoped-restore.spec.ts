@@ -1,7 +1,7 @@
 import { NoResultError } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
-import { lstat, mkdtemp, readFile, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdtemp, readFile, readdir, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -115,6 +115,111 @@ it.each([
   } finally {
     restorer.mockRestore();
     media.mockRestore();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it.each([
+  ['keep', 'source edit', true],
+  ['replace', 'original bytes', true],
+  ['replace', 'source edit', false],
+] as const)('never writes into a read-only library folder (%s, source holds %s)', async (mode, current, completes) => {
+  const directory = await mkdtemp(join(tmpdir(), 'buddy-restore-read-only-'));
+  const source = join(directory, 'import');
+  mkdirSync(source);
+  const assetId = randomUUID();
+  const libraryId = randomUUID();
+  const hash = (data: Buffer | string) => createHash('sha256').update(data).digest('hex');
+  const original = join(source, 'photo.jpg');
+  const manifest = {
+    library: {
+      assets: {
+        [assetId]: {
+          owner: 'owner',
+          files: [{ role: 'original', path: original, size: 14, sha256: hash('original bytes') }],
+        },
+      },
+      profiles: {},
+      albums: {},
+      people: {},
+    },
+    assetLinks: { [assetId]: { isExternal: true, libraryId } },
+  };
+  const operation: any = {
+    id: randomUUID(),
+    ownerId: 'owner',
+    claimToken: 'token',
+    result: {},
+    snapshot: {
+      request: { scope: 'asset', assetIds: [assetId], mode },
+      admin: true,
+      owner: { current: { [assetId]: { originalPath: original, isExternal: true } } },
+      manifestHash: hash(JSON.stringify(manifest)),
+    },
+  };
+  const query: any = {
+    select: () => query,
+    where: () => query,
+    execute: () => Promise.resolve([{ id: libraryId, importPaths: [source] }]),
+  };
+  const complete = vi.fn().mockResolvedValue(true);
+  const fail = vi.fn();
+  const service = Object.assign(Object.create(BuddyBackupRestoreService.prototype), {
+    repository: { root: () => join(directory, 'buddy'), db: { selectFrom: () => query } },
+    crypto: { hashFile: async (path: string) => Buffer.from(hash(await readFile(path)), 'hex') },
+    storage: {
+      mkdirSync: (path: string) => mkdirSync(path, { recursive: true }),
+      rename,
+      unlink,
+      checkFileExists: async (path: string) => !!(await lstat(path).catch(() => null)),
+    },
+    logger: { warn: vi.fn(), error: vi.fn() },
+    binding: async () => {},
+    guarded: (...args: any[]) => args[6](),
+    index: {
+      getOwnerRestoreAuth: () => Promise.resolve({ auth: { user: { isAdmin: true } } }),
+      getOwnerRestoreIdentities: () => Promise.resolve({ [assetId]: { originalPath: original, isExternal: true } }),
+    },
+    operations: {
+      getOfKind: () => Promise.resolve(operation),
+      reportProgress: () => Promise.resolve(true),
+      setBulkResult: () => Promise.resolve({ cancelRequestedAt: null, pauseRequestedAt: null }),
+      beginValidation: () => Promise.resolve(true),
+      complete,
+      fail,
+    },
+    open: () =>
+      Promise.resolve({
+        manifest,
+        reader: {
+          download: async (_manifest: unknown, _sha256: string, path: string) => {
+            await writeFile(path, 'original bytes');
+            return { sha256: hash('original bytes'), size: 14 };
+          },
+        },
+      }),
+  });
+  const restore = CloudBackupRestorer.prototype.restore;
+  const restorer = vi.spyOn(CloudBackupRestorer.prototype, 'restore').mockImplementation(function (
+    this: CloudBackupRestorer,
+    options,
+  ) {
+    return restore.call(this, { ...options, library: (result) => Promise.resolve(result) });
+  });
+  const media = vi.spyOn(StorageCore, 'getMediaLocation').mockReturnValue(join(directory, 'media'));
+  try {
+    await writeFile(original, current);
+    // A read-only mount: any staged copy or rename beside the original fails.
+    await chmod(source, 0o555);
+    await service.run(operation, 'token');
+    expect(complete).toHaveBeenCalledTimes(completes ? 1 : 0);
+    expect(fail).toHaveBeenCalledTimes(completes ? 0 : 1);
+    expect(await readFile(original, 'utf8')).toBe(current);
+    expect(await readdir(source)).toEqual(['photo.jpg']);
+  } finally {
+    restorer.mockRestore();
+    media.mockRestore();
+    await chmod(source, 0o755);
     await rm(directory, { recursive: true, force: true });
   }
 });

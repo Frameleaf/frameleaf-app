@@ -1039,11 +1039,16 @@ export class CloudMlBatchService extends BaseService {
     try {
       await this.mediaRepository.writeCloudUpload(asset.previewFile, output);
       const { sha256, sizeInBytes } = await this.cryptoRepository.hashFileDigests(output);
-      return { ...base, sha256: sha256.toString('hex'), bytes: sizeInBytes, contentType: 'image/jpeg' };
+      const checksum = await this.originalChecksum(item.assetId);
+      return { ...base, sha256: sha256.toString('hex'), bytes: sizeInBytes, contentType: 'image/jpeg', checksum };
     } catch (error) {
       this.logger.warn(`Could not prepare photo ${item.assetId} for Frameleaf Cloud: ${errorMessage(error)}`);
       return { ...base, refused: 'prepare-failed' };
     }
+  }
+
+  private async originalChecksum(assetId: string) {
+    return (await this.assetRepository.getById(assetId))?.checksum.toString('hex');
   }
 
   private toInput(item: CloudDescriptionItem) {
@@ -1439,6 +1444,7 @@ export class CloudMlBatchService extends BaseService {
     const documents = delivered ? await this.downloadResults(run, gateway, view) : new Map();
     const modelName = run.snapshot.modelName ?? run.snapshot.modelSku;
     const items: typeof run.result.items = [];
+    const changed: string[] = [];
     const context = queueExecution.getStore();
     const adoptionStart = context?.adoptions.length ?? 0;
     let adoptions: NonNullable<typeof context>['adoptions'] = [];
@@ -1448,8 +1454,19 @@ export class CloudMlBatchService extends BaseService {
           items.push(item);
           continue;
         }
+        // The original was replaced while the cloud worked: its description is of the old image
+        const isChanged = !!item.checksum && item.checksum !== (await this.originalChecksum(item.assetId));
+        if (isChanged) {
+          changed.push(item.assetId);
+        }
         items.push(
-          await this.writeResult(item, documents.get(item.inputId) ?? null, run.snapshot.destinationId, modelName),
+          await this.writeResult(
+            item,
+            documents.get(item.inputId) ?? null,
+            run.snapshot.destinationId,
+            modelName,
+            isChanged,
+          ),
         );
       }
     };
@@ -1519,6 +1536,10 @@ export class CloudMlBatchService extends BaseService {
       }
       await afterJobCommit(async () => {
         await this.release(gateway, run.operation.id, job.jobId, false);
+        // described again from the new original, wherever descriptions are routed now
+        if (changed.length > 0) {
+          await this.jobRepository.queueAll(changed.map((id) => ({ name: JobName.ImageDescription, data: { id } })));
+        }
       });
     };
     if (!deferJobAdoption(commit)) {
@@ -1601,16 +1622,22 @@ export class CloudMlBatchService extends BaseService {
     document: CloudDescriptionOutcome | null,
     destinationId: string,
     modelName: string,
+    changed = false,
   ): Promise<CloudDescriptionItem> {
     const found = document && !('invalid' in document) ? document : null;
     const warnings = found?.item.warnings ?? [];
     const failed = warnings.filter((warning) => CLOUD_DESCRIPTION_FAILURE_WARNINGS.includes(warning));
-    const failure = found
-      ? failed.length > 0
-        ? `Frameleaf Cloud could not describe this photo (${failed.join(', ')})`
-        : undefined
-      : 'Frameleaf Cloud returned no readable description for this photo';
-    const base: CloudDescriptionItem = { ...item, ...(found && { modelRev: found.modelRev, warnings: [...warnings] }) };
+    const failure = changed
+      ? 'The photo changed while Frameleaf Cloud described it; it is described again'
+      : found
+        ? failed.length > 0
+          ? `Frameleaf Cloud could not describe this photo (${failed.join(', ')})`
+          : undefined
+        : 'Frameleaf Cloud returned no readable description for this photo';
+    const base: CloudDescriptionItem = {
+      ...item,
+      ...(found && { modelRev: found.modelRev, warnings: [...warnings] }),
+    };
     const onPublished = (outcome: Awaited<ReturnType<ImageEnrichmentService['publishCloudDescription']>>) => {
       if (!failure && outcome.status === JobStatus.Success) {
         base.outcome = 'described';
@@ -1810,7 +1837,8 @@ export class CloudMlBatchService extends BaseService {
         run.operation.id,
         run.claimToken,
         { error: refusal.message, errorCode: refusal.code },
-        { retry: refusal.transient },
+        // the batch resumes by its phase, cloud job and idempotency key, so its one retry repeats nothing
+        { retry: refusal.transient, resumable: true },
       );
     }
   }

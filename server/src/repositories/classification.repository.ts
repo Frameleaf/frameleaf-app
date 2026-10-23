@@ -35,6 +35,10 @@ export type ClassificationApplyOutcome = {
   tagged: string[];
   /** Assets this call untagged, for the sidecar events. */
   untagged: string[];
+  /** Assets left untouched because they are locked. */
+  locked: string[];
+  /** Assets left untouched because they are no longer the owner's live, listed media. */
+  missing: string[];
 };
 
 export type ClassificationRuleCounts = Record<'matched' | 'suggested' | 'accepted' | 'rejected', number>;
@@ -60,6 +64,8 @@ const emptyOutcome = (): ClassificationApplyOutcome => ({
   unchanged: 0,
   tagged: [],
   untagged: [],
+  locked: [],
+  missing: [],
 });
 
 const jsonb = (value: string[]) => sql<string[]>`${JSON.stringify(value)}::text::jsonb`;
@@ -491,6 +497,7 @@ export class ClassificationRepository {
         const row = existing.get(assetId);
         if (!asset || asset.isLocked) {
           outcome.unchanged++;
+          (asset ? outcome.locked : outcome.missing).push(assetId);
           continue;
         }
 

@@ -406,6 +406,7 @@ describe(CloudBackupService.name, () => {
     };
     index = {
       getExisting: vi.fn().mockResolvedValue(new Set()),
+      getRecorded: vi.fn().mockResolvedValue(new Map()),
       record: vi.fn().mockResolvedValue(undefined),
       touch: vi.fn().mockResolvedValue(undefined),
       getUsage: vi.fn().mockResolvedValue({ objects: 2, bytes: 200 }),
@@ -423,11 +424,21 @@ describe(CloudBackupService.name, () => {
       getManifestKeys: vi.fn().mockResolvedValue(new Set()),
       adoptManifests: vi.fn().mockResolvedValue(0),
       listKeptManifests: vi.fn().mockResolvedValue([]),
+      getOwnerBackupCandidates: vi
+        .fn()
+        .mockImplementation(
+          async (bucket: string) =>
+            new Set((await index.listKeptManifests(bucket)).map(({ key }: { key: string }) => key)),
+        ),
       markManifests: vi.fn().mockResolvedValue(0),
       forget: vi.fn().mockResolvedValue(undefined),
       getOwnerRestoreIdentities: vi.fn().mockResolvedValue({}),
       getOwnerHistoryState: vi.fn().mockResolvedValue(new Map()),
       getLibraryState: vi.fn().mockResolvedValue(new Map()),
+      getTakenPaths: vi.fn().mockResolvedValue(new Set()),
+      getEndedTransfers: vi.fn().mockResolvedValue([]),
+      clearEndedTransfer: vi.fn().mockResolvedValue(undefined),
+      getUnfinishedOperationIds: vi.fn().mockResolvedValue(new Set()),
       getOwnerNames: vi.fn().mockResolvedValue(new Map()),
       endAbandonedManifests: vi.fn().mockResolvedValue(0),
       countAssets: vi.fn().mockResolvedValue(3),
@@ -1643,6 +1654,44 @@ describe(CloudBackupService.name, () => {
         }
       },
     );
+
+    it('removes the partial downloads and transfer folders of operations that ended', async () => {
+      const ended = '00000000-0000-4000-8000-0000000000e1';
+      const running = '00000000-0000-4000-8000-0000000000e2';
+      const partial = '/data/library/owner-1/2026/.frameleaf-part-abc';
+      index.getEndedTransfers.mockResolvedValue([
+        {
+          id: ended,
+          transfer: {
+            kind: 'download',
+            key: `o/${SHA_A}`,
+            partial,
+            expectedSha256: SHA_A,
+            etag: '"e"',
+            size: 100,
+            offset: 10,
+            completed: null,
+          },
+        },
+      ]);
+      mocks.storage.readdir.mockImplementation((folder) =>
+        Promise.resolve(folder.endsWith('cloud-backup-transfers') ? [ended, running, 'notes'] : []),
+      );
+      index.getUnfinishedOperationIds.mockResolvedValue(new Set([running]));
+
+      await sut.run(operationOf(), 'claim-1');
+
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(partial);
+      expect(index.clearEndedTransfer).toHaveBeenCalledWith(ended);
+      expect(mocks.storage.unlinkDir).toHaveBeenCalledOnce();
+      expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(
+        expect.stringMatching(new RegExp(`cloud-backup-transfers/${ended}$`)),
+        {
+          recursive: true,
+          force: true,
+        },
+      );
+    });
 
     it('keeps BYO multipart permission requirements and avoids Cloud capability calls', async () => {
       await sut.run(operationOf(), 'claim-1');
@@ -3799,6 +3848,15 @@ describe(CloudBackupService.name, () => {
         nextOffset: null,
       });
     });
+    it('lists backups without downloading a manifest that holds none of the owner’s restorable items', async () => {
+      index.getOwnerBackupCandidates.mockResolvedValue(new Set());
+      expect(await sut.listOwnerBackups(authStub.user1, { limit: 1, offset: 0 }, refresh())).toEqual({
+        backups: [],
+        nextOffset: null,
+      });
+      expect(store.get).not.toHaveBeenCalled();
+      expect(index.getOwnerBackupCandidates).toHaveBeenCalledWith(expect.any(String), authStub.user1.user.id);
+    });
     it('refuses revoked normal auth, shared links, changed owner, relock and pruned cached manifest', async () => {
       const revoked = refresh().mockRejectedValueOnce(new Error('revoked'));
       await expect(sut.listOwnerHistory(authStub.user1, dto, revoked)).rejects.toThrow('revoked');
@@ -4119,6 +4177,17 @@ describe(CloudBackupService.name, () => {
         store.get = vi.fn().mockResolvedValue(v2Body);
       });
 
+      it('never names or finds by name a deleted item the backup recorded as Locked', async () => {
+        const body = JSON.parse(gunzipSync(v2Body).toString());
+        body.assets['asset-2'].details.visibility = 'locked';
+        store.get = vi.fn().mockResolvedValue(gzipSync(JSON.stringify(body)));
+        index.getLibraryState.mockResolvedValue(new Map());
+
+        const listed = await sut.listManifestItems({ manifestKey });
+        expect(listed.items.find(({ assetId }) => assetId === 'asset-2')).toMatchObject({ name: '', locked: true });
+        await expect(sut.listManifestItems({ manifestKey, query: 'img_2' })).resolves.toMatchObject({ total: 0 });
+      });
+
       it('queues an album restore with the album’s items from the backup and how their details come back', async () => {
         await sut.startRestore(authStub.admin, { manifestKey, scope: 'album', albumId: ALBUM_ID, details: 'fill' });
 
@@ -4344,12 +4413,40 @@ describe(CloudBackupService.name, () => {
         return Promise.resolve({ size: 100, etag: 'etag' });
       });
       await sut['backUpFiles'](batch(true), fileBatch());
-      expect(index.record).not.toHaveBeenCalled();
+      // a client upload leaves only this server's receipt, never a row of the bucket's shared index
+      expect(index.record).not.toHaveBeenCalledWith(ref, expect.anything());
       await sut['backUpFiles'](batch(false), fileBatch());
       expect(uploadedKeys()).toEqual([
         clientBackupObjectKey(Buffer.from(fixture.file.client.keys[1], 'base64'), fixture.vaultId, 1, SHA_A),
         `o/${SHA_A}`,
       ]);
+    });
+
+    it('skips a client object its own upload receipt still names, without downloading it again', async () => {
+      const run = batch(true);
+      const object = clientBackupObjectKey(
+        Buffer.from(fixture.file.client.keys[1], 'base64'),
+        fixture.vaultId,
+        1,
+        SHA_A,
+      );
+      index.getRecorded.mockResolvedValue(new Map([[SHA_A, { size: 100, etag: '"uploaded"' }]]));
+      store.head = vi.fn().mockResolvedValue({ key: object, size: 100, etag: '"uploaded"' });
+      store.hashObject = vi.fn();
+
+      await sut['backUpFiles'](run, fileBatch());
+
+      expect(index.getRecorded).toHaveBeenCalledWith(`${ref}#client-v1`, [SHA_A]);
+      expect(store.head).toHaveBeenCalledWith(run.connection, object, key);
+      expect(store.hashObject).not.toHaveBeenCalled();
+      expect(store.uploadFile).not.toHaveBeenCalled();
+
+      // a replaced object (another ETag) is read in full again
+      store.head = vi.fn().mockResolvedValue({ key: object, size: 100, etag: '"replaced"' });
+      store.hashObject = vi.fn().mockResolvedValue({ size: 100, sha256: SHA_A });
+      await sut['backUpFiles'](batch(true), fileBatch());
+      expect(store.hashObject).toHaveBeenCalledOnce();
+      expect(index.record).toHaveBeenCalledWith(`${ref}#client-v1`, [{ sha256: SHA_A, size: 100, etag: '"replaced"' }]);
     });
 
     it('repairs failed client authentication even when a same-size object still exists', async () => {
@@ -4380,7 +4477,7 @@ describe(CloudBackupService.name, () => {
       await sut['backUpFiles'](run, fileBatch());
       expect(index.forget).toHaveBeenCalledWith(ref, [SHA_A]);
       expect(uploadedKeys()).toEqual([object]);
-      expect(index.record).not.toHaveBeenCalled();
+      expect(index.record).not.toHaveBeenCalledWith(ref, expect.anything());
       store.hashObject.mockResolvedValue({ size: 100, sha256: SHA_A });
       await sut['backUpFiles'](batch(true), fileBatch());
       expect(store.uploadFile).toHaveBeenCalledOnce();
@@ -4533,7 +4630,10 @@ describe(CloudBackupService.name, () => {
       expect(store.uploadFile.mock.calls[1].slice(1)).toEqual(firstRequest.slice(1));
       expect(databaseBackup.createDatabaseBackup).toHaveBeenCalledOnce();
       expect(mocks.crypto.hashFile).toHaveBeenCalledOnce();
-      expect(mocks.storage.readdir).toHaveBeenCalledOnce();
+      // the backups folder is read once for leftover dumps (the transfer folders are swept on every open)
+      expect(
+        mocks.storage.readdir.mock.calls.filter(([folder]) => !folder.endsWith('cloud-backup-transfers')),
+      ).toHaveLength(1);
       expect(checkpoint).toMatchObject({ phase: 'reconcile', database: { key: firstRequest[1] } });
     });
   });

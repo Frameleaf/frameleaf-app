@@ -173,9 +173,10 @@ export class Discovery {
       container: dbContainer.Id,
       host,
       port: Number(url?.port || env.DB_PORT || 5432),
-      name: decodeURIComponent(url?.pathname.slice(1) || env.DB_DATABASE_NAME || 'immich'),
-      user: decodeURIComponent(url?.username || env.DB_USERNAME || 'postgres'),
-      password: decodeURIComponent(url?.password || env.DB_PASSWORD || ''),
+      // Only DB_URL parts are percent-encoded; plain DB_* values are used as-is, as Immich does.
+      name: url?.pathname.slice(1) ? decodeURIComponent(url.pathname.slice(1)) : env.DB_DATABASE_NAME || 'immich',
+      user: url?.username ? decodeURIComponent(url.username) : env.DB_USERNAME || 'postgres',
+      password: url?.password ? decodeURIComponent(url.password) : env.DB_PASSWORD || '',
     };
     // Any port: Manager reaches the database from inside its own container or on its network.
     if (!Number.isInteger(database.port) || database.port < 1 || database.port > 65535 || !database.password)

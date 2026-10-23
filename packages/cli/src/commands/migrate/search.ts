@@ -2,11 +2,12 @@ import { AssetVisibility, type AssetResponseDto, type MetadataSearchDto } from '
 import type { ServerClient } from 'src/commands/migrate/client';
 
 // searchAssetBuilder on the server defaults to visibility=timeline and filters to exactly
-// that single value, so a full-library walk MUST make one pass per visibility. Locked/Hidden
-// require an elevated session (not available to an API key) and are out of scope.
-const VISIBILITIES = [AssetVisibility.Timeline, AssetVisibility.Archive];
+// that single value, so a full-library walk MUST make one pass per visibility. Hidden holds
+// every Live Photo motion clip. Locked needs an elevated session, which an API key never
+// has, so Locked items are not copied and the audit says so (`lockedMedia`).
+export const VISIBILITIES = [AssetVisibility.Timeline, AssetVisibility.Archive, AssetVisibility.Hidden];
 
-/** Yields every asset matching `baseDto`, across timeline + archive, following pagination. */
+/** Yields every asset matching `baseDto`, across every readable visibility, following pagination. */
 export async function* searchAllAssets(
   client: ServerClient,
   baseDto: MetadataSearchDto,
