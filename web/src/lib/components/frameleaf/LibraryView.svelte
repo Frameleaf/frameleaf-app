@@ -56,7 +56,7 @@
   import { namedEntitySegments, withArchiveDetail } from '$lib/frameleaf/archive-name';
   import { preparesArchiveOnServer } from '$lib/frameleaf/archive-operations';
   import type { BulkAsset, BulkActionContext, BulkActionId } from '$lib/frameleaf/bulk-actions';
-  import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
+  import { bulkStateById, type BulkPayload } from '$lib/frameleaf/bulk-operations';
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import { type FilterEntityKind, resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
@@ -703,6 +703,7 @@
           .map((id) => [id, findAsset(id)?.ownerId])
           .filter(([, owner]) => !!owner) as [string, string][],
       ),
+      stateById: bulkStateById([...session.selection, ...actionTargets], findAsset),
     }),
   });
 
