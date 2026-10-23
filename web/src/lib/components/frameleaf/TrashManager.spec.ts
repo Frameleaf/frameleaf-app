@@ -120,6 +120,21 @@ describe('TrashManager (FL-47)', () => {
     expect(screen.getByText(/2 matching items/)).toBeInTheDocument();
   });
 
+  it('says how long each item has, going soonest first, and narrows to the next week (FL-519)', async () => {
+    const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000 - 60_000).toISOString();
+    serve([item('old', { trashedAt: daysAgo(26) }), item('new', { trashedAt: daysAgo(1) })]);
+    render(TrashManager);
+
+    expect(await screen.findByText('3 days left')).toHaveClass('soon');
+    expect(screen.getByText('28 days left')).not.toHaveClass('soon');
+    expect(vi.mocked(getTrashItems)).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'soonest' }));
+
+    await fireEvent.change(screen.getByLabelText('Show'), { target: { value: 'soon' } });
+    await waitFor(() =>
+      expect(vi.mocked(getTrashItems)).toHaveBeenLastCalledWith(expect.objectContaining({ goingWithinDays: 7 })),
+    );
+  });
+
   it('shows the empty trash', async () => {
     serve([]);
 
@@ -212,7 +227,7 @@ describe('TrashManager (FL-47)', () => {
 
     render(TrashManager);
     await screen.findByText('lake.jpg');
-    await fireEvent.click(screen.getByRole('button', { name: 'Empty your trash (1)' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Empty Trash (1)' }));
     // Emptying the whole trash still asks for the count to be typed; capitals do not matter.
     const confirm = await screen.findByRole('button', { name: 'Permanently delete 1 item' });
     expect(confirm).toBeDisabled();
@@ -362,7 +377,7 @@ describe('TrashManager (FL-47)', () => {
     expect(await screen.findByText('gone.jpg')).toBeInTheDocument();
     expect(screen.queryByLabelText('Select gone.jpg')).toBeNull();
     expect(screen.getByText(en.frameleaf_trash_offline)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Empty your trash (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Empty Trash (1)' })).toBeInTheDocument();
   });
 
   describe('when the trash changes elsewhere', () => {

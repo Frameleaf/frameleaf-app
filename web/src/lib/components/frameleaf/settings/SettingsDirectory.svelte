@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import type { KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import type { SectionScope } from '$lib/frameleaf/settings-areas';
 
   /** One row of an area directory: a settings page (or a tool) the row opens. */
@@ -11,6 +12,8 @@
     scope?: SectionScope;
     /** The row's own icon (an mdi path), drawn before its title as the template does for tools. */
     icon?: string;
+    /** FL-519: the tool's state in a few words ("12 groups to look at"), shown before the chevron. */
+    status?: { text: string; tone: KitTone };
     onSelect: () => void;
   };
 </script>
@@ -25,6 +28,7 @@
    * `utilities-data.mjs:15-87`), as `SectionDirectory` does (CommandCenter.jsx:2784, command-center.css:1663-1666).
    * A group named like its area does not repeat the name as a heading.
    */
+  import Pill from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import { usualScope } from '$lib/frameleaf/settings-areas';
   import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight } from '@mdi/js';
@@ -58,6 +62,9 @@
               <strong>{row.title}</strong>
               <span>{row.description}</span>
             </span>
+            {#if row.status}
+              <span class="cc-directory-status"><Pill tone={row.status.tone}>{row.status.text}</Pill></span>
+            {/if}
             {#if row.scope && usual && row.scope !== usual}
               <small class="cc-directory-scope">{scopeTag(row.scope)}</small>
             {/if}
@@ -70,6 +77,11 @@
 </div>
 
 <style>
+  .cc-directory-status {
+    flex: none;
+    margin-inline-start: auto;
+    white-space: nowrap;
+  }
   .cc-directory {
     display: grid;
     gap: 26px;

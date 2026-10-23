@@ -16255,6 +16255,20 @@ export type CreateProfileImageResponseDto = {
     /** User ID */
     userId: string;
 };
+export type UtilitiesSummaryResponseDto = {
+    /** Photos whose original file is damaged, across the server; null unless an administrator asks */
+    damagedFiles: number | null;
+    /** Groups of look-alike photos waiting for a decision */
+    duplicateGroups: number;
+    /** Photos whose original file is missing, across the server; null unless an administrator asks */
+    missingFiles: number | null;
+    /** Combined size of those unused originals, in bytes; null unless an administrator asks */
+    unusedBytes: number | null;
+    /** Originals no library uses any more; null unless an administrator asks */
+    unusedFiles: number | null;
+    /** Photos and videos on the timeline with no place */
+    withoutPlace: number;
+};
 export type FolderSummaryResponseDto = {
     /** Originals directly in this folder */
     count: number;
@@ -18248,6 +18262,8 @@ export type TrashEveryoneQueryDto = {
     days?: number;
 };
 export type TrashItemsDto = {
+    /** Only items removed for good within this many days (FL-519). With the trash off, every item goes tonight */
+    goingWithinDays?: number;
     /** Page number, from 1 */
     page?: number;
     /** Words that must all appear in the file name */
@@ -31206,7 +31222,8 @@ export function emptyTrash(opts?: Oazapfts.RequestOpts) {
 /**
  * List trash items
  */
-export function getTrashItems({ page, query, size, sort, $type }: {
+export function getTrashItems({ goingWithinDays, page, query, size, sort, $type }: {
+    goingWithinDays?: number;
     page?: number;
     query?: string;
     size?: number;
@@ -31217,6 +31234,7 @@ export function getTrashItems({ page, query, size, sort, $type }: {
         status: 200;
         data: TrashItemsResponseDto;
     }>(`/trash/items${QS.query(QS.explode({
+        goingWithinDays,
         page,
         query,
         size,
@@ -31810,6 +31828,17 @@ export function getProfileImage({ id }: {
         status: 200;
         data: Blob;
     }>(`/users/${encodeURIComponent(id)}/profile-image`, {
+        ...opts
+    }));
+}
+/**
+ * Get what each utility has waiting
+ */
+export function getUtilitiesSummary(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UtilitiesSummaryResponseDto;
+    }>("/utilities/summary", {
         ...opts
     }));
 }
@@ -35769,6 +35798,7 @@ export enum TrashReviewAction {
     Empty = "empty"
 }
 export enum TrashItemSort {
+    Soonest = "soonest",
     Recent = "recent",
     Size = "size",
     Name = "name"

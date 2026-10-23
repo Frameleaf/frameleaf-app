@@ -24,7 +24,6 @@
   import TypedConfirmation from '$lib/components/frameleaf/settings/TypedConfirmation.svelte';
   import { matchesTyped } from '$lib/components/frameleaf/settings/typed-confirmation';
   import { animateFlip, canAnimate, dock, leave } from '$lib/frameleaf/motion';
-  import { OpenQueryParam } from '$lib/constants';
   import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
   import {
@@ -38,16 +37,19 @@
     TRASH_MAX_PAGE_SIZE,
     TRASH_PAGE_SIZE,
     TRASH_SELECTION_LIMIT,
+    TRASH_SOON_DAYS,
     trashAgeLabel,
+    trashGoingWithin,
+    trashTimeLeft,
     trashTypeFilter,
     withoutIds,
     type TrashMediaFilter,
   } from '$lib/frameleaf/trash';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
-  import { Route } from '$lib/route';
   import { websocketEvents, type AssetLocalEffectsV1 } from '$lib/stores/websocket';
   import { getAssetMediaUrl } from '$lib/utils';
   import {
@@ -95,7 +97,8 @@
   let query = $state('');
   let appliedQuery = $state('');
   let media = $state<TrashMediaFilter>('all');
-  let sort = $state<TrashItemSort>(TrashItemSort.Recent);
+  // FL-519: what goes first leads, so nothing is lost by surprise.
+  let sort = $state<TrashItemSort>(TrashItemSort.Soonest);
 
   let selected = $state<string[]>([]);
   let notice = $state('');
@@ -183,6 +186,7 @@
       sort,
       ...(appliedQuery.trim() && { query: appliedQuery.trim() }),
       ...(trashTypeFilter(media) && { $type: trashTypeFilter(media) }),
+      ...(trashGoingWithin(media) !== undefined && { goingWithinDays: trashGoingWithin(media) }),
     });
 
   /**
@@ -499,6 +503,17 @@
     return $t(key, { values });
   };
 
+  /** FL-519: "4 days left" and the day it goes, or "Goes tonight" while the Trash is off. */
+  const leftOf = (row: TrashItemResponseDto) => (trashEnabled ? trashTimeLeft(row.trashedAt, days) : null);
+  const leftText = (daysLeft: number) =>
+    daysLeft === 0
+      ? $t('frameleaf_trash_goes_tonight')
+      : $t('frameleaf_trash_days_left', { values: { count: daysLeft } });
+  const removedText = (removedOn: Date) =>
+    $t('frameleaf_trash_removed_on', {
+      values: { date: removedOn.toLocaleDateString($locale, { weekday: 'short', month: 'short', day: 'numeric' }) },
+    });
+
   const sizeText = (row: TrashItemResponseDto) =>
     row.fileSizeInByte === null ? $t('frameleaf_trash_size_unknown') : formatBytes(row.fileSizeInByte);
 
@@ -571,6 +586,19 @@
     </div>
   </div>
 
+  {#if !trashEnabled && actionable > 0}
+    <!-- FL-519: with the Trash off, what is still here goes tonight; say so first, with the way out. -->
+    <div class="tm-off" role="status">
+      <div>
+        <strong>{$t('frameleaf_trash_off_title')}</strong>
+        <p>{$t('frameleaf_trash_off_body', { values: { count: actionable } })}</p>
+      </div>
+      <Button variant="primary" disabled={busy} onclick={() => void restore(null)}>
+        {$t('frameleaf_trash_restore_all', { values: { count: actionable } })}
+      </Button>
+    </div>
+  {/if}
+
   <p class="tm-retention">
     {trashEnabled
       ? $t('frameleaf_trash_retention', { values: { count: days } })
@@ -596,6 +624,7 @@
       {$t('frameleaf_trash_media')}
       <select bind:value={media} onchange={resetView}>
         <option value="all">{$t('frameleaf_trash_media_all')}</option>
+        <option value="soon">{$t('frameleaf_trash_media_soon', { values: { count: TRASH_SOON_DAYS } })}</option>
         <option value="image">{$t('frameleaf_trash_media_photos')}</option>
         <option value="video">{$t('frameleaf_trash_media_videos')}</option>
       </select>
@@ -603,13 +632,14 @@
     <label>
       {$t('frameleaf_trash_sort')}
       <select bind:value={sort} onchange={resetView}>
+        <option value={TrashItemSort.Soonest}>{$t('frameleaf_trash_sort_soonest')}</option>
         <option value={TrashItemSort.Recent}>{$t('frameleaf_trash_sort_recent')}</option>
         <option value={TrashItemSort.Size}>{$t('frameleaf_trash_sort_size')}</option>
         <option value={TrashItemSort.Name}>{$t('frameleaf_trash_sort_name')}</option>
       </select>
     </label>
     {#if authManager.user.isAdmin}
-      <Button onclick={() => void goto(Route.systemSettings({ isOpen: OpenQueryParam.TRASH }))}>
+      <Button onclick={() => void goto(commandCenterUrl('storage', 'trash'))}>
         {$t('frameleaf_trash_retention_settings')}
       </Button>
     {/if}
@@ -714,6 +744,15 @@
           <strong>{row.originalFileName}</strong>
           <span>{sizeText(row)} · {kindText(row)}</span>
           <small>{ageText(row)}</small>
+          {#if !row.isOffline}
+            {@const left = leftOf(row)}
+            {#if !trashEnabled}
+              <span class="tm-left soon">{$t('frameleaf_trash_goes_tonight')}</span>
+            {:else if left}
+              <span class="tm-left" class:soon={left.daysLeft <= TRASH_SOON_DAYS}>{leftText(left.daysLeft)}</span>
+              <small>{removedText(left.removedOn)}</small>
+            {/if}
+          {/if}
           {#if row.isOffline}
             <!-- No checkbox and no Restore here on purpose: the library scan owns this item. -->
             <span class="tm-badge">{$t('frameleaf_trash_offline_badge')}</span>
@@ -876,6 +915,34 @@
 </Dialog>
 
 <style>
+  .tm-off {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-3);
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 0 var(--fl-space-4);
+    padding: var(--fl-space-4);
+    border: 1px solid color-mix(in srgb, var(--fl-danger, #d70015) 35%, transparent);
+    border-radius: var(--fl-radius-md, 12px);
+    background: color-mix(in srgb, var(--fl-danger, #d70015) 7%, transparent);
+  }
+  .tm-off p {
+    margin: 0.25rem 0 0;
+    font-size: 0.8125rem;
+  }
+  .tm-left {
+    justify-self: start;
+    padding: 0.125rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 550;
+    color: var(--fl-success, #248a3d);
+    background: color-mix(in srgb, currentColor 12%, transparent);
+  }
+  .tm-left.soon {
+    color: var(--fl-warning, #b25000);
+  }
   .trash-manager {
     min-width: 0;
     color: var(--fl-text);

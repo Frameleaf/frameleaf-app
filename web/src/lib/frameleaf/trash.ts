@@ -20,7 +20,31 @@ export const TRASH_MAX_PAGE_SIZE = 1000;
 /** Upper bound on one selection, matching the server's limit for one reviewed change. */
 export const TRASH_SELECTION_LIMIT = 50_000;
 
-export type TrashMediaFilter = 'all' | 'image' | 'video';
+/** `soon`: only what is removed for good in the next week (FL-519). */
+export type TrashMediaFilter = 'all' | 'soon' | 'image' | 'video';
+
+/** "Going in the next 7 days": the window the Show filter narrows to, and the days marked on an item. */
+export const TRASH_SOON_DAYS = 7;
+
+/** The server's going-within filter for the Show select. */
+export const trashGoingWithin = (media: TrashMediaFilter) => (media === 'soon' ? TRASH_SOON_DAYS : undefined);
+
+/**
+ * FL-519: how long an item has before it is removed for good, `keepDays` after it was trashed:
+ * whole days left (0 = goes tonight) and the day it goes. Null when the date is unknown.
+ */
+export const trashTimeLeft = (
+  trashedAt: string | null | undefined,
+  keepDays: number,
+  now = Date.now(),
+): { daysLeft: number; removedOn: Date } | null => {
+  const at = trashedAt ? Date.parse(trashedAt) : NaN;
+  if (!Number.isFinite(at)) {
+    return null;
+  }
+  const removedOn = new Date(at + keepDays * 86_400_000);
+  return { daysLeft: Math.max(0, Math.floor((removedOn.getTime() - now) / 86_400_000)), removedOn };
+};
 
 /** The server's type filter for the Media select. */
 export const trashTypeFilter = (media: TrashMediaFilter): AssetTypeEnum | undefined => {

@@ -86,6 +86,22 @@ export class TrashService extends BaseService {
     };
   }
 
+  /**
+   * FL-519: the cut-off for "going within N days". An item is removed for good `trash.days` after it
+   * was deleted, so it goes within N days when it was deleted at or before now + N - days. With the
+   * trash off, everything goes tonight, so there is no cut-off.
+   */
+  private async goingBy(withinDays: number | undefined): Promise<Date | undefined> {
+    if (withinDays === undefined) {
+      return undefined;
+    }
+    const { trash } = await this.getConfig({ withCache: true });
+    if (!trash.enabled) {
+      return undefined;
+    }
+    return new Date(Date.now() + (withinDays - trash.days) * 86_400_000);
+  }
+
   async getItems(auth: AuthDto, dto: TrashItemsDto): Promise<TrashItemsResponseDto> {
     const page = dto.page ?? 1;
     const size = dto.size ?? 200;
@@ -93,6 +109,7 @@ export class TrashService extends BaseService {
       ...this.scopeOf(auth),
       terms: trashSearchTerms(dto.query),
       type: dto.type,
+      deletedBefore: await this.goingBy(dto.goingWithinDays),
       order: dto.sort ?? TrashItemSort.Recent,
       page,
       size,
