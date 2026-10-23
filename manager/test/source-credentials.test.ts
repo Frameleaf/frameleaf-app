@@ -8,7 +8,7 @@ const container = (id: string, name: string, env: string[]) =>
   ({
     Id: id,
     Name: `/${name}`,
-    Config: { Image: 'ghcr.io/immich-app/immich-server:v2.0.0', Env: env, Labels: {} },
+    Config: { Image: 'registry.test/source:v2.0.0', Env: env, Labels: {} },
     NetworkSettings: { Networks: { immich: { IPAddress: '', Aliases: [name] } } },
   }) as unknown as Container;
 
