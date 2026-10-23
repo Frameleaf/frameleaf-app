@@ -279,6 +279,13 @@ export const AlbumResponseSchema = z
       .meta({ format: 'double' })
       .nullable()
       .describe('Sibling display position. Lower values appear first.'),
+    // FL-416
+    recovered: z
+      .boolean()
+      .optional()
+      .describe(
+        'True for a Recovered Media album: files Immich had lost track of, brought back after an Immich import. Populated by GET /albums/tree and GET /albums/{id}.',
+      ),
     // FL-326
     origin: PartnerOriginSchema.optional().describe(
       'Present on your own album when partner sharing copied it from another library',

@@ -10,6 +10,7 @@ import {
   IdenticalFilesChangeDto,
   IdenticalFilesExtraCopiesDto,
   IdenticalFilesProblemKind,
+  IdenticalFilesRecentChangeDto,
   IdenticalFilesStage,
   IdenticalFilesState,
   IdenticalFilesStatusDto,
@@ -218,6 +219,24 @@ export class IdenticalFilesService {
       id: row.id,
       kind: row.kind as 'link',
       keptAssetId: row.keptAssetId,
+      createdAt: new Date(row.createdAt).toISOString(),
+      undoneAt: row.undoneAt ? new Date(row.undoneAt).toISOString() : null,
+      restorable: row.restorable && !row.undoneAt,
+    }));
+  }
+
+  /** FL-416: the newest links across the server, for the "Merged for you" history with Undo. */
+  async getRecentChanges(limit: number): Promise<IdenticalFilesRecentChangeDto[]> {
+    const rows = await this.repository.listRecentChanges(limit);
+    return rows.map((row) => ({
+      id: row.id,
+      assetId: row.assetId,
+      originalFileName: row.originalFileName,
+      ownerId: row.ownerId,
+      ownerName: row.ownerName,
+      keptAssetId: row.keptAssetId,
+      keptOwnerName: row.keptOwnerName,
+      sizeInBytes: row.sizeInBytes,
       createdAt: new Date(row.createdAt).toISOString(),
       undoneAt: row.undoneAt ? new Date(row.undoneAt).toISOString() : null,
       restorable: row.restorable && !row.undoneAt,

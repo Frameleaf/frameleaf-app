@@ -8,8 +8,10 @@ import { mimeTypes } from 'src/utils/mime-types.js';
 @Injectable()
 export class UtilitiesService extends BaseService {
   /**
-   * FL-519: each tool's count for the Utilities directory. The server-wide checks (missing, damaged
-   * and unused files) are only counted for an administrator, as only they can open those tools.
+   * FL-519: each tool's count for the Utilities directory. The server-wide checks (missing and damaged
+   * files) are only counted for an administrator, as only they can open those tools. FL-416: Unused files
+   * is the server owner's alone (the first administrator), so its count is null for everyone else; the
+   * web reads that as "do not show Unused files".
    */
   async getSummary(auth: AuthDto): Promise<UtilitiesSummaryResponseDto> {
     const ownerId = auth.user.id;
@@ -31,15 +33,17 @@ export class UtilitiesService extends BaseService {
     }
     const [findings, unused] = await Promise.all([
       this.integrityRepository.getFindingsOverview(Object.keys(mimeTypes.raw)),
-      this.physicalFileTrashRepository.list({ skip: 0, take: 0, lockedOwnerId: ownerId }),
+      this.isServerOwner(auth).then((owner) =>
+        owner ? this.physicalFileTrashRepository.list({ skip: 0, take: 0, lockedOwnerId: ownerId }) : null,
+      ),
     ]);
     return {
       duplicateGroups,
       withoutPlace,
       missingFiles: findings.missing,
       damagedFiles: findings.damaged,
-      unusedFiles: unused.total,
-      unusedBytes: Math.round(unused.totalBytes),
+      unusedFiles: unused ? unused.total : null,
+      unusedBytes: unused ? Math.round(unused.totalBytes) : null,
     };
   }
 }

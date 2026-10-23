@@ -105,6 +105,7 @@ import {
 } from 'src/utils/ml-destination.js';
 import { replaceLockedProfileImages } from 'src/utils/profile-image.js';
 import { resolvePublicUrl } from 'src/utils/public-url.js';
+import { isServerOwner, requireServerOwner } from 'src/utils/server-owner.js';
 
 /**
  * FL-456: an admission that says this place cannot take the job now (refused, gone, or the Frameleaf
@@ -664,6 +665,16 @@ export class BaseService {
 
   checkAccess(request: AccessRequest) {
     return checkAccess(this.accessRepository, request);
+  }
+
+  /** FL-416: whether the caller is the server owner, the first administrator (`utils/server-owner`). */
+  isServerOwner(auth: AuthDto): Promise<boolean> {
+    return isServerOwner(this.userRepository, auth);
+  }
+
+  /** FL-416: refuses (403) anyone but the server owner, the first administrator. */
+  requireServerOwner(auth: AuthDto): Promise<void> {
+    return requireServerOwner(this.userRepository, auth);
   }
 
   async isSetupAvailable(): Promise<boolean> {
