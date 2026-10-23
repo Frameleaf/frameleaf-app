@@ -678,11 +678,18 @@
     if (!patch) {
       return;
     }
-    manager.update(ids, patch);
+    // Decide what leaves before updating: update() already splices excluded items out of the page,
+    // so they could not be found afterwards (FL-529).
     const left = ids.filter((id) => {
       const asset = findAsset(id);
-      return !!asset && manager.isExcluded(asset);
+      if (!asset) {
+        return false;
+      }
+      const changed = { ...asset };
+      patch(changed);
+      return manager.isExcluded(changed);
     });
+    manager.update(ids, patch);
     if (left.length > 0) {
       dispatch({ type: 'mutated', removedIds: left });
     }
