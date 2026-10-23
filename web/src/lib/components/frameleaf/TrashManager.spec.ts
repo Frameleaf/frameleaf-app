@@ -49,9 +49,8 @@ vi.mock('$lib/stores/websocket', () => ({
     }),
   },
 }));
-vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
-  featureFlagsManager: { value: { trash: true } },
-}));
+const flags = vi.hoisted(() => ({ value: { trash: true } }));
+vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: flags }));
 vi.mock('$lib/managers/server-config-manager.svelte', () => ({
   serverConfigManager: { value: { trashDays: 30 } },
 }));
@@ -133,6 +132,20 @@ describe('TrashManager (FL-47)', () => {
     await waitFor(() =>
       expect(vi.mocked(getTrashItems)).toHaveBeenLastCalledWith(expect.objectContaining({ goingWithinDays: 7 })),
     );
+  });
+
+  it('with the Trash off, says what goes tonight and offers Restore all first (FL-519)', async () => {
+    flags.value.trash = false;
+    serve([item('a'), item('b')]);
+    try {
+      render(TrashManager);
+      expect(await screen.findByText('The Trash is turned off on this server')).toBeInTheDocument();
+      expect(screen.getByText(/These 2 items will be removed for good tonight\./)).toBeInTheDocument();
+      expect(screen.getAllByText('Goes tonight')).toHaveLength(2);
+      expect(screen.getAllByRole('button', { name: 'Restore all (2)' })).toHaveLength(2);
+    } finally {
+      flags.value.trash = true;
+    }
   });
 
   it('shows the empty trash', async () => {
