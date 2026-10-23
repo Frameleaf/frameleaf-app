@@ -9,10 +9,12 @@ import {
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hiddenFromOthers } from 'src/utils/database.js';
 import { everyOwnersRules } from 'src/utils/hidden-content.js';
+import { getOwnerHiddenShareIds } from 'src/utils/item-share.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -236,5 +238,27 @@ describe('owner Locked rules across sharing (FL-446)', () => {
     await expect(assets.getHiddenContentAssetIds(ids, { othersRulesViewerId: member.id })).resolves.toEqual(hidden);
     await expect(assets.getHiddenContentAssetIds(ids, everyOwnersRules)).resolves.toEqual(hidden);
     await expect(assets.getHiddenContentAssetIds(ids, {})).resolves.toEqual(new Set());
+  });
+
+  it("leaves the owner's rule matches, and exports of them, out of a photography gallery", async () => {
+    const { ctx } = setup();
+    const { owner, album, items } = await sharedAlbum(ctx);
+    const { asset: exported } = await ctx.newAsset({ ownerId: owner.id });
+    await exportOf(owner.id, exported.id, [{ assetId: items.tagged, ownerId: owner.id }]);
+    await db.insertInto('album_asset').values({ albumId: album.id, assetId: exported.id }).execute();
+
+    const rows = await new PhotographyWorkflowRepository(db).assets(owner.id, album.id);
+
+    expect(new Set(rows.map(({ id }) => id))).toEqual(new Set([items.plain, items.rejectedPet]));
+  });
+
+  it('withholds an item share of a Studio export made from a matching source (FL-447)', async () => {
+    const { ctx } = setup();
+    const { owner, items } = await sharedAlbum(ctx);
+    const { asset: exported } = await ctx.newAsset({ ownerId: owner.id });
+    await exportOf(owner.id, exported.id, [{ assetId: items.tagged, ownerId: owner.id }]);
+    const shared = [exported.id, items.tagged, items.plain].map((id) => ({ id, ownerId: owner.id }));
+
+    await expect(getOwnerHiddenShareIds(db, shared)).resolves.toEqual(new Set([exported.id, items.tagged]));
   });
 });

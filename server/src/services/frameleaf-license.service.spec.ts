@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { decodeProtectedHeader, importJWK, jwtVerify } from 'jose';
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -1144,6 +1145,39 @@ describe(FrameleafLicenseService.name, () => {
       mocks.frameleafUserLicense.getByKeyHash.mockResolvedValue({ userId: 'someone-else' } as never);
       await expect(sut.activateUserSupporter(authStub.user1, { key: PERSONAL_KEY })).rejects.toThrow(
         'already active for another account',
+      );
+    });
+
+    it('keys a pasted personal licence by its licence id, as a link-code redemption does', async () => {
+      const licenceHash = createHash('sha256').update('lic:lic-77').digest('hex');
+      cloud.on('POST /api/v1/licenses/activate', () => ({
+        status: 200,
+        body: {
+          certificate: certificate({
+            ent: ['SUPPORTER_INDIVIDUAL'],
+            lic_exp: null,
+            lic: { id: 'lic-77', kind: 'individual', last4: '8EL6' },
+          }),
+          activationId: 'act-9',
+        },
+      }));
+      // the same licence was redeemed by link code for another account, keyed by its licence id
+      mocks.frameleafUserLicense.getByKeyHash.mockImplementation((hash) =>
+        Promise.resolve(hash === licenceHash ? ({ userId: 'someone-else' } as never) : undefined),
+      );
+
+      await expect(sut.activateUserSupporter(authStub.user1, { key: PERSONAL_KEY })).rejects.toThrow(
+        'already active for another account',
+      );
+      expect(mocks.frameleafUserLicense.upsert).not.toHaveBeenCalled();
+
+      mocks.frameleafUserLicense.getByKeyHash.mockResolvedValue(undefined);
+      mocks.frameleafUserLicense.upsert.mockImplementation((row) =>
+        Promise.resolve({ ...row, kind: 'individual', activatedAt: new Date('2026-09-25T12:00:00.000Z') }),
+      );
+      await sut.activateUserSupporter(authStub.user1, { key: PERSONAL_KEY });
+      expect(mocks.frameleafUserLicense.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ keySha256: licenceHash }),
       );
     });
 

@@ -501,6 +501,8 @@ export const getMocks = () => {
     unchanged: 0,
     tagged: [],
     untagged: [],
+    locked: [],
+    missing: [],
   });
   mocks.classification.recordAlbumAdditions.mockResolvedValue();
 
