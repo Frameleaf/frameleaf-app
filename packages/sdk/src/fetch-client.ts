@@ -3441,6 +3441,10 @@ export type FoldersResponse = {
     /** Whether folders appear in web sidebar */
     sidebarWeb: boolean;
 };
+export type LockedPinResponse = {
+    /** How long Locked photos stay open after the PIN unlocks them, in minutes */
+    relockMinutes: number;
+};
 export type MemoriesResponse = {
     /** Memory duration in seconds */
     duration: number;
@@ -3516,6 +3520,7 @@ export type UserPreferencesResponseDto = {
     download: DownloadResponse;
     emailNotifications: EmailNotificationsResponse;
     folders: FoldersResponse;
+    lockedPin?: LockedPinResponse;
     /** Whether privacy.suppression names the account's Locked people, pets and tags. False when they were blanked (a session that is not unlocked, or an administrator); such rules must never be edited and saved back (FL-67) */
     lockedRulesRevealed: boolean;
     memories: MemoriesResponse;
@@ -3572,6 +3577,10 @@ export type FoldersUpdate = {
     enabled?: boolean;
     /** Whether folders appear in web sidebar */
     sidebarWeb?: boolean;
+};
+export type LockedPinUpdate = {
+    /** How long Locked photos stay open after the PIN unlocks them: 5, 15 or 60 minutes */
+    relockMinutes?: number;
 };
 export type MemoriesUpdate = {
     /** Memory duration in seconds */
@@ -3643,6 +3652,7 @@ export type UserPreferencesUpdateDto = {
     /** The revision these changes were made against. When it no longer matches the stored preferences the update is rejected with 409 and nothing is changed */
     expectedRevision?: string;
     folders?: FoldersUpdate;
+    lockedPin?: LockedPinUpdate;
     memories?: MemoriesUpdate;
     /** Origin-server system notification language: account locale and optional session-specific device overrides. Save devices as a whole list with expectedRevision. */
     notifications?: {

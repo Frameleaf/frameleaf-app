@@ -133,6 +133,20 @@ const CastUpdateSchema = z
   .optional()
   .meta({ id: 'CastUpdate' });
 
+const LockedPinUpdateSchema = z
+  .object({
+    relockMinutes: z
+      .int()
+      .min(5)
+      .max(60)
+      .refine((minutes) => [5, 15, 60].includes(minutes), { message: 'relockMinutes must be 5, 15 or 60' })
+      .optional()
+      .describe('How long Locked photos stay open after the PIN unlocks them: 5, 15 or 60 minutes'),
+  })
+  .optional()
+  .describe('Locked PIN preferences (FL-517). Only the account itself can change them')
+  .meta({ id: 'LockedPinUpdate' });
+
 const SuppressionScopeSchema = z.enum(['owned', 'visible']).meta({ id: 'SuppressionScope' });
 
 const SuppressionUpdateSchema = z
@@ -209,6 +223,7 @@ const UserPreferencesUpdateSchema = z
     sharedLinks: SharedLinksUpdateSchema,
     tags: TagsUpdateSchema,
     recentlyAdded: RecentlyAddedUpdateSchema,
+    lockedPin: LockedPinUpdateSchema,
     savedSearches: SavedSearchesUpdateSchema.meta(new HistoryBuilder().added('v3.2.0').getExtensions()),
     expectedRevision: z
       .string()
@@ -338,6 +353,12 @@ const RecentlyAddedResponseSchema = z
   })
   .meta({ id: 'RecentlyAddedResponse' });
 
+const LockedPinResponseSchema = z
+  .object({
+    relockMinutes: z.int().describe('How long Locked photos stay open after the PIN unlocks them, in minutes'),
+  })
+  .meta({ id: 'LockedPinResponse' });
+
 const UserPreferencesResponseSchema = z
   .object({
     notifications: NotificationLocalePreferencesSchema.optional(),
@@ -355,6 +376,8 @@ const UserPreferencesResponseSchema = z
     purchase: PurchaseResponseSchema,
     cast: CastResponseSchema,
     recentlyAdded: RecentlyAddedResponseSchema,
+    // always sent; optional in the schema so older clients keep compiling (FL-517)
+    lockedPin: LockedPinResponseSchema.optional(),
     // always sent; optional in the schema so clients built before FL-49 keep compiling
     savedSearches: z
       .array(SavedSearchSchema)

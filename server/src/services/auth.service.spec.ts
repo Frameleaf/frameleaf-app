@@ -2269,6 +2269,30 @@ describe(AuthService.name, () => {
       vi.useRealTimers();
     });
 
+    it('unlocks for the account’s "Lock again after" choice (FL-517)', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-05-08T12:00:00.000Z'));
+      const user = UserFactory.create();
+      const auth = AuthFactory.from(user).session().build();
+
+      mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
+      mocks.crypto.compareBcrypt.mockImplementation((a, b) => Promise.resolve(`${a} (hashed)` === b));
+      mocks.session.elevate.mockResolvedValue(true);
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { lockedPin: { relockMinutes: 15 } } },
+      ]);
+
+      await sut.unlockSession(auth, { pinCode: '123456' });
+
+      expect(mocks.session.elevate).toHaveBeenCalledWith(
+        auth.session!.id,
+        user.id,
+        { pinCode: '123456 (hashed)', password: '' },
+        new Date('2026-05-08T12:15:00.000Z'),
+      );
+      vi.useRealTimers();
+    });
+
     it('does not elevate when the PIN or password changed after the check (FL-34)', async () => {
       const auth = AuthFactory.from().session().build();
       mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });

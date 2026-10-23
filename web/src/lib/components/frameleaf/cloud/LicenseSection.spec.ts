@@ -205,7 +205,7 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
         'for every account (Server licence) or your own (Individual licence), with a Frameleaf Cloud plan.',
       );
       expect(screen.getByText('Buddy Backup').parentElement).toHaveTextContent('with a Server licence on both');
-      expect(screen.getByText(/You need one before a Frameleaf Cloud plan or AI credit/)).toBeInTheDocument();
+      expect(screen.getByText(/Only backups away from home need a licence/)).toBeInTheDocument();
     });
 
     it('activates a key for one person as the administrator’s own supporter key, as the prototype allows', async () => {
@@ -262,9 +262,9 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
         .closest('li');
       expect(supporterChip).toHaveClass('is-on');
 
-      await fireEvent.click(screen.getByRole('button', { name: 'Remove your supporter key…' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Remove your Individual licence…' }));
       const dialog = await screen.findByRole('dialog');
-      await fireEvent.click(within(dialog).getByRole('button', { name: /Remove key/ }));
+      await fireEvent.click(within(dialog).getByRole('button', { name: /Remove licence/ }));
       await waitFor(() => expect(sdkMock.deleteUserLicense).toHaveBeenCalled());
       expect(sdkMock.removeLicenseKey).not.toHaveBeenCalled();
       expect(await screen.findByText('Enter a licence key')).toBeInTheDocument();
@@ -289,16 +289,16 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       expect(await screen.findByText('•••• J583')).toBeInTheDocument();
       expect(screen.getByText('•••• 8EL6')).toBeInTheDocument();
 
-      await fireEvent.click(screen.getByRole('button', { name: 'Remove licence key…' }));
-      await fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Remove key' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Remove from this server…' }));
+      await fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Remove licence' }));
       await waitFor(() => expect(sdkMock.removeLicenseKey).toHaveBeenCalled());
       expect(sdkMock.deleteUserLicense).not.toHaveBeenCalled();
 
-      await fireEvent.click(screen.getByRole('button', { name: 'Remove your supporter key…' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Remove your Individual licence…' }));
       const personalDialog = await screen.findByRole('dialog');
-      expect(within(personalDialog).getByText('Remove your supporter key?')).toBeInTheDocument();
+      expect(within(personalDialog).getByText('Remove your Individual licence?')).toBeInTheDocument();
       expect(within(personalDialog).queryByText(/on this server/)).toBeNull();
-      await fireEvent.click(within(personalDialog).getByRole('button', { name: 'Remove key' }));
+      await fireEvent.click(within(personalDialog).getByRole('button', { name: 'Remove licence' }));
       await waitFor(() => expect(sdkMock.deleteUserLicense).toHaveBeenCalledTimes(1));
       expect(sdkMock.removeLicenseKey).toHaveBeenCalledTimes(1);
     });
@@ -337,14 +337,14 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       expect(within(chips).getByText('Remote access').closest('li')).toHaveClass('is-on');
       expect(within(chips).getByText('Cloud backup').closest('li')).not.toHaveClass('is-on');
 
-      await fireEvent.click(screen.getByRole('button', { name: /Remove licence key/ }));
+      await fireEvent.click(screen.getByRole('button', { name: /Remove from this server/ }));
       const dialog = await screen.findByRole('dialog');
       expect(
         within(dialog).getByText(
-          /supporter badge, Buddy Backup, Cloud Backup for every account and the plan discount stop/,
+          /Cloud Backup and Buddy Backup for everyone this licence covered, the supporter badge and the plan discount. What is kept: backups already made/,
         ),
       ).toBeInTheDocument();
-      await fireEvent.click(within(dialog).getByRole('button', { name: 'Remove key' }));
+      await fireEvent.click(within(dialog).getByRole('button', { name: 'Remove licence' }));
       await waitFor(() => expect(sdkMock.removeLicenseKey).toHaveBeenCalled());
     });
   });
@@ -392,7 +392,7 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       } as never);
       sdkMock.getLicenseStatus.mockResolvedValue(license());
       render(PlanSection);
-      expect(await screen.findByText(/Your supporter key takes 5% off Frameleaf Cloud plans/)).toBeInTheDocument();
+      expect(await screen.findByText(/Your Individual licence takes 5% off Frameleaf Cloud plans/)).toBeInTheDocument();
       expect(screen.getByText(/\$9\.49/)).toBeInTheDocument();
     });
 
@@ -437,9 +437,9 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       expect(await screen.findByText('Active')).toBeInTheDocument();
       expect(screen.getByRole('heading', { name: 'Frameleaf Cloud' })).toBeInTheDocument();
       expect(screen.getByRole('link', { name: /Manage subscription/ })).toHaveAttribute('target', '_blank');
-      await fireEvent.click(screen.getByRole('button', { name: /Remove from this server/ }));
+      await fireEvent.click(screen.getByRole('button', { name: /Stop using this plan on this server/ }));
       const dialog = await screen.findByRole('dialog');
-      await fireEvent.click(within(dialog).getByRole('button', { name: 'Remove plan' }));
+      await fireEvent.click(within(dialog).getByRole('button', { name: 'Stop using the plan' }));
       await waitFor(() => expect(sdkMock.removeLicensePlan).toHaveBeenCalled());
     });
   });

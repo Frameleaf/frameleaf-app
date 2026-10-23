@@ -1144,6 +1144,11 @@
   "preferences.folders.sidebarWeb": {
     "type": "boolean"
   },
+  "preferences.lockedPin.relockMinutes": {
+    "type": "integer",
+    "minimum": 5,
+    "maximum": 60
+  },
   "preferences.memories.duration": {
     "type": "integer",
     "minimum": 1,

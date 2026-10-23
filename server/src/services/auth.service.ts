@@ -55,7 +55,7 @@ import {
   logoutTokenAudiences,
 } from 'src/utils/frameleaf-sign-in.js';
 import { HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
-import { getPreferences } from 'src/utils/preferences.js';
+import { getPreferences, relockMinutesOf } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
 import { createSession } from 'src/utils/session.js';
@@ -1094,7 +1094,9 @@ export class AuthService extends BaseService {
           // refresh finds the session locked, this request is not elevated either
           hasElevatedPermission = await this.sessionRepository.refreshPinExpiry(
             session.id,
-            DateTime.now().plus({ minutes: ELEVATED_SESSION_DURATION_MINUTES }).toJSDate(),
+            DateTime.now()
+              .plus({ minutes: await this.relockMinutes(session.user.id) })
+              .toJSDate(),
           );
           if (!hasElevatedPermission) {
             // A concurrent lock leaves a valid ordinary session, but a concurrent revocation or expiry
@@ -1119,6 +1121,15 @@ export class AuthService extends BaseService {
     throw new UnauthorizedException('Invalid user token');
   }
 
+  /** FL-517: the account's "Lock again after" choice (an hour unless it chose 5 or 15 minutes). */
+  private async relockMinutes(userId: string): Promise<number> {
+    try {
+      return relockMinutesOf(getPreferences(await this.userRepository.getMetadata(userId)));
+    } catch {
+      return ELEVATED_SESSION_DURATION_MINUTES;
+    }
+  }
+
   async unlockSession(auth: AuthDto, dto: SessionUnlockDto): Promise<void> {
     if (!auth.session) {
       throw new BadRequestException('This endpoint can only be used with a session token');
@@ -1132,7 +1143,9 @@ export class AuthService extends BaseService {
       auth.session.id,
       auth.user.id,
       user,
-      DateTime.now().plus({ minutes: ELEVATED_SESSION_DURATION_MINUTES }).toJSDate(),
+      DateTime.now()
+        .plus({ minutes: await this.relockMinutes(auth.user.id) })
+        .toJSDate(),
     );
     if (!elevated) {
       throw new UnauthorizedException('Your PIN or password changed; unlock again');
