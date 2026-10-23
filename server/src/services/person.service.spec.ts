@@ -1672,7 +1672,7 @@ describe(PersonService.name, () => {
       expect(mocks.person.vacuum).not.toHaveBeenCalled();
     });
 
-    it('preserves existing people when recognition is forced', async () => {
+    it('resets generated people when recognition is forced', async () => {
       const face = AssetFaceFactory.from().person().build();
       const person = PersonFactory.create();
 
@@ -1695,14 +1695,20 @@ describe(PersonService.name, () => {
       await sut.handleQueueRecognizeFaces({ force: true });
 
       expect(mocks.person.deleteFaces).not.toHaveBeenCalled();
-      expect(mocks.person.unassignFaces).not.toHaveBeenCalled();
+      expect(mocks.person.unassignFaces).toHaveBeenCalledWith({
+        clusterGroupId: undefined,
+        sourceType: SourceType.MachineLearning,
+      });
+      expect(mocks.person.unassignFaces.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.job.queueSelection.mock.invocationCallOrder[0],
+      );
       expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.FacialRecognition, expect.anything(), {
         deferred: false,
         force: true,
       });
-      expect(mocks.person.delete).not.toHaveBeenCalled();
-      expect(mocks.person.deleteEmptyGroups).not.toHaveBeenCalled();
-      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      // only the person left without faces goes
+      expect(mocks.person.delete).toHaveBeenCalledWith([person.personGroupId], undefined);
+      expect(mocks.person.deleteEmptyGroups).toHaveBeenCalled();
       expect(mocks.person.vacuum).not.toHaveBeenCalled();
     });
   });

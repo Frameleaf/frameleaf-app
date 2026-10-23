@@ -302,6 +302,8 @@ describe(MemoryService.name, () => {
     const eventStory = expect.objectContaining({ type: MemoryType.EventStory });
 
     beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-06-10T12:00:00.000Z'));
       mocks.user.getList.mockResolvedValue([{ id: newUuid() }] as never);
       mocks.asset.getEventStoryCandidates.mockResolvedValue(dayAtThePark());
       mocks.memory.getExistingMemoryDates.mockResolvedValue([]);
@@ -332,6 +334,39 @@ describe(MemoryService.name, () => {
         }),
         new Set(['asset-9', 'asset-10', 'asset-11', 'asset-12', 'asset-13']),
       );
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('looks back no further than unsaved memories are kept', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ lastOnThisDayDate: new Date().toISOString() });
+
+      await sut.onMemoriesCreate();
+
+      expect(mocks.asset.getEventStoryCandidates).toHaveBeenCalledWith(
+        expect.any(String),
+        new Date('2026-05-11T00:00:00.000Z'),
+        new Date('2026-06-08T23:59:59.999Z'),
+      );
+    });
+
+    it('makes none of a run cut by either edge of the window', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ lastOnThisDayDate: new Date().toISOString() });
+      const at = (iso: string) =>
+        dayAtThePark().map((candidate, index) => ({
+          ...candidate,
+          localDateTime: new Date(new Date(iso).getTime() + index * 3_600_000),
+        }));
+
+      // the window is 2026-05-11 to 2026-06-08: one run starts just after it opens, one ends just before it closes
+      for (const start of ['2026-05-11T09:00:00.000Z', '2026-06-08T09:00:00.000Z']) {
+        mocks.asset.getEventStoryCandidates.mockResolvedValue(at(start));
+        await sut.onMemoriesCreate();
+      }
+
+      expect(mocks.memory.create).not.toHaveBeenCalledWith(eventStory, expect.anything());
     });
 
     it('makes none at a landmark the owner is at all year', async () => {
