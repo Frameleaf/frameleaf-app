@@ -423,6 +423,9 @@ describe(CloudBackupService.name, () => {
       getManifestKeys: vi.fn().mockResolvedValue(new Set()),
       adoptManifests: vi.fn().mockResolvedValue(0),
       listKeptManifests: vi.fn().mockResolvedValue([]),
+      getOwnerBackupCandidates: vi
+        .fn()
+        .mockImplementation(async (bucket: string) => new Set((await index.listKeptManifests(bucket)).map(({ key }) => key))),
       markManifests: vi.fn().mockResolvedValue(0),
       forget: vi.fn().mockResolvedValue(undefined),
       getOwnerRestoreIdentities: vi.fn().mockResolvedValue({}),
@@ -3800,6 +3803,15 @@ describe(CloudBackupService.name, () => {
         nextOffset: null,
       });
     });
+    it('lists backups without downloading a manifest that holds none of the owner’s restorable items', async () => {
+      index.getOwnerBackupCandidates.mockResolvedValue(new Set());
+      expect(await sut.listOwnerBackups(authStub.user1, { limit: 1, offset: 0 }, refresh())).toEqual({
+        backups: [],
+        nextOffset: null,
+      });
+      expect(store.get).not.toHaveBeenCalled();
+      expect(index.getOwnerBackupCandidates).toHaveBeenCalledWith(expect.any(String), authStub.user1.user.id);
+    });
     it('refuses revoked normal auth, shared links, changed owner, relock and pruned cached manifest', async () => {
       const revoked = refresh().mockRejectedValueOnce(new Error('revoked'));
       await expect(sut.listOwnerHistory(authStub.user1, dto, revoked)).rejects.toThrow('revoked');
@@ -4118,6 +4130,17 @@ describe(CloudBackupService.name, () => {
 
       beforeEach(() => {
         store.get = vi.fn().mockResolvedValue(v2Body);
+      });
+
+      it('never names or finds by name a deleted item the backup recorded as Locked', async () => {
+        const body = JSON.parse(gunzipSync(v2Body).toString());
+        body.assets['asset-2'].details.visibility = 'locked';
+        store.get = vi.fn().mockResolvedValue(gzipSync(JSON.stringify(body)));
+        index.getLibraryState.mockResolvedValue(new Map());
+
+        const listed = await sut.listManifestItems({ manifestKey });
+        expect(listed.items.find(({ assetId }) => assetId === 'asset-2')).toMatchObject({ name: '', locked: true });
+        await expect(sut.listManifestItems({ manifestKey, query: 'img_2' })).resolves.toMatchObject({ total: 0 });
       });
 
       it('queues an album restore with the album’s items from the backup and how their details come back', async () => {

@@ -531,6 +531,49 @@ export class CloudBackupIndexRepository {
       .execute();
     return fresh.length;
   }
+  /**
+   * The kept manifests that may hold an owner's restorable item: one of their originals is trashed, deleted
+   * or gone with the owner's deletion record. A manifest with no recorded originals (adopted from the bucket
+   * listing) may hold anything. A superset: the owner history rule still decides on each.
+   */
+  @GenerateSql({ params: [DummyValue.STRING, DummyValue.UUID] })
+  async getOwnerBackupCandidates(bucket: string, ownerId: string): Promise<Set<string>> {
+    const rows = await this.db
+      .selectFrom('cloud_backup_manifest as m')
+      .select('m.key')
+      .where('m.bucket', '=', bucket)
+      .where('m.status', 'in', [...KEPT_MANIFEST_STATUSES])
+      .where((eb) =>
+        eb.or([
+          eb.not(
+            eb.exists(
+              eb.selectFrom('cloud_backup_manifest_original as o').select('o.assetId').whereRef('o.manifestId', '=', 'm.id'),
+            ),
+          ),
+          eb.exists(
+            eb
+              .selectFrom('cloud_backup_manifest_original as o')
+              .innerJoin('asset', 'asset.id', 'o.assetId')
+              .select('o.assetId')
+              .whereRef('o.manifestId', '=', 'm.id')
+              .where('asset.ownerId', '=', ownerId)
+              .where((inner) =>
+                inner.or([inner('asset.status', '=', AssetStatus.Trashed), inner('asset.deletedAt', 'is not', null)]),
+              ),
+          ),
+          eb.exists(
+            eb
+              .selectFrom('cloud_backup_manifest_original as o')
+              .innerJoin('asset_backup_deletion as d', 'd.assetId', 'o.assetId')
+              .select('o.assetId')
+              .whereRef('o.manifestId', '=', 'm.id')
+              .where('d.ownerId', '=', ownerId),
+          ),
+        ]),
+      )
+      .execute();
+    return new Set(rows.map(({ key }) => key));
+  }
   /** FL-164: this bucket's kept manifests, newest first: what a restore can be made from. */
   @GenerateSql({ params: [DummyValue.STRING] })
   async listKeptManifests(bucket: string): Promise<CloudBackupKeptManifest[]> {

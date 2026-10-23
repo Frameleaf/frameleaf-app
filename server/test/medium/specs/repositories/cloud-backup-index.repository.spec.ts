@@ -243,6 +243,43 @@ describe(CloudBackupIndexRepository.name, () => {
     await expect(sut.listKeptManifests(other)).resolves.toHaveLength(1);
   });
 
+  it('names the kept manifests that can hold an owner’s trashed item, or that recorded no originals', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const bucket = `https://s3.example.test/${randomUUID()}`;
+    const { asset: active } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: trashed } = await ctx.newAsset({
+      ownerId: user.id,
+      status: AssetStatus.Trashed,
+      deletedAt: new Date(),
+    });
+    const complete = async (key: string, assetId?: string) => {
+      const manifest = await sut.createManifest({ bucket, key, operationId: randomUUID() });
+      if (assetId) {
+        await sut.upsertEntries(manifest.id, [
+          {
+            fileKey: `${assetId}:original`,
+            assetId,
+            ownerId: user.id,
+            role: 'original',
+            path: `/data/${assetId}.jpg`,
+            sha256: sha(assetId),
+            size: 1,
+            mtime: null,
+          },
+        ]);
+      }
+      await sut.finishManifest(manifest.id, { status: 'complete' });
+    };
+    await complete('m/20260920T030000Z.json.gz', active.id);
+    await complete('m/20260921T030000Z.json.gz', trashed.id);
+    await complete('m/20260922T030000Z.json.gz');
+
+    await expect(sut.getOwnerBackupCandidates(bucket, user.id)).resolves.toEqual(
+      new Set(['m/20260921T030000Z.json.gz', 'm/20260922T030000Z.json.gz']),
+    );
+  });
+
   it('names the paths another asset holds now, as its original or one of its files', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();

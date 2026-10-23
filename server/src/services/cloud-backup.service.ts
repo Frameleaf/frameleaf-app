@@ -3596,7 +3596,11 @@ export class CloudBackupService {
     await this.ownerBackupAuth(auth.user.id, refresh);
     const metadata = await this.ownerBackupClaim();
     const candidates: Array<{ manifestKey: string; manifest: CloudBackupManifest }> = [];
+    // only the manifests that can hold one of the owner's trashed or deleted items are downloaded
+    // ponytail: an owner with such items in every manifest still downloads every kept one per request
+    const possible = await this.index.getOwnerBackupCandidates(metadata.bucketRef, auth.user.id);
     for (const row of await this.index.listKeptManifests(metadata.bucketRef)) {
+      if (!possible.has(row.key)) continue;
       const found = await this.ownerHistory(auth, { manifestKey: row.key, offset: 0, limit: 1 }, refresh);
       if (found.metadata.bucketRef !== metadata.bucketRef)
         throw new ConflictException('Cloud backup changed during the request');
@@ -3724,9 +3728,15 @@ export class CloudBackupService {
       return [{ assetId, asset, original, name }];
     });
     const library = await this.libraryState(candidates.map(({ assetId }) => assetId));
+    // an item gone from the library is Locked as the backup recorded it
+    const lockedIds = new Set(
+      candidates
+        .filter(({ assetId, asset }) => library.get(assetId)?.locked ?? asset.details?.visibility === 'locked')
+        .map(({ assetId }) => assetId),
+    );
     // a search by name never finds a Locked item, so its name cannot be guessed at
     const named = candidates.filter(
-      ({ assetId, name }) => !query || (!library.get(assetId)?.locked && name.toLowerCase().includes(query)),
+      ({ assetId, name }) => !query || (!lockedIds.has(assetId) && name.toLowerCase().includes(query)),
     );
     const stateOf = (assetId: string) => library.get(assetId)?.status ?? 'deleted';
     const byName = (a: { name: string }, b: { name: string }) =>
@@ -3738,8 +3748,8 @@ export class CloudBackupService {
       })
       .toSorted(
         (a, b) =>
-          Number(!!library.get(a.assetId)?.locked) - Number(!!library.get(b.assetId)?.locked) ||
-          (library.get(a.assetId)?.locked ? 0 : byName(a, b)) ||
+          Number(lockedIds.has(a.assetId)) - Number(lockedIds.has(b.assetId)) ||
+          (lockedIds.has(a.assetId) ? 0 : byName(a, b)) ||
           compareCodeUnits(a.assetId, b.assetId),
       );
     const page = matching.slice(0, limit);
@@ -3749,8 +3759,8 @@ export class CloudBackupService {
     const items: CloudBackupManifestItem[] = page.map(({ assetId, asset, original, name }) => ({
       assetId,
       // a Locked item is never named here, whoever looks; it can still be restored
-      name: library.get(assetId)?.locked ? '' : name,
-      locked: !!library.get(assetId)?.locked,
+      name: lockedIds.has(assetId) ? '' : name,
+      locked: lockedIds.has(assetId),
       ownerId: asset.owner,
       ownerName: asset.owner ? (owners.get(asset.owner) ?? null) : null,
       files: asset.files.length,
