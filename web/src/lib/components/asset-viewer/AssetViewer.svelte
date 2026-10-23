@@ -28,6 +28,7 @@
   import ViewerStackStrip from '$lib/components/frameleaf/ViewerStackStrip.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { AssetAction } from '$lib/constants';
+  import { isDialogOpen, isTypingTarget } from '$lib/frameleaf/viewer-keys';
   import { isPanorama } from '$lib/frameleaf/viewer-media';
   import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
   import { slideshowStage, type SlideshowDirection } from '$lib/frameleaf/slideshow-stage.svelte';
@@ -758,6 +759,23 @@
    * does nothing when the on-screen buttons would not have been there either, and the two replay paths
    * above re-check it too, since a queued press can outlive the state it was made in.
    */
+  /**
+   * An arrow key the viewer handles only when nothing else owns it: a slider, select, number field or
+   * video keeps its arrows, and so does an open dialog. The key is left un-prevented in those cases, so
+   * the control's own stepping still happens.
+   */
+  const arrowShortcut = (key: string, run: () => void) => ({
+    shortcut: { key },
+    preventDefault: false,
+    onShortcut: (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target) || isDialogOpen()) {
+        return;
+      }
+      event.preventDefault();
+      run();
+    },
+  });
+
   const navigateAssetByKey = (order: 'previous' | 'next') => {
     if (!canNavigateByKey()) {
       return;
@@ -1592,21 +1610,15 @@
   bind:fullscreenElement
   onfullscreenchange={onFullscreenChange}
   use:shortcuts={[
-    { shortcut: { key: 'ArrowUp' }, onShortcut: () => navigateStack('previous') },
-    { shortcut: { key: 'ArrowDown' }, onShortcut: () => navigateStack('next') },
+    arrowShortcut('ArrowUp', () => navigateStack('previous')),
+    arrowShortcut('ArrowDown', () => navigateStack('next')),
     // While a slideshow runs the arrows step it through SlideshowBar's own bindings (VIEWER-P1 has no
     // capsule buttons any more), so the viewer leaves them alone: a match here would mark the key
     // handled and the slideshow would never see it.
     ...($slideshowState === SlideshowState.None
       ? [
-          {
-            shortcut: { key: 'ArrowLeft' },
-            onShortcut: () => navigateAssetByKey(isForwardKey('ArrowLeft') ? 'next' : 'previous'),
-          },
-          {
-            shortcut: { key: 'ArrowRight' },
-            onShortcut: () => navigateAssetByKey(isForwardKey('ArrowRight') ? 'next' : 'previous'),
-          },
+          arrowShortcut('ArrowLeft', () => navigateAssetByKey(isForwardKey('ArrowLeft') ? 'next' : 'previous')),
+          arrowShortcut('ArrowRight', () => navigateAssetByKey(isForwardKey('ArrowRight') ? 'next' : 'previous')),
         ]
       : []),
   ]}
