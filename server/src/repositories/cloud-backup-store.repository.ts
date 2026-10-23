@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { constants, createReadStream, createWriteStream } from 'node:fs';
 import { type FileHandle, mkdir, open, readFile, rename, rm } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { Readable, Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
@@ -586,16 +586,22 @@ export class CloudBackupStoreRepository {
     // eslint-disable-next-line unicorn/no-impossible-length-comparison -- Size comes from an untrusted HTTP header.
     if (!object?.etag || !Number.isSafeInteger(object.size) || object.size < 0)
       throw new CloudBackupStoreError('The backup download has no stable object identity.', 404, 'NoSuchKey');
-    if (
-      state &&
-      (state.partial !== partial ||
-        state.etag !== object.etag ||
+    const remoteChanged =
+      !!state &&
+      (state.etag !== object.etag ||
         state.size !== object.size ||
         state.expectedSha256 !== wireSha256 ||
         (state.plaintextSha256 ?? null) !== (client ? expectedSha256 : null) ||
-        (state.versionId !== undefined && state.versionId !== object.versionId))
-    )
-      throw new CloudBackupStoreError('The backup object changed during its download.', null, 'ChecksumMismatch');
+        (state.versionId !== undefined && state.versionId !== object.versionId));
+    if (state && (remoteChanged || state.partial !== partial)) {
+      // A receipt for another attempt (the target moved, or the object changed) is dropped with its partial,
+      // so the next attempt starts again instead of meeting the same receipt.
+      if (basename(state.partial).startsWith('.frameleaf-part-')) await rm(state.partial, { force: true });
+      await journal.save(null);
+      state = null;
+      if (remoteChanged)
+        throw new CloudBackupStoreError('The backup object changed during its download.', null, 'ChecksumMismatch');
+    }
     state ??= {
       kind: 'download',
       key,

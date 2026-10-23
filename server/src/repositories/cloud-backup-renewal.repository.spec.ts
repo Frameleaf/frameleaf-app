@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
-import { access, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -588,6 +588,29 @@ describe('temporary backup capability storage integration', () => {
     await store.download(provider.connection('restore', journal()), `o/${sha(bytes)}`, key, destination, sha(bytes));
     expect(provider.seen.some((request) => request.range === 'bytes=1024-')).toBe(true);
     expect(await readFile(destination)).toEqual(bytes);
+    expect(durable).toBeNull();
+  });
+
+  it('starts a download again when its target moved since the interrupted attempt, leaving no partial', async () => {
+    const bytes = Buffer.alloc(4096, 5);
+    provider.objects.set(`o/${sha(bytes)}`, bytes);
+    provider.breakDownload = true;
+    provider.expireDownload = true;
+    store.retryDelaysMs = [0];
+    await mkdir(join(folder, 'before'));
+    await mkdir(join(folder, 'after'));
+    await expect(
+      store.download(provider.connection('restore', journal()), `o/${sha(bytes)}`, key, join(folder, 'before', 'a'), sha(bytes)),
+    ).rejects.toThrow();
+    expect(await readdir(join(folder, 'before'))).toHaveLength(1);
+    provider.expireDownload = false;
+    provider.unavailable = false;
+
+    const target = join(folder, 'after', 'a');
+    await store.download(provider.connection('restore', journal()), `o/${sha(bytes)}`, key, target, sha(bytes));
+
+    expect(await readFile(target)).toEqual(bytes);
+    expect(await readdir(join(folder, 'before'))).toEqual([]);
     expect(durable).toBeNull();
   });
 
