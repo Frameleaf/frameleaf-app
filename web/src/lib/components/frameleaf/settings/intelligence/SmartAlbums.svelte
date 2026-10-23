@@ -225,7 +225,7 @@
             countsOf(album.kind)
               ? $t('frameleaf_intel_album_holds', { values: { count: countsOf(album.kind)!.count } })
               : '',
-            usesOf(album.kind) ?? '',
+            usesOf(album.kind) ? `${usesOf(album.kind)}.` : '',
           ]
             .filter(Boolean)
             .join(' ')
