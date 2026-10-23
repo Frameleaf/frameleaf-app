@@ -218,6 +218,10 @@ export class SmartAlbumService extends BaseService {
       if (onlyKind && kind !== onlyKind) {
         continue;
       }
+      // a disabled kind keeps its members until it is enabled again
+      if (!smartAlbums.builtIn[kind as BuiltInKind]?.enabled) {
+        continue;
+      }
       if (!matchedKinds.has(kind)) {
         const smartAlbumId = albumIdByKind.get(kind as BuiltInKind);
         if (smartAlbumId) {

@@ -85,6 +85,28 @@ describe(LivePhotoService.name, () => {
       ]);
     });
 
+    it('leaves out a pair with an item the session hides, as every other surface does', async () => {
+      const auth = { ...AuthFactory.create(), hiddenContent: { userId: 'owner' } as never };
+      const ownerId = auth.user.id;
+      vi.mocked(livePhotoRepository.getUnlinkedByContentId).mockResolvedValue([
+        { photoId: 'photo-a', videoId: 'video-a' },
+        { photoId: 'photo-b', videoId: 'video-b' },
+      ]);
+      vi.mocked(livePhotoRepository.getUnlinkedByFilename).mockResolvedValue([]);
+      mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set(['photo-a']));
+      mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue(
+        ['photo-b', 'video-b'].map((id) => AssetFactory.from({ id, ownerId }).exif().build()) as never,
+      );
+
+      const result = await sut.getCandidates(auth);
+
+      expect(mocks.asset.getHiddenContentAssetIds).toHaveBeenCalledWith(['photo-a', 'video-a', 'photo-b', 'video-b'], {
+        hiddenContent: auth.hiddenContent,
+      });
+      expect(mocks.asset.getByIdsWithAllRelationsButStacks).toHaveBeenCalledWith(['photo-b', 'video-b']);
+      expect(result.candidates.map(({ photo }) => photo.id)).toEqual(['photo-b']);
+    });
+
     it('drops ambiguous low-confidence matches (a photo matching multiple videos)', async () => {
       const auth = AuthFactory.create();
       vi.mocked(livePhotoRepository.getUnlinkedByFilename).mockResolvedValue([
