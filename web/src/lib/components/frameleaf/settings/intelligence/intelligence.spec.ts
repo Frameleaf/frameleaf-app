@@ -356,6 +356,56 @@ describe('Categories & smart albums', () => {
     expect(store.draft.smartAlbums?.builtIn.travel.threshold).toBe(0.24);
     expect(screen.getByText('These choices apply to photos added from now on')).toBeInTheDocument();
   });
+
+  it('says how many photos each album holds and how many people show it (FL-522)', async () => {
+    address.url = new URL('http://localhost/user-settings?area=intelligence&section=smart-albums');
+    sdkMock.getSmartAlbumOverview.mockResolvedValue({
+      people: 3,
+      albums: [{ kind: 'travel', count: 2140, people: 3, hiddenBy: 1, samples: ['a1'] }],
+    });
+    useDraft();
+    render(SmartAlbums);
+
+    expect(await screen.findByText('2,140 photos')).toBeInTheDocument();
+    expect(screen.getByText('2 of 3 people show it')).toBeInTheDocument();
+  });
+
+  it('shows what a change would add and take out before saving (FL-522)', async () => {
+    address.url = new URL('http://localhost/user-settings?area=intelligence&section=smart-albums&album=travel');
+    sdkMock.previewSmartAlbumRule.mockResolvedValue({
+      current: 10,
+      matched: 12,
+      adds: 3,
+      removes: 1,
+      addSamples: ['a1'],
+      removeSamples: ['r1'],
+      looksChecked: true,
+    });
+    useDraft();
+    render(SmartAlbums);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'More photos' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Show me' }));
+    expect(sdkMock.previewSmartAlbumRule).toHaveBeenCalledWith({
+      smartAlbumPreviewDto: expect.objectContaining({ kind: 'travel', threshold: 0.24 }),
+    });
+    expect(
+      await screen.findByText(/3 photos would join and 1 would leave, so the album would hold 12 photos/),
+    ).toBeInTheDocument();
+  });
+
+  it('lets each person hide an album from their own library (FL-522)', async () => {
+    address.url = new URL('http://localhost/user-settings?area=intelligence&section=smart-albums');
+    const album = { kind: 'pets', name: 'Pets', albumId: 'p1', count: 40, samples: [], hidden: false };
+    sdkMock.getMySmartAlbums.mockResolvedValue({ enabled: true, albums: [album] });
+    sdkMock.setMySmartAlbumHidden.mockResolvedValue({ enabled: true, albums: [{ ...album, hidden: true }] });
+    useDraft();
+    render(SmartAlbums);
+
+    await fireEvent.click(await screen.findByRole('switch', { name: 'Show Pets in my library' }));
+    expect(sdkMock.setMySmartAlbumHidden).toHaveBeenCalledWith({ kind: 'pets', smartAlbumHiddenDto: { hidden: true } });
+    expect(await screen.findByText('Hidden')).toBeInTheDocument();
+  });
 });
 
 describe('Words', () => {

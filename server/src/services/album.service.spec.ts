@@ -67,6 +67,20 @@ describe(AlbumService.name, () => {
       expect(result[1]).not.toHaveProperty('origin');
     });
 
+    it('leaves out the smart albums the person hid from their library (FL-522)', async () => {
+      const album = AlbumFactory.from().albumUser().build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const hiddenAlbum = AlbumFactory.from().owner(owner).build();
+      mocks.album.getAll.mockResolvedValue([getForAlbum(album), getForAlbum(hiddenAlbum)]);
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+      mocks.smartAlbum.getHiddenAlbumIds.mockResolvedValue(new Set([hiddenAlbum.id]));
+
+      const result = await sut.getAll(AuthFactory.create(owner), {});
+
+      expect(result.map(({ id }) => id)).toEqual([album.id]);
+      expect(mocks.smartAlbum.getHiddenAlbumIds).toHaveBeenCalledWith(owner.id);
+    });
+
     it('gets list of albums for auth user', async () => {
       const album = AlbumFactory.from().albumUser().build();
       const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
