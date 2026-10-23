@@ -65,7 +65,26 @@ describe(UserAdminService.name, () => {
         storageLabel: 'label',
         password: expect.anything(),
         clusterGroupId: expect.any(String),
+        quotaSizeInBytes: null,
       });
+    });
+
+    it('starts an account added without a space of its own with "Space for new people" (FL-516)', async () => {
+      mocks.user.getAdmin.mockResolvedValue(userStub.admin);
+      mocks.user.create.mockResolvedValue(userStub.user1);
+      mocks.systemMetadata.get.mockResolvedValue({ user: { newUserStorageQuota: 200 } });
+
+      await sut.create(authStub.admin, { email: 'a@example.test', name: 'A', password: 'password' });
+      expect(mocks.user.create).toHaveBeenLastCalledWith(expect.objectContaining({ quotaSizeInBytes: 200e9 }));
+
+      // A space chosen for this person wins, "no limit" included.
+      await sut.create(authStub.admin, {
+        email: 'b@example.test',
+        name: 'B',
+        password: 'password',
+        quotaSizeInBytes: null,
+      });
+      expect(mocks.user.create).toHaveBeenLastCalledWith(expect.objectContaining({ quotaSizeInBytes: null }));
     });
 
     // FL-76: the create path accepted `pinCode` and stored it verbatim while `update`

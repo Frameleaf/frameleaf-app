@@ -1,3 +1,4 @@
+import type { UtilitiesSummaryResponseDto } from '@frameleaf/sdk';
 import {
   mdiCloudOutline,
   mdiCompare,
@@ -119,6 +120,33 @@ export const UTILITY_TOOLS: UtilityTool[] = [
     descriptionKey: 'library_care_tool_obtainium_description',
   },
 ];
+
+/** FL-519: tools kept under a closed Advanced in the Utilities directory; most people never need them. */
+export const RARELY_NEEDED_UTILITIES: readonly UtilityId[] = ['obtainium', 'file-trash'];
+
+/** What the Utilities summary says about one tool: how many are waiting, and whether that needs a look. */
+export type UtilityState = { count: number; waiting: boolean; bytes?: number };
+
+/**
+ * FL-519: each tool's state from `GET /utilities/summary`. Duplicates, missing and damaged files
+ * wait for a decision; photos with no place and unused files are only described.
+ */
+export const utilityStates = (summary: UtilitiesSummaryResponseDto): Partial<Record<UtilityId, UtilityState>> => {
+  const states: Partial<Record<UtilityId, UtilityState>> = {
+    duplicates: { count: summary.duplicateGroups, waiting: summary.duplicateGroups > 0 },
+    geolocation: { count: summary.withoutPlace, waiting: false },
+  };
+  if (summary.missingFiles !== null) {
+    states['missing-media'] = { count: summary.missingFiles, waiting: summary.missingFiles > 0 };
+  }
+  if (summary.damagedFiles !== null) {
+    states['corrupt-media'] = { count: summary.damagedFiles, waiting: summary.damagedFiles > 0 };
+  }
+  if (summary.unusedFiles !== null) {
+    states['file-trash'] = { count: summary.unusedFiles, waiting: false, bytes: summary.unusedBytes ?? 0 };
+  }
+  return states;
+};
 
 export const utilityToolsFor = (isAdmin: boolean) => UTILITY_TOOLS.filter((tool) => isAdmin || !tool.adminOnly);
 /**

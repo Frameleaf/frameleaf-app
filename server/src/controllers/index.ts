@@ -54,6 +54,7 @@ import { IdenticalFilesController } from 'src/controllers/identical-files.contro
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
 import { ItemShareController } from 'src/controllers/item-share.controller.js';
 import { JobController } from 'src/controllers/job.controller.js';
+import { LibraryProgressController } from 'src/controllers/library-progress.controller.js';
 import { LibraryAdminController, LibraryController } from 'src/controllers/library.controller.js';
 import { LicenseAdminController, LicenseController } from 'src/controllers/license-admin.controller.js';
 import { LivePhotoController } from 'src/controllers/live-photo.controller.js';
@@ -113,6 +114,7 @@ import { TimelineController } from 'src/controllers/timeline.controller.js';
 import { TrashAdminController, TrashController } from 'src/controllers/trash.controller.js';
 import { UserAdminController } from 'src/controllers/user-admin.controller.js';
 import { UserController } from 'src/controllers/user.controller.js';
+import { UtilitiesController } from 'src/controllers/utilities.controller.js';
 import { VideoStreamController } from 'src/controllers/video-stream.controller.js';
 import { ViewController } from 'src/controllers/view.controller.js';
 import { WorkerInventoryController } from 'src/controllers/worker-inventory.controller.js';
@@ -161,6 +163,7 @@ export const controllers = [
   AssetMediaController,
   AssetRestorationController,
   AttentionController,
+  LibraryProgressController,
   OvernightController,
   AuthController,
   AuthAdminController,
@@ -184,6 +187,7 @@ export const controllers = [
   LibraryController,
   LibraryAdminController,
   LivePhotoController,
+  UtilitiesController,
   MaintenanceController,
   MapController,
   MediaHealthController,

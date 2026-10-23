@@ -241,6 +241,28 @@ export class DuplicateRepository {
       .whereRef('asset.duplicateId', '=', 'singletons.duplicateId')
       .execute();
   }
+  /** FL-519: groups of two or more of the owner's timeline photos waiting for a decision. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async countGroupsForOwner(ownerId: string): Promise<number> {
+    const { count } = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('asset')
+          .$call((qb) => withDefaultVisibility(qb))
+          .select('asset.duplicateId')
+          .where('asset.ownerId', '=', asUuid(ownerId))
+          .where('asset.duplicateId', 'is not', null)
+          .where('asset.deletedAt', 'is', null)
+          .where('asset.stackId', 'is', null)
+          .groupBy('asset.duplicateId')
+          .having((eb) => eb.fn.count('asset.id'), '>', 1)
+          .as('grouped'),
+      )
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .executeTakeFirstOrThrow();
+    return Number(count);
+  }
+
   @GenerateSql({ params: [DummyValue.UUID, { excludeNsfw: true }] })
   async get(
     duplicateId: string,

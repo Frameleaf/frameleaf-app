@@ -1,7 +1,7 @@
 {
-  "sourceCommit": "2941400e28fa556b2d4ba979c4823166f77b6fe7",
+  "sourceCommit": "73fa83f26be31dced4c7b7cae0d9b9b1e0207499",
   "sourceHashes": {
-    "src/enum.ts": "3c0ec36b27b92f0f48eaab5deb13c349040e3a73d2a8002459720b59ac1658f5",
+    "src/enum.ts": "202251c77d5f243a6ef04e61a9194e48e7a2994c3ca9db85130a4392333f62bd",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/queue/schema.ts": "6093d34aad84f8926892a0a0b17a7824c676470e1a25607a358936495a8651a2",
     "src/schema/enums.ts": "6f7ec2f2d59677c4806c85fc069bcd50aa93ed8b9b8cc3c3bc2ab632c9eb5347",
@@ -107,7 +107,7 @@
     "src/schema/tables/shared-space-visit.table.ts": "3c21a4351f33fd94b5b04c4d43ee57770c88bf96c6fbbeefbe081d39a7a8e302",
     "src/schema/tables/smart-album-asset.table.ts": "eaf7b1353fec55e47fc71a27c723457a0e8f7938bf3c75776b53724dc22fd2cf",
     "src/schema/tables/smart-album-exclusion.table.ts": "921885e9bdcff1608f487d63513fa798203686d912cf1602e988290f415fb5cd",
-    "src/schema/tables/smart-album.table.ts": "1278d23989b9eb8963f0f727e2be5885a15ea0d5f71f53c6fbce7910643078a0",
+    "src/schema/tables/smart-album.table.ts": "cf05f0f1d4bdc60cd581f7c6f90cc3bbcdcc822ef5e9bf986b378bd15088d8e1",
     "src/schema/tables/smart-search-description.table.ts": "5a81ab7fb476378080b9d1b9dfdf46963e60db2f4ad53e75a9a13ceb1940ed3f",
     "src/schema/tables/smart-search.table.ts": "fd8811bd6a4eaeb94073e4af42d8b42ca0ef3d95b950e6fcd733b98cc86e50f2",
     "src/schema/tables/source-resource-read.table.ts": "0a8add85873edc03434d56cdad39a78f8c755e707767520863f8c7177f05d748",
@@ -142,6 +142,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "919d03d2961bdeeb79f0aa900eaa9ff7ffd39979e502724132175955a80d5938",
+  "dumpSha256": "c0551c09899ccb7668af68bbc060f49f9eca8499d8cf99383d1ed482180a6eb0",
   "rawMetadataSha256": "93cb902694c3995d4b8b877e5a8c49f1705b9b1a19a7eb6dbd86b390ee9fc583"
 }

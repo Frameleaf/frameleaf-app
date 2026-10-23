@@ -368,6 +368,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
   },
   user: {
     deleteDelay: 15,
+    newUserStorageQuota: null,
   },
   notifications: {
     smtp: {
