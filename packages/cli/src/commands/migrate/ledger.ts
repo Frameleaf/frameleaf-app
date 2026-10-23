@@ -4,6 +4,8 @@ import type { AssetRecord } from 'src/commands/migrate/types';
 export interface AlbumSnapshot {
   aId: string;
   name: string;
+  /** Album, collection or space. Albums nest only inside a collection, so this must survive. */
+  kind?: string;
   description: string;
   icon: string | null;
   order?: string;
@@ -132,6 +134,11 @@ export class Ledger {
     const runColumns = this.db.prepare('PRAGMA table_info(run)').all() as Array<{ name: string }>;
     if (runColumns.every((column) => column.name !== 'source_email')) {
       this.db.exec('ALTER TABLE run ADD COLUMN source_email TEXT');
+    }
+    // Likewise the album kind; enumeration re-snapshots albums on every run, which fills it in.
+    const albumColumns = this.db.prepare('PRAGMA table_info(album)').all() as Array<{ name: string }>;
+    if (albumColumns.every((column) => column.name !== 'kind')) {
+      this.db.exec('ALTER TABLE album ADD COLUMN kind TEXT');
     }
   }
 
@@ -368,15 +375,16 @@ export class Ledger {
   upsertAlbum(a: AlbumSnapshot) {
     this.db
       .prepare(
-        `INSERT INTO album (a_id, name, description, icon, sort_order, album_order, parent_a_id, thumb_a_id)
-         VALUES (@a_id, @name, @description, @icon, @sort_order, @album_order, @parent_a_id, @thumb_a_id)
-         ON CONFLICT(a_id) DO UPDATE SET name = excluded.name, description = excluded.description,
+        `INSERT INTO album (a_id, name, kind, description, icon, sort_order, album_order, parent_a_id, thumb_a_id)
+         VALUES (@a_id, @name, @kind, @description, @icon, @sort_order, @album_order, @parent_a_id, @thumb_a_id)
+         ON CONFLICT(a_id) DO UPDATE SET name = excluded.name, kind = excluded.kind, description = excluded.description,
            icon = excluded.icon, sort_order = excluded.sort_order, album_order = excluded.album_order,
            parent_a_id = excluded.parent_a_id, thumb_a_id = excluded.thumb_a_id`,
       )
       .run({
         a_id: a.aId,
         name: a.name,
+        kind: a.kind ?? null,
         description: a.description,
         icon: a.icon,
         sort_order: a.sortOrder,
@@ -389,6 +397,7 @@ export class Ledger {
     const rows = this.stmt('SELECT * FROM album').all() as Array<{
       a_id: string;
       name: string;
+      kind: string | null;
       description: string;
       icon: string | null;
       sort_order: number | null;
@@ -401,6 +410,7 @@ export class Ledger {
     return rows.map((r) => ({
       aId: r.a_id,
       name: r.name,
+      kind: r.kind ?? undefined,
       description: r.description,
       icon: r.icon,
       sortOrder: r.sort_order,
