@@ -56,7 +56,7 @@
   import { namedEntitySegments, withArchiveDetail } from '$lib/frameleaf/archive-name';
   import { preparesArchiveOnServer } from '$lib/frameleaf/archive-operations';
   import type { BulkAsset, BulkActionContext, BulkActionId } from '$lib/frameleaf/bulk-actions';
-  import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
+  import { bulkStateById, type BulkPayload } from '$lib/frameleaf/bulk-operations';
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import { type FilterEntityKind, resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
@@ -678,11 +678,18 @@
     if (!patch) {
       return;
     }
-    manager.update(ids, patch);
+    // Decide what leaves before updating: update() already splices excluded items out of the page,
+    // so they could not be found afterwards (FL-529).
     const left = ids.filter((id) => {
       const asset = findAsset(id);
-      return !!asset && manager.isExcluded(asset);
+      if (!asset) {
+        return false;
+      }
+      const changed = { ...asset };
+      patch(changed);
+      return manager.isExcluded(changed);
     });
+    manager.update(ids, patch);
     if (left.length > 0) {
       dispatch({ type: 'mutated', removedIds: left });
     }
@@ -703,6 +710,7 @@
           .map((id) => [id, findAsset(id)?.ownerId])
           .filter(([, owner]) => !!owner) as [string, string][],
       ),
+      stateById: bulkStateById([...session.selection, ...actionTargets], findAsset),
     }),
   });
 

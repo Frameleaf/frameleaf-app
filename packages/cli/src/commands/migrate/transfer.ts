@@ -56,9 +56,13 @@ export async function transfer(
         isFavorite: asset.isFavorite,
         visibility: asset.visibility,
       });
-      const { checksum } = await to.getAssetInfo(uploaded.id);
+      const { checksum, isTrashed } = await to.getAssetInfo(uploaded.id);
       if (checksum !== sha256) {
         throw new Error(`destination checksum differs from uploaded bytes for ${asset.aId}`);
+      }
+      if (isTrashed) {
+        // B already held these bytes, but in its trash, which it purges when the trash empties.
+        await to.restoreAssets([uploaded.id]);
       }
       const via = uploaded.status === AssetMediaStatus.Duplicate ? 'duplicate' : 'upload';
       ledger.setAssetUploaded(asset.aId, uploaded.id, via, checksum);

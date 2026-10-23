@@ -161,7 +161,8 @@ export class SystemMetadataService extends BaseService {
 
   async getReverseGeocodingState(): Promise<ReverseGeocodingStateResponseDto> {
     const value = await this.systemMetadataRepository.get(SystemMetadataKey.ReverseGeocodingState);
-    return { lastUpdate: null, lastImportFileName: null, ...value };
+    // the restoring flag (FL-402) is reported to everyone through server config instead
+    return { lastUpdate: value?.lastUpdate ?? null, lastImportFileName: value?.lastImportFileName ?? null };
   }
 
   async getVersionCheckState(): Promise<VersionCheckStateResponseDto> {

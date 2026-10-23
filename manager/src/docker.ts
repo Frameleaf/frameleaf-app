@@ -380,8 +380,9 @@ export class Docker {
     const present = new Set(
       (await this.execute('docker', ['image', 'ls', '--digests', '--format', '{{.Repository}}@{{.Digest}}'])).split('\n'),
     );
+    // `image ls` prints no tag beside the digest, so `name:tag@sha256:…` is looked up as `name@sha256:…`.
     for (const image of new Set(wanted))
-      if (!present.has(image)) await this.execute('docker', ['pull', image], { timeout: 3_600_000 });
+      if (!present.has(image.replace(/:[^/@]+(?=@)/, ''))) await this.execute('docker', ['pull', image], { timeout: 3_600_000 });
   }
   /**
    * FL-414: which of these media folders the Frameleaf server cannot write to, checked by the server

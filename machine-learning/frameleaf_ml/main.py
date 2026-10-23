@@ -357,7 +357,8 @@ def hardware() -> ORJSONResponse:
     torch_cuda_available, cuda_device_count = _torch_cuda_info()
     preferred_acceleration = ImageDescriptionAcceleration.AUTO
 
-    if torch_cuda_available or "CUDAExecutionProvider" in providers:
+    # The CUDA provider is compiled into the -cuda image whether or not a GPU was passed in.
+    if torch_cuda_available:
         preferred_acceleration = ImageDescriptionAcceleration.CUDA
     elif "OpenVINOExecutionProvider" in providers and openvino_device_ids:
         preferred_acceleration = ImageDescriptionAcceleration.OPENVINO

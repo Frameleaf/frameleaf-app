@@ -13625,6 +13625,8 @@ export type ServerConfigDto = {
     oauthAccountManagementUrl?: string;
     /** OAuth button text */
     oauthButtonText: string;
+    /** Whether place names and landmarks are being put back after a restore or a first start, so they can look missing for a few minutes */
+    placesRestoring: boolean;
     /** Whether public user registration is enabled */
     publicUsers: boolean;
     /** Server name set by an administrator; empty when none is set */

@@ -1416,6 +1416,30 @@ describe(AssetMediaService.name, () => {
       }
     });
 
+    it('redirects a never-inspected web image to the original while HDR processing is off', async () => {
+      const asset = AssetFactory.from({ originalPath: '/data/original.jpg' }).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        renditionIdentity: null,
+        ...asset,
+        path: null,
+        imageEncoding: null,
+      });
+      await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.FULLSIZE })).resolves.toEqual({
+        targetSize: 'original',
+      });
+
+      vitest.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      try {
+        // with HDR on, the encoding backfill decides first
+        await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.FULLSIZE })).resolves.toEqual({
+          targetSize: AssetMediaSize.PREVIEW,
+        });
+      } finally {
+        vitest.unstubAllEnvs();
+      }
+    });
+
     it('serves the owner current develop pixels but keeps the face source on ordinary edited pixels', async () => {
       const asset = AssetFactory.from({ ownerId: authStub.admin.user.id })
         .file({ type: AssetFileType.Preview, path: '/data/legacy-preview.jpg' })

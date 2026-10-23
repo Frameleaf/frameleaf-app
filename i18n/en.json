@@ -10854,6 +10854,7 @@
   "frameleaf_places_no_match_help": "Try a shorter name or clear the search.",
   "frameleaf_places_no_match_title": "No places match “{query}”",
   "frameleaf_places_place_count": "{count, plural, one {# place} other {# places}}",
+  "frameleaf_places_restoring": "Putting place names and landmarks back. Some may be missing for a few minutes.",
   "frameleaf_places_show_on_map": "Show {name} on the map",
   "frameleaf_places_state_label": "{name}, {count, plural, one {# item} other {# items}}. View all",
   "frameleaf_places_subtitle_empty": "Where your photos and videos were taken",

@@ -409,6 +409,20 @@ export class StudioExportRepository {
       .orderBy('key', 'asc')
       .execute() as Promise<StudioExportVersionSource[]>;
   }
+  /** The library sources, among these, that are neither trashed nor offline: what a download may still use. */
+  async getAvailableSourceIds(assetIds: string[]): Promise<Set<string>> {
+    if (assetIds.length === 0) {
+      return new Set();
+    }
+    const rows = await this.db
+      .selectFrom('asset')
+      .select('id')
+      .where('id', 'in', assetIds)
+      .where('deletedAt', 'is', null)
+      .where('isOffline', '=', false)
+      .execute();
+    return new Set(rows.map((row) => row.id));
+  }
   /** Interactive SRT reads use the current session and source epochs, never a worker's background grant. */
   async withSubtitleAccess<T>(
     versionId: string,

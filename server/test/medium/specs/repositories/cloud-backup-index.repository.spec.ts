@@ -228,6 +228,124 @@ describe(CloudBackupIndexRepository.name, () => {
     await expect(sut.getUsage(bucket)).resolves.toEqual({ objects: 0, bytes: 0 });
   });
 
+  it('keeps client upload receipts apart from the bucket, and forgets them with it', async () => {
+    const { sut } = setup();
+    const bucket = `https://s3.example.test/${randomUUID()}`;
+    const receipts = `${bucket}#client-v1`;
+    await sut.record(receipts, [
+      { sha256: sha('bad'), size: 1, etag: '"b"' },
+      { sha256: sha('good'), size: 2, etag: '"g"' },
+    ]);
+    await expect(sut.getUsage(bucket)).resolves.toEqual({ objects: 0, bytes: 0 });
+    await expect(sut.getRecorded(receipts, [sha('good'), sha('none')])).resolves.toEqual(
+      new Map([[sha('good'), { size: 2, etag: '"g"' }]]),
+    );
+
+    await sut.forget(bucket, [sha('bad')]);
+    await expect(sut.getRecorded(receipts, [sha('bad'), sha('good')])).resolves.toEqual(
+      new Map([[sha('good'), { size: 2, etag: '"g"' }]]),
+    );
+    await sut.deleteBucket(bucket);
+    await expect(sut.getRecorded(receipts, [sha('good')])).resolves.toEqual(new Map());
+  });
+
+  it('forgets a bucket’s manifests too, so a fresh claim keeps no backup the bucket no longer holds', async () => {
+    const { sut } = setup();
+    const bucket = `https://s3.example.test/${randomUUID()}`;
+    const other = `https://s3.example.test/${randomUUID()}`;
+    const old = await sut.createManifest({ bucket, key: 'm/20260920T030000Z.json.gz', operationId: randomUUID() });
+    await sut.finishManifest(old.id, { status: 'complete' });
+    const kept = await sut.createManifest({
+      bucket: other,
+      key: 'm/20260920T030000Z.json.gz',
+      operationId: randomUUID(),
+    });
+    await sut.finishManifest(kept.id, { status: 'complete' });
+
+    await sut.deleteBucket(bucket);
+
+    await expect(sut.listKeptManifests(bucket)).resolves.toEqual([]);
+    await expect(sut.listKeptManifests(other)).resolves.toHaveLength(1);
+  });
+
+  it('names the kept manifests that can hold an owner’s trashed item, or that recorded no originals', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const bucket = `https://s3.example.test/${randomUUID()}`;
+    const { asset: active } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: trashed } = await ctx.newAsset({
+      ownerId: user.id,
+      status: AssetStatus.Trashed,
+      deletedAt: new Date(),
+    });
+    const complete = async (key: string, assetId?: string) => {
+      const manifest = await sut.createManifest({ bucket, key, operationId: randomUUID() });
+      if (assetId) {
+        await sut.upsertEntries(manifest.id, [
+          {
+            fileKey: `${assetId}:original`,
+            assetId,
+            ownerId: user.id,
+            role: 'original',
+            path: `/data/${assetId}.jpg`,
+            sha256: sha(assetId),
+            size: 1,
+            mtime: null,
+          },
+        ]);
+      }
+      await sut.finishManifest(manifest.id, { status: 'complete' });
+    };
+    await complete('m/20260920T030000Z.json.gz', active.id);
+    await complete('m/20260921T030000Z.json.gz', trashed.id);
+    await complete('m/20260922T030000Z.json.gz');
+
+    await expect(sut.getOwnerBackupCandidates(bucket, user.id)).resolves.toEqual(
+      new Set(['m/20260921T030000Z.json.gz', 'm/20260922T030000Z.json.gz']),
+    );
+  });
+
+  it('finds and clears the transfer receipts of ended operations, and names the ones still going', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const transfer = { kind: 'download', partial: '/data/.frameleaf-part-x' };
+    const insert = async (status: string) => {
+      const { rows } = await sql<{ id: string }>`INSERT INTO media_operation
+        ("ownerId", kind, destination, label, snapshot, settings, status, result)
+        VALUES (${user.id}::uuid, 'cloud_restore', 'local', 'Restore', '{}'::jsonb, '{}'::jsonb, ${status},
+          ${{ task: 'restore', backupTransfer: transfer }}::jsonb) RETURNING id`.execute(defaultDatabase);
+      return rows[0].id;
+    };
+    const ended = await insert('cancelled');
+    const queued = await insert('queued');
+
+    const found = (await sut.getEndedTransfers()).filter(({ id }) => id === ended || id === queued);
+    expect(found).toEqual([{ id: ended, transfer }]);
+    await expect(sut.getUnfinishedOperationIds([ended, queued, randomUUID()])).resolves.toEqual(new Set([queued]));
+
+    await sut.clearEndedTransfer(ended);
+    await sut.clearEndedTransfer(queued);
+    expect((await sut.getEndedTransfers()).some(({ id }) => id === ended)).toBe(false);
+    const { rows } = await sql<{ id: string; result: Record<string, unknown> }>`SELECT id, result FROM media_operation
+      WHERE id = any(${[ended, queued]}::uuid[])`.execute(defaultDatabase);
+    expect(Object.fromEntries(rows.map(({ id, result }) => [id, result]))).toEqual({
+      [ended]: { task: 'restore' },
+      [queued]: { task: 'restore', backupTransfer: transfer },
+    });
+  });
+
+  it('names the paths another asset holds now, as its original or one of its files', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const folder = `/data/library/${randomUUID()}`;
+    const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: `${folder}/IMG_1.jpg` });
+    await ctx.newAssetFile({ assetId: asset.id, path: `${folder}/IMG_1.jpg.xmp`, type: AssetFileType.Sidecar });
+    const paths = [`${folder}/IMG_1.jpg`, `${folder}/IMG_1.jpg.xmp`, `${folder}/IMG_2.jpg`];
+
+    await expect(sut.getTakenPaths(paths, [randomUUID()])).resolves.toEqual(new Set(paths.slice(0, 2)));
+    await expect(sut.getTakenPaths(paths, [asset.id])).resolves.toEqual(new Set());
+  });
+
   it('records manifests found in the bucket once, and never over one it already knows (FL-164)', async () => {
     const { sut } = setup();
     const bucket = `https://s3.example.test/${randomUUID()}`;
