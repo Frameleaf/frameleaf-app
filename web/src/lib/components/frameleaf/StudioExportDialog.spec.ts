@@ -394,6 +394,22 @@ describe('Studio export dialog', () => {
     expect(onExport.mock.calls.at(-1)![0]).not.toHaveProperty('range');
   });
 
+  it('exports the still at any start frame, with no end to set', async () => {
+    const onExport = vi.fn();
+    const row = evidence();
+    row.candidates![0].outputFormats.push(StudioExportFormat.SdrJpeg);
+    render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', renderEvidence: [row], onExport });
+    await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_format'), {
+      target: { value: StudioExportFormat.SdrJpeg },
+    });
+    await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_range'), { target: { value: 'frames' } });
+    expect(screen.queryByLabelText('frameleaf_studio_export_range_end')).toBeNull();
+    await fireEvent.input(screen.getByLabelText('frameleaf_studio_export_range_start'), { target: { value: '120' } });
+    expect(screen.queryByText('frameleaf_studio_export_range_invalid')).toBeNull();
+    await fireEvent.click(exportButton());
+    expect(onExport).toHaveBeenLastCalledWith(expect.objectContaining({ range: { inPoint: 120, outPoint: 121 } }));
+  });
+
   it('renders at home only: this server or the home network, never Frameleaf Cloud (FL-159 §2.7)', () => {
     render(StudioExportDialog, {
       open: true,
