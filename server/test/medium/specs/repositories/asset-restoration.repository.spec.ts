@@ -472,3 +472,56 @@ describe('restoration retention', () => {
     },
   );
 });
+
+describe('restoration sweep', () => {
+  it('leaves a cancelled Frameleaf Cloud full render to its own reconcile, which puts the preview back', async () => {
+    const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    const sut = new AssetRestorationRepository(db);
+    const operations = ctx.get(MediaOperationRepository as never) as MediaOperationRepository;
+    const cancelled = async (kind: MediaOperationKind, destination: MediaOperationDestination) => {
+      const operation = await operations.create({
+        ownerId: user.id,
+        kind,
+        destination,
+        label: 'Full render',
+        snapshot: {},
+        settings: {},
+      });
+      await db
+        .updateTable('media_operation')
+        .set({ status: MediaOperationStatus.Cancelled })
+        .where('id', '=', operation.id)
+        .execute();
+      return operation;
+    };
+    const restoration = (fullOperationId: string) =>
+      sut.create({
+        assetId: asset.id,
+        ownerId: user.id,
+        mode: AssetRestorationMode.Faithful,
+        workload: MlWorkload.RestorationFaithful,
+        destinationKind: MlDestinationKind.Local,
+        destinationName: 'Local',
+        sourceType: 'image',
+        sourceChecksum: asset.checksum,
+        sourceWidth: 100,
+        sourceHeight: 100,
+        previewRegion: { x: 0, y: 0, w: 1, h: 1 },
+        status: AssetRestorationStatus.Accepted,
+        fullOperationId,
+      });
+    const local = await restoration(
+      (await cancelled(MediaOperationKind.Restoration, MediaOperationDestination.Local)).id,
+    );
+    const cloud = await restoration(
+      (await cancelled(MediaOperationKind.CloudMlJob, MediaOperationDestination.FrameleafCloud)).id,
+    );
+
+    await sut.alignWithOperations(new Date(Date.now() + 60_000));
+
+    await expect(sut.get(local.id)).resolves.toMatchObject({ status: AssetRestorationStatus.RestoreCancelled });
+    await expect(sut.get(cloud.id)).resolves.toMatchObject({ status: AssetRestorationStatus.Accepted });
+  });
+});
