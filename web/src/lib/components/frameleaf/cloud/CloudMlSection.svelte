@@ -452,7 +452,7 @@
         </span>
         <small>{$t('admin.frameleaf_cloud_ml_setting_daily_budget_description')}</small>
       </label>
-      <SettingActions keys={['frameleafCloud']} disabled={configDisabled} />
+      <SettingActions keys={['frameleafCloud.cloudMl']} disabled={configDisabled} />
     </section>
   {/if}
 

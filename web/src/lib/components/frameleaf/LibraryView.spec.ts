@@ -13,8 +13,9 @@ import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
 import { uploadAssetsStore } from '$lib/stores/upload';
+import { fromISODateTimeUTCToObject } from '$lib/utils/timeline-util';
 import { renderWithTooltips } from '$tests/helpers';
-import { assetFactory } from '@test-data/factories/asset-factory';
+import { assetFactory, timelineAssetFactory, toResponseDto } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import LibraryView from './LibraryView.svelte';
@@ -929,6 +930,46 @@ describe('LibraryView', () => {
       await setupLibrary({ options: { isFavorite: true }, destination: { kind: 'favorites' }, title: 'Favorites' });
       const heading = screen.getByRole('heading', { level: 1, name: 'Favorites' });
       expect(heading.closest('.fl-library-header')).toContainElement(screen.getByTestId('frameleaf-layout-switch'));
+    });
+
+    // FL-529: unfavoriting in Favorites takes the items off the page and out of the selection.
+    it('drops unfavorited items from the selection in Favorites', async () => {
+      authManager.setUser(userAdminFactory.build({ id: 'owner' }));
+      authManager.setPreferences(preferencesFactory.build());
+      const at = '2024-03-10T12:00:00.000Z';
+      const favorite = timelineAssetFactory.build({ id: 'fav', ownerId: 'owner', isFavorite: true });
+      sdkMock.getTimeBuckets.mockResolvedValue([{ timeBucket: '2024-03-01', count: 1 }] as never);
+      sdkMock.getTimeBucket.mockResolvedValue(
+        toResponseDto({
+          ...favorite,
+          fileCreatedAt: fromISODateTimeUTCToObject(at),
+          localDateTime: fromISODateTimeUTCToObject(at),
+        }),
+      );
+      sdkMock.updateAssets.mockResolvedValue(undefined as never);
+      const session = new LibrarySessionStore({ storage: null, transientStorage: null });
+      const timeline = { manager: undefined as TimelineManager | undefined };
+      render(LibraryView, {
+        options: { isFavorite: true },
+        destination: { kind: 'favorites' },
+        syncUrl: false,
+        session,
+        get timelineManager() {
+          return timeline.manager;
+        },
+        set timelineManager(value) {
+          timeline.manager = value;
+        },
+      });
+      await waitFor(() => expect(timeline.manager?.months.length).toBe(1));
+      await timeline.manager!.updateViewport({ width: 1000, height: 400 });
+      await waitFor(() => expect(timeline.manager?.months[0]?.isLoaded).toBe(true));
+      session.select('fav');
+      await tick();
+
+      await fireEvent.keyDown(document, { key: 'f' });
+      await waitFor(() => expect(sdkMock.updateAssets).toHaveBeenCalled());
+      await waitFor(() => expect(session.selection).toEqual([]));
     });
 
     it('draws no heading of its own where the page gives no title', async () => {
