@@ -19,14 +19,17 @@
    * so it is a promise too. FL-413 merges identical files automatically for the whole server; the old
    * per-account "Merge older copies" is retired, and its status block comes with FL-416.
    *
-   * Left for later (server work): a count of look-alike groups for each choice, a time estimate for
-   * comparing again, and starting that comparison from the save.
+   * FL-520: each "How alike" choice says about how many groups it makes in this library, and changing it
+   * says, before saving, how long comparing every photo again takes, with "Save and start tonight",
+   * "Save and start now" and "Undo" (`getDuplicateEstimate`, `recompareDuplicates`). Extra copies already
+   * on the drive are counted without a run (`getIdenticalFilesExtraCopies`); "Store them once now" starts
+   * the identical-files run.
    */
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
-  import { ALIKE_CHOICES, alikeChoiceOf } from '$lib/components/frameleaf/settings/care/duplicates';
+  import { ALIKE_CHOICES, alikeChoiceOf, aboutDuration } from '$lib/components/frameleaf/settings/care/duplicates';
   import Explain from '$lib/components/frameleaf/settings/intelligence/Explain.svelte';
   import Figure from '$lib/components/frameleaf/settings/intelligence/Figure.svelte';
   import MasterOff from '$lib/components/frameleaf/settings/intelligence/MasterOff.svelte';
@@ -38,13 +41,25 @@
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
   import Promises from '$lib/components/frameleaf/settings/kit/Promises.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
+  import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { Route } from '$lib/route';
-  import { getSummary } from '@frameleaf/sdk';
+  import { handleError } from '$lib/utils/handle-error';
+  import {
+    checkIdenticalFiles,
+    DuplicateRecompareWhen,
+    getDuplicateEstimate,
+    getIdenticalFilesExtraCopies,
+    getSummary,
+    recompareDuplicates,
+    type DuplicateEstimateResponseDto,
+    type IdenticalFilesExtraCopiesDto,
+  } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
     mdiCheckCircleOutline,
@@ -72,11 +87,75 @@
   /** Look-alike groups waiting in this account's review. */
   let groups = $state<number | null>(null);
 
+  /** FL-520: groups for each choice and the time comparing again takes; extra copies on the drive. */
+  let estimate = $state<DuplicateEstimateResponseDto>();
+  let extra = $state<IdenticalFilesExtraCopiesDto>();
+  let said = $state('');
+  let saving = $state(false);
+
   onMount(() => {
     getSummary({})
       .then((summary) => (groups = summary.queues.duplicates))
       .catch(() => (groups = null));
+    void (async () => {
+      try {
+        estimate = await getDuplicateEstimate({ maxDistances: ALIKE_CHOICES.map((choice) => choice.maxDistance) });
+      } catch {
+        // without an estimate the choices say only what each one means
+      }
+    })();
+    void (async () => {
+      try {
+        extra = await getIdenticalFilesExtraCopies();
+      } catch {
+        // the row is left out
+      }
+    })();
   });
+
+  const groupsFor = (maxDistance: number) =>
+    estimate?.choices.find((choice) => Math.abs(choice.maxDistance - maxDistance) < 1e-9)?.groups;
+
+  const duration = $derived(estimate ? aboutDuration(estimate.seconds) : undefined);
+  const recompareTitle = $derived(
+    estimate && duration
+      ? $t('frameleaf_dupes_recompare_estimate_title', {
+          values: { count: estimate.comparable, duration: $t(duration.key, { values: duration.values }) },
+        })
+      : $t('frameleaf_dupes_recompare_title'),
+  );
+
+  /** Save "How alike", then compare every photo again tonight or now. */
+  const saveAndCompare = async (when: DuplicateRecompareWhen) => {
+    saving = true;
+    try {
+      if (!(await settingsDraft.saveKeys(['machineLearning', 'libraryCare']))) {
+        return;
+      }
+      await recompareDuplicates({ duplicateRecompareDto: { when } });
+      said =
+        when === DuplicateRecompareWhen.Now && duration
+          ? $t('frameleaf_dupes_recompare_said_now', {
+              values: { duration: $t(duration.key, { values: duration.values }) },
+            })
+          : when === DuplicateRecompareWhen.Now
+            ? $t('frameleaf_dupes_recompare_said_now_unknown')
+            : $t('frameleaf_dupes_recompare_said_tonight');
+    } catch (error) {
+      handleError(error, $t('frameleaf_dupes_recompare_failed'));
+    } finally {
+      saving = false;
+    }
+  };
+
+  const storeOnce = async () => {
+    try {
+      await checkIdenticalFiles();
+      said = $t('frameleaf_dupes_extra_started');
+    } catch (error) {
+      handleError(error, $t('frameleaf_dupes_extra_failed'));
+    }
+  };
 
   const waiting = $derived(looking && groups ? groups : 0);
 
@@ -113,16 +192,20 @@
     }
   };
 
-  const alikeHelp = $derived(
-    alike === 'custom'
-      ? $t('frameleaf_dupes_how_alike_custom_help', { values: { distance: dupes.maxDistance } })
-      : $t(`frameleaf_dupes_how_alike_${alike}_help` as Translations),
-  );
+  const alikeHelp = $derived.by(() => {
+    if (alike === 'custom') {
+      return $t('frameleaf_dupes_how_alike_custom_help', { values: { distance: dupes.maxDistance } });
+    }
+    const help = $t(`frameleaf_dupes_how_alike_${alike}_help` as Translations);
+    const count = groupsFor(dupes.maxDistance);
+    return count === undefined ? help : `${help} ${$t('frameleaf_dupes_how_alike_groups', { values: { count } })}`;
+  });
 
   const advancedOpen = $derived(page.url.searchParams.get('section') === 'advanced-duplicate-matching');
 </script>
 
 <KitPage>
+  <Said message={said} onDismiss={() => (said = '')} />
   <Hero
     tone={waiting > 0 ? 'warn' : 'good'}
     icon={hero.icon}
@@ -176,6 +259,20 @@
         },
       ]}
     />
+    {#if extra}
+      <Row
+        label={$t('frameleaf_dupes_extra')}
+        help={extra.files > 0
+          ? $t('frameleaf_dupes_extra_found', {
+              values: { files: extra.files, contents: extra.contents, size: formatBytes(extra.bytes) },
+            })
+          : $t('frameleaf_dupes_extra_none')}
+      >
+        {#if extra.files > 0}
+          <Button {disabled} onclick={storeOnce}>{$t('frameleaf_dupes_extra_store')}</Button>
+        {/if}
+      </Row>
+    {/if}
   </Section>
 
   <Section title={$t('frameleaf_dupes_alike')} description={$t('frameleaf_dupes_alike_description')}>
@@ -221,11 +318,14 @@
         />
       </Row>
       {#if distanceChanged}
-        <Notice tone="warn" title={$t('frameleaf_dupes_recompare_title')}>
-          {$t('frameleaf_dupes_recompare_body')}
+        <Notice tone="warn" title={recompareTitle}>
+          {$t('frameleaf_dupes_recompare_estimate_body')}
           {#snippet action()}
-            <Button onclick={() => goto(commandCenterUrl('processing', 'queues'))}>
-              {$t('frameleaf_dupes_background_work')}
+            <Button disabled={saving || disabled} onclick={() => saveAndCompare(DuplicateRecompareWhen.Tonight)}>
+              {$t('frameleaf_dupes_recompare_tonight')}
+            </Button>
+            <Button disabled={saving || disabled} onclick={() => saveAndCompare(DuplicateRecompareWhen.Now)}>
+              {$t('frameleaf_dupes_recompare_now')}
             </Button>
             <Button
               onclick={() => (settingsDraft.draft.machineLearning.duplicateDetection.maxDistance = saved.maxDistance)}

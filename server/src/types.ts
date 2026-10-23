@@ -1512,6 +1512,9 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;
+  [SystemMetadataKey.IntegrityCheckHistory]: { entries: IntegrityCheckHistoryEntry[] };
+  [SystemMetadataKey.IntegrityCheckStop]: { requestedAt: string };
+  [SystemMetadataKey.DuplicateRecompare]: { requestedAt: string };
   [SystemMetadataKey.BackupRestoreVerification]: BackupRestoreVerification;
   [SystemMetadataKey.BackupSequence]: BackupSequenceState;
   [SystemMetadataKey.ApiKeyLastUsed]: Record<string, string>;
@@ -1550,6 +1553,21 @@ export type BackupRestoreVerification = {
  */
 export type IntegrityCheckRun = { runId: string; startedAt: string; batches: number | null; done: number };
 export type IntegrityCheckRuns = Partial<Record<IntegrityReport, { lastRunAt?: string; current?: IntegrityCheckRun }>>;
+
+/**
+ * FL-520: one file check in "Recent checks". `completed`: it went through everything it had to look at;
+ * `paused`: the damage check reached its time or share limit and carries on next night; `stopped`: an
+ * administrator pressed Stop. `found` is how many findings its list held when it ended.
+ */
+export type IntegrityCheckHistoryEntry = {
+  type: IntegrityReport;
+  startedAt: string;
+  finishedAt: string;
+  outcome: 'completed' | 'paused' | 'stopped';
+  found: number;
+  /** Files looked at in this run, when the check counts them. */
+  checked: number | null;
+};
 
 export type UserPreferences = {
   /** FL-329: origin-rendered system text; device overrides are scoped to signed-in sessions. */

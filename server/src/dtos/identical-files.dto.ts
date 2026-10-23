@@ -128,6 +128,16 @@ const IdenticalFilesChangeSchema = z
   })
   .meta({ id: 'IdenticalFilesChangeDto' });
 
+/** FL-520: a quick count of extra copies on the drive, without reading any file. */
+const IdenticalFilesExtraCopiesSchema = z
+  .object({
+    files: z.int().nonnegative().describe('Extra files on the drive that hold the same content as another'),
+    contents: z.int().nonnegative().describe('Photos and videos those extra files are copies of'),
+    bytes: z.int().nonnegative().describe('Space the extra files take'),
+  })
+  .meta({ id: 'IdenticalFilesExtraCopiesDto' });
+
+export class IdenticalFilesExtraCopiesDto extends createZodDto(IdenticalFilesExtraCopiesSchema) {}
 export class IdenticalFilesStatusDto extends createZodDto(IdenticalFilesStatusSchema) {}
 export class IdenticalFilesChangeDto extends createZodDto(IdenticalFilesChangeSchema) {}
 
