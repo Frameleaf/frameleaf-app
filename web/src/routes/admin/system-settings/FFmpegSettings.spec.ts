@@ -109,6 +109,24 @@ describe('Video playback copies (FL-366)', () => {
     ).toBeInTheDocument();
   });
 
+  it('says how many videos have a copy and the space they take (FL-521)', async () => {
+    sdkMock.getMediaCopies.mockResolvedValue({
+      photos: 3000,
+      withoutPreview: 0,
+      videos: 3350,
+      withCopy: 390,
+      previewsBytes: null,
+      playbackBytes: 52_000_000_000,
+      measuredAt: '2026-10-22T03:00:00.000Z',
+      tonight: [],
+    });
+    draft.store = newStore();
+    render(FFmpegSettings);
+
+    const status = within(screen.getByRole('region', { name: 'Playback copy status' }));
+    expect(await status.findByText(/390 of your 3,350 videos have one, taking 52 GB/)).toBeInTheDocument();
+  });
+
   it('reads numbers that match no choice as Custom', () => {
     draft.store = newStore({ targetResolution: '480', crf: 23 });
     render(FFmpegSettings);

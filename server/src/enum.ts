@@ -632,6 +632,10 @@ export enum SystemMetadataKey {
   FrameleafRecoveryMlAuthority = 'frameleaf-recovery-ml-authority',
   /** FL-81 (CC-21): when each integrity check last ran in full, for "Last run …" in Maintenance. */
   IntegrityCheckRuns = 'integrity-check-runs',
+  /** FL-521: counts of what each reading feature has done, a few hours of readings, for "N an hour". */
+  LibraryProgressSamples = 'library-progress-samples',
+  /** FL-521: work to start again over every photo in the next overnight run ("Save and … tonight"). */
+  OvernightRedo = 'overnight-redo',
   /**
    * FL-71 (CC-9): when an administrator last proved a backup restores: the database (metadata) and
    * the original files, each recorded separately, and who recorded it.
