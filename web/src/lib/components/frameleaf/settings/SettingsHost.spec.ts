@@ -461,7 +461,7 @@ describe('the Command Center (FL-71)', () => {
 
   describe('the Viewing scope (design review finding 65)', () => {
     it('offers the picker only where the page reads it', async () => {
-      open('/user-settings?area=overview');
+      open('/user-settings?area=analytics');
       const { unmount } = render(SettingsHost, { sections });
       expect(await screen.findByRole('combobox', { name: 'Account or library scope' })).toBeInTheDocument();
       unmount();

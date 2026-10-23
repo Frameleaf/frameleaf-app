@@ -318,7 +318,8 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   },
   {
     pattern: 'libraryCare.healthScanCronExpression',
-    kind: 'control',
+    // FL-363: the overnight schedule starts the checks; this stored start no longer does
+    kind: 'api-only',
     file: 'src/lib/components/frameleaf/settings/care/FileChecks.svelte',
     evidence: 'libraryCare.healthScanCronExpression',
   },
@@ -578,7 +579,8 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   },
   {
     pattern: 'integrityChecks.checksumFiles.cronExpression',
-    kind: 'control',
+    // FL-363: the overnight schedule starts the checks; this stored start no longer does
+    kind: 'api-only',
     file: 'src/lib/components/frameleaf/settings/care/FileChecks.svelte',
     evidence: 'checksumFiles.cronExpression',
   },
@@ -602,7 +604,8 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   },
   {
     pattern: 'integrityChecks.missingFiles.cronExpression',
-    kind: 'control',
+    // FL-363: the overnight schedule starts the checks; this stored start no longer does
+    kind: 'api-only',
     file: 'src/lib/components/frameleaf/settings/care/FileChecks.svelte',
     evidence: 'missingFiles.cronExpression',
   },
@@ -614,7 +617,8 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   },
   {
     pattern: 'integrityChecks.untrackedFiles.cronExpression',
-    kind: 'control',
+    // FL-363: the overnight schedule starts the checks; this stored start no longer does
+    kind: 'api-only',
     file: 'src/lib/components/frameleaf/settings/care/FileChecks.svelte',
     evidence: 'untrackedFiles.cronExpression',
   },
@@ -1045,41 +1049,72 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     file: 'src/routes/admin/system-settings/NewVersionCheckSettings.svelte',
     evidence: 'check.frequency = ',
   },
+  // FL-363: Computers & background work › Overnight schedule.
   {
     pattern: 'nightlyTasks.clusterNewFaces',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/NightlyTasksSettings.svelte',
-    evidence: 'nightlyTasks.clusterNewFaces',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: "'clusterNewFaces'",
   },
   {
     pattern: 'nightlyTasks.databaseCleanup',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/NightlyTasksSettings.svelte',
-    evidence: 'nightlyTasks.databaseCleanup',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: 'nightly.databaseCleanup',
+  },
+  {
+    pattern: 'nightlyTasks.days',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: 'nightly.days',
+  },
+  {
+    pattern: 'nightlyTasks.emptyTrash',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: "'emptyTrash'",
   },
   {
     pattern: 'nightlyTasks.generateMemories',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/NightlyTasksSettings.svelte',
-    evidence: 'nightlyTasks.generateMemories',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: "'generateMemories'",
   },
   {
     pattern: 'nightlyTasks.missingThumbnails',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/NightlyTasksSettings.svelte',
-    evidence: 'nightlyTasks.missingThumbnails',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: "'missingThumbnails'",
   },
   {
     pattern: 'nightlyTasks.startTime',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/NightlyTasksSettings.svelte',
-    evidence: 'nightlyTasks.startTime',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: "'startTime'",
+  },
+  {
+    pattern: 'nightlyTasks.steps.*',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: '[id]: event.currentTarget.value as OvernightStepTiming',
+  },
+  {
+    pattern: 'nightlyTasks.stopTime',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: 'nightly.stopTime',
   },
   {
     pattern: 'nightlyTasks.syncQuotaUsage',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/NightlyTasksSettings.svelte',
-    evidence: 'nightlyTasks.syncQuotaUsage',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: "'syncQuotaUsage'",
+  },
+  {
+    pattern: 'nightlyTasks.weeklyDay',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: 'nightly.weeklyDay',
   },
   {
     pattern: 'notifications.smtp.enabled',

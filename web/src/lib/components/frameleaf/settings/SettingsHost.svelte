@@ -40,7 +40,7 @@
   import CloudLanding from '$lib/components/frameleaf/settings/cloud/CloudLanding.svelte';
   import WhoCanSignInLanding from '$lib/components/frameleaf/settings/security/WhoCanSignInLanding.svelte';
   import YourSignInLanding from '$lib/components/frameleaf/settings/security/YourSignInLanding.svelte';
-  import CommandCenterOverview from '$lib/components/frameleaf/settings/CommandCenterOverview.svelte';
+  import Overview from '$lib/components/frameleaf/settings/overview/Overview.svelte';
   import { ownPreferencesPending } from '$lib/components/frameleaf/settings/own-preferences-pending.svelte';
   import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';
   import SettingsDirectory, { type DirectoryRow } from '$lib/components/frameleaf/settings/SettingsDirectory.svelte';
@@ -367,6 +367,8 @@
     'storage-template',
     'trash',
     'migration',
+    // FL-363: the Overnight schedule draws its own kit cards.
+    'nightly-tasks',
     // FL-155..FL-158: the Frameleaf Cloud pages draw their own cards (frameleaf-cloud.css:3-7).
     'cloud-account',
     'cloud-plan',
@@ -966,7 +968,7 @@
                 </div>
               {/if}
               {#if area === 'overview'}
-                <CommandCenterOverview />
+                <Overview />
               {:else if area === 'backups' && backupPage}
                 <BackupArea page={backupPage} />
               {:else if area === 'history'}

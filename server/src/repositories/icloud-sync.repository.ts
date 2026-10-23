@@ -665,6 +665,35 @@ export class ICloudSyncRepository {
       .execute(this.db)
       .then((result) => result.rows);
   }
+  /**
+   * FL-363: the connections the overnight step checks: every connected one that is not waiting out a
+   * back-off and has no run in progress, however recently it last ran.
+   */
+  async overnightConnections(): Promise<Array<{ id: string; ownerId: string }>> {
+    return sql<{ id: string; ownerId: string }>`SELECT c.id, c."ownerId" FROM public.icloud_connection c
+      WHERE c.state = 'connected' AND c."encryptedSession" IS NOT NULL AND c."lastError" IS DISTINCT FROM 'owner_removed'
+        AND (c."nextRunAt" IS NULL OR c."nextRunAt" <= now())
+        AND NOT EXISTS (SELECT 1 FROM media_operation o WHERE o."ownerId" = c."ownerId"
+          AND o.kind = ${MediaOperationKind.ICloudSync} AND o.snapshot->>'connectionId' = c.id::text
+          AND o.status = ANY(${[...ACTIVE_MEDIA_OPERATION_STATUSES]}::text[]))
+      ORDER BY c.id LIMIT 100`
+      .execute(this.db)
+      .then((result) => result.rows);
+  }
+  /** FL-363: whether an iCloud Photos connection exists that the overnight step would check. */
+  async hasConnections(): Promise<boolean> {
+    const { rows } = await sql<{ found: boolean }>`SELECT EXISTS (SELECT 1 FROM public.icloud_connection c
+      WHERE c.state = 'connected' AND c."encryptedSession" IS NOT NULL) found`.execute(this.db);
+    return rows[0]?.found ?? false;
+  }
+  /** FL-363: whether any iCloud Photos run, other than an identity audit, is still in progress. */
+  async hasActiveSync(): Promise<boolean> {
+    const { rows } = await sql<{ found: boolean }>`SELECT EXISTS (SELECT 1 FROM media_operation o
+      WHERE o.kind = ${MediaOperationKind.ICloudSync}
+        AND o.snapshot->>'task' IS DISTINCT FROM 'identity-audit' AND o.snapshot->>'task' IS DISTINCT FROM 'identity-audit-weekly'
+        AND o.status = ANY(${[...ACTIVE_MEDIA_OPERATION_STATUSES]}::text[])) found`.execute(this.db);
+    return rows[0]?.found ?? false;
+  }
   /** The connection's newest run, or its unfinished one when `activeOnly` (FL-68). Owner-scoped. */
   async latestOperation(
     connectionId: string,

@@ -33,7 +33,13 @@ const setup = () => {
   const mocks = {
     logger: { setContext: vi.fn(), warn: vi.fn(), log: vi.fn(), debug: vi.fn(), error: vi.fn() },
     config: { getEnv: () => ({}) },
-    metadata: { get: vi.fn((key: SystemMetadataKey) => Promise.resolve(metadata[key])) },
+    metadata: {
+      get: vi.fn((key: SystemMetadataKey) => Promise.resolve(metadata[key])),
+      set: vi.fn((key: SystemMetadataKey, value: unknown) => {
+        metadata[key] = value;
+        return Promise.resolve();
+      }),
+    },
     storage: {
       checkDiskUsage: vi.fn().mockResolvedValue({ available: 600 * GB, free: 600 * GB, total: 1000 * GB }),
       // The server names each copy after its own clock: this one was made early this morning.
@@ -91,7 +97,19 @@ describe(AttentionService.name, () => {
         { kind: 'work', state: 'ok' },
         { kind: 'version', state: 'ok' },
       ],
+      dismissed: [],
     });
+  });
+
+  it('keeps a dismissed Overview item for every administrator, and brings it back (FL-363)', async () => {
+    const { sut } = setup();
+
+    await expect(sut.setDismissed({ id: 'studio', dismissed: true })).resolves.toEqual(
+      expect.objectContaining({ dismissed: ['studio'] }),
+    );
+    await expect(sut.setDismissed({ id: 'studio', dismissed: false })).resolves.toEqual(
+      expect.objectContaining({ dismissed: [] }),
+    );
   });
 
   it('reads the drive the library is on', async () => {

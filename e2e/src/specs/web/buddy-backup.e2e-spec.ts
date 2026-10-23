@@ -10,8 +10,6 @@ import { utils } from 'src/utils.js';
  */
 const backupUrl = '/user-settings?area=backups';
 const pages = ['Overview', 'Schedule', 'Restore'];
-const hostingPrivacy =
-  'Hosting is encrypted storage only. Your buddy’s photos, albums and filenames never appear in your library.';
 const screens = [
   { name: 'desktop-dark', viewport: { width: 1440, height: 1000 }, theme: 'dark' },
   { name: 'desktop-light', viewport: { width: 1440, height: 1000 }, theme: 'light' },
@@ -54,21 +52,6 @@ const recordScreen = async (page: Page, info: TestInfo, name: string, selector: 
   ).toEqual([]);
 };
 
-const expectSummary = async (page: Page) => {
-  const summary = page.getByRole('region', { name: 'Backup & hosting', exact: true });
-  await expect(summary).toHaveAttribute('aria-busy', 'false');
-  await expect(summary.getByRole('alert')).toHaveCount(0);
-  await expect(summary.getByRole('link', { name: /^My backup · outgoing/ })).toContainText('Not paired');
-  const incoming = summary.getByRole('link', { name: /^Hosting for my buddy · incoming/ });
-  await expect(incoming).toContainText('Not configured');
-  await expect(incoming).toContainText('0 B encrypted');
-  await expect(summary.getByRole('link', { name: /^Cloud Backup/ })).toContainText('Not configured');
-  await expect(summary.getByText(hostingPrivacy, { exact: true })).toBeVisible();
-  await expect(summary.locator('img, video, canvas')).toHaveCount(0);
-  await incoming.scrollIntoViewIfNeeded();
-  return summary;
-};
-
 test.describe('Buddy Backup production Command Center (FL-310)', () => {
   let admin: LoginResponseDto;
 
@@ -105,10 +88,11 @@ test.describe('Buddy Backup production Command Center (FL-310)', () => {
       await page.goto('/user-settings?area=overview');
       await expect(page.getByRole('heading', { level: 1, name: 'Overview', exact: true })).toBeVisible();
       await setTheme(page, screen.theme);
-      const summary = await expectSummary(page);
-      await recordScreen(page, info, `${screen.name}-overview`, '.backup-summary');
+      // FL-363: the Overview names Backup once, as a row of "What was checked" that opens it.
+      await expect(page.getByRole('region', { name: 'Backup & hosting', exact: true })).toHaveCount(0);
+      await recordScreen(page, info, `${screen.name}-overview`, '.kit-page');
 
-      const openBackup = summary.getByRole('link', { name: 'Open Backup', exact: true });
+      const openBackup = page.getByRole('link', { name: 'Open Backup', exact: true }).first();
       await openBackup.focus();
       await openBackup.press('Enter');
       await expect(page).toHaveURL(backupUrl);
@@ -220,14 +204,10 @@ test.describe('Buddy Backup production Command Center (FL-310)', () => {
         .getByRole('button', { name: 'Library analytics', exact: true })
         .click();
       await expect(page.getByRole('heading', { level: 1, name: 'Library analytics', exact: true })).toBeVisible();
-      const analytics = await expectSummary(page);
-      await expect(analytics).toContainText(
-        'Server-wide operational snapshot. Independent of the library filters above.',
-      );
-      await expect(analytics).toContainText('Historical transfer totals are not recorded.');
-      await recordScreen(page, info, `${screen.name}-analytics`, '.backup-summary');
-      await analytics.getByRole('button', { name: 'Refresh', exact: true }).scrollIntoViewIfNeeded();
-      await recordScreen(page, info, `${screen.name}-analytics-details`, '.backup-summary');
+      // FL-363: Library analytics links to Backup instead of keeping a copy of its status.
+      await expect(page.getByRole('region', { name: 'Backup & hosting', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('link', { name: 'Open Backup', exact: true })).toHaveAttribute('href', backupUrl);
+      await recordScreen(page, info, `${screen.name}-analytics`, '.analytics');
     });
   }
 

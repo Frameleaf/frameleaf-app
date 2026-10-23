@@ -908,6 +908,12 @@
   "nightlyTasks.databaseCleanup": {
     "type": "boolean"
   },
+  "nightlyTasks.days": {
+    "type": "array"
+  },
+  "nightlyTasks.emptyTrash": {
+    "type": "boolean"
+  },
   "nightlyTasks.generateMemories": {
     "type": "boolean"
   },
@@ -917,8 +923,48 @@
   "nightlyTasks.startTime": {
     "type": "string"
   },
+  "nightlyTasks.steps.cleanup": {
+    "type": "string",
+    "enum": [
+      "nightly",
+      "weekly",
+      "manual"
+    ]
+  },
+  "nightlyTasks.steps.fileChecks": {
+    "type": "string",
+    "enum": [
+      "nightly",
+      "weekly",
+      "manual"
+    ]
+  },
+  "nightlyTasks.steps.folders": {
+    "type": "string",
+    "enum": [
+      "nightly",
+      "weekly",
+      "manual"
+    ]
+  },
+  "nightlyTasks.steps.icloud": {
+    "type": "string",
+    "enum": [
+      "nightly",
+      "weekly",
+      "manual"
+    ]
+  },
+  "nightlyTasks.stopTime": {
+    "type": "unknown"
+  },
   "nightlyTasks.syncQuotaUsage": {
     "type": "boolean"
+  },
+  "nightlyTasks.weeklyDay": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 6
   },
   "notifications.smtp.enabled": {
     "type": "boolean"

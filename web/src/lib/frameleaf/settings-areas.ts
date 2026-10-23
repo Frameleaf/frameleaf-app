@@ -406,11 +406,11 @@ export const presentedAreaForSection = (sectionKey: string): SettingsAreaId | un
 };
 
 /**
- * Areas whose pages read the "Viewing" scope (`?scope=`): Overview, Library analytics, Library care
- * and the Job manager. Everywhere else a setting applies to the whole server, so the picker is not
- * offered there (design review finding 65).
+ * Areas whose pages read the "Viewing" scope (`?scope=`): Library analytics, Library care and the Job
+ * manager. Everywhere else a setting applies to the whole server, so the picker is not offered there
+ * (design review finding 65). The Overview (FL-363) answers for the whole server only.
  */
-export const SCOPED_AREAS: readonly SettingsAreaId[] = Object.freeze(['overview', 'analytics', 'care']);
+export const SCOPED_AREAS: readonly SettingsAreaId[] = Object.freeze(['analytics', 'care']);
 export const honoursScope = (area: SettingsAreaId, section?: string | null) =>
   SCOPED_AREAS.includes(area) || (area === 'processing' && section === 'queues');
 

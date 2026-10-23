@@ -33,30 +33,14 @@ describe(IntegrityService.name, () => {
       mocks.cron.update.mockReturnValue();
     });
 
-    it('stops the scheduled reference checks while the audit is off, keeping the checksum check', async () => {
-      await sut.onConfigInit({ newConfig: config(false) });
-
-      expect(mocks.cron.create).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'integrityUntrackedFiles', start: false }),
-      );
-      expect(mocks.cron.create).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'integrityMissingFiles', start: false }),
-      );
-      expect(mocks.cron.create).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'integrityChecksumFiles', start: true }),
-      );
-    });
-
-    it('runs each reference check on its own switch while the audit is on', async () => {
+    it('starts none of the checks on a timer of its own: the overnight schedule runs them (FL-363)', async () => {
       await sut.onConfigInit({ newConfig: config(true) });
       sut.onConfigUpdate({ newConfig: config(false) } as never);
 
-      expect(mocks.cron.create).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'integrityMissingFiles', start: true }),
-      );
-      expect(mocks.cron.update).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'integrityMissingFiles', start: false }),
-      );
+      for (const name of ['integrityUntrackedFiles', 'integrityMissingFiles', 'integrityChecksumFiles']) {
+        expect(mocks.cron.create).toHaveBeenCalledWith(expect.objectContaining({ name, start: false }));
+        expect(mocks.cron.update).toHaveBeenCalledWith(expect.objectContaining({ name, start: false }));
+      }
     });
   });
 

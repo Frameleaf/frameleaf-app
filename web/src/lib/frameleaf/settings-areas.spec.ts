@@ -151,7 +151,7 @@ describe('Frameleaf settings areas', () => {
   });
 
   it('offers the Viewing scope only where a page reads it (design review finding 65)', () => {
-    expect(honoursScope('overview')).toBe(true);
+    expect(honoursScope('overview')).toBe(false);
     expect(honoursScope('analytics')).toBe(true);
     expect(honoursScope('care', 'repair')).toBe(true);
     expect(honoursScope('processing', 'queues')).toBe(true);

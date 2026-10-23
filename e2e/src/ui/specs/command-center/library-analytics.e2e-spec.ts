@@ -235,7 +235,12 @@ test.describe('Library analytics dashboard', () => {
     const hero = page.getByRole('region', { name: 'Library at a glance' });
     await expect(hero.getByText('Your library')).toBeVisible();
     await expect(hero.getByText('8 years')).toBeVisible();
-    for (const tile of ['Added in this period', 'Volume used', 'Saved by deduplication', 'Photos · videos']) {
+    for (const tile of [
+      'Added in this period',
+      'Storage used',
+      'Saved by keeping identical files once',
+      'Photos · videos',
+    ]) {
       await expect(hero.getByText(tile)).toBeVisible();
     }
     for (const id of ['years', 'punchcard', 'lenses', 'focal-lengths', 'orientation', 'places']) {
@@ -257,7 +262,13 @@ test.describe('Library analytics dashboard', () => {
     expect(await tableTotal(page, 'cameras')).toBe(96);
     // the whole-server report splits the volume by what the server measured
     const legend = page.locator('[data-panel="storage"] .an-legend');
-    for (const part of ['Originals', 'Previews & thumbnails', 'Encoded video', 'Database', 'Other files']) {
+    for (const part of [
+      'Your photos and videos',
+      'Thumbnails',
+      'Videos made for playback',
+      'Library data',
+      'Other files on this drive',
+    ]) {
       await expect(legend.getByText(part, { exact: true })).toBeVisible();
     }
     expect(await tableTotal(page, 'volume-parts')).toBe(600_000);

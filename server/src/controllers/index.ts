@@ -66,6 +66,7 @@ import { MlDestinationController } from 'src/controllers/ml-destination.controll
 import { NotificationAdminController } from 'src/controllers/notification-admin.controller.js';
 import { NotificationController } from 'src/controllers/notification.controller.js';
 import { OAuthController } from 'src/controllers/oauth.controller.js';
+import { OvernightController } from 'src/controllers/overnight.controller.js';
 import { PartnerController } from 'src/controllers/partner.controller.js';
 import { PersonController } from 'src/controllers/person.controller.js';
 import { PetController } from 'src/controllers/pet.controller.js';
@@ -158,6 +159,7 @@ export const controllers = [
   AssetMediaController,
   AssetRestorationController,
   AttentionController,
+  OvernightController,
   AuthController,
   AuthAdminController,
   AnalyticsController,
