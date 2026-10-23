@@ -527,6 +527,32 @@ describe(MediaOperationRepository.name, () => {
         .where('id', '=', id)
         .execute();
 
+    it('retries a resumable Frameleaf Cloud batch only when the runner says so', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const claimBatch = () =>
+        sut.claimNext({ kinds: [MediaOperationKind.CloudLibraryBatch], workerId: 'worker-a', leaseMs: LEASE_MS });
+      const cloud = {
+        kind: MediaOperationKind.CloudLibraryBatch,
+        destination: MediaOperationDestination.FrameleafCloud,
+      };
+      const failure = { error: 'Frameleaf Cloud is unavailable', errorCode: 'cloud_library_unavailable' };
+
+      const plain = await newOperation(sut, user.id, cloud);
+      await expect(sut.fail(plain.id, (await claimBatch())!.claimToken, failure, { retry: true })).resolves.toBe(
+        'failed',
+      );
+
+      const resumable = await newOperation(sut, user.id, cloud);
+      await expect(
+        sut.fail(resumable.id, (await claimBatch())!.claimToken, failure, { retry: true, resumable: true }),
+      ).resolves.toBe('retrying');
+      await expect(sut.getForOwner(resumable.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Queued,
+        autoRetries: 1,
+      });
+    });
+
     it('retries a failed job once, after the delay, and reports the second failure', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
