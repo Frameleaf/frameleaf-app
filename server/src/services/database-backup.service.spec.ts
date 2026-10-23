@@ -54,8 +54,24 @@ describe(DatabaseBackupService.name, () => {
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
     });
 
+    it('keeps a temporary file that another backup is still writing', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.backupEnabled);
+      mocks.storage.readdir.mockResolvedValue([
+        'frameleaf-db-backup-1-v1.sql.gz.tmp',
+        'frameleaf-db-backup-2-v1.sql.gz.tmp',
+      ]);
+      mocks.storage.stat.mockImplementation((path) =>
+        path.endsWith('1-v1.sql.gz.tmp')
+          ? Promise.resolve({ mtimeMs: Date.now() } as Stats)
+          : Promise.reject(Object.assign(new Error('gone'), { code: 'ENOENT' })),
+      );
+      await sut.cleanupDatabaseBackups();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
     it('should remove failed backup files', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.backupEnabled);
+      mocks.storage.stat.mockResolvedValue({ mtimeMs: 0 } as Stats);
       //`frameleaf-db-backup-${DateTime.now().toFormat("yyyyLLdd'T'HHmmss")}-v${serverVersion.toString()}-pg${databaseVersion.split(' ')[0]}.sql.gz.tmp`,
       mocks.storage.readdir.mockResolvedValue([
         'frameleaf-db-backup-123.sql.gz.tmp',
@@ -88,6 +104,7 @@ describe(DatabaseBackupService.name, () => {
 
     it('should remove old backup files over keepLastAmount and failed backups', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.backupEnabled);
+      mocks.storage.stat.mockResolvedValue({ mtimeMs: 0 } as Stats);
       mocks.storage.readdir.mockResolvedValue([
         `frameleaf-db-backup-${DateTime.fromISO('2025-07-25T11:02:16Z').toFormat("yyyyLLdd'T'HHmmss")}-v1.234.5-pg19.1.sql.gz.tmp`,
         `frameleaf-db-backup-${DateTime.fromISO('2025-07-27T11:01:16Z').toFormat("yyyyLLdd'T'HHmmss")}-v1.234.5-pg19.1.sql.gz`,

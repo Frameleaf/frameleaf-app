@@ -8,7 +8,7 @@ import {
 import { NoResultError, type Transaction, sql } from 'kysely';
 import { createHash } from 'node:crypto';
 import { lstat, readFile, readdir, rm } from 'node:fs/promises';
-import { join, sep } from 'node:path';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import { coerce, gt } from 'semver';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { BuddyRestoreDto } from 'src/dtos/buddy-backup.dto.js';
@@ -941,6 +941,33 @@ export class BuddyBackupRestoreService {
     }
   }
 
+  /** Files of external assets that live in the folders of a library marked read-only (FL-490). */
+  private async readOnlyLibraryFiles(manifest: BuddyManifest, files: CloudBackupRestoreFile[]) {
+    const libraryIds = [
+      ...new Set(
+        files.flatMap((file) => {
+          const link = manifest.assetLinks?.[file.assetId!];
+          return link?.isExternal && link.libraryId ? [link.libraryId] : [];
+        }),
+      ),
+    ];
+    if (libraryIds.length === 0) return [];
+    const libraries = await this.repository.db
+      .selectFrom('library')
+      .select(['id', 'importPaths'])
+      .where('id', 'in', libraryIds)
+      .where('readOnly', '=', true)
+      .execute();
+    return files.filter((file) => {
+      const link = manifest.assetLinks?.[file.assetId!];
+      const library = link?.isExternal ? libraries.find(({ id }) => id === link.libraryId) : undefined;
+      return library?.importPaths.some((folder) => {
+        const path = relative(folder, file.target);
+        return path !== '' && !path.startsWith('..') && !isAbsolute(path);
+      });
+    });
+  }
+
   private async verifyFiles(operationId: string, files: CloudBackupRestoreFile[]) {
     const evidence = new Map<string, { identity: string; sha256: string; size: string }>();
     for (const file of files) {
@@ -1134,11 +1161,22 @@ export class BuddyBackupRestoreService {
         plan.files.sort((a, b) => compareCodeUnits(a.fileKey, b.fileKey));
         if (plan.files.some((file) => !file.inPlace))
           throw new Error('Restore the original storage mounts before restoring these items.');
+        // FL-490: a read-only library's folder is never written, not even a staged copy. Its files
+        // must already be there; the restore then only puts the library details back.
+        const readOnly = job.admin ? await this.readOnlyLibraryFiles(manifest, plan.files) : [];
+        for (const file of readOnly) {
+          const evidence = await captureOwnerRestoreFile(file.target, async (path) =>
+            (await this.crypto.hashFile(path, 'sha256')).toString('hex'),
+          );
+          if (!evidence.identity || (job.request.mode === 'replace' && evidence.sha256 !== file.sha256))
+            throw new Error('A file in a read-only library is missing or changed. Put it back, then restore again.');
+          await this.recordFile(operation.id, file, job.request.mode === 'keep');
+        }
         const restorer = new CloudBackupRestorer(null, this.storage, this.crypto, this.logger);
         const done = await restorer.restore({
           manifest: manifest.library,
           scope: 'asset',
-          files: plan.files,
+          files: plan.files.filter((file) => !readOnly.includes(file)),
           destination: null,
           stageBesideTarget: true,
           read: async (_key, path, sha256) => {
