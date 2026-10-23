@@ -1975,6 +1975,8 @@ export type AdminConfigTrashDto = {
 export type AdminConfigUserDto = {
     /** Delete delay */
     deleteDelay: number;
+    /** Space each new account starts with, in GB (1 GB = 1,000,000,000 bytes); null is no limit */
+    newUserStorageQuota?: number | null;
 };
 export type AdminConfigDto = {
     analytics?: AdminConfigAnalyticsDto;
@@ -2466,6 +2468,46 @@ export type LibraryMovePauseStatusDto = {
     pausedAt: string | null;
     /** Write requests still being answered */
     writesInFlight: number;
+};
+export type LibraryFeatureProgressDto = {
+    /** Photos and videos this feature has read */
+    done: number;
+    feature: LibraryProgressFeature;
+    /** Photos read an hour lately, or null until it has been measured */
+    perHour: number | null;
+    /** About how long the rest takes at that rate, or null when not known */
+    secondsLeft: number | null;
+    /** Photos and videos this feature reads */
+    total: number;
+};
+export type LibraryProgressResponseDto = {
+    features: LibraryFeatureProgressDto[];
+    /** The start of the period the rate is measured over */
+    measuredSince: string | null;
+};
+export type MediaCopiesResponseDto = {
+    /** When the space was last measured */
+    measuredAt: string | null;
+    photos: number;
+    /** Space playback copies take, when measured */
+    playbackBytes: number | null;
+    /** Space thumbnails and previews take, when measured */
+    previewsBytes: number | null;
+    /** Work waiting for the next overnight run */
+    tonight: LibraryRedoQueue[];
+    videos: number;
+    /** Videos with a playback copy */
+    withCopy: number;
+    /** Photos and videos without a preview yet */
+    withoutPreview: number;
+};
+export type LibraryRedoDto = {
+    queue: LibraryRedoQueue;
+    when: LibraryRedoWhen;
+};
+export type LibraryRedoResponseDto = {
+    /** Work waiting for the next overnight run */
+    tonight: LibraryRedoQueue[];
 };
 export type LicenseEntitlementsDto = {
     cloudBackup: boolean;
@@ -16265,6 +16307,20 @@ export type CreateProfileImageResponseDto = {
     /** User ID */
     userId: string;
 };
+export type UtilitiesSummaryResponseDto = {
+    /** Photos whose original file is damaged, across the server; null unless an administrator asks */
+    damagedFiles: number | null;
+    /** Groups of look-alike photos waiting for a decision */
+    duplicateGroups: number;
+    /** Photos whose original file is missing, across the server; null unless an administrator asks */
+    missingFiles: number | null;
+    /** Combined size of those unused originals, in bytes; null unless an administrator asks */
+    unusedBytes: number | null;
+    /** Originals no library uses any more; null unless an administrator asks */
+    unusedFiles: number | null;
+    /** Photos and videos on the timeline with no place */
+    withoutPlace: number;
+};
 export type FolderSummaryResponseDto = {
     /** Originals directly in this folder */
     count: number;
@@ -18258,6 +18314,8 @@ export type TrashEveryoneQueryDto = {
     days?: number;
 };
 export type TrashItemsDto = {
+    /** Only items removed for good within this many days (FL-519). With the trash off, every item goes tonight */
+    goingWithinDays?: number;
     /** Page number, from 1 */
     page?: number;
     /** Words that must all appear in the file name */
@@ -19958,6 +20016,43 @@ export function resumeLibraryMovePause(opts?: Oazapfts.RequestOpts) {
         ...opts,
         method: "POST"
     }));
+}
+/**
+ * Get the reading progress
+ */
+export function getLibraryProgress(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryProgressResponseDto;
+    }>("/admin/library-progress", {
+        ...opts
+    }));
+}
+/**
+ * Get the previews and playback copies
+ */
+export function getMediaCopies(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaCopiesResponseDto;
+    }>("/admin/library-progress/media-copies", {
+        ...opts
+    }));
+}
+/**
+ * Start a feature again over every photo
+ */
+export function redoLibraryWork({ libraryRedoDto }: {
+    libraryRedoDto: LibraryRedoDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryRedoResponseDto;
+    }>("/admin/library-progress/redo", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: libraryRedoDto
+    })));
 }
 /**
  * Remove the licence key
@@ -31216,7 +31311,8 @@ export function emptyTrash(opts?: Oazapfts.RequestOpts) {
 /**
  * List trash items
  */
-export function getTrashItems({ page, query, size, sort, $type }: {
+export function getTrashItems({ goingWithinDays, page, query, size, sort, $type }: {
+    goingWithinDays?: number;
     page?: number;
     query?: string;
     size?: number;
@@ -31227,6 +31323,7 @@ export function getTrashItems({ page, query, size, sort, $type }: {
         status: 200;
         data: TrashItemsResponseDto;
     }>(`/trash/items${QS.query(QS.explode({
+        goingWithinDays,
         page,
         query,
         size,
@@ -31820,6 +31917,17 @@ export function getProfileImage({ id }: {
         status: 200;
         data: Blob;
     }>(`/users/${encodeURIComponent(id)}/profile-image`, {
+        ...opts
+    }));
+}
+/**
+ * Get what each utility has waiting
+ */
+export function getUtilitiesSummary(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UtilitiesSummaryResponseDto;
+    }>("/utilities/summary", {
         ...opts
     }));
 }
@@ -32685,6 +32793,23 @@ export enum IntegrityReport {
 export enum IntegrityUnreachableFolderKind {
     Storage = "storage",
     Library = "library"
+}
+export enum LibraryProgressFeature {
+    Search = "search",
+    Faces = "faces",
+    Text = "text",
+    Captions = "captions",
+    Locked = "locked"
+}
+export enum LibraryRedoQueue {
+    SmartSearch = "smartSearch",
+    FacialRecognition = "facialRecognition",
+    ThumbnailGeneration = "thumbnailGeneration",
+    VideoConversion = "videoConversion"
+}
+export enum LibraryRedoWhen {
+    Now = "now",
+    Tonight = "tonight"
 }
 export enum LicenseKind {
     Server = "server",
@@ -35779,6 +35904,7 @@ export enum TrashReviewAction {
     Empty = "empty"
 }
 export enum TrashItemSort {
+    Soonest = "soonest",
     Recent = "recent",
     Size = "size",
     Name = "name"

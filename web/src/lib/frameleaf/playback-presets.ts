@@ -65,6 +65,21 @@ export const applyPreviewQuality = (image: PreviewNumbers, quality: PreviewQuali
   writeCopy(image.preview, PREVIEW_SETS[quality].preview);
 };
 
+/**
+ * FL-521: roughly how much a copy weighs against another: its pixels, its quality number and its format
+ * (WebP is about a quarter smaller than JPEG at the same quality). Only ever used as a ratio.
+ */
+const copyWeight = (copy: ImageCopy) =>
+  copy.size ** 2 * (copy.quality / 80) * (copy.format === ImageFormat.Webp ? 0.75 : 1);
+const setWeight = (numbers: PreviewNumbers) => copyWeight(numbers.preview) + copyWeight(numbers.thumbnail);
+
+/**
+ * FL-521: about how much space previews would take with a choice, from the space they take now with the
+ * saved numbers. "About": the real size depends on the photos.
+ */
+export const previewSpaceFor = (bytes: number, saved: PreviewNumbers, quality: PreviewQuality) =>
+  Math.round((bytes * setWeight(PREVIEW_SETS[quality])) / setWeight(saved));
+
 export type PlaybackQuality = 'good' | 'better' | 'best';
 export const PLAYBACK_QUALITIES: readonly PlaybackQuality[] = ['good', 'better', 'best'];
 

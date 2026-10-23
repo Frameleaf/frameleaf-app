@@ -133,4 +133,40 @@ describe('Search and recognition progress (FL-366)', () => {
     await fireEvent.click(screen.getByRole('switch', { name: 'Redo only what changed' }));
     expect(store.draft.libraryCare?.incrementalEnrichment).toBe(false);
   });
+
+  it('says N of M read and about how long the rest takes (FL-521)', async () => {
+    sdkMock.getLibraryProgress.mockResolvedValue({
+      measuredSince: '2026-10-22T08:00:00.000Z',
+      features: [{ feature: 'search' as never, done: 1000, total: 4000, perHour: 1000, secondsLeft: 10_800 }],
+    });
+    newStore();
+    render(CareProgress, { pollMs: 60_000 });
+
+    expect(await screen.findByText('1,000 of 4,000 read')).toBeInTheDocument();
+    expect(row('Visual search').getByText('1,000 of 4,000 read')).toBeInTheDocument();
+    expect(row('Visual search').getByText('about 3 hours left')).toBeInTheDocument();
+  });
+
+  it('says the work is waiting for a computer and names it (FL-521)', async () => {
+    sdkMock.getLibraryProgress.mockResolvedValue({
+      measuredSince: null,
+      features: [{ feature: 'faces' as never, done: 10, total: 50, perHour: null, secondsLeft: null }],
+    });
+    sdkMock.getMlCapabilities.mockResolvedValue({
+      workloads: [
+        {
+          workload: 'face',
+          available: false,
+          routedDestinationId: 'office',
+          destinations: [{ id: 'office', kind: 'lan', name: 'Office PC', checkedAt: null } as never],
+        },
+      ],
+    } as never);
+    newStore();
+    render(CareProgress, { pollMs: 60_000 });
+
+    expect(await hero().findByRole('heading', { name: 'Waiting for Office PC' })).toBeInTheDocument();
+    expect(row('Faces & identity').getByText('Waiting for a computer')).toBeInTheDocument();
+    expect(hero().getByRole('button', { name: 'Open Computers' })).toBeInTheDocument();
+  });
 });

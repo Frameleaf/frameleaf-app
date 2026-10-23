@@ -1736,6 +1736,26 @@ describe(AuthService.name, () => {
       expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: 1_000_000_000 }));
     });
 
+    it('uses "Space for new people" when the provider sends no quota (FL-516)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        ...systemConfigStub.oauthWithStorageQuota,
+        user: { newUserStorageQuota: 200 },
+      });
+      mocks.oauth.getProfileAndOAuthSid.mockResolvedValue({ profile: OAuthProfileFactory.create({}) });
+      mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }));
+      mocks.user.getByEmail.mockResolvedValue(void 0);
+      mocks.user.create.mockResolvedValue(UserFactory.create({ oauthId: 'oauth-id' }));
+      mocks.session.create.mockResolvedValue(SessionFactory.create());
+
+      await sut.callback(
+        { url: 'http://immich/auth/login?code=abc123', state: 'xyz789', codeVerifier: 'foo' },
+        {},
+        loginDetails,
+      );
+
+      expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: 200_000_000_000 }));
+    });
+
     it('should ignore a negative quota', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthWithStorageQuota);
       mocks.oauth.getProfileAndOAuthSid.mockResolvedValue({

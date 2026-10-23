@@ -1358,7 +1358,18 @@ const AdminConfigSchemaWithVisibility = z
       })
       .meta({ id: 'AdminConfigServerDto' }),
     user: z
-      .object({ deleteDelay: z.int().min(1).describe('Delete delay').meta({ visibility: User }) })
+      .object({
+        deleteDelay: z.int().min(1).describe('Delete delay').meta({ visibility: User }),
+        // FL-516: "Space for new people", however an account is made: added by hand, invited through
+        // Frameleaf, or created by a sign-in provider. Decimal GB (D5); null is no limit.
+        newUserStorageQuota: z
+          .int()
+          .min(0)
+          .max(1_000_000)
+          .nullable()
+          .optional()
+          .describe('Space each new account starts with, in GB (1 GB = 1,000,000,000 bytes); null is no limit'),
+      })
       .meta({ id: 'AdminConfigUserDto' }),
     smartAlbums: AdminConfigSmartAlbumsSchema.default(smartAlbumsDefaults),
     frameleafCloud: AdminConfigFrameleafCloudSchema.default(frameleafCloudDefaults),
@@ -1890,6 +1901,7 @@ export const defaults = Object.freeze<SystemConfig>({
   },
   user: {
     deleteDelay: 7,
+    newUserStorageQuota: null,
   },
   smartAlbums: smartAlbumsDefaults,
   frameleafCloud: frameleafCloudDefaults,

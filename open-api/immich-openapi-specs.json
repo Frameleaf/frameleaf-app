@@ -6682,6 +6682,157 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/library-progress": {
+      "get": {
+        "description": "For Visual search, Faces, Text in photos, Descriptions and Locked detection: how many photos and videos are read of how many, how many an hour lately, and about how long the rest takes.",
+        "operationId": "getLibraryProgress",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryProgressResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the reading progress",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/library-progress/media-copies": {
+      "get": {
+        "description": "How many photos have no preview yet, how many videos have a playback copy, the space previews and playback copies take (as last measured), and what waits for tonight.",
+        "operationId": "getMediaCopies",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaCopiesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the previews and playback copies",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/library-progress/redo": {
+      "post": {
+        "description": "Read every photo again for Visual search, group faces again, rebuild previews or remake playback copies: now, or in the next overnight run.",
+        "operationId": "redoLibraryWork",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryRedoDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryRedoResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start a feature again over every photo",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/license": {
       "delete": {
         "description": "Removes the supporter key from this server, deactivating it with Frameleaf Cloud when reachable. A Frameleaf Cloud plan is not affected.",
@@ -53345,6 +53496,17 @@
         "operationId": "getTrashItems",
         "parameters": [
           {
+            "name": "goingWithinDays",
+            "required": false,
+            "in": "query",
+            "description": "Only items removed for good within this many days (FL-519). With the trash off, every item goes tonight",
+            "schema": {
+              "minimum": 0,
+              "maximum": 36500,
+              "type": "integer"
+            }
+          },
+          {
             "name": "page",
             "required": false,
             "in": "query",
@@ -55842,6 +56004,52 @@
         ],
         "x-immich-permission": "userProfileImage.read",
         "x-immich-state": "Stable"
+      }
+    },
+    "/utilities/summary": {
+      "get": {
+        "description": "Counts for the Utilities directory: look-alike groups and photos with no place for your library, and for an administrator the missing, damaged and unused files across the server.",
+        "operationId": "getUtilitiesSummary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UtilitiesSummaryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get what each utility has waiting",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/view/folder": {
@@ -59791,6 +59999,13 @@
             "description": "Delete delay",
             "maximum": 9007199254740991,
             "minimum": 1,
+            "type": "integer"
+          },
+          "newUserStorageQuota": {
+            "description": "Space each new account starts with, in GB (1 GB = 1,000,000,000 bytes); null is no limit",
+            "maximum": 1000000,
+            "minimum": 0,
+            "nullable": true,
             "type": "integer"
           }
         },
@@ -87403,6 +87618,46 @@
         },
         "type": "object"
       },
+      "LibraryFeatureProgressDto": {
+        "properties": {
+          "done": {
+            "description": "Photos and videos this feature has read",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "feature": {
+            "$ref": "#/components/schemas/LibraryProgressFeature"
+          },
+          "perHour": {
+            "description": "Photos read an hour lately, or null until it has been measured",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "secondsLeft": {
+            "description": "About how long the rest takes at that rate, or null when not known",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "total": {
+            "description": "Photos and videos this feature reads",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "done",
+          "feature",
+          "perHour",
+          "secondsLeft",
+          "total"
+        ],
+        "type": "object"
+      },
       "LibraryFolderBrowseDto": {
         "properties": {
           "path": {
@@ -87575,6 +87830,86 @@
           "operationId"
         ],
         "type": "object"
+      },
+      "LibraryProgressFeature": {
+        "description": "search: Visual search; faces: Faces; text: Text in photos; captions: Descriptions; locked: Locked detection",
+        "enum": [
+          "search",
+          "faces",
+          "text",
+          "captions",
+          "locked"
+        ],
+        "type": "string"
+      },
+      "LibraryProgressResponseDto": {
+        "properties": {
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryFeatureProgressDto"
+            },
+            "type": "array"
+          },
+          "measuredSince": {
+            "description": "The start of the period the rate is measured over",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "features",
+          "measuredSince"
+        ],
+        "type": "object"
+      },
+      "LibraryRedoDto": {
+        "properties": {
+          "queue": {
+            "$ref": "#/components/schemas/LibraryRedoQueue"
+          },
+          "when": {
+            "$ref": "#/components/schemas/LibraryRedoWhen"
+          }
+        },
+        "required": [
+          "queue",
+          "when"
+        ],
+        "type": "object"
+      },
+      "LibraryRedoQueue": {
+        "description": "smartSearch: read again for Visual search; facialRecognition: group faces again; thumbnailGeneration: rebuild previews; videoConversion: remake playback copies",
+        "enum": [
+          "smartSearch",
+          "facialRecognition",
+          "thumbnailGeneration",
+          "videoConversion"
+        ],
+        "type": "string"
+      },
+      "LibraryRedoResponseDto": {
+        "properties": {
+          "tonight": {
+            "description": "Work waiting for the next overnight run",
+            "items": {
+              "$ref": "#/components/schemas/LibraryRedoQueue"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "tonight"
+        ],
+        "type": "object"
+      },
+      "LibraryRedoWhen": {
+        "description": "now: start over every photo now; tonight: in the next overnight run",
+        "enum": [
+          "now",
+          "tonight"
+        ],
+        "type": "string"
       },
       "LibraryRemovalDto": {
         "properties": {
@@ -89484,6 +89819,70 @@
           "archived",
           "partner",
           "unlocated"
+        ],
+        "type": "object"
+      },
+      "MediaCopiesResponseDto": {
+        "properties": {
+          "measuredAt": {
+            "description": "When the space was last measured",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "photos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "playbackBytes": {
+            "description": "Space playback copies take, when measured",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "previewsBytes": {
+            "description": "Space thumbnails and previews take, when measured",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "tonight": {
+            "description": "Work waiting for the next overnight run",
+            "items": {
+              "$ref": "#/components/schemas/LibraryRedoQueue"
+            },
+            "type": "array"
+          },
+          "videos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "withCopy": {
+            "description": "Videos with a playback copy",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "withoutPreview": {
+            "description": "Photos and videos without a preview yet",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "measuredAt",
+          "photos",
+          "playbackBytes",
+          "previewsBytes",
+          "tonight",
+          "videos",
+          "withCopy",
+          "withoutPreview"
         ],
         "type": "object"
       },
@@ -135345,8 +135744,9 @@
         "type": "object"
       },
       "TrashItemSort": {
-        "description": "Trash order: most recently deleted, largest original, or file name",
+        "description": "Trash order: going soonest, most recently deleted, largest original, or file name",
         "enum": [
+          "soonest",
           "recent",
           "size",
           "name"
@@ -135355,6 +135755,12 @@
       },
       "TrashItemsDto": {
         "properties": {
+          "goingWithinDays": {
+            "description": "Only items removed for good within this many days (FL-519). With the trash off, every item goes tonight",
+            "maximum": 36500,
+            "minimum": 0,
+            "type": "integer"
+          },
           "page": {
             "default": 1,
             "description": "Page number, from 1",
@@ -137238,6 +137644,59 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "UtilitiesSummaryResponseDto": {
+        "properties": {
+          "damagedFiles": {
+            "description": "Photos whose original file is damaged, across the server; null unless an administrator asks",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "duplicateGroups": {
+            "description": "Groups of look-alike photos waiting for a decision",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "missingFiles": {
+            "description": "Photos whose original file is missing, across the server; null unless an administrator asks",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "unusedBytes": {
+            "description": "Combined size of those unused originals, in bytes; null unless an administrator asks",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "unusedFiles": {
+            "description": "Originals no library uses any more; null unless an administrator asks",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "withoutPlace": {
+            "description": "Photos and videos on the timeline with no place",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "damagedFiles",
+          "duplicateGroups",
+          "missingFiles",
+          "unusedBytes",
+          "unusedFiles",
+          "withoutPlace"
+        ],
         "type": "object"
       },
       "UtilityActivityAction": {

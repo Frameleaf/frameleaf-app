@@ -49,9 +49,8 @@ vi.mock('$lib/stores/websocket', () => ({
     }),
   },
 }));
-vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
-  featureFlagsManager: { value: { trash: true } },
-}));
+const flags = vi.hoisted(() => ({ value: { trash: true } }));
+vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: flags }));
 vi.mock('$lib/managers/server-config-manager.svelte', () => ({
   serverConfigManager: { value: { trashDays: 30 } },
 }));
@@ -118,6 +117,35 @@ describe('TrashManager (FL-47)', () => {
     expect(screen.getByText('camp.jpg')).toBeInTheDocument();
     expect(screen.getByText('30 days')).toBeInTheDocument();
     expect(screen.getByText(/2 matching items/)).toBeInTheDocument();
+  });
+
+  it('says how long each item has, going soonest first, and narrows to the next week (FL-519)', async () => {
+    const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000 - 60_000).toISOString();
+    serve([item('old', { trashedAt: daysAgo(26) }), item('new', { trashedAt: daysAgo(1) })]);
+    render(TrashManager);
+
+    expect(await screen.findByText('3 days left')).toHaveClass('soon');
+    expect(screen.getByText('28 days left')).not.toHaveClass('soon');
+    expect(vi.mocked(getTrashItems)).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'soonest' }));
+
+    await fireEvent.change(screen.getByLabelText('Show'), { target: { value: 'soon' } });
+    await waitFor(() =>
+      expect(vi.mocked(getTrashItems)).toHaveBeenLastCalledWith(expect.objectContaining({ goingWithinDays: 7 })),
+    );
+  });
+
+  it('with the Trash off, says what goes tonight and offers Restore all first (FL-519)', async () => {
+    flags.value.trash = false;
+    serve([item('a'), item('b')]);
+    try {
+      render(TrashManager);
+      expect(await screen.findByText('The Trash is turned off on this server')).toBeInTheDocument();
+      expect(screen.getByText(/These 2 items will be removed for good tonight\./)).toBeInTheDocument();
+      expect(screen.getAllByText('Goes tonight')).toHaveLength(2);
+      expect(screen.getAllByRole('button', { name: 'Restore all (2)' })).toHaveLength(2);
+    } finally {
+      flags.value.trash = true;
+    }
   });
 
   it('shows the empty trash', async () => {
@@ -212,7 +240,7 @@ describe('TrashManager (FL-47)', () => {
 
     render(TrashManager);
     await screen.findByText('lake.jpg');
-    await fireEvent.click(screen.getByRole('button', { name: 'Empty your trash (1)' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Empty Trash (1)' }));
     // Emptying the whole trash still asks for the count to be typed; capitals do not matter.
     const confirm = await screen.findByRole('button', { name: 'Permanently delete 1 item' });
     expect(confirm).toBeDisabled();
@@ -362,7 +390,7 @@ describe('TrashManager (FL-47)', () => {
     expect(await screen.findByText('gone.jpg')).toBeInTheDocument();
     expect(screen.queryByLabelText('Select gone.jpg')).toBeNull();
     expect(screen.getByText(en.frameleaf_trash_offline)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Empty your trash (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Empty Trash (1)' })).toBeInTheDocument();
   });
 
   describe('when the trash changes elsewhere', () => {

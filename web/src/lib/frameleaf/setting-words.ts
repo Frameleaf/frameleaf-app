@@ -113,6 +113,7 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   },
   'templates.email.showBranding': { label: 'frameleaf_notify_branding' },
   // FL-422: Editing & playback › Edited masters and AI restoration
+  'user.newUserStorageQuota': { label: 'frameleaf_userpage_space_for_new' },
   'editing.trimMode': {
     label: 'frameleaf_editing_masters_trim',
     values: { precise: 'frameleaf_editing_masters_trim_precise', fast: 'frameleaf_editing_masters_trim_fast' },
