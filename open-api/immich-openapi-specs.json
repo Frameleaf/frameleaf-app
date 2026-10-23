@@ -59943,6 +59943,13 @@
             "maximum": 9007199254740991,
             "minimum": 1,
             "type": "integer"
+          },
+          "newUserStorageQuota": {
+            "description": "Space each new account starts with, in GB (1 GB = 1,000,000,000 bytes); null is no limit",
+            "maximum": 1000000,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
           }
         },
         "required": [

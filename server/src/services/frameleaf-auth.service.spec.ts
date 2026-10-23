@@ -668,6 +668,17 @@ describe(FrameleafAuthService.name, () => {
         expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: 5 * GB }));
       });
 
+      it('uses "Space for new people" when it is set, over the older invited default (FL-516)', async () => {
+        metadata.set(SystemMetadataKey.SystemConfig, {
+          user: { newUserStorageQuota: 200 },
+          frameleafCloud: { signIn: { invitedStorageQuota: 5 } },
+        });
+        clearConfigCache();
+        newAccount();
+        await sut.exchangeToken({ token: await mint() }, loginDetails);
+        expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: 200 * GB }));
+      });
+
       it('never caps the server owner', async () => {
         setQuota(5);
         newAccount();
