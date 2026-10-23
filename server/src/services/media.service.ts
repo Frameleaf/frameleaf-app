@@ -45,6 +45,7 @@ import {
   QueueName,
   RawExtractedFormat,
   StorageFolder,
+  SystemMetadataKey,
   TranscodeHardwareAcceleration,
   TranscodePolicy,
   TranscodeTarget,
@@ -1274,8 +1275,12 @@ export class MediaService extends BaseService {
       );
     }
 
+    const accel = ffmpeg.accel;
     try {
       await this.mediaRepository.transcode(input, output, command);
+      if (accel !== TranscodeHardwareAcceleration.Disabled) {
+        await this.noteVideoCard(true, accel);
+      }
     } catch (error: any) {
       this.logger.error(`Error occurred during transcoding: ${error.message}`);
       if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
@@ -1295,11 +1300,15 @@ export class MediaService extends BaseService {
         }
       }
 
-      if (!isPartialFallbackSuccess) {
+      if (isPartialFallbackSuccess) {
+        await this.noteVideoCard(true, accel);
+      } else {
         this.logger.error(`Retrying with ${ffmpeg.accel.toUpperCase()} acceleration disabled`);
         ffmpeg = { ...ffmpeg, accel: TranscodeHardwareAcceleration.Disabled };
         const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, videoStream, audioStream);
         await this.mediaRepository.transcode(input, output, command);
+        // FL-537: the copy was made on the processor because the card failed; Video playback copies says so
+        await this.noteVideoCard(false, accel);
       }
     }
 
@@ -1579,6 +1588,39 @@ export class MediaService extends BaseService {
       });
     }
     return colorDecision;
+  }
+
+  /** FL-537: whether the graphics card is known to have failed, read once per process. */
+  private videoCardFailed?: boolean;
+
+  /**
+   * FL-537: keep when the graphics card stopped helping the video converter (a copy had to be made on
+   * the processor), and clear it once a copy is made on the card again. Written only when it changes.
+   */
+  private async noteVideoCard(worked: boolean, accel: TranscodeHardwareAcceleration) {
+    if (worked && this.videoCardFailed === false) {
+      return;
+    }
+    try {
+      const state = await this.systemMetadataRepository.get(SystemMetadataKey.VideoCardState);
+      if (worked && state?.failedAt) {
+        await this.systemMetadataRepository.set(SystemMetadataKey.VideoCardState, {
+          ...state,
+          failedAt: null,
+          accel: null,
+        });
+      } else if (!worked && !state?.failedAt) {
+        await this.systemMetadataRepository.set(SystemMetadataKey.VideoCardState, {
+          ...state,
+          lastTest: state?.lastTest ?? null,
+          failedAt: new Date().toISOString(),
+          accel,
+        });
+      }
+      this.videoCardFailed = !worked;
+    } catch (error) {
+      this.logger.warn(`Could not record the graphics card state: ${error}`);
+    }
   }
 
   /** Renders an edited master, falling back to software once when a hardware plan fails. */

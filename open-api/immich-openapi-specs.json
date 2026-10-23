@@ -6776,6 +6776,53 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/library-progress/media-copies/video-card/test": {
+      "post": {
+        "description": "Makes a short test video on the graphics card the video converter uses, and on the processor for comparison, and keeps the result.",
+        "operationId": "testVideoCard",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoCardDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Test the graphics card for video",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/library-progress/redo": {
       "post": {
         "description": "Read every photo again for Visual search, group faces again, rebuild previews or remake playback copies: now, or in the next overnight run.",
@@ -90041,6 +90088,12 @@
       },
       "MediaCopiesResponseDto": {
         "properties": {
+          "copyMinutes": {
+            "description": "FL-537: the length of the videos with a playback copy, in minutes",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
           "measuredAt": {
             "description": "When the space was last measured",
             "format": "date-time",
@@ -90073,6 +90126,15 @@
             },
             "type": "array"
           },
+          "videoCard": {
+            "$ref": "#/components/schemas/VideoCardDto"
+          },
+          "videoMinutes": {
+            "description": "FL-537: the length of every video, in minutes",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
           "videos": {
             "maximum": 9007199254740991,
             "minimum": 0,
@@ -90092,11 +90154,14 @@
           }
         },
         "required": [
+          "copyMinutes",
           "measuredAt",
           "photos",
           "playbackBytes",
           "previewsBytes",
           "tonight",
+          "videoCard",
+          "videoMinutes",
           "videos",
           "withCopy",
           "withoutPreview"
@@ -138404,6 +138469,80 @@
           "develop"
         ],
         "type": "string"
+      },
+      "VideoCardDto": {
+        "properties": {
+          "failedAt": {
+            "description": "When the graphics card stopped helping (copies made on the processor), or null while it works",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "lastTest": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/VideoCardTestDto"
+              }
+            ],
+            "nullable": true
+          },
+          "slowdown": {
+            "description": "About how many times slower the processor makes copies than the card, from the last test that measured both",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "failedAt",
+          "lastTest",
+          "slowdown"
+        ],
+        "type": "object"
+      },
+      "VideoCardTestDto": {
+        "properties": {
+          "at": {
+            "description": "When it was tested",
+            "format": "date-time",
+            "type": "string"
+          },
+          "encoder": {
+            "description": "The encoder tested, or null when no graphics card was found",
+            "nullable": true,
+            "type": "string"
+          },
+          "error": {
+            "description": "Why the card failed, as the converter said it",
+            "nullable": true,
+            "type": "string"
+          },
+          "ok": {
+            "description": "The card made the test video",
+            "type": "boolean"
+          },
+          "softwareSpeed": {
+            "description": "Seconds of test video the processor made a second, for comparison",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "speed": {
+            "description": "Seconds of test video the card made a second, or null when it failed",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "at",
+          "encoder",
+          "error",
+          "ok",
+          "softwareSpeed",
+          "speed"
+        ],
+        "type": "object"
       },
       "VideoCodec": {
         "description": "Target video codec",

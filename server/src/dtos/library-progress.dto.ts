@@ -71,6 +71,44 @@ const LibraryRedoResponseSchema = z
   })
   .meta({ id: 'LibraryRedoResponseDto' });
 
+/** FL-537: the last "Test it" of the graphics card the video converter uses. */
+const VideoCardTestSchema = z
+  .object({
+    at: z.string().meta({ format: 'date-time' }).describe('When it was tested'),
+    ok: z.boolean().describe('The card made the test video'),
+    encoder: z.string().nullable().describe('The encoder tested, or null when no graphics card was found'),
+    speed: z
+      .number()
+      .meta({ format: 'double' })
+      .nullable()
+      .describe('Seconds of test video the card made a second, or null when it failed'),
+    softwareSpeed: z
+      .number()
+      .meta({ format: 'double' })
+      .nullable()
+      .describe('Seconds of test video the processor made a second, for comparison'),
+    error: z.string().nullable().describe('Why the card failed, as the converter said it'),
+  })
+  .meta({ id: 'VideoCardTestDto' });
+
+const VideoCardSchema = z
+  .object({
+    failedAt: z
+      .string()
+      .meta({ format: 'date-time' })
+      .nullable()
+      .describe('When the graphics card stopped helping (copies made on the processor), or null while it works'),
+    slowdown: z
+      .number()
+      .meta({ format: 'double' })
+      .nullable()
+      .describe(
+        'About how many times slower the processor makes copies than the card, from the last test that measured both',
+      ),
+    lastTest: VideoCardTestSchema.nullable(),
+  })
+  .meta({ id: 'VideoCardDto' });
+
 /** FL-521: what the copies beside the originals take, for Editing & playback. */
 const MediaCopiesResponseSchema = z
   .object({
@@ -82,6 +120,17 @@ const MediaCopiesResponseSchema = z
     playbackBytes: z.int().nonnegative().nullable().describe('Space playback copies take, when measured'),
     measuredAt: z.string().meta({ format: 'date-time' }).nullable().describe('When the space was last measured'),
     tonight: z.array(LibraryRedoQueueSchema).describe('Work waiting for the next overnight run'),
+    videoMinutes: z
+      .number()
+      .meta({ format: 'double' })
+      .nonnegative()
+      .describe('FL-537: the length of every video, in minutes'),
+    copyMinutes: z
+      .number()
+      .meta({ format: 'double' })
+      .nonnegative()
+      .describe('FL-537: the length of the videos with a playback copy, in minutes'),
+    videoCard: VideoCardSchema,
   })
   .meta({ id: 'MediaCopiesResponseDto' });
 
@@ -89,3 +138,4 @@ export class LibraryProgressResponseDto extends createZodDto(LibraryProgressResp
 export class LibraryRedoDto extends createZodDto(LibraryRedoSchema) {}
 export class LibraryRedoResponseDto extends createZodDto(LibraryRedoResponseSchema) {}
 export class MediaCopiesResponseDto extends createZodDto(MediaCopiesResponseSchema) {}
+export class VideoCardDto extends createZodDto(VideoCardSchema) {}

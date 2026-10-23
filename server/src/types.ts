@@ -1519,6 +1519,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;
   [SystemMetadataKey.LibraryProgressSamples]: { samples: { at: string; done: Record<string, number> }[] };
   [SystemMetadataKey.OvernightRedo]: { queues: string[] };
+  [SystemMetadataKey.VideoCardState]: VideoCardState;
   [SystemMetadataKey.IntegrityCheckHistory]: { entries: IntegrityCheckHistoryEntry[] };
   [SystemMetadataKey.IntegrityCheckStop]: { requestedAt: string };
   [SystemMetadataKey.DuplicateRecompare]: { requestedAt: string };
@@ -1691,4 +1692,23 @@ export type ClassConstructor<T> = T extends new (...args: infer R) => infer L
 
 export type ClassConstructorsToInstances<T extends readonly ClassConstructor<unknown>[]> = {
   [K in keyof T]: InstanceType<T[K]> | Mocked<InstanceType<T[K]>>;
+};
+
+/** FL-537: the video converter's graphics card, as Video playback copies says it. */
+export type VideoCardState = {
+  /** When a copy last had to be made on the processor because the card failed; null once it works again. */
+  failedAt: string | null;
+  /** The kind of card that failed (`ffmpeg.accel`). */
+  accel: string | null;
+  /** About how many times slower the processor is than the card, from the last test that measured both. */
+  slowdown?: number | null;
+  /** The last "Test it": the card's encoder, how fast the card and the processor each were, and why it failed. */
+  lastTest: {
+    at: string;
+    ok: boolean;
+    encoder: string | null;
+    speed: number | null;
+    softwareSpeed: number | null;
+    error: string | null;
+  } | null;
 };

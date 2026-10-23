@@ -6,13 +6,16 @@ import {
   LibraryRedoResponseDto,
   MediaCopiesResponseDto,
   REDO_QUEUES,
+  VideoCardDto,
 } from 'src/dtos/library-progress.dto.js';
 import { AnalyticsSeriesId, QueueCommand, SystemMetadataKey } from 'src/enum.js';
 import { AnalyticsRepository } from 'src/repositories/analytics.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { HardwareProbeRepository } from 'src/repositories/hardware-probe.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { QueueService } from 'src/services/queue.service.js';
+import type { VideoCardState } from 'src/types.js';
 
 /** A reading is kept at most this often, so a page left open does not fill the list. */
 export const PROGRESS_SAMPLE_EVERY_MS = 10 * 60_000;
@@ -22,6 +25,15 @@ export const PROGRESS_RATE_WINDOW_MS = 6 * 60 * 60_000;
 const PROGRESS_SAMPLES_KEPT = 48;
 
 type RedoQueue = (typeof REDO_QUEUES)[number];
+
+const minutes = (ms: number) => Math.round((ms / 60_000) * 10) / 10;
+
+/** The card's state for the page. */
+const videoCardOf = (state: VideoCardState | null | undefined): VideoCardDto => ({
+  failedAt: state?.failedAt ?? null,
+  slowdown: state?.slowdown ?? null,
+  lastTest: state?.lastTest ?? null,
+});
 
 /**
  * FL-521: Library care's "N of M read" for each reading feature with a time estimate from the recent
@@ -40,6 +52,7 @@ export class LibraryProgressService {
     private analyticsRepository: AnalyticsRepository,
     private systemMetadataRepository: SystemMetadataRepository,
     private queueService: QueueService,
+    private hardwareProbeRepository: HardwareProbeRepository,
   ) {
     this.logger.setContext(LibraryProgressService.name);
   }
@@ -73,7 +86,7 @@ export class LibraryProgressService {
   }
 
   async getMediaCopies(): Promise<MediaCopiesResponseDto> {
-    const [counts, samples, redo] = await Promise.all([
+    const [{ videoMs, copyMs, ...counts }, samples, redo, card] = await Promise.all([
       this.assetJobRepository.countMediaCopies(),
       this.analyticsRepository.getLatestHostSamples([
         AnalyticsSeriesId.HostThumbnailBytes,
@@ -82,6 +95,7 @@ export class LibraryProgressService {
         AnalyticsSeriesId.HostEncodedVideoOtherDiskBytes,
       ]),
       this.systemMetadataRepository.get(SystemMetadataKey.OvernightRedo),
+      this.systemMetadataRepository.get(SystemMetadataKey.VideoCardState),
     ]);
     // The newest reading of each folder, wherever it is (the library volume or another disk).
     const newest = (...series: AnalyticsSeriesId[]) =>
@@ -97,7 +111,33 @@ export class LibraryProgressService {
       playbackBytes: playback ? Math.round(playback.value) : null,
       measuredAt: observed.length > 0 ? new Date(Math.min(...observed)).toISOString() : null,
       tonight: this.tonight(redo?.queues),
+      videoMinutes: minutes(videoMs),
+      copyMinutes: minutes(copyMs),
+      videoCard: videoCardOf(card),
     };
+  }
+
+  /**
+   * FL-537: "Test it": a short test encode on the graphics card, and one on the processor to say how
+   * much slower copies are without the card. A test that works does not clear "stopped helping": the
+   * next copy made on the card does.
+   */
+  async testVideoCard(now = new Date()): Promise<VideoCardDto> {
+    const result = await this.hardwareProbeRepository.testVideoCard();
+    const stored = await this.systemMetadataRepository.get(SystemMetadataKey.VideoCardState);
+    // The slowdown is kept from the last test that measured both, so a failed card still has one.
+    const measured =
+      result.speed && result.softwareSpeed
+        ? Math.max(1, Math.round((result.speed / result.softwareSpeed) * 10) / 10)
+        : null;
+    const next: VideoCardState = {
+      failedAt: stored?.failedAt ?? null,
+      accel: stored?.accel ?? null,
+      slowdown: measured ?? stored?.slowdown ?? null,
+      lastTest: { at: now.toISOString(), ok: result.encoder !== null && result.speed !== null, ...result },
+    };
+    await this.systemMetadataRepository.set(SystemMetadataKey.VideoCardState, next);
+    return videoCardOf(next);
   }
 
   /**

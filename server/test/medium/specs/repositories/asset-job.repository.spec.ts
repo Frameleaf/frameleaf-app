@@ -42,7 +42,7 @@ describe(AssetJobRepository.name, () => {
     const { user } = await ctx.newUser();
     const { asset: read } = await ctx.newAsset({ ownerId: user.id });
     const { asset: unread } = await ctx.newAsset({ ownerId: user.id });
-    const { asset: video } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Video });
+    const { asset: video } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Video, duration: 90_000 });
     const { asset: noPreview } = await ctx.newAsset({ ownerId: user.id });
     for (const asset of [read, unread, video, noPreview]) {
       await ctx.newJobStatus({ assetId: asset.id });
@@ -69,7 +69,15 @@ describe(AssetJobRepository.name, () => {
       captions: [1, 3],
       locked: [0, 2],
     });
-    await expect(sut.countMediaCopies()).resolves.toEqual({ photos: 3, withoutPreview: 1, videos: 1, withCopy: 1 });
+    await expect(sut.countMediaCopies()).resolves.toEqual({
+      photos: 3,
+      withoutPreview: 1,
+      videos: 1,
+      withCopy: 1,
+      // FL-537: how long the videos are, for "about N MB a minute"
+      videoMs: 90_000,
+      copyMs: 90_000,
+    });
   });
 
   it('backfills only uninspected non-RAW images through the existing metadata selection', async () => {

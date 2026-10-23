@@ -6,6 +6,7 @@ import {
   LibraryRedoDto,
   LibraryRedoResponseDto,
   MediaCopiesResponseDto,
+  VideoCardDto,
 } from 'src/dtos/library-progress.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Authenticated } from 'src/middleware/auth.guard.js';
@@ -42,6 +43,19 @@ export class LibraryProgressController {
   })
   getMediaCopies(): Promise<MediaCopiesResponseDto> {
     return this.service.getMediaCopies();
+  }
+
+  @Post('media-copies/video-card/test')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.SystemConfigUpdate, admin: true })
+  @Endpoint({
+    summary: 'Test the graphics card for video',
+    description:
+      'Makes a short test video on the graphics card the video converter uses, and on the processor for comparison, and keeps the result.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  testVideoCard(): Promise<VideoCardDto> {
+    return this.service.testVideoCard();
   }
 
   @Post('redo')

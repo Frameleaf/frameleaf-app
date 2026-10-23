@@ -21,14 +21,16 @@ const setup = (stored: Partial<Record<SystemMetadataKey, unknown>> = {}) => {
   const assetJob = { countFeatureProgress: vi.fn(), countMediaCopies: vi.fn() };
   const analytics = { getLatestHostSamples: vi.fn().mockResolvedValue([]) };
   const queue = { runCommandLegacy: vi.fn().mockResolvedValue({}) };
+  const probe = { testVideoCard: vi.fn() };
   const sut = new LibraryProgressService(
     { setContext: vi.fn(), warn: vi.fn() } as never,
     assetJob as never,
     analytics as never,
     metadata as never,
     queue as never,
+    probe as never,
   );
-  return { sut, metadata, assetJob, analytics, queue, stored };
+  return { sut, metadata, assetJob, analytics, queue, probe, stored };
 };
 
 describe(LibraryProgressService.name, () => {
@@ -94,7 +96,14 @@ describe(LibraryProgressService.name, () => {
     const { sut, assetJob, analytics } = setup({
       [SystemMetadataKey.OvernightRedo]: { queues: [QueueName.ThumbnailGeneration, 'unknown'] },
     });
-    assetJob.countMediaCopies.mockResolvedValue({ photos: 900, withoutPreview: 2, videos: 100, withCopy: 12 });
+    assetJob.countMediaCopies.mockResolvedValue({
+      photos: 900,
+      withoutPreview: 2,
+      videos: 100,
+      withCopy: 12,
+      videoMs: 6_000_000,
+      copyMs: 900_000,
+    });
     analytics.getLatestHostSamples.mockResolvedValue([
       { series: AnalyticsSeriesId.HostThumbnailBytes, value: 41e9, observedAt: new Date('2026-10-22T03:00:00Z') },
       {
@@ -114,6 +123,73 @@ describe(LibraryProgressService.name, () => {
       playbackBytes: 52e9,
       measuredAt: '2026-10-22T03:00:00.000Z',
       tonight: [QueueName.ThumbnailGeneration],
+      videoMinutes: 100,
+      copyMinutes: 15,
+      videoCard: { failedAt: null, slowdown: null, lastTest: null },
+    });
+  });
+
+  describe('the graphics card for video (FL-537)', () => {
+    it('says when the card stopped helping', async () => {
+      const { sut, assetJob } = setup({
+        [SystemMetadataKey.VideoCardState]: {
+          failedAt: '2026-10-08T02:00:00.000Z',
+          accel: 'qsv',
+          slowdown: 6,
+          lastTest: null,
+        },
+      });
+      assetJob.countMediaCopies.mockResolvedValue({
+        photos: 0,
+        withoutPreview: 0,
+        videos: 0,
+        withCopy: 0,
+        videoMs: 0,
+        copyMs: 0,
+      });
+      await expect(sut.getMediaCopies()).resolves.toEqual(
+        expect.objectContaining({
+          videoCard: { failedAt: '2026-10-08T02:00:00.000Z', slowdown: 6, lastTest: null },
+        }),
+      );
+    });
+
+    it('tests the card against the processor, and keeps the slowdown when a later test fails', async () => {
+      const { sut, probe, stored } = setup();
+      probe.testVideoCard.mockResolvedValueOnce({ encoder: 'h264_vaapi', speed: 12, softwareSpeed: 2, error: null });
+      await expect(sut.testVideoCard(new Date('2026-10-23T10:00:00Z'))).resolves.toEqual({
+        failedAt: null,
+        slowdown: 6,
+        lastTest: {
+          at: '2026-10-23T10:00:00.000Z',
+          ok: true,
+          encoder: 'h264_vaapi',
+          speed: 12,
+          softwareSpeed: 2,
+          error: null,
+        },
+      });
+
+      probe.testVideoCard.mockResolvedValueOnce({
+        encoder: 'h264_vaapi',
+        speed: null,
+        softwareSpeed: 2,
+        error: 'Failed to initialise VAAPI connection',
+      });
+      const failed = await sut.testVideoCard(new Date('2026-10-23T11:00:00Z'));
+      expect(failed.slowdown).toBe(6);
+      expect(failed.lastTest).toEqual(
+        expect.objectContaining({ ok: false, error: 'Failed to initialise VAAPI connection' }),
+      );
+      expect(stored[SystemMetadataKey.VideoCardState]).toEqual(expect.objectContaining({ slowdown: 6 }));
+    });
+
+    it('says plainly when there is no graphics card to test', async () => {
+      const { sut, probe } = setup();
+      probe.testVideoCard.mockResolvedValue({ encoder: null, speed: null, softwareSpeed: null, error: null });
+      const result = await sut.testVideoCard();
+      expect(result.lastTest).toEqual(expect.objectContaining({ ok: false, encoder: null }));
+      expect(result.slowdown).toBeNull();
     });
   });
 

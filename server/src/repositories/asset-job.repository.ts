@@ -852,10 +852,25 @@ export class AssetJobRepository {
 
   /**
    * FL-521: the photos and videos behind Editing & playback's status: photos and how many have no
-   * preview yet, videos and how many have a playback copy.
+   * preview yet, videos and how many have a playback copy. FL-537: and how long those videos are, for
+   * "about N MB a minute".
    */
-  async countMediaCopies(): Promise<{ photos: number; withoutPreview: number; videos: number; withCopy: number }> {
-    const { rows } = await sql<{ photos: number; withoutPreview: number; videos: number; withCopy: number }>`
+  async countMediaCopies(): Promise<{
+    photos: number;
+    withoutPreview: number;
+    videos: number;
+    withCopy: number;
+    videoMs: number;
+    copyMs: number;
+  }> {
+    const { rows } = await sql<{
+      photos: number;
+      withoutPreview: number;
+      videos: number;
+      withCopy: number;
+      videoMs: number;
+      copyMs: number;
+    }>`
       SELECT
         count(*) FILTER (WHERE a.type = ${AssetType.Image})::int AS photos,
         count(*) FILTER (WHERE NOT EXISTS (
@@ -864,7 +879,11 @@ export class AssetJobRepository {
         count(*) FILTER (WHERE a.type = ${AssetType.Video})::int AS videos,
         count(*) FILTER (WHERE a.type = ${AssetType.Video} AND EXISTS (
           SELECT 1 FROM public.asset_file f WHERE f."assetId" = a.id AND f.type = ${AssetFileType.EncodedVideo}
-        ))::int AS "withCopy"
+        ))::int AS "withCopy",
+        coalesce(sum(a.duration) FILTER (WHERE a.type = ${AssetType.Video}), 0)::float8 AS "videoMs",
+        coalesce(sum(a.duration) FILTER (WHERE a.type = ${AssetType.Video} AND EXISTS (
+          SELECT 1 FROM public.asset_file f WHERE f."assetId" = a.id AND f.type = ${AssetFileType.EncodedVideo}
+        )), 0)::float8 AS "copyMs"
       FROM public.asset a
       WHERE a."deletedAt" IS NULL AND a.visibility != ${AssetVisibility.Hidden}
         AND a.type IN (${AssetType.Image}, ${AssetType.Video})`.execute(this.db);

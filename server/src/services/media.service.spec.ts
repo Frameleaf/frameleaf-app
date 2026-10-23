@@ -28,6 +28,7 @@ import {
   JobName,
   JobStatus,
   RawExtractedFormat,
+  SystemMetadataKey,
   ToneMapping,
   TranscodeHardwareAcceleration,
   TranscodePolicy,
@@ -4850,6 +4851,32 @@ describe(MediaService.name, () => {
 
       await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Failed);
       expect(mocks.media.transcode).toHaveBeenCalledTimes(1);
+    });
+
+    it('records when the graphics card stopped helping, and clears it once a copy is made on it again (FL-537)', async () => {
+      const config = {
+        ffmpeg: { transcode: TranscodePolicy.All, accel: TranscodeHardwareAcceleration.Nvenc, accelDecode: false },
+      };
+      const metadata: Record<string, unknown> = {};
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve((key === SystemMetadataKey.VideoCardState ? metadata[key] : config) as never),
+      );
+      mocks.systemMetadata.set.mockImplementation((key, value) => {
+        metadata[key] = value;
+        return Promise.resolve();
+      });
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.multipleVideoStreams });
+      mocks.media.transcode.mockRejectedValueOnce(new Error('nvenc failed')).mockResolvedValueOnce(void 0);
+
+      await sut.handleVideoConversion({ id: 'video-id' });
+      expect(mocks.media.transcode).toHaveBeenCalledTimes(2);
+      expect(metadata[SystemMetadataKey.VideoCardState]).toEqual(
+        expect.objectContaining({ failedAt: expect.any(String), accel: TranscodeHardwareAcceleration.Nvenc }),
+      );
+
+      mocks.media.transcode.mockResolvedValue(void 0);
+      await sut.handleVideoConversion({ id: 'video-id' });
+      expect(metadata[SystemMetadataKey.VideoCardState]).toEqual(expect.objectContaining({ failedAt: null }));
     });
 
     it('should transcode when set to all', async () => {
