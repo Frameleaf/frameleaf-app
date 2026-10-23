@@ -226,12 +226,26 @@ export const rebaseDraft = <T extends object>(
   return { draft: applyChanges(latest, apply), conflicts };
 };
 
-/** "Reset this page": the defaults of the given groups go into the draft. Save applies them. */
-export const resetConfigKeys = <T extends object>(draft: T, defaults: T, keys: readonly (keyof T)[]): T => {
+/** A top-level group, or a dotted path to one part of it (`frameleafCloud.cloudMl`, FL-529). */
+export type ConfigResetKey<T> = (keyof T & string) | `${keyof T & string}.${string}`;
+
+/**
+ * "Reset this page": the defaults of the given groups go into the draft. Save applies them. A
+ * dotted path resets only that part, so a page that edits part of a group leaves the rest alone.
+ */
+export const resetConfigKeys = <T extends object>(draft: T, defaults: T, keys: readonly ConfigResetKey<T>[]): T => {
   const next = cloneConfig(draft);
   for (const key of keys) {
-    if (Object.hasOwn(defaults as object, key)) {
-      next[key] = cloneConfig(defaults[key]);
+    const path = key.split('.');
+    const last = path.pop()!;
+    let target = next as Record<string, unknown> | undefined;
+    let source = defaults as Record<string, unknown> | undefined;
+    for (const segment of path) {
+      target = target?.[segment] as Record<string, unknown> | undefined;
+      source = source?.[segment] as Record<string, unknown> | undefined;
+    }
+    if (target && source && Object.hasOwn(source, last)) {
+      target[last] = cloneConfig(source[last]);
     }
   }
   return next;
