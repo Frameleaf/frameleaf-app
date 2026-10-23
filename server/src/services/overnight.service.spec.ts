@@ -79,7 +79,7 @@ const setup = (overrides: { stopTime?: string; steps?: Partial<Record<string, Ov
       queueOperation: vi.fn().mockResolvedValue({}),
       hasActiveSync: vi.fn(() => Promise.resolve(!!busy.icloud)),
     },
-    queue: { handleNightlyJobs: vi.fn().mockResolvedValue(undefined) },
+    queue: { handleNightlyJobs: vi.fn().mockResolvedValue(undefined), runCommandLegacy: vi.fn().mockResolvedValue({}) },
     mediaHealth: { startScheduledScans: vi.fn().mockResolvedValue(1) },
     // 12 items past their keep time when the run starts, none left after the tidy-up; 214 came in
     trash: {
@@ -135,6 +135,23 @@ describe(OvernightService.name, () => {
     await sut.handleStart();
 
     expect(stored.state?.nights[0]).toMatchObject({ removedFromTrash: null, newFiles: null });
+  });
+
+  it('starts what "Save and … tonight" asked for once, over every photo (FL-521)', async () => {
+    const { sut, mocks } = setup();
+    const redo = { queues: [QueueName.SmartSearch, QueueName.VideoConversion] };
+    mocks.metadata.get.mockImplementation((key: SystemMetadataKey) =>
+      Promise.resolve(key === SystemMetadataKey.OvernightRedo ? (redo as never) : undefined),
+    );
+    mocks.queue.runCommandLegacy.mockRejectedValueOnce(new Error('Job is already running'));
+    await sut.handleStart();
+
+    expect(mocks.metadata.set).toHaveBeenCalledWith(SystemMetadataKey.OvernightRedo, { queues: [] });
+    expect(mocks.queue.runCommandLegacy).toHaveBeenCalledWith(QueueName.SmartSearch, { command: 'start', force: true });
+    expect(mocks.queue.runCommandLegacy).toHaveBeenCalledWith(QueueName.VideoConversion, {
+      command: 'start',
+      force: true,
+    });
   });
 
   it('compares look-alike photos again once when "Save and start tonight" asked for it (FL-520)', async () => {

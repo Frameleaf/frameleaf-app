@@ -4,7 +4,15 @@ import { DateTime } from 'luxon';
 import type { SystemConfig } from 'src/config.js';
 import type { OvernightResponseDto } from 'src/dtos/overnight.dto.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { DatabaseLock, FrameleafWorker, JobName, JobStatus, QueueName, SystemMetadataKey } from 'src/enum.js';
+import {
+  DatabaseLock,
+  FrameleafWorker,
+  JobName,
+  JobStatus,
+  QueueCommand,
+  QueueName,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
@@ -130,6 +138,7 @@ export class OvernightService {
           trashDue: await this.trashDue(),
         },
       });
+      await this.startRequestedRedo();
       await this.startRequestedRecompare();
       await this.advance();
       return JobStatus.Success;
@@ -172,6 +181,26 @@ export class OvernightService {
       removedFromTrash,
       newFiles,
     };
+  }
+
+  /**
+   * FL-521: "Save and … tonight" (read again for Visual search, group faces again, rebuild previews,
+   * remake playback copies). Each starts over every photo once, on its own queue, alongside the night.
+   */
+  private async startRequestedRedo() {
+    const queues = (await this.systemMetadataRepository.get(SystemMetadataKey.OvernightRedo))?.queues ?? [];
+    if (queues.length === 0) {
+      return;
+    }
+    await this.systemMetadataRepository.set(SystemMetadataKey.OvernightRedo, { queues: [] });
+    for (const name of queues) {
+      try {
+        await this.queueService.runCommandLegacy(name as QueueName, { command: QueueCommand.Start, force: true });
+      } catch (error) {
+        // a queue that is already running carries on; what it has not reached is read the next time
+        this.logger.warn(`Could not start ${name} again tonight: ${error}`);
+      }
+    }
   }
 
   /**

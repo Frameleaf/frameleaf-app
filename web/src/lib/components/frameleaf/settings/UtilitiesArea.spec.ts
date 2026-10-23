@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
 import { SvelteURL } from 'svelte/reactivity';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import UtilitiesArea from '$lib/components/frameleaf/settings/UtilitiesArea.svelte';
 import en from '../../../../../../i18n/en.json';
 
@@ -43,15 +44,53 @@ describe('Utilities area', () => {
     for (const name of ['Organize', 'Repair', 'Import', 'Automate', 'Connect']) {
       expect(screen.getByRole('heading', { name })).toBeInTheDocument();
     }
-    expect(screen.queryByRole('button', { name: /Missing media/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Mobile applications/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Missing files/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Mobile apps/ })).toBeInTheDocument();
     expect(state.load).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: /Duplicate review/ }));
     expect(state.goto).toHaveBeenCalledWith('/user-settings?area=utilities&section=duplicates', expect.any(Object));
   });
+  it('opens on what needs a look, with those tools first and the rare ones under Advanced (FL-519)', async () => {
+    state.user = { id: 'me', isAdmin: true };
+    sdkMock.getUtilitiesSummary.mockResolvedValue({
+      duplicateGroups: 12,
+      withoutPlace: 214,
+      missingFiles: 3,
+      damagedFiles: 0,
+      unusedFiles: 86,
+      unusedBytes: 410_000_000,
+    });
+    render(UtilitiesArea);
+
+    expect(await screen.findByRole('heading', { name: '2 tools have something for you' })).toBeInTheDocument();
+    const first = screen.getByRole('heading', { name: 'Needs a look' }).nextElementSibling as HTMLElement;
+    expect(first).toHaveTextContent('Duplicate review');
+    expect(first).toHaveTextContent('12 groups to look at');
+    expect(first).toHaveTextContent('3 files missing');
+    expect(screen.getByRole('button', { name: /Fix locations/ })).toHaveTextContent('214 photos have no place');
+    expect(
+      screen.getByText('Advanced: Android direct updates and unused files').closest('details'),
+    ).not.toHaveAttribute('open');
+  });
+
+  it('says nothing needs a look when every tool is calm (FL-519)', async () => {
+    sdkMock.getUtilitiesSummary.mockResolvedValue({
+      duplicateGroups: 0,
+      withoutPlace: 0,
+      missingFiles: null,
+      damagedFiles: null,
+      unusedFiles: null,
+      unusedBytes: null,
+    });
+    render(UtilitiesArea);
+
+    expect(await screen.findByRole('heading', { name: 'Nothing needs a look' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Needs a look' })).toBeNull();
+  });
+
   it('shows each tool’s icon in the directory (UT-12)', () => {
     render(UtilitiesArea);
-    for (const name of [/Duplicate review/, /Large files/, /Mobile applications/]) {
+    for (const name of [/Duplicate review/, /Large files/, /Mobile apps/]) {
       expect(screen.getByRole('button', { name }).querySelector('svg')).not.toBeNull();
       // The icon comes first, before the title, then the chevron.
       expect(screen.getByRole('button', { name }).querySelectorAll('svg')).toHaveLength(2);
@@ -60,7 +99,7 @@ describe('Utilities area', () => {
   it('keeps an admin on the single utilities host', async () => {
     state.user.isAdmin = true;
     render(UtilitiesArea);
-    await userEvent.click(screen.getByRole('button', { name: /Missing media/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Missing files/ }));
     expect(state.goto).toHaveBeenCalledWith('/user-settings?area=utilities&section=missing-media', expect.any(Object));
   });
   it('rejects a direct non-admin health tool selection without loading it', () => {

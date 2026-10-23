@@ -5,11 +5,12 @@ import en from '../../../../../i18n/en.json';
 import { mapStub } from '../../../test-data/frameleaf/utility-map-stub';
 import GeolocationUtility from './GeolocationUtility.svelte';
 
-const state = vi.hoisted(() => ({ search: vi.fn(), info: vi.fn(), run: vi.fn() }));
+const state = vi.hoisted(() => ({ search: vi.fn(), info: vi.fn(), run: vi.fn(), places: vi.fn() }));
 vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<typeof import('@frameleaf/sdk')>()),
   searchAssets: state.search,
   getAssetInfo: state.info,
+  searchPlaces: state.places,
 }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: { user: { id: 'owner', name: 'Alex' }, params: {} },
@@ -53,6 +54,25 @@ describe('location utility', () => {
     (screen.getByRole('spinbutton', { name: 'Latitude' }) as HTMLInputElement).valueAsNumber,
     (screen.getByRole('spinbutton', { name: 'Longitude' }) as HTMLInputElement).valueAsNumber,
   ];
+  it('finds a place by name and names it in the confirmation (FL-519)', async () => {
+    state.places.mockResolvedValue([
+      { name: 'Lake Louise', admin1name: 'Alberta', latitude: 51.42, longitude: -116.18 },
+      { name: 'Lake Louisa', admin1name: 'Florida', latitude: 28.5, longitude: -81.7 },
+    ]);
+    render(GeolocationUtility);
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'one.jpg' }));
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Find a place' }), 'Lake Lou');
+    await userEvent.click(await screen.findByRole('button', { name: /Lake Louise/ }));
+
+    expect(state.places).toHaveBeenLastCalledWith({ name: 'Lake Lou' });
+    expect(coordinates()).toEqual([51.42, -116.18]);
+    expect(screen.getByText(/will be set to Lake Louise, Alberta/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Apply to 1 selected' }));
+    expect(screen.getByRole('dialog', { name: 'Set 1 photo to Lake Louise, Alberta?' })).toHaveTextContent(
+      'Lake Louise, Alberta',
+    );
+  });
+
   it('limits changes to owned media and rejects incomplete or out-of-range coordinates', async () => {
     render(GeolocationUtility);
     const one = await screen.findByRole('checkbox', { name: 'one.jpg' });

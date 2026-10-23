@@ -53,6 +53,8 @@ export type TrashScopeOptions = {
 export type TrashItemsOptions = TrashScopeOptions & {
   terms: string[];
   type?: AssetType;
+  /** Only items deleted at or before this moment (those going within a number of days). */
+  deletedBefore?: Date;
   order: TrashItemSort;
   page: number;
   size: number;
@@ -196,6 +198,7 @@ export class TrashRepository {
     const filtered = this.scope(this.db, userId, 'listed', options)
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
       .$if(!!options.type, (qb) => qb.where('asset.type', '=', options.type as AssetType))
+      .$if(!!options.deletedBefore, (qb) => qb.where('asset.deletedAt', '<=', options.deletedBefore as Date))
       .$call((qb) => {
         let query = qb;
         for (const term of options.terms) {
@@ -225,6 +228,10 @@ export class TrashRepository {
       }
       case TrashItemSort.Name: {
         query = query.orderBy('asset.originalFileName', 'asc').orderBy('asset.id', 'asc');
+        break;
+      }
+      case TrashItemSort.Soonest: {
+        query = query.orderBy('asset.deletedAt', (ob) => ob.asc().nullsLast()).orderBy('asset.id', 'asc');
         break;
       }
       default: {

@@ -7,6 +7,7 @@
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import { helpLinks } from '$lib/frameleaf/help-links.svelte';
   import { appCallback, FRAMELEAF_APP_CALLBACK } from '$lib/frameleaf/oauth-callbacks';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
@@ -189,15 +190,11 @@
                 </p>
               </div>
 
-              <SettingField
-                inputType={SettingInputFieldType.NUMBER}
-                label={$t('frameleaf_oauth_storage_quota_default')}
-                description={$t('frameleaf_oauth_storage_quota_default_description')}
-                bind:value={configToEdit.oauth.defaultStorageQuota}
-                required={false}
-                disabled={disabled || !configToEdit.oauth.enabled}
-                isEdited={configToEdit.oauth.defaultStorageQuota !== config.oauth.defaultStorageQuota}
-              />
+              <!-- FL-516: the space a new account starts with is one setting, "Space for new people" under Users. -->
+              <p class="new-space">
+                {$t('frameleaf_signin_new_space')}
+                <a href={commandCenterUrl('users')}>{$t('frameleaf_signin_new_space_link')}</a>
+              </p>
 
               <SettingField
                 inputType={SettingInputFieldType.TEXT}

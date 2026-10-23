@@ -307,6 +307,40 @@ describe(TrashService.name, () => {
     });
   });
 
+  describe('going soon (FL-519)', () => {
+    beforeEach(() => {
+      mocks.trash.getItems.mockResolvedValue({ items: [], hasNextPage: false, total: 0 });
+    });
+
+    it('lists only what is removed for good within the days asked, going soonest first', async () => {
+      vi.useFakeTimers({ now: new Date('2026-10-23T12:00:00.000Z') });
+      mocks.systemMetadata.get.mockResolvedValue({ trash: { enabled: true, days: 30 } });
+
+      await sut.getItems(authStub.user1, { goingWithinDays: 7, sort: TrashItemSort.Soonest });
+
+      // removed 30 days after deletion, so going within 7 days = deleted 23 or more days ago
+      expect(mocks.trash.getItems).toHaveBeenCalledWith(
+        'user-id',
+        expect.objectContaining({
+          deletedBefore: new Date('2026-09-30T12:00:00.000Z'),
+          order: TrashItemSort.Soonest,
+        }),
+      );
+      vi.useRealTimers();
+    });
+
+    it('lists everything while the trash is off, because it all goes tonight', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ trash: { enabled: false, days: 30 } });
+
+      await sut.getItems(authStub.user1, { goingWithinDays: 7 });
+
+      expect(mocks.trash.getItems).toHaveBeenCalledWith(
+        'user-id',
+        expect.objectContaining({ deletedBefore: undefined }),
+      );
+    });
+  });
+
   describe('missing external originals', () => {
     it("should mark only the library scan's missing originals, not trashed items whose file went missing", async () => {
       const row = {

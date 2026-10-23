@@ -632,6 +632,10 @@ export enum SystemMetadataKey {
   FrameleafRecoveryMlAuthority = 'frameleaf-recovery-ml-authority',
   /** FL-81 (CC-21): when each integrity check last ran in full, for "Last run …" in Maintenance. */
   IntegrityCheckRuns = 'integrity-check-runs',
+  /** FL-521: counts of what each reading feature has done, a few hours of readings, for "N an hour". */
+  LibraryProgressSamples = 'library-progress-samples',
+  /** FL-521: work to start again over every photo in the next overnight run ("Save and … tonight"). */
+  OvernightRedo = 'overnight-redo',
   /** FL-520: the most recent file checks, newest first: when each ran, how it ended and what it found. */
   IntegrityCheckHistory = 'integrity-check-history',
   /** FL-520: when an administrator last pressed Stop on the file checks; a check started before it stops. */

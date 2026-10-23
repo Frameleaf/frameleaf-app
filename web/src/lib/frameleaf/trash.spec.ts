@@ -12,9 +12,31 @@ import {
   toggleSelection,
   trashAgeDays,
   trashAgeLabel,
+  trashGoingWithin,
+  trashTimeLeft,
   trashTypeFilter,
   withoutIds,
 } from '$lib/frameleaf/trash';
+
+describe('time left in the Trash (FL-519)', () => {
+  const now = Date.parse('2026-10-23T12:00:00.000Z');
+
+  it('counts whole days until it goes, and the day it goes', () => {
+    expect(trashTimeLeft('2026-09-27T12:00:00.000Z', 30, now)).toEqual({
+      daysLeft: 4,
+      removedOn: new Date('2026-10-27T12:00:00.000Z'),
+    });
+    // overdue items go with the next tidy-up, never "-2 days"
+    expect(trashTimeLeft('2026-09-01T00:00:00.000Z', 30, now)?.daysLeft).toBe(0);
+    expect(trashTimeLeft(null, 30, now)).toBeNull();
+  });
+
+  it('narrows Show to the next week only for "Going in the next 7 days"', () => {
+    expect(trashGoingWithin('soon')).toBe(7);
+    expect(trashGoingWithin('all')).toBeUndefined();
+    expect(trashTypeFilter('soon')).toBeUndefined();
+  });
+});
 
 const item = (id: string, overrides: Partial<TrashItemResponseDto> = {}): TrashItemResponseDto => ({
   id,
