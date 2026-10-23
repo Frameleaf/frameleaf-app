@@ -19,7 +19,6 @@ import { AbortError, cancelUploadRequests, uploadRequest } from '$lib/utils';
 import { ExecutorQueue } from '$lib/utils/executor-queue';
 import { generateId } from '$lib/utils/generate-id';
 import { asQueryString } from '$lib/utils/shared-links';
-import type { HashAlgorithm } from '$lib/workers/hash-file';
 import { handleError } from './handle-error';
 
 export const uploadExecutionQueue = new ExecutorQueue({ concurrency: 2 });
@@ -182,21 +181,22 @@ function getDeviceAssetId(asset: File) {
   return `web-${asset.name}-${asset.lastModified}-${generateId()}`;
 }
 
-async function hashFile(file: File, signal: AbortSignal, algorithm: HashAlgorithm): Promise<string> {
+async function hashFile(file: File, signal: AbortSignal): Promise<{ sha256: string; sha1: string }> {
   signal.throwIfAborted();
   const worker = new Worker(new URL('$lib/workers/hash-file.ts', import.meta.url), { type: 'module' });
   let abort: () => void;
   try {
-    return await new Promise<string>((resolve, reject) => {
+    return await new Promise((resolve, reject) => {
       abort = () => reject(signal.reason);
       signal.addEventListener('abort', abort, { once: true });
       worker.addEventListener(
         'message',
-        ({ data }: MessageEvent<{ result?: unknown; error?: string }>) => {
+        ({ data }: MessageEvent<{ result?: { sha256?: unknown; sha1?: unknown }; error?: string }>) => {
+          const { sha256, sha1 } = data?.result ?? {};
           if (data?.error) {
             reject(new Error(data.error));
-          } else if (typeof data?.result === 'string' && data.result.length > 0) {
-            resolve(data.result);
+          } else if (typeof sha256 === 'string' && sha256 && typeof sha1 === 'string' && sha1) {
+            resolve({ sha256, sha1 });
           } else {
             reject(new Error('Missing file checksum'));
           }
@@ -205,7 +205,8 @@ async function hashFile(file: File, signal: AbortSignal, algorithm: HashAlgorith
       );
       worker.addEventListener('error', (event) => reject(new Error(event.message)), { once: true });
       worker.addEventListener('messageerror', () => reject(new Error('Unable to read file checksum')), { once: true });
-      worker.postMessage({ file, algorithm });
+      // Both digests from one read: rows adopted from Immich keep SHA-1 (FL-529).
+      worker.postMessage({ file, both: true });
     });
   } finally {
     signal.removeEventListener('abort', abort!);
@@ -259,10 +260,7 @@ async function fileUploader(
       try {
         assertCurrent();
         // New rows store SHA-256 and rows adopted from Immich keep SHA-1, so check both (FL-529).
-        const [sha256, sha1] = await Promise.all([
-          hashFile(assetFile, signal, 'SHA-256'),
-          hashFile(assetFile, signal, 'SHA-1'),
-        ]);
+        const { sha256, sha1 } = await hashFile(assetFile, signal);
         assertCurrent();
 
         const { results } = await checkBulkUpload(

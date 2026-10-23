@@ -143,8 +143,8 @@ describe('fileUploader error handling', () => {
     const sha1 = 'a'.repeat(40);
     const sha256 = 'b'.repeat(64);
     class FakeWorker extends EventTarget {
-      postMessage({ algorithm }: { file: File; algorithm: string }) {
-        const result = algorithm === 'SHA-1' ? sha1 : sha256;
+      postMessage({ both }: { file: File; both?: boolean }) {
+        const result = both ? { sha256, sha1 } : undefined;
         queueMicrotask(() => this.dispatchEvent(new MessageEvent('message', { data: { result } })));
       }
       terminate() {}
