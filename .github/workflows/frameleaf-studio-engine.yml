@@ -291,10 +291,21 @@ jobs:
           npm --prefix studio/engine run build -- --config ../tools/engine-build.config.mjs
           node studio/tools/engine.mjs attest
           cp studio/engine/frameleaf-build.json "$RUNNER_TEMP/frameleaf-build-first.json"
-      - name: Frameleaf adapter tests (FL-88, FL-92)
+      # Includes FL-403's long-timeline budget (long-timeline-performance.test.ts) and VFR
+      # correspondence (vfr-source-correspondence.test.ts); the budget's measurements are retained.
+      - name: Frameleaf adapter tests (FL-88, FL-92, FL-403)
         id: adapter_contracts
+        env:
+          LONG_TIMELINE_REPORT: ${{ runner.temp }}/long-timeline-report.json
         run: |
           COMMAND_MATRIX_REPORT="$RUNNER_TEMP/command-matrix-report.json" node studio/tools/adapter.mjs test
+      - name: Retain the long-timeline measurements (FL-403)
+        if: ${{ always() && steps.adapter_contracts.outcome != 'skipped' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: long-timeline-report
+          path: ${{ runner.temp }}/long-timeline-report.json
+          if-no-files-found: warn
       - name: Recover genuine graph fixture answers after adapter failure
         id: graph_fixture_recovery
         if: ${{ failure() && steps.adapter_contracts.outcome == 'failure' }}
