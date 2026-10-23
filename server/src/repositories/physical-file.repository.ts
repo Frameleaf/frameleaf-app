@@ -20,7 +20,7 @@ import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { sweepAttemptOutputs } from 'src/utils/attempt-sweep.js';
-import { anyUuid, asUuid } from 'src/utils/database.js';
+import { asUuid } from 'src/utils/database.js';
 import { libraryPathOnRelink } from 'src/utils/library-path.js';
 
 type PhysicalFile = Selectable<PhysicalFileTable>;
