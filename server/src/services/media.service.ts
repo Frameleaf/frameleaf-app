@@ -177,6 +177,10 @@ type VideoEditCommandPlan = {
   fallbackReason?: string;
 };
 
+/** A persisted format carries asset.duration in milliseconds; a probe, and everything here, uses seconds. */
+const fromStoredFormat = (format: VideoFormat | null) =>
+  format && { ...format, duration: (format.duration ?? 0) / 1000 };
+
 const cpuVideoEditActions = new Set<AssetEditAction>([
   AssetEditAction.Crop,
   AssetEditAction.Rotate,
@@ -411,7 +415,7 @@ export class MediaService extends BaseService {
     if (asset.type === AssetType.Video || asset.originalFileName.toLowerCase().endsWith('.gif')) {
       this.logger.verbose(`Thumbnail generation for video ${id} ${asset.originalPath}`);
       let videoStream: VideoStreamInfo | null = asset.videoStream;
-      let format: VideoFormat | null = asset.format;
+      let format = fromStoredFormat(asset.format);
       if (!videoStream || !format) {
         this.logger.warn(`Missing persisted video metadata for asset ${asset.id}; probing ${asset.originalPath}`);
         const exists = await this.storageRepository.checkFileExists(asset.originalPath);
@@ -1214,7 +1218,8 @@ export class MediaService extends BaseService {
     const input = asset.originalPath;
     const output = attemptOutputPath(StorageCore.getEncodedVideoPath(asset));
 
-    const { videoStream, format } = asset;
+    const { videoStream } = asset;
+    const format = fromStoredFormat(asset.format);
     const audioStream = asset.audioStream ?? undefined;
     if (!videoStream || !format) {
       this.logger.warn(`Skipped transcoding for asset ${asset.id}: missing metadata; re-run extraction first`);
@@ -1366,7 +1371,8 @@ export class MediaService extends BaseService {
       return JobStatus.Failed;
     }
 
-    const { videoStream, format } = asset;
+    const { videoStream } = asset;
+    const format = fromStoredFormat(asset.format);
     const audioStream = asset.audioStream ?? undefined;
     if (!videoStream || !format) {
       this.logger.warn(`Skipped video edit generation for asset ${asset.id}: missing metadata`);

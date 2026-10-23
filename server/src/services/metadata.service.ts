@@ -933,9 +933,9 @@ export class MetadataService extends BaseService {
 
     this.logger.debug(`Starting motion photo video extraction for asset ${asset.id}: ${asset.originalPath}`);
 
+    let video: Buffer;
     try {
       const position = stats.size - length - padding;
-      let video: Buffer;
       // Samsung MotionPhoto video extraction
       //     HEIC-encoded
       if (hasMotionPhotoVideo) {
@@ -953,6 +953,13 @@ export class MetadataService extends BaseService {
           length,
         });
       }
+    } catch (error) {
+      // A damaged embedded video must not cost the still its metadata, as upstream.
+      this.logger.error(`Failed to extract motion video for ${asset.id}: ${asset.originalPath}: ${error}`);
+      return;
+    }
+
+    try {
       const checksum = this.cryptoRepository.hashSha1(video);
       const existing = await this.assetRepository.getByChecksum({
         ownerId: asset.ownerId,
@@ -961,9 +968,23 @@ export class MetadataService extends BaseService {
       });
       if (existing) {
         if (!(await this.storageRepository.checkFileExists(existing.originalPath))) {
-          throw new Error('Existing motion video original is missing; repair is required before extracting metadata');
-        }
-        if (existing.id === asset.livePhotoVideoId) {
+          // Only our own extracted copy is rewritten; a missing upload is left to media health.
+          if (!StorageCore.isAndroidMotionPath(existing.originalPath)) {
+            this.logger.warn(`Motion video ${existing.id} for asset ${asset.id} is missing: ${existing.originalPath}`);
+            return;
+          }
+          // write the extracted video back, especially if the encoded-video folder has been deleted
+          this.storageCore.ensureFolders(existing.originalPath);
+          await this.storageRepository.createFile(existing.originalPath, video);
+          this.logger.log(`Wrote motion photo video to ${existing.originalPath}`);
+          if (existing.id === asset.livePhotoVideoId) {
+            await this.jobRepository.queue({
+              name: JobName.AssetExtractMetadata,
+              data: { id: existing.id, source: 'motion-photo' },
+            });
+            return;
+          }
+        } else if (existing.id === asset.livePhotoVideoId) {
           return;
         }
       }

@@ -585,7 +585,8 @@ export class AssetMediaService extends BaseService {
       // Missing edit evidence must not permit a redirect to unedited pixels.
       // eslint-disable-next-line unicorn/no-unnecessary-boolean-comparison
       (!dto.edited || (dto.dynamicRange && dto.dynamicRange !== 'hdr' && isEdited === false && !dto.faceSource)) &&
-      imageEncoding?.dynamicRange === 'sdr'
+      // Never inspected (no HDR processing, or an import from before it) was always served as upstream.
+      (imageEncoding ? imageEncoding.dynamicRange === 'sdr' : !hdrEnabled)
     ) {
       // FL-161: through the relay the original is refused unless an administrator allowed it, so the
       // viewer gets the preview instead of a redirect it cannot follow

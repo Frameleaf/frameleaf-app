@@ -779,7 +779,7 @@ describe(MediaService.name, () => {
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),
         ...probeStub.videoStream2160p,
-        format: { ...probeStub.videoStream2160p.format, duration: 120 },
+        format: { ...probeStub.videoStream2160p.format, duration: 120_000 },
       });
       mocks.media.scoreThumbnailCandidate
         .mockResolvedValueOnce(10)
@@ -822,7 +822,7 @@ describe(MediaService.name, () => {
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),
         ...probeStub.videoStream2160p,
-        format: { ...probeStub.videoStream2160p.format, duration: 120 },
+        format: { ...probeStub.videoStream2160p.format, duration: 120_000 },
         coverTimestampMs: 64_500,
       });
 
@@ -848,7 +848,7 @@ describe(MediaService.name, () => {
         mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
           ...getForGenerateThumbnail(asset),
           ...probeStub.videoStream2160p,
-          format: { ...probeStub.videoStream2160p.format, duration: 120 },
+          format: { ...probeStub.videoStream2160p.format, duration: 120_000 },
           coverTimestampMs,
         });
         await sut.handleGenerateThumbnails({ id: asset.id });
@@ -870,7 +870,7 @@ describe(MediaService.name, () => {
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),
         ...probeStub.videoStream2160p,
-        format: { ...probeStub.videoStream2160p.format, duration: 120 },
+        format: { ...probeStub.videoStream2160p.format, duration: 120_000 },
         coverTimestampMs: 119_900,
       });
 
@@ -920,12 +920,34 @@ describe(MediaService.name, () => {
       );
     });
 
+    it('reads the stored duration in milliseconds when the container has no frame count', async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.webm' }).exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        ...probeStub.videoStream2160p,
+        videoStream: { ...probeStub.videoStream2160p.videoStream, frameCount: 0 },
+        format: { ...probeStub.videoStream2160p.format, duration: 20_000 },
+      });
+      mocks.media.scoreThumbnailCandidate.mockResolvedValue(10);
+
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      for (const [index, seconds] of ['4', '10', '16'].entries()) {
+        expect(mocks.media.transcode).toHaveBeenNthCalledWith(
+          index + 1,
+          '/original/path.webm',
+          expect.stringContaining(`_candidate_${index}`),
+          expect.objectContaining({ inputOptions: expect.arrayContaining(['-ss', seconds]) }),
+        );
+      }
+    });
+
     it('should use proportional candidate timestamps for short videos', async () => {
       const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),
         ...probeStub.videoStream2160p,
-        format: { ...probeStub.videoStream2160p.format, duration: 10 },
+        format: { ...probeStub.videoStream2160p.format, duration: 10_000 },
       });
       mocks.media.scoreThumbnailCandidate.mockResolvedValueOnce(10).mockResolvedValueOnce(80).mockResolvedValueOnce(30);
 
@@ -987,7 +1009,7 @@ describe(MediaService.name, () => {
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),
         ...probeStub.videoStream2160p,
-        format: { ...probeStub.videoStream2160p.format, duration: 30.3 },
+        format: { ...probeStub.videoStream2160p.format, duration: 30_300 },
       });
       mocks.media.scoreThumbnailCandidate.mockResolvedValueOnce(10).mockResolvedValueOnce(80).mockResolvedValueOnce(30);
 
@@ -1043,7 +1065,7 @@ describe(MediaService.name, () => {
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),
         ...probeStub.videoStream2160p,
-        format: { ...probeStub.videoStream2160p.format, duration: 10 },
+        format: { ...probeStub.videoStream2160p.format, duration: 10_000 },
       });
       mocks.media.scoreThumbnailCandidate.mockRejectedValue(new Error('could not read candidate'));
 
@@ -1079,7 +1101,7 @@ describe(MediaService.name, () => {
         ...getForGenerateThumbnail(asset),
         ...probeStub.videoStream2160p,
         videoStream: { ...probeStub.videoStream2160p.videoStream!, frameCount: 144, frameRate: 24 },
-        format: { ...probeStub.videoStream2160p.format, duration: 6 },
+        format: { ...probeStub.videoStream2160p.format, duration: 6000 },
       });
       mocks.media.scoreThumbnailCandidate.mockResolvedValueOnce(10).mockResolvedValueOnce(80).mockResolvedValueOnce(30);
 
@@ -1105,7 +1127,7 @@ describe(MediaService.name, () => {
         ...getForGenerateThumbnail(asset),
         ...probeStub.videoStream2160p,
         videoStream: { ...probeStub.videoStream2160p.videoStream!, frameCount: 251, frameRate: 24 },
-        format: { ...probeStub.videoStream2160p.format, duration: 10.458 },
+        format: { ...probeStub.videoStream2160p.format, duration: 10_458 },
       });
       mocks.media.scoreThumbnailCandidate.mockResolvedValueOnce(10).mockResolvedValueOnce(80).mockResolvedValueOnce(30);
 
