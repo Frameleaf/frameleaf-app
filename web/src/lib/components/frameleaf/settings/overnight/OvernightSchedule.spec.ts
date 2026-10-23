@@ -59,6 +59,8 @@ describe('Overnight schedule (FL-363)', () => {
           finishedAt: '2026-10-20T01:22:00.000Z',
           manual: false,
           results: { cleanup: 'done', folders: 'done', icloud: 'off', fileChecks: 'done' },
+          removedFromTrash: 12,
+          newFiles: 214,
         },
       ],
     });
@@ -86,6 +88,11 @@ describe('Overnight schedule (FL-363)', () => {
     // no schedule expression and no operator wording anywhere
     expect(screen.queryByText(/\* \* \*/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Database cleanup|Sync quota usage/)).not.toBeInTheDocument();
+  });
+
+  it('says what each night removed and found (FL-518)', async () => {
+    render(OvernightSchedule);
+    expect(await screen.findByText(/12 items left Trash for good · 214 new files/)).toBeInTheDocument();
   });
 
   it('says Trash is not emptied while the tidy-up is off, and switches it back on', async () => {

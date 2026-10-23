@@ -57,6 +57,18 @@ const OvernightResponseSchema = z
             finishedAt: z.string().meta({ format: 'date-time' }),
             manual: z.boolean(),
             results: OvernightResultsSchema,
+            removedFromTrash: z
+              .int()
+              .min(0)
+              .nullable()
+              .optional()
+              .describe('Items that left Trash for good during the run; null or absent when not measured'),
+            newFiles: z
+              .int()
+              .min(0)
+              .nullable()
+              .optional()
+              .describe('Photos and videos that came in during the run; null or absent when not measured'),
           })
           .meta({ id: 'OvernightNightDto' }),
       )

@@ -95525,6 +95525,20 @@
           "manual": {
             "type": "boolean"
           },
+          "newFiles": {
+            "description": "Photos and videos that came in during the run; null or absent when not measured",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "removedFromTrash": {
+            "description": "Items that left Trash for good during the run; null or absent when not measured",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
           "results": {
             "$ref": "#/components/schemas/OvernightResultsDto"
           },

@@ -2709,6 +2709,10 @@ export type OvernightResultsDto = {
 export type OvernightNightDto = {
     finishedAt: string;
     manual: boolean;
+    /** Photos and videos that came in during the run; null or absent when not measured */
+    newFiles?: number | null;
+    /** Items that left Trash for good during the run; null or absent when not measured */
+    removedFromTrash?: number | null;
     results: OvernightResultsDto;
     startedAt: string;
 };

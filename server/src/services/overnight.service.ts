@@ -20,12 +20,14 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
 import { QueueService } from 'src/services/queue.service.js';
 import { getConfig } from 'src/utils/config.js';
 import {
   OVERNIGHT_STEPS,
   OVERNIGHT_STEP_LIMIT_MS,
+  type OvernightNight,
   type OvernightRun,
   type OvernightState,
   type OvernightStep,
@@ -78,6 +80,7 @@ export class OvernightService {
     private icloudRepository: ICloudSyncRepository,
     private queueService: QueueService,
     private mediaHealth: MediaHealthService,
+    private trashRepository: TrashRepository,
   ) {
     this.logger.setContext(OvernightService.name);
   }
@@ -126,13 +129,58 @@ export class OvernightService {
       }
       await this.save({
         ...state,
-        run: { startedAt: new Date().toISOString(), manual, step: OVERNIGHT_STEPS[0], begunAt: null, results: {} },
+        run: {
+          startedAt: new Date().toISOString(),
+          manual,
+          step: OVERNIGHT_STEPS[0],
+          begunAt: null,
+          results: {},
+          trashDue: await this.trashDue(),
+        },
       });
       await this.startRequestedRedo();
       await this.startRequestedRecompare();
       await this.advance();
       return JobStatus.Success;
     });
+  }
+
+  /**
+   * FL-518: what the tidy-up is due to remove: items in Trash past their keep time (everything in it
+   * while the Trash is off). Measured again when the run ends, so a night can say what it removed.
+   */
+  private async trashDue(): Promise<OvernightRun['trashDue']> {
+    try {
+      const { trash } = await this.readConfig();
+      const cutoff = new Date(Date.now() - (trash.enabled ? trash.days : 0) * 86_400_000);
+      return { cutoff: cutoff.toISOString(), count: await this.trashRepository.countTrashedBefore(cutoff) };
+    } catch (error) {
+      this.logger.warn(`Overnight run: could not count what Trash will remove: ${error}`);
+      return undefined;
+    }
+  }
+
+  /** FL-518: a finished run, with what it removed from Trash and what came in while it ran. */
+  private async night(run: OvernightRun, results: OvernightRun['results']): Promise<OvernightNight> {
+    let removedFromTrash: number | null = null;
+    let newFiles: number | null = null;
+    try {
+      if (run.trashDue) {
+        const left = await this.trashRepository.countTrashedBefore(new Date(run.trashDue.cutoff));
+        removedFromTrash = Math.max(0, run.trashDue.count - left);
+      }
+      newFiles = await this.trashRepository.countAddedSince(new Date(run.startedAt));
+    } catch (error) {
+      this.logger.warn(`Overnight run: could not count what the night did: ${error}`);
+    }
+    return {
+      startedAt: run.startedAt,
+      finishedAt: new Date().toISOString(),
+      manual: run.manual,
+      results,
+      removedFromTrash,
+      newFiles,
+    };
   }
 
   /**
@@ -339,12 +387,7 @@ export class OvernightService {
       } else {
         state = {
           run: null,
-          nights: keepNight(state.nights, {
-            startedAt: run.startedAt,
-            finishedAt: new Date().toISOString(),
-            manual: run.manual,
-            results,
-          }),
+          nights: keepNight(state.nights, await this.night(run, results)),
         };
         run = null;
       }
@@ -366,12 +409,7 @@ export class OvernightService {
       }
       await this.save({
         run: null,
-        nights: keepNight(state.nights, {
-          startedAt: run.startedAt,
-          finishedAt: new Date().toISOString(),
-          manual: run.manual,
-          results,
-        }),
+        nights: keepNight(state.nights, await this.night(run, results)),
       });
     });
     return this.getStatus();
