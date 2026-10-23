@@ -53,7 +53,8 @@
     $props();
 
   const live = $derived(accountLifecycle(user) === 'active');
-  const isSelf = $derived(authManager.user.id === user.id);
+  const selfId = $derived(authManager.authenticated ? authManager.user.id : undefined);
+  const isSelf = $derived(selfId === user.id);
 
   // ---- About: one form, saved together ----
   let name = $state('');
@@ -177,7 +178,7 @@
       <SegmentedControl
         label={$t('frameleaf_userpage_role')}
         value={isAdmin ? 'admin' : 'member'}
-        disabled={!live || !canChangeRole(user, authManager.user.id)}
+        disabled={!live || !canChangeRole(user, selfId ?? "")}
         options={[
           { value: 'member', label: $t('frameleaf_userpage_role_member') },
           { value: 'admin', label: $t('frameleaf_userpage_role_admin') },

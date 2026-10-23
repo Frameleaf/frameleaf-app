@@ -148,7 +148,7 @@
         savePreferences={(update) => updateUserPreferencesAdmin({ id: user.id, userPreferencesUpdateDto: update })}
         loadPreferences={() => getUserPreferencesAdmin({ id: user.id })}
         onPreferencesSaved={() => onPreferencesSaved(user)}
-        onOpenPrivacy={user.id === authManager.user.id ? openOwnLockedSettings : undefined}
+        onOpenPrivacy={authManager.authenticated && user.id === authManager.user.id ? openOwnLockedSettings : undefined}
       />
     {/key}
   </Pane>

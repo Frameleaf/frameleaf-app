@@ -55,6 +55,9 @@ const mock = async (context: BrowserContext) => {
 test('person page', async ({ context, page }) => {
   await page.setViewportSize({ width: 1440, height: 1600 });
   await mock(context);
+  page.on('response', (r) => r.status() >= 500 && console.log('R5XX', r.url()));
+  page.on('pageerror', (e) => console.log('PAGEERROR', e.message, e.stack?.slice(0, 600)));
+  page.on('console', (m) => !m.text().includes('Failed to load') && !m.text().includes('WebSocket') && console.log('CONSOLE', m.text().slice(0, 400)));
   await page.goto(`/user-settings?area=users&user=${EMMA}`);
   await expect(page.getByRole('heading', { name: 'What they’ve turned on' })).toBeVisible({ timeout: 60_000 });
   await page.screenshot({ path: `${OUT}/person.png`, fullPage: true });
@@ -63,6 +66,9 @@ test('person page', async ({ context, page }) => {
 test('add a person', async ({ context, page }) => {
   await page.setViewportSize({ width: 1440, height: 1400 });
   await mock(context);
+  page.on('response', (r) => r.status() >= 500 && console.log('R5XX', r.url()));
+  page.on('pageerror', (e) => console.log('PAGEERROR', e.message, e.stack?.slice(0, 600)));
+  page.on('console', (m) => !m.text().includes('Failed to load') && !m.text().includes('WebSocket') && console.log('CONSOLE', m.text().slice(0, 400)));
   await page.goto('/user-settings?area=users&new=1');
   await expect(page.getByRole('heading', { name: 'Add a person' }).first()).toBeVisible({ timeout: 60_000 });
   await page.screenshot({ path: `${OUT}/add-person.png`, fullPage: true });
@@ -71,6 +77,9 @@ test('add a person', async ({ context, page }) => {
 test('users list', async ({ context, page }) => {
   await page.setViewportSize({ width: 1440, height: 1200 });
   await mock(context);
+  page.on('response', (r) => r.status() >= 500 && console.log('R5XX', r.url()));
+  page.on('pageerror', (e) => console.log('PAGEERROR', e.message, e.stack?.slice(0, 600)));
+  page.on('console', (m) => !m.text().includes('Failed to load') && !m.text().includes('WebSocket') && console.log('CONSOLE', m.text().slice(0, 400)));
   await page.goto('/user-settings?area=users');
   await expect(page.getByText('Each new person starts with')).toBeVisible({ timeout: 60_000 });
   await page.screenshot({ path: `${OUT}/users.png`, fullPage: true });
