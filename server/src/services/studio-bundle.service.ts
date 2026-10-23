@@ -1461,7 +1461,9 @@ export class StudioBundleService {
             if (error instanceof BadRequestException || error instanceof PayloadTooLargeException) {
               this.logger.warn(`Studio bundle import: project file ${item.id} was not kept: ${errorMessage(error)}`);
             } else if (settle) {
-              this.logger.error(`Studio bundle import: project file ${item.id} could not be kept: ${errorMessage(error)}`);
+              this.logger.error(
+                `Studio bundle import: project file ${item.id} could not be kept: ${errorMessage(error)}`,
+              );
             } else {
               throw error;
             }

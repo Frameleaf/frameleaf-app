@@ -369,8 +369,12 @@ export class StudioProjectRepository {
             SELECT ${row.id}::uuid, id, "ownerId", "sourceRevision", producer, checksum, path, "derivedFrom"
             FROM public.studio_generated_resource
             WHERE "projectId"=${seed.duplicatedFromId}::uuid AND "ownerId"=${seed.ownerId}::uuid`.execute(trx);
-          const folder = join(StorageCore.getFolderLocation(StorageFolder.Exports, seed.ownerId), 'studio-imports', row.id);
           for (const item of imports) {
+            const folder = join(
+              StorageCore.getFolderLocation(StorageFolder.Exports, seed.ownerId),
+              'studio-imports',
+              row.id,
+            );
             // ponytail: a restored import's name may carry no plain extension; its type is the row's.
             const extension = /^\.[a-zA-Z0-9]+$/.test(extname(item.path)) ? extname(item.path) : '.bin';
             const path = join(folder, `${item.id}${extension}`);
