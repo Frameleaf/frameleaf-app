@@ -376,6 +376,9 @@ export class StorageTemplateService extends BaseService {
           if (moved) {
             await this.physicalFileRepository.updateOriginalPhysicalPathForAsset(id, newPath);
           }
+        } else if (asset.libraryPath !== newPath) {
+          // FL-417: the shared file stays where it is; the photo shows its own template path
+          await this.assetRepository.update({ id, libraryPath: newPath });
         }
 
         const sidecarPath = getAssetFile(asset.files, AssetFileType.Sidecar, { isEdited: false })?.path;

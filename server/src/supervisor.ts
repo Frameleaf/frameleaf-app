@@ -413,8 +413,8 @@ async function main() {
   // FL-294: `frameleaf-admin`; `immich-admin` is its deprecated alias
   if (immichApp === 'frameleaf-admin' || immichApp === 'immich-admin') {
     if (process.argv[2] === 'buddy-backup') {
-      const { buddyBackupCommand } = await import('./utils/buddy-backup-offline.js');
-      return buddyBackupCommand(process.argv.slice(3));
+      const { runBuddyBackupCommand } = await import('./utils/buddy-backup-offline.js');
+      return runBuddyBackupCommand(process.argv.slice(3));
     }
     process.title = 'frameleaf_admin_cli';
     process.env.FRAMELEAF_LOG_LEVEL = LogLevel.Warn;

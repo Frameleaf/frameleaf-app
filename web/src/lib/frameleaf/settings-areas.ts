@@ -36,6 +36,7 @@ export type SettingsAreaId =
   | 'processing'
   | 'cloud'
   | 'security'
+  | 'privacy'
   | 'notifications'
   | 'server'
   | 'sharing'
@@ -136,14 +137,14 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     sections: ['cloud-account', 'cloud-plan', 'cloud-license', 'cloud-remote', 'cloud-processing', 'cloud-backup'],
     adminOnly: true,
   },
-  // The template's Access & security holds each account's own sign-in (password, PIN, provider),
-  // Locked tags & people, and devices & API keys next to the server's sign-in methods.
+  // FL-367 (owner, 2026-10-10): Access & security is two entries. "Who can sign in" holds what an
+  // administrator sets for everyone; FL-158: Sign in with Frameleaf sits beside the server's own
+  // sign-in methods.
   {
     id: 'security',
     group: 'server',
-    // FL-158: Sign in with Frameleaf sits beside the administrator's own provider.
     sections: ['authentication', 'frameleaf-signin'],
-    personal: ['password', 'user-pin-code-settings', 'oauth', 'suppressed-content', 'authorized-devices', 'api-keys'],
+    adminOnly: true,
   },
   // The account's own email notifications sit with the server's email delivery, as in the template.
   // FL-368: "Emails you receive" comes first, because every account has it. FL-421: an
@@ -181,6 +182,14 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
       'user-purchase-settings',
     ],
   },
+  // FL-367: "Your sign-in & privacy", what belongs to the person signed in: how they sign in, their
+  // devices and API keys, and their Locked PIN and Always Locked rules.
+  {
+    id: 'privacy',
+    group: 'personal',
+    sections: [],
+    personal: ['password', 'oauth', 'authorized-devices', 'api-keys', 'user-pin-code-settings', 'suppressed-content'],
+  },
   // FL-71: the old /admin/users pages; one account opens inside the section (`?user=<id>`).
   { id: 'users', group: 'server', sections: ['accounts'] },
   // FL-78: the template moves external library settings out of "Import & protection" into their own
@@ -217,6 +226,7 @@ export const AREA_TILE_COLORS: Readonly<Record<SettingsAreaId, string>> = Object
   processing: '#636366',
   cloud: '#0a84ff',
   security: '#0a84ff',
+  privacy: '#5e5ce6',
   notifications: '#ff453a',
   server: '#8e8e93',
   maintenance: '#636366',
@@ -282,6 +292,10 @@ export const PLAIN_AREAS: readonly SettingsAreaId[] = Object.freeze([
   // FL-365
   'storage',
   'backup',
+  // FL-367
+  'cloud',
+  'security',
+  'privacy',
 ]);
 export const isPlainArea = (area: SettingsAreaId) => PLAIN_AREAS.includes(area);
 
@@ -519,10 +533,16 @@ export const areaSectionKeys = (areaId: SettingsAreaId): string[] => {
  */
 export const resolveSettingsArea = (params: {
   area?: string | null;
+  section?: string | null;
   isOpen?: string | null;
   isAdmin?: boolean;
 }): SettingsAreaId => {
   if (isSettingsAreaId(params.area)) {
+    // FL-367: a person's own sign-in pages moved from Access & security to "Your sign-in & privacy";
+    // addresses written before still open them.
+    if (params.area === 'security' && params.section && areaForPersonalSection(params.section) === 'privacy') {
+      return 'privacy';
+    }
     return params.area;
   }
   for (const key of (params.isOpen ?? '').split(' ')) {
@@ -709,6 +729,8 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
   security: {
     authentication: 'sign_in',
     'frameleaf-signin': 'sign_in',
+  },
+  privacy: {
     password: 'sign_in',
     oauth: 'sign_in',
     'user-pin-code-settings': 'locked_content',

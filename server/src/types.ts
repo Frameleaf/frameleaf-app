@@ -827,6 +827,8 @@ export type StorageAsset = {
   timeZone: string | null;
   fileCreatedAt: Date;
   originalPath: string;
+  /** FL-417: the photo's own path while it shares a file kept elsewhere */
+  libraryPath?: string | null;
   physicalOriginalFileId?: string | null;
   originalFileName: string;
   fileSizeInByte: number | null;
@@ -1526,6 +1528,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;
   [SystemMetadataKey.BackupRestoreVerification]: BackupRestoreVerification;
   [SystemMetadataKey.BackupSequence]: BackupSequenceState;
+  [SystemMetadataKey.ApiKeyLastUsed]: Record<string, string>;
   [SystemMetadataKey.FrameleafSetup]: FrameleafSetupState;
   [SystemMetadataKey.FrameleafMailConnection]: FrameleafMailConnection;
   [SystemMetadataKey.FrameleafMailSignIn]: FrameleafMailSignIn;

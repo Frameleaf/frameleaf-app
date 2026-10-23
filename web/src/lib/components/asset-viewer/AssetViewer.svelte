@@ -925,6 +925,7 @@
     }
   };
 
+  let facesShownFor: string | undefined;
   const refresh = async () => {
     const target = asset;
     const isCurrent = captureView();
@@ -935,7 +936,10 @@
       return;
     }
     ocrManager.clear();
-    faceManager.clear();
+    // LIB-02: an update to the open item (a saved date, the server's re-read after it) keeps its people
+    // on screen while they are read again, instead of flashing "No people tagged yet."
+    faceManager.clear(target.id === facesShownFor);
+    facesShownFor = target.id;
     if (!sharedLink) {
       await ocrManager.getAssetOcr(target.id);
       if (!isCurrent()) {

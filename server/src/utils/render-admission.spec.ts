@@ -9,7 +9,9 @@ import {
   evaluateRenderOutput,
   evaluateRunningLimits,
   evaluateSessionAdmission,
+  hdrMasterEvidence,
   isWorkerRefusal,
+  operationOutputRequest,
   provesOutput,
   requiredOutput,
   signInputGrant,
@@ -733,6 +735,67 @@ describe('evaluateRenderOutput (FL-42)', () => {
       evaluateRenderOutput([sdr, hdr], { format: 'mp4-hevc-main10', color: 'hdr10', resolution: '2160p' }),
     ).toEqual({
       supported: true,
+    });
+  });
+
+  describe('HDR10 and HLG masters (FL-107)', () => {
+    // What the bundled worker reports after writing and decoding back both masters with libx265.
+    const bundled = {
+      gpuMemoryBytes: 8 * gib,
+      codecs: ['webcodecs-avc', 'libx265'],
+      formats: ['mp4', 'mp4-hevc', 'mp4-hevc-main10', 'mp4-hevc-main10+pq', 'mp4-hevc-main10+hlg'],
+      colorPrecision: { maxBitDepth: 10, hdr10: true, dolbyVision: false },
+    };
+    const hlg = {
+      format: 'mp4-hevc-main10',
+      color: 'preserve',
+      resolution: '1080p',
+      minBitDepth: 10,
+      transfer: 'arib-std-b67' as const,
+    };
+    const pq = { ...hlg, color: 'hdr10', transfer: 'smpte2084' as const };
+
+    it('names the exact master evidence', () => {
+      expect(hdrMasterEvidence('mp4-hevc-main10', 'smpte2084')).toBe('mp4-hevc-main10+pq');
+      expect(hdrMasterEvidence('mp4-hevc-main10', 'arib-std-b67')).toBe('mp4-hevc-main10+hlg');
+    });
+
+    it('admits an HDR10 and an HLG master from the session that proved them', () => {
+      expect(evaluateRenderOutput([bundled], pq)).toEqual({ supported: true });
+      expect(evaluateRenderOutput([bundled], hlg)).toEqual({ supported: true });
+    });
+
+    it('refuses HLG without the exact HLG master evidence, even at ten bits', () => {
+      const pqOnly = { ...bundled, formats: bundled.formats.filter((format) => !format.endsWith('+hlg')) };
+      expect(evaluateRenderOutput([pqOnly], hlg)).toEqual({
+        supported: false,
+        refusal: RenderOutputRefusal.IncompatibleColor,
+      });
+      expect(evaluateRenderOutput([hdr], hlg)).toMatchObject({ refusal: RenderOutputRefusal.IncompatibleColor });
+      // HLG kept in an 8-bit format: no session proved that format as HLG.
+      expect(evaluateRenderOutput([bundled], { ...hlg, format: 'mp4-hevc' })).toMatchObject({
+        refusal: RenderOutputRefusal.IncompatibleColor,
+      });
+    });
+
+    it('refuses a PQ picture kept from PQ sources without verified HDR10', () => {
+      const tenBitOnly = { ...bundled, colorPrecision: { maxBitDepth: 10, hdr10: false, dolbyVision: false } };
+      expect(evaluateRenderOutput([tenBitOnly], { ...pq, color: 'preserve' })).toMatchObject({
+        refusal: RenderOutputRefusal.IncompatibleColor,
+      });
+      expect(evaluateRenderOutput([bundled], { ...pq, color: 'preserve' })).toEqual({ supported: true });
+    });
+
+    it('offers a queued claim only to a session that can keep its sealed contract', () => {
+      const settings = { format: 'mp4-hevc-main10', color: 'preserve', resolution: '1080p' };
+      const request = operationOutputRequest(settings, {
+        contract: { video: { minBitDepth: 10, transfer: 'arib-std-b67' } },
+      });
+      expect(request).toEqual({ ...settings, minBitDepth: 10, transfer: 'arib-std-b67' });
+      expect(evaluateRenderOutput([hdr], request)).toMatchObject({ refusal: RenderOutputRefusal.IncompatibleColor });
+      expect(evaluateRenderOutput([bundled], request)).toEqual({ supported: true });
+      expect(operationOutputRequest(settings, null)).toEqual(settings);
+      expect(operationOutputRequest(settings, { contract: { video: { transfer: 'bt709' } } })).toEqual(settings);
     });
   });
 });

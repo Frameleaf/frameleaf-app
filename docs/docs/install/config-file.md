@@ -206,7 +206,7 @@ Part of the default configuration looks like this (the file can hold any setting
   "oauth": {
     "autoLaunch": false,
     "autoRegister": true,
-    "buttonText": "Login with OAuth",
+    "buttonText": "Sign in with your provider",
     "clientId": "",
     "clientSecret": "",
     "defaultStorageQuota": null,

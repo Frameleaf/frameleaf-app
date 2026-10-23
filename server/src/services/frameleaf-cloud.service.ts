@@ -900,6 +900,9 @@ export class FrameleafCloudService extends BaseService {
       level: NotificationLevel.Info,
       title: 'Server linked to Frameleaf',
       description: `This server is linked to ${link.accountLabel ?? 'a Frameleaf account'}. Cloud features you turn on use this link.`,
+      systemTemplate: link.accountLabel
+        ? { version: 1, key: 'cloud-linked', args: { account: link.accountLabel } }
+        : { version: 1, key: 'cloud-linked-unnamed', args: {} },
       dedupeKey: `frameleaf-cloud:linked:${link.linkedAt}`,
     });
     return link;
@@ -933,6 +936,7 @@ export class FrameleafCloudService extends BaseService {
         level: NotificationLevel.Info,
         title: 'Server unlinked from Frameleaf',
         description: 'Cloud features on this server stopped. Local photos, accounts and sign-in are unchanged.',
+        systemTemplate: { version: 1, key: 'cloud-unlinked', args: {} },
         dedupeKey: `frameleaf-cloud:unlinked:${Date.now()}`,
       });
       return this.getStatus();
@@ -1133,6 +1137,7 @@ export class FrameleafCloudService extends BaseService {
       level: NotificationLevel.Warning,
       title: 'Frameleaf Cloud ended this server’s link',
       description: `${reason} Cloud features stopped; local photos, accounts and sign-in are unchanged. Link again from Settings → Frameleaf Cloud.`,
+      systemTemplate: { version: 1, key: 'cloud-revoked', args: { reason } },
       dedupeKey: 'frameleaf-cloud:revoked',
       dedupeDays: 1,
     });
@@ -1444,12 +1449,12 @@ export class FrameleafCloudService extends BaseService {
   }
 
   /**
-   * FL-434 (owner decision 2026-10-10, FC-147): Buddy Backup needs Server licences, not a plan, as long as
-   * the two servers connect directly; only the relay needs the plan. Without a plan this server has no
-   * Cloud-issued certificate, so the direct address is the one the owner set up themselves: the HTTPS
-   * external domain. It is published only while a Buddy pairing can use it (active, or ended and still
-   * readable). Cloud hands it only to the buddy's grant; the apps' reads for a server without a plan keep
-   * only home-network entries.
+   * FL-434 (owner decision 2026-10-10, FC-147): a Buddy pairing needs Server licences. The direct address
+   * published here is the one the owner set up themselves: the HTTPS external domain. It is published only
+   * while a Buddy pairing can use it (active, or ended and still readable). Cloud decides who receives it:
+   * since FL-513 (FC-139, 2026-10-21) the buddy's grant carries this server's WAN, IPv6, custom and relay
+   * entries only while its owner has REMOTE_ACCESS (active or grace), otherwise only home-network entries;
+   * the apps' reads for a server without a plan keep only home-network entries too.
    */
   private async withBuddyDirect(
     endpoints: Array<{ kind: string; url: string }>,
@@ -1661,6 +1666,7 @@ export class FrameleafCloudService extends BaseService {
               : NotificationLevel.Info,
         title: 'Message from Frameleaf Cloud',
         description: notice.message,
+        systemTemplate: { version: 1, key: 'cloud-message', args: { message: notice.message } },
         dedupeKey: `frameleaf-cloud:notice:${keyOf(notice)}`,
         dedupeDays: 30,
       });
@@ -1794,6 +1800,7 @@ export class FrameleafCloudService extends BaseService {
       level: NotificationLevel.Warning,
       title: 'Custom hostname needs attention',
       description: `${host} is not fully verified by Frameleaf Cloud. ${detail.problem}`,
+      systemTemplate: { version: 1, key: 'cloud-hostname-failing', args: { host, problem: detail.problem } },
       dedupeKey: `frameleaf-cloud:custom-hostname-failing:${host}:${noticedAt}`,
       dedupeDays: 30,
     });
@@ -2097,6 +2104,7 @@ export class FrameleafCloudService extends BaseService {
           ? 'Frameleaf Cloud no longer accepts this server’s key.'
           : 'Frameleaf Cloud asked for this server to be linked again.'
       } Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed.`,
+      systemTemplate: { version: 1, key: why === 'key' ? 'cloud-relink-key' : 'cloud-relink-command', args: {} },
       dedupeKey: 'frameleaf-cloud:relink',
       dedupeDays: 1,
     });
@@ -2148,6 +2156,7 @@ export class FrameleafCloudService extends BaseService {
       title: 'This server’s new identity key could not be read',
       description:
         'The key Frameleaf Cloud accepted in the last key rotation could not be read, so it was set aside and this server keeps using its previous key. A new rotation is under way. If it does not finish before the previous key expires (within a day of that rotation), the link to Frameleaf Cloud stops working and this server must be linked again. This rotation runs whatever the cloud command permissions are set to.',
+      systemTemplate: { version: 1, key: 'cloud-identity-key-damaged', args: {} },
       dedupeKey: 'frameleaf-cloud:identity-key-damaged',
       dedupeDays: 1,
     });
@@ -2283,6 +2292,7 @@ export class FrameleafCloudService extends BaseService {
       title: 'Link this server to Frameleaf again',
       description:
         'This server’s identity key could not be replaced before its previous key expired, so Frameleaf Cloud no longer accepts it. Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed.',
+      systemTemplate: { version: 1, key: 'cloud-identity-key-expired', args: {} },
       dedupeKey: 'frameleaf-cloud:identity-key-expired',
       dedupeDays: 1,
     });
@@ -2550,12 +2560,34 @@ export class FrameleafCloudService extends BaseService {
     }
   }
 
-  private notifyBackupPlan({ key, audience, title, body, data, userIds }: BackupPlanNotice & { userIds: string[] }) {
+  private notifyBackupPlan({
+    key,
+    audience,
+    title,
+    body,
+    data,
+    systemTemplate,
+    userIds,
+  }: BackupPlanNotice & { userIds: string[] }) {
     if (audience === 'admins') {
-      this.notify({ level: NotificationLevel.Warning, title, description: body, dedupeKey: `frameleaf-cloud:${key}` });
+      this.notify({
+        level: NotificationLevel.Warning,
+        title,
+        description: body,
+        systemTemplate,
+        dedupeKey: `frameleaf-cloud:${key}`,
+      });
     }
     this.eventRepository
-      .emit('PushNotify', { type: PushEventType.BackupNeedsAttention, userIds, title, body, data, dedupeKey: key })
+      .emit('PushNotify', {
+        type: PushEventType.BackupNeedsAttention,
+        userIds,
+        title,
+        body,
+        data,
+        systemTemplate,
+        dedupeKey: key,
+      })
       .catch((error) => this.logger.warn(`Could not push the Frameleaf backup plan notice: ${error}`));
   }
 
@@ -2565,7 +2597,8 @@ export class FrameleafCloudService extends BaseService {
     description: string;
     dedupeKey: string;
     dedupeDays?: number;
-    systemTemplate?: SystemNotificationTemplate;
+    /** FL-406: every notice here renders in each administrator's language; title/description stay the English fallback. */
+    systemTemplate: SystemNotificationTemplate;
   }) {
     this.eventRepository.emit('AdminNotify', { type: NotificationType.SystemMessage, ...notice }).catch((error) => {
       this.logger.warn(`Could not notify administrators: ${error}`);

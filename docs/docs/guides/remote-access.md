@@ -6,7 +6,7 @@ This page gives a few pointers on how to access your Frameleaf server from outsi
 
 Link the server to a Frameleaf account, then open **Settings → Frameleaf Cloud → Remote access**.
 
-- **Server licence, no plan.** The server gets its own Frameleaf direct address and certificate. A browser or a Buddy Backup partner reaches it directly when your router lets them in (automatic port mapping, or **I forward the port myself**).
+- **Server licence, no plan.** The server gets its own Frameleaf direct address and certificate. A browser reaches it directly when your router lets it in (automatic port mapping, or **I forward the port myself**). Frameleaf Cloud does not give this address, your Public server URL or the relay to a Buddy Backup partner without a plan, so a partner reaches the server only on the same home network.
 - **Frameleaf Cloud plan.** Adds the Frameleaf relay, which works even when your router or internet provider blocks incoming connections, plus a custom hostname on a domain you own and the monthly relay allowance. The Frameleaf apps use the relay away from home.
 - **Your own address.** An address you set up yourself (your own domain behind a reverse proxy, a VPN or Tailscale, described below) works anywhere without a licence or a plan. Enter it as the **Public server URL** so shared links and sign-in callbacks use it.
 

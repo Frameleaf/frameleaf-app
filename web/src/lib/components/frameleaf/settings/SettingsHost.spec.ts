@@ -176,7 +176,9 @@ describe('the Command Center (FL-71)', () => {
       'Libraries',
       'Utilities',
     ]);
-    expect(names.at(-2)).toBe('Your preferences');
+    expect(names.at(-3)).toBe('Your preferences');
+    // FL-367
+    expect(names.at(-2)).toBe('Your sign-in & privacy');
     expect(names.at(-1)).toBe('Change history');
     expect(screen.getByRole('button', { name: 'Storage & originals' })).toHaveAttribute('aria-current', 'page');
   });
@@ -200,40 +202,14 @@ describe('the Command Center (FL-71)', () => {
     }
   });
 
-  it('shows an area as a section directory and one section at a time with its breadcrumb', async () => {
-    open('/user-settings?area=cloud');
+  // FL-365 / FL-367: Storage & originals and Frameleaf Cloud were the last areas drawn as a section
+  // directory; every area with several pages now opens on a landing page of its own.
+  it('opens a section one at a time, with the way back to its area', async () => {
+    open('/user-settings?area=cloud&section=cloud-account');
     const { container } = render(SettingsHost, { sections });
-    expect(screen.getByRole('heading', { level: 1, name: 'Frameleaf Cloud' })).toBeInTheDocument();
-    expect(container.querySelector('.cc-section')).toBeNull();
-    await userEvent.click(
-      within(container.querySelector<HTMLElement>('.cc-directory')!).getByRole('button', { name: /Account & link/ }),
-    );
-    expect(state.goto).toHaveBeenCalledWith('/user-settings?area=cloud&section=cloud-account', expect.any(Object));
-
-    state.url.searchParams.set('section', 'cloud-account');
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Account & link' })).toBeInTheDocument());
-    expect(container.querySelector('#setting-cloud-account')).not.toBeNull();
+    await waitFor(() => expect(container.querySelector('#setting-cloud-account')).not.toBeNull());
     expect(container.querySelector('#setting-cloud-remote')).toBeNull();
-    const pages = screen.getByLabelText('Frameleaf Cloud pages');
-    expect(within(pages).getByRole('button', { name: 'Account & link' })).toHaveAttribute('aria-current', 'page');
-    // The breadcrumb returns to the directory.
-    const breadcrumb = screen.getByRole('heading', { level: 1 }).parentElement!;
-    await userEvent.click(within(breadcrumb).getByRole('button', { name: 'Frameleaf Cloud' }));
-    expect(state.goto).toHaveBeenLastCalledWith('/user-settings?area=cloud', expect.any(Object));
-  });
-
-  it('draws an area directory as grouped lists, every row with its own icon (FL-71, FL-10, FL-168)', () => {
-    open('/user-settings?area=cloud');
-    const { container } = render(SettingsHost, { sections });
-    const directory = container.querySelector<HTMLElement>('.cc-directory')!;
-    expect(within(directory).getAllByRole('heading', { level: 2 }).length).toBe(2);
-    // The section's own icon and the chevron; no area icon repeated on every row.
-    for (const row of within(directory).getAllByRole('button')) {
-      expect(row.querySelectorAll('svg')).toHaveLength(2);
-      expect(row.querySelector(':scope .row-icon path')).toHaveAttribute('d', ICON);
-    }
-    // Every row is a server setting, like the area, so none carries a scope tag.
-    expect(directory.querySelector('.cc-directory-scope')).toBeNull();
+    expect(container.querySelector('.cc-directory')).toBeNull();
   });
 
   it('opens a plain-words area on its own landing page instead of a directory (FL-368)', () => {
@@ -436,9 +412,9 @@ describe('the Command Center (FL-71)', () => {
       'Library care',
       'Utilities',
       'Trash',
-      'Access & security',
       'Notifications',
       'Your preferences',
+      'Your sign-in & privacy',
       'Change history',
     ]);
     // A server area falls back to the first area the account may open.

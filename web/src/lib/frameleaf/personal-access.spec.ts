@@ -2,6 +2,8 @@ import { Permission, type SessionResponseDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   canSubmitPin,
+  keyPurpose,
+  PURPOSE_PERMISSIONS,
   filterPermissions,
   INDIVIDUAL_PERMISSIONS,
   isCompletePin,
@@ -135,5 +137,19 @@ describe('personal access (FL-67)', () => {
     expect(isProfileImageFile({ name: 'me.heic', size: 1000 })).toBe(true);
     expect(isProfileImageFile({ name: 'me.gif', size: 1000 })).toBe(false);
     expect(isProfileImageFile({ name: 'me.png', size: 0 })).toBe(false);
+  });
+});
+
+describe('API key purposes (FL-367)', () => {
+  it('recognises a purpose from its exact permissions, and anything else as your own choice', () => {
+    expect(keyPurpose([...PURPOSE_PERMISSIONS.view])).toBe('view');
+    expect(keyPurpose([Permission.AssetUpload])).toBe('upload');
+    expect(keyPurpose([Permission.All])).toBe('everything');
+    expect(keyPurpose([Permission.AssetRead])).toBe('custom');
+  });
+
+  it('keeps downloads and deletes out of View only', () => {
+    expect(PURPOSE_PERMISSIONS.view).not.toContain(Permission.AssetDownload);
+    expect(PURPOSE_PERMISSIONS.view.some((permission) => permission.endsWith('.delete'))).toBe(false);
   });
 });

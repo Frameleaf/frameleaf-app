@@ -147,6 +147,8 @@ export type Asset = {
   localDateTime: Date;
   originalFileName: string;
   originalPath: string;
+  /** FL-417: the photo's own path while it shares a file kept elsewhere */
+  libraryPath?: string | null;
   physicalOriginalFileId?: string | null;
   ownerId: string;
   type: AssetType;
@@ -336,6 +338,7 @@ export const columns = {
     'asset.localDateTime',
     'asset.originalFileName',
     'asset.originalPath',
+    'asset.libraryPath',
     'asset.physicalOriginalFileId',
     'asset.ownerId',
     'asset.type',
@@ -366,6 +369,7 @@ export const columns = {
     'asset.localDateTime',
     'asset.originalFileName',
     'asset.originalPath',
+    'asset.libraryPath',
     'asset.ownerId',
     'asset.stackId',
     'asset.thumbhash',

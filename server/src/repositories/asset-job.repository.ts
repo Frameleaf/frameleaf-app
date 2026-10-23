@@ -606,6 +606,7 @@ export class AssetJobRepository {
         'asset.type',
         'asset.checksum',
         'asset.originalPath',
+        'asset.libraryPath',
         'asset.physicalOriginalFileId',
         'asset.isExternal',
         'asset.visibility',

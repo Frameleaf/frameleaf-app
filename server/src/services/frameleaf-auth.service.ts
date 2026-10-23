@@ -57,6 +57,7 @@ import {
   hasInstanceAccess,
   httpsOrigin,
 } from 'src/utils/frameleaf-sign-in.js';
+import { localNotificationText } from 'src/utils/preferences.js';
 import { publishedLocalOrigins } from 'src/utils/public-url.js';
 import { createSession } from 'src/utils/session.js';
 
@@ -911,12 +912,19 @@ export class FrameleafAuthService extends BaseService {
       if (admin.id === user.id) {
         continue;
       }
+      const name = user.name || user.email;
+      const { title, body } = await localNotificationText(
+        this.userRepository,
+        admin.id,
+        { version: 1, key: 'admin-granted', args: { name } },
+        { title: 'New administrator', body: `${name} became an administrator through Frameleaf Cloud` },
+      );
       const item = await this.notificationRepository.create({
         userId: admin.id,
         type: NotificationType.SystemMessage,
         level: NotificationLevel.Info,
-        title: 'New administrator',
-        description: `${user.name || user.email} became an administrator through Frameleaf Cloud`,
+        title,
+        description: body,
         data: JSON.stringify({ userId: user.id, source: 'frameleaf_role' }),
       });
       this.websocketRepository.clientSend('on_notification', admin.id, mapNotification(item));

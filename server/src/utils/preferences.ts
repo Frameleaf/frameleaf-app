@@ -7,6 +7,12 @@ import { DeepPartial, SavedSearch, UserMetadataItem, UserPreferences } from 'src
 import { DecimalSize } from 'src/utils/bytes.js';
 import { emptySuppressionPreferences } from 'src/utils/hidden-content.js';
 import { getKeysDeep } from 'src/utils/misc.js';
+import {
+  type NotificationText,
+  type SystemNotificationTemplate,
+  notificationLocaleOf,
+  renderSystemNotification,
+} from 'src/utils/notification-locale.js';
 import { canonicalJson } from 'src/utils/object.js';
 
 /**
@@ -189,6 +195,28 @@ export const getPreferences = (metadata: UserMetadataItem[]): FrameleafUserPrefe
   }
 
   return preferences;
+};
+
+/**
+ * FL-329/FL-406: a system notice's text in the recipient's current account locale. Without a template, or
+ * when the locale, catalog or arguments do not fit, the producer's supplied English is kept.
+ */
+export const localNotificationText = async (
+  users: { getMetadata(userId: string): Promise<UserMetadataItem[]> },
+  userId: string,
+  template: SystemNotificationTemplate | undefined,
+  fallback: NotificationText,
+): Promise<NotificationText> => {
+  if (!template) {
+    return fallback;
+  }
+  let metadata: UserMetadataItem[] = [];
+  try {
+    metadata = (await users.getMetadata(userId)) ?? [];
+  } catch {
+    // an unreadable preference keeps English, like an absent one
+  }
+  return renderSystemNotification(template, notificationLocaleOf(getPreferences(metadata)), fallback);
 };
 
 export const getPreferencesPartial = (newPreferences: UserPreferences) => {

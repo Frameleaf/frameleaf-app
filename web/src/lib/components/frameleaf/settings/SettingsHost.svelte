@@ -37,6 +37,9 @@
   import NotificationsLanding from '$lib/components/frameleaf/settings/notifications/NotificationsLanding.svelte';
   import PreferencesLanding from '$lib/components/frameleaf/settings/preferences/PreferencesLanding.svelte';
   import ServerLanding from '$lib/components/frameleaf/settings/server-settings/ServerLanding.svelte';
+  import CloudLanding from '$lib/components/frameleaf/settings/cloud/CloudLanding.svelte';
+  import WhoCanSignInLanding from '$lib/components/frameleaf/settings/security/WhoCanSignInLanding.svelte';
+  import YourSignInLanding from '$lib/components/frameleaf/settings/security/YourSignInLanding.svelte';
   import CommandCenterOverview from '$lib/components/frameleaf/settings/CommandCenterOverview.svelte';
   import { ownPreferencesPending } from '$lib/components/frameleaf/settings/own-preferences-pending.svelte';
   import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';
@@ -91,6 +94,7 @@
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
+    mdiAccountLockOutline,
     mdiAccountMultipleOutline,
     mdiAccountOutline,
     mdiDeleteOutline,
@@ -198,6 +202,12 @@
       description: $t('frameleaf_settings_area_security_description'),
       icon: mdiShieldLockOutline,
     },
+    // FL-367: a person's own sign-in, devices, keys and Locked photos.
+    privacy: {
+      title: $t('frameleaf_settings_area_privacy'),
+      description: $t('frameleaf_settings_area_privacy_description'),
+      icon: mdiAccountLockOutline,
+    },
     notifications: {
       title: $t('frameleaf_settings_area_notifications'),
       description: $t('frameleaf_settings_area_notifications_description'),
@@ -295,7 +305,12 @@
       .join(' '),
   );
   const requestedArea = $derived(
-    resolveSettingsArea({ area: page.url.searchParams.get('area'), isOpen: legacyOpen, isAdmin }),
+    resolveSettingsArea({
+      area: page.url.searchParams.get('area'),
+      section: page.url.searchParams.get('section'),
+      isOpen: legacyOpen,
+      isAdmin,
+    }),
   );
   // An area this account may not open falls back to the first one it may. This is the area the
   // address names; `area` below is the one the page is shown in.
@@ -1008,6 +1023,12 @@
                 <EditingLanding sections={areaSections} />
               {:else if area === 'maintenance'}
                 <MaintenanceLanding />
+              {:else if area === 'security'}
+                <WhoCanSignInLanding />
+              {:else if area === 'cloud'}
+                <CloudLanding />
+              {:else if area === 'privacy'}
+                <YourSignInLanding sections={areaSections} />
               {:else}
                 <div class="cc-settings-content">
                   <SettingsDirectory rows={directoryRows} areaTitle={areaCopy[area].title} />

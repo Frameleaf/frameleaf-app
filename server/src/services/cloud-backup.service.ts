@@ -29,6 +29,7 @@ import type {
   FrameleafCloudBackupRestore,
   FrameleafCloudBackupRun,
 } from 'src/types.js';
+import type { SystemNotificationTemplate } from 'src/utils/notification-locale.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
@@ -255,6 +256,12 @@ import { OperationClaimLostError, settleOperationStop, withOperationExecution } 
 import { serverTimeZone } from 'src/utils/server-time-zone.js';
 
 const KIND = MediaOperationKind.CloudBackup;
+/** FL-406: the notice template of each failed maintenance task, by its English name. */
+const FAILED_TASK_TEMPLATE = {
+  'Cloud backup check': 'cloud-backup-check-failed',
+  'Cloud backup clean-up': 'cloud-backup-cleanup-failed',
+  'Restore from cloud backup': 'cloud-restore-failed',
+} as const;
 /** FL-164: a restore uses the bucket too, so it never runs beside a backup operation, nor they beside it. */
 const RESTORE_KIND = MediaOperationKind.CloudRestore;
 const BUCKET_KINDS = [KIND, RESTORE_KIND];
@@ -1691,6 +1698,7 @@ export class CloudBackupService {
           level: NotificationLevel.Error,
           title: 'Cloud backup failed',
           description: `The last cloud backup stopped: ${message}`,
+          systemTemplate: { version: 1, key: 'cloud-backup-failed', args: { error: message } },
           dedupeKey: 'cloud-backup:failed',
           dedupeDays: 1,
           job: { id: operation.id, type: 'cloud-backup-run', actions: ['retry'] },
@@ -1822,6 +1830,7 @@ export class CloudBackupService {
         level: NotificationLevel.Warning,
         title: 'Cloud backup is waiting for its key',
         description: 'This server does not keep the backup key. Load it in Settings › Frameleaf Cloud › Cloud backup.',
+        systemTemplate: { version: 1, key: 'cloud-backup-key-locked', args: {} },
         dedupeKey: 'cloud-backup:key-locked',
         dedupeDays: 1,
         job: { id: operation.id, type: 'cloud-backup-run', actions: ['pause', 'cancel'] },
@@ -3067,7 +3076,12 @@ export class CloudBackupService {
   }
 
   /** A verification, a clean-up or a restore failed: after its automatic retry, the administrators hear why. */
-  private async failTask(operation: MediaOperation, claimToken: string, error: unknown, what: string) {
+  private async failTask(
+    operation: MediaOperation,
+    claimToken: string,
+    error: unknown,
+    what: keyof typeof FAILED_TASK_TEMPLATE,
+  ) {
     if (await this.settleBackupStop(operation, claimToken, error)) return false;
     if (await this.waitForManagedRenewal(operation, claimToken, error)) return false;
     // a file system error names its path: shown to administrators, it names it below the media folder only
@@ -3090,6 +3104,7 @@ export class CloudBackupService {
         level: NotificationLevel.Error,
         title: `${what} failed`,
         description: message,
+        systemTemplate: { version: 1, key: FAILED_TASK_TEMPLATE[what], args: { error: message } },
         dedupeKey: `cloud-backup:${operation.kind === RESTORE_KIND ? 'restore' : taskOf(operation)}-failed`,
         dedupeDays: 1,
         // named so a device can open it; a verification, clean-up or restore is started again from settings
@@ -3186,6 +3201,11 @@ export class CloudBackupService {
             'The next backup uploads them again from this server;',
             `${result.degradedManifests} earlier backups are marked incomplete.`,
           ].join(' '),
+          systemTemplate: {
+            version: 1,
+            key: 'cloud-backup-check-problems',
+            args: { missing: result.missing, damaged: result.mismatched, incomplete: result.degradedManifests },
+          },
           dedupeKey: `cloud-backup:verify:${operation.id}`,
           dedupeDays: 7,
         });
@@ -4560,6 +4580,8 @@ export class CloudBackupService {
     dedupeKey: string;
     dedupeDays?: number;
     type?: NotificationType;
+    /** FL-406: the notice in each recipient's language; title and description stay the English fallback. */
+    systemTemplate: SystemNotificationTemplate;
     /** The server job the notice is about, so devices can offer Retry or Pause for it. */
     job?: PushJobRef;
   }) {
@@ -4574,6 +4596,7 @@ export class CloudBackupService {
         admins: true,
         title: notice.title,
         body: notice.description,
+        systemTemplate: notice.systemTemplate,
         data: { reason: notice.dedupeKey, ...pushJobData(job) },
         dedupeKey: `cloud-backup-attention/${notice.dedupeKey}`,
       })

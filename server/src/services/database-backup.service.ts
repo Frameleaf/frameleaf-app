@@ -66,6 +66,13 @@ export const restoreVerificationDue = (
   return { dueAt: dueAt.toISOString(), overdue: dueAt.getTime() <= now.getTime() };
 };
 
+/** FL-511: the first-boot place import's staging table (MapRepository.importGeodata). */
+const GEODATA_STAGING_TABLE = 'geodata_places_tmp';
+
+/** FL-511: pg_dump failed because a table it had listed was renamed or dropped before it could lock it. */
+const isVanishedRelationError = (error: unknown) =>
+  error instanceof Error && /pg_dump[\s\S]*relation "[^"]+" does not exist/.test(error.message);
+
 /** The final marker written by pg_dump only after the database dump finishes. */
 const DUMP_COMPLETE = /-- PostgreSQL database dump complete/;
 /** Newer `pg_dump` versions write an `unrestrict` meta-command line after it; this much of the end is checked. */
@@ -203,6 +210,9 @@ export class DatabaseBackupService {
           // backup carries the tables without their rows. An item's own matches (asset_landmark) stay in.
           '--exclude-table-data=public.landmark',
           '--exclude-table-data=public.landmark_area',
+          // FL-511: the first-boot place import stages rows here, then swaps or drops it. It is never
+          // library data, and a dump that lists it can fail when the swap lands before the table locks.
+          `--exclude-table=public.${GEODATA_STAGING_TABLE}`,
         );
         break;
       }
@@ -603,6 +613,34 @@ export class DatabaseBackupService {
     this.logger.debug(`Database Backup Cleanup Finished, deleted ${toDelete.length} backups`);
   }
 
+  /**
+   * FL-511: the restore's safety copy of the current database. On a freshly installed server the
+   * first-boot place import can rename or drop a table between pg_dump listing the tables and locking
+   * them, which fails the dump with "relation … does not exist". That is a race, not a broken database,
+   * so the dump is taken once more before the restore gives up.
+   */
+  private async createRestorePoint(): Promise<string> {
+    try {
+      return await this.createDatabaseBackup('restore-point-');
+    } catch (error) {
+      if (!isVanishedRelationError(error)) {
+        throw error;
+      }
+      this.logger.warn('A table changed while the safety copy of the database was being made; trying once more');
+      try {
+        return await this.createDatabaseBackup('restore-point-');
+      } catch (retryError) {
+        if (!isVanishedRelationError(retryError)) {
+          throw retryError;
+        }
+        throw new Error(
+          'The safety copy of the current database could not be made because the server is still setting itself up. Wait a few minutes, then run the restore again.',
+          { cause: retryError },
+        );
+      }
+    }
+  }
+
   async restoreDatabaseBackup(
     filename: string,
     progressCb?: (action: 'backup' | 'restore' | 'migrations' | 'rollback', progress: number) => void,
@@ -641,7 +679,7 @@ export class DatabaseBackupService {
 
       progressCb?.('backup', 0.05);
 
-      const restorePointFilePath = await this.createDatabaseBackup('restore-point-');
+      const restorePointFilePath = await this.createRestorePoint();
 
       this.logger.log(`Database Restore Starting. Database Version: ${databaseMajorVersion}`);
 

@@ -91,10 +91,19 @@ export async function detectAcceleration(
 function mlVariant(images: NasManifest['images'], accel: Acceleration): string | undefined {
   return accel === 'cpu' ? undefined : images.machineLearningVariants?.[accel];
 }
-/** Every image renderCompose references on this host, so the download step pulls exactly what `up --pull never` runs. */
-export async function releaseImages(images: NasManifest['images'], acceleration?: Acceleration): Promise<string[]> {
+/**
+ * Every image renderCompose references on this host, so the download step pulls exactly what `up --pull never`
+ * runs: no ML image when machine learning is off, and only the attested GPU variant (not the CPU image) when one
+ * is chosen.
+ */
+export async function releaseImages(
+  images: NasManifest['images'],
+  installation: Pick<Installation, 'ml'>,
+  acceleration?: Acceleration,
+): Promise<string[]> {
+  if (!installation.ml) return [images.server, images.postgres];
   const variant = mlVariant(images, acceleration ?? (await detectAcceleration()));
-  return [images.server, images.machineLearning, images.postgres, ...(variant ? [variant] : [])];
+  return [images.server, images.postgres, variant ?? images.machineLearning];
 }
 
 /** Names Manager sets itself; an advanced setting may not rewire the stack or move the media. */

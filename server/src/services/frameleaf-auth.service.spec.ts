@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FrameleafCloudLink, FrameleafInstanceIdentity } from 'src/types.js';
 import { FrameleafTokenExchangeErrorCode } from 'src/dtos/frameleaf-auth.dto.js';
-import { AdminAuditAction, DatabaseLock, JobStatus, SystemMetadataKey } from 'src/enum.js';
+import { AdminAuditAction, DatabaseLock, JobStatus, SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -15,11 +15,13 @@ import { UNVERIFIED_EMAIL_MESSAGE } from 'src/services/auth.service.js';
 import { FrameleafAuthService } from 'src/services/frameleaf-auth.service.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
+import { NOTIFICATION_CATALOGS, type NotificationCatalogs } from 'src/utils/notification-locale.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { FakeCloud, startFakeCloud } from 'test/fake-frameleaf-cloud.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { type ExchangeTokenOptions, mintExchangeToken } from 'test/fixtures/frameleaf-token-exchange.js';
+import localeFixtures from 'test/fixtures/system-notification-locale.json' with { type: 'json' };
 import { ServiceMocks, type ServiceOverrides, newTestService } from 'test/utils.js';
 
 const loginDetails = { isSecure: true, clientIp: '127.0.0.1', deviceOS: '', deviceType: '', appVersion: null };
@@ -1228,6 +1230,28 @@ describe(FrameleafAuthService.name, () => {
           }),
         );
         expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_notification', admin.id, expect.anything());
+      });
+
+      it('tells each other administrator in their own language (FL-406)', async () => {
+        const { user, admin, auth } = setup(false);
+        idClaims.frameleaf_role = 'admin';
+        mocks.user.getMetadata.mockResolvedValue([
+          { key: UserMetadataKey.Preferences, value: { notifications: { locale: 'en-XA' } } },
+        ]);
+        NOTIFICATION_CATALOGS['en-XA'] = (localeFixtures.catalogs as NotificationCatalogs)['en-XA'];
+        try {
+          await sut.link(auth, callbackDto, {});
+        } finally {
+          delete NOTIFICATION_CATALOGS['en-XA'];
+        }
+        expect(mocks.user.getMetadata).toHaveBeenCalledWith(admin.id);
+        expect(mocks.notification.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            userId: admin.id,
+            title: '[Fixture New administrator]',
+            description: `[Fixture ${user.name} became an administrator through Frameleaf Cloud]`,
+          }),
+        );
       });
 
       it('changes no role for a share that is not admin', async () => {
