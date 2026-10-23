@@ -53,6 +53,7 @@ const setup = (overrides: { stopTime?: string; steps?: Partial<Record<string, Ov
         stored.state = value;
         return Promise.resolve();
       }),
+      delete: vi.fn().mockResolvedValue(undefined),
     },
     database: {
       tryLock: vi.fn().mockResolvedValue(true),
@@ -115,6 +116,20 @@ describe(OvernightService.name, () => {
       folders: 'done',
       icloud: 'done',
       fileChecks: 'done',
+    });
+  });
+
+  it('compares look-alike photos again once when "Save and start tonight" asked for it (FL-520)', async () => {
+    const { sut, mocks } = setup();
+    mocks.metadata.get.mockImplementation((key: SystemMetadataKey) =>
+      Promise.resolve(key === SystemMetadataKey.DuplicateRecompare ? ({ requestedAt: 'then' } as never) : undefined),
+    );
+    await sut.handleStart();
+
+    expect(mocks.metadata.delete).toHaveBeenCalledWith(SystemMetadataKey.DuplicateRecompare);
+    expect(mocks.job.queue).toHaveBeenCalledWith({
+      name: JobName.AssetDetectDuplicatesQueueAll,
+      data: { force: true },
     });
   });
 

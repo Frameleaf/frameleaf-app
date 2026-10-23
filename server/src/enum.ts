@@ -632,6 +632,12 @@ export enum SystemMetadataKey {
   FrameleafRecoveryMlAuthority = 'frameleaf-recovery-ml-authority',
   /** FL-81 (CC-21): when each integrity check last ran in full, for "Last run …" in Maintenance. */
   IntegrityCheckRuns = 'integrity-check-runs',
+  /** FL-520: the most recent file checks, newest first: when each ran, how it ended and what it found. */
+  IntegrityCheckHistory = 'integrity-check-history',
+  /** FL-520: when an administrator last pressed Stop on the file checks; a check started before it stops. */
+  IntegrityCheckStop = 'integrity-check-stop',
+  /** FL-520: look-alike photos are to be compared again in the next overnight run (after a change of "How alike"). */
+  DuplicateRecompare = 'duplicate-recompare',
   /**
    * FL-71 (CC-9): when an administrator last proved a backup restores: the database (metadata) and
    * the original files, each recorded separately, and who recorded it.

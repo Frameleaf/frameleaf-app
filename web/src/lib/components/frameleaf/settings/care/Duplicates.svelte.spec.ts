@@ -37,7 +37,7 @@ const config = (overrides: { enabled?: boolean; review?: boolean; maxDistance?: 
 
 const makeDraft = (overrides: Parameters<typeof config>[0] = {}) => {
   const live = $state(config(overrides));
-  const store = { baseline: config(overrides), draft: live };
+  const store = { baseline: config(overrides), draft: live, saveKeys: vi.fn().mockResolvedValue(true) };
   draft.store = store;
   return store;
 };
@@ -111,6 +111,57 @@ describe('Library care › Duplicates (FL-366)', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_dupes_undo }));
     expect(store.draft.machineLearning.duplicateDetection.maxDistance).toBe(0.01);
+  });
+
+  it('says about how many groups each choice makes, and how long comparing again takes (FL-520)', async () => {
+    sdkMock.getDuplicateEstimate.mockResolvedValue({
+      comparable: 48_210,
+      groups: 38,
+      sampled: 200,
+      seconds: 2400,
+      choices: [
+        { maxDistance: 0.004, groups: 12 },
+        { maxDistance: 0.01, groups: 38 },
+        { maxDistance: 0.03, groups: 140 },
+      ],
+    });
+    const store = makeDraft();
+    render(Duplicates);
+
+    expect(await screen.findByText(/About 38 groups in your library/)).toBeInTheDocument();
+    expect(sdkMock.getDuplicateEstimate).toHaveBeenCalledWith({ maxDistances: [0.004, 0.01, 0.03] });
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_dupes_how_alike_loose }));
+    expect(screen.getByText(/About 140 groups in your library/)).toBeInTheDocument();
+    expect(screen.getByText('Saving this compares all 48,210 photos again, about 40 minutes')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_dupes_recompare_now }));
+    expect(store.saveKeys).toHaveBeenCalledWith(['machineLearning', 'libraryCare']);
+    expect(sdkMock.recompareDuplicates).toHaveBeenCalledWith({ duplicateRecompareDto: { when: 'now' } });
+    expect(await screen.findByText('Saved. Comparing has started and takes about 40 minutes.')).toBeInTheDocument();
+  });
+
+  it('leaves comparing again for tonight, and does nothing when the save fails (FL-520)', async () => {
+    const store = makeDraft();
+    render(Duplicates);
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_dupes_how_alike_close }));
+    store.saveKeys.mockResolvedValueOnce(false);
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_dupes_recompare_tonight }));
+    expect(sdkMock.recompareDuplicates).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_dupes_recompare_tonight }));
+    expect(sdkMock.recompareDuplicates).toHaveBeenCalledWith({ duplicateRecompareDto: { when: 'tonight' } });
+  });
+
+  it('counts extra copies already on the drive and can store them once (FL-520)', async () => {
+    sdkMock.getIdenticalFilesExtraCopies.mockResolvedValue({ files: 214, contents: 97, bytes: 3_200_000_000 });
+    makeDraft();
+    render(Duplicates);
+
+    expect(await screen.findByText(/214 extra copies of 97 photos and videos, taking/)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_dupes_extra_store }));
+    expect(sdkMock.checkIdenticalFiles).toHaveBeenCalled();
   });
 
   it('shows a number that matches no choice as Custom', () => {

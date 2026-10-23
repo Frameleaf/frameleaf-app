@@ -2,7 +2,11 @@ import { Controller, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/comm
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
-import { IdenticalFilesChangeDto, IdenticalFilesStatusDto } from 'src/dtos/identical-files.dto.js';
+import {
+  IdenticalFilesChangeDto,
+  IdenticalFilesExtraCopiesDto,
+  IdenticalFilesStatusDto,
+} from 'src/dtos/identical-files.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { IdenticalFilesService } from 'src/services/identical-files.service.js';
@@ -27,6 +31,18 @@ export class IdenticalFilesController {
   })
   getIdenticalFilesStatus(): Promise<IdenticalFilesStatusDto> {
     return this.service.getStatus();
+  }
+
+  @Get('extra-copies')
+  @Authenticated({ permission: Permission.JobRead, admin: true })
+  @Endpoint({
+    summary: 'Count extra copies on the drive',
+    description:
+      'How many extra files on the drive hold the same content as another, of how many photos and videos, and the space they take, from what the last run recorded. Reads no file.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  getIdenticalFilesExtraCopies(): Promise<IdenticalFilesExtraCopiesDto> {
+    return this.service.getExtraCopies();
   }
 
   @Post('check')

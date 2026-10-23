@@ -126,6 +126,24 @@ export class IdenticalFilesRepository {
     return rows.map((row) => ({ sha256: row.sha256, sizeInBytes: Number(row.sizeInBytes) }));
   }
 
+  /**
+   * FL-520: extra copies on the drive, from what the scan already recorded: for each content held in
+   * more than one file, every file but one, and the space they take. Reads no file.
+   */
+  async countExtraCopies(): Promise<{ files: number; contents: number; bytes: number }> {
+    const { rows } = await sql<{ files: number; contents: number; bytes: string }>`
+      SELECT coalesce(sum(g.copies - 1), 0)::int AS files, count(*)::int AS contents,
+        coalesce(sum((g.copies - 1) * g.size), 0)::text AS bytes
+      FROM (
+        SELECT c."sizeInBytes" AS size, count(DISTINCT a."originalPath") AS copies
+        FROM public.asset_checksum c JOIN public.asset a ON a.id = c."assetId"
+        WHERE ${managed}
+        GROUP BY c.sha256, c."sizeInBytes"
+        HAVING count(DISTINCT a."originalPath") > 1
+      ) g`.execute(this.db);
+    return { files: rows[0].files, contents: rows[0].contents, bytes: Number(rows[0].bytes) };
+  }
+
   /** Every active managed photo holding this content, oldest first (the photo added first, then id). */
   async getMembers(content: IdenticalFilesContent, ownerId?: string): Promise<IdenticalFilesMember[]> {
     const { rows } = await sql<IdenticalFilesMember>`

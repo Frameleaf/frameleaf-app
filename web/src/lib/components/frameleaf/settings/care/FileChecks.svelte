@@ -15,6 +15,12 @@
    * it, then "Clear this list" (forgets the findings, touches nothing), then the destructive action
    * named for what it does, whose confirmation carries the count.
    *
+   * FL-520: the counts and the "drive unplugged" signal come from the server's one source of findings
+   * (`getIntegrityOverview`): a folder of originals whose drive or share cannot be reached is said as such,
+   * instead of being guessed from many missing files in one folder. A running check shows its progress
+   * and can be stopped; "Recent checks" lists what each past check found; "Restore from a backup" opens
+   * Backup › Restore with the photos behind the missing or damaged findings.
+   *
    * When the checks run is the overnight schedule's "Check files" step (FL-363): the start times the
    * server still keeps (`missingFiles.cronExpression`, `checksumFiles.cronExpression`,
    * `untrackedFiles.cronExpression`, `libraryCare.healthScanCronExpression`) no longer start
@@ -27,13 +33,15 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import {
+    checkSteps,
+    restoreUrl,
     shareOf,
     SHARES,
     splitPath,
     STOP_AFTER_MINUTES,
     stopAfterMinutes,
     stopAfterMs,
-    unpluggedFolder,
+    unreachableFolder,
     type Share,
   } from '$lib/components/frameleaf/settings/care/file-checks';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
@@ -41,11 +49,14 @@
   import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
   import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import HistoryList from '$lib/components/frameleaf/settings/kit/HistoryList.svelte';
+  import HistoryRow from '$lib/components/frameleaf/settings/kit/HistoryRow.svelte';
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
-  import type { KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
+  import Pill, { type KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Select from '$lib/components/frameleaf/settings/kit/Select.svelte';
+  import Steps, { type Step } from '$lib/components/frameleaf/settings/kit/Steps.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import TextLink from '$lib/components/frameleaf/settings/kit/TextLink.svelte';
   import { backupWhen } from '$lib/frameleaf/backup-overview';
@@ -60,16 +71,21 @@
     handleRemoveAllIntegrityReportItems,
   } from '$lib/services/integrity.service';
   import { handleCreateJob } from '$lib/services/job.service';
+  import { handleError } from '$lib/utils/handle-error';
   import { locale } from '$lib/stores/preferences.store';
   import {
     getIntegrityCheckRuns,
+    getIntegrityOverview,
     getIntegrityReport,
     getIntegrityReportSummary,
     getQueuesLegacy,
     getSummary,
+    IntegrityCheckOutcome,
     IntegrityReport,
     ManualJobName,
+    stopIntegrityChecks,
     type IntegrityCheckRunsResponseDto,
+    type IntegrityOverviewResponseDto,
     type IntegrityReportResponseDto,
     type IntegrityReportSummaryResponseDto,
   } from '@frameleaf/sdk';
@@ -86,6 +102,7 @@
     mdiPlayOutline,
     mdiShieldAlertOutline,
     mdiShieldCheckOutline,
+    mdiStop,
     mdiSync,
   } from '@mdi/js';
   import { onMount } from 'svelte';
@@ -126,8 +143,6 @@
 
   /** How many findings of each list are shown here; the rest are in Details for support. */
   const SHOWN = 3;
-  /** Missing files are read further, to tell an unplugged drive from files that are gone. */
-  const MISSING_READ = 500;
 
   // ---- the settings ----
   const settingsDraft = requireSystemConfigDraft();
@@ -180,26 +195,34 @@
   // ---- what the checks found ----
   let summary = $state<IntegrityReportSummaryResponseDto>();
   let runs = $state<IntegrityCheckRunsResponseDto>();
+  let overview = $state<IntegrityOverviewResponseDto>();
+  let stopping = $state(false);
   let found = $state<Partial<Record<IntegrityReport, IntegrityReportResponseDto>>>({});
   let recoveryAvailable = $state(false);
   let loaded = $state(false);
   let running = $state(false);
 
+  /** An answer, or nothing when the server could not give one. */
+  const quietly = async <T,>(call: () => Promise<T>): Promise<T | undefined> => {
+    try {
+      return await call();
+    } catch {
+      return undefined;
+    }
+  };
+
   const load = async () => {
-    const [counts, times, lists] = await Promise.all([
+    const [counts, times, lists, findings] = await Promise.all([
       getIntegrityReportSummary().catch(() => undefined),
       getIntegrityCheckRuns().catch(() => undefined),
       Promise.all(
-        CHECKS.map((check) =>
-          getIntegrityReport({
-            $type: check.type,
-            limit: check.type === IntegrityReport.MissingFile ? MISSING_READ : SHOWN,
-          }).catch(() => undefined),
-        ),
+        CHECKS.map((check) => getIntegrityReport({ $type: check.type, limit: SHOWN }).catch(() => undefined)),
       ),
+      quietly(getIntegrityOverview),
     ]);
     summary = counts;
     runs = times;
+    overview = findings;
     found = Object.fromEntries(CHECKS.map((check, index) => [check.type, lists[index]]));
     loaded = true;
   };
@@ -221,6 +244,9 @@
           const busy = integrityCheck.queueStatus.isActive || active + waiting + delayed > 0;
           if (!busy && running) {
             void load();
+          } else if (busy) {
+            // FL-520: how far the running check has got.
+            void quietly(getIntegrityOverview).then((value) => (overview = value ?? overview));
           }
           running = busy;
         })
@@ -234,9 +260,10 @@
   const damaged = $derived(count(IntegrityReport.ChecksumMismatch));
   const stray = $derived(count(IntegrityReport.UntrackedFile));
   const problems = $derived(missing + damaged);
-  const unplugged = $derived(
-    unpluggedFolder(missing, found[IntegrityReport.MissingFile]?.items.map((item) => item.path) ?? []),
-  );
+  /** FL-520: a folder of originals the server cannot reach (a drive unplugged, a share not mounted). */
+  const unreachable = $derived(unreachableFolder(overview?.unreachable ?? []));
+  const unplugged = $derived(unreachable ? unreachable.name || unreachable.path : undefined);
+  const rawToMatch = $derived(overview?.rawToMatch ?? 0);
 
   const lastRun = (type: IntegrityReport) => runs?.[type] ?? null;
   const lastChecked = $derived.by(() => {
@@ -276,7 +303,7 @@
         return {
           tone: 'bad',
           icon: mdiHarddiskRemove,
-          title: $t('frameleaf_care_fc_hero_unplugged', { values: { count: missing } }),
+          title: $t('frameleaf_care_fc_hero_unplugged', { values: { count: unreachable?.missing ?? missing } }),
           body: $t('frameleaf_care_fc_hero_unplugged_body', { values: { folder: unplugged } }),
         };
       }
@@ -321,6 +348,78 @@
         running = true;
       }
     }
+  };
+
+  /** FL-520: Stop. Findings so far stay; the damage check carries on next night. */
+  const stop = async () => {
+    stopping = true;
+    try {
+      overview = await stopIntegrityChecks();
+      running = false;
+      await load();
+    } catch (error) {
+      handleError(error, $t('frameleaf_care_fc_stop_failed'));
+    } finally {
+      stopping = false;
+    }
+  };
+
+  /** The three checks as a run: done, now, waiting (in the order the page lists them). */
+  const steps = $derived.by((): Step[] =>
+    checkSteps(
+      CHECKS.filter((check) => isOn(check.id)).map((check) => check.type),
+      overview?.running ?? [],
+      overview?.history ?? [],
+    ).map(({ type, state, percent }) => {
+      const check = CHECKS.find((item) => item.type === type)!;
+      return {
+        title: words(check.id, 'name'),
+        state,
+        detail:
+          state === 'done'
+            ? $t('frameleaf_care_fc_step_done')
+            : state === 'now'
+              ? percent === undefined
+                ? $t('frameleaf_care_fc_step_now')
+                : $t('frameleaf_care_fc_step_now_percent', { values: { percent } })
+              : $t('frameleaf_care_fc_step_waiting'),
+      };
+    }),
+  );
+
+  // ---- Recent checks (FL-520) ----
+  type HistoryEntry = IntegrityOverviewResponseDto['history'][number];
+  const historyTone = (entry: HistoryEntry): KitTone =>
+    entry.outcome === IntegrityCheckOutcome.Stopped ? 'off' : entry.found > 0 ? 'warn' : 'good';
+  const historyDetail = (entry: HistoryEntry) => {
+    const minutes = Math.max(
+      1,
+      Math.round((new Date(entry.finishedAt).getTime() - new Date(entry.startedAt).getTime()) / 60_000),
+    );
+    const took = $t('frameleaf_care_fc_history_took', { values: { minutes } });
+    switch (entry.outcome) {
+      case IntegrityCheckOutcome.Stopped: {
+        return $t('frameleaf_care_fc_history_stopped');
+      }
+      case IntegrityCheckOutcome.Paused: {
+        return $t('frameleaf_care_fc_history_paused', { values: { count: entry.checked ?? 0, took } });
+      }
+      default: {
+        return entry.checked === null
+          ? took
+          : $t('frameleaf_care_fc_history_read', { values: { count: entry.checked, took } });
+      }
+    }
+  };
+  const historyStatus = (entry: HistoryEntry) =>
+    entry.outcome === IntegrityCheckOutcome.Stopped
+      ? $t('frameleaf_care_fc_history_stopped_status')
+      : entry.found > 0
+        ? $t('frameleaf_care_fc_found', { values: { count: entry.found } })
+        : $t('frameleaf_care_fc_history_nothing');
+  const checkName = (type: IntegrityReport) => {
+    const check = CHECKS.find((item) => item.type === type);
+    return check ? words(check.id, 'name') : type;
   };
 
   const clearList = async (type: IntegrityReport) => {
@@ -422,13 +521,23 @@
       label={$t('frameleaf_care_fc_hero_label')}
     >
       {#snippet actions()}
-        {#if loaded && !running && !allOff}
+        {#if running}
+          <Button disabled={stopping} onclick={stop}>
+            <Icon icon={mdiStop} size="1em" aria-hidden />
+            {$t('frameleaf_care_fc_stop')}
+          </Button>
+        {:else if loaded && !allOff}
           <Button variant={problems === 0 || unplugged ? 'primary' : 'default'} onclick={() => checkNow()}>
             <Icon icon={mdiPlayOutline} size="1em" aria-hidden />
             {problems > 0 ? $t('frameleaf_care_fc_check_again') : $t('frameleaf_care_fc_check_now')}
           </Button>
         {/if}
       {/snippet}
+      {#if running && steps.length > 0}
+        <div class="steps">
+          <Steps {steps} label={$t('frameleaf_care_fc_steps_label')} />
+        </div>
+      {/if}
     </Hero>
 
     {#if missing > 0}
@@ -457,10 +566,14 @@
         {:else}
           {@render findings(IntegrityReport.MissingFile, mdiFileQuestionOutline, $t('frameleaf_care_fc_not_on_drive'))}
         {/if}
+        {#if rawToMatch > 0}
+          <p class="hint raw">{$t('frameleaf_care_fc_raw_to_match', { values: { count: rawToMatch } })}</p>
+        {/if}
         <div class="actions">
           <Button variant="primary" onclick={() => goto(utilitiesUrl('missing-media', { from: 'care' }))}>
             {$t('frameleaf_care_fc_find_again', { values: { count: missing } })}
           </Button>
+          <Button onclick={() => goto(restoreUrl('missing'))}>{$t('frameleaf_care_fc_restore')}</Button>
           <Button onclick={() => clearList(IntegrityReport.MissingFile)}>{$t('frameleaf_care_fc_clear')}</Button>
           <Button variant="danger" onclick={() => actOnAll(IntegrityReport.MissingFile)}>
             {$t('frameleaf_care_fc_trash', { values: { count: missing } })}
@@ -476,8 +589,11 @@
       >
         {@render findings(IntegrityReport.ChecksumMismatch, mdiFileAlertOutline, $t('frameleaf_care_fc_changed'))}
         <div class="actions">
-          <Button variant="primary" onclick={() => goto(utilitiesUrl('corrupt-media', { from: 'care' }))}>
-            {recoveryAvailable ? $t('frameleaf_care_fc_restore') : $t('frameleaf_care_fc_look')}
+          <Button variant="primary" onclick={() => goto(restoreUrl('damaged'))}
+            >{$t('frameleaf_care_fc_restore')}</Button
+          >
+          <Button onclick={() => goto(utilitiesUrl('corrupt-media', { from: 'care' }))}>
+            {recoveryAvailable ? $t('frameleaf_care_fc_look_copies') : $t('frameleaf_care_fc_look')}
           </Button>
           <Button onclick={() => clearList(IntegrityReport.ChecksumMismatch)}>{$t('frameleaf_care_fc_clear')}</Button>
           <Button variant="danger" onclick={() => actOnAll(IntegrityReport.ChecksumMismatch)}>
@@ -594,6 +710,27 @@
         {/if}
       </Advanced>
     </Section>
+
+    <Section title={$t('frameleaf_care_fc_history_title')}>
+      {#if (overview?.history ?? []).length === 0}
+        <Notice tone="info" title={$t('frameleaf_care_fc_history_none')}>
+          {$t('frameleaf_care_fc_history_none_body')}
+        </Notice>
+      {:else}
+        <HistoryList>
+          {#each overview?.history ?? [] as entry (entry.type + entry.finishedAt)}
+            <HistoryRow
+              when={when(entry.finishedAt)}
+              datetime={entry.finishedAt}
+              what={checkName(entry.type)}
+              detail={historyDetail(entry)}
+            >
+              <Pill tone={historyTone(entry)}>{historyStatus(entry)}</Pill>
+            </HistoryRow>
+          {/each}
+        </HistoryList>
+      {/if}
+    </Section>
   </KitPage>
 {/if}
 
@@ -622,6 +759,17 @@
 {/snippet}
 
 <style>
+  .steps {
+    padding: 0 var(--fl-space-6) var(--fl-space-6);
+  }
+  @container kit (max-width: 620px) {
+    .steps {
+      padding: 0 var(--fl-space-4) var(--fl-space-4);
+    }
+  }
+  .raw {
+    margin-top: var(--fl-space-3);
+  }
   .actions {
     display: flex;
     flex-wrap: wrap;
