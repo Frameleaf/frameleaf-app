@@ -109,6 +109,7 @@ describe(MetadataService.name, () => {
     mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue([]);
 
     mocks.config.getWorker.mockReturnValue(FrameleafWorker.Microservices);
+    mocks.map.setPlacesRestoring.mockResolvedValue();
 
     delete process.env.TZ;
   });
@@ -138,6 +139,8 @@ describe(MetadataService.name, () => {
       expect(mocks.map.init).toHaveBeenCalledTimes(1);
       expect(mocks.job.resume).toHaveBeenCalledTimes(1);
       expect(mocks.job.queue).not.toHaveBeenCalled();
+      // FL-402: nothing was put back, so the "putting place names back" notice comes down
+      expect(mocks.map.setPlacesRestoring).toHaveBeenCalledWith(false);
     });
 
     it('should re-match landmarks after a geodata import', async () => {
@@ -146,6 +149,8 @@ describe(MetadataService.name, () => {
       await sut.onBootstrap();
 
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LandmarkMatchAll });
+      // FL-402: the notice stays up until the re-match finishes
+      expect(mocks.map.setPlacesRestoring).not.toHaveBeenCalled();
     });
 
     // FL-355: the brand icon pack is fetched whole, in the background, by a production server
@@ -195,6 +200,14 @@ describe(MetadataService.name, () => {
 
       await expect(sut.handleLandmarkMatchAll()).resolves.toBe(JobStatus.Success);
       expect(mocks.map.matchAllLandmarks).toHaveBeenCalledTimes(1);
+      expect(mocks.map.setPlacesRestoring).toHaveBeenCalledWith(false);
+    });
+
+    it('should clear the places notice even when the re-match fails (FL-402)', async () => {
+      mocks.map.matchAllLandmarks.mockRejectedValue(new Error('database went away'));
+
+      await expect(sut.handleLandmarkMatchAll()).rejects.toThrow('database went away');
+      expect(mocks.map.setPlacesRestoring).toHaveBeenCalledWith(false);
     });
   });
 

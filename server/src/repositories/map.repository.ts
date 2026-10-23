@@ -249,18 +249,37 @@ export class MapRepository {
       // A database backup leaves the place pack out (it ships with the server), so a restored database has
       // the geodata of this date and no places: put them back.
       const place = await this.db.selectFrom('landmark').select('id').limit(1).executeTakeFirst();
-      return place ? false : this.importLandmarks();
+      if (place) {
+        return false;
+      }
+      // FL-402: the web app tells people place names are coming back; the flag clears once items are re-matched
+      await this.setPlacesRestoring(true);
+      return this.importLandmarks();
     }
 
+    await this.setPlacesRestoring(true);
     await Promise.all([this.importGeodata(), this.importNaturalEarthCountries(), this.importLandmarks()]);
 
     await this.metadataRepository.set(SystemMetadataKey.ReverseGeocodingState, {
       lastUpdate: geodataDate,
       lastImportFileName: citiesFile,
+      restoring: true,
     });
 
     this.logger.log('Geodata import completed');
     return true;
+  }
+
+  /**
+   * FL-402: marks whether place data is being put back, so the app can say why place names are missing for
+   * a few minutes after a first start or a restore. Keeps the rest of the reverse geocoding state.
+   */
+  async setPlacesRestoring(restoring: boolean): Promise<void> {
+    const state = await this.metadataRepository.get(SystemMetadataKey.ReverseGeocodingState);
+    if ((state?.restoring ?? false) === restoring) {
+      return;
+    }
+    await this.metadataRepository.set(SystemMetadataKey.ReverseGeocodingState, { ...state, restoring });
   }
 
   /**

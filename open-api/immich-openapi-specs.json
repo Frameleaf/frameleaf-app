@@ -121278,6 +121278,10 @@
             "description": "OAuth button text",
             "type": "string"
           },
+          "placesRestoring": {
+            "description": "Whether place names and landmarks are being put back after a restore or a first start, so they can look missing for a few minutes",
+            "type": "boolean"
+          },
           "publicUsers": {
             "description": "Whether public user registration is enabled",
             "type": "boolean"
@@ -121312,6 +121316,7 @@
           "mapLightStyleUrl",
           "minFaces",
           "oauthButtonText",
+          "placesRestoring",
           "publicUsers",
           "serverName",
           "trashDays",
