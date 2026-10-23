@@ -1810,7 +1810,8 @@ export class CloudMlBatchService extends BaseService {
         run.operation.id,
         run.claimToken,
         { error: refusal.message, errorCode: refusal.code },
-        { retry: refusal.transient },
+        // the batch resumes by its phase, cloud job and idempotency key, so its one retry repeats nothing
+        { retry: refusal.transient, resumable: true },
       );
     }
   }

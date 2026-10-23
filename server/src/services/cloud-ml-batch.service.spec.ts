@@ -428,7 +428,7 @@ describe(CloudMlBatchService.name, () => {
           BATCH_ID,
           'claim-1',
           expect.objectContaining({ errorCode: 'cloud_description_consent_version_outdated' }),
-          { retry: false },
+          { retry: false, resumable: true },
         );
       },
     );
@@ -1045,7 +1045,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_photos_changed' }),
-        { retry: false },
+        { retry: false, resumable: true },
       );
     });
 
@@ -1067,7 +1067,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_wallet_insufficient' }),
-        { retry: false },
+        { retry: false, resumable: true },
       );
     });
 
@@ -1117,7 +1117,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_wallet_insufficient' }),
-        { retry: false },
+        { retry: false, resumable: true },
       );
     });
 
@@ -1152,7 +1152,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_idempotency_key_reused' }),
-        { retry: false },
+        { retry: false, resumable: true },
       );
     });
 
@@ -1173,7 +1173,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_cloud_unavailable' }),
-        { retry: true },
+        { retry: true, resumable: true },
       );
     });
 
@@ -1188,7 +1188,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         { error: 'Frameleaf Cloud has no capacity now', errorCode: 'cloud_description_destination_unhealthy' },
-        { retry: true },
+        { retry: true, resumable: true },
       );
       expect(mocks.machineLearning.describeImage).not.toHaveBeenCalled();
       expect(mocks.mediaOperation.setRemoteJobId).not.toHaveBeenCalled();
@@ -1232,7 +1232,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_wallet_insufficient' }),
-        { retry: false },
+        { retry: false, resumable: true },
       );
     });
 
@@ -1244,7 +1244,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_estimate_increased' }),
-        { retry: false },
+        { retry: false, resumable: true },
       );
     });
 
@@ -1260,7 +1260,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_budget_exceeded' }),
-        { retry: false },
+        { retry: false, resumable: true },
       );
     });
 
@@ -1504,7 +1504,7 @@ describe(CloudMlBatchService.name, () => {
           BATCH_ID,
           'claim-1',
           expect.objectContaining({ errorCode: 'cloud_description_consent_version_outdated' }),
-          { retry: false },
+          { retry: false, resumable: true },
         );
       } else {
         expect(mocks.frameleafCloudMl.uploadInput).toHaveBeenCalled();
@@ -1525,7 +1525,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_consent_unconfirmed' }),
-        { retry: true },
+        { retry: true, resumable: true },
       );
     });
 
@@ -1548,7 +1548,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_consent_unconfirmed' }),
-        { retry: true },
+        { retry: true, resumable: true },
       );
     });
 
@@ -1598,7 +1598,7 @@ describe(CloudMlBatchService.name, () => {
           BATCH_ID,
           'claim-1',
           expect.objectContaining({ errorCode: code }),
-          { retry: false },
+          { retry: false, resumable: true },
         );
       },
     );
@@ -1641,7 +1641,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_photos_changed' }),
-        { retry: false },
+        { retry: false, resumable: true },
       );
     });
 
@@ -1659,7 +1659,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_photos_changed' }),
-        { retry: false },
+        { retry: false, resumable: true },
       );
     });
 
@@ -1949,7 +1949,7 @@ describe(CloudMlBatchService.name, () => {
         BATCH_ID,
         'claim-1',
         expect.objectContaining({ errorCode: 'cloud_description_output_sha256_mismatch' }),
-        { retry: true },
+        { retry: true, resumable: true },
       );
     });
 
