@@ -446,7 +446,7 @@ export class IntegrityService extends BaseService {
           return reportId;
         }
 
-        return (await this.pathExists(path)) ? undefined : reportId;
+        return (await this.pathExists(path)) === false ? reportId : undefined;
       }),
     );
 
@@ -520,15 +520,19 @@ export class IntegrityService extends BaseService {
     return status;
   }
 
-  private async pathExists(path: string): Promise<boolean> {
+  /** Whether the path exists, or undefined when it cannot be checked (EACCES, EIO, ENOTDIR …): such a path is never reported
+   * missing, and must not fail its batch. */
+  private async pathExists(path: string): Promise<boolean | undefined> {
     try {
       await this.storageRepository.stat(path);
       return true;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-        throw error;
+      const code = (error as NodeJS.ErrnoException)?.code;
+      if (code === 'ENOENT') {
+        return false;
       }
-      return false;
+      this.logger.warn(`Could not check ${path}: ${code ?? error}`);
+      return undefined;
     }
   }
 
@@ -540,9 +544,9 @@ export class IntegrityService extends BaseService {
     const outdatedReports: string[] = [];
     const missingFiles = [];
     for (const [index, { reportId, path, assetId, fileAssetId }] of items.entries()) {
-      if (!exists[index]) {
+      if (exists[index] === false) {
         missingFiles.push({ type: IntegrityReport.MissingFile, path, assetId, fileAssetId });
-      } else if (reportId) {
+      } else if (exists[index] && reportId) {
         outdatedReports.push(reportId);
       }
     }
@@ -563,7 +567,7 @@ export class IntegrityService extends BaseService {
 
     const results = await Promise.all(
       paths.map(async ({ reportId, path }) => {
-        return (await this.pathExists(path)) ? reportId : undefined;
+        return (await this.pathExists(path)) === true ? reportId : undefined;
       }),
     );
 

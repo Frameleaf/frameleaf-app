@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
-import { ChecksumAlgorithm, IntegrityReport, SystemMetadataKey } from 'src/enum.js';
+import { ChecksumAlgorithm, IntegrityReport, JobStatus, SystemMetadataKey } from 'src/enum.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -381,6 +381,41 @@ describe(IntegrityService.name, () => {
       expect(mocks.systemMetadata.completeIntegrityRun).toHaveBeenCalledWith(
         IntegrityReport.MissingFile,
         'run-1',
+        expect.any(Date),
+      );
+    });
+
+    it('finishes a missing-file batch when one path cannot be read, and leaves that path unjudged', async () => {
+      mocks.storage.stat.mockImplementation((path) => {
+        if (path === '/denied') {
+          return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
+        }
+        if (path === '/under-a-file/a.jpg') {
+          return Promise.reject(Object.assign(new Error('ENOTDIR'), { code: 'ENOTDIR' }));
+        }
+        return Promise.resolve({} as never);
+      });
+      mocks.systemMetadata.updateIntegrityRun.mockResolvedValueOnce({
+        runId: 'run-3',
+        startedAt: '',
+        batches: 1,
+        done: 1,
+      });
+      await expect(
+        sut.handleMissingFiles({
+          runId: 'run-3',
+          items: [
+            { path: '/denied', reportId: 'stale', assetId: 'a', fileAssetId: null },
+            { path: '/under-a-file/a.jpg', reportId: null, assetId: 'b', fileAssetId: null },
+            { path: '/fine', reportId: 'fixed', assetId: 'c', fileAssetId: null },
+          ],
+        }),
+      ).resolves.toBe(JobStatus.Success);
+      expect(mocks.integrityReport.create).not.toHaveBeenCalled();
+      expect(mocks.integrityReport.deleteByIds).toHaveBeenCalledWith(['fixed']);
+      expect(mocks.systemMetadata.completeIntegrityRun).toHaveBeenCalledWith(
+        IntegrityReport.MissingFile,
+        'run-3',
         expect.any(Date),
       );
     });
