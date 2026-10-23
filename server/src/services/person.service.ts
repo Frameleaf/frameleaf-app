@@ -1256,13 +1256,6 @@ export class PersonService extends BaseService {
       }
     }
 
-    if (force) {
-      // "Reset generated face results": every face recognition decided on its own is clustered again
-      // from scratch, or its neighbours' old groups pull it straight back. Corrected faces keep theirs.
-      await this.personRepository.unassignFaces({ clusterGroupId, sourceType: SourceType.MachineLearning });
-      await this.handlePersonCleanup();
-    }
-
     await this.databaseRepository.prewarm(VectorIndex.Face);
 
     const lastRun = new Date().toISOString();
