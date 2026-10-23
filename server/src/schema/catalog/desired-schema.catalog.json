@@ -27922,148 +27922,6 @@
       "synchronize": true
     },
     {
-      "name": "smart_album",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "smart_album",
-          "nullable": false,
-          "isArray": false,
-          "default": "uuid_generate_v4()",
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "kind",
-          "tableName": "smart_album",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "smart_album",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "albumId",
-          "tableName": "smart_album",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "smart_album",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "hiddenAt",
-          "tableName": "smart_album",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "smart_album_ownerId_idx",
-          "definition": "CREATE INDEX \"smart_album_ownerId_idx\" ON public.smart_album USING btree (\"ownerId\")",
-          "tableName": "smart_album",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "smart_album_albumId_idx",
-          "definition": "CREATE INDEX \"smart_album_albumId_idx\" ON public.smart_album USING btree (\"albumId\")",
-          "tableName": "smart_album",
-          "columnNames": [
-            "albumId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "unique",
-          "name": "smart_album_ownerId_kind_uq",
-          "definition": "UNIQUE (\"ownerId\", kind)",
-          "tableName": "smart_album",
-          "columnNames": [
-            "ownerId",
-            "kind"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "smart_album_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "smart_album",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "smart_album_albumId_fkey",
-          "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON DELETE CASCADE",
-          "tableName": "smart_album",
-          "columnNames": [
-            "albumId"
-          ],
-          "referenceTableName": "album",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "smart_album_ownerId_fkey",
-          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON DELETE CASCADE",
-          "tableName": "smart_album",
-          "columnNames": [
-            "ownerId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "smart_album_asset",
       "columns": [
         {
@@ -43065,6 +42923,148 @@
           ],
           "onUpdate": "CASCADE",
           "onDelete": "SET NULL",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "smart_album",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "smart_album",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "kind",
+          "tableName": "smart_album",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "smart_album",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "albumId",
+          "tableName": "smart_album",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "smart_album",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "hiddenAt",
+          "tableName": "smart_album",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "smart_album_ownerId_idx",
+          "definition": "CREATE INDEX \"smart_album_ownerId_idx\" ON public.smart_album USING btree (\"ownerId\")",
+          "tableName": "smart_album",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "smart_album_albumId_idx",
+          "definition": "CREATE INDEX \"smart_album_albumId_idx\" ON public.smart_album USING btree (\"albumId\")",
+          "tableName": "smart_album",
+          "columnNames": [
+            "albumId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "unique",
+          "name": "smart_album_ownerId_kind_uq",
+          "definition": "UNIQUE (\"ownerId\", kind)",
+          "tableName": "smart_album",
+          "columnNames": [
+            "ownerId",
+            "kind"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "smart_album_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "smart_album",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "smart_album_albumId_fkey",
+          "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON DELETE CASCADE",
+          "tableName": "smart_album",
+          "columnNames": [
+            "albumId"
+          ],
+          "referenceTableName": "album",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "smart_album_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON DELETE CASCADE",
+          "tableName": "smart_album",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
           "synchronize": true
         }
       ],
