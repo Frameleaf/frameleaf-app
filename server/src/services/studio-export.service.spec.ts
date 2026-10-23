@@ -326,6 +326,7 @@ describe(StudioExportService.name, () => {
       getForOwner: vi.fn(),
       getByRenderOperation: vi.fn(),
       getSources: vi.fn().mockResolvedValue([sourceRow()]),
+      getAvailableSourceIds: vi.fn((ids: string[]) => Promise.resolve(new Set(ids))),
       getSourceMediaFacts: vi.fn().mockResolvedValue([]),
       getSourcesFor: vi.fn((ids: string[]) =>
         Promise.resolve(new Map(ids.map((id) => [id, [sourceRow({ versionId: id })]]))),
@@ -2833,6 +2834,14 @@ describe(StudioExportService.name, () => {
       );
 
       access.asset.checkAlbumAccess.mockResolvedValue(new Set());
+      await expect(sut.download(auth(), VERSION)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('stops serving the file once one of the owner\'s own sources is trashed or offline', async () => {
+      repository.getForOwner.mockResolvedValue(projectResult());
+      access.asset.checkAlbumAccess.mockResolvedValue(new Set([SHARED_CLIP]));
+      repository.getAvailableSourceIds.mockResolvedValue(new Set([SHARED_CLIP]));
+
       await expect(sut.download(auth(), VERSION)).rejects.toBeInstanceOf(NotFoundException);
     });
 
