@@ -1235,7 +1235,10 @@ export class StudioProjectService {
     // FL-195: an unlocked session resolves the owner's revealed locks, a locked one refuses them, so a
     // resolution is never shared between the two
     const privacy = getLockedOwnerId(auth) ? 'unlocked' : 'locked';
-    const key = `${project.id}:${revision.revision}:${auth.user.id}:${privacy}:${destination}:${declarations}`;
+    // The manifest's interactive admission view names the session that resolved it, so another
+    // session, or an API key, of the same account never reuses it.
+    const credential = auth.session ? `session:${auth.session.id}` : auth.apiKey ? `key:${auth.apiKey.id}` : '';
+    const key = `${project.id}:${revision.revision}:${auth.user.id}:${credential}:${privacy}:${destination}:${declarations}`;
     const now = Date.now();
 
     if (cacheable) {
