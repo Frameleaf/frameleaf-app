@@ -323,7 +323,19 @@ export class PreservationWorkerService {
    * operation gets (`MediaOperationRepository.fail`); everything below is safe to repeat.
    */
   async run(job: RunningJob): Promise<void> {
-    if (job.operation.kind !== MediaOperationKind.PreservationExport) return this.runClaim(job);
+    if (job.operation.kind !== MediaOperationKind.PreservationExport) {
+      // One item (a multi-GB video hashed from a NAS) or reading a large index can outlast the lease, so it
+      // is renewed on a timer too. Cancel, pause and claim loss are still settled at the next checkpoint.
+      const renewal = setInterval(() => {
+        this.operations.heartbeat(job.operation.id, job.claimToken, PRESERVATION_LEASE_MS).catch(() => {});
+      }, PRESERVATION_LEASE_MS / 4);
+      renewal.unref();
+      try {
+        return await this.runClaim(job);
+      } finally {
+        clearInterval(renewal);
+      }
+    }
     return withOperationExecution(
       {
         renew: () =>

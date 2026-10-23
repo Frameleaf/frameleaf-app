@@ -1294,6 +1294,39 @@ describe(PreservationWorkerService.name, () => {
         expect(source.close).toHaveBeenCalledOnce();
       });
 
+      it('renews the claim while one verify step runs longer than its lease', async () => {
+        vi.useFakeTimers();
+        try {
+          const built = buildPackage(1);
+          useSource(built.entries);
+          const found = packageOf({ origin: 'upload' });
+          repository.getPackageById.mockResolvedValue(found);
+          const started = Promise.withResolvers<void>();
+          const release = Promise.withResolvers<void>();
+          const read = source.readDocument.getMockImplementation()!;
+          source.readDocument.mockImplementationOnce(async (name: string, maxBytes: number) => {
+            started.resolve();
+            await release.promise;
+            return read(name, maxBytes);
+          });
+          const operation = operationOf(MediaOperationKind.PreservationVerify, { packageId: found.id });
+          const claimToken = newUuid();
+
+          const task = sut.run({ operation, claimToken });
+          await started.promise;
+          await vi.advanceTimersByTimeAsync(PRESERVATION_LEASE_MS + PRESERVATION_TICK_MS);
+          expect(operations.heartbeat).toHaveBeenCalledWith(operation.id, claimToken, PRESERVATION_LEASE_MS);
+          expect(operations.heartbeat.mock.calls.length).toBeGreaterThan(1);
+
+          release.resolve();
+          await task;
+          expect(operations.complete).toHaveBeenCalled();
+          expect(vi.getTimerCount()).toBe(0);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
       it('calls a package whose manifest was rewritten after this server wrote it unreadable', async () => {
         const built = buildPackage(1);
         useSource(built.entries);
