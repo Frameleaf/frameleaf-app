@@ -27970,6 +27970,15 @@
           "isArray": false,
           "default": "now()",
           "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "hiddenAt",
+          "tableName": "smart_album",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
       "indexes": [
