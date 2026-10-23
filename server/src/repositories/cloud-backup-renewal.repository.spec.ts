@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
-import { access, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -600,7 +600,13 @@ describe('temporary backup capability storage integration', () => {
     await mkdir(join(folder, 'before'));
     await mkdir(join(folder, 'after'));
     await expect(
-      store.download(provider.connection('restore', journal()), `o/${sha(bytes)}`, key, join(folder, 'before', 'a'), sha(bytes)),
+      store.download(
+        provider.connection('restore', journal()),
+        `o/${sha(bytes)}`,
+        key,
+        join(folder, 'before', 'a'),
+        sha(bytes),
+      ),
     ).rejects.toThrow();
     expect(await readdir(join(folder, 'before'))).toHaveLength(1);
     provider.expireDownload = false;

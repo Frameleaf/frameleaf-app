@@ -86,19 +86,19 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import {
   CloudBackupAsset,
   CloudBackupEntry,
-  CloudBackupIndexedObject,
   CloudBackupIndexRepository,
+  CloudBackupIndexedObject,
   CloudBackupLibraryAsset,
 } from 'src/repositories/cloud-backup-index.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { CloudBackupSelectionRepository } from 'src/repositories/cloud-backup-selection.repository.js';
 import {
-  bareEtag,
   CloudBackupClaimError,
   CloudBackupConnection,
   CloudBackupFileChangedError,
   CloudBackupStoreError,
   CloudBackupStoreRepository,
+  bareEtag,
 } from 'src/repositories/cloud-backup-store.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
@@ -2600,7 +2600,10 @@ export class CloudBackupService {
         );
         try {
           const receipt = receipts.get(file.sha256);
-          const head = receipt?.etag && receipt.size === file.size ? await this.store.head(run.connection, key, run.bucketKey) : null;
+          const head =
+            receipt?.etag && receipt.size === file.size
+              ? await this.store.head(run.connection, key, run.bucketKey)
+              : null;
           if (head && head.size === file.size && bareEtag(head.etag) === bareEtag(receipt!.etag)) {
             existing.add(file.sha256);
             continue;
@@ -3373,7 +3376,10 @@ export class CloudBackupService {
         missing,
       );
       const takenPaths = new Map(
-        missing.map((id) => [id, new Set(manifest.assets[id].files.map((file) => file.path).filter((path) => taken.has(path)))]),
+        missing.map((id) => [
+          id,
+          new Set(manifest.assets[id].files.map((file) => file.path).filter((path) => taken.has(path))),
+        ]),
       );
       const mediaLocation = StorageCore.getMediaLocation();
       const plan = restorePlan({

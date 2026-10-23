@@ -565,7 +565,10 @@ export class CloudBackupIndexRepository {
         eb.or([
           eb.not(
             eb.exists(
-              eb.selectFrom('cloud_backup_manifest_original as o').select('o.assetId').whereRef('o.manifestId', '=', 'm.id'),
+              eb
+                .selectFrom('cloud_backup_manifest_original as o')
+                .select('o.assetId')
+                .whereRef('o.manifestId', '=', 'm.id'),
             ),
           ),
           eb.exists(

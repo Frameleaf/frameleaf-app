@@ -107,7 +107,10 @@ describe(CloudBackupDetailsService.name, () => {
         { db, ownerId: user.id, jobs: [] },
       );
       await expect(
-        sut.restoreAlbum({ albumId: album.id, album: undefined, memberIds: [asset.id] }, { db, ownerId: user.id, jobs: [] }),
+        sut.restoreAlbum(
+          { albumId: album.id, album: undefined, memberIds: [asset.id] },
+          { db, ownerId: user.id, jobs: [] },
+        ),
       ).resolves.toBeNull();
     });
     expect((await index.getAssetDetails([asset.id])).get(asset.id)!.details.isFavorite).toBe(true);

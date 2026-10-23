@@ -426,7 +426,10 @@ describe(CloudBackupService.name, () => {
       listKeptManifests: vi.fn().mockResolvedValue([]),
       getOwnerBackupCandidates: vi
         .fn()
-        .mockImplementation(async (bucket: string) => new Set((await index.listKeptManifests(bucket)).map(({ key }) => key))),
+        .mockImplementation(
+          async (bucket: string) =>
+            new Set((await index.listKeptManifests(bucket)).map(({ key }: { key: string }) => key)),
+        ),
       markManifests: vi.fn().mockResolvedValue(0),
       forget: vi.fn().mockResolvedValue(undefined),
       getOwnerRestoreIdentities: vi.fn().mockResolvedValue({}),
@@ -1681,10 +1684,13 @@ describe(CloudBackupService.name, () => {
       expect(mocks.storage.unlink).toHaveBeenCalledWith(partial);
       expect(index.clearEndedTransfer).toHaveBeenCalledWith(ended);
       expect(mocks.storage.unlinkDir).toHaveBeenCalledOnce();
-      expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`cloud-backup-transfers/${ended}$`)), {
-        recursive: true,
-        force: true,
-      });
+      expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(
+        expect.stringMatching(new RegExp(`cloud-backup-transfers/${ended}$`)),
+        {
+          recursive: true,
+          force: true,
+        },
+      );
     });
 
     it('keeps BYO multipart permission requirements and avoids Cloud capability calls', async () => {
@@ -4625,7 +4631,9 @@ describe(CloudBackupService.name, () => {
       expect(databaseBackup.createDatabaseBackup).toHaveBeenCalledOnce();
       expect(mocks.crypto.hashFile).toHaveBeenCalledOnce();
       // the backups folder is read once for leftover dumps (the transfer folders are swept on every open)
-      expect(mocks.storage.readdir.mock.calls.filter(([folder]) => !folder.endsWith('cloud-backup-transfers'))).toHaveLength(1);
+      expect(
+        mocks.storage.readdir.mock.calls.filter(([folder]) => !folder.endsWith('cloud-backup-transfers')),
+      ).toHaveLength(1);
       expect(checkpoint).toMatchObject({ phase: 'reconcile', database: { key: firstRequest[1] } });
     });
   });

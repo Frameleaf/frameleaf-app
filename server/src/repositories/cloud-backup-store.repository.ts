@@ -1243,8 +1243,7 @@ export class CloudBackupStoreRepository {
     if (state?.completed) {
       // An object's receipt outlives its upload only when the run stopped right after it; the object may be
       // pruned, deleted or replaced since, so it is trusted only while the bucket still answers with it.
-      const kept =
-        context.kind !== 'object' || (await this.stillStored(connection, key, root, state.completed));
+      const kept = context.kind !== 'object' || (await this.stillStored(connection, key, root, state.completed));
       if (connection.transfer) await connection.transfer.save(null);
       if (context.kind === 'object') await this.finishClientUpload(connection, key);
       if (kept) return { ...state.completed, size: state.size, ciphertextSha256: state.ciphertextSha256 };

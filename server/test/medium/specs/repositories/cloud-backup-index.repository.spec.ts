@@ -255,7 +255,11 @@ describe(CloudBackupIndexRepository.name, () => {
     const other = `https://s3.example.test/${randomUUID()}`;
     const old = await sut.createManifest({ bucket, key: 'm/20260920T030000Z.json.gz', operationId: randomUUID() });
     await sut.finishManifest(old.id, { status: 'complete' });
-    const kept = await sut.createManifest({ bucket: other, key: 'm/20260920T030000Z.json.gz', operationId: randomUUID() });
+    const kept = await sut.createManifest({
+      bucket: other,
+      key: 'm/20260920T030000Z.json.gz',
+      operationId: randomUUID(),
+    });
     await sut.finishManifest(kept.id, { status: 'complete' });
 
     await sut.deleteBucket(bucket);
