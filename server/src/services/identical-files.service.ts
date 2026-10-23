@@ -8,6 +8,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { OnJob } from 'src/decorators.js';
 import {
   IdenticalFilesChangeDto,
+  IdenticalFilesExtraCopiesDto,
   IdenticalFilesProblemKind,
   IdenticalFilesStage,
   IdenticalFilesState,
@@ -133,6 +134,11 @@ export class IdenticalFilesService {
   /* ------------------------------------------------------------------------ */
   /* API                                                                       */
   /* ------------------------------------------------------------------------ */
+
+  /** FL-520: "Extra copies already on the drive", counted without a run. */
+  getExtraCopies(): Promise<IdenticalFilesExtraCopiesDto> {
+    return this.repository.countExtraCopies();
+  }
 
   async getStatus(): Promise<IdenticalFilesStatusDto> {
     const state = await this.getState();

@@ -4,8 +4,17 @@
  *
  * - How much the damage check reads: "Stop after" (the server keeps milliseconds) and "Check each
  *   night" (the server keeps a share from 0 to 1).
- * - "A drive is unplugged": many missing files that all sit in one folder.
+ * - "A drive is unplugged": a folder of originals the server says it cannot reach (FL-520).
+ * - The checks as a run in progress, and where "Restore from a backup" goes (FL-520).
  */
+import type {
+  IntegrityCheckHistoryEntryDto,
+  IntegrityCheckProgressDto,
+  IntegrityReport,
+  IntegrityUnreachableFolderDto,
+} from '@frameleaf/sdk';
+import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+
 const MINUTE_MS = 60_000;
 /** "Stop after": how long one night's damage check may read files, in minutes. */
 export const STOP_AFTER_MINUTES = [30, 60, 120, 240, 480] as const;
@@ -24,19 +33,38 @@ export const splitPath = (path: string) => {
   return index === -1 ? { folder: '', name: path } : { folder: path.slice(0, index + 1), name: path.slice(index + 1) };
 };
 
-/** At least this many missing files in one folder reads as a drive or folder that cannot be reached. */
-export const UNPLUGGED_MIN = 10;
+/**
+ * FL-520: the folder to name when originals cannot be reached: the one holding the most missing files.
+ * The server looks at each folder's drive (`IntegrityService.getUnreachableFolders`) instead of guessing
+ * from many missing files in one folder. A folder that cannot be reached but holds no missing finding
+ * yet says nothing until a check has looked.
+ */
+export const unreachableFolder = (folders: readonly IntegrityUnreachableFolderDto[]) =>
+  folders.filter((folder) => folder.missing > 0).sort((a, b) => b.missing - a.missing)[0];
+
+export type CheckStepState = { type: IntegrityReport; state: 'done' | 'now' | 'waiting'; percent?: number };
 
 /**
- * The folder every missing file is in, when there are many and they all share it: that is usually a
- * drive that is unplugged or a folder that was moved, not photos that are gone. Only the loaded
- * findings are looked at, so it says nothing unless every one of them is in the same folder.
+ * FL-520: the checks that are on, as a run: the ones running now (with how far each has got, when the
+ * server knows), the ones that finished since the earliest running one started, and the rest waiting
+ * their turn.
  */
-export const unpluggedFolder = (count: number, paths: readonly string[]) => {
-  if (count < UNPLUGGED_MIN || paths.length < UNPLUGGED_MIN) {
-    return;
-  }
-  const folders = new Set(paths.map((path) => splitPath(path).folder));
-  const [folder] = folders;
-  return folders.size === 1 && folder ? folder : undefined;
+export const checkSteps = (
+  types: readonly IntegrityReport[],
+  running: readonly IntegrityCheckProgressDto[],
+  history: readonly IntegrityCheckHistoryEntryDto[],
+): CheckStepState[] => {
+  const since = running.map((run) => run.startedAt).sort()[0];
+  return types.map((type) => {
+    const run = running.find((item) => item.type === type);
+    if (run) {
+      const percent = run.total ? Math.min(99, Math.floor((run.done / run.total) * 100)) : undefined;
+      return { type, state: 'now', percent };
+    }
+    const finished = since !== undefined && history.some((entry) => entry.type === type && entry.finishedAt >= since);
+    return { type, state: finished ? 'done' : 'waiting' };
+  });
 };
+
+/** FL-520: Backup › Restore, with the photos behind the missing or damaged findings chosen. */
+export const restoreUrl = (kind: 'missing' | 'damaged') => commandCenterUrl('backups', 'restore', { files: kind });

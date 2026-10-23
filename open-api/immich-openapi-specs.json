@@ -5241,6 +5241,121 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/duplicates/estimate": {
+      "get": {
+        "description": "About how many look-alike groups each distance would make in this library, and how long comparing every photo again takes, from a sample of photos. Nothing is changed.",
+        "operationId": "getDuplicateEstimate",
+        "parameters": [
+          {
+            "name": "maxDistances",
+            "required": true,
+            "in": "query",
+            "description": "The distances to estimate groups for, from 0.001 (nearly identical) to 0.1",
+            "schema": {
+              "minItems": 1,
+              "maxItems": 5,
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0.001,
+                "maximum": 0.1,
+                "format": "double"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DuplicateEstimateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Estimate look-alike groups",
+        "tags": [
+          "Duplicates"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/duplicates/recompare": {
+      "post": {
+        "description": "Compare every photo again with the saved \"How alike\" setting: now, or in the next overnight run. Groups already dealt with stay dealt with.",
+        "operationId": "recompareDuplicates",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DuplicateRecompareDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Compare look-alike photos again",
+        "tags": [
+          "Duplicates"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/file-trash": {
       "get": {
         "description": "Originals no library references any more, newest first, with the total disk space the file trash holds. Nothing here is deleted automatically.",
@@ -5776,6 +5891,156 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/identical-files/extra-copies": {
+      "get": {
+        "description": "How many extra files on the drive hold the same content as another, of how many photos and videos, and the space they take, from what the last run recorded. Reads no file.",
+        "operationId": "getIdenticalFilesExtraCopies",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdenticalFilesExtraCopiesDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Count extra copies on the drive",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/integrity/assets": {
+      "get": {
+        "description": "The photos still in the library whose files are missing or damaged, from both checkers, at most 10,000: what \"Restore from a backup\" restores.",
+        "operationId": "getIntegrityFindingAssets",
+        "parameters": [
+          {
+            "name": "kind",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/IntegrityFindingKind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrityFindingAssetsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the photos behind missing or damaged findings",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/integrity/overview": {
+      "get": {
+        "description": "One count per kind of problem across the file checks and the Library care scanner (a photo both report is counted once), the folders of originals that cannot be reached, the checks running now and the most recent checks.",
+        "operationId": "getIntegrityOverview",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrityOverviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the file checks overview",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/integrity/report": {
       "get": {
         "description": "Get all flagged items by integrity report type",
@@ -6157,6 +6422,53 @@
           }
         ],
         "summary": "Get integrity check runs",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/integrity/stop": {
+      "post": {
+        "description": "Stop the file checks in progress and take waiting ones off the queue. Findings so far are kept; the damage check carries on from where it stopped at the next overnight run.",
+        "operationId": "stopIntegrityChecks",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrityOverviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Stop the file checks",
         "tags": [
           "Maintenance (admin)"
         ],
@@ -77857,6 +78169,88 @@
         ],
         "type": "string"
       },
+      "DuplicateEstimateChoiceDto": {
+        "properties": {
+          "groups": {
+            "description": "About how many look-alike groups this choice makes in this library",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxDistance": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "groups",
+          "maxDistance"
+        ],
+        "type": "object"
+      },
+      "DuplicateEstimateQueryDto": {
+        "properties": {
+          "maxDistances": {
+            "description": "The distances to estimate groups for, from 0.001 (nearly identical) to 0.1",
+            "items": {
+              "format": "double",
+              "maximum": 0.1,
+              "minimum": 0.001,
+              "type": "number"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "maxDistances"
+        ],
+        "type": "object"
+      },
+      "DuplicateEstimateResponseDto": {
+        "properties": {
+          "choices": {
+            "description": "An estimate for each distance asked for",
+            "items": {
+              "$ref": "#/components/schemas/DuplicateEstimateChoiceDto"
+            },
+            "type": "array"
+          },
+          "comparable": {
+            "description": "Photos and videos that are compared",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "groups": {
+            "description": "Look-alike groups found so far",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sampled": {
+            "description": "How many photos the estimate is based on",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "seconds": {
+            "description": "About how long comparing every photo again takes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "choices",
+          "comparable",
+          "groups",
+          "sampled",
+          "seconds"
+        ],
+        "type": "object"
+      },
       "DuplicateGroupBlock": {
         "description": "Why a duplicate group cannot be decided from this session",
         "enum": [
@@ -77882,6 +78276,25 @@
           "most-metadata",
           "compressed-copy",
           "lower-resolution"
+        ],
+        "type": "string"
+      },
+      "DuplicateRecompareDto": {
+        "properties": {
+          "when": {
+            "$ref": "#/components/schemas/DuplicateRecompareWhen"
+          }
+        },
+        "required": [
+          "when"
+        ],
+        "type": "object"
+      },
+      "DuplicateRecompareWhen": {
+        "description": "now: start comparing every photo again; tonight: in the next overnight run",
+        "enum": [
+          "now",
+          "tonight"
         ],
         "type": "string"
       },
@@ -84282,6 +84695,34 @@
         ],
         "type": "object"
       },
+      "IdenticalFilesExtraCopiesDto": {
+        "properties": {
+          "bytes": {
+            "description": "Space the extra files take",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "contents": {
+            "description": "Photos and videos those extra files are copies of",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "files": {
+            "description": "Extra files on the drive that hold the same content as another",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes",
+          "contents",
+          "files"
+        ],
+        "type": "object"
+      },
       "IdenticalFilesProblemDto": {
         "properties": {
           "assetId": {
@@ -84879,6 +85320,86 @@
         ],
         "type": "string"
       },
+      "IntegrityCheckHistoryEntryDto": {
+        "properties": {
+          "checked": {
+            "description": "Files it looked at, when counted",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "found": {
+            "description": "Findings in its list when it ended",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/IntegrityCheckOutcome"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/IntegrityReport"
+          }
+        },
+        "required": [
+          "checked",
+          "finishedAt",
+          "found",
+          "outcome",
+          "startedAt",
+          "type"
+        ],
+        "type": "object"
+      },
+      "IntegrityCheckOutcome": {
+        "description": "completed: it looked at everything; paused: the damage check reached its nightly limit and carries on next night; stopped: an administrator stopped it",
+        "enum": [
+          "completed",
+          "paused",
+          "stopped"
+        ],
+        "type": "string"
+      },
+      "IntegrityCheckProgressDto": {
+        "properties": {
+          "done": {
+            "description": "Parts finished: batches of files, or files read by the damage check",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "total": {
+            "description": "Parts in this run; null until they are all counted",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "type": {
+            "$ref": "#/components/schemas/IntegrityReport"
+          }
+        },
+        "required": [
+          "done",
+          "startedAt",
+          "total",
+          "type"
+        ],
+        "type": "object"
+      },
       "IntegrityCheckRunsResponseDto": {
         "properties": {
           "checksum_mismatch": {
@@ -84907,6 +85428,42 @@
         ],
         "type": "object"
       },
+      "IntegrityFindingAssetsDto": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/IntegrityFindingKind"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "IntegrityFindingAssetsResponseDto": {
+        "properties": {
+          "assetIds": {
+            "description": "Photos behind the findings, at most 10,000",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetIds"
+        ],
+        "type": "object"
+      },
+      "IntegrityFindingKind": {
+        "description": "Which findings",
+        "enum": [
+          "missing",
+          "damaged"
+        ],
+        "type": "string"
+      },
       "IntegrityGetReportDto": {
         "properties": {
           "cursor": {
@@ -84927,6 +85484,65 @@
         },
         "required": [
           "type"
+        ],
+        "type": "object"
+      },
+      "IntegrityOverviewResponseDto": {
+        "properties": {
+          "damaged": {
+            "description": "Damaged files, each counted once across both checkers",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "history": {
+            "description": "The most recent checks, newest first",
+            "items": {
+              "$ref": "#/components/schemas/IntegrityCheckHistoryEntryDto"
+            },
+            "type": "array"
+          },
+          "missing": {
+            "description": "Missing files, each counted once across both checkers",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rawToMatch": {
+            "description": "Missing photos whose original is a RAW file",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "running": {
+            "description": "Checks in progress",
+            "items": {
+              "$ref": "#/components/schemas/IntegrityCheckProgressDto"
+            },
+            "type": "array"
+          },
+          "stray": {
+            "description": "Files on the drive that are in no library",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unreachable": {
+            "description": "Folders of originals that cannot be reached",
+            "items": {
+              "$ref": "#/components/schemas/IntegrityUnreachableFolderDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "damaged",
+          "history",
+          "missing",
+          "rawToMatch",
+          "running",
+          "stray",
+          "unreachable"
         ],
         "type": "object"
       },
@@ -85025,6 +85641,42 @@
           "untracked_file"
         ],
         "type": "object"
+      },
+      "IntegrityUnreachableFolderDto": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/IntegrityUnreachableFolderKind"
+          },
+          "missing": {
+            "description": "Missing-file findings inside this folder",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "description": "The external library’s name; empty for Frameleaf’s own folders",
+            "type": "string"
+          },
+          "path": {
+            "description": "The folder on the server",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "missing",
+          "name",
+          "path"
+        ],
+        "type": "object"
+      },
+      "IntegrityUnreachableFolderKind": {
+        "description": "storage: Frameleaf's own folders; library: an external library's folder",
+        "enum": [
+          "storage",
+          "library"
+        ],
+        "type": "string"
       },
       "ItemShareChangeDto": {
         "properties": {

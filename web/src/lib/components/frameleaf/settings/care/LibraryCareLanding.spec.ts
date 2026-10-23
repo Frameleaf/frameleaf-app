@@ -2,7 +2,7 @@ import {
   createJob,
   getAssetStatistics,
   getIntegrityCheckRuns,
-  getIntegrityReportSummary,
+  getIntegrityOverview,
   getServerStatistics,
   getSummary,
   IntegrityReport,
@@ -25,7 +25,7 @@ vi.mock('@frameleaf/sdk', async (original) => ({
   createJob: vi.fn(),
   getAssetStatistics: vi.fn(),
   getIntegrityCheckRuns: vi.fn(),
-  getIntegrityReportSummary: vi.fn(),
+  getIntegrityOverview: vi.fn(),
   getServerStatistics: vi.fn(),
   getSummary: vi.fn(),
 }));
@@ -52,10 +52,15 @@ const summary = (queues: Partial<MediaHealthSummaryResponseDto['queues']> = {}, 
     recoveryAvailable: false,
   }) as unknown as MediaHealthSummaryResponseDto;
 
-const reports = (missing = 0, checksum = 0, untracked = 0) => ({
-  [IntegrityReport.MissingFile]: missing,
-  [IntegrityReport.ChecksumMismatch]: checksum,
-  [IntegrityReport.UntrackedFile]: untracked,
+/** FL-520: the server's one source of findings, each file counted once. */
+const reports = (missing = 0, damaged = 0, stray = 0) => ({
+  missing,
+  damaged,
+  stray,
+  rawToMatch: 0,
+  unreachable: [],
+  running: [],
+  history: [],
 });
 const runs = (at: string | null) => ({
   [IntegrityReport.MissingFile]: at,
@@ -75,7 +80,7 @@ describe('Library care landing (FL-366)', () => {
 
   it('says the library is healthy, with how many files were checked', async () => {
     vi.mocked(getSummary).mockResolvedValue(summary());
-    vi.mocked(getIntegrityReportSummary).mockResolvedValue(reports() as never);
+    vi.mocked(getIntegrityOverview).mockResolvedValue(reports() as never);
     vi.mocked(getIntegrityCheckRuns).mockResolvedValue(runs(new Date().toISOString()) as never);
 
     render(LibraryCareLanding);
@@ -87,7 +92,7 @@ describe('Library care landing (FL-366)', () => {
 
   it('counts a missing file both scanners found once, and lists what needs attention', async () => {
     vi.mocked(getSummary).mockResolvedValue(summary({ missing: 2, damagedConfirmed: 1 }));
-    vi.mocked(getIntegrityReportSummary).mockResolvedValue(reports(2, 0, 1) as never);
+    vi.mocked(getIntegrityOverview).mockResolvedValue(reports(2, 1, 1) as never);
     vi.mocked(getIntegrityCheckRuns).mockResolvedValue(runs(new Date().toISOString()) as never);
 
     render(LibraryCareLanding);
@@ -100,7 +105,7 @@ describe('Library care landing (FL-366)', () => {
 
   it('says a library that was never checked is not checked yet, and can start a check', async () => {
     vi.mocked(getSummary).mockResolvedValue(summary());
-    vi.mocked(getIntegrityReportSummary).mockResolvedValue(reports() as never);
+    vi.mocked(getIntegrityOverview).mockResolvedValue(reports() as never);
     vi.mocked(getIntegrityCheckRuns).mockResolvedValue(runs(null) as never);
     vi.mocked(createJob).mockResolvedValue(undefined as never);
 
@@ -122,7 +127,7 @@ describe('Library care landing (FL-366)', () => {
 
     expect(await hero().findByText(/All 42 of your photos and videos/)).toBeInTheDocument();
     expect(getSummary).toHaveBeenCalledWith({});
-    expect(getIntegrityReportSummary).not.toHaveBeenCalled();
+    expect(getIntegrityOverview).not.toHaveBeenCalled();
     expect(screen.queryByText(en.frameleaf_carehome_row_checks)).not.toBeInTheDocument();
     expect(screen.getByText(en.frameleaf_carehome_row_fix)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: en.frameleaf_carehome_check_now })).not.toBeInTheDocument();

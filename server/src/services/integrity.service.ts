@@ -12,16 +12,21 @@ import type {
   IIntegrityPathWithChecksumJob,
   IIntegrityPathWithReportJob,
   IIntegrityUntrackedFilesJob,
+  IntegrityCheckHistoryEntry,
 } from 'src/types.js';
 import { JOBS_LIBRARY_PAGINATION_SIZE } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   IntegrityCheckRunsResponseDto,
+  IntegrityFindingAssetsDto,
+  IntegrityFindingAssetsResponseDto,
   IntegrityGetReportDto,
+  IntegrityOverviewResponseDto,
   IntegrityReportClearResponseDto,
   IntegrityReportResponseDto,
   IntegrityReportSummaryResponseDto,
+  IntegrityUnreachableFolder,
 } from 'src/dtos/integrity.dto.js';
 import {
   AssetStatus,
@@ -39,7 +44,15 @@ import {
 import { BaseService } from 'src/services/base.service.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, handlePromiseError } from 'src/utils/misc.js';
+
+/** FL-520: how many past checks "Recent checks" keeps. */
+export const INTEGRITY_HISTORY_KEPT = 30;
+/** FL-520: the most photos "Restore from a backup" takes at once (the restore request's own limit). */
+const FINDING_ASSETS_LIMIT = 10_000;
+/** FL-520: how often (in files) the damage check saves its progress and looks for a Stop. */
+const CHECKSUM_PROGRESS_EVERY = 100;
 
 /**
  * Untracked Files:
@@ -166,6 +179,121 @@ export class IntegrityService extends BaseService {
     };
   }
 
+  /**
+   * FL-520: Library care's one source of findings (a photo two checkers both report is counted once),
+   * the folders of originals that cannot be reached, the checks running now and the recent checks.
+   */
+  async getIntegrityOverview(): Promise<IntegrityOverviewResponseDto> {
+    const [counts, unreachable, runs, history] = await Promise.all([
+      this.integrityRepository.getFindingsOverview(Object.keys(mimeTypes.raw)),
+      this.getUnreachableFolders(),
+      this.systemMetadataRepository.get(SystemMetadataKey.IntegrityCheckRuns),
+      this.systemMetadataRepository.get(SystemMetadataKey.IntegrityCheckHistory),
+    ]);
+    const running = Object.values(IntegrityReport).flatMap((type) => {
+      const current = runs?.[type]?.current;
+      return current ? [{ type, startedAt: current.startedAt, done: current.done, total: current.batches }] : [];
+    });
+    return {
+      missing: counts.missing,
+      damaged: counts.damaged,
+      stray: counts.stray,
+      rawToMatch: counts.rawToMatch,
+      unreachable,
+      running,
+      history: history?.entries ?? [],
+    };
+  }
+
+  /**
+   * FL-520: a real "drive unplugged" signal. Frameleaf's own folders are reachable while their mount
+   * file (`.frameleaf`) is there; an external library's folder while it exists. Each folder that
+   * cannot be reached says how many missing files are inside it.
+   */
+  private async getUnreachableFolders(): Promise<IntegrityUnreachableFolder[]> {
+    const candidates: Omit<IntegrityUnreachableFolder, 'missing'>[] = [];
+    for (const folder of [StorageFolder.Library, StorageFolder.Upload, StorageFolder.EncodedVideo]) {
+      const base = StorageCore.getBaseFolder(folder);
+      if ((await this.pathState(`${base}/.frameleaf`)) === 'missing') {
+        candidates.push({ kind: 'storage', name: '', path: base });
+      }
+    }
+    const libraries = await this.libraryRepository.getAll().catch(() => []);
+    for (const library of libraries) {
+      for (const importPath of library.importPaths) {
+        if ((await this.pathState(importPath)) === 'missing') {
+          candidates.push({ kind: 'library', name: library.name, path: importPath.replace(/\/+$/, '') });
+        }
+      }
+    }
+    const counts = await this.integrityRepository.countMissingUnder(candidates.map(({ path }) => `${path}/`));
+    return candidates.map((candidate, index) => ({ ...candidate, missing: counts[index] }));
+  }
+
+  /** `missing` only when the filesystem says so; any other failure says nothing. */
+  private async pathState(path: string): Promise<'present' | 'missing' | 'unknown'> {
+    try {
+      await this.storageRepository.stat(path);
+      return 'present';
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      return code === 'ENOENT' || code === 'ENOTDIR' ? 'missing' : 'unknown';
+    }
+  }
+
+  /** FL-520: the photos behind the missing or damaged findings, for "Restore from a backup". */
+  async getFindingAssetIds({ kind }: IntegrityFindingAssetsDto): Promise<IntegrityFindingAssetsResponseDto> {
+    return { assetIds: await this.integrityRepository.getFindingAssetIds(kind, FINDING_ASSETS_LIMIT) };
+  }
+
+  /**
+   * FL-520: Stop. Checks waiting their turn are taken off the queue, the checks in progress end as
+   * "stopped" in Recent checks, and the damage check stops at its next save point. Nothing found so far
+   * is lost: the damage check carries on from where it stopped the next night, and the other two look
+   * again in full the next night.
+   */
+  async stopIntegrityChecks(): Promise<IntegrityOverviewResponseDto> {
+    const requestedAt = new Date().toISOString();
+    await this.systemMetadataRepository.set(SystemMetadataKey.IntegrityCheckStop, { requestedAt });
+    await this.jobRepository.empty(QueueName.IntegrityCheck);
+    const runs = (await this.systemMetadataRepository.get(SystemMetadataKey.IntegrityCheckRuns)) ?? {};
+    for (const type of Object.values(IntegrityReport)) {
+      const current = runs[type]?.current;
+      if (current && (await this.systemMetadataRepository.clearIntegrityRun(type, current.runId))) {
+        await this.recordHistory(type, current.startedAt, 'stopped', null);
+      }
+    }
+    return this.getIntegrityOverview();
+  }
+
+  /** Whether Stop was pressed after `startedAt`. */
+  private async stopRequestedSince(startedAt: string): Promise<boolean> {
+    const stop = await this.systemMetadataRepository.get(SystemMetadataKey.IntegrityCheckStop);
+    return !!stop && stop.requestedAt >= startedAt;
+  }
+
+  /** FL-520: adds one ended check to Recent checks, newest first, with how many findings its list holds. */
+  private async recordHistory(
+    type: IntegrityReport,
+    startedAt: string,
+    outcome: IntegrityCheckHistoryEntry['outcome'],
+    checked: number | null,
+  ) {
+    const summary = await this.integrityRepository.getIntegrityReportSummary();
+    const entry: IntegrityCheckHistoryEntry = {
+      type,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      outcome,
+      found: summary[type] ?? 0,
+      checked,
+    };
+    const history = await this.systemMetadataRepository.get(SystemMetadataKey.IntegrityCheckHistory);
+    await this.systemMetadataRepository.set(SystemMetadataKey.IntegrityCheckHistory, {
+      entries: [entry, ...(history?.entries ?? [])].slice(0, INTEGRITY_HISTORY_KEPT),
+    });
+  }
+
   /** A full (not refresh-only) run of `type` begins; its batches carry the returned id. */
   private async startCheckRun(type: IntegrityReport): Promise<string> {
     const runId = this.cryptoRepository.randomUUID();
@@ -191,8 +319,13 @@ export class IntegrityService extends BaseService {
       return;
     }
     const run = await this.systemMetadataRepository.updateIntegrityRun(type, runId, progress);
-    if (run && run.batches !== null && run.done >= run.batches) {
-      await this.systemMetadataRepository.completeIntegrityRun(type, runId, new Date());
+    if (
+      run &&
+      run.batches !== null &&
+      run.done >= run.batches &&
+      (await this.systemMetadataRepository.completeIntegrityRun(type, runId, new Date()))
+    ) {
+      await this.recordHistory(type, run.startedAt, 'completed', null);
     }
   }
 
@@ -738,8 +871,17 @@ export class IntegrityService extends BaseService {
     };
 
     let lastCreatedAt: Date | undefined;
+    let stopped = false;
 
     this.logger.log(`Processing assets from ${startMarker?.toISOString() ?? 'beginning'}`);
+
+    // FL-520: the night's damage check is a run of its own, so its progress and its end show in
+    // Library care: the files it plans to read tonight, and how many it has read.
+    const runId = await this.startCheckRun(IntegrityReport.ChecksumFail);
+    const runStartedAt = new Date(startedAt).toISOString();
+    await this.systemMetadataRepository.updateIntegrityRun(IntegrityReport.ChecksumFail, runId, {
+      batches: Math.max(0, Math.min(count, Math.ceil(count * percentageLimit))),
+    });
 
     const assets = this.integrityRepository.streamAssetChecksums(startMarker);
 
@@ -748,8 +890,17 @@ export class IntegrityService extends BaseService {
 
       processed++;
 
-      if (processed % 100 === 0) {
+      if (processed % CHECKSUM_PROGRESS_EVERY === 0) {
         printStats();
+        await this.systemMetadataRepository.updateIntegrityRun(IntegrityReport.ChecksumFail, runId, {
+          finished: CHECKSUM_PROGRESS_EVERY,
+        });
+        if (await this.stopRequestedSince(runStartedAt)) {
+          this.logger.log('Stopped by an administrator.');
+          lastCreatedAt = createdAt;
+          stopped = true;
+          break;
+        }
       }
 
       if (Date.now() > startedAt + timeLimit || processed > count * percentageLimit) {
@@ -767,12 +918,17 @@ export class IntegrityService extends BaseService {
 
     if (lastCreatedAt) {
       this.logger.log(`Finished checksum job, will continue from ${lastCreatedAt.toISOString()}.`);
+      // FL-520: a pass stopped by its limits (or by Stop) is not a completed run: it carries on from the
+      // checkpoint next night. Stop already wrote its own line in Recent checks.
+      if (await this.systemMetadataRepository.clearIntegrityRun(IntegrityReport.ChecksumFail, runId)) {
+        await this.recordHistory(IntegrityReport.ChecksumFail, runStartedAt, stopped ? 'stopped' : 'paused', processed);
+      }
     } else {
       this.logger.log(`Finished checksum job, covered all assets.`);
-      // A pass that reached the last asset is a completed run (FL-81); one stopped by its limits
-      // continues from the checkpoint next time and completes then.
-      const runId = await this.startCheckRun(IntegrityReport.ChecksumFail);
-      await this.systemMetadataRepository.completeIntegrityRun(IntegrityReport.ChecksumFail, runId, new Date());
+      // A pass that reached the last asset is a completed run (FL-81).
+      if (await this.systemMetadataRepository.completeIntegrityRun(IntegrityReport.ChecksumFail, runId, new Date())) {
+        await this.recordHistory(IntegrityReport.ChecksumFail, runStartedAt, 'completed', processed);
+      }
     }
 
     return JobStatus.Success;

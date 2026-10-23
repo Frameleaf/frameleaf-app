@@ -38,6 +38,34 @@ describe(DuplicateRepository.name, () => {
     defaultDatabase = await getKyselyDB();
   });
 
+  describe('look-alike estimate (FL-520)', () => {
+    it('reads the nearest photo in the same library and counts what can be compared', async () => {
+      const { assetRepository, database, sut, userRepository } = setup();
+      const user = await createUser(userRepository);
+      const near = (axis: number, wobble: number) =>
+        `[${Array.from({ length: 768 }, (_, index) => (index === axis ? 1 : index === axis + 1 ? wobble : 0)).join(',')}]`;
+      const photos = [near(0, 0), near(0, 0.01), near(5, 0)];
+      const ids: string[] = [];
+      for (const embedding of photos) {
+        const asset = mediumFactory.assetInsert({ ownerId: user.id, type: AssetType.Image });
+        await assetRepository.create(asset);
+        await sql`insert into "smart_search" ("assetId", "embedding") values (${asset.id}, ${embedding})`.execute(
+          database,
+        );
+        ids.push(asset.id);
+      }
+      await database.updateTable('asset').set({ duplicateId: ids[0] }).where('id', 'in', ids.slice(0, 2)).execute();
+
+      const distances = await sut.sampleNearestDistances(10);
+      expect(distances).toHaveLength(3);
+      expect(distances.filter((distance) => distance < 0.001)).toHaveLength(2);
+
+      await expect(sut.countComparable()).resolves.toEqual(expect.objectContaining({ groups: 1, grouped: 2 }));
+      const { comparable } = await sut.countComparable();
+      expect(comparable).toBeGreaterThanOrEqual(3);
+    });
+  });
+
   describe('asset_video_duplicate_frame', () => {
     it('should have the expected table shape', async () => {
       const { rows } = await sql<{ columnName: string; dataType: string }>`

@@ -2124,6 +2124,26 @@ export type DatabaseBackupUploadDto = {
     /** Database backup file */
     file?: Blob;
 };
+export type DuplicateEstimateChoiceDto = {
+    /** About how many look-alike groups this choice makes in this library */
+    groups: number;
+    maxDistance: number;
+};
+export type DuplicateEstimateResponseDto = {
+    /** An estimate for each distance asked for */
+    choices: DuplicateEstimateChoiceDto[];
+    /** Photos and videos that are compared */
+    comparable: number;
+    /** Look-alike groups found so far */
+    groups: number;
+    /** How many photos the estimate is based on */
+    sampled: number;
+    /** About how long comparing every photo again takes */
+    seconds: number;
+};
+export type DuplicateRecompareDto = {
+    when: DuplicateRecompareWhen;
+};
 export type FileTrashItemResponseDto = {
     /** Hex-encoded SHA-256 checksum of the file */
     checksum: string;
@@ -2328,6 +2348,61 @@ export type IdenticalFilesChangeDto = {
     /** The photo’s own file waits in Unused files and can be restored */
     restorable: boolean;
     undoneAt: string | null;
+};
+export type IdenticalFilesExtraCopiesDto = {
+    /** Space the extra files take */
+    bytes: number;
+    /** Photos and videos those extra files are copies of */
+    contents: number;
+    /** Extra files on the drive that hold the same content as another */
+    files: number;
+};
+export type IntegrityFindingAssetsResponseDto = {
+    /** Photos behind the findings, at most 10,000 */
+    assetIds: string[];
+};
+export type IntegrityCheckHistoryEntryDto = {
+    /** Files it looked at, when counted */
+    checked: number | null;
+    finishedAt: string;
+    /** Findings in its list when it ended */
+    found: number;
+    outcome: IntegrityCheckOutcome;
+    startedAt: string;
+    "type": IntegrityReport;
+};
+export type IntegrityCheckProgressDto = {
+    /** Parts finished: batches of files, or files read by the damage check */
+    done: number;
+    startedAt: string;
+    /** Parts in this run; null until they are all counted */
+    total: number | null;
+    "type": IntegrityReport;
+};
+export type IntegrityUnreachableFolderDto = {
+    kind: IntegrityUnreachableFolderKind;
+    /** Missing-file findings inside this folder */
+    missing: number;
+    /** The external library’s name; empty for Frameleaf’s own folders */
+    name: string;
+    /** The folder on the server */
+    path: string;
+};
+export type IntegrityOverviewResponseDto = {
+    /** Damaged files, each counted once across both checkers */
+    damaged: number;
+    /** The most recent checks, newest first */
+    history: IntegrityCheckHistoryEntryDto[];
+    /** Missing files, each counted once across both checkers */
+    missing: number;
+    /** Missing photos whose original is a RAW file */
+    rawToMatch: number;
+    /** Checks in progress */
+    running: IntegrityCheckProgressDto[];
+    /** Files on the drive that are in no library */
+    stray: number;
+    /** Folders of originals that cannot be reached */
+    unreachable: IntegrityUnreachableFolderDto[];
 };
 export type IntegrityReportResponseDto = {
     items: {
@@ -16568,6 +16643,10 @@ export type DocumentSearchDto = {
     query?: string;
     size?: number;
 };
+export type DuplicateEstimateQueryDto = {
+    /** The distances to estimate groups for, from 0.001 (nearly identical) to 0.1 */
+    maxDistances: number[];
+};
 export type FaceSearchDto = {
     /** Face ID */
     id: string;
@@ -16858,6 +16937,9 @@ export type HdrAssetDevelopRecipeV6 = {
 };
 export type ICloudEditEvidenceQueryDto = {
     assetId: string;
+};
+export type IntegrityFindingAssetsDto = {
+    kind: IntegrityFindingKind;
 };
 export type IntegrityGetReportDto = {
     /** Cursor for pagination */
@@ -19524,6 +19606,33 @@ export function downloadDatabaseBackup({ filename }: {
     }));
 }
 /**
+ * Estimate look-alike groups
+ */
+export function getDuplicateEstimate({ maxDistances }: {
+    maxDistances: number[];
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DuplicateEstimateResponseDto;
+    }>(`/admin/duplicates/estimate${QS.query(QS.explode({
+        maxDistances
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Compare look-alike photos again
+ */
+export function recompareDuplicates({ duplicateRecompareDto }: {
+    duplicateRecompareDto: DuplicateRecompareDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/admin/duplicates/recompare", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: duplicateRecompareDto
+    })));
+}
+/**
  * List the file trash
  */
 export function getFileTrash({ page, size }: {
@@ -19651,6 +19760,43 @@ export function checkIdenticalFiles(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Count extra copies on the drive
+ */
+export function getIdenticalFilesExtraCopies(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IdenticalFilesExtraCopiesDto;
+    }>("/admin/identical-files/extra-copies", {
+        ...opts
+    }));
+}
+/**
+ * Get the photos behind missing or damaged findings
+ */
+export function getIntegrityFindingAssets({ kind }: {
+    kind: IntegrityFindingKind;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IntegrityFindingAssetsResponseDto;
+    }>(`/admin/integrity/assets${QS.query(QS.explode({
+        kind
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get the file checks overview
+ */
+export function getIntegrityOverview(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IntegrityOverviewResponseDto;
+    }>("/admin/integrity/overview", {
+        ...opts
+    }));
+}
+/**
  * Get integrity report by type
  */
 export function getIntegrityReport({ cursor, limit, $type }: {
@@ -19740,6 +19886,18 @@ export function getIntegrityCheckRuns(opts?: Oazapfts.RequestOpts) {
         data: IntegrityCheckRunsResponseDto;
     }>("/admin/integrity/runs", {
         ...opts
+    }));
+}
+/**
+ * Stop the file checks
+ */
+export function stopIntegrityChecks(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IntegrityOverviewResponseDto;
+    }>("/admin/integrity/stop", {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -32418,6 +32576,10 @@ export enum BackupSequencePlace {
     Buddy = "buddy",
     Cloud = "cloud"
 }
+export enum DuplicateRecompareWhen {
+    Now = "now",
+    Tonight = "tonight"
+}
 export enum HardwareRunsOn {
     Gpu = "gpu",
     Cpu = "cpu"
@@ -32496,10 +32658,23 @@ export enum IdenticalFilesTrigger {
 export enum IdenticalFilesChangeKind {
     Link = "link"
 }
+export enum IntegrityFindingKind {
+    Missing = "missing",
+    Damaged = "damaged"
+}
+export enum IntegrityCheckOutcome {
+    Completed = "completed",
+    Paused = "paused",
+    Stopped = "stopped"
+}
 export enum IntegrityReport {
     UntrackedFile = "untracked_file",
     MissingFile = "missing_file",
     ChecksumMismatch = "checksum_mismatch"
+}
+export enum IntegrityUnreachableFolderKind {
+    Storage = "storage",
+    Library = "library"
 }
 export enum LicenseKind {
     Server = "server",

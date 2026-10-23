@@ -4,9 +4,9 @@
    * answer to "is my library all right?", then the four pages with their own state, then the tools.
    *
    * An administrator sees the whole household: Library Care's findings across every account, and the
-   * file checks' lists. A member sees their own library and no settings. Where the two scanners report
-   * the same kind of problem (a missing or a damaged file), the larger count is said, so a file is never
-   * counted twice. Time estimates wait for the server (follow-up of FL-366).
+   * file checks' lists. A member sees their own library and no settings. FL-520: an administrator's
+   * counts come from the server's one source of findings (`getIntegrityOverview`), where a photo both
+   * checkers report is counted once; a member's from their own Library care queues.
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -29,13 +29,12 @@
     createJob,
     getAssetStatistics,
     getIntegrityCheckRuns,
-    getIntegrityReportSummary,
+    getIntegrityOverview,
     getServerStatistics,
     getSummary,
-    IntegrityReport,
     ManualJobName,
     type IntegrityCheckRunsResponseDto,
-    type IntegrityReportSummaryResponseDto,
+    type IntegrityOverviewResponseDto,
     type MediaHealthSummaryResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -58,12 +57,21 @@
   const isAdmin = $derived(authManager.user.isAdmin);
 
   let summary = $state<MediaHealthSummaryResponseDto>();
-  let integrity = $state<IntegrityReportSummaryResponseDto>();
+  let integrity = $state<IntegrityOverviewResponseDto>();
   let runs = $state<IntegrityCheckRunsResponseDto>();
   let total = $state<number>();
   let loaded = $state(false);
   let said = $state('');
   let starting = $state(false);
+
+  /** FL-520: the one source of findings, or nothing when it cannot be read. */
+  const overviewOf = async () => {
+    try {
+      return await getIntegrityOverview();
+    } catch {
+      return undefined;
+    }
+  };
 
   $effect(() => {
     const admin = isAdmin;
@@ -71,7 +79,7 @@
     loaded = false;
     void Promise.all([
       getSummary(admin ? { allAccounts: true } : {}).catch(() => undefined),
-      admin ? getIntegrityReportSummary().catch(() => undefined) : Promise.resolve(undefined),
+      admin ? overviewOf() : Promise.resolve(undefined),
       admin ? getIntegrityCheckRuns().catch(() => undefined) : Promise.resolve(undefined),
       admin
         ? getServerStatistics()
@@ -96,14 +104,12 @@
   });
 
   const queues = $derived(summary?.queues);
-  const missing = $derived(Math.max(queues?.missing ?? 0, integrity?.[IntegrityReport.MissingFile] ?? 0));
+  // FL-520: one count per kind, from one source, for an administrator; a member's own queues otherwise.
+  const missing = $derived(integrity ? integrity.missing : (queues?.missing ?? 0));
   const damaged = $derived(
-    Math.max(
-      (queues?.damagedConfirmed ?? 0) + (queues?.damagedSuspected ?? 0),
-      integrity?.[IntegrityReport.ChecksumMismatch] ?? 0,
-    ),
+    integrity ? integrity.damaged : (queues?.damagedConfirmed ?? 0) + (queues?.damagedSuspected ?? 0),
   );
-  const stray = $derived(integrity?.[IntegrityReport.UntrackedFile] ?? 0);
+  const stray = $derived(integrity?.stray ?? 0);
   const attention = $derived(missing + damaged + stray);
   const lookAlikes = $derived(queues?.duplicates ?? 0);
   const waiting = $derived(queues?.enrichmentPending ?? 0);

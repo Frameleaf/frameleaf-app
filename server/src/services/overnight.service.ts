@@ -120,9 +120,22 @@ export class OvernightService {
         ...state,
         run: { startedAt: new Date().toISOString(), manual, step: OVERNIGHT_STEPS[0], begunAt: null, results: {} },
       });
+      await this.startRequestedRecompare();
       await this.advance();
       return JobStatus.Success;
     });
+  }
+
+  /**
+   * FL-520: "Save and start tonight" on Library care › Duplicates. Look-alike photos are compared again
+   * once, on its own queue, alongside the night's steps.
+   */
+  private async startRequestedRecompare() {
+    if (!(await this.systemMetadataRepository.get(SystemMetadataKey.DuplicateRecompare))) {
+      return;
+    }
+    await this.systemMetadataRepository.delete(SystemMetadataKey.DuplicateRecompare);
+    await this.jobRepository.queue({ name: JobName.AssetDetectDuplicatesQueueAll, data: { force: true } });
   }
 
   /** Looks whether the step a run waits for has finished. One look at a time. */

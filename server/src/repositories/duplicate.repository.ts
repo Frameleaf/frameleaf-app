@@ -353,6 +353,62 @@ export class DuplicateRepository {
         .execute();
     });
   }
+  /**
+   * FL-520: for a random sample of photos and videos that can be compared, the distance to the nearest
+   * other item of the same kind in the same library (`Infinity` when it has none). The look-alike
+   * estimate reads how many fall under each "How alike" choice; the time taken is the time estimate.
+   */
+  sampleNearestDistances(sampleSize: number): Promise<number[]> {
+    return this.db.transaction().execute(async (trx) => {
+      await sql`set local hnsw.ef_search = 100`.execute(trx);
+      const sample = await trx
+        .selectFrom('asset')
+        .$call(withDefaultVisibility)
+        .innerJoin('smart_search', 'asset.id', 'smart_search.assetId')
+        .select(['asset.id', 'asset.ownerId', 'asset.type', 'smart_search.embedding'])
+        .where('asset.deletedAt', 'is', null)
+        .where('asset.stackId', 'is', null)
+        .where('asset.type', 'in', [AssetType.Image, AssetType.Video])
+        .orderBy(sql`random()`)
+        .limit(sampleSize)
+        .execute();
+      const distances: number[] = [];
+      for (const item of sample) {
+        const nearest = await trx
+          .selectFrom('asset')
+          .$call(withDefaultVisibility)
+          .innerJoin('smart_search', 'asset.id', 'smart_search.assetId')
+          .select(sql<number>`smart_search.embedding <=> ${item.embedding}`.as('distance'))
+          .where('asset.ownerId', '=', item.ownerId)
+          .where('asset.id', '!=', item.id)
+          .where('asset.type', '=', item.type)
+          .where('asset.deletedAt', 'is', null)
+          .where('asset.stackId', 'is', null)
+          .orderBy('distance')
+          .limit(1)
+          .executeTakeFirst();
+        distances.push(nearest ? Number(nearest.distance) : Infinity);
+      }
+      return distances;
+    });
+  }
+
+  /** FL-520: photos and videos that duplicate detection compares, and the look-alike groups it has made. */
+  async countComparable(): Promise<{ comparable: number; groups: number; grouped: number }> {
+    const { rows } = await sql<{ comparable: number; groups: number; grouped: number }>`
+      SELECT
+        (SELECT count(*)::int FROM public.asset a JOIN public.smart_search s ON s."assetId" = a.id
+          WHERE a."deletedAt" IS NULL AND a."stackId" IS NULL AND a.type IN ('IMAGE', 'VIDEO')) AS comparable,
+        count(*)::int AS groups,
+        coalesce(sum(g.members), 0)::int AS grouped
+      FROM (
+        SELECT count(*) AS members FROM public.asset
+        WHERE "duplicateId" IS NOT NULL AND "deletedAt" IS NULL
+        GROUP BY "duplicateId" HAVING count(*) > 1
+      ) g`.execute(this.db);
+    return rows[0];
+  }
+
   @GenerateSql({
     params: [{ targetDuplicateId: DummyValue.UUID, duplicateIds: [DummyValue.UUID], assetIds: [DummyValue.UUID] }],
   })
