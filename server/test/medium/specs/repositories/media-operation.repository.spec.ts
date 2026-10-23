@@ -532,7 +532,10 @@ describe(MediaOperationRepository.name, () => {
       const { user } = await ctx.newUser();
       const claimBatch = () =>
         sut.claimNext({ kinds: [MediaOperationKind.CloudLibraryBatch], workerId: 'worker-a', leaseMs: LEASE_MS });
-      const cloud = { kind: MediaOperationKind.CloudLibraryBatch, destination: MediaOperationDestination.FrameleafCloud };
+      const cloud = {
+        kind: MediaOperationKind.CloudLibraryBatch,
+        destination: MediaOperationDestination.FrameleafCloud,
+      };
       const failure = { error: 'Frameleaf Cloud is unavailable', errorCode: 'cloud_library_unavailable' };
 
       const plain = await newOperation(sut, user.id, cloud);
