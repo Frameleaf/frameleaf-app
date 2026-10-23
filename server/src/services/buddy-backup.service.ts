@@ -58,6 +58,7 @@ import {
   writeBuddyFile,
 } from 'src/utils/buddy-backup-vault.js';
 import { getDiskUsage } from 'src/utils/disk-usage.js';
+import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import {
   advanceExecutionProgress,
   assertExecutionActive,
@@ -171,12 +172,10 @@ export class BuddyBackupService {
       ...new Set([StorageCore.getMediaLocation(), ...libraries.flatMap((library) => library.importPaths)]),
     ];
     const identity = await realpath(dirname(this.repository.root()));
+    const configurationFile = readAliasedEnv('FRAMELEAF_CONFIG_FILE');
     const configuration = [
       ...new Set(
-        [
-          ...dto.configurationFiles,
-          ...(process.env.FRAMELEAF_CONFIG_FILE ? [process.env.FRAMELEAF_CONFIG_FILE] : []),
-        ].map((path) => resolve(path)),
+        [...dto.configurationFiles, ...(configurationFile ? [configurationFile] : [])].map((path) => resolve(path)),
       ),
     ];
     const configurationFiles = [];
@@ -251,12 +250,10 @@ export class BuddyBackupService {
           'Choose a dedicated hosting directory outside the photo library and all external libraries.',
         );
     }
+    const configurationFile = readAliasedEnv('FRAMELEAF_CONFIG_FILE');
     dto.configurationFiles = [
       ...new Set(
-        [
-          ...dto.configurationFiles,
-          ...(process.env.FRAMELEAF_CONFIG_FILE ? [process.env.FRAMELEAF_CONFIG_FILE] : []),
-        ].map((path) => resolve(path)),
+        [...dto.configurationFiles, ...(configurationFile ? [configurationFile] : [])].map((path) => resolve(path)),
       ),
     ];
     if (dto.configurationFiles.length > 32)

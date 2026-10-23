@@ -1,9 +1,19 @@
 import { HttpException } from '@nestjs/common';
+import {
+  type DatabaseConnection,
+  DummyDriver,
+  Kysely,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler,
+} from 'kysely';
 import { createHash, randomUUID, sign } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
+import type { DB } from 'src/schema/index.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import {
   DatabaseLock,
   MediaOperationKind,
@@ -910,5 +920,47 @@ describe('Buddy invitation errors (FL-506) and escrow passphrases (FL-507)', () 
       answer(service.unlockKit({ ...escrow, blob: escrow.blob.slice(0, 40) }, 'correct horse battery staple')),
     ).resolves.toMatchObject({ status: 400, body: { message: 'Invalid encrypted recovery package' } });
     await expect(answer(service.unlockKit(escrow, 'short'))).resolves.toMatchObject({ status: 400 });
+  });
+});
+
+describe('Buddy preflight configuration coverage', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it('covers the configuration file named by the inherited IMMICH_CONFIG_FILE', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'buddy-preflight-'));
+    const path = join(directory, 'immich.yml');
+    await writeFile(path, '{}');
+    await mkdir(join(directory, 'identity', 'buddy'), { recursive: true });
+    vi.stubEnv('FRAMELEAF_CONFIG_FILE', undefined);
+    vi.stubEnv('IMMICH_CONFIG_FILE', path);
+    vi.spyOn(StorageCore, 'getMediaLocation').mockReturnValue(join(directory, 'media'));
+    const db = new Kysely<DB>({
+      dialect: {
+        createAdapter: () => new PostgresAdapter(),
+        createDriver: () =>
+          new (class extends DummyDriver {
+            override async acquireConnection(): Promise<DatabaseConnection> {
+              const connection = await super.acquireConnection();
+              const row = { importPaths: [], items: '0', bytes: '0', unknown: '0', database: '0' };
+              return { ...connection, executeQuery: <R>() => Promise.resolve({ rows: [row as R] }) };
+            }
+          })(),
+        createIntrospector: (database) => new PostgresIntrospector(database),
+        createQueryCompiler: () => new PostgresQueryCompiler(),
+      },
+    });
+    const service = Object.assign(Object.create(BuddyBackupService.prototype), {
+      repository: { db, root: () => join(directory, 'identity', 'buddy') },
+    }) as BuddyBackupService;
+    try {
+      const result = await service.preflight({ configurationFiles: [] } as never);
+      expect(result.configurationFiles).toEqual([{ path, available: true }]);
+    } finally {
+      await db.destroy();
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });
