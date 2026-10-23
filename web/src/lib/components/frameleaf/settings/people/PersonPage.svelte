@@ -178,7 +178,7 @@
       <SegmentedControl
         label={$t('frameleaf_userpage_role')}
         value={isAdmin ? 'admin' : 'member'}
-        disabled={!live || !canChangeRole(user, selfId ?? "")}
+        disabled={!live || !canChangeRole(user, selfId ?? '')}
         options={[
           { value: 'member', label: $t('frameleaf_userpage_role_member') },
           { value: 'admin', label: $t('frameleaf_userpage_role_admin') },

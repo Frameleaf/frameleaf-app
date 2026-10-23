@@ -30,7 +30,9 @@ describe('AccountDeleteDialog (FL-76 CC-32)', () => {
 
     expect(screen.getByRole('dialog', { name: 'Remove this person' })).toBeInTheDocument();
     expect(
-      screen.getByText(/Grace Hopper is signed out everywhere and can’t sign in again\. Their photos and videos, albums and edits are kept for 7 days/),
+      screen.getByText(
+        /Grace Hopper is signed out everywhere and can’t sign in again\. Their photos and videos, albums and edits are kept for 7 days/,
+      ),
     ).toBeInTheDocument();
     const submit = screen.getByRole('button', { name: 'Remove this person' });
     expect(submit).toBeDisabled();

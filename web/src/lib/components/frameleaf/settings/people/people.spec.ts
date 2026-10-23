@@ -1,10 +1,10 @@
+import { UserStatus, type UserAdminResponseDto, type UserPreferencesResponseDto } from '@frameleaf/sdk';
+import { fireEvent, render, screen } from '@testing-library/svelte';
+import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import AddPerson from '$lib/components/frameleaf/settings/people/AddPerson.svelte';
 import PersonPage from '$lib/components/frameleaf/settings/people/PersonPage.svelte';
 import { bytesOfGb, gbOfBytes, spaceChoiceOf, spaceWords } from '$lib/components/frameleaf/settings/people/space';
-import { UserStatus, type UserAdminResponseDto, type UserPreferencesResponseDto } from '@frameleaf/sdk';
-import { fireEvent, render, screen } from '@testing-library/svelte';
-import { addMessages } from 'svelte-i18n';
 import en from '../../../../../../../i18n/en.json';
 
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { id: 'admin-1' } } }));
