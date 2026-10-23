@@ -2467,6 +2467,46 @@ export type LibraryMovePauseStatusDto = {
     /** Write requests still being answered */
     writesInFlight: number;
 };
+export type LibraryFeatureProgressDto = {
+    /** Photos and videos this feature has read */
+    done: number;
+    feature: LibraryProgressFeature;
+    /** Photos read an hour lately, or null until it has been measured */
+    perHour: number | null;
+    /** About how long the rest takes at that rate, or null when not known */
+    secondsLeft: number | null;
+    /** Photos and videos this feature reads */
+    total: number;
+};
+export type LibraryProgressResponseDto = {
+    features: LibraryFeatureProgressDto[];
+    /** The start of the period the rate is measured over */
+    measuredSince: string | null;
+};
+export type MediaCopiesResponseDto = {
+    /** When the space was last measured */
+    measuredAt: string | null;
+    photos: number;
+    /** Space playback copies take, when measured */
+    playbackBytes: number | null;
+    /** Space thumbnails and previews take, when measured */
+    previewsBytes: number | null;
+    /** Work waiting for the next overnight run */
+    tonight: LibraryRedoQueue[];
+    videos: number;
+    /** Videos with a playback copy */
+    withCopy: number;
+    /** Photos and videos without a preview yet */
+    withoutPreview: number;
+};
+export type LibraryRedoDto = {
+    queue: LibraryRedoQueue;
+    when: LibraryRedoWhen;
+};
+export type LibraryRedoResponseDto = {
+    /** Work waiting for the next overnight run */
+    tonight: LibraryRedoQueue[];
+};
 export type LicenseEntitlementsDto = {
     cloudBackup: boolean;
     cloudMl: boolean;
@@ -19950,6 +19990,43 @@ export function resumeLibraryMovePause(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Get the reading progress
+ */
+export function getLibraryProgress(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryProgressResponseDto;
+    }>("/admin/library-progress", {
+        ...opts
+    }));
+}
+/**
+ * Get the previews and playback copies
+ */
+export function getMediaCopies(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaCopiesResponseDto;
+    }>("/admin/library-progress/media-copies", {
+        ...opts
+    }));
+}
+/**
+ * Start a feature again over every photo
+ */
+export function redoLibraryWork({ libraryRedoDto }: {
+    libraryRedoDto: LibraryRedoDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryRedoResponseDto;
+    }>("/admin/library-progress/redo", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: libraryRedoDto
+    })));
+}
+/**
  * Remove the licence key
  */
 export function removeLicenseKey(opts?: Oazapfts.RequestOpts) {
@@ -32675,6 +32752,23 @@ export enum IntegrityReport {
 export enum IntegrityUnreachableFolderKind {
     Storage = "storage",
     Library = "library"
+}
+export enum LibraryProgressFeature {
+    Search = "search",
+    Faces = "faces",
+    Text = "text",
+    Captions = "captions",
+    Locked = "locked"
+}
+export enum LibraryRedoQueue {
+    SmartSearch = "smartSearch",
+    FacialRecognition = "facialRecognition",
+    ThumbnailGeneration = "thumbnailGeneration",
+    VideoConversion = "videoConversion"
+}
+export enum LibraryRedoWhen {
+    Now = "now",
+    Tonight = "tonight"
 }
 export enum LicenseKind {
     Server = "server",

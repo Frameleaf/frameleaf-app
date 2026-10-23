@@ -202,6 +202,27 @@ describe('Visual search', () => {
     expect(store.draft.machineLearning.clip.modelName).toBe('ViT-B-16-SigLIP-384__webli');
   });
 
+  it('says how long reading again takes and starts it from the save (FL-521)', async () => {
+    const store = useDraft();
+    const saveKeys = vi.spyOn(store, 'saveKeys').mockResolvedValue(true);
+    sdkMock.getLibraryProgress.mockResolvedValue({
+      measuredSince: '2026-10-22T08:00:00.000Z',
+      features: [{ feature: 'search' as never, done: 1000, total: 4000, perHour: 2000, secondsLeft: 5400 }],
+    });
+    sdkMock.redoLibraryWork.mockResolvedValue({ tonight: [] });
+    render(VisualSearch);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Most accurate' }));
+    expect(
+      await screen.findByText('Saving this reads all 4,000 photos and videos again, about 2 hours'),
+    ).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Save and start now' }));
+    expect(saveKeys).toHaveBeenCalledWith(['machineLearning']);
+    expect(sdkMock.redoLibraryWork).toHaveBeenCalledWith({ libraryRedoDto: { queue: 'smartSearch', when: 'now' } });
+    expect(await screen.findByText(/Saved. Reading has started/)).toBeInTheDocument();
+  });
+
   it('shows a model outside the three choices as Custom', async () => {
     const store = useDraft();
     store.draft.machineLearning.clip.modelName = 'my-model';
