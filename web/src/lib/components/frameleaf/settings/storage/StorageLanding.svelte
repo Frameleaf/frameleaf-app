@@ -22,7 +22,7 @@
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { growthPerDay, roomLeft, WARN_PERCENTS } from '$lib/components/frameleaf/settings/storage/storage';
-  import { formatBytes } from '$lib/frameleaf/physical-dedup';
+  import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import {
