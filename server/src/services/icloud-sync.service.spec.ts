@@ -54,7 +54,6 @@ describe(ICloudSyncService.name, () => {
       ...overrides,
     }) as never;
   const repository = {
-    dueConnections: vi.fn(),
     ownerUploadsPaused: vi.fn().mockResolvedValue(false),
     refreshResource: vi.fn(),
     invalidateCursor: vi.fn(),
@@ -139,7 +138,6 @@ describe(ICloudSyncService.name, () => {
     repository.hasPending.mockResolvedValue(false);
     repository.counts.mockResolvedValue({ resources: 2, finalized: 1, pending: 1 });
     repository.latestOperation.mockResolvedValue(undefined);
-    repository.dueConnections.mockResolvedValue([]);
     weeklySchedule.schedule.mockResolvedValue(undefined);
     repository.list.mockResolvedValue([]);
     repository.notify.mockResolvedValue(undefined);
@@ -196,10 +194,10 @@ describe(ICloudSyncService.name, () => {
   });
 
   it('drives weekly production from the existing schedule before nudging the worker', async () => {
-    repository.dueConnections.mockResolvedValue([{ id: 'connection', ownerId: 'owner' }]);
     const tick = vi.spyOn(sut, 'tick').mockImplementation(() => {});
     await (sut as unknown as { schedule(): Promise<void> }).schedule();
-    expect(repository.queueOperation).toHaveBeenCalledExactlyOnceWith('connection', 'owner', { trigger: 'schedule' });
+    // FL-518: ordinary checks run only in the overnight step; the five-minute schedule queues none.
+    expect(repository.queueOperation).not.toHaveBeenCalled();
     expect(weeklySchedule.schedule).toHaveBeenCalledTimes(1);
     expect(tick).toHaveBeenCalledTimes(1);
     expect(weeklySchedule.schedule.mock.invocationCallOrder[0]).toBeLessThan(tick.mock.invocationCallOrder[0]);

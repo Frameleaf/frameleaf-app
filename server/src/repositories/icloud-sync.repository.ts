@@ -646,33 +646,6 @@ export class ICloudSyncRepository {
   }
 
   /**
-   * Connections a scheduled run is due for (FL-68): signed in, past any provider back-off, with no
-   * unfinished run and none started or finished within the connection's interval. Counting from the
-   * last run's end rather than from a stored time is what keeps a run cancelled from Activity, or one
-   * that failed, from being queued again five minutes later. `queueOperation` checks all of it again
-   * under the connection's lock.
-   */
-  async dueConnections(): Promise<
-    Array<{
-      id: string;
-      ownerId: string;
-    }>
-  > {
-    return sql<{
-      id: string;
-      ownerId: string;
-    }>`SELECT c.id, c."ownerId" FROM public.icloud_connection c
-      WHERE c.state = 'connected' AND c."encryptedSession" IS NOT NULL AND c."lastError" IS DISTINCT FROM 'owner_removed'
-        AND (c."nextRunAt" IS NULL OR c."nextRunAt" <= now())
-        AND NOT EXISTS (SELECT 1 FROM media_operation o WHERE o."ownerId" = c."ownerId"
-          AND o.kind = ${MediaOperationKind.ICloudSync} AND o.snapshot->>'connectionId' = c.id::text AND o.snapshot->>'task' IS DISTINCT FROM 'identity-audit' AND o.snapshot->>'task' IS DISTINCT FROM 'identity-audit-weekly'
-          AND (o.status = ANY(${[...ACTIVE_MEDIA_OPERATION_STATUSES]}::text[])
-            OR coalesce(o."finishedAt", o."createdAt") > now() - make_interval(hours => coalesce((c.config->>'intervalHours')::int, 24))))
-      ORDER BY c."nextRunAt" NULLS FIRST, c.id LIMIT 100`
-      .execute(this.db)
-      .then((result) => result.rows);
-  }
-  /**
    * FL-363: the connections the overnight step checks: every connected one that is not waiting out a
    * back-off and has no run in progress, however recently it last ran.
    */
@@ -1256,7 +1229,8 @@ export class ICloudSyncRepository {
       const partial = ['failed', 'needs-review', 'unsupported', 'retry'].some((key) => (counts[key] ?? 0) > 0);
       await sql`UPDATE public.icloud_run SET status=${partial ? 'partial' : 'complete'},counts=${counts}::jsonb,"finishedAt"=now()
         WHERE "connectionId"=${connection.id}::uuid AND status='running'`.execute(db);
-      await sql`UPDATE public.icloud_connection SET "nextRunAt"=now()+${connection.config.intervalHours}*interval '1 hour'
+      // FL-518: the next check is the next overnight run; a finished run leaves no back-off behind.
+      await sql`UPDATE public.icloud_connection SET "nextRunAt"=NULL
         WHERE id=${connection.id}::uuid AND state='connected'`.execute(db);
     });
   }

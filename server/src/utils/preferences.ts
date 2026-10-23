@@ -15,6 +15,16 @@ import {
 } from 'src/utils/notification-locale.js';
 import { canonicalJson } from 'src/utils/object.js';
 
+/** FL-517: the choices for "Lock again after"; an hour is what an unlock always lasted before. */
+export const LOCKED_RELOCK_MINUTES = [5, 15, 60] as const;
+export const LOCKED_RELOCK_MINUTES_DEFAULT = 60;
+
+/** How long an unlock lasts for these preferences, never outside the offered choices. */
+export const relockMinutesOf = (preferences: Pick<UserPreferences, 'lockedPin'>) =>
+  (LOCKED_RELOCK_MINUTES as readonly number[]).includes(preferences.lockedPin.relockMinutes)
+    ? preferences.lockedPin.relockMinutes
+    : LOCKED_RELOCK_MINUTES_DEFAULT;
+
 /**
  * FL-77: preferences plus the Frameleaf admin-enforced casting permission.
  *
@@ -182,6 +192,9 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
     recentlyAdded: {
       sidebarWeb: true,
     },
+    lockedPin: {
+      relockMinutes: LOCKED_RELOCK_MINUTES_DEFAULT,
+    },
     savedSearches: [],
   };
 };
@@ -254,10 +267,13 @@ export const restrictPreferencesUpdate = (
   dto: UserPreferencesUpdateDto,
   editor: PreferencesEditor,
 ): UserPreferencesUpdateDto => {
-  // Locked people, pets and tags, and saved searches (FL-49), are the account owner's private choices.
-  const { privacy: _privacy, savedSearches: _savedSearches, ...ownerOnly } = dto;
+  // Locked people, pets and tags, saved searches (FL-49) and how long an unlock lasts (FL-517) are the
+  // account owner's private choices.
+  const { privacy: _privacy, savedSearches: _savedSearches, lockedPin: _lockedPin, ...ownerOnly } = dto;
   const allowed =
-    editor === 'admin' && (dto.privacy !== undefined || dto.savedSearches !== undefined) ? ownerOnly : dto;
+    editor === 'admin' && (dto.privacy !== undefined || dto.savedSearches !== undefined || dto.lockedPin !== undefined)
+      ? ownerOnly
+      : dto;
 
   if (!allowed.cast) {
     return allowed;

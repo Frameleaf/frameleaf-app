@@ -133,7 +133,7 @@ describe('RemoteAccessSection who can connect (FL-161)', () => {
     render(RemoteAccessSection);
 
     expect(await screen.findByText('Who can connect')).toBeInTheDocument();
-    const originals = screen.getByRole('switch', { name: 'Allow original downloads over the relay' });
+    const originals = screen.getByRole('switch', { name: 'Let people download full-size originals through Frameleaf' });
     const password = screen.getByRole('switch', { name: 'Allow password sign-in over the relay' });
     await waitFor(() => expect(originals).toBeDisabled());
     expect(password).toBeDisabled();
@@ -150,7 +150,9 @@ describe('RemoteAccessSection who can connect (FL-161)', () => {
     sdkMock.getCloudStatus.mockResolvedValue(linked());
     render(RemoteAccessSection);
 
-    const originals = await screen.findByRole('switch', { name: 'Allow original downloads over the relay' });
+    const originals = await screen.findByRole('switch', {
+      name: 'Let people download full-size originals through Frameleaf',
+    });
     await waitFor(() => expect(originals).toBeEnabled());
     await fireEvent.click(originals);
 
@@ -193,7 +195,9 @@ describe('RemoteAccessSection who can connect (FL-161)', () => {
     sdkMock.updateCloudRemoteAccess.mockRejectedValue(new Error('Link this server first.'));
     render(RemoteAccessSection);
 
-    const originals = await screen.findByRole('switch', { name: 'Allow original downloads over the relay' });
+    const originals = await screen.findByRole('switch', {
+      name: 'Let people download full-size originals through Frameleaf',
+    });
     await waitFor(() => expect(originals).toBeChecked());
     await fireEvent.click(originals);
     expect(await screen.findByRole('alert')).toBeInTheDocument();
@@ -385,7 +389,7 @@ describe('RemoteAccessSection (FL-165)', () => {
     await waitFor(() => expect(sdkMock.testRemoteAccess).toHaveBeenCalled());
     expect(await screen.findByText('Connection test finished.')).toBeInTheDocument();
     const checks = screen.getByTestId('remote-test-checks');
-    expect(within(checks).getByText('Request through the listener')).toBeInTheDocument();
+    expect(within(checks).getByText('A test request got through')).toBeInTheDocument();
     expect(within(checks).getByText('Not connected to the Frameleaf relay yet.')).toBeInTheDocument();
   });
 

@@ -112,7 +112,7 @@ test.describe('Support Frameleaf', () => {
     await expect(page).toHaveURL(/\/buy$/, { timeout: 30_000 });
     await expect.poll(() => redeemed).toEqual({ code: CODE });
     await expect(page.getByText('Thank you. Your key is active.')).toBeVisible();
-    await expect(page.getByLabel('Product key')).toHaveValue('');
+    await expect(page.getByLabel('Licence key')).toHaveValue('');
 
     // the code went out once, in a request body; after the page took it only the address it was
     // opened with (the account site's navigation) ever held it, and no referrer carried it on
@@ -151,7 +151,7 @@ test.describe('Support Frameleaf', () => {
       await page.goto(address);
       await expect(page).toHaveURL(/\/buy$/, { timeout: 30_000 });
       await expect(page.getByText(/keys are no longer accepted in links\. Paste your key below/)).toBeVisible();
-      await expect(page.getByLabel('Product key')).toHaveValue('');
+      await expect(page.getByLabel('Licence key')).toHaveValue('');
 
       // only the navigation that opened the old link can hold the key (a browser never sends the
       // fragment); nothing the page sent afterwards did, in an address, a referrer or a body
@@ -219,7 +219,7 @@ test.describe('Support Frameleaf', () => {
     });
 
     await page.goto('/buy');
-    await page.getByLabel('Product key').fill(KEY);
+    await page.getByLabel('Licence key').fill(KEY);
     await page.getByRole('button', { name: 'Activate' }).click();
     await expect.poll(() => activation).toEqual({ key: KEY });
 

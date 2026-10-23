@@ -316,11 +316,25 @@
         what: night.manual
           ? $t('frameleaf_overnight_night_manual')
           : $t('frameleaf_overnight_night_steps', { values: { count: result.ran.length } }),
-        detail: result.problem
-          ? $t('frameleaf_overnight_night_not_finished', {
-              values: { time: finishedAt(night.finishedAt), steps: list(result.notFinished.map((id) => stepName(id))) },
-            })
-          : $t('frameleaf_overnight_finished_at', { values: { time: finishedAt(night.finishedAt) } }),
+        detail: [
+          result.problem
+            ? $t('frameleaf_overnight_night_not_finished', {
+                values: {
+                  time: finishedAt(night.finishedAt),
+                  steps: list(result.notFinished.map((id) => stepName(id))),
+                },
+              })
+            : $t('frameleaf_overnight_finished_at', { values: { time: finishedAt(night.finishedAt) } }),
+          // FL-518: what the night removed and what came in, when it was measured
+          typeof night.removedFromTrash === 'number' && night.removedFromTrash > 0
+            ? $t('frameleaf_overnight_night_removed', { values: { count: night.removedFromTrash } })
+            : null,
+          typeof night.newFiles === 'number' && night.newFiles > 0
+            ? $t('frameleaf_overnight_night_new_files', { values: { count: night.newFiles } })
+            : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
         tone: (result.problem ? 'warn' : 'good') as KitTone,
         pill: result.problem ? $t('frameleaf_overnight_pill_not_finished') : $t('frameleaf_overnight_pill_done'),
       };

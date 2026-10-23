@@ -16,6 +16,7 @@ const sdk = vi.hoisted(() => ({
   listMlDestinations: vi.fn(),
   getMlWorkloadRoutes: vi.fn(),
   getOvernight: vi.fn(),
+  listAllBackupDevices: vi.fn(),
   createJob: vi.fn(),
 }));
 vi.mock('$lib/managers/cloud-manager.svelte', () => ({
@@ -56,6 +57,38 @@ describe('Overview (FL-363)', () => {
     sdk.listMlDestinations.mockResolvedValue([]);
     sdk.getMlWorkloadRoutes.mockResolvedValue({ routes: [] });
     sdk.getOvernight.mockResolvedValue({ timezone: 'UTC', nextRunAt: null, steps: [], run: null, nights: [] });
+    sdk.listAllBackupDevices.mockReset().mockResolvedValue({ devices: [], nextOffset: null });
+  });
+
+  it('reads every phone and says when one stopped sending photos (FL-518)', async () => {
+    const phone = (displayName: string, quietForDays: number | null) => ({
+      id: displayName,
+      displayName,
+      quietForDays,
+      ownerId: 'u',
+      deviceKey: displayName,
+      platform: 'ios',
+      model: 'iPhone',
+      appVersion: '1.0',
+      pendingCount: 0,
+      lastSuccessfulBackupAt: null,
+      reportedAt: '2026-10-20T00:00:00.000Z',
+    });
+    sdk.listAllBackupDevices.mockResolvedValue({
+      devices: [phone('Taylor’s iPhone', 0), phone('Emma’s phone', 9), phone('New phone', null)],
+      nextOffset: null,
+    });
+    render(Overview);
+
+    expect(await screen.findByText('Emma’s phone hasn’t sent photos for 9 days')).toBeInTheDocument();
+    expect(screen.getByText('1 phone behind')).toBeInTheDocument();
+    expect(screen.getByText('Emma’s phone, 9 days')).toBeInTheDocument();
+  });
+
+  it('says there are no phones yet (FL-518)', async () => {
+    render(Overview);
+    expect(await screen.findByText('No phones yet')).toBeInTheDocument();
+    expect(screen.getByText('Install the app to send photos here')).toBeInTheDocument();
   });
 
   it('says everything is working when nothing needs the person', async () => {

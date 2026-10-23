@@ -245,7 +245,10 @@ export class ICloudSyncService {
     };
   }
 
-  /** When the schedule will queue the next run, by the same rule `dueConnections` applies. */
+  /**
+   * FL-518: connections are checked by the overnight run (and "Sync now"), not on an interval, so the
+   * only time worth saying is a back-off the provider asked for.
+   */
   private nextRunAt(connection: ICloudConnection, run: MediaOperation | undefined): string | null {
     if (connection.state !== 'connected' || !connection.encryptedSession) {
       return null;
@@ -254,9 +257,7 @@ export class ICloudSyncService {
       return null;
     }
     const backoff = connection.nextRunAt ? new Date(connection.nextRunAt).getTime() : 0;
-    const last = run ? new Date((run.finishedAt ?? run.createdAt) as unknown as string).getTime() : 0;
-    const interval = run ? last + connection.config.intervalHours * 3_600_000 : 0;
-    return new Date(Math.max(backoff, interval, Date.now())).toISOString();
+    return backoff > Date.now() ? new Date(backoff).toISOString() : null;
   }
 
   async list(auth: AuthDto): Promise<ICloudConnectionsResponseDto> {
@@ -576,10 +577,11 @@ export class ICloudSyncService {
     await Promise.allSettled(this.lanes);
   }
 
+  /**
+   * FL-518: ordinary checks run only in the overnight "Bring in new iCloud photos" step; this
+   * schedule keeps the weekly identity audits and nudges the worker.
+   */
   private async schedule(): Promise<void> {
-    for (const { id, ownerId } of await this.repository.dueConnections()) {
-      await this.repository.queueOperation(id, ownerId, { trigger: 'schedule' });
-    }
     await this.weeklySchedule.schedule();
     this.tick();
   }

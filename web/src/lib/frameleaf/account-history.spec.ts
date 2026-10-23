@@ -18,7 +18,7 @@ describe(describeAdminEvent.name, () => {
   it("uses the template's wording", () => {
     expect(describe_(AdminAuditAction.AccountCreated)).toBe('Account created');
     expect(describe_(AdminAuditAction.PinReset)).toBe('PIN reset');
-    expect(describe_(AdminAuditAction.PinSet)).toBe('Locked folder PIN updated');
+    expect(describe_(AdminAuditAction.PinSet)).toBe('Locked PIN updated');
     expect(describe_(AdminAuditAction.PreferencesUpdated, 'download,tags')).toBe('Account preferences updated');
     expect(describe_(AdminAuditAction.AccountRestored)).toBe('Account restored · sign-in required');
     expect(describe_(AdminAuditAction.LibraryCreated)).toBe('External library created');
