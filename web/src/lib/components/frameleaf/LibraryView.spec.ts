@@ -967,7 +967,7 @@ describe('LibraryView', () => {
       session.select('fav');
       await tick();
 
-      await fireEvent.keyDown(window, { key: 'f' });
+      await fireEvent.keyDown(document, { key: 'f' });
       await waitFor(() => expect(sdkMock.updateAssets).toHaveBeenCalled());
       await waitFor(() => expect(session.selection).toEqual([]));
     });

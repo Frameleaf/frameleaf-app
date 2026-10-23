@@ -184,7 +184,7 @@ describe('actions started from the library keys and tiles (FL-33, T-5)', () => {
       },
     });
 
-    await fireEvent.keyDown(window, { key: 'Delete' });
+    await fireEvent.keyDown(document, { key: 'Delete' });
     const dialog = await screen.findByRole('dialog', { name: en.frameleaf_bulk_delete_permanently });
     expect(onAction).not.toHaveBeenCalled();
     await fireEvent.click(within(dialog).getByRole('button', { name: en.frameleaf_bulk_delete_permanently }));
