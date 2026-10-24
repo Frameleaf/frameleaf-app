@@ -26,6 +26,7 @@
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import SpacePicker from '$lib/components/frameleaf/settings/people/SpacePicker.svelte';
   import { bytesOfGb, gbOfBytes, spaceWords } from '$lib/components/frameleaf/settings/people/space';
   import { accountLifecycle, canChangeRole } from '$lib/frameleaf/accounts';
@@ -95,6 +96,22 @@
       });
     } finally {
       saving = false;
+    }
+  };
+
+  // ---- Pause new uploads: saved as soon as it is switched (FL-538) ----
+  let pausing = $state(false);
+  // follows the saved choice, and shows a switch at once while it saves
+  let paused = $derived(user.uploadsPaused);
+  const setPaused = async (next: boolean) => {
+    paused = next;
+    pausing = true;
+    try {
+      if (!(await handleUpdateUserAdmin(user, { uploadsPaused: next }))) {
+        paused = user.uploadsPaused;
+      }
+    } finally {
+      pausing = false;
     }
   };
 
@@ -192,6 +209,14 @@
         value={space}
         disabled={!live}
         onChange={(value) => (space = value)}
+      />
+    </Row>
+    <Row label={$t('frameleaf_userpage_pause')} help={$t('frameleaf_userpage_pause_help')}>
+      <Switch
+        label={$t('frameleaf_userpage_pause')}
+        checked={paused}
+        held={!live || pausing}
+        onChange={(value) => void setPaused(value)}
       />
     </Row>
     {#if changed}

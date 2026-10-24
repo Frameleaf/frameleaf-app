@@ -12,6 +12,7 @@ describe('iCloud API authorization and input boundaries', () => {
     id = randomUUID();
   const repository = {
     get: vi.fn(),
+    ownerUploadsPaused: vi.fn().mockResolvedValue(false),
     list: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),

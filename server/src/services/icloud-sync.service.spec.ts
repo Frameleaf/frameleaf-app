@@ -54,6 +54,7 @@ describe(ICloudSyncService.name, () => {
       ...overrides,
     }) as never;
   const repository = {
+    ownerUploadsPaused: vi.fn().mockResolvedValue(false),
     refreshResource: vi.fn(),
     invalidateCursor: vi.fn(),
     block: vi.fn(),
@@ -529,6 +530,19 @@ describe(ICloudSyncService.name, () => {
       });
       expect(operations.complete).not.toHaveBeenCalled();
       expect(repository.completeRun).not.toHaveBeenCalled();
+    });
+
+    it('imports nothing while an administrator has paused new uploads, without warning the owner (FL-538)', async () => {
+      repository.ownerUploadsPaused.mockResolvedValueOnce(true);
+      await sut.run(operation(), 'token');
+      expect(repository.ownerUploadsPaused).toHaveBeenCalledWith('owner');
+      expect(operations.fail).toHaveBeenCalledWith('run', 'token', {
+        error: 'icloud_uploads_paused',
+        errorCode: 'icloud_uploads_paused',
+      });
+      expect(repository.notify).not.toHaveBeenCalled();
+      expect(adoption.adopt).not.toHaveBeenCalled();
+      expect(staging.download).not.toHaveBeenCalled();
     });
 
     it('fails with the account reason and leaves the notification to the connection', async () => {

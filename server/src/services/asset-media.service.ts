@@ -44,7 +44,7 @@ import {
 import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { BaseService } from 'src/services/base.service.js';
-import { requireUploadAccess } from 'src/utils/access.js';
+import { requireUploadAccess, requireUploadsNotPaused } from 'src/utils/access.js';
 import { asUploadRequest } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
@@ -92,6 +92,8 @@ export class AssetMediaService extends BaseService {
 
     switch (fieldName) {
       case UploadFieldName.ASSET_DATA: {
+        // FL-538: refused before any bytes are kept, on every path that uploads a photo or video
+        requireUploadsNotPaused(requireUploadAccess(auth));
         if (mimeTypes.isAsset(filename)) {
           return true;
         }
@@ -160,6 +162,7 @@ export class AssetMediaService extends BaseService {
       ids: [auth.user.id],
     });
 
+    requireUploadsNotPaused(auth);
     this.requireQuota(auth, file.size);
 
     return {

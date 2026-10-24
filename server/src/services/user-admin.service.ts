@@ -19,6 +19,7 @@ import {
   mapUserAdmin,
 } from 'src/dtos/user.dto.js';
 import { AdminAuditAction, AssetVisibility, JobName, UserMetadataKey, UserStatus } from 'src/enum.js';
+import { EmailTemplate } from 'src/repositories/email.repository.js';
 import { UserFindOptions } from 'src/repositories/user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getCalendarHeatmap } from 'src/services/shared/user-methods.js';
@@ -42,6 +43,9 @@ type Preferences = ReturnType<typeof getPreferences>;
 /** The default page size of an account's history (FL-76). */
 const HISTORY_PAGE_SIZE = 50;
 
+/** FL-538: how long an emailed "choose a password" link works. */
+const PASSWORD_LINK_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class UserAdminService extends BaseService {
   async search(auth: AuthDto, dto: UserAdminSearchDto): Promise<UserAdminResponseDto[]> {
@@ -53,9 +57,14 @@ export class UserAdminService extends BaseService {
   }
 
   async create(auth: AuthDto, dto: UserAdminCreateDto): Promise<UserAdminResponseDto> {
-    const { notify, ...userDto } = dto;
+    const { notify, passwordLink, ...userDto } = dto;
     const config = await this.getConfig({ withCache: false });
-    if (!config.oauth.enabled && !userDto.password) {
+    // FL-538: with a link they choose their own password, so none is set here (and none is emailed)
+    const linkBase = passwordLink ? await this.requirePasswordLinkBase() : undefined;
+    if (linkBase !== undefined) {
+      userDto.password = '';
+      userDto.shouldChangePassword = false;
+    } else if (!config.oauth.enabled && !userDto.password) {
       throw new BadRequestException('password is required');
     }
 
@@ -71,15 +80,80 @@ export class UserAdminService extends BaseService {
           : userDto.quotaSizeInBytes,
     });
 
-    await this.eventRepository.emit('UserSignup', {
-      notify: !!notify,
-      id: user.id,
-      password: userDto.password,
-    });
+    const events = [accountEvent(auth, user, AdminAuditAction.AccountCreated)];
+    if (linkBase === undefined) {
+      await this.eventRepository.emit('UserSignup', {
+        notify: !!notify,
+        id: user.id,
+        password: userDto.password,
+      });
+    } else {
+      await this.emailPasswordLink(auth, user, linkBase, true);
+      events.push(accountEvent(auth, user, AdminAuditAction.PasswordReset, 'link'));
+    }
 
-    await this.recordAdminEvents([accountEvent(auth, user, AdminAuditAction.AccountCreated)]);
+    await this.recordAdminEvents(events);
 
     return mapUserAdmin(user);
+  }
+
+  /**
+   * FL-538: email the person a single-use link to choose their own password. A new link replaces any
+   * earlier one. The administrator never sees the link or the password.
+   */
+  async sendPasswordLink(auth: AuthDto, id: string): Promise<void> {
+    const user = await this.findOrFail(id, {});
+    const base = await this.requirePasswordLinkBase();
+    await this.emailPasswordLink(auth, user, base, false);
+    await this.recordAdminEvents([accountEvent(auth, user, AdminAuditAction.PasswordReset, 'link')]);
+  }
+
+  /** The address a link points at; refused when email is off or the server has no public address. */
+  private async requirePasswordLinkBase(): Promise<string> {
+    const { notifications, server } = await this.getConfig({ withCache: false });
+    if (!notifications.smtp.enabled) {
+      throw new BadRequestException('Email is not set up on this server, so a link cannot be sent');
+    }
+    const base = await this.getPublicUrl(server);
+    if (!base) {
+      throw new BadRequestException('This server needs a public address before it can email a link');
+    }
+    return base;
+  }
+
+  private async emailPasswordLink(
+    auth: AuthDto,
+    user: { id: string; name: string; email: string },
+    baseUrl: string,
+    isNew: boolean,
+  ) {
+    const token = this.cryptoRepository.randomBytes(32).toString('base64url');
+    await this.userRepository.update(user.id, {
+      passwordLinkHash: this.cryptoRepository.hashSha256(token),
+      passwordLinkExpiresAt: new Date(Date.now() + PASSWORD_LINK_LIFETIME_MS),
+    });
+    const { templates } = await this.getConfig({ withCache: true });
+    const { html, text } = await this.emailRepository.renderEmail({
+      template: EmailTemplate.PASSWORD_LINK,
+      data: {
+        baseUrl,
+        displayName: user.name,
+        username: user.email,
+        link: `${baseUrl}/auth/choose-password#${token}`,
+        senderName: auth.user.name,
+        isNew,
+        showBranding: templates.email.showBranding,
+      },
+    });
+    await this.jobRepository.queue({
+      name: JobName.SendMail,
+      data: {
+        to: user.email,
+        subject: isNew ? 'Choose your Frameleaf password' : 'Choose a new Frameleaf password',
+        html,
+        text,
+      },
+    });
   }
 
   async get(auth: AuthDto, id: string): Promise<UserAdminResponseDto> {
@@ -175,6 +249,11 @@ export class UserAdminService extends BaseService {
 
     if (dto.quotaSizeInBytes !== undefined && after.quotaSizeInBytes !== before.quotaSizeInBytes) {
       add(AdminAuditAction.QuotaChanged, after.quotaSizeInBytes === null ? null : String(after.quotaSizeInBytes));
+    }
+
+    if (dto.uploadsPaused !== undefined && after.uploadsPaused !== before.uploadsPaused) {
+      // FL-538: recorded as an account change, so the API gains no new action values
+      add(AdminAuditAction.AccountUpdated, after.uploadsPaused ? 'uploads-paused' : 'uploads-resumed');
     }
 
     if (dto.storageLabel !== undefined && after.storageLabel !== before.storageLabel) {
