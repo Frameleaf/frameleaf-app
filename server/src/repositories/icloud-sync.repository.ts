@@ -638,6 +638,13 @@ export class ICloudSyncRepository {
       }
     });
   }
+
+  /** FL-538: an administrator paused new uploads for this account, so a run adds nothing. */
+  async ownerUploadsPaused(ownerId: string): Promise<boolean> {
+    const row = await this.db.selectFrom('user').select('uploadsPaused').where('id', '=', ownerId).executeTakeFirst();
+    return row?.uploadsPaused === true;
+  }
+
   /**
    * FL-363: the connections the overnight step checks: every connected one that is not waiting out a
    * back-off and has no run in progress, however recently it last ran.

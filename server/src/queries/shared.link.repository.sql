@@ -384,7 +384,8 @@ select
           "user"."email",
           "user"."isAdmin",
           "user"."quotaUsageInBytes",
-          "user"."quotaSizeInBytes"
+          "user"."quotaSizeInBytes",
+          "user"."uploadsPaused"
         from
           "user"
         where
@@ -424,7 +425,8 @@ select
           "user"."email",
           "user"."isAdmin",
           "user"."quotaUsageInBytes",
-          "user"."quotaSizeInBytes"
+          "user"."quotaSizeInBytes",
+          "user"."uploadsPaused"
         from
           "user"
         where

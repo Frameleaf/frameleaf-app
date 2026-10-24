@@ -78,6 +78,7 @@
   "/admin/users/[id]": 407971,
   "/admin/users/[id]/edit": 407970,
   "/auth/change-password": 412897,
+  "/auth/choose-password": 418857,
   "/auth/login": 415525,
   "/auth/logout": 410150,
   "/auth/onboarding": 455253,

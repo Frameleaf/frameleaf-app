@@ -20,6 +20,7 @@ select
   "storageLabel",
   "quotaSizeInBytes",
   "quotaUsageInBytes",
+  "uploadsPaused",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -60,6 +61,7 @@ select
   "storageLabel",
   "quotaSizeInBytes",
   "quotaUsageInBytes",
+  "uploadsPaused",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -100,6 +102,7 @@ select
   "storageLabel",
   "quotaSizeInBytes",
   "quotaUsageInBytes",
+  "uploadsPaused",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -162,6 +165,36 @@ where
   "user"."id" = $1
   and "user"."deletedAt" is null
 
+-- UserRepository.getByPasswordLink
+select
+  "id",
+  "name",
+  "email"
+from
+  "user"
+where
+  "passwordLinkHash" = $1
+  and "passwordLinkExpiresAt" > now()
+  and "deletedAt" is null
+  and "status" = $2
+
+-- UserRepository.redeemPasswordLink
+update "user"
+set
+  "password" = $1,
+  "shouldChangePassword" = $2,
+  "passwordLinkHash" = $3,
+  "passwordLinkExpiresAt" = $4,
+  "updatedAt" = $5
+where
+  "passwordLinkHash" = $6
+  and "passwordLinkExpiresAt" > now()
+  and "deletedAt" is null
+  and "status" = $7
+returning
+  "id",
+  "email"
+
 -- UserRepository.getByEmail
 select
   "id",
@@ -182,6 +215,7 @@ select
   "storageLabel",
   "quotaSizeInBytes",
   "quotaUsageInBytes",
+  "uploadsPaused",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -221,7 +255,8 @@ select
   "shouldChangePassword",
   "storageLabel",
   "quotaSizeInBytes",
-  "quotaUsageInBytes"
+  "quotaUsageInBytes",
+  "uploadsPaused"
 from
   "user"
 where
@@ -248,6 +283,7 @@ select
   "storageLabel",
   "quotaSizeInBytes",
   "quotaUsageInBytes",
+  "uploadsPaused",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -296,6 +332,7 @@ select
   "storageLabel",
   "quotaSizeInBytes",
   "quotaUsageInBytes",
+  "uploadsPaused",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -335,6 +372,7 @@ select
   "storageLabel",
   "quotaSizeInBytes",
   "quotaUsageInBytes",
+  "uploadsPaused",
   (
     select
       coalesce(json_agg(agg), '[]')

@@ -20,6 +20,9 @@ import {
   OAuthBackchannelLogoutDto,
   OAuthCallbackDto,
   OAuthConfigDto,
+  PasswordLinkCheckDto,
+  PasswordLinkCheckResponseDto,
+  PasswordLinkRedeemDto,
   PinCodeChangeDto,
   PinCodeResetDto,
   PinCodeSetupDto,
@@ -395,6 +398,32 @@ export class AuthService extends BaseService {
     });
 
     return mapUserAdmin(updatedUser);
+  }
+
+  /** FL-538: who an emailed "choose a password" link is for, while it can still be used. */
+  async checkPasswordLink(dto: PasswordLinkCheckDto): Promise<PasswordLinkCheckResponseDto> {
+    const user = await this.userRepository.getByPasswordLink(this.cryptoRepository.hashSha256(dto.token));
+    if (!user) {
+      throw new BadRequestException('This link has expired or was already used');
+    }
+    return { name: user.name, email: user.email };
+  }
+
+  /**
+   * FL-538: choose a password with an emailed link. The link works once; every session the account
+   * had is signed out, as after any password change.
+   */
+  async redeemPasswordLink(dto: PasswordLinkRedeemDto): Promise<void> {
+    const hash = this.cryptoRepository.hashSha256(dto.token);
+    if (!(await this.userRepository.getByPasswordLink(hash))) {
+      throw new BadRequestException('This link has expired or was already used');
+    }
+    const hashedPassword = await this.cryptoRepository.hashBcrypt(dto.newPassword, SALT_ROUNDS);
+    const user = await this.userRepository.redeemPasswordLink(hash, hashedPassword);
+    if (!user) {
+      throw new BadRequestException('This link has expired or was already used');
+    }
+    await this.eventRepository.emit('AuthChangePassword', { userId: user.id, invalidateSessions: true });
   }
 
   async setupPinCode(auth: AuthDto, { pinCode }: PinCodeSetupDto) {

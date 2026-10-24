@@ -6,6 +6,7 @@ import type { EmailImageAttachment } from 'src/types.js';
 import { AlbumInviteEmail } from 'src/emails/album-invite.email.js';
 import { AlbumUpdateEmail } from 'src/emails/album-update.email.js';
 import { ItemShareEmail } from 'src/emails/item-share.email.js';
+import { PasswordLinkEmail } from 'src/emails/password-link.email.js';
 import { TestEmail } from 'src/emails/test.email.js';
 import { WelcomeEmail } from 'src/emails/welcome.email.js';
 import { MailSignInProvider } from 'src/enum.js';
@@ -68,6 +69,7 @@ export enum EmailTemplate {
   // AUTH
   WELCOME = 'welcome',
   RESET_PASSWORD = 'reset-password',
+  PASSWORD_LINK = 'password-link',
 
   // ALBUM
   ALBUM_INVITE = 'album-invite',
@@ -99,6 +101,15 @@ export interface WelcomeEmailProps extends BaseEmailProps {
   displayName: string;
   username: string;
   password?: string;
+}
+
+/** FL-538: a single-use link to choose a password; `isNew` when the account was just added. */
+export interface PasswordLinkEmailProps extends BaseEmailProps {
+  displayName: string;
+  username: string;
+  link: string;
+  senderName: string;
+  isNew: boolean;
 }
 
 export interface AlbumInviteEmailProps extends BaseEmailProps, InvitationEmailProps {
@@ -149,6 +160,12 @@ export type EmailRenderRequest =
       template: EmailTemplate.ITEM_SHARE;
       data: ItemShareEmailProps;
       customTemplate: string;
+    }
+  | {
+      template: EmailTemplate.PASSWORD_LINK;
+      data: PasswordLinkEmailProps;
+      /** Not customisable: the link is the whole point of the email. */
+      customTemplate?: string;
     };
 
 export type SendEmailResponse = {
@@ -304,6 +321,10 @@ export class EmailRepository {
 
       case EmailTemplate.ITEM_SHARE: {
         return createElement(ItemShareEmail, { ...data, customTemplate });
+      }
+
+      case EmailTemplate.PASSWORD_LINK: {
+        return createElement(PasswordLinkEmail, data);
       }
     }
   }
