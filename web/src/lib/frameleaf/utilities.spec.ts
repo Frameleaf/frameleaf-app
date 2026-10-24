@@ -10,7 +10,6 @@ const sdk = vi.hoisted(() => ({
   getLivePhotoCandidates: vi.fn(),
   listICloudConnections: vi.fn(),
   searchLargeAssets: vi.fn(),
-  getFileTrash: vi.fn(),
 }));
 const health = vi.hoisted(() => vi.fn());
 vi.mock('@frameleaf/sdk', async (original) => ({ ...(await original<typeof import('@frameleaf/sdk')>()), ...sdk }));
@@ -30,7 +29,9 @@ describe('Command Center utilities', () => {
       'downloads',
       'obtainium',
     ]);
-    expect(utilityToolsFor(true)).toHaveLength(11);
+    expect(utilityToolsFor(true)).toHaveLength(10);
+    // FL-416: File trash left Utilities; it is Library care › Unused files, the server owner's
+    expect(utilityTool('file-trash')).toBeUndefined();
     expect(utilityTool('preservation')).toBeUndefined();
   });
   it('places utility links in the existing user settings namespace and opens Care as its settings area', () => {
@@ -39,20 +40,6 @@ describe('Command Center utilities', () => {
     expect(Route.libraryCare()).toBe('/user-settings?area=care');
     expect(Route.duplicatesUtility({ index: 2 })).toBe('/user-settings?area=utilities&section=duplicates&index=2');
     expect(utilitiesUrl('icloud')).toBe('/user-settings?area=utilities&section=icloud');
-  });
-  it('loads the file trash for administrators only (universal storage)', async () => {
-    await expect(loadUtility('file-trash', new URL('https://example.test/user-settings'), false)).rejects.toMatchObject(
-      {
-        status: 403,
-      },
-    );
-    expect(sdk.getFileTrash).not.toHaveBeenCalled();
-    sdk.getFileTrash.mockResolvedValue({ items: [], total: 0, totalBytes: 0 });
-    await expect(loadUtility('file-trash', new URL('https://example.test/user-settings'), true)).resolves.toEqual({
-      tool: 'file-trash',
-      initial: { items: [], total: 0, totalBytes: 0 },
-    });
-    expect(sdk.getFileTrash).toHaveBeenCalledWith({ page: 1, size: 100 });
   });
   it.each(['missing-media', 'corrupt-media'] as const)(
     'rejects non-admin %s before requesting findings',

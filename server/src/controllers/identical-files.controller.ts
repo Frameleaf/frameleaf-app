@@ -1,10 +1,12 @@
-import { Controller, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
+import { Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   IdenticalFilesChangeDto,
   IdenticalFilesExtraCopiesDto,
+  IdenticalFilesRecentChangeDto,
+  IdenticalFilesRecentChangesQueryDto,
   IdenticalFilesStatusDto,
 } from 'src/dtos/identical-files.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
@@ -56,6 +58,20 @@ export class IdenticalFilesController {
   })
   checkIdenticalFiles(@Auth() auth: AuthDto): Promise<IdenticalFilesStatusDto> {
     return this.service.check(auth);
+  }
+
+  @Get('changes')
+  @Authenticated({ permission: Permission.JobRead, admin: true })
+  @Endpoint({
+    summary: 'List recent identical-file changes',
+    description:
+      'The newest links the identical-files run made across the server, for the "Merged for you" history: each photo, whose it is, whose identical file it now shares, the space saved and whether it can be undone.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  getRecentIdenticalFileChanges(
+    @Query() { limit }: IdenticalFilesRecentChangesQueryDto,
+  ): Promise<IdenticalFilesRecentChangeDto[]> {
+    return this.service.getRecentChanges(limit);
   }
 
   @Get('assets/:id/changes')

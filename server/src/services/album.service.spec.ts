@@ -1432,6 +1432,20 @@ describe(AlbumService.name, () => {
       expect(JSON.stringify(tree)).not.toContain(privateCollectionId);
     });
 
+    it('marks the Recovered Media album the identical-files run made, by id (FL-416)', async () => {
+      const recovered = AlbumFactory.from({ albumName: 'Renamed by its owner' }).build();
+      const plain = AlbumFactory.from().build();
+      mocks.album.getAll.mockResolvedValue([getForAlbum(recovered), getForAlbum(plain)]);
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+      mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map());
+      mocks.systemMetadata.get.mockResolvedValue({ recoveredAlbums: { someone: recovered.id } } as never);
+
+      const tree = await sut.getTree(AuthFactory.create());
+
+      expect(tree.albums.find(({ id }) => id === recovered.id)?.recovered).toBe(true);
+      expect(tree.albums.find(({ id }) => id === plain.id)?.recovered).toBeUndefined();
+    });
+
     it('masks hidden thumbnails in the tree exactly as in the list', async () => {
       const thumbnailAssetId = newUuid();
       const album = AlbumFactory.from({ albumThumbnailAssetId: thumbnailAssetId }).build();
