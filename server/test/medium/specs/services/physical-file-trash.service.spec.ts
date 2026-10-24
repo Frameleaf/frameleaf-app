@@ -47,8 +47,9 @@ afterEach(async () => {
 });
 
 /**
- * FL-416: Unused files is the server owner's alone; that rule has its own unit specs. These specs are about
- * what each session may see in it, so every caller here passes the owner check.
+ * FL-416: Unused files is the server owner's alone (proved with real users under "the server owner only"
+ * below). The privacy cases here call as several sessions and accounts on purpose, to show which Locked
+ * entries each one sees, so each of those calls is made past the owner check.
  */
 const actAsServerOwner = (sut: PhysicalFileTrashService) => vi.spyOn(sut, 'requireServerOwner').mockResolvedValue();
 
@@ -478,5 +479,41 @@ describe(PhysicalFileTrashService.name, () => {
     expect(ctx.getMock(EventRepository).emit).not.toHaveBeenCalled();
     expect(ctx.getMock(LoggingRepository).error).toHaveBeenCalledWith('File-trash inspection failed', inspectionError);
     expect(ctx.getMock(LoggingRepository).error).toHaveBeenCalledWith('File-trash move-back failed', compensationError);
+  });
+
+  describe('the server owner only (FL-416)', () => {
+    // Real users: the owner is whatever `requireServerOwner` resolves to, the oldest administrator.
+    const ownerSetup = async () => {
+      const { sut, ctx } = newMediumService(PhysicalFileTrashService, {
+        database,
+        real: [PhysicalFileTrashRepository, UserRepository],
+        mock: [LoggingRepository, StorageRepository],
+      });
+      await ctx.newUser({ isAdmin: true });
+      const [first] = await ctx.get(UserRepository).getAdmins();
+      const { user: secondAdmin } = await ctx.newUser({ isAdmin: true });
+      const { user: member } = await ctx.newUser({ isAdmin: false });
+      const as = (user: { id: string; isAdmin: boolean }) => ({
+        ...authStub.adminWithElevatedPermission,
+        user: { ...authStub.admin.user, id: user.id, isAdmin: user.isAdmin },
+      });
+      return { sut, owner: as(first), secondAdmin: as(secondAdmin), member: as(member) };
+    };
+
+    it('lets the first administrator read and empty Unused files', async () => {
+      const { sut, owner } = await ownerSetup();
+      await expect(sut.list(owner, { page: 1, size: 100 })).resolves.toMatchObject({ total: 0 });
+      await expect(sut.empty(owner)).resolves.toEqual({ files: 0, bytes: 0, kept: 0 });
+    });
+
+    it.each(['secondAdmin', 'member'] as const)('refuses the %s every Unused files action', async (who) => {
+      const fixture = await ownerSetup();
+      const auth = fixture[who];
+      const id = randomUUID();
+      await expect(fixture.sut.list(auth, { page: 1, size: 100 })).rejects.toThrow('Only the server owner can do this');
+      await expect(fixture.sut.restore(auth, id)).rejects.toThrow('Only the server owner can do this');
+      await expect(fixture.sut.purge(auth, id)).rejects.toThrow('Only the server owner can do this');
+      await expect(fixture.sut.empty(auth)).rejects.toThrow('Only the server owner can do this');
+    });
   });
 });
