@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { VideoCardState } from 'src/types.js';
 import {
   LIBRARY_PROGRESS_FEATURES,
   LibraryProgressResponseDto,
@@ -15,7 +16,6 @@ import { HardwareProbeRepository } from 'src/repositories/hardware-probe.reposit
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { QueueService } from 'src/services/queue.service.js';
-import type { VideoCardState } from 'src/types.js';
 
 /** A reading is kept at most this often, so a page left open does not fill the list. */
 export const PROGRESS_SAMPLE_EVERY_MS = 10 * 60_000;
