@@ -128,7 +128,14 @@ describe('desktop enrollment authority', () => {
     expect(await service.capabilities(auth)).toMatchObject({
       protocolVersion: 1,
       serverId: 'server',
-      features: { enrollment: true, worker: false, sources: false, nativeHost: false },
+      features: {
+        enrollment: true,
+        worker: false,
+        workerSession: true,
+        qualificationMemory: true,
+        sources: false,
+        nativeHost: false,
+      },
     });
   });
   it('ends a signed-in association without permanently revoking its installation', async () => {

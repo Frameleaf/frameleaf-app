@@ -77248,6 +77248,12 @@
                 ],
                 "type": "boolean"
               },
+              "qualificationMemory": {
+                "enum": [
+                  true
+                ],
+                "type": "boolean"
+              },
               "sources": {
                 "enum": [
                   false
@@ -77271,6 +77277,7 @@
               "enrollment",
               "worker",
               "workerSession",
+              "qualificationMemory",
               "sources",
               "nativeHost"
             ],

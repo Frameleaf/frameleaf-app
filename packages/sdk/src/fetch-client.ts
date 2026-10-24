@@ -6572,6 +6572,7 @@ export type DesktopCapabilitiesDto = {
     features: {
         enrollment: true;
         nativeHost: false;
+        qualificationMemory: true;
         sources: false;
         worker: false;
         workerSession: true;

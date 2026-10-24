@@ -52,6 +52,15 @@ const reportSchema = z.strictObject({
   runtimeFingerprint: digest,
   runtime: factsSchema,
   deviceExecution: desktopDeviceExecutionSchema.optional(),
+  memory: z
+    .strictObject({
+      scope: z.literal('process-lifetime-rss'),
+      beforeResidentBytes: integer.positive(),
+      afterResidentBytes: integer.positive(),
+      peakResidentBytes: integer.positive(),
+    })
+    .refine((value) => value.peakResidentBytes >= Math.max(value.beforeResidentBytes, value.afterResidentBytes))
+    .optional(),
   coldMilliseconds: z.number().min(0).max(600_000),
   warmMilliseconds: z.number().min(0).max(600_000),
   reason: z.null(),

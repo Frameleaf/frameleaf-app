@@ -30,7 +30,14 @@ export class DesktopDeviceService {
         !auth.user.isAdmin && (await this.policy.read(auth.user.id))?.memberApproved === true
           ? 'account-approved'
           : 'administrators',
-      features: { enrollment: true, worker: false, workerSession: true, sources: false, nativeHost: false },
+      features: {
+        enrollment: true,
+        worker: false,
+        workerSession: true,
+        qualificationMemory: true,
+        sources: false,
+        nativeHost: false,
+      },
     };
   }
 

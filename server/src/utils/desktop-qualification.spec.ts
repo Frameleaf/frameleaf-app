@@ -322,3 +322,35 @@ it('accepts an OpenVINO accelerator report like CUDA, with no device collector a
     ),
   ).toThrow();
 });
+
+it('seals observed process memory without treating older receipts as measured', () => {
+  const original = report();
+  const memory = {
+    scope: 'process-lifetime-rss',
+    beforeResidentBytes: 100,
+    afterResidentBytes: 300,
+    peakResidentBytes: 400,
+  };
+  const measured = DesktopQualificationReceipt.validate({ ...original, memory }, profile, challenge, runtime);
+  const legacy = DesktopQualificationReceipt.validate(original, profile, challenge, runtime);
+  expect(legacy.reportSha256).toBe(createHash('sha256').update(canonicalJson(original)).digest('hex'));
+  expect(measured.runtimeFingerprint).toBe(legacy.runtimeFingerprint);
+  expect(measured.reportSha256).not.toBe(
+    DesktopQualificationReceipt.validate(original, profile, challenge, runtime).reportSha256,
+  );
+  for (const invalid of [
+    { ...memory, scope: 'gpu-memory' },
+    { ...memory, peakResidentBytes: 299 },
+    { ...memory, beforeResidentBytes: 401 },
+    { ...memory, peakResidentBytes: true },
+    { ...memory, afterResidentBytes: 0 },
+    { ...memory, peakResidentBytes: Number.MAX_SAFE_INTEGER + 1 },
+    { ...memory, secret: 'forbidden' },
+    {},
+    null,
+  ]) {
+    expect(() =>
+      DesktopQualificationReceipt.validate({ ...original, memory: invalid }, profile, challenge, runtime),
+    ).toThrow();
+  }
+});
