@@ -198,6 +198,39 @@ export class DuplicateReviewSession {
     }
   }
 
+  /**
+   * FL-416: undo one group of a decision job, as "Merged for you" does for one automatic merge of identical
+   * photos. Returns false when it cannot be undone.
+   */
+  async undoGroup(batch: DuplicateDecisionBatchDto, duplicateId: string): Promise<boolean> {
+    const groups = undoGroupsFor(batch).filter((group) => group.duplicateId === duplicateId);
+    if (groups.length === 0 || this.undoing) {
+      return false;
+    }
+    this.undoing = true;
+    try {
+      await this.#submit(MediaOperationBulkAction.UndoDuplicates, groups);
+      this.history = {
+        ...this.history,
+        recent: this.history.recent.map((entry) =>
+          entry.operationId === batch.operationId
+            ? {
+                ...entry,
+                undoable: false,
+                groups: entry.groups.map((group) =>
+                  group.duplicateId === duplicateId ? { ...group, undoing: true } : group,
+                ),
+              }
+            : entry,
+        ),
+      };
+      return true;
+    } catch (error) {
+      this.undoing = false;
+      throw error;
+    }
+  }
+
   /** Read the review and its history again from the server. */
   async refresh(): Promise<void> {
     if (this.#destroyed) {

@@ -2171,6 +2171,14 @@ export type FileTrashResponseDto = {
     /** Disk space the file trash holds, in bytes */
     totalBytes: number;
 };
+export type FileTrashEmptyResponseDto = {
+    /** Space that came back, in bytes */
+    bytes: number;
+    /** Files deleted from the drive for good */
+    files: number;
+    /** Files that could not be deleted and are still waiting */
+    kept: number;
+};
 export type FileTrashRestoreResponseDto = {
     /** The new asset the file was restored as, in its last owner’s library */
     assetId: string;
@@ -2349,6 +2357,28 @@ export type IdenticalFilesChangeDto = {
     kind: IdenticalFilesChangeKind;
     /** The photo’s own file waits in Unused files and can be restored */
     restorable: boolean;
+    undoneAt: string | null;
+};
+export type IdenticalFilesRecentChangeDto = {
+    /** The photo that now shares another person’s identical file */
+    assetId: string;
+    createdAt: string;
+    /** Change id */
+    id: string;
+    /** The photo whose file was kept */
+    keptAssetId: string | null;
+    /** Whose photo that is, while it exists */
+    keptOwnerName: string | null;
+    /** The photo’s file name */
+    originalFileName: string;
+    /** Whose photo it is */
+    ownerId: string;
+    /** Their name */
+    ownerName: string;
+    /** The photo’s own file waits in Unused files and can be restored */
+    restorable: boolean;
+    /** Space the link saved */
+    sizeInBytes: number;
     undoneAt: string | null;
 };
 export type IdenticalFilesExtraCopiesDto = {
@@ -4027,6 +4057,8 @@ export type AlbumResponseDto = {
     origin?: PartnerOriginDto;
     /** Collection this album belongs to (null = top-level) */
     parentId: string | null;
+    /** True for a Recovered Media album: files the imported library had lost track of, brought back after the import. Populated by GET /albums/tree and GET /albums/{id}. */
+    recovered?: boolean;
     /** Is shared album */
     shared: boolean;
     /** Built-in smart album kind behind this album, when it is a built-in smart album */
@@ -7010,6 +7042,8 @@ export type DuplicateDecisionGroupDto = {
     undone: boolean;
 };
 export type DuplicateDecisionBatchDto = {
+    /** Frameleaf made this job itself, merging identical files in one library (FL-416 "Merged for you") */
+    automatic: boolean;
     createdAt: string;
     groups: DuplicateDecisionGroupDto[];
     /** The durable job that applied these decisions */
@@ -16378,9 +16412,9 @@ export type UtilitiesSummaryResponseDto = {
     duplicateGroups: number;
     /** Photos whose original file is missing, across the server; null unless an administrator asks */
     missingFiles: number | null;
-    /** Combined size of those unused originals, in bytes; null unless an administrator asks */
+    /** Combined size of those unused originals, in bytes; null unless the server owner asks */
     unusedBytes: number | null;
-    /** Originals no library uses any more; null unless an administrator asks */
+    /** Originals no library uses any more (Unused files); null unless the server owner asks */
     unusedFiles: number | null;
     /** Photos and videos on the timeline with no place */
     withoutPlace: number;
@@ -17067,6 +17101,10 @@ export type HdrAssetDevelopRecipeV6 = {
 };
 export type ICloudEditEvidenceQueryDto = {
     assetId: string;
+};
+export type IdenticalFilesRecentChangesQueryDto = {
+    /** How many to list */
+    limit?: number;
 };
 export type IntegrityFindingAssetsDto = {
     kind: IntegrityFindingKind;
@@ -19785,6 +19823,18 @@ export function getFileTrash({ page, size }: {
     }));
 }
 /**
+ * Empty the file trash
+ */
+export function emptyFileTrash(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FileTrashEmptyResponseDto;
+    }>("/admin/file-trash/empty", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Delete a file permanently
  */
 export function deleteFileTrashItem({ id }: {
@@ -19865,6 +19915,21 @@ export function getIdenticalFileChanges({ id }: {
         status: 200;
         data: IdenticalFilesChangeDto[];
     }>(`/admin/identical-files/assets/${encodeURIComponent(id)}/changes`, {
+        ...opts
+    }));
+}
+/**
+ * List recent identical-file changes
+ */
+export function getRecentIdenticalFileChanges({ limit }: {
+    limit?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IdenticalFilesRecentChangeDto[];
+    }>(`/admin/identical-files/changes${QS.query(QS.explode({
+        limit
+    }))}`, {
         ...opts
     }));
 }

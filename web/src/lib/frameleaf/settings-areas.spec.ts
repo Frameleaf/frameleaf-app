@@ -306,7 +306,13 @@ describe('Frameleaf settings areas', () => {
         'repair',
         'enrichment-care',
       ]);
-      expect(areaSectionKeys('care')).toEqual(['integrity-checks', 'repair', 'duplicates', 'enrichment-care']);
+      expect(areaSectionKeys('care')).toEqual([
+        'integrity-checks',
+        'repair',
+        'duplicates',
+        'enrichment-care',
+        'unused-files',
+      ]);
       expect(sectionsForArea([care[1]], 'care').map((s) => s.key)).toEqual(['repair']);
     });
 
@@ -316,6 +322,8 @@ describe('Frameleaf settings areas', () => {
       expect(resolveSettingsSection('care', { section: 'exact-copies' })).toBe('duplicates');
       // FL-413: the retired Merge older copies opens Duplicates
       expect(resolveSettingsSection('care', { section: 'deduplication' })).toBe('duplicates');
+      // FL-416: File trash is Unused files
+      expect(resolveSettingsSection('care', { section: 'file-trash' })).toBe('unused-files');
       expect(resolveSettingsSection('care', { section: 'advanced-duplicate-matching' })).toBe('duplicates');
       expect(resolveSettingsSection('intelligence', { section: 'metadata' })).toBe('faces');
       expect(resolveSettingsSection('intelligence', { section: 'smart-album-pets' })).toBe('smart-albums');

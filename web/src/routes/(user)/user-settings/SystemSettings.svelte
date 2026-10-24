@@ -24,6 +24,7 @@
   import ThemeSettings from '../../admin/system-settings/ThemeSettings.svelte';
   import Duplicates from '$lib/components/frameleaf/settings/care/Duplicates.svelte';
   import FileChecks from '$lib/components/frameleaf/settings/care/FileChecks.svelte';
+  import UnusedFiles from '$lib/components/frameleaf/settings/care/UnusedFiles.svelte';
   import DeletedItems from '$lib/components/frameleaf/settings/storage/DeletedItems.svelte';
   import FolderLayout from '$lib/components/frameleaf/settings/storage/FolderLayout.svelte';
   import MoveOrExport from '$lib/components/frameleaf/settings/storage/MoveOrExport.svelte';
@@ -44,6 +45,7 @@
   import { forConfigSave } from '$lib/frameleaf/credentials';
   import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import { cloneConfig, SYSTEM_CONFIG_JOURNAL_PREFIX } from '$lib/frameleaf/system-config-draft';
+  import { unusedFilesAccess } from '$lib/frameleaf/unused-files.svelte';
   import {
     setSystemConfigDraft,
     SystemConfigDraftStore,
@@ -177,6 +179,10 @@
   });
 
   onMount(() => {
+    void unusedFilesAccess.loadForCurrentUser();
+  });
+
+  onMount(() => {
     // Another administrator (or another tab) saved settings: follow them. An unsaved draft is
     // carried onto them, or marked stale when it changes the same settings.
     return websocketEvents.on('on_config_update', () => void settingsDraft.refresh());
@@ -274,7 +280,7 @@
       icon: mdiRobotOutline,
     },
     {
-      // FL-366: Library care → Duplicates (look-alike matching; exact copies are merged on Merge older copies).
+      // FL-366: Library care → Duplicates (identical files, stored once by themselves, and look-alike matching).
       admin: true,
       component: Duplicates,
       title: $t('frameleaf_cc_section_duplicates'),
@@ -282,6 +288,20 @@
       key: 'duplicates',
       icon: mdiContentCopy,
     },
+    // FL-416: Library care → Unused files, the server owner's alone (the first administrator): no other
+    // account is offered the page, its search entry or its address.
+    ...(unusedFilesAccess.isOwner
+      ? [
+          {
+            admin: true,
+            component: UnusedFiles,
+            title: $t('frameleaf_cc_section_unused_files'),
+            subtitle: $t('frameleaf_cc_section_unused_files_description'),
+            key: 'unused-files',
+            icon: mdiTrashCanOutline,
+          },
+        ]
+      : []),
     {
       admin: true,
       component: MapSettings,

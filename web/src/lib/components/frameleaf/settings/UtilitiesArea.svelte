@@ -5,7 +5,6 @@
   import ApplicationSetup from '$lib/components/frameleaf/ApplicationSetup.svelte';
   import WorkflowsPanel from '$lib/components/frameleaf/WorkflowsPanel.svelte';
   import DuplicateUtility from '$lib/components/frameleaf/DuplicateUtility.svelte';
-  import FileTrashUtility from '$lib/components/frameleaf/FileTrashUtility.svelte';
   import LargeFilesUtility from '$lib/components/frameleaf/LargeFilesUtility.svelte';
   import LivePhotosUtility from '$lib/components/frameleaf/LivePhotosUtility.svelte';
   import GeolocationUtility from '$lib/components/frameleaf/GeolocationUtility.svelte';
@@ -18,7 +17,6 @@
   import UtilityHistory from '$lib/components/frameleaf/UtilityHistory.svelte';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
-  import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import {
     LIBRARY_CARE_TOOLS,
@@ -42,6 +40,12 @@
   const tools = $derived(utilityToolsFor(authManager.user.isAdmin));
   const requestedStatus = $derived(page.url.searchParams.get('status'));
   const selected = $derived(utilityTool(page.url.searchParams.get('section')));
+  // FL-416: File trash is Library care › Unused files now; an old address opens it there.
+  $effect(() => {
+    if (page.url.searchParams.get('section') === 'file-trash') {
+      void goto(commandCenterUrl('care', 'unused-files'), { replaceState: true });
+    }
+  });
   const denied = $derived(selected?.adminOnly && !authManager.user.isAdmin);
   // A repair tool opened from Library care says so and goes back there (design review finding 67).
   const fromCare = $derived(
@@ -114,13 +118,8 @@
       case 'missing-media': {
         return $t('frameleaf_utilities_state_missing', { values: { count: state.count } });
       }
-      case 'corrupt-media': {
-        return $t('frameleaf_utilities_state_damaged', { values: { count: state.count } });
-      }
       default: {
-        return $t('frameleaf_utilities_state_unused', {
-          values: { count: state.count, size: formatBytes(state.bytes ?? 0) },
-        });
+        return $t('frameleaf_utilities_state_damaged', { values: { count: state.count } });
       }
     }
   };
@@ -244,7 +243,6 @@
       {:else if data.tool === 'downloads' || data.tool === 'obtainium'}
         <ApplicationSetup tool={data.tool} />
       {:else if data.tool === 'icloud'}<ICloudSyncPanel initial={data.initial} />
-      {:else if data.tool === 'file-trash'}<FileTrashUtility initial={data.initial} />
       {:else if data.tool === 'missing-media' || data.tool === 'corrupt-media'}
         <LibraryCareHealth
           category={data.category}
@@ -258,7 +256,7 @@
       {/if}
       <!-- UT-11: every tool but Duplicate review shows the shared history (UtilitiesManager.jsx:946);
            Missing and Damaged media show Library Care's own, with its scans and searches. -->
-      {#if !['duplicates', 'missing-media', 'corrupt-media', 'file-trash'].includes(data.tool)}
+      {#if !['duplicates', 'missing-media', 'corrupt-media'].includes(data.tool)}
         <UtilityHistory />
       {/if}
     </div>
