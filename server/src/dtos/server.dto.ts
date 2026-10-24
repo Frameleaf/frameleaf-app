@@ -271,6 +271,11 @@ const ServerConfigSchema = z
     mapDarkStyleUrl: z.string().describe('Map dark style URL'),
     mapLightStyleUrl: z.string().describe('Map light style URL'),
     maintenanceMode: z.boolean().describe('Whether maintenance mode is active'),
+    placesRestoring: z
+      .boolean()
+      .describe(
+        'Whether place names and landmarks are being put back after a restore or a first start, so they can look missing for a few minutes',
+      ),
     defaultImageDescriptionRawPromptTemplate: z
       .string()
       .describe('Canonical default for the image-description advanced raw prompt template'),

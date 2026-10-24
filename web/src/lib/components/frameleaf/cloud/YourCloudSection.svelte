@@ -154,7 +154,7 @@
         icon={mdiCloudOutline}
         title={$t('frameleaf_yc_new_title')}
         description={$t('frameleaf_yc_new_body', { values: { price: bundle } })}
-        status={$t('frameleaf_signin_not_linked')}
+        status={$t('frameleaf_cloud_status_not_linked')}
       >
         <div class="fc-actions">
           <Button variant="primary" onclick={() => getCloud()}>{$t('frameleaf_get_cloud')}</Button>

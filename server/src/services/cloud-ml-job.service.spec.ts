@@ -41,6 +41,7 @@ import {
   jobViewSchema,
 } from 'src/utils/frameleaf-cloud.js';
 import { stripsVideoMetadata } from 'src/utils/media-privacy.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
@@ -1712,7 +1713,7 @@ describe(CloudMlJobService.name, () => {
         rendering();
         mocks.crypto.hashFileDigests.mockClear();
         mocks.crypto.hashFileDigests.mockImplementation((file) =>
-          Promise.try(() => {
+          tryPromise(() => {
             const path = file.toString();
             const cached = path.includes('/out-');
             const first = path.endsWith('out-v1-s0.mp4');

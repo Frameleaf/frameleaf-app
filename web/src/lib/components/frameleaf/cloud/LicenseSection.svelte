@@ -1,45 +1,50 @@
 <script lang="ts">
-  import { locale } from '$lib/stores/preferences.store';
   /**
-   * Settings → Frameleaf Cloud → Licence (FL-156): the prototype's `License`
-   * (design/frameleaf/template/src/FrameleafCloud.jsx:1041-1222, effd05ffb7) on the server's real
-   * licence certificates. Licence is its own page, separate from Plan (owner decision 2026-09-25).
-   * States: none, active, grace, expired and invalid, with the key hint, expiry, grace deadline and
-   * entitlement chips; actions: activate a key, install an offline file, refresh and remove.
+   * Settings → Frameleaf Cloud → Licence (FL-156; FL-541 after the prototype's
+   * `settings-v2/cloud/Licence.jsx`): opens on what the licence decides — backups away from home,
+   * for everyone, for one person, or not yet — with Cloud Backup and Buddy Backup said underneath.
+   * One key box recognises a Server or an Individual key and says what it will do before anything
+   * changes. A server with no internet connection (offline file, server ID, Check now) is under a
+   * closed Advanced.
+   *
+   * ponytail: who is covered is read from the licence kind here (Server: everyone; Individual: the
+   * administrator's own account). The cover Frameleaf Cloud reports per account waits on FC-147/FC-148.
    */
   import './cloud-account.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import CloudBanner from '$lib/components/frameleaf/cloud/CloudBanner.svelte';
-  import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import LicenseKeyField from '$lib/components/frameleaf/cloud/LicenseKeyField.svelte';
+  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
+  import Coverage, { type CoverageRow } from '$lib/components/frameleaf/settings/kit/Coverage.svelte';
+  import Facts from '$lib/components/frameleaf/settings/kit/Facts.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
+  import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { discountOffer, type ProductKeyCheck } from '$lib/frameleaf/cloud';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
+  import { locale } from '$lib/stores/preferences.store';
   import { copyToClipboard } from '$lib/utils';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { deleteUserLicense, getMyUser, setUserLicense } from '@frameleaf/sdk';
-  import { Icon } from '@frameleaf/ui';
   import {
-    mdiCartOutline,
+    mdiBackupRestore,
     mdiCertificateOutline,
-    mdiCheckCircleOutline,
-    mdiClose,
-    mdiCloudLockOutline,
-    mdiContentCopy,
-    mdiDeleteOutline,
-    mdiFileDocumentOutline,
+    mdiCloudOutline,
     mdiHandshakeOutline,
     mdiHeartOutline,
     mdiInfinity,
-    mdiKeyOutline,
-    mdiMinus,
-    mdiRefresh,
     mdiTagOutline,
-    mdiUpload,
   } from '@mdi/js';
+  import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -47,13 +52,13 @@
 
   const license = $derived(cloudManager.license);
   const key = $derived(license?.key ?? null);
-  const serverLicensed = $derived(!!key && (key.state === 'active' || key.state === 'grace'));
-  // FL-156: a key for one person (the administrator's own) is an individual licence, shown as
-  // Licensed as in the prototype (frameleaf-cloud-data.mjs:579-592)
+  const keyActive = $derived(!!key && (key.state === 'active' || key.state === 'grace'));
+  // FL-156: a key for one person (the administrator's own) is an Individual licence
   const personal = $derived(authManager.user.license ?? null);
-  const licensed = $derived(serverLicensed || !!personal);
-  // the plan discounts Frameleaf Cloud published for a Server and an Individual licence
-  // (license/products); none shown until they are known
+  const serverCover = $derived(keyActive && key?.kind !== 'individual');
+  const oneCover = $derived(!serverCover && (!!personal || (keyActive && key?.kind === 'individual')));
+  const licensed = $derived(serverCover || oneCover);
+  const me = $derived(authManager.user.name);
   const offered = $derived(cloudManager.products?.licensedDiscount ?? 0);
   const offer = $derived(discountOffer(cloudManager.products));
 
@@ -94,6 +99,30 @@
     }
   };
 
+  const refreshMe = async (isCurrent: () => boolean) => {
+    if (!isCurrent()) {
+      return;
+    }
+    const updated = await getMyUser();
+    if (isCurrent()) {
+      authManager.setUser(updated);
+    }
+  };
+
+  const activate = async () => {
+    const individual = keyCheck?.valid && keyCheck.kind === 'individual';
+    // a key for one person is the administrator's own supporter key (personal endpoint)
+    const done = individual
+      ? await act(async (isCurrent) => {
+          await setUserLicense({ licenseActivateDto: { key: keyValue } });
+          await refreshMe(isCurrent);
+        }, $t('frameleaf_license_personal_activated_notice'))
+      : await act(() => cloudManager.activateLicense(keyValue), $t('frameleaf_license_activated_notice'));
+    if (done) {
+      keyValue = '';
+    }
+  };
+
   const installFile = async (file: File | undefined) => {
     if (!file) {
       return;
@@ -108,307 +137,289 @@
     await act(() => cloudManager.installLicenseFile(text), $t('frameleaf_license_file_installed'));
   };
 
-  const stateLabel = (state: string | undefined) => {
-    switch (state) {
-      case 'active': {
-        return $t('frameleaf_license_state_active');
-      }
-      case 'grace': {
-        return $t('frameleaf_license_state_grace');
-      }
-      case 'expired': {
-        return $t('frameleaf_license_state_expired');
-      }
-      case 'invalid': {
-        return $t('frameleaf_license_state_invalid');
-      }
-      default: {
-        return $t('frameleaf_license_state_none');
-      }
-    }
-  };
-  const tone = (state: string | undefined) =>
+  const stateLabel = (state: string | undefined) =>
     state === 'active'
-      ? 'ok'
+      ? $t('frameleaf_license_state_active')
       : state === 'grace'
-        ? 'warning'
-        : state === 'expired' || state === 'invalid'
-          ? 'danger'
-          : 'muted';
+        ? $t('frameleaf_license_state_grace')
+        : state === 'expired'
+          ? $t('frameleaf_license_state_expired')
+          : state === 'invalid'
+            ? $t('frameleaf_license_state_invalid')
+            : $t('frameleaf_license_state_none');
 
-  const chips = $derived(
-    license
-      ? ([
-          ['remoteAccess', $t('frameleaf_license_entitlement_remote'), license.entitlements.remoteAccess],
-          ['cloudBackup', $t('frameleaf_license_entitlement_backup'), license.entitlements.cloudBackup],
-          ['cloudMl', $t('frameleaf_license_entitlement_processing'), license.entitlements.cloudMl],
-          // an active key for one person makes its holder a supporter too
-          ['supporter', $t('frameleaf_license_entitlement_supporter'), license.entitlements.supporter || !!personal],
-        ] as const)
-      : [],
+  const hero = $derived(
+    serverCover
+      ? {
+          tone: 'good' as const,
+          title: $t('frameleaf_lic_hero_everyone'),
+          body: $t('frameleaf_lic_hero_everyone_body'),
+        }
+      : oneCover
+        ? {
+            tone: 'warn' as const,
+            title: $t('frameleaf_lic_hero_one', { values: { name: me } }),
+            body: $t('frameleaf_lic_hero_one_body'),
+          }
+        : { tone: 'warn' as const, title: $t('frameleaf_lic_hero_none'), body: $t('frameleaf_lic_hero_none_body') },
+  );
+
+  const coverage = $derived<CoverageRow[]>([
+    {
+      icon: mdiCloudOutline,
+      name: $t('frameleaf_lic_cloud_backup'),
+      detail: $t('frameleaf_lic_cloud_backup_detail'),
+      ...(serverCover
+        ? { tone: 'good' as const, value: $t('frameleaf_lic_everyone') }
+        : oneCover
+          ? { tone: 'warn' as const, value: $t('frameleaf_lic_only', { values: { name: me } }) }
+          : { tone: 'off' as const, value: $t('frameleaf_lic_not_included') }),
+    },
+    {
+      icon: mdiHandshakeOutline,
+      name: $t('frameleaf_lic_buddy_backup'),
+      detail: $t('frameleaf_lic_buddy_backup_detail'),
+      ...(serverCover
+        ? { tone: 'good' as const, value: $t('frameleaf_lic_everyone') }
+        : { tone: 'off' as const, value: $t('frameleaf_lic_not_included') }),
+      note: oneCover ? $t('frameleaf_lic_needs_server') : undefined,
+    },
+  ]);
+
+  const whoTone = $derived(serverCover ? 'good' : oneCover ? 'warn' : 'off');
+  const whoStatus = $derived(
+    serverCover
+      ? $t('frameleaf_lic_everyone')
+      : oneCover
+        ? $t('frameleaf_lic_only', { values: { name: me } })
+        : $t('frameleaf_lic_not_included'),
   );
 </script>
 
-<div class="frameleaf-cloud" data-section="cloud-license">
-  {#if failure}
-    <p class="fc-notice is-error" role="alert">{failure}</p>
-  {/if}
-  {#if notice}
-    <div class="fc-notice" role="status">
-      <span>{notice}</span>
-      <button
-        type="button"
-        class="fc-link"
-        aria-label={$t('frameleaf_cloud_dismiss_notice')}
-        onclick={() => (notice = '')}
-      >
-        <Icon icon={mdiClose} size="16" />
-      </button>
-    </div>
-  {/if}
-
-  {#if !license}
-    <div class="fc-loading" role="status" aria-label={$t('frameleaf_cloud_loading')}>
-      <Skeleton variant="block" height="168px" />
-    </div>
-  {:else}
-    {#if license.state === 'grace'}
-      <CloudBanner tone="warning" title={$t('frameleaf_license_grace_title')}>
-        {$t('frameleaf_license_grace_body', { values: { date: formatDate(license.graceUntil) } })}
-      </CloudBanner>
-    {:else if license.state === 'expired'}
-      <CloudBanner tone="danger" title={$t('frameleaf_license_expired_title')}
-        >{$t('frameleaf_license_expired_body')}</CloudBanner
-      >
-    {:else if license.state === 'invalid'}
-      <CloudBanner tone="danger" title={$t('frameleaf_license_invalid_title')}
-        >{$t('frameleaf_license_invalid_body')}</CloudBanner
-      >
+<div data-section="cloud-license">
+  <KitPage>
+    <Said message={notice} onDismiss={() => (notice = '')} />
+    {#if failure}
+      <Notice tone="warn" title={failure} />
     {/if}
 
-    <CloudCard
-      icon={mdiCertificateOutline}
-      title={serverLicensed
-        ? key?.kind === 'individual'
-          ? $t('frameleaf_license_individual')
-          : $t('frameleaf_license_server')
-        : personal
-          ? $t('frameleaf_license_individual')
-          : $t('frameleaf_license_not_licensed_title')}
-      description={licensed
-        ? $t('frameleaf_license_licensed_description')
-        : $t('frameleaf_license_not_licensed_description')}
-      status={licensed ? $t('frameleaf_license_status_licensed') : $t('frameleaf_license_status_not_licensed')}
-      tone={licensed ? 'ok' : 'muted'}
-    >
-      <ul class="fc-benefits">
-        {#if offered > 0}
-          <li>
-            <Icon icon={mdiTagOutline} size="18" />
-            <span>
-              <strong>{$t('frameleaf_license_benefit_discount_title', { values: { pct: offer.server } })}</strong>
-              {$t('frameleaf_license_benefit_discount_body', { values: { individual: offer.individual } })}
-            </span>
-          </li>
-        {/if}
-        <li>
-          <Icon icon={mdiHeartOutline} size="18" />
-          <span>
-            <strong>{$t('frameleaf_license_benefit_badge_title')}</strong>
-            {$t('frameleaf_license_benefit_badge_body')}
-          </span>
-        </li>
-        <li>
-          <Icon icon={mdiCloudLockOutline} size="18" />
-          <span>
-            <strong>{$t('frameleaf_license_benefit_backup_title')}</strong>
-            {$t('frameleaf_license_benefit_backup_body')}
-          </span>
-        </li>
-        <li>
-          <Icon icon={mdiHandshakeOutline} size="18" />
-          <span>
-            <strong>{$t('frameleaf_license_benefit_buddy_title')}</strong>
-            {$t('frameleaf_license_benefit_buddy_body')}
-          </span>
-        </li>
-        <li>
-          <Icon icon={mdiInfinity} size="18" />
-          <span>
-            <strong>{$t('frameleaf_license_benefit_once_title')}</strong>
-            {$t('frameleaf_license_benefit_once_body')}
-          </span>
-        </li>
-      </ul>
-      {#if key}
-        <dl class="fc-facts">
-          <dt>{$t('frameleaf_license_key')}</dt>
-          <dd>•••• {key.keyHint ?? '—'}</dd>
-          <dt>{$t('frameleaf_license_type')}</dt>
-          <dd>{key.kind === 'individual' ? $t('frameleaf_license_individual') : $t('frameleaf_license_server')}</dd>
-          <dt>{$t('frameleaf_license_state')}</dt>
-          <dd>
-            <span
-              class="fc-status"
-              class:is-ok={tone(key.state) === 'ok'}
-              class:is-warning={tone(key.state) === 'warning'}
-              class:is-danger={tone(key.state) === 'danger'}>{stateLabel(key.state)}</span
-            >
-          </dd>
-          <dt>{$t('frameleaf_license_activated')}</dt>
-          <dd>{formatWhen(key.activatedAt)}</dd>
-          {#if key.graceUntil}
-            <dt>{$t('frameleaf_license_grace_until')}</dt>
-            <dd>{formatDate(key.graceUntil)}</dd>
+    {#if !license}
+      <div role="status" aria-label={$t('frameleaf_cloud_loading')}>
+        <Skeleton variant="block" height="168px" />
+      </div>
+    {:else}
+      {#if license.state === 'grace'}
+        <Notice tone="warn" title={$t('frameleaf_license_grace_title')}>
+          {$t('frameleaf_license_grace_body', { values: { date: formatDate(license.graceUntil) } })}
+        </Notice>
+      {:else if license.state === 'expired'}
+        <Notice tone="warn" title={$t('frameleaf_license_expired_title')}>{$t('frameleaf_license_expired_body')}</Notice
+        >
+      {:else if license.state === 'invalid'}
+        <Notice tone="warn" title={$t('frameleaf_license_invalid_title')}>{$t('frameleaf_license_invalid_body')}</Notice
+        >
+      {/if}
+
+      <Hero
+        label={$t('frameleaf_lic_status')}
+        tone={hero.tone}
+        icon={mdiCertificateOutline}
+        title={hero.title}
+        body={hero.body}
+      >
+        {#snippet actions()}
+          {#if serverCover}
+            <Button onclick={() => goto(commandCenterUrl('backup'))}>{$t('frameleaf_lic_open_backup')}</Button>
+          {:else}
+            <Button variant="primary" onclick={() => getCloudManager.open()}>{$t('frameleaf_get_cloud')}</Button>
           {/if}
-          <dt>{$t('frameleaf_license_last_checked')}</dt>
-          <dd>{formatWhen(key.refreshedAt ?? key.activatedAt)}</dd>
-        </dl>
-      {/if}
-      {#if personal}
-        <dl class="fc-facts" aria-label={$t('frameleaf_license_personal_facts')}>
-          <dt>{$t('frameleaf_license_key')}</dt>
-          <dd>•••• {personal.keyHint}</dd>
-          <dt>{$t('frameleaf_license_type')}</dt>
-          <dd>{$t('frameleaf_license_individual')}</dd>
-          <dt>{$t('frameleaf_license_activated')}</dt>
-          <dd>{formatWhen(personal.activatedAt)}</dd>
-        </dl>
-      {/if}
-      <ul class="fc-chips" aria-label={$t('frameleaf_license_included')}>
-        {#each chips as [id, label, on] (id)}
-          <li class:is-on={on}>
-            <Icon icon={on ? mdiCheckCircleOutline : mdiMinus} size="16" />
-            {label}
-            <span class="fc-visually-hidden">
-              {on ? $t('frameleaf_license_chip_included') : $t('frameleaf_license_chip_not_included')}
-            </span>
-          </li>
-        {/each}
-      </ul>
-      {#if license.refresh.lastError}
-        <p class="fc-muted" role="status">
-          {$t('frameleaf_license_refresh_failed', { values: { error: license.refresh.lastError } })}
-        </p>
-      {/if}
-      <div class="fc-actions">
-        {#if !licensed}
-          <Button variant="primary" onclick={() => getCloudManager.open()}>
-            <Icon icon={mdiCartOutline} size="18" />
-            {$t('frameleaf_get_cloud')}
-          </Button>
-        {/if}
-        {#if license.linked && (license.key || license.plan)}
-          <Button
-            disabled={busy}
-            onclick={() => void act(() => cloudManager.refreshLicense(), $t('frameleaf_license_refreshed'))}
-          >
-            <Icon icon={mdiRefresh} size="18" />
-            {$t('frameleaf_license_refresh')}
-          </Button>
-        {/if}
+        {/snippet}
+        <Coverage rows={coverage} />
+      </Hero>
+
+      <Section title={$t('frameleaf_lic_gives')} description={$t('frameleaf_lic_gives_description')}>
+        <ItemList>
+          <Item
+            icon={mdiCloudOutline}
+            name={$t('frameleaf_lic_gives_cloud')}
+            detail={$t('frameleaf_lic_gives_cloud_detail')}
+            tone={licensed ? 'good' : 'off'}
+            status={licensed ? $t('frameleaf_lic_included') : $t('frameleaf_lic_not_included')}
+            off={!licensed}
+          />
+          <Item
+            icon={mdiBackupRestore}
+            name={$t('frameleaf_lic_gives_backups')}
+            detail={$t('frameleaf_lic_gives_backups_detail')}
+            tone={whoTone}
+            status={whoStatus}
+            off={!licensed}
+          />
+          {#if offered > 0}
+            <Item
+              icon={mdiTagOutline}
+              name={$t('frameleaf_lic_gives_discount')}
+              detail={$t('frameleaf_lic_gives_discount_detail', {
+                values: { server: offer.server, individual: offer.individual },
+              })}
+              tone={licensed ? 'good' : 'off'}
+              status={serverCover
+                ? $t('frameleaf_lic_off', { values: { pct: offer.server } })
+                : oneCover
+                  ? $t('frameleaf_lic_off', { values: { pct: offer.individual } })
+                  : $t('frameleaf_lic_not_included')}
+              off={!licensed}
+            />
+          {/if}
+          <Item
+            icon={mdiHeartOutline}
+            name={$t('frameleaf_license_benefit_badge_title')}
+            detail={$t('frameleaf_lic_gives_badge_detail')}
+            tone={whoTone}
+            status={whoStatus}
+            off={!licensed}
+          />
+          <Item
+            icon={mdiInfinity}
+            name={$t('frameleaf_lic_gives_life')}
+            detail={$t('frameleaf_lic_gives_life_detail')}
+            off={!licensed}
+          />
+        </ItemList>
+        <p class="hint">{$t('frameleaf_lic_without')}</p>
+      </Section>
+
+      <Section
+        title={licensed || key ? $t('frameleaf_lic_yours') : $t('frameleaf_license_enter_key_title')}
+        description={licensed || key ? undefined : $t('frameleaf_lic_enter_description')}
+      >
         {#if key}
-          <Button onclick={() => (removingKey = 'server')}>
-            <Icon icon={mdiDeleteOutline} size="18" />
-            {$t('frameleaf_license_remove_action')}
-          </Button>
+          <Facts
+            rows={[
+              {
+                label: $t('frameleaf_lic_kind'),
+                value: key.kind === 'individual' ? $t('frameleaf_license_individual') : $t('frameleaf_license_server'),
+                detail: stateLabel(key.state),
+              },
+              {
+                label: $t('frameleaf_license_key'),
+                value: `•••• ${key.keyHint ?? '—'}`,
+                detail: $t('frameleaf_lic_key_email'),
+              },
+              {
+                label: $t('frameleaf_lic_added'),
+                value: formatWhen(key.activatedAt),
+                detail: key.graceUntil
+                  ? $t('frameleaf_lic_grace_until', { values: { date: formatDate(key.graceUntil) } })
+                  : undefined,
+              },
+            ]}
+          />
+          <div class="actions">
+            <Button variant="danger" onclick={() => (removingKey = 'server')}
+              >{$t('frameleaf_license_remove_action')}</Button
+            >
+          </div>
         {/if}
         {#if personal}
-          <Button onclick={() => (removingKey = 'personal')}>
-            <Icon icon={mdiDeleteOutline} size="18" />
-            {$t('frameleaf_license_remove_personal_action')}
-          </Button>
+          <div aria-label={$t('frameleaf_license_personal_facts')} role="group">
+            <Facts
+              rows={[
+                {
+                  label: $t('frameleaf_lic_kind'),
+                  value: $t('frameleaf_license_individual'),
+                  detail: $t('frameleaf_lic_only', { values: { name: me } }),
+                },
+                { label: $t('frameleaf_license_key'), value: `•••• ${personal.keyHint}` },
+                { label: $t('frameleaf_lic_added'), value: formatWhen(personal.activatedAt) },
+              ]}
+            />
+          </div>
+          <div class="actions">
+            <Button variant="danger" onclick={() => (removingKey = 'personal')}
+              >{$t('frameleaf_license_remove_personal_action')}</Button
+            >
+          </div>
         {/if}
-      </div>
-    </CloudCard>
 
-    <!-- as in the prototype, a key can be entered whenever the server is not licensed, also to
-         replace an expired or refused one without removing it first -->
-    {#if !licensed}
-      <CloudCard
-        icon={mdiKeyOutline}
-        title={$t('frameleaf_license_enter_key_title')}
-        description={$t('frameleaf_license_enter_key_description')}
-      >
-        <LicenseKeyField
-          bind:value={keyValue}
-          accept="any"
-          label={$t('frameleaf_license_key')}
-          help={$t('frameleaf_license_key_help')}
-          onCheck={(check) => (keyCheck = check)}
-        />
-        {#if !license.configured}
-          <p class="fc-muted">{$t('frameleaf_license_key_needs_cloud')}</p>
+        {#if !serverCover}
+          <div class="frameleaf-cloud">
+            <LicenseKeyField
+              bind:value={keyValue}
+              accept="any"
+              label={oneCover ? $t('frameleaf_lic_enter_another') : $t('frameleaf_license_key')}
+              help={oneCover ? $t('frameleaf_lic_enter_another_help') : $t('frameleaf_lic_enter_help')}
+              onCheck={(check) => (keyCheck = check)}
+            />
+          </div>
+          {#if !license.configured}
+            <p class="hint">{$t('frameleaf_license_key_needs_cloud')}</p>
+          {:else if keyCheck?.valid && keyCheck.kind === 'server'}
+            <Notice icon={mdiCertificateOutline} title={$t('frameleaf_lic_typed_server')}>
+              {$t('frameleaf_lic_typed_server_body')}
+              {#snippet action()}
+                <Button variant="primary" disabled={busy} onclick={() => void activate()}
+                  >{$t('frameleaf_lic_activate')}</Button
+                >
+              {/snippet}
+            </Notice>
+          {:else if keyCheck?.valid && keyCheck.kind === 'individual'}
+            <Notice icon={mdiCertificateOutline} title={$t('frameleaf_lic_typed_individual')}>
+              {$t('frameleaf_lic_typed_individual_body', { values: { name: me } })}
+              {#snippet action()}
+                <Button variant="primary" disabled={busy} onclick={() => void activate()}
+                  >{$t('frameleaf_lic_activate_for', { values: { name: me } })}</Button
+                >
+              {/snippet}
+            </Notice>
+          {/if}
         {/if}
-        <div class="fc-actions">
-          <Button
-            variant="primary"
-            disabled={busy || !keyCheck?.valid || !license.configured}
-            onclick={async () => {
-              // a key for one person is that administrator's own supporter key (personal endpoint)
-              const done =
-                keyCheck?.valid && keyCheck.kind === 'individual'
-                  ? await act(async (isCurrent) => {
-                      await setUserLicense({ licenseActivateDto: { key: keyValue } });
-                      if (!isCurrent()) {
-                        return;
-                      }
-                      const updated = await getMyUser();
-                      if (isCurrent()) {
-                        authManager.setUser(updated);
-                      }
-                    }, $t('frameleaf_license_personal_activated_notice'))
-                  : await act(() => cloudManager.activateLicense(keyValue), $t('frameleaf_license_activated_notice'));
-              if (done) {
-                keyValue = '';
-              }
-            }}
-          >
-            {$t('frameleaf_license_activate')}
-          </Button>
-        </div>
-      </CloudCard>
-    {/if}
 
-    <CloudCard
-      icon={mdiFileDocumentOutline}
-      title={$t('frameleaf_license_file_title')}
-      description={$t('frameleaf_license_file_description')}
-    >
-      <dl class="fc-facts">
-        <dt>{$t('frameleaf_license_instance_id')}</dt>
-        <dd>
-          <span class="fc-copy">
-            <code>{license.fingerprint.instanceId ?? '—'}</code>
-            {#if license.fingerprint.instanceId}
+        <Advanced summary={$t('frameleaf_lic_offline')}>
+          <p class="hint">{$t('frameleaf_lic_offline_body')}</p>
+          <Row label={$t('frameleaf_lic_server_id')} help={$t('frameleaf_lic_server_id_help')}>
+            <span class="copy">
+              <code>{license.fingerprint.instanceId ?? '—'}</code>
+              {#if license.fingerprint.instanceId}
+                <Button onclick={() => copyToClipboard(license.fingerprint.instanceId ?? '')}
+                  >{$t('frameleaf_lic_copy')}</Button
+                >
+              {/if}
+            </span>
+          </Row>
+          <Row label={$t('frameleaf_lic_file')} help={$t('frameleaf_lic_file_help')}>
+            <input
+              bind:this={fileInput}
+              type="file"
+              accept=".json,.lic,application/json"
+              hidden
+              onchange={(event) => {
+                void installFile(event.currentTarget.files?.[0]);
+                event.currentTarget.value = '';
+              }}
+            />
+            <Button disabled={busy} onclick={() => fileInput?.click()}>{$t('frameleaf_license_choose_file')}</Button>
+          </Row>
+          {#if license.linked && (license.key || license.plan)}
+            <Row
+              label={$t('frameleaf_lic_last_checked')}
+              help={license.refresh.lastError
+                ? $t('frameleaf_license_refresh_failed', { values: { error: license.refresh.lastError } })
+                : $t('frameleaf_lic_last_checked_help', {
+                    values: { when: formatWhen(license.refresh.refreshedAt ?? key?.refreshedAt ?? key?.activatedAt) },
+                  })}
+            >
               <Button
-                label={$t('frameleaf_license_copy_instance_id')}
-                onclick={() => copyToClipboard(license.fingerprint.instanceId ?? '')}
+                disabled={busy}
+                onclick={() => void act(() => cloudManager.refreshLicense(), $t('frameleaf_license_refreshed'))}
+                >{$t('frameleaf_lic_check_now')}</Button
               >
-                <Icon icon={mdiContentCopy} size="16" />
-              </Button>
-            {/if}
-          </span>
-        </dd>
-      </dl>
-      <input
-        bind:this={fileInput}
-        type="file"
-        accept=".json,.lic,application/json"
-        hidden
-        onchange={(event) => {
-          void installFile(event.currentTarget.files?.[0]);
-          event.currentTarget.value = '';
-        }}
-      />
-      <div class="fc-actions">
-        <Button disabled={busy} onclick={() => fileInput?.click()}>
-          <Icon icon={mdiUpload} size="18" />
-          {$t('frameleaf_license_choose_file')}
-        </Button>
-      </div>
-    </CloudCard>
-  {/if}
+            </Row>
+          {/if}
+        </Advanced>
+      </Section>
+    {/if}
+  </KitPage>
 </div>
 
 <Dialog
@@ -422,7 +433,7 @@
     {removingKey === 'personal' ? $t('frameleaf_license_remove_personal_body') : $t('frameleaf_license_remove_body')}
   </p>
   {#snippet actions()}
-    <Button onclick={() => (removingKey = null)}>{$t('frameleaf_cloud_cancel')}</Button>
+    <Button onclick={() => (removingKey = null)}>{$t('frameleaf_lic_keep')}</Button>
     <Button
       variant="danger"
       disabled={busy}
@@ -432,13 +443,7 @@
           removingKey === 'personal'
             ? await act(async (isCurrent) => {
                 await deleteUserLicense();
-                if (!isCurrent()) {
-                  return;
-                }
-                const updated = await getMyUser();
-                if (isCurrent()) {
-                  authManager.setUser(updated);
-                }
+                await refreshMe(isCurrent);
               }, $t('frameleaf_license_personal_removed_notice'))
             : await act(() => cloudManager.removeLicenseKey(), $t('frameleaf_license_removed_notice'));
         if (removed) {
@@ -450,3 +455,25 @@
     </Button>
   {/snippet}
 </Dialog>
+
+<style>
+  .hint {
+    margin: var(--fl-space-3) 0 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .actions {
+    display: flex;
+    gap: var(--fl-space-2);
+    margin: var(--fl-space-3) 0;
+  }
+  .copy {
+    display: inline-flex;
+    gap: var(--fl-space-2);
+    align-items: center;
+  }
+  code {
+    font-size: var(--fl-font-small);
+    overflow-wrap: anywhere;
+  }
+</style>

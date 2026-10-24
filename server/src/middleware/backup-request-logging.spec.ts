@@ -23,7 +23,15 @@ describe('backup request diagnostics', () => {
   };
   const log = { setContext: vi.fn(), debug: vi.fn(), verbose: vi.fn(), error: vi.fn(), warn: vi.fn() };
   const cloud = { storeEscrow: vi.fn(), startVerify: vi.fn() };
-  const buddy = { keyring: vi.fn(), importKit: vi.fn(), verifyKit: vi.fn() };
+  const buddy = {
+    keyring: vi.fn(),
+    importKit: vi.fn(),
+    verifyKit: vi.fn(),
+    // The real local wrap/unwrap over the mocked keyring and import, so the package is genuinely encrypted.
+    wrapKit: (passphrase: string) => BuddyBackupService.prototype.wrapKit.call(buddy as never, passphrase),
+    unlockKit: (escrow: never, passphrase: string) =>
+      BuddyBackupService.prototype.unlockKit.call(buddy as never, escrow, passphrase),
+  };
   const restore = { administrator: vi.fn() };
   const config = { setCredential: vi.fn() };
   const output = () =>

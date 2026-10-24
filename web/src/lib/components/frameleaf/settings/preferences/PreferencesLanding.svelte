@@ -81,7 +81,7 @@
           icon: mdiShieldLockOutline,
           title: $t('frameleaf_prefs_landing_security'),
           body: $t('frameleaf_prefs_landing_security_where'),
-          href: commandCenterUrl('security'),
+          href: commandCenterUrl('privacy'),
         },
       ]}
     />

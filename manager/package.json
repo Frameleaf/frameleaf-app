@@ -1,10 +1,10 @@
 {
   "name": "@frameleaf/manager",
-  "version": "0.2.8",
+  "version": "0.2.12",
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=22.23.4"
   },
   "scripts": {
     "build": "node node_modules/@typescript/native/bin/tsc -p tsconfig.json && vite build",

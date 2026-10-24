@@ -117,10 +117,27 @@ const AttentionResponseSchema = z
     checkedAt: z.string().meta({ format: 'date-time' }).describe('When the checks were made'),
     items: z.array(AttentionItemSchema).describe('What needs attention, the most urgent first'),
     checks: z.array(AttentionCheckSchema).describe('How each kind of check came out, in a fixed order'),
+    dismissed: z
+      .array(z.string())
+      .describe('Overview items an administrator dismissed (FL-363); they stop counting as needing attention'),
   })
   .meta({ id: 'AttentionResponseDto' });
+
+/** FL-363: dismiss an Overview item, or bring it back. Ids are the client's, for example "studio". */
+const AttentionDismissSchema = z
+  .object({
+    id: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-z0-9:-]+$/)
+      .describe('The item to dismiss or bring back'),
+    dismissed: z.boolean().describe('True dismisses it; false brings it back'),
+  })
+  .meta({ id: 'AttentionDismissDto' });
 
 export type AttentionItem = z.infer<typeof AttentionItemSchema>;
 export type AttentionCheck = z.infer<typeof AttentionCheckSchema>;
 
 export class AttentionResponseDto extends createZodDto(AttentionResponseSchema) {}
+export class AttentionDismissDto extends createZodDto(AttentionDismissSchema) {}

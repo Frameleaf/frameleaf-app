@@ -241,6 +241,14 @@ export class ImmichImportService {
         if (!pristine) throw new ImportRefused('DESTINATION_NOT_FRESH');
         continue;
       }
+      if (table === 'ml_processing_order') {
+        // The FL-456 migration seeds only the default order on a fresh install.
+        const seeds = await this.destination.query(`SELECT scope FROM public.ml_processing_order LIMIT 2`);
+        if (seeds.length > 1 || (seeds.length === 1 && seeds[0].scope !== 'default')) {
+          throw new ImportRefused('DESTINATION_NOT_FRESH');
+        }
+        continue;
+      }
       if (!BOOTSTRAP_TABLES.has(table)) {
         const records = await this.destination.query(`SELECT 1 FROM public.${quote(table)} LIMIT 1`);
         if (records.length > 0) {

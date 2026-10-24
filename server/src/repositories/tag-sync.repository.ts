@@ -22,7 +22,7 @@ import {
   tagIsSuppressed,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
-import { getHiddenContentQueryOptions, getRevealQueryOptions } from 'src/utils/hidden-content.js';
+import { everyOwnersRules, getHiddenContentQueryOptions, getRevealQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLockedOwnerId, notLockedOrOwnedBy } from 'src/utils/locked.js';
 import { toAck } from 'src/utils/sync.js';
@@ -245,7 +245,7 @@ export class TagSync {
                 await links.getLinkedAlbumCounts(
                   spaceId,
                   current.map((row) => row.linkedAlbumId),
-                  { excludeNsfw: true },
+                  { excludeNsfw: true, ...everyOwnersRules },
                 )
               ).map((row) => [row.albumId, row]),
             );
@@ -271,7 +271,7 @@ export class TagSync {
                 await links.getLinkedPersonCounts(
                   spaceId,
                   rows.map((row) => row.personGroupId),
-                  { excludeNsfw: true },
+                  { excludeNsfw: true, ...everyOwnersRules },
                 )
               ).map((row) => [row.personGroupId, row.assetCount]),
             );

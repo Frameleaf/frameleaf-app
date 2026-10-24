@@ -84,6 +84,7 @@ import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { VersionHistoryRepository } from 'src/repositories/version-history.repository.js';
 import { VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
+import { ViewRepository } from 'src/repositories/view-repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -164,6 +165,8 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
         Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() }),
       );
       mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+      // FL-456: no processing-order plan unless a test gives one, so admission falls back to `getRoute` above
+      mlDestination.resolveRoute.mockResolvedValue([]);
       // Synthetic healthy destinations have no restored authority; fence tests override this mock.
       mlDestination.assertRecoveryAuthority.mockResolvedValue();
       mlDestination.getRoutes.mockResolvedValue([]);
@@ -586,6 +589,7 @@ const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>
     case UserRepository:
     case VersionHistoryRepository:
     case VideoMomentRepository:
+    case ViewRepository:
     case WorkflowRepository: {
       return new key(db) as InstanceType<T>;
     }
@@ -727,6 +731,7 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
         ],
       });
       mock.collectFollowups.mockImplementation((action) => action());
+      mock.pinnedDestination.mockResolvedValue(null);
       return mock;
     }
 

@@ -35,7 +35,12 @@ describe('describeFilterField', () => {
       negated: false,
     });
     expect(describeFilterField(withFilter({ isFavorite: { eq: false } }), 'isFavorite')?.negated).toBe(true);
-    expect(describeFilterField(withFilter({ hasTags: { eq: false } }), 'hasTags')?.negated).toBe(true);
+    expect(describeFilterField(withFilter({ isMotion: { eq: false } }), 'isMotion')?.negated).toBe(true);
+    // the library-status quick toggles keep the panel's own name instead of "Not tags"
+    expect(describeFilterField(withFilter({ hasTags: { eq: false } }), 'hasTags')).toMatchObject({
+      labelKey: 'untagged',
+      negated: false,
+    });
   });
 
   it('counts the values of a list condition', () => {
@@ -46,7 +51,11 @@ describe('describeFilterField', () => {
 
   it('shows the value of a scalar condition and strips SQL wildcards from a text one', () => {
     expect(describeFilterField(withFilter({ city: { eq: 'Halifax' } }), 'city')?.detail).toBe('Halifax');
-    expect(describeFilterField(withFilter({ rating: { eq: 4 } }), 'rating')?.detail).toBe('4');
+    expect(describeFilterField(withFilter({ fileSizeInBytes: { eq: 4 } }), 'fileSizeInBytes')?.detail).toBe('4');
+    expect(describeFilterField(withFilter({ rating: { eq: 4 } }), 'rating')?.detailText).toEqual({
+      key: 'frameleaf_search_rating_exactly',
+      values: { count: 4 },
+    });
     expect(describeFilterField(withFilter({ description: { like: '%harbour%' } }), 'description')?.detail).toBe(
       'harbour',
     );
@@ -58,10 +67,19 @@ describe('describeFilterField', () => {
 
   it('renders a range from whichever bounds were supplied', () => {
     expect(
-      describeFilterField(withFilter({ takenAt: { gte: '2026-01-01', lte: '2026-02-01' } }), 'takenAt')?.detail,
+      describeFilterField(withFilter({ createdAt: { gte: '2026-01-01', lte: '2026-02-01' } }), 'createdAt')?.detail,
     ).toBe('2026-01-01 – 2026-02-01');
-    expect(describeFilterField(withFilter({ takenAt: { gte: '2026-01-01' } }), 'takenAt')?.detail).toBe('2026-01-01');
-    expect(describeFilterField(withFilter({ takenAt: { lte: '2026-02-01' } }), 'takenAt')?.detail).toBe('2026-02-01');
+    expect(describeFilterField(withFilter({ createdAt: { gte: '2026-01-01' } }), 'createdAt')?.detail).toBe(
+      '2026-01-01',
+    );
+    expect(describeFilterField(withFilter({ createdAt: { lte: '2026-02-01' } }), 'createdAt')?.detail).toBe(
+      '2026-02-01',
+    );
+    // a capture date reads as dates, formatted by the caller
+    expect(describeFilterField(withFilter({ takenAt: { lte: '2026-02-01' } }), 'takenAt')?.detailText).toEqual({
+      key: 'frameleaf_library_filter_date_through',
+      values: { to: new Date('2026-02-01T00:00:00') },
+    });
   });
 
   it('counts an or branch once, as the badge does', () => {

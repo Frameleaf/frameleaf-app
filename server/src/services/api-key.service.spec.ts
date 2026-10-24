@@ -329,5 +329,17 @@ describe(ApiKeyService.name, () => {
 
       expect(mocks.apiKey.getByUserId).toHaveBeenCalledWith(auth.user.id);
     });
+
+    it('says when each key was last used (FL-367)', async () => {
+      const auth = AuthFactory.create();
+      const used = ApiKeyFactory.create({ userId: auth.user.id });
+      const never = ApiKeyFactory.create({ userId: auth.user.id });
+      mocks.apiKey.getByUserId.mockResolvedValue([used, never]);
+      mocks.systemMetadata.get.mockResolvedValue({ [used.id]: '2026-10-20T10:00:00.000Z' });
+
+      const keys = await sut.getAll(auth);
+
+      expect(keys.map((key) => key.lastUsedAt)).toEqual(['2026-10-20T10:00:00.000Z', null]);
+    });
   });
 });

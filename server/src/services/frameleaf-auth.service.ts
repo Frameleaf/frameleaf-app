@@ -57,6 +57,7 @@ import {
   hasInstanceAccess,
   httpsOrigin,
 } from 'src/utils/frameleaf-sign-in.js';
+import { localNotificationText } from 'src/utils/preferences.js';
 import { publishedLocalOrigins } from 'src/utils/public-url.js';
 import { createSession } from 'src/utils/session.js';
 
@@ -424,14 +425,17 @@ export class FrameleafAuthService extends BaseService {
       // FL-235: a person invited to this server gets their own account, with the quota the
       // administrator chose for invited accounts (unlimited by default); the server's owner is never
       // capped: the owner is the link's account (its sub) when known, as GET /users/me reports it
-      const { frameleafCloud } = await this.getConfig({ withCache: false });
+      const { frameleafCloud, user: userConfig } = await this.getConfig({ withCache: false });
       const { link: cloudLink, linked } = await readCloudLink({
         configRepository: this.configRepository,
         systemMetadataRepository: this.systemMetadataRepository,
       });
       const ownerAccountId = linked ? cloudLink?.accountId : undefined;
       const isOwner = ownerAccountId ? profile.sub === ownerAccountId : access === 'owner';
-      const quota = isOwner ? null : (frameleafCloud.signIn?.invitedStorageQuota ?? null);
+      // FL-516: "Space for new people" decides; the older invited-account default applies while it is unset
+      const quota = isOwner
+        ? null
+        : (userConfig.newUserStorageQuota ?? frameleafCloud.signIn?.invitedStorageQuota ?? null);
       // The caller holds the setup claim lock before the Cloud authority lock, as setup does.
       user = await this.createUser({
         name: typeof profile.name === 'string' && profile.name.trim() ? profile.name.trim() : email,
@@ -911,12 +915,19 @@ export class FrameleafAuthService extends BaseService {
       if (admin.id === user.id) {
         continue;
       }
+      const name = user.name || user.email;
+      const { title, body } = await localNotificationText(
+        this.userRepository,
+        admin.id,
+        { version: 1, key: 'admin-granted', args: { name } },
+        { title: 'New administrator', body: `${name} became an administrator through Frameleaf Cloud` },
+      );
       const item = await this.notificationRepository.create({
         userId: admin.id,
         type: NotificationType.SystemMessage,
         level: NotificationLevel.Info,
-        title: 'New administrator',
-        description: `${user.name || user.email} became an administrator through Frameleaf Cloud`,
+        title,
+        description: body,
         data: JSON.stringify({ userId: user.id, source: 'frameleaf_role' }),
       });
       this.websocketRepository.clientSend('on_notification', admin.id, mapNotification(item));

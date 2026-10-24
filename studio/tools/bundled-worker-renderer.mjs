@@ -313,6 +313,7 @@ export async function createEngineRenderer({
         codecs: matrix?.codecs ?? [],
         formats: matrix?.formats ?? [],
         writers: matrix?.writers ?? {},
+        colorPrecision: matrix?.colorPrecision ?? null,
       };
     } catch (error) {
       throw signal?.aborted ? signal.reason : error;
@@ -421,6 +422,72 @@ export async function createEngineRenderer({
         if (error?.code === 'MISSING_MEDIA')
           throw new BundledRefusal('missing_media', 'A clip reads media this export was not granted.');
         throw error;
+      } finally {
+        await session.close();
+      }
+    },
+    /**
+     * FL-107: the engine's float route, one frame at a time, as rgb48le BT.2020 signal in `target`
+     * (`pq` or `hlg`) with alpha applied over black. Frames are absolute timeline frames
+     * `bounds.inPoint` .. `bounds.outPoint - 1`; any engine warning or HDR refusal stops the export.
+     */
+    async *renderSignalFrames({ fonts = [], project, files, bounds, target, signal }) {
+      signal?.throwIfAborted();
+      requireGraphFonts(project, fonts);
+      const session = await open(files, signal);
+      try {
+        await registerClaimFonts(session.page, fonts);
+        const media = [...files.keys()].map((mediaId) => ({ mediaId, url: session.server.mediaUrl(mediaId) }));
+        for (let frame = bounds.inPoint; frame < bounds.outPoint; frame++) {
+          signal?.throwIfAborted();
+          let result;
+          try {
+            result = await session.page.evaluate(
+              async ({ project, media, frame, target }) => {
+                const rendered = await window.freecut.renderFrameSignal({ project, media, frame, target, strict: true });
+                const { width, height, rgba } = rendered;
+                const out = new Uint16Array(width * height * 3);
+                for (let i = 0; i < width * height; i++) {
+                  const alpha = Math.min(Math.max(rgba[i * 4 + 3], 0), 1);
+                  for (let c = 0; c < 3; c++) {
+                    out[i * 3 + c] = Math.round(Math.min(Math.max(rgba[i * 4 + c] * alpha, 0), 1) * 65_535);
+                  }
+                }
+                const bytes = new Uint8Array(out.buffer);
+                let binary = '';
+                for (let i = 0; i < bytes.length; i += 32_768) binary += String.fromCharCode(...bytes.subarray(i, i + 32_768));
+                return {
+                  width,
+                  height,
+                  base64: btoa(binary),
+                  warnings: (rendered.warnings ?? []).map((warning) => warning?.code ?? 'UNKNOWN'),
+                };
+              },
+              { project, media, frame, target },
+            );
+          } catch (error) {
+            if (signal?.aborted) throw signal.reason;
+            const message = String(error?.message ?? error);
+            if (/HdrRenderUnavailableError|not migrated to linear HDR|linear HDR/i.test(message)) {
+              throw new BundledRefusal(
+                'hdr_unsupported',
+                `The Studio engine cannot render this project as HDR yet (${message.split('\n')[0].replace(/^.*?Error:\s*/, '')}).`,
+              );
+            }
+            if (/requires WebGPU|float route/i.test(message)) {
+              throw new BundledRefusal('hdr_needs_gpu', 'HDR export renders on the GPU float route, which this worker could not open.');
+            }
+            if (/MISSING_MEDIA/.test(message)) throw new BundledRefusal('missing_media', 'A clip reads media this export was not granted.');
+            throw error;
+          }
+          if (result.warnings.length > 0) {
+            throw new BundledRefusal(
+              'render_warning',
+              `The engine could not render this project exactly (${[...new Set(result.warnings)].join(', ')}); nothing was exported.`,
+            );
+          }
+          yield { width: result.width, height: result.height, rgb48: Buffer.from(result.base64, 'base64') };
+        }
       } finally {
         await session.close();
       }

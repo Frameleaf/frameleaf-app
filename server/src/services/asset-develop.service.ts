@@ -1419,8 +1419,9 @@ export class AssetDevelopService {
         code: 'develop_key_frame_unavailable',
       });
     }
+    // the stored format carries asset.duration, which is in milliseconds
     const duration = motion.format.duration;
-    if (Number.isFinite(duration) && duration > 0 && timeMs >= duration * 1000) {
+    if (Number.isFinite(duration) && duration > 0 && timeMs >= duration) {
       throw new BadRequestException({
         message: 'The key frame is past the end of the motion clip',
         code: 'develop_key_frame_out_of_range',

@@ -412,6 +412,27 @@ describe('supervisor worker-local restart lifecycle', () => {
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'microservices']);
   });
 
+  it('backs off an executor that keeps failing at startup, and resets after a minute of running', async () => {
+    const restarts = () => fixture.starts.filter((name) => name === 'microservices').length;
+    latest(FrameleafWorker.Microservices).emit('exit', 1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(restarts()).toBe(2);
+    latest(FrameleafWorker.Microservices).emit('exit', 1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(restarts()).toBe(2);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(restarts()).toBe(3);
+    latest(FrameleafWorker.Microservices).emit('exit', 1);
+    await vi.advanceTimersByTimeAsync(3999);
+    expect(restarts()).toBe(3);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(restarts()).toBe(4);
+    await vi.advanceTimersByTimeAsync(61_000);
+    latest(FrameleafWorker.Microservices).emit('exit', 1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(restarts()).toBe(5);
+  });
+
   it('still restarts a poisoned API pool without restarting healthy workers', async () => {
     latest(FrameleafWorker.Api).emit('message', { type: 'database-unusable' });
     latest(FrameleafWorker.Api).emit('exit', 1);
@@ -438,7 +459,8 @@ describe('supervisor worker-local restart lifecycle', () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'microservices']);
     proof.resolve();
-    await vi.advanceTimersByTimeAsync(1000);
+    // its second failure in a row waits 2 s
+    await vi.advanceTimersByTimeAsync(2000);
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'microservices', 'microservices']);
   });
 });

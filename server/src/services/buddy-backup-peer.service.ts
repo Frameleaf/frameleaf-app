@@ -70,6 +70,11 @@ export class BuddyBackupPeerService {
     return this.instanceIdentityRepository.currentSigner();
   }
 
+  /** The Frameleaf account this server is linked to, when the link recorded it. */
+  async accountId() {
+    return (await readCloudLink(this.deps())).link?.accountId ?? null;
+  }
+
   async cloudTarget() {
     const { linked, link, cloudUrl } = await readCloudLink(this.deps());
     if (!linked || !cloudUrl || !link?.instanceId || link.heartbeat?.cloneSuspected)
@@ -143,8 +148,6 @@ export class BuddyBackupPeerService {
     scope: 'read' | 'write',
     handshake = false,
   ): Promise<BuddyPeerAccess> {
-    if ((await this.rates.hit('buddy:requests', 60)).count > 120)
-      throw new HttpException('Buddy request rate limit reached', 429);
     const authorization = request.headers.authorization;
     const proof = request.headers.dpop;
     if (!authorization?.startsWith('DPoP ') || typeof proof !== 'string')
@@ -169,6 +172,10 @@ export class BuddyBackupPeerService {
         (!state.pairing.readUntil || Date.parse(state.pairing.readUntil) <= Date.now()))
     )
       throw new ForbiddenException('Buddy access is unavailable');
+    // Counted only once the request names a vault paired with this server, so callers without the
+    // pairing cannot spend the buddy's budget; it still guards the Cloud key and grant checks below.
+    if ((await this.rates.hit('buddy:requests', 60)).count > 120)
+      throw new HttpException('Buddy request rate limit reached', 429);
     if (
       scope === 'write' &&
       (process.env.FRAMELEAF_BUDDY_BACKUP !== 'true' ||

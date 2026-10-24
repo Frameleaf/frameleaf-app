@@ -34,6 +34,7 @@ import {
   validPrivateCopy,
   validValidationInputs,
 } from 'src/utils/icloud-private-copy.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 
 class ScheduledReadonlyUnsettledError extends Error {}
@@ -750,7 +751,7 @@ export class ICloudScheduledStagingService {
         released = true;
         const cleanup = Promise.allSettled(pending)
           .then(async () => {
-            const closed = await Promise.allSettled(files.map(({ handle }) => Promise.try(() => handle.close())));
+            const closed = await Promise.allSettled(files.map(({ handle }) => tryPromise(() => handle.close())));
             const failures = closed.filter((close) => close.status === 'rejected').map((close) => close.reason);
             if (failures.length > 0) throw new AggregateError(failures, 'scheduled_audit_close_failed');
             await this.repository.finishPrivateWork(input, privateWork);
@@ -762,7 +763,7 @@ export class ICloudScheduledStagingService {
       };
       return { receipt, validation, current, release, paths: files.map(({ path }) => path) };
     } catch (error) {
-      const closed = await Promise.allSettled(files.map(({ handle }) => Promise.try(() => handle.close())));
+      const closed = await Promise.allSettled(files.map(({ handle }) => tryPromise(() => handle.close())));
       if (!(error instanceof ScheduledReadonlyUnsettledError) && closed.every(({ status }) => status === 'fulfilled')) {
         await this.repository.finishPrivateWork(input, privateWork);
       }

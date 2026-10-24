@@ -638,10 +638,10 @@ export class MediaOperationService {
       throw new BadRequestException('Start the scan or search again from Library Care');
     }
 
-    // FL-73: a deduplication plan is applied only after a fresh review, the typed confirmation and
-    // the one-plan-at-a-time check; copying the old row would skip all of them.
+    // FL-413: reviewed per-account deduplication plans are retired; identical files are merged
+    // automatically by the identical-files run ("Check again" in Library care).
     if (operation.kind === MediaOperationKind.PhysicalDeduplication) {
-      throw new BadRequestException('Apply a new reviewed plan from the Physical deduplication page');
+      throw new BadRequestException('Identical files are merged automatically; use Check again in Library care');
     }
 
     // FL-78: a library scan reads the library's folders afresh and admits one scan per library; it is

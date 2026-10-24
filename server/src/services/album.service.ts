@@ -33,7 +33,14 @@ import {
 } from 'src/dtos/album.dto.js';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AlbumMapMarkerDto, MapMarkerResponseDto } from 'src/dtos/map.dto.js';
-import { AlbumKind, AlbumUserRole, Permission, PushEventType, SharedSpaceEventType } from 'src/enum.js';
+import {
+  AlbumKind,
+  AlbumUserRole,
+  Permission,
+  PushEventType,
+  SharedSpaceEventType,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { AlbumAssetCount, AlbumInfoOptions, AlbumReadOptions } from 'src/repositories/album.repository.js';
 import { AlbumOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -81,6 +88,11 @@ export class AlbumService extends BaseService {
     let albums: MapAlbumDto[] = assetId
       ? await this.albumRepository.getByAssetId(ownerId, assetId, privacyOptions)
       : await this.albumRepository.getAll(ownerId, rest);
+    // FL-522: a smart album the person hid stays out of their own album list (it keeps filling)
+    const hidden: Set<string> | undefined = await this.smartAlbumRepository.getHiddenAlbumIds(ownerId);
+    if (hidden && hidden.size > 0) {
+      albums = albums.filter((album) => !hidden.has(album.id));
+    }
 
     if (albums.length === 0) {
       return [];
@@ -165,12 +177,13 @@ export class AlbumService extends BaseService {
     }
 
     const ids = albums.map((album) => album.id);
-    const [results, smartBackedIds, ruleAlbumIds, rules, positions] = await Promise.all([
+    const [results, smartBackedIds, ruleAlbumIds, rules, positions, recovered] = await Promise.all([
       this.albumRepository.getMetadataForIds(ids, privacyOptions),
       this.smartAlbumRepository.getSmartBackedAlbumKinds(ids),
       this.classificationRepository.getRuleAlbumIds(ids),
       this.classificationRepository.getRules(auth.user.id),
       this.albumRepository.getPositions(auth.user.id),
+      this.recoveredAlbumIds(),
     ]);
     const ruleByAlbum = new Map(rules.map((rule) => [rule.albumId, rule.id]));
     const albumMetadata: Record<string, AlbumAssetCount> = {};
@@ -189,6 +202,7 @@ export class AlbumService extends BaseService {
           isSmart: smartBackedIds.has(album.id) || ruleAlbumIds.has(album.id),
           smartRuleId: ruleByAlbum.get(album.id) ?? null,
           smartKind: (smartBackedIds.get(album.id) as SmartAlbumBuiltInKind | undefined) ?? null,
+          ...(recovered.has(album.id) && { recovered: true }),
         })),
       ),
       positions,
@@ -249,6 +263,15 @@ export class AlbumService extends BaseService {
     };
   }
 
+  /**
+   * FL-416: the "Recovered Media" albums the identical-files run made, one per owner, with files Immich had
+   * lost track of. Remembered by id, so a renamed album keeps its cover mark.
+   */
+  private async recoveredAlbumIds(): Promise<Set<string>> {
+    const state = await this.systemMetadataRepository.get(SystemMetadataKey.IdenticalFiles);
+    return new Set(Object.values(state?.recoveredAlbums ?? {}));
+  }
+
   /** FL-326: the partner library the viewer's own album was copied from; never shown through a shared link. */
   private async originOf(auth: AuthDto, albumId: string) {
     if (auth.sharedLink) {
@@ -287,6 +310,7 @@ export class AlbumService extends BaseService {
       coverFollowsNewest: (await this.albumRepository.isCoverFollowingNewest(album.id)) === true,
       ...(await this.smartStateOf(auth, album.id)),
       ...(await this.originOf(auth, album.id)),
+      ...((await this.recoveredAlbumIds()).has(album.id) && { recovered: true }),
     };
   }
 
@@ -983,6 +1007,10 @@ export class AlbumService extends BaseService {
         });
         return;
       }
+    }
+
+    if (album.albumUsers.every(({ user }) => user.id !== userId)) {
+      throw new BadRequestException('Album not shared with user');
     }
 
     await this.albumUserRepository.update({ albumId: id, userId }, { role: dto.role });

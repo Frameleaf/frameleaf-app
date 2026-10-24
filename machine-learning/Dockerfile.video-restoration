@@ -31,10 +31,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates ffmpeg git tini && \
+    test ! -e /etc/ssl/certs/emSign_ECC_Root_CA_-_G3.pem && test ! -e /etc/ssl/certs/Comodo_AAA_Services_root.pem && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.13.4@sha256:9f130421e930bfbdc563c00740466603f8723158e90297d07957c2294640262b /uv /uvx /bin/
 
 # The worker app uses the repository's locked machine-learning dependencies (CPU extra: it
 # never loads a model itself), in its own environment separate from both model runtimes.
@@ -106,8 +107,9 @@ RUN command -v nvcc >/dev/null || \
     { echo "SEEDVR2_BUILD_BASE must be a pinned CUDA devel image (nvcc is required)" >&2; exit 1; }
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates git build-essential && \
+    test ! -e /etc/ssl/certs/emSign_ECC_Root_CA_-_G3.pem && test ! -e /etc/ssl/certs/Comodo_AAA_Services_root.pem && \
     rm -rf /var/lib/apt/lists/*
-COPY --from=ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.13.4@sha256:9f130421e930bfbdc563c00740466603f8723158e90297d07957c2294640262b /uv /uvx /bin/
 
 ARG SEEDVR2_REVISION
 ARG SEEDVR2_PYTHON

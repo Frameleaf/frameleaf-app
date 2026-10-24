@@ -289,3 +289,34 @@ def test_failed_inference_releases_sessions_before_removing_runtime_files(bindin
     monkeypatch.setattr(OpenClipTextualEncoder, "predict", Mock(side_effect=failure))
     with pytest.raises(ValueError, match="producer_identity_unavailable"):
         producer_binding.BoundPredictor().predict(json.dumps(binding), None, "fixture")
+
+
+def test_overlapping_bound_requests_wait_instead_of_refusing(monkeypatch):
+    import threading
+    import time
+
+    from frameleaf_ml.producer_binding import BoundPredictor
+
+    predictor = BoundPredictor()
+    active = 0
+    overlapped = False
+
+    def slow(raw, image, text):
+        nonlocal active, overlapped
+        active += 1
+        overlapped |= active > 1
+        time.sleep(0.05)
+        active -= 1
+        return {"ok": raw}
+
+    monkeypatch.setattr(predictor, "_predict", slow)
+    results: list[dict[str, str]] = []
+    threads = [
+        threading.Thread(target=lambda i=i: results.append(predictor.predict(str(i), None, "a"))) for i in range(3)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert sorted(r["ok"] for r in results) == ["0", "1", "2"]
+    assert not overlapped

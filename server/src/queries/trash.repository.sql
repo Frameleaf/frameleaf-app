@@ -32,6 +32,24 @@ order by
   "asset"."deletedAt" desc,
   "asset"."id" desc
 
+-- TrashRepository.countTrashedBefore
+select
+  count(*) as "count"
+from
+  "asset"
+where
+  "status" = $1
+  and "deletedAt" < $2
+
+-- TrashRepository.countAddedSince
+select
+  count(*) as "count"
+from
+  "asset"
+where
+  "createdAt" >= $1
+  and "deletedAt" is null
+
 -- TrashRepository.restoreAll
 update "asset"
 set

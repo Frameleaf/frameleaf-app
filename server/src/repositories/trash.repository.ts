@@ -53,6 +53,8 @@ export type TrashScopeOptions = {
 export type TrashItemsOptions = TrashScopeOptions & {
   terms: string[];
   type?: AssetType;
+  /** Only items deleted at or before this moment (those going within a number of days). */
+  deletedBefore?: Date;
   order: TrashItemSort;
   page: number;
   size: number;
@@ -155,6 +157,8 @@ export class TrashRepository {
           'offline',
         ),
         sql<string>`coalesce(sum(asset_exif."fileSizeInByte"), 0)`.as('bytes'),
+        // FL-539: the oldest item, which is removed for good first
+        sql<Date | null>`min(asset."deletedAt")`.as('oldestDeletedAt'),
       ])
       .executeTakeFirstOrThrow();
     const deleted = await this.scope(this.db, userId, AssetStatus.Deleted, options)
@@ -165,13 +169,39 @@ export class TrashRepository {
       offline: Number(listed.offline),
       bytes: toByteCount(listed.bytes),
       pendingDeletion: Number(deleted.count),
+      oldestDeletedAt: listed.oldestDeletedAt ? new Date(listed.oldestDeletedAt) : null,
     };
+  }
+  /**
+   * FL-365: what waits in every account's trash, per account (counts and sizes only, never the
+   * items), and how many were deleted before `before`: what a shorter keep time removes tonight.
+   */
+  getEveryone(before: Date) {
+    return this.db
+      .selectFrom('asset')
+      .innerJoin('user', 'user.id', 'asset.ownerId')
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .where('asset.status', '=', AssetStatus.Trashed)
+      .where('asset.deletedAt', 'is not', null)
+      .where('asset.visibility', '!=', AssetVisibility.Hidden)
+      .groupBy(['user.id', 'user.name'])
+      .select((eb) => [
+        'user.id as userId',
+        'user.name as name',
+        eb.fn.countAll<string>().as('count'),
+        sql<string>`coalesce(sum(asset_exif."fileSizeInByte"), 0)`.as('bytes'),
+        sql<Date | null>`min(asset."deletedAt")`.as('oldestDeletedAt'),
+        sql<string>`count(*) filter (where asset."deletedAt" < ${before})`.as('older'),
+      ])
+      .orderBy(sql`count(*)`, 'desc')
+      .execute();
   }
   /** One page of the owner's trash, filtered and ordered as the page asks, with the matching total. */
   async getItems(userId: string, options: TrashItemsOptions) {
     const filtered = this.scope(this.db, userId, 'listed', options)
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
       .$if(!!options.type, (qb) => qb.where('asset.type', '=', options.type as AssetType))
+      .$if(!!options.deletedBefore, (qb) => qb.where('asset.deletedAt', '<=', options.deletedBefore as Date))
       .$call((qb) => {
         let query = qb;
         for (const term of options.terms) {
@@ -203,6 +233,10 @@ export class TrashRepository {
         query = query.orderBy('asset.originalFileName', 'asc').orderBy('asset.id', 'asc');
         break;
       }
+      case TrashItemSort.Soonest: {
+        query = query.orderBy('asset.deletedAt', (ob) => ob.asc().nullsLast()).orderBy('asset.id', 'asc');
+        break;
+      }
       default: {
         query = query.orderBy('asset.deletedAt', (ob) => ob.desc().nullsLast()).orderBy('asset.id', 'desc');
         break;
@@ -216,6 +250,30 @@ export class TrashRepository {
     rows.splice(options.size);
     return { items: rows, hasNextPage, total: Number(count) };
   }
+  /** FL-518: items in every account's Trash deleted before `cutoff` (what the tidy-up removes). */
+  @GenerateSql({ params: [DummyValue.DATE] })
+  async countTrashedBefore(cutoff: Date): Promise<number> {
+    const { count } = await this.db
+      .selectFrom('asset')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('status', '=', AssetStatus.Trashed)
+      .where('deletedAt', '<', cutoff)
+      .executeTakeFirstOrThrow();
+    return Number(count);
+  }
+
+  /** FL-518: photos and videos added to any library since `since` and still there. */
+  @GenerateSql({ params: [DummyValue.DATE] })
+  async countAddedSince(since: Date): Promise<number> {
+    const { count } = await this.db
+      .selectFrom('asset')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('createdAt', '>=', since)
+      .where('deletedAt', 'is', null)
+      .executeTakeFirstOrThrow();
+    return Number(count);
+  }
+
   /**
    * The set an action would change, with what the review shows about each item. `ids` names the
    * items for the actions that take them; without it the whole visible trash is the set.

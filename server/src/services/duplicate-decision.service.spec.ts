@@ -108,6 +108,7 @@ describe(DuplicateDecisionService.name, () => {
       beginUndo: vi.fn().mockResolvedValue(true),
       markUndone: vi.fn().mockResolvedValue(undefined),
       listRecent: vi.fn().mockResolvedValue([]),
+      getAutomaticOperationIds: vi.fn().mockResolvedValue(new Set()),
       listActiveOperations: vi.fn().mockResolvedValue([]),
     };
     access = { asset: { checkOwnerAccess: vi.fn().mockResolvedValue(new Set()) } };
@@ -258,6 +259,22 @@ describe(DuplicateDecisionService.name, () => {
       expect(history.recent.map(({ operationId: id }) => id)).toEqual([operationId, older]);
       expect(history.recent[0].undoable).toBe(false);
       expect(history.recent[1].undoable).toBe(true);
+    });
+
+    it('marks the jobs Frameleaf made itself, merging identical files (FL-416)', async () => {
+      const automaticJob = newUuidV7();
+      repository.listRecent.mockResolvedValue([
+        recorded({ appliedAt: new Date() }),
+        recorded({ operationId: automaticJob, duplicateId: newUuid(), appliedAt: new Date() }),
+      ]);
+      repository.getAutomaticOperationIds.mockResolvedValue(new Set([automaticJob]));
+
+      const history = await sut.getHistory(elevated);
+
+      const byJob = new Map(history.recent.map((batch) => [batch.operationId, batch]));
+      expect(byJob.get(automaticJob)?.automatic).toBe(true);
+      expect(byJob.get(operationId)?.automatic).toBe(false);
+      expect(repository.getAutomaticOperationIds).toHaveBeenCalledWith([operationId, automaticJob]);
     });
 
     it('offers undo again after an unfinished undo job, never for copies gone for good', async () => {

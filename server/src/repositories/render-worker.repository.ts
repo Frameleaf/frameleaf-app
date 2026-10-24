@@ -38,6 +38,7 @@ import {
   evaluateClaimAdmission,
   evaluateRenderOutput,
   evaluateSessionAdmission,
+  operationOutputRequest,
   tightestLimits,
 } from 'src/utils/render-admission.js';
 
@@ -963,7 +964,7 @@ export class RenderWorkerRepository {
               engineDigest: session.engineDigest,
             },
           ],
-          operation.settings as { format: string; color: string; resolution: string },
+          operationOutputRequest(operation.settings, operation.snapshot),
         );
         if (!output.supported)
           return refuse(

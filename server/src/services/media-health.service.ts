@@ -289,7 +289,8 @@ export class MediaHealthService {
       name: LIBRARY_CARE_HEALTH_SCAN_CRON,
       expression: libraryCare.healthScanCronExpression,
       onTick: () => handlePromiseError(this.startScheduledScans(), this.logger),
-      start: libraryCare.healthScan,
+      // FL-363: the overnight schedule's "Check files" step starts the health scans
+      start: false,
     });
   }
 
@@ -301,7 +302,8 @@ export class MediaHealthService {
     this.cronRepository.update({
       name: LIBRARY_CARE_HEALTH_SCAN_CRON,
       expression: libraryCare.healthScanCronExpression,
-      start: libraryCare.healthScan,
+      // FL-363: the overnight schedule's "Check files" step starts the health scans
+      start: false,
     });
   }
 

@@ -69,7 +69,10 @@ Its configuration includes `media: {"mode":"manager-in-place", "authority":"fram
 Every `mediaRoots` entry must use exactly the same absolute normalized `source`
 and `target` path. Nested Manager roots select the most specific mount, matching
 Docker mount precedence; duplicate destinations are refused. Manager mounts the existing media at those exact container
-paths, read-only during import; it does not copy or back up media. Root mappings,
+paths, read-only during import; it does not copy or back up media. Before the import, Manager checks with the
+server image and its live mounts that every writable media root is writable by the server (FL-414):
+after activation the identical-files run moves extra copies to the file trash and recovers orphans in
+place. A folder that is not writable stops the operation before any source grant, naming the folder. Root mappings,
 media mode, deployment and operation identity are included in the existing
 configuration fingerprint. They cannot change on resume or verification.
 
@@ -93,14 +96,14 @@ Invoke `frameleaf-admin import-immich preflight --config /private/import.json`,
 then `run` (or `resume` for a partial journal), then `verify`, in the offline
 container. The existing admin module initializes the canonical PostgreSQL 19
 schema with inactive imports allowed, without starting ordinary API/workers.
-Verification retains all five derived-work snapshots and activates the journal before
-Manager starts the app. In a Manager `new_import`, all five snapshots commit held in
+Verification retains all six derived-work snapshots (FL-414 adds identical files) and activates the journal before
+Manager starts the app. In a Manager `new_import`, all six snapshots commit held in
 `enumerating` state, including empty snapshots. Their stable fingerprint-derived run
 records `selection.managerSetup` with installation and operation identity,
 `preparedAt` after the complete manifest audit, and `startedAt: null`. No worker can
 admit this retained work before first setup explicitly releases it. The setup service
 requires an admin, the chosen and validated initial ML settings, the matching activated
-journal, and all five captured stages; it stamps `startedAt` and releases the held
+journal, and all six captured stages; it stamps `startedAt` and releases the held
 snapshots atomically. A resumed import preserves that start and never revives cancelled
 or attention-required stages.
 
@@ -252,6 +255,14 @@ Ineligible faces remain excluded, and the ordinary thumbnail worker retains its
 featured-face, protected-content and publication checks. An empty person stage does
 not prevent the run completing. This handoff promises durable repair ownership, not
 that rendering has already finished.
+FL-414: the run also holds one `IdenticalFilesCheck` item (`itemKey` `identical-files`, payload
+`importRunId`), frozen at verify with the other stages and admitted with them, so the importer
+still changes no files. Once admitted it starts the identical-files run (FL-413) for this import:
+every managed original is read again, SHA-1 records are upgraded, identical files are stored once
+(the oldest copy across people; the oldest photo inside one library, the other to the Trash through
+a duplicate decision), orphans are recovered into each owner's Recovered Media album, and extra
+copies wait in the file trash ("Unused files"). A retried item after that run finished changes
+nothing. An empty library still holds this item, because orphans can exist without any asset.
 After activation, the coordinator admits manifest work in batches of 250 up to 1,000 live
 jobs per queue, refilling when that queue reaches 500. It activates only when every gate has passed;
 derived jobs need to be durably retained, not already executed. Worker/API startup must call

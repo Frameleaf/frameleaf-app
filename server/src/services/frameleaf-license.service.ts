@@ -113,6 +113,8 @@ const refreshResponseSchema = z.object({
 });
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
+/** A personal licence's uniqueness key, from its licence id: the same whether the key was pasted or redeemed. */
+const licenceKeySha256 = (licenceId: string) => sha256(`lic:${licenceId}`);
 
 /**
  * FL-177: Frameleaf Cloud refused an activation because this server's ID is already registered
@@ -639,10 +641,19 @@ export class FrameleafLicenseService extends BaseService {
     if (license.kind !== 'individual') {
       throw new BadRequestException('Frameleaf Cloud returned a licence that is not a personal one.');
     }
+    // the licence id is what a link-code redemption knows too, so one licence has one key in either path
+    const licenceId = license.claims.lic?.id;
+    const licenceSha256 = licenceId ? licenceKeySha256(licenceId) : keySha256;
+    if (licenceSha256 !== keySha256) {
+      const holder = await this.frameleafUserLicenseRepository.getByKeyHash(licenceSha256);
+      if (holder && holder.userId !== auth.user.id) {
+        throw new ConflictException('This key is already active for another account on this server.');
+      }
+    }
     const row = await this.frameleafUserLicenseRepository.upsert({
       userId: auth.user.id,
       keyHint: check.last4,
-      keySha256,
+      keySha256: licenceSha256,
       binding,
       certificate,
       activationId: activationId ?? null,
@@ -746,7 +757,7 @@ export class FrameleafLicenseService extends BaseService {
     }
     if (license.kind === 'individual') {
       // the key itself never reaches this server: the licence id stands in for it in the uniqueness check
-      const keySha256 = sha256(`lic:${license.claims.lic?.id ?? license.claims.jti ?? answer.certificate}`);
+      const keySha256 = licenceKeySha256(license.claims.lic?.id ?? license.claims.jti ?? answer.certificate);
       const existing = await this.frameleafUserLicenseRepository.getByKeyHash(keySha256);
       if (existing && existing.userId !== auth.user.id) {
         throw new ConflictException('This key is already active for another account on this server.');

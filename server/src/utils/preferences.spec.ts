@@ -10,6 +10,7 @@ import {
   getPreferencesPartial,
   getPreferencesRevision,
   mergePreferences,
+  relockMinutesOf,
   restrictPreferencesUpdate,
   withoutStoredLockedRuleIds,
 } from 'src/utils/preferences.js';
@@ -83,6 +84,24 @@ describe('preferences (FL-77 admin casting permission)', () => {
     it('does not change unrelated groups', () => {
       const preferences = getPreferences(stored({ memories: { enabled: false } }));
       expect(mapPreferences(preferences).memories).toEqual(preferences.memories);
+    });
+  });
+
+  describe('Lock again after (FL-517)', () => {
+    it('lasts an hour unless the account chose 5 or 15 minutes', () => {
+      expect(relockMinutesOf(getPreferences([]))).toBe(60);
+      expect(relockMinutesOf(getPreferences(stored({ lockedPin: { relockMinutes: 15 } })))).toBe(15);
+      expect(relockMinutesOf(getPreferences(stored({ lockedPin: { relockMinutes: 7 } })))).toBe(60);
+    });
+
+    it('is the account’s own choice: an administrator cannot change it', () => {
+      const current = getPreferences([]);
+      expect(restrictPreferencesUpdate(current, { lockedPin: { relockMinutes: 5 } }, 'admin')).not.toHaveProperty(
+        'lockedPin',
+      );
+      expect(restrictPreferencesUpdate(current, { lockedPin: { relockMinutes: 5 } }, 'user').lockedPin).toEqual({
+        relockMinutes: 5,
+      });
     });
   });
 

@@ -2558,7 +2558,7 @@ describe(MediaHealthService.name, () => {
       vi.mocked(mocks.systemMetadata.get).mockResolvedValue({ libraryCare } as never);
     };
 
-    it('schedules the health scan on the server that holds the lock, as the settings say', async () => {
+    it('keeps the health scan timer stopped on the server that holds the lock: the overnight schedule starts it (FL-363)', async () => {
       vi.mocked(mocks.database.tryLock).mockResolvedValue(true);
       vi.mocked(mocks.cron.create).mockReturnValue();
       vi.mocked(mocks.cron.update).mockReturnValue();
@@ -2575,7 +2575,7 @@ describe(MediaHealthService.name, () => {
       expect(mocks.cron.update).toHaveBeenCalledWith({
         name: 'libraryCareHealthScan',
         expression: '0 03 * * *',
-        start: true,
+        start: false,
       });
     });
 

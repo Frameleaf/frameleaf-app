@@ -57,6 +57,7 @@ import {
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { DATABASE_POOL_SIZE, boundExecutionReservations } from 'src/utils/execution-database.js';
+import { displayPathSql } from 'src/utils/library-path.js';
 import {
   isDefaultVisible,
   isLocked,
@@ -113,16 +114,17 @@ export const getKyselyConfig = (connection: DatabaseConnectionParams): KyselyCon
       if (isAssetChecksumConstraint(event.error)) {
         return;
       }
-      const privateInference = /\bdesktop_(?:ml_(?:task|attempt)|worker_(?:session|challenge))\b/u.test(
-        event.query.sql,
-      );
+      // Desktop inference rows and queued job payloads (JOBS_WITH_SENSITIVE_DATA) must never be logged.
+      const privateData =
+        /\bdesktop_(?:ml_(?:task|attempt)|worker_(?:session|challenge))\b/u.test(event.query.sql) ||
+        /\b(?:insert\s+into|update)\s+(?:public\.)?"?job(?:_run_item)?"?(?![\w"])/iu.test(event.query.sql);
       // eslint-disable-next-line import-x/no-named-as-default-member -- postgres exposes this class on its default ESM export.
       const sqlState = event.error instanceof postgres.PostgresError ? event.error.code : undefined;
       console.error('Query failed :', {
         durationMs: event.queryDurationMillis,
-        error: privateInference ? { code: sqlState } : event.error,
+        error: privateData ? { code: sqlState } : event.error,
         sql: event.query.sql,
-        params: privateInference ? '[redacted]' : event.query.parameters,
+        params: privateData ? '[redacted]' : event.query.parameters,
       });
     },
   };
@@ -687,11 +689,7 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
           .where('asset_file.path', '=', options.encodedVideoPath!),
       )
       .$if(!!options.originalPath, (qb) =>
-        qb.where(
-          sql`f_unaccent(asset."originalPath")`,
-          'ilike',
-          sql`'%' || f_unaccent(${options.originalPath}) || '%'`,
-        ),
+        qb.where(sql`f_unaccent(${displayPathSql()})`, 'ilike', sql`'%' || f_unaccent(${options.originalPath}) || '%'`),
       )
       .$if(!!options.originalFileName, (qb) =>
         qb.where(
@@ -935,8 +933,9 @@ function stringPatternPredicates(eb: AssetExpressionBuilder, column: StringColum
   if (filter === undefined) {
     return [];
   }
-  const ref = sql.ref(column);
-  const predicates = comparisonPredicates(eb, column, filter);
+  // FL-417: path search follows the photo's own path, never the folder a shared file is kept in
+  const ref = column === 'asset.originalPath' ? displayPathSql() : sql.ref(column);
+  const predicates = comparisonPredicates(eb, ref, filter);
   if (filter.like !== undefined) {
     predicates.push(sql<SqlBool>`f_unaccent(${ref}) ilike ('%' || f_unaccent(${filter.like}) || '%')`);
   }

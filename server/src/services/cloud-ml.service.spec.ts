@@ -11,6 +11,7 @@ import {
   NotificationLevel,
   NotificationType,
   SystemMetadataKey,
+  UserMetadataKey,
 } from 'src/enum.js';
 import { CloudMlService, WALLET_STEP_UP_MESSAGE } from 'src/services/cloud-ml.service.js';
 import { localPinnedIdentity } from 'src/utils/cloud-model-identity.js';
@@ -21,8 +22,10 @@ import {
   consentCurrentSchema,
   usageSchema,
 } from 'src/utils/frameleaf-cloud.js';
+import { NOTIFICATION_CATALOGS, type NotificationCatalogs } from 'src/utils/notification-locale.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
+import localeFixtures from 'test/fixtures/system-notification-locale.json' with { type: 'json' };
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 /** The identity key's signer (FL-178): the key the ML token is bound to and every proof is signed with. */
@@ -1013,6 +1016,51 @@ describe(CloudMlService.name, () => {
       expect(notice.description).toContain('2 unfinished jobs stopped');
       expect(notice.description).not.toMatch(/runpod/i);
       expect(metadata.has(SystemMetadataKey.FrameleafCloudMigrationNotice)).toBe(false);
+    });
+
+    it('renders the notice in each administrator’s language, sentence by sentence (FL-406)', async () => {
+      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(FrameleafWorker.Api);
+      metadata.set(SystemMetadataKey.FrameleafCloudMigrationNotice, {
+        removedDestinations: [
+          { name: 'Cloud GPU', workloads: ['enrichment'] },
+          { name: 'Lab', workloads: ['smartSearch'] },
+        ],
+        cancelledOperations: 1,
+        revokedRenderWorkers: 3,
+        createdAt: '2026-09-25T00:00:00.000Z',
+      });
+      mocks.user.getList.mockResolvedValue([
+        { id: 'admin-1', isAdmin: true, deletedAt: null },
+        { id: 'admin-2', isAdmin: true, deletedAt: null },
+      ] as never);
+      mocks.user.getMetadata.mockImplementation((userId: string) =>
+        Promise.resolve(
+          userId === 'admin-1'
+            ? [{ key: UserMetadataKey.Preferences, value: { notifications: { locale: 'en-XA' } } }]
+            : [],
+        ),
+      );
+      mocks.notification.create.mockResolvedValue({} as never);
+      NOTIFICATION_CATALOGS['en-XA'] = (localeFixtures.catalogs as NotificationCatalogs)['en-XA'];
+      try {
+        await sut.onBootstrap();
+      } finally {
+        delete NOTIFICATION_CATALOGS['en-XA'];
+      }
+
+      const [[translated], [english]] = mocks.notification.create.mock.calls;
+      expect(translated).toMatchObject({
+        userId: 'admin-1',
+        title: '[Fixture Cloud processing moved to Frameleaf Cloud]',
+        description:
+          '[Fixture The cloud processing destinations Cloud GPU, Lab were removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.] [Fixture 1 unfinished job stopped and can be started again.] [Fixture 3 render workers were signed out.]',
+      });
+      expect(english).toMatchObject({
+        userId: 'admin-2',
+        title: 'Cloud processing moved to Frameleaf Cloud',
+        description:
+          'The cloud processing destinations Cloud GPU, Lab were removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud. 1 unfinished job stopped and can be started again. 3 render workers were signed out.',
+      });
     });
 
     it('sends nothing when there is no notice or on another worker', async () => {

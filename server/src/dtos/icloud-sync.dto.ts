@@ -10,6 +10,8 @@ export const ICloudConfigSchema = z
     includeHidden: z.boolean().default(false),
     recoverExternalAsManaged: z.boolean().default(false),
     intervalHours: z.number().int().min(1).max(8760).default(24),
+    /** FL-539: "By itself" (checked in the overnight run) or "Only when I ask" (false). */
+    automatic: z.boolean().default(true),
     concurrency: z.number().int().min(1).max(4).default(1),
     stagingBytes: z
       .number()
@@ -29,6 +31,7 @@ const ConfigFieldsSchema = z
     includeHidden: ICloudConfigSchema.shape.includeHidden.unwrap(),
     recoverExternalAsManaged: ICloudConfigSchema.shape.recoverExternalAsManaged.unwrap(),
     intervalHours: ICloudConfigSchema.shape.intervalHours.unwrap(),
+    automatic: ICloudConfigSchema.shape.automatic.unwrap(),
     concurrency: ICloudConfigSchema.shape.concurrency.unwrap(),
     stagingBytes: ICloudConfigSchema.shape.stagingBytes.unwrap(),
   })

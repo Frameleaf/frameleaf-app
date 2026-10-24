@@ -20,6 +20,7 @@
    * Frameleaf Cloud model choice is saved at once.
    */
   import './frameleaf-cloud.css';
+  import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import CloudDescriptionBackfill from '$lib/components/frameleaf/cloud/CloudDescriptionBackfill.svelte';
   import CloudMlConsentDialog from '$lib/components/frameleaf/cloud/CloudMlConsentDialog.svelte';
@@ -27,6 +28,9 @@
   import CloudMlWalletCard from '$lib/components/frameleaf/cloud/CloudMlWalletCard.svelte';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  import Coverage from '$lib/components/frameleaf/settings/kit/Coverage.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
   import WorkloadModelPickers from '$lib/components/frameleaf/cloud/WorkloadModelPickers.svelte';
   import WorkloadRoutingTable from '$lib/components/frameleaf/cloud/WorkloadRoutingTable.svelte';
   import {
@@ -38,6 +42,7 @@
     formatRatePerMinute,
     formatUsd,
     ROUTED_WORKLOADS,
+    walletAvailable,
     workloadRoute,
   } from '$lib/frameleaf/cloud-ml';
   import {
@@ -73,13 +78,16 @@
   import { Icon } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
+    mdiCalendarTodayOutline,
     mdiCheckCircleOutline,
     mdiCloudSyncOutline,
+    mdiCreationOutline,
     mdiExpansionCard,
     mdiHistory,
     mdiImagePlusOutline,
     mdiLinkVariant,
     mdiTuneVariant,
+    mdiWalletOutline,
   } from '@mdi/js';
   import { onMount } from 'svelte';
   import { locale, t, type Translations } from 'svelte-i18n';
@@ -179,6 +187,68 @@
     }
   };
 
+  // FL-541: the answer first (the prototype's Processing hero): on, off, credit almost gone, terms to
+  // review, or a server still to link; with the credit and today's spending under it.
+  const wallet = $derived(status?.wallet ?? null);
+  const available = $derived(walletAvailable(wallet));
+  const lowCredit = $derived(!!wallet && available < 1);
+  const hero = $derived.by(() => {
+    if (status && !linked) {
+      return { tone: 'quiet' as const, title: $t('frameleaf_cp_hero_link'), body: $t('frameleaf_cp_hero_link_body') };
+    }
+    if (!enabled) {
+      return { tone: 'quiet' as const, title: $t('frameleaf_cp_hero_off'), body: $t('frameleaf_cp_hero_off_body') };
+    }
+    if (status?.consent && !consentCurrent) {
+      return {
+        tone: 'warn' as const,
+        title: $t('admin.frameleaf_cloud_ml_terms_changed'),
+        body: $t('frameleaf_cp_hero_terms_body'),
+      };
+    }
+    if (lowCredit) {
+      return {
+        tone: 'warn' as const,
+        title: $t('frameleaf_cp_hero_low'),
+        body: $t('frameleaf_cp_hero_low_body', { values: { amount: formatUsd(available) } }),
+      };
+    }
+    return {
+      tone: 'good' as const,
+      title: $t('frameleaf_cp_hero_on'),
+      body: wallet
+        ? $t('frameleaf_cp_hero_on_body', {
+            values: { amount: formatUsd(available), today: formatUsd(wallet.spentTodayUsd) },
+          })
+        : $t('frameleaf_cp_hero_on_body_unread'),
+    };
+  });
+
+  /** "What these add up to": the limits said back as one sentence. */
+  const limitsSaidBack = $derived.by(() => {
+    if (!wallet) {
+      return '';
+    }
+    const daily =
+      wallet.dailyCapUsd === null
+        ? $t('frameleaf_cp_limits_no_daily')
+        : $t('frameleaf_cp_limits_daily', { values: { amount: formatUsd(wallet.dailyCapUsd) } });
+    const auto =
+      cloudMl?.autoDescribe.enabled && cloudMl.autoDescribe.dailyBudgetUsd
+        ? ' ' +
+          $t('frameleaf_cp_limits_auto', {
+            values: {
+              amount: formatUsd(
+                wallet.dailyCapUsd === null
+                  ? cloudMl.autoDescribe.dailyBudgetUsd
+                  : Math.min(cloudMl.autoDescribe.dailyBudgetUsd, wallet.dailyCapUsd),
+              ),
+            },
+          })
+        : '';
+    return `${daily}${auto} ${$t('frameleaf_cp_limits_never_automatic')}`;
+  });
+
   const fees = startFeeRange();
 
   // Estimate a job: any cloud model, any quantity.
@@ -210,6 +280,47 @@
 </script>
 
 <div class="frameleaf-cloud">
+  <Hero
+    label={$t('frameleaf_cp_status')}
+    tone={hero.tone}
+    icon={mdiCreationOutline}
+    title={hero.title}
+    body={hero.body}
+  >
+    {#snippet actions()}
+      {#if status && !linked}
+        <Button variant="primary" onclick={() => goto(commandCenterUrl('cloud', 'cloud-account'))}
+          >{$t('frameleaf_cp_link_server')}</Button
+        >
+      {:else if linked && !enabled && cloudMl && !configDisabled}
+        <Button variant="primary" onclick={() => setEnabled(true)}>{$t('frameleaf_cp_turn_on')}</Button>
+      {/if}
+    {/snippet}
+    {#if linked && enabled && wallet}
+      <Coverage
+        rows={[
+          {
+            icon: mdiWalletOutline,
+            name: $t('frameleaf_cp_credit'),
+            detail: $t('frameleaf_cp_credit_held', { values: { amount: formatUsd(wallet.heldUsd) } }),
+            tone: lowCredit ? 'warn' : 'good',
+            value: $t('frameleaf_cp_to_spend', { values: { amount: formatUsd(available) } }),
+          },
+          {
+            icon: mdiCalendarTodayOutline,
+            name: $t('frameleaf_cp_spent_today'),
+            detail:
+              wallet.dailyCapUsd === null
+                ? $t('frameleaf_cp_no_daily_limit')
+                : $t('frameleaf_cp_daily_limit', { values: { amount: formatUsd(wallet.dailyCapUsd) } }),
+            tone: 'good',
+            value: formatUsd(wallet.spentTodayUsd),
+          },
+        ]}
+      />
+    {/if}
+  </Hero>
+
   {#if notice}
     <p class="fc-banner" role="status">{notice}</p>
   {/if}
@@ -275,6 +386,7 @@
         policy={linked ? undefined : $t('admin.frameleaf_cloud_ml_link_first')}
       />
     {/if}
+    <Notice title={$t('frameleaf_cp_leaves')}>{$t('frameleaf_cp_leaves_body')}</Notice>
     <dl class="fc-facts">
       <dt>{$t('admin.frameleaf_cloud_ml_fact_terms')}</dt>
       <dd>
@@ -469,11 +581,15 @@
         </span>
         <small>{$t('admin.frameleaf_cloud_ml_setting_daily_budget_description')}</small>
       </label>
-      <SettingActions keys={['frameleafCloud']} disabled={configDisabled} />
+      <SettingActions keys={['frameleafCloud.cloudMl']} disabled={configDisabled} />
     </section>
   {/if}
 
   <CloudMlSpendersCard disabled={configDisabled} />
+
+  {#if linked && enabled && limitsSaidBack}
+    <Notice title={$t('frameleaf_cp_limits')}>{limitsSaidBack}</Notice>
+  {/if}
 
   <CloudDescriptionBackfill available={backfillAvailable} />
 

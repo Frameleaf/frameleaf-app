@@ -353,8 +353,13 @@
     }
   };
 
+  /** Set on destroy: a list read still on its way must not start a new poll for a closed panel. */
+  let destroyed = false;
   const schedulePoll = () => {
     clearTimeout(pollTimer);
+    if (destroyed) {
+      return;
+    }
     pollTimer = setTimeout(
       () =>
         void (async () => {
@@ -397,6 +402,7 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
     clearTimeout(pollTimer);
     stopActivity?.();
     onCompare(null);

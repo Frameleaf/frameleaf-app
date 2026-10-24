@@ -37,7 +37,7 @@ The standard `DEVICE=cpu` image includes frozen Torch 2.14.1, Torchvision 0.29.1
 5.19.0. Both Linux amd64 and arm64 use the explicit [official CPU wheel index](https://download.pytorch.org/whl/cpu).
 CPU/CUDA extras conflict explicitly, following [uv's accelerator selection](https://docs.astral.sh/uv/guides/integration/pytorch/).
 CPU builder/runtime use the digest-pinned Python 3.12 slim image. OpenVINO/ArmNN retain Python 3.13
-bases; ROCm/RKNN retain their existing bases. Digest-pinned uv 0.13.0 consumes the refreshed frozen lock.
+bases; ROCm/RKNN retain their existing bases. Digest-pinned uv 0.13.4 consumes the refreshed frozen lock.
 The image build runs `verify-semantic-runtime.py` for CPU/CUDA: native class imports, exact runtime
 versions, Torch/NumPy interchange and CPU wheel isolation, without loading checkpoints.
 

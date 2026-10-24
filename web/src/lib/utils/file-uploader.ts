@@ -181,21 +181,22 @@ function getDeviceAssetId(asset: File) {
   return `web-${asset.name}-${asset.lastModified}-${generateId()}`;
 }
 
-async function hashFile(file: File, signal: AbortSignal): Promise<string> {
+async function hashFile(file: File, signal: AbortSignal): Promise<{ sha256: string; sha1: string }> {
   signal.throwIfAborted();
   const worker = new Worker(new URL('$lib/workers/hash-file.ts', import.meta.url), { type: 'module' });
   let abort: () => void;
   try {
-    return await new Promise<string>((resolve, reject) => {
+    return await new Promise((resolve, reject) => {
       abort = () => reject(signal.reason);
       signal.addEventListener('abort', abort, { once: true });
       worker.addEventListener(
         'message',
-        ({ data }: MessageEvent<{ result?: unknown; error?: string }>) => {
+        ({ data }: MessageEvent<{ result?: { sha256?: unknown; sha1?: unknown }; error?: string }>) => {
+          const { sha256, sha1 } = data?.result ?? {};
           if (data?.error) {
             reject(new Error(data.error));
-          } else if (typeof data?.result === 'string' && data.result.length > 0) {
-            resolve(data.result);
+          } else if (typeof sha256 === 'string' && sha256 && typeof sha1 === 'string' && sha1) {
+            resolve({ sha256, sha1 });
           } else {
             reject(new Error('Missing file checksum'));
           }
@@ -204,7 +205,8 @@ async function hashFile(file: File, signal: AbortSignal): Promise<string> {
       );
       worker.addEventListener('error', (event) => reject(new Error(event.message)), { once: true });
       worker.addEventListener('messageerror', () => reject(new Error('Unable to read file checksum')), { once: true });
-      worker.postMessage(file);
+      // Both digests from one read: rows adopted from Immich keep SHA-1 (FL-529).
+      worker.postMessage({ file, both: true });
     });
   } finally {
     signal.removeEventListener('abort', abort!);
@@ -257,17 +259,26 @@ async function fileUploader(
       await tick();
       try {
         assertCurrent();
-        const checksum = await hashFile(assetFile, signal);
+        // New rows store SHA-256 and rows adopted from Immich keep SHA-1, so check both (FL-529).
+        const { sha256, sha1 } = await hashFile(assetFile, signal);
         assertCurrent();
 
-        const {
-          results: [checkUploadResult],
-        } = await checkBulkUpload(
-          { assetBulkUploadCheckDto: { assets: [{ id: assetFile.name, checksum }] } },
+        const { results } = await checkBulkUpload(
+          {
+            assetBulkUploadCheckDto: {
+              assets: [
+                { id: assetFile.name, checksum: sha256 },
+                { id: assetFile.name, checksum: sha1 },
+              ],
+            },
+          },
           { signal },
         );
         assertCurrent();
-        if (checkUploadResult.action === AssetUploadAction.Reject && checkUploadResult.assetId) {
+        const checkUploadResult = results.find(
+          (result) => result.action === AssetUploadAction.Reject && result.assetId,
+        );
+        if (checkUploadResult?.assetId) {
           responseData = {
             status: AssetMediaStatus.Duplicate,
             id: checkUploadResult.assetId,
@@ -311,11 +322,6 @@ async function fileUploader(
 
     // An acknowledged upload is saved; cancelling the batch cannot undo it.
     assertCurrent(false);
-    if (responseData.status === AssetMediaStatus.Duplicate) {
-      uploadAssetsStore.track('duplicate');
-    } else {
-      uploadAssetsStore.track('success');
-    }
 
     if (albumId && !context.sharedLink && responseData.id) {
       uploadAssetsStore.updateItem(deviceAssetId, { message: $t('asset_adding_to_album') });
@@ -325,6 +331,8 @@ async function fileUploader(
       if (!added) {
         // FL-53: the file is safely in the library, but it is not in the album. Say exactly that,
         // rather than "added to album"; retrying finds the uploaded original and only adds it.
+        // It counts as a failure, so the panel offers Retry and Dismiss (FL-529).
+        uploadAssetsStore.track('error');
         uploadAssetsStore.updateItem(deviceAssetId, {
           state: UploadState.ERROR,
           assetId: responseData.id,
@@ -334,6 +342,8 @@ async function fileUploader(
       }
       uploadAssetsStore.updateItem(deviceAssetId, { message: $t('asset_added_to_album') });
     }
+
+    uploadAssetsStore.track(responseData.status === AssetMediaStatus.Duplicate ? 'duplicate' : 'success');
 
     uploadAssetsStore.updateItem(deviceAssetId, {
       state: responseData.status === AssetMediaStatus.Duplicate ? UploadState.DUPLICATED : UploadState.DONE,

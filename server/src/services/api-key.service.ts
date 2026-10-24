@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/com
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { ApiKey } from 'src/database.js';
 import { ApiKeyCreateDto, ApiKeyCreateResponseDto, ApiKeyResponseDto, ApiKeyUpdateDto } from 'src/dtos/api-key.dto.js';
-import { Permission } from 'src/enum.js';
+import { Permission, SystemMetadataKey } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
 import { findOrFail } from 'src/utils/misc.js';
@@ -23,7 +23,7 @@ export class ApiKeyService extends BaseService {
       userId: auth.user.id,
       permissions: dto.permissions,
     });
-    const apiKey = this.map(entity);
+    const apiKey = this.map(entity, {});
 
     return { ...apiKey, secret: token, apiKey };
   }
@@ -44,7 +44,7 @@ export class ApiKeyService extends BaseService {
 
     const key = await this.apiKeyRepository.update(auth.user.id, id, { name: dto.name, permissions: dto.permissions });
 
-    return this.map(key);
+    return this.map(key, await this.lastUsed());
   }
 
   async rotate(auth: AuthDto, id: string): Promise<ApiKeyCreateResponseDto> {
@@ -60,7 +60,7 @@ export class ApiKeyService extends BaseService {
     const token = this.cryptoRepository.randomBytesAsText(32);
     const hashed = this.cryptoRepository.hashSha256(token);
     const newKey = await this.apiKeyRepository.update(auth.user.id, id, { key: hashed });
-    const apiKey = this.map(newKey);
+    const apiKey = this.map(newKey, await this.lastUsed());
 
     return { ...apiKey, secret: token, apiKey };
   }
@@ -84,7 +84,7 @@ export class ApiKeyService extends BaseService {
       throw new BadRequestException('API Key not found');
     }
 
-    return this.map(key);
+    return this.map(key, await this.lastUsed());
   }
 
   async getById(auth: AuthDto, id: string): Promise<ApiKeyResponseDto> {
@@ -92,21 +92,28 @@ export class ApiKeyService extends BaseService {
     if (!key) {
       throw new BadRequestException('API Key not found');
     }
-    return this.map(key);
+    return this.map(key, await this.lastUsed());
   }
 
   async getAll(auth: AuthDto): Promise<ApiKeyResponseDto[]> {
     const keys = await this.apiKeyRepository.getByUserId(auth.user.id);
-    return keys.map((key) => this.map(key));
+    const used = await this.lastUsed();
+    return keys.map((key) => this.map(key, used));
   }
 
-  private map(entity: ApiKey): ApiKeyResponseDto {
+  /** FL-367: when each key was last used, as `AuthService` records it. */
+  private async lastUsed(): Promise<Record<string, string>> {
+    return (await this.systemMetadataRepository.get(SystemMetadataKey.ApiKeyLastUsed)) ?? {};
+  }
+
+  private map(entity: ApiKey, used: Record<string, string>): ApiKeyResponseDto {
     return {
       id: entity.id,
       name: entity.name,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
       permissions: entity.permissions as Permission[],
+      lastUsedAt: used[entity.id] ?? null,
     };
   }
 }

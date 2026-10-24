@@ -149,7 +149,8 @@ export class ServerClient {
 
   // --- enumeration ---
   searchAssets = (dto: MetadataSearchDto) => this.json<SearchResponseDto>('POST', '/search/metadata', dto);
-  getAllAlbums = () => this.json<AlbumResponseDto[]>('GET', '/albums');
+  /** Albums this account owns. Albums other users share with it are theirs to migrate. */
+  getAllAlbums = () => this.json<AlbumResponseDto[]>('GET', `/albums${buildQuery({ isOwned: true })}`);
   getAlbumInfo = (id: string) => this.json<AlbumResponseDto>('GET', `/albums/${id}`);
   getAllTags = () => this.json<TagResponseDto[]>('GET', '/tags');
   searchStacks = () => this.json<StackResponseDto[]>('GET', '/stacks');
@@ -172,6 +173,7 @@ export class ServerClient {
   checkBulkUpload = (assets: Array<{ id: string; checksum: string }>) =>
     this.json<AssetBulkUploadCheckResponseDto>('POST', '/assets/bulk-upload-check', { assets });
   getAssetInfo = (id: string) => this.json<AssetResponseDto>('GET', `/assets/${id}`);
+  restoreAssets = (ids: string[]) => this.json<unknown>('POST', '/trash/restore/assets', { ids });
 
   /** Streamed original bytes. Caller pipes `response.body` to disk. */
   downloadOriginal = (id: string) => this.request('GET', `/assets/${id}/original`);

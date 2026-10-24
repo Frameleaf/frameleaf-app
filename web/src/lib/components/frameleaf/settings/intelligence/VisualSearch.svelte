@@ -8,11 +8,10 @@
    *
    * What the app does today is said, not what the prototype hoped for: a new search model empties
    * the old search results when it is saved, and the photos are read again only when that work is
-   * started from Background work. Left for later (server work): how long the re-read takes, starting
-   * it from the save, and the try-out on a few photos first.
+   * started again. FL-521: changing the model says how long reading every photo again takes (at the
+   * recent rate) and offers "Save and start tonight / now". Left for later: the try-out on a few photos
+   * first.
    */
-  import { goto } from '$app/navigation';
-  import Button from '$lib/components/frameleaf/Button.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import Amount from '$lib/components/frameleaf/settings/kit/Amount.svelte';
@@ -20,7 +19,9 @@
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
+  import Reread from '$lib/components/frameleaf/settings/kit/Reread.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import Explain from '$lib/components/frameleaf/settings/intelligence/Explain.svelte';
@@ -32,7 +33,15 @@
     workWaiting,
     type SearchQuality,
   } from '$lib/components/frameleaf/settings/intelligence/presets';
-  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { aboutTime, rereadSeconds, saveAndRedo } from '$lib/frameleaf/library-progress';
+  import { handleError } from '$lib/utils/handle-error';
+  import {
+    getLibraryProgress,
+    LibraryProgressFeature,
+    LibraryRedoQueue,
+    LibraryRedoWhen,
+    type LibraryProgressResponseDto,
+  } from '@frameleaf/sdk';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { queueManager } from '$lib/managers/queue-manager.svelte';
@@ -52,6 +61,44 @@
   const waiting = $derived(workWaiting(queueManager.queues, FEATURE_WORK['smart-search']));
   const quality = $derived<SearchQuality | 'custom'>(choiceOf(SEARCH_QUALITY, ml.clip) ?? 'custom');
   const modelChanged = $derived(ml.clip.modelName !== saved.clip.modelName);
+
+  // FL-521: how long reading again takes, at the recent rate, and starting it from the save.
+  let progress = $state<LibraryProgressResponseDto>();
+  let said = $state('');
+  onMount(() => {
+    void (async () => {
+      try {
+        progress = await getLibraryProgress();
+      } catch {
+        // without a rate the notice says what happens, without how long
+      }
+    })();
+  });
+  const about = (seconds: number) => {
+    const time = aboutTime(seconds);
+    return $t(time.key, { values: time.values });
+  };
+  const failedSave = () => $t('frameleaf_intel_redo_failed');
+
+  const searchProgress = $derived(progress?.features.find((item) => item.feature === LibraryProgressFeature.Search));
+  const rereadTime = $derived(rereadSeconds(searchProgress));
+  const rereadTitle = $derived(
+    searchProgress && rereadTime
+      ? $t('frameleaf_intel_search_reread_estimate', {
+          values: { count: searchProgress.total, time: about(rereadTime) },
+        })
+      : $t('frameleaf_intel_search_reread_title'),
+  );
+  const saveAndRead = async (when: LibraryRedoWhen) => {
+    try {
+      if (await saveAndRedo(settingsDraft, ['machineLearning'], LibraryRedoQueue.SmartSearch, when)) {
+        said =
+          when === LibraryRedoWhen.Now ? $t('frameleaf_intel_redo_said_now') : $t('frameleaf_intel_redo_said_tonight');
+      }
+    } catch (error) {
+      handleError(error, failedSave());
+    }
+  };
 
   const hero = $derived.by(() => {
     if (!on) {
@@ -85,6 +132,7 @@
 </script>
 
 <KitPage>
+  <Said message={said} onDismiss={() => (said = '')} />
   <Hero
     tone={hero.tone}
     icon={mdiImageSearchOutline}
@@ -128,17 +176,16 @@
         />
       </Row>
       {#if modelChanged}
-        <Notice tone="warn" title={$t('frameleaf_intel_search_reread_title')}>
-          {$t('frameleaf_intel_search_reread_body')}
-          {#snippet action()}
-            <Button onclick={() => goto(commandCenterUrl('processing', 'queues'))}>
-              {$t('frameleaf_intel_background_work')}
-            </Button>
-            <Button onclick={() => (settingsDraft.draft.machineLearning.clip.modelName = saved.clip.modelName)}>
-              {$t('frameleaf_intel_undo')}
-            </Button>
-          {/snippet}
-        </Notice>
+        <Reread
+          title={rereadTitle}
+          body={$t('frameleaf_intel_search_reread_body')}
+          {disabled}
+          choices={[
+            { label: $t('frameleaf_intel_save_tonight'), run: () => saveAndRead(LibraryRedoWhen.Tonight) },
+            { label: $t('frameleaf_intel_save_now'), run: () => saveAndRead(LibraryRedoWhen.Now) },
+          ]}
+          onUndo={() => (settingsDraft.draft.machineLearning.clip.modelName = saved.clip.modelName)}
+        />
       {/if}
       <Notice icon={mdiShieldCheckOutline} title={$t('frameleaf_intel_search_pledge')}>
         {$t('frameleaf_intel_search_pledge_body')}

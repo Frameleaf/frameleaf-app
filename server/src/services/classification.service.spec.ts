@@ -42,7 +42,16 @@ const ruleOf = (overrides: Partial<ClassificationRuleWithAlbum> = {}): Classific
   ...overrides,
 });
 
-const emptyOutcome = { added: 0, suggested: 0, removed: 0, unchanged: 0, tagged: [], untagged: [] };
+const emptyOutcome = {
+  added: 0,
+  suggested: 0,
+  removed: 0,
+  unchanged: 0,
+  tagged: [],
+  untagged: [],
+  locked: [],
+  missing: [],
+};
 
 describe(ClassificationService.name, () => {
   let sut: ClassificationService;
@@ -251,6 +260,29 @@ describe(ClassificationService.name, () => {
         { id: 'b', status: MediaOperationItemStatus.Ok },
       ]);
       expect(mocks.classification.apply).toHaveBeenCalledWith(rule, ['a', 'b'], new Map([['a', null]]));
+    });
+
+    it('reports an item the rule could not touch, locked or gone, as skipped rather than done', async () => {
+      const auth = factory.auth();
+      const rule = ruleOf({ ownerId: auth.user.id });
+      mocks.classification.getRule.mockResolvedValue(rule);
+      mocks.classification.findMatches.mockResolvedValue([]);
+      mocks.classification.apply.mockResolvedValue({
+        added: 0,
+        suggested: 0,
+        removed: 0,
+        unchanged: 3,
+        tagged: [],
+        untagged: [],
+        locked: ['b'],
+        missing: ['c'],
+      });
+
+      await expect(sut.applyBulkBatch(auth, rule.id, ['a', 'b', 'c'])).resolves.toEqual([
+        { id: 'a', status: MediaOperationItemStatus.Ok },
+        { id: 'b', status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_locked' },
+        { id: 'c', status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_not_found' },
+      ]);
     });
   });
 

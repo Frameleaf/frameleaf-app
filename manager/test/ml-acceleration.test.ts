@@ -156,7 +156,7 @@ test('existing Unraid stacks refresh video devices without changing storage or M
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test('the download step pulls the ML variant the compose file runs', async () => {
+test('the download step pulls exactly the images the compose file runs', async () => {
   const digest = (c: string) => `ghcr.io/frameleaf/frameleaf-machine-learning@sha256:${c.repeat(64)}`;
   const images = {
     server: digest('a'),
@@ -164,8 +164,55 @@ test('the download step pulls the ML variant the compose file runs', async () =>
     machineLearningVariants: { openvino: digest('c') },
     postgres: digest('f'),
   };
-  assert.deepEqual(await releaseImages(images, 'openvino'), [digest('a'), digest('b'), digest('f'), digest('c')]);
-  assert.deepEqual(await releaseImages(images, 'cpu'), [digest('a'), digest('b'), digest('f')]);
-  // No attested CUDA digest: compose keeps the CPU image, so nothing extra is pulled.
-  assert.deepEqual(await releaseImages(images, 'cuda'), [digest('a'), digest('b'), digest('f')]);
+  // FL-475: a GPU variant replaces the CPU image rather than being pulled beside it.
+  assert.deepEqual(await releaseImages(images, { ml: true }, 'openvino'), [digest('a'), digest('f'), digest('c')]);
+  assert.deepEqual(await releaseImages(images, { ml: true }, 'cpu'), [digest('a'), digest('f'), digest('b')]);
+  // No attested CUDA digest: compose keeps the CPU image, so that is what is pulled.
+  assert.deepEqual(await releaseImages(images, { ml: true }, 'cuda'), [digest('a'), digest('f'), digest('b')]);
+  // FL-475: machine learning off pulls no ML image at all, whatever the host could accelerate.
+  for (const accel of ['cpu', 'openvino', 'cuda'] as const)
+    assert.deepEqual(await releaseImages(images, { ml: false }, accel), [digest('a'), digest('f')]);
+});
+
+test('the pull list matches the images in the rendered compose file, with ML on or off', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'manager-pull-list-'));
+  try {
+    const bundle = join(folder, 'bundle'),
+      stack = join(folder, 'stack');
+    await mkdir(bundle);
+    await writeFile(
+      join(bundle, 'docker-compose.yml'),
+      JSON.stringify({ services: { database: {}, 'frameleaf-server': {}, 'frameleaf-machine-learning': {} } }),
+    );
+    const digest = (c: string) => `ghcr.io/frameleaf/frameleaf-machine-learning@sha256:${c.repeat(64)}`;
+    const release = {
+      directory: bundle,
+      nas: {
+        images: {
+          server: digest('a'),
+          machineLearning: digest('b'),
+          machineLearningVariants: { cuda: digest('d') },
+          postgres: digest('f'),
+        },
+      },
+    } as unknown as VerifiedRelease;
+    for (const ml of [true, false])
+      for (const accel of ['cpu', 'cuda'] as const) {
+        const installation = {
+          id: 'a'.repeat(12),
+          project: 'frameleaf-' + 'a'.repeat(12),
+          ml,
+          origin: 'new_library',
+          databasePath: '/appdata/pg',
+          mounts: [],
+        } as unknown as Installation;
+        await renderCompose(release, installation, 'pw', stack, undefined, accel);
+        const compose = JSON.parse(await readFile(join(stack, 'compose.json'), 'utf8'));
+        const referenced = new Set(Object.values(compose.services).map((service: any) => service.image));
+        const pulled = new Set(await releaseImages(release.nas.images, installation, accel));
+        assert.deepEqual(pulled, referenced, `ml=${ml} ${accel}`);
+      }
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
 });

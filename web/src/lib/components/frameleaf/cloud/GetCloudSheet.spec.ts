@@ -275,7 +275,7 @@ describe('GetCloudSheet (FL-544: one sheet on every gate)', () => {
   it('says Frameleaf Cloud is not set up when the server has no cloud address', async () => {
     sdkMock.getCloudStatus.mockResolvedValue(status({ state: CloudLinkState.NotConfigured, configured: false }));
     render(GetCloudSheet, { feature: 'remote', close: vi.fn() });
-    expect(await screen.findByText('Frameleaf Cloud is not set up on this server')).toBeInTheDocument();
+    expect(await screen.findByText('Frameleaf Cloud is turned off for this server')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Link this server' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Continue to the Frameleaf store' })).toBeNull();
   });

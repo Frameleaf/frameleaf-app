@@ -27,16 +27,17 @@ describe(JobService.name, () => {
   });
 
   describe('create', () => {
-    it('never applies physical deduplication from a queue button; that needs a reviewed plan (FL-73)', async () => {
-      await expect(sut.create({ name: ManualJobName.PhysicalDeduplicationApply })).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
-      expect(mocks.job.queue).not.toHaveBeenCalled();
-    });
+    it.each([ManualJobName.PhysicalDeduplicationDryRun, ManualJobName.PhysicalDeduplicationApply])(
+      'refuses the retired %s (FL-413)',
+      async (name) => {
+        await expect(sut.create({ name })).rejects.toBeInstanceOf(BadRequestException);
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      },
+    );
 
-    it('still queues a physical deduplication preview', async () => {
-      await sut.create({ name: ManualJobName.PhysicalDeduplicationDryRun });
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.PhysicalDeduplicationMigrationDryRun });
+    it('queues an identical-files check (FL-413)', async () => {
+      await sut.create({ name: ManualJobName.IdenticalFilesCheck });
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.IdenticalFilesCheck });
     });
   });
 

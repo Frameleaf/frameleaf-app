@@ -1,5 +1,6 @@
-import { type Kysely, type RawBuilder, type Transaction, sql } from 'kysely';
+import { type Kysely, type QueryExecutorProvider, type RawBuilder, type Transaction, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
+import type { DB } from 'src/schema/index.js';
 import { JobName, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { attachProducerRun } from 'src/queue/manifest.js';
 import { libraryCanonicalState, libraryMembershipEntitled } from 'src/queue/selection-state.js';
@@ -30,9 +31,9 @@ export const librarySourceKey = (intent: QueueIntent) => {
 
 /** Catalogue -> queue claim -> domain claim; the caller's domain callback takes the latter. */
 export async function withLibraryQueueFence<T>(
-  db: Kysely<any>,
+  db: Kysely<DB>,
   context: QueueExecution | undefined,
-  work: (tx: Transaction<any>) => Promise<T>,
+  work: (tx: Transaction<DB>) => Promise<T>,
 ): Promise<T> {
   context?.signal.throwIfAborted();
   return db.transaction().execute(async (tx) => {
@@ -55,7 +56,7 @@ export async function withLibraryQueueFence<T>(
 
 /** Small setup only. Domain sources never attach their lifetime to the current producer job. */
 export async function ensureLibrarySource(
-  tx: Transaction<any>,
+  tx: Transaction<DB>,
   identity: LibrarySourceIdentity,
   intent: QueueIntent,
   context?: QueueExecution,
@@ -86,10 +87,7 @@ export async function ensureLibrarySource(
  * child-header participants in pages, including requests arriving after a producer completed.
  * Caller owns the catalogue guard; LIMIT bounds every inserted mapping and reopened run.
  */
-export async function attachLibraryParticipants(
-  tx: Kysely<any> | Transaction<any>,
-  filter: { producerId: string } | { queue: string },
-) {
+export async function attachLibraryParticipants(tx: Kysely<DB>, filter: { producerId: string } | { queue: string }) {
   const { rows } = await sql<{ runId: string }>`with candidates as materialized (
     select membership."runId", initial.id "selectionId", membership."itemKey" "producerItemKey",
       membership.stage "producerStage", link."producerId" from job_library_source_producer link
@@ -142,7 +140,7 @@ export const libraryProducerAttachmentPending = (producerId: string) => sql<bool
     select 1 from job_selection_run m where m."selectionId" = link."selectionId" and m."runId" = i."runId"))`;
 
 /** No hot execution rows. Each accepted page appends durable source membership in the same transaction. */
-export async function appendLibraryInitialSources(tx: Transaction<any>, operationId: string, intents: QueueIntent[]) {
+export async function appendLibraryInitialSources(tx: Transaction<DB>, operationId: string, intents: QueueIntent[]) {
   if (intents.length > QUEUE_BATCH) throw new Error('Library source acceptance is limited to 250 intents');
   const {
     rows: [source],
@@ -185,7 +183,7 @@ const physicalLibraryIntentKey = (intent: QueueIntent) =>
   );
 
 async function appendSourcePage(
-  tx: Transaction<any>,
+  tx: Transaction<DB>,
   selectionId: string,
   operationId: string,
   after: string,
@@ -255,7 +253,7 @@ async function appendSourcePage(
 }
 
 /** Called only after actual enumeration, under the same queue/domain fences as its final checkpoint. */
-export async function closeLibrarySource(tx: Transaction<any>, operationId: string) {
+export async function closeLibrarySource(tx: Transaction<DB>, operationId: string) {
   const { rows } = await sql`update job_selection set "sourceClosedAt" = clock_timestamp(),
     "capturedAt" = clock_timestamp(), state = 'ready' where id = ${operationId}::uuid
     and "sourceKind" = 'library-initial' and state = 'enumerating' and "sourceClosedAt" is null returning id`.execute(
@@ -267,7 +265,7 @@ export async function closeLibrarySource(tx: Transaction<any>, operationId: stri
 }
 
 /** Failure does not freeze or make partial enumeration runnable. Its durable rows need explicit attention. */
-export async function markLibrarySourceOutcome(tx: Transaction<any>, operationId: string) {
+export async function markLibrarySourceOutcome(tx: Transaction<DB>, operationId: string) {
   await sql`update job_selection s set state = 'needs_attention' from media_operation o
     where s."libraryOperationId" = o.id and o.id = ${operationId}::uuid and o.kind = ${MediaOperationKind.LibraryScan}
       and o.status in (${MediaOperationStatus.Failed}, ${MediaOperationStatus.Cancelled})
@@ -276,7 +274,7 @@ export async function markLibrarySourceOutcome(tx: Transaction<any>, operationId
 }
 
 /** Bounded terminal repair for operations failed by domain recovery or cancellation before a worker owns them. */
-export async function settleTerminalLibrarySources(tx: Transaction<any>) {
+export async function settleTerminalLibrarySources(tx: Transaction<DB>) {
   const { rows } = await sql`with terminal as (
     select s.id from job_selection s join media_operation o on o.id = s."libraryOperationId"
     where s."sourceKind" = 'library-initial' and s.state = 'enumerating' and s."sourceClosedAt" is null
@@ -292,7 +290,7 @@ export async function settleTerminalLibrarySources(tx: Transaction<any>) {
  * by the accepted bounded lineage protocol before any participant can acknowledge completion.
  */
 export async function appendLibraryChildSources(
-  tx: Transaction<any>,
+  tx: Transaction<DB>,
   parent: { operationId: string; jobId: string; rootItemKey: string },
   intents: QueueIntent[],
   executionOwners?: SharedLibraryExecutions,
@@ -382,10 +380,7 @@ export const libraryChildOrigins = (parentId: RawBuilder<string>, root: RawBuild
  * remains unfeedable and unacknowledged until its proofs are complete; late alias attachment
  * uses the same retained source identity and never grants whole-operation membership.
  */
-export async function discoverLibraryChildOrigins(
-  tx: Kysely<any> | Transaction<any>,
-  filter: { producerId: string } | { queue: string },
-) {
+export async function discoverLibraryChildOrigins(tx: Kysely<DB>, filter: { producerId: string } | { queue: string }) {
   const { rows: selections } = await sql<{ id: string; runId: string }>`select s.id, s."runId" from job_selection s
     where s."sourceKind" = 'library-child'
       and ${
@@ -430,7 +425,7 @@ export async function discoverLibraryChildOrigins(
 }
 
 /** Library parents publish one canonical page; aliases are discovered by header copying. */
-export async function publishLibraryFollowups(tx: Transaction<any>, jobId: string, intents: QueueIntent[]) {
+export async function publishLibraryFollowups(tx: Transaction<DB>, jobId: string, intents: QueueIntent[]) {
   const { rows: parents } = await sql<{ operationId: string; rootItemKey: string }>`with owners as materialized (
     select "runId","itemKey",stage from job_run_item where "jobId"=${jobId}::uuid and "libraryIntent" is not null limit ${QUEUE_BATCH + 1}
   ), memberships as (
@@ -475,11 +470,7 @@ export async function publishLibraryFollowups(tx: Transaction<any>, jobId: strin
 /** Sensitive execution payloads live only until their retained owner reaches a terminal state.
  * Source identity remains available for deduplication; late copies receive the redacted value.
  */
-export async function redactLibraryPayloads(
-  tx: Kysely<any> | Transaction<any>,
-  jobId: string | string[],
-  terminalOnly = true,
-) {
+export async function redactLibraryPayloads(tx: QueryExecutorProvider, jobId: string | string[], terminalOnly = true) {
   const jobIds = Array.isArray(jobId) ? jobId : [jobId];
   await sql`update job_run_item i set selection = '{}'::jsonb,
     "libraryIntent" = i."libraryIntent" - 'options' || jsonb_build_object('data', '{}'::jsonb)
@@ -567,7 +558,7 @@ export const libraryRedactionPage = (queue?: string) => {
 };
 
 /** Advance the privacy cursor without treating a no-redaction visit as queue progress. */
-export async function redactLibrarySourcePage(tx: Kysely<any> | Transaction<any>, queue?: string) {
+export async function redactLibrarySourcePage(tx: QueryExecutorProvider, queue?: string) {
   const { rows } = await libraryRedactionPage(queue).execute(tx);
   if (rows[0].redacted > 0) await sql`select pg_notify('frameleaf_jobs','')`.execute(tx);
   return rows[0].redacted > 0;
