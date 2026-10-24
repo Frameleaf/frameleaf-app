@@ -10,7 +10,7 @@
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import { immichCheckView, type ImmichCheckStep } from '$lib/components/frameleaf/settings/care/immich-check';
+  import { importCheckView, type ImportCheckStep } from '$lib/components/frameleaf/settings/care/import-check';
   import Facts from '$lib/components/frameleaf/settings/kit/Facts.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { backupWhen } from '$lib/frameleaf/backup-overview';
@@ -40,12 +40,12 @@
     onResume: () => void;
   } = $props();
 
-  const view = $derived(immichCheckView(status));
+  const view = $derived(importCheckView(status));
   const ICONS = { done: mdiCheckCircle, running: mdiProgressClock, queued: mdiCircleOutline };
-  const STEP_COPY: Record<ImmichCheckStep, { title: Translations; detail: Translations }> = {
-    read: { title: 'frameleaf_immich_check_step_read', detail: 'frameleaf_immich_check_step_read_detail' },
-    recover: { title: 'frameleaf_immich_check_step_recover', detail: 'frameleaf_immich_check_step_recover_detail' },
-    move: { title: 'frameleaf_immich_check_step_move', detail: 'frameleaf_immich_check_step_move_detail' },
+  const STEP_COPY: Record<ImportCheckStep, { title: Translations; detail: Translations }> = {
+    read: { title: 'frameleaf_import_check_step_read', detail: 'frameleaf_import_check_step_read_detail' },
+    recover: { title: 'frameleaf_import_check_step_recover', detail: 'frameleaf_import_check_step_recover_detail' },
+    move: { title: 'frameleaf_import_check_step_move', detail: 'frameleaf_import_check_step_move_detail' },
   };
   const when = (value: string | null) => {
     if (!value) {
@@ -58,18 +58,18 @@
 </script>
 
 <Section
-  title={view.finished ? $t('frameleaf_immich_check_done_title') : $t('frameleaf_immich_check_title')}
-  description={view.finished ? $t('frameleaf_immich_check_done_description') : $t('frameleaf_immich_check_description')}
+  title={view.finished ? $t('frameleaf_import_check_done_title') : $t('frameleaf_import_check_title')}
+  description={view.finished ? $t('frameleaf_import_check_done_description') : $t('frameleaf_import_check_description')}
 >
   {#snippet action()}
     {#if !view.finished}
       <Button disabled={busy} onclick={paused ? onResume : onPause}>
         <Icon icon={paused ? mdiPlay : mdiPause} size="1em" aria-hidden />
-        {paused ? $t('frameleaf_immich_check_resume') : $t('frameleaf_immich_check_pause')}
+        {paused ? $t('frameleaf_import_check_resume') : $t('frameleaf_import_check_pause')}
       </Button>
     {:else if recoveredAlbumId}
       <Button onclick={() => goto(Route.viewAlbum({ id: recoveredAlbumId }))}>
-        {$t('frameleaf_immich_check_open_recovered')}
+        {$t('frameleaf_import_check_open_recovered')}
         <Icon icon={mdiChevronRight} size="1em" aria-hidden />
       </Button>
     {/if}
@@ -78,7 +78,7 @@
     <div
       class="bar"
       role="progressbar"
-      aria-label={$t('frameleaf_immich_check_title')}
+      aria-label={$t('frameleaf_import_check_title')}
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={view.percent}
@@ -90,33 +90,33 @@
     <Facts
       rows={[
         {
-          label: $t('frameleaf_immich_check_checked'),
-          value: $t('frameleaf_immich_check_checked_value', { values: { checked: view.checked, total: view.total } }),
+          label: $t('frameleaf_import_check_checked'),
+          value: $t('frameleaf_import_check_checked_value', { values: { checked: view.checked, total: view.total } }),
           detail: view.finished
-            ? $t('frameleaf_immich_check_all_read')
+            ? $t('frameleaf_import_check_all_read')
             : paused
-              ? $t('frameleaf_immich_check_paused')
+              ? $t('frameleaf_import_check_paused')
               : view.minutesLeft === undefined
                 ? undefined
-                : $t('frameleaf_immich_check_minutes_left', { values: { count: view.minutesLeft } }),
+                : $t('frameleaf_import_check_minutes_left', { values: { count: view.minutesLeft } }),
         },
         {
-          label: $t('frameleaf_immich_check_merged'),
+          label: $t('frameleaf_import_check_merged'),
           value: view.merged.toLocaleString($locale),
-          detail: $t('frameleaf_immich_check_merged_detail'),
+          detail: $t('frameleaf_import_check_merged_detail'),
         },
         {
-          label: $t('frameleaf_immich_check_recovered'),
+          label: $t('frameleaf_import_check_recovered'),
           value: view.recovered.toLocaleString($locale),
           detail:
             view.recovered > 0 || view.finished
-              ? $t('frameleaf_immich_check_recovered_detail')
-              : $t('frameleaf_immich_check_recovered_later'),
+              ? $t('frameleaf_import_check_recovered_detail')
+              : $t('frameleaf_import_check_recovered_later'),
         },
         {
-          label: $t('frameleaf_immich_check_moved'),
+          label: $t('frameleaf_import_check_moved'),
           value: formatBytes(view.movedBytes, $locale),
-          detail: $t('frameleaf_immich_check_moved_detail'),
+          detail: $t('frameleaf_import_check_moved_detail'),
         },
       ]}
     />
@@ -132,14 +132,14 @@
           </div>
           <span>
             {step.status === 'done'
-              ? $t('frameleaf_immich_check_step_done')
+              ? $t('frameleaf_import_check_step_done')
               : step.status === 'running'
                 ? paused
-                  ? $t('frameleaf_immich_check_paused')
+                  ? $t('frameleaf_import_check_paused')
                   : step.percent === undefined
-                    ? $t('frameleaf_immich_check_step_running')
+                    ? $t('frameleaf_import_check_step_running')
                     : `${step.percent}%`
-                : $t('frameleaf_immich_check_step_waiting')}
+                : $t('frameleaf_import_check_step_waiting')}
           </span>
         </li>
       {/each}
@@ -148,9 +148,9 @@
   <div class="foot">
     <span>
       {view.finished
-        ? $t('frameleaf_immich_check_finished', { values: { when: when(status.finishedAt) } })
+        ? $t('frameleaf_import_check_finished', { values: { when: when(status.finishedAt) } })
         : running
-          ? $t('frameleaf_immich_check_now', {
+          ? $t('frameleaf_import_check_now', {
               values: { step: $t(STEP_COPY[running.id].title).toLowerCase(), when: when(status.startedAt) },
             })
           : ''}

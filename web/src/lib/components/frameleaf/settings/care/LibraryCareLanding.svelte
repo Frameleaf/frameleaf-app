@@ -9,13 +9,13 @@
    * checkers report is counted once; a member's from their own Library care queues.
    *
    * FL-416: after an Immich import, an administrator sees "Checking your Immich library" while the
-   * identical-files check reads every imported file (`ImmichCheck`). Duplicates says the space identical
+   * identical-files check reads every imported file (`ImportCheck`). Duplicates says the space identical
    * files save. Unused files is among the tools only for the server owner (`unusedFilesAccess`).
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import ImmichCheck from '$lib/components/frameleaf/settings/care/ImmichCheck.svelte';
-  import { showsImmichCheck } from '$lib/components/frameleaf/settings/care/immich-check';
+  import ImportCheck from '$lib/components/frameleaf/settings/care/ImportCheck.svelte';
+  import { showsImportCheck } from '$lib/components/frameleaf/settings/care/import-check';
   import Coverage from '$lib/components/frameleaf/settings/kit/Coverage.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
@@ -125,9 +125,9 @@
     try {
       const queue = await updateQueue({ name: QueueName.StorageTemplateMigration, queueUpdateDto: { isPaused } });
       checkPaused = queue.isPaused;
-      said = isPaused ? $t('frameleaf_immich_check_paused_said') : $t('frameleaf_immich_check_resumed_said');
+      said = isPaused ? $t('frameleaf_import_check_paused_said') : $t('frameleaf_import_check_resumed_said');
     } catch (error) {
-      handleError(error, $t('frameleaf_immich_check_pause_failed'));
+      handleError(error, $t('frameleaf_import_check_pause_failed'));
     } finally {
       pausing = false;
     }
@@ -401,8 +401,8 @@
     {/if}
   </Hero>
 
-  {#if isAdmin && identical && showsImmichCheck(identical)}
-    <ImmichCheck
+  {#if isAdmin && identical && showsImportCheck(identical)}
+    <ImportCheck
       status={identical}
       paused={checkPaused}
       busy={pausing}

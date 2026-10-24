@@ -1,5 +1,5 @@
 import { identicalProblems } from '$lib/components/frameleaf/settings/care/identical-files';
-import { immichCheckView, showsImmichCheck } from '$lib/components/frameleaf/settings/care/immich-check';
+import { importCheckView, showsImportCheck } from '$lib/components/frameleaf/settings/care/import-check';
 
 const counts = {
   scanned: 0,
@@ -48,16 +48,16 @@ describe('identical files (FL-416)', () => {
 
   it('shows the import card while the check runs and for a week after', () => {
     const now = Date.parse('2026-10-23T15:00:00.000Z');
-    expect(showsImmichCheck(status(), now)).toBe(true);
-    expect(showsImmichCheck(status({ trigger: 'manual' }), now)).toBe(false);
-    expect(showsImmichCheck(status({ status: 'completed', finishedAt: '2026-10-20T15:00:00.000Z' }), now)).toBe(true);
-    expect(showsImmichCheck(status({ status: 'completed', finishedAt: '2026-10-01T15:00:00.000Z' }), now)).toBe(false);
-    expect(showsImmichCheck(undefined, now)).toBe(false);
+    expect(showsImportCheck(status(), now)).toBe(true);
+    expect(showsImportCheck(status({ trigger: 'manual' }), now)).toBe(false);
+    expect(showsImportCheck(status({ status: 'completed', finishedAt: '2026-10-20T15:00:00.000Z' }), now)).toBe(true);
+    expect(showsImportCheck(status({ status: 'completed', finishedAt: '2026-10-01T15:00:00.000Z' }), now)).toBe(false);
+    expect(showsImportCheck(undefined, now)).toBe(false);
   });
 
   it('says where the check stands in three steps, with time left from the pace so far', () => {
     const now = Date.parse('2026-10-23T14:55:00.000Z');
-    const reading = immichCheckView(
+    const reading = importCheckView(
       status({ counts: { ...counts, scanned: 500, linked: 2, photosMerged: 3, bytesMovedToUnused: 10 } }),
       now,
     );
@@ -76,11 +76,11 @@ describe('identical files (FL-416)', () => {
       { id: 'move', status: 'queued' },
     ]);
 
-    const recovering = immichCheckView(status({ stage: 'orphans', counts: { ...counts, scanned: 1000 } }), now);
+    const recovering = importCheckView(status({ stage: 'orphans', counts: { ...counts, scanned: 1000 } }), now);
     expect(recovering.steps.map((step) => step.status)).toEqual(['done', 'running', 'queued']);
     expect(recovering.minutesLeft).toBeUndefined();
 
-    const done = immichCheckView(
+    const done = importCheckView(
       status({ status: 'completed', stage: 'done', counts: { ...counts, scanned: 1000, photosRecovered: 37 } }),
       now,
     );

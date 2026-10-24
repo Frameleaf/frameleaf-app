@@ -187,21 +187,21 @@ describe('Library care landing (FL-366)', () => {
 
     render(LibraryCareLanding);
 
-    const card = within(await screen.findByRole('region', { name: en.frameleaf_immich_check_title }));
+    const card = within(await screen.findByRole('region', { name: en.frameleaf_import_check_title }));
     expect(card.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '62');
     expect(card.getByText('35,278 of 48,210')).toBeInTheDocument();
     expect(card.getByText('157')).toBeInTheDocument();
     expect(card.getByText('2.3 GB')).toBeInTheDocument();
-    expect(card.getByText(en.frameleaf_immich_check_recovered_later)).toBeInTheDocument();
+    expect(card.getByText(en.frameleaf_import_check_recovered_later)).toBeInTheDocument();
     expect(card.getByText('73%')).toBeInTheDocument();
 
-    await fireEvent.click(card.getByRole('button', { name: en.frameleaf_immich_check_pause }));
+    await fireEvent.click(card.getByRole('button', { name: en.frameleaf_import_check_pause }));
     expect(updateQueue).toHaveBeenCalledWith({
       name: QueueName.StorageTemplateMigration,
       queueUpdateDto: { isPaused: true },
     });
-    expect(await card.findByRole('button', { name: en.frameleaf_immich_check_resume })).toBeInTheDocument();
-    expect(await screen.findByText(en.frameleaf_immich_check_paused_said)).toBeInTheDocument();
+    expect(await card.findByRole('button', { name: en.frameleaf_import_check_resume })).toBeInTheDocument();
+    expect(await screen.findByText(en.frameleaf_import_check_paused_said)).toBeInTheDocument();
   });
 
   it('leaves the card out when the latest check was not an import (FL-416)', async () => {
@@ -212,7 +212,7 @@ describe('Library care landing (FL-366)', () => {
     render(LibraryCareLanding);
 
     expect(await hero().findByText(en.frameleaf_carehome_hero_ok)).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: en.frameleaf_immich_check_title })).toBeNull();
+    expect(screen.queryByRole('region', { name: en.frameleaf_import_check_title })).toBeNull();
     expect(await screen.findByText('Identical files stored once · 3.2 GB saved')).toBeInTheDocument();
   });
 

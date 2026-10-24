@@ -5,15 +5,15 @@ import type { IdenticalFilesStatusDto } from '@frameleaf/sdk';
  * After an Immich import the identical-files check reads every imported file once; Library care shows
  * where it stands while it runs and for a week after it finished.
  */
-export const IMMICH_CHECK_SHOWN_FOR_MS = 7 * 24 * 60 * 60 * 1000;
+export const IMPORT_CHECK_SHOWN_FOR_MS = 7 * 24 * 60 * 60 * 1000;
 
-export type ImmichCheckStep = 'read' | 'recover' | 'move';
-export type ImmichCheckStepStatus = 'done' | 'running' | 'queued';
-export type ImmichCheckView = {
+export type ImportCheckStep = 'read' | 'recover' | 'move';
+export type ImportCheckStepStatus = 'done' | 'running' | 'queued';
+export type ImportCheckView = {
   finished: boolean;
   /** 0 to 100, for the bar. */
   percent: number;
-  steps: Array<{ id: ImmichCheckStep; status: ImmichCheckStepStatus; percent?: number }>;
+  steps: Array<{ id: ImportCheckStep; status: ImportCheckStepStatus; percent?: number }>;
   checked: number;
   total: number;
   merged: number;
@@ -24,7 +24,7 @@ export type ImmichCheckView = {
 };
 
 /** Whether Library care shows the card: the latest check came from an Immich import and is recent. */
-export const showsImmichCheck = (status: IdenticalFilesStatusDto | undefined, now = Date.now()) => {
+export const showsImportCheck = (status: IdenticalFilesStatusDto | undefined, now = Date.now()) => {
   if (!status || status.trigger !== 'immich-import') {
     return false;
   }
@@ -32,11 +32,11 @@ export const showsImmichCheck = (status: IdenticalFilesStatusDto | undefined, no
     return true;
   }
   const finished = status.finishedAt ? new Date(status.finishedAt).getTime() : NaN;
-  return Number.isFinite(finished) && now - finished < IMMICH_CHECK_SHOWN_FOR_MS;
+  return Number.isFinite(finished) && now - finished < IMPORT_CHECK_SHOWN_FOR_MS;
 };
 
 /** Where the check stands, in the card's three steps. Reading every file is most of the work. */
-export const immichCheckView = (status: IdenticalFilesStatusDto, now = Date.now()): ImmichCheckView => {
+export const importCheckView = (status: IdenticalFilesStatusDto, now = Date.now()): ImportCheckView => {
   const finished = status.status === 'completed';
   const stage = status.stage ?? 'scan';
   const total = status.totalOriginals;
