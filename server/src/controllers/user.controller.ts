@@ -29,6 +29,8 @@ import {
   UserPreferenceHistoryResponseDto,
   UserPreferencesResponseDto,
   UserPreferencesUpdateDto,
+  LockedRulesCountResponseDto,
+  LockedRulesDraftDto,
 } from 'src/dtos/user-preferences.dto.js';
 import { CreateProfileImageDto, CreateProfileImageResponseDto } from 'src/dtos/user-profile.dto.js';
 import { UserAdminResponseDto, UserMeResponseDto, UserResponseDto, UserUpdateMeDto } from 'src/dtos/user.dto.js';
@@ -159,6 +161,19 @@ export class UserController {
   })
   getMyPreferenceHistory(@Auth() auth: AuthDto): Promise<UserPreferenceHistoryResponseDto> {
     return this.service.getMyPreferenceHistory(auth);
+  }
+
+  @Post('me/preferences/locked-rules/count')
+  @Authenticated({ permission: Permission.UserPreferenceRead })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Count what a draft of my Locked rules keeps Locked',
+    description:
+      'How many of your own photos and videos (timeline or archive) the people, pets and tags in a draft of your Locked rules match, before it is saved. Needs an unlocked session.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  countLockedRules(@Auth() auth: AuthDto, @Body() dto: LockedRulesDraftDto): Promise<LockedRulesCountResponseDto> {
+    return this.service.countLockedRules(auth, dto);
   }
 
   @Put('me/preferences')

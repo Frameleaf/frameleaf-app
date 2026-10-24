@@ -3367,6 +3367,56 @@ describe(FrameleafCloudService.name, () => {
     });
   });
 
+  describe('Sign in with Frameleaf people (FL-541)', () => {
+    const emma = { id: 'u-emma', name: 'Emma', email: 'emma@example.com' };
+    const sam = { id: 'u-sam', name: 'Sam', email: 'sam@example.com' };
+    beforeEach(() => {
+      mocks.user.getList.mockResolvedValue([sam, emma] as never);
+      mocks.frameleafAccount.listLinks.mockResolvedValue([{ userId: sam.id, email: 'sam@frameleaf.app' }]);
+      mocks.email.renderEmail.mockResolvedValue({ html: '<p/>', text: 'text' });
+    });
+
+    it('lists who has linked by name, those not linked first, and cannot remind without email', async () => {
+      await expect(sut.getSignInPeople()).resolves.toEqual({
+        people: [
+          { id: emma.id, name: 'Emma', email: emma.email, linked: false, frameleafEmail: null },
+          { id: sam.id, name: 'Sam', email: sam.email, linked: true, frameleafEmail: 'sam@frameleaf.app' },
+        ],
+        canRemind: false,
+      });
+      mocks.user.get.mockResolvedValue(emma as never);
+      await expect(sut.remindSignIn(authStub.admin, emma.id)).rejects.toThrow('Email and a public address');
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.SendMail }));
+    });
+
+    it('emails a reminder to someone who has not linked, never to someone who has', async () => {
+      metadata.set(SystemMetadataKey.SystemConfig, {
+        notifications: { smtp: { enabled: true } },
+        server: { externalDomain: 'https://photos.example.com' },
+      });
+      clearConfigCache();
+      await expect(sut.getSignInPeople()).resolves.toMatchObject({ canRemind: true });
+
+      mocks.user.get.mockResolvedValue(sam as never);
+      await expect(sut.remindSignIn(authStub.admin, sam.id)).rejects.toThrow('already linked');
+
+      mocks.user.get.mockResolvedValue(emma as never);
+      await sut.remindSignIn(authStub.admin, emma.id);
+      expect(mocks.email.renderEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            displayName: 'Emma',
+            link: 'https://photos.example.com/user-settings?area=preferences&section=frameleaf-account',
+          }),
+        }),
+      );
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.SendMail,
+        data: expect.objectContaining({ to: emma.email }),
+      });
+    });
+  });
+
   describe('Sign in with Frameleaf settings (FL-158)', () => {
     it('reports the linked accounts and offers the button at home only once linked', async () => {
       mocks.frameleafAccount.countLinks.mockResolvedValue(3);

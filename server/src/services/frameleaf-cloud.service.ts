@@ -18,6 +18,7 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   CloudPermissionsUpdateDto,
   CloudRemoteAccessUpdateDto,
+  CloudSignInPeopleResponseDto,
   CloudSignInUpdateDto,
   CloudStatusResponseDto,
 } from 'src/dtos/frameleaf-cloud.dto.js';
@@ -40,6 +41,7 @@ import {
   QueueName,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { EmailTemplate } from 'src/repositories/email.repository.js';
 import { FrameleafCloudPublicCall } from 'src/repositories/frameleaf-cloud.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
@@ -990,6 +992,73 @@ export class FrameleafCloudService extends BaseService {
       this.logger.log(`Sign in with Frameleaf settings changed by ${auth.user.id}`);
       return this.getStatus();
     });
+  }
+
+  /**
+   * `GET admin/cloud/sign-in/people` (FL-541): who here has linked a Frameleaf account, by name, those
+   * not linked first, and whether a reminder can be emailed.
+   */
+  async getSignInPeople(): Promise<CloudSignInPeopleResponseDto> {
+    const [users, links, base] = await Promise.all([
+      this.userRepository.getList({ withDeleted: false }),
+      this.frameleafAccountRepository.listLinks(),
+      this.reminderBase(),
+    ]);
+    const linkedEmail = new Map(links.map((link) => [link.userId, link.email]));
+    const people = users
+      .map((user) => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        linked: linkedEmail.has(user.id),
+        frameleafEmail: linkedEmail.get(user.id) ?? null,
+      }))
+      .sort((a, b) => Number(a.linked) - Number(b.linked) || a.name.localeCompare(b.name));
+    return { people, canRemind: !!base };
+  }
+
+  /**
+   * `POST admin/cloud/sign-in/people/:id/remind` (FL-541): email someone who has not linked a link to
+   * their own sign-in settings, where they link their Frameleaf account. Nothing is linked for them.
+   */
+  async remindSignIn(auth: AuthDto, id: string): Promise<void> {
+    const user = await this.userRepository.get(id, { withDeleted: false });
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+    const links = await this.frameleafAccountRepository.listLinks();
+    if (links.some((link) => link.userId === id)) {
+      throw new BadRequestException('This person has already linked their Frameleaf account');
+    }
+    const base = await this.reminderBase();
+    if (!base) {
+      throw new BadRequestException('Email and a public address are needed to send a reminder');
+    }
+    const { templates } = await this.getConfig({ withCache: true });
+    const { html, text } = await this.emailRepository.renderEmail({
+      template: EmailTemplate.FRAMELEAF_SIGN_IN_REMINDER,
+      data: {
+        baseUrl: base,
+        displayName: user.name,
+        senderName: auth.user.name,
+        link: `${base}/user-settings?area=preferences&section=frameleaf-account`,
+        showBranding: templates.email.showBranding,
+      },
+      customTemplate: '',
+    });
+    await this.jobRepository.queue({
+      name: JobName.SendMail,
+      data: { to: user.email, subject: 'Link your Frameleaf account to sign in away from home', html, text },
+    });
+  }
+
+  /** The public address reminders link to; undefined while email is off or there is none. */
+  private async reminderBase(): Promise<string | undefined> {
+    const { notifications, server } = await this.getConfig({ withCache: true });
+    if (!notifications.smtp.enabled) {
+      return undefined;
+    }
+    return (await this.getPublicUrl(server)) || undefined;
   }
 
   /**
