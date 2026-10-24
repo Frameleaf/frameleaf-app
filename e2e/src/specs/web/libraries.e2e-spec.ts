@@ -41,7 +41,11 @@ test.describe('Libraries (FL-78)', () => {
     await page.goto('/admin/library-management');
     await page.waitForURL('**/user-settings?area=libraries');
     await expect(page.getByRole('heading', { name: 'Libraries', level: 1 })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Add a folder of photos', exact: true })).toBeVisible();
+    await expect(
+      page
+        .getByRole('region', { name: 'Libraries' })
+        .getByRole('button', { name: 'Add a folder of photos', exact: true }),
+    ).toBeVisible();
   });
 
   // FL-78: add a library with an import folder, scan it, and see the scan complete with what it found.
@@ -50,7 +54,10 @@ test.describe('Libraries (FL-78)', () => {
     utils.createImageFile(`${testAssetDir}/temp/fl78-web-add/asset.png`);
 
     await page.goto(librariesArea);
-    await page.getByRole('button', { name: 'Add a folder of photos', exact: true }).click();
+    await page
+      .getByRole('region', { name: 'Libraries' })
+      .getByRole('button', { name: 'Add a folder of photos', exact: true })
+      .click();
     // FL-539: a page of its own, in four steps
     await expect(page.getByRole('heading', { name: 'Add a folder of photos', level: 1 })).toBeVisible();
     await page.getByText('Advanced: type a path').click();
