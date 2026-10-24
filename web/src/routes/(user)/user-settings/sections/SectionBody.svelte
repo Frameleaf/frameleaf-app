@@ -9,8 +9,7 @@
   import WhereWorkRuns from '$lib/components/frameleaf/computers/WhereWorkRuns.svelte';
   import FrameleafSignInSection from '$lib/components/frameleaf/cloud/FrameleafSignInSection.svelte';
   import HardwareSection from '$lib/components/frameleaf/cloud/HardwareSection.svelte';
-  import LicenseSection from '$lib/components/frameleaf/cloud/LicenseSection.svelte';
-  import PlanSection from '$lib/components/frameleaf/cloud/PlanSection.svelte';
+  import YourCloudSection from '$lib/components/frameleaf/cloud/YourCloudSection.svelte';
   import RemoteAccessSection from '$lib/components/frameleaf/cloud/RemoteAccessSection.svelte';
   import CareProgress from '$lib/components/frameleaf/settings/care/CareProgress.svelte';
   import FileChecks from '$lib/components/frameleaf/settings/care/FileChecks.svelte';
@@ -54,9 +53,7 @@
   {:else if section.key === 'cloud-account'}
     <CloudAccountSection />
   {:else if section.key === 'cloud-plan'}
-    <PlanSection />
-  {:else if section.key === 'cloud-license'}
-    <LicenseSection />
+    <YourCloudSection />
   {:else if section.key === 'cloud-remote'}
     <RemoteAccessSection />
   {:else if section.key === 'frameleaf-signin'}

@@ -15,10 +15,9 @@
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
   import LicenseKeyField from '$lib/components/frameleaf/cloud/LicenseKeyField.svelte';
   import { discountOffer, type ProductKeyCheck } from '$lib/frameleaf/cloud';
-  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
-  import { Route } from '$lib/route';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { copyToClipboard } from '$lib/utils';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { deleteUserLicense, getMyUser, setUserLicense } from '@frameleaf/sdk';
@@ -30,7 +29,6 @@
     mdiClose,
     mdiCloudLockOutline,
     mdiContentCopy,
-    mdiCreditCardOutline,
     mdiDeleteOutline,
     mdiFileDocumentOutline,
     mdiHandshakeOutline,
@@ -295,10 +293,10 @@
       {/if}
       <div class="fc-actions">
         {#if !licensed}
-          <a class="fc-button is-primary" href={Route.buy()}>
+          <Button variant="primary" onclick={() => getCloudManager.open()}>
             <Icon icon={mdiCartOutline} size="18" />
-            {$t('frameleaf_license_buy')}
-          </a>
+            {$t('frameleaf_get_cloud')}
+          </Button>
         {/if}
         {#if license.linked && (license.key || license.plan)}
           <Button
@@ -321,10 +319,6 @@
             {$t('frameleaf_license_remove_personal_action')}
           </Button>
         {/if}
-        <a class="fc-button" href={commandCenterUrl('cloud', 'cloud-plan')}>
-          <Icon icon={mdiCreditCardOutline} size="18" />
-          {$t('frameleaf_license_see_plans')}
-        </a>
       </div>
     </CloudCard>
 

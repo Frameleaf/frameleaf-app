@@ -26,6 +26,7 @@ import {
   sectionsForArea,
   SETTINGS_AREAS,
   usualScope,
+  serverSectionKey,
 } from '$lib/frameleaf/settings-areas';
 
 const sections = [
@@ -190,7 +191,7 @@ describe('Frameleaf settings areas', () => {
     expect(SETTINGS_AREAS.find((item) => item.id === 'cloud')).toEqual({
       id: 'cloud',
       group: 'server',
-      sections: ['cloud-account', 'cloud-plan', 'cloud-license', 'cloud-remote', 'cloud-processing', 'cloud-backup'],
+      sections: ['cloud-account', 'cloud-plan', 'cloud-remote', 'cloud-processing', 'cloud-backup'],
       adminOnly: true,
     });
     expect(directoryGroup('cloud', 'cloud-processing')).toBe('cloud_services');
@@ -198,7 +199,8 @@ describe('Frameleaf settings areas', () => {
     expect(AREA_TILE_COLORS.cloud).toBeDefined();
     expect(directoryGroup('cloud', 'cloud-account')).toBe('account_link');
     expect(directoryGroup('cloud', 'cloud-plan')).toBe('licensing');
-    expect(directoryGroup('cloud', 'cloud-license')).toBe('licensing');
+    // FL-544: Licence folded into Your Frameleaf Cloud; old links still land there
+    expect(serverSectionKey('cloud-license')).toBe('cloud-plan');
     expect(areaForSection('cloud-license')).toBe('cloud');
     expect(directoryGroup('cloud', 'cloud-remote')).toBe('remote');
     expect(areaForSection('cloud-remote')).toBe('cloud');
