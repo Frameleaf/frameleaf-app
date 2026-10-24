@@ -146,12 +146,10 @@ it.each([
     await fireEvent.click(setup);
     expect(await screen.findByRole('dialog', { name: 'Set up Buddy Backup' })).toBeVisible();
   }
-  if (!gate.linked) {
-    expect(outgoing.getByText(en.frameleaf_buddy_link_required)).toBeVisible();
-    expect(outgoing.getByRole('link', { name: en.frameleaf_cloud_backup_gate_link })).toBeVisible();
-  } else if (gate.licence !== 'server') {
-    expect(outgoing.getByText(en.frameleaf_buddy_server_licence_required)).toBeVisible();
-    expect(outgoing.getByRole('link', { name: en.frameleaf_buddy_server_licence_action })).toBeVisible();
+  // FL-544: unlinked or without a Server licence, the same gate and the same one button
+  if (!gate.linked || gate.licence !== 'server') {
+    expect(outgoing.getByText(/Buddy Backup needs a Server licence on both servers/)).toBeVisible();
+    expect(outgoing.getByRole('button', { name: en.frameleaf_get_cloud })).toBeVisible();
   } else {
     expect(outgoing.getByText(en.frameleaf_buddy_direct_or_relay)).toBeVisible();
   }
@@ -188,7 +186,7 @@ it('shows the Server licence prompt when Cloud refuses an invitation with 402 (F
     target: { value: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e99' },
   });
   await fireEvent.click(dialog.getByRole('button', { name: en.frameleaf_buddy_create_invitation }));
-  expect(await dialog.findByText(en.frameleaf_buddy_server_licence_required)).toBeVisible();
-  expect(dialog.getByRole('link', { name: en.frameleaf_buddy_server_licence_action })).toBeVisible();
+  expect(await dialog.findByText(/Buddy Backup needs a Server licence on both servers/)).toBeVisible();
+  expect(dialog.getByRole('button', { name: en.frameleaf_get_cloud })).toBeVisible();
   expect(dialog.getByText('This server needs an active Server licence')).toBeVisible();
 });

@@ -149,9 +149,9 @@ test.describe('Buddy Backup production Command Center (FL-310)', () => {
       const outgoing = page.getByRole('region', { name: 'My backup', exact: true });
       const incoming = page.getByRole('region', { name: 'Hosting for my buddy', exact: true });
       await expect(outgoing.getByText('Not paired', { exact: true })).toBeVisible();
-      await expect(
-        outgoing.getByText('Link this Frameleaf server to your Cloud account before pairing.'),
-      ).toBeVisible();
+      // FL-544: unlinked, the same gate and the same one button as every other cloud feature
+      await expect(outgoing.getByText(/Buddy Backup needs a Server licence on both servers/)).toBeVisible();
+      await expect(outgoing.getByRole('button', { name: 'Get Frameleaf Cloud' })).toBeVisible();
       await expect(outgoing.getByRole('button', { name: 'Set up Buddy Backup' })).toBeDisabled();
       await expect(incoming.getByText('Not configured', { exact: true })).toBeVisible();
       await expect(incoming.getByText('30 days, 12 monthly points, and the latest complete backup')).toBeVisible();

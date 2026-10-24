@@ -62,6 +62,8 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { gateButtonKey, type CloudLack } from '$lib/frameleaf/cloud-rules';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import {
     CloudMlConnection,
@@ -138,6 +140,12 @@
   const consentCurrent = $derived(!!status && !cloudConsentNeeded(status));
   const enabled = $derived(!!cloudMl?.enabled);
   const refusal = $derived(cloudAdmission(status, enabled, null));
+  // FL-544: what the Get Frameleaf Cloud sheet would have to add before cloud work can start
+  const lacks = $derived<CloudLack[]>([
+    ...(linked ? [] : (['link'] as const)),
+    ...(status?.entitled === false ? (['licence'] as const) : []),
+    ...(status?.wallet && status.wallet.availableUsd <= 0 ? (['credit'] as const) : []),
+  ]);
   const statusFor = () => {
     if (!linked) {
       return { key: 'admin.frameleaf_cloud_ml_status_not_linked', tone: 'muted' };
@@ -321,16 +329,18 @@
     <div class="fc-banner" role="status">
       <Icon icon={mdiLinkVariant} size="18" aria-hidden={true} />
       <div>
-        <strong>{$t('admin.frameleaf_cloud_ml_gate_title')}</strong>
+        <strong>{$t('frameleaf_gate_processing')}</strong>
         <p>
           {$t(
             status.connection === CloudMlConnection.NotConfigured
               ? 'admin.frameleaf_cloud_ml_connection_not_configured_help'
-              : 'admin.frameleaf_cloud_ml_gate_body',
+              : 'frameleaf_why_processing',
           )}
         </p>
       </div>
-      <a class="fc-button-link" href={commandCenterUrl('cloud')}>{$t('admin.frameleaf_cloud_ml_gate_link')}</a>
+      <Button variant="primary" onclick={() => getCloudManager.open('processing', { onDone: () => setEnabled(true) })}
+        >{$t('frameleaf_get_cloud')}</Button
+      >
     </div>
   {/if}
 
@@ -416,6 +426,13 @@
           values: { reason: $t(refusal.key, { values: refusal.values }) },
         })}
       </p>
+      {#if lacks.length > 0}
+        <div class="fc-actions">
+          <Button onclick={() => getCloudManager.open('processing', { onDone: () => setEnabled(true) })}
+            >{$t(gateButtonKey(lacks))}</Button
+          >
+        </div>
+      {/if}
     {/if}
     {#if linked && consentCurrent && status?.consent}
       <div class="fc-actions">

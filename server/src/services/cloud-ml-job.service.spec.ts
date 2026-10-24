@@ -609,10 +609,18 @@ describe(CloudMlJobService.name, () => {
     });
 
     it('refuses to send a job the AI Wallet cannot hold, without offering a lighter model', async () => {
-      mocks.frameleafCloudMl.getWallet.mockResolvedValue(wallet(1));
+      mocks.frameleafCloudMl.getWallet.mockResolvedValue({
+        ...wallet(1),
+        topUpUrl: 'https://frameleaf.cloud/wallet/top-up',
+      });
 
       const estimate = await sut.estimate(owner, preview(), now);
-      expect(estimate.refusal).toMatchObject({ code: 'insufficient-credits' });
+      // FL-544: the refusal carries the one link that fixes it, so a gate can show one button
+      expect(estimate.refusal).toEqual({
+        code: 'insufficient-credits',
+        message: expect.stringContaining('Add AI credit first.'),
+        topUpUrl: 'https://frameleaf.cloud/wallet/top-up',
+      });
       expect(estimate.model.sku).toBe(FAITHFUL);
     });
 

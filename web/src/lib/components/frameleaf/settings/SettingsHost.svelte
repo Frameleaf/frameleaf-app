@@ -372,7 +372,6 @@
     // FL-155..FL-158: the Frameleaf Cloud pages draw their own cards (frameleaf-cloud.css:3-7).
     'cloud-account',
     'cloud-plan',
-    'cloud-license',
     'cloud-remote',
     'cloud-backup',
     'frameleaf-signin',

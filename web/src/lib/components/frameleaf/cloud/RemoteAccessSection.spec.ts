@@ -139,9 +139,12 @@ describe('RemoteAccessSection: the answer and the address (FL-165, FL-541)', () 
     );
     render(RemoteAccessSection);
 
-    expect(await screen.findByRole('heading', { name: 'Remote access is not available yet' })).toBeInTheDocument();
-    expect(screen.getByText('Remote access needs a Server licence or a Frameleaf Cloud plan.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'See plans' })).toBeInTheDocument();
+    // FL-544: the hero names the one thing missing and shows one button
+    expect(
+      await screen.findByRole('heading', { name: 'Remote access is part of Frameleaf Cloud' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Reach your library away from home/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Get Frameleaf Cloud' })).toBeInTheDocument();
     expect(screen.queryByRole('switch', { name: ALLOW })).toBeNull();
   });
 
@@ -255,7 +258,7 @@ describe('RemoteAccessSection: how devices connect (FL-166, FL-167, FL-541)', ()
     expect(within(group).getByRole('radio', { name: /Always through Frameleaf/ })).toBeDisabled();
     expect(screen.getByText('devices connect straight to your home.')).toBeInTheDocument();
     expect(screen.getByText('Needs a plan')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'See plans' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Get Frameleaf Cloud' })).toBeInTheDocument();
     expect(sdkMock.getRemoteAccessUsage).not.toHaveBeenCalled();
     expect(screen.getByPlaceholderText('photos.example.com')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Check my domain' })).toBeDisabled();
@@ -390,10 +393,12 @@ describe('RemoteAccessSection: the monthly allowance (FL-166)', () => {
     );
     render(RemoteAccessSection);
 
-    expect(await screen.findByText('Link this server to a Frameleaf account first.')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Remote access is part of Frameleaf Cloud' }),
+    ).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sdkMock.getRemoteAccessUsage).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Link to Frameleaf' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Get Frameleaf Cloud' })).toBeInTheDocument();
   });
 });
 
@@ -528,7 +533,9 @@ describe('RemoteAccessSection: signing in away from home and originals (FL-161, 
       remote({ unavailableReason: 'Link this server to a Frameleaf account first.' }),
     );
     render(RemoteAccessSection);
-    expect(await screen.findByText('Link this server to a Frameleaf account first.')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Remote access is part of Frameleaf Cloud' }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('radiogroup', { name: 'Signing in away from home' })).toBeNull();
   });
 

@@ -26,6 +26,7 @@
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { getCloudSignInPeople, remindCloudSignIn, type CloudSignInPeopleResponseDto } from '@frameleaf/sdk';
   import { mdiAccountOutline, mdiCloudAlertOutline, mdiCloudCheckOutline, mdiCloudOutline } from '@mdi/js';
@@ -102,9 +103,7 @@
         body={$t('frameleaf_signin_hero_off_body')}
       >
         {#snippet actions()}
-          <Button variant="primary" onclick={() => goto(commandCenterUrl('cloud', 'cloud-account'))}
-            >{$t('frameleaf_signin_link_server')}</Button
-          >
+          <Button variant="primary" onclick={() => getCloudManager.open('signin')}>{$t('frameleaf_get_cloud')}</Button>
         {/snippet}
       </Hero>
     {:else if people && missing.length > 0}

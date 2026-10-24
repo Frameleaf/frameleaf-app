@@ -135,7 +135,7 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   {
     id: 'cloud',
     group: 'server',
-    sections: ['cloud-account', 'cloud-plan', 'cloud-license', 'cloud-remote', 'cloud-processing', 'cloud-backup'],
+    sections: ['cloud-account', 'cloud-plan', 'cloud-remote', 'cloud-processing', 'cloud-backup'],
     adminOnly: true,
   },
   // FL-367 (owner, 2026-10-10): Access & security is two entries. "Who can sign in" holds what an
@@ -453,6 +453,8 @@ export const analyticsAreaUrl = (params: { scope?: string; range?: string } = {}
  * and Render workers are one page, Computers (FL-364).
  */
 const SERVER_ALIASES: Record<string, string> = {
+  // FL-544: Plan and Licence are one page, Your Frameleaf Cloud
+  'cloud-license': 'cloud-plan',
   // FL-365: Deleted items is one page for deleted photos and deleted accounts; the prototype's addresses.
   // FL-539: the prototype's address of Folder checks
   checking: 'external-library',
@@ -734,7 +736,6 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
   cloud: {
     'cloud-account': 'account_link',
     'cloud-plan': 'licensing',
-    'cloud-license': 'licensing',
     'cloud-remote': 'remote',
     'cloud-processing': 'cloud_services',
     'cloud-backup': 'cloud_services',

@@ -10,6 +10,8 @@ import {
   LINK_CODE_PATTERN,
   LicenseActivateDto,
   LicenseCertificateDto,
+  LicenseCheckoutDto,
+  LicenseCheckoutResponseDto,
   LicenseLinkCodeDto,
   LicenseLinkCodeResponseDto,
   LicenseProductsResponseDto,
@@ -33,11 +35,13 @@ import { FrameleafCloudPublicCall } from 'src/repositories/frameleaf-cloud.repos
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
 import { FRAMELEAF_BUILD_CHANNEL, FrameleafBuildChannel } from 'src/utils/frameleaf-build-channel.js';
+import { CLOUD_GATES } from 'src/utils/frameleaf-cloud-gates.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   CloudErrorCode,
   FrameleafCloudError,
   accountStoreUrl,
+  cloudAddressProblem,
   cloudErrorCode,
   storeAddress,
 } from 'src/utils/frameleaf-cloud.js';
@@ -89,6 +93,12 @@ const certificateResponseSchema = z.object({
     .min(1)
     .max(64 * 1024),
   activationId: z.string().max(200).optional(),
+});
+/** FC-152: what the cloud answers a combined checkout with. */
+const checkoutResponseSchema = z.object({
+  checkoutId: z.string().min(1).max(200),
+  url: z.string().min(1).max(2048),
+  expiresAt: z.string().max(64),
 });
 /** The complete current set: a plan certificate when present, then one per key activation; empty is valid. */
 const refreshResponseSchema = z.object({
@@ -360,6 +370,48 @@ export class FrameleafLicenseService extends BaseService {
     return this.getStatus();
   }
 
+  /**
+   * `POST admin/license/checkout` (FL-544, FC-152): start the combined licence-and-plan purchase for
+   * this linked server. The cloud answers with the store page; the buyer signs into the account that
+   * owns this server and pays there. An Individual licence is bound to the person asking, with the same
+   * fingerprint a personal key uses. The plan and licence arrive on the next licence refresh.
+   */
+  async startCheckout(auth: AuthDto, dto: LicenseCheckoutDto): Promise<LicenseCheckoutResponseDto> {
+    const { cloudUrl, linked, link } = await readCloudLink(this.gatewayDeps());
+    if (!cloudUrl || !linked || !link?.instanceId) {
+      throw new BadRequestException(CLOUD_GATES.linkFirst);
+    }
+    const identity = await loadInstanceIdentity(this.gatewayDeps());
+    const body = {
+      licence: dto.licence,
+      plan: dto.plan,
+      ...(dto.licence === 'supporter-individual'
+        ? { userFingerprint: sha256(`${identity.instanceId}${auth.user.id}`) }
+        : {}),
+    };
+    let answer: z.infer<typeof checkoutResponseSchema>;
+    try {
+      const { document, token } = await this.apiToken(cloudUrl, link.instanceId);
+      answer = await this.frameleafCloudRepository.requestJson(checkoutResponseSchema, {
+        method: 'POST',
+        url: `${document.api.replace(/\/+$/, '')}/v1/billing/licensed-checkout`,
+        dpop: token,
+        body,
+      });
+    } catch (error) {
+      if (error instanceof FrameleafCloudError) {
+        throw new BadRequestException(error.message);
+      }
+      throw error;
+    }
+    // the page must be on the cloud, like every other address the cloud names
+    const problem = cloudAddressProblem(cloudUrl, 'checkout', answer.url);
+    if (problem) {
+      throw new BadRequestException(problem);
+    }
+    return answer;
+  }
+
   /** `POST admin/license/refresh`: ask Frameleaf Cloud for current certificates now. */
   async refreshNow(): Promise<LicenseStatusResponseDto> {
     const store = await this.readStore();
@@ -368,7 +420,7 @@ export class FrameleafLicenseService extends BaseService {
       throw new BadRequestException(
         store.key?.source === 'file' || store.plan?.source === 'file'
           ? 'This licence came from a file. Install a newer file to update it.'
-          : 'Link this server to refresh its licence.',
+          : CLOUD_GATES.linkFirst,
       );
     }
     await this.databaseRepository.withLock(DatabaseLock.FrameleafLicenseRefresh, () => this.refresh(true));

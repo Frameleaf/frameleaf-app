@@ -11,7 +11,6 @@
    * only its direct address (FL-437). The Public server URL (FL-168) is set by the links choice, or
    * typed under "Another address" as part of the settings draft.
    */
-  import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import QrCode from '$lib/components/frameleaf/QrCode.svelte';
@@ -30,9 +29,9 @@
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import { formatDateTime } from '$lib/frameleaf/cloud-ml';
   import { checkCustomHostname, hostnameMessageKey } from '$lib/frameleaf/remote-access';
-  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { copyToClipboard } from '$lib/utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
@@ -182,7 +181,13 @@
   /** What the hero says: off, starting, working, slowed, or not reachable. */
   const hero = $derived.by(() => {
     if (blocked) {
-      return { tone: 'quiet' as const, icon: mdiWebOff, title: $t('frameleaf_remote_gate_title'), body: blocked };
+      // FL-544: one sentence on what it is, one button; the server's reason stays on the switch
+      return {
+        tone: 'quiet' as const,
+        icon: mdiWebOff,
+        title: $t('frameleaf_gate_remote'),
+        body: $t('frameleaf_why_remote'),
+      };
     }
     if (!remote?.enabled) {
       return {
@@ -450,15 +455,13 @@
     <Hero label={$t('frameleaf_ra_status')} tone={hero.tone} icon={hero.icon} title={hero.title} body={hero.body}>
       {#snippet actions()}
         {#if blocked}
-          {#if !linked}
-            <Button variant="primary" onclick={() => goto(commandCenterUrl('cloud', 'cloud-account'))}
-              >{$t('frameleaf_cloud_link_action')}</Button
-            >
-          {:else}
-            <Button variant="primary" onclick={() => goto(commandCenterUrl('cloud', 'cloud-plan'))}
-              >{$t('frameleaf_remote_gate_plan')}</Button
-            >
-          {/if}
+          <Button
+            variant="primary"
+            onclick={() =>
+              getCloudManager.open('remote', {
+                onDone: () => void update({ enabled: true }, $t('frameleaf_remote_saved')),
+              })}>{$t('frameleaf_get_cloud')}</Button
+          >
         {:else if remote && !remote.enabled}
           <Button
             variant="primary"
@@ -566,9 +569,7 @@
           <Notice title={$t('frameleaf_remote_relay_needs_plan_status')}>
             {$t('frameleaf_remote_relay_needs_plan_body')}
             {#snippet action()}
-              <Button onclick={() => goto(commandCenterUrl('cloud', 'cloud-plan'))}
-                >{$t('frameleaf_remote_gate_plan')}</Button
-              >
+              <Button onclick={() => getCloudManager.open('remote')}>{$t('frameleaf_get_cloud')}</Button>
             {/snippet}
           </Notice>
         {:else if remote.relayRevoked}

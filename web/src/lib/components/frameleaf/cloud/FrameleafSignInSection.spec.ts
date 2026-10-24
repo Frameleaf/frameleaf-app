@@ -84,7 +84,7 @@ describe('FrameleafSignInSection (FL-158, FL-541)', () => {
     expect(
       await screen.findByRole('heading', { name: 'Sign in with Frameleaf isn’t available yet' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Link this server' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Get Frameleaf Cloud' })).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: 'Offer Sign in with Frameleaf at home' })).toBeDisabled();
     expect(screen.queryByText('Who has linked')).toBeNull();
     expect(sdkMock.getCloudSignInPeople).not.toHaveBeenCalled();

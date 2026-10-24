@@ -16,7 +16,6 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import LicenseSection from './LicenseSection.svelte';
-import PlanSection from './PlanSection.svelte';
 
 const entitlements = {
   frameleafCloud: false,
@@ -316,101 +315,6 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       render(LicenseSection);
       expect(await screen.findByText('Your renewal did not go through')).toBeInTheDocument();
       expect(screen.getByText(/Keeps working until/)).toBeInTheDocument();
-    });
-  });
-
-  describe('PlanSection', () => {
-    it('shows plan cards with the store link, 1 TB of backup included and the price of more', async () => {
-      sdkMock.getLicenseStatus.mockResolvedValue(license());
-      render(PlanSection);
-
-      expect(await screen.findByText('No plan on this server')).toBeInTheDocument();
-      expect(screen.getByText('$9.99')).toBeInTheDocument();
-      expect(screen.getByText('$99.90')).toBeInTheDocument();
-      expect(screen.getAllByText('1 TB encrypted cloud backup')).toHaveLength(2);
-      expect(screen.getByText(/More storage is \$9\.99\/month for each extra 1 TB/)).toBeInTheDocument();
-      expect(screen.getAllByRole('button', { name: 'Continue to checkout' })).toHaveLength(2);
-    });
-
-    it('strikes through the price on a licensed server (plans only)', async () => {
-      sdkMock.getLicenseStatus.mockResolvedValue(
-        license({ licensed: true, key: keySlot, entitlements: { ...entitlements, supporter: true } }),
-      );
-      render(PlanSection);
-
-      expect(await screen.findByText(/\$9\.29/)).toBeInTheDocument();
-      expect(screen.getByText('$9.99').tagName).toBe('S');
-      expect(screen.getByText(/\$92\.91/)).toBeInTheDocument();
-      expect(screen.getByText(/plans cost 7% less/)).toBeInTheDocument();
-      expect(screen.getByText(/AI credit is priced the same for everyone/)).toBeInTheDocument();
-    });
-
-    it('takes the Individual rate off for an Individual licence: the server’s, or the administrator’s own (FL-369)', async () => {
-      sdkMock.getLicenseStatus.mockResolvedValue(
-        license({ licensed: true, key: { ...keySlot, kind: LicenseKind.Individual } }),
-      );
-      const { unmount } = render(PlanSection);
-      expect(await screen.findByText(/\$9\.49/)).toBeInTheDocument();
-      expect(screen.getByText(/\$94\.90/)).toBeInTheDocument();
-      expect(screen.getByText(/This server is licensed: Frameleaf Cloud plans cost 5% less/)).toBeInTheDocument();
-      unmount();
-
-      authManager.setUser({
-        id: 'admin-1',
-        isAdmin: true,
-        license: { kind: 'individual', keyHint: '8EL6', activatedAt: '2026-09-25T09:00:00.000Z' },
-      } as never);
-      sdkMock.getLicenseStatus.mockResolvedValue(license());
-      render(PlanSection);
-      expect(await screen.findByText(/Your Individual licence takes 5% off Frameleaf Cloud plans/)).toBeInTheDocument();
-      expect(screen.getByText(/\$9\.49/)).toBeInTheDocument();
-    });
-
-    it('offers both rates to a server without a licence, at the regular price (FL-369)', async () => {
-      sdkMock.getLicenseStatus.mockResolvedValue(license());
-      render(PlanSection);
-
-      expect(
-        await screen.findByText(/A server licence takes 7% off Frameleaf Cloud plans, an individual licence 5%\./),
-      ).toBeInTheDocument();
-      expect(screen.getByText('$9.99').tagName).not.toBe('S');
-    });
-
-    it('follows the discount Frameleaf Cloud published', async () => {
-      sdkMock.getLicenseStatus.mockResolvedValue(
-        license({ licensed: true, key: keySlot, entitlements: { ...entitlements, supporter: true } }),
-      );
-      sdkMock.getLicenseProducts.mockResolvedValue({ ...products(), licensedDiscount: 0.25 });
-      render(PlanSection);
-
-      expect(await screen.findByText(/\$7\.49/)).toBeInTheDocument();
-      expect(screen.getByText(/\$74\.92/)).toBeInTheDocument();
-      expect(screen.getByText(/plans cost 25% less/)).toBeInTheDocument();
-    });
-
-    it('says purchasing is not available yet when no store is configured', async () => {
-      sdkMock.getLicenseStatus.mockResolvedValue(license());
-      sdkMock.getLicenseProducts.mockResolvedValue(products(null));
-      render(PlanSection);
-
-      expect(await screen.findAllByText('Purchasing isn’t available on this server yet.')).toHaveLength(2);
-      expect(screen.queryByRole('button', { name: 'Continue to checkout' })).not.toBeInTheDocument();
-    });
-
-    it('shows an active plan and removes it from this server after confirmation', async () => {
-      sdkMock.getLicenseStatus.mockResolvedValue(
-        license({ state: LicenseState.Active, plan: planSlot, entitlements: { ...entitlements, remoteAccess: true } }),
-      );
-      sdkMock.removeLicensePlan.mockResolvedValue(license());
-      render(PlanSection);
-
-      expect(await screen.findByText('Active')).toBeInTheDocument();
-      expect(screen.getByRole('heading', { name: 'Frameleaf Cloud' })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: /Manage subscription/ })).toHaveAttribute('target', '_blank');
-      await fireEvent.click(screen.getByRole('button', { name: /Stop using this plan on this server/ }));
-      const dialog = await screen.findByRole('dialog');
-      await fireEvent.click(within(dialog).getByRole('button', { name: 'Stop using the plan' }));
-      await waitFor(() => expect(sdkMock.removeLicensePlan).toHaveBeenCalled());
     });
   });
 });

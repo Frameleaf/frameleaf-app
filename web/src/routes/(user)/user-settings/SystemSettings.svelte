@@ -73,7 +73,6 @@
     mdiFaceRecognition,
     mdiImageSearchOutline,
     mdiTextRecognition,
-    mdiCertificateOutline,
     mdiCloudSyncOutline,
     mdiCloudUploadOutline,
     mdiCreditCardOutline,
@@ -451,7 +450,6 @@
         // FL-154..FL-156: Frameleaf Cloud → Account & link, Plan and Licence (settings-catalog.mjs:1713-1752).
         ['cloud-account', 'frameleaf_cc_section_cloud_account', mdiLinkVariant],
         ['cloud-plan', 'frameleaf_cc_section_cloud_plan', mdiCreditCardOutline],
-        ['cloud-license', 'frameleaf_cc_section_cloud_license', mdiCertificateOutline],
         // FL-161: Frameleaf Cloud → Remote access, who can connect and what the relay carries.
         ['cloud-remote', 'frameleaf_cc_section_cloud_remote', mdiEarth],
         // FL-160: Frameleaf Cloud → Cloud backup.

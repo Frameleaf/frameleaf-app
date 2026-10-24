@@ -2654,6 +2654,17 @@ export type LicenseCertificateDto = {
     /** The contents of a licence file: the signed certificate, or a JSON file holding it */
     certificate: string;
 };
+export type LicenseCheckoutDto = {
+    licence: Licence;
+    plan: Plan;
+};
+export type LicenseCheckoutResponseDto = {
+    checkoutId: string;
+    /** When the page stops working unless payment has started, about 30 minutes */
+    expiresAt: string;
+    /** The Frameleaf store page to open; the buyer signs into the account that owns this server */
+    url: string;
+};
 export type SetMaintenanceModeDto = {
     action: MaintenanceAction;
     /** A verified, locally staged Buddy recovery */
@@ -6349,6 +6360,8 @@ export type CloudMlJobRefusalDto = {
     /** insufficient-credits, daily-cap or budget-exceeded; nothing is sent and the model is never changed */
     code: string;
     message: string;
+    /** FL-544: where to add AI credit in the Frameleaf account, when the cloud named a page; null otherwise */
+    topUpUrl: string | null;
 };
 export type CloudMlJobUpscaleDto = {
     /** The factor Frameleaf Cloud will really use and prices: lower when the 64 MP output cap needs it */
@@ -20400,6 +20413,21 @@ export function installLicenseCertificate({ licenseCertificateDto }: {
     })));
 }
 /**
+ * Start a Frameleaf Cloud purchase
+ */
+export function startLicenseCheckout({ licenseCheckoutDto }: {
+    licenseCheckoutDto: LicenseCheckoutDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LicenseCheckoutResponseDto;
+    }>("/admin/license/checkout", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: licenseCheckoutDto
+    })));
+}
+/**
  * Remove the plan from this server
  */
 export function removeLicensePlan(opts?: Oazapfts.RequestOpts) {
@@ -33236,6 +33264,14 @@ export enum LicenseState {
     Grace = "grace",
     Expired = "expired",
     Invalid = "invalid"
+}
+export enum Licence {
+    SupporterServer = "supporter-server",
+    SupporterIndividual = "supporter-individual"
+}
+export enum Plan {
+    CloudMonthly = "cloud-monthly",
+    CloudAnnual = "cloud-annual"
 }
 export enum MaintenanceAction {
     Start = "start",

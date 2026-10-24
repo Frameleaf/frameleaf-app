@@ -15,8 +15,9 @@
   import BuddyRestoreSection from '$lib/components/frameleaf/cloud/BuddyRestoreSection.svelte';
   import { buddyBackupPresentation, buddyConnectionKey } from '$lib/frameleaf/buddy-backup';
   import { formatDateTime } from '$lib/frameleaf/cloud-ml';
-  import { backupPageUrl, commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { backupPageUrl } from '$lib/frameleaf/settings-areas';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
@@ -391,18 +392,13 @@
         <div class="inside">
           {#if !status.pairing}
             <!-- Link first, then a Server licence; setup stays visible until every gate is satisfied. -->
-            {#if !linked}
-              <p class="explain">{$t('frameleaf_buddy_link_required')}</p>
+            {#if !linked || !serverLicensed}
+              <p class="explain">{$t('frameleaf_gate_buddy')}. {$t('frameleaf_why_buddy')}</p>
               <div class="fc-actions">
-                <a class="fc-button is-primary" href={commandCenterUrl('cloud', 'cloud-account')}
-                  >{$t('frameleaf_cloud_backup_gate_link')}</a
-                >
-              </div>
-            {:else if !serverLicensed}
-              <p class="explain">{$t('frameleaf_buddy_server_licence_required')}</p>
-              <div class="fc-actions">
-                <a class="fc-button" href={commandCenterUrl('cloud', 'cloud-license')}
-                  >{$t('frameleaf_buddy_server_licence_action')}</a
+                <Button
+                  variant="primary"
+                  onclick={() => getCloudManager.open('buddy', { onDone: () => void beginSetup() })}
+                  >{$t('frameleaf_get_cloud')}</Button
                 >
               </div>
             {:else}
@@ -838,11 +834,9 @@
     </p>
     {#if failure}<InlineError compact message={failure} />{/if}
     {#if licencePrompt}
-      <p class="explain">{$t('frameleaf_buddy_server_licence_required')}</p>
+      <p class="explain">{$t('frameleaf_gate_buddy')}. {$t('frameleaf_why_buddy')}</p>
       <div class="fc-actions">
-        <a class="fc-button" href={commandCenterUrl('cloud', 'cloud-license')}
-          >{$t('frameleaf_buddy_server_licence_action')}</a
-        >
+        <Button variant="primary" onclick={() => getCloudManager.open('buddy')}>{$t('frameleaf_get_cloud')}</Button>
       </div>
     {/if}
     {#if step === 0}{@render storageForm()}

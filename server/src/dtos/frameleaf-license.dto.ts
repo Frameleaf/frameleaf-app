@@ -164,7 +164,27 @@ const LicenseProductsResponseSchema = z
   })
   .meta({ id: 'LicenseProductsResponseDto' });
 
+/** FL-544: the combined licence-and-plan purchase (FC-152). Product ids are the store's. */
+const LicenseCheckoutSchema = z
+  .object({
+    licence: z.enum(['supporter-server', 'supporter-individual']),
+    plan: z.enum(['cloud-monthly', 'cloud-annual']),
+  })
+  .meta({ id: 'LicenseCheckoutDto' });
+
+const LicenseCheckoutResponseSchema = z
+  .object({
+    checkoutId: z.string(),
+    url: z
+      .string()
+      .describe('The Frameleaf store page to open; the buyer signs into the account that owns this server'),
+    expiresAt: z.string().describe('When the page stops working unless payment has started, about 30 minutes'),
+  })
+  .meta({ id: 'LicenseCheckoutResponseDto' });
+
 export class LicenseStatusResponseDto extends createZodDto(LicenseStatusResponseSchema) {}
+export class LicenseCheckoutDto extends createZodDto(LicenseCheckoutSchema) {}
+export class LicenseCheckoutResponseDto extends createZodDto(LicenseCheckoutResponseSchema) {}
 export class LicenseActivateDto extends createZodDto(LicenseActivateSchema) {}
 export class LicenseLinkCodeDto extends createZodDto(LicenseLinkCodeSchema) {}
 export class LicenseLinkCodeResponseDto extends createZodDto(LicenseLinkCodeResponseSchema) {}

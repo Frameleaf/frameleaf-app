@@ -18,10 +18,10 @@
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { Route } from '$lib/route';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { setSupportBadgeVisibility } from '$lib/utils/purchase-utils';
-  import { deleteUserLicense, getMyUser, setUserLicense } from '@frameleaf/sdk';
+  import { deleteUserLicense, getLicenseProducts, getMyUser, setUserLicense } from '@frameleaf/sdk';
+  import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
   let key = $state('');
@@ -30,6 +30,19 @@
   let notice = $state('');
 
   const personal = $derived(authManager.user.license ?? null);
+  // FL-544: Support Frameleaf folded into Your Frameleaf Cloud; a member buys their own licence in the store
+  let individualStoreUrl = $state<string | null>(null);
+  onMount(() => {
+    const load = async () => {
+      try {
+        const products = await getLicenseProducts();
+        individualStoreUrl = products.products.find((p) => p.id === 'supporter-individual')?.storeUrl ?? null;
+      } catch {
+        individualStoreUrl = null;
+      }
+    };
+    void load();
+  });
   const badgeHidden = $derived(!authManager.preferences.purchase.showSupportBadge);
 
   const reloadUser = async () => {
@@ -150,11 +163,14 @@
     </section>
   {/if}
   <p class="auth-note">
-    <a class="auth-link" href={Route.buy()}>{$t('frameleaf_buy_open')}</a>
-    {#if authManager.user.isAdmin}
-      · <a class="auth-link" href={commandCenterUrl('cloud', 'cloud-license')}
-        >{$t('frameleaf_buy_server_licence_link')}</a
+    {#if individualStoreUrl}
+      <a class="auth-link" href={individualStoreUrl} target="_blank" rel="noopener noreferrer"
+        >{$t('frameleaf_supporter_buy_individual')}</a
       >
+    {/if}
+    {#if authManager.user.isAdmin}
+      {#if individualStoreUrl}·{/if}
+      <a class="auth-link" href={commandCenterUrl('cloud', 'cloud-plan')}>{$t('frameleaf_cc_section_cloud_plan')}</a>
     {/if}
   </p>
 </div>

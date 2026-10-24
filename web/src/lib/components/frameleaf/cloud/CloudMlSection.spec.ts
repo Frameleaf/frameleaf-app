@@ -156,8 +156,8 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     );
     render(CloudMlSection);
 
-    expect(await screen.findByText('Link this server first')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Link to Frameleaf' })).toBeInTheDocument();
+    expect(await screen.findByText('Cloud processing is pay as you go')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Get Frameleaf Cloud' })).toBeInTheDocument();
     expect(screen.getAllByText('Not linked').length).toBeGreaterThan(0);
     expect(screen.getByRole('switch', { name: 'Use Frameleaf Cloud for chosen jobs' })).toBeDisabled();
   });

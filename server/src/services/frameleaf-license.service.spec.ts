@@ -34,6 +34,8 @@ import { ServiceMocks, newTestService } from 'test/utils.js';
 const SERVER_KEY = 'FL-S8NL-49G8-J583';
 const PERSONAL_KEY = 'FL-IC8Q-BT2Q-8EL6';
 
+const sha256Hex = (value: string) => createHash('sha256').update(value).digest('hex');
+
 describe(FrameleafLicenseService.name, () => {
   let sut: FrameleafLicenseService;
   let mocks: ServiceMocks;
@@ -839,6 +841,66 @@ describe(FrameleafLicenseService.name, () => {
       const products = await sut.getProducts();
       expect(products.storeUrl).toBeNull();
       expect(products.products.every(({ storeUrl }) => storeUrl === null)).toBe(true);
+    });
+  });
+
+  describe('startCheckout (FL-544: the combined licence-and-plan purchase)', () => {
+    const CHECKOUT = { checkoutId: 'chk_1', expiresAt: '2026-10-24T16:00:00.000Z' };
+
+    it('refuses before the server is linked', async () => {
+      await expect(
+        sut.startCheckout(authStub.admin, { licence: 'supporter-server', plan: 'cloud-annual' }),
+      ).rejects.toThrow('Link this server to a Frameleaf account first.');
+      expect(cloud.requests.some(({ path }) => path.includes('licensed-checkout'))).toBe(false);
+    });
+
+    it('asks Frameleaf Cloud with the instance token and returns the store page to open', async () => {
+      link();
+      serveToken();
+      cloud.on('POST /api/v1/billing/licensed-checkout', () => ({
+        status: 200,
+        body: { ...CHECKOUT, url: `${cloud.url}/store?checkout=chk_1` },
+      }));
+      await expect(
+        sut.startCheckout(authStub.admin, { licence: 'supporter-server', plan: 'cloud-annual' }),
+      ).resolves.toEqual({ ...CHECKOUT, url: `${cloud.url}/store?checkout=chk_1` });
+      const request = cloud.requests.find(({ path }) => path === '/api/v1/billing/licensed-checkout')!;
+      expect(tokenNameOf(request)).toBe('api-token');
+      expect(request.json()).toEqual({ licence: 'supporter-server', plan: 'cloud-annual' });
+    });
+
+    it('sends the holder fingerprint for an Individual licence only', async () => {
+      link();
+      serveToken();
+      cloud.on('POST /api/v1/billing/licensed-checkout', () => ({
+        status: 200,
+        body: { ...CHECKOUT, url: `${cloud.url}/store?checkout=chk_1` },
+      }));
+      await sut.startCheckout(authStub.admin, { licence: 'supporter-individual', plan: 'cloud-monthly' });
+      const request = cloud.requests.find(({ path }) => path === '/api/v1/billing/licensed-checkout')!;
+      const body = request.json() as { userFingerprint: string };
+      expect(body.userFingerprint).toMatch(/^[a-f0-9]{64}$/);
+      expect(body.userFingerprint).toBe(sha256Hex(`${instanceId()}${authStub.admin.user.id}`));
+    });
+
+    it('passes a cloud refusal on as a bad request and never opens a page off the cloud', async () => {
+      link();
+      serveToken();
+      cloud.on('POST /api/v1/billing/licensed-checkout', () => ({
+        status: 402,
+        body: { code: 'instance-limit', message: 'This account already has three servers.' },
+      }));
+      await expect(
+        sut.startCheckout(authStub.admin, { licence: 'supporter-server', plan: 'cloud-annual' }),
+      ).rejects.toThrow('This account already has three servers.');
+
+      cloud.on('POST /api/v1/billing/licensed-checkout', () => ({
+        status: 200,
+        body: { ...CHECKOUT, url: 'https://evil.example/store' },
+      }));
+      await expect(
+        sut.startCheckout(authStub.admin, { licence: 'supporter-server', plan: 'cloud-annual' }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 

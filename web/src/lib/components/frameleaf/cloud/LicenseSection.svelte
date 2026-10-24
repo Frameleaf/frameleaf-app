@@ -30,7 +30,7 @@
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
-  import { Route } from '$lib/route';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { copyToClipboard } from '$lib/utils';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
@@ -231,7 +231,7 @@
           {#if serverCover}
             <Button onclick={() => goto(commandCenterUrl('backup'))}>{$t('frameleaf_lic_open_backup')}</Button>
           {:else}
-            <Button variant="primary" onclick={() => goto(Route.buy())}>{$t('frameleaf_license_buy')}</Button>
+            <Button variant="primary" onclick={() => getCloudManager.open()}>{$t('frameleaf_get_cloud')}</Button>
           {/if}
         {/snippet}
         <Coverage rows={coverage} />
