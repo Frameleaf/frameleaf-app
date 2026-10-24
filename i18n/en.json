@@ -14557,7 +14557,6 @@
   "frameleaf_trash_restored": "Restored {count, plural, one {# item} other {# items}} to your library.",
   "frameleaf_trash_retention": "Items are deleted for good after {count, plural, one {# day} other {# days}} in the trash.",
   "frameleaf_trash_retention_disabled": "Trash protection is off for new deletions. Existing items remain available here until the server removes them.",
-  "frameleaf_trash_retention_settings": "Change how long items are kept",
   "frameleaf_trash_retention_sizes": "You may get back less space than the sizes shown, because a file that is also used elsewhere is kept.",
   "frameleaf_trash_review_confirm": "Type {phrase} to confirm",
   "frameleaf_trash_review_confirm_label": "Confirm permanent deletion",

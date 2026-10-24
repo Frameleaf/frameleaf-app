@@ -57,7 +57,7 @@ test.describe('Libraries (FL-78)', () => {
     await page.getByLabel('Path on this server', { exact: true }).fill(`${testAssetDirInternal}/temp/fl78-web-add`);
     await page.getByRole('button', { name: 'Use this path', exact: true }).click();
     await expect(page.getByText(/About 1 photo/)).toBeVisible();
-    await page.getByLabel('Name', { exact: true }).fill(name);
+    await page.getByLabel('Library name', { exact: true }).fill(name);
     await page.getByRole('button', { name: 'Add folder', exact: true }).click();
     await expect(page.getByText('Folder added. Its first check has started.', { exact: true })).toBeVisible();
 

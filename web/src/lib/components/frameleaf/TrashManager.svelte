@@ -649,11 +649,7 @@
         <option value={TrashItemSort.Name}>{$t('frameleaf_trash_sort_name')}</option>
       </select>
     </label>
-    {#if authManager.user.isAdmin}
-      <Button onclick={() => void goto(commandCenterUrl('storage', 'trash'))}>
-        {$t('frameleaf_trash_retention_settings')}
-      </Button>
-    {/if}
+    <!-- FL-539: "Change how long items are kept" now sits on the Hero, as in the prototype -->
   </div>
 
   {#if error && !reviewOpen}
