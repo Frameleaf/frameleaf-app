@@ -224,7 +224,73 @@ describe('GetCloudSheet (FL-544: one sheet on every gate)', () => {
       wallet: { availableUsd: 25, topUpUrl: 'https://frameleaf.cloud.test/wallet/top-up' },
     } as never);
     await vi.advanceTimersByTimeAsync(5000);
-    expect(await screen.findByRole('button', { name: 'Turn on cloud processing' })).toBeInTheDocument();
+    // no gate asked to turn it on here, so the sheet ends on Done
+    expect(await screen.findByRole('button', { name: 'Done' })).toBeInTheDocument();
+  });
+
+  it('buys a licence alone from the store, never the combined checkout, when only the licence is missing', async () => {
+    render(GetCloudSheet, { feature: 'processing', close: vi.fn() });
+    expect(await screen.findByText('A lifetime Server licence')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue to the Frameleaf store' }));
+    await waitFor(() =>
+      expect(open).toHaveBeenCalledWith(
+        'https://frameleaf.cloud.test/store?product=supporter-server',
+        '_blank',
+        'noopener,noreferrer',
+      ),
+    );
+    expect(sdkMock.startLicenseCheckout).not.toHaveBeenCalled();
+  });
+
+  it('goes back to the link step when the server is unlinked while the sheet is open', async () => {
+    render(GetCloudSheet, { feature: 'remote', close: vi.fn() });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Continue to the Frameleaf store' }));
+    await screen.findByText(/This page updates by itself/);
+    sdkMock.refreshLicense.mockRejectedValue(new Error('Link this server to a Frameleaf account first.'));
+    sdkMock.getCloudStatus.mockResolvedValue(status());
+    sdkMock.getLicenseStatus.mockResolvedValue(license({ linked: false }));
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await screen.findByRole('button', { name: 'Link this server' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continue to the Frameleaf store' })).toBeNull();
+  });
+
+  it('ends on Done when no gate asked to turn anything on', async () => {
+    sdkMock.getLicenseStatus.mockResolvedValue(cloudLicense());
+    render(GetCloudSheet, { feature: 'backup', close: vi.fn() });
+    expect(await screen.findByRole('button', { name: 'Done' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Turn on Cloud Backup' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Later' })).toBeNull();
+  });
+
+  it('does not promise everyone Cloud Backup after a just-me purchase', async () => {
+    render(GetCloudSheet, { feature: 'backup', close: vi.fn() });
+    await fireEvent.click(await screen.findByRole('radio', { name: 'Just me' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue to the Frameleaf store' }));
+    sdkMock.refreshLicense.mockResolvedValue(cloudLicense('individual'));
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await screen.findByText('Added to this server just now. Covers you only.')).toBeInTheDocument();
+    expect(screen.queryByText(/are all ready now/)).toBeNull();
+  });
+
+  it('says Frameleaf Cloud is not set up when the server has no cloud address', async () => {
+    sdkMock.getCloudStatus.mockResolvedValue(status({ state: CloudLinkState.NotConfigured, configured: false }));
+    render(GetCloudSheet, { feature: 'remote', close: vi.fn() });
+    expect(await screen.findByText('Frameleaf Cloud is not set up on this server')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Link this server' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Continue to the Frameleaf store' })).toBeNull();
+  });
+
+  it('gives a member the top-up link a refusal carried instead of a dead end', async () => {
+    authManager.setUser({ id: 'user-2', name: 'Morgan', email: 'm@example.test', isAdmin: false } as never);
+    render(GetCloudSheet, {
+      feature: 'processing',
+      close: vi.fn(),
+      topUpUrl: 'https://frameleaf.cloud.test/wallet/top-up',
+    });
+    expect(await screen.findByRole('link', { name: /Add AI credit in your Frameleaf account/ })).toHaveAttribute(
+      'href',
+      'https://frameleaf.cloud.test/wallet/top-up',
+    );
   });
 
   it('says purchasing is unavailable when the server has no store', async () => {

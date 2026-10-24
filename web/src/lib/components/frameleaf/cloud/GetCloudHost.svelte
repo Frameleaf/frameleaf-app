@@ -6,5 +6,12 @@
 
 {#if getCloudManager.request}
   {@const request = getCloudManager.request}
-  <GetCloudSheet feature={request.feature} onDone={request.onDone} close={() => getCloudManager.close()} />
+  {#key request}
+    <GetCloudSheet
+      feature={request.feature}
+      onDone={request.onDone}
+      topUpUrl={request.topUpUrl}
+      close={() => getCloudManager.close()}
+    />
+  {/key}
 {/if}

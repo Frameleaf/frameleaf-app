@@ -7,6 +7,7 @@
    * licence, key and file under Details. Buying happens through the Get Frameleaf Cloud sheet.
    */
   import './cloud-account.css';
+  import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
@@ -97,7 +98,8 @@
     }
   };
 
-  const getCloud = (feature: CloudFeature | null = null) => getCloudManager.open(feature);
+  const getCloud = (feature: CloudFeature | null = null, page?: string) =>
+    getCloudManager.open(feature, page ? { onDone: () => void goto(page) } : {});
 
   type Row = { id: CloudFeature; icon: string; on: boolean; page: string; note: string };
   const rows = $derived<Row[]>([
@@ -111,7 +113,8 @@
     {
       id: 'backup',
       icon: mdiShieldCheckOutline,
-      on: !!license?.entitlements.cloudBackup,
+      // whether Cloud Backup is set up is the Backup page's to say; here it is ready once Frameleaf Cloud is
+      on: false,
       page: commandCenterUrl('backups', 'cloud'),
       note: '',
     },
@@ -242,7 +245,7 @@
               {#if lacks.length > 0}
                 <Button
                   variant={lacks.includes('credit') && lacks.length === 1 ? 'primary' : 'default'}
-                  onclick={() => getCloud(row.id)}
+                  onclick={() => getCloud(row.id, row.page)}
                 >
                   {$t(gateButtonKey(lacks))}
                 </Button>

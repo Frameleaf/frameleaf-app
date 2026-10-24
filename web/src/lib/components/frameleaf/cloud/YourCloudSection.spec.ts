@@ -143,7 +143,7 @@ describe('YourCloudSection (FL-544: Plan, Licence and Support Frameleaf as one p
     expect(await screen.findByText('This server isn’t linked to Frameleaf yet')).toBeInTheDocument();
     expect(screen.getByText(/\$100 once, then \$92\.91 a year/)).toBeInTheDocument();
     await fireEvent.click(screen.getAllByRole('button', { name: 'Get Frameleaf Cloud' })[0]);
-    expect(getCloudManager.request).toEqual({ feature: null, onDone: undefined });
+    expect(getCloudManager.request).toEqual({ feature: null, onDone: undefined, topUpUrl: null });
   });
 
   it('tells a linked server with nothing bought what Frameleaf Cloud adds, one button per row', async () => {

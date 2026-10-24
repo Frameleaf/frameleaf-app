@@ -432,7 +432,10 @@
       <Button onclick={close}>{$t('cancel')}</Button>
       {#if estimate?.refusal}
         <!-- FL-544: one button that fixes it, instead of a sentence -->
-        <Button variant="primary" onclick={() => getCloudManager.open('processing')}>
+        <Button
+          variant="primary"
+          onclick={() => getCloudManager.open('processing', { topUpUrl: estimate?.refusal?.topUpUrl ?? null })}
+        >
           {estimate.refusal.code === 'insufficient-credits' ? $t('frameleaf_add_ai_credit') : $t('frameleaf_get_cloud')}
         </Button>
       {/if}

@@ -328,7 +328,9 @@
     <CloudBanner icon={mdiCloudOutline} title={$t('frameleaf_gate_backup')}>
       {$t('frameleaf_why_backup')}
       {#snippet action()}
-        <Button variant="primary" onclick={() => getCloudManager.open('backup')}>{$t('frameleaf_get_cloud')}</Button>
+        <Button variant="primary" onclick={() => getCloudManager.open('backup', { onDone: () => (setupOpen = true) })}
+          >{$t('frameleaf_get_cloud')}</Button
+        >
       {/snippet}
     </CloudBanner>
   {/if}

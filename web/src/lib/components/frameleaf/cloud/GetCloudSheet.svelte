@@ -27,9 +27,11 @@
     feature: CloudFeature | null;
     /** Called when the person presses the feature's own button on the done step. */
     onDone?: () => void;
+    /** FL-544: the top-up page a job refusal carried, so a member who may spend is not sent to an administrator. */
+    topUpUrl?: string | null;
     close: () => void;
   };
-  let { feature, onDone, close }: Props = $props();
+  let { feature, onDone, topUpUrl = null, close }: Props = $props();
 
   /** The sheet polls this often while the store tab is open. */
   const POLL_MS = 5000;
@@ -95,10 +97,16 @@
     stage = current[0] === 'link' ? 'link' : stepsFor(current).length > 0 ? 'needs' : 'done';
   });
 
-  // the link step ends by itself once the code is approved
+  // the link step ends by itself once the code is approved, and comes back if the link is lost
   $effect(() => {
-    if (stage === 'link' && have.linked && lacks) {
+    if (!lacks || !ready) {
+      return;
+    }
+    if (stage === 'link' && have.linked) {
       stage = stepsFor(lacks).length > 0 ? 'needs' : 'done';
+    } else if (stage !== 'link' && stage !== 'done' && !have.linked && have.configured) {
+      stopWaiting();
+      stage = 'link';
     }
   });
 
@@ -133,7 +141,15 @@
 
   const continueToStore = async () => {
     failure = '';
-    if (buyingStore) {
+    if (buyingStore && !buysCloud) {
+      // a licence alone (cloud processing, Buddy Backup): the store's own page, never the plan checkout
+      checkoutUrl =
+        cloudManager.products?.products.find((product) => product.id === 'supporter-server')?.storeUrl ?? null;
+      if (!checkoutUrl) {
+        failure = $t('frameleaf_plan_store_unavailable');
+        return;
+      }
+    } else if (buyingStore) {
       busy = true;
       try {
         const answer = await startLicenseCheckout({
@@ -194,7 +210,8 @@
         await loadWallet();
       }
     } catch {
-      // the next check tries again
+      // the next check tries again; a lost link shows up in the status and sends the sheet back a step
+      await cloudManager.refresh();
     }
     arrived();
   };
@@ -235,7 +252,8 @@
 
   const status = $derived(cloudManager.status);
   const account = $derived(status?.account?.label ?? '');
-  const unavailable = $derived(lacks !== null && stage === 'needs' && (!have.configured || !have.store));
+  const notConfigured = $derived(ready && !have.configured);
+  const unavailable = $derived(lacks !== null && stage === 'needs' && !have.store);
   const title = $derived(
     stage === 'done' && (bought.cloud || have.plan) ? $t('frameleaf_gc_done_title') : $t('frameleaf_gc_title'),
   );
@@ -244,7 +262,17 @@
 
 <Dialog {title} closeLabel={$t('close')} open={true} onRequestClose={close} size="medium">
   {#if !isAdmin}
-    <p class="gc-lead">{$t('frameleaf_gc_admin_only')}</p>
+    {#if topUpUrl}
+      <p class="gc-lead">
+        <a class="gc-link" href={topUpUrl} target="_blank" rel="noopener noreferrer"
+          >{$t('frameleaf_gc_member_top_up')}</a
+        >
+      </p>
+    {:else}
+      <p class="gc-lead">{$t('frameleaf_gc_admin_only')}</p>
+    {/if}
+  {:else if notConfigured}
+    <p class="gc-lead">{$t('frameleaf_cloud_not_configured_title')}</p>
   {:else if lacks === null}
     <p class="gc-lead" aria-busy="true">{$t('frameleaf_gc_intro')}</p>
   {:else}
@@ -441,7 +469,7 @@
           >
           <div>
             <strong>
-              {spec.onKey === 'frameleaf_on_signin' ? $t(spec.nameKey) : $t(spec.onKey)}
+              {spec.onKey === 'frameleaf_on_signin' || !onDone ? $t(spec.nameKey) : $t(spec.onKey)}
               <span class="gc-pill" class:is-good={stage === 'done'}
                 >{stage === 'done' ? $t('frameleaf_gc_next') : $t('frameleaf_gc_last')}</span
               >
@@ -452,7 +480,7 @@
       {/if}
     </ol>
 
-    {#if stage === 'done' && spec && spec.needs === 'cloud'}
+    {#if stage === 'done' && spec && spec.needs === 'cloud' && (who === 'everyone' || have.licence === 'server')}
       <p class="gc-note">{$t('frameleaf_gc_done_others')}</p>
     {/if}
     {#if unavailable}
@@ -468,7 +496,7 @@
   {/if}
 
   {#snippet actions()}
-    {#if !isAdmin || lacks === null}
+    {#if !isAdmin || notConfigured || lacks === null}
       <Button onclick={close}>{$t('close')}</Button>
     {:else if stage === 'link'}
       <Button onclick={close}>{$t('frameleaf_gc_not_now')}</Button>
@@ -491,10 +519,12 @@
       >
       <Button onclick={() => checkoutUrl && open(checkoutUrl)}>{$t('frameleaf_gc_store_again')}</Button>
     {:else}
-      {#if spec && spec.onKey !== 'frameleaf_on_signin'}
+      {#if spec && onDone && spec.onKey !== 'frameleaf_on_signin'}
         <Button onclick={close}>{$t('frameleaf_gc_later')}</Button>
       {/if}
-      <Button variant="primary" onclick={turnOn}>{spec ? $t(spec.onKey) : $t('frameleaf_gc_done_all_button')}</Button>
+      <Button variant="primary" onclick={turnOn}
+        >{spec && onDone ? $t(spec.onKey) : $t('frameleaf_gc_done_all_button')}</Button
+      >
     {/if}
   {/snippet}
 </Dialog>
@@ -510,6 +540,11 @@
     display: block;
     color: var(--fl-text);
     font-weight: 600;
+  }
+  .gc-link {
+    color: var(--fl-accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
   .gc-lead.is-done {
     display: flex;

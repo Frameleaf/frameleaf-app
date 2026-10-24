@@ -1,6 +1,6 @@
 import type { CloudFeature } from '$lib/frameleaf/cloud-rules';
 
-export type GetCloudRequest = { feature: CloudFeature | null; onDone?: () => void };
+export type GetCloudRequest = { feature: CloudFeature | null; onDone?: () => void; topUpUrl?: string | null };
 
 /**
  * FL-544: the one "Get Frameleaf Cloud" sheet, opened from any gate. `GetCloudHost` (mounted once in
@@ -15,8 +15,8 @@ export class GetCloudManager {
     return this.#request;
   }
 
-  open(feature: CloudFeature | null = null, options: { onDone?: () => void } = {}) {
-    this.#request = { feature, onDone: options.onDone };
+  open(feature: CloudFeature | null = null, options: { onDone?: () => void; topUpUrl?: string | null } = {}) {
+    this.#request = { feature, onDone: options.onDone, topUpUrl: options.topUpUrl ?? null };
   }
 
   close() {
