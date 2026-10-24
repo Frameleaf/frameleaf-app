@@ -217,11 +217,11 @@ describe('RemoteAccessSection (FL-165)', () => {
   it('explains why remote access cannot be turned on and keeps the switch off', async () => {
     sdkMock.getCloudStatus.mockResolvedValue(linked());
     sdkMock.getRemoteAccess.mockResolvedValue(
-      remote({ unavailableReason: 'Remote access needs a Server licence or a Frameleaf Cloud plan.' }),
+      remote({ unavailableReason: 'Remote access is part of Frameleaf Cloud.' }),
     );
     render(RemoteAccessSection);
 
-    const reason = 'Remote access needs a Server licence or a Frameleaf Cloud plan.';
+    const reason = 'Remote access is part of Frameleaf Cloud.';
     // As in the prototype, the reason is both the page's gate banner and the switch's own explanation.
     const gate = await screen.findByRole('status', { name: '' });
     expect(gate).toHaveTextContent(reason);
@@ -263,7 +263,7 @@ describe('RemoteAccessSection (FL-165)', () => {
       remote({
         enabled: true,
         status: RemoteAccessState.Ready,
-        reason: 'The relay comes with a Frameleaf Cloud plan. Without one, this server is reached directly.',
+        reason: 'Connecting through Frameleaf is part of Frameleaf Cloud. Without it, this server is reached directly.',
         relayNeedsPlan: true,
         mode: RemoteAccessMode.Relay,
         publicUrl: wan,

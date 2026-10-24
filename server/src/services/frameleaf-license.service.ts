@@ -32,6 +32,7 @@ import {
 import { FrameleafCloudPublicCall } from 'src/repositories/frameleaf-cloud.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
+import { CLOUD_GATES } from 'src/utils/frameleaf-cloud-gates.js';
 import { FRAMELEAF_BUILD_CHANNEL, FrameleafBuildChannel } from 'src/utils/frameleaf-build-channel.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
@@ -366,7 +367,7 @@ export class FrameleafLicenseService extends BaseService {
       throw new BadRequestException(
         store.key?.source === 'file' || store.plan?.source === 'file'
           ? 'This licence came from a file. Install a newer file to update it.'
-          : 'Link this server to refresh its licence.',
+          : CLOUD_GATES.linkFirst,
       );
     }
     await this.databaseRepository.withLock(DatabaseLock.FrameleafLicenseRefresh, () => this.refresh(true));

@@ -109,7 +109,7 @@ describe(FrameleafRemoteAccessService.name, () => {
     it('says why remote access cannot be turned on, as the prototype does', async () => {
       metadata.set(SystemMetadataKey.FrameleafLicense, { key: null, plan: license(['CLOUD']) });
       await expect(sut.getStatus()).resolves.toMatchObject({
-        unavailableReason: 'Remote access needs a Server licence or a Frameleaf Cloud plan.',
+        unavailableReason: 'Remote access is part of Frameleaf Cloud.',
         enabled: false,
         status: 'off',
       });
@@ -141,7 +141,7 @@ describe(FrameleafRemoteAccessService.name, () => {
   describe('a Server licence without a plan (FL-437)', () => {
     const WAN = 'https://203-0-113-7.u225vlzhsdlhwh4l.frameleaf.net:2443';
     const serverLicence = (): FrameleafLicense => ({ ...license(['SUPPORTER_SERVER']), kind: 'server', source: 'key' });
-    const NO_PLAN = 'The relay comes with a Frameleaf Cloud plan. Without one, this server is reached directly.';
+    const NO_PLAN = 'Connecting through Frameleaf is part of Frameleaf Cloud. Without it, this server is reached directly.';
 
     beforeEach(() => {
       metadata.set(SystemMetadataKey.FrameleafLicense, { key: serverLicence(), plan: null });
@@ -265,7 +265,7 @@ describe(FrameleafRemoteAccessService.name, () => {
     it('turns remote access on only on a linked, entitled server, and keeps the link in step', async () => {
       metadata.set(SystemMetadataKey.FrameleafLicense, { key: null, plan: license(['CLOUD']) });
       await expect(sut.update(authStub.admin, { enabled: true })).rejects.toThrow(
-        'Remote access needs a Server licence or a Frameleaf Cloud plan.',
+        'Remote access is part of Frameleaf Cloud.',
       );
       metadata.set(SystemMetadataKey.FrameleafLicense, { key: null, plan: license(['CLOUD', 'REMOTE_ACCESS']) });
 

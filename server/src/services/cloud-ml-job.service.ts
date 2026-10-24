@@ -72,6 +72,7 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { parseDurationSeconds } from 'src/services/asset-restoration.service.js';
 import { requireAccess } from 'src/utils/access.js';
+import { CLOUD_GATES } from 'src/utils/frameleaf-cloud-gates.js';
 import {
   CLOUD_ML_JOB_COST_POLL_MS,
   CLOUD_ML_JOB_COST_READS,
@@ -3068,13 +3069,13 @@ export class CloudMlJobService {
     if (availableUsd < holdUsd) {
       return {
         code: 'insufficient-credits',
-        message: `This job needs $${holdUsd.toFixed(2)} held and the AI Wallet has $${availableUsd.toFixed(2)} available. Add credit first.`,
+        message: CLOUD_GATES.creditShort(holdUsd, availableUsd),
       };
     }
     if (wallet.dailyCapUsd !== null && wallet.spentTodayUsd + holdUsd > wallet.dailyCapUsd) {
       return {
         code: 'daily-cap',
-        message: `Today's AI Wallet limit of $${wallet.dailyCapUsd.toFixed(2)} leaves too little for this job. Try again tomorrow or raise the limit in your Frameleaf account.`,
+        message: CLOUD_GATES.dailyCap(wallet.dailyCapUsd),
       };
     }
     return null;
