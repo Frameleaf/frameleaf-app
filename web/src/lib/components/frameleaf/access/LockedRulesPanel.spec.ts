@@ -182,6 +182,23 @@ describe('LockedRulesPanel (FL-67)', () => {
     expect(appMocks.goto).toHaveBeenCalledWith('/user-settings?isOpen=user-pin-code-settings');
   });
 
+  it('says what the draft keeps Locked, counted again as the rules change (FL-541)', async () => {
+    sdkMock.countLockedRules.mockResolvedValue({ photos: 12, videos: 1 });
+    await renderPanel();
+
+    expect(await screen.findByText('frameleaf_locked_rules_count', undefined, { timeout: 3000 })).toBeInTheDocument();
+    expect(sdkMock.countLockedRules).toHaveBeenLastCalledWith({
+      lockedRulesDraftDto: { personIds: [], tagIds: [family.id], petIds: [] },
+    });
+
+    sdkMock.countLockedRules.mockResolvedValue({ photos: 0, videos: 0 });
+    await fireEvent.click(screen.getByRole('checkbox', { name: /^Family$/ }));
+    expect(await screen.findByText('frameleaf_locked_rules_count_none', undefined, { timeout: 3000 })).toBeInTheDocument();
+    expect(sdkMock.countLockedRules).toHaveBeenLastCalledWith({
+      lockedRulesDraftDto: { personIds: [], tagIds: [], petIds: [] },
+    });
+  });
+
   it('marks a tag inside a Locked tag as Locked through it', async () => {
     await renderPanel();
 

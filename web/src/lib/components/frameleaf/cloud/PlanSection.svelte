@@ -21,6 +21,8 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import CloudBanner from '$lib/components/frameleaf/cloud/CloudBanner.svelte';
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
+  import Coverage from '$lib/components/frameleaf/settings/kit/Coverage.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import {
     CLOUD_BACKUP_PRICING,
     cloudPlanPrice,
@@ -42,6 +44,7 @@
     mdiCloudUploadOutline,
     mdiCreditCardOutline,
     mdiDeleteOutline,
+    mdiEarth,
     mdiLinkVariant,
     mdiMinus,
     mdiOpenInNew,
@@ -123,6 +126,41 @@
       : [],
   );
 
+  // FL-541: the plan said in one sentence, with what it covers under it: remote access, and the
+  // Cloud Backup storage the licence decides who may use (Server: everyone; Individual: one person).
+  const keyKind = $derived(serverLicenceKind(license?.key));
+  const backupCover = $derived(
+    keyKind === 'server'
+      ? { tone: 'good' as const, value: $t('frameleaf_plan_cover_backup_everyone'), detail: $t('frameleaf_plan_cover_backup_everyone_detail') }
+      : keyKind === 'individual' || authManager.user.license
+        ? {
+            tone: 'warn' as const,
+            value: $t('frameleaf_plan_cover_backup_one', { values: { name: authManager.user.name } }),
+            detail: $t('frameleaf_plan_cover_backup_one_detail'),
+          }
+        : { tone: 'off' as const, value: $t('frameleaf_plan_cover_backup_waiting'), detail: $t('frameleaf_plan_cover_backup_waiting_detail') },
+  );
+  const planHero = $derived.by(() => {
+    if (!plan) {
+      return { tone: 'quiet' as const, title: $t('frameleaf_plan_hero_none'), body: $t('frameleaf_plan_hero_none_body') };
+    }
+    if (plan.state === 'grace') {
+      return {
+        tone: 'warn' as const,
+        title: $t('frameleaf_plan_hero_renew'),
+        body: $t('frameleaf_plan_hero_renew_body', { values: { date: formatDate(plan.graceUntil) } }),
+      };
+    }
+    if (plan.state !== 'active') {
+      return { tone: 'bad' as const, title: $t('frameleaf_plan_hero_ended'), body: $t('frameleaf_license_expired_body') };
+    }
+    return {
+      tone: 'good' as const,
+      title: $t('frameleaf_plan_hero_active'),
+      body: $t('frameleaf_plan_hero_active_body', { values: { date: formatDate(plan.expiresAt) } }),
+    };
+  });
+
   const act = async (call: () => Promise<unknown>, success: string) => {
     busy = true;
     failure = '';
@@ -174,9 +212,42 @@
       <Skeleton variant="block" height="168px" />
     </div>
   {:else}
+    <Hero
+      label={$t('frameleaf_plan_status_label')}
+      tone={planHero.tone}
+      icon={mdiCreditCardOutline}
+      title={planHero.title}
+      body={planHero.body}
+    >
+      {#if plan}
+        <Coverage
+          rows={[
+            {
+              icon: mdiEarth,
+              name: $t('frameleaf_plan_cover_remote'),
+              detail: $t('frameleaf_plan_cover_remote_detail'),
+              tone: plan.state === 'active' ? 'good' : plan.state === 'grace' ? 'warn' : 'off',
+              value:
+                plan.state === 'active'
+                  ? $t('frameleaf_plan_cover_remote_everyone')
+                  : plan.state === 'grace'
+                    ? $t('frameleaf_plan_cover_until', { values: { date: formatDate(plan.graceUntil) } })
+                    : $t('frameleaf_lic_not_included'),
+            },
+            {
+              icon: mdiCloudUploadOutline,
+              name: $t('frameleaf_plan_cover_backup'),
+              detail: backupCover.detail,
+              tone: plan.state === 'expired' || plan.state === 'invalid' ? 'off' : backupCover.tone,
+              value: backupCover.value,
+            },
+          ]}
+        />
+      {/if}
+    </Hero>
     <CloudCard
       icon={mdiCreditCardOutline}
-      title={plan ? $t('frameleaf_plan_title') : $t('frameleaf_plan_none_title')}
+      title={$t('frameleaf_plan_title')}
       description={plan ? $t('frameleaf_plan_description') : $t('frameleaf_plan_none_description')}
       status={statusLabel}
       tone={statusTone}
@@ -202,14 +273,17 @@
         {/each}
       </ul>
       {#if plan}
-        <dl class="fc-facts">
-          <dt>{plan.state === 'expired' ? $t('frameleaf_plan_ended') : $t('frameleaf_plan_renews')}</dt>
-          <dd>{formatDate(plan.expiresAt)}</dd>
-          <dt>{$t('frameleaf_plan_source')}</dt>
-          <dd>{plan.source === 'file' ? $t('frameleaf_plan_source_file') : $t('frameleaf_plan_source_account')}</dd>
-          <dt>{$t('frameleaf_license_last_checked')}</dt>
-          <dd>{formatWhen(plan.refreshedAt ?? plan.activatedAt)}</dd>
-        </dl>
+        <details class="fc-disclosure">
+          <summary>{$t('frameleaf_plan_details')}</summary>
+          <dl class="fc-facts">
+            <dt>{plan.state === 'expired' ? $t('frameleaf_plan_ended') : $t('frameleaf_plan_renews')}</dt>
+            <dd>{formatDate(plan.expiresAt)}</dd>
+            <dt>{$t('frameleaf_plan_source')}</dt>
+            <dd>{plan.source === 'file' ? $t('frameleaf_plan_source_file') : $t('frameleaf_plan_source_account')}</dd>
+            <dt>{$t('frameleaf_license_last_checked')}</dt>
+            <dd>{formatWhen(plan.refreshedAt ?? plan.activatedAt)}</dd>
+          </dl>
+        </details>
       {/if}
       <p class="fc-note"><Icon icon={mdiShieldCheckOutline} size="16" /> {$t('frameleaf_plan_never_locked')}</p>
       {#if offered > 0}

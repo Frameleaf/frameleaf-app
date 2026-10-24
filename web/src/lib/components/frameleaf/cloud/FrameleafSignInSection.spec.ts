@@ -1,5 +1,5 @@
 import { CloudHeartbeatField, CloudLinkState, type CloudStatusResponseDto } from '@frameleaf/sdk';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -49,7 +49,21 @@ const linked = (overrides: Partial<CloudStatusResponseDto> = {}) =>
     ...overrides,
   });
 
-describe('FrameleafSignInSection (FL-158)', () => {
+const people = (overrides: { canRemind?: boolean; emmaLinked?: boolean } = {}) => ({
+  canRemind: overrides.canRemind ?? true,
+  people: [
+    {
+      id: 'u-emma',
+      name: 'Emma',
+      email: 'emma@example.com',
+      linked: !!overrides.emmaLinked,
+      frameleafEmail: overrides.emmaLinked ? 'emma@frameleaf.app' : null,
+    },
+    { id: 'u-sam', name: 'Sam', email: 'sam@example.com', linked: true, frameleafEmail: 'sam@frameleaf.app' },
+  ],
+});
+
+describe('FrameleafSignInSection (FL-158, FL-541)', () => {
   beforeAll(async () => {
     await init({ fallbackLocale: 'en-US' });
     register('en-US', () => import('$i18n/en.json'));
@@ -60,63 +74,72 @@ describe('FrameleafSignInSection (FL-158)', () => {
     vi.clearAllMocks();
     sdkMock.getLicenseStatus.mockResolvedValue({} as never);
     sdkMock.getLicenseProducts.mockResolvedValue({} as never);
+    sdkMock.getCloudSignInPeople.mockResolvedValue(people());
   });
 
-  it('shows Not linked, keeps the home switch off with the reason, and offers to link', async () => {
+  it('says it is not available until the server is linked, keeps the home switch held, and offers to link', async () => {
     sdkMock.getCloudStatus.mockResolvedValue(status());
     render(FrameleafSignInSection);
 
-    expect(await screen.findByText('Not linked')).toBeInTheDocument();
-    expect(screen.getByText('Link this server first.')).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: 'Show “Sign in with Frameleaf” at home' })).toBeDisabled();
-    expect(screen.getByRole('switch', { name: 'Require Frameleaf sign-in for remote access' })).toBeDisabled();
-    expect(screen.getByText('Always on')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Link to Frameleaf' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Your own OpenID provider' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Link your own account' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Sign in with Frameleaf isn’t available yet' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Link this server' })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Offer Sign in with Frameleaf at home' })).toBeDisabled();
+    expect(screen.queryByText('Who has linked')).toBeNull();
+    expect(sdkMock.getCloudSignInPeople).not.toHaveBeenCalled();
     // FL-177: the server's key is the only client credential; there is no secret to enter
     expect(screen.queryByText(/client secret/i)).toBeNull();
   });
 
-  it('shows the provider, client ID and linked accounts once linked, and turns the home button on', async () => {
+  it('lists who has and hasn’t linked by name, and reminds someone who hasn’t', async () => {
+    sdkMock.getCloudStatus.mockResolvedValue(linked());
+    sdkMock.remindCloudSignIn.mockResolvedValue(undefined as never);
+    render(FrameleafSignInSection);
+
+    expect(await screen.findByRole('heading', { name: '1 of 2 people can sign in with Frameleaf' })).toBeInTheDocument();
+    expect(screen.getByText(/Not yet: Emma\./)).toBeInTheDocument();
+    expect(screen.getByText('Can only sign in at home')).toBeInTheDocument();
+    expect(screen.getByText('sam@frameleaf.app')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Remind' }));
+    await waitFor(() => expect(sdkMock.remindCloudSignIn).toHaveBeenCalledWith({ id: 'u-emma' }));
+    expect(await screen.findByText(/Emailed Emma a link/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send Emma a reminder' })).toBeInTheDocument();
+  });
+
+  it('says why there is no Remind without email, and says when everyone has linked', async () => {
+    sdkMock.getCloudStatus.mockResolvedValue(linked());
+    sdkMock.getCloudSignInPeople.mockResolvedValue(people({ canRemind: false }));
+    const { unmount } = render(FrameleafSignInSection);
+    expect(await screen.findByText('Reminders need email and a public address for this server.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remind' })).toBeNull();
+    unmount();
+
+    sdkMock.getCloudSignInPeople.mockResolvedValue(people({ emmaLinked: true }));
+    render(FrameleafSignInSection);
+    expect(await screen.findByRole('heading', { name: 'Everyone can sign in with Frameleaf' })).toBeInTheDocument();
+    expect(screen.getByText(/All 2 people have linked/)).toBeInTheDocument();
+  });
+
+  it('turns the home button on, and saves the button’s words on their own', async () => {
     sdkMock.getCloudStatus.mockResolvedValue(linked());
     sdkMock.updateCloudSignIn.mockResolvedValue(linked({ signInShowOnLocalLogin: true }));
     render(FrameleafSignInSection);
 
-    expect(await screen.findByText('Available')).toBeInTheDocument();
-    expect(screen.getByText('Frameleaf · id.frameleaf.cloud.test')).toBeInTheDocument();
-    expect(screen.getByText('018f3a7c-5e2b-7c91-9a4d-2f6b1e0c8d55')).toBeInTheDocument();
-    expect(screen.getByText('3 people')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Link to Frameleaf' })).toBeNull();
-
-    await fireEvent.click(screen.getByRole('switch', { name: 'Show “Sign in with Frameleaf” at home' }));
+    await fireEvent.click(await screen.findByRole('switch', { name: 'Offer Sign in with Frameleaf at home' }));
     await waitFor(() =>
       expect(sdkMock.updateCloudSignIn).toHaveBeenCalledWith({ cloudSignInUpdateDto: { showOnLocalLogin: true } }),
     );
-  });
 
-  it('saves the button text on its own', async () => {
-    sdkMock.getCloudStatus.mockResolvedValue(linked());
-    sdkMock.updateCloudSignIn.mockResolvedValue(linked({ signInButtonText: 'Use Frameleaf' }));
-    render(FrameleafSignInSection);
-
-    const input = await screen.findByLabelText('Button text');
-    const field = within(input.closest('.fc-field') as HTMLElement);
+    const input = screen.getByLabelText('Words on the button');
     await waitFor(() => expect(input).toHaveValue('Sign in with Frameleaf'));
-    expect(field.getByRole('button', { name: 'Save' })).toBeDisabled();
     await fireEvent.input(input, { target: { value: '  Use Frameleaf ' } });
-    await fireEvent.click(field.getByRole('button', { name: 'Save' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() =>
       expect(sdkMock.updateCloudSignIn).toHaveBeenCalledWith({ cloudSignInUpdateDto: { buttonText: 'Use Frameleaf' } }),
     );
-  });
-
-  it('points to "Space for new people" in Users instead of its own quota (FL-516)', async () => {
-    sdkMock.getCloudStatus.mockResolvedValue(linked());
-    render(FrameleafSignInSection);
-
-    const link = await screen.findByRole('link', { name: 'Change it in Users' });
-    expect(link.getAttribute('href')).toContain('area=users');
-    expect(screen.queryByLabelText('Storage quota for invited accounts')).toBeNull();
+    // the rule for away from home lives in Remote access
+    expect(screen.getByRole('link', { name: 'Change in Remote access' }).getAttribute('href')).toContain(
+      'section=cloud-remote',
+    );
   });
 });
