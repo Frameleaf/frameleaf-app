@@ -46,12 +46,19 @@ afterEach(async () => {
   StorageCore.setMediaLocation('/data');
 });
 
+/**
+ * FL-416: Unused files is the server owner's alone; that rule has its own unit specs. These specs are about
+ * what each session may see in it, so every caller here passes the owner check.
+ */
+const actAsServerOwner = (sut: PhysicalFileTrashService) => vi.spyOn(sut, 'requireServerOwner').mockResolvedValue();
+
 const setup = async () => {
   const { sut, ctx } = newMediumService(PhysicalFileTrashService, {
     database,
     real: [AssetRepository, PhysicalFileRepository, PhysicalFileTrashRepository, UserRepository],
     mock: [CryptoRepository, EventRepository, JobRepository, LoggingRepository, StorageRepository],
   });
+  actAsServerOwner(sut);
   const { user } = await ctx.newUser();
   const directory = await mkdtemp(join(tmpdir(), 'frameleaf-trash-restore-'));
   directories.push(directory);
@@ -317,6 +324,7 @@ describe(PhysicalFileTrashService.name, () => {
         real: [AssetRepository, UserRepository, CryptoRepository, PhysicalFileRepository, PhysicalFileTrashRepository],
         mock: [StorageRepository, LoggingRepository, JobRepository, EventRepository],
       });
+      actAsServerOwner(sut);
       const contents = Buffer.from(`original media bytes for ${name}`);
       const checksum = createHash(algorithm).update(contents).digest();
       const { user } = await ctx.newUser();
