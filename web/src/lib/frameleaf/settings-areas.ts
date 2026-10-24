@@ -453,6 +453,8 @@ export const analyticsAreaUrl = (params: { scope?: string; range?: string } = {}
  */
 const SERVER_ALIASES: Record<string, string> = {
   // FL-365: Deleted items is one page for deleted photos and deleted accounts; the prototype's addresses.
+  // FL-539: the prototype's address of Folder checks
+  checking: 'external-library',
   'user-settings': 'trash',
   'deleted-items': 'trash',
   retention: 'trash',

@@ -56,6 +56,7 @@ const connection = (overrides: Partial<ICloudConnectionResponseDto> = {}): IClou
     includeHidden: false,
     recoverExternalAsManaged: false,
     intervalHours: 24,
+    automatic: true,
     concurrency: 1,
     stagingBytes: 20 * 1024 ** 3,
   },
@@ -309,6 +310,17 @@ describe('ICloudSyncPanel', () => {
     await waitFor(() => expect(mocks.updateICloudConnection).toHaveBeenCalled());
     expect(mocks.updateICloudConnection.mock.calls[0][0].iCloudConnectionUpdateDto.config.includeHidden).toBe(true);
     expect(sessionStorage.getItem('frameleaf.icloud.pending-save')).toBeNull();
+  });
+
+  it('checks by itself or only when asked, per connection (FL-539)', async () => {
+    mocks.updateICloudConnection.mockResolvedValue(connection());
+    render(ICloudSyncPanel, { initial: { enabled: true, connections: [connection()] } });
+    expect(screen.getByText(en.frameleaf_icloud_check_auto_help)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_icloud_check_manual }));
+    expect(screen.getByText(en.frameleaf_icloud_check_manual_help)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_icloud_save }));
+    await waitFor(() => expect(mocks.updateICloudConnection).toHaveBeenCalled());
+    expect(mocks.updateICloudConnection.mock.calls[0][0].iCloudConnectionUpdateDto.config.automatic).toBe(false);
   });
 
   it('controls the durable run it shows', async () => {

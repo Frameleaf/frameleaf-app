@@ -72,6 +72,8 @@ const serve = (rows: TrashItemResponseDto[]) => {
     offline: rows.filter((row) => row.isOffline).length,
     bytes: rows.length * 2048,
     pendingDeletion: 0,
+    nextGoesAt: null,
+    freesBytes: rows.length * 2048,
   });
   vi.mocked(getTrashItems).mockResolvedValue({ items: rows, total: rows.length, nextPage: null });
 };
@@ -115,8 +117,11 @@ describe('TrashManager (FL-47)', () => {
 
     expect(await screen.findByText('lake.jpg')).toBeInTheDocument();
     expect(screen.getByText('camp.jpg')).toBeInTheDocument();
-    expect(screen.getByText('30 days')).toBeInTheDocument();
     expect(screen.getByText(/2 matching items/)).toBeInTheDocument();
+    // FL-539: the prototype's Hero, and what emptying frees before the review
+    expect(screen.getByRole('heading', { name: '2 photos and videos are in your Trash' })).toBeInTheDocument();
+    expect(screen.getByText(/Each one is removed for good 30 days after you deleted it/)).toBeInTheDocument();
+    expect(screen.getByText(/Emptying the Trash frees about/)).toBeInTheDocument();
   });
 
   it('says how long each item has, going soonest first, and narrows to the next week (FL-519)', async () => {

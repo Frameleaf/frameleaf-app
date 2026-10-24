@@ -115,14 +115,21 @@
       void loadExtras();
     }
   });
-  const states = $derived({
-    ...(summary ? utilityStates(summary) : {}),
-    ...(extras?.toPair === null || extras?.toPair === undefined
-      ? {}
-      : { 'live-photos': { count: extras.toPair, waiting: extras.toPair > 0 } }),
-  } as Partial<Record<UtilityId, UtilityState>>);
+  const states = $derived.by(() => {
+    const all: Partial<Record<UtilityId, UtilityState>> = summary ? utilityStates(summary) : {};
+    const toPair = extras?.toPair;
+    if (toPair !== null && toPair !== undefined) {
+      all['live-photos'] = { count: toPair, waiting: toPair > 0 };
+    }
+    return all;
+  });
   /** The tools the overnight checks look at, which say "Checked last night" after one. */
-  const CHECKED_OVERNIGHT: readonly UtilityId[] = ['duplicates', 'missing-media', 'corrupt-media', 'live-photos'];
+  const CHECKED_OVERNIGHT: ReadonlySet<UtilityId> = new Set<UtilityId>([
+    'duplicates',
+    'missing-media',
+    'corrupt-media',
+    'live-photos',
+  ]);
   const lastNight = $derived(checkedLastNight(extras?.checkedAt ?? null));
   const ago = (iso: string) => DateTime.fromISO(iso, { locale: $locale }).toRelative() ?? '';
   /** FL-539: the states the summary does not carry: largest file, iCloud, workflows and phones. */
@@ -134,14 +141,20 @@
       case 'large-files': {
         return extras.largestBytes === null
           ? undefined
-          : { text: $t('frameleaf_utilities_state_largest', { values: { size: formatBytes(extras.largestBytes) } }), tone: 'off' };
+          : {
+              text: $t('frameleaf_utilities_state_largest', { values: { size: formatBytes(extras.largestBytes) } }),
+              tone: 'off',
+            };
       }
       case 'icloud': {
         if (!extras.icloudConnected) {
           return { text: $t('frameleaf_utilities_state_icloud_none'), tone: 'off' };
         }
         return extras.icloudCheckedAt
-          ? { text: $t('frameleaf_utilities_state_icloud_checked', { values: { ago: ago(extras.icloudCheckedAt) } }), tone: 'good' }
+          ? {
+              text: $t('frameleaf_utilities_state_icloud_checked', { values: { ago: ago(extras.icloudCheckedAt) } }),
+              tone: 'good',
+            }
           : undefined;
       }
       case 'workflows': {
@@ -207,7 +220,10 @@
     group,
     icon: tool.icon,
     status: statusOf(tool.id),
-    note: lastNight && CHECKED_OVERNIGHT.includes(tool.id) && states[tool.id] ? $t('frameleaf_utilities_checked_last_night') : undefined,
+    note:
+      lastNight && CHECKED_OVERNIGHT.has(tool.id) && statusOf(tool.id) !== undefined
+        ? $t('frameleaf_utilities_checked_last_night')
+        : undefined,
     onSelect: () => void select(tool.id),
   });
   const rows = $derived([

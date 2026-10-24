@@ -24,7 +24,11 @@
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import TextArea from '$lib/components/frameleaf/settings/kit/TextArea.svelte';
   import { formatBytes } from '$lib/frameleaf/format-bytes';
-  import { DEFAULT_EXCLUSION_PATTERNS, LIBRARY_NAME_MAX_LENGTH, isImportPathFormatValid } from '$lib/frameleaf/libraries';
+  import {
+    DEFAULT_EXCLUSION_PATTERNS,
+    LIBRARY_NAME_MAX_LENGTH,
+    isImportPathFormatValid,
+  } from '$lib/frameleaf/libraries';
   import { locale } from '$lib/stores/preferences.store';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
@@ -92,7 +96,7 @@
   const choose = (path: string) => {
     folder = path;
     if (!name.trim()) {
-      name = path.split('/').filter(Boolean).at(-1) ?? '';
+      name = path.split('/').findLast(Boolean) ?? '';
     }
     browseOpen = false;
   };
@@ -243,7 +247,9 @@
     {#if folder && estimate && estimate.readable && estimate.count === 0}
       <Notice tone="warn" title={$t('frameleaf_addfolder_empty_title')}>{$t('frameleaf_addfolder_empty_body')}</Notice>
     {:else if folder && estimate && !estimate.readable}
-      <Notice tone="warn" title={$t('frameleaf_addfolder_blocked_title')}>{$t('frameleaf_addfolder_blocked_body')}</Notice>
+      <Notice tone="warn" title={$t('frameleaf_addfolder_blocked_title')}
+        >{$t('frameleaf_addfolder_blocked_body')}</Notice
+      >
     {/if}
     <Advanced summary={$t('frameleaf_addfolder_type_path')}>
       <Row label={$t('frameleaf_addfolder_path')} help={$t('frameleaf_addfolder_path_help')}>
@@ -252,13 +258,11 @@
           label={$t('frameleaf_addfolder_path')}
           value={typed}
           placeholder="/mnt/photos/family"
-          onChange={(value) => {
-            typed = value;
-            if (isImportPathFormatValid(value.trim())) {
-              choose(value.trim());
-            }
-          }}
+          onChange={(value) => (typed = value)}
         />
+        <Button disabled={!isImportPathFormatValid(typed.trim())} onclick={() => choose(typed.trim())}>
+          {$t('frameleaf_addfolder_use_path')}
+        </Button>
       </Row>
     </Advanced>
   </Section>
@@ -286,7 +290,11 @@
 
   <Section title={$t('frameleaf_addfolder_step3')} description={$t('frameleaf_addfolder_skip_description')}>
     <Row label={$t('frameleaf_libraries_skip_hidden')} help={$t('frameleaf_addfolder_skip_hidden_help')}>
-      <Switch label={$t('frameleaf_libraries_skip_hidden')} checked={skipHidden} onChange={(value) => (skipHidden = value)} />
+      <Switch
+        label={$t('frameleaf_libraries_skip_hidden')}
+        checked={skipHidden}
+        onChange={(value) => (skipHidden = value)}
+      />
     </Row>
     <Row label={$t('frameleaf_libraries_skip_nas')} help={$t('frameleaf_addfolder_skip_nas_help')}>
       <Switch label={$t('frameleaf_libraries_skip_nas')} checked={skipNas} onChange={(value) => (skipNas = value)} />
@@ -301,7 +309,11 @@
         onChange={(value) => (extra = value)}
       />
       <Row label={$t('frameleaf_libraries_readonly_label')} help={$t('frameleaf_libraries_readonly_hint')}>
-        <Switch label={$t('frameleaf_libraries_readonly_label')} checked={readOnly} onChange={(value) => (readOnly = value)} />
+        <Switch
+          label={$t('frameleaf_libraries_readonly_label')}
+          checked={readOnly}
+          onChange={(value) => (readOnly = value)}
+        />
       </Row>
     </Advanced>
   </Section>

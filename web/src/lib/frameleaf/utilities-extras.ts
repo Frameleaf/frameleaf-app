@@ -51,7 +51,7 @@ export const loadUtilityExtras = async (isAdmin: boolean): Promise<UtilityExtras
   const finished = (icloud?.connections ?? [])
     .map((connection) => connection.run?.finishedAt)
     .filter((at): at is string => !!at)
-    .toSorted()
+    .sort()
     .at(-1);
   return {
     largestBytes: largest?.exifInfo?.fileSizeInByte ?? null,

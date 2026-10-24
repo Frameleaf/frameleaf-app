@@ -22,7 +22,12 @@
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { copyToClipboard } from '$lib/utils';
-  import { getAppReleases, listBackupDevices, type BackupDeviceDto, type ServerAppReleasesResponseDto } from '@frameleaf/sdk';
+  import {
+    getAppReleases,
+    listBackupDevices,
+    type BackupDeviceDto,
+    type ServerAppReleasesResponseDto,
+  } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiAndroid, mdiApple, mdiCellphone, mdiCellphoneCheck } from '@mdi/js';
   import { DateTime } from 'luxon';
@@ -62,12 +67,11 @@
     },
   ]);
 
-  const ago = (iso: string | null) =>
-    iso ? (DateTime.fromISO(iso, { locale: $locale }).toRelative() ?? '') : '';
+  const ago = (iso: string | null) => (iso ? (DateTime.fromISO(iso, { locale: $locale }).toRelative() ?? '') : '');
   const newest = $derived(
     (phones ?? [])
       .filter((phone) => phone.lastSuccessfulBackupAt)
-      .toSorted((a, b) => (b.lastSuccessfulBackupAt ?? '').localeCompare(a.lastSuccessfulBackupAt ?? ''))[0],
+      .sort((a, b) => (b.lastSuccessfulBackupAt ?? '').localeCompare(a.lastSuccessfulBackupAt ?? ''))[0],
   );
   const copy = async () => {
     if (await copyToClipboard(address)) {
