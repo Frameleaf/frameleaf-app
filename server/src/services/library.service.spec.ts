@@ -257,6 +257,17 @@ describe(LibraryService.name, () => {
       expect(mocks.asset.createAll).not.toHaveBeenCalled();
     });
 
+    it('adds nothing while an administrator has paused the owner’s uploads (FL-538)', async () => {
+      const library = factory.library();
+      mocks.library.get.mockResolvedValue(library);
+      mocks.user.get.mockResolvedValue(UserFactory.create({ uploadsPaused: true }));
+
+      await expect(sut.handleSyncFiles({ libraryId: library.id, paths: ['/mnt/user1/photo.jpg'] })).resolves.toBe(
+        JobStatus.Skipped,
+      );
+      expect(mocks.asset.createAll).not.toHaveBeenCalled();
+    });
+
     it('should not import an asset to a soft deleted library', async () => {
       const library = factory.library({ deletedAt: new Date() });
 

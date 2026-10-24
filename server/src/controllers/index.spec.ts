@@ -183,6 +183,9 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   // Changing or removing the PIN takes the password or the current PIN: bounded per address like a sign-in.
   'PUT auth/pin-code': RATE_LIMITS.login,
   'DELETE auth/pin-code': RATE_LIMITS.login,
+  // FL-538: a choose-a-password link is checked and used without signing in, bounded like a sign-in.
+  'POST auth/password-link/check': RATE_LIMITS.login,
+  'POST auth/password-link': RATE_LIMITS.login,
   // FL-292: claiming a new server is tried only a few times per address
   'POST auth/admin-sign-up': RATE_LIMITS.frameleafSetup,
   'POST server/setup/link': RATE_LIMITS.frameleafSetup,

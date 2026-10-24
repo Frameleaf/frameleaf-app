@@ -37,6 +37,9 @@ export class UserFactory {
       status: UserStatus.Active,
       profileChangedAt: newDate(),
       updateId: newUuidV7(),
+      uploadsPaused: false,
+      passwordLinkHash: null,
+      passwordLinkExpiresAt: null,
       ...dto,
     });
   }

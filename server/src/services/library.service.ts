@@ -444,6 +444,11 @@ export class LibraryService extends BaseService {
       this.logger.debug(`Library ${job.libraryId} belongs to a deleted account, won't import assets into it`);
       return JobStatus.Skipped;
     }
+    // FL-538: nothing new is added while an administrator has paused the owner's uploads
+    if (owner.uploadsPaused) {
+      this.logger.debug(`Library ${job.libraryId}: new uploads are paused for its owner, won't import assets`);
+      return JobStatus.Skipped;
+    }
 
     const assetImports: Insertable<AssetTable>[] = [];
     await Promise.all(

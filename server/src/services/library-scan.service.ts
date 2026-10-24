@@ -546,6 +546,13 @@ export class LibraryScanService {
       expected: await this.assetRepository.getLibraryAssetCount(library.id),
     };
     const found = new Map(roots.map((root) => [root, 0]));
+    // FL-538: while an administrator has paused the owner's uploads, the folders are still checked
+    // (files that went missing are noticed) but nothing new is added; the next scan after resuming does.
+    const owner = await this.userRepository.get(library.ownerId, {});
+    const paused = owner?.uploadsPaused === true;
+    if (paused) {
+      this.logger.log(`Scan ${operation.id} of library ${library.id}: new uploads are paused, nothing is added`);
+    }
 
     const batches = this.storageRepository.walkLibrary({
       pathsToCrawl: roots,
@@ -571,7 +578,7 @@ export class LibraryScanService {
 
       for (let offset = 0; offset < batch.length; offset += QUEUE_BATCH) {
         const slice = batch.slice(offset, offset + QUEUE_BATCH);
-        const added = await this.importFiles(operation, claimToken, library, slice, result, signal);
+        const added = paused ? 0 : await this.importFiles(operation, claimToken, library, slice, result, signal);
         if (added === undefined) return;
         result = { ...result, crawled: result.crawled + slice.length, added: result.added + added };
       }

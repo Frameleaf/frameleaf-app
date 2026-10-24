@@ -514,6 +514,7 @@ const ERROR_KEYS: Record<string, string> = {
   icloud_disconnect_first: 'disconnect_first',
   icloud_connection_unavailable: 'connection_unavailable',
   icloud_sync_stalled: 'stalled',
+  icloud_uploads_paused: 'uploads_paused',
 };
 
 /** A stable server code as a translated message; anything unknown reads as a general failure. */
