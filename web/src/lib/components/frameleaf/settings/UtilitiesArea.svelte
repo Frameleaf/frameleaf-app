@@ -18,6 +18,7 @@
   import UtilityHistory from '$lib/components/frameleaf/UtilityHistory.svelte';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import {
     LIBRARY_CARE_TOOLS,
