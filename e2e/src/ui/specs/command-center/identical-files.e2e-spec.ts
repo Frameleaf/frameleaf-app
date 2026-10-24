@@ -5,7 +5,7 @@ import { setupBaseMockApiRoutes } from 'src/ui/mock-network/base-network.js';
 /**
  * FL-416: identical files, look-alike Duplicates and Unused files, against a mocked server (the approved
  * FL-415 prototype). Library care › Duplicates says what identical files save and checks again; the
- * "Checking your Immich library" card follows the check an import started and pauses it; Unused files
+ * "Checking your imported library" card follows the check an import started and pauses it; Unused files
  * restores and empties, and only the server owner (the first administrator) is offered it.
  */
 const GB = 1_000_000_000;
@@ -153,7 +153,7 @@ test.describe('Identical files, Duplicates and Unused files (FL-416)', () => {
     await page.goto('/user-settings?area=care&section=duplicates');
 
     const block = section(page, 'Identical files are stored once');
-    await expect(block.getByText('3.2 GB', { exact: true })).toBeVisible();
+    await expect(block.locator('dd', { hasText: '1,140 files are stored once' })).toContainText('3.2 GB');
     await expect(block.getByText('1,140 files are stored once')).toBeVisible();
     await expect(block.getByText('All 48,210 files, read from the drive')).toBeVisible();
     await expect(block.getByText('214 files · 3.2 GB')).toBeVisible();
@@ -200,12 +200,12 @@ test.describe('Identical files, Duplicates and Unused files (FL-416)', () => {
     });
     await page.goto('/user-settings?area=care');
 
-    const card = section(page, 'Checking your Immich library');
+    const card = section(page, 'Checking your imported library');
     await expect(card.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '62');
     await expect(card.getByText('35,278 of 48,210')).toBeVisible();
-    await expect(card.getByText('157', { exact: true })).toBeVisible();
-    await expect(card.getByText('2.3 GB', { exact: true })).toBeVisible();
-    await expect(card.getByText('Reading every file')).toBeVisible();
+    await expect(card.locator('dd', { hasText: 'Identical files, oldest kept' })).toContainText('157');
+    await expect(card.locator('dd', { hasText: 'Space comes back when emptied' })).toContainText('2.3 GB');
+    await expect(card.getByText('Reading every file', { exact: true })).toBeVisible();
 
     await card.getByRole('button', { name: 'Pause' }).click();
     await expect(card.getByRole('button', { name: 'Resume' })).toBeVisible();

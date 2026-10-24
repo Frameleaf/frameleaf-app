@@ -36,7 +36,7 @@ describe('AlbumTile', () => {
     render(AlbumTile, { album, currentUserId: 'me' });
 
     const mark = screen.getByTestId('album-recovered-mark');
-    expect(mark.getAttribute('aria-label')).toBe('Recovered from your Immich folders');
+    expect(mark.getAttribute('aria-label')).toBe('Recovered from your imported library’s folders');
     expect(screen.getByText(/· Recovered$/)).toBeInTheDocument();
   });
 
