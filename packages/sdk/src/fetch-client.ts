@@ -2515,7 +2515,30 @@ export type LibraryProgressResponseDto = {
     /** The start of the period the rate is measured over */
     measuredSince: string | null;
 };
+export type VideoCardTestDto = {
+    /** When it was tested */
+    at: string;
+    /** The encoder tested, or null when no graphics card was found */
+    encoder: string | null;
+    /** Why the card failed, as the converter said it */
+    error: string | null;
+    /** The card made the test video */
+    ok: boolean;
+    /** Seconds of test video the processor made a second, for comparison */
+    softwareSpeed: number | null;
+    /** Seconds of test video the card made a second, or null when it failed */
+    speed: number | null;
+};
+export type VideoCardDto = {
+    /** When the graphics card stopped helping (copies made on the processor), or null while it works */
+    failedAt: string | null;
+    lastTest: (VideoCardTestDto) | null;
+    /** About how many times slower the processor makes copies than the card, from the last test that measured both */
+    slowdown: number | null;
+};
 export type MediaCopiesResponseDto = {
+    /** FL-537: the length of the videos with a playback copy, in minutes */
+    copyMinutes: number;
     /** When the space was last measured */
     measuredAt: string | null;
     photos: number;
@@ -2525,6 +2548,9 @@ export type MediaCopiesResponseDto = {
     previewsBytes: number | null;
     /** Work waiting for the next overnight run */
     tonight: LibraryRedoQueue[];
+    videoCard: VideoCardDto;
+    /** FL-537: the length of every video, in minutes */
+    videoMinutes: number;
     videos: number;
     /** Videos with a playback copy */
     withCopy: number;
@@ -20195,6 +20221,18 @@ export function getMediaCopies(opts?: Oazapfts.RequestOpts) {
         data: MediaCopiesResponseDto;
     }>("/admin/library-progress/media-copies", {
         ...opts
+    }));
+}
+/**
+ * Test the graphics card for video
+ */
+export function testVideoCard(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: VideoCardDto;
+    }>("/admin/library-progress/media-copies/video-card/test", {
+        ...opts,
+        method: "POST"
     }));
 }
 /**

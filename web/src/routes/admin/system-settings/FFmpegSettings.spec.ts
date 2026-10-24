@@ -12,6 +12,7 @@ import {
   VideoContainer,
   type AdminConfigDto,
   type HardwareCheckResponseDto,
+  type MediaCopiesResponseDto,
   type QueueResponseDto,
 } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
@@ -83,6 +84,13 @@ const hardware = (backend: HardwareBackend, model: string | null) =>
 
 const group = (name: string) => within(screen.getByRole('group', { name }));
 
+/** FL-537: 52 GB of copies over 866.7 minutes is 60 MB a minute; all 3,350 videos are 7,533.3 minutes. */
+const copyMinutes = {
+  videoMinutes: 7533.3,
+  copyMinutes: 866.7,
+  videoCard: { failedAt: null, slowdown: null, lastTest: null },
+};
+
 describe('Video playback copies (FL-366)', () => {
   beforeAll(() => {
     addMessages('dev', en);
@@ -119,12 +127,85 @@ describe('Video playback copies (FL-366)', () => {
       playbackBytes: 52_000_000_000,
       measuredAt: '2026-10-22T03:00:00.000Z',
       tonight: [],
+      ...copyMinutes,
     });
     draft.store = newStore();
     render(FFmpegSettings);
 
     const status = within(screen.getByRole('region', { name: 'Playback copy status' }));
     expect(await status.findByText(/390 of your 3,350 videos have one, taking 52 GB/)).toBeInTheDocument();
+  });
+
+  describe('FL-537', () => {
+    const copies = (videoCard: Partial<MediaCopiesResponseDto['videoCard']> = {}) =>
+      ({
+        photos: 3000,
+        withoutPreview: 0,
+        videos: 3350,
+        withCopy: 390,
+        previewsBytes: null,
+        playbackBytes: 52_000_000_000,
+        measuredAt: '2026-10-22T03:00:00.000Z',
+        tonight: [],
+        ...copyMinutes,
+        videoCard: { failedAt: null, slowdown: null, lastTest: null, ...videoCard },
+      }) as MediaCopiesResponseDto;
+
+    it('says about how many MB a minute each quality takes, from the copies measured', async () => {
+      // 52 GB over 866.7 minutes is 60 MB a minute at Better, so Good is 30 and Best 250
+      sdkMock.getMediaCopies.mockResolvedValue(copies());
+      const store = newStore();
+      draft.store = store;
+      render(FFmpegSettings);
+
+      expect(await screen.findByText(/about 60 MB a minute/)).toBeInTheDocument();
+      await fireEvent.click(group('Playback quality').getByRole('button', { name: 'Best (4K)' }));
+      expect(screen.getByText(/about 250 MB a minute/)).toBeInTheDocument();
+      await fireEvent.click(group('Playback quality').getByRole('button', { name: 'Better (1080p)' }));
+      // the 2,960 videos without a copy, 6,666.7 minutes at 60 MB a minute
+      await fireEvent.click(group('Which videos get a copy').getByRole('button', { name: 'All videos' }));
+      expect(screen.getByText(/every video gets a copy, about 400 GB more/)).toBeInTheDocument();
+    });
+
+    it('says when the graphics card stopped helping, and tests it', async () => {
+      sdkMock.getMediaCopies.mockResolvedValue(copies({ failedAt: '2026-10-08T02:00:00.000Z', slowdown: 6 }));
+      sdkMock.testVideoCard.mockResolvedValue({
+        failedAt: '2026-10-08T02:00:00.000Z',
+        slowdown: 6,
+        lastTest: {
+          at: '2026-10-23T10:00:00.000Z',
+          ok: false,
+          encoder: 'h264_vaapi',
+          speed: null,
+          softwareSpeed: 2,
+          error: 'no device',
+        },
+      });
+      draft.store = newStore({ accel: TranscodeHWAccel.Qsv });
+      render(FFmpegSettings);
+
+      const status = within(screen.getByRole('region', { name: 'Playback copy status' }));
+      expect(
+        await status.findByRole('heading', { name: /The graphics card stopped helping on Oct 8/ }),
+      ).toBeInTheDocument();
+      expect(status.getByText(/about 6 times slower/)).toBeInTheDocument();
+      expect(status.getByRole('button', { name: 'Graphics card check' })).toBeInTheDocument();
+
+      await fireEvent.click(status.getByRole('button', { name: 'Test it' }));
+      expect(sdkMock.testVideoCard).toHaveBeenCalled();
+      expect(await screen.findByText(/the graphics card did not answer/)).toBeInTheDocument();
+      expect(screen.getByText(/The last test, on Oct 23, failed./)).toBeInTheDocument();
+    });
+
+    it('does not warn while the card is turned off', async () => {
+      sdkMock.getMediaCopies.mockResolvedValue(copies({ failedAt: '2026-10-08T02:00:00.000Z' }));
+      draft.store = newStore();
+      render(FFmpegSettings);
+
+      const status = within(screen.getByRole('region', { name: 'Playback copy status' }));
+      expect(await status.findByText(/390 of your 3,350 videos/)).toBeInTheDocument();
+      expect(status.queryByText(/stopped helping/)).not.toBeInTheDocument();
+    });
   });
 
   it('reads numbers that match no choice as Custom', () => {

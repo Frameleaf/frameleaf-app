@@ -143,6 +143,9 @@ describe('Image previews (FL-366)', () => {
       playbackBytes: null,
       measuredAt: '2026-10-22T03:00:00.000Z',
       tonight: [],
+      videoMinutes: 0,
+      copyMinutes: 0,
+      videoCard: { failedAt: null, slowdown: null, lastTest: null },
     });
     sdkMock.redoLibraryWork.mockResolvedValue({ tonight: ['thumbnailGeneration' as never] });
     const store = newStore();

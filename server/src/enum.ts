@@ -636,6 +636,11 @@ export enum SystemMetadataKey {
   LibraryProgressSamples = 'library-progress-samples',
   /** FL-521: work to start again over every photo in the next overnight run ("Save and … tonight"). */
   OvernightRedo = 'overnight-redo',
+  /**
+   * FL-537: when the graphics card last stopped helping the video converter (a copy was made on the
+   * processor instead), and the last "Test it" of the card, for Video playback copies.
+   */
+  VideoCardState = 'video-card-state',
   /** FL-520: the most recent file checks, newest first: when each ran, how it ended and what it found. */
   IntegrityCheckHistory = 'integrity-check-history',
   /** FL-520: when an administrator last pressed Stop on the file checks; a check started before it stops. */
