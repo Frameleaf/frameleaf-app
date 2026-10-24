@@ -311,6 +311,45 @@ describe('Descriptions & tags', () => {
     expect(store.draft.machineLearning.imageDescription?.videoMomentCaptions).toBe(true);
   });
 
+  it('writes sample captions in place with the choices on the page, saving nothing (FL-537)', async () => {
+    sdkMock.searchAssets.mockResolvedValue({
+      assets: { items: [{ id: 'photo-1', thumbhash: null }] },
+    } as never);
+    sdkMock.previewEnrichment.mockResolvedValue({
+      cloud: false,
+      destinationId: 'local',
+      destinationName: 'This server',
+      modelName: 'model',
+      samples: [
+        {
+          assetId: 'photo-1',
+          candidate: 'A person paddles a yellow kayak across a calm lake.',
+          tags: ['kayak', 'lake'],
+          status: 'success',
+        },
+      ],
+    } as never);
+    useDraft();
+    render(Descriptions);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Short' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Try it' }));
+    expect(await screen.findByText('A person paddles a yellow kayak across a calm lake.')).toBeInTheDocument();
+    expect(screen.getByText('Tags: kayak, lake')).toBeInTheDocument();
+    expect(sdkMock.previewEnrichment).toHaveBeenCalledWith({
+      enrichmentPreviewRequestDto: expect.objectContaining({
+        assetIds: ['photo-1'],
+        prompt: expect.objectContaining({ style: Style.Terse, sentenceCountTarget: 1 }),
+      }),
+    });
+
+    // a changed choice offers to write them again
+    await fireEvent.click(screen.getByRole('button', { name: 'Detailed' }));
+    expect(screen.getByRole('button', { name: 'Try again with these choices' })).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Hide the try-out' }));
+    expect(screen.queryByText('Tags: kayak, lake')).not.toBeInTheDocument();
+  });
+
   it('adds a thing to look out for and writes the number of tags', async () => {
     const store = useDraft();
     render(Descriptions);
