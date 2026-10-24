@@ -8,9 +8,8 @@ import { bytesOfGb, gbOfBytes, spaceChoiceOf, spaceWords } from '$lib/components
 import en from '../../../../../../../i18n/en.json';
 
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { id: 'admin-1' } } }));
-vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
-  featureFlagsManager: { value: { oauth: false, configFile: false } },
-}));
+const flags = vi.hoisted(() => ({ oauth: false, configFile: false, email: false }));
+vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: { value: flags } }));
 vi.mock('$lib/components/frameleaf/AccountSecurityPanel.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/frameleaf/AccountLifecyclePanel.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/frameleaf/DesktopMemberApproval.svelte', () => ({ default: () => {} }));
@@ -40,7 +39,10 @@ const preferences = {
 
 describe('Users as People (FL-516)', () => {
   beforeAll(() => addMessages('dev', en));
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    flags.email = false;
+  });
 
   it('reads space as a short list with Other… and plain sizes', () => {
     expect(spaceChoiceOf(null)).toBe('none');
@@ -114,5 +116,50 @@ describe('Users as People (FL-516)', () => {
       }),
     });
     expect(await screen.findByText('Their temporary password')).toBeInTheDocument();
+  });
+
+  it('pauses new uploads for one person as soon as it is switched (FL-538)', async () => {
+    sdkMock.updateUserAdmin.mockResolvedValue(user({ uploadsPaused: true }));
+    render(PersonPage, {
+      user: user({ uploadsPaused: false }),
+      preferences,
+      sessions: [],
+      savePreferences: vi.fn(),
+      loadPreferences: vi.fn(),
+    });
+
+    expect(
+      screen.getByText(
+        'Their photos stay and they can still look at them. Nothing new can be added until you turn this off.',
+      ),
+    ).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('switch', { name: 'Pause new uploads' }));
+    expect(sdkMock.updateUserAdmin).toHaveBeenCalledWith({
+      id: 'emma-1',
+      userAdminUpdateDto: { uploadsPaused: true },
+    });
+  });
+
+  it('adds a person with an emailed link to choose a password and a colour (FL-538)', async () => {
+    flags.email = true;
+    sdkMock.getConfig.mockResolvedValue({ user: { newUserStorageQuota: null } } as never);
+    sdkMock.createUserAdmin.mockResolvedValue(user({ id: 'alex-1', name: 'Alex', email: 'alex@example.test' }));
+    render(AddPerson, { onDone: vi.fn() });
+
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Alex' } });
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Email' }), { target: { value: 'alex@example.test' } });
+    expect(screen.getByText(/They choose their own password. You never see it./)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Green' })).toHaveAttribute('aria-pressed', 'true');
+    await fireEvent.click(screen.getByRole('button', { name: 'Blue' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Add person' }));
+
+    expect(sdkMock.createUserAdmin).toHaveBeenCalledWith({
+      userAdminCreateDto: expect.objectContaining({ passwordLink: true, password: '', avatarColor: 'blue' }),
+    });
+    expect(sdkMock.createUserAdmin.mock.calls[0][0].userAdminCreateDto).not.toHaveProperty('shouldChangePassword');
+    expect(
+      await screen.findByText('An email with a link to choose a password is on its way to alex@example.test.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Their temporary password')).not.toBeInTheDocument();
   });
 });

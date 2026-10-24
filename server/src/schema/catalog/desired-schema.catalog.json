@@ -10998,370 +10998,6 @@
       "synchronize": true
     },
     {
-      "name": "user",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "uuid_generate_v4()",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "email",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "password",
-          "tableName": "user",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "pinCode",
-          "tableName": "user",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "profileImagePath",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "''::character varying",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "profileImageAssetId",
-          "tableName": "user",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "isAdmin",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "shouldChangePassword",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "true",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "avatarColor",
-          "tableName": "user",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "deletedAt",
-          "tableName": "user",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "oauthId",
-          "tableName": "user",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "storageLabel",
-          "tableName": "user",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "name",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "''::character varying",
-          "synchronize": true
-        },
-        {
-          "type": "bigint",
-          "primary": false,
-          "name": "quotaSizeInBytes",
-          "tableName": "user",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 64,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "bigint",
-          "primary": false,
-          "name": "quotaUsageInBytes",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 64,
-          "numericScale": 0,
-          "default": "0",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "status",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "'active'::character varying",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "profileChangedAt",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "updateId",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "clusterGroupId",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "user_profileImageAssetId_idx",
-          "definition": "CREATE INDEX \"user_profileImageAssetId_idx\" ON public.\"user\" USING btree (\"profileImageAssetId\")",
-          "tableName": "user",
-          "columnNames": [
-            "profileImageAssetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "user_updatedAt_id_idx",
-          "definition": "CREATE INDEX \"user_updatedAt_id_idx\" ON public.\"user\" USING btree (\"updatedAt\", id)",
-          "tableName": "user",
-          "columnNames": [
-            "updatedAt",
-            "id"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "user_updateId_idx",
-          "definition": "CREATE INDEX \"user_updateId_idx\" ON public.\"user\" USING btree (\"updateId\")",
-          "tableName": "user",
-          "columnNames": [
-            "updateId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "user_clusterGroupId_idx",
-          "definition": "CREATE INDEX \"user_clusterGroupId_idx\" ON public.\"user\" USING btree (\"clusterGroupId\")",
-          "tableName": "user",
-          "columnNames": [
-            "clusterGroupId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [
-        {
-          "name": "icloud_weekly_pin_retirement",
-          "definition": "CREATE TRIGGER icloud_weekly_pin_retirement AFTER DELETE OR UPDATE ON public.\"user\" FOR EACH ROW EXECUTE FUNCTION retire_icloud_weekly_authority()",
-          "tableName": "user",
-          "functionName": "retire_icloud_weekly_authority",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "delete",
-            "update"
-          ],
-          "timing": "after",
-          "scope": "row"
-        },
-        {
-          "name": "user_delete_audit",
-          "definition": "CREATE TRIGGER user_delete_audit AFTER DELETE ON public.\"user\" REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN ((pg_trigger_depth() = 0)) EXECUTE FUNCTION user_delete_audit()",
-          "tableName": "user",
-          "functionName": "user_delete_audit",
-          "referencingOldTableAs": "old",
-          "when": "(pg_trigger_depth() = 0)",
-          "synchronize": true,
-          "actions": [
-            "delete"
-          ],
-          "timing": "after",
-          "scope": "statement"
-        },
-        {
-          "name": "user_updatedAt",
-          "definition": "CREATE TRIGGER \"user_updatedAt\" BEFORE UPDATE ON public.\"user\" FOR EACH ROW EXECUTE FUNCTION updated_at()",
-          "tableName": "user",
-          "functionName": "updated_at",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "before",
-          "scope": "row"
-        }
-      ],
-      "constraints": [
-        {
-          "type": "unique",
-          "name": "user_email_uq",
-          "definition": "UNIQUE (email)",
-          "tableName": "user",
-          "columnNames": [
-            "email"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "user_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "user",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "unique",
-          "name": "user_storageLabel_uq",
-          "definition": "UNIQUE (\"storageLabel\")",
-          "tableName": "user",
-          "columnNames": [
-            "storageLabel"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "user_clusterGroupId_fkey",
-          "definition": "FOREIGN KEY (\"clusterGroupId\") REFERENCES cluster_group(id) ON UPDATE CASCADE",
-          "tableName": "user",
-          "columnNames": [
-            "clusterGroupId"
-          ],
-          "referenceTableName": "cluster_group",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "NO ACTION",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "user_profileImageAssetId_fkey",
-          "definition": "FOREIGN KEY (\"profileImageAssetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
-          "tableName": "user",
-          "columnNames": [
-            "profileImageAssetId"
-          ],
-          "referenceTableName": "asset",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "SET NULL",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "user_metadata",
       "columns": [
         {
@@ -43065,6 +42701,398 @@
           ],
           "onUpdate": "NO ACTION",
           "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "user",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "email",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "password",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "pinCode",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "profileImagePath",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "''::character varying",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "profileImageAssetId",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "isAdmin",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "shouldChangePassword",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "true",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "avatarColor",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "deletedAt",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "oauthId",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "storageLabel",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "name",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "''::character varying",
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "quotaSizeInBytes",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "quotaUsageInBytes",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "status",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "'active'::character varying",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "profileChangedAt",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "updateId",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "clusterGroupId",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "uploadsPaused",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "passwordLinkHash",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "passwordLinkExpiresAt",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "user_profileImageAssetId_idx",
+          "definition": "CREATE INDEX \"user_profileImageAssetId_idx\" ON public.\"user\" USING btree (\"profileImageAssetId\")",
+          "tableName": "user",
+          "columnNames": [
+            "profileImageAssetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "user_updatedAt_id_idx",
+          "definition": "CREATE INDEX \"user_updatedAt_id_idx\" ON public.\"user\" USING btree (\"updatedAt\", id)",
+          "tableName": "user",
+          "columnNames": [
+            "updatedAt",
+            "id"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "user_updateId_idx",
+          "definition": "CREATE INDEX \"user_updateId_idx\" ON public.\"user\" USING btree (\"updateId\")",
+          "tableName": "user",
+          "columnNames": [
+            "updateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "user_clusterGroupId_idx",
+          "definition": "CREATE INDEX \"user_clusterGroupId_idx\" ON public.\"user\" USING btree (\"clusterGroupId\")",
+          "tableName": "user",
+          "columnNames": [
+            "clusterGroupId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "icloud_weekly_pin_retirement",
+          "definition": "CREATE TRIGGER icloud_weekly_pin_retirement AFTER DELETE OR UPDATE ON public.\"user\" FOR EACH ROW EXECUTE FUNCTION retire_icloud_weekly_authority()",
+          "tableName": "user",
+          "functionName": "retire_icloud_weekly_authority",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "delete",
+            "update"
+          ],
+          "timing": "after",
+          "scope": "row"
+        },
+        {
+          "name": "user_delete_audit",
+          "definition": "CREATE TRIGGER user_delete_audit AFTER DELETE ON public.\"user\" REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN ((pg_trigger_depth() = 0)) EXECUTE FUNCTION user_delete_audit()",
+          "tableName": "user",
+          "functionName": "user_delete_audit",
+          "referencingOldTableAs": "old",
+          "when": "(pg_trigger_depth() = 0)",
+          "synchronize": true,
+          "actions": [
+            "delete"
+          ],
+          "timing": "after",
+          "scope": "statement"
+        },
+        {
+          "name": "user_updatedAt",
+          "definition": "CREATE TRIGGER \"user_updatedAt\" BEFORE UPDATE ON public.\"user\" FOR EACH ROW EXECUTE FUNCTION updated_at()",
+          "tableName": "user",
+          "functionName": "updated_at",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        }
+      ],
+      "constraints": [
+        {
+          "type": "unique",
+          "name": "user_email_uq",
+          "definition": "UNIQUE (email)",
+          "tableName": "user",
+          "columnNames": [
+            "email"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "user_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "user",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "user_storageLabel_uq",
+          "definition": "UNIQUE (\"storageLabel\")",
+          "tableName": "user",
+          "columnNames": [
+            "storageLabel"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "user_clusterGroupId_fkey",
+          "definition": "FOREIGN KEY (\"clusterGroupId\") REFERENCES cluster_group(id) ON UPDATE CASCADE",
+          "tableName": "user",
+          "columnNames": [
+            "clusterGroupId"
+          ],
+          "referenceTableName": "cluster_group",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "NO ACTION",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "user_profileImageAssetId_fkey",
+          "definition": "FOREIGN KEY (\"profileImageAssetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "user",
+          "columnNames": [
+            "profileImageAssetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
           "synchronize": true
         }
       ],

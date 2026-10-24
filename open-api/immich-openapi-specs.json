@@ -9724,6 +9724,52 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/users/{id}/password-link": {
+      "post": {
+        "description": "Email the person a single-use link (valid 7 days) to choose their own password. The administrator never sees it. Needs email to be set up and a public address.",
+        "operationId": "sendUserPasswordLinkAdmin",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Email a link to choose a password",
+        "tags": [
+          "Users (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "adminUser.update"
+      }
+    },
     "/admin/users/{id}/pin-code": {
       "get": {
         "description": "Retrieve whether a specific user has a PIN code set, never the PIN itself.",
@@ -18212,6 +18258,77 @@
           }
         ],
         "x-immich-state": "Stable"
+      }
+    },
+    "/auth/password-link": {
+      "post": {
+        "description": "Set the password with an emailed single-use link. The link stops working once used, and every session of the account is signed out.",
+        "operationId": "redeemPasswordLink",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordLinkRedeemDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "summary": "Choose a password with a link",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/auth/password-link/check": {
+      "post": {
+        "description": "Who an emailed single-use link to choose a password is for, while it can still be used.",
+        "operationId": "checkPasswordLink",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordLinkCheckDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordLinkCheckResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Check a choose-a-password link",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          }
+        ]
       }
     },
     "/auth/pin-code": {
@@ -80756,6 +80873,10 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
+          },
+          "uploadsPaused": {
+            "description": "New uploads are paused for this person",
+            "type": "boolean"
           }
         },
         "required": [
@@ -80780,7 +80901,8 @@
           "shouldChangePassword",
           "status",
           "storageLabel",
-          "updatedAt"
+          "updatedAt",
+          "uploadsPaused"
         ],
         "type": "object"
       },
@@ -96667,6 +96789,58 @@
       },
       "PartnerUpdateDto": {
         "properties": {},
+        "type": "object"
+      },
+      "PasswordLinkCheckDto": {
+        "properties": {
+          "token": {
+            "description": "The token from the emailed link",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "type": "object"
+      },
+      "PasswordLinkCheckResponseDto": {
+        "properties": {
+          "email": {
+            "description": "The email address they sign in with",
+            "type": "string"
+          },
+          "name": {
+            "description": "Name of the person the link is for",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "name"
+        ],
+        "type": "object"
+      },
+      "PasswordLinkRedeemDto": {
+        "properties": {
+          "newPassword": {
+            "description": "The password they chose (min 8 characters)",
+            "example": "password",
+            "minLength": 8,
+            "type": "string"
+          },
+          "token": {
+            "description": "The token from the emailed link",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "newPassword",
+          "token"
+        ],
         "type": "object"
       },
       "PeopleListItemDto": {
@@ -137228,6 +137402,10 @@
             "description": "User password",
             "type": "string"
           },
+          "passwordLink": {
+            "description": "Email the person a single-use link to choose their own password instead of setting one (needs email to be set up and a public address)",
+            "type": "boolean"
+          },
           "pinCode": {
             "description": "PIN code",
             "example": "123456",
@@ -137473,6 +137651,10 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
+          },
+          "uploadsPaused": {
+            "description": "New uploads are paused for this person",
+            "type": "boolean"
           }
         },
         "required": [
@@ -137493,7 +137675,8 @@
           "shouldChangePassword",
           "status",
           "storageLabel",
-          "updatedAt"
+          "updatedAt",
+          "uploadsPaused"
         ],
         "type": "object"
       },
@@ -137562,6 +137745,10 @@
             "description": "Storage label",
             "nullable": true,
             "type": "string"
+          },
+          "uploadsPaused": {
+            "description": "Pause new uploads: what the person has stays, and nothing new can be added until this is turned off",
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -138201,6 +138388,10 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
+          },
+          "uploadsPaused": {
+            "description": "New uploads are paused for this person",
+            "type": "boolean"
           }
         },
         "required": [
@@ -138223,7 +138414,8 @@
           "shouldChangePassword",
           "status",
           "storageLabel",
-          "updatedAt"
+          "updatedAt",
+          "uploadsPaused"
         ],
         "type": "object"
       },

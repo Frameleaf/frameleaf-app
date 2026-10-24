@@ -97,6 +97,40 @@ describe(AuthService.name, () => {
     });
   });
 
+  describe('password link (FL-538)', () => {
+    it('says who a usable link is for, and refuses one that is not', async () => {
+      mocks.crypto.hashSha256.mockReturnValue(Buffer.from('digest'));
+      mocks.user.getByPasswordLink.mockResolvedValueOnce({ id: 'u1', name: 'Alex', email: 'alex@example.test' });
+      await expect(sut.checkPasswordLink({ token: 'token' })).resolves.toEqual({
+        name: 'Alex',
+        email: 'alex@example.test',
+      });
+      expect(mocks.crypto.hashSha256).toHaveBeenCalledWith('token');
+      expect(mocks.user.getByPasswordLink).toHaveBeenCalledWith(Buffer.from('digest'));
+
+      mocks.user.getByPasswordLink.mockResolvedValueOnce(void 0);
+      await expect(sut.checkPasswordLink({ token: 'used' })).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('sets the chosen password once and signs every session out', async () => {
+      mocks.crypto.hashSha256.mockReturnValue(Buffer.from('digest'));
+      mocks.crypto.hashBcrypt.mockResolvedValue('hashed');
+      mocks.user.getByPasswordLink.mockResolvedValue({ id: 'u1', name: 'Alex', email: 'alex@example.test' });
+      mocks.user.redeemPasswordLink.mockResolvedValueOnce({ id: 'u1', email: 'alex@example.test' });
+
+      await sut.redeemPasswordLink({ token: 'token', newPassword: 'a-long-password' });
+
+      expect(mocks.user.redeemPasswordLink).toHaveBeenCalledWith(Buffer.from('digest'), 'hashed');
+      expect(mocks.event.emit).toHaveBeenCalledWith('AuthChangePassword', { userId: 'u1', invalidateSessions: true });
+
+      // a link used in between (a race) is refused
+      mocks.user.redeemPasswordLink.mockResolvedValueOnce(void 0);
+      await expect(sut.redeemPasswordLink({ token: 'token', newPassword: 'a-long-password' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+  });
+
   describe('changePassword', () => {
     it('should change the password', async () => {
       const user = UserFactory.create();

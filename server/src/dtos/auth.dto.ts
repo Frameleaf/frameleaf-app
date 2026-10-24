@@ -88,6 +88,28 @@ const ChangePasswordSchema = z
   })
   .meta({ id: 'ChangePasswordDto' });
 
+/** FL-538: the single-use link an administrator emailed to choose a password. */
+const PasswordLinkCheckSchema = z
+  .object({
+    token: z.string().min(1).max(200).describe('The token from the emailed link'),
+  })
+  .meta({ id: 'PasswordLinkCheckDto' });
+
+const PasswordLinkCheckResponseSchema = z
+  .object({
+    name: z.string().describe('Name of the person the link is for'),
+    email: z.string().describe('The email address they sign in with'),
+  })
+  .meta({ id: 'PasswordLinkCheckResponseDto' });
+
+const PasswordLinkRedeemSchema = PasswordLinkCheckSchema.extend({
+  newPassword: z.string().min(8).describe('The password they chose (min 8 characters)').meta({ example: 'password' }),
+}).meta({ id: 'PasswordLinkRedeemDto' });
+
+export class PasswordLinkCheckDto extends createZodDto(PasswordLinkCheckSchema) {}
+export class PasswordLinkCheckResponseDto extends createZodDto(PasswordLinkCheckResponseSchema) {}
+export class PasswordLinkRedeemDto extends createZodDto(PasswordLinkRedeemSchema) {}
+
 const PinCodeSetupSchema = z
   .object({
     pinCode: z.string().regex(pinCodeRegex).describe('PIN code (4-6 digits)').meta({ example: '123456' }),

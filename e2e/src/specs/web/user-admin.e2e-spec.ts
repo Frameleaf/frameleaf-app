@@ -126,6 +126,36 @@ test.describe('User Administration', () => {
       .toBe(false);
   });
 
+  // FL-538: what they have stays; nothing new can be added until the switch is turned off.
+  test('pause new uploads for one person', async ({ context, page }) => {
+    const admin = await utils.adminSetup();
+    await utils.setAuthCookies(context, admin.accessToken);
+    const user = await utils.userSetup(admin.accessToken, {
+      name: 'Paused Person',
+      email: 'paused@example.com',
+      password: 'password',
+    });
+
+    await page.goto(`${usersManager}&user=${user.userId}`);
+    await page.getByRole('switch', { name: 'Pause new uploads' }).click();
+    await expect
+      .poll(async () => {
+        const userAdmin = await getUserAdmin({ id: user.userId }, { headers: asBearerAuth(admin.accessToken) });
+        return userAdmin.uploadsPaused;
+      })
+      .toBe(true);
+    await expect(utils.createAsset(user.accessToken)).rejects.toThrow('HTTP 403');
+
+    await page.getByRole('switch', { name: 'Pause new uploads' }).click();
+    await expect
+      .poll(async () => {
+        const userAdmin = await getUserAdmin({ id: user.userId }, { headers: asBearerAuth(admin.accessToken) });
+        return userAdmin.uploadsPaused;
+      })
+      .toBe(false);
+    await expect(utils.createAsset(user.accessToken)).resolves.toHaveProperty('id');
+  });
+
   test.describe('FL-76 account lifecycle', () => {
     // FL-516: Add a person no longer asks for a PIN (the prototype's page); an administrator can set
     // one right after, from Sign-in & security, and it unlocks the new account's Locked folder.
