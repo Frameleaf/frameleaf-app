@@ -147,11 +147,11 @@ it.each([
     expect(await screen.findByRole('dialog', { name: 'Set up Buddy Backup' })).toBeVisible();
   }
   if (!gate.linked) {
-    expect(outgoing.getByText(en.frameleaf_buddy_link_required)).toBeVisible();
-    expect(outgoing.getByRole('link', { name: en.frameleaf_cloud_backup_gate_link })).toBeVisible();
+    expect(outgoing.getByText(/Buddy Backup needs a Server licence on both servers/)).toBeVisible();
+    expect(outgoing.getByRole('button', { name: en.frameleaf_get_cloud })).toBeVisible();
   } else if (gate.licence !== 'server') {
-    expect(outgoing.getByText(en.frameleaf_buddy_server_licence_required)).toBeVisible();
-    expect(outgoing.getByRole('link', { name: en.frameleaf_buddy_server_licence_action })).toBeVisible();
+    expect(outgoing.getByText(/Buddy Backup needs a Server licence on both servers/)).toBeVisible();
+    expect(outgoing.getByRole('button', { name: en.frameleaf_get_cloud })).toBeVisible();
   } else {
     expect(outgoing.getByText(en.frameleaf_buddy_direct_or_relay)).toBeVisible();
   }

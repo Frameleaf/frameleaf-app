@@ -294,10 +294,12 @@ export const setLinked = (state: SetupState, linked: boolean): SetupState => {
   return { ...state, choices };
 };
 
-/** Where processing can run: the Cloud option only shows when the server is already linked. */
+/**
+ * Where processing can run. FL-544: the Cloud option is gone from setup (it was recorded and never
+ * applied); cloud processing is turned on from the Get Frameleaf Cloud sheet after setup.
+ */
 export const processingOptions = (state: SetupState): ProcessingChoice[] => [
   'local',
-  ...(state.choices.linked ? (['cloud'] as const) : []),
   ...(state.flow === 'existing' ? (['later'] as const) : []),
 ];
 

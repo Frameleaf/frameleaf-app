@@ -17,6 +17,7 @@
   import CloudToggleRow from '$lib/components/frameleaf/cloud/CloudToggleRow.svelte';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { mdiShieldAccountOutline } from '@mdi/js';
   import { onMount } from 'svelte';
@@ -143,9 +144,7 @@
     {/if}
     <div class="fc-actions">
       {#if !linked}
-        <Button variant="primary" onclick={() => goto(commandCenterUrl('cloud', 'cloud-account'))}
-          >{$t('frameleaf_cloud_link_action')}</Button
-        >
+        <Button variant="primary" onclick={() => getCloudManager.open('signin')}>{$t('frameleaf_get_cloud')}</Button>
       {/if}
       <Button onclick={() => goto(commandCenterUrl('security', 'authentication'))}
         >{$t('frameleaf_signin_own_provider')}</Button

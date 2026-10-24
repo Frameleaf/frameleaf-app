@@ -45,7 +45,7 @@ test.describe('Frameleaf Cloud remote access', () => {
     await expect(page.getByText('Remote access is included with a Frameleaf Cloud plan.').first()).toBeVisible({
       timeout: 30_000,
     });
-    await expect(page.getByRole('button', { name: 'See plans' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Get Frameleaf Cloud' }).first()).toBeVisible();
   });
 
   test('turns remote access on and shows the public address', async ({ page }) => {

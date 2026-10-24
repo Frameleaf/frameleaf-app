@@ -71,7 +71,7 @@ describe('FrameleafSignInSection (FL-158)', () => {
     expect(screen.getByRole('switch', { name: 'Show “Sign in with Frameleaf” at home' })).toBeDisabled();
     expect(screen.getByRole('switch', { name: 'Require Frameleaf sign-in for remote access' })).toBeDisabled();
     expect(screen.getByText('Always on')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Link to Frameleaf' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Get Frameleaf Cloud' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Your own OpenID provider' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Link your own account' })).toBeInTheDocument();
     // FL-177: the server's key is the only client credential; there is no secret to enter
@@ -87,7 +87,7 @@ describe('FrameleafSignInSection (FL-158)', () => {
     expect(screen.getByText('Frameleaf · id.frameleaf.cloud.test')).toBeInTheDocument();
     expect(screen.getByText('018f3a7c-5e2b-7c91-9a4d-2f6b1e0c8d55')).toBeInTheDocument();
     expect(screen.getByText('3 people')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Link to Frameleaf' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Get Frameleaf Cloud' })).toBeNull();
 
     await fireEvent.click(screen.getByRole('switch', { name: 'Show “Sign in with Frameleaf” at home' }));
     await waitFor(() =>

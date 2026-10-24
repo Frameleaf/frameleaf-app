@@ -44,6 +44,7 @@
   import { mdiAlertCircleOutline, mdiCloudOutline, mdiCloudUploadOutline, mdiOpenInNew } from '@mdi/js';
   import { onDestroy, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
 
   type Props = {
     open?: boolean;
@@ -429,6 +430,12 @@
   {#snippet actions()}
     {#if !job}
       <Button onclick={close}>{$t('cancel')}</Button>
+      {#if estimate?.refusal}
+        <!-- FL-544: one button that fixes it, instead of a sentence -->
+        <Button variant="primary" onclick={() => getCloudManager.open('processing')}>
+          {estimate.refusal.code === 'insufficient-credits' ? $t('frameleaf_add_ai_credit') : $t('frameleaf_get_cloud')}
+        </Button>
+      {/if}
       {#if !estimate?.refusal && estimate?.permission.canConfirm !== false}
         <Button
           variant="primary"

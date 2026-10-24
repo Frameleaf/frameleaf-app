@@ -19,7 +19,6 @@
    * The prototype's "Preview other network conditions" panel only simulates states and is not ported.
    */
   import './cloud-account.css';
-  import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import QrCode from '$lib/components/frameleaf/QrCode.svelte';
@@ -28,9 +27,9 @@
   import CloudToggleRow from '$lib/components/frameleaf/cloud/CloudToggleRow.svelte';
   import { formatDateTime } from '$lib/frameleaf/cloud-ml';
   import { checkCustomHostname, hostnameMessageKey } from '$lib/frameleaf/remote-access';
-  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { copyToClipboard } from '$lib/utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
@@ -418,18 +417,16 @@
 
 <div class="frameleaf-cloud" data-section="cloud-remote">
   {#if blocked}
-    <CloudBanner tone="warning" title={$t('frameleaf_remote_gate_title')}>
-      {blocked}
+    <CloudBanner tone="warning" title={$t('frameleaf_gate_remote')}>
+      {$t('frameleaf_why_remote')}
       {#snippet action()}
-        {#if !linked}
-          <Button variant="primary" onclick={() => goto(commandCenterUrl('cloud', 'cloud-account'))}
-            >{$t('frameleaf_cloud_link_action')}</Button
-          >
-        {:else}
-          <Button variant="primary" onclick={() => goto(commandCenterUrl('cloud', 'cloud-plan'))}
-            >{$t('frameleaf_remote_gate_plan')}</Button
-          >
-        {/if}
+        <Button
+          variant="primary"
+          onclick={() =>
+            getCloudManager.open('remote', {
+              onDone: () => void update({ enabled: true }, $t('frameleaf_remote_saved')),
+            })}>{$t('frameleaf_get_cloud')}</Button
+        >
       {/snippet}
     </CloudBanner>
   {/if}
@@ -545,9 +542,7 @@
       {#if relayNeedsPlan}
         <p class="fc-muted" role="status">{$t('frameleaf_remote_relay_needs_plan_body')}</p>
         <div class="fc-actions">
-          <Button onclick={() => goto(commandCenterUrl('cloud', 'cloud-plan'))}
-            >{$t('frameleaf_remote_gate_plan')}</Button
-          >
+          <Button onclick={() => getCloudManager.open('remote')}>{$t('frameleaf_get_cloud')}</Button>
         </div>
       {:else if remote?.enabled && remote.relayRevoked}
         <CloudBanner tone="warning" title={$t('frameleaf_remote_relay_revoked_title')}>
@@ -808,9 +803,7 @@
     />
     {#if !linked}
       <div class="fc-actions">
-        <Button variant="primary" onclick={() => goto(commandCenterUrl('cloud', 'cloud-account'))}
-          >{$t('frameleaf_cloud_link_action')}</Button
-        >
+        <Button variant="primary" onclick={() => getCloudManager.open('remote')}>{$t('frameleaf_get_cloud')}</Button>
       </div>
     {/if}
   </CloudCard>

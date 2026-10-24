@@ -142,7 +142,7 @@ describe('RemoteAccessSection who can connect (FL-161)', () => {
     expect(screen.getByRole('switch', { name: 'Require Frameleaf sign-in for remote visitors' })).toBeDisabled();
     expect(screen.getByText('Always on')).toBeInTheDocument();
     // offered on the remote access card and on who can connect
-    expect(screen.getAllByRole('button', { name: 'Link to Frameleaf' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: 'Get Frameleaf Cloud' }).length).toBeGreaterThan(0);
     expect(sdkMock.updateCloudRemoteAccess).not.toHaveBeenCalled();
   });
 
@@ -224,12 +224,13 @@ describe('RemoteAccessSection (FL-165)', () => {
     const reason = 'Remote access is part of Frameleaf Cloud.';
     // As in the prototype, the reason is both the page's gate banner and the switch's own explanation.
     const gate = await screen.findByRole('status', { name: '' });
-    expect(gate).toHaveTextContent(reason);
+    // FL-544: the banner names the one thing missing and shows one button; the switch keeps the server's reason
+    expect(gate).toHaveTextContent('Remote access is part of Frameleaf Cloud');
     const toggle = screen.getByRole('switch', { name: 'Allow remote access' });
     expect(toggle).toHaveAccessibleDescription(expect.stringContaining(reason));
     await waitFor(() => expect(toggle).toBeDisabled());
     expect(toggle).not.toBeChecked();
-    expect(screen.getByRole('button', { name: 'See plans' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Get Frameleaf Cloud' })[0]).toBeInTheDocument();
   });
 
   it('turns remote access on and shows the public address with its certificate', async () => {
@@ -285,9 +286,9 @@ describe('RemoteAccessSection (FL-165)', () => {
     // the relay says it needs a plan, quietly, with the way to one
     expect(screen.getByText('Needs a plan')).toBeInTheDocument();
     expect(
-      screen.getByText(/The relay comes with a Frameleaf Cloud plan, and so do the Frameleaf apps/),
+      screen.getByText(/Connecting through Frameleaf is part of Frameleaf Cloud, and so are the Frameleaf apps/),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'See plans' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Get Frameleaf Cloud' })[0]).toBeInTheDocument();
     expect(sdkMock.getRemoteAccessUsage).not.toHaveBeenCalled();
 
     // direct is the only way in, whatever the stored mode says

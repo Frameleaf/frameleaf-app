@@ -23,6 +23,7 @@
   import { dataRegionKey, displayHost, linkRefusalKeys, shortFingerprint } from '$lib/frameleaf/cloud';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { CloudLinkRefusal, type CloudHeartbeatField, type CloudPermissionsDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -448,10 +449,10 @@
     </CloudCard>
     <p class="fc-muted">
       {$t('frameleaf_cloud_next')}
-      <a class="fc-link" href={commandCenterUrl('cloud', 'cloud-plan')}>{$t('frameleaf_cloud_next_plan')}</a>
-      ·
-      <a class="fc-link" href={commandCenterUrl('cloud', 'cloud-license')}>{$t('frameleaf_cloud_next_license')}</a>
-      ·
+      {#if !cloudManager.license?.plan}
+        <button type="button" class="fc-link" onclick={() => getCloudManager.open()}>{$t('frameleaf_get_cloud')}</button>
+        ·
+      {/if}
       <a class="fc-link" href={commandCenterUrl('cloud', 'cloud-remote')}>{$t('frameleaf_cloud_next_remote')}</a>
     </p>
   {/if}

@@ -136,7 +136,7 @@ describe('first-run setup state (FL-176)', () => {
 
   it('drops the choices that need Frameleaf when unlinking', () => {
     let state = setLinked(createSetup('existing'), true);
-    expect(processingOptions(state)).toEqual(['local', 'cloud', 'later']);
+    expect(processingOptions(state)).toEqual(['local', 'later']);
     state = { ...state, choices: { ...state.choices, processing: 'cloud', restore: 'restore' } };
     const unlinked = setLinked(state, false);
     expect(unlinked.choices).toMatchObject({ processing: 'local', restore: null });

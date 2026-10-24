@@ -20,6 +20,8 @@
   import SetupChange from '$lib/components/frameleaf/setup/SetupChange.svelte';
   import SetupChoiceCard from '$lib/components/frameleaf/setup/SetupChoiceCard.svelte';
   import SetupFrameleafLink from '$lib/components/frameleaf/setup/SetupFrameleafLink.svelte';
+  import GetCloudSheet from '$lib/components/frameleaf/cloud/GetCloudSheet.svelte';
+  import { cloudPlanPrice, formatUsd } from '$lib/frameleaf/cloud';
   import SetupImports from '$lib/components/frameleaf/setup/SetupImports.svelte';
   import SetupLogoIntro from '$lib/components/frameleaf/setup/SetupLogoIntro.svelte';
   import SetupRadio from '$lib/components/frameleaf/setup/SetupRadio.svelte';
@@ -95,6 +97,7 @@
     type FrameleafSetupStorageResponseDto,
     type HardwareCheckResponseDto,
     type UserAdminResponseDto,
+    getLicenseProducts,
   } from '@frameleaf/sdk';
   import { Icon, ThemePreference, themeManager } from '@frameleaf/ui';
   import {
@@ -505,7 +508,7 @@
         themeAfterSetup(choices.theme) === 'light' ? ThemePreference.Light : ThemePreference.Dark,
       );
       await goto(
-        choices.restore === 'restore' && linked ? commandCenterUrl('cloud', 'cloud-account') : Route.photos(),
+        choices.restore === 'restore' && linked ? commandCenterUrl('backups', 'cloud') : Route.photos(),
         { invalidateAll: true },
       );
       // Still here (the navigation was turned back): never leave the faded stage on screen.
@@ -567,6 +570,25 @@
   const fieldErrors = $derived(['name', 'email', 'password', 'confirm'].filter((field) => errors[field]).length);
   const hours = $derived(reindexHours(items, choices.model, perHour));
   const options = $derived(processingOptions(setup));
+  // FL-544: the Frameleaf Cloud card on Protection names the price, from the bundled prices
+  let cloudBundle = $state('');
+  let getCloud = $state(false);
+  $effect(() => {
+    if (!linked || cloudBundle) {
+      return;
+    }
+    void getLicenseProducts()
+      .then((products) => {
+        const price = (id: string) => products.products.find((product) => product.id === id)?.priceUsd ?? 0;
+        cloudBundle = $t('frameleaf_gc_price_year', {
+          values: {
+            once: formatUsd(price('supporter-server')),
+            renew: formatUsd(cloudPlanPrice(price('cloud-annual'), products.licensedDiscount)),
+          },
+        });
+      })
+      .catch(() => (cloudBundle = ''));
+  });
   const formatCount = (value: number) => new Intl.NumberFormat($locale).format(Math.round(value));
   /** Originals in the unit that fits: an imported library of a few hundred MB never reads as "0.0 TB". */
   const formatSize = (bytes: number) => getByteUnitString(bytes, $locale);
@@ -1412,20 +1434,32 @@
                   />
                 </div>
                 {#if linked}
+                  <!-- FL-544: Frameleaf Cloud as one purchase, with the price said here -->
                   <section class="frs-cloud-backup">
                     <header>
                       <span class="frs-found-icon"><Icon icon={mdiCloudOutline} size="24" aria-hidden={true} /></span>
                       <div>
-                        <h2>{$t('frameleaf_setup_cloud_backup_title')}</h2>
-                        <p>{$t('frameleaf_setup_cloud_backup_body')}</p>
+                        <h2>{$t('frameleaf_setup_cloud_title')}</h2>
+                        <p>{$t('frameleaf_setup_cloud_body')}</p>
                       </div>
                     </header>
-                    <p class="frs-later">
-                      <Icon icon={mdiClockOutline} size="14" aria-hidden={true} />{$t(
-                        'frameleaf_setup_cloud_backup_after',
-                      )}
-                    </p>
+                    {#if cloudBundle}
+                      <p class="frs-later">
+                        <Icon icon={mdiClockOutline} size="14" aria-hidden={true} />{$t('frameleaf_setup_cloud_price', {
+                          values: { price: cloudBundle },
+                        })}
+                      </p>
+                    {/if}
+                    <div class="frs-choices two">
+                      <button type="button" class="button primary" onclick={() => (getCloud = true)}
+                        >{$t('frameleaf_get_cloud')}</button
+                      >
+                      <span class="frs-quiet">{$t('frameleaf_setup_cloud_later')}</span>
+                    </div>
                   </section>
+                  {#if getCloud}
+                    <GetCloudSheet feature="backup" close={() => (getCloud = false)} />
+                  {/if}
                 {:else}
                   <p class="frs-quiet">
                     <Icon icon={mdiInformationOutline} size="16" aria-hidden={true} />{$t(
