@@ -162,9 +162,13 @@
             : index === 0
               ? $t('frameleaf_overnight_step_starts', { values: { time: time(startTime) } })
               : $t('frameleaf_overnight_step_then');
+        // FL-540: a step that uses the disk or the internet waits while a backup runs
+        const waitsForBackup = state === 'now' && !!runStep?.waitingForBackupSince;
         return {
           title: stepName(id),
-          detail: `${when} · ${off ? $t('frameleaf_overnight_trash_kept') : stepWhat(id)}`,
+          detail: waitsForBackup
+            ? `${$t('frameleaf_overnight_step_waits_backup')} · ${stepWhat(id)}`
+            : `${when} · ${off ? $t('frameleaf_overnight_trash_kept') : stepWhat(id)}`,
           state,
         };
       }),
@@ -185,6 +189,14 @@
   );
 
   const hero = $derived.by((): { tone: Exclude<KitTone, 'off'>; icon: string; title: string; body: string } => {
+    if (status?.run?.waitingForBackupSince) {
+      return {
+        tone: 'warn',
+        icon: mdiSync,
+        title: $t('frameleaf_overnight_hero_waiting_backup'),
+        body: $t('frameleaf_overnight_hero_waiting_backup_body', { values: { step: stepName(status.run.step) } }),
+      };
+    }
     if (status?.run) {
       const position = OVERNIGHT_STEP_IDS.indexOf(status.run.step) + 1;
       return {
@@ -572,6 +584,7 @@
         <Steps steps={orderSteps} stacked label={$t('frameleaf_overnight_order')} />
       {/if}
       <p class="hint">{$t('frameleaf_overnight_one_after')}</p>
+      <p class="hint">{$t('frameleaf_overnight_overlap_rule')}</p>
       {#if manualSteps.length > 0}
         <p class="hint">
           {$t('frameleaf_overnight_manual_steps', { values: { steps: list(manualSteps.map((id) => stepName(id))) } })}

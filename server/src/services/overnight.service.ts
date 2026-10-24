@@ -26,6 +26,7 @@ import { QueueService } from 'src/services/queue.service.js';
 import { getConfig } from 'src/utils/config.js';
 import {
   OVERNIGHT_STEPS,
+  OVERNIGHT_STEPS_COMPETING_WITH_BACKUP,
   OVERNIGHT_STEP_LIMIT_MS,
   type OvernightNight,
   type OvernightRun,
@@ -255,6 +256,15 @@ export class OvernightService {
     }
   }
 
+  /** FL-540: whether the backup schedule's run is going (the library data copy, Buddy or Cloud Backup). */
+  private async backupRunning(): Promise<boolean> {
+    try {
+      return !!(await this.systemMetadataRepository.get(SystemMetadataKey.BackupSequence))?.run;
+    } catch {
+      return false;
+    }
+  }
+
   /** Starts a step's work. */
   private async begin(step: OvernightStep, config: SystemConfig): Promise<void> {
     switch (step) {
@@ -357,9 +367,17 @@ export class OvernightService {
           } else if (await this.isOn(step, config)) {
             if (stopAt && DateTime.now() >= stopAt) {
               result = 'stopped';
+            } else if (OVERNIGHT_STEPS_COMPETING_WITH_BACKUP.has(step) && (await this.backupRunning())) {
+              // FL-540: the two schedules overlap; a step that uses the disk or the internet waits its turn
+              if (!run.waitingForBackupSince) {
+                run = { ...run, waitingForBackupSince: new Date().toISOString() };
+                state = { ...state, run };
+                await this.save(state);
+              }
+              return;
             } else {
               await this.begin(step, config);
-              run = { ...run, begunAt: new Date().toISOString() };
+              run = { ...run, begunAt: new Date().toISOString(), waitingForBackupSince: null };
               state = { ...state, run };
               await this.save(state);
               continue;
@@ -382,7 +400,7 @@ export class OvernightService {
       const results: OvernightRun['results'] = { ...run.results, [step]: result };
       const next = nextOvernightStep(step);
       if (next) {
-        run = { ...run, step: next, begunAt: null, results };
+        run = { ...run, step: next, begunAt: null, results, waitingForBackupSince: null };
         state = { ...state, run };
       } else {
         state = {
@@ -448,7 +466,13 @@ export class OvernightService {
       nextRunAt,
       steps,
       run: state.run
-        ? { startedAt: state.run.startedAt, manual: state.run.manual, step: state.run.step, results: state.run.results }
+        ? {
+            startedAt: state.run.startedAt,
+            manual: state.run.manual,
+            step: state.run.step,
+            results: state.run.results,
+            waitingForBackupSince: state.run.waitingForBackupSince ?? null,
+          }
         : null,
       nights: state.nights,
     };

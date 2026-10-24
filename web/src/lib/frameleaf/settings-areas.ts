@@ -86,7 +86,8 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   {
     id: 'backup',
     group: 'library',
-    sections: ['backup'],
+    // FL-540: Phones, the prototype's "See phones" (devices-backup)
+    sections: ['backup', 'devices-backup'],
     // FL-362: "What Cloud Backup keeps" is each account's own choice, beside its preservation.
     personal: ['takeout', 'preservation', 'cloud-backup-choice'],
     order: ['takeout', 'backup', 'preservation', 'cloud-backup-choice'],
@@ -692,7 +693,13 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     migration: 'storage',
     trash: 'trash',
   },
-  backup: { takeout: 'import', backup: 'protection', preservation: 'protection', 'cloud-backup-choice': 'protection' },
+  backup: {
+    takeout: 'import',
+    'devices-backup': 'import',
+    backup: 'protection',
+    preservation: 'protection',
+    'cloud-backup-choice': 'protection',
+  },
   intelligence: {
     'smart-search': 'search',
     descriptions: 'search',

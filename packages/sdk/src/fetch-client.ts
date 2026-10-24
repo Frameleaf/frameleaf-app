@@ -2788,6 +2788,8 @@ export type OvernightRunDto = {
     results: OvernightResultsDto;
     startedAt: string;
     step: OvernightStep;
+    /** FL-540: the step uses the disk or the internet and waits for a running backup, since then */
+    waitingForBackupSince: string | null;
 };
 export type OvernightStepStatusDto = {
     id: OvernightStep;

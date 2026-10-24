@@ -45,6 +45,11 @@ const OvernightResponseSchema = z
         manual: z.boolean().describe('Started with Run now'),
         step: OvernightStepSchema,
         results: OvernightResultsSchema,
+        waitingForBackupSince: z
+          .string()
+          .meta({ format: 'date-time' })
+          .nullable()
+          .describe('FL-540: the step uses the disk or the internet and waits for a running backup, since then'),
       })
       .meta({ id: 'OvernightRunDto' })
       .nullable()

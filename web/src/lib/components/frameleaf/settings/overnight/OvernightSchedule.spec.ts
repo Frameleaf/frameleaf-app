@@ -90,6 +90,22 @@ describe('Overnight schedule (FL-363)', () => {
     expect(screen.queryByText(/Database cleanup|Sync quota usage/)).not.toBeInTheDocument();
   });
 
+  it('says a step that competes with a running backup is waiting for it (FL-540)', async () => {
+    sdk.getOvernight.mockResolvedValueOnce({
+      ...(await sdk.getOvernight()),
+      run: {
+        startedAt: '2026-10-21T00:00:00.000Z',
+        manual: false,
+        step: 'folders',
+        waitingForBackupSince: '2026-10-21T00:05:00.000Z',
+        results: { cleanup: 'done' },
+      },
+    });
+    render(OvernightSchedule);
+    expect(await screen.findByRole('heading', { name: 'Waiting for the backups to finish' })).toBeInTheDocument();
+    expect(screen.getAllByText(/^Waits for the backups to finish, then starts ·/).length).toBeGreaterThan(0);
+  });
+
   it('says what each night removed and found (FL-518)', async () => {
     render(OvernightSchedule);
     expect(await screen.findByText(/12 items left Trash for good · 214 new files/)).toBeInTheDocument();
