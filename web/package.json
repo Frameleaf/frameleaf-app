@@ -1,6 +1,6 @@
 {
   "name": "frameleaf-web",
-  "version": "1.1.10",
+  "version": "1.1.11",
   "license": "GNU Affero General Public License version 3",
   "type": "module",
   "scripts": {
