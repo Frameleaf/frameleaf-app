@@ -123,7 +123,6 @@
         })),
   );
 
-
   const directStatus = $derived.by(() => {
     if (!direct) {
       return { label: $t('frameleaf_remote_status_off'), tone: 'muted' as const };
@@ -168,7 +167,6 @@
     return remote?.lastTestChecks.find((check) => check.id === 'direct')?.detail ?? $t('frameleaf_remote_run_test');
   });
 
-
   const checkLabels: Record<string, string> = $derived({
     certificate: $t('frameleaf_remote_check_certificate'),
     listener: $t('frameleaf_remote_check_listener'),
@@ -187,7 +185,12 @@
       return { tone: 'quiet' as const, icon: mdiWebOff, title: $t('frameleaf_remote_gate_title'), body: blocked };
     }
     if (!remote?.enabled) {
-      return { tone: 'quiet' as const, icon: mdiWebOff, title: $t('frameleaf_ra_off'), body: $t('frameleaf_ra_off_body') };
+      return {
+        tone: 'quiet' as const,
+        icon: mdiWebOff,
+        title: $t('frameleaf_ra_off'),
+        body: $t('frameleaf_ra_off_body'),
+      };
     }
     if (remote.status === RemoteAccessState.Error || testFailed) {
       return {
@@ -198,7 +201,12 @@
       };
     }
     if (!serving) {
-      return { tone: 'warn' as const, icon: mdiWebClock, title: $t('frameleaf_ra_starting'), body: $t('frameleaf_ra_starting_body') };
+      return {
+        tone: 'warn' as const,
+        icon: mdiWebClock,
+        title: $t('frameleaf_ra_starting'),
+        body: $t('frameleaf_ra_starting_body'),
+      };
     }
     if (usage?.throttled && usage.throttleUntil) {
       return {
@@ -460,7 +468,11 @@
           >
         {:else if remote?.enabled}
           <Button variant={testFailed ? 'primary' : 'default'} disabled={testing || busy} onclick={() => void runTest()}
-            >{testing ? $t('frameleaf_remote_testing') : testFailed ? $t('frameleaf_ra_check_again') : $t('frameleaf_ra_check_now')}</Button
+            >{testing
+              ? $t('frameleaf_remote_testing')
+              : testFailed
+                ? $t('frameleaf_ra_check_again')
+                : $t('frameleaf_ra_check_now')}</Button
           >
         {/if}
       {/snippet}
@@ -469,7 +481,9 @@
           {#if remote.publicUrl}
             <div class="address">
               {@render copyValue(remote.publicUrl, $t('frameleaf_remote_address_title'))}
-              <Button onclick={() => (showQr = !showQr)}>{showQr ? $t('frameleaf_ra_hide_qr') : $t('frameleaf_ra_show_qr')}</Button>
+              <Button onclick={() => (showQr = !showQr)}
+                >{showQr ? $t('frameleaf_ra_hide_qr') : $t('frameleaf_ra_show_qr')}</Button
+              >
             </div>
             {#if showQr}
               <QrCode
@@ -512,7 +526,10 @@
             checked={!!remote?.enabled}
             held={!remote || busy}
             onChange={(value) =>
-              void update({ enabled: value }, value ? $t('frameleaf_remote_on_notice') : $t('frameleaf_remote_off_notice'))}
+              void update(
+                { enabled: value },
+                value ? $t('frameleaf_remote_on_notice') : $t('frameleaf_remote_off_notice'),
+              )}
           />
         </Row>
       </Section>
@@ -533,7 +550,9 @@
             {
               value: RemoteAccessMode.Relay,
               label: $t('frameleaf_ra_how_frameleaf'),
-              detail: relayNeedsPlan ? $t('frameleaf_remote_connection_needs_plan') : $t('frameleaf_ra_how_frameleaf_detail'),
+              detail: relayNeedsPlan
+                ? $t('frameleaf_remote_connection_needs_plan')
+                : $t('frameleaf_ra_how_frameleaf_detail'),
               disabled: relayNeedsPlan,
             },
           ]}
@@ -547,14 +566,21 @@
           <Notice title={$t('frameleaf_remote_relay_needs_plan_status')}>
             {$t('frameleaf_remote_relay_needs_plan_body')}
             {#snippet action()}
-              <Button onclick={() => goto(commandCenterUrl('cloud', 'cloud-plan'))}>{$t('frameleaf_remote_gate_plan')}</Button>
+              <Button onclick={() => goto(commandCenterUrl('cloud', 'cloud-plan'))}
+                >{$t('frameleaf_remote_gate_plan')}</Button
+              >
             {/snippet}
           </Notice>
         {:else if remote.relayRevoked}
-          <Notice tone="warn" title={$t('frameleaf_remote_relay_revoked_title')}>{$t('frameleaf_remote_relay_revoked_body')}</Notice>
+          <Notice tone="warn" title={$t('frameleaf_remote_relay_revoked_title')}
+            >{$t('frameleaf_remote_relay_revoked_body')}</Notice
+          >
         {/if}
         {#if usage}
-          <Row label={$t('frameleaf_ra_this_month')} help={$t('frameleaf_ra_this_month_help', { values: { allowance: allowance } })}>
+          <Row
+            label={$t('frameleaf_ra_this_month')}
+            help={$t('frameleaf_ra_this_month_help', { values: { allowance } })}
+          >
             <div class="meter">
               <Meter
                 label={$t('frameleaf_remote_relay_usage_label')}
@@ -608,10 +634,16 @@
                       : $t('frameleaf_remote_not_connected'),
                 detail:
                   remote.relayConnected && remote.relayConnectedAt
-                    ? $t('frameleaf_ra_connected_since', { values: { date: formatDateTime(remote.relayConnectedAt, $locale) } })
+                    ? $t('frameleaf_ra_connected_since', {
+                        values: { date: formatDateTime(remote.relayConnectedAt, $locale) },
+                      })
                     : undefined,
               },
-              { label: $t('frameleaf_remote_check_direct'), value: directStatus.label, detail: direct ? directResult : undefined },
+              {
+                label: $t('frameleaf_remote_check_direct'),
+                value: directStatus.label,
+                detail: direct ? directResult : undefined,
+              },
               ...(direct
                 ? [
                     {
@@ -631,14 +663,17 @@
           {#if direct}
             <p class="hint">{$t('frameleaf_ra_door_hint')}</p>
             {#if remote.directGuidance === RemoteDirectGuidance.Bridge}
-              <Notice tone="warn" title={$t('frameleaf_remote_bridge_title')}>{$t('frameleaf_remote_bridge_body')}</Notice>
+              <Notice tone="warn" title={$t('frameleaf_remote_bridge_title')}
+                >{$t('frameleaf_remote_bridge_body')}</Notice
+              >
             {:else if remote.portMapping && remote.mappingError && !remote.cgnatSuspected}
               <p class="hint" role="status">
                 {$t('frameleaf_remote_mapping_failed', { values: { problem: remote.mappingError } })}
               </p>
             {/if}
             {#if remote.cgnatSuspected}
-              <Notice tone="warn" title={$t('frameleaf_remote_cgnat_title')}>{$t('frameleaf_remote_cgnat_body')}</Notice>
+              <Notice tone="warn" title={$t('frameleaf_remote_cgnat_title')}>{$t('frameleaf_remote_cgnat_body')}</Notice
+              >
             {/if}
             <Row label={$t('frameleaf_remote_manual_port')} help={$t('frameleaf_remote_manual_port_help')}>
               <Switch
@@ -667,11 +702,17 @@
           {#if remote.publicUrl}
             <Facts
               rows={[
-                { label: $t('frameleaf_remote_certificate'), value: remote.certificateName ?? '—', detail: $t('frameleaf_remote_issued_to_value') },
+                {
+                  label: $t('frameleaf_remote_certificate'),
+                  value: remote.certificateName ?? '—',
+                  detail: $t('frameleaf_remote_issued_to_value'),
+                },
                 {
                   label: $t('frameleaf_remote_renews'),
                   value: remote.certificateExpiresAt
-                    ? $t('frameleaf_remote_renews_value', { values: { date: formatDateTime(remote.certificateExpiresAt, $locale) } })
+                    ? $t('frameleaf_remote_renews_value', {
+                        values: { date: formatDateTime(remote.certificateExpiresAt, $locale) },
+                      })
                     : '—',
                 },
               ]}
@@ -689,7 +730,11 @@
           value={choseCustom ? RemoteAccessPublicUrl.Custom : RemoteAccessPublicUrl.Frameleaf}
           disabled={busy || configFile}
           options={[
-            { value: RemoteAccessPublicUrl.Frameleaf, label: $t('frameleaf_ra_links_frameleaf'), detail: frameleafUrl || undefined },
+            {
+              value: RemoteAccessPublicUrl.Frameleaf,
+              label: $t('frameleaf_ra_links_frameleaf'),
+              detail: frameleafUrl || undefined,
+            },
             {
               value: RemoteAccessPublicUrl.Custom,
               label: $t('frameleaf_ra_links_own'),
@@ -703,7 +748,9 @@
           <p class="said-back">{$t('frameleaf_ra_links_start')} <strong>{serverUrl}</strong></p>
         {/if}
         <Advanced summary={$t('frameleaf_remote_domain_title')}>
-          <p class="hint">{relayNeedsPlan ? $t('frameleaf_remote_domain_needs_plan') : $t('frameleaf_remote_domain_description')}</p>
+          <p class="hint">
+            {relayNeedsPlan ? $t('frameleaf_remote_domain_needs_plan') : $t('frameleaf_remote_domain_description')}
+          </p>
           <label class="stack">
             {$t('frameleaf_remote_hostname')}
             <input
@@ -741,7 +788,8 @@
                         {@render copyValue(record.name, `${record.type} ${$t('frameleaf_remote_record_name')}`)}
                         <small>{record.purpose}</small>
                       </td>
-                      <td>{@render copyValue(record.value, `${record.type} ${$t('frameleaf_remote_record_value')}`)}</td>
+                      <td>{@render copyValue(record.value, `${record.type} ${$t('frameleaf_remote_record_value')}`)}</td
+                      >
                     </tr>
                   {/each}
                 </tbody>
@@ -762,7 +810,8 @@
               onclick={() => void checkDns()}>{$t('frameleaf_ra_check_domain')}</Button
             >
             {#if remote.customHostname}
-              <Button disabled={busy} onclick={() => void removeDomain()}>{$t('frameleaf_remote_remove_domain')}</Button>
+              <Button disabled={busy} onclick={() => void removeDomain()}>{$t('frameleaf_remote_remove_domain')}</Button
+              >
             {/if}
           </div>
           {#if settingsDraft}
@@ -792,13 +841,23 @@
           value={status?.allowPasswordOverRelay ? 'password' : 'frameleaf'}
           disabled={!linked || busy}
           options={[
-            { value: 'frameleaf', label: $t('frameleaf_ra_signin_frameleaf'), detail: $t('frameleaf_ra_signin_frameleaf_detail') },
-            { value: 'password', label: $t('frameleaf_ra_signin_password'), detail: $t('frameleaf_ra_signin_password_detail') },
+            {
+              value: 'frameleaf',
+              label: $t('frameleaf_ra_signin_frameleaf'),
+              detail: $t('frameleaf_ra_signin_frameleaf_detail'),
+            },
+            {
+              value: 'password',
+              label: $t('frameleaf_ra_signin_password'),
+              detail: $t('frameleaf_ra_signin_password_detail'),
+            },
           ]}
           onChange={(value) => change('allowPasswordOverRelay', value === 'password')}
         />
         {#if status?.allowPasswordOverRelay}
-          <Notice tone="warn" title={$t('frameleaf_ra_signin_password_on')}>{$t('frameleaf_ra_signin_password_on_body')}</Notice>
+          <Notice tone="warn" title={$t('frameleaf_ra_signin_password_on')}
+            >{$t('frameleaf_ra_signin_password_on_body')}</Notice
+          >
         {/if}
         <p class="hint">{$t('frameleaf_ra_signin_hint')}</p>
       </Section>
@@ -818,6 +877,13 @@
   .hero-extra {
     display: grid;
     gap: var(--fl-space-3);
+    padding: var(--fl-space-4) var(--fl-space-6);
+    border-top: 1px solid var(--fl-border);
+  }
+  @media (max-width: 640px) {
+    .hero-extra {
+      padding: var(--fl-space-4);
+    }
   }
   .address {
     display: flex;
@@ -899,7 +965,7 @@
   td {
     padding: var(--fl-space-2);
     border-bottom: 1px solid var(--fl-border);
-    text-align: left;
+    text-align: start;
     vertical-align: top;
   }
 </style>

@@ -193,7 +193,9 @@ describe('LockedRulesPanel (FL-67)', () => {
 
     sdkMock.countLockedRules.mockResolvedValue({ photos: 0, videos: 0 });
     await fireEvent.click(screen.getByRole('checkbox', { name: /^Family$/ }));
-    expect(await screen.findByText('frameleaf_locked_rules_count_none', undefined, { timeout: 3000 })).toBeInTheDocument();
+    expect(
+      await screen.findByText('frameleaf_locked_rules_count_none', undefined, { timeout: 3000 }),
+    ).toBeInTheDocument();
     expect(sdkMock.countLockedRules).toHaveBeenLastCalledWith({
       lockedRulesDraftDto: { personIds: [], tagIds: [], petIds: [] },
     });

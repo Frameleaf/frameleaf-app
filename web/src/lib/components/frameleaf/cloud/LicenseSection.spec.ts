@@ -172,20 +172,26 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
     it('opens on what the licence decides: not included yet, for one person, or for everyone', async () => {
       sdkMock.getLicenseStatus.mockResolvedValue(license());
       const { unmount } = render(LicenseSection);
-      expect(await screen.findByRole('heading', { name: 'Backups away from home aren’t included yet' })).toBeInTheDocument();
+      expect(
+        await screen.findByRole('heading', { name: 'Backups away from home aren’t included yet' }),
+      ).toBeInTheDocument();
       expect(screen.getAllByText('Not included').length).toBeGreaterThan(1);
       unmount();
 
       authManager.setUser(personalUser as never);
       const second = render(LicenseSection);
-      expect(await screen.findByRole('heading', { name: 'Backups away from home are included for Admin only' })).toBeInTheDocument();
+      expect(
+        await screen.findByRole('heading', { name: 'Backups away from home are included for Admin only' }),
+      ).toBeInTheDocument();
       expect(screen.getByText('Needs a Server licence')).toBeInTheDocument();
       second.unmount();
 
       authManager.setUser({ ...personalUser, license: null } as never);
       sdkMock.getLicenseStatus.mockResolvedValue(license({ licensed: true, key: keySlot, keyHint: 'J583' }));
       render(LicenseSection);
-      expect(await screen.findByRole('heading', { name: 'Backups away from home are included for everyone' })).toBeInTheDocument();
+      expect(
+        await screen.findByRole('heading', { name: 'Backups away from home are included for everyone' }),
+      ).toBeInTheDocument();
       expect(screen.getByText('•••• J583')).toBeInTheDocument();
       expect(screen.queryByPlaceholderText('FL-XXXX-XXXX-XXXX')).toBeNull();
     });

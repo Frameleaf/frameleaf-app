@@ -5,15 +5,21 @@ import ImmichLayout from 'src/emails/components/immich.layout.js';
 import { SignInReminderEmailProps } from 'src/repositories/email.repository.js';
 
 /** FL-541: an administrator reminds someone to link their Frameleaf account to sign in away from home. */
-export const SignInReminderEmail = ({ baseUrl, displayName, senderName, link, showBranding }: SignInReminderEmailProps) => (
+export const SignInReminderEmail = ({
+  baseUrl,
+  displayName,
+  senderName,
+  link,
+  showBranding,
+}: SignInReminderEmailProps) => (
   <ImmichLayout baseUrl={baseUrl} showBranding={showBranding} preview="Link your Frameleaf account.">
     <Text className="m-0">
       Hey <strong>{displayName}</strong>!
     </Text>
 
     <Text>
-      {senderName} asked you to link your Frameleaf account. Once it is linked, you can sign in to your photos away
-      from home. At home, your password keeps working.
+      {senderName} asked you to link your Frameleaf account. Once it is linked, you can sign in to your photos away from
+      home. At home, your password keeps working.
     </Text>
 
     <Section className="flex justify-center my-6">

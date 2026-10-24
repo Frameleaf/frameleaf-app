@@ -251,7 +251,7 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
       screen.getByText('Frameleaf will spend at most $20.00 a day in total. Nothing is ever charged automatically.'),
     ).toBeInTheDocument();
 
-    store.draft.frameleafCloud.cloudMl.autoDescribe.enabled = true;
+    store.draft.frameleafCloud!.cloudMl.autoDescribe.enabled = true;
     expect(
       await screen.findByText(/Up to \$2\.00 of that can go on describing new photos automatically\./),
     ).toBeInTheDocument();

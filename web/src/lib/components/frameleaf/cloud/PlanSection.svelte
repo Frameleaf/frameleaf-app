@@ -131,18 +131,30 @@
   const keyKind = $derived(serverLicenceKind(license?.key));
   const backupCover = $derived(
     keyKind === 'server'
-      ? { tone: 'good' as const, value: $t('frameleaf_plan_cover_backup_everyone'), detail: $t('frameleaf_plan_cover_backup_everyone_detail') }
+      ? {
+          tone: 'good' as const,
+          value: $t('frameleaf_plan_cover_backup_everyone'),
+          detail: $t('frameleaf_plan_cover_backup_everyone_detail'),
+        }
       : keyKind === 'individual' || authManager.user.license
         ? {
             tone: 'warn' as const,
             value: $t('frameleaf_plan_cover_backup_one', { values: { name: authManager.user.name } }),
             detail: $t('frameleaf_plan_cover_backup_one_detail'),
           }
-        : { tone: 'off' as const, value: $t('frameleaf_plan_cover_backup_waiting'), detail: $t('frameleaf_plan_cover_backup_waiting_detail') },
+        : {
+            tone: 'off' as const,
+            value: $t('frameleaf_plan_cover_backup_waiting'),
+            detail: $t('frameleaf_plan_cover_backup_waiting_detail'),
+          },
   );
   const planHero = $derived.by(() => {
     if (!plan) {
-      return { tone: 'quiet' as const, title: $t('frameleaf_plan_hero_none'), body: $t('frameleaf_plan_hero_none_body') };
+      return {
+        tone: 'quiet' as const,
+        title: $t('frameleaf_plan_hero_none'),
+        body: $t('frameleaf_plan_hero_none_body'),
+      };
     }
     if (plan.state === 'grace') {
       return {
@@ -152,7 +164,11 @@
       };
     }
     if (plan.state !== 'active') {
-      return { tone: 'bad' as const, title: $t('frameleaf_plan_hero_ended'), body: $t('frameleaf_license_expired_body') };
+      return {
+        tone: 'bad' as const,
+        title: $t('frameleaf_plan_hero_ended'),
+        body: $t('frameleaf_license_expired_body'),
+      };
     }
     return {
       tone: 'good' as const,

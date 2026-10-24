@@ -26,11 +26,11 @@ import { LicenseResponseDto } from 'src/dtos/license.dto.js';
 import { OnboardingDto, OnboardingResponseDto } from 'src/dtos/onboarding.dto.js';
 import { PinnedCollectionsResponseDto, PinnedCollectionsUpdateDto } from 'src/dtos/pinned-collection.dto.js';
 import {
+  LockedRulesCountResponseDto,
+  LockedRulesDraftDto,
   UserPreferenceHistoryResponseDto,
   UserPreferencesResponseDto,
   UserPreferencesUpdateDto,
-  LockedRulesCountResponseDto,
-  LockedRulesDraftDto,
 } from 'src/dtos/user-preferences.dto.js';
 import { CreateProfileImageDto, CreateProfileImageResponseDto } from 'src/dtos/user-profile.dto.js';
 import { UserAdminResponseDto, UserMeResponseDto, UserResponseDto, UserUpdateMeDto } from 'src/dtos/user.dto.js';

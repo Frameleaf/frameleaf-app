@@ -339,7 +339,9 @@
             status.lastContactAt
               ? $t('frameleaf_cloud_hero_heard', { values: { when: formatWhen(status.lastContactAt) } })
               : '',
-            status.dataRegion ? $t('frameleaf_cloud_hero_region', { values: { region: regionLabel(status.dataRegion) } }) : '',
+            status.dataRegion
+              ? $t('frameleaf_cloud_hero_region', { values: { region: regionLabel(status.dataRegion) } })
+              : '',
           ]
             .filter(Boolean)
             .join(' ')}

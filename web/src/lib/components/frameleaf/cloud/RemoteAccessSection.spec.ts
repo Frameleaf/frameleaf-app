@@ -228,7 +228,9 @@ describe('RemoteAccessSection: how devices connect (FL-166, FL-167, FL-541)', ()
       }),
     );
     expect(await screen.findByRole('switch', { name: 'I set up my router myself' })).toBeInTheDocument();
-    expect(screen.getByText(/Frameleaf is checking whether devices can connect straight to your home/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Frameleaf is checking whether devices can connect straight to your home/),
+    ).toBeInTheDocument();
   });
 
   it('serves the direct address with a Server licence and no plan: Through Frameleaf and your own domain need one (FL-437)', async () => {
@@ -308,18 +310,26 @@ describe('RemoteAccessSection: how devices connect (FL-166, FL-167, FL-541)', ()
     );
     render(RemoteAccessSection);
     expect(await screen.findByText('Your internet provider shares one public address')).toBeInTheDocument();
-    expect(screen.getByText(/doesn’t allow direct connections, so everything goes through Frameleaf/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/doesn’t allow direct connections, so everything goes through Frameleaf/),
+    ).toBeInTheDocument();
   });
 
   it('says why nothing goes through Frameleaf, and when Frameleaf Cloud stopped it', async () => {
     sdkMock.getRemoteAccess.mockResolvedValue(
-      remote({ enabled: true, status: RemoteAccessState.Ready, relayLastError: 'The relay refused the tunnel: timeout' }),
+      remote({
+        enabled: true,
+        status: RemoteAccessState.Ready,
+        relayLastError: 'The relay refused the tunnel: timeout',
+      }),
     );
     const first = render(RemoteAccessSection);
     expect(await screen.findByText('Last problem: The relay refused the tunnel: timeout')).toBeInTheDocument();
     first.unmount();
 
-    sdkMock.getRemoteAccess.mockResolvedValue(remote({ enabled: true, status: RemoteAccessState.Ready, relayRevoked: true }));
+    sdkMock.getRemoteAccess.mockResolvedValue(
+      remote({ enabled: true, status: RemoteAccessState.Ready, relayRevoked: true }),
+    );
     render(RemoteAccessSection);
     expect(
       await screen.findByText('Frameleaf Cloud stopped connections through Frameleaf for this server'),
@@ -354,19 +364,30 @@ describe('RemoteAccessSection: the monthly allowance (FL-166)', () => {
   });
 
   it('says it is slower, not stopped, once the allowance is used up', async () => {
-    sdkMock.getRemoteAccess.mockResolvedValue(remote({ enabled: true, status: RemoteAccessState.Ready, relayConnected: true }));
+    sdkMock.getRemoteAccess.mockResolvedValue(
+      remote({ enabled: true, status: RemoteAccessState.Ready, relayConnected: true }),
+    );
     sdkMock.getRemoteAccessUsage.mockResolvedValue(
-      usage({ bytes: 200_000_000_000, throttled: true, throttleBps: 1_000_000, throttleUntil: '2026-10-01T00:00:00.000Z' }),
+      usage({
+        bytes: 200_000_000_000,
+        throttled: true,
+        throttleBps: 1_000_000,
+        throttleUntil: '2026-10-01T00:00:00.000Z',
+      }),
     );
     render(RemoteAccessSection);
 
-    expect(await screen.findByRole('heading', { name: /Remote access is working, but slower until/ })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: /Remote access is working, but slower until/ }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/slowed to 1 Mbit\/s until/)).toBeInTheDocument();
   });
 
   it('asks Frameleaf Cloud for nothing while remote access is unavailable', async () => {
     sdkMock.getCloudStatus.mockResolvedValue(status());
-    sdkMock.getRemoteAccess.mockResolvedValue(remote({ unavailableReason: 'Link this server to a Frameleaf account first.' }));
+    sdkMock.getRemoteAccess.mockResolvedValue(
+      remote({ unavailableReason: 'Link this server to a Frameleaf account first.' }),
+    );
     render(RemoteAccessSection);
 
     expect(await screen.findByText('Link this server to a Frameleaf account first.')).toBeInTheDocument();
@@ -381,13 +402,21 @@ describe('RemoteAccessSection: the address in links you share (FL-165, FL-168, F
 
   const useDraft = (externalDomain = '') => {
     const config = { server: { externalDomain, name: '', loginPageMessage: '', publicUsers: true } } as never;
-    const store = new SystemConfigDraftStore({ config, revision: 'r1' }, { defaults: config, load: vi.fn(), save: vi.fn() });
+    const store = new SystemConfigDraftStore(
+      { config, revision: 'r1' },
+      { defaults: config, load: vi.fn(), save: vi.fn() },
+    );
     draftRef.current = store;
     return store;
   };
 
   const records = [
-    { type: RemoteDnsRecordType.Cname, name: 'photos.example.com', value: 'r.u225vlzhsdlhwh4l.frameleaf.net', purpose: '' },
+    {
+      type: RemoteDnsRecordType.Cname,
+      name: 'photos.example.com',
+      value: 'r.u225vlzhsdlhwh4l.frameleaf.net',
+      purpose: '',
+    },
     {
       type: RemoteDnsRecordType.Cname,
       name: '_acme-challenge.photos.example.com',
@@ -421,14 +450,18 @@ describe('RemoteAccessSection: the address in links you share (FL-165, FL-168, F
 
     const input = screen.getByPlaceholderText('photos.example.com');
     await fireEvent.input(input, { target: { value: 'photos.frameleaf.net' } });
-    expect(await screen.findByText('Use a domain you own; Frameleaf addresses are already set up.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Use a domain you own; Frameleaf addresses are already set up.'),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Check my domain' })).toBeDisabled();
 
     await fireEvent.input(input, { target: { value: 'photos.example.com' } });
     expect(await screen.findByText('_acme-challenge.u225vlzhsdlhwh4l.frameleaf.net')).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Check my domain' }));
     await waitFor(() =>
-      expect(sdkMock.setRemoteHostname).toHaveBeenCalledWith({ remoteHostnameUpdateDto: { hostname: 'photos.example.com' } }),
+      expect(sdkMock.setRemoteHostname).toHaveBeenCalledWith({
+        remoteHostnameUpdateDto: { hostname: 'photos.example.com' },
+      }),
     );
     expect(await screen.findByText(/The records are not visible yet/)).toBeInTheDocument();
 
@@ -491,7 +524,9 @@ describe('RemoteAccessSection: signing in away from home and originals (FL-161, 
 
   it('keeps one sign-in choice, held until the server is linked', async () => {
     sdkMock.getCloudStatus.mockResolvedValue(status());
-    sdkMock.getRemoteAccess.mockResolvedValue(remote({ unavailableReason: 'Link this server to a Frameleaf account first.' }));
+    sdkMock.getRemoteAccess.mockResolvedValue(
+      remote({ unavailableReason: 'Link this server to a Frameleaf account first.' }),
+    );
     render(RemoteAccessSection);
     expect(await screen.findByText('Link this server to a Frameleaf account first.')).toBeInTheDocument();
     expect(screen.queryByRole('radiogroup', { name: 'Signing in away from home' })).toBeNull();

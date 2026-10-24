@@ -150,7 +150,11 @@
 
   const hero = $derived(
     serverCover
-      ? { tone: 'good' as const, title: $t('frameleaf_lic_hero_everyone'), body: $t('frameleaf_lic_hero_everyone_body') }
+      ? {
+          tone: 'good' as const,
+          title: $t('frameleaf_lic_hero_everyone'),
+          body: $t('frameleaf_lic_hero_everyone_body'),
+        }
       : oneCover
         ? {
             tone: 'warn' as const,
@@ -209,12 +213,20 @@
           {$t('frameleaf_license_grace_body', { values: { date: formatDate(license.graceUntil) } })}
         </Notice>
       {:else if license.state === 'expired'}
-        <Notice tone="warn" title={$t('frameleaf_license_expired_title')}>{$t('frameleaf_license_expired_body')}</Notice>
+        <Notice tone="warn" title={$t('frameleaf_license_expired_title')}>{$t('frameleaf_license_expired_body')}</Notice
+        >
       {:else if license.state === 'invalid'}
-        <Notice tone="warn" title={$t('frameleaf_license_invalid_title')}>{$t('frameleaf_license_invalid_body')}</Notice>
+        <Notice tone="warn" title={$t('frameleaf_license_invalid_title')}>{$t('frameleaf_license_invalid_body')}</Notice
+        >
       {/if}
 
-      <Hero label={$t('frameleaf_lic_status')} tone={hero.tone} icon={mdiCertificateOutline} title={hero.title} body={hero.body}>
+      <Hero
+        label={$t('frameleaf_lic_status')}
+        tone={hero.tone}
+        icon={mdiCertificateOutline}
+        title={hero.title}
+        body={hero.body}
+      >
         {#snippet actions()}
           {#if serverCover}
             <Button onclick={() => goto(commandCenterUrl('backup'))}>{$t('frameleaf_lic_open_backup')}</Button>
@@ -289,7 +301,11 @@
                 value: key.kind === 'individual' ? $t('frameleaf_license_individual') : $t('frameleaf_license_server'),
                 detail: stateLabel(key.state),
               },
-              { label: $t('frameleaf_license_key'), value: `•••• ${key.keyHint ?? '—'}`, detail: $t('frameleaf_lic_key_email') },
+              {
+                label: $t('frameleaf_license_key'),
+                value: `•••• ${key.keyHint ?? '—'}`,
+                detail: $t('frameleaf_lic_key_email'),
+              },
               {
                 label: $t('frameleaf_lic_added'),
                 value: formatWhen(key.activatedAt),
@@ -300,7 +316,9 @@
             ]}
           />
           <div class="actions">
-            <Button variant="danger" onclick={() => (removingKey = 'server')}>{$t('frameleaf_license_remove_action')}</Button>
+            <Button variant="danger" onclick={() => (removingKey = 'server')}
+              >{$t('frameleaf_license_remove_action')}</Button
+            >
           </div>
         {/if}
         {#if personal}
@@ -340,7 +358,9 @@
             <Notice icon={mdiCertificateOutline} title={$t('frameleaf_lic_typed_server')}>
               {$t('frameleaf_lic_typed_server_body')}
               {#snippet action()}
-                <Button variant="primary" disabled={busy} onclick={() => void activate()}>{$t('frameleaf_lic_activate')}</Button>
+                <Button variant="primary" disabled={busy} onclick={() => void activate()}
+                  >{$t('frameleaf_lic_activate')}</Button
+                >
               {/snippet}
             </Notice>
           {:else if keyCheck?.valid && keyCheck.kind === 'individual'}
@@ -361,7 +381,9 @@
             <span class="copy">
               <code>{license.fingerprint.instanceId ?? '—'}</code>
               {#if license.fingerprint.instanceId}
-                <Button onclick={() => copyToClipboard(license.fingerprint.instanceId ?? '')}>{$t('frameleaf_lic_copy')}</Button>
+                <Button onclick={() => copyToClipboard(license.fingerprint.instanceId ?? '')}
+                  >{$t('frameleaf_lic_copy')}</Button
+                >
               {/if}
             </span>
           </Row>
@@ -402,7 +424,9 @@
 
 <Dialog
   bind:open={() => removing, (open) => (removingKey = open ? removingKey : null)}
-  title={removingKey === 'personal' ? $t('frameleaf_license_remove_personal_title') : $t('frameleaf_license_remove_title')}
+  title={removingKey === 'personal'
+    ? $t('frameleaf_license_remove_personal_title')
+    : $t('frameleaf_license_remove_title')}
   closeLabel={$t('close')}
 >
   <p>

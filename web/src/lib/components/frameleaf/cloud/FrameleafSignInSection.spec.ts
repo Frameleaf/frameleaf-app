@@ -81,7 +81,9 @@ describe('FrameleafSignInSection (FL-158, FL-541)', () => {
     sdkMock.getCloudStatus.mockResolvedValue(status());
     render(FrameleafSignInSection);
 
-    expect(await screen.findByRole('heading', { name: 'Sign in with Frameleaf isn’t available yet' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Sign in with Frameleaf isn’t available yet' }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Link this server' })).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: 'Offer Sign in with Frameleaf at home' })).toBeDisabled();
     expect(screen.queryByText('Who has linked')).toBeNull();
@@ -95,7 +97,9 @@ describe('FrameleafSignInSection (FL-158, FL-541)', () => {
     sdkMock.remindCloudSignIn.mockResolvedValue(undefined as never);
     render(FrameleafSignInSection);
 
-    expect(await screen.findByRole('heading', { name: '1 of 2 people can sign in with Frameleaf' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: '1 of 2 people can sign in with Frameleaf' }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Not yet: Emma\./)).toBeInTheDocument();
     expect(screen.getByText('Can only sign in at home')).toBeInTheDocument();
     expect(screen.getByText('sam@frameleaf.app')).toBeInTheDocument();

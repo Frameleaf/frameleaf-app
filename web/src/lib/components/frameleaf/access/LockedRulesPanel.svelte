@@ -479,12 +479,14 @@
       return;
     }
     const [personIds, tagIds, petIds] = JSON.parse(draftKey) as [string[], string[], string[]];
-    const timer = setTimeout(async () => {
-      try {
-        lockedCount = (await countLockedRules({ lockedRulesDraftDto: { personIds, tagIds, petIds } })) ?? null;
-      } catch {
-        lockedCount = null;
-      }
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          lockedCount = (await countLockedRules({ lockedRulesDraftDto: { personIds, tagIds, petIds } })) ?? null;
+        } catch {
+          lockedCount = null;
+        }
+      })();
     }, 400);
     return () => clearTimeout(timer);
   });

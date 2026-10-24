@@ -192,7 +192,11 @@
       return { tone: 'quiet' as const, title: $t('frameleaf_cp_hero_off'), body: $t('frameleaf_cp_hero_off_body') };
     }
     if (status?.consent && !consentCurrent) {
-      return { tone: 'warn' as const, title: $t('admin.frameleaf_cloud_ml_terms_changed'), body: $t('frameleaf_cp_hero_terms_body') };
+      return {
+        tone: 'warn' as const,
+        title: $t('admin.frameleaf_cloud_ml_terms_changed'),
+        body: $t('frameleaf_cp_hero_terms_body'),
+      };
     }
     if (lowCredit) {
       return {
@@ -268,7 +272,13 @@
 </script>
 
 <div class="frameleaf-cloud">
-  <Hero label={$t('frameleaf_cp_status')} tone={hero.tone} icon={mdiCreationOutline} title={hero.title} body={hero.body}>
+  <Hero
+    label={$t('frameleaf_cp_status')}
+    tone={hero.tone}
+    icon={mdiCreationOutline}
+    title={hero.title}
+    body={hero.body}
+  >
     {#snippet actions()}
       {#if status && !linked}
         <Button variant="primary" onclick={() => goto(commandCenterUrl('cloud', 'cloud-account'))}

@@ -183,7 +183,10 @@
         {$t('frameleaf_signin_away')}
         <TextLink href={commandCenterUrl('cloud', 'cloud-remote')}>{$t('frameleaf_signin_away_link')}</TextLink>
       </p>
-      <Row label={$t('frameleaf_signin_offer_home')} help={linked ? $t('frameleaf_signin_offer_home_help') : $t('frameleaf_signin_link_first')}>
+      <Row
+        label={$t('frameleaf_signin_offer_home')}
+        help={linked ? $t('frameleaf_signin_offer_home_help') : $t('frameleaf_signin_link_first')}
+      >
         <Switch
           label={$t('frameleaf_signin_offer_home_switch')}
           checked={linked && !!status?.signInShowOnLocalLogin}
