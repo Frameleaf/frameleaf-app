@@ -14,6 +14,8 @@
     icon?: string;
     /** FL-519: the tool's state in a few words ("12 groups to look at"), shown before the chevron. */
     status?: { text: string; tone: KitTone };
+    /** FL-539: a word under the state, such as "Checked last night". */
+    note?: string;
     onSelect: () => void;
   };
 </script>
@@ -63,7 +65,9 @@
               <span>{row.description}</span>
             </span>
             {#if row.status}
-              <span class="cc-directory-status"><Pill tone={row.status.tone}>{row.status.text}</Pill></span>
+              <span class="cc-directory-status"
+                ><Pill tone={row.status.tone}>{row.status.text}</Pill>{#if row.note}<small>{row.note}</small>{/if}</span
+              >
             {/if}
             {#if row.scope && usual && row.scope !== usual}
               <small class="cc-directory-scope">{scopeTag(row.scope)}</small>
@@ -78,9 +82,16 @@
 
 <style>
   .cc-directory-status {
+    display: grid;
     flex: none;
+    justify-items: end;
+    gap: 4px;
     margin-inline-start: auto;
     white-space: nowrap;
+  }
+  .cc-directory-status small {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
   }
   .cc-directory {
     display: grid;

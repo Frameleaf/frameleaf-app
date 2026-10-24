@@ -281,7 +281,7 @@ describe('ICloudSyncPanel', () => {
   it('asks consent before hidden photos, then unlocks before saving', async () => {
     mocks.getAuthStatus.mockResolvedValue({ isElevated: false });
     render(ICloudSyncPanel, { initial: { enabled: true, connections: [connection()] } });
-    await fireEvent.click(screen.getByRole('checkbox', { name: en.frameleaf_icloud_include_hidden }));
+    await fireEvent.click(screen.getByRole('switch', { name: en.frameleaf_icloud_hidden }));
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_icloud_save }));
     await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_icloud_consent_confirm }));
     await waitFor(() =>
@@ -304,7 +304,7 @@ describe('ICloudSyncPanel', () => {
     mocks.getAuthStatus.mockResolvedValue({ isElevated: true });
     mocks.updateICloudConnection.mockResolvedValue(connection());
     render(ICloudSyncPanel, { initial: { enabled: true, connections: [connection()] } });
-    expect(screen.getByRole('checkbox', { name: en.frameleaf_icloud_include_hidden })).toBeChecked();
+    expect(screen.getByRole('switch', { name: en.frameleaf_icloud_hidden })).toHaveAttribute('aria-checked', 'true');
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_icloud_save }));
     await waitFor(() => expect(mocks.updateICloudConnection).toHaveBeenCalled());
     expect(mocks.updateICloudConnection.mock.calls[0][0].iCloudConnectionUpdateDto.config.includeHidden).toBe(true);
