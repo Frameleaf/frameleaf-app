@@ -175,7 +175,9 @@ const LicenseCheckoutSchema = z
 const LicenseCheckoutResponseSchema = z
   .object({
     checkoutId: z.string(),
-    url: z.string().describe('The Frameleaf store page to open; the buyer signs into the account that owns this server'),
+    url: z
+      .string()
+      .describe('The Frameleaf store page to open; the buyer signs into the account that owns this server'),
     expiresAt: z.string().describe('When the page stops working unless payment has started, about 30 minutes'),
   })
   .meta({ id: 'LicenseCheckoutResponseDto' });

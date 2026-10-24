@@ -72,7 +72,6 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { parseDurationSeconds } from 'src/services/asset-restoration.service.js';
 import { requireAccess } from 'src/utils/access.js';
-import { CLOUD_GATES } from 'src/utils/frameleaf-cloud-gates.js';
 import {
   CLOUD_ML_JOB_COST_POLL_MS,
   CLOUD_ML_JOB_COST_READS,
@@ -116,6 +115,7 @@ import {
   plannedWorkers,
 } from 'src/utils/cloud-ml-job.js';
 import { getConfig } from 'src/utils/config.js';
+import { CLOUD_GATES } from 'src/utils/frameleaf-cloud-gates.js';
 import { CloudConnectionState, CloudMlGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
 import { CloudJobInputError, FrameleafCloudJobClient } from 'src/utils/frameleaf-cloud-job-client.js';
 import {
@@ -3062,21 +3062,17 @@ export class CloudMlJobService {
 
   /** Why the AI Wallet cannot hold the job now, or null. Nothing is sent, and no lighter model is tried. */
   private walletRefusal(
-    wallet: { dailyCapUsd: number | null; spentTodayUsd: number },
+    wallet: { dailyCapUsd: number | null; spentTodayUsd: number; topUpUrl?: string | null },
     availableUsd: number,
     holdUsd: number,
-  ): { code: string; message: string } | null {
+  ): { code: string; message: string; topUpUrl: string | null } | null {
+    // FL-544: the refusal carries the page that fixes it, so a gate shows one button instead of a sentence
+    const topUpUrl = wallet.topUpUrl ?? null;
     if (availableUsd < holdUsd) {
-      return {
-        code: 'insufficient-credits',
-        message: CLOUD_GATES.creditShort(holdUsd, availableUsd),
-      };
+      return { code: 'insufficient-credits', message: CLOUD_GATES.creditShort(holdUsd, availableUsd), topUpUrl };
     }
     if (wallet.dailyCapUsd !== null && wallet.spentTodayUsd + holdUsd > wallet.dailyCapUsd) {
-      return {
-        code: 'daily-cap',
-        message: CLOUD_GATES.dailyCap(wallet.dailyCapUsd),
-      };
+      return { code: 'daily-cap', message: CLOUD_GATES.dailyCap(wallet.dailyCapUsd), topUpUrl };
     }
     return null;
   }

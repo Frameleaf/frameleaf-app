@@ -104,6 +104,10 @@ const CloudMlJobRefusalSchema = z
       .string()
       .describe('insufficient-credits, daily-cap or budget-exceeded; nothing is sent and the model is never changed'),
     message: z.string(),
+    topUpUrl: z
+      .string()
+      .nullable()
+      .describe('FL-544: where to add AI credit in the Frameleaf account, when the cloud named a page; null otherwise'),
   })
   .meta({ id: 'CloudMlJobRefusalDto' });
 

@@ -848,9 +848,9 @@ describe(FrameleafLicenseService.name, () => {
     const CHECKOUT = { checkoutId: 'chk_1', expiresAt: '2026-10-24T16:00:00.000Z' };
 
     it('refuses before the server is linked', async () => {
-      await expect(sut.startCheckout(authStub.admin, { licence: 'supporter-server', plan: 'cloud-annual' })).rejects.toThrow(
-        'Link this server to a Frameleaf account first.',
-      );
+      await expect(
+        sut.startCheckout(authStub.admin, { licence: 'supporter-server', plan: 'cloud-annual' }),
+      ).rejects.toThrow('Link this server to a Frameleaf account first.');
       expect(cloud.requests.some(({ path }) => path.includes('licensed-checkout'))).toBe(false);
     });
 

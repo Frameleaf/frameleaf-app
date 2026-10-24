@@ -34,8 +34,8 @@ import {
 import { FrameleafCloudPublicCall } from 'src/repositories/frameleaf-cloud.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
-import { CLOUD_GATES } from 'src/utils/frameleaf-cloud-gates.js';
 import { FRAMELEAF_BUILD_CHANNEL, FrameleafBuildChannel } from 'src/utils/frameleaf-build-channel.js';
+import { CLOUD_GATES } from 'src/utils/frameleaf-cloud-gates.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   CloudErrorCode,
@@ -383,7 +383,9 @@ export class FrameleafLicenseService extends BaseService {
     const body = {
       licence: dto.licence,
       plan: dto.plan,
-      ...(dto.licence === 'supporter-individual' ? { userFingerprint: sha256(`${identity.instanceId}${auth.user.id}`) } : {}),
+      ...(dto.licence === 'supporter-individual'
+        ? { userFingerprint: sha256(`${identity.instanceId}${auth.user.id}`) }
+        : {}),
     };
     let answer: z.infer<typeof checkoutResponseSchema>;
     try {

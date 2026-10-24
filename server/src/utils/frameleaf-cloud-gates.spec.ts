@@ -1,5 +1,5 @@
-import { CLOUD_GATES } from 'src/utils/frameleaf-cloud-gates.js';
 import { describe, expect, it } from 'vitest';
+import { CLOUD_GATES } from 'src/utils/frameleaf-cloud-gates.js';
 
 describe('CLOUD_GATES (FL-544: one rule table for Frameleaf Cloud gate copy)', () => {
   it('names Frameleaf Cloud as the one thing remote access and Cloud Backup need', () => {
