@@ -820,12 +820,16 @@ describe(UserAdminService.name, () => {
         userStub.user1.id,
         expect.objectContaining({ uploadsPaused: true }),
       );
-      expect(mocks.adminAudit.create).toHaveBeenLastCalledWith([entry(AdminAuditAction.AccountUpdated, 'uploads-paused')]);
+      expect(mocks.adminAudit.create).toHaveBeenLastCalledWith([
+        entry(AdminAuditAction.AccountUpdated, 'uploads-paused'),
+      ]);
 
       mocks.user.get.mockResolvedValue({ ...userStub.user1, uploadsPaused: true });
       mocks.user.update.mockResolvedValue({ ...userStub.user1, uploadsPaused: false });
       await sut.update(authStub.admin, userStub.user1.id, { uploadsPaused: false });
-      expect(mocks.adminAudit.create).toHaveBeenLastCalledWith([entry(AdminAuditAction.AccountUpdated, 'uploads-resumed')]);
+      expect(mocks.adminAudit.create).toHaveBeenLastCalledWith([
+        entry(AdminAuditAction.AccountUpdated, 'uploads-resumed'),
+      ]);
     });
 
     it('records a password reset without the password', async () => {
