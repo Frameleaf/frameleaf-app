@@ -161,6 +161,26 @@ const SuppressionUpdateSchema = z
   .optional()
   .meta({ id: 'SuppressionUpdate' });
 
+/** FL-541: a draft of the Locked rules, counted before it is saved. */
+const LockedRulesDraftSchema = z
+  .object({
+    tagIds: z.array(z.uuidv4()).max(1000).describe('Tag IDs the draft locks'),
+    personIds: z.array(z.uuidv4()).max(1000).describe('Person IDs the draft locks'),
+    petIds: z.array(z.uuidv4()).max(1000).describe('Pet IDs the draft locks'),
+  })
+  .meta({ id: 'LockedRulesDraftDto' });
+
+export class LockedRulesDraftDto extends createZodDto(LockedRulesDraftSchema) {}
+
+const LockedRulesCountResponseSchema = z
+  .object({
+    photos: z.int().min(0).describe('Your photos the draft would keep Locked'),
+    videos: z.int().min(0).describe('Your videos the draft would keep Locked'),
+  })
+  .meta({ id: 'LockedRulesCountResponseDto' });
+
+export class LockedRulesCountResponseDto extends createZodDto(LockedRulesCountResponseSchema) {}
+
 const PrivacyUpdateSchema = z
   .object({
     suppression: SuppressionUpdateSchema,

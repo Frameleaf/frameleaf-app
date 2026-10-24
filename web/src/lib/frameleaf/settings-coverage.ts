@@ -212,7 +212,7 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     pattern: 'frameleafCloud.remoteAccess.allowPasswordOverRelay',
     kind: 'control',
     file: 'src/lib/components/frameleaf/cloud/RemoteAccessSection.svelte',
-    evidence: "change('allowPasswordOverRelay', value)",
+    evidence: "change('allowPasswordOverRelay', value === 'password')",
   },
   {
     pattern: 'frameleafCloud.remoteAccess.customHostname.*',
@@ -236,7 +236,7 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     pattern: 'frameleafCloud.remoteAccess.mode',
     kind: 'control',
     file: 'src/lib/components/frameleaf/cloud/RemoteAccessSection.svelte',
-    evidence: 'update({ mode: event.currentTarget.value as RemoteAccessMode })',
+    evidence: 'update({ mode: value as RemoteAccessMode })',
   },
   {
     pattern: 'frameleafCloud.remoteAccess.portMapping',

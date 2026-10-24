@@ -1255,6 +1255,24 @@ export type CloudSignInUpdateDto = {
     /** Offer Sign in with Frameleaf on the login page at home */
     showOnLocalLogin?: boolean;
 };
+export type CloudSignInPersonDto = {
+    /** Sign-in email here */
+    email: string;
+    /** The Frameleaf account email it is linked with */
+    frameleafEmail: string | null;
+    /** Account ID */
+    id: string;
+    /** Linked to a Frameleaf account, so they can sign in away from home */
+    linked: boolean;
+    /** Account name */
+    name: string;
+};
+export type CloudSignInPeopleResponseDto = {
+    /** Email is set up and the server has a public address, so reminders can be sent */
+    canRemind: boolean;
+    /** Every account here, those not linked first */
+    people: CloudSignInPersonDto[];
+};
 export type CloudTourResponseDto = {
     /** Cloud backup is set up */
     backupConfigured: boolean;
@@ -16460,6 +16478,20 @@ export type UserPreferenceHistoryResponseDto = {
     /** The newest preference changes first */
     entries: UserPreferenceHistoryEntryDto[];
 };
+export type LockedRulesDraftDto = {
+    /** Person IDs the draft locks */
+    personIds: string[];
+    /** Pet IDs the draft locks */
+    petIds: string[];
+    /** Tag IDs the draft locks */
+    tagIds: string[];
+};
+export type LockedRulesCountResponseDto = {
+    /** Your photos the draft would keep Locked */
+    photos: number;
+    /** Your videos the draft would keep Locked */
+    videos: number;
+};
 export type CreateProfileImageDto = {
     /** ID of the photo the image was copied from, if any. A Locked photo is refused. */
     assetId?: string;
@@ -19606,6 +19638,28 @@ export function updateCloudSignIn({ cloudSignInUpdateDto }: {
         method: "PUT",
         body: cloudSignInUpdateDto
     })));
+}
+/**
+ * List who has linked a Frameleaf account
+ */
+export function getCloudSignInPeople(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudSignInPeopleResponseDto;
+    }>("/admin/cloud/sign-in/people", {
+        ...opts
+    }));
+}
+/**
+ * Remind someone to link their Frameleaf account
+ */
+export function remindCloudSignIn({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/cloud/sign-in/people/${encodeURIComponent(id)}/remind`, {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * Get the Frameleaf Cloud link status
@@ -32209,6 +32263,21 @@ export function getMyPreferenceHistory(opts?: Oazapfts.RequestOpts) {
     }>("/users/me/preferences/history", {
         ...opts
     }));
+}
+/**
+ * Count what a draft of my Locked rules keeps Locked
+ */
+export function countLockedRules({ lockedRulesDraftDto }: {
+    lockedRulesDraftDto: LockedRulesDraftDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LockedRulesCountResponseDto;
+    }>("/users/me/preferences/locked-rules/count", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: lockedRulesDraftDto
+    })));
 }
 /**
  * Delete user profile image

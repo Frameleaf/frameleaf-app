@@ -97,6 +97,7 @@ import {
   isTimelineVisible,
   lockReasonOf,
   lockedForReason,
+  visibilityIn,
   visibilityIs,
 } from 'src/utils/locked.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
@@ -2226,6 +2227,27 @@ export class AssetRepository {
       .where('asset_exif.livePhotoCID', '=', livePhotoCID)
       .limit(1)
       .executeTakeFirst();
+  }
+  /**
+   * FL-541: how many of the owner's own photos and videos (timeline or archive, not in Trash) a draft
+   * of their Locked rules matches, as the Locked view matches them (`lockedRuleMatches`).
+   * ponytail: the owner's own media only; a "visible" scope also hides shared items, not counted here.
+   */
+  @GenerateSql({ params: [{ userId: DummyValue.UUID, tagIds: [], personIds: [DummyValue.UUID], petIds: [] }] })
+  async countLockedRuleMatches(
+    filter: Pick<HiddenContentFilter, 'userId' | 'tagIds' | 'personIds' | 'petIds'>,
+  ): Promise<{ photos: number; videos: number }> {
+    const rules: HiddenContentFilter = { ...filter, includeNsfw: false, scope: 'owned' };
+    const row = await this.db
+      .selectFrom('asset')
+      .select((eb) => eb.fn.countAll<string>().filterWhere('type', '=', AssetType.Image).as('photos'))
+      .select((eb) => eb.fn.countAll<string>().filterWhere('type', '=', AssetType.Video).as('videos'))
+      .where('ownerId', '=', asUuid(filter.userId))
+      .where('deletedAt', 'is', null)
+      .where(visibilityIn([AssetVisibility.Timeline, AssetVisibility.Archive]))
+      .where(hiddenContentAssetIdExists(sql.ref('asset.id'), rules))
+      .executeTakeFirstOrThrow();
+    return { photos: Number(row.photos), videos: Number(row.videos) };
   }
   getStatistics(ownerId: string, options: AssetStatsOptions): Promise<AssetStats> {
     const { visibility, isFavorite, isTrashed } = options;

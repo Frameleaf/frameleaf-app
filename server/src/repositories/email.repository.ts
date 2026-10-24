@@ -7,6 +7,7 @@ import { AlbumInviteEmail } from 'src/emails/album-invite.email.js';
 import { AlbumUpdateEmail } from 'src/emails/album-update.email.js';
 import { ItemShareEmail } from 'src/emails/item-share.email.js';
 import { PasswordLinkEmail } from 'src/emails/password-link.email.js';
+import { SignInReminderEmail } from 'src/emails/sign-in-reminder.email.js';
 import { TestEmail } from 'src/emails/test.email.js';
 import { WelcomeEmail } from 'src/emails/welcome.email.js';
 import { MailSignInProvider } from 'src/enum.js';
@@ -70,6 +71,7 @@ export enum EmailTemplate {
   WELCOME = 'welcome',
   RESET_PASSWORD = 'reset-password',
   PASSWORD_LINK = 'password-link',
+  FRAMELEAF_SIGN_IN_REMINDER = 'frameleaf-sign-in-reminder',
 
   // ALBUM
   ALBUM_INVITE = 'album-invite',
@@ -128,6 +130,13 @@ export interface ItemShareEmailProps extends BaseEmailProps, InvitationEmailProp
   link?: string;
 }
 
+/** FL-541: an administrator reminds someone to link their Frameleaf account. */
+export interface SignInReminderEmailProps extends BaseEmailProps {
+  displayName: string;
+  senderName: string;
+  link: string;
+}
+
 export interface AlbumUpdateEmailProps extends BaseEmailProps {
   albumName: string;
   albumId: string;
@@ -166,6 +175,11 @@ export type EmailRenderRequest =
       data: PasswordLinkEmailProps;
       /** Not customisable: the link is the whole point of the email. */
       customTemplate?: string;
+    }
+  | {
+      template: EmailTemplate.FRAMELEAF_SIGN_IN_REMINDER;
+      data: SignInReminderEmailProps;
+      customTemplate: string;
     };
 
 export type SendEmailResponse = {
@@ -325,6 +339,10 @@ export class EmailRepository {
 
       case EmailTemplate.PASSWORD_LINK: {
         return createElement(PasswordLinkEmail, data);
+      }
+
+      case EmailTemplate.FRAMELEAF_SIGN_IN_REMINDER: {
+        return createElement(SignInReminderEmail, data);
       }
     }
   }

@@ -4241,6 +4241,104 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/sign-in/people": {
+      "get": {
+        "description": "Every account here and whether it is linked to a Frameleaf account, so it can sign in away from home. Those not linked come first. Reads local state only.",
+        "operationId": "getCloudSignInPeople",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudSignInPeopleResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List who has linked a Frameleaf account",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/sign-in/people/{id}/remind": {
+      "post": {
+        "description": "Emails the person a link to their own sign-in settings, where they link their Frameleaf account. Needs email and a public address. Nothing is linked for them.",
+        "operationId": "remindCloudSignIn",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remind someone to link their Frameleaf account",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/status": {
       "get": {
         "description": "Whether Frameleaf Cloud is configured, and whether this server is unlinked, waiting for approval, linked or revoked. Reads local state only; nothing is contacted.",
@@ -56383,6 +56481,62 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/users/me/preferences/locked-rules/count": {
+      "post": {
+        "description": "How many of your own photos and videos (timeline or archive) the people, pets and tags in a draft of your Locked rules match, before it is saved. Needs an unlocked session.",
+        "operationId": "countLockedRules",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockedRulesDraftDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedRulesCountResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Count what a draft of my Locked rules keeps Locked",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/users/profile-image": {
       "delete": {
         "description": "Delete the profile image of the current user.",
@@ -75620,6 +75774,61 @@
         ],
         "type": "string"
       },
+      "CloudSignInPeopleResponseDto": {
+        "properties": {
+          "canRemind": {
+            "description": "Email is set up and the server has a public address, so reminders can be sent",
+            "type": "boolean"
+          },
+          "people": {
+            "description": "Every account here, those not linked first",
+            "items": {
+              "$ref": "#/components/schemas/CloudSignInPersonDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "canRemind",
+          "people"
+        ],
+        "type": "object"
+      },
+      "CloudSignInPersonDto": {
+        "properties": {
+          "email": {
+            "description": "Sign-in email here",
+            "type": "string"
+          },
+          "frameleafEmail": {
+            "description": "The Frameleaf account email it is linked with",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Account ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "linked": {
+            "description": "Linked to a Frameleaf account, so they can sign in away from home",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Account name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "frameleafEmail",
+          "id",
+          "linked",
+          "name"
+        ],
+        "type": "object"
+      },
       "CloudSignInUpdateDto": {
         "properties": {
           "buttonText": {
@@ -89894,6 +90103,67 @@
             "type": "integer"
           }
         },
+        "type": "object"
+      },
+      "LockedRulesCountResponseDto": {
+        "properties": {
+          "photos": {
+            "description": "Your photos the draft would keep Locked",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "videos": {
+            "description": "Your videos the draft would keep Locked",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "photos",
+          "videos"
+        ],
+        "type": "object"
+      },
+      "LockedRulesDraftDto": {
+        "properties": {
+          "personIds": {
+            "description": "Person IDs the draft locks",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "petIds": {
+            "description": "Pet IDs the draft locks",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "tagIds": {
+            "description": "Tag IDs the draft locks",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          }
+        },
+        "required": [
+          "personIds",
+          "petIds",
+          "tagIds"
+        ],
         "type": "object"
       },
       "LogLevel": {
