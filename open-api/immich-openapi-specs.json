@@ -95884,13 +95884,20 @@
           },
           "step": {
             "$ref": "#/components/schemas/OvernightStep"
+          },
+          "waitingForBackupSince": {
+            "description": "FL-540: the step uses the disk or the internet and waits for a running backup, since then",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
           }
         },
         "required": [
           "manual",
           "results",
           "startedAt",
-          "step"
+          "step",
+          "waitingForBackupSince"
         ],
         "type": "object"
       },

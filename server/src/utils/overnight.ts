@@ -14,6 +14,17 @@ export const OVERNIGHT_STEPS = ['cleanup', 'folders', 'icloud', 'fileChecks'] as
 export type OvernightStep = (typeof OVERNIGHT_STEPS)[number];
 
 /**
+ * FL-540: the steps that compete with a running backup for the disk or the internet, so they wait for
+ * it to finish when the two schedules overlap. Emptying Trash and tidying up does not, so a long first
+ * backup never holds it back.
+ */
+export const OVERNIGHT_STEPS_COMPETING_WITH_BACKUP: ReadonlySet<OvernightStep> = new Set([
+  'folders',
+  'icloud',
+  'fileChecks',
+]);
+
+/**
  * What a step did. `off`: switched off or not set up. `skipped`: not its night (weekly, or only when
  * started by hand). `stopped`: the stop time came first, so it carries on the next night.
  * `unfinished`: it was still running when the run moved on.
@@ -31,6 +42,8 @@ export type OvernightRun = {
   results: Partial<Record<OvernightStep, OvernightStepResult>>;
   /** FL-518: items in Trash already past their keep time when the run started, and that cut-off. */
   trashDue?: { cutoff: string; count: number };
+  /** FL-540: when the step began waiting for a running backup to finish; absent while it does not wait. */
+  waitingForBackupSince?: string | null;
 };
 
 export type OvernightNight = {

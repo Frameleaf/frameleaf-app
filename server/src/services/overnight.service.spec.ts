@@ -128,6 +128,36 @@ describe(OvernightService.name, () => {
     expect(stored.state?.nights[0]).toMatchObject({ removedFromTrash: 12, newFiles: 214 });
   });
 
+  it('empties Trash while a backup runs, and makes only the steps that compete with it wait (FL-540)', async () => {
+    const { sut, mocks, stored } = setup();
+    let backup: { run: object | null } = { run: { place: 'cloud' } };
+    mocks.metadata.get.mockImplementation((key: SystemMetadataKey) =>
+      Promise.resolve(
+        (key === SystemMetadataKey.OvernightSequence
+          ? stored.state
+          : key === SystemMetadataKey.BackupSequence
+            ? backup
+            : undefined) as never,
+      ),
+    );
+    await sut.handleStart();
+
+    expect(mocks.queue.handleNightlyJobs).toHaveBeenCalledWith({ cleanup: true });
+    expect(mocks.job.queue).not.toHaveBeenCalledWith({ name: JobName.LibraryScanQueueAll });
+    expect(stored.state?.run).toMatchObject({ step: 'folders', begunAt: null, results: { cleanup: 'done' } });
+    expect(stored.state?.run?.waitingForBackupSince).toEqual(expect.any(String));
+    await expect(sut.getStatus()).resolves.toMatchObject({
+      run: { step: 'folders', waitingForBackupSince: expect.any(String) },
+    });
+
+    // the backup finishes: the folders are checked, and the rest of the night follows
+    backup = { run: null };
+    await sut.move();
+    expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LibraryScanQueueAll });
+    expect(stored.state?.run).toBeNull();
+    expect(stored.state?.nights[0].results).toMatchObject({ folders: 'done', icloud: 'done', fileChecks: 'done' });
+  });
+
   it('still records the night when the counts cannot be read (FL-518)', async () => {
     const { sut, mocks, stored } = setup();
     mocks.trash.countTrashedBefore.mockReset().mockRejectedValue(new Error('offline'));

@@ -205,7 +205,7 @@
           values: { name: phone.displayName, count: phone.quietForDays ?? 0 },
         }),
         body: $t('frameleaf_overview_need_phone_body'),
-        actions: [{ label: $t('frameleaf_overview_open_phones'), href: commandCenterUrl('utilities', 'downloads') }],
+        actions: [{ label: $t('frameleaf_overview_open_phones'), href: commandCenterUrl('backup', 'devices-backup') }],
       });
     }
     if (aiState === 'unreachable') {
@@ -441,7 +441,11 @@
                   values: { name: behind[0].displayName, count: behind[0].quietForDays ?? 0 },
                 })
               : $t('frameleaf_overview_phones_ok_note', { values: { count: phones.length } }),
-        href: commandCenterUrl('utilities', 'downloads'),
+        // FL-540: the phones list; with no phone yet, getting the app
+        href:
+          phones && phones.length > 0
+            ? commandCenterUrl('backup', 'devices-backup')
+            : commandCenterUrl('utilities', 'downloads'),
       },
       {
         id: 'night',

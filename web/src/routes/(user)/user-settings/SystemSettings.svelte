@@ -13,6 +13,7 @@
    * without secrets, and imports a settings file into the draft for review instead of saving it.
    */
   import AuthSettings from '../../admin/system-settings/AuthSettings.svelte';
+  import PhonesList from '$lib/components/frameleaf/settings/PhonesList.svelte';
   import FFmpegSettings from '../../admin/system-settings/FFmpegSettings.svelte';
   import ImageSettings from '../../admin/system-settings/ImageSettings.svelte';
   import LibrarySettings from '../../admin/system-settings/LibrarySettings.svelte';
@@ -107,6 +108,7 @@
     mdiUpdate,
     mdiSwapVertical,
     mdiVideoOutline,
+    mdiCellphoneArrowDown,
   } from '@mdi/js';
   import { onMount, untrack, type Snippet } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
@@ -204,6 +206,15 @@
       subtitle: $t('frameleaf_cc_section_database_backup_description'),
       key: 'backup',
       icon: mdiBackupRestore,
+    },
+    {
+      // FL-540: every account's phones that back up here, and which stopped sending photos
+      admin: true,
+      component: PhonesList,
+      title: $t('frameleaf_cc_section_phones'),
+      subtitle: $t('frameleaf_cc_section_phones_description'),
+      key: 'devices-backup',
+      icon: mdiCellphoneArrowDown,
     },
     {
       admin: true,
