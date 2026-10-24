@@ -5,6 +5,7 @@ import {
   type LicenseProductsResponseDto,
   type LicenseStatusResponseDto,
 } from '@frameleaf/sdk';
+import type { Translations } from 'svelte-i18n';
 import { serverLicenceKind } from '$lib/frameleaf/cloud';
 
 /**
@@ -35,7 +36,13 @@ export type CloudHave = {
 
 export const FEATURES: Record<
   CloudFeature,
-  { nameKey: string; gateKey: string; whyKey: string; onKey: string; needs: 'cloud' | 'licence' | 'credit' }
+  {
+    nameKey: Translations;
+    gateKey: Translations;
+    whyKey: Translations;
+    onKey: Translations;
+    needs: 'cloud' | 'licence' | 'credit';
+  }
 > = {
   remote: {
     nameKey: 'frameleaf_feature_remote',
