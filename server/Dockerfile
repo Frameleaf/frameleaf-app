@@ -1,6 +1,6 @@
-ARG STUDIO_NODE_IMAGE=node:26.11.1-bookworm@sha256:f1233c415b41ffcf237c717b3dea92e9d4ea006e0e4c71edcb790605d74f5404
+ARG STUDIO_NODE_IMAGE=node:22.23.4-bookworm@sha256:2bd396628eceb5c999a6e43731fab69d5fb98b94ba9d9d90b5f64575c5178765
 # BEGIN frameleaf-server-base
-ARG NODE_IMAGE=node:26.11.1-trixie-slim@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0
+ARG NODE_IMAGE=node:22.23.4-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
 # Frameleaf builds its own server base instead of pulling a prebuilt one. The stages between these
 # markers reproduce the base-server-dev image from immich-app/base-images tag 202609151314 (commit
 # 0f4c144d44c0556f8a7fc9143f82a176986369fc, AGPL-3.0). The scripts, version pins and patches it runs
@@ -22,6 +22,7 @@ COPY --chmod=755 server/base-image/apt-update-strict.sh /usr/local/sbin/apt-upda
 RUN ./configure-apt.sh && \
   apt-update-strict && \
   apt-get install --no-install-recommends -yqq ca-certificates && \
+  test ! -e /etc/ssl/certs/emSign_ECC_Root_CA_-_G3.pem && test ! -e /etc/ssl/certs/Comodo_AAA_Services_root.pem && \
   mkdir -p /usr/share/postgresql-common/pgdg
 
 # PGDG signing key (fingerprint B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8), pinned by checksum.
@@ -235,6 +236,7 @@ COPY --chmod=755 server/base-image/apt-update-strict.sh /usr/local/sbin/apt-upda
 RUN ./configure-apt.sh && \
   apt-update-strict && \
   apt-get install curl ca-certificates --no-install-recommends -yqq && \
+  test ! -e /etc/ssl/certs/emSign_ECC_Root_CA_-_G3.pem && test ! -e /etc/ssl/certs/Comodo_AAA_Services_root.pem && \
   mkdir -p /usr/share/postgresql-common/pgdg
 
 # PGDG signing key (fingerprint B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8), pinned by checksum.
@@ -421,7 +423,7 @@ ENTRYPOINT ["node", "/build/verify-darktable-develop.mjs"]
 # together with every licence notice it needs (attribution/, notices/).
 FROM ${STUDIO_NODE_IMAGE} AS studio-engine
 
-RUN npm install --global npm@11.8.0 --ignore-scripts --no-audit --no-fund
+RUN npm install --global npm@12.2.0 --ignore-scripts --no-audit --no-fund
 
 WORKDIR /usr/src/app
 COPY ./scripts/frameleaf-studio-contracts.mjs ./scripts/frameleaf-studio-contracts.mjs

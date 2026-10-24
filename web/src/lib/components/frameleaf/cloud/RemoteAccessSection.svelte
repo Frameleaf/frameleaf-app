@@ -1,31 +1,33 @@
 <script lang="ts">
   /**
-   * Settings → Frameleaf Cloud → Remote access (FL-161, FL-165): the prototype's Remote access section
-   * (design/frameleaf/template/src/FrameleafCloud.jsx `RemoteAccess`, with `validateCustomHostname`,
-   * `customHostnameRecords` and `checkCustomHostname` in frameleaf-cloud-data.mjs) on real state from
-   * `admin/cloud/remote` and `admin/cloud/status`:
+   * Settings → Frameleaf Cloud → Remote access (FL-161, FL-165; FL-541 after the prototype's
+   * `settings-v2/cloud/Remote.jsx`): is it working and at what address (Copy, QR code, "Check it
+   * now", the details of the check opening on a failure), then plain choices: how devices connect,
+   * the monthly allowance beside it, the address in links you share (your Frameleaf address or your
+   * own domain), and one control for signing in away from home. Router, port, region and
+   * certificate detail sit in a closed "Connection details". "Relay" is said "Through Frameleaf".
    *
-   * - the switch and connection mode, turned on only for a linked server with a Server licence or a
-   *   remote access plan (FL-437: without a plan there is no relay or custom domain, only the direct address);
-   * - the relay and direct connection as the edge worker reports them, and port forwarding;
-   * - the public address with its certificate and QR code;
-   * - the custom hostname: the two DNS records to add, "Check DNS" (adds the hostname, then asks
-   *   Frameleaf Cloud whether the records are in place) and "Remove domain";
-   * - the Public server URL (FL-168: moved here from Server identity), which "Use the Frameleaf
-   *   address" or "Use my domain" fill, publishing the same address to the apps;
-   * - who can connect (a Frameleaf sign-in for remote visitors is a fixed policy; originals and
-   *   passwords over the relay ask before turning on); and the connection test.
-   *
-   * The prototype's "Preview other network conditions" panel only simulates states and is not ported.
+   * State comes from `admin/cloud/remote` and `admin/cloud/status`. A server without the plan keeps
+   * only its direct address (FL-437). The Public server URL (FL-168) is set by the links choice, or
+   * typed under "Another address" as part of the settings draft.
    */
-  import './cloud-account.css';
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import QrCode from '$lib/components/frameleaf/QrCode.svelte';
-  import CloudBanner from '$lib/components/frameleaf/cloud/CloudBanner.svelte';
-  import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
-  import CloudToggleRow from '$lib/components/frameleaf/cloud/CloudToggleRow.svelte';
+  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
+  import Choice from '$lib/components/frameleaf/settings/kit/Choice.svelte';
+  import Facts from '$lib/components/frameleaf/settings/kit/Facts.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
+  import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Meter from '$lib/components/frameleaf/settings/kit/Meter.svelte';
+  import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import { formatDateTime } from '$lib/frameleaf/cloud-ml';
   import { checkCustomHostname, hostnameMessageKey } from '$lib/frameleaf/remote-access';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
@@ -54,17 +56,7 @@
     type RemoteAccessUsageResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import {
-    mdiCheckCircleOutline,
-    mdiCloudOutline,
-    mdiContentCopy,
-    mdiDeleteOutline,
-    mdiDnsOutline,
-    mdiEarth,
-    mdiLinkVariant,
-    mdiProgressClock,
-    mdiWeb,
-  } from '@mdi/js';
+  import { mdiContentCopy, mdiSpeedometerSlow, mdiWebCheck, mdiWebClock, mdiWebOff } from '@mdi/js';
   import { onMount } from 'svelte';
   import { locale, t } from 'svelte-i18n';
 
@@ -131,28 +123,6 @@
         })),
   );
 
-  const statusLabel = $derived.by(() => {
-    if (!remote?.enabled || blocked) {
-      return $t('frameleaf_remote_status_off');
-    }
-    if (remote.status === RemoteAccessState.Error) {
-      return $t('frameleaf_remote_status_error');
-    }
-    if (remote.status === RemoteAccessState.Starting || remote.status === RemoteAccessState.Unknown) {
-      return $t('frameleaf_remote_status_starting');
-    }
-    return remote.relayConnected ? $t('frameleaf_remote_status_on_connected') : $t('frameleaf_remote_status_on');
-  });
-  const statusTone = $derived.by(() => {
-    if (!remote?.enabled || blocked) {
-      return 'muted' as const;
-    }
-    if (remote.status === RemoteAccessState.Error) {
-      return 'warning' as const;
-    }
-    return serving ? ('ok' as const) : ('running' as const);
-  });
-
   const directStatus = $derived.by(() => {
     if (!direct) {
       return { label: $t('frameleaf_remote_status_off'), tone: 'muted' as const };
@@ -197,14 +167,6 @@
     return remote?.lastTestChecks.find((check) => check.id === 'direct')?.detail ?? $t('frameleaf_remote_run_test');
   });
 
-  const domainStatus = $derived(
-    hostVerified
-      ? { label: $t('frameleaf_remote_domain_verified'), tone: 'ok' as const }
-      : hostPending
-        ? { label: $t('frameleaf_remote_domain_waiting'), tone: 'running' as const }
-        : { label: $t('frameleaf_remote_domain_not_set'), tone: 'muted' as const },
-  );
-
   const checkLabels: Record<string, string> = $derived({
     certificate: $t('frameleaf_remote_check_certificate'),
     listener: $t('frameleaf_remote_check_listener'),
@@ -212,6 +174,68 @@
     relay: $t('frameleaf_remote_check_relay'),
     direct: $t('frameleaf_remote_check_direct'),
   });
+
+  let showQr = $state(false);
+  const testFailed = $derived(remote?.lastTestOk === false);
+  const allowance = $derived(usage ? getByteUnitString(usage.limitBytes, $locale ?? undefined) : '');
+
+  /** What the hero says: off, starting, working, slowed, or not reachable. */
+  const hero = $derived.by(() => {
+    if (blocked) {
+      return { tone: 'quiet' as const, icon: mdiWebOff, title: $t('frameleaf_remote_gate_title'), body: blocked };
+    }
+    if (!remote?.enabled) {
+      return {
+        tone: 'quiet' as const,
+        icon: mdiWebOff,
+        title: $t('frameleaf_ra_off'),
+        body: $t('frameleaf_ra_off_body'),
+      };
+    }
+    if (remote.status === RemoteAccessState.Error || testFailed) {
+      return {
+        tone: 'bad' as const,
+        icon: mdiWebOff,
+        title: $t('frameleaf_ra_unreachable'),
+        body: remote.reason ?? $t('frameleaf_ra_unreachable_body'),
+      };
+    }
+    if (!serving) {
+      return {
+        tone: 'warn' as const,
+        icon: mdiWebClock,
+        title: $t('frameleaf_ra_starting'),
+        body: $t('frameleaf_ra_starting_body'),
+      };
+    }
+    if (usage?.throttled && usage.throttleUntil) {
+      return {
+        tone: 'warn' as const,
+        icon: mdiSpeedometerSlow,
+        title: $t('frameleaf_ra_slow', { values: { when: formatDateTime(usage.throttleUntil, $locale) } }),
+        body: $t('frameleaf_ra_slow_body', { values: { allowance } }),
+      };
+    }
+    return {
+      tone: 'good' as const,
+      icon: mdiWebCheck,
+      title: $t('frameleaf_ra_working'),
+      body: remote.lastTestAt
+        ? $t('frameleaf_ra_working_checked', { values: { date: formatDateTime(remote.lastTestAt, $locale) } })
+        : $t('frameleaf_ra_working_body'),
+    };
+  });
+
+  /** "Right now": how devices actually connect, whatever was chosen. */
+  const rightNow = $derived(
+    !direct
+      ? $t('frameleaf_ra_now_frameleaf')
+      : remote?.cgnatSuspected
+        ? $t('frameleaf_ra_now_blocked')
+        : remote?.wanVerified || remote?.lastTestChecks.find((check) => check.id === 'direct')?.ok
+          ? $t('frameleaf_ra_now_direct')
+          : $t('frameleaf_ra_now_checking'),
+  );
 
   const apply = (next: RemoteAccessStatusResponseDto | undefined | null) => {
     if (!next) {
@@ -408,7 +432,7 @@
 </script>
 
 {#snippet copyValue(value: string, what: string)}
-  <span class="fc-copy">
+  <span class="copy">
     <code>{value}</code>
     <Button variant="quiet" label={$t('frameleaf_remote_copy', { values: { what } })} onclick={() => copy(value)}>
       <Icon icon={mdiContentCopy} size="16" />
@@ -416,436 +440,429 @@
   </span>
 {/snippet}
 
-<div class="frameleaf-cloud" data-section="cloud-remote">
-  {#if blocked}
-    <CloudBanner tone="warning" title={$t('frameleaf_remote_gate_title')}>
-      {blocked}
-      {#snippet action()}
-        {#if !linked}
-          <Button variant="primary" onclick={() => goto(commandCenterUrl('cloud', 'cloud-account'))}
-            >{$t('frameleaf_cloud_link_action')}</Button
+<div data-section="cloud-remote">
+  <KitPage>
+    <Said message={notice} onDismiss={() => (notice = '')} />
+    {#if failure}
+      <Notice tone="warn" title={failure} />
+    {/if}
+
+    <Hero label={$t('frameleaf_ra_status')} tone={hero.tone} icon={hero.icon} title={hero.title} body={hero.body}>
+      {#snippet actions()}
+        {#if blocked}
+          {#if !linked}
+            <Button variant="primary" onclick={() => goto(commandCenterUrl('cloud', 'cloud-account'))}
+              >{$t('frameleaf_cloud_link_action')}</Button
+            >
+          {:else}
+            <Button variant="primary" onclick={() => goto(commandCenterUrl('cloud', 'cloud-plan'))}
+              >{$t('frameleaf_remote_gate_plan')}</Button
+            >
+          {/if}
+        {:else if remote && !remote.enabled}
+          <Button
+            variant="primary"
+            disabled={busy}
+            onclick={() => void update({ enabled: true }, $t('frameleaf_remote_on_notice'))}
+            >{$t('frameleaf_remote_turn_on')}</Button
           >
-        {:else}
-          <Button variant="primary" onclick={() => goto(commandCenterUrl('cloud', 'cloud-plan'))}
-            >{$t('frameleaf_remote_gate_plan')}</Button
+        {:else if remote?.enabled}
+          <Button variant={testFailed ? 'primary' : 'default'} disabled={testing || busy} onclick={() => void runTest()}
+            >{testing
+              ? $t('frameleaf_remote_testing')
+              : testFailed
+                ? $t('frameleaf_ra_check_again')
+                : $t('frameleaf_ra_check_now')}</Button
           >
         {/if}
       {/snippet}
-    </CloudBanner>
-  {/if}
-
-  <CloudCard
-    icon={mdiEarth}
-    title={$t('frameleaf_remote_title')}
-    description={$t('frameleaf_remote_description')}
-    status={statusLabel}
-    tone={statusTone}
-  >
-    <CloudToggleRow
-      label={$t('frameleaf_remote_allow')}
-      help={$t('frameleaf_remote_allow_help')}
-      checked={!!remote?.enabled && !blocked}
-      disabled={!!blocked || !remote || busy}
-      reason={blocked ?? undefined}
-      onChange={(value) =>
-        void update({ enabled: value }, value ? $t('frameleaf_remote_on_notice') : $t('frameleaf_remote_off_notice'))}
-    />
-    <label class="fc-stack">
-      {$t('frameleaf_remote_connection')}
-      <select
-        value={relayNeedsPlan ? RemoteAccessMode.RelayAndDirect : (remote?.mode ?? RemoteAccessMode.Relay)}
-        disabled={!!blocked || !remote || busy || relayNeedsPlan}
-        onchange={(event) => void update({ mode: event.currentTarget.value as RemoteAccessMode })}
-      >
-        <option value={RemoteAccessMode.Relay} disabled={relayNeedsPlan}>{$t('frameleaf_remote_mode_relay')}</option>
-        <option value={RemoteAccessMode.RelayAndDirect}>{$t('frameleaf_remote_mode_direct')}</option>
-      </select>
-      <small class="fc-muted"
-        >{relayNeedsPlan ? $t('frameleaf_remote_connection_needs_plan') : $t('frameleaf_remote_connection_help')}</small
-      >
-    </label>
-    {#if remote?.enabled && remote.reason && !blocked}
-      <p class="fc-muted" role="status">{remote.reason}</p>
-    {/if}
-  </CloudCard>
-
-  <div class="fc-grid">
-    <CloudCard
-      title={$t('frameleaf_remote_relay_title')}
-      status={relayNeedsPlan
-        ? $t('frameleaf_remote_relay_needs_plan_status')
-        : remote?.enabled && remote.relayConnected
-          ? $t('frameleaf_remote_connected')
-          : $t('frameleaf_remote_not_connected')}
-      tone={remote?.enabled && remote.relayConnected ? 'ok' : 'muted'}
-    >
-      <dl class="fc-facts">
-        <dt>{$t('frameleaf_remote_region')}</dt>
-        <dd>{remote?.relayRegion ?? '—'}</dd>
-        <dt>{$t('frameleaf_remote_latency')}</dt>
-        <dd>
-          {remote?.enabled && remote.relayConnected && remote.relayLatencyMs !== null
-            ? $t('frameleaf_remote_latency_value', { values: { ms: remote.relayLatencyMs } })
-            : '—'}
-        </dd>
-        <dt>{$t('frameleaf_remote_speed')}</dt>
-        <dd>{$t('frameleaf_remote_speed_value')}</dd>
-        {#if remote?.enabled && remote.relayConnected && remote.relayConnectedAt}
-          <dt>{$t('frameleaf_remote_relay_connected_since')}</dt>
-          <dd>{formatDateTime(remote.relayConnectedAt, $locale)}</dd>
-        {/if}
-        {#if remote?.enabled && remote.relayBytesIn + remote.relayBytesOut > 0}
-          <dt>{$t('frameleaf_remote_relay_traffic')}</dt>
-          <dd>
-            {$t('frameleaf_remote_relay_traffic_value', {
-              values: {
-                received: getByteUnitString(remote.relayBytesIn, $locale ?? undefined),
-                sent: getByteUnitString(remote.relayBytesOut, $locale ?? undefined),
-              },
-            })}
-          </dd>
-        {/if}
-      </dl>
-      {#if usage}
-        <div class="fc-meter">
-          <div class="fc-meter-label">
-            <span>{$t('frameleaf_remote_relay_usage_label')}</span>
-            <strong>
-              {$t('frameleaf_remote_relay_usage_of', {
-                values: {
-                  used: getByteUnitString(usage.bytes, $locale ?? undefined),
-                  allowance: getByteUnitString(usage.limitBytes, $locale ?? undefined),
-                },
-              })}
-            </strong>
-          </div>
-          <div
-            class="fc-meter-track"
-            class:is-high={usageRatio >= 0.8}
-            role="meter"
-            aria-label={$t('frameleaf_remote_relay_usage_label')}
-            aria-valuemin={0}
-            aria-valuemax={usage.limitBytes}
-            aria-valuenow={usage.bytes}
-          >
-            <span style:width="{(usageRatio * 100).toFixed(1)}%"></span>
-          </div>
-        </div>
-        {#if usage.throttled && usage.throttleBps !== null && usage.throttleUntil}
-          <p class="fc-muted" role="status">
-            {$t('frameleaf_remote_relay_throttled', {
-              values: {
-                speed: throttleSpeed(usage.throttleBps),
-                when: formatDateTime(usage.throttleUntil, $locale),
-              },
-            })}
-          </p>
-        {/if}
-      {/if}
-      {#if relayNeedsPlan}
-        <p class="fc-muted" role="status">{$t('frameleaf_remote_relay_needs_plan_body')}</p>
-        <div class="fc-actions">
-          <Button onclick={() => goto(commandCenterUrl('cloud', 'cloud-plan'))}
-            >{$t('frameleaf_remote_gate_plan')}</Button
-          >
-        </div>
-      {:else if remote?.enabled && remote.relayRevoked}
-        <CloudBanner tone="warning" title={$t('frameleaf_remote_relay_revoked_title')}>
-          {$t('frameleaf_remote_relay_revoked_body')}
-        </CloudBanner>
-      {:else if remote?.enabled && !remote.relayConnected && remote.relayLastError}
-        <p class="fc-muted" role="status">
-          {$t('frameleaf_remote_relay_last_problem', { values: { problem: remote.relayLastError } })}
-        </p>
-      {/if}
-    </CloudCard>
-    <CloudCard title={$t('frameleaf_remote_direct_title')} status={directStatus.label} tone={directStatus.tone}>
-      {#if direct && remote}
-        <dl class="fc-facts">
-          <dt>{$t('frameleaf_remote_port')}</dt>
-          <dd>{remote.directPort}</dd>
-          <dt>{$t('frameleaf_remote_router_mapping')}</dt>
-          <dd>{mappingLabel}</dd>
-          {#if remote.directExternalIp}
-            <dt>{$t('frameleaf_remote_public_address')}</dt>
-            <dd>{remote.directExternalIp}</dd>
+      {#if remote?.enabled && !blocked}
+        <div class="hero-extra">
+          {#if remote.publicUrl}
+            <div class="address">
+              {@render copyValue(remote.publicUrl, $t('frameleaf_remote_address_title'))}
+              <Button onclick={() => (showQr = !showQr)}
+                >{showQr ? $t('frameleaf_ra_hide_qr') : $t('frameleaf_ra_show_qr')}</Button
+              >
+            </div>
+            {#if showQr}
+              <QrCode
+                value={remote.publicUrl}
+                size={148}
+                label={$t('frameleaf_remote_qr_label')}
+                copyLabel={$t('frameleaf_remote_copy', { values: { what: $t('frameleaf_remote_address_title') } })}
+                downloadLabel={$t('frameleaf_remote_qr_download')}
+                errorLabel={$t('frameleaf_remote_qr_error')}
+                fileName="frameleaf-remote-address"
+              />
+            {/if}
+          {:else}
+            <p class="hint">{$t('frameleaf_remote_address_pending')}</p>
           {/if}
-          <dt>{$t('frameleaf_remote_last_result')}</dt>
-          <dd>{directResult}</dd>
-        </dl>
-        {#if remote.directGuidance === RemoteDirectGuidance.Bridge}
-          <CloudBanner tone="warning" title={$t('frameleaf_remote_bridge_title')}>
-            {$t('frameleaf_remote_bridge_body')}
-          </CloudBanner>
-        {:else if remote.portMapping && remote.mappingError && !remote.cgnatSuspected}
-          <p class="fc-muted" role="status">
-            {$t('frameleaf_remote_mapping_failed', { values: { problem: remote.mappingError } })}
-          </p>
-        {/if}
-        {#if remote.cgnatSuspected}
-          <CloudBanner tone="warning" title={$t('frameleaf_remote_cgnat_title')}>
-            {$t('frameleaf_remote_cgnat_body')}
-          </CloudBanner>
-        {/if}
-      {:else}
-        <p class="fc-muted">{$t('frameleaf_remote_relay_only_body')}</p>
+          {#if remote.lastTestChecks.length > 0}
+            <Advanced summary={$t('frameleaf_ra_check_details')} open={testFailed}>
+              <ItemList>
+                {#each remote.lastTestChecks as check, index (check.id)}
+                  <Item
+                    name={checkLabels[check.id] ?? check.id}
+                    detail={check.detail}
+                    tone={check.ok ? 'good' : 'bad'}
+                    status={check.ok ? $t('frameleaf_ra_passed') : $t('frameleaf_ra_failed')}
+                    note={$t('frameleaf_ra_check_n', { values: { n: index + 1 } })}
+                  />
+                {/each}
+              </ItemList>
+            </Advanced>
+          {/if}
+        </div>
       {/if}
-    </CloudCard>
-  </div>
+    </Hero>
 
-  {#if direct && remote}
-    <CloudCard title={$t('frameleaf_remote_port_title')} description={$t('frameleaf_remote_port_description')}>
-      <CloudToggleRow
-        label={$t('frameleaf_remote_manual_port')}
-        help={$t('frameleaf_remote_manual_port_help')}
-        checked={!remote.portMapping}
-        disabled={!!blocked || busy}
-        onChange={(value) => void update({ portMapping: !value })}
-      />
-      <label class="fc-stack">
-        {$t('frameleaf_remote_external_port')}
-        <span class="fc-input-unit">
-          <input
-            type="number"
-            min="1024"
-            max="65535"
-            step="1"
-            bind:value={portInput}
-            disabled={!!blocked || busy}
-            onchange={savePort}
-            aria-label={$t('frameleaf_remote_external_port')}
+    {#if !blocked}
+      <Section title={$t('frameleaf_remote_title')}>
+        <Row label={$t('frameleaf_ra_allow')} help={$t('frameleaf_ra_allow_help')}>
+          <Switch
+            label={$t('frameleaf_ra_allow')}
+            checked={!!remote?.enabled}
+            held={!remote || busy}
+            onChange={(value) =>
+              void update(
+                { enabled: value },
+                value ? $t('frameleaf_remote_on_notice') : $t('frameleaf_remote_off_notice'),
+              )}
           />
-        </span>
-        <small class="fc-muted">{$t('frameleaf_remote_external_port_help')}</small>
-      </label>
-    </CloudCard>
-  {/if}
+        </Row>
+      </Section>
+    {/if}
 
-  <CloudCard title={$t('frameleaf_remote_address_title')} description={$t('frameleaf_remote_address_description')}>
-    {#if remote?.publicUrl}
-      <div class="fc-address">
-        <div>
-          {@render copyValue(remote.publicUrl, $t('frameleaf_remote_address_title'))}
-          <dl class="fc-facts">
-            <dt>{$t('frameleaf_remote_certificate')}</dt>
-            <dd>{remote.certificateName ?? '—'}</dd>
-            <dt>{$t('frameleaf_remote_renews')}</dt>
-            <dd>
-              {remote.certificateExpiresAt
-                ? $t('frameleaf_remote_renews_value', {
-                    values: { date: formatDateTime(remote.certificateExpiresAt, $locale) },
-                  })
-                : '—'}
-            </dd>
-            <dt>{$t('frameleaf_remote_issued_to')}</dt>
-            <dd>{$t('frameleaf_remote_issued_to_value')}</dd>
-          </dl>
-          {#if remote.certificateError}
-            <p class="fc-notice is-error" role="alert">{remote.certificateError}</p>
+    {#if remote?.enabled && !blocked}
+      <Section title={$t('frameleaf_ra_how')} description={$t('frameleaf_ra_how_description')}>
+        <Choice
+          label={$t('frameleaf_ra_how')}
+          value={direct ? RemoteAccessMode.RelayAndDirect : RemoteAccessMode.Relay}
+          disabled={busy}
+          options={[
+            {
+              value: RemoteAccessMode.RelayAndDirect,
+              label: $t('frameleaf_ra_how_direct'),
+              detail: $t('frameleaf_ra_how_direct_detail'),
+            },
+            {
+              value: RemoteAccessMode.Relay,
+              label: $t('frameleaf_ra_how_frameleaf'),
+              detail: relayNeedsPlan
+                ? $t('frameleaf_remote_connection_needs_plan')
+                : $t('frameleaf_ra_how_frameleaf_detail'),
+              disabled: relayNeedsPlan,
+            },
+          ]}
+          onChange={(value) => void update({ mode: value as RemoteAccessMode })}
+        />
+        <p class="said-back"><strong>{$t('frameleaf_ra_right_now')}</strong> {rightNow}</p>
+        {#if remote.reason}
+          <p class="hint" role="status">{remote.reason}</p>
+        {/if}
+        {#if relayNeedsPlan}
+          <Notice title={$t('frameleaf_remote_relay_needs_plan_status')}>
+            {$t('frameleaf_remote_relay_needs_plan_body')}
+            {#snippet action()}
+              <Button onclick={() => goto(commandCenterUrl('cloud', 'cloud-plan'))}
+                >{$t('frameleaf_remote_gate_plan')}</Button
+              >
+            {/snippet}
+          </Notice>
+        {:else if remote.relayRevoked}
+          <Notice tone="warn" title={$t('frameleaf_remote_relay_revoked_title')}
+            >{$t('frameleaf_remote_relay_revoked_body')}</Notice
+          >
+        {/if}
+        {#if usage}
+          <Row
+            label={$t('frameleaf_ra_this_month')}
+            help={$t('frameleaf_ra_this_month_help', { values: { allowance } })}
+          >
+            <div class="meter">
+              <Meter
+                label={$t('frameleaf_remote_relay_usage_label')}
+                value={getByteUnitString(usage.bytes, $locale ?? undefined)}
+                max={$t('frameleaf_ra_of', { values: { allowance } })}
+                fraction={usageRatio}
+              />
+            </div>
+          </Row>
+          {#if usage.throttled && usage.throttleBps !== null && usage.throttleUntil}
+            <p class="hint" role="status">
+              {$t('frameleaf_remote_relay_throttled', {
+                values: { speed: throttleSpeed(usage.throttleBps), when: formatDateTime(usage.throttleUntil, $locale) },
+              })}
+            </p>
           {/if}
-        </div>
-        <QrCode
-          value={remote.publicUrl}
-          size={148}
-          label={$t('frameleaf_remote_qr_label')}
-          copyLabel={$t('frameleaf_remote_copy', { values: { what: $t('frameleaf_remote_address_title') } })}
-          downloadLabel={$t('frameleaf_remote_qr_download')}
-          errorLabel={$t('frameleaf_remote_qr_error')}
-          fileName="frameleaf-remote-address"
+        {/if}
+        <Row label={$t('frameleaf_remote_allow_originals')} help={$t('frameleaf_remote_allow_originals_help')}>
+          <Switch
+            label={$t('frameleaf_remote_allow_originals')}
+            checked={!!status?.allowOriginalsOverRelay}
+            held={!linked || busy}
+            onChange={(value) => change('allowOriginalsOverRelay', value)}
+          />
+        </Row>
+        <Advanced summary={$t('frameleaf_ra_details')}>
+          <Facts
+            rows={[
+              {
+                label: $t('frameleaf_ra_region'),
+                value: remote.relayRegion ?? '—',
+                detail:
+                  remote.relayConnected && remote.relayLatencyMs !== null
+                    ? $t('frameleaf_ra_response_time', { values: { ms: remote.relayLatencyMs } })
+                    : remote.relayConnected
+                      ? undefined
+                      : $t('frameleaf_remote_not_connected'),
+              },
+              {
+                label: $t('frameleaf_ra_through_frameleaf'),
+                value:
+                  remote.relayBytesIn + remote.relayBytesOut > 0
+                    ? $t('frameleaf_remote_relay_traffic_value', {
+                        values: {
+                          received: getByteUnitString(remote.relayBytesIn, $locale ?? undefined),
+                          sent: getByteUnitString(remote.relayBytesOut, $locale ?? undefined),
+                        },
+                      })
+                    : remote.relayConnected
+                      ? $t('frameleaf_remote_connected')
+                      : $t('frameleaf_remote_not_connected'),
+                detail:
+                  remote.relayConnected && remote.relayConnectedAt
+                    ? $t('frameleaf_ra_connected_since', {
+                        values: { date: formatDateTime(remote.relayConnectedAt, $locale) },
+                      })
+                    : undefined,
+              },
+              {
+                label: $t('frameleaf_remote_check_direct'),
+                value: directStatus.label,
+                detail: direct ? directResult : undefined,
+              },
+              ...(direct
+                ? [
+                    {
+                      label: $t('frameleaf_ra_door'),
+                      value: $t('frameleaf_ra_port', { values: { port: remote.directPort } }),
+                      detail: remote.directExternalIp ? `${mappingLabel} · ${remote.directExternalIp}` : mappingLabel,
+                    },
+                  ]
+                : []),
+            ]}
+          />
+          {#if !remote.relayConnected && remote.relayLastError}
+            <p class="hint" role="status">
+              {$t('frameleaf_remote_relay_last_problem', { values: { problem: remote.relayLastError } })}
+            </p>
+          {/if}
+          {#if direct}
+            <p class="hint">{$t('frameleaf_ra_door_hint')}</p>
+            {#if remote.directGuidance === RemoteDirectGuidance.Bridge}
+              <Notice tone="warn" title={$t('frameleaf_remote_bridge_title')}
+                >{$t('frameleaf_remote_bridge_body')}</Notice
+              >
+            {:else if remote.portMapping && remote.mappingError && !remote.cgnatSuspected}
+              <p class="hint" role="status">
+                {$t('frameleaf_remote_mapping_failed', { values: { problem: remote.mappingError } })}
+              </p>
+            {/if}
+            {#if remote.cgnatSuspected}
+              <Notice tone="warn" title={$t('frameleaf_remote_cgnat_title')}>{$t('frameleaf_remote_cgnat_body')}</Notice
+              >
+            {/if}
+            <Row label={$t('frameleaf_remote_manual_port')} help={$t('frameleaf_remote_manual_port_help')}>
+              <Switch
+                label={$t('frameleaf_remote_manual_port')}
+                checked={!remote.portMapping}
+                held={busy}
+                onChange={(value) => void update({ portMapping: !value })}
+              />
+            </Row>
+            {#if !remote.portMapping}
+              <Row label={$t('frameleaf_remote_external_port')} help={$t('frameleaf_remote_external_port_help')}>
+                <input
+                  class="port"
+                  type="number"
+                  min="1024"
+                  max="65535"
+                  step="1"
+                  bind:value={portInput}
+                  disabled={busy}
+                  onchange={savePort}
+                  aria-label={$t('frameleaf_remote_external_port')}
+                />
+              </Row>
+            {/if}
+          {/if}
+          {#if remote.publicUrl}
+            <Facts
+              rows={[
+                {
+                  label: $t('frameleaf_remote_certificate'),
+                  value: remote.certificateName ?? '—',
+                  detail: $t('frameleaf_remote_issued_to_value'),
+                },
+                {
+                  label: $t('frameleaf_remote_renews'),
+                  value: remote.certificateExpiresAt
+                    ? $t('frameleaf_remote_renews_value', {
+                        values: { date: formatDateTime(remote.certificateExpiresAt, $locale) },
+                      })
+                    : '—',
+                },
+              ]}
+            />
+            {#if remote.certificateError}
+              <Notice tone="warn" title={remote.certificateError} />
+            {/if}
+          {/if}
+        </Advanced>
+      </Section>
+
+      <Section title={$t('frameleaf_ra_links')} description={$t('frameleaf_ra_links_description')}>
+        <Choice
+          label={$t('frameleaf_ra_links')}
+          value={choseCustom ? RemoteAccessPublicUrl.Custom : RemoteAccessPublicUrl.Frameleaf}
+          disabled={busy || configFile}
+          options={[
+            {
+              value: RemoteAccessPublicUrl.Frameleaf,
+              label: $t('frameleaf_ra_links_frameleaf'),
+              detail: frameleafUrl || undefined,
+            },
+            {
+              value: RemoteAccessPublicUrl.Custom,
+              label: $t('frameleaf_ra_links_own'),
+              detail: hostVerified ? customUrl : $t('frameleaf_ra_links_own_not_ready'),
+              disabled: !hostVerified,
+            },
+          ]}
+          onChange={(value) => void usePublicUrl(value as RemoteAccessPublicUrl)}
         />
-      </div>
-    {:else}
-      <p class="fc-muted">{$t('frameleaf_remote_address_pending')}</p>
+        {#if serverUrl}
+          <p class="said-back">{$t('frameleaf_ra_links_start')} <strong>{serverUrl}</strong></p>
+        {/if}
+        <Advanced summary={$t('frameleaf_remote_domain_title')}>
+          <p class="hint">
+            {relayNeedsPlan ? $t('frameleaf_remote_domain_needs_plan') : $t('frameleaf_remote_domain_description')}
+          </p>
+          <label class="stack">
+            {$t('frameleaf_remote_hostname')}
+            <input
+              value={hostInput}
+              placeholder="photos.example.com"
+              autocomplete="off"
+              spellcheck={false}
+              disabled={relayNeedsPlan}
+              aria-invalid={hostCheck ? !hostCheck.valid : undefined}
+              oninput={(event) => {
+                hostInput = event.currentTarget.value;
+                hostTouched = true;
+              }}
+            />
+            <small>{$t('frameleaf_remote_hostname_help')}</small>
+            {#if hostCheck && !hostCheck.valid && hostInput.length > 3}
+              <small class="error">{$t(hostnameMessageKey(hostCheck.reason))}</small>
+            {/if}
+          </label>
+          {#if (hostCheck?.valid || remote.customHostname) && records.length > 0}
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">{$t('frameleaf_remote_record_type')}</th>
+                    <th scope="col">{$t('frameleaf_remote_record_name')}</th>
+                    <th scope="col">{$t('frameleaf_remote_record_value')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each records as record (record.name)}
+                    <tr>
+                      <td>{record.type}</td>
+                      <td>
+                        {@render copyValue(record.name, `${record.type} ${$t('frameleaf_remote_record_name')}`)}
+                        <small>{record.purpose}</small>
+                      </td>
+                      <td>{@render copyValue(record.value, `${record.type} ${$t('frameleaf_remote_record_value')}`)}</td
+                      >
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
+          <p class="hint" role="status">
+            {hostVerified && remote.customHostname
+              ? $t('frameleaf_remote_domain_verified_note', { values: { host: remote.customHostname } })
+              : hostPending
+                ? (remote.customHostnameProblem ?? $t('frameleaf_remote_domain_pending_note'))
+                : $t('frameleaf_ra_domain_nothing_changes')}
+          </p>
+          <div class="actions">
+            <Button
+              variant={remote.customHostname ? 'default' : 'primary'}
+              disabled={relayNeedsPlan || busy || !hostCheck?.valid}
+              onclick={() => void checkDns()}>{$t('frameleaf_ra_check_domain')}</Button
+            >
+            {#if remote.customHostname}
+              <Button disabled={busy} onclick={() => void removeDomain()}>{$t('frameleaf_remote_remove_domain')}</Button
+              >
+            {/if}
+          </div>
+          {#if settingsDraft}
+            <Row label={$t('frameleaf_ra_other_address')} help={$t('frameleaf_ra_other_address_help')}>
+              <input
+                class="wide"
+                type="url"
+                value={serverUrl}
+                placeholder="https://"
+                autocomplete="off"
+                spellcheck={false}
+                disabled={configFile}
+                data-testid="public-server-url"
+                aria-label={$t('frameleaf_ra_other_address')}
+                oninput={(event) => setServerUrl(event.currentTarget.value)}
+              />
+            </Row>
+          {/if}
+        </Advanced>
+      </Section>
     {/if}
-  </CloudCard>
 
-  <CloudCard
-    icon={mdiWeb}
-    title={$t('frameleaf_remote_domain_title')}
-    description={$t('frameleaf_remote_domain_description')}
-    status={domainStatus.label}
-    tone={domainStatus.tone}
-  >
-    <label class="fc-stack">
-      {$t('frameleaf_remote_hostname')}
-      <input
-        value={hostInput}
-        placeholder="photos.example.com"
-        autocomplete="off"
-        spellcheck={false}
-        disabled={!!blocked || relayNeedsPlan}
-        aria-invalid={hostCheck ? !hostCheck.valid : undefined}
-        oninput={(event) => {
-          hostInput = event.currentTarget.value;
-          hostTouched = true;
-        }}
-      />
-      <small class="fc-muted"
-        >{relayNeedsPlan ? $t('frameleaf_remote_domain_needs_plan') : $t('frameleaf_remote_hostname_help')}</small
-      >
-      {#if hostCheck && !hostCheck.valid && hostInput.length > 3}
-        <small class="fc-notice is-error">{$t(hostnameMessageKey(hostCheck.reason))}</small>
-      {/if}
-    </label>
-    {#if (hostCheck?.valid || remote?.customHostname) && records.length > 0}
-      <div class="fc-table-wrap">
-        <table class="fc-table">
-          <thead>
-            <tr>
-              <th scope="col">{$t('frameleaf_remote_record_type')}</th>
-              <th scope="col">{$t('frameleaf_remote_record_name')}</th>
-              <th scope="col">{$t('frameleaf_remote_record_value')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each records as record (record.name)}
-              <tr>
-                <td>{record.type}</td>
-                <td>
-                  {@render copyValue(record.name, `${record.type} ${$t('frameleaf_remote_record_name')}`)}
-                  <small class="fc-muted">{record.purpose}</small>
-                </td>
-                <td>{@render copyValue(record.value, `${record.type} ${$t('frameleaf_remote_record_value')}`)}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-    {/if}
-    {#if hostPending}
-      <p class="fc-muted" role="status">
-        <Icon icon={mdiProgressClock} size="16" />
-        {remote?.customHostnameProblem ?? $t('frameleaf_remote_domain_pending_note')}
-      </p>
-    {/if}
-    {#if hostVerified && remote?.customHostname}
-      <p class="fc-ok" role="status">
-        <Icon icon={mdiCheckCircleOutline} size="16" />
-        {$t('frameleaf_remote_domain_verified_note', { values: { host: remote.customHostname } })}
-      </p>
-    {/if}
-    <div class="fc-actions">
-      <Button
-        variant={remote?.customHostname ? 'default' : 'primary'}
-        disabled={!!blocked || relayNeedsPlan || busy || !hostCheck?.valid}
-        onclick={() => void checkDns()}
-      >
-        <Icon icon={mdiDnsOutline} size="16" />
-        {$t('frameleaf_remote_check_dns')}
-      </Button>
-      {#if remote?.customHostname}
-        <Button disabled={busy} onclick={() => void removeDomain()}>
-          <Icon icon={mdiDeleteOutline} size="16" />
-          {$t('frameleaf_remote_remove_domain')}
-        </Button>
-      {/if}
-    </div>
-  </CloudCard>
-
-  <CloudCard
-    icon={mdiLinkVariant}
-    title={$t('frameleaf_remote_public_url_title')}
-    description={$t('frameleaf_remote_public_url_description')}
-  >
-    {#if settingsDraft}
-      <label class="fc-stack">
-        {$t('frameleaf_remote_public_url_title')}
-        <input
-          type="url"
-          value={serverUrl}
-          placeholder="https://photos.example.com"
-          autocomplete="off"
-          spellcheck={false}
-          disabled={configFile}
-          data-testid="public-server-url"
-          oninput={(event) => setServerUrl(event.currentTarget.value)}
+    {#if !blocked || linked}
+      <Section title={$t('frameleaf_ra_signin')} description={$t('frameleaf_ra_signin_description')}>
+        <Choice
+          label={$t('frameleaf_ra_signin')}
+          value={status?.allowPasswordOverRelay ? 'password' : 'frameleaf'}
+          disabled={!linked || busy}
+          options={[
+            {
+              value: 'frameleaf',
+              label: $t('frameleaf_ra_signin_frameleaf'),
+              detail: $t('frameleaf_ra_signin_frameleaf_detail'),
+            },
+            {
+              value: 'password',
+              label: $t('frameleaf_ra_signin_password'),
+              detail: $t('frameleaf_ra_signin_password_detail'),
+            },
+          ]}
+          onChange={(value) => change('allowPasswordOverRelay', value === 'password')}
         />
-        <small class="fc-muted">{$t('frameleaf_remote_public_url_help')}</small>
-      </label>
-    {:else if remote?.publicUrl}
-      {@render copyValue(remote.publicUrl, $t('frameleaf_remote_public_url_title'))}
+        {#if status?.allowPasswordOverRelay}
+          <Notice tone="warn" title={$t('frameleaf_ra_signin_password_on')}
+            >{$t('frameleaf_ra_signin_password_on_body')}</Notice
+          >
+        {/if}
+        <p class="hint">{$t('frameleaf_ra_signin_hint')}</p>
+      </Section>
     {/if}
-    <div class="fc-actions">
-      <Button
-        disabled={!!blocked || busy || !frameleafUrl || (serverUrl === frameleafUrl && !choseCustom)}
-        onclick={() => void usePublicUrl(RemoteAccessPublicUrl.Frameleaf)}
-      >
-        <Icon icon={mdiCloudOutline} size="16" />
-        {$t('frameleaf_remote_use_frameleaf')}
-      </Button>
-      <Button
-        disabled={!!blocked || busy || !hostVerified || (serverUrl === customUrl && choseCustom)}
-        onclick={() => void usePublicUrl(RemoteAccessPublicUrl.Custom)}
-      >
-        <Icon icon={mdiWeb} size="16" />
-        {$t('frameleaf_remote_use_domain')}
-      </Button>
-    </div>
-  </CloudCard>
-
-  <CloudCard title={$t('frameleaf_remote_who_title')} description={$t('frameleaf_remote_who_description')}>
-    <CloudToggleRow
-      label={$t('frameleaf_remote_require_signin')}
-      help={$t('frameleaf_remote_require_signin_help')}
-      checked
-      policy={$t('frameleaf_signin_always_on')}
-    />
-    <CloudToggleRow
-      label={$t('frameleaf_remote_allow_originals')}
-      help={$t('frameleaf_remote_allow_originals_help')}
-      checked={!!status?.allowOriginalsOverRelay}
-      disabled={!linked || busy}
-      reason={$t('frameleaf_signin_link_first')}
-      onChange={(value) => change('allowOriginalsOverRelay', value)}
-    />
-    <CloudToggleRow
-      label={$t('frameleaf_remote_allow_password')}
-      help={$t('frameleaf_remote_allow_password_help')}
-      checked={!!status?.allowPasswordOverRelay}
-      disabled={!linked || busy}
-      reason={$t('frameleaf_signin_link_first')}
-      onChange={(value) => change('allowPasswordOverRelay', value)}
-    />
-    {#if !linked}
-      <div class="fc-actions">
-        <Button variant="primary" onclick={() => goto(commandCenterUrl('cloud', 'cloud-account'))}
-          >{$t('frameleaf_cloud_link_action')}</Button
-        >
-      </div>
-    {/if}
-  </CloudCard>
-
-  {#if failure}
-    <p class="fc-notice is-error" role="alert">{failure}</p>
-  {:else if notice}
-    <p class="fc-notice" role="status">{notice}</p>
-  {/if}
-
-  <div class="fc-actions">
-    <Button
-      variant="primary"
-      disabled={!!blocked || !remote?.enabled || testing || busy}
-      onclick={() => void runTest()}
-    >
-      <Icon icon={mdiCheckCircleOutline} size="16" />
-      {testing ? $t('frameleaf_remote_testing') : $t('frameleaf_remote_test')}
-    </Button>
-    {#if remote?.lastTestAt}
-      <span class="fc-muted"
-        >{$t('frameleaf_remote_last_tested', { values: { date: formatDateTime(remote.lastTestAt, $locale) } })}</span
-      >
-    {/if}
-  </div>
-  {#if remote && remote.lastTestChecks.length > 0}
-    <ul class="fc-steps" data-testid="remote-test-checks">
-      {#each remote.lastTestChecks as check (check.id)}
-        <li class:is-ok={check.ok}>
-          <strong>{checkLabels[check.id] ?? check.id}</strong>
-          <span>{check.detail}</span>
-        </li>
-      {/each}
-    </ul>
-  {/if}
+  </KitPage>
 </div>
 
 <Dialog bind:open={confirmOpen} title={confirmTitle} closeLabel={$t('close')} onRequestClose={keepOff}>
@@ -855,3 +872,100 @@
     <Button variant="primary" disabled={busy} onclick={() => void confirm()}>{$t('frameleaf_remote_turn_on')}</Button>
   {/snippet}
 </Dialog>
+
+<style>
+  .hero-extra {
+    display: grid;
+    gap: var(--fl-space-3);
+    padding: var(--fl-space-4) var(--fl-space-6);
+    border-top: 1px solid var(--fl-border);
+  }
+  @media (max-width: 640px) {
+    .hero-extra {
+      padding: var(--fl-space-4);
+    }
+  }
+  .address {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-2);
+    align-items: center;
+  }
+  .address code {
+    font-size: 1.05rem;
+    font-weight: 600;
+  }
+  .copy {
+    display: inline-flex;
+    gap: var(--fl-space-1);
+    align-items: center;
+    max-width: 100%;
+  }
+  code {
+    overflow-wrap: anywhere;
+  }
+  .said-back {
+    margin: 0 0 var(--fl-space-3);
+    color: var(--fl-text);
+  }
+  .hint {
+    margin: var(--fl-space-2) 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .meter {
+    min-width: 14rem;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-2);
+    margin: var(--fl-space-2) 0 var(--fl-space-3);
+  }
+  .stack {
+    display: grid;
+    gap: var(--fl-space-1);
+    margin: var(--fl-space-3) 0;
+    color: var(--fl-text);
+    font-weight: 500;
+  }
+  .stack small,
+  td small {
+    display: block;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    font-weight: 400;
+  }
+  .stack small.error {
+    color: var(--fl-danger, #c0392b);
+  }
+  input:not([type='radio']) {
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control, 8px);
+    background: var(--fl-raised);
+    color: var(--fl-text);
+    font: inherit;
+  }
+  input.port {
+    width: 7rem;
+  }
+  input.wide {
+    width: min(100%, 22rem);
+  }
+  .table-wrap {
+    overflow-x: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--fl-font-small);
+  }
+  th,
+  td {
+    padding: var(--fl-space-2);
+    border-bottom: 1px solid var(--fl-border);
+    text-align: start;
+    vertical-align: top;
+  }
+</style>

@@ -1,4 +1,4 @@
-import type { UpdateAssetDto } from '@frameleaf/sdk';
+import { AssetVisibility, type UpdateAssetDto } from '@frameleaf/sdk';
 import type { ServerClient } from 'src/commands/migrate/client';
 import type { Controller } from 'src/commands/migrate/controller';
 import type { Ledger } from 'src/commands/migrate/ledger';
@@ -10,7 +10,7 @@ const ML_ENRICHMENT_KEY = 'ml-enrichment';
 
 /**
  * Phase 4: apply editable metadata to each uploaded asset on B — description (incl. the
- * applied AI text), capture date, GPS, rating, live-photo link — then copy the structured
+ * applied AI text), capture date, GPS, rating, favorite, archive, live-photo link — then copy the structured
  * ml-enrichment blob. All writes are idempotent (last-writer-wins / set semantics).
  */
 export async function applyMetadata(
@@ -47,6 +47,14 @@ export async function applyMetadata(
     }
     if (asset.rating != undefined) {
       dto.rating = asset.rating;
+    }
+    // A fresh upload already carries these, but a file B already held keeps B's state. Only
+    // ever add them: B's own favorites and archive stay as they are.
+    if (asset.isFavorite) {
+      dto.isFavorite = true;
+    }
+    if (asset.visibility === AssetVisibility.Archive) {
+      dto.visibility = AssetVisibility.Archive;
     }
     if (asset.livePhotoVideoAId) {
       const videoBId = ledger.bId(asset.livePhotoVideoAId);

@@ -24,6 +24,7 @@ import {
 } from 'src/enum.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { asDateTimeString } from 'src/utils/date.js';
+import { displayPath } from 'src/utils/library-path.js';
 import { effectiveVisibilityOf } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
@@ -175,6 +176,8 @@ export type MapAsset = {
   localDateTime: Date;
   originalFileName: string;
   originalPath: string;
+  /** FL-417: the photo's own path while it shares a file kept in another folder */
+  libraryPath?: string | null;
   owner?: ShallowDehydrateObject<User> | null;
   ownerId: string;
   stack?: (ShallowDehydrateObject<Stack> & { assets: Stack['assets'] }) | null;
@@ -278,7 +281,8 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     owner: entity.owner ? mapUser(entity.owner) : undefined,
     libraryId: entity.libraryId,
     type: entity.type,
-    originalPath: entity.originalPath,
+    // FL-417: the photo's own path, never the folder a shared file is kept in
+    originalPath: displayPath(entity),
     originalFileName: entity.originalFileName,
     originalMimeType: mimeTypes.lookup(entity.originalFileName),
     thumbhash: entity.thumbhash ? hexOrBufferToBase64(entity.thumbhash) : null,

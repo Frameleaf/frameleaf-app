@@ -735,7 +735,7 @@ export const utils = {
                   'admin-onboarding',
                   'maintenance-mode',
                   'version-check-state',
-                  'physical-deduplication-migration',
+                  'identical-files',
                   'frameleaf-cloud-link',
                   'frameleaf-service-discovery',
                   'frameleaf-ml-wallet',

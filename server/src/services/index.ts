@@ -72,11 +72,13 @@ import { ICloudScheduledWorkerService } from 'src/services/icloud-scheduled-work
 import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
 import { ICloudSyncService } from 'src/services/icloud-sync.service.js';
 import { ICloudWeeklyService } from 'src/services/icloud-weekly.service.js';
+import { IdenticalFilesService } from 'src/services/identical-files.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { ItemShareService } from 'src/services/item-share.service.js';
 import { JobService } from 'src/services/job.service.js';
 import { LanDiscoveryService } from 'src/services/lan-discovery.service.js';
+import { LibraryProgressService } from 'src/services/library-progress.service.js';
 import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
@@ -98,6 +100,7 @@ import { MlDestinationService } from 'src/services/ml-destination.service.js';
 import { NotificationAdminService } from 'src/services/notification-admin.service.js';
 import { NotificationService } from 'src/services/notification.service.js';
 import { OcrService } from 'src/services/ocr.service.js';
+import { OvernightService } from 'src/services/overnight.service.js';
 import { PartnerCopyService } from 'src/services/partner-copy.service.js';
 import { PartnerLockService } from 'src/services/partner-lock.service.js';
 import { PartnerLockedNoticeService } from 'src/services/partner-locked-notice.service.js';
@@ -110,8 +113,6 @@ import { PhotoSourceService } from 'src/services/photo-source.service.js';
 import { PhotoToolsService } from 'src/services/photo-tools.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
-import { PhysicalDeduplicationPlanService } from 'src/services/physical-deduplication-plan.service.js';
-import { PhysicalDeduplicationService } from 'src/services/physical-deduplication.service.js';
 import { PhysicalFileTrashService } from 'src/services/physical-file-trash.service.js';
 import { PinnedCollectionService } from 'src/services/pinned-collection.service.js';
 import { PluginService } from 'src/services/plugin.service.js';
@@ -131,6 +132,7 @@ import { SharedLinkService } from 'src/services/shared-link.service.js';
 import { SharedSpaceService } from 'src/services/shared-space.service.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
+import { SourceResourceAuthService } from 'src/services/source-resource-auth.service.js';
 import { StackService } from 'src/services/stack.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
@@ -161,6 +163,7 @@ import { TranscodingService } from 'src/services/transcoding.service.js';
 import { TrashService } from 'src/services/trash.service.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
 import { UserService } from 'src/services/user.service.js';
+import { UtilitiesService } from 'src/services/utilities.service.js';
 import { VersionService } from 'src/services/version.service.js';
 import { VideoMomentIndexService } from 'src/services/video-moment-index.service.js';
 import { ViewService } from 'src/services/view.service.js';
@@ -174,6 +177,7 @@ export const services = [
   DesktopAssistancePolicyService,
   DesktopDeviceService,
   PhotoSourceService,
+  SourceResourceAuthService,
   DesktopMlService,
   DesktopNasProducerService,
   DesktopQualificationService,
@@ -233,6 +237,8 @@ export const services = [
   AssetRestorationService,
   AssetService,
   AttentionService,
+  LibraryProgressService,
+  OvernightService,
   AuthService,
   AuthAdminService,
   AnalyticsService,
@@ -255,6 +261,7 @@ export const services = [
   LibraryScanService,
   LibraryService,
   LivePhotoService,
+  UtilitiesService,
   MaintenanceService,
   MapService,
   MediaHealthOperationService,
@@ -286,8 +293,7 @@ export const services = [
   PinnedCollectionService,
   PetRecognitionService,
   PetService,
-  PhysicalDeduplicationPlanService,
-  PhysicalDeduplicationService,
+  IdenticalFilesService,
   PhysicalFileTrashService,
   PluginService,
   PreservationService,

@@ -13,6 +13,7 @@ import {
 import { CloudErrorEnvelope, FrameleafCloudError, FrameleafDiscoveryDocument } from 'src/utils/frameleaf-cloud.js';
 import { FrameleafKeySigner } from 'src/utils/frameleaf-dpop.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
+import { expectLocalisedSystemNotices } from 'test/utils.js';
 
 /**
  * FC-50 (CLD-201): the ML host is always discovery's `ml.<region>` for the owner's `dataRegion` from
@@ -220,6 +221,7 @@ describe('Frameleaf Cloud ML region routing (FC-50)', () => {
       expect(cloud.forget).toHaveBeenCalledTimes(1);
       expect(emit).toHaveBeenCalledTimes(1);
       expect(emit).toHaveBeenCalledWith('AdminNotify', expect.objectContaining(REGION_MISMATCH_NOTICE));
+      expectLocalisedSystemNotices(emit);
       expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(false);
     });
 

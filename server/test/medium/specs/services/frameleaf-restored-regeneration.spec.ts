@@ -3,7 +3,11 @@ import { randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { defaults, mapAdminConfig } from 'src/dtos/config.dto.js';
 import { JobName, SystemMetadataKey } from 'src/enum.js';
-import { IMPORT_DERIVED_RUN_KIND, IMPORT_DERIVED_STAGES, importDerivedRunId } from 'src/immich-import/derived-work.js';
+import {
+  IMPORT_DERIVED_RUN_KIND,
+  IMPORT_DERIVED_RUN_STAGES,
+  importDerivedRunId,
+} from 'src/immich-import/derived-work.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -26,7 +30,7 @@ it('releases a restored prepared import once with a real admin and effective set
   const source = 'restored-verified-source',
     fingerprint = 'restored-verified-config';
   const id = importDerivedRunId(source, fingerprint);
-  const stages = [...IMPORT_DERIVED_STAGES.map(([, name]) => name), JobName.PersonGenerateThumbnail];
+  const stages = [...IMPORT_DERIVED_RUN_STAGES];
   const setup = newMediumService(SystemConfigService, {
     database: db,
     real: [SystemMetadataRepository],

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AcmeClient, EdgeCertificateRepository } from 'src/edge/edge-certificate.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { automock } from 'test/utils.js';
 
 /** Test-only self-signed certificates and keys (openssl, P-256), never used anywhere else. */
@@ -175,12 +176,12 @@ describe(EdgeCertificateRepository.name, () => {
           directoryUrl: 'https://acme.test/directory',
           names: NAMES,
           setChallenge: (value) =>
-            Promise.try(() => {
+            tryPromise(() => {
               attempted.push(value);
               if (attempted.length === failed) throw new Error('publication acknowledgement lost');
             }),
           removeChallenge: (value) =>
-            Promise.try(() => {
+            tryPromise(() => {
               removed.push(value);
             }),
         }),

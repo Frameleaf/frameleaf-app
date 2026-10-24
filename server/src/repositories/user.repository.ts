@@ -365,6 +365,43 @@ export class UserRepository {
       .where('user.deletedAt', 'is', null)
       .executeTakeFirstOrThrow();
   }
+
+  /** FL-538: who a still-usable "choose a password" link belongs to, by the link's SHA-256. */
+  @GenerateSql({ params: [DummyValue.BUFFER] })
+  getByPasswordLink(hash: Buffer) {
+    return this.db
+      .selectFrom('user')
+      .select(['id', 'name', 'email'])
+      .where('passwordLinkHash', '=', hash)
+      .where('passwordLinkExpiresAt', '>', sql<Date>`now()`)
+      .where('deletedAt', 'is', null)
+      .where('status', '=', UserStatus.Active)
+      .executeTakeFirst();
+  }
+
+  /**
+   * FL-538: use a "choose a password" link once. The link is cleared in the same statement that sets
+   * the password, so a second use (or a race) finds nothing.
+   */
+  @GenerateSql({ params: [DummyValue.BUFFER, DummyValue.STRING] })
+  redeemPasswordLink(hash: Buffer, hashedPassword: string) {
+    return this.db
+      .updateTable('user')
+      .set({
+        password: hashedPassword,
+        shouldChangePassword: false,
+        passwordLinkHash: null,
+        passwordLinkExpiresAt: null,
+        updatedAt: new Date(),
+      })
+      .where('passwordLinkHash', '=', hash)
+      .where('passwordLinkExpiresAt', '>', sql<Date>`now()`)
+      .where('deletedAt', 'is', null)
+      .where('status', '=', UserStatus.Active)
+      .returning(['id', 'email'])
+      .executeTakeFirst();
+  }
+
   /**
    * `withDeleted` (FL-76): the email is unique across soft-deleted accounts too, so a duplicate check
    * before an insert or update must see them. Sign-in never passes it.

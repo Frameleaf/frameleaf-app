@@ -3,6 +3,7 @@ import { AssetType, AssetVisibility } from 'src/enum.js';
 import { LivePhotoRepository } from 'src/repositories/live-photo.repository.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
@@ -82,6 +83,28 @@ describe(LivePhotoService.name, () => {
           video: expect.objectContaining({ id: 'video-b' }),
         }),
       ]);
+    });
+
+    it('leaves out a pair with an item the session hides, as every other surface does', async () => {
+      const auth = { ...AuthFactory.create(), hiddenContent: { userId: 'owner' } as never };
+      const ownerId = auth.user.id;
+      vi.mocked(livePhotoRepository.getUnlinkedByContentId).mockResolvedValue([
+        { photoId: 'photo-a', videoId: 'video-a' },
+        { photoId: 'photo-b', videoId: 'video-b' },
+      ]);
+      vi.mocked(livePhotoRepository.getUnlinkedByFilename).mockResolvedValue([]);
+      mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set(['photo-a']));
+      mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue(
+        ['photo-b', 'video-b'].map((id) => AssetFactory.from({ id, ownerId }).exif().build()) as never,
+      );
+
+      const result = await sut.getCandidates(auth);
+
+      expect(mocks.asset.getHiddenContentAssetIds).toHaveBeenCalledWith(['photo-a', 'video-a', 'photo-b', 'video-b'], {
+        hiddenContent: auth.hiddenContent,
+      });
+      expect(mocks.asset.getByIdsWithAllRelationsButStacks).toHaveBeenCalledWith(['photo-b', 'video-b']);
+      expect(result.candidates.map(({ photo }) => photo.id)).toEqual(['photo-b']);
     });
 
     it('drops ambiguous low-confidence matches (a photo matching multiple videos)', async () => {
@@ -414,7 +437,7 @@ describe(LivePhotoService.name, () => {
       );
       mocks.asset.getLivePhotoCount.mockResolvedValue(0);
       mocks.asset.update.mockImplementation((patch) =>
-        Promise.try(() => {
+        tryPromise(() => {
           const role = patch.id === 'photo-1' ? 'photo' : 'video';
           state[role] = { ...state[role], ...patch } as never;
           if (failing === role) throw new Error('write failed');
@@ -422,7 +445,7 @@ describe(LivePhotoService.name, () => {
         }),
       );
       mocks.album.removeAssetsFromAll.mockImplementation(() =>
-        Promise.try(() => {
+        tryPromise(() => {
           state.inAlbum = false;
           if (failing === 'albums') throw new Error('write failed');
         }),
@@ -465,7 +488,7 @@ describe(LivePhotoService.name, () => {
 
     it('announces the link only after its writes commit', async () => {
       mocks.event.emit.mockImplementation(() =>
-        Promise.try(() => {
+        tryPromise(() => {
           expect(committed).toBe(true);
         }),
       );

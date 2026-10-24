@@ -101,10 +101,15 @@ export const createBuddyKeyring = (vaultId: string): BuddyKeyring =>
   parseBuddyKeyring({ version: 1, vaultId, current: 1, keys: { 1: randomBytes(32).toString('base64url') } }, vaultId);
 
 export type BuddyEscrow = { version: 1; vaultId: string; blob: string };
+/** FL-507: the owner's input is wrong (malformed package, weak or wrong passphrase); safe to show as-is. */
+export class BuddyEscrowError extends Error {
+  name = 'BuddyEscrowError';
+}
+export const BUDDY_ESCROW_WRONG_PASSPHRASE = 'That passphrase doesn’t unlock this recovery package';
 // Format 1 fixes scrypt N=32768/r=8/p=1 and AES-GCM: salt(16), nonce(12), ciphertext, tag(16).
 const escrowKey = (passphrase: string, salt: Buffer) => {
   if (typeof passphrase !== 'string' || passphrase.length < 12 || Buffer.byteLength(passphrase) > 1024)
-    throw new Error('Use a recovery passphrase of at least 12 characters and at most 1024 bytes');
+    throw new BuddyEscrowError('Use a recovery passphrase of at least 12 characters and at most 1024 bytes');
   return new Promise<Buffer>((resolve, reject) =>
     scrypt(passphrase, salt, 32, { N: 32_768, r: 8, p: 1, maxmem: 64 * 1024 ** 2 }, (error, key) =>
       error ? reject(error) : resolve(key),
@@ -143,18 +148,26 @@ export const unwrapBuddyKeyring = async (escrow: BuddyEscrow, passphrase: string
     escrow.blob.length > 32_768 ||
     !/^[\w-]+$/.test(escrow.blob)
   )
-    throw new Error('Invalid encrypted recovery package');
+    throw new BuddyEscrowError('Invalid encrypted recovery package');
   const bytes = Buffer.from(escrow.blob, 'base64url');
   if (bytes.length < 45 || bytes.length > 16 * 1024 + 44 || bytes.toString('base64url') !== escrow.blob)
-    throw new Error('Invalid encrypted recovery package');
+    throw new BuddyEscrowError('Invalid encrypted recovery package');
   const key = await escrowKey(passphrase, bytes.subarray(0, 16));
   try {
     const decipher = createDecipheriv('aes-256-gcm', key, bytes.subarray(16, 28));
     decipher.setAAD(escrowContext(escrow.vaultId));
     decipher.setAuthTag(bytes.subarray(-16));
-    const plain = Buffer.concat([decipher.update(bytes.subarray(28, -16)), decipher.final()]);
+    let plain: Buffer;
+    try {
+      plain = Buffer.concat([decipher.update(bytes.subarray(28, -16)), decipher.final()]);
+    } catch {
+      // AES-GCM authentication failed: a wrong passphrase, or a package altered or bound to another vault.
+      throw new BuddyEscrowError(BUDDY_ESCROW_WRONG_PASSPHRASE);
+    }
     try {
       return parseBuddyKeyring(JSON.parse(plain.toString('utf8')), escrow.vaultId);
+    } catch {
+      throw new BuddyEscrowError('Invalid encrypted recovery package');
     } finally {
       plain.fill(0);
     }

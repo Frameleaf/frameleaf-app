@@ -7,13 +7,15 @@
    * is open.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import type { ConfigResetKey } from '$lib/frameleaf/system-config-draft';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import type { AdminConfigDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   type Props = {
     disabled?: boolean;
-    keys: Array<keyof AdminConfigDto>;
+    /** The groups the page edits; a dotted path when it edits only part of one. */
+    keys: ConfigResetKey<AdminConfigDto>[];
   };
 
   let { disabled, keys }: Props = $props();

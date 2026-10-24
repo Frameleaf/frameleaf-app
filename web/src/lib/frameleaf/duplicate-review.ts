@@ -229,6 +229,16 @@ export const undoGroupsFor = (batch: DuplicateDecisionBatchDto): MediaOperationD
       decisionId: group.decisionId,
     }));
 
+/**
+ * FL-416: a group of byte-identical files (the same SHA-256 checksum) rather than look-alikes. Identical
+ * files are merged by themselves, so one is in the review only when its merge was undone or could not
+ * carry everything over; the review says so before anyone merges it.
+ */
+export const isIdenticalGroup = (group: Pick<ReviewGroup, 'kind' | 'assets'>): boolean =>
+  group.kind !== DuplicateGroupKind.Burst &&
+  group.assets.length > 1 &&
+  group.assets.every((asset) => !!asset.checksum && asset.checksum === group.assets[0].checksum);
+
 /** The undoable decision jobs, newest first, within reach. */
 export const undoableBatches = (recent: readonly DuplicateDecisionBatchDto[]): DuplicateDecisionBatchDto[] =>
   recent.filter((batch) => batch.undoable && undoGroupsFor(batch).length > 0).slice(0, DUPLICATE_UNDO_LIMIT);

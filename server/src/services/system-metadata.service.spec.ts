@@ -163,6 +163,18 @@ describe(SystemMetadataService.name, () => {
       });
     });
 
+    it('should leave the places-restoring flag out (FL-402)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        lastUpdate: '2024-01-01',
+        lastImportFileName: 'foo.bar',
+        restoring: true,
+      });
+      await expect(sut.getReverseGeocodingState()).resolves.toEqual({
+        lastUpdate: '2024-01-01',
+        lastImportFileName: 'foo.bar',
+      });
+    });
+
     it('should default reverse geocoding state to null', async () => {
       await expect(sut.getReverseGeocodingState()).resolves.toEqual({
         lastUpdate: null,

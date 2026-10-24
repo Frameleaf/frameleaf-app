@@ -155,6 +155,8 @@
   let shareOpen = $state(false);
   let status = $state('');
   const current = $derived(memoryManager.current);
+  // `current` is rebuilt for every item; this changes only when the memory itself does.
+  const currentMemoryId = $derived(current?.memory.id);
   /** The memory's title and subtitle as the index shows them (the owner's own title first). */
   const headline = $derived(current ? $memoryHeadline(current.memory) : undefined);
   /** FL-356: a visit to a landmark can be kept as an album of everything taken there on those days. */
@@ -713,7 +715,7 @@
   // Pick up an export that is already running for this memory — started here before a
   // reload, or from another tab — instead of offering to start a second one.
   $effect(() => {
-    const memoryId = current?.memory.id;
+    const memoryId = currentMemoryId;
     exportGeneration++;
     stopPolling();
     exportRun = undefined;
@@ -1366,8 +1368,9 @@
                   </IconButton>
                 {/if}
                 <!-- FL-194: a highlight video rendered directly from the memory, beside the Studio handoff. -->
+                <!-- the stable id, so a new slide does not restart the control's export lookup -->
                 <MemoryHighlightControl
-                  memoryId={current.memory.id}
+                  memoryId={currentMemoryId ?? current.memory.id}
                   memoryTitle={titleCard?.title ?? ''}
                   onStatus={(message) => (status = message)}
                 />

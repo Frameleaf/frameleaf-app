@@ -44,6 +44,7 @@
     type BuddyKitDto,
     type BuddySettingsDto,
     EnvironmentKeys,
+    isHttpError,
     LicenseKind,
     LicenseState,
     Version,
@@ -59,7 +60,8 @@
   let status = $state<BuddyStatusDto | null>(null);
   let coverage = $state<BuddyPreflightDto | null>(null);
   const linked = $derived(cloudManager.status?.state === 'linked');
-  // A new pairing needs a Server licence on both servers; no plan, unless the buddies use the relay (FL-434).
+  // A new pairing needs a Server licence on both servers (FL-434). Without a plan, Cloud hands a buddy only this
+  // server's home-network addresses; away from home (direct address, Public server URL, relay) needs one (FL-513).
   const serverLicensed = $derived.by(() => {
     const key = cloudManager.license?.key;
     return (
@@ -71,6 +73,8 @@
   const presentation = $derived(buddyBackupPresentation(status, linked));
   const place = $derived(buddyPlaceState(status, { linked }, new Date()));
   let failure = $state('');
+  // Frameleaf Cloud refused an invitation or accept for a missing Server licence (402, FL-506).
+  let licencePrompt = $state(false);
   let notice = $state('');
   let busy = $state(false);
   /** The first read of the status failed: the section says so and offers to try again. */
@@ -203,31 +207,40 @@
     });
   const pair = (accept: boolean) =>
     action(async () => {
-      if (!status?.settings) {
-        return;
-      }
-      const common = {
-        version: 1 as const,
-        instanceId: status.instanceId,
-        quotaBytes: status.settings.quotaBytes,
-        retention: { days: 30 as const, monthly: 12 as const },
-      };
-      if (accept) {
-        let token = invitation.trim();
-        try {
-          const url = new URL(token);
-          token = url.searchParams.get('invite') ?? url.hash.slice(1);
-        } catch {
-          /* a copied invitation code is also accepted */
-        }
-        status = await acceptBackupBuddy({ buddyAcceptDto: { ...common, token } });
-        step = 2;
-      } else {
-        const invite = await inviteBackupBuddy({ buddyInviteDto: { ...common, targetAccountId: buddyAccount.trim() } });
-        invitationLink = `https://frameleaf.cloud/buddy?invite=${encodeURIComponent(invite.token)}`;
-        notice = $t('frameleaf_buddy_send_this_private_invitation_to_your_buddy_it_expires_in_24_hours');
+      licencePrompt = false;
+      try {
+        await sendPairing(accept);
+      } catch (error) {
+        licencePrompt = isHttpError(error) && error.status === 402;
+        throw error;
       }
     });
+  const sendPairing = async (accept: boolean) => {
+    if (!status?.settings) {
+      return;
+    }
+    const common = {
+      version: 1 as const,
+      instanceId: status.instanceId,
+      quotaBytes: status.settings.quotaBytes,
+      retention: { days: 30 as const, monthly: 12 as const },
+    };
+    if (accept) {
+      let token = invitation.trim();
+      try {
+        const url = new URL(token);
+        token = url.searchParams.get('invite') ?? url.hash.slice(1);
+      } catch {
+        /* a copied invitation code is also accepted */
+      }
+      status = await acceptBackupBuddy({ buddyAcceptDto: { ...common, token } });
+      step = 2;
+    } else {
+      const invite = await inviteBackupBuddy({ buddyInviteDto: { ...common, targetAccountId: buddyAccount.trim() } });
+      invitationLink = `https://frameleaf.cloud/buddy?invite=${encodeURIComponent(invite.token)}`;
+      notice = $t('frameleaf_buddy_send_this_private_invitation_to_your_buddy_it_expires_in_24_hours');
+    }
+  };
   const savePackage = (value: unknown, filename: string) => {
     const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }));
     const link = document.createElement('a');
@@ -496,7 +509,7 @@
                 disabled={busy}
                 onclick={() => {
                   setup = true;
-                  step = status?.pairing?.state === 'pending' ? 2 : 3;
+                  step = 3;
                 }}>{$t('frameleaf_buddy_recovery_kit_pairing')}</Button
               >
             </div>
@@ -824,6 +837,14 @@
       ][step]}
     </p>
     {#if failure}<InlineError compact message={failure} />{/if}
+    {#if licencePrompt}
+      <p class="explain">{$t('frameleaf_buddy_server_licence_required')}</p>
+      <div class="fc-actions">
+        <a class="fc-button" href={commandCenterUrl('cloud', 'cloud-license')}
+          >{$t('frameleaf_buddy_server_licence_action')}</a
+        >
+      </div>
+    {/if}
     {#if step === 0}{@render storageForm()}
     {:else if step === 1}
       <p>{$t('frameleaf_buddy_both_servers_need_a_compatible_frameleaf_version_cloud_sign_in_and_an_active_subsc')}</p>
@@ -886,22 +907,9 @@
           </div>
         </dl>{/if}
       <p>{$t('frameleaf_buddy_each_direction_keeps_30_days_and_12_monthly_restore_points_both_sides_enforce_thei')}</p>
-      {#if status?.pairing?.state === 'pending' && !status.canConfirm}
-        <p class="explain">{$t('frameleaf_buddy_waiting_for_inviter_confirmation')}</p>
-      {/if}
-      <Button
-        variant="primary"
-        disabled={busy || !status?.pairing}
-        onclick={() =>
-          action(async () => {
-            // Only the server that sent the invitation confirms; the one that accepted it waits (FL-434).
-            if (status?.pairing?.state === 'pending' && status.canConfirm) {
-              status = await changeBuddyRelationship({
-                buddyRelationshipDto: { action: BuddyRelationshipAction.Confirm },
-              });
-            }
-            step = 3;
-          })}>{$t('frameleaf_buddy_confirm_agreement')}</Button
+      <!-- Accepting the invitation activates the pairing; neither server confirms it in Cloud (FL-513). -->
+      <Button variant="primary" disabled={busy || !status?.pairing} onclick={() => (step = 3)}
+        >{$t('frameleaf_buddy_confirm_agreement')}</Button
       >
     {:else if step === 3}
       <p>{$t('frameleaf_buddy_this_recovery_kit_unlocks_your_backups_save_it_somewhere_other_than_this_server_th')}</p>

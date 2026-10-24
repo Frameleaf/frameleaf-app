@@ -18,7 +18,6 @@
   import AttentionPage from '$lib/components/frameleaf/settings/notifications/AttentionPage.svelte';
   import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import UserSettingsList from '../UserSettingsList.svelte';
-  import DeduplicationSection from './DeduplicationSection.svelte';
   import Loader from './Loader.svelte';
   import ComputersSection from './ComputersSection.svelte';
   import { loadComputers } from './loaders';
@@ -35,9 +34,7 @@
 </script>
 
 {#if section.admin}
-  {#if section.key === 'deduplication'}
-    <DeduplicationSection />
-  {:else if section.key === 'computers'}
+  {#if section.key === 'computers'}
     <Loader load={loadComputers}>
       {#snippet children(data)}
         <ComputersSection {data} />

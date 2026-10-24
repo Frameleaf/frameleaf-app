@@ -208,6 +208,16 @@ describe('client-encrypted storage and independent recovery', () => {
     expect((await readdir(directory)).some((name) => name.includes('.part-'))).toBe(false);
   });
 
+  it('reports a client object truncated to an impossible encrypted length as damaged', async () => {
+    const bytes = Buffer.from('object later truncated at the provider');
+    const key = keyFor(bytes);
+    await store.put(connection, key, bytes, legacy);
+    const object = s3.current.get(key)!;
+    object.bytes = object.bytes.subarray(0, 10);
+
+    await expect(store.head(connection, key, legacy)).rejects.toMatchObject({ code: 'ChecksumMismatch' });
+  });
+
   it('resumes an interrupted multipart upload in another worker with the same ciphertext and completed parts', async () => {
     const bytes = randomBytes(CLOUD_BACKUP_PART_BYTES + 91);
     const key = keyFor(bytes);
@@ -249,6 +259,34 @@ describe('client-encrypted storage and independent recovery', () => {
     expect(firstParts).toHaveLength(2);
     expect(firstParts[1].body.equals(originalPart)).toBe(true);
     expect((await store.get(connection, key, legacy)).equals(bytes)).toBe(true);
+  });
+
+  it('uploads an object again when its left-behind receipt names an object the bucket no longer holds', async () => {
+    const bytes = Buffer.from('object pruned after a lost checkpoint');
+    const key = keyFor(bytes);
+    const path = join(directory, 'source');
+    await writeFile(path, bytes);
+    let lost = true;
+    const journal = {
+      current: null,
+      directory: join(directory, 'journal'),
+      save: vi.fn((transfer: unknown) => {
+        if (transfer === null && lost) {
+          lost = false;
+          return Promise.reject(new Error('claim lost'));
+        }
+        return Promise.resolve();
+      }),
+    };
+    await expect(store.uploadFile({ ...connection, transfer: journal }, key, path, legacy, sha(bytes))).rejects.toThrow(
+      'claim lost',
+    );
+    s3.current.delete(key);
+
+    await store.uploadFile({ ...connection, transfer: journal }, key, path, legacy, sha(bytes));
+
+    expect((await store.get(connection, key, legacy)).equals(bytes)).toBe(true);
+    expect(await readdir(connection.stagingDirectory!)).toEqual([]);
   });
 
   it('retains a completed database receipt until its worker checkpoint commits', async () => {

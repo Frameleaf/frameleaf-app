@@ -137,6 +137,10 @@ const StorageMigrationStatusResponseSchema = z
       .boolean()
       .describe('Whether durable work remains, including delayed, paused and unadmitted work'),
     statistics: QueueStatisticsSchema,
+    candidates: z
+      .int()
+      .min(0)
+      .describe('Uploaded originals a re-file checks; those already in place are not moved (FL-365)'),
   })
   .meta({ id: 'StorageMigrationStatusResponseDto' });
 

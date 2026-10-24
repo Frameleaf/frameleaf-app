@@ -4,8 +4,10 @@
    * `personal-key-create` / `personal-key-edit` forms and the one-time reveal of the design
    * template's `PersonalForm`.
    *
-   * Every current permission is offered, searchable, with full access first; choosing full
-   * access or every permission saves `all`, as the previous editor did. A key that can delete
+   * FL-367: a key starts from what it is for (View only, Upload only, View and upload, Everything);
+   * every permission stays behind "Choose exact permissions", searchable, and ticking one there
+   * makes the key "Your own choice". Choosing full access or every permission saves `all`, as the
+   * previous editor did. A key that can delete
    * things says so. A created or rotated key is shown once in this dialog with Copy; closing it
    * drops the value and it cannot be shown again.
    */
@@ -15,12 +17,16 @@
     API_KEY_NAME_MAX_LENGTH,
     filterPermissions,
     INDIVIDUAL_PERMISSIONS,
+    KEY_PURPOSES,
     keyCanDelete,
+    keyPurpose,
     normalizeKeyPermissions,
+    PURPOSE_PERMISSIONS,
+    type KeyPurpose,
   } from '$lib/frameleaf/personal-access';
   import { handleCreateApiKey, handleUpdateApiKey } from '$lib/services/api-key.service';
   import { Permission, type ApiKeyResponseDto } from '@frameleaf/sdk';
-  import { t } from 'svelte-i18n';
+  import { t, type Translations } from 'svelte-i18n';
   import './access.css';
 
   let {
@@ -42,14 +48,17 @@
       ? apiKey.permissions.includes(Permission.All)
         ? [Permission.All]
         : [...apiKey.permissions]
-      : [Permission.AssetRead],
+      : [...PURPOSE_PERMISSIONS.view],
   );
+  const choosePurpose = (next: KeyPurpose) => (selected = [...PURPOSE_PERMISSIONS[next]]);
+  let exact = $state(false);
   let search = $state('');
   let working = $state(false);
   let secret = $state(revealed ?? '');
   let copyStatus = $state('');
 
   const fullAccess = $derived(selected.includes(Permission.All));
+  const purpose = $derived(fullAccess ? 'everything' : keyPurpose(selected));
   const visible = $derived(filterPermissions(search));
   const count = $derived(fullAccess ? INDIVIDUAL_PERMISSIONS.length : selected.length);
   const valid = $derived(name.trim().length > 0 && selected.length > 0);
@@ -141,26 +150,50 @@
           bind:value={name}
         />
       </label>
-      <p>{$t('frameleaf_access_key_permissions_count', { values: { count } })}</p>
-      <label class="fl-access-field">
-        <span>{$t('frameleaf_access_key_find_permission')}</span>
-        <input type="search" aria-controls={listId} bind:value={search} />
-      </label>
-      <div class="permissions" id={listId} role="group" aria-label={$t('frameleaf_access_key_permissions')}>
-        {#each visible as permission (permission)}
-          <label class="fl-access-check">
+      <fieldset class="purposes">
+        <legend>{$t('frameleaf_access_key_purpose')}</legend>
+        {#each KEY_PURPOSES as option (option)}
+          <label class="fl-access-check purpose">
             <input
-              type="checkbox"
-              checked={fullAccess || selected.includes(permission)}
-              disabled={working || (fullAccess && permission !== Permission.All)}
-              onchange={(event) => toggle(permission, event.currentTarget.checked)}
+              type="radio"
+              name="purpose"
+              checked={purpose === option}
+              disabled={working}
+              onchange={() => choosePurpose(option)}
             />
-            <span>{permission === Permission.All ? $t('frameleaf_access_key_full_access') : permission}</span>
+            <span>
+              <strong>{$t(`frameleaf_access_key_purpose_${option.replace('-', '_')}` as Translations)}</strong>
+              <small>{$t(`frameleaf_access_key_purpose_${option.replace('-', '_')}_help` as Translations)}</small>
+            </span>
           </label>
-        {:else}
-          <p class="fl-access-footnote">{$t('frameleaf_access_key_no_permissions_match')}</p>
         {/each}
-      </div>
+        {#if purpose === 'custom'}
+          <p class="fl-access-footnote">{$t('frameleaf_access_key_purpose_custom')}</p>
+        {/if}
+      </fieldset>
+      <details bind:open={exact}>
+        <summary>{$t('frameleaf_access_key_exact')}</summary>
+        <p>{$t('frameleaf_access_key_permissions_count', { values: { count } })}</p>
+        <label class="fl-access-field">
+          <span>{$t('frameleaf_access_key_find_permission')}</span>
+          <input type="search" aria-controls={listId} bind:value={search} />
+        </label>
+        <div class="permissions" id={listId} role="group" aria-label={$t('frameleaf_access_key_permissions')}>
+          {#each visible as permission (permission)}
+            <label class="fl-access-check">
+              <input
+                type="checkbox"
+                checked={fullAccess || selected.includes(permission)}
+                disabled={working || (fullAccess && permission !== Permission.All)}
+                onchange={(event) => toggle(permission, event.currentTarget.checked)}
+              />
+              <span>{permission === Permission.All ? $t('frameleaf_access_key_full_access') : permission}</span>
+            </label>
+          {:else}
+            <p class="fl-access-footnote">{$t('frameleaf_access_key_no_permissions_match')}</p>
+          {/each}
+        </div>
+      </details>
       {#if keyCanDelete(selected)}
         <p class="fl-access-notice">{$t('frameleaf_access_key_delete_warning')}</p>
       {/if}
@@ -175,6 +208,31 @@
 </Dialog>
 
 <style>
+  .purposes {
+    display: grid;
+    gap: var(--fl-space-2);
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .purposes legend {
+    margin-bottom: var(--fl-space-2);
+    font-weight: 600;
+  }
+  .purpose span {
+    display: grid;
+    gap: var(--fl-space-1);
+  }
+  .purpose small {
+    color: var(--fl-muted);
+  }
+  details > summary {
+    cursor: pointer;
+    color: var(--fl-muted);
+  }
+  details[open] > summary {
+    margin-bottom: var(--fl-space-3);
+  }
   .permissions {
     display: grid;
     max-height: 16rem;

@@ -12,9 +12,8 @@
    * detection that names the graphics card "Automatic" picks, and the hardware presets. A preset is
    * applied when the kind of graphics card is chosen, never on its own when the page opens.
    *
-   * "Try it on a few photos" opens the enrichment workbench (FL-59), which runs the choices on this
-   * page on samples without changing the library. Left for later (server work): sample captions
-   * written in place on this page, and starting a rewrite from the save.
+   * "Try it on a few photos" writes sample captions in place with the choices on this page, saved or
+   * not (FL-537, `CaptionTryout`); the enrichment workbench (FL-59) opens from there for more samples.
    */
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
@@ -32,6 +31,7 @@
   import Select from '$lib/components/frameleaf/settings/kit/Select.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import TextArea from '$lib/components/frameleaf/settings/kit/TextArea.svelte';
+  import CaptionTryout from '$lib/components/frameleaf/settings/intelligence/CaptionTryout.svelte';
   import Explain from '$lib/components/frameleaf/settings/intelligence/Explain.svelte';
   import Figure from '$lib/components/frameleaf/settings/intelligence/Figure.svelte';
   import MasterOff from '$lib/components/frameleaf/settings/intelligence/MasterOff.svelte';
@@ -108,6 +108,7 @@
   let framesPerVideo = $state<number>();
   let detectedAcceleration = $state<MachineLearningHardwareAcceleration>();
   let workbenchOpen = $state(false);
+  let trying = $state(false);
 
   const loadStats = async () => {
     try {
@@ -344,8 +345,13 @@
         onChange={(words) => (prompt.forbiddenInferences = words)}
       />
       <Row label={$t('frameleaf_intel_captions_try')} help={$t('frameleaf_intel_captions_try_help')}>
-        <Button onclick={() => (workbenchOpen = true)}>{$t('frameleaf_intel_captions_try_button')}</Button>
+        <Button onclick={() => (trying = !trying)}>
+          {trying ? $t('frameleaf_intel_captions_try_hide') : $t('frameleaf_intel_captions_try_button')}
+        </Button>
       </Row>
+      {#if trying}
+        <CaptionTryout draft={imageDescription} {disabled} onOpenWorkbench={() => (workbenchOpen = true)} />
+      {/if}
       {#if promptChanged}
         <Notice tone="info" title={$t('frameleaf_intel_captions_change_title')}>
           {rewrite

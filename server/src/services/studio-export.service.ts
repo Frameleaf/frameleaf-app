@@ -407,9 +407,14 @@ export class StudioExportService {
     if (audioProblem) {
       throw new ConflictException({ code: 'studio_export_audio_unsupported', message: audioProblem });
     }
-    if (contract.video.minBitDepth > (studioExportFormatSpec(dto.format)?.bitDepth ?? 8)) {
-      // The sources keep an HDR picture: only a worker that verified that precision can take it.
-      await this.requireRenderableOutput(dto.destination, { ...settings, minBitDepth: contract.video.minBitDepth });
+    if (contract.video.minBitDepth > (studioExportFormatSpec(dto.format)?.bitDepth ?? 8) || contract.video.transfer) {
+      // The sources keep (or the colour asks for) an HDR picture: only a worker that verified that
+      // precision, and for HLG that exact HLG master (FL-107), can take it.
+      await this.requireRenderableOutput(dto.destination, {
+        ...settings,
+        minBitDepth: contract.video.minBitDepth,
+        transfer: contract.video.transfer,
+      });
     }
     const pairedCaptions = dto.subtitleMode === 'sidecar' || dto.subtitleMode === 'embedded';
     if (
@@ -662,11 +667,14 @@ export class StudioExportService {
       sources.filter((source) => source.ownerId !== auth.user.id).map((source) => source.assetId!),
     );
     // FL-326: partners hold their own copies, so another owner's source is reached only through an album
-    const [ownedOk, album] = await Promise.all([
+    // Owner access does not look at the trash or offline state, so availability is checked apart.
+    const [ownedOk, album, available] = await Promise.all([
       this.access.asset.checkOwnerAccess(auth.user.id, owned, !!getLockedOwnerId(auth)),
       this.access.asset.checkAlbumAccess(auth.user.id, shared),
+      this.repository.getAvailableSourceIds(sources.map((source) => source.assetId!)),
     ]);
-    const reachable = (assetId: string) => (owned.has(assetId) ? ownedOk.has(assetId) : album.has(assetId));
+    const reachable = (assetId: string) =>
+      available.has(assetId) && (owned.has(assetId) ? ownedOk.has(assetId) : album.has(assetId));
     if (sources.some((source) => !reachable(source.assetId!))) {
       throw new NotFoundException('Studio export not found');
     }
@@ -1121,6 +1129,9 @@ export class StudioExportService {
         userIds: [version.ownerId],
         title: 'Rendering',
         body: `${name} · ${percent}%`,
+        systemTemplate: operation.label?.trim()
+          ? { version: 1, key: 'studio-render-progress-named', args: { label: name, percent } }
+          : { version: 1, key: 'studio-render-progress', args: { percent } },
         // native apps: `kind` names the payload, `progress` is 0..1, `job` is the render's media operation
         data: {
           kind: 'render',
@@ -2024,16 +2035,27 @@ export class StudioExportService {
             : status === 'cancelled'
               ? `${name} was cancelled`
               : `${name} could not be finished`,
-        systemTemplate:
-          status === 'cancelled'
-            ? undefined
-            : label?.trim()
-              ? {
-                  version: 1,
-                  key: status === 'published' ? 'studio-export-ready-named' : 'studio-export-failed-named',
-                  args: { label: name },
-                }
-              : { version: 1, key: status === 'published' ? 'studio-export-ready' : 'studio-export-failed', args: {} },
+        systemTemplate: label?.trim()
+          ? {
+              version: 1,
+              key:
+                status === 'published'
+                  ? 'studio-export-ready-named'
+                  : status === 'cancelled'
+                    ? 'studio-export-cancelled-named'
+                    : 'studio-export-failed-named',
+              args: { label: name },
+            }
+          : {
+              version: 1,
+              key:
+                status === 'published'
+                  ? 'studio-export-ready'
+                  : status === 'cancelled'
+                    ? 'studio-export-cancelled'
+                    : 'studio-export-failed',
+              args: {},
+            },
         // Studio operations cannot use generic Retry; reopen this project/version for a new export.
         data: {
           versionId: version.id,

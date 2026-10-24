@@ -13,7 +13,7 @@ import { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { Duplex, Readable, Writable } from 'node:stream';
 import { PNG } from 'pngjs';
-import { Mock, Mocked, assert, vitest } from 'vitest';
+import { Mock, Mocked, assert, expect, vitest } from 'vitest';
 import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
 import { AssetUploadInterceptor } from 'src/middleware/asset-upload.interceptor.js';
 import { AuthGuard } from 'src/middleware/auth.guard.js';
@@ -99,6 +99,7 @@ import { AuthService } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { RepositoryInterface } from 'src/types.js';
 import { getKyselyConfig } from 'src/utils/database.js';
+import { renderSystemNotification } from 'src/utils/notification-locale.js';
 import { ClusterGroupFactory } from 'test/factories/cluster-group.factory.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { IAccessRepositoryMock, newAccessRepositoryMock } from 'test/repositories/access.repository.mock.js';
@@ -468,6 +469,7 @@ export const getMocks = () => {
 
   // no album is filled by smart album rules, and no classification rule exists, unless a test says so (FL-60)
   mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map());
+  mocks.smartAlbum.getHiddenAlbumIds.mockResolvedValue(new Set());
   mocks.classification.getRuleAlbumIds.mockResolvedValue(new Set());
   mocks.classification.getRules.mockResolvedValue([]);
   mocks.classification.getEnabledRules.mockResolvedValue([]);
@@ -500,6 +502,8 @@ export const getMocks = () => {
     unchanged: 0,
     tagged: [],
     untagged: [],
+    locked: [],
+    missing: [],
   });
   mocks.classification.recordAlbumAdditions.mockResolvedValue();
 
@@ -513,6 +517,8 @@ export const getMocks = () => {
     Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() }),
   );
   mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+  // FL-456: no processing-order plan unless a test gives one, so admission falls back to `getRoute` above
+  mocks.mlDestination.resolveRoute.mockResolvedValue([]);
   // no route names a restoration endpoint for library work unless a test says otherwise (FL-72)
   mocks.mlDestination.getRoutes.mockResolvedValue([]);
   mocks.mlDestination.getSpend.mockResolvedValue(0);
@@ -765,4 +771,20 @@ export const wait = (ms: number): Promise<void> => {
     };
     setTimeout(checkDone, ms);
   });
+};
+
+/**
+ * FL-329/FL-406: every administrator notice and push a producer emitted carries a system template whose
+ * English catalog text is exactly the producer's supplied text, so English recipients see no change.
+ */
+export const expectLocalisedSystemNotices = (emit: { mock: { calls: unknown[][] } }) => {
+  for (const [event, value] of emit.mock.calls) {
+    if (event !== 'AdminNotify' && event !== 'PushNotify') {
+      continue;
+    }
+    const notice = value as { title: string; description?: string; body?: string; systemTemplate?: unknown };
+    const supplied = { title: notice.title, body: event === 'AdminNotify' ? notice.description : notice.body };
+    expect(notice.systemTemplate, `${event}: ${notice.title}`).toBeDefined();
+    expect(renderSystemNotification(notice.systemTemplate, 'en', { title: '', body: '' })).toEqual(supplied);
+  }
 };

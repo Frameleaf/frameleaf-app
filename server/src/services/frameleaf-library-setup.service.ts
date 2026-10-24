@@ -6,8 +6,12 @@ import { readFile } from 'node:fs/promises';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { OnEvent } from 'src/decorators.js';
 import { AdminConfigDto } from 'src/dtos/config.dto.js';
-import { FrameleafWorker, JobName, QueueName, SyncEntityType } from 'src/enum.js';
-import { IMPORT_DERIVED_RUN_KIND, IMPORT_DERIVED_STAGES, importDerivedRunId } from 'src/immich-import/derived-work.js';
+import { FrameleafWorker, QueueName, SyncEntityType } from 'src/enum.js';
+import {
+  IMPORT_DERIVED_RUN_KIND,
+  IMPORT_DERIVED_RUN_STAGES,
+  importDerivedRunId,
+} from 'src/immich-import/derived-work.js';
 import { listRuns } from 'src/queue/run-query.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
@@ -231,7 +235,8 @@ export class FrameleafLibrarySetupService {
         return;
       }
     }
-    const stages = [...IMPORT_DERIVED_STAGES.map(([, stage]) => stage), JobName.PersonGenerateThumbnail];
+    // FL-414: Manager releases the identical-files stage with the others
+    const stages = [...IMPORT_DERIVED_RUN_STAGES];
     const {
       rows: [prepared],
     } = await sql<{ ready: boolean }>`SELECT

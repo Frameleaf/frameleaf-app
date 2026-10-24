@@ -1,11 +1,12 @@
 [project]
 name = "frameleaf-ml"
-version = "1.1.7"
+version = "1.1.11"
 description = ""
 authors = [{ name = "Hau Tran", email = "alex.tran1502@gmail.com" }]
 requires-python = ">=3.12,<4.0"
 readme = "README.md"
 dependencies = [
+    "certifi>=2026.10.19",
     "aiocache>=0.12.3,<1.0",
     "fastapi>=0.143.0,<1.0",
     "gunicorn>=26.2.0",
@@ -60,6 +61,8 @@ cpu = [
 cuda = [
     # PyPI >=1.27 uses CUDA 13; the stable CUDA 12 feed ends at 1.29 (Pascal support).
     "onnxruntime-gpu==1.29.0",
+    # TensorRT-RTX plugin provider for GeForce RTX cards (consumer GPUs); registered in sessions/ort.py.
+    "onnxruntime-ep-nv-tensorrt-rtx-cu12>=0.4.0,<0.5 ; platform_machine == 'x86_64'",
     "qwen-vl-utils>=0.0.14,<1",
     "torch==2.14.1",
     # Qwen imports its video processor for still images, so Torchvision must match Torch.

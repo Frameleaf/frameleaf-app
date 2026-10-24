@@ -8,6 +8,7 @@ import { TakeoutConflict, TakeoutRepository } from 'src/repositories/takeout.rep
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { TakeoutService } from 'src/services/takeout.service.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { TAKEOUT_DEFAULT_OPTIONS, takeoutStableId } from 'src/utils/takeout.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -95,7 +96,7 @@ const requestService = (repository: TakeoutRepository) =>
   new TakeoutService(
     { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
     repository,
-    { prepare: () => Promise.resolve('/staging/admission'), freeBytes: () => Promise.try(() => 1024 ** 4) } as never,
+    { prepare: () => Promise.resolve('/staging/admission'), freeBytes: () => tryPromise(() => 1024 ** 4) } as never,
     {} as never,
     {} as never,
     {} as never,

@@ -51,6 +51,18 @@ const summary = (queues: Partial<Record<string, number>> = {}) =>
     queues: { missing: 0, damagedConfirmed: 0, damagedSuspected: 0, duplicates: 0, enrichmentPending: 0, ...queues },
   }) as never;
 
+/** FL-520: the server's one source of findings. */
+const overview = (counts: Partial<Record<'missing' | 'damaged' | 'stray' | 'rawToMatch', number>> = {}) => ({
+  missing: 0,
+  damaged: 0,
+  stray: 0,
+  rawToMatch: 0,
+  unreachable: [],
+  running: [],
+  history: [],
+  ...counts,
+});
+
 const hero = () => within(screen.getByRole('region', { name: 'Things to fix' }));
 const row = (name: string) => within(screen.getByText(name, { selector: 'strong' }).closest('li')!);
 
@@ -63,7 +75,7 @@ describe('Things to fix (FL-366)', () => {
     vi.clearAllMocks();
     auth.user.isAdmin = true;
     sdkMock.getSummary.mockResolvedValue(summary());
-    sdkMock.getIntegrityReportSummary.mockResolvedValue({ missing_file: 0, checksum_mismatch: 0, untracked_file: 0 });
+    sdkMock.getIntegrityOverview.mockResolvedValue(overview());
     sdkMock.getLivePhotoCandidates.mockResolvedValue({ candidates: [], total: 0, suggestionsEnabled: true });
   });
 
@@ -89,12 +101,14 @@ describe('Things to fix (FL-366)', () => {
 
   it('puts missing and damaged files first, counting each file once', async () => {
     sdkMock.getSummary.mockResolvedValue(summary({ missing: 1, damagedConfirmed: 1 }));
-    sdkMock.getIntegrityReportSummary.mockResolvedValue({ missing_file: 1, checksum_mismatch: 0, untracked_file: 4 });
+    sdkMock.getIntegrityOverview.mockResolvedValue(overview({ missing: 1, damaged: 1, stray: 4, rawToMatch: 1 }));
     newStore();
     render(ThingsToFix);
 
     expect(await hero().findByRole('heading', { name: '2 files need attention' })).toBeInTheDocument();
     expect(row('Missing files').getByText('1 found')).toBeInTheDocument();
+    // FL-520: the missing RAW originals to match have a count of their own
+    expect(row('RAW files to match').getByText('1 waiting')).toBeInTheDocument();
   });
 
   it('gives an administrator a switch on the two kinds that can be turned off', async () => {
@@ -119,7 +133,7 @@ describe('Things to fix (FL-366)', () => {
 
     expect(await hero().findByRole('heading', { name: '2 suggestions are waiting for you' })).toBeInTheDocument();
     expect(sdkMock.getSummary).toHaveBeenCalledWith({});
-    expect(sdkMock.getIntegrityReportSummary).not.toHaveBeenCalled();
+    expect(sdkMock.getIntegrityOverview).not.toHaveBeenCalled();
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
     expect(screen.queryByText('RAW files to match')).not.toBeInTheDocument();
   });

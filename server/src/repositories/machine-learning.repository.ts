@@ -284,6 +284,11 @@ export type MlUsage = {
  */
 export type DesktopPoolOptions = {
   jobId?: string | null;
+  /**
+   * FL-456: take the job only when one of the owner's Frameleaf Desktop helpers is online and qualified
+   * for its model now; otherwise hand it back so the next place in the processing order can take it.
+   */
+  requireReady?: boolean;
   modelName: string;
   ocr?: MachineLearningConfig['ocr'];
   face?: MachineLearningConfig['facialRecognition'];
@@ -1108,7 +1113,11 @@ export class MachineLearningRepository implements RestorationInference {
     this.desktopPoolSelector = selector;
   }
 
-  async selectBackgroundPool(selection: MlSelection, jobId?: string | null): Promise<MlSelection> {
+  async selectBackgroundPool(
+    selection: MlSelection,
+    jobId?: string | null,
+    requireReady = false,
+  ): Promise<MlSelection> {
     if (!queueExecution.getStore() || ![MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face].includes(selection.workload))
       return selection;
     if (!this.desktopPoolSelector) throw new Error('desktop_pool_authority_unavailable');
@@ -1117,6 +1126,7 @@ export class MachineLearningRepository implements RestorationInference {
     const modelName = face?.modelName ?? ocr?.modelName ?? this.config.clip.modelName;
     return this.desktopPoolSelector(selection, {
       jobId,
+      ...(requireReady && { requireReady }),
       modelName,
       ...(ocr && { ocr }),
       ...(face && { face }),

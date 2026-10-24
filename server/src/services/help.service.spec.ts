@@ -39,6 +39,7 @@ const container = (patch: Partial<HardwareCheck['ml']>): HardwareCheck['ml'] => 
   vendor: null,
   model: null,
   vramGb: null,
+  integrated: null,
   driver: null,
   backend: 'CPU',
   test: null,

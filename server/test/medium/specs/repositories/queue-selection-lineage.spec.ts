@@ -4,6 +4,7 @@ import { PostgresJSDialect } from 'kysely-postgres-js';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as sleep } from 'node:timers/promises';
+import type { DB } from 'src/schema/index.js';
 import { freezeSelection, shareSelectionPage } from 'src/queue/manifest.js';
 import { pruneQueueHistory } from 'src/queue/retention.js';
 import { selectionLineageSource } from 'src/queue/selection-lineage.js';
@@ -77,7 +78,7 @@ it('retains downstream stages published before a late shared membership is copie
 });
 
 describe('durable selected-job descendant lineage', () => {
-  let db: Kysely<any>;
+  let db: Kysely<DB>;
   beforeEach(async () => {
     db = await getKyselyDB();
   });
@@ -162,7 +163,7 @@ describe('durable selected-job descendant lineage', () => {
     const {
       rows: [database],
     } = await sql<{ name: string }>`select current_database() name`.execute(db);
-    return new Kysely<any>({
+    return new Kysely<DB>({
       dialect: new PostgresJSDialect({
         postgres: createPostgres({
           connection: {
