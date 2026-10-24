@@ -3,6 +3,7 @@
   import { gotoWithFocusAndScroll } from '$lib/utils/navigation';
   import { page } from '$app/state';
   import ApplicationSetup from '$lib/components/frameleaf/ApplicationSetup.svelte';
+  import MobileApps from '$lib/components/frameleaf/settings/utilities/MobileApps.svelte';
   import WorkflowsPanel from '$lib/components/frameleaf/WorkflowsPanel.svelte';
   import DuplicateUtility from '$lib/components/frameleaf/DuplicateUtility.svelte';
   import LargeFilesUtility from '$lib/components/frameleaf/LargeFilesUtility.svelte';
@@ -17,6 +18,7 @@
   import UtilityHistory from '$lib/components/frameleaf/UtilityHistory.svelte';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import {
     LIBRARY_CARE_TOOLS,
@@ -29,6 +31,9 @@
     type UtilityState,
   } from '$lib/frameleaf/utilities';
   import { loadUtility, type UtilityData } from '$lib/frameleaf/utilities-load';
+  import { checkedLastNight, loadUtilityExtras, type UtilityExtras } from '$lib/frameleaf/utilities-extras';
+  import { locale } from '$lib/stores/preferences.store';
+  import { DateTime } from 'luxon';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { getUtilitiesSummary, type UtilitiesSummaryResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -100,12 +105,81 @@
       summary = null;
     }
   };
+  // FL-539: the other tools' states, each read on its own; a tool shows none when it cannot be read.
+  let extras = $state<UtilityExtras | null>(null);
+  const loadExtras = async () => {
+    try {
+      extras = await loadUtilityExtras(authManager.user.isAdmin);
+    } catch {
+      extras = null;
+    }
+  };
   $effect(() => {
     if (!selected) {
       void loadSummary();
+      void loadExtras();
     }
   });
-  const states = $derived(summary ? utilityStates(summary) : {});
+  const states = $derived.by(() => {
+    const all: Partial<Record<UtilityId, UtilityState>> = summary ? utilityStates(summary) : {};
+    const toPair = extras?.toPair;
+    if (toPair !== null && toPair !== undefined) {
+      all['live-photos'] = { count: toPair, waiting: toPair > 0 };
+    }
+    return all;
+  });
+  /** The tools the overnight checks look at, which say "Checked last night" after one. */
+  const CHECKED_OVERNIGHT: ReadonlySet<UtilityId> = new Set<UtilityId>([
+    'duplicates',
+    'missing-media',
+    'corrupt-media',
+    'live-photos',
+  ]);
+  const lastNight = $derived(checkedLastNight(extras?.checkedAt ?? null));
+  const ago = (iso: string) => DateTime.fromISO(iso, { locale: $locale }).toRelative() ?? '';
+  /** FL-539: the states the summary does not carry: largest file, iCloud, workflows and phones. */
+  const extraStatus = (id: UtilityId): { text: string; tone: 'good' | 'off' } | undefined => {
+    if (!extras) {
+      return undefined;
+    }
+    switch (id) {
+      case 'large-files': {
+        return extras.largestBytes === null
+          ? undefined
+          : {
+              text: $t('frameleaf_utilities_state_largest', { values: { size: formatBytes(extras.largestBytes) } }),
+              tone: 'off',
+            };
+      }
+      case 'icloud': {
+        if (!extras.icloudConnected) {
+          return { text: $t('frameleaf_utilities_state_icloud_none'), tone: 'off' };
+        }
+        return extras.icloudCheckedAt
+          ? {
+              text: $t('frameleaf_utilities_state_icloud_checked', { values: { ago: ago(extras.icloudCheckedAt) } }),
+              tone: 'good',
+            }
+          : undefined;
+      }
+      case 'workflows': {
+        return extras.workflows === null
+          ? undefined
+          : { text: $t('frameleaf_utilities_state_workflows', { values: { count: extras.workflows } }), tone: 'off' };
+      }
+      case 'downloads': {
+        return extras.phones === null
+          ? undefined
+          : {
+              text: $t('frameleaf_utilities_state_phones', { values: { count: extras.phones } }),
+              tone: extras.phones > 0 ? 'good' : 'off',
+            };
+      }
+      default: {
+        return undefined;
+      }
+    }
+  };
   const waiting = $derived(tools.filter((tool) => states[tool.id]?.waiting));
   const statusText = (id: UtilityId, state: UtilityState) => {
     switch (id) {
@@ -118,6 +192,9 @@
       case 'missing-media': {
         return $t('frameleaf_utilities_state_missing', { values: { count: state.count } });
       }
+      case 'live-photos': {
+        return $t('frameleaf_utilities_state_pair', { values: { count: state.count } });
+      }
       default: {
         return $t('frameleaf_utilities_state_damaged', { values: { count: state.count } });
       }
@@ -125,7 +202,9 @@
   };
   const statusOf = (id: UtilityId) => {
     const state = states[id];
-    return state && { text: statusText(id, state), tone: state.waiting ? ('warn' as const) : ('off' as const) };
+    return state
+      ? { text: statusText(id, state), tone: state.waiting ? ('warn' as const) : ('off' as const) }
+      : extraStatus(id);
   };
 
   // The template lists Utilities as an ordinary area directory: grouped rows, each with its tool's
@@ -141,6 +220,10 @@
     group,
     icon: tool.icon,
     status: statusOf(tool.id),
+    note:
+      lastNight && CHECKED_OVERNIGHT.has(tool.id) && statusOf(tool.id) !== undefined
+        ? $t('frameleaf_utilities_checked_last_night')
+        : undefined,
     onSelect: () => void select(tool.id),
   });
   const rows = $derived([
@@ -240,7 +323,8 @@
             }}
           />
         {/key}
-      {:else if data.tool === 'downloads' || data.tool === 'obtainium'}
+      {:else if data.tool === 'downloads'}<MobileApps />
+      {:else if data.tool === 'obtainium'}
         <ApplicationSetup tool={data.tool} />
       {:else if data.tool === 'icloud'}<ICloudSyncPanel initial={data.initial} />
       {:else if data.tool === 'missing-media' || data.tool === 'corrupt-media'}

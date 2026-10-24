@@ -91,6 +91,8 @@ const ADMIN_ROUTES = new Set([
   'POST jobs',
   'POST libraries',
   'POST libraries/:id/scan',
+  // FL-539: Check every file again
+  'POST libraries/:id/scan/every-file',
   'POST libraries/:id/validate',
   'POST preservation/server-packages',
   // FL-71: the Job manager's Retry failed.

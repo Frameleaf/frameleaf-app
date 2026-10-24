@@ -232,5 +232,30 @@ const LibraryFolderBrowseResponseSchema = z
   })
   .meta({ id: 'LibraryFolderBrowseResponseDto' });
 
+/** FL-539: "About N photos and videos, X GB" for a folder chosen on Add a folder. */
+const LibraryFolderEstimateSchema = z
+  .object({
+    path: z.string().min(1).max(4096).describe('An absolute folder'),
+    exclusionPatterns: z
+      .union([z.string(), z.array(z.string())])
+      .optional()
+      .transform((value) => (value === undefined ? [] : Array.isArray(value) ? value : [value]))
+      .describe('What the folder would skip'),
+  })
+  .meta({ id: 'LibraryFolderEstimateDto' });
+
+const LibraryFolderEstimateResponseSchema = z
+  .object({
+    readable: z.boolean().describe('Whether the folder could be read'),
+    count: z.int().min(0).describe('Photos and videos found'),
+    bytes: z.int().min(0).describe('Their combined size, in bytes'),
+    complete: z
+      .boolean()
+      .describe('False when the count stopped early (a very large or slow folder), so it is a lower bound'),
+  })
+  .meta({ id: 'LibraryFolderEstimateResponseDto' });
+
+export class LibraryFolderEstimateDto extends createZodDto(LibraryFolderEstimateSchema) {}
+export class LibraryFolderEstimateResponseDto extends createZodDto(LibraryFolderEstimateResponseSchema) {}
 export class LibraryFolderBrowseDto extends createZodDto(LibraryFolderBrowseSchema) {}
 export class LibraryFolderBrowseResponseDto extends createZodDto(LibraryFolderBrowseResponseSchema) {}

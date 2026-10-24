@@ -159,6 +159,18 @@ describe(LibraryScanService.name, () => {
       expect(mocks.adminAudit.create).not.toHaveBeenCalled();
     });
 
+    it('queues "Check every file again" as a scan that reads every file (FL-539)', async () => {
+      operations.createUnlessActive.mockResolvedValue({ created: operationOf() });
+
+      await sut.queueManual(authStub.admin, library.id, true);
+
+      expect(operations.createUnlessActive).toHaveBeenCalledWith(
+        expect.objectContaining({ snapshot: { libraryId: library.id, trigger: 'manual', everyFile: true } }),
+        expect.anything(),
+        undefined,
+      );
+    });
+
     it('refuses a library whose owner account is deleted', async () => {
       mocks.user.get.mockResolvedValue(UserFactory.create({ deletedAt: new Date(), status: UserStatus.Deleted }));
 

@@ -242,6 +242,8 @@ export type ICloudDraft = {
   includeEdits: boolean;
   includeHidden: boolean;
   intervalHours: string;
+  /** FL-539: "By itself" (in the overnight run) or "Only when I ask". */
+  automatic: boolean;
   concurrency: string;
   stagingGb: string;
 };
@@ -257,6 +259,7 @@ export const icloudDraft = (connection: Pick<ICloudConnectionResponseDto, 'label
   includeEdits: connection.config.includeEdits,
   includeHidden: connection.config.includeHidden,
   intervalHours: String(connection.config.intervalHours),
+  automatic: connection.config.automatic ?? true,
   concurrency: String(connection.config.concurrency),
   stagingGb: formatGb(connection.config.stagingBytes),
 });
@@ -270,6 +273,7 @@ export const icloudBlankDraft = (): ICloudDraft => ({
   includeEdits: true,
   includeHidden: false,
   intervalHours: '24',
+  automatic: true,
   concurrency: '1',
   stagingGb: '20',
 });
@@ -369,6 +373,7 @@ export const icloudDraftUpdate = (
       includeEdits: draft.includeEdits,
       includeHidden: draft.includeHidden,
       intervalHours: Number(draft.intervalHours),
+      automatic: draft.automatic,
       concurrency: Number(draft.concurrency),
       stagingBytes,
     },

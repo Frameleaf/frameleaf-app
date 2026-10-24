@@ -139,9 +139,9 @@ export class LibraryScanService {
   /* ------------------------------------------------------------------ */
 
   /** An administrator's scan. Asking again while one is waiting or running answers with that one. */
-  async queueManual(auth: AuthDto, libraryId: string): Promise<void> {
+  async queueManual(auth: AuthDto, libraryId: string, everyFile = false): Promise<void> {
     const library = await this.findOrFail(libraryId);
-    const { created } = await this.queue(library, { ownerId: auth.user.id, trigger: 'manual' });
+    const { created } = await this.queue(library, { ownerId: auth.user.id, trigger: 'manual', everyFile });
     if (created) {
       await this.audit(auth, library, AdminAuditAction.LibraryScanQueued);
     }
@@ -185,7 +185,7 @@ export class LibraryScanService {
    */
   async queue(
     library: LibraryRow,
-    options: { ownerId: string; trigger: LibraryScanTrigger },
+    options: { ownerId: string; trigger: LibraryScanTrigger; everyFile?: boolean },
   ): Promise<{ operation: MediaOperation; created: boolean }> {
     await this.requireActiveOwner(library);
     if (library.importPaths.length === 0) {
@@ -200,7 +200,11 @@ export class LibraryScanService {
           destination: MediaOperationDestination.Local,
           destinationDetail: null,
           label: library.name,
-          snapshot: { libraryId: library.id, trigger: options.trigger } satisfies LibraryScanSnapshot,
+          snapshot: {
+            libraryId: library.id,
+            trigger: options.trigger,
+            ...(options.everyFile && { everyFile: true }),
+          } satisfies LibraryScanSnapshot,
           settings: {},
           estimate: null,
           result: emptyLibraryScanResult() as unknown as Record<string, unknown>,
@@ -666,9 +670,12 @@ export class LibraryScanService {
     const toOnline: string[] = [];
     const trashedToOnline: string[] = [];
     const toUpdate: string[] = [];
+    // FL-539: "Check every file again" reads every file again, not only the ones that changed
+    const everyFile = parseLibraryScanSnapshot(operation.snapshot).everyFile;
 
     for (const [index, asset] of assets.entries()) {
-      switch (checkExistingAsset(asset, stats[index])) {
+      const outcome = checkExistingAsset(asset, stats[index]);
+      switch (everyFile && outcome === AssetSyncResult.DO_NOTHING ? AssetSyncResult.UPDATE : outcome) {
         case AssetSyncResult.OFFLINE: {
           (asset.status === AssetStatus.Trashed ? trashedToOffline : toOffline).push(asset.id);
           break;

@@ -6,6 +6,8 @@ import {
   CreateLibraryDto,
   LibraryFolderBrowseDto,
   LibraryFolderBrowseResponseDto,
+  LibraryFolderEstimateDto,
+  LibraryFolderEstimateResponseDto,
   LibraryRemovalDto,
   LibraryRemovalReviewDto,
   LibraryResponseDto,
@@ -159,6 +161,19 @@ export class LibraryController {
     return this.scans.queueManual(auth, id);
   }
 
+  @Post(':id/scan/every-file')
+  @Authenticated({ permission: Permission.LibraryUpdate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Check every file of a library again',
+    description:
+      'Queue a scan that reads every file in the folder again (its date, place and details), not only the new and changed ones.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  scanLibraryEveryFile(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.scans.queueManual(auth, id, true);
+  }
+
   @Delete(':id/scan')
   @Authenticated({ permission: Permission.LibraryUpdate, admin: true })
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -215,5 +230,17 @@ export class LibraryAdminController {
   })
   browseLibraryFolders(@Query() dto: LibraryFolderBrowseDto): Promise<LibraryFolderBrowseResponseDto> {
     return this.service.browseFolders(dto);
+  }
+
+  @Get('folders/estimate')
+  @Authenticated({ permission: Permission.LibraryCreate, admin: true })
+  @Endpoint({
+    summary: 'Count the photos in a folder',
+    description:
+      'For an administrator adding a folder of photos: about how many photos and videos it holds and their size, skipping what the folder would skip. Stops early on a very large or slow folder and says so.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  estimateLibraryFolder(@Query() dto: LibraryFolderEstimateDto): Promise<LibraryFolderEstimateResponseDto> {
+    return this.service.estimateFolder(dto);
   }
 }

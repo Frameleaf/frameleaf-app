@@ -331,11 +331,15 @@ describe(TrashService.name, () => {
         deletedAt: new Date(),
       });
 
+      // FL-539: nothing goes for good next and emptying frees nothing, so neither the hidden part
+      // nor the other account's item counts toward the hero
       await expect(sut.getSummary(factory.auth({ user }))).resolves.toEqual({
         count: 0,
         offline: 0,
         bytes: 0,
         pendingDeletion: 0,
+        nextGoesAt: null,
+        freesBytes: 0,
       });
       await expect(sut.review(factory.auth({ user }), { action: TrashReviewAction.Empty })).rejects.toThrow(
         'Your trash is already empty',

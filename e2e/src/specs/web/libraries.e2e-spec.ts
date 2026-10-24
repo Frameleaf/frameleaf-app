@@ -41,7 +41,11 @@ test.describe('Libraries (FL-78)', () => {
     await page.goto('/admin/library-management');
     await page.waitForURL('**/user-settings?area=libraries');
     await expect(page.getByRole('heading', { name: 'Libraries', level: 1 })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Add a folder of photos', exact: true })).toBeVisible();
+    await expect(
+      page
+        .getByRole('region', { name: 'Libraries' })
+        .getByRole('button', { name: 'Add a folder of photos', exact: true }),
+    ).toBeVisible();
   });
 
   // FL-78: add a library with an import folder, scan it, and see the scan complete with what it found.
@@ -50,22 +54,23 @@ test.describe('Libraries (FL-78)', () => {
     utils.createImageFile(`${testAssetDir}/temp/fl78-web-add/asset.png`);
 
     await page.goto(librariesArea);
-    await page.getByRole('button', { name: 'Add a folder of photos', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Add external library' });
-    await dialog.getByLabel('Library name').fill(name);
-    await dialog.getByRole('button', { name: 'Add folder', exact: true }).click();
-    await dialog.getByLabel('Import folders 1', { exact: true }).fill(`${testAssetDirInternal}/temp/fl78-web-add`);
-    await dialog.getByRole('button', { name: 'Create library', exact: true }).click();
-    await expect(dialog).toHaveCount(0);
-    await expect(page.getByText('External library created', { exact: true })).toBeVisible();
+    await page
+      .getByRole('region', { name: 'Libraries' })
+      .getByRole('button', { name: 'Add a folder of photos', exact: true })
+      .click();
+    // FL-539: a page of its own, in four steps
+    await expect(page.getByRole('heading', { name: 'Add a folder of photos', level: 1 })).toBeVisible();
+    await page.getByText('Advanced: type a path').click();
+    await page.getByLabel('Path on this server', { exact: true }).fill(`${testAssetDirInternal}/temp/fl78-web-add`);
+    await page.getByRole('button', { name: 'Use this path', exact: true }).click();
+    await expect(page.getByText(/About 1 photo/)).toBeVisible();
+    await page.getByLabel('Library name', { exact: true }).fill(name);
+    await page.getByRole('button', { name: 'Add folder', exact: true }).click();
+    await expect(page.getByText('Folder added. Its first check has started.', { exact: true })).toBeVisible();
 
-    // creating a library does not scan it
+    // the first check starts by itself
     const detail = libraryDetail(page, name);
     const message = detail.getByTestId('library-scan-message');
-    await expect(message).toHaveText('Check folders for new, changed and missing items.');
-
-    await detail.getByRole('button', { name: 'Check now', exact: true }).click();
-    await expect(page.getByText('Library scan queued', { exact: true })).toBeVisible();
 
     // the page polls while the scan moves, and settles on the completed summary
     await expect(message).toHaveText(/· 1 added · 0 missing$/, { timeout: 60_000 });
@@ -155,7 +160,7 @@ test.describe('Libraries (FL-78)', () => {
 
     await page.goto(viewLibrary(library.id));
     const detail = libraryDetail(page, name);
-    await detail.getByRole('button', { name: 'Remove library', exact: true }).click();
+    await detail.getByRole('button', { name: 'Remove 1 photo from Frameleaf', exact: true }).click();
 
     // stage one: the review of what the removal takes with it
     const dialog = page.getByRole('dialog', { name: 'Remove library' });

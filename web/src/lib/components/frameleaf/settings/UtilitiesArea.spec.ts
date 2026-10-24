@@ -71,7 +71,34 @@ describe('Utilities area', () => {
     expect(screen.getByText('Advanced: Android direct updates').closest('details')).not.toHaveAttribute('open');
   });
 
+  it('says each other tool’s state and "Checked last night" (FL-539)', async () => {
+    state.user = { id: 'me', isAdmin: true };
+    sdkMock.getUtilitiesSummary.mockResolvedValue({
+      duplicateGroups: 12,
+      withoutPlace: 0,
+      missingFiles: 0,
+      damagedFiles: 0,
+      unusedFiles: 0,
+      unusedBytes: 0,
+    });
+    sdkMock.searchLargeAssets.mockResolvedValue([{ exifInfo: { fileSizeInByte: 4_200_000_000 } }] as never);
+    sdkMock.getLivePhotoCandidates.mockResolvedValue({ candidates: [], total: 2, suggestionsEnabled: true });
+    sdkMock.listICloudConnections.mockResolvedValue({ enabled: true, connections: [] } as never);
+    sdkMock.searchWorkflows.mockResolvedValue([{}, {}] as never);
+    sdkMock.listBackupDevices.mockResolvedValue({ devices: [{}, {}, {}], nextOffset: null } as never);
+    sdkMock.getOvernight.mockResolvedValue({ nights: [{ finishedAt: new Date().toISOString() }] } as never);
+    render(UtilitiesArea);
+
+    expect(await screen.findByText('2 to pair')).toBeInTheDocument();
+    expect(await screen.findByText(/The largest is/)).toBeInTheDocument();
+    expect(screen.getByText('3 phones connected')).toBeInTheDocument();
+    expect(screen.getByText('2 rules')).toBeInTheDocument();
+    expect(screen.getByText('Not connected')).toBeInTheDocument();
+    expect(screen.getAllByText('Checked last night').length).toBeGreaterThan(0);
+  });
+
   it('says nothing needs a look when every tool is calm (FL-519)', async () => {
+    sdkMock.getLivePhotoCandidates.mockResolvedValue({ candidates: [], total: 0, suggestionsEnabled: true });
     sdkMock.getUtilitiesSummary.mockResolvedValue({
       duplicateGroups: 0,
       withoutPlace: 0,

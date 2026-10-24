@@ -1,5 +1,6 @@
 <script lang="ts">
   import { locale } from '$lib/stores/preferences.store';
+  import { DateTime } from 'luxon';
   /**
    * Your trash (FL-47), ported from the design template's `TrashManager.jsx`.
    *
@@ -17,6 +18,7 @@
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
@@ -72,6 +74,7 @@
     mdiCheckCircleOutline,
     mdiClose,
     mdiDeleteOutline,
+    mdiDeleteRestore,
     mdiMagnify,
     mdiMovieOpenOutline,
   } from '@mdi/js';
@@ -172,12 +175,9 @@
       }
     });
 
-  const retentionValue = $derived(
-    trashEnabled ? $t('frameleaf_trash_summary_days', { values: { count: days } }) : $t('frameleaf_trash_disabled'),
-  );
-  const retentionLabel = $derived(
-    trashEnabled ? $t('frameleaf_trash_summary_retention') : $t('frameleaf_trash_summary_disabled'),
-  );
+  /** FL-539: the day the next item goes for good, as the prototype says it ("Thursday, 14 November"). */
+  const dayOf = (iso: string) =>
+    DateTime.fromISO(iso, { locale: $locale }).toLocaleString({ weekday: 'long', month: 'long', day: 'numeric' });
 
   const fetchPage = (page: number, size: number) =>
     getTrashItems({
@@ -571,20 +571,31 @@
 </script>
 
 <section class="trash-manager" aria-label={$t('frameleaf_trash_label')}>
-  <div class="tm-summary">
-    <div>
-      <strong>{available.toLocaleString($locale)}</strong>
-      <span>{$t('frameleaf_trash_summary_items')}</span>
-    </div>
-    <div>
-      <strong>{formatBytes(summary?.bytes ?? 0)}</strong>
-      <span>{$t('frameleaf_trash_summary_sizes')}</span>
-    </div>
-    <div>
-      <strong>{retentionValue}</strong>
-      <span>{retentionLabel}</span>
-    </div>
-  </div>
+  <!-- FL-539: the prototype's Hero (trash.jsx) in place of the three summary numbers -->
+  {#if summary && trashEnabled}
+    <Hero
+      label={$t('frameleaf_trash_hero_label')}
+      icon={available > 0 ? mdiDeleteRestore : mdiDeleteOutline}
+      title={available > 0
+        ? $t('frameleaf_trash_hero_title', { values: { count: available } })
+        : $t('frameleaf_trash_hero_empty_title')}
+      body={available > 0
+        ? `${$t('frameleaf_trash_hero_body', { values: { days } })}${
+            summary.nextGoesAt
+              ? ` ${$t('frameleaf_trash_hero_next', { values: { date: dayOf(summary.nextGoesAt) } })}`
+              : ''
+          } ${$t('frameleaf_trash_hero_size', { values: { size: formatBytes(summary.bytes) } })}`
+        : $t('frameleaf_trash_hero_empty_body', { values: { days } })}
+    >
+      {#snippet actions()}
+        {#if authManager.user.isAdmin}
+          <Button onclick={() => void goto(commandCenterUrl('storage', 'trash'))}>
+            {$t('frameleaf_trash_hero_change')}
+          </Button>
+        {/if}
+      {/snippet}
+    </Hero>
+  {/if}
 
   {#if !trashEnabled && actionable > 0}
     <!-- FL-519: with the Trash off, what is still here goes tonight; say so first, with the way out. -->
@@ -638,11 +649,7 @@
         <option value={TrashItemSort.Name}>{$t('frameleaf_trash_sort_name')}</option>
       </select>
     </label>
-    {#if authManager.user.isAdmin}
-      <Button onclick={() => void goto(commandCenterUrl('storage', 'trash'))}>
-        {$t('frameleaf_trash_retention_settings')}
-      </Button>
-    {/if}
+    <!-- FL-539: "Change how long items are kept" now sits on the Hero, as in the prototype -->
   </div>
 
   {#if error && !reviewOpen}
@@ -810,6 +817,9 @@
       <strong>{$t('frameleaf_trash_manage_all')}</strong>
       <p>
         {$t('frameleaf_trash_manage_all_help', { values: { count: actionable } })}
+        {#if actionable > 0 && summary}
+          {$t('frameleaf_trash_frees', { values: { size: formatBytes(summary.freesBytes) } })}
+        {/if}
         {#if !sessionAccess.isElevated}
           {$t('frameleaf_trash_manage_all_locked')}
         {/if}
@@ -951,24 +961,6 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
     line-height: 1.6;
-  }
-  .tm-summary {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 20px;
-    padding: 23px 0 10px;
-  }
-  .tm-summary strong {
-    display: block;
-    font-size: 25px;
-    font-weight: 550;
-    font-variant-numeric: var(--fl-numeric);
-  }
-  .tm-summary span {
-    display: block;
-    margin-top: 7px;
-    font-size: var(--fl-font-micro);
-    color: var(--fl-muted);
   }
   .trash-manager .tm-retention {
     max-width: 850px;
@@ -1249,15 +1241,6 @@
     gap: 8px;
   }
   @media (max-width: 700px) {
-    .tm-summary {
-      gap: 10px;
-    }
-    .tm-summary strong {
-      font-size: 20px;
-    }
-    .tm-summary span {
-      line-height: 1.5;
-    }
     .tm-toolbar {
       flex-wrap: wrap;
     }

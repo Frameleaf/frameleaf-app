@@ -55,8 +55,28 @@ export class TrashService extends BaseService {
     };
   }
 
+  /**
+   * FL-539: also when the next item goes for good (the oldest one, `trash.days` after it was
+   * deleted; tonight with the Trash off), and the space emptying the Trash frees: the originals no
+   * other item still uses, as the review of "Empty Trash" counts them.
+   */
   async getSummary(auth: AuthDto): Promise<TrashSummaryResponseDto> {
-    return this.trashRepository.getSummary(auth.user.id, this.scopeOf(auth));
+    const scope = this.scopeOf(auth);
+    const { oldestDeletedAt, ...summary } = await this.trashRepository.getSummary(auth.user.id, scope);
+    const { trash } = await this.getConfig({ withCache: true });
+    let nextGoesAt: string | null = null;
+    if (oldestDeletedAt) {
+      nextGoesAt = trash.enabled
+        ? new Date(oldestDeletedAt.getTime() + trash.days * 86_400_000).toISOString()
+        : DateTime.now().endOf('day').toJSDate().toISOString();
+    }
+    let freesBytes = 0;
+    if (summary.count > 0) {
+      const rows = await this.trashRepository.getReviewRows(auth.user.id, TrashReviewAction.Empty, undefined, scope);
+      const reviewed = summarizeTrashReview(rows);
+      freesBytes = Math.max(0, reviewed.bytes - reviewed.retainedBytes);
+    }
+    return { ...summary, nextGoesAt, freesBytes };
   }
 
   /**

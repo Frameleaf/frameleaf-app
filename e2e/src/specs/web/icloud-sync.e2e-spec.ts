@@ -325,7 +325,7 @@ test.describe('iCloud Photos sync with a fake bridge (FL-68, FL-144)', () => {
     expectExactly(await assetsOf(user), visible);
 
     // Include hidden photos: the consent dialog, then the PIN, because they arrive Locked.
-    await page.getByLabel('Hidden photos').check();
+    await page.getByRole('switch', { name: 'Hidden photos' }).click();
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await page.getByRole('button', { name: 'Allow and save' }).click();
     await page.waitForURL(/\/auth\/pin-prompt/);
@@ -336,7 +336,7 @@ test.describe('iCloud Photos sync with a fake bridge (FL-68, FL-144)', () => {
     await page.waitForURL((url) => url.pathname === '/user-settings' && url.searchParams.get('section') === 'icloud');
     // Back on the connection, the preferences come back and are saved.
     await expect(notice(page)).toContainText('Unlocked. Your sync preferences are back; save them to finish.');
-    await expect(page.getByLabel('Hidden photos')).toBeChecked();
+    await expect(page.getByRole('switch', { name: 'Hidden photos' })).toHaveAttribute('aria-checked', 'true');
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(notice(page)).toContainText('Connection updated.');
     const saved = await onlyConnection(user);
@@ -349,7 +349,7 @@ test.describe('iCloud Photos sync with a fake bridge (FL-68, FL-144)', () => {
     // Locking always reloads the whole document onto Photos; the owner goes back to the connection.
     await page.waitForURL((url) => url.pathname === '/photos');
     await openICloud(page);
-    await expect(page.getByLabel('Hidden photos')).toBeChecked();
+    await expect(page.getByRole('switch', { name: 'Hidden photos' })).toHaveAttribute('aria-checked', 'true');
 
     await control(page, 'Sync now').click();
     await expect(notice(page)).toContainText('Sync started.');

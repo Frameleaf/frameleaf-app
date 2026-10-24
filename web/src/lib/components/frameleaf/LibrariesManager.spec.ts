@@ -146,11 +146,16 @@ describe('LibrariesManager (FL-78)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(en.frameleaf_libraries_error_scan);
   });
 
-  it('opens the add form from the header, over the list', async () => {
+  it('opens Add a folder of photos as a page of its own, in four steps (FL-539)', async () => {
     setup(null, { selectedKey: null });
 
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_libraries_add }));
 
-    expect(screen.getByRole('heading', { name: en.frameleaf_libraries_form_create_title })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: en.frameleaf_addfolder_title, level: 1 })).toBeInTheDocument();
+    for (const step of [en.frameleaf_addfolder_step1, en.frameleaf_addfolder_step2, en.frameleaf_addfolder_step3]) {
+      expect(screen.getByRole('heading', { name: step })).toBeInTheDocument();
+    }
+    expect(screen.getByRole('switch', { name: en.frameleaf_addfolder_first })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('button', { name: en.frameleaf_addfolder_add })).toBeDisabled();
   });
 });

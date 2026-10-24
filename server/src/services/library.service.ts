@@ -13,6 +13,8 @@ import {
   CreateLibraryDto,
   LibraryFolderBrowseDto,
   LibraryFolderBrowseResponseDto,
+  LibraryFolderEstimateDto,
+  LibraryFolderEstimateResponseDto,
   LibraryRemovalDto,
   LibraryRemovalReviewDto,
   LibraryResponseDto,
@@ -58,6 +60,9 @@ import { tryPromise } from 'src/utils/promise.js';
  */
 /** FL-365: how many folders one browse lists at most. */
 const BROWSE_FOLDER_LIMIT = 500;
+/** FL-539: a folder estimate stops after this many files or this long, and says it is incomplete. */
+const FOLDER_ESTIMATE_LIMIT = 50_000;
+const FOLDER_ESTIMATE_MS = 8000;
 
 const libraryEvent = (
   auth: AuthDto | undefined,
@@ -370,6 +375,50 @@ export class LibraryService extends BaseService {
       readable,
       defaultExclusionPatterns: [...DEFAULT_LIBRARY_EXCLUSION_PATTERNS],
     };
+  }
+
+  /**
+   * FL-539: about how many photos and videos a folder holds, and how much they take, for "About N
+   * photos and videos, X GB" on Add a folder. It walks the folder as a scan would (same skips), and
+   * stops after a while on a very large or slow folder, saying the count is incomplete.
+   */
+  async estimateFolder({
+    path: requested,
+    exclusionPatterns,
+  }: LibraryFolderEstimateDto): Promise<LibraryFolderEstimateResponseDto> {
+    const raw = requested.trim();
+    if (!path.isAbsolute(raw) || raw.split('/').includes('..')) {
+      throw new BadRequestException('Choose a whole path, starting with a slash, with no .. in it');
+    }
+    const folder = normalizeImportPath(raw);
+    const deadline = Date.now() + FOLDER_ESTIMATE_MS;
+    let count = 0;
+    let bytes = 0;
+    let complete = true;
+    try {
+      const batches = this.storageRepository.walkLibrary({
+        pathsToCrawl: [folder],
+        includeHidden: false,
+        exclusionPatterns,
+        take: 500,
+      });
+      for await (const batch of batches) {
+        for (const file of batch) {
+          count++;
+          bytes += await this.storageRepository
+            .stat(file)
+            .then((stats) => stats.size)
+            .catch(() => 0);
+        }
+        if (count >= FOLDER_ESTIMATE_LIMIT || Date.now() > deadline) {
+          complete = false;
+          break;
+        }
+      }
+    } catch {
+      return { readable: false, count: 0, bytes: 0, complete: true };
+    }
+    return { readable: true, count, bytes, complete };
   }
 
   /** Every account's managed uploads, for the Libraries list (FL-78). */

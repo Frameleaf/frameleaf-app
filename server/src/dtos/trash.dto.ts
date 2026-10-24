@@ -46,6 +46,15 @@ const TrashSummaryResponseSchema = z
       .int()
       .min(0)
       .describe('Items already permanently deleted whose files are still being removed from storage'),
+    nextGoesAt: z
+      .string()
+      .meta({ format: 'date-time' })
+      .nullable()
+      .describe('FL-539: when the next item is removed for good, or null with an empty trash'),
+    freesBytes: z
+      .int()
+      .min(0)
+      .describe('FL-539: the space emptying the Trash frees: originals no other item still uses, in bytes'),
   })
   .meta({ id: 'TrashSummaryResponseDto' });
 

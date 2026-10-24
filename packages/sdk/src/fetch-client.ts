@@ -2481,6 +2481,16 @@ export type LibraryFolderBrowseResponseDto = {
     /** Whether there were more folders than listed */
     truncated: boolean;
 };
+export type LibraryFolderEstimateResponseDto = {
+    /** Their combined size, in bytes */
+    bytes: number;
+    /** False when the count stopped early (a very large or slow folder), so it is a lower bound */
+    complete: boolean;
+    /** Photos and videos found */
+    count: number;
+    /** Whether the folder could be read */
+    readable: boolean;
+};
 export type LibraryMovePauseStatusDto = {
     /** Background jobs still running */
     activeJobs: number;
@@ -7596,6 +7606,7 @@ export type ICloudConnectionResponseDto = {
     authenticated: boolean;
     config: {
         albums: string[];
+        automatic: boolean;
         concurrency: number;
         includeEdits: boolean;
         includeHidden: boolean;
@@ -7630,6 +7641,7 @@ export type ICloudConnectionsResponseDto = {
 export type ICloudConnectionCreateDto = {
     config?: {
         albums?: string[];
+        automatic?: boolean;
         concurrency?: number;
         includeEdits?: boolean;
         includeHidden?: boolean;
@@ -7643,6 +7655,7 @@ export type ICloudConnectionCreateDto = {
 export type ICloudConnectionUpdateDto = {
     config?: {
         albums?: string[];
+        automatic?: boolean;
         concurrency?: number;
         includeEdits?: boolean;
         includeHidden?: boolean;
@@ -16166,6 +16179,10 @@ export type TrashSummaryResponseDto = {
     bytes: number;
     /** Items in your trash this session can see */
     count: number;
+    /** FL-539: the space emptying the Trash frees: originals no other item still uses, in bytes */
+    freesBytes: number;
+    /** FL-539: when the next item is removed for good, or null with an empty trash */
+    nextGoesAt: string | null;
     /** Of those, external-library originals that went missing; the library scan manages them */
     offline: number;
     /** Items already permanently deleted whose files are still being removed from storage */
@@ -17303,6 +17320,12 @@ export type LargeAssetSearchDto = {
 export type LibraryFolderBrowseDto = {
     /** An absolute folder; defaults to the top of the disk */
     path?: string;
+};
+export type LibraryFolderEstimateDto = {
+    /** What the folder would skip */
+    exclusionPatterns?: string | string[];
+    /** An absolute folder */
+    path: string;
 };
 export type LibrarySearchDto = {
     /** Include libraries whose removal is still in progress */
@@ -20173,6 +20196,23 @@ export function browseLibraryFolders({ path }: {
         status: 200;
         data: LibraryFolderBrowseResponseDto;
     }>(`/admin/libraries/folders${QS.query(QS.explode({
+        path
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Count the photos in a folder
+ */
+export function estimateLibraryFolder({ exclusionPatterns, path }: {
+    exclusionPatterns?: string | string[];
+    path: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryFolderEstimateResponseDto;
+    }>(`/admin/libraries/folders/estimate${QS.query(QS.explode({
+        exclusionPatterns,
         path
     }))}`, {
         ...opts
@@ -24762,6 +24802,17 @@ export function scanLibrary({ id }: {
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/scan`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Check every file of a library again
+ */
+export function scanLibraryEveryFile({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/scan/every-file`, {
         ...opts,
         method: "POST"
     }));

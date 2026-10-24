@@ -17,6 +17,11 @@
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
+  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import {
     GB,
     ICLOUD_MAX_CONNECTIONS,
@@ -673,15 +678,25 @@
           <p class="ic-hint">{$t('frameleaf_icloud_albums_limit')}</p>
         {/if}
 
-        <h3>{$t('frameleaf_icloud_include')}</h3>
-        <label class="ic-check">
-          <input type="checkbox" bind:checked={draft.includeEdits} disabled={busy} />
-          {$t('frameleaf_icloud_include_edits')}
-        </label>
-        <label class="ic-check">
-          <input type="checkbox" bind:checked={draft.includeHidden} disabled={busy} />
-          {$t('frameleaf_icloud_include_hidden')}
-        </label>
+        <!-- FL-539: "What comes in" as switches, each saying what it does (prototype importing.jsx) -->
+        <h3>{$t('frameleaf_icloud_what_comes_in')}</h3>
+        <p class="ic-hint">{$t('frameleaf_icloud_what_comes_in_help')}</p>
+        <Row label={$t('frameleaf_icloud_edited')} help={$t('frameleaf_icloud_edited_help')}>
+          <Switch
+            label={$t('frameleaf_icloud_edited')}
+            checked={draft.includeEdits}
+            held={busy}
+            onChange={(value) => (draft.includeEdits = value)}
+          />
+        </Row>
+        <Row label={$t('frameleaf_icloud_hidden')} help={$t('frameleaf_icloud_hidden_help')}>
+          <Switch
+            label={$t('frameleaf_icloud_hidden')}
+            checked={draft.includeHidden}
+            held={busy}
+            onChange={(value) => (draft.includeHidden = value)}
+          />
+        </Row>
         <p class="ic-hint">{$t('frameleaf_icloud_external_managed')}</p>
       </section>
 
@@ -706,35 +721,58 @@
           {$t('frameleaf_icloud_connection_name')}
           <input bind:value={draft.label} maxlength={100} disabled={busy} aria-invalid={problems.includes('label')} />
         </label>
-        <!-- FL-518: no interval any more; the overnight run checks every connection. -->
-        <p class="ic-run-note">{$t('frameleaf_icloud_checked_nightly')}</p>
-        <label>
-          {$t('frameleaf_icloud_concurrency')}
-          <input
-            type="number"
-            min="1"
-            max="4"
-            step="1"
-            value={draft.concurrency}
-            oninput={(event) => (draft.concurrency = event.currentTarget.value)}
+        <!-- FL-539: "By itself" checks in the overnight run (FL-518); "Only when I ask" waits for Check now -->
+        <Row
+          label={$t('frameleaf_icloud_check_when')}
+          help={draft.automatic ? $t('frameleaf_icloud_check_auto_help') : $t('frameleaf_icloud_check_manual_help')}
+        >
+          <SegmentedControl
+            label={$t('frameleaf_icloud_check_when')}
+            value={draft.automatic ? 'auto' : 'manual'}
             disabled={busy}
-            aria-invalid={problems.includes('concurrency')}
+            options={[
+              { value: 'auto', label: $t('frameleaf_icloud_check_auto') },
+              { value: 'manual', label: $t('frameleaf_icloud_check_manual') },
+            ]}
+            onChange={(value) => (draft.automatic = value === 'auto')}
           />
-        </label>
-        <label>
-          {$t('frameleaf_icloud_staging')}
-          <input
-            type="number"
-            min={1024 ** 2 / GB}
-            max={Number.MAX_SAFE_INTEGER / GB}
-            step="any"
-            value={draft.stagingGb}
-            oninput={(event) => (draft.stagingGb = event.currentTarget.value)}
-            disabled={busy}
-            aria-invalid={problems.includes('staging')}
-          />
-        </label>
-        <p class="ic-hint">{$t('frameleaf_icloud_limits_hint')}</p>
+        </Row>
+        {#if draft.automatic}
+          <Row label={$t('frameleaf_icloud_overnight')} help={$t('frameleaf_icloud_overnight_help')}>
+            <Button onclick={() => goto(commandCenterUrl('processing', 'nightly-tasks'))}>
+              {$t('frameleaf_icloud_overnight_open')}
+            </Button>
+          </Row>
+        {/if}
+        <Advanced summary={$t('frameleaf_icloud_download_limits')}>
+          <Row label={$t('frameleaf_icloud_concurrency')} help={$t('frameleaf_icloud_at_once_help')}>
+            <SegmentedControl
+              label={$t('frameleaf_icloud_concurrency')}
+              value={draft.concurrency}
+              disabled={busy}
+              options={['1', '2', '3', '4'].map((value) => ({ value, label: value }))}
+              onChange={(value) => (draft.concurrency = value)}
+            />
+          </Row>
+          <Row
+            label={$t('frameleaf_icloud_staging')}
+            help={$t('frameleaf_icloud_staging_help', { values: { size: draft.stagingGb } })}
+          >
+            <input
+              class="ic-amount"
+              type="number"
+              aria-label={$t('frameleaf_icloud_staging')}
+              min={1024 ** 2 / GB}
+              max={Number.MAX_SAFE_INTEGER / GB}
+              step="any"
+              value={draft.stagingGb}
+              oninput={(event) => (draft.stagingGb = event.currentTarget.value)}
+              disabled={busy}
+              aria-invalid={problems.includes('staging')}
+            />
+          </Row>
+          <p class="ic-hint">{$t('frameleaf_icloud_limits_hint')}</p>
+        </Advanced>
       </section>
     </div>
 
