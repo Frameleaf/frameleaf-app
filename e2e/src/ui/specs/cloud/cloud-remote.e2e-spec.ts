@@ -32,11 +32,14 @@ test.describe('Frameleaf Cloud remote access', () => {
   });
 
   test('explains why remote access cannot be turned on', async ({ page }) => {
+    // FL-544: unlinked or without the plan, the same gate and the same one button; the sheet sorts out
+    // which steps are left.
     mock.state = 'unlinked';
     await page.goto(remotePage);
-    await expect(page.getByText('Link this server to a Frameleaf account first.').first()).toBeVisible({
+    await expect(page.getByText('Remote access is part of Frameleaf Cloud').first()).toBeVisible({
       timeout: 30_000,
     });
+    await expect(page.getByRole('button', { name: 'Get Frameleaf Cloud' }).first()).toBeVisible();
     await expect(page.getByRole('switch', { name: 'Let people reach this server away from home' })).toHaveCount(0);
 
     mock.state = 'linked';
@@ -46,6 +49,7 @@ test.describe('Frameleaf Cloud remote access', () => {
       timeout: 30_000,
     });
     await expect(page.getByRole('button', { name: 'Get Frameleaf Cloud' }).first()).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'Let people reach this server away from home' })).toHaveCount(0);
   });
 
   test('turns remote access on and shows the address', async ({ page }) => {
@@ -136,7 +140,7 @@ test.describe('Frameleaf Cloud remote access', () => {
   test('asks for no allowance before the server is linked (FL-166)', async ({ page }) => {
     mock.state = 'unlinked';
     await page.goto(remotePage);
-    await expect(page.getByText('Link this server to a Frameleaf account first.').first()).toBeVisible({
+    await expect(page.getByText('Remote access is part of Frameleaf Cloud').first()).toBeVisible({
       timeout: 30_000,
     });
     await expect(page.getByRole('meter', { name: 'Sent through Frameleaf this month' })).toHaveCount(0);
