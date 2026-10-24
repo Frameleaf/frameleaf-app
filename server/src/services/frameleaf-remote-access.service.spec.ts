@@ -141,7 +141,8 @@ describe(FrameleafRemoteAccessService.name, () => {
   describe('a Server licence without a plan (FL-437)', () => {
     const WAN = 'https://203-0-113-7.u225vlzhsdlhwh4l.frameleaf.net:2443';
     const serverLicence = (): FrameleafLicense => ({ ...license(['SUPPORTER_SERVER']), kind: 'server', source: 'key' });
-    const NO_PLAN = 'Connecting through Frameleaf is part of Frameleaf Cloud. Without it, this server is reached directly.';
+    const NO_PLAN =
+      'Connecting through Frameleaf is part of Frameleaf Cloud. Without it, this server is reached directly.';
 
     beforeEach(() => {
       metadata.set(SystemMetadataKey.FrameleafLicense, { key: serverLicence(), plan: null });

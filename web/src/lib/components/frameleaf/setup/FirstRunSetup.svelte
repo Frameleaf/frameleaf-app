@@ -20,7 +20,6 @@
   import SetupChange from '$lib/components/frameleaf/setup/SetupChange.svelte';
   import SetupChoiceCard from '$lib/components/frameleaf/setup/SetupChoiceCard.svelte';
   import SetupFrameleafLink from '$lib/components/frameleaf/setup/SetupFrameleafLink.svelte';
-  import GetCloudSheet from '$lib/components/frameleaf/cloud/GetCloudSheet.svelte';
   import { cloudPlanPrice, formatUsd } from '$lib/frameleaf/cloud';
   import SetupImports from '$lib/components/frameleaf/setup/SetupImports.svelte';
   import SetupLogoIntro from '$lib/components/frameleaf/setup/SetupLogoIntro.svelte';
@@ -1468,7 +1467,9 @@
                     </div>
                   </section>
                   {#if getCloud}
-                    <GetCloudSheet feature="backup" close={() => (getCloud = false)} />
+                    {#await import('$lib/components/frameleaf/cloud/GetCloudSheet.svelte') then { default: GetCloudSheet }}
+                      <GetCloudSheet feature="backup" close={() => (getCloud = false)} />
+                    {/await}
                   {/if}
                 {:else}
                   <p class="frs-quiet">

@@ -816,7 +816,8 @@ describe(EdgeStateService.name, () => {
     });
 
     describe('a Server licence without a plan (FL-437, FC-147)', () => {
-      const NO_PLAN = 'Connecting through Frameleaf is part of Frameleaf Cloud. Without it, this server is reached directly.';
+      const NO_PLAN =
+        'Connecting through Frameleaf is part of Frameleaf Cloud. Without it, this server is reached directly.';
       const NO_LICENCE = 'Remote access is part of Frameleaf Cloud.';
       const serverLicence = (): FrameleafLicense => ({
         ...license(['SUPPORTER_SERVER'], now),
