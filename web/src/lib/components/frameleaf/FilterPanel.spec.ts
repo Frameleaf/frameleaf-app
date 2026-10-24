@@ -7,6 +7,12 @@ import { emptyFilterPanelOptions } from '$lib/frameleaf/search-options';
 import { renderWithTooltips } from '$tests/helpers';
 import FilterPanel from './FilterPanel.svelte';
 
+/** The option names of the listbox a combobox controls. */
+const optionNames = (combobox: HTMLElement) =>
+  [...document.querySelectorAll(`#${combobox.getAttribute('aria-controls')} [role="option"]`)].map((option) =>
+    option.textContent?.trim(),
+  );
+
 const JAMIE = '00000000-0000-4000-8000-000000000001';
 
 const options = {
@@ -79,5 +85,40 @@ describe('FilterPanel', () => {
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ imageEnrichment: ImageEnrichmentFilter.ImageDescriptionFailed }),
     );
+  });
+
+  /** LIB-09: star counts read as English, "0 stars or more" is gone, and 0 stars is one of the exact counts. */
+  it('lists rating choices with correct plurals and no "0 stars or more"', async () => {
+    const { panel } = setup();
+    const rating = within(panel).getByRole('combobox', { name: 'Star rating' });
+    await fireEvent.focus(rating);
+    await fireEvent.keyDown(rating, { key: 'ArrowDown' });
+    const names = optionNames(rating);
+    expect(names).toEqual([
+      'Any rating',
+      'Not rated',
+      'Rejected',
+      'Exactly 0 stars',
+      'Exactly 1 star',
+      'Exactly 2 stars',
+      'Exactly 3 stars',
+      'Exactly 4 stars',
+      'Exactly 5 stars',
+      '1 star or more',
+      '2 stars or more',
+      '3 stars or more',
+      '4 stars or more',
+      '5 stars or more',
+    ]);
+  });
+
+  it('names visibility choices instead of showing the stored value', async () => {
+    const { panel } = setup();
+    const visibility = within(panel).getByRole('combobox', { name: 'Visibility' });
+    await fireEvent.focus(visibility);
+    await fireEvent.keyDown(visibility, { key: 'ArrowDown' });
+    const names = optionNames(visibility);
+    expect(names).toEqual(expect.arrayContaining(['Archived', 'Timeline', 'Hidden', 'Locked']));
+    expect(names).not.toContain('archive');
   });
 });
