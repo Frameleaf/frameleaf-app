@@ -5358,7 +5358,7 @@
     },
     "/admin/file-trash": {
       "get": {
-        "description": "Originals no library references any more, newest first, with the total disk space the file trash holds. Nothing here is deleted automatically.",
+        "description": "Unused files: originals no library references any more, newest first, with the total disk space they hold. Nothing here is deleted automatically. Only the server owner (the first administrator) may read it.",
         "operationId": "getFileTrash",
         "parameters": [
           {
@@ -5428,9 +5428,56 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/file-trash/empty": {
+      "post": {
+        "description": "Empty Unused files: delete every file in it from disk for good and answer how many went and the space that came back. This cannot be undone. Only the server owner (the first administrator) may empty it.",
+        "operationId": "emptyFileTrash",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileTrashEmptyResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Empty the file trash",
+        "tags": [
+          "File trash (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/file-trash/{id}": {
       "delete": {
-        "description": "Delete the file from disk for good. This cannot be undone.",
+        "description": "Delete the file from disk for good. This cannot be undone. Only the server owner may delete.",
         "operationId": "deleteFileTrashItem",
         "parameters": [
           {
@@ -5481,7 +5528,7 @@
     },
     "/admin/file-trash/{id}/restore": {
       "post": {
-        "description": "Re-import the file as a new asset in the library it was last in, reading its metadata again. Answers 400 when that account is unknown or gone and 409 when its library already holds the file.",
+        "description": "Re-import the file as a new asset in the library it was last in, reading its metadata again. Answers 400 when that account is unknown or gone and 409 when its library already holds the file. Only the server owner may restore.",
         "operationId": "restoreFileTrashItem",
         "parameters": [
           {
@@ -5768,6 +5815,69 @@
           }
         ],
         "summary": "List a photo’s identical-file changes",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/identical-files/changes": {
+      "get": {
+        "description": "The newest links the identical-files run made across the server, for the \"Merged for you\" history: each photo, whose it is, whose identical file it now shares, the space saved and whether it can be undone.",
+        "operationId": "getRecentIdenticalFileChanges",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "How many to list",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IdenticalFilesRecentChangeDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List recent identical-file changes",
         "tags": [
           "Maintenance (admin)"
         ],
@@ -60675,6 +60785,10 @@
             "nullable": true,
             "type": "string"
           },
+          "recovered": {
+            "description": "True for a Recovered Media album: files the imported library had lost track of, brought back after the import. Populated by GET /albums/tree and GET /albums/{id}.",
+            "type": "boolean"
+          },
           "shared": {
             "description": "Is shared album",
             "type": "boolean"
@@ -78594,6 +78708,10 @@
       },
       "DuplicateDecisionBatchDto": {
         "properties": {
+          "automatic": {
+            "description": "Frameleaf made this job itself, merging identical files in one library (FL-416 \"Merged for you\")",
+            "type": "boolean"
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -78616,6 +78734,7 @@
           }
         },
         "required": [
+          "automatic",
           "createdAt",
           "groups",
           "operationId",
@@ -80052,6 +80171,34 @@
         },
         "required": [
           "id"
+        ],
+        "type": "object"
+      },
+      "FileTrashEmptyResponseDto": {
+        "properties": {
+          "bytes": {
+            "description": "Space that came back, in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "files": {
+            "description": "Files deleted from the drive for good",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kept": {
+            "description": "Files that could not be deleted and are still waiting",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes",
+          "files",
+          "kept"
         ],
         "type": "object"
       },
@@ -85321,6 +85468,85 @@
           "failed"
         ],
         "type": "string"
+      },
+      "IdenticalFilesRecentChangeDto": {
+        "properties": {
+          "assetId": {
+            "description": "The photo that now shares another person’s identical file",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Change id",
+            "type": "string"
+          },
+          "keptAssetId": {
+            "description": "The photo whose file was kept",
+            "nullable": true,
+            "type": "string"
+          },
+          "keptOwnerName": {
+            "description": "Whose photo that is, while it exists",
+            "nullable": true,
+            "type": "string"
+          },
+          "originalFileName": {
+            "description": "The photo’s file name",
+            "type": "string"
+          },
+          "ownerId": {
+            "description": "Whose photo it is",
+            "type": "string"
+          },
+          "ownerName": {
+            "description": "Their name",
+            "type": "string"
+          },
+          "restorable": {
+            "description": "The photo’s own file waits in Unused files and can be restored",
+            "type": "boolean"
+          },
+          "sizeInBytes": {
+            "description": "Space the link saved",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "undoneAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "createdAt",
+          "id",
+          "keptAssetId",
+          "keptOwnerName",
+          "originalFileName",
+          "ownerId",
+          "ownerName",
+          "restorable",
+          "sizeInBytes",
+          "undoneAt"
+        ],
+        "type": "object"
+      },
+      "IdenticalFilesRecentChangesQueryDto": {
+        "properties": {
+          "limit": {
+            "default": 50,
+            "description": "How many to list",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
       },
       "IdenticalFilesRunStatus": {
         "description": "Where the latest run stands",
@@ -138342,14 +138568,14 @@
             "type": "integer"
           },
           "unusedBytes": {
-            "description": "Combined size of those unused originals, in bytes; null unless an administrator asks",
+            "description": "Combined size of those unused originals, in bytes; null unless the server owner asks",
             "maximum": 9007199254740991,
             "minimum": 0,
             "nullable": true,
             "type": "integer"
           },
           "unusedFiles": {
-            "description": "Originals no library uses any more; null unless an administrator asks",
+            "description": "Originals no library uses any more (Unused files); null unless the server owner asks",
             "maximum": 9007199254740991,
             "minimum": 0,
             "nullable": true,

@@ -457,6 +457,37 @@ export class IdenticalFilesRepository {
     return rows;
   }
 
+  /**
+   * FL-416: the newest links the run made, across the server, for the "Merged for you" history: the photo,
+   * whose it is, whose file it now shares, and whether its own file still waits in Unused files.
+   */
+  async listRecentChanges(limit: number) {
+    const { rows } = await sql<{
+      id: string;
+      assetId: string;
+      originalFileName: string;
+      ownerId: string;
+      ownerName: string;
+      keptAssetId: string | null;
+      keptOwnerName: string | null;
+      sizeInBytes: string;
+      createdAt: Date;
+      undoneAt: Date | null;
+      restorable: boolean;
+    }>`
+      SELECT c.id, c."assetId", a."originalFileName", a."ownerId", owner.name AS "ownerName", c."keptAssetId",
+        kept_owner.name AS "keptOwnerName", c."sizeInBytes", c."createdAt", c."undoneAt",
+        c."trashEntryId" IS NOT NULL AS restorable
+      FROM public.identical_file_change c
+      JOIN public.asset a ON a.id = c."assetId"
+      JOIN public."user" owner ON owner.id = a."ownerId"
+      LEFT JOIN public.asset kept ON kept.id = c."keptAssetId"
+      LEFT JOIN public."user" kept_owner ON kept_owner.id = kept."ownerId"
+      ORDER BY c."createdAt" DESC, c.id DESC
+      LIMIT ${limit}`.execute(this.db);
+    return rows.map((row) => ({ ...row, sizeInBytes: Number(row.sizeInBytes) }));
+  }
+
   async markUndone(id: string) {
     await sql`UPDATE public.identical_file_change SET "undoneAt" = now() WHERE id = ${id}::uuid`.execute(this.db);
   }

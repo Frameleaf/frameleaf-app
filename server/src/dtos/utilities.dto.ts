@@ -20,12 +20,12 @@ const UtilitiesSummaryResponseSchema = z
       .int()
       .min(0)
       .nullable()
-      .describe('Originals no library uses any more; null unless an administrator asks'),
+      .describe('Originals no library uses any more (Unused files); null unless the server owner asks'),
     unusedBytes: z
       .int()
       .min(0)
       .nullable()
-      .describe('Combined size of those unused originals, in bytes; null unless an administrator asks'),
+      .describe('Combined size of those unused originals, in bytes; null unless the server owner asks'),
   })
   .meta({ id: 'UtilitiesSummaryResponseDto' });
 
