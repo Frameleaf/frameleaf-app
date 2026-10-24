@@ -29,6 +29,14 @@ at least 48 characters. Only authenticated `/ping` and library `/predict` reques
 are accepted. Model acquisition is separate: stop inference before running
 `python -m frameleaf_ml.staging` against the private cache. Runtime downloads are disabled.
 
+Native image inputs accept JPEG, PNG, WebP and AVIF previews. Each image is limited
+to 16 Mi pixels and an 8,192-pixel edge, in addition to the 16 MiB encoded-input
+limit. Oversized image headers return HTTP 413 before prediction; invalid headers
+return HTTP 422. Server preview settings larger than this envelope need adjustment
+before those previews can be processed by a native worker. PNG and
+[WebP container headers](https://developers.google.com/speed/webp/docs/riff_container)
+are checked before opening codecs that may allocate an animation canvas.
+
 Run qualification in a fresh process:
 
 ```sh

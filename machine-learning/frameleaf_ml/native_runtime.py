@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hmac
 import os
 import sys
 import tempfile
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
+from io import BytesIO
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -19,10 +21,17 @@ from pathlib import Path
 
 import orjson
 from fastapi import Depends, FastAPI, File, Form, HTTPException
+from PIL import Image, UnidentifiedImageError
 from starlette.responses import JSONResponse
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .schemas import InferenceEntries
+
+# Room for the 16 MiB input, bounded entries and multipart framing before parsing.
+MAX_REQUEST_BYTES = 17 * 1024 * 1024
+REQUEST_BODY_SECONDS = 30
+MAX_IMAGE_EDGE = 8192
+MAX_IMAGE_PIXELS = 16 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -97,7 +106,139 @@ class NativeScope:
         if not native_path_allowed(path) or scope.get("method") != method:
             await JSONResponse({"message": "Not found"}, status_code=404)(scope, receive, send)
             return
+        if path == "/predict":
+            body = bytearray()
+            oversized = False
+            try:
+                async with asyncio.timeout(REQUEST_BODY_SECONDS):
+                    while True:
+                        message = await receive()
+                        if message["type"] == "http.disconnect":
+                            return
+                        chunk = message.get("body", b"")
+                        if len(body) + len(chunk) > MAX_REQUEST_BYTES:
+                            oversized = True
+                            break
+                        body.extend(chunk)
+                        if not message.get("more_body", False):
+                            break
+            except TimeoutError:
+                await JSONResponse({"message": "Native inference input timed out"}, status_code=408)(
+                    scope, receive, send
+                )
+                return
+            if oversized:
+                await JSONResponse({"message": "Native inference input too large"}, status_code=413)(
+                    scope, receive, send
+                )
+                return
+
+            payload: bytes | None = bytes(body)
+            del body, message, chunk
+
+            async def replay() -> Message:
+                nonlocal payload
+                if payload is None:
+                    return await receive()
+                value = payload
+                payload = None
+                return {"type": "http.request", "body": value, "more_body": False}
+
+            await self.app(scope, replay, send)
+            return
         await self.app(scope, receive, send)
+
+
+def check_dimensions(width: int, height: int) -> None:
+    if width <= 0 or height <= 0:
+        raise HTTPException(422, "Native inference image invalid")
+    if max(width, height) > MAX_IMAGE_EDGE or width * height > MAX_IMAGE_PIXELS:
+        raise HTTPException(413, "Native inference image dimensions too large")
+
+
+def check_png_header(data: bytes) -> None:
+    if len(data) < 33 or data[8:16] != b"\0\0\0\rIHDR":
+        raise HTTPException(422, "Native inference image invalid")
+    check_dimensions(int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big"))
+    offset = 33
+    for _ in range(4096):
+        if offset + 12 > len(data):
+            break
+        size = int.from_bytes(data[offset : offset + 4], "big")
+        tag = data[offset + 4 : offset + 8]
+        if offset + 12 + size > len(data) or tag == b"IHDR":
+            break
+        if tag == b"IDAT":
+            return
+        offset += size + 12
+    raise HTTPException(422, "Native inference image invalid")
+
+
+def check_webp_header(data: bytes) -> None:
+    invalid = HTTPException(422, "Native inference image invalid")
+    if len(data) < 12 or int.from_bytes(data[4:8], "little") + 8 != len(data):
+        raise invalid
+    pending = [(12, len(data), 0)]
+    count = 0
+    found = False
+    while pending:
+        offset, end, depth = pending.pop()
+        while offset < end:
+            count += 1
+            if count > 4096 or offset + 8 > end:
+                raise invalid
+            tag = data[offset : offset + 4]
+            size = int.from_bytes(data[offset + 4 : offset + 8], "little")
+            start = offset + 8
+            stop = start + size
+            offset = stop + size % 2
+            if offset > end:
+                raise invalid
+            if tag == b"VP8X" and size == 10:
+                check_dimensions(
+                    int.from_bytes(data[start + 4 : start + 7], "little") + 1,
+                    int.from_bytes(data[start + 7 : start + 10], "little") + 1,
+                )
+                found = True
+            elif tag == b"VP8L" and size >= 5 and data[start] == 0x2F:
+                bits = int.from_bytes(data[start + 1 : start + 5], "little")
+                check_dimensions((bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1)
+                found = True
+            elif tag == b"VP8 " and size >= 10 and data[start + 3 : start + 6] == b"\x9d\x01\x2a":
+                check_dimensions(
+                    int.from_bytes(data[start + 6 : start + 8], "little") & 0x3FFF,
+                    int.from_bytes(data[start + 8 : start + 10], "little") & 0x3FFF,
+                )
+                found = True
+            elif tag == b"ANMF" and size >= 16 and depth == 0:
+                width = int.from_bytes(data[start + 6 : start + 9], "little") + 1
+                height = int.from_bytes(data[start + 9 : start + 12], "little") + 1
+                check_dimensions(
+                    width + 2 * int.from_bytes(data[start : start + 3], "little"),
+                    height + 2 * int.from_bytes(data[start + 3 : start + 6], "little"),
+                )
+                pending.append((start + 16, stop, 1))
+                found = True
+            elif tag in {b"VP8X", b"VP8L", b"VP8 ", b"ANMF"}:
+                raise invalid
+    if not found:
+        raise invalid
+
+
+def check_image_envelope(data: bytes) -> None:
+    # PNG animation/WebP opening may allocate a canvas before Pillow returns dimensions.
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        check_png_header(data)
+    elif data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        check_webp_header(data)
+    try:
+        # NAS preview formats plus catalogue PNG fixtures; other plugins have not been admitted.
+        with Image.open(BytesIO(data), formats=["JPEG", "PNG", "WEBP", "AVIF"]) as image:
+            check_dimensions(image.width, image.height)
+    except Image.DecompressionBombError as error:
+        raise HTTPException(413, "Native inference image dimensions too large") from error
+    except (UnidentifiedImageError, OSError, ValueError) as error:
+        raise HTTPException(422, "Native inference image invalid") from error
 
 
 def create_native_app(binding: "NativeBinding | NativeBindingSet | None") -> FastAPI:
@@ -132,6 +273,8 @@ def create_native_app(binding: "NativeBinding | NativeBindingSet | None") -> Fas
             value = orjson.loads(entries)
             kind = "image" if image is not None else "text"
             selected = await main.run(binding.check, value, kind)
+            if image is not None:
+                await main.run(check_image_envelope, image)
             response: JSONResponse = await main.predict(entries=selected, image=image, text=text, mask=None)
             # Recheck before publishing; changed bytes or drivers invalidate the whole result.
             await main.run(binding.check, value, kind)

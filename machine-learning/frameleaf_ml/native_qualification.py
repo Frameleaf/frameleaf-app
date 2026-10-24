@@ -20,7 +20,7 @@ import orjson
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
-from frameleaf_ml.native_hardware import snapshot
+from frameleaf_ml.native_hardware import process_memory, snapshot
 from frameleaf_ml.native_ort import configure
 from frameleaf_ml.qualification import compare_output, execution_evidence
 from frameleaf_ml.schemas import InferenceEntries, ModelTask, ModelType, ORJSONResponse
@@ -180,6 +180,7 @@ async def qualify(
     before = snapshot(observer.facts()) if observer is not None else snapshot()
     if before["availableMemoryBytes"] < spec.min_memory_bytes:
         raise ValueError("native_memory_insufficient")
+    before_resident, before_peak = process_memory()
     settings.model_downloads = False
     settings.cache_folder = cache_dir.resolve()
     settings.ann = False
@@ -259,8 +260,15 @@ async def qualify(
                 state, reason = "incompatible", "native_device_execution_evidence_required"
             if device_evidence is not None:
                 state, reason = "ready-mixed", None
+            after_resident, after_peak = process_memory()
             return {
                 "protocolVersion": 1,
+                "memory": {
+                    "scope": "process-lifetime-rss",
+                    "beforeResidentBytes": before_resident,
+                    "afterResidentBytes": after_resident,
+                    "peakResidentBytes": max(before_peak, after_peak),
+                },
                 "modelKey": spec.model_key,
                 "bindingSha256": spec_sha256,
                 "preprocessingSha256": spec.preprocessing_sha256,

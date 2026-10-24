@@ -135,8 +135,15 @@ def test_one_native_binding_set_selects_exact_roles_and_rechecks_live_authority(
         return main.ORJSONResponse({"role": kwargs["entries"][0][0]})
 
     monkeypatch.setattr(main, "predict", predict)
+    from io import BytesIO
     from unittest.mock import AsyncMock
 
+    from PIL import Image
+
+    encoded = BytesIO()
+    with Image.new("RGB", (2, 2)) as image:
+        image.save(encoded, format="PNG")
+    image_bytes = encoded.getvalue()
     preload = AsyncMock()
     monkeypatch.setattr(module.NativeBinding, "preload", preload)
     with TestClient(create_native_app(loaded)) as client:
@@ -144,7 +151,7 @@ def test_one_native_binding_set_selects_exact_roles_and_rechecks_live_authority(
         for item in [default, english, visual, default]:
             data = {"entries": json.dumps(item.spec.entries)}
             if item is visual:
-                response = client.post("/predict", data=data, files={"image": ("fixture", b"image")})
+                response = client.post("/predict", data=data, files={"image": ("fixture", image_bytes)})
             else:
                 response = client.post("/predict", data={**data, "text": "fixture"})
             assert response.status_code == 200

@@ -79,3 +79,29 @@ def snapshot(device_facts: dict[str, Any] | None = None) -> dict[str, Any]:
         "facts": stable,
         "availableMemoryBytes": psutil.virtual_memory().available,
     }
+
+
+def process_memory() -> tuple[int, int]:
+    """Current RSS and OS lifetime peak for this process, in bytes; excludes GPU/child memory."""
+    try:
+        info = psutil.Process().memory_info()
+        system = platform.system()
+        if system == "Windows":
+            peak = getattr(info, "peak_rss", None)
+            if peak is None:
+                peak = getattr(info, "peak_wset", None)
+        elif system in {"Darwin", "Linux"}:
+            import resource
+
+            peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            if type(peak) is not int:
+                raise ValueError("invalid_memory_measurement")
+            if system == "Linux":
+                peak *= 1024
+        else:
+            raise ValueError("unsupported_memory_measurement")
+        if any(type(value) is not int or not 0 < value < 2**53 for value in (info.rss, peak)):
+            raise ValueError("invalid_memory_measurement")
+        return info.rss, max(info.rss, peak)
+    except (ImportError, OSError, ValueError, psutil.Error) as error:
+        raise ValueError("native_memory_measurement_unavailable") from error

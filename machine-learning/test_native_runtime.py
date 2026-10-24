@@ -271,3 +271,294 @@ def test_binding_set_cli_is_explicit_and_checks_pair_counts_before_imports(tmp_p
         )
         assert result.returncode == 2
         assert reason in result.stderr
+
+
+async def native_request(chunks, *, headers=(), path="/predict"):
+    from frameleaf_ml.native_runtime import NativeScope
+
+    received, sent, parsed = [], [], []
+    messages = iter(chunks)
+
+    async def receive():
+        value = next(messages)
+        received.append(value)
+        return value
+
+    async def send(value):
+        sent.append(value)
+
+    async def parser(scope, read, write):
+        while True:
+            value = await read()
+            parsed.append(value)
+            if not value.get("more_body", False):
+                break
+        await write({"type": "http.response.start", "status": 200, "headers": []})
+        await write({"type": "http.response.body", "body": b"ok"})
+
+    await NativeScope(parser, "a" * 48)(
+        {
+            "type": "http",
+            "path": path,
+            "method": "POST",
+            "headers": [
+                (b"authorization", b"Bearer " + b"a" * 48),
+                *headers,
+            ],
+        },
+        receive,
+        send,
+    )
+    return received, sent, parsed
+
+
+def test_native_request_is_bounded_before_form_parsing():
+    import asyncio
+
+    # The authenticated body itself is bounded, even with a missing or misleading Content-Length.
+    for headers in [(), ((b"content-length", b"1"),)]:
+        received, sent, parsed = asyncio.run(
+            native_request(
+                [
+                    {"type": "http.request", "body": b"x" * (17 * 1024 * 1024), "more_body": True},
+                    {"type": "http.request", "body": b"x", "more_body": True},
+                    {"type": "http.request", "body": b"unread", "more_body": False},
+                ],
+                headers=headers,
+            )
+        )
+        assert sent[0]["status"] == 413
+        assert not parsed
+        assert len(received) == 2
+
+
+def test_native_request_replays_exact_bounded_body_to_parser():
+    import asyncio
+
+    _, sent, parsed = asyncio.run(
+        native_request(
+            [
+                {"type": "http.request", "body": b"first", "more_body": True},
+                {"type": "http.request", "body": b"second", "more_body": False},
+            ]
+        )
+    )
+    assert sent[0]["status"] == 200
+    assert b"".join(part["body"] for part in parsed) == b"firstsecond"
+
+
+def test_native_disconnect_never_parses_an_incomplete_body():
+    import asyncio
+
+    _, sent, parsed = asyncio.run(
+        native_request(
+            [
+                {"type": "http.request", "body": b"partial", "more_body": True},
+                {"type": "http.disconnect"},
+            ]
+        )
+    )
+    assert not parsed
+    assert not sent
+
+
+def test_native_body_timeout_releases_buffer_without_parsing(monkeypatch):
+    import asyncio
+
+    from frameleaf_ml import native_runtime as module
+
+    monkeypatch.setattr(module, "REQUEST_BODY_SECONDS", 0.01)
+
+    async def exercise():
+        parsed, sent, cancelled = [], [], []
+
+        reads = 0
+
+        async def stalled():
+            nonlocal reads
+            reads += 1
+            if reads == 1:
+                return {"type": "http.request", "body": b"partial", "more_body": True}
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.append(True)
+
+        async def parser(*args):
+            parsed.append(True)
+
+        async def send(value):
+            sent.append(value)
+
+        await module.NativeScope(parser, "a" * 48)(
+            {
+                "type": "http",
+                "path": "/predict",
+                "method": "POST",
+                "headers": [
+                    (b"authorization", b"Bearer " + b"a" * 48),
+                ],
+            },
+            stalled,
+            send,
+        )
+        assert not parsed
+        assert cancelled == [True]
+        assert sent[0]["status"] == 408
+
+    asyncio.run(exercise())
+
+
+def test_bounded_native_transport_preserves_multipart_inputs():
+    from fastapi import FastAPI, File, Form
+    from fastapi.testclient import TestClient
+
+    from frameleaf_ml.native_runtime import NativeScope
+
+    app = FastAPI()
+
+    @app.post("/predict")
+    async def predict(entries: str = Form(), image: bytes = File()):
+        return {"entries": entries, "bytes": len(image)}
+
+    with TestClient(NativeScope(app, "a" * 48)) as client:
+        response = client.post(
+            "/predict",
+            headers={"Authorization": "Bearer " + "a" * 48},
+            data={"entries": "{}"},
+            files={"image": ("fixture.png", b"synthetic")},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"entries": "{}", "bytes": len(b"synthetic")}
+        entries = "{}".ljust(65536)
+        response = client.post(
+            "/predict",
+            headers={"Authorization": "Bearer " + "a" * 48},
+            data={"entries": entries},
+            files={"image": ("fixture.png", b"x" * (16 * 1024 * 1024))},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"entries": entries, "bytes": 16 * 1024 * 1024}
+
+
+def test_native_checks_decoded_image_envelope_before_prediction(monkeypatch):
+    from io import BytesIO
+    from unittest.mock import AsyncMock, Mock
+
+    from fastapi.testclient import TestClient
+    from PIL import Image
+
+    from frameleaf_ml import main
+    from frameleaf_ml.native_runtime import create_native_app
+
+    class Binding:
+        async def preload(self):
+            pass
+
+        def check(self, entries, kind):
+            assert kind == "image"
+            return ([], [])
+
+    prediction = AsyncMock(return_value=main.ORJSONResponse({"accepted": True}))
+    monkeypatch.setattr(main, "predict", prediction)
+    cases = []
+    for dimensions, status in [((8193, 1), 413), ((1, 8193), 413), ((4096, 4097), 413), ((8192, 2048), 200)]:
+        output = BytesIO()
+        with Image.new("RGB", dimensions) as image:
+            image.save(output, format="PNG")
+        cases.append((output.getvalue(), status))
+    # A tiny encoded header can declare billions of pixels without allocating them in the fixture.
+    import struct
+    import zlib
+
+    bomb = bytearray(cases[0][0])
+    bomb[16:24] = struct.pack(">II", 90000, 90000)
+    bomb[29:33] = struct.pack(">I", zlib.crc32(bomb[12:29]))
+    cases.append((bytes(bomb), 413))
+    cases.append((b"not an image", 422))
+    Image.init()  # Plugin registration may create its own tiny prototype image.
+    with TestClient(create_native_app(Binding())) as client:
+        # Even an accepted header does not allocate pixels in the admission check.
+        load = Mock(side_effect=AssertionError("pixels decoded before admission"))
+        monkeypatch.setattr(Image.Image, "load", load)
+        for payload, status in cases:
+            prediction.reset_mock()
+            response = client.post("/predict", data={"entries": "{}"}, files={"image": ("fixture", payload)})
+            assert response.status_code == status
+            assert prediction.await_count == (1 if status == 200 else 0)
+        load.assert_not_called()
+
+
+def test_native_webp_dimensions_precede_canvas_decoder(monkeypatch):
+    import struct
+    from unittest.mock import Mock
+
+    import pytest
+    from fastapi import HTTPException
+    from PIL import WebPImagePlugin
+
+    from frameleaf_ml.native_runtime import check_image_envelope
+
+    def chunk(tag, payload):
+        return tag + struct.pack("<I", len(payload)) + payload + b"\0" * (len(payload) % 2)
+
+    def webp(payload):
+        return b"RIFF" + struct.pack("<I", len(payload) + 4) + b"WEBP" + payload
+
+    # VP8, VP8L, VP8X and animated frame dimensions can all reach native allocations.
+    vp8 = b"\0\0\0\x9d\x01\x2a" + struct.pack("<HH", 8193, 1)
+    vp8l = b"\x2f" + struct.pack("<I", 8192)
+    vp8x = b"\0" * 4 + (8192).to_bytes(3, "little") + b"\0" * 3
+    anmf = b"\0" * 6 + (8192).to_bytes(3, "little") + b"\0" * 7
+    decoder = Mock(side_effect=AssertionError("native canvas allocated before admission"))
+    monkeypatch.setattr(WebPImagePlugin._webp, "WebPAnimDecoder", decoder)
+    for tag, payload in [(b"VP8 ", vp8), (b"VP8L", vp8l), (b"VP8X", vp8x), (b"ANMF", anmf)]:
+        with pytest.raises(HTTPException) as error:
+            check_image_envelope(webp(chunk(tag, payload)))
+        assert error.value.status_code == 413
+    decoder.assert_not_called()
+
+
+def test_native_preview_codecs_and_animation_headers_remain_supported():
+    from io import BytesIO
+
+    from PIL import Image
+
+    from frameleaf_ml.native_runtime import check_image_envelope
+
+    for codec in ["JPEG", "PNG", "WEBP", "AVIF"]:
+        encoded = BytesIO()
+        with Image.new("RGB", (8, 8), "white") as image:
+            image.save(encoded, format=codec)
+        check_image_envelope(encoded.getvalue())
+    for codec in ["PNG", "WEBP"]:
+        encoded = BytesIO()
+        with Image.new("RGB", (8, 8), "white") as image, Image.new("RGB", (8, 8), "black") as frame:
+            image.save(encoded, format=codec, save_all=True, append_images=[frame], duration=100, loop=0)
+        check_image_envelope(encoded.getvalue())
+
+
+def test_native_container_headers_are_bounded_before_pillow_open(monkeypatch):
+    import struct
+    import zlib
+    from io import BytesIO
+    from unittest.mock import Mock
+
+    import pytest
+    from fastapi import HTTPException
+    from PIL import Image
+
+    from frameleaf_ml.native_runtime import check_image_envelope
+
+    encoded = BytesIO()
+    with Image.new("RGB", (8, 8)) as image:
+        image.save(encoded, format="PNG")
+    oversized = bytearray(encoded.getvalue())
+    oversized[16:24] = struct.pack(">II", 8193, 1)
+    oversized[29:33] = struct.pack(">I", zlib.crc32(oversized[12:29]))
+    unopened = Mock(side_effect=AssertionError("canvas opener invoked before size admission"))
+    monkeypatch.setattr(Image, "open", unopened)
+    with pytest.raises(HTTPException) as error:
+        check_image_envelope(bytes(oversized))
+    assert error.value.status_code == 413
+    unopened.assert_not_called()

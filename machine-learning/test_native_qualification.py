@@ -236,6 +236,10 @@ def test_production_text_pipeline_qualification_binds_artifacts_fixture_and_runt
     assert passed.returncode == 0, passed.stderr
     result = json.loads(report.read_text())
     assert result["state"] == "ready-cpu"
+    assert result.get("memory", {}).get("scope") == "process-lifetime-rss"
+    memory = result["memory"]
+    assert memory["peakResidentBytes"] >= memory["beforeResidentBytes"] > 0
+    assert memory["peakResidentBytes"] >= memory["afterResidentBytes"] > 0
     assert result["bindingSha256"] == hashlib.sha256(spec_path.read_bytes()).hexdigest()
     assert result["execution"][0]["nodes"]["CPUExecutionProvider"] > 0
     assert cache_hashes(cache) == hashes
@@ -334,3 +338,45 @@ module.main()
     )
     assert result.returncode == 124
     assert not report.exists()
+
+
+@pytest.mark.parametrize(
+    ("system", "peak_field", "expected"),
+    [("Windows", "peak_wset", 8), ("Windows", "peak_rss", 8), ("Darwin", None, 8), ("Linux", None, 8192)],
+)
+def test_native_memory_uses_os_high_water_mark(monkeypatch, system, peak_field, expected):
+    import sys
+    from types import SimpleNamespace
+
+    from frameleaf_ml import native_hardware as module
+
+    info = SimpleNamespace(rss=4, **({peak_field: 8} if peak_field else {}))
+    monkeypatch.setattr(module.platform, "system", lambda: system)
+    monkeypatch.setattr(module.psutil, "Process", lambda: SimpleNamespace(memory_info=lambda: info))
+    monkeypatch.setitem(
+        sys.modules,
+        "resource",
+        SimpleNamespace(
+            RUSAGE_SELF=0,
+            getrusage=lambda who: SimpleNamespace(ru_maxrss=8),
+        ),
+    )
+    assert module.process_memory() == (4, expected)
+
+
+@pytest.mark.parametrize("peak", [None, 0, -1, True, float("nan"), 2**53])
+def test_native_memory_refuses_unknown_or_invalid_peak(monkeypatch, peak):
+    from types import SimpleNamespace
+
+    from frameleaf_ml import native_hardware as module
+
+    monkeypatch.setattr(module.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(
+        module.psutil,
+        "Process",
+        lambda: SimpleNamespace(
+            memory_info=lambda: SimpleNamespace(rss=4, peak_wset=peak),
+        ),
+    )
+    with pytest.raises(ValueError, match="native_memory_measurement_unavailable"):
+        module.process_memory()
