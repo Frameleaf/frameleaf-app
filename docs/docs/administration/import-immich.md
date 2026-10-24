@@ -72,7 +72,7 @@ The import keeps the source library's folders as they are. Once it is activated,
 - Orphaned files are recovered. These are media files in the storage folders that no photo points at, such as the files the source server listed as untracked. Each one comes back to the owner of its folder, in an album called **Recovered Media**. Files the owner already has, and damaged files, are not imported.
 - Extra copies wait in Unused files until the server owner empties it. Nothing is deleted.
 
-While this runs, **Settings > Library care** shows **Checking your Immich library**: files checked, photos merged, photos recovered into Recovered Media and the space moved to Unused files, with Pause and Resume.
+While this runs, **Settings > Library care** shows **Checking your imported library**: files checked, photos merged, photos recovered into Recovered Media and the space moved to Unused files, with Pause and Resume.
 
 External libraries are never touched. In independent-copy mode the source media is not touched either. For an in-place import, Manager first checks that the Frameleaf server can write to every media folder. If one isn't writable, Manager stops before importing anything and names the folder.
 

@@ -4057,7 +4057,7 @@ export type AlbumResponseDto = {
     origin?: PartnerOriginDto;
     /** Collection this album belongs to (null = top-level) */
     parentId: string | null;
-    /** True for a Recovered Media album: files Immich had lost track of, brought back after an Immich import. Populated by GET /albums/tree and GET /albums/{id}. */
+    /** True for a Recovered Media album: files the imported library had lost track of, brought back after the import. Populated by GET /albums/tree and GET /albums/{id}. */
     recovered?: boolean;
     /** Is shared album */
     shared: boolean;

@@ -284,7 +284,7 @@ export const AlbumResponseSchema = z
       .boolean()
       .optional()
       .describe(
-        'True for a Recovered Media album: files Immich had lost track of, brought back after an Immich import. Populated by GET /albums/tree and GET /albums/{id}.',
+        'True for a Recovered Media album: files the imported library had lost track of, brought back after the import. Populated by GET /albums/tree and GET /albums/{id}.',
       ),
     // FL-326
     origin: PartnerOriginSchema.optional().describe(

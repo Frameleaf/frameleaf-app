@@ -60669,7 +60669,7 @@
             "type": "string"
           },
           "recovered": {
-            "description": "True for a Recovered Media album: files Immich had lost track of, brought back after an Immich import. Populated by GET /albums/tree and GET /albums/{id}.",
+            "description": "True for a Recovered Media album: files the imported library had lost track of, brought back after the import. Populated by GET /albums/tree and GET /albums/{id}.",
             "type": "boolean"
           },
           "shared": {
