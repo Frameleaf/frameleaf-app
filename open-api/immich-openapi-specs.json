@@ -6191,6 +6191,63 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/license/checkout": {
+      "post": {
+        "description": "Starts the combined licence-and-plan purchase for this linked server with Frameleaf Cloud and returns the store page to open. Payment happens in the Frameleaf store, never on this server; the plan and licence arrive on the next licence refresh.",
+        "operationId": "startLicenseCheckout",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LicenseCheckoutDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseCheckoutResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start a Frameleaf Cloud purchase",
+        "tags": [
+          "Frameleaf licence"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "serverLicense.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/license/plan": {
       "delete": {
         "description": "Removes the Frameleaf Cloud plan certificate from this server. The subscription itself is managed in the Frameleaf account and is not cancelled; the licence key is not affected.",
@@ -72969,11 +73026,17 @@
           },
           "message": {
             "type": "string"
+          },
+          "topUpUrl": {
+            "description": "FL-544: where to add AI credit in the Frameleaf account, when the cloud named a page; null otherwise",
+            "nullable": true,
+            "type": "string"
           }
         },
         "required": [
           "code",
-          "message"
+          "message",
+          "topUpUrl"
         ],
         "type": "object"
       },
@@ -86150,6 +86213,50 @@
         },
         "required": [
           "certificate"
+        ],
+        "type": "object"
+      },
+      "LicenseCheckoutDto": {
+        "properties": {
+          "licence": {
+            "enum": [
+              "supporter-server",
+              "supporter-individual"
+            ],
+            "type": "string"
+          },
+          "plan": {
+            "enum": [
+              "cloud-monthly",
+              "cloud-annual"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "licence",
+          "plan"
+        ],
+        "type": "object"
+      },
+      "LicenseCheckoutResponseDto": {
+        "properties": {
+          "checkoutId": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "description": "When the page stops working unless payment has started, about 30 minutes",
+            "type": "string"
+          },
+          "url": {
+            "description": "The Frameleaf store page to open; the buyer signs into the account that owns this server",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkoutId",
+          "expiresAt",
+          "url"
         ],
         "type": "object"
       },
