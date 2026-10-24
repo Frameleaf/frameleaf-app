@@ -473,7 +473,8 @@
     <p class="fc-muted">
       {$t('frameleaf_cloud_next')}
       {#if !cloudManager.license?.plan}
-        <button type="button" class="fc-link" onclick={() => getCloudManager.open()}>{$t('frameleaf_get_cloud')}</button>
+        <button type="button" class="fc-link" onclick={() => getCloudManager.open()}>{$t('frameleaf_get_cloud')}</button
+        >
         ·
       {/if}
       <a class="fc-link" href={commandCenterUrl('cloud', 'cloud-remote')}>{$t('frameleaf_cloud_next_remote')}</a>

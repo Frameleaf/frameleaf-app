@@ -89,7 +89,9 @@
     type AssetRestorationListResponseDto,
     type AssetRestorationOptionsDto,
     type AssetRestorationResponseDto,
-    type CloudMlJobEstimateRequestDto, MlAdmissionRefusal } from '@frameleaf/sdk';
+    type CloudMlJobEstimateRequestDto,
+    MlAdmissionRefusal,
+  } from '@frameleaf/sdk';
   import { Icon, modalManager, toastManager } from '@frameleaf/ui';
   import {
     mdiAutoFix,
@@ -940,7 +942,9 @@
           </p>
           {#if selected.refusal === MlAdmissionRefusal.EntitlementMissing || selected.refusal === MlAdmissionRefusal.WalletInsufficient}
             <button type="button" class="rs-button" onclick={() => getCloudManager.open('processing')}>
-              {selected.refusal === MlAdmissionRefusal.WalletInsufficient ? $t('frameleaf_add_ai_credit') : $t('frameleaf_get_cloud')}
+              {selected.refusal === MlAdmissionRefusal.WalletInsufficient
+                ? $t('frameleaf_add_ai_credit')
+                : $t('frameleaf_get_cloud')}
             </button>
           {/if}
         {:else if selected.leavesNetwork}

@@ -146,10 +146,8 @@ it.each([
     await fireEvent.click(setup);
     expect(await screen.findByRole('dialog', { name: 'Set up Buddy Backup' })).toBeVisible();
   }
-  if (!gate.linked) {
-    expect(outgoing.getByText(/Buddy Backup needs a Server licence on both servers/)).toBeVisible();
-    expect(outgoing.getByRole('button', { name: en.frameleaf_get_cloud })).toBeVisible();
-  } else if (gate.licence !== 'server') {
+  // FL-544: unlinked or without a Server licence, the same gate and the same one button
+  if (!gate.linked || gate.licence !== 'server') {
     expect(outgoing.getByText(/Buddy Backup needs a Server licence on both servers/)).toBeVisible();
     expect(outgoing.getByRole('button', { name: en.frameleaf_get_cloud })).toBeVisible();
   } else {
