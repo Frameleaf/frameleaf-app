@@ -38,9 +38,14 @@
   let cloudMl = $state<Pick<CloudMlStatusResponseDto, 'enabled' | 'wallet'> | null>(null);
   onMount(() => {
     const stop = cloudManager.listen();
-    void getCloudMlStatus()
-      .then((answer) => (cloudMl = answer))
-      .catch(() => (cloudMl = null));
+    const load = async () => {
+      try {
+        cloudMl = await getCloudMlStatus();
+      } catch {
+        cloudMl = null;
+      }
+    };
+    void load();
     return stop;
   });
 

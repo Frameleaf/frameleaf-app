@@ -658,7 +658,7 @@
     line-height: 1.5;
   }
   .gc-to-pay {
-    margin-right: auto;
+    margin-inline-end: auto;
     align-self: center;
     color: var(--fl-muted);
     font-size: var(--fl-font-small);

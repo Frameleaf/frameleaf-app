@@ -147,7 +147,7 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
   });
 
   test('Skip tour records it and leaves the notice to take it again', async ({ page }) => {
-    await page.goto(planPage);
+    await page.goto(`${planPage}&tour=cloud`);
     const tour = await openedTour(page);
     await tour.getByRole('button', { name: 'Skip tour' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -158,7 +158,7 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
   });
 
   test('Escape skips it too', async ({ page }) => {
-    await page.goto(planPage);
+    await page.goto(`${planPage}&tour=cloud`);
     await openedTour(page);
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -167,7 +167,7 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
   });
 
   test('an "Open …" link closes the tour and opens its settings page', async ({ page }) => {
-    await page.goto(planPage);
+    await page.goto(`${planPage}&tour=cloud`);
     const dialog = await openedTour(page);
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('ArrowRight');
@@ -209,7 +209,7 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
           .map((animation) => JSON.stringify((animation.effect as KeyframeEffect).getKeyframes())),
       );
 
-    await page.goto(planPage);
+    await page.goto(`${planPage}&tour=cloud`);
     const dialog = await openedTour(page);
     await dialog.getByRole('button', { name: 'Next' }).click();
     await expect.poll(keyframes).toEqual([expect.stringContaining('translateX(28px)')]);
@@ -222,7 +222,7 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
 
   test('is a bottom sheet with 44pt controls on a phone', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(planPage);
+    await page.goto(`${planPage}&tour=cloud`);
     const dialog = await openedTour(page);
     // the sheet rises into place: measure it once its entrance has finished, not part way up
     await dialog.evaluate((sheet) =>

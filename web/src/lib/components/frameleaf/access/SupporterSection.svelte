@@ -33,12 +33,15 @@
   // FL-544: Support Frameleaf folded into Your Frameleaf Cloud; a member buys their own licence in the store
   let individualStoreUrl = $state<string | null>(null);
   onMount(() => {
-    void getLicenseProducts()
-      .then(
-        (products) =>
-          (individualStoreUrl = products.products.find((p) => p.id === 'supporter-individual')?.storeUrl ?? null),
-      )
-      .catch(() => (individualStoreUrl = null));
+    const load = async () => {
+      try {
+        const products = await getLicenseProducts();
+        individualStoreUrl = products.products.find((p) => p.id === 'supporter-individual')?.storeUrl ?? null;
+      } catch {
+        individualStoreUrl = null;
+      }
+    };
+    void load();
   });
   const badgeHidden = $derived(!authManager.preferences.purchase.showSupportBadge);
 

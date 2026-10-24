@@ -507,10 +507,9 @@
       themeManager.setPreference(
         themeAfterSetup(choices.theme) === 'light' ? ThemePreference.Light : ThemePreference.Dark,
       );
-      await goto(
-        choices.restore === 'restore' && linked ? commandCenterUrl('backups', 'cloud') : Route.photos(),
-        { invalidateAll: true },
-      );
+      await goto(choices.restore === 'restore' && linked ? commandCenterUrl('backups', 'cloud') : Route.photos(), {
+        invalidateAll: true,
+      });
       // Still here (the navigation was turned back): never leave the faded stage on screen.
       showStage();
     } catch (error) {
@@ -577,8 +576,9 @@
     if (!linked || cloudBundle) {
       return;
     }
-    void getLicenseProducts()
-      .then((products) => {
+    const load = async () => {
+      try {
+        const products = await getLicenseProducts();
         const price = (id: string) => products.products.find((product) => product.id === id)?.priceUsd ?? 0;
         cloudBundle = $t('frameleaf_gc_price_year', {
           values: {
@@ -586,8 +586,11 @@
             renew: formatUsd(cloudPlanPrice(price('cloud-annual'), products.licensedDiscount)),
           },
         });
-      })
-      .catch(() => (cloudBundle = ''));
+      } catch {
+        cloudBundle = '';
+      }
+    };
+    void load();
   });
   const formatCount = (value: number) => new Intl.NumberFormat($locale).format(Math.round(value));
   /** Originals in the unit that fits: an imported library of a few hundred MB never reads as "0.0 TB". */

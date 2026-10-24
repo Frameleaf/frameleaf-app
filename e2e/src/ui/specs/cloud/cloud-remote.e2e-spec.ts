@@ -42,7 +42,7 @@ test.describe('Frameleaf Cloud remote access', () => {
     mock.state = 'linked';
     mock.remote = { ...defaults(), entitled: false };
     await page.reload();
-    await expect(page.getByText('Remote access is included with a Frameleaf Cloud plan.').first()).toBeVisible({
+    await expect(page.getByText('Remote access is part of Frameleaf Cloud').first()).toBeVisible({
       timeout: 30_000,
     });
     await expect(page.getByRole('button', { name: 'Get Frameleaf Cloud' }).first()).toBeVisible();
