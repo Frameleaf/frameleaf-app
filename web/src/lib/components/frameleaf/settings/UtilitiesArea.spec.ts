@@ -68,9 +68,7 @@ describe('Utilities area', () => {
     expect(first).toHaveTextContent('12 groups to look at');
     expect(first).toHaveTextContent('3 files missing');
     expect(screen.getByRole('button', { name: /Fix locations/ })).toHaveTextContent('214 photos have no place');
-    expect(
-      screen.getByText('Advanced: Android direct updates and unused files').closest('details'),
-    ).not.toHaveAttribute('open');
+    expect(screen.getByText('Advanced: Android direct updates').closest('details')).not.toHaveAttribute('open');
   });
 
   it('says nothing needs a look when every tool is calm (FL-519)', async () => {

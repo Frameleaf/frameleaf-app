@@ -12,12 +12,18 @@
    * Groups are reviewed whole. A search narrows which groups are listed, never which photos of a group
    * are shown, and a group this session cannot see completely — or that holds another account's
    * photo — is listed but cannot be decided.
+   *
+   * FL-416: the review is for look-alikes. Identical files are merged by themselves and listed under
+   * "Merged for you" (`MergedForYou`), each with Undo; a group of byte-identical files that is here
+   * anyway (a merge that was undone, or one the check could not carry over) says so with the "Identical
+   * file: check before merging" badge.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import DuplicateCompare from '$lib/components/frameleaf/DuplicateCompare.svelte';
   import DuplicateContactSheet from '$lib/components/frameleaf/DuplicateContactSheet.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
+  import MergedForYou from '$lib/components/frameleaf/MergedForYou.svelte';
   import TileJobState from '$lib/components/frameleaf/TileJobState.svelte';
   import {
     buildDecisionGroups,
@@ -29,6 +35,7 @@
     groupTitle,
     isActionable,
     isBurst,
+    isIdenticalGroup,
     matchReviewShortcut,
     nextGroupId,
     suggestedKeeper,
@@ -59,6 +66,7 @@
     mdiChevronLeft,
     mdiChevronRight,
     mdiClose,
+    mdiContentCopy,
     mdiFilterOffOutline,
     mdiImageMultipleOutline,
     mdiUndo,
@@ -743,6 +751,16 @@
               <p class="fl-dr-access error" role="alert">{$t(activeProgress.reasonKey)}</p>
             {/if}
 
+            {#if isIdenticalGroup(active)}
+              <div class="fl-dr-identical" role="note">
+                <span class="fl-dr-identical-badge">
+                  <Icon icon={mdiContentCopy} size="14" aria-hidden={true} />
+                  {$t('frameleaf_duplicates_identical_badge')}
+                </span>
+                <p>{$t('frameleaf_duplicates_identical_body')}</p>
+              </div>
+            {/if}
+
             {#if active.reviewRequiredReasons?.length}
               <p role="status">{$t('frameleaf_duplicates_protected_content')}</p>
             {/if}
@@ -879,6 +897,12 @@
   </div>
 </section>
 
+<MergedForYou
+  recent={session.history.recent}
+  undoing={session.undoing}
+  onUndoMerge={(batch, duplicateId) => session.undoGroup(batch, duplicateId)}
+/>
+
 <Dialog
   bind:open={confirmOpen}
   title={$t('frameleaf_duplicates_confirm_delete_title')}
@@ -893,6 +917,35 @@
 </Dialog>
 
 <style>
+  /* FL-416, duplicate-review.css .dr-identical: identical files waiting here for a person to decide. */
+  .fl-dr-identical {
+    display: grid;
+    gap: var(--fl-space-2);
+    margin: 0 0 var(--fl-space-4);
+    padding: var(--fl-space-3) var(--fl-space-4);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-raised);
+  }
+  .fl-dr-identical-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--fl-space-2);
+    justify-self: start;
+    min-height: 28px;
+    padding: 0 var(--fl-space-3);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--fl-warning) 18%, transparent);
+    color: var(--fl-text);
+    font-size: var(--fl-font-micro);
+    font-weight: 600;
+  }
+  .fl-dr-identical p {
+    margin: 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    line-height: 1.5;
+  }
   .fl-duplicate-review {
     min-width: 0;
     color: var(--fl-text);

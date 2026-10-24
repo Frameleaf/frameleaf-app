@@ -9,7 +9,8 @@
    * the disk is nearly full" is `storageWarning.percent`, saved with the settings bar.
    *
    * Each person's total counts the full size of a file two people share (as the app does; owner call
-   * defaulted on FL-365). The switch for identical files lives in Library care › Duplicates.
+   * defaulted on FL-365). FL-416: "Identical files are stored once: X saved" opens Library care ›
+   * Duplicates, and the server owner alone also sees what waits in Unused files (`unusedFilesAccess`).
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -25,6 +26,7 @@
   import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
+  import { unusedFilesAccess } from '$lib/frameleaf/unused-files.svelte';
   import {
     AnalyticsRange,
     getAnalyticsReport,
@@ -36,9 +38,8 @@
     type TrashEveryoneResponseDto,
     type TrashSummaryResponseDto,
   } from '@frameleaf/sdk';
-  import { Icon } from '@frameleaf/ui';
   import {
-    mdiChevronRight,
+    mdiContentCopy,
     mdiDeleteRestore,
     mdiFolderOutline,
     mdiHarddisk,
@@ -55,6 +56,7 @@
 
   const settled = <T,>(result: PromiseSettledResult<T>) => (result.status === 'fulfilled' ? result.value : null);
   onMount(async () => {
+    void unusedFilesAccess.loadForCurrentUser();
     const results = await Promise.allSettled([
       getStorage(),
       getAnalyticsReport({ scope: 'all', range: AnalyticsRange.Year }),
@@ -146,6 +148,30 @@
         : $t('frameleaf_storage_link_trash_body_unread'),
       href: commandCenterUrl('trash', 'contents'),
     },
+  ]);
+  const identicalRows = $derived<LinkRow[]>([
+    {
+      icon: mdiContentCopy,
+      title: report
+        ? $t('frameleaf_storage_identical_saved', { values: { size: size(report.summary.savedBytes) } })
+        : $t('frameleaf_storage_identical_title'),
+      body: report
+        ? $t('frameleaf_storage_identical_saved_body', { values: { count: report.summary.duplicateReferences } })
+        : $t('frameleaf_storage_identical_unread_body'),
+      href: commandCenterUrl('care', 'duplicates'),
+    },
+    ...(unusedFilesAccess.totals
+      ? [
+          {
+            icon: mdiTrashCanOutline,
+            title: $t('frameleaf_storage_unused', {
+              values: { count: unusedFilesAccess.totals.files, size: size(unusedFilesAccess.totals.bytes) },
+            }),
+            body: $t('frameleaf_storage_unused_body'),
+            href: commandCenterUrl('care', 'unused-files'),
+          },
+        ]
+      : []),
   ]);
 </script>
 
@@ -239,29 +265,7 @@
   </Section>
 
   <Section title={$t('frameleaf_storage_identical_title')} description={$t('frameleaf_storage_identical_description')}>
-    {#snippet action()}
-      <Button onclick={() => goto(commandCenterUrl('care', 'duplicates'))}
-        >{$t('frameleaf_storage_open_duplicates')}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></Button
-      >
-    {/snippet}
-    <div class="pad">
-      <Facts
-        rows={[
-          {
-            label: $t('frameleaf_storage_saved'),
-            value: report ? size(report.summary.savedBytes) : $t('frameleaf_storage_unread'),
-            detail: report
-              ? $t('frameleaf_storage_saved_detail', { values: { count: report.summary.duplicateReferences } })
-              : undefined,
-          },
-          {
-            label: $t('frameleaf_storage_looked_after'),
-            value: $t('frameleaf_storage_looked_after_value'),
-            detail: $t('frameleaf_storage_looked_after_detail'),
-          },
-        ]}
-      />
-    </div>
+    <Links rows={identicalRows} stacked />
   </Section>
 </KitPage>
 
@@ -271,9 +275,6 @@
     gap: var(--fl-space-4);
     padding: var(--fl-space-4) var(--fl-space-6) var(--fl-space-6);
     border-top: 1px solid var(--fl-border);
-  }
-  .pad {
-    padding-bottom: var(--fl-space-5);
   }
   @container kit (max-width: 620px) {
     .extra {

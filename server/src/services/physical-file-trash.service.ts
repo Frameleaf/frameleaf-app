@@ -87,7 +87,7 @@ export class PhysicalFileTrashService extends BaseService {
     entry: PhysicalFileTrashEntry | undefined,
   ): asserts entry is PhysicalFileTrashEntry {
     if (!entry || (entry.wasLocked !== false && getLockedOwnerId(auth) !== entry.lastOwnerId)) {
-      throw new NotFoundException('File not found in the file trash');
+      throw new NotFoundException('File not found in Unused files');
     }
   }
 
@@ -181,7 +181,7 @@ export class PhysicalFileTrashService extends BaseService {
         },
       );
       if (!restored || !asset) {
-        throw new NotFoundException('File not found in the file trash');
+        throw new NotFoundException('File not found in Unused files');
       }
     } catch (error) {
       if (isAssetChecksumConstraint(error)) {
@@ -218,7 +218,7 @@ export class PhysicalFileTrashService extends BaseService {
       return this.storageRepository.unlink(path);
     });
     if (!entry) {
-      throw new NotFoundException('File not found in the file trash');
+      throw new NotFoundException('File not found in Unused files');
     }
     this.logger.log(`Permanently deleted ${entry.originalFileName} (${entry.sizeInBytes} bytes) from the file trash`);
   }

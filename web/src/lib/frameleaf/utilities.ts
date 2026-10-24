@@ -2,7 +2,6 @@ import type { UtilitiesSummaryResponseDto } from '@frameleaf/sdk';
 import {
   mdiCloudOutline,
   mdiCompare,
-  mdiDeleteRestore,
   mdiDevices,
   mdiDownload,
   mdiFolderSearchOutline,
@@ -24,7 +23,6 @@ export type UtilityId =
   | 'icloud'
   | 'missing-media'
   | 'corrupt-media'
-  | 'file-trash'
   | 'workflows'
   | 'downloads'
   | 'obtainium';
@@ -82,15 +80,6 @@ export const UTILITY_TOOLS: UtilityTool[] = [
     adminOnly: true,
   },
   {
-    // universal storage: originals no library references any more, until an administrator acts
-    id: 'file-trash',
-    group: 'repair',
-    icon: mdiDeleteRestore,
-    titleKey: 'library_care_tool_file_trash',
-    descriptionKey: 'library_care_tool_file_trash_description',
-    adminOnly: true,
-  },
-  {
     id: 'icloud',
     group: 'import',
     icon: mdiCloudOutline,
@@ -121,15 +110,18 @@ export const UTILITY_TOOLS: UtilityTool[] = [
   },
 ];
 
-/** FL-519: tools kept under a closed Advanced in the Utilities directory; most people never need them. */
-export const RARELY_NEEDED_UTILITIES: readonly UtilityId[] = ['obtainium', 'file-trash'];
+/**
+ * FL-519: tools kept under a closed Advanced in the Utilities directory; most people never need them.
+ * FL-416: Unused files (the old File trash) left Utilities: it is a Library care page, the server owner's.
+ */
+export const RARELY_NEEDED_UTILITIES: readonly UtilityId[] = ['obtainium'];
 
 /** What the Utilities summary says about one tool: how many are waiting, and whether that needs a look. */
-export type UtilityState = { count: number; waiting: boolean; bytes?: number };
+export type UtilityState = { count: number; waiting: boolean };
 
 /**
  * FL-519: each tool's state from `GET /utilities/summary`. Duplicates, missing and damaged files
- * wait for a decision; photos with no place and unused files are only described.
+ * wait for a decision; photos with no place are only described.
  */
 export const utilityStates = (summary: UtilitiesSummaryResponseDto): Partial<Record<UtilityId, UtilityState>> => {
   const states: Partial<Record<UtilityId, UtilityState>> = {
@@ -141,9 +133,6 @@ export const utilityStates = (summary: UtilitiesSummaryResponseDto): Partial<Rec
   }
   if (summary.damagedFiles !== null) {
     states['corrupt-media'] = { count: summary.damagedFiles, waiting: summary.damagedFiles > 0 };
-  }
-  if (summary.unusedFiles !== null) {
-    states['file-trash'] = { count: summary.unusedFiles, waiting: false, bytes: summary.unusedBytes ?? 0 };
   }
   return states;
 };
@@ -158,7 +147,6 @@ export const LIBRARY_CARE_TOOLS: readonly UtilityId[] = Object.freeze([
   'duplicates',
   'missing-media',
   'corrupt-media',
-  'file-trash',
   'live-photos',
 ]);
 export const libraryCareToolsFor = (isAdmin: boolean) =>

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { analyticsReportFixture } from '$lib/frameleaf/analytics.fixture';
+import { unusedFilesAccess } from '$lib/frameleaf/unused-files.svelte';
 import en from '../../../../../../../i18n/en.json';
 import DeletedItems from './DeletedItems.svelte';
 import FolderLayout from './FolderLayout.svelte';
@@ -74,6 +75,21 @@ describe('Storage & originals (FL-365)', () => {
       candidates: 31_920,
     });
     sdk.getManagerAccess.mockResolvedValue({ url: null });
+  });
+
+  it('says what identical files save, opening Duplicates, and Unused files for the server owner only (FL-416)', async () => {
+    unusedFilesAccess.reset();
+    const { unmount } = render(StorageLanding);
+    const saved = await screen.findByText(/^Identical files are stored once: .+ saved$/);
+    expect(saved.closest('a')).toHaveAttribute('href', expect.stringContaining('section=duplicates'));
+    expect(screen.queryByText(/^Unused files:/)).toBeNull();
+    unmount();
+
+    unusedFilesAccess.totals = { files: 277, bytes: 4_500_000_000 };
+    render(StorageLanding);
+    const unused = await screen.findByText('Unused files: 277 files, 4.5 GB');
+    expect(unused.closest('a')).toHaveAttribute('href', expect.stringContaining('section=unused-files'));
+    unusedFilesAccess.reset();
   });
 
   it('opens on the room left and keeps the disk warning in the settings draft', async () => {
