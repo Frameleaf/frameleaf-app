@@ -33309,9 +33309,7 @@ export enum AdminAuditAction {
     LicenseActivated = "license-activated",
     LicenseRemoved = "license-removed",
     FrameleafAccountLinked = "frameleaf-account-linked",
-    FrameleafAccountUnlinked = "frameleaf-account-unlinked",
-    UploadsPaused = "uploads-paused",
-    UploadsResumed = "uploads-resumed"
+    FrameleafAccountUnlinked = "frameleaf-account-unlinked"
 }
 export enum AssetOrder {
     Asc = "asc",

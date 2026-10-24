@@ -36,6 +36,13 @@ export const describeAdminEvent = (
       return $t('frameleaf_account_history_account_created');
     }
     case AdminAuditAction.AccountUpdated: {
+      // FL-538: pausing and resuming new uploads are account changes with their own wording
+      if (detail === 'uploads-paused') {
+        return $t('frameleaf_account_history_uploads_paused');
+      }
+      if (detail === 'uploads-resumed') {
+        return $t('frameleaf_account_history_uploads_resumed');
+      }
       return $t('frameleaf_account_history_account_updated');
     }
     case AdminAuditAction.AdminGranted: {
@@ -62,12 +69,6 @@ export const describeAdminEvent = (
       return detail === 'change-required'
         ? $t('frameleaf_account_history_password_reset_change_required')
         : $t('frameleaf_account_history_password_reset');
-    }
-    case AdminAuditAction.UploadsPaused: {
-      return $t('frameleaf_account_history_uploads_paused');
-    }
-    case AdminAuditAction.UploadsResumed: {
-      return $t('frameleaf_account_history_uploads_resumed');
     }
     case AdminAuditAction.PinSet: {
       return $t('frameleaf_account_history_pin_set');

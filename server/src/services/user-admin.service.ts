@@ -252,7 +252,8 @@ export class UserAdminService extends BaseService {
     }
 
     if (dto.uploadsPaused !== undefined && after.uploadsPaused !== before.uploadsPaused) {
-      add(after.uploadsPaused ? AdminAuditAction.UploadsPaused : AdminAuditAction.UploadsResumed);
+      // FL-538: recorded as an account change, so the API gains no new action values
+      add(AdminAuditAction.AccountUpdated, after.uploadsPaused ? 'uploads-paused' : 'uploads-resumed');
     }
 
     if (dto.storageLabel !== undefined && after.storageLabel !== before.storageLabel) {

@@ -57708,9 +57708,7 @@
           "license-activated",
           "license-removed",
           "frameleaf-account-linked",
-          "frameleaf-account-unlinked",
-          "uploads-paused",
-          "uploads-resumed"
+          "frameleaf-account-unlinked"
         ],
         "type": "string"
       },
