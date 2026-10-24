@@ -34,6 +34,7 @@ import { AlbumService } from 'src/services/album.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
+import { UPLOADS_PAUSED_MESSAGE } from 'src/utils/access.js';
 import { MEDIA_OPERATION_AUTO_RETRY_DELAY_MS, mediaOperationProgress } from 'src/utils/media-operation.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { TakeoutZipError } from 'src/utils/takeout-zip.js';
@@ -283,6 +284,14 @@ export class TakeoutWorkerService {
       await this.operations.fail(id, claimToken, {
         error: 'The account that started this import no longer exists',
         errorCode: 'takeout_owner_unavailable',
+      });
+      return;
+    }
+    if (action === 'import' && auth.user.uploadsPaused) {
+      // FL-538: nothing new is added while an administrator has paused this account's uploads
+      await this.operations.fail(id, claimToken, {
+        error: UPLOADS_PAUSED_MESSAGE,
+        errorCode: 'takeout_uploads_paused',
       });
       return;
     }
@@ -672,6 +681,9 @@ export class TakeoutWorkerService {
               'takeout_owner_unavailable',
               'The account that started this import no longer exists',
             );
+          }
+          if (refreshed.user.uploadsPaused) {
+            throw new TakeoutJobError('takeout_uploads_paused', UPLOADS_PAUSED_MESSAGE);
           }
           run.auth = refreshed;
         }
@@ -1079,6 +1091,8 @@ export class TakeoutWorkerService {
         email: user.email,
         quotaUsageInBytes: user.quotaUsageInBytes,
         quotaSizeInBytes: user.quotaSizeInBytes,
+        // FL-538: an import started before uploads were paused stops adding items once they are
+        uploadsPaused: user.uploadsPaused,
       },
       session: { id: this.sessionId, hasElevatedPermission: true },
     };

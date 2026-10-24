@@ -3439,6 +3439,8 @@ export type UserAdminResponseDto = {
     storageLabel: string | null;
     /** Last update date */
     updatedAt: string;
+    /** New uploads are paused for this person */
+    uploadsPaused: boolean;
 };
 export type UserAdminCreateDto = {
     avatarColor?: (UserAvatarColor) | null;
@@ -3452,6 +3454,8 @@ export type UserAdminCreateDto = {
     notify?: boolean;
     /** User password */
     password: string;
+    /** Email the person a single-use link to choose their own password instead of setting one (needs email to be set up and a public address) */
+    passwordLink?: boolean;
     /** PIN code */
     pinCode?: string | null;
     /** Storage quota in bytes */
@@ -3485,6 +3489,8 @@ export type UserAdminUpdateDto = {
     shouldChangePassword?: boolean;
     /** Storage label */
     storageLabel?: string | null;
+    /** Pause new uploads: what the person has stays, and nothing new can be added until this is turned off */
+    uploadsPaused?: boolean;
 };
 export type CalendarHeatmapResponseDto = {
     /** Start date in UTC */
@@ -5856,6 +5862,22 @@ export type LogoutResponseDto = {
     redirectUri: string;
     /** Logout successful */
     successful: boolean;
+};
+export type PasswordLinkRedeemDto = {
+    /** The password they chose (min 8 characters) */
+    newPassword: string;
+    /** The token from the emailed link */
+    token: string;
+};
+export type PasswordLinkCheckDto = {
+    /** The token from the emailed link */
+    token: string;
+};
+export type PasswordLinkCheckResponseDto = {
+    /** The email address they sign in with */
+    email: string;
+    /** Name of the person the link is for */
+    name: string;
 };
 export type PinCodeResetDto = {
     /** User password (required if PIN code is not provided) */
@@ -9425,6 +9447,8 @@ export type FrameleafLinkResponseDto = {
     storageLabel: string | null;
     /** Last update date */
     updatedAt: string;
+    /** New uploads are paused for this person */
+    uploadsPaused: boolean;
 };
 export type FrameleafLinkConfirmDto = {
     /** The token a preview returned */
@@ -16160,6 +16184,8 @@ export type UserMeResponseDto = {
     storageLabel: string | null;
     /** Last update date */
     updatedAt: string;
+    /** New uploads are paused for this person */
+    uploadsPaused: boolean;
 };
 export type UserUpdateMeDto = {
     avatarColor?: (UserAvatarColor) | null;
@@ -20839,6 +20865,17 @@ export function getUserHistoryAdmin({ before, id, take }: {
     }));
 }
 /**
+ * Email a link to choose a password
+ */
+export function sendUserPasswordLinkAdmin({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/users/${encodeURIComponent(id)}/password-link`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Retrieve whether a user has a PIN
  */
 export function getUserPinCodeStateAdmin({ id }: {
@@ -22801,6 +22838,33 @@ export function logout(opts?: Oazapfts.RequestOpts) {
         ...opts,
         method: "POST"
     }));
+}
+/**
+ * Choose a password with a link
+ */
+export function redeemPasswordLink({ passwordLinkRedeemDto }: {
+    passwordLinkRedeemDto: PasswordLinkRedeemDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/auth/password-link", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: passwordLinkRedeemDto
+    })));
+}
+/**
+ * Check a choose-a-password link
+ */
+export function checkPasswordLink({ passwordLinkCheckDto }: {
+    passwordLinkCheckDto: PasswordLinkCheckDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PasswordLinkCheckResponseDto;
+    }>("/auth/password-link/check", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: passwordLinkCheckDto
+    })));
 }
 /**
  * Reset pin code
