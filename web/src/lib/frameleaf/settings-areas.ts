@@ -107,16 +107,16 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   },
   // The template's People & sharing: partner sharing moved out of the personal settings list.
   { id: 'sharing', group: 'library', sections: [], personal: ['sharing'] },
-  // Library care (FL-366): File checks (the one checker), Things to fix, Duplicates with Merge older
-  // copies behind it, and Search and recognition progress, under a landing page that says how the
-  // library is.
+  // Library care (FL-366): File checks (the one checker), Things to fix, Duplicates, and Search and
+  // recognition progress, under a landing page that says how the library is. FL-416: Unused files (the
+  // old File trash) is a page here too, offered only to the server owner (the first administrator).
   {
     id: 'care',
     group: 'library',
     // FL-413: identical files merge automatically; the per-account Merge older copies is retired
-    sections: ['integrity-checks', 'duplicates', 'enrichment-care'],
+    sections: ['integrity-checks', 'duplicates', 'enrichment-care', 'unused-files'],
     personal: ['repair'],
-    order: ['integrity-checks', 'repair', 'duplicates', 'enrichment-care'],
+    order: ['integrity-checks', 'repair', 'duplicates', 'enrichment-care', 'unused-files'],
   },
   // Computers & background work (FL-364; before it "Compute & jobs", FL-71): a landing page that says
   // how the computers and the background work are doing, then Computers, Where work runs, Background
@@ -319,7 +319,7 @@ export const PAGE_DESCRIPTIONS: Readonly<Record<string, Translations>> = Object.
   repair: 'frameleaf_page_repair_description',
   'enrichment-care': 'frameleaf_page_enrichment_description',
   duplicates: 'frameleaf_page_duplicates_description',
-  deduplication: 'frameleaf_page_deduplication_description',
+  'unused-files': 'frameleaf_page_unused_files_description',
   notifications: 'frameleaf_page_email_description',
   'email-preferences': 'frameleaf_page_email_preferences_description',
   signals: 'frameleaf_page_signals_description',
@@ -471,6 +471,8 @@ const SERVER_ALIASES: Record<string, string> = {
   'advanced-duplicate-matching': 'duplicates',
   'exact-copies': 'duplicates',
   deduplication: 'duplicates',
+  // FL-416: File trash is Unused files now
+  'file-trash': 'unused-files',
   metadata: 'faces',
   pets: 'faces',
   'advanced-recognition-models': 'faces',
@@ -712,6 +714,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     repair: 'repairs',
     duplicates: 'identical_files',
     deduplication: 'identical_files',
+    'unused-files': 'identical_files',
     'enrichment-care': 'repairs',
   },
   processing: {

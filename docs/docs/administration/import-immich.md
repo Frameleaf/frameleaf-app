@@ -70,7 +70,9 @@ The import keeps the source library's folders as they are. Once it is activated,
 - Every original is read again from disk. Older SHA-1 records are upgraded to SHA-256, and your devices keep matching against the SHA-1.
 - Identical files are stored once. Files are identical when their SHA-256 and size match. Across people, everyone keeps their own photo, and all of them use the oldest copy. Inside one library, two identical photos become one: the oldest is kept, and the other goes to the Trash, where you can restore it.
 - Orphaned files are recovered. These are media files in the storage folders that no photo points at, such as the files the source server listed as untracked. Each one comes back to the owner of its folder, in an album called **Recovered Media**. Files the owner already has, and damaged files, are not imported.
-- Extra copies wait in File trash until an administrator empties it. Nothing is deleted.
+- Extra copies wait in Unused files until the server owner empties it. Nothing is deleted.
+
+While this runs, **Settings > Library care** shows **Checking your imported library**: files checked, photos merged, photos recovered into Recovered Media and the space moved to Unused files, with Pause and Resume.
 
 External libraries are never touched. In independent-copy mode the source media is not touched either. For an in-place import, Manager first checks that the Frameleaf server can write to every media folder. If one isn't writable, Manager stops before importing anything and names the folder.
 

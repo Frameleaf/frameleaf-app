@@ -243,6 +243,10 @@ export class DuplicateDecisionService {
     const visible = (memberIds: readonly string[]) => memberIds.every((id) => !locked.has(id));
 
     const running = new Set(operations.map(({ id }) => id));
+    // FL-416: the jobs Frameleaf started itself, merging identical photos ("Merged for you")
+    const automatic = await this.repository.getAutomaticOperationIds([
+      ...new Set(decisions.map(({ operationId }) => operationId).filter((id): id is string => !!id)),
+    ]);
     const batches = new Map<string, DuplicateDecisionBatchDto>();
     for (const decision of decisions) {
       // a decision its job closed without applying never happened as far as the owner is concerned
@@ -256,6 +260,7 @@ export class DuplicateDecisionService {
         createdAt,
         groups: [],
         undoable: true,
+        automatic: automatic.has(decision.operationId),
       };
       const group: DuplicateDecisionGroupDto = {
         decisionId: decision.id,

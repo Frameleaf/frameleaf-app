@@ -128,6 +128,29 @@ const IdenticalFilesChangeSchema = z
   })
   .meta({ id: 'IdenticalFilesChangeDto' });
 
+/** FL-416: one link in the "Merged for you" history, across the server, newest first. */
+const IdenticalFilesRecentChangeSchema = z
+  .object({
+    id: z.string().describe('Change id'),
+    assetId: z.string().describe('The photo that now shares another person’s identical file'),
+    originalFileName: z.string().describe('The photo’s file name'),
+    ownerId: z.string().describe('Whose photo it is'),
+    ownerName: z.string().describe('Their name'),
+    keptAssetId: z.string().nullable().describe('The photo whose file was kept'),
+    keptOwnerName: z.string().nullable().describe('Whose photo that is, while it exists'),
+    sizeInBytes: z.int().nonnegative().describe('Space the link saved'),
+    createdAt: z.string().meta({ format: 'date-time' }),
+    undoneAt: z.string().meta({ format: 'date-time' }).nullable(),
+    restorable: z.boolean().describe('The photo’s own file waits in Unused files and can be restored'),
+  })
+  .meta({ id: 'IdenticalFilesRecentChangeDto' });
+
+const IdenticalFilesRecentChangesQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(200).default(50).describe('How many to list'),
+  })
+  .meta({ id: 'IdenticalFilesRecentChangesQueryDto' });
+
 /** FL-520: a quick count of extra copies on the drive, without reading any file. */
 const IdenticalFilesExtraCopiesSchema = z
   .object({
@@ -140,6 +163,8 @@ const IdenticalFilesExtraCopiesSchema = z
 export class IdenticalFilesExtraCopiesDto extends createZodDto(IdenticalFilesExtraCopiesSchema) {}
 export class IdenticalFilesStatusDto extends createZodDto(IdenticalFilesStatusSchema) {}
 export class IdenticalFilesChangeDto extends createZodDto(IdenticalFilesChangeSchema) {}
+export class IdenticalFilesRecentChangeDto extends createZodDto(IdenticalFilesRecentChangeSchema) {}
+export class IdenticalFilesRecentChangesQueryDto extends createZodDto(IdenticalFilesRecentChangesQuerySchema) {}
 
 /** The run's durable state (`system_metadata`), saved after every batch. */
 export type IdenticalFilesState = {

@@ -13,6 +13,7 @@ const setup = (state: Record<string, unknown> | null) => {
     getExternalImportPaths: vi.fn().mockResolvedValue([]),
     getKnownPaths: vi.fn().mockResolvedValue(new Set()),
     getOwners: vi.fn().mockResolvedValue([]),
+    listRecentChanges: vi.fn().mockResolvedValue([]),
   };
   const jobs = {
     queue: vi.fn(),
@@ -60,6 +61,46 @@ beforeAll(() => {
 });
 
 describe(IdenticalFilesService.name, () => {
+  it('lists the newest links for the "Merged for you" history (FL-416)', async () => {
+    const { sut, repository } = setup(null);
+    repository.listRecentChanges.mockResolvedValue([
+      {
+        id: 'change-1',
+        assetId: 'asset-1',
+        originalFileName: 'VID_0311.MOV',
+        ownerId: 'morgan',
+        ownerName: 'Morgan',
+        keptAssetId: 'asset-0',
+        keptOwnerName: 'Taylor',
+        sizeInBytes: 412,
+        createdAt: new Date('2026-10-22T03:40:00.000Z'),
+        undoneAt: null,
+        restorable: true,
+      },
+      {
+        id: 'change-2',
+        assetId: 'asset-2',
+        originalFileName: 'IMG_2040.HEIC',
+        ownerId: 'emma',
+        ownerName: 'Emma',
+        keptAssetId: null,
+        keptOwnerName: null,
+        sizeInBytes: 8,
+        createdAt: new Date('2026-10-21T03:40:00.000Z'),
+        undoneAt: new Date('2026-10-22T09:00:00.000Z'),
+        restorable: true,
+      },
+    ]);
+    const changes = await sut.getRecentChanges(20);
+    expect(repository.listRecentChanges).toHaveBeenCalledWith(20);
+    expect(changes).toEqual([
+      expect.objectContaining({ id: 'change-1', ownerName: 'Morgan', keptOwnerName: 'Taylor', restorable: true }),
+      // an undone link is never restorable again
+      expect.objectContaining({ id: 'change-2', undoneAt: '2026-10-22T09:00:00.000Z', restorable: false }),
+    ]);
+    expect(changes[0].createdAt).toBe('2026-10-22T03:40:00.000Z');
+  });
+
   it('reports a server that was never checked', async () => {
     const { sut } = setup(null);
     await expect(sut.getStatus()).resolves.toMatchObject({ status: 'never-run', stage: null, problems: [] });
