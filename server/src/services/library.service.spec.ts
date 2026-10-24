@@ -414,6 +414,40 @@ describe(LibraryService.name, () => {
     });
   });
 
+  describe('estimateFolder (FL-539)', () => {
+    it('counts the photos and videos in a folder and their size, with its skips', async () => {
+      mocks.storage.walkLibrary.mockImplementation(async function* () {
+        // eslint-disable-next-line unicorn/no-useless-promise-resolve-reject
+        yield await Promise.resolve(['/photos/a.jpg', '/photos/b.mov']);
+      });
+      mocks.storage.stat.mockResolvedValueOnce({ size: 1000 } as Stats).mockResolvedValueOnce({ size: 2000 } as Stats);
+
+      await expect(sut.estimateFolder({ path: '/photos/', exclusionPatterns: ['**/@eaDir/**'] })).resolves.toEqual({
+        readable: true,
+        count: 2,
+        bytes: 3000,
+        complete: true,
+      });
+      expect(mocks.storage.walkLibrary).toHaveBeenCalledWith(
+        expect.objectContaining({ pathsToCrawl: ['/photos'], exclusionPatterns: ['**/@eaDir/**'] }),
+      );
+    });
+
+    it('says when a folder cannot be read, and refuses a relative path', async () => {
+      mocks.storage.walkLibrary.mockImplementation(async function* () {
+        // eslint-disable-next-line unicorn/no-useless-promise-resolve-reject
+        yield await Promise.reject<string[]>(new Error('EACCES'));
+      });
+      await expect(sut.estimateFolder({ path: '/locked', exclusionPatterns: [] })).resolves.toEqual({
+        readable: false,
+        count: 0,
+        bytes: 0,
+        complete: true,
+      });
+      await expect(sut.estimateFolder({ path: 'photos', exclusionPatterns: [] })).rejects.toThrow();
+    });
+  });
+
   describe('create', () => {
     describe('external library', () => {
       it('persists and reports the explicit read-only policy', async () => {

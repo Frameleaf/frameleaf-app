@@ -157,6 +157,8 @@ export class TrashRepository {
           'offline',
         ),
         sql<string>`coalesce(sum(asset_exif."fileSizeInByte"), 0)`.as('bytes'),
+        // FL-539: the oldest item, which is removed for good first
+        sql<Date | null>`min(asset."deletedAt")`.as('oldestDeletedAt'),
       ])
       .executeTakeFirstOrThrow();
     const deleted = await this.scope(this.db, userId, AssetStatus.Deleted, options)
@@ -167,6 +169,7 @@ export class TrashRepository {
       offline: Number(listed.offline),
       bytes: toByteCount(listed.bytes),
       pendingDeletion: Number(deleted.count),
+      oldestDeletedAt: listed.oldestDeletedAt ? new Date(listed.oldestDeletedAt) : null,
     };
   }
   /**

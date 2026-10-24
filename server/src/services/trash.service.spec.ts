@@ -220,8 +220,38 @@ describe(TrashService.name, () => {
       );
     });
 
+    it('says when the next item goes and what emptying frees (FL-539)', async () => {
+      mocks.trash.getSummary.mockResolvedValue({
+        count: 2,
+        offline: 0,
+        bytes: 3000,
+        pendingDeletion: 0,
+        oldestDeletedAt: new Date('2026-10-01T00:00:00.000Z'),
+      });
+      mocks.trash.getReviewRows.mockResolvedValue([
+        reviewRow('asset-1', { fileSizeInByte: 1000 }),
+        reviewRow('asset-2', { fileSizeInByte: 2000, sharesOriginal: true }),
+      ]);
+      mocks.systemMetadata.get.mockResolvedValue({ trash: { enabled: true, days: 30 } });
+
+      await expect(sut.getSummary(authStub.user1)).resolves.toEqual({
+        count: 2,
+        offline: 0,
+        bytes: 3000,
+        pendingDeletion: 0,
+        nextGoesAt: '2026-10-31T00:00:00.000Z',
+        freesBytes: 1000,
+      });
+    });
+
     it('should never widen an ordinary session to Locked media', async () => {
-      mocks.trash.getSummary.mockResolvedValue({ count: 0, offline: 0, bytes: 0, pendingDeletion: 0 });
+      mocks.trash.getSummary.mockResolvedValue({
+        count: 0,
+        offline: 0,
+        bytes: 0,
+        pendingDeletion: 0,
+        oldestDeletedAt: null,
+      });
 
       await sut.getSummary(authStub.user1);
 
@@ -232,7 +262,13 @@ describe(TrashService.name, () => {
   describe('privacy filters (FL-47)', () => {
     it('should keep hidden sensitive media out of an ordinary session', async () => {
       const auth = { ...authStub.user1, hideNsfwAssets: true };
-      mocks.trash.getSummary.mockResolvedValue({ count: 0, offline: 0, bytes: 0, pendingDeletion: 0 });
+      mocks.trash.getSummary.mockResolvedValue({
+        count: 0,
+        offline: 0,
+        bytes: 0,
+        pendingDeletion: 0,
+        oldestDeletedAt: null,
+      });
 
       await sut.getSummary(auth);
 

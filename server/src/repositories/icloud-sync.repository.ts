@@ -645,6 +645,7 @@ export class ICloudSyncRepository {
   async overnightConnections(): Promise<Array<{ id: string; ownerId: string }>> {
     return sql<{ id: string; ownerId: string }>`SELECT c.id, c."ownerId" FROM public.icloud_connection c
       WHERE c.state = 'connected' AND c."encryptedSession" IS NOT NULL AND c."lastError" IS DISTINCT FROM 'owner_removed'
+        AND coalesce((c.config->>'automatic')::boolean, true)
         AND (c."nextRunAt" IS NULL OR c."nextRunAt" <= now())
         AND NOT EXISTS (SELECT 1 FROM media_operation o WHERE o."ownerId" = c."ownerId"
           AND o.kind = ${MediaOperationKind.ICloudSync} AND o.snapshot->>'connectionId' = c.id::text

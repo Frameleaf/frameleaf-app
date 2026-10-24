@@ -6592,6 +6592,84 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/libraries/folders/estimate": {
+      "get": {
+        "description": "For an administrator adding a folder of photos: about how many photos and videos it holds and their size, skipping what the folder would skip. Stops early on a very large or slow folder and says so.",
+        "operationId": "estimateLibraryFolder",
+        "parameters": [
+          {
+            "name": "exclusionPatterns",
+            "required": false,
+            "in": "query",
+            "description": "What the folder would skip",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "path",
+            "required": true,
+            "in": "query",
+            "description": "An absolute folder",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 4096,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryFolderEstimateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Count the photos in a folder",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "library.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/library-move": {
       "get": {
         "operationId": "getLibraryMovePause",
@@ -25582,6 +25660,57 @@
         ],
         "x-immich-permission": "library.update",
         "x-immich-state": "Stable"
+      }
+    },
+    "/libraries/{id}/scan/every-file": {
+      "post": {
+        "description": "Queue a scan that reads every file in the folder again (its date, place and details), not only the new and changed ones.",
+        "operationId": "scanLibraryEveryFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check every file of a library again",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "library.update",
+        "x-immich-state": "Alpha"
       }
     },
     "/libraries/{id}/statistics": {
@@ -83293,6 +83422,7 @@
             "additionalProperties": false,
             "default": {
               "albums": [],
+              "automatic": true,
               "concurrency": 1,
               "includeEdits": true,
               "includeHidden": false,
@@ -83311,6 +83441,10 @@
                 },
                 "maxItems": 10000,
                 "type": "array"
+              },
+              "automatic": {
+                "default": true,
+                "type": "boolean"
               },
               "concurrency": {
                 "default": 1,
@@ -83395,6 +83529,9 @@
                 "maxItems": 10000,
                 "type": "array"
               },
+              "automatic": {
+                "type": "boolean"
+              },
               "concurrency": {
                 "maximum": 4,
                 "minimum": 1,
@@ -83436,6 +83573,7 @@
               "includeHidden",
               "recoverExternalAsManaged",
               "intervalHours",
+              "automatic",
               "concurrency",
               "stagingBytes"
             ],
@@ -83536,6 +83674,9 @@
                 },
                 "maxItems": 10000,
                 "type": "array"
+              },
+              "automatic": {
+                "type": "boolean"
               },
               "concurrency": {
                 "maximum": 4,
@@ -87941,6 +88082,65 @@
         "required": [
           "name",
           "path"
+        ],
+        "type": "object"
+      },
+      "LibraryFolderEstimateDto": {
+        "properties": {
+          "exclusionPatterns": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ],
+            "description": "What the folder would skip"
+          },
+          "path": {
+            "description": "An absolute folder",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "LibraryFolderEstimateResponseDto": {
+        "properties": {
+          "bytes": {
+            "description": "Their combined size, in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "complete": {
+            "description": "False when the count stopped early (a very large or slow folder), so it is a lower bound",
+            "type": "boolean"
+          },
+          "count": {
+            "description": "Photos and videos found",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "readable": {
+            "description": "Whether the folder could be read",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "bytes",
+          "complete",
+          "count",
+          "readable"
         ],
         "type": "object"
       },
@@ -136409,6 +136609,18 @@
             "minimum": 0,
             "type": "integer"
           },
+          "freesBytes": {
+            "description": "FL-539: the space emptying the Trash frees: originals no other item still uses, in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "nextGoesAt": {
+            "description": "FL-539: when the next item is removed for good, or null with an empty trash",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "offline": {
             "description": "Of those, external-library originals that went missing; the library scan manages them",
             "maximum": 9007199254740991,
@@ -136425,6 +136637,8 @@
         "required": [
           "bytes",
           "count",
+          "freesBytes",
+          "nextGoesAt",
           "offline",
           "pendingDeletion"
         ],

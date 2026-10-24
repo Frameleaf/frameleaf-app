@@ -233,7 +233,8 @@ export class ICloudSyncService {
       label: connection.label,
       state: connection.state,
       authenticated: !!connection.encryptedSession,
-      config: connection.config,
+      // FL-539: a connection saved before "Only when I ask" existed is checked by itself
+      config: { ...connection.config, automatic: connection.config.automatic ?? true },
       lastError: connection.lastError,
       nextRunAt: this.nextRunAt(connection, run),
       counts: {
@@ -250,7 +251,8 @@ export class ICloudSyncService {
    * only time worth saying is a back-off the provider asked for.
    */
   private nextRunAt(connection: ICloudConnection, run: MediaOperation | undefined): string | null {
-    if (connection.state !== 'connected' || !connection.encryptedSession) {
+    // FL-539: "Only when I ask" is never checked by itself
+    if (connection.state !== 'connected' || !connection.encryptedSession || !connection.config.automatic) {
       return null;
     }
     if (run && isActiveMediaOperation(run.status as MediaOperationStatus)) {
