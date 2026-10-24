@@ -199,6 +199,8 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'POST photography/galleries/:id/session': { bucket: 'photography-gallery-session', limit: 30, windowSeconds: 600 },
   'PUT admin/license/activate': RATE_LIMITS.licenseActivation,
   'PUT admin/license/certificate': RATE_LIMITS.licenseActivation,
+  // FL-544: starting the combined licence+plan checkout is limited like a key
+  'POST admin/license/checkout': RATE_LIMITS.licenseActivation,
   'PUT users/me/license': RATE_LIMITS.licenseActivation,
   // CLD-004: a one-time link code from the account site is limited like a key
   'POST license/link-code': RATE_LIMITS.licenseActivation,
