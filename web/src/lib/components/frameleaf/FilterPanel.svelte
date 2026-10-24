@@ -148,7 +148,8 @@
       list.push(asOption(CUSTOM_CONDITION, $t('frameleaf_search_custom_condition')));
     }
     for (const value of values) {
-      const name = field === 'visibility' && VISIBILITY_LABEL_KEYS[value] ? $t(VISIBILITY_LABEL_KEYS[value]) : value;
+      const key = field === 'visibility' ? VISIBILITY_LABEL_KEYS[value] : undefined;
+      const name = key ? $t(key) : value;
       list.push(asOption(value, withCount(name, counts?.get(value))));
     }
     if (current && current !== CUSTOM_CONDITION && !values.includes(current)) {

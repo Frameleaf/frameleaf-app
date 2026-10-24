@@ -67,8 +67,8 @@ describe('ResultsToolbar chip wording', () => {
     const session = new LibrarySessionStore({ storage: null });
     session.setQuery({ ...emptyDiscoveryQuery(), filter, ...(imageEnrichment && { imageEnrichment }) } as never);
     const { unmount } = render(ResultsToolbar, { session });
-    const text = [...screen.getByTestId('frameleaf-filter-chips').querySelectorAll('.fl-chip-list > *')].map((chip) =>
-      chip.textContent?.replaceAll(/\s+/g, ' ').trim(),
+    const text = [...screen.getByTestId('frameleaf-filter-chips').querySelectorAll(':scope .fl-chip-list > *')].map(
+      (chip) => chip.textContent?.replaceAll(/\s+/g, ' ').trim(),
     );
     unmount();
     return text;

@@ -195,11 +195,10 @@ export const describeFilterField = (query: DiscoveryQuery, field: string): Filte
 
 const describeValue = (field: string, condition: Record<string, unknown>): FilterText | undefined => {
   const value = condition.eq ?? condition.ne;
-  if (field === 'type' && typeof value === 'string' && MEDIA_TYPE_LABEL_KEYS[value]) {
-    return { key: MEDIA_TYPE_LABEL_KEYS[value] };
-  }
-  if (field === 'visibility' && typeof value === 'string' && VISIBILITY_LABEL_KEYS[value]) {
-    return { key: VISIBILITY_LABEL_KEYS[value] };
+  const labels = field === 'type' ? MEDIA_TYPE_LABEL_KEYS : field === 'visibility' ? VISIBILITY_LABEL_KEYS : undefined;
+  const key = labels && typeof value === 'string' ? labels[value] : undefined;
+  if (key) {
+    return { key };
   }
   if (field === 'rating') {
     return ratingChoiceText(ratingControlValue(condition)) ?? undefined;
