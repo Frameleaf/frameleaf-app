@@ -31,11 +31,13 @@ import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
 export type CloudBackupRestoreScope = 'files' | 'asset' | 'album' | 'database' | 'library';
 
 /** Called for a no-op read preflight, then for publication; each guard releases before whole-file I/O. */
+export type OwnerRestoreStagedProof = { identity: string; sha256: string; size: number };
 export type OwnerRestorePublisher = (
   file: CloudBackupRestoreFile,
   staged: string,
   publish: () => Promise<'written' | 'skipped' | 'replaced'>,
   phase?: 'inspect' | 'publish',
+  proof?: OwnerRestoreStagedProof,
 ) => Promise<'written' | 'skipped' | 'replaced'>;
 export type BackupObjectReader = (
   key: string,
@@ -408,7 +410,11 @@ export class CloudBackupRestorer {
         const stagedEvidence = await captureOwnerRestoreFile(staged, async (target) =>
           (await this.crypto.hashFile(target, 'sha256')).toString('hex'),
         );
-        if (stagedEvidence.sha256 !== file.sha256 || stagedEvidence.size !== BigInt(file.size))
+        if (
+          !stagedEvidence.identity ||
+          stagedEvidence.sha256 !== file.sha256 ||
+          stagedEvidence.size !== BigInt(file.size)
+        )
           throw new Error('Owner restore staging size or checksum mismatch');
         return await options.publish(
           file,
@@ -436,6 +442,7 @@ export class CloudBackupRestorer {
             return present === null ? 'written' : 'replaced';
           },
           'publish',
+          { identity: stagedEvidence.identity, sha256: file.sha256, size: file.size },
         );
       } finally {
         // A refused guard must never leave verified bytes at the public/current destination.

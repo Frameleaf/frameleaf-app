@@ -54,6 +54,7 @@ import {
   type CloudBackupRestoreFile,
   type CloudBackupRestoreSnapshot,
   CloudBackupRestorer,
+  type OwnerRestoreStagedProof,
   emptyRestoreResult,
   restorePlan,
 } from 'src/services/cloud-backup-restore.js';
@@ -996,6 +997,20 @@ export class BuddyBackupRestoreService {
     );
   }
 
+  private async publishStaged(
+    file: CloudBackupRestoreFile,
+    staged: string,
+    publish: () => Promise<'written' | 'skipped' | 'replaced'>,
+    proof?: OwnerRestoreStagedProof,
+  ) {
+    if (!proof?.identity || proof.sha256 !== file.sha256 || proof.size !== file.size)
+      throw new Error('Buddy restore staging proof changed');
+    await assertOwnerRestoreFile(staged, proof.identity);
+    const outcome = await publish();
+    if (outcome !== 'skipped') await assertOwnerRestoreFile(file.target, proof.identity, true);
+    return outcome;
+  }
+
   private fileJournal(operationId: string, file: CloudBackupRestoreFile) {
     return join(
       this.repository.root(),
@@ -1358,7 +1373,7 @@ export class BuddyBackupRestoreService {
             });
             return !!saved && !saved.cancelRequestedAt && !saved.pauseRequestedAt;
           },
-          publish: async (file, _staged, publish, phase) => {
+          publish: async (file, staged, publish, phase, proof) => {
             if (phase === 'inspect')
               return this.guarded(
                 operation,
@@ -1393,7 +1408,9 @@ export class BuddyBackupRestoreService {
                 },
                 true,
               );
-            return this.guarded(operation, token, job, manifest, snapshot, file, publish);
+            return this.guarded(operation, token, job, manifest, snapshot, file, () =>
+              this.publishStaged(file, staged, publish, proof),
+            );
           },
           library: async (result) => {
             const verified = await this.verifyFiles(operation.id, plan.files);
