@@ -15,7 +15,7 @@ import {
   PRESERVATION_TICK_MS,
   PreservationWorkerService,
 } from 'src/services/preservation-worker.service.js';
-import { executionSignal } from 'src/utils/execution-signal.js';
+import { executionSignal, withExecutionSignal } from 'src/utils/execution-signal.js';
 import { libraryAssetFromFile } from 'src/utils/library-scan.js';
 import {
   PRESERVATION_FORMAT,
@@ -25,6 +25,7 @@ import {
   PreservationSidecar,
   preservationJson,
 } from 'src/utils/preservation.js';
+import { sourceOriginalPath } from 'src/utils/source-original.js';
 import { newUuid, newUuidV7 } from 'test/small.factory.js';
 import { getMocks } from 'test/utils.js';
 
@@ -224,6 +225,173 @@ describe(PreservationWorkerService.name, () => {
   describe('export', () => {
     const itemOf = (): PreservationItem =>
       ({ id: newUuidV7(), sourceAssetId: newUuid(), state: 'pending', attempts: 0 }) as unknown as PreservationItem;
+
+    const reference = () => {
+      const item = itemOf();
+      const asset = {
+        id: item.sourceAssetId,
+        ownerId,
+        status: 'active',
+        originalFileName: 'lake.jpg',
+        originalPath: sourceOriginalPath({ sourceId: newUuid(), resourceKey: 'c'.repeat(64) }),
+        checksum: Buffer.alloc(20, 1),
+        checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+        isLocked: false,
+      };
+      const epoch = {
+        assetId: asset.id,
+        ownerId,
+        epoch: '0',
+        reference: { resourceId: newUuid(), version: 'd'.repeat(64), sha256 },
+      };
+      repository.getExportAsset.mockResolvedValue(asset);
+      repository.getExportSourceEpoch = vi.fn().mockResolvedValue(epoch);
+      const abort = new AbortController();
+      let authorize!: () => Promise<void>;
+      const input = {
+        localPath: '/private/source-original-cache/verified.artifact',
+        verifiedSha256: sha256,
+        resourceId: epoch.reference.resourceId,
+        resourceVersion: epoch.reference.version,
+        signal: abort.signal,
+        check: vi.fn().mockResolvedValue(undefined),
+        release: vi.fn().mockResolvedValue(undefined),
+      };
+      Object.assign(sut, {
+        sourceOriginalService: {
+          open: vi.fn(async (_id, _reader, check) => {
+            authorize = check;
+            await check();
+            return input;
+          }),
+        },
+      });
+      return { item, asset, epoch, input, abort, authorize: () => authorize() };
+    };
+
+    it('copies verified reference bytes and fences successful item/file commits with their source epoch', async () => {
+      const f = reference();
+      const guarded = vi.fn((write, _source) => write(repository));
+      files.copyOriginal.mockImplementation(async (_path, _target, publish) => {
+        await publish(() => Promise.resolve());
+        return { sha1, sha256, bytes: 5 };
+      });
+      expect(await worker().exportItem(packageOf({ includeMetadata: false }), f.item, guarded)).toBe('copied');
+      expect(files.copyOriginal).toHaveBeenCalledWith(
+        f.input.localPath,
+        expect.any(String),
+        expect.any(Function),
+        Buffer.from(sha256, 'hex'),
+      );
+      for (const [, source] of guarded.mock.calls) expect(source.epoch).toEqual(f.epoch);
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('refuses a reference delivery whose immutable version no longer matches admission', async () => {
+      const f = reference();
+      f.input.resourceVersion = 'e'.repeat(64);
+      expect(await worker().exportItem(packageOf({ includeMetadata: false }), f.item, commit)).toBe('failed');
+      expect(files.copyOriginal).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('rejects copied reference bytes that do not match the verified resource digest', async () => {
+      const f = reference();
+      files.copyOriginal.mockResolvedValue({ sha1, sha256: 'e'.repeat(64), bytes: 5 });
+      expect(await worker().exportItem(packageOf({ includeMetadata: false }), f.item, commit)).toBe('failed');
+      expect(repository.finishItem).not.toHaveBeenCalledWith(f.item.id, expect.objectContaining({ state: 'copied' }));
+      expect(files.removeFile).toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('stops taking preservation work if closing an original reader is unconfirmed', async () => {
+      const f = reference();
+      files.copyOriginal.mockResolvedValue({ sha1, sha256, bytes: 5 });
+      f.input.release.mockRejectedValue(new Error('artifact_close_unconfirmed'));
+      await expect(worker().exportItem(packageOf({ includeMetadata: false }), f.item, commit)).rejects.toThrow(
+        'artifact_close_unconfirmed',
+      );
+      expect(sut['stopping']).toBe(true);
+    });
+
+    it('rechecks reference ownership and Locked eligibility during the original read', async () => {
+      const f = reference();
+      files.copyOriginal.mockResolvedValue({ sha1, sha256, bytes: 5 });
+      await worker().exportItem(packageOf({ includeMetadata: false }), f.item, commit);
+      repository.getExportAsset.mockResolvedValue({ ...f.asset, isLocked: true });
+      await expect(f.authorize()).rejects.toThrow();
+    });
+
+    it('joins a cancelled copy before releasing its borrowed input', async () => {
+      const f = reference();
+      const started = Promise.withResolvers<void>(),
+        stopped = Promise.withResolvers<void>();
+      files.copyOriginal.mockImplementation(async () => {
+        started.resolve();
+        await stopped.promise;
+        throw f.abort.signal.reason;
+      });
+      const pending = worker().exportItem(packageOf({ includeMetadata: false }), f.item, commit);
+      await started.promise;
+      f.abort.abort(new Error('source transfer stopped'));
+      expect(f.input.release).not.toHaveBeenCalled();
+      stopped.resolve();
+      expect(await pending).toBe('failed');
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it.each(['resourceId', 'resourceVersion', 'verifiedSha256'] as const)(
+      'refuses mismatching reference delivery %s before copying',
+      async (field) => {
+        const f = reference();
+        f.input[field] = field === 'resourceId' ? newUuid() : 'e'.repeat(64);
+        expect(await worker().exportItem(packageOf({ includeMetadata: false }), f.item, commit)).toBe('failed');
+        expect(files.copyOriginal).not.toHaveBeenCalled();
+        expect(f.input.release).toHaveBeenCalledOnce();
+      },
+    );
+
+    it('refuses a source revoked after copying before a successful item result', async () => {
+      const f = reference();
+      files.copyOriginal.mockImplementation(() => {
+        f.input.check.mockRejectedValue(new Error('reference revoked'));
+        return Promise.resolve({ sha1, sha256, bytes: 5 });
+      });
+      expect(await worker().exportItem(packageOf({ includeMetadata: false }), f.item, commit)).toBe('failed');
+      expect(repository.finishItem).not.toHaveBeenCalledWith(f.item.id, expect.objectContaining({ state: 'copied' }));
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it.each(['artifact_close_unconfirmed', 'source_original_shutdown_unconfirmed', 'source_reader_stop_unconfirmed'])(
+      'stops taking new work after uncertain acquisition: %s',
+      async (code) => {
+        const f = reference();
+        Object.assign(sut, { sourceOriginalService: { open: vi.fn().mockRejectedValue(new Error(code)) } });
+        await expect(worker().exportItem(packageOf({ includeMetadata: false }), f.item, commit)).rejects.toThrow(code);
+        expect(sut['stopping']).toBe(true);
+        expect(repository.finishItem).not.toHaveBeenCalled();
+        expect(files.copyOriginal).not.toHaveBeenCalled();
+      },
+    );
+
+    it('runs mandatory input cleanup outside an aborted operation signal', async () => {
+      const f = reference();
+      const abort = new AbortController();
+      files.copyOriginal.mockImplementation(() => {
+        abort.abort(new Error('operation cancelled'));
+        return Promise.reject(abort.signal.reason);
+      });
+      f.input.release.mockImplementation(() => {
+        expect(executionSignal()?.aborted).toBe(false);
+        return Promise.resolve();
+      });
+      await expect(
+        withExecutionSignal(abort.signal, () =>
+          worker().exportItem(packageOf({ includeMetadata: false }), f.item, commit),
+        ),
+      ).rejects.toThrow('operation cancelled');
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
 
     it('skips an item that became Locked when the package was asked for without Locked items', async () => {
       const item = itemOf();

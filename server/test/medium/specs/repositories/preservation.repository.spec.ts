@@ -12,6 +12,7 @@ import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { OperationClaimLostError } from 'src/utils/operation-execution.js';
 import { PreservationEntrySchema } from 'src/utils/preservation.js';
+import { bindSourceReference } from 'test/fixtures/source-reference.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -207,8 +208,154 @@ describe(PreservationRepository.name, () => {
             .where('id', '=', item.id)
             .executeTakeFirstOrThrow(),
         ]);
-      return { sut, operationId: operation.id, claimToken, entry, manifest, write, read };
+      return { sut, asset, owner, operationId: operation.id, claimToken, entry, manifest, write, read };
     };
+
+    const referenced = async () => {
+      const f = await claimedExport();
+      const bound = await bindSourceReference(defaultDatabase, f.asset);
+      const asset = (await f.sut.getExportAsset(f.asset.id))!;
+      const epoch = (await f.sut.getExportSourceEpoch(asset.id))!;
+      const authority = await defaultDatabase
+        .selectFrom('photo_source')
+        .select(['id', 'deviceId', 'photoSessionId'])
+        .where('id', '=', new URL(asset.originalPath).hostname)
+        .executeTakeFirstOrThrow();
+      return {
+        ...f,
+        bound,
+        authority,
+        source: {
+          epoch,
+          originalPath: asset.originalPath,
+          checksum: Buffer.from(asset.checksum),
+          includeLocked: false,
+          isLocked: false,
+        },
+      };
+    };
+
+    it.each(['source revoked', 'device paused', 'session expired', 'library deleted'])(
+      'refuses publication after %s',
+      async (change) => {
+        const f = await referenced();
+        switch (change) {
+          case 'source revoked': {
+            await defaultDatabase
+              .updateTable('photo_source')
+              .set({ revokedAt: new Date() })
+              .where('id', '=', f.authority.id)
+              .execute();
+            break;
+          }
+          case 'device paused': {
+            await defaultDatabase
+              .updateTable('desktop_device')
+              .set({ state: 'paused' })
+              .where('id', '=', f.authority.deviceId)
+              .execute();
+            break;
+          }
+          case 'session expired': {
+            await defaultDatabase
+              .updateTable('session')
+              .set({ expiresAt: new Date(0) })
+              .where('id', '=', f.authority.photoSessionId)
+              .execute();
+            break;
+          }
+          case 'library deleted': {
+            await defaultDatabase
+              .updateTable('library')
+              .set({ deletedAt: new Date() })
+              .where('id', '=', defaultDatabase.selectFrom('asset').select('libraryId').where('id', '=', f.asset.id))
+              .execute();
+            break;
+          }
+          // No default
+        }
+        const write = vi.fn().mockResolvedValue('unsafe');
+        await expect(f.sut.withExportClaim(f.operationId, f.claimToken, write, f.source)).rejects.toThrow(
+          'referenced original changed',
+        );
+        expect(write).not.toHaveBeenCalled();
+      },
+    );
+
+    it('rejects a foreign operation owner even with a live source', async () => {
+      const f = await referenced();
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      await defaultDatabase
+        .updateTable('media_operation')
+        .set({ ownerId: user.id })
+        .where('id', '=', f.operationId)
+        .execute();
+      const write = vi.fn().mockResolvedValue('unsafe');
+      await expect(f.sut.withExportClaim(f.operationId, f.claimToken, write, f.source)).rejects.toBeInstanceOf(
+        OperationClaimLostError,
+      );
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    it('commits only the captured reference version and rejects a changed source before writing', async () => {
+      const f = await referenced();
+      const write = vi.fn().mockResolvedValue('committed');
+      expect(await f.sut.withExportClaim(f.operationId, f.claimToken, write, f.source)).toBe('committed');
+      await defaultDatabase
+        .updateTable('photo_source_resource')
+        .set({ version: 'e'.repeat(64) })
+        .where('id', '=', f.bound.resource.id)
+        .execute();
+      write.mockClear();
+      await expect(f.sut.withExportClaim(f.operationId, f.claimToken, write, f.source)).rejects.toThrow(
+        'referenced original changed',
+      );
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    it.each([false, true])(
+      'refuses a changed Locked state without mislabelling the copy (includeLocked %s)',
+      async (includeLocked) => {
+        const f = await referenced();
+        await defaultDatabase
+          .insertInto('asset_lock')
+          .values({ assetId: f.asset.id, reason: AssetLockReason.Marked, lockedBy: f.owner.id })
+          .execute();
+        const write = vi.fn().mockResolvedValue('unsafe');
+        await expect(
+          f.sut.withExportClaim(f.operationId, f.claimToken, write, { ...f.source, includeLocked }),
+        ).rejects.toThrow('privacy changed');
+        expect(write).not.toHaveBeenCalled();
+      },
+    );
+
+    it('rolls back a source mutation made inside a proposed preservation commit', async () => {
+      const f = await referenced();
+      await expect(
+        f.sut.withExportClaim(
+          f.operationId,
+          f.claimToken,
+          async (scoped) => {
+            await scoped['db']
+              .updateTable('photo_source_resource')
+              .set({ version: 'e'.repeat(64) })
+              .where('id', '=', f.bound.resource.id)
+              .execute();
+          },
+          f.source,
+        ),
+      ).rejects.toThrow('referenced original changed');
+      expect(
+        (
+          await defaultDatabase
+            .selectFrom('photo_source_resource')
+            .select('version')
+            .where('id', '=', f.bound.resource.id)
+            .executeTakeFirstOrThrow()
+        ).version,
+      ).toBe(f.bound.resource.version);
+    });
 
     it.each([
       ['replaced', { claimToken: newUuid() }],

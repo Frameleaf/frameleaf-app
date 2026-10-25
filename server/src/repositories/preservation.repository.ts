@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { SearchFilter } from 'src/dtos/search.dto.js';
@@ -12,7 +12,9 @@ import {
   VideoMomentSource,
 } from 'src/enum.js';
 
+import { AssetLocalEffectRepository, type SourceEpoch } from 'src/repositories/asset-local-effect.repository.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
+import { holdSourceAdmission } from 'src/repositories/studio-source-admission.js';
 import { DB } from 'src/schema/index.js';
 import {
   PreservationItemTable,
@@ -24,7 +26,17 @@ import { anyUuid, searchAssetBuilder } from 'src/utils/database.js';
 import { assertExecutionActive } from 'src/utils/execution-signal.js';
 import { isLocked, isNotLocked } from 'src/utils/locked.js';
 import { OperationClaimLostError } from 'src/utils/operation-execution.js';
+import { PreservationPackageError } from 'src/utils/preservation.js';
+import { lockSourceAuthorities } from 'src/utils/source-authority-lock.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 
+export type PreservationExportSource = {
+  epoch: SourceEpoch;
+  originalPath: string;
+  checksum: Buffer;
+  includeLocked: boolean;
+  isLocked: boolean;
+};
 export type PreservationPackage = Selectable<PreservationPackageTable>;
 export type PreservationItem = Selectable<PreservationItemTable>;
 export type PreservationRestore = Selectable<PreservationRestoreTable>;
@@ -95,10 +107,55 @@ export class PreservationRepository {
     operationId: string,
     claimToken: string,
     callback: (repository: PreservationRepository) => Promise<T>,
+    source?: PreservationExportSource,
   ): Promise<T> {
     assertExecutionActive();
     return this.db.transaction().execute(async (tx) => {
-      const claim = tx
+      const scoped = new PreservationRepository(tx);
+      const checkSource = async () => {
+        if (!source) return;
+        try {
+          await holdSourceAdmission(tx, { sourceEpochs: [source.epoch] });
+        } catch (error) {
+          if (error instanceof ConflictException)
+            throw new PreservationPackageError(
+              'original_changed',
+              'The referenced original changed before its copy was saved',
+            );
+          throw error;
+        }
+        const current = await scoped.getExportAsset(source.epoch.assetId);
+        if (
+          !current ||
+          current.ownerId !== source.epoch.ownerId ||
+          current.deletedAt ||
+          current.status !== 'active' ||
+          current.isOffline ||
+          current.originalPath !== source.originalPath ||
+          !current.checksum.equals(source.checksum) ||
+          !!current.isLocked !== source.isLocked ||
+          (current.isLocked && !source.includeLocked)
+        )
+          throw new PreservationPackageError(
+            'original_changed',
+            'The referenced original or its privacy changed before its copy was saved',
+          );
+      };
+      if (source) {
+        const locator = parseSourceOriginalPath(source.originalPath);
+        if (
+          !locator ||
+          !source.epoch.reference ||
+          !(await lockSourceAuthorities(tx, [{ sourceId: locator.sourceId, ownerId: source.epoch.ownerId }]))
+        )
+          throw new PreservationPackageError(
+            'original_changed',
+            'The referenced original changed before its copy was saved',
+          );
+        await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${source.epoch.assetId})::int)`.execute(tx);
+        await checkSource();
+      }
+      let claim = tx
         .selectFrom('media_operation')
         .select('id')
         .where('id', '=', operationId)
@@ -109,10 +166,13 @@ export class PreservationRepository {
         .where('cancelRequestedAt', 'is', null)
         .where('pauseRequestedAt', 'is', null)
         .forUpdate();
+      if (source) claim = claim.where('ownerId', '=', source.epoch.ownerId);
       const held = await claim.executeTakeFirst();
       assertExecutionActive();
       if (!held) throw new OperationClaimLostError();
-      const result = await callback(new PreservationRepository(tx));
+      await checkSource();
+      const result = await callback(scoped);
+      await checkSource();
       // Row locks serialize claim changes, but lease time and execution cancellation still advance.
       const current = await claim.executeTakeFirst();
       assertExecutionActive();
@@ -690,6 +750,10 @@ export class PreservationRepository {
   /* ---------------------------------------------------------------- */
   /* Export reads: one original and what the library knows about it    */
   /* ---------------------------------------------------------------- */
+  async getExportSourceEpoch(id: string) {
+    return (await AssetLocalEffectRepository.sourceEpochs(this.db, [id]))[0];
+  }
+
   getExportAsset(id: string) {
     return this.db
       .selectFrom('asset')

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { extname, join } from 'node:path';
 import z from 'zod';
@@ -30,6 +30,7 @@ import {
   PreservationPackageSource,
 } from 'src/repositories/preservation-files.repository.js';
 import {
+  type PreservationExportSource,
   PreservationItem,
   PreservationPackage,
   PreservationRepository,
@@ -41,6 +42,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetService } from 'src/services/asset.service.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
 import { StackService } from 'src/services/stack.service.js';
 import { cropBoxOf, isRegionInsideCrop } from 'src/utils/documents.js';
 import {
@@ -48,6 +50,8 @@ import {
   assertExecutionActive,
   executionSignal,
   settleOperationExecution,
+  withExecutionCleanup,
+  withExecutionSignal,
 } from 'src/utils/execution-signal.js';
 import { OperationClaimLostError, settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
 import {
@@ -102,6 +106,7 @@ import {
   splitDescription,
   verificationStatus,
 } from 'src/utils/preservation.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 import { upsertTags } from 'src/utils/tag.js';
 
@@ -122,7 +127,10 @@ const FINDING_EDIT_WAITING = 'edit_recipe_waiting';
 
 type RunningJob = { operation: MediaOperation; claimToken: string };
 type Outcome = 'copied' | 'failed' | 'skipped';
-type ExportCommit = <T>(callback: (repository: PreservationRepository) => Promise<T>) => Promise<T>;
+type ExportCommit = <T>(
+  callback: (repository: PreservationRepository) => Promise<T>,
+  source?: PreservationExportSource,
+) => Promise<T>;
 
 type RestoreContext = {
   auth: AuthDto;
@@ -227,6 +235,9 @@ const overlap = (
  */
 @Injectable()
 export class PreservationWorkerService {
+  @Inject(SourceOriginalService)
+  private sourceOriginalService!: SourceOriginalService;
+  private readonly sourceReaderOwnerId = randomUUID();
   private tickHandle?: ReturnType<typeof setInterval>;
   private active?: Promise<void>;
   private stopping = false;
@@ -449,7 +460,10 @@ export class PreservationWorkerService {
       );
     }
 
-    const commit: ExportCommit = (write) => this.repository.withExportClaim(operation.id, claimToken, write);
+    const commit: ExportCommit = (write, source) =>
+      source
+        ? this.repository.withExportClaim(operation.id, claimToken, write, source)
+        : this.repository.withExportClaim(operation.id, claimToken, write);
     const result = { phase: 'copying', packageId: found.id, copied: 0, failed: 0, skipped: 0 };
     let done = 0;
     let total = await this.repository.countExportWork(found.id, PRESERVATION_ITEM_ATTEMPTS);
@@ -501,15 +515,25 @@ export class PreservationWorkerService {
 
   /** Copy one original and write its sidecar. A full disk or stopped claim aborts the job. */
   private async exportItem(found: PreservationPackage, item: PreservationItem, commit: ExportCommit): Promise<Outcome> {
-    const publish: PreservationFileCommit = (write) => commit(() => write());
+    let input: Awaited<ReturnType<SourceOriginalService['open']>> | undefined;
+    let source: PreservationExportSource | undefined;
+    const publish: PreservationFileCommit = (write) => {
+      const save = () => commit(() => write(), source);
+      return input ? withExecutionSignal(input.signal, save) : save();
+    };
     let finishing = false;
     const finish = (patch: Parameters<PreservationRepository['finishItem']>[1]) => {
       finishing = true;
-      return commit(async (repository) => {
-        // Interrupted work has no outcome: the operation claim owns its recovery budget.
-        await repository.beginItemAttempt(item.id);
-        await repository.finishItem(item.id, patch);
-      });
+      const save = () =>
+        commit(
+          async (repository) => {
+            // Interrupted work has no outcome: the operation claim owns its recovery budget.
+            await repository.beginItemAttempt(item.id);
+            await repository.finishItem(item.id, patch);
+          },
+          patch.state === 'copied' ? source : undefined,
+        );
+      return patch.state === 'copied' && input ? withExecutionSignal(input.signal, save) : save();
     };
     try {
       const asset = await this.repository.getExportAsset(item.sourceAssetId);
@@ -526,15 +550,64 @@ export class PreservationWorkerService {
         throw new PreservationPackageError('original_offline', 'The original is offline');
       }
 
+      if (parseSourceOriginalPath(asset.originalPath)) {
+        const epoch = await this.repository.getExportSourceEpoch(asset.id);
+        if (!epoch?.reference || epoch.ownerId !== found.ownerId || epoch.assetId !== asset.id)
+          throw new PreservationPackageError('original_unavailable', 'The referenced original is unavailable');
+        source = {
+          epoch: structuredClone(epoch),
+          originalPath: asset.originalPath,
+          checksum: Buffer.from(asset.checksum),
+          includeLocked: found.includeLocked,
+          isLocked: !!asset.isLocked,
+        };
+        input = await this.sourceOriginalService.open(
+          asset.id,
+          { kind: 'http', readerId: randomUUID(), ownerId: this.sourceReaderOwnerId },
+          async () => {
+            const current = await this.repository.getExportAsset(asset.id);
+            if (
+              !current ||
+              current.ownerId !== found.ownerId ||
+              current.deletedAt ||
+              current.status !== 'active' ||
+              current.isOffline ||
+              current.originalPath !== asset.originalPath ||
+              !current.checksum.equals(asset.checksum) ||
+              !!current.isLocked !== !!asset.isLocked ||
+              (current.isLocked && !found.includeLocked)
+            )
+              throw new PreservationPackageError('original_changed', 'The referenced original or its privacy changed');
+          },
+          executionSignal(),
+        );
+        if (
+          input.resourceId !== epoch.reference.resourceId ||
+          input.resourceVersion !== epoch.reference.version ||
+          input.verifiedSha256 !== epoch.reference.sha256
+        )
+          throw new PreservationPackageError(
+            'original_changed',
+            'The referenced original changed before it could be copied',
+          );
+      }
+
       const names = preservationEntryNames(asset.id, asset.originalFileName);
       const destination = join(found.path, names.original);
       // External-library checksums identify a path, so establish their content digests during the copy.
-      const contentChecksum =
-        asset.checksumAlgorithm === ChecksumAlgorithm.sha1Path ? undefined : Buffer.from(asset.checksum);
-      const digests = await this.files.copyOriginal(asset.originalPath, destination, publish, contentChecksum);
+      const contentChecksum = input
+        ? Buffer.from(input.verifiedSha256, 'hex')
+        : asset.checksumAlgorithm === ChecksumAlgorithm.sha1Path
+          ? undefined
+          : Buffer.from(asset.checksum);
+      const copy = () =>
+        this.files.copyOriginal(input?.localPath ?? asset.originalPath, destination, publish, contentChecksum);
+      const digests = input ? await withExecutionSignal(input.signal, copy) : await copy();
+      await input?.check();
       assertExecutionActive();
-      const measured =
-        asset.checksumAlgorithm === ChecksumAlgorithm.sha1File
+      const measured = input
+        ? digests.sha256
+        : asset.checksumAlgorithm === ChecksumAlgorithm.sha1File
           ? digests.sha1
           : asset.checksumAlgorithm === ChecksumAlgorithm.sha256File
             ? digests.sha256
@@ -563,9 +636,21 @@ export class PreservationWorkerService {
         original: { path: names.original, sha1: digests.sha1, sha256: digests.sha256, bytes: digests.bytes },
         metadata,
       };
+      await input?.check();
       await finish({ state: 'copied', entry, locked: !!asset.isLocked });
       return 'copied';
     } catch (error) {
+      if (
+        error instanceof Error &&
+        [
+          'artifact_close_unconfirmed',
+          'source_original_shutdown_unconfirmed',
+          'source_reader_stop_unconfirmed',
+        ].includes(error.message)
+      ) {
+        this.stopping = true;
+        throw error;
+      }
       // Recover an uncertain commit through the operation, without writing a second item outcome.
       if (finishing) throw error;
       assertExecutionActive();
@@ -576,6 +661,12 @@ export class PreservationWorkerService {
         throw error;
       }
       return 'failed';
+    } finally {
+      await (input ? withExecutionCleanup(() => input!.release()) : Promise.resolve()).catch((error) => {
+        this.stopping = true;
+        this.logger.error('Preservation processing stopped because source cleanup could not be confirmed');
+        throw error;
+      });
     }
   }
 
