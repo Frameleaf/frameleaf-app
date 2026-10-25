@@ -28,6 +28,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { openRenderArtifact, receiveRenderArtifact } from 'src/utils/render-artifact.js';
 import { sealStudioSidecar } from 'src/utils/studio-subtitle-sidecar.js';
 import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
+import { bindSourceReference } from 'test/fixtures/source-reference.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -272,7 +273,7 @@ describe('paired whole-export authority under canonical migrations', () => {
 
 /** Actual file moves and canonical repository publication, independent of encoder qualification. */
 describe('paired file publication and private reads', () => {
-  const staged = async (withSource = false) => {
+  const staged = async (withSource = false, referenceSource = false) => {
     const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
     const { user } = await ctx.newUser();
     const { session } = await ctx.newSession({ userId: user.id, pinExpiresAt: new Date(Date.now() + 60_000) });
@@ -291,6 +292,11 @@ describe('paired file publication and private reads', () => {
     });
     const repo = new StudioExportRepository(db, new DerivativePrivacyRepository(db));
     const asset = withSource ? (await ctx.newAsset({ ownerId: user.id })).asset : null;
+    const reference = asset && referenceSource ? await bindSourceReference(db, asset) : null;
+    if (asset && reference)
+      asset.checksum = (
+        await db.selectFrom('asset').select('checksum').where('id', '=', asset.id).executeTakeFirstOrThrow()
+      ).checksum;
     const epochs = asset ? await AssetLocalEffectRepository.sourceEpochs(db, [asset.id]) : [];
     const sources = asset
       ? [
@@ -415,9 +421,31 @@ describe('paired file publication and private reads', () => {
       operation: staged!.operation,
       failure,
       asset,
+      reference,
       ctx,
     };
   };
+  it('reads the independently published subtitle after its original provider session expires', async () => {
+    const f = await staged(true, true);
+    const published = await f.repo.publish(f.input);
+    const authority = await db
+      .selectFrom('photo_source')
+      .innerJoin('photo_source_run', 'photo_source_run.sourceId', 'photo_source.id')
+      .select('photoSessionId')
+      .where('photo_source_run.id', '=', f.reference!.resource.runId)
+      .executeTakeFirstOrThrow();
+    await db
+      .updateTable('session')
+      .set({ expiresAt: new Date(0) })
+      .where('id', '=', authority.photoSessionId)
+      .execute();
+    await expect(
+      f.repo.withSubtitleAccess(published.version.id, f.user.id, f.session.id, (version) =>
+        readFile(version.subtitlePath!),
+      ),
+    ).resolves.toEqual(Buffer.alloc(0));
+    expect(await readFile(f.after[0])).toEqual(f.media);
+  });
   it('atomically publishes both actual files and an identical replay never moves them again', async () => {
     const f = await staged();
     const result = await f.repo.publish(f.input);

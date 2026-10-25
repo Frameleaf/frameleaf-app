@@ -18,6 +18,7 @@ import {
 import { SqlQueueStore } from 'src/queue/store.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { AssetLocalEffectRepository, type SourceEpoch } from 'src/repositories/asset-local-effect.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
@@ -36,6 +37,7 @@ import { TagRepository } from 'src/repositories/tag.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getOwnerHiddenShareIds } from 'src/utils/item-share.js';
+import { bindSourceReference } from 'test/fixtures/source-reference.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -61,6 +63,7 @@ const deferred = () => {
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
+afterAll(async () => defaultDatabase?.destroy());
 
 afterEach(async () => {
   await defaultDatabase.deleteFrom('studio_export_remote_reference').execute();
@@ -74,7 +77,7 @@ const stagedExport = async (
   { sut, projects }: Ctx,
   ownerId: string,
   sources: Source[],
-  options: { destination?: MediaOperationDestination; projectId?: string } = {},
+  options: { destination?: MediaOperationDestination; projectId?: string; sourceEpochs?: SourceEpoch[] } = {},
 ) => {
   const projectId = options.projectId ?? (await projects.create({ ownerId, name: 'Lake trip' })).id;
   const destination = options.destination ?? MediaOperationDestination.Local;
@@ -90,7 +93,7 @@ const stagedExport = async (
       retryOfId: null,
       projectId,
       revisionId: 'digest-1',
-      snapshot: { kind: 'studio-export' },
+      snapshot: { kind: 'studio-export', ...(options.sourceEpochs && { sourceEpochs: options.sourceEpochs }) },
       settings: {},
       estimate: null,
       maxAttempts: 3,
@@ -108,6 +111,9 @@ const stagedExport = async (
       ownerId: source.ownerId,
       checksum: source.checksum.toString('base64'),
       sourceAccess: source.access,
+      ...(options.sourceEpochs && {
+        sourceEpoch: options.sourceEpochs.find((epoch) => epoch.assetId === source.id)?.epoch ?? null,
+      }),
     })),
   });
   const checksum = randomBytes(32);
@@ -213,6 +219,120 @@ const expectRefusal = async (promise: Promise<unknown>, code: string) => {
 };
 
 describe(StudioExportRepository.name, () => {
+  it.each([
+    'valid',
+    'changed-version',
+    'omitted-caller-epoch',
+    'expiry-during-move',
+    'expiry-during-queue',
+    'published-replay',
+    'published-save',
+    'staged-rollback',
+  ] as const)('binds reference export publication to its stored operation: %s', async (change) => {
+    const context = setup(),
+      db = defaultDatabase;
+    const { user } = await context.ctx.newUser();
+    const { asset } = await context.ctx.newAsset({ ownerId: user.id });
+    const bound = await bindSourceReference(db, asset);
+    const live = await db
+      .selectFrom('asset')
+      .select(['id', 'ownerId', 'checksum'])
+      .where('id', '=', asset.id)
+      .executeTakeFirstOrThrow();
+    const source: Source = { ...live, access: 'owner' };
+    const epochs = await AssetLocalEffectRepository.sourceEpochs(db, [asset.id]);
+    const staged = await stagedExport(context, user.id, [source], { sourceEpochs: epochs });
+    const input = publication(staged, [source], { sources: await context.sut.getSources(staged.version.id) });
+    if (change === 'published-save') {
+      input.retainInProject = true;
+      input.expectedScope = StudioExportScope.Project;
+    }
+    const authority = await db
+      .selectFrom('photo_source')
+      .innerJoin('photo_source_run', 'photo_source_run.sourceId', 'photo_source.id')
+      .select('photoSessionId')
+      .where('photo_source_run.id', '=', bound.resource.runId)
+      .executeTakeFirstOrThrow();
+    const moved = vi.fn().mockResolvedValue(undefined),
+      rollback = vi.fn().mockResolvedValue(undefined);
+    input.files = { paths: [input.path], move: moved, rollback };
+    switch (change) {
+      case 'changed-version':
+      case 'omitted-caller-epoch': {
+        await db
+          .updateTable('photo_source_resource')
+          .set({ version: 'e'.repeat(64) })
+          .where('id', '=', bound.resource.id)
+          .execute();
+        if (change === 'omitted-caller-epoch') input.sources = publication(staged, [source]).sources;
+        break;
+      }
+      case 'expiry-during-move':
+      case 'expiry-during-queue': {
+        await db
+          .updateTable('session')
+          .set({ expiresAt: new Date(Date.now() + 500) })
+          .where('id', '=', authority.photoSessionId)
+          .execute();
+        if (change === 'expiry-during-move')
+          moved.mockImplementationOnce(() => new Promise((resolve) => setTimeout(resolve, 600)));
+        break;
+      }
+      // No default
+    }
+    const metadata = vi.fn(async (trx: Transaction<DB>, _id: string) => {
+      if (change === 'expiry-during-queue') await sql`SELECT pg_sleep(0.6)`.execute(trx);
+    });
+    if (change === 'staged-rollback') {
+      expect(await context.sut.restorePublicationFiles(input, input.files!)).toBe(true);
+      expect(rollback).toHaveBeenCalledOnce();
+      expect(moved).not.toHaveBeenCalled();
+    } else if (['valid', 'published-replay', 'published-save'].includes(change)) {
+      expect(await context.sut.publish(input, metadata)).toMatchObject({ status: 'published' });
+      const operation = await db
+        .selectFrom('media_operation')
+        .select('snapshot')
+        .where('id', '=', staged.publishId)
+        .executeTakeFirstOrThrow();
+      expect(operation.snapshot.sourceEpochs).toEqual(epochs);
+      if (change === 'published-replay') {
+        const { user: other } = await context.ctx.newUser();
+        await expectRefusal(context.sut.publish({ ...input, ownerId: other.id }), 'not-staged');
+        await db
+          .updateTable('session')
+          .set({ expiresAt: new Date(0) })
+          .where('id', '=', authority.photoSessionId)
+          .execute();
+        expect(await context.sut.publish(input, metadata)).toMatchObject({ status: 'published', createdAssetId: null });
+        expect(metadata).toHaveBeenCalledOnce();
+        expect(moved).toHaveBeenCalledOnce();
+        const notification = vi.fn().mockResolvedValue(undefined);
+        await context.sut.publicationFollowups(staged.publishId, staged.claimToken, metadata, notification);
+        expect(metadata).toHaveBeenCalledOnce();
+        expect(notification).toHaveBeenCalledOnce();
+      } else if (change === 'published-save') {
+        await db
+          .updateTable('session')
+          .set({ expiresAt: new Date(0) })
+          .where('id', '=', authority.photoSessionId)
+          .execute();
+        const saved = await context.sut.saveToLibrary(
+          { ...input, files: { ...input.files!, sourcePath: input.path } },
+          metadata,
+        );
+        expect(saved).toMatchObject({
+          version: { scope: StudioExportScope.Library },
+          createdAssetId: expect.any(String),
+        });
+        expect(metadata).toHaveBeenCalledOnce();
+      }
+    } else {
+      await expect(context.sut.publish(input, metadata)).rejects.toThrow('studio_source_admission_changed');
+      expect((await context.sut.getById(staged.version.id))?.state).toBe(StudioExportVersionState.Staged);
+      expect(rollback).toHaveBeenCalledTimes(change.startsWith('expiry-') ? 1 : 0);
+    }
+  });
+
   describe('durable publication follow-ups', () => {
     const schedule = (name: JobName) => async (tx: Transaction<DB>, assetId: string) => {
       await new SqlQueueStore(defaultDatabase).enqueue(

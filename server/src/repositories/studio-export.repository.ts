@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
+import type { SourceEpoch } from 'src/repositories/asset-local-effect.repository.js';
 import type { VideoPacketInfo } from 'src/types.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { RenderArtifact } from 'src/utils/render-artifact.js';
@@ -10,6 +11,7 @@ import {
   AssetVisibility,
   ChecksumAlgorithm,
   MediaOperationDestination,
+  MediaOperationKind,
   MediaOperationStatus,
   Permission,
   StudioExportRemoteReason,
@@ -22,7 +24,7 @@ import { DerivativePrivacyRepository, LockedSourceRow } from 'src/repositories/d
 import { currentAuth } from 'src/repositories/icloud-audit.repository.js';
 import { MediaOperation, MediaOperationCreate } from 'src/repositories/media-operation.repository.js';
 import { PhysicalFileRepository, lockFilePath } from 'src/repositories/physical-file.repository.js';
-import { holdSourceAdmission } from 'src/repositories/studio-source-admission.js';
+import { holdOwnedOutputAdmission, holdSourceAdmission } from 'src/repositories/studio-source-admission.js';
 import { DB } from 'src/schema/index.js';
 import {
   StudioExportRemoteReferenceTable,
@@ -463,11 +465,10 @@ export class StudioExportRepository {
         ]),
       ].sort();
       const evidence = await this.privacy.lockSources(tx, ids);
-      await holdSourceAdmission(tx, {
-        sourceEpochs: sources
-          .filter((s) => s.assetId)
-          .map((s) => ({ assetId: s.assetId, ownerId: s.ownerId, epoch: s.sourceEpoch })),
-      });
+      await holdOwnedOutputAdmission(
+        tx,
+        sources.filter((s) => s.assetId).map((s) => ({ assetId: s.assetId, ownerId: s.ownerId, epoch: s.sourceEpoch })),
+      );
       await tx
         .selectFrom('studio_export_version')
         .select('id')
@@ -605,9 +606,12 @@ export class StudioExportRepository {
       )
         throw new StudioExportRefusal('output-rejected', 'The required subtitle sibling is unavailable');
       if (!seal && output.subtitle) throw new StudioExportRefusal('output-rejected', 'Unexpected subtitle sibling');
+      const publication = publish(version);
+      if (observed?.snapshot.sourceEpochs !== undefined)
+        publication.snapshot = { ...publication.snapshot, sourceEpochs: observed.snapshot.sourceEpochs };
       const operation = await tx
         .insertInto('media_operation')
-        .values(publish(version))
+        .values(publication)
         .returningAll()
         .executeTakeFirstOrThrow();
       const staged = await tx
@@ -630,6 +634,7 @@ export class StudioExportRepository {
         .executeTakeFirstOrThrow();
       if (requireActiveClaim && !(await this.lockClaim(tx, renderOperationId, claimToken, true)))
         throw new StudioExportRefusal('claim-lost', 'The render claim expired during staging');
+      if (observed) await holdSourceAdmission(tx, observed.snapshot);
       return { version: staged as unknown as StudioExportVersion, operation: operation as unknown as MediaOperation };
     });
   }
@@ -681,6 +686,46 @@ export class StudioExportRepository {
     ) as Promise<StudioExportVersion | undefined>;
   }
   /** Serialize publication and staging against cancellation and claim recovery (FL-43). */
+  private async publicationAdmission(
+    tx: Kysely<DB>,
+    input: Pick<StudioExportPublication, 'operationId' | 'versionId' | 'sources'>,
+  ): Promise<Record<string, unknown> | undefined> {
+    const operation = await tx
+      .selectFrom('media_operation')
+      .select('snapshot')
+      .where('id', '=', input.operationId)
+      .where('kind', '=', MediaOperationKind.StudioExportPublish)
+      .executeTakeFirst();
+    if (!operation) return;
+    const ids = [...new Set(input.sources.flatMap((row) => (row.assetId ? [row.assetId] : [])))].sort();
+    const snapshot = operation.snapshot;
+    if (snapshot.versionId !== undefined && snapshot.versionId !== input.versionId)
+      throw new ConflictException('studio_source_admission_changed');
+    if (snapshot.sourceEpochs !== undefined) {
+      if (!Array.isArray(snapshot.sourceEpochs)) throw new ConflictException('studio_source_admission_changed');
+      const bound = [...new Set((snapshot.sourceEpochs as SourceEpoch[]).map((row) => row?.assetId))].sort();
+      if (ids.length !== bound.length || ids.some((id, index) => id !== bound[index]))
+        throw new ConflictException('studio_source_admission_changed');
+      return snapshot;
+    }
+    // Historical managed exports retain their old representation; references require immutable admission.
+    if (
+      ids.length > 0 &&
+      (await tx
+        .selectFrom('asset')
+        .select('id')
+        .where('id', 'in', ids)
+        .where('originalPath', 'ilike', 'frameleaf-source:%')
+        .executeTakeFirst())
+    )
+      throw new ConflictException('studio_source_admission_changed');
+    return {
+      sourceEpochs: input.sources
+        .filter((row) => row.assetId && row.ownerId && row.sourceEpoch !== null && row.sourceEpoch !== undefined)
+        .map((row) => ({ assetId: row.assetId, ownerId: row.ownerId, epoch: String(row.sourceEpoch) })),
+    };
+  }
+
   private async lockClaim(
     tx: Kysely<DB>,
     operationId: string,
@@ -735,6 +780,18 @@ export class StudioExportRepository {
     scheduleNotification?: ScheduleStudioNotification,
   ): Promise<StudioExportPublished> {
     return this.db.transaction().execute(async (tx) => {
+      const admission = await this.publicationAdmission(tx, input);
+      if (!admission) throw new StudioExportRefusal('claim-lost', 'The publication operation is unavailable');
+      const observed = await tx
+        .selectFrom('studio_export_version')
+        .select(['state', 'publishOperationId'])
+        .where('id', '=', input.versionId)
+        .executeTakeFirst();
+      const replay =
+        observed?.state === StudioExportVersionState.Published && observed.publishOperationId === input.operationId;
+      const hold = () =>
+        replay ? holdOwnedOutputAdmission(tx, admission.sourceEpochs) : holdSourceAdmission(tx, admission);
+      await hold();
       for (const path of [...new Set(input.files?.paths)].sort()) await lockFilePath(tx, path);
       if (
         input.subtitle &&
@@ -743,11 +800,6 @@ export class StudioExportRepository {
         )
       )
         throw new StudioExportRefusal('source-access-lost', 'Required subtitle source epoch is unavailable');
-      await holdSourceAdmission(tx, {
-        sourceEpochs: input.sources
-          .filter((row) => row.assetId && row.ownerId && row.sourceEpoch !== null && row.sourceEpoch !== undefined)
-          .map((row) => ({ assetId: row.assetId, ownerId: row.ownerId, epoch: String(row.sourceEpoch) })),
-      });
       if (!(await this.lockClaim(tx, input.operationId, input.claimToken, true))) {
         throw new StudioExportRefusal('claim-lost', 'The publication claim is no longer validating');
       }
@@ -757,7 +809,11 @@ export class StudioExportRepository {
         .where('id', '=', input.versionId)
         .forUpdate()
         .executeTakeFirst()) as StudioExportVersion | undefined;
-      if (version?.state === StudioExportVersionState.Published && version.publishOperationId === input.operationId) {
+      if (
+        version?.state === StudioExportVersionState.Published &&
+        version.publishOperationId === input.operationId &&
+        version.ownerId === input.ownerId
+      ) {
         const sealed = sidecarSealOf(version.settings);
         if (
           sealed &&
@@ -775,6 +831,7 @@ export class StudioExportRepository {
         )
           throw new StudioExportRefusal('output-rejected', 'Published pair identity changed');
         const privacy = (version.privacy ?? {}) as unknown as DerivativePrivacy;
+        await hold();
         return { status: 'published', version, privacy, createdAssetId: null, reusedAssetId: null };
       }
       if (
@@ -821,6 +878,7 @@ export class StudioExportRepository {
       }
       if (!(await this.lockClaim(tx, input.operationId, input.claimToken, true)))
         throw new StudioExportRefusal('claim-lost', 'The publication claim expired while checking sources');
+      await hold();
       try {
         await input.files?.move();
         const { createdAssetId, reusedAssetId } =
@@ -887,6 +945,7 @@ export class StudioExportRepository {
           })
           .where('id', '=', input.operationId)
           .execute();
+        await hold();
         return {
           status: 'published',
           version: published as unknown as StudioExportVersion,
@@ -913,12 +972,10 @@ export class StudioExportRepository {
     files: NonNullable<StudioExportPublication['files']>,
   ): Promise<boolean> {
     return this.db.transaction().execute(async (tx) => {
+      const admission = await this.publicationAdmission(tx, input);
+      if (!admission) return false;
+      await holdSourceAdmission(tx, admission);
       for (const path of [...new Set(files.paths)].sort()) await lockFilePath(tx, path);
-      await holdSourceAdmission(tx, {
-        sourceEpochs: input.sources
-          .filter((s) => s.assetId && s.ownerId && s.sourceEpoch !== null && s.sourceEpoch !== undefined)
-          .map((s) => ({ assetId: s.assetId, ownerId: s.ownerId, epoch: s.sourceEpoch })),
-      });
       if (!(await this.lockClaim(tx, input.operationId, input.claimToken, true))) return false;
       const version = await tx
         .selectFrom('studio_export_version')
@@ -930,6 +987,7 @@ export class StudioExportRepository {
         return false;
       if (!(await this.lockClaim(tx, input.operationId, input.claimToken, true))) return false;
       await files.rollback();
+      await holdSourceAdmission(tx, admission);
       return true;
     });
   }
@@ -941,6 +999,12 @@ export class StudioExportRepository {
     scheduleNotification: ScheduleStudioNotification,
   ) {
     return this.db.transaction().execute(async (tx) => {
+      const admission = await tx
+        .selectFrom('media_operation')
+        .select('snapshot')
+        .where('id', '=', operationId)
+        .executeTakeFirst();
+      if (admission) await holdOwnedOutputAdmission(tx, admission.snapshot.sourceEpochs);
       if (!(await this.lockClaim(tx, operationId, claimToken, true))) {
         throw new StudioExportRefusal('claim-lost', 'The publication follow-up claim expired');
       }
@@ -979,6 +1043,7 @@ export class StudioExportRepository {
       if (!(await this.lockClaim(tx, operationId, claimToken, true))) {
         throw new StudioExportRefusal('claim-lost', 'The publication follow-up claim expired during queue admission');
       }
+      if (admission) await holdOwnedOutputAdmission(tx, admission.snapshot.sourceEpochs);
       return followups;
     });
   }
@@ -1043,11 +1108,10 @@ export class StudioExportRepository {
   }> {
     return this.db.transaction().execute(async (tx) => {
       for (const path of [...new Set(input.files?.paths)].sort()) await lockFilePath(tx, path);
-      await holdSourceAdmission(tx, {
-        sourceEpochs: input.sources
-          .filter((row) => row.assetId && row.ownerId && row.sourceEpoch !== null && row.sourceEpoch !== undefined)
-          .map((row) => ({ assetId: row.assetId, ownerId: row.ownerId, epoch: String(row.sourceEpoch) })),
-      });
+      const epochs = input.sources
+        .filter((row) => row.assetId && row.ownerId && row.sourceEpoch !== null && row.sourceEpoch !== undefined)
+        .map((row) => ({ assetId: row.assetId, ownerId: row.ownerId, epoch: String(row.sourceEpoch) }));
+      await holdOwnedOutputAdmission(tx, epochs);
       const version = (await tx
         .selectFrom('studio_export_version')
         .selectAll()
@@ -1095,6 +1159,7 @@ export class StudioExportRepository {
           .returningAll()
           .executeTakeFirstOrThrow();
         if (createdAssetId && scheduleMetadata) await scheduleMetadata(tx, createdAssetId);
+        await holdOwnedOutputAdmission(tx, epochs);
         return { version: saved as unknown as StudioExportVersion, createdAssetId, reusedAssetId };
       } catch (error) {
         try {
