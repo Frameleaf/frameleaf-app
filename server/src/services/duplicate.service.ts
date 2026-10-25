@@ -1,8 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { JobOf } from 'src/types.js';
+import type { JobOf, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import type { ClipEmbedding } from 'src/utils/clip-embedding.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnJob } from 'src/decorators.js';
@@ -30,17 +30,21 @@ import {
   SystemMetadataKey,
   TranscodeTarget,
 } from 'src/enum.js';
-import { attemptOutputPath, deferJobAdoption, jobSignal, publishJobResult, queueExecution } from 'src/queue/context.js';
+import { attemptOutputPath, deferJobAdoption, publishJobResult, queueExecution } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
+import { isMediaProcessShutdownUnconfirmed } from 'src/queue/process-lifetime.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { AssetDuplicateResult } from 'src/repositories/search.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
 import { classifyDuplicateGroup, duplicateDisposalReasons } from 'src/utils/duplicate-review.js';
 import { suggestDuplicateKeepAssetIds } from 'src/utils/duplicate.js';
+import { assertExecutionActive, executionSignal, withExecutionSignal } from 'src/utils/execution-signal.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { effectiveVisibilityOf } from 'src/utils/locked.js';
 import { ThumbnailConfig } from 'src/utils/media.js';
 import { isDuplicateDetectionEnabled } from 'src/utils/misc.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 
 type ResolveRequest = {
   assetUpdate: {
@@ -132,6 +136,9 @@ const getUniqueCoordinate = (assets: MapAsset[], key: 'latitude' | 'longitude'):
 
 @Injectable()
 export class DuplicateService extends BaseService {
+  @Inject(SourceOriginalService)
+  private sourceOriginalService!: SourceOriginalService;
+
   async getDuplicates(auth: AuthDto): Promise<DuplicateResponseDto[]> {
     // Clean up singleton groups (assets that are the only member of their duplicate group)
     await this.duplicateRepository.cleanupSingletonGroups(auth.user.id);
@@ -625,89 +632,157 @@ export class DuplicateService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const timestamps = this.getVideoDuplicateFrameTimestamps(enhancedVideo.frameCount, asset.format);
-    if (timestamps.length < VIDEO_DUPLICATE_FRAME_MIN_COUNT) {
-      this.logger.debug(`Asset ${id} is too short for enhanced video duplicate detection`);
-      await publishJobResult(() =>
-        this.assetRepository.upsertJobStatus({ assetId: asset.id, duplicatesDetectedAt: new Date() }),
-      );
-      return JobStatus.Skipped;
-    }
-
-    const frames: Array<{
-      assetId: string;
-      frameIndex: number;
-      timestampMs: number;
-      path: string;
-      embedding: ClipEmbedding;
-    }> = [];
-    for (const [frameIndex, timestamp] of timestamps.entries()) {
-      const path = attemptOutputPath(
-        StorageCore.getNestedPath(
-          StorageFolder.Thumbnails,
-          asset.ownerId,
-          `${asset.id}_video_duplicate_${frameIndex}.jpeg`,
-        ),
-      );
-      this.storageCore.ensureFolders(path);
-
-      const command = ThumbnailConfig.create(
-        { ...config.ffmpeg, targetResolution: config.image.preview.size.toString() },
-        timestamp,
-      ).getCommand(TranscodeTarget.Video, asset.videoStream, undefined, asset.format);
-
-      try {
-        await this.mediaRepository.transcode(asset.originalPath, path, command);
-        const selection = await this.selectRoutedMlDestination({
-          workload: MlWorkload.Clip,
-          jobId: asset.id,
-          jobName: JobName.AssetGenerateVideoDuplicateFrames,
+    const reference = parseSourceOriginalPath(asset.originalPath);
+    const authority = queueExecution.getStore()?.sourceAuthorities?.get(asset.id);
+    if (
+      reference &&
+      (!authority ||
+        authority.ownerId !== asset.ownerId ||
+        authority.snapshot.revision.originalPath !== asset.originalPath)
+    )
+      throw new Error('Video duplicate source claim changed');
+    const original = reference
+      ? await this.sourceOriginalService.openForJob(asset.id, async () => {
+          this.assertVideoFrameActive();
+          await authority!.assertCurrent();
+          const current = await this.assetJobRepository.getForVideoDuplicateFrameJob(asset.id);
+          if (
+            !current ||
+            current.ownerId !== asset.ownerId ||
+            current.originalPath !== asset.originalPath ||
+            current.visibility === AssetVisibility.Hidden ||
+            current.visibility === AssetVisibility.Locked
+          )
+            throw new Error('Video duplicate source changed');
+        })
+      : undefined;
+    if (original) deferJobAdoption(() => original.check());
+    const render = async () => {
+      let video: { videoStream: VideoStreamInfo; format: VideoFormat } = asset;
+      if (original) {
+        const probe = await this.mediaRepository.probe(original.localPath, {
+          countFrames: false,
+          signal: executionSignal(),
         });
-        const embedding = await this.machineLearningRepository.encodeImage(selection, path, machineLearning.clip);
-
-        frames.push({
-          assetId: asset.id,
-          frameIndex,
-          timestampMs: Math.round(timestamp * 1000),
-          path,
-          embedding,
-        });
-      } catch (error: any) {
-        jobSignal()?.throwIfAborted();
-        // A single frame can fail to extract when its sampled start_time lands in
-        // the sparse-keyframe dead zone near EOF (ffmpeg writes no packets and
-        // exits non-zero). Skip just that frame instead of failing the whole job.
-        this.logger.warn(
-          `Failed to extract video duplicate frame ${frameIndex} for asset ${asset.id} at ${timestamp}s: ${error}`,
-          error?.stack,
+        this.assertVideoFrameActive();
+        await original.check();
+        const stream = probe.videoStreams[0];
+        if (!stream) throw new Error('The original has no video stream');
+        video = { ...asset, videoStream: stream, format: { ...probe.format, duration: probe.format.duration * 1000 } };
+      }
+      const timestamps = this.getVideoDuplicateFrameTimestamps(enhancedVideo.frameCount, video.format);
+      if (timestamps.length < VIDEO_DUPLICATE_FRAME_MIN_COUNT) {
+        this.logger.debug(`Asset ${id} is too short for enhanced video duplicate detection`);
+        await publishJobResult(() =>
+          this.assetRepository.upsertJobStatus({ assetId: asset.id, duplicatesDetectedAt: new Date() }),
         );
+        return JobStatus.Skipped;
       }
-    }
 
-    if (frames.length === 0) {
-      // Every frame failed: don't fall through to replaceVideoDuplicateFrames([]),
-      // which would delete any previously-stored frames for this asset. Surface
-      // the job as failed so it can be retried.
-      this.logger.warn(`Failed to extract any video duplicate frames for asset ${asset.id}`);
-      return JobStatus.Failed;
-    }
+      const frames: Array<{
+        assetId: string;
+        frameIndex: number;
+        timestampMs: number;
+        path: string;
+        embedding: ClipEmbedding;
+      }> = [];
+      for (const [frameIndex, timestamp] of timestamps.entries()) {
+        this.assertVideoFrameActive();
+        await original?.check();
+        const path = attemptOutputPath(
+          StorageCore.getNestedPath(
+            StorageFolder.Thumbnails,
+            asset.ownerId,
+            `${asset.id}_video_duplicate_${frameIndex}.jpeg`,
+          ),
+        );
+        this.storageCore.ensureFolders(path);
 
-    const newConfig = await this.getConfig({ withCache: false });
-    if (machineLearning.clip.modelName !== newConfig.machineLearning.clip.modelName) {
-      if (frames.length > 0) {
-        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: frames.map(({ path }) => path) } });
+        const command = ThumbnailConfig.create(
+          { ...config.ffmpeg, targetResolution: config.image.preview.size.toString() },
+          timestamp,
+        ).getCommand(TranscodeTarget.Video, video.videoStream, undefined, video.format);
+
+        try {
+          await this.mediaRepository.transcode(original?.localPath ?? asset.originalPath, path, command);
+          this.assertVideoFrameActive();
+          await original?.check();
+          const selection = await this.selectRoutedMlDestination({
+            workload: MlWorkload.Clip,
+            jobId: asset.id,
+            jobName: JobName.AssetGenerateVideoDuplicateFrames,
+          });
+          this.assertVideoFrameActive();
+          await original?.check();
+          const embedding = await this.machineLearningRepository.encodeImage(selection, path, machineLearning.clip);
+          this.assertVideoFrameActive();
+          await original?.check();
+
+          frames.push({
+            assetId: asset.id,
+            frameIndex,
+            timestampMs: Math.round(timestamp * 1000),
+            path,
+            embedding,
+          });
+        } catch (error: any) {
+          if (this.nativeStopUnconfirmed(error)) {
+            const context = queueExecution.getStore();
+            if (context) context.executorStopUnconfirmed = true;
+            throw error;
+          }
+          this.assertVideoFrameActive();
+          await original?.check();
+          // A single frame can fail to extract when its sampled start_time lands in
+          // the sparse-keyframe dead zone near EOF (ffmpeg writes no packets and
+          // exits non-zero). Skip just that frame instead of failing the whole job.
+          this.logger.warn(
+            `Failed to extract video duplicate frame ${frameIndex} for asset ${asset.id} at ${timestamp}s: ${error}`,
+            error?.stack,
+          );
+        }
       }
-      return JobStatus.Skipped;
-    }
 
-    await publishJobResult(async () => {
-      const stalePaths = await this.duplicateRepository.replaceVideoDuplicateFrames(asset.id, frames);
-      if (stalePaths.length > 0) {
-        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: stalePaths } });
+      if (frames.length === 0) {
+        // Every frame failed: don't fall through to replaceVideoDuplicateFrames([]),
+        // which would delete any previously-stored frames for this asset. Surface
+        // the job as failed so it can be retried.
+        this.logger.warn(`Failed to extract any video duplicate frames for asset ${asset.id}`);
+        return JobStatus.Failed;
+      }
+
+      const newConfig = await this.getConfig({ withCache: false });
+      if (machineLearning.clip.modelName !== newConfig.machineLearning.clip.modelName) {
+        if (frames.length > 0) {
+          await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: frames.map(({ path }) => path) } });
+        }
+        return JobStatus.Skipped;
+      }
+
+      this.assertVideoFrameActive();
+      await original?.check();
+      await publishJobResult(async () => {
+        const stalePaths = await this.duplicateRepository.replaceVideoDuplicateFrames(asset.id, frames);
+        if (stalePaths.length > 0) {
+          await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: stalePaths } });
+        }
+      });
+
+      return JobStatus.Success;
+    };
+    if (!original) return render();
+    return withExecutionSignal(original.signal, async () => {
+      try {
+        await original.check();
+        const result = await render();
+        if (queueExecution.getStore()?.executorStopUnconfirmed) throw new Error('media_process_shutdown_unconfirmed');
+        await original.check();
+        return result;
+      } catch (error) {
+        if (this.nativeStopUnconfirmed(error)) original.retainOnUnconfirmedStop();
+        throw error;
       }
     });
-
-    return JobStatus.Success;
   }
 
   @OnJob({ name: JobName.AssetDetectDuplicates, queue: QueueName.DuplicateDetection })
@@ -800,6 +875,23 @@ export class DuplicateService extends BaseService {
     )
       return JobStatus.Success;
     return publish();
+  }
+
+  private assertVideoFrameActive() {
+    assertExecutionActive();
+    if (queueExecution.getStore()?.executorStopUnconfirmed) throw new Error('media_process_shutdown_unconfirmed');
+  }
+
+  private nativeStopUnconfirmed(error: unknown) {
+    return (
+      isMediaProcessShutdownUnconfirmed(error) ||
+      (error instanceof Error &&
+        [
+          'source_original_shutdown_unconfirmed',
+          'artifact_close_unconfirmed',
+          'source_reader_stop_unconfirmed',
+        ].includes(error.message))
+    );
   }
 
   private getVideoDuplicateFrameTimestamps(frameCount: number, format: { duration: number }): number[] {

@@ -366,3 +366,28 @@ it('retains its on-disk reader marker when opening cannot confirm descriptor clo
   expect((await readdir(folder())).filter((name) => name.startsWith('reader-'))).toHaveLength(1);
   expect(await readFile(file())).toEqual(bytes);
 });
+
+describe.each(['openForJob', 'openForJobEntry'] as const)('%s acquisition stop proof', (method) => {
+  it.each([
+    ['artifact_close_unconfirmed', true],
+    ['source_original_shutdown_unconfirmed', true],
+    ['source_reader_stop_unconfirmed', true],
+    ['media_process_shutdown_unconfirmed', true],
+    ['known closed acquisition failure', false],
+  ] as const)('records actual stop uncertainty for %s', async (code, uncertain) => {
+    const context = execution();
+    vi.spyOn(service, 'open').mockRejectedValueOnce(new Error(code));
+    await expect(queueExecution.run(context, () => service[method](assetId, authorize))).rejects.toThrow(code);
+    expect(context.executorStopUnconfirmed === true).toBe(uncertain);
+  });
+});
+
+it('keeps actual failed job artifact acquisition from recording a stopped attempt', async () => {
+  const context = execution();
+  vi.spyOn(artifacts, 'openRenderArtifact').mockRejectedValueOnce(new Error('artifact_close_unconfirmed'));
+  await expect(queueExecution.run(context, () => service.openForJob(assetId, authorize))).rejects.toThrow(
+    'artifact_close_unconfirmed',
+  );
+  expect(context.executorStopUnconfirmed).toBe(true);
+  expect(cache.release).not.toHaveBeenCalled();
+});

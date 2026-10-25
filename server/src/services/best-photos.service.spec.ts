@@ -1,8 +1,14 @@
+import { access, rm } from 'node:fs/promises';
+import path from 'node:path';
 import { vitest } from 'vitest';
+import type { QueueExecution } from 'src/queue/types.js';
 import { BEST_PHOTO_SCORE_VERSION } from 'src/dtos/best-photos.dto.js';
 import { AssetStatus, AssetType, AssetVisibility, JobName, JobStatus } from 'src/enum.js';
+import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { BestPhotosService } from 'src/services/best-photos.service.js';
-import { probeStub } from 'test/fixtures/media.stub.js';
+import { executionSignal } from 'src/utils/execution-signal.js';
+import { sourceOriginalPath } from 'src/utils/source-original.js';
+import { probeStub, videoInfoStub } from 'test/fixtures/media.stub.js';
 import { newSystemMetadataRepositoryMock } from 'test/repositories/system-metadata.repository.mock.js';
 import { factory } from 'test/small.factory.js';
 
@@ -18,7 +24,7 @@ describe(BestPhotosService.name, () => {
     upsertScore: vitest.fn(),
   };
   const jobRepository = { queueSelection: vitest.fn(), guardAssetSource: vitest.fn() };
-  const mediaRepository = { scoreThumbnailCandidate: vitest.fn(), transcode: vitest.fn() };
+  const mediaRepository = { scoreThumbnailCandidate: vitest.fn(), transcode: vitest.fn(), probe: vitest.fn() };
   const configRepository = { getEnv: vitest.fn() };
   const systemMetadataRepository = newSystemMetadataRepositoryMock();
 
@@ -127,6 +133,264 @@ describe(BestPhotosService.name, () => {
       visibility: AssetVisibility.Timeline,
       videoStream: probeStub.videoStream2160p.videoStream!,
       format: { ...probeStub.videoStream2160p.format, duration: durationMs },
+    });
+
+    describe('reference originals', () => {
+      const logicalPath = sourceOriginalPath({
+        sourceId: '12345678-1234-4234-8234-123456789012',
+        resourceKey: 'a'.repeat(64),
+      });
+      const ownedFolders = new Set<string>();
+      afterEach(async () => {
+        // No real child is started by these mocks; remove only their retained frame fixture folders.
+        for (const folder of ownedFolders) await rm(folder, { recursive: true, force: true });
+        ownedFolders.clear();
+      });
+      const reference = () => {
+        const controller = new AbortController();
+        const assertCurrent = vitest.fn().mockResolvedValue(undefined);
+        const context: QueueExecution = {
+          claim: {
+            id: '12345678-1234-4234-8234-123456789013',
+            queue: 'backgroundTask',
+            name: JobName.BestPhotosScore,
+            data: { id: videoAsset.id },
+            token: '12345678-1234-4234-8234-123456789014',
+            workerId: 'test',
+            attempt: 1,
+            runId: null,
+            itemKey: null,
+            deadlineMs: 120_000,
+            startedAt: new Date(),
+          },
+          signal: new AbortController().signal,
+          progress: () => {},
+          followups: [],
+          adoptions: [],
+          afterSettled: [],
+          buffering: true,
+          progressUnits: 0,
+          sourceAuthorities: new Map([
+            [
+              videoAsset.id,
+              {
+                ownerId: videoAsset.ownerId,
+                snapshot: {
+                  assetId: videoAsset.id,
+                  ownerId: videoAsset.ownerId,
+                  derivatives: true,
+                  checksum: 'aa',
+                  revision: { originalPath: logicalPath },
+                },
+                assertCurrent,
+              },
+            ],
+          ]),
+        };
+        let authorize!: () => Promise<void>;
+        let retained = false;
+        const release = vitest.fn().mockResolvedValue(undefined);
+        const input = {
+          localPath: '/fixture/borrowed.artifact',
+          signal: controller.signal,
+          check: vitest.fn(async () => {
+            controller.signal.throwIfAborted();
+            await authorize();
+          }),
+          retainOnUnconfirmedStop: vitest.fn(() => {
+            retained = true;
+            context.executorStopUnconfirmed = true;
+          }),
+        };
+        const originals = {
+          openForJob: vitest.fn(async (_id: string, guard: () => Promise<void>) => {
+            authorize = guard;
+            await guard();
+            context.afterSettled!.push(async () => {
+              if (!retained) await release();
+            });
+            return input;
+          }),
+        };
+        Object.assign(sut, { sourceOriginalService: originals });
+        assetJobRepository.getForBestPhotoScoring.mockResolvedValue(videoAsset);
+        assetJobRepository.getForVideoDuplicateFrameJob.mockResolvedValue({
+          ...videoJob(60_000),
+          originalPath: logicalPath,
+        });
+        mediaRepository.probe.mockResolvedValue({
+          ...videoInfoStub.videoStream2160p,
+          format: { ...videoInfoStub.videoStream2160p.format, duration: 60 },
+        });
+        mediaRepository.transcode.mockImplementation((_input: string, output: string) => {
+          ownedFolders.add(path.dirname(output));
+          return Promise.resolve();
+        });
+        mediaRepository.scoreThumbnailCandidate.mockResolvedValue(80);
+        const persisted: unknown[] = [];
+        bestPhotosRepository.upsertScore.mockImplementation((score) => {
+          deferJobAdoption(() => {
+            persisted.push(score);
+            return Promise.resolve();
+          });
+          return Promise.resolve();
+        });
+        return { context, controller, input, originals, release, persisted, assertCurrent };
+      };
+
+      it('probes and samples one leased original, retaining it through source-checked publication', async () => {
+        const f = reference();
+        assetJobRepository.getForVideoDuplicateFrameJob.mockResolvedValue({
+          ...videoJob(3_600_000),
+          originalPath: logicalPath,
+        });
+        mediaRepository.probe.mockResolvedValue({
+          ...videoInfoStub.videoStream2160p,
+          videoStreams: [{ ...videoInfoStub.videoStream2160p.videoStreams[0], width: 1280, height: 720 }],
+          format: { ...videoInfoStub.videoStream2160p.format, duration: 60 },
+        });
+        const status = await queueExecution.run(f.context, () => sut.handleScore({ id: videoAsset.id }));
+        expect(logger.warn.mock.calls).toEqual([]);
+        expect(status).toBe(JobStatus.Success);
+        expect(f.originals.openForJob).toHaveBeenCalledOnce();
+        expect(mediaRepository.probe).toHaveBeenCalledWith(f.input.localPath, expect.anything());
+        expect(mediaRepository.transcode).toHaveBeenCalledTimes(5);
+        expect(mediaRepository.transcode.mock.calls.every(([input]) => input === f.input.localPath)).toBe(true);
+        expect(bestPhotosRepository.upsertScore).toHaveBeenCalledWith(
+          expect.objectContaining({ frameMetadata: expect.objectContaining({ durationMs: 60_000 }) }),
+        );
+        expect(bestPhotosRepository.upsertScore).toHaveBeenCalledWith(
+          expect.objectContaining({ metadata: expect.objectContaining({ pixels: 1280 * 720 }) }),
+        );
+        expect(f.persisted).toEqual([]);
+        expect(f.release).not.toHaveBeenCalled();
+        for (const adopt of f.context.adoptions) await adopt({} as never);
+        expect(f.persisted).toHaveLength(1);
+        for (const settle of f.context.afterSettled!) await settle();
+        expect(f.release).toHaveBeenCalledOnce();
+        await expect(assetJobRepository.getForVideoDuplicateFrameJob.mock.results[0].value).resolves.toMatchObject({
+          originalPath: logicalPath,
+        });
+      });
+
+      it.each(['source_original_shutdown_unconfirmed', 'artifact_close_unconfirmed'])(
+        'retains original and frame resources after %s',
+        async (code) => {
+          const f = reference();
+          mediaRepository.transcode.mockImplementationOnce((_input: string, output: string) => {
+            ownedFolders.add(path.dirname(output));
+            throw new Error(code);
+          });
+          expect(await queueExecution.run(f.context, () => sut.handleScore({ id: videoAsset.id }))).toBe(
+            JobStatus.Failed,
+          );
+          expect(f.input.retainOnUnconfirmedStop).toHaveBeenCalledOnce();
+          expect(mediaRepository.transcode).toHaveBeenCalledOnce();
+          expect(bestPhotosRepository.upsertScore).not.toHaveBeenCalled();
+        },
+      );
+
+      it('marks an unknown managed encoder stop before declaring the attempt stopped', async () => {
+        const f = reference();
+        assetJobRepository.getForVideoDuplicateFrameJob.mockResolvedValue(videoJob(60_000));
+        mediaRepository.transcode.mockImplementationOnce((_input: string, output: string) => {
+          ownedFolders.add(path.dirname(output));
+          throw new Error('media_process_shutdown_unconfirmed');
+        });
+        expect(await queueExecution.run(f.context, () => sut.handleScore({ id: videoAsset.id }))).toBe(
+          JobStatus.Failed,
+        );
+        expect(f.context.executorStopUnconfirmed).toBe(true);
+        expect(f.originals.openForJob).not.toHaveBeenCalled();
+        expect(mediaRepository.transcode).toHaveBeenCalledOnce();
+      });
+
+      it('refuses provider revocation at adoption before publishing a prepared score', async () => {
+        const f = reference();
+        await queueExecution.run(f.context, () => sut.handleScore({ id: videoAsset.id }));
+        expect(f.context.adoptions.length).toBeGreaterThan(0);
+        f.input.check.mockRejectedValueOnce(new Error('source_original_unavailable'));
+        await expect(f.context.adoptions[0]({} as never)).rejects.toThrow('source_original_unavailable');
+        expect(f.persisted).toEqual([]);
+      });
+
+      it('does not swallow source cancellation and continue sampling other frames', async () => {
+        const f = reference();
+        mediaRepository.transcode.mockImplementationOnce((_input: string, output: string) => {
+          ownedFolders.add(path.dirname(output));
+          const signal = executionSignal();
+          f.controller.abort();
+          expect(signal?.aborted).toBe(true);
+          expect(f.context.signal.aborted).toBe(false);
+          throw new Error('cancelled input');
+        });
+        await expect(queueExecution.run(f.context, () => sut.handleScore({ id: videoAsset.id }))).resolves.toBe(
+          JobStatus.Failed,
+        );
+        expect(mediaRepository.transcode).toHaveBeenCalledOnce();
+        expect(mediaRepository.scoreThumbnailCandidate).not.toHaveBeenCalled();
+        expect(bestPhotosRepository.upsertScore).not.toHaveBeenCalled();
+      });
+
+      it('refuses references without the executor source authority before acquisition', async () => {
+        const f = reference();
+        await expect(sut.handleScore({ id: videoAsset.id })).resolves.toBe(JobStatus.Failed);
+        expect(f.originals.openForJob).not.toHaveBeenCalled();
+        expect(mediaRepository.probe).not.toHaveBeenCalled();
+        expect(mediaRepository.transcode).not.toHaveBeenCalled();
+      });
+
+      it('stops sampling when the provider revokes the input after one extraction', async () => {
+        const f = reference();
+        mediaRepository.transcode.mockImplementationOnce((_input: string, output: string) => {
+          ownedFolders.add(path.dirname(output));
+          f.input.check.mockRejectedValue(new Error('source_original_unavailable'));
+          return Promise.resolve();
+        });
+        await expect(queueExecution.run(f.context, () => sut.handleScore({ id: videoAsset.id }))).resolves.toBe(
+          JobStatus.Failed,
+        );
+        expect(mediaRepository.transcode).toHaveBeenCalledOnce();
+        expect(mediaRepository.scoreThumbnailCandidate).not.toHaveBeenCalled();
+        expect(bestPhotosRepository.upsertScore).not.toHaveBeenCalled();
+      });
+
+      it.each(['owner', 'privacy'] as const)('rechecks %s before starting the source reader', async (change) => {
+        const f = reference();
+        assetJobRepository.getForBestPhotoScoring.mockResolvedValueOnce(videoAsset).mockResolvedValue({
+          ...videoAsset,
+          ...(change === 'owner' ? { ownerId: 'other-owner' } : { visibility: AssetVisibility.Hidden }),
+        });
+        await expect(queueExecution.run(f.context, () => sut.handleScore({ id: videoAsset.id }))).resolves.toBe(
+          JobStatus.Failed,
+        );
+        expect(mediaRepository.probe).not.toHaveBeenCalled();
+        expect(mediaRepository.transcode).not.toHaveBeenCalled();
+        expect(bestPhotosRepository.upsertScore).not.toHaveBeenCalled();
+      });
+
+      it.each(['flag', 'error'] as const)(
+        'retains the lease and frames after unconfirmed child stop (%s)',
+        async (failure) => {
+          const f = reference();
+          mediaRepository.transcode.mockImplementationOnce((_input: string, output: string) => {
+            ownedFolders.add(path.dirname(output));
+            if (failure === 'error') throw new Error('media_process_shutdown_unconfirmed');
+            f.context.executorStopUnconfirmed = true;
+            return Promise.resolve();
+          });
+          await expect(queueExecution.run(f.context, () => sut.handleScore({ id: videoAsset.id }))).resolves.toBe(
+            JobStatus.Failed,
+          );
+          expect(mediaRepository.transcode).toHaveBeenCalledOnce();
+          expect(f.input.retainOnUnconfirmedStop).toHaveBeenCalledOnce();
+          expect(mediaRepository.scoreThumbnailCandidate).not.toHaveBeenCalled();
+          expect(bestPhotosRepository.upsertScore).not.toHaveBeenCalled();
+          for (const folder of ownedFolders) await expect(access(folder)).resolves.toBeUndefined();
+          for (const settle of f.context.afterSettled!) await settle();
+          expect(f.release).not.toHaveBeenCalled();
+        },
+      );
     });
 
     it('should score a video by its best sampled frame and persist frame columns', async () => {

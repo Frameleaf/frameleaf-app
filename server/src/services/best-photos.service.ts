@@ -1,9 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { JobOf } from 'src/types.js';
+import type { JobOf, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import { OnJob } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
@@ -13,7 +13,9 @@ import {
   BestPhotosResponseDto,
 } from 'src/dtos/best-photos.dto.js';
 import { AssetStatus, AssetType, AssetVisibility, JobName, JobStatus, QueueName, TranscodeTarget } from 'src/enum.js';
+import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
+import { isMediaProcessShutdownUnconfirmed } from 'src/queue/process-lifetime.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { BestPhotoScoreUpsert, BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -21,10 +23,15 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
 import { getConfig } from 'src/utils/config.js';
 import { asDateTimeString } from 'src/utils/date.js';
+import { assertExecutionActive, executionSignal, withExecutionSignal } from 'src/utils/execution-signal.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { ThumbnailConfig } from 'src/utils/media.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
+
+type BestPhotoVideo = { videoStream: VideoStreamInfo; format: VideoFormat };
 
 type BestPhotoScoringAsset = NonNullable<Awaited<ReturnType<AssetJobRepository['getForBestPhotoScoring']>>>;
 
@@ -61,6 +68,9 @@ const VIDEO_SCORE_MAX_DURATION_SECONDS = 15 * 60;
 
 @Injectable()
 export class BestPhotosService {
+  @Inject(SourceOriginalService)
+  private sourceOriginalService!: SourceOriginalService;
+
   constructor(
     private logger: LoggingRepository,
     private assetJobRepository: AssetJobRepository,
@@ -124,6 +134,7 @@ export class BestPhotosService {
         return JobStatus.Skipped;
       }
 
+      this.assertScoringActive();
       await this.bestPhotosRepository.upsertScore(upsert);
       return JobStatus.Success;
     } catch (error: any) {
@@ -158,6 +169,89 @@ export class BestPhotosService {
       return null;
     }
 
+    if (!parseSourceOriginalPath(video.originalPath)) return this.sampleVideoAsset(asset, video, video.originalPath);
+    const authority = queueExecution.getStore()?.sourceAuthorities?.get(asset.id);
+    if (
+      !authority ||
+      authority.ownerId !== asset.ownerId ||
+      authority.snapshot.revision.originalPath !== video.originalPath
+    )
+      throw new Error('Best Photos source claim changed');
+    const input = await this.sourceOriginalService.openForJob(asset.id, async () => {
+      assertExecutionActive();
+      await authority.assertCurrent();
+      const [current, original] = await Promise.all([
+        this.assetJobRepository.getForBestPhotoScoring(asset.id),
+        this.assetJobRepository.getForVideoDuplicateFrameJob(asset.id),
+      ]);
+      if (
+        !current ||
+        !this.isEligible(current) ||
+        current.ownerId !== asset.ownerId ||
+        current.previewFile !== asset.previewFile ||
+        !original ||
+        original.ownerId !== asset.ownerId ||
+        original.originalPath !== video.originalPath
+      )
+        throw new Error('Best Photos source changed');
+    });
+    deferJobAdoption(() => input.check());
+    try {
+      return await withExecutionSignal(input.signal, async () => {
+        await input.check();
+        const probe = await this.mediaRepository.probe(input.localPath, {
+          countFrames: false,
+          signal: executionSignal(),
+        });
+        this.assertScoringActive();
+        await input.check();
+        const stream = probe.videoStreams[0];
+        if (!stream) return null;
+        const result = await this.sampleVideoAsset(
+          { ...asset, width: stream.width, height: stream.height },
+          {
+            ...video,
+            videoStream: stream,
+            // Stored video metadata uses milliseconds; ffprobe reports seconds.
+            format: { ...probe.format, duration: probe.format.duration * 1000 },
+          },
+          input.localPath,
+          input.check,
+        );
+        await input.check();
+        return result;
+      });
+    } catch (error) {
+      if (this.nativeStopUnconfirmed(error)) {
+        input.retainOnUnconfirmedStop();
+      }
+      throw error;
+    }
+  }
+
+  private nativeStopUnconfirmed(error: unknown) {
+    return (
+      isMediaProcessShutdownUnconfirmed(error) ||
+      (error instanceof Error &&
+        [
+          'source_original_shutdown_unconfirmed',
+          'artifact_close_unconfirmed',
+          'source_reader_stop_unconfirmed',
+        ].includes(error.message))
+    );
+  }
+
+  private assertScoringActive() {
+    assertExecutionActive();
+    if (queueExecution.getStore()?.executorStopUnconfirmed) throw new Error('media_process_shutdown_unconfirmed');
+  }
+
+  private async sampleVideoAsset(
+    asset: BestPhotoScoringAsset,
+    video: BestPhotoVideo,
+    inputPath: string,
+    check?: () => Promise<void>,
+  ): Promise<BestPhotoScoreUpsert | null> {
     const durationSeconds = video.format.duration / 1000;
     if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
       this.logger.debug(`Skipping Best Photos video scoring for asset ${asset.id}: unknown duration`);
@@ -185,8 +279,11 @@ export class BestPhotosService {
     let best: { timestamp: number; thumbnailScore: number } | null = null;
     const sampledFrames: Array<{ timestampMs: number; thumbnailScore: number }> = [];
     const tempDir = await mkdtemp(path.join(tmpdir(), 'immich-best-photos-'));
+    let stopUnconfirmed = false;
     try {
       for (const [index, timestamp] of timestamps.entries()) {
+        this.assertScoringActive();
+        await check?.();
         const framePath = path.join(tempDir, `frame_${index}.jpeg`);
         try {
           const command = ThumbnailConfig.create(thumbnailConfig, timestamp).getCommand(
@@ -195,13 +292,25 @@ export class BestPhotosService {
             undefined,
             video.format,
           );
-          await this.mediaRepository.transcode(video.originalPath, framePath, command);
+          await this.mediaRepository.transcode(inputPath, framePath, command);
+          this.assertScoringActive();
+          await check?.();
           const thumbnailScore = await this.mediaRepository.scoreThumbnailCandidate(framePath);
+          this.assertScoringActive();
+          await check?.();
           sampledFrames.push({ timestampMs: Math.round(timestamp * 1000), thumbnailScore });
           if (!best || thumbnailScore > best.thumbnailScore) {
             best = { timestamp, thumbnailScore };
           }
         } catch (error: any) {
+          if (this.nativeStopUnconfirmed(error)) {
+            stopUnconfirmed = true;
+            const context = queueExecution.getStore();
+            if (context) context.executorStopUnconfirmed = true;
+            throw error;
+          }
+          this.assertScoringActive();
+          await check?.();
           // A frame can fail to extract when its start_time lands in the
           // sparse-keyframe dead zone near EOF. Skip just that frame.
           this.logger.warn(
@@ -210,7 +319,9 @@ export class BestPhotosService {
         }
       }
     } finally {
-      await rm(tempDir, { recursive: true, force: true });
+      if (!stopUnconfirmed && !queueExecution.getStore()?.executorStopUnconfirmed) {
+        await rm(tempDir, { recursive: true, force: true });
+      }
     }
 
     if (!best) {

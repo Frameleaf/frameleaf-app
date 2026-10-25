@@ -1,10 +1,14 @@
 import { BadRequestException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vitest } from 'vitest';
+import type { QueueExecution } from 'src/queue/types.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
 import { AssetType, AssetVisibility, JobName, JobStatus, SystemMetadataKey } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { DuplicateService } from 'src/services/duplicate.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
+import { executionSignal } from 'src/utils/execution-signal.js';
+import { sourceOriginalPath } from 'src/utils/source-original.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { probeStub } from 'test/fixtures/media.stub.js';
@@ -298,6 +302,174 @@ describe(DuplicateService.name, () => {
           },
         },
       });
+    });
+
+    const referenceVideo = () => {
+      const asset = {
+        id: newUuid(),
+        ownerId: newUuid(),
+        originalPath: sourceOriginalPath({ sourceId: newUuid(), resourceKey: 'b'.repeat(64) }),
+        visibility: AssetVisibility.Timeline,
+        videoStream: probeStub.videoStream2160p.videoStream!,
+        format: { ...probeStub.videoStream2160p.format, duration: 120_000 },
+      };
+      mocks.assetJob.getForVideoDuplicateFrameJob.mockResolvedValue(asset);
+      mocks.media.probe.mockResolvedValue({
+        format: { ...asset.format, duration: 120 },
+        videoStreams: [asset.videoStream],
+        audioStreams: [],
+      });
+      mocks.machineLearning.encodeImage.mockResolvedValue('[1, 2, 3, 4]');
+      mocks.duplicateRepository.replaceVideoDuplicateFrames.mockResolvedValue([]);
+      const abort = new AbortController();
+      const input = {
+        localPath: '/private/cache/original.artifact',
+        signal: abort.signal,
+        check: vi.fn().mockResolvedValue(undefined),
+        retainOnUnconfirmedStop: vi.fn(),
+      };
+      let authorize!: () => Promise<void>;
+      const originals = {
+        openForJob: vi.fn(async (_id, check) => {
+          authorize = check;
+          await check();
+          input.check.mockImplementation(async () => {
+            abort.signal.throwIfAborted();
+            await check();
+          });
+          return input;
+        }),
+      };
+      Object.assign(sut, { sourceOriginalService: originals });
+      const context: QueueExecution = {
+        claim: { id: newUuid(), token: newUuid() } as QueueExecution['claim'],
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        followups: [],
+        adoptions: [],
+        buffering: false,
+        sourceAuthorities: new Map([
+          [
+            asset.id,
+            {
+              ownerId: asset.ownerId,
+              snapshot: {
+                assetId: asset.id,
+                ownerId: asset.ownerId,
+                checksum: 'aa',
+                derivatives: true,
+                revision: { originalPath: asset.originalPath },
+              },
+              assertCurrent: vi.fn().mockResolvedValue(undefined),
+            },
+          ],
+        ]),
+      };
+      return { asset, input, originals, context, abort, authorize: () => authorize() };
+    };
+
+    it('samples from leased video geometry and seconds rather than stale stored metadata', async () => {
+      const f = referenceVideo();
+      f.asset.format.duration = 1000;
+      mocks.media.probe.mockResolvedValue({
+        format: { ...f.asset.format, duration: 120 },
+        videoStreams: [f.asset.videoStream],
+        audioStreams: [],
+      });
+      expect(
+        await queueExecution.run(f.context, () => sut.handleGenerateVideoDuplicateFrames({ id: f.asset.id })),
+      ).toBe(JobStatus.Success);
+      expect(mocks.media.probe).toHaveBeenCalledWith(f.input.localPath, expect.anything());
+      expect(mocks.media.transcode).toHaveBeenCalledTimes(4);
+      expect(mocks.media.transcode.mock.calls[0][2].inputOptions).toContain('24');
+    });
+
+    it('refuses a reference without its queue source authority before acquisition', async () => {
+      const f = referenceVideo();
+      f.context.sourceAuthorities!.clear();
+      await expect(
+        queueExecution.run(f.context, () => sut.handleGenerateVideoDuplicateFrames({ id: f.asset.id })),
+      ).rejects.toThrow(/source claim/);
+      expect(f.originals.openForJob).not.toHaveBeenCalled();
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    it.each(['extract', 'embed'] as const)(
+      'does not publish after %s returns with unknown native shutdown',
+      async (stage) => {
+        const f = referenceVideo();
+        const flag = () => {
+          f.context.executorStopUnconfirmed = true;
+        };
+        if (stage === 'extract')
+          mocks.media.transcode.mockImplementationOnce(() => {
+            flag();
+            return Promise.resolve();
+          });
+        else
+          mocks.machineLearning.encodeImage.mockImplementationOnce(() => {
+            flag();
+            return Promise.resolve('[1, 2, 3, 4]');
+          });
+        await expect(
+          queueExecution.run(f.context, () => sut.handleGenerateVideoDuplicateFrames({ id: f.asset.id })),
+        ).rejects.toThrow('media_process_shutdown_unconfirmed');
+        expect(f.input.retainOnUnconfirmedStop).toHaveBeenCalledOnce();
+        if (stage === 'extract') expect(mocks.machineLearning.encodeImage).not.toHaveBeenCalled();
+        expect(mocks.media.transcode).toHaveBeenCalledOnce();
+      },
+    );
+
+    it('uses one verified original across sampled frames and checks it again at publication', async () => {
+      const f = referenceVideo();
+      mocks.media.transcode.mockImplementation(() => {
+        expect(executionSignal()).toBeInstanceOf(AbortSignal);
+        expect(executionSignal()?.aborted).toBe(false);
+        return Promise.resolve();
+      });
+      expect(
+        await queueExecution.run(f.context, () => sut.handleGenerateVideoDuplicateFrames({ id: f.asset.id })),
+      ).toBe(JobStatus.Success);
+      expect(f.originals.openForJob).toHaveBeenCalledOnce();
+      expect(mocks.media.transcode.mock.calls.every(([path]) => path === f.input.localPath)).toBe(true);
+      expect(mocks.duplicateRepository.replaceVideoDuplicateFrames).not.toHaveBeenCalled();
+      f.input.check.mockRejectedValue(new Error('source changed'));
+      await expect(f.context.adoptions[0]({} as never)).rejects.toThrow('source changed');
+      expect(mocks.duplicateRepository.replaceVideoDuplicateFrames).not.toHaveBeenCalled();
+    });
+
+    it('stops sampling on source cancellation instead of treating it as an EOF frame failure', async () => {
+      const f = referenceVideo();
+      mocks.media.transcode.mockImplementation(() => {
+        f.abort.abort(new Error('source revoked'));
+        return Promise.reject(f.abort.signal.reason);
+      });
+      await expect(
+        queueExecution.run(f.context, () => sut.handleGenerateVideoDuplicateFrames({ id: f.asset.id })),
+      ).rejects.toThrow('source revoked');
+      expect(mocks.media.transcode).toHaveBeenCalledOnce();
+      expect(mocks.machineLearning.encodeImage).not.toHaveBeenCalled();
+    });
+
+    it.each([true, false])('retains the input after unconfirmed shutdown (executor marker %s)', async (marked) => {
+      const f = referenceVideo();
+      mocks.media.transcode.mockImplementation(() => {
+        f.context.executorStopUnconfirmed = marked;
+        return Promise.reject(new Error('media_process_shutdown_unconfirmed'));
+      });
+      await expect(
+        queueExecution.run(f.context, () => sut.handleGenerateVideoDuplicateFrames({ id: f.asset.id })),
+      ).rejects.toThrow('media_process_shutdown_unconfirmed');
+      expect(f.input.retainOnUnconfirmedStop).toHaveBeenCalledOnce();
+      expect(mocks.media.transcode).toHaveBeenCalledOnce();
+    });
+
+    it('rechecks original identity and privacy before allowing another reference read', async () => {
+      const f = referenceVideo();
+      await queueExecution.run(f.context, () => sut.handleGenerateVideoDuplicateFrames({ id: f.asset.id }));
+      mocks.assetJob.getForVideoDuplicateFrameJob.mockResolvedValue({ ...f.asset, visibility: AssetVisibility.Hidden });
+      await expect(f.authorize()).rejects.toThrow();
     });
 
     it('should generate and persist sampled video duplicate frames', async () => {
@@ -1225,7 +1397,6 @@ describe(DuplicateService.name, () => {
       });
     });
   });
-
   describe('look-alike estimate and comparing again (FL-520)', () => {
     it('estimates the groups each choice makes and how long comparing again takes, from a sample', async () => {
       mocks.duplicateRepository.sampleNearestDistances.mockResolvedValue([0.002, 0.008, 0.02, 0.05, Infinity]);

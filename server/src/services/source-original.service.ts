@@ -47,7 +47,19 @@ export class SourceOriginalService {
       },
       authorize,
       context.signal,
-    );
+    ).catch((error) => {
+      if (
+        error instanceof Error &&
+        [
+          'artifact_close_unconfirmed',
+          'source_original_shutdown_unconfirmed',
+          'source_reader_stop_unconfirmed',
+          'media_process_shutdown_unconfirmed',
+        ].includes(error.message)
+      )
+        context.executorStopUnconfirmed = true;
+      throw error;
+    });
     let retained = false;
     (context.afterSettled ??= []).push(async () => {
       if (!retained && !context.executorStopUnconfirmed) await release();

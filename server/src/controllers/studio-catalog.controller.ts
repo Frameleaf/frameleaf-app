@@ -85,7 +85,22 @@ export class StudioCatalogController {
       'What placing this photo or video in Studio needs (graph protocol 3.5), read from the original: its exact frame rate as a reduced fraction, whether it has an audio track and its codec, its display size and length. When the original cannot be read, the stored metadata is answered and `source` says so. It also answers the colour of the picture stream as metadata extraction stored it: `colorTransfer` (`hdr` for any Dolby Vision profile, else `pq` for H.273 transfer 16, `hlg` for 18, `sdr` otherwise), the H.273 codes, the bit depth and the Dolby Vision profile. A native client that cannot read the stream itself marks its media record from it.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
-  getStudioMediaFacts(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<StudioMediaFactsDto> {
-    return this.service.getMediaFacts(auth, id);
+  async getStudioMediaFacts(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StudioMediaFactsDto> {
+    const controller = new AbortController();
+    const abandon = () => controller.abort();
+    res.once('close', abandon);
+    try {
+      if (res.destroyed) abandon();
+      controller.signal.throwIfAborted();
+      const facts = await this.service.getMediaFacts(auth, id, controller.signal);
+      controller.signal.throwIfAborted();
+      return facts;
+    } finally {
+      res.off('close', abandon);
+    }
   }
 }

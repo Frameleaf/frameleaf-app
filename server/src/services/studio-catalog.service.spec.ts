@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssetType, CacheControl } from 'src/enum.js';
 import { StudioCatalogService, exactFrameRateOf, studioMediaColorOf } from 'src/services/studio-catalog.service.js';
+import { sourceOriginalPath } from 'src/utils/source-original.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { getMocks } from 'test/utils.js';
 
@@ -11,8 +12,11 @@ describe(StudioCatalogService.name, () => {
   let sut: StudioCatalogService;
   let access: { asset: { checkOwnerAccess: ReturnType<typeof vi.fn> } };
   let assets: { getById: ReturnType<typeof vi.fn>; getVideoColor: ReturnType<typeof vi.fn> };
-  let media: { probe: ReturnType<typeof vi.fn> };
+  let media: { probe: ReturnType<typeof vi.fn<(...args: any[]) => Promise<any>>> };
+  let integrity: { sourceEpochs: ReturnType<typeof vi.fn> };
+  let sessions: { getAuth: ReturnType<typeof vi.fn> };
   let storage: { checkFileExists: ReturnType<typeof vi.fn> };
+  let originals: { open: ReturnType<typeof vi.fn<(...args: any[]) => Promise<any>>> };
 
   const video = (overrides: Record<string, unknown> = {}) => ({
     id: ASSET,
@@ -59,13 +63,218 @@ describe(StudioCatalogService.name, () => {
       }),
     };
     storage = { checkFileExists: vi.fn().mockResolvedValue(true) };
+    originals = { open: vi.fn() };
+    sessions = { getAuth: vi.fn().mockResolvedValue(authStub.adminWithElevatedPermission) };
     sut = new StudioCatalogService(
       mocks.logger as never,
       access as never,
       assets as never,
       media as never,
       storage as never,
+      originals as never,
     );
+    integrity = { sourceEpochs: vi.fn() };
+    Object.assign(sut, { sessionRepository: sessions, integrityRepository: integrity });
+  });
+
+  describe('reference original facts', () => {
+    const reference = () => {
+      const asset = video({
+        ownerId: authStub.admin.user.id,
+        originalPath: sourceOriginalPath({ sourceId: ASSET, resourceKey: 'b'.repeat(64) }),
+        checksum: Buffer.from('logical checksum'),
+      });
+      assets.getById.mockResolvedValue(asset);
+      const abort = new AbortController();
+      const input = {
+        localPath: '/private/source.artifact',
+        resourceId: ASSET,
+        resourceVersion: 'a'.repeat(64),
+        verifiedSha256: 'c'.repeat(64),
+        signal: abort.signal,
+        check: vi.fn().mockResolvedValue(undefined),
+        release: vi.fn().mockResolvedValue(undefined),
+      };
+      originals.open.mockImplementation(async (_id, _reader, authorize) => {
+        await authorize();
+        input.check.mockImplementation(authorize);
+        return input;
+      });
+      const epoch = {
+        assetId: ASSET,
+        ownerId: authStub.admin.user.id,
+        epoch: '0',
+        reference: { resourceId: input.resourceId, version: input.resourceVersion, sha256: input.verifiedSha256 },
+      };
+      integrity.sourceEpochs.mockResolvedValue([epoch]);
+      return { asset, input, abort, epoch };
+    };
+
+    it('holds verified input through probing and uses its colour instead of stale stored colour', async () => {
+      const f = reference();
+      assets.getVideoColor.mockResolvedValue(stream({ colorTransfer: 16 }));
+      media.probe.mockImplementation((path, options) => {
+        expect(path).toBe(f.input.localPath);
+        expect(options.signal).toBe(f.input.signal);
+        expect(f.input.release).not.toHaveBeenCalled();
+        return Promise.resolve({
+          format: { duration: 2 },
+          videoStreams: [{ ...stream(), width: 640, height: 480 }],
+          audioStreams: [],
+        });
+      });
+      await expect(sut.getMediaFacts(authStub.admin, ASSET)).resolves.toMatchObject({
+        source: 'probe',
+        colorTransfer: 'sdr',
+        width: 640,
+      });
+      expect(f.input.check).toHaveBeenCalledTimes(2);
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it.each(['ownerId', 'originalPath', 'checksum'] as const)('refuses changed %s before probing', async (field) => {
+      const f = reference();
+      assets.getById.mockResolvedValueOnce(f.asset).mockResolvedValue({
+        ...f.asset,
+        [field]: field === 'checksum' ? Buffer.from('changed') : 'changed',
+      });
+      await expect(sut.getMediaFacts(authStub.admin, ASSET)).rejects.toThrow('Studio source changed');
+      expect(media.probe).not.toHaveBeenCalled();
+    });
+
+    it('does not answer facts after source access is revoked during probing', async () => {
+      const f = reference();
+      media.probe.mockImplementation(() => {
+        f.input.check.mockRejectedValue(new Error('source revoked'));
+        return Promise.resolve({ format: {}, videoStreams: [], audioStreams: [] });
+      });
+      await expect(sut.getMediaFacts(authStub.admin, ASSET)).rejects.toThrow('source revoked');
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('rechecks the lease after a stopped failed probe before returning labelled stored metadata', async () => {
+      const f = reference();
+      media.probe.mockRejectedValue(new Error('unsupported probe'));
+      await expect(sut.getMediaFacts(authStub.admin, ASSET)).resolves.toMatchObject({ source: 'stored' });
+      expect(f.input.check).toHaveBeenCalledTimes(2);
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('propagates source cancellation and releases after the probe has stopped', async () => {
+      const f = reference();
+      const error = new Error('source canceled');
+      media.probe.mockImplementation(() => {
+        f.abort.abort(error);
+        return Promise.reject(error);
+      });
+      await expect(sut.getMediaFacts(authStub.admin, ASSET)).rejects.toBe(error);
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it.each([
+      'media_process_shutdown_unconfirmed',
+      'source_original_shutdown_unconfirmed',
+      'artifact_close_unconfirmed',
+    ])('retains the probe input and refuses new probing after %s', async (code) => {
+      const f = reference();
+      media.probe.mockRejectedValueOnce(new Error(code));
+      await expect(sut.getMediaFacts(authStub.admin, ASSET)).rejects.toThrow(code);
+      expect(f.input.release).not.toHaveBeenCalled();
+      await expect(sut.getMediaFacts(authStub.admin, ASSET)).rejects.toThrow(/unconfirmed/);
+      expect(originals.open).toHaveBeenCalledOnce();
+      expect(media.probe).toHaveBeenCalledOnce();
+    });
+
+    it('retains quarantine when the source descriptor close is unconfirmed', async () => {
+      const f = reference();
+      f.input.release.mockRejectedValueOnce(new Error('artifact_close_unconfirmed'));
+      await expect(sut.getMediaFacts(authStub.admin, ASSET)).rejects.toThrow('artifact_close_unconfirmed');
+      await expect(sut.getMediaFacts(authStub.admin, ASSET)).rejects.toThrow(/unconfirmed/);
+      expect(originals.open).toHaveBeenCalledOnce();
+    });
+
+    it.each(['during probe', 'during release'] as const)('rechecks the actor session %s', async (phase) => {
+      const f = reference();
+      if (phase === 'during probe')
+        media.probe.mockImplementationOnce(() => {
+          sessions.getAuth.mockResolvedValue(undefined);
+          return Promise.resolve({ format: {}, videoStreams: [], audioStreams: [] });
+        });
+      else
+        f.input.release.mockImplementationOnce(() => {
+          sessions.getAuth.mockResolvedValue(undefined);
+          return Promise.resolve();
+        });
+      await expect(sut.getMediaFacts(authStub.adminWithElevatedPermission, ASSET)).rejects.toThrow();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('rechecks live privacy after PIN elevation is removed', async () => {
+      reference();
+      media.probe.mockImplementationOnce(() => {
+        sessions.getAuth.mockResolvedValue({
+          ...authStub.adminWithElevatedPermission,
+          session: { ...authStub.adminWithElevatedPermission.session, hasElevatedPermission: false },
+        });
+        access.asset.checkOwnerAccess = vi.fn((_owner, ids, elevated) =>
+          Promise.resolve(elevated ? new Set(ids) : new Set()),
+        );
+        return Promise.resolve({ format: {}, videoStreams: [], audioStreams: [] });
+      });
+      await expect(sut.getMediaFacts(authStub.adminWithElevatedPermission, ASSET)).rejects.toThrow();
+    });
+
+    it.each(['resourceId', 'version', 'sha256', 'revoked'] as const)(
+      'refuses a %s change during input release',
+      async (field) => {
+        const f = reference();
+        f.input.release.mockImplementationOnce(() => {
+          integrity.sourceEpochs.mockResolvedValue(
+            field === 'revoked'
+              ? []
+              : [
+                  {
+                    ...f.epoch,
+                    reference: {
+                      ...f.epoch.reference,
+                      [field]: field === 'resourceId' ? '4b0f4b2e-5d3a-4c55-9e0e-6b9f4c7d8e02' : 'e'.repeat(64),
+                    },
+                  },
+                ],
+          );
+          return Promise.resolve();
+        });
+        await expect(sut.getMediaFacts(authStub.admin, ASSET)).rejects.toThrow('Studio source changed');
+        expect(f.input.release).toHaveBeenCalledOnce();
+      },
+    );
+
+    it('does not acquire bytes for a still or a caller without access', async () => {
+      reference();
+      access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+      await expect(sut.getMediaFacts(authStub.admin, ASSET)).rejects.toThrow();
+      expect(originals.open).not.toHaveBeenCalled();
+      access.asset.checkOwnerAccess.mockResolvedValue(new Set([ASSET]));
+      assets.getById.mockResolvedValue(video({ type: AssetType.Image }));
+      await expect(sut.getMediaFacts(authStub.admin, ASSET)).resolves.toMatchObject({ source: 'stored' });
+      expect(originals.open).not.toHaveBeenCalled();
+    });
+
+    it('does not pass an unavailable reference URI to a native tool', async () => {
+      reference();
+      originals.open.mockRejectedValue(new Error('source_original_unavailable'));
+      await expect(sut.getMediaFacts(authStub.admin, ASSET)).rejects.toThrow('source_original_unavailable');
+      expect(media.probe).not.toHaveBeenCalled();
+    });
+  });
+
+  it('passes request cancellation to a managed original probe too', async () => {
+    const controller = new AbortController();
+    await sut.getMediaFacts(authStub.admin, ASSET, controller.signal);
+    expect(media.probe).toHaveBeenCalledWith('/data/upload/clip.mov', {
+      countFrames: false,
+      signal: controller.signal,
+    });
   });
 
   it('reads the exact frame rate and the audio track from the original', async () => {
