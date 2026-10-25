@@ -1,7 +1,7 @@
 import { type Kysely, type Transaction, sql } from 'kysely';
 import type { DB } from 'src/schema/index.js';
 import type { CloudBackupManifestFile } from 'src/utils/cloud-backup.js';
-import { AssetType } from 'src/enum.js';
+import { AssetType, ChecksumAlgorithm } from 'src/enum.js';
 import { DEVELOP_ARTIFACT_PER_ASSET } from 'src/repositories/asset-develop.repository.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import {
@@ -13,9 +13,12 @@ import {
   buddyFidelityPaths,
   buddyRestorationSchema,
   buddyVideoVersionSchema,
+  readBuddyImageEditSource,
 } from 'src/utils/buddy-backup-fidelity.js';
+import { type ImageEditSource, imageEditSourceSchema } from 'src/utils/image-edit-source.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
 import { canonicalJson } from 'src/utils/object.js';
+import { sourceReferenceSchema } from 'src/utils/source-reference.js';
 
 type Row = Record<string, unknown>;
 const tables = {
@@ -26,7 +29,7 @@ const tables = {
   restoration: 'public.asset_restoration',
 } as const;
 type Table = (typeof tables)[keyof typeof tables];
-const jsonColumns = new Set(['recipe', 'files', 'previewRegion', 'provenance']);
+const jsonColumns = new Set(['recipe', 'files', 'previewRegion', 'provenance', 'sourceReference', 'sourceBinding']);
 const checksumColumns = new Set(['sourceChecksum', 'renditionChecksum']);
 /** Internal snapshot/publication adapter. Publication requires the caller's live Buddy guard transaction. */
 export class BuddyBackupFidelityRepository {
@@ -46,7 +49,7 @@ export class BuddyBackupFidelityRepository {
   ): Promise<BuddyAssetFidelity> {
     const asset = await this.db
       .selectFrom('asset')
-      .select(['id', 'ownerId', 'checksum', 'checksumAlgorithm', 'type'])
+      .select(['id', 'ownerId', 'originalPath', 'checksum', 'checksumAlgorithm', 'type'])
       .where('id', '=', assetId)
       .executeTakeFirstOrThrow();
     const selection = await sql<{
@@ -55,8 +58,41 @@ export class BuddyBackupFidelityRepository {
     }>`
       SELECT "requestedVersionId", "currentVersionId" FROM public.video_edit_selection
       WHERE "assetId"=${assetId}::uuid AND "ownerId"=${asset.ownerId}::uuid`.execute(this.db);
+    const videoVersions = await this.rows(tables.video, assetId);
+    const hasReferences = videoVersions.some(
+      (row) =>
+        (row.sourceReference !== null && row.sourceReference !== undefined) ||
+        (typeof row.sourcePath === 'string' && row.sourcePath.toLowerCase().startsWith('frameleaf-source:')),
+    );
+    const developRevisions = await this.rows(tables.develop, assetId);
+    const hasDevelopBindings = developRevisions.some(
+      (row) =>
+        (row.sourceBinding !== null && row.sourceBinding !== undefined) ||
+        (row.sourceAssetId !== null && row.sourceAssetId !== undefined && row.sourceAssetId !== assetId),
+    );
+    let imageEditSource: ImageEditSource | null = null;
+    if (asset.type === AssetType.Image && edits.length > 0) {
+      const rows = await this.db
+        .selectFrom('asset_edit')
+        .select(['action', 'parameters', 'sourceReference'])
+        .where('assetId', '=', assetId)
+        .orderBy('sequence')
+        .execute();
+      if (
+        canonicalJson(rows.map(({ action, parameters }) => ({ action, parameters }))) !==
+        canonicalJson(edits.map(({ action, parameters }) => ({ action, parameters })))
+      )
+        throw new Error('Buddy image edit snapshot changed');
+      const reference = asset.originalPath.toLowerCase().startsWith('frameleaf-source:');
+      const bindings = rows.map(
+        (row) => row.sourceReference ?? (reference ? { kind: 'unbound-reference' as const } : null),
+      );
+      imageEditSource = bindings[0] ? imageEditSourceSchema.parse(bindings[0]) : null;
+      if (bindings.some((binding) => canonicalJson(binding) !== canonicalJson(imageEditSource)))
+        throw new Error('Buddy image edit source bindings disagree');
+    }
     return buddyAssetFidelitySchema.parse({
-      version: 1,
+      version: imageEditSource ? 4 : hasDevelopBindings ? 3 : hasReferences ? 2 : 1,
       assetId,
       ownerId: asset.ownerId,
       source: {
@@ -65,10 +101,11 @@ export class BuddyBackupFidelityRepository {
         sha256: originalSha256,
         type: asset.type,
       },
-      videoVersions: await this.rows(tables.video, assetId),
+      videoVersions,
       videoSelection: selection.rows[0] ?? null,
       edits,
-      developRevisions: await this.rows(tables.develop, assetId),
+      ...(imageEditSource && { imageEditSource }),
+      developRevisions,
       artifacts: await this.rows(tables.artifact, assetId),
       developExports: await this.rows(tables.exported, assetId),
       restorations: (await this.rows(tables.restoration, assetId)).filter(
@@ -145,6 +182,94 @@ export class BuddyBackupFidelityRepository {
     // Only an exact captured identity is translated. History of an older original remains inactive.
     const sourceChecksum = (value: string) =>
       value === state.source.checksum ? asset.checksum.toString('hex') : value;
+    const referenceMatches = (version: BuddyAssetFidelity['videoVersions'][number]) =>
+      version.sourceReference
+        ? version.sourceReference.sha256 === state.source.sha256
+        : !version.sourcePath.toLowerCase().startsWith('frameleaf-source:');
+    const videoSourceChecksum = (version: BuddyAssetFidelity['videoVersions'][number]) =>
+      referenceMatches(version) ? sourceChecksum(version.sourceChecksum) : version.sourceChecksum;
+    const restoredReference = (version: BuddyAssetFidelity['videoVersions'][number]) =>
+      !asset.originalPath.toLowerCase().startsWith('frameleaf-source:') && referenceMatches(version)
+        ? null
+        : version.sourceReference;
+    const restoredDevelopBinding = (revision: BuddyAssetFidelity['developRevisions'][number]) => {
+      const binding = revision.sourceBinding;
+      if (binding?.kind !== 'bound' || asset.originalPath.toLowerCase().startsWith('frameleaf-source:')) return binding;
+      const originals = [binding.parent, binding.input];
+      if (
+        originals.some(
+          (source) =>
+            source.assetId !== state.assetId ||
+            source.checksum !== state.source.checksum ||
+            (source.reference && source.reference.sha256 !== state.source.sha256),
+        )
+      )
+        return binding;
+      const original = {
+        assetId: asset.id,
+        path: asset.originalPath,
+        checksum: asset.checksum.toString('hex'),
+        reference: null,
+      };
+      return { kind: 'bound' as const, parent: original, input: original };
+    };
+    const restoredDevelopSourceAsset = (revision: BuddyAssetFidelity['developRevisions'][number]) => {
+      // A legacy null and the parent asset id both mean the still itself.
+      if (
+        revision.sourceBinding === null &&
+        (revision.sourceAssetId === null || revision.sourceAssetId === state.assetId)
+      )
+        return null;
+      return revision.sourceAssetId === state.assetId ? asset.id : revision.sourceAssetId;
+    };
+    const canRestoreDevelop = (revision: BuddyAssetFidelity['developRevisions'][number]) => {
+      const binding = restoredDevelopBinding(revision);
+      if (binding === null)
+        return (
+          state.source.checksumAlgorithm !== ChecksumAlgorithm.sha1Path ||
+          revision.sourceChecksum === state.source.sha256
+        );
+      return (
+        binding.kind === 'bound' &&
+        binding.parent.assetId === asset.id &&
+        binding.input.assetId === asset.id &&
+        binding.parent.reference === null &&
+        binding.input.reference === null &&
+        binding.parent.checksum === asset.checksum.toString('hex') &&
+        binding.input.checksum === asset.checksum.toString('hex')
+      );
+    };
+    const archivedImageSource = readBuddyImageEditSource(state);
+    const imageEditSource =
+      archivedImageSource &&
+      'sha256' in archivedImageSource &&
+      archivedImageSource.sha256 === state.source.sha256 &&
+      !asset.originalPath.toLowerCase().startsWith('frameleaf-source:')
+        ? null
+        : archivedImageSource;
+    const restorationMatches = (restoration: BuddyAssetFidelity['restorations'][number]) => {
+      if (
+        state.source.checksumAlgorithm !== ChecksumAlgorithm.sha1Path ||
+        restoration.sourceChecksum === state.source.sha256
+      )
+        return true;
+      const full = restoration.provenance.full;
+      if (!full || typeof full !== 'object' || Array.isArray(full)) return false;
+      const epochs = (full as Record<string, unknown>).sourceEpochs;
+      if (!Array.isArray(epochs) || epochs.length !== 1) return false;
+      const epoch: unknown = epochs[0];
+      if (!epoch || typeof epoch !== 'object' || Array.isArray(epoch)) return false;
+      const proof = epoch as Record<string, unknown>;
+      const reference = sourceReferenceSchema.safeParse(proof.reference);
+      return (
+        proof.assetId === state.assetId &&
+        proof.ownerId === ownerId &&
+        reference.success &&
+        reference.data.sha256 === state.source.sha256
+      );
+    };
+    const restorationSourceChecksum = (restoration: BuddyAssetFidelity['restorations'][number]) =>
+      restorationMatches(restoration) ? sourceChecksum(restoration.sourceChecksum) : restoration.sourceChecksum;
     const currentVideos = await sql<{
       ownerId: string;
       requestedVersionId: string | null;
@@ -173,8 +298,9 @@ export class BuddyBackupFidelityRepository {
     for (const version of state.videoVersions) {
       const value = {
         ...version,
-        sourcePath: asset.originalPath,
-        sourceChecksum: sourceChecksum(version.sourceChecksum),
+        sourcePath: referenceMatches(version) ? asset.originalPath : version.sourcePath,
+        sourceChecksum: videoSourceChecksum(version),
+        sourceReference: restoredReference(version),
         status: version.status === 'pending' ? 'failed' : version.status,
         masterPath: path(version.masterPath),
         proxyPath: path(version.proxyPath),
@@ -184,13 +310,14 @@ export class BuddyBackupFidelityRepository {
         tables.video,
         value,
         ['id'],
-        ['assetId', 'ownerId', 'createdAt', 'recipe', 'purpose', 'sourceChecksum'],
+        ['assetId', 'ownerId', 'createdAt', 'recipe', 'purpose', 'sourceChecksum', 'sourceReference'],
         (row) => ({
           ...buddyVideoVersionSchema.parse(row),
-          sourceChecksum: sourceChecksum(buddyVideoVersionSchema.parse(row).sourceChecksum),
+          sourceChecksum: videoSourceChecksum(buddyVideoVersionSchema.parse(row)),
+          sourceReference: restoredReference(buddyVideoVersionSchema.parse(row)),
         }),
         version.status === 'ready'
-          ? ['masterPath', 'proxyPath', 'files', 'status', 'sourceChecksum', 'sourcePath']
+          ? ['masterPath', 'proxyPath', 'files', 'status', 'sourceChecksum', 'sourcePath', 'sourceReference']
           : [],
       );
     }
@@ -234,6 +361,8 @@ export class BuddyBackupFidelityRepository {
     for (const revision of state.developRevisions) {
       const value = {
         ...revision,
+        sourceBinding: restoredDevelopBinding(revision),
+        sourceAssetId: restoredDevelopSourceAsset(revision),
         masterPath: path(revision.masterPath),
         previewPath: path(revision.previewPath),
         isCurrent: false,
@@ -251,10 +380,19 @@ export class BuddyBackupFidelityRepository {
           'recipeVersion',
           'recipe',
           'kind',
+          'sourceBinding',
+          'sourceAssetId',
           'exportId',
           ...(revision.kind === 'external' ? ['sourceChecksum', 'renditionChecksum'] : []),
         ],
-        (row) => buddyDevelopRevisionSchema.parse(row),
+        (row) => {
+          const revision = buddyDevelopRevisionSchema.parse(row);
+          return {
+            ...revision,
+            sourceBinding: restoredDevelopBinding(revision),
+            sourceAssetId: restoredDevelopSourceAsset(revision),
+          };
+        },
         (row) => {
           const current = buddyDevelopRevisionSchema.parse(row);
           if (['queued', 'rendering'].includes(current.status)) {
@@ -269,10 +407,12 @@ export class BuddyBackupFidelityRepository {
               current.status === 'rendered' &&
               current.renditionChecksum !== revision.renditionChecksum)
           )
-            return [];
+            return ['sourceBinding', 'sourceAssetId'];
           return [
             'masterPath',
             'previewPath',
+            'sourceBinding',
+            'sourceAssetId',
             'status',
             'rendererVersion',
             'width',
@@ -287,7 +427,7 @@ export class BuddyBackupFidelityRepository {
     for (const restoration of state.restorations) {
       const value = {
         ...restoration,
-        sourceChecksum: sourceChecksum(restoration.sourceChecksum),
+        sourceChecksum: restorationSourceChecksum(restoration),
         isCurrent: false,
         resultPath: path(restoration.resultPath),
         resultPreviewPath: path(restoration.resultPreviewPath),
@@ -315,7 +455,7 @@ export class BuddyBackupFidelityRepository {
             status: 'restored',
             resultPath: row.resultPath ?? restoration.resultPath,
           });
-          return { ...parsed, sourceChecksum: sourceChecksum(parsed.sourceChecksum) };
+          return { ...parsed, sourceChecksum: restorationSourceChecksum(parsed) };
         },
         (row) =>
           mode === 'replace' || row.status === 'restored'
@@ -328,6 +468,7 @@ export class BuddyBackupFidelityRepository {
         (row) =>
           row.isCurrent &&
           row.status === 'rendered' &&
+          canRestoreDevelop(row) &&
           (row.sourceChecksum === null || row.sourceChecksum === state.source.sha256),
       );
       await sql`UPDATE public.asset_develop_revision SET "isCurrent"=false WHERE "assetId"=${asset.id}::uuid`.execute(
@@ -339,7 +480,8 @@ export class BuddyBackupFidelityRepository {
     }
     if (mode === 'replace' || previousRestorations.length === 0) {
       const current = state.restorations.find(
-        (row) => row.isCurrent && sourceChecksum(row.sourceChecksum) === asset.checksum.toString('hex'),
+        (row) =>
+          row.isCurrent && restorationMatches(row) && restorationSourceChecksum(row) === asset.checksum.toString('hex'),
       );
       await trx.updateTable('asset_restoration').set({ isCurrent: false }).where('assetId', '=', asset.id).execute();
       if (current)
@@ -351,6 +493,40 @@ export class BuddyBackupFidelityRepository {
           .where('ownerId', '=', ownerId)
           .execute();
     }
+    const previousImageSources =
+      state.source.type === AssetType.Image
+        ? await trx
+            .selectFrom('asset_edit')
+            .select('sourceReference')
+            .where('assetId', '=', asset.id)
+            .orderBy('sequence')
+            .execute()
+        : [];
+    const restoreImageChoice =
+      state.source.type === AssetType.Image &&
+      (mode === 'replace' ||
+        (previousProjection.length === 0 &&
+          (previousEdits.length === 0 ||
+            (canonicalJson(previousEdits) === canonicalJson(state.edits) &&
+              previousImageSources.every(
+                (row) => canonicalJson(row.sourceReference) === canonicalJson(imageEditSource),
+              )))));
+    if (restoreImageChoice) {
+      await trx.deleteFrom('asset_edit').where('assetId', '=', asset.id).execute();
+      if (state.edits.length > 0)
+        await trx
+          .insertInto('asset_edit')
+          .values(
+            state.edits.map((edit, sequence) => ({
+              assetId: asset.id,
+              sequence,
+              action: edit.action as never,
+              parameters: edit.parameters as never,
+              sourceReference: imageEditSource,
+            })),
+          )
+          .execute();
+    }
     const restoreVideoChoice =
       mode === 'replace' ||
       (currentVideos.rows.length === 0 && previousProjection.length === 0 && previousEdits.length === 0);
@@ -360,7 +536,8 @@ export class BuddyBackupFidelityRepository {
           (row) =>
             row.id === id &&
             row.status === 'ready' &&
-            sourceChecksum(row.sourceChecksum) === asset.checksum.toString('hex'),
+            referenceMatches(row) &&
+            videoSourceChecksum(row) === asset.checksum.toString('hex'),
         )?.id ?? null;
       if (state.videoSelection) {
         const current = ready(state.videoSelection.currentVersionId);
@@ -387,16 +564,26 @@ export class BuddyBackupFidelityRepository {
     if (
       mode === 'replace' ||
       (previousProjection.length === 0 &&
-        (state.source.type === AssetType.Video
-          ? restoreVideoChoice
-          : canonicalJson(previousEdits) === canonicalJson(state.edits)))
+        (state.source.type === AssetType.Video ? restoreVideoChoice : restoreImageChoice))
     ) {
       await trx.deleteFrom('asset_file').where('assetId', '=', asset.id).where('isEdited', '=', true).execute();
-      if (state.projection.length > 0)
+      const currentVideo = state.videoVersions.find((row) => row.id === state.videoSelection?.currentVersionId);
+      const currentDevelop = state.developRevisions.find((row) => row.isCurrent);
+      const invalidDevelop =
+        currentDevelop &&
+        (!canRestoreDevelop(currentDevelop) ||
+          (currentDevelop.sourceChecksum !== null && currentDevelop.sourceChecksum !== state.source.sha256));
+      const projection =
+        (currentVideo && !referenceMatches(currentVideo)) ||
+        invalidDevelop ||
+        (state.source.type === AssetType.Image && imageEditSource !== null)
+          ? []
+          : state.projection;
+      if (projection.length > 0)
         await trx
           .insertInto('asset_file')
           .values(
-            state.projection.map((file) => ({
+            projection.map((file) => ({
               ...file,
               assetId: asset.id,
               path: path(file.path)!,
@@ -419,7 +606,9 @@ export class BuddyBackupFidelityRepository {
     const columns = Object.keys(row);
     const value = (column: string) =>
       jsonColumns.has(column)
-        ? sql`${JSON.stringify(row[column])}::text::jsonb`
+        ? (column === 'sourceReference' || column === 'sourceBinding') && row[column] === null
+          ? sql`NULL`
+          : sql`${JSON.stringify(row[column])}::text::jsonb`
         : checksumColumns.has(column) && row[column] !== null
           ? sql`${Buffer.from(String(row[column]), 'hex')}`
           : sql`${row[column]}`;

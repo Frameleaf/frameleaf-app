@@ -72,7 +72,7 @@ describe('Buddy photo projection publication and deferred jobs', () => {
       checksum: Buffer.from(source.sha256, 'hex'),
       checksumAlgorithm: ChecksumAlgorithm.sha256File,
     });
-    const recipe = [{ action: AssetEditAction.Rotate, parameters: { angle: 90 } }];
+    const recipe = [{ action: AssetEditAction.Rotate as const, parameters: { angle: 90 } }];
     const projection = retained
       ? [master, preview].map((file, index) => ({
           path: file.path,
@@ -82,6 +82,7 @@ describe('Buddy photo projection publication and deferred jobs', () => {
           isTransparent: false,
         }))
       : [];
+    await new AssetEditRepository(db).replaceAll(asset.id, recipe);
     const fidelity = new BuddyBackupFidelityRepository(db);
     const state = await fidelity.capture(asset.id, source.sha256, projection, recipe);
     fidelity.bindFiles(state, new Map([source, master, preview].map((file) => [file.path, file])));

@@ -12,7 +12,14 @@ import { flushBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vaul
 import { backupKeyFile, keyFingerprint } from 'src/utils/cloud-backup.js';
 import { recoveryAuthorityDigest, recoveryMlConfigOf } from 'src/utils/recovery-ml-authority.js';
 
-const fixture = vi.hoisted(() => ({ reset: vi.fn(), media: '', rows: [] as unknown[], authority: {} as any }));
+const fixture = vi.hoisted(() => ({
+  reset: vi.fn(),
+  sourceReset: vi.fn(),
+  referenceRecovery: vi.fn(),
+  media: '',
+  rows: [] as unknown[],
+  authority: {} as any,
+}));
 // These tests isolate real file/publication barriers; canonical PG tests exercise the authority helpers.
 vi.mock('src/utils/buddy-recovery-ml.js', () => ({
   captureReplacementMl: () => Promise.resolve(fixture.authority),
@@ -21,6 +28,8 @@ vi.mock('src/utils/buddy-recovery-ml.js', () => ({
   admitReplacementMl: async () => {},
   verifyCommittedReplacementMl: async () => {},
 }));
+vi.mock('src/utils/source-resource-restore.js', () => ({ resetSourceResourcesAfterRestore: fixture.sourceReset }));
+vi.mock('src/utils/buddy-reference-recovery.js', () => ({ recoverBuddyReferenceOriginals: fixture.referenceRecovery }));
 vi.mock('src/queue/store.js', () => ({ resetQueueAfterRestore: fixture.reset }));
 vi.mock('src/constants.js', () => ({ serverVersion: '2.6.0' }));
 vi.mock('src/cores/storage.core.js', () => ({ StorageCore: { getMediaLocation: () => fixture.media } }));
@@ -361,7 +370,10 @@ describe('Buddy recovery crash barriers', () => {
     });
   });
 
-  it('resumes server preferences at database-ready without repeating import', async () => {
+  it.each([1, 2])('resumes format %s server recovery at database-ready without repeating import', async (version) => {
+    fixture.sourceReset.mockClear();
+    fixture.referenceRecovery.mockClear();
+    plan.manifest.version = version;
     plan.scope = 'server';
     plan.manifest.settings.buddy = { version: 1, settings: savedSettings(root) };
     await writeFile(join(directory, 'prepared.json'), JSON.stringify(plan));
@@ -378,6 +390,13 @@ describe('Buddy recovery crash barriers', () => {
     const before = await repository.state();
     await service.restore(id, restore, maintenance, assert);
     expect(fixture.reset).toHaveBeenCalledWith(database);
+    expect(fixture.sourceReset).toHaveBeenCalledWith(database);
+    if (version === 2) {
+      expect(fixture.referenceRecovery).toHaveBeenCalledWith(database, plan, assert);
+      expect(fixture.sourceReset.mock.invocationCallOrder[0]).toBeLessThan(
+        fixture.referenceRecovery.mock.invocationCallOrder[0],
+      );
+    } else expect(fixture.referenceRecovery).not.toHaveBeenCalled();
     expect(database.deleteFrom.mock.calls).toEqual([['session'], ['system_metadata']]);
     expect(deletion.where).toHaveBeenCalledExactlyOnceWith('key', 'in', []);
     expect((await repository.state()).settings).toMatchObject({

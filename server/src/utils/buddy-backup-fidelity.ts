@@ -5,7 +5,10 @@ import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js
 import type { CloudBackupRestoreFile } from 'src/services/cloud-backup-restore.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFileType, AssetType, ChecksumAlgorithm, StorageFolder } from 'src/enum.js';
+import { developSourceBindingSchema } from 'src/utils/develop-source-binding.js';
+import { type ImageEditSource, imageEditSourceSchema } from 'src/utils/image-edit-source.js';
 import { EDITED_MASTER_LINEAGE_SUFFIX, getEditedMasterLineagePath } from 'src/utils/media-policy.js';
+import { sourceReferenceSchema } from 'src/utils/source-reference.js';
 
 const uuid = z.uuid();
 const hex = z.preprocess(
@@ -40,6 +43,7 @@ export const buddyVideoVersionSchema = z.object({
   ...identity,
   sourcePath: path,
   sourceChecksum: hex,
+  sourceReference: sourceReferenceSchema.nullable().default(null),
   recipe: edits,
   purpose: z.enum(['save', 'export', 'revert']),
   status: z.enum(['pending', 'ready', 'failed']),
@@ -47,27 +51,38 @@ export const buddyVideoVersionSchema = z.object({
   proxyPath: path.nullable(),
   files: z.array(projection).max(100),
 });
-export const buddyDevelopRevisionSchema = z.object({
-  ...identity,
-  revision: z.number().int().positive(),
-  recipeVersion: z.number().int().positive(),
-  recipe: json,
-  label: z.string().nullable(),
-  status: z.enum(['saved', 'queued', 'rendering', 'rendered', 'failed', 'cancelled']),
-  rendererVersion: z.string().nullable(),
-  masterPath: path.nullable(),
-  previewPath: path.nullable(),
-  width: z.number().int().nullable(),
-  height: z.number().int().nullable(),
-  isCurrent: z.boolean(),
-  kind: z.enum(['recipe', 'external']),
-  sourceChecksum: hex.nullable(),
-  renditionChecksum: hex.nullable(),
-  exportId: uuid.nullable(),
-  fileName: z.string().nullable(),
-  software: z.string().nullable(),
-  renderedAt: date.nullable(),
-});
+export const buddyDevelopRevisionSchema = z
+  .object({
+    ...identity,
+    revision: z.number().int().positive(),
+    recipeVersion: z.number().int().positive(),
+    recipe: json,
+    label: z.string().nullable(),
+    status: z.enum(['saved', 'queued', 'rendering', 'rendered', 'failed', 'cancelled']),
+    rendererVersion: z.string().nullable(),
+    masterPath: path.nullable(),
+    previewPath: path.nullable(),
+    width: z.number().int().nullable(),
+    height: z.number().int().nullable(),
+    isCurrent: z.boolean(),
+    kind: z.enum(['recipe', 'external']),
+    sourceBinding: developSourceBindingSchema.nullable().default(null),
+    sourceAssetId: uuid.nullable().default(null),
+    sourceChecksum: hex.nullable(),
+    renditionChecksum: hex.nullable(),
+    exportId: uuid.nullable(),
+    fileName: z.string().nullable(),
+    software: z.string().nullable(),
+    renderedAt: date.nullable(),
+  })
+  .refine(
+    (row) =>
+      row.sourceBinding?.kind !== 'bound' ||
+      (row.sourceBinding.parent.assetId === row.assetId && row.sourceBinding.input.assetId === row.sourceAssetId),
+    {
+      message: 'Develop source binding does not belong to this revision',
+    },
+  );
 export const buddyArtifactSchema = z.object({
   assetId: uuid,
   id: sha256,
@@ -110,22 +125,53 @@ export const buddyRestorationSchema = z.object({
 const file = z.object({ role: z.string(), path, sha256, size: z.number().int().nonnegative(), mtime: date.nullable() });
 
 /** Buddy-only, JSON-safe records. Claims, jobs, destinations and expiring previews are never replayed. */
-export const buddyAssetFidelitySchema = z.object({
-  version: z.literal(1),
-  assetId: uuid,
-  ownerId: uuid,
-  source: z.object({ checksum: hex, checksumAlgorithm: z.enum(ChecksumAlgorithm), sha256, type: z.enum(AssetType) }),
-  videoVersions: z.array(buddyVideoVersionSchema).max(10_000),
-  videoSelection: z.object({ requestedVersionId: uuid.nullable(), currentVersionId: uuid.nullable() }).nullable(),
-  edits,
-  developRevisions: z.array(buddyDevelopRevisionSchema).max(10_000),
-  artifacts: z.array(buddyArtifactSchema).max(64),
-  developExports: z.array(buddyDevelopExportSchema).max(10_000),
-  restorations: z.array(buddyRestorationSchema).max(10_000),
-  projection: z.array(projection).max(100),
-  files: z.array(file).max(100_000),
-});
+export const buddyAssetFidelitySchema = z
+  .object({
+    version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
+    assetId: uuid,
+    ownerId: uuid,
+    source: z.object({ checksum: hex, checksumAlgorithm: z.enum(ChecksumAlgorithm), sha256, type: z.enum(AssetType) }),
+    videoVersions: z.array(buddyVideoVersionSchema).max(10_000),
+    videoSelection: z.object({ requestedVersionId: uuid.nullable(), currentVersionId: uuid.nullable() }).nullable(),
+    edits,
+    imageEditSource: imageEditSourceSchema.nullable().optional(),
+    developRevisions: z.array(buddyDevelopRevisionSchema).max(10_000),
+    artifacts: z.array(buddyArtifactSchema).max(64),
+    developExports: z.array(buddyDevelopExportSchema).max(10_000),
+    restorations: z.array(buddyRestorationSchema).max(10_000),
+    projection: z.array(projection).max(100),
+    files: z.array(file).max(100_000),
+  })
+  .refine((state) => state.version >= 2 || state.videoVersions.every((version) => version.sourceReference === null), {
+    message: 'Reference video history requires fidelity format 2',
+  })
+  .refine(
+    (state) =>
+      state.version >= 3 ||
+      state.developRevisions.every(
+        (row) => row.sourceBinding === null && (row.sourceAssetId === null || row.sourceAssetId === row.assetId),
+      ),
+    {
+      message: 'Bound develop history requires fidelity format 3',
+    },
+  )
+  .refine(
+    (state) =>
+      state.imageEditSource === null ||
+      state.imageEditSource === undefined ||
+      (state.version === 4 && state.source.type === AssetType.Image),
+    {
+      message: 'Image edit source provenance requires fidelity format 4',
+    },
+  );
+
 export type BuddyAssetFidelity = z.infer<typeof buddyAssetFidelitySchema>;
+
+export const readBuddyImageEditSource = (state: BuddyAssetFidelity): ImageEditSource | null =>
+  state.source.type === AssetType.Image && state.edits.length > 0
+    ? (state.imageEditSource ??
+      (state.source.checksumAlgorithm === ChecksumAlgorithm.sha1Path ? { kind: 'unbound-reference' } : null))
+    : null;
 
 export const buddyFidelityPaths = (state: BuddyAssetFidelity) =>
   [

@@ -7,7 +7,10 @@ import type { DB } from 'src/schema/index.js';
 import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
 import type { CloudBackupManifestFile } from 'src/utils/cloud-backup.js';
 import { StorageCore } from 'src/cores/storage.core.js';
+import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
+import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import { AssetFileType, AssetType, ChecksumAlgorithm, StorageFolder } from 'src/enum.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
 import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
@@ -17,6 +20,7 @@ import { PhysicalFileRepository } from 'src/repositories/physical-file.repositor
 import { BaseService } from 'src/services/base.service.js';
 import {
   type BuddyAssetFidelity,
+  buddyAssetFidelitySchema,
   buddyFidelityFiles,
   buddyRestoreChecksum,
   readBuddyAssetFidelity,
@@ -124,6 +128,300 @@ describe('Buddy retained per-asset work', () => {
         },
       }),
     );
+
+  it('keeps a legacy reference Develop output inactive without source checksum or binding', async () => {
+    const { asset, source } = await original();
+    const develops = new AssetDevelopRepository(db);
+    const revision = await develops.create({
+      assetId: asset.id,
+      ownerId,
+      recipe: defaultDevelopRecipe(),
+      recipeVersion: 1,
+      label: null,
+      status: AssetDevelopRevisionStatus.Saved,
+    });
+    const master = await file('unproven.master.jpg');
+    const preview = await file('unproven.preview.jpg');
+    await develops.update(revision.id, {
+      status: AssetDevelopRevisionStatus.Rendered,
+      masterPath: master.path,
+      previewPath: preview.path,
+    });
+    await develops.setCurrent(asset.id, revision.id);
+    await sql`UPDATE public.asset_develop_revision SET "sourceBinding"=NULL,"sourceAssetId"=NULL,"sourceChecksum"=NULL
+      WHERE id=${revision.id}::uuid`.execute(db);
+    const locator = `frameleaf-source://${randomUUID()}/${'a'.repeat(64)}`;
+    await db
+      .updateTable('asset')
+      .set({
+        originalPath: locator,
+        checksum: createHash('sha1').update(locator).digest(),
+        checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+      })
+      .where('id', '=', asset.id)
+      .execute();
+    const { state, manifest } = await capture(asset.id, source, [
+      { path: preview.path, type: AssetFileType.Preview, isEdited: true, isProgressive: false, isTransparent: false },
+    ]);
+    await db
+      .updateTable('asset')
+      .set({ originalPath: asset.originalPath, checksum: asset.checksum, checksumAlgorithm: asset.checksumAlgorithm })
+      .where('id', '=', asset.id)
+      .execute();
+    await publish(state, await stage(manifest, state));
+    expect((await develops.get(revision.id))?.isCurrent).toBe(false);
+    expect(
+      await db
+        .selectFrom('asset_file')
+        .select('id')
+        .where('assetId', '=', asset.id)
+        .where('isEdited', '=', true)
+        .execute(),
+    ).toHaveLength(0);
+  });
+
+  it.each(['matching', 'different', 'missing', 'wrong-owner', 'wrong-asset', 'ambiguous'] as const)(
+    'activates a locator-based restoration only with proven recovered pixels: %s',
+    async (kind) => {
+      const { asset, source } = await original();
+      const locator = `frameleaf-source://${randomUUID()}/${'a'.repeat(64)}`;
+      const locatorChecksum = createHash('sha1').update(locator).digest();
+      await db
+        .updateTable('asset')
+        .set({ originalPath: locator, checksum: locatorChecksum, checksumAlgorithm: ChecksumAlgorithm.sha1Path })
+        .where('id', '=', asset.id)
+        .execute();
+      const result = await file('restored-reference.jpg');
+      const epoch = {
+        assetId: kind === 'wrong-asset' ? randomUUID() : asset.id,
+        ownerId: kind === 'wrong-owner' ? randomUUID() : ownerId,
+        epoch: '0',
+        reference: {
+          resourceId: randomUUID(),
+          version: 'b'.repeat(64),
+          sha256: kind === 'different' ? 'c'.repeat(64) : source.sha256,
+        },
+      };
+      const restoration = await db
+        .insertInto('asset_restoration')
+        .values({
+          assetId: asset.id,
+          ownerId,
+          revision: 1,
+          status: 'restored',
+          mode: 'faithful',
+          workload: 'restoration-faithful',
+          destinationKind: 'local',
+          destinationName: 'Local',
+          sourceType: 'image',
+          sourceChecksum: locatorChecksum,
+          sourceWidth: 32,
+          sourceHeight: 32,
+          previewRegion: {},
+          resultPath: result.path,
+          isCurrent: true,
+          provenance:
+            kind === 'missing' ? {} : { full: { sourceEpochs: kind === 'ambiguous' ? [epoch, epoch] : [epoch] } },
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      const { state, manifest } = await capture(asset.id, source);
+      await db
+        .updateTable('asset')
+        .set({ originalPath: asset.originalPath, checksum: asset.checksum, checksumAlgorithm: asset.checksumAlgorithm })
+        .where('id', '=', asset.id)
+        .execute();
+      const paths = await stage(manifest, state);
+      await publish(state, paths);
+      const restored = await db
+        .selectFrom('asset_restoration')
+        .select(['isCurrent', 'sourceChecksum'])
+        .where('id', '=', restoration.id)
+        .executeTakeFirstOrThrow();
+      expect(restored.isCurrent).toBe(kind === 'matching');
+      expect(restored.sourceChecksum).toEqual(kind === 'matching' ? asset.checksum : locatorChecksum);
+      await publish(state, paths);
+    },
+  );
+
+  it.each(['matching', 'different', 'unbound'] as const)(
+    'preserves reference still provenance and rebinds only proven copies: %s',
+    async (kind) => {
+      const { asset, source } = await original();
+      const develops = new AssetDevelopRepository(db);
+      const revision = await develops.create({
+        assetId: asset.id,
+        ownerId,
+        recipe: defaultDevelopRecipe(),
+        recipeVersion: 1,
+        label: null,
+        status: AssetDevelopRevisionStatus.Saved,
+      });
+      const master = await file('bound-still.master.jpg');
+      const preview = await file('bound-still.preview.jpg');
+      await develops.update(revision.id, {
+        status: AssetDevelopRevisionStatus.Rendered,
+        masterPath: master.path,
+        previewPath: preview.path,
+        sourceChecksum: Buffer.from(source.sha256, 'hex'),
+      });
+      await develops.setCurrent(asset.id, revision.id);
+      const snapshot = {
+        assetId: asset.id,
+        path: `frameleaf-source://${randomUUID()}/${'b'.repeat(64)}`,
+        checksum: asset.checksum.toString('hex'),
+        reference: {
+          resourceId: randomUUID(),
+          version: 'a'.repeat(64),
+          sha256: kind === 'matching' ? source.sha256 : 'e'.repeat(64),
+        },
+      };
+      const binding =
+        kind === 'unbound' ? { kind: 'unbound-reference' } : { kind: 'bound', parent: snapshot, input: snapshot };
+      await sql`UPDATE asset_develop_revision SET "renderAttemptId"=gen_random_uuid(), "renderGenerationId"=gen_random_uuid(), "sourceBinding"=${JSON.stringify(binding)}::text::jsonb, "sourceAssetId"=${asset.id}::uuid WHERE id=${revision.id}::uuid`.execute(
+        db,
+      );
+      const projection = [
+        {
+          assetId: asset.id,
+          type: AssetFileType.Preview,
+          path: preview.path,
+          isEdited: true as const,
+          isProgressive: false,
+          isTransparent: false,
+        },
+      ];
+      const { state, manifest } = await capture(asset.id, source, projection);
+      expect(state.version).toBe(3);
+      expect(state.developRevisions[0]).not.toHaveProperty('renderAttemptId');
+      expect(state.developRevisions[0]).not.toHaveProperty('renderGenerationId');
+      expect(state.developRevisions[0].sourceBinding).toEqual(binding);
+      expect(buddyAssetFidelitySchema.safeParse({ ...state, version: 2 }).success).toBe(false);
+      const paths = await stage(manifest, state);
+      await publish(state, paths);
+      const stored = (await develops.get(revision.id))!;
+      expect(stored.isCurrent).toBe(kind === 'matching');
+      expect(stored.sourceBinding).toEqual(
+        kind === 'matching'
+          ? {
+              kind: 'bound',
+              parent: {
+                assetId: asset.id,
+                path: asset.originalPath,
+                checksum: asset.checksum.toString('hex'),
+                reference: null,
+              },
+              input: {
+                assetId: asset.id,
+                path: asset.originalPath,
+                checksum: asset.checksum.toString('hex'),
+                reference: null,
+              },
+            }
+          : binding,
+      );
+      if (kind !== 'matching')
+        expect(
+          await db
+            .selectFrom('asset_file')
+            .select('id')
+            .where('assetId', '=', asset.id)
+            .where('isEdited', '=', true)
+            .execute(),
+        ).toHaveLength(0);
+      if (kind === 'matching') await develops.assertSourceBinding(stored);
+    },
+  );
+
+  it.each(['matching', 'different', 'legacy-unbound', 'legacy-uppercase-unbound'] as const)(
+    'restores reference video binding only for proven copied bytes: %s',
+    async (kind) => {
+      const { asset, source } = await original(AssetType.Video, true);
+      const versions = new AssetEditRepository(db);
+      const edits = [{ action: AssetEditAction.Rotate as const, parameters: { angle: 90 as const } }];
+      await versions.replaceAll(asset.id, edits);
+      const version = (await versions.getRequestedVideoVersion(asset.id))!;
+      const master = await file('reference.master.mp4');
+      const proxy = await file('reference.proxy.mp4');
+      await file('reference.master.mp4.lineage.json');
+      const projection = [
+        {
+          assetId: asset.id,
+          path: proxy.path,
+          type: AssetFileType.EncodedVideo,
+          isEdited: true as const,
+          isProgressive: false,
+          isTransparent: false,
+        },
+      ];
+      await versions.publishVideoVersion(version, {
+        masterPath: master.path,
+        files: projection,
+        width: 10,
+        height: 10,
+        duration: 1000,
+      });
+      const reference = kind.startsWith('legacy-')
+        ? null
+        : {
+            resourceId: randomUUID(),
+            version: 'a'.repeat(64),
+            sha256: kind === 'matching' ? source.sha256 : '1'.repeat(64),
+          };
+      const uri = `frameleaf-source://${randomUUID()}/${'b'.repeat(64)}`;
+      const logicalPath = kind === 'legacy-uppercase-unbound' ? uri.toUpperCase() : uri;
+      await sql`UPDATE video_edit_version SET "sourceReference"=${reference ? JSON.stringify(reference) : null}::text::jsonb,
+      "sourcePath"=${logicalPath} WHERE id=${version.id}::uuid`.execute(db);
+      const { state, manifest } = await capture(asset.id, source, projection, edits);
+      expect(state.videoVersions[0].sourceReference).toEqual(reference);
+      expect(state.version).toBe(2);
+      expect(buddyAssetFidelitySchema.safeParse({ ...state, version: 1 }).success).toBe(kind.startsWith('legacy-'));
+      if (kind.startsWith('legacy-')) {
+        const legacy = structuredClone(manifest) as unknown as {
+          assetFidelity: Record<string, { version: number; videoVersions: Record<string, unknown>[] }>;
+        };
+        delete legacy.assetFidelity[asset.id].videoVersions[0].sourceReference;
+        legacy.assetFidelity[asset.id].version = 1;
+        expect(
+          readBuddyAssetFidelity(legacy as unknown as BuddyManifest, asset.id)?.videoVersions[0].sourceReference,
+        ).toBeNull();
+      }
+      const paths = await stage(manifest, state);
+      await sql`DELETE FROM video_edit_selection WHERE "assetId"=${asset.id}::uuid`.execute(db);
+      await sql`DELETE FROM video_edit_version WHERE "assetId"=${asset.id}::uuid`.execute(db);
+      await db.deleteFrom('asset_file').where('assetId', '=', asset.id).where('isEdited', '=', true).execute();
+      await db
+        .updateTable('asset')
+        .set({ checksum: Buffer.from(source.sha256, 'hex'), checksumAlgorithm: ChecksumAlgorithm.sha256File })
+        .where('id', '=', asset.id)
+        .execute();
+      await expect(publish(state, paths)).resolves.toBe('restored');
+      await expect(publish(state, paths)).resolves.toBe('restored');
+      const offered = await versions.listVideoVersions(asset.id, ownerId);
+      expect(offered).toHaveLength(kind === 'matching' ? 1 : 0);
+      const stored = (
+        await sql<{
+          sourceReference: unknown;
+          sourcePath: string;
+        }>`SELECT "sourceReference","sourcePath" FROM video_edit_version WHERE id=${version.id}::uuid`.execute(db)
+      ).rows[0];
+      expect(stored.sourceReference).toEqual(kind === 'matching' ? null : reference);
+      expect(stored.sourcePath).toBe(kind === 'matching' ? asset.originalPath : logicalPath);
+      const selection = (
+        await sql<{
+          currentVersionId: string | null;
+        }>`SELECT "currentVersionId" FROM video_edit_selection WHERE "assetId"=${asset.id}::uuid`.execute(db)
+      ).rows[0];
+      expect(selection.currentVersionId).toBe(kind === 'matching' ? version.id : null);
+      const files = await db
+        .selectFrom('asset_file')
+        .select('path')
+        .where('assetId', '=', asset.id)
+        .where('isEdited', '=', true)
+        .execute();
+      expect(files).toHaveLength(kind === 'matching' ? 1 : 0);
+    },
+  );
 
   it('restores video history, selection, recipes and lineage with a translated legacy checksum, then safely replays', async () => {
     const { asset, source } = await original(AssetType.Video, true);
@@ -394,6 +692,124 @@ describe('Buddy retained per-asset work', () => {
     expect(hash(await readFile(later.path))).toBe(later.sha256);
   });
 
+  it.each([
+    ['keep', 'queued'],
+    ['replace', 'queued'],
+    ['keep', 'rendering'],
+    ['replace', 'rendering'],
+    ['keep', 'publishing'],
+    ['replace', 'publishing'],
+  ] as const)('preserves a live Develop producer during %s recovery while %s', async (mode, phase) => {
+    const { asset, source } = await original();
+    const develops = new AssetDevelopRepository(db);
+    const revision = await develops.create({
+      assetId: asset.id,
+      ownerId,
+      recipe: defaultDevelopRecipe(),
+      recipeVersion: 1,
+      label: null,
+      status: AssetDevelopRevisionStatus.Saved,
+    });
+    const master = await file('snapshot-master.jpg');
+    const preview = await file('snapshot-preview.jpg');
+    await develops.update(revision.id, {
+      status: AssetDevelopRevisionStatus.Rendered,
+      sourceChecksum: Buffer.from(source.sha256, 'hex'),
+      renditionChecksum: Buffer.from(master.sha256, 'hex'),
+      masterPath: master.path,
+      previewPath: preview.path,
+    });
+    await develops.setCurrent(asset.id, revision.id);
+    const { state, manifest } = await capture(asset.id, source);
+    const paths = await stage(manifest, state);
+    const generation = randomUUID();
+    const queued = (await develops.update(revision.id, {
+      status: AssetDevelopRevisionStatus.Queued,
+      progress: 0,
+      attempts: 0,
+      renderGenerationId: generation,
+    }))!;
+    const attempt =
+      phase === 'queued' ? queued : (await develops.beginAttempt(revision.id, 'live-renderer', 60, generation))!;
+    expect(attempt).toMatchObject({
+      status: phase === 'queued' ? AssetDevelopRevisionStatus.Queued : AssetDevelopRevisionStatus.Rendering,
+      renderGenerationId: generation,
+    });
+    const laterMaster = await file('live-master.jpg');
+    const laterPreview = await file('live-preview.jpg');
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let acquired!: () => void;
+    const locked = new Promise<void>((resolve) => (acquired = resolve));
+    const finishRender = (current: typeof attempt, hold = false) =>
+      db.transaction().execute((trx) =>
+        publicationTransaction.run(trx, async () => {
+          await develops.assertSourceBinding(current);
+          await develops.update(current.id, {
+            status: AssetDevelopRevisionStatus.Rendered,
+            sourceChecksum: Buffer.from(source.sha256, 'hex'),
+            renditionChecksum: Buffer.from(laterMaster.sha256, 'hex'),
+            masterPath: laterMaster.path,
+            previewPath: laterPreview.path,
+          });
+          await develops.setCurrent(asset.id, current.id);
+          if (hold) {
+            acquired();
+            await released;
+          }
+        }),
+      );
+    if (phase === 'publishing') {
+      const rendering = finishRender(attempt, true);
+      try {
+        await Promise.race([
+          locked,
+          rendering.then(() => {
+            throw new Error('Render completed before the publication checkpoint');
+          }),
+        ]);
+        await expect(
+          db.transaction().execute(async (trx) => {
+            await sql`SET LOCAL lock_timeout='200ms'`.execute(trx);
+            return new BuddyBackupFidelityRepository(trx).publish({
+              state,
+              paths,
+              mode,
+              ownerId,
+              originalSha256: source.sha256,
+              verify: () => Promise.reject(new Error('Recovery must not pass the live source publication lock')),
+            });
+          }),
+        ).rejects.toMatchObject({ code: '55P03' });
+      } finally {
+        release();
+        await rendering;
+      }
+      await expect(publish(state, paths, mode)).resolves.toBe('restored');
+    } else {
+      if (mode === 'replace') await expect(publish(state, paths, mode)).rejects.toThrow('An edit is changing');
+      else await expect(publish(state, paths, mode)).resolves.toBe('restored');
+      expect(await develops.get(revision.id)).toEqual(attempt);
+      const running =
+        phase === 'queued' ? (await develops.beginAttempt(revision.id, 'live-renderer', 60, generation))! : attempt;
+      expect(await develops.progressAttempt(running, 70)).toBe(true);
+      await finishRender(running);
+    }
+    const current = (await develops.getCurrent(asset.id))!;
+    expect(current).toMatchObject({
+      id: revision.id,
+      status: AssetDevelopRevisionStatus.Rendered,
+      renderGenerationId: generation,
+      masterPath: phase === 'publishing' && mode === 'replace' ? paths.get(master.path) : laterMaster.path,
+      previewPath: phase === 'publishing' && mode === 'replace' ? paths.get(preview.path) : laterPreview.path,
+    });
+    await develops.assertSourceBinding(current);
+    for (const retained of [source, master, preview, laterMaster, laterPreview])
+      expect(hash(await readFile(retained.path))).toBe(retained.sha256);
+    expect(hash(await readFile(paths.get(master.path)!))).toBe(master.sha256);
+    expect(await develops.listByAsset(asset.id)).toHaveLength(1);
+  });
+
   it('leaves unedited videos on the normal original renderer without a synthetic version selection', async () => {
     const { asset, source } = await original(AssetType.Video);
     const { state, manifest } = await capture(asset.id, source);
@@ -412,4 +828,68 @@ describe('Buddy retained per-asset work', () => {
     await symlink(elsewhere, StorageCore.getFolderLocation(StorageFolder.Thumbnails, ownerId));
     await expect(stage(manifest, state)).rejects.toThrow('destination unavailable');
   });
+  it.each(['matching', 'different', 'unbound', 'legacy-unbound'] as const)(
+    'preserves an image recipe source through independent-copy recovery: %s',
+    async (kind) => {
+      const { asset, source } = await original();
+      const edits = [{ action: AssetEditAction.Rotate as const, parameters: { angle: 90 as const } }];
+      const sut = ctx.get(AssetEditRepository);
+      await sut.replaceAll(asset.id, edits);
+      const binding = kind.endsWith('unbound')
+        ? { kind: 'unbound-reference' as const }
+        : {
+            resourceId: randomUUID(),
+            version: 'a'.repeat(64),
+            sha256: kind === 'matching' ? source.sha256 : 'e'.repeat(64),
+          };
+      await db.updateTable('asset_edit').set({ sourceReference: binding }).where('assetId', '=', asset.id).execute();
+      const preview = await file('bound-edit.png');
+      const { state, manifest } = await capture(
+        asset.id,
+        source,
+        [
+          {
+            type: AssetFileType.Preview,
+            path: preview.path,
+            isEdited: true,
+            isProgressive: false,
+            isTransparent: false,
+          },
+        ],
+        edits,
+      );
+      expect(state.version).toBe(4);
+      expect(state.imageEditSource).toEqual(binding);
+      if (kind === 'legacy-unbound') {
+        state.version = 1;
+        delete state.imageEditSource;
+        state.source.checksumAlgorithm = ChecksumAlgorithm.sha1Path;
+        state.source.checksum = 'b'.repeat(40);
+        manifest.assetFidelity![asset.id] = state;
+      }
+      const paths = await stage(manifest, state);
+      await db.deleteFrom('asset_edit').where('assetId', '=', asset.id).execute();
+      await publish(state, paths);
+      const rows = await db
+        .selectFrom('asset_edit')
+        .select(['action', 'parameters', 'sourceReference'])
+        .where('assetId', '=', asset.id)
+        .execute();
+      expect(rows[0]).toMatchObject(edits[0]);
+      expect(rows[0].sourceReference).toEqual(kind === 'matching' ? null : binding);
+      if (kind === 'matching') await expect(sut.assertImageEditSource(asset.id)).resolves.toBeUndefined();
+      else await expect(sut.assertImageEditSource(asset.id)).rejects.toThrow('asset_edit_source_changed');
+      expect(
+        (
+          await db
+            .selectFrom('asset_file')
+            .select('id')
+            .where('assetId', '=', asset.id)
+            .where('isEdited', '=', true)
+            .execute()
+        ).length,
+      ).toBe(kind === 'matching' ? 1 : 0);
+      expect(hash(await readFile(source.path))).toBe(source.sha256);
+    },
+  );
 });

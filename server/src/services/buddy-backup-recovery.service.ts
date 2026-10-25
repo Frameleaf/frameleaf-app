@@ -34,6 +34,7 @@ import {
   readReplacementMl,
   verifyCommittedReplacementMl,
 } from 'src/utils/buddy-recovery-ml.js';
+import { recoverBuddyReferenceOriginals } from 'src/utils/buddy-reference-recovery.js';
 import { keyFingerprint, parseBackupKey } from 'src/utils/cloud-backup.js';
 import { publishFileConfig, recoverEffectiveConfig } from 'src/utils/config.js';
 import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
@@ -43,6 +44,7 @@ import {
   recoveryMlRefusal,
   recoveryMlRegistrySchema,
 } from 'src/utils/recovery-ml-authority.js';
+import { resetSourceResourcesAfterRestore } from 'src/utils/source-resource-restore.js';
 
 /** Available in maintenance without booting application jobs, accounts or the Cloud client. */
 @Injectable()
@@ -293,6 +295,8 @@ export class BuddyBackupRecoveryService {
         await trx.deleteFrom('session').execute();
         // Stopped-worker restore: fence active claims and retain only the queue's safe durable work.
         await resetQueueAfterRestore(trx);
+        await resetSourceResourcesAfterRestore(trx);
+        if (plan.manifest.version === 2) await recoverBuddyReferenceOriginals(trx, plan, assert);
         await sql`TRUNCATE public.frameleaf_rate_limit, public.frameleaf_upload_lease,
         public.frameleaf_websocket_worker, public.socket_io_attachments`.execute(trx);
         // Restored unfinished jobs describe work from the old server and cannot safely be resumed.
