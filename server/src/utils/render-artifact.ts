@@ -1,13 +1,19 @@
 import { BadRequestException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
-import { constants, createWriteStream } from 'node:fs';
+import { close as closeFile, constants, createWriteStream, fsync, open as openFile, write, writev } from 'node:fs';
 import { mkdir, open, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
+import { finished, pipeline } from 'node:stream/promises';
 
 export type RenderArtifact = { outputPath: string; outputChecksum: Buffer; sizeInBytes: number };
 export type ArtifactAccessCheck = () => Promise<void>;
+
+export async function closeArtifactFile(file: { close: () => Promise<void> }) {
+  await file.close().catch(() => {
+    throw new Error('artifact_close_unconfirmed');
+  });
+}
 
 /** Streams a declared finite body with backpressure; a worker never chooses a filesystem path. */
 export async function receiveRenderArtifact(
@@ -16,7 +22,7 @@ export async function receiveRenderArtifact(
   expected: { checksum: string; sizeInBytes: string },
   check: ArtifactAccessCheck,
   commit: (artifact: RenderArtifact) => Promise<boolean | 'duplicate'>,
-  options: { allowEmpty?: boolean } = {},
+  options: { allowEmpty?: boolean; signal?: AbortSignal } = {},
 ): Promise<boolean> {
   const size = Number(expected.sizeInBytes);
   if (
@@ -32,8 +38,25 @@ export async function receiveRenderArtifact(
   const outputPath = join(folder, `${randomUUID()}.artifact`);
   const partial = `${outputPath}.partial`;
   let accepted = false;
-  const output = createWriteStream(partial, { flags: 'wx', mode: 0o600, flush: true });
-  const closed = new Promise<void>((resolve) => output.once('close', resolve));
+  let commitUncertain = false;
+  let closeUnconfirmed = false;
+  const filesystem = {
+    open: openFile,
+    write,
+    writev,
+    fsync,
+    close(fd: number, callback: (error: NodeJS.ErrnoException | null) => void) {
+      closeFile(fd, (error) => {
+        if (error) closeUnconfirmed = true;
+        callback(error ? new Error('artifact_close_unconfirmed') : null);
+      });
+    },
+  };
+  const output = createWriteStream(partial, { flags: 'wx', mode: 0o600, flush: true, fs: filesystem });
+  const closed = new Promise<void>((resolve, reject) =>
+    output.once('close', () => (closeUnconfirmed ? reject(new Error('artifact_close_unconfirmed')) : resolve())),
+  );
+  void closed.catch(() => {});
   try {
     const hash = createHash('sha256');
     let bytes = 0;
@@ -56,6 +79,7 @@ export async function receiveRenderArtifact(
         }
       },
       output,
+      { signal: options.signal },
     );
     const checksum = hash.digest();
     if (bytes !== size || !checksum.equals(Buffer.from(expected.checksum, 'hex'))) {
@@ -68,22 +92,34 @@ export async function receiveRenderArtifact(
     try {
       await directory.sync();
     } finally {
-      await directory.close();
+      await closeArtifactFile(directory);
     }
     const artifact = { outputPath, outputChecksum: checksum, sizeInBytes: size };
     // Independently open and hash the actual regular file before recording completion.
-    const verified = await openRenderArtifact(folder, artifact, check);
-    verified.destroy();
+    const verified = await openRenderArtifact(folder, artifact, check, { start: size });
+    // Finish the EOF stream so its verified descriptor is closed before publication.
+    try {
+      await finished(verified.resume());
+    } finally {
+      await verified.descriptorClosed;
+    }
+    options.signal?.throwIfAborted();
+    commitUncertain = true;
     const outcome = await commit(artifact);
+    commitUncertain = false;
     accepted = outcome === true;
     return accepted || outcome === 'duplicate';
+  } catch (error) {
+    if (error instanceof Error && error.message === 'artifact_close_unconfirmed') commitUncertain = true;
+    throw error;
   } finally {
     // pipeline may reject before an asynchronous open settles. Close before unlinking so a late
     // open cannot recreate a partial after cleanup, including when the input disconnects.
     output.destroy();
     await closed;
-    await rm(partial, { force: true });
-    if (!accepted) {
+    // A thrown commit or unconfirmed descriptor close retains ownership and its original failure.
+    if (!accepted && !commitUncertain) {
+      await rm(partial, { force: true });
       await rm(outputPath, { force: true });
     }
   }
@@ -95,7 +131,7 @@ export async function openRenderArtifact(
   artifact: RenderArtifact,
   check: ArtifactAccessCheck,
   options: { publishedName?: string; start?: number; end?: number; checkEachChunk?: boolean } = {},
-): Promise<Readable> {
+): Promise<Readable & { descriptorClosed: Promise<void> }> {
   await check();
   if (
     dirname(resolve(artifact.outputPath)) !== resolve(folder) ||
@@ -136,7 +172,7 @@ export async function openRenderArtifact(
     const source = file.createReadStream({
       start: options.start ?? 0,
       ...(options.end !== undefined && { end: options.end }),
-      autoClose: true,
+      autoClose: false,
     });
     const stream = Readable.from(
       (async function* () {
@@ -155,11 +191,18 @@ export async function openRenderArtifact(
         }
       })(),
     );
-    stream.once('close', () => source.destroy());
+    const descriptorClosed = new Promise<void>((resolve, reject) => {
+      stream.once('close', () => {
+        source.destroy();
+        void closeArtifactFile(file).then(resolve).catch(reject);
+      });
+    });
+    // Existing stream-only consumers do not observe descriptor settlement separately.
+    void descriptorClosed.catch(() => {});
     source.once('error', (error) => stream.destroy(error));
-    return stream;
+    return Object.assign(stream, { descriptorClosed });
   } catch (error) {
-    await file.close();
+    await closeArtifactFile(file);
     throw error;
   }
 }
