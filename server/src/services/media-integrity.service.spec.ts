@@ -3,22 +3,38 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AssetType } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { getMocks } from 'test/utils.js';
 
-const exec = vi.hoisted(() => ({ error: undefined as Error | undefined }));
-vi.mock('node:child_process', async (original) => ({
-  ...(await original<typeof import('node:child_process')>()),
-  execFile: (
-    _file: string,
-    _args: string[],
-    _options: unknown,
-    callback: (error: Error | undefined, stdout: string, stderr: string) => void,
-  ) => callback(exec.error, '', ''),
+const exec = vi.hoisted(() => ({
+  error: undefined as Error | undefined,
+  deferClose: false,
+  entered: undefined as (() => void) | undefined,
+  child: undefined as { emit: (event: string) => boolean; kill: ReturnType<typeof vi.fn> } | undefined,
 }));
+vi.mock('node:child_process', async (original) => {
+  const { EventEmitter } = await import('node:events');
+  return {
+    ...(await original<typeof import('node:child_process')>()),
+    execFile: (
+      _file: string,
+      _args: string[],
+      _options: unknown,
+      callback: (error: Error | undefined, stdout: string, stderr: string) => void,
+    ) => {
+      const child = Object.assign(new EventEmitter(), { kill: vi.fn() });
+      exec.child = child;
+      callback(exec.error, '', '');
+      exec.entered?.();
+      if (!exec.deferClose) queueMicrotask(() => child.emit('close'));
+      return child;
+    },
+  };
+});
 vi.mock('src/utils/raw-renderer.js', async (original) => ({
   ...(await original<typeof import('src/utils/raw-renderer.js')>()),
   renderRawWithLibRaw: vi.fn(),
@@ -32,6 +48,9 @@ describe(MediaIntegrityService.name, () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     exec.error = undefined;
+    exec.deferClose = false;
+    exec.entered = undefined;
+    exec.child = undefined;
     vi.mocked(renderRawWithLibRaw).mockReset();
     directory = await mkdtemp(join(tmpdir(), 'integrity-test-'));
     input = { path: join(directory, 'original.jpg'), originalFileName: 'original.jpg', type: AssetType.Image };
@@ -82,6 +101,70 @@ describe(MediaIntegrityService.name, () => {
     expect((await sut.validate(input)).status).toBe('healthy');
     expect(await first.result).toEqual({ status: 'timeout', reason: 'validation_timeout' });
   });
+  it('owns video cancellation and waits for child close before settling its input', async () => {
+    exec.deferClose = true;
+    const entered = Promise.withResolvers<void>();
+    exec.entered = entered.resolve;
+    const validation = sut.validateWithSettlement({ ...input, type: AssetType.Video, deep: true });
+    await entered.promise;
+    let settled = false;
+    void validation.settled.then(() => {
+      settled = true;
+    });
+    validation.cancel();
+    expect(await validation.result).toEqual({ status: 'timeout', reason: 'validation_timeout' });
+    expect(exec.child!.kill).toHaveBeenCalledWith('SIGKILL');
+    expect(settled).toBe(false);
+    exec.child!.emit('close');
+    await validation.settled;
+    expect(settled).toBe(true);
+  });
+
+  it('does not treat the FFmpeg callback as proof that its process and streams closed', async () => {
+    exec.deferClose = true;
+    const entered = Promise.withResolvers<void>();
+    exec.entered = entered.resolve;
+    const validation = sut.validateWithSettlement({ ...input, type: AssetType.Video, deep: true });
+    await entered.promise;
+    const result = vi.fn();
+    void validation.result.then(result);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(result).not.toHaveBeenCalled();
+    exec.child!.emit('close');
+    expect(await validation.result).toMatchObject({ status: 'healthy' });
+    await validation.settled;
+  });
+
+  it('propagates unknown decoder shutdown through result and settlement and retains its capacity', async () => {
+    const error = new Error('media_process_shutdown_unconfirmed');
+    mocks.media.decodeImage.mockRejectedValue(error);
+    for (let i = 0; i < 2; i++) {
+      const validation = sut.validateWithSettlement({ ...input, deep: true });
+      await expect(validation.result).rejects.toBe(error);
+      await expect(validation.settled).rejects.toBe(error);
+    }
+    expect(await sut.validate(input)).toEqual({ status: 'transient', reason: 'validation_busy' });
+  });
+
+  it('reports a late unknown stop to its queue owner after the result deadline was refused', async () => {
+    const entered = Promise.withResolvers<void>();
+    const decode = Promise.withResolvers<never>();
+    mocks.media.decodeImage.mockImplementation(() => {
+      entered.resolve();
+      return decode.promise;
+    });
+    const context = { signal: new AbortController().signal, executorStopUnconfirmed: false };
+    const validation = queueExecution.run(context as never, () => sut.validateWithSettlement({ ...input, deep: true }));
+    await entered.promise;
+    validation.cancel();
+    expect(await validation.result).toEqual({ status: 'timeout', reason: 'validation_timeout' });
+    const error = new Error('media_process_shutdown_unconfirmed');
+    decode.reject(error);
+    await expect(validation.settled).rejects.toBe(error);
+    expect(context.executorStopUnconfirmed).toBe(true);
+  });
+
   it('reports missing', async () => {
     await rm(input.path);
     expect(await sut.validate(input)).toEqual({ status: 'missing', reason: 'file_missing' });

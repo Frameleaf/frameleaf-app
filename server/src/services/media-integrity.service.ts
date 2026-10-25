@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { execFile as execFileCallback } from 'node:child_process';
-import { promisify } from 'node:util';
 import type { Stats } from 'node:fs';
 import { AssetType, Colorspace, MediaHealthStatus } from 'src/enum.js';
+import { trackQueueChild } from 'src/queue/child-process.js';
+import { queueExecution } from 'src/queue/context.js';
+import { isMediaProcessShutdownUnconfirmed } from 'src/queue/process-lifetime.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -11,7 +13,6 @@ import { classifyImageDecodeFailure } from 'src/utils/media-health.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 
-const execFile = promisify(execFileCallback);
 // Admin override for full decoding of long videos. Native operations retain their concurrency slot after timeout.
 const validationTimeout = () => {
   const value = Number(readAliasedEnv('FRAMELEAF_MEDIA_VALIDATION_TIMEOUT_MS') ?? 120_000);
@@ -52,7 +53,7 @@ export type MediaIntegrityInput = {
 };
 export type MediaIntegrityValidation = {
   result: Promise<MediaIntegrityResult>;
-  /** Actual hashing/decoder completion, including noncooperative work after the deadline. */
+  /** Actual hashing/decoder completion, including late work; rejects when native shutdown is unconfirmed. */
   settled: Promise<void>;
   cancel: () => void;
 };
@@ -87,13 +88,25 @@ export class MediaIntegrityService {
       controller.abort();
       refusal.resolve({ status: 'timeout', reason: 'validation_timeout' });
     };
-    const work = this.validateFile(input, controller.signal).finally(() => {
-      this.activeValidations--;
-    });
+    const work = this.validateFile(input, controller.signal)
+      .then((result) => {
+        this.activeValidations--;
+        return result;
+      })
+      .catch((error: unknown) => {
+        if (isMediaProcessShutdownUnconfirmed(error)) {
+          const context = queueExecution.getStore();
+          if (context) context.executorStopUnconfirmed = true;
+        } else this.activeValidations--;
+        throw error;
+      });
+    const settled = work.then(() => {});
+    // Result-only callers still retain capacity and queue ownership when a late decoder cannot stop.
+    void settled.catch(() => {});
     const timer = setTimeout(cancel, this.timeoutMs);
     return {
       result: Promise.race([work, refusal.promise]).finally(() => clearTimeout(timer)),
-      settled: work.then(() => {}).catch(() => {}),
+      settled,
       cancel,
     };
   }
@@ -140,6 +153,7 @@ export class MediaIntegrityService {
       }
       return failure ?? { status: 'healthy', reason: 'verified', ...digests, identity };
     } catch (error) {
+      if (isMediaProcessShutdownUnconfirmed(error)) throw error;
       const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
       if (code === 'ENOENT' || code === 'ENOTDIR') {
         return { status: 'missing', reason: 'file_missing' };
@@ -158,11 +172,31 @@ export class MediaIntegrityService {
     const isRaw = mimeTypes.isRaw(input.originalFileName) && !input.originalFileName.toLowerCase().endsWith('.psd');
     try {
       if (input.type === AssetType.Video) {
-        await execFile(
-          'ffmpeg',
-          ['-nostdin', '-v', 'error', '-xerror', '-i', input.path, '-map', '0:v:0', '-f', 'null', '-'],
-          { timeout: this.timeoutMs, signal },
-        );
+        signal.throwIfAborted();
+        // The execFile callback can precede close on cancellation; close owns the input lifetime.
+        await new Promise<void>((resolve, reject) => {
+          let failure: unknown;
+          const child = execFileCallback(
+            'ffmpeg',
+            ['-nostdin', '-v', 'error', '-xerror', '-i', input.path, '-map', '0:v:0', '-f', 'null', '-'],
+            { timeout: this.timeoutMs, killSignal: 'SIGKILL' },
+            (error) => {
+              failure = error;
+            },
+          );
+          trackQueueChild(child);
+          const abort = () => {
+            child.kill('SIGKILL');
+          };
+          child.once('close', () => {
+            signal.removeEventListener('abort', abort);
+            if (signal.aborted) reject(signal.reason);
+            else if (failure) reject(failure);
+            else resolve();
+          });
+          signal.addEventListener('abort', abort, { once: true });
+          if (signal.aborted) abort();
+        });
       } else if (input.type === AssetType.Image) {
         // RAW previews do not prove the original sensor data can be decoded.
         const source = isRaw ? await renderRawWithLibRaw(input.path, signal) : input.path;
@@ -174,6 +208,7 @@ export class MediaIntegrityService {
         return { status: 'unsupported', reason: 'media_type_unsupported' };
       }
     } catch (error) {
+      if (isMediaProcessShutdownUnconfirmed(error)) throw error;
       if (signal.aborted) {
         return { status: 'timeout', reason: 'validation_timeout' };
       }
