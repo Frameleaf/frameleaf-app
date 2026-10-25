@@ -80,8 +80,13 @@ export class PhotoSourceService {
       runId,
       itemId,
       PhotoSourceReferenceDto.schema.parse(input),
-      (tx, id) =>
-        this.jobs.queueInTransaction(tx, { name: JobName.AssetExtractMetadata, data: { id, source: 'upload' } }),
+      async (tx, id, retired) => {
+        if (retired.files.length > 0)
+          await this.jobs.queueInTransaction(tx, { name: JobName.FileDelete, data: { files: retired.files } });
+        for (const parent of retired.projections)
+          await this.jobs.queueInTransaction(tx, { name: JobName.AssetGenerateThumbnails, data: { id: parent } });
+        await this.jobs.queueInTransaction(tx, { name: JobName.AssetExtractMetadata, data: { id, source: 'upload' } });
+      },
     );
     return PhotoSourceReferenceReceiptDto.schema.parse({
       sourceId,

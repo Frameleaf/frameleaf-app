@@ -62,6 +62,7 @@ import { requireElevatedPermission } from 'src/utils/access.js';
 import { CloudDescriptionQueueWriter, cloudDescriptionDestination } from 'src/utils/cloud-description-batch.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { enrichmentStaleReason, identityHash } from 'src/utils/enrichment-plan.js';
+import { getGeneratedDescriptionBlock, withoutGeneratedDescriptionBlocks } from 'src/utils/generated-description.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import {
   isImageDescriptionEnabled,
@@ -213,7 +214,6 @@ const withPinnedConfig = (
   nsfwDetection: { ...machineLearning.nsfwDetection, ...options.nsfwDetection },
   clip: { ...machineLearning.clip, ...(options.clipModelName && { modelName: options.clipModelName }) },
 });
-const GENERATED_DESCRIPTION_PREFIX = 'AI description:';
 const HIGH_CONFIDENCE = 'high';
 /**
  * FL-36: the description confidence a destination reported, as a number from 0 to 1, or null.
@@ -255,25 +255,6 @@ const getErrorMessage = (error: unknown) => (error instanceof Error ? error.mess
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const promptConfigHash = (promptConfig: unknown) =>
   createHash('sha256').update(JSON.stringify(promptConfig)).digest('hex').slice(0, 8);
-const getGeneratedDescriptionBlock = (description: string) => {
-  const trimmed = description.trim();
-  return trimmed ? `${GENERATED_DESCRIPTION_PREFIX} ${trimmed}` : undefined;
-};
-const withoutGeneratedDescriptionBlocks = (description: string, generatedDescriptions: string[]) => {
-  const blocks = new Set(
-    generatedDescriptions
-      .map((generatedDescription) => getGeneratedDescriptionBlock(generatedDescription))
-      .filter((block): block is string => !!block),
-  );
-  if (blocks.size === 0) {
-    return description.trim();
-  }
-  return description
-    .split(/\n{2,}/)
-    .filter((part) => !blocks.has(part.trim()))
-    .join('\n\n')
-    .trim();
-};
 const copyAppliedFields = <T extends Record<string, unknown>>(target: T, source: T, keys: Array<keyof T>) => {
   for (const key of keys) {
     if (source[key] === undefined) {

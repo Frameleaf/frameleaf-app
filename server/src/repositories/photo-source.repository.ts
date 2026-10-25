@@ -14,6 +14,8 @@ import type { PhotoSourceResourceTable } from 'src/schema/tables/photo-source.ta
 import type { FolderUploadSourceIdentity } from 'src/utils/asset-upload-resource.js';
 import { AssetStatus, AssetVisibility, ChecksumAlgorithm, QueueName } from 'src/enum.js';
 import { lockChecksum, lockFilePath } from 'src/repositories/physical-file.repository.js';
+import { retireReferenceVersion } from 'src/repositories/reference-version-retirement.js';
+import { AssetSourceChangedError } from 'src/utils/asset-source-authority.js';
 import { isLocked, isNotLocked } from 'src/utils/locked.js';
 import { lockSourceAuthorities } from 'src/utils/source-authority-lock.js';
 import { sourceOriginalPath } from 'src/utils/source-original.js';
@@ -270,11 +272,13 @@ export class PhotoSourceRepository {
     runId: string,
     itemId: string,
     dto: PhotoSourceReferenceDto,
-    admit: (tx: Transaction<DB>, assetId: string) => Promise<void>,
+    admit: (tx: Transaction<DB>, assetId: string, retired: { files: string[]; projections: string[] }) => Promise<void>,
   ) {
     return this.db.transaction().execute(async (tx) => {
       // Queue admission precedes source/asset locks everywhere, including first publication.
-      await sql`SELECT name FROM job_queue WHERE name=${QueueName.MetadataExtraction} FOR NO KEY UPDATE`.execute(tx);
+      await sql`SELECT name FROM job_queue WHERE name IN (${QueueName.MetadataExtraction}, ${QueueName.BackgroundTask}, ${QueueName.ThumbnailGeneration}) ORDER BY name FOR NO KEY UPDATE`.execute(
+        tx,
+      );
       if (!(await lockSourceAuthorities(tx, [{ sourceId, ownerId: auth.ownerId }])))
         throw new NotFoundException('Photo source unavailable');
       const { source, photo, device, run } = await this.activeRun(tx, auth, sourceId, runId, false);
@@ -301,15 +305,19 @@ export class PhotoSourceRepository {
         .limit(1)
         .executeTakeFirst();
       const conflict = () => new ConflictException('photo_source_reference_changed');
-      // shortcut: refuse version changes until replacement also invalidates derived files and edit bindings.
-      if (
-        previous &&
-        (previous.assetId !== dto.assetId ||
-          previous.version !== item.version ||
-          !previous.checksum.equals(item.checksum) ||
-          Number(previous.bytes) !== Number(item.bytes))
-      )
-        throw conflict();
+      if (previous && previous.assetId !== dto.assetId) throw conflict();
+      if (!previous && dto.previous) throw conflict();
+      const inconsistent = await tx
+        .selectFrom('photo_source_resource as resource')
+        .innerJoin('photo_source_run as run', 'run.id', 'resource.runId')
+        .select('resource.id')
+        .where('run.sourceId', '=', sourceId)
+        .where('resource.resourceKey', '=', item.resourceKey)
+        .where('resource.version', '=', item.version)
+        .where((eb) => eb.or([eb('resource.checksum', '!=', item.checksum), eb('resource.bytes', '!=', item.bytes)]))
+        .limit(1)
+        .executeTakeFirst();
+      if (inconsistent) throw conflict();
       const known = await tx
         .selectFrom('photo_source_resource as resource')
         .innerJoin('photo_source_run as run', 'run.id', 'resource.runId')
@@ -352,8 +360,63 @@ export class PhotoSourceRepository {
       const checksum = createHash('sha1').update(originalPath).digest();
       let resourceId = item.id;
       let needsElevation = false;
+      let changed = false;
+      let retired = { files: [] as string[], projections: [] as string[] };
       if (previous) {
         const unlocked = !!photo.pinExpiresAt && new Date(photo.pinExpiresAt).getTime() > Date.now();
+        const binding = await tx
+          .selectFrom('source_original')
+          .innerJoin('photo_source_resource as bound', 'bound.id', 'source_original.resourceId')
+          .innerJoin('photo_source_run as run', 'run.id', 'bound.runId')
+          .select([
+            'source_original.resourceId',
+            'scopeFingerprint',
+            'authorizationEpoch',
+            'run.sourceId',
+            'bound.resourceKey',
+            'bound.version',
+            'bound.checksum',
+            'bound.bytes',
+            'bound.state',
+            'bound.verifiedAt',
+            'bound.assetId',
+          ])
+          .where('source_original.assetId', '=', dto.assetId)
+          .executeTakeFirst();
+        if (
+          !binding ||
+          binding.sourceId !== sourceId ||
+          binding.resourceKey !== item.resourceKey ||
+          binding.state !== 'verified' ||
+          !binding.verifiedAt ||
+          binding.assetId !== dto.assetId ||
+          binding.scopeFingerprint !== source.scopeFingerprint ||
+          binding.authorizationEpoch !== device.authorizationEpoch
+        )
+          throw conflict();
+        changed =
+          binding.version !== item.version ||
+          !binding.checksum.equals(item.checksum) ||
+          Number(binding.bytes) !== Number(item.bytes);
+        if (changed) {
+          const expected = dto.previous;
+          if (
+            binding.version === item.version ||
+            item.state !== 'planned' ||
+            item.assetId !== null ||
+            !expected ||
+            expected.resourceId !== binding.resourceId ||
+            expected.version !== binding.version ||
+            expected.sha256 !== binding.checksum.toString('hex')
+          )
+            throw conflict();
+          try {
+            retired = await retireReferenceVersion(tx, dto.assetId, expected);
+          } catch (error) {
+            if (error instanceof AssetSourceChangedError) throw conflict();
+            throw error;
+          }
+        }
         const asset = await tx
           .selectFrom('asset')
           .select(['id', 'visibility'])
@@ -373,39 +436,27 @@ export class PhotoSourceRepository {
           .$if(!unlocked, (qb) => qb.where('visibility', '!=', AssetVisibility.Hidden).where(isNotLocked()))
           .forShare()
           .executeTakeFirst();
-        const binding = await tx
-          .selectFrom('source_original')
-          .innerJoin('photo_source_resource as bound', 'bound.id', 'source_original.resourceId')
-          .innerJoin('photo_source_run as run', 'run.id', 'bound.runId')
-          .select([
-            'source_original.resourceId',
-            'scopeFingerprint',
-            'authorizationEpoch',
-            'run.sourceId',
-            'bound.resourceKey',
-            'bound.version',
-            'bound.checksum',
-            'bound.bytes',
-            'bound.state',
-            'bound.assetId',
-          ])
-          .where('source_original.assetId', '=', dto.assetId)
-          .executeTakeFirst();
-        if (
-          !asset ||
-          !binding ||
-          binding.sourceId !== sourceId ||
-          binding.resourceKey !== item.resourceKey ||
-          binding.version !== item.version ||
-          !binding.checksum.equals(item.checksum) ||
-          Number(binding.bytes) !== Number(item.bytes) ||
-          binding.state !== 'verified' ||
-          binding.assetId !== dto.assetId ||
-          binding.scopeFingerprint !== source.scopeFingerprint ||
-          binding.authorizationEpoch !== device.authorizationEpoch
-        )
-          throw conflict();
-        resourceId = binding.resourceId;
+        if (!asset) throw conflict();
+        resourceId = changed ? item.id : binding.resourceId;
+        if (changed) {
+          const switched = await tx
+            .updateTable('source_original')
+            .set({ resourceId: item.id })
+            .where('assetId', '=', dto.assetId)
+            .where('resourceId', '=', binding.resourceId)
+            .executeTakeFirstOrThrow();
+          if (switched.numUpdatedRows !== 1n) throw conflict();
+          await tx
+            .updateTable('asset')
+            .set({
+              originalFileName: dto.originalFileName,
+              fileModifiedAt: new Date(dto.fileModifiedAt),
+              fileCreatedAt: sql<Date>`CASE WHEN EXISTS (SELECT 1 FROM asset_exif e WHERE e."assetId"=${dto.assetId}::uuid AND 'dateTimeOriginal'=ANY(coalesce(e."lockedProperties",'{}'::varchar[]))) THEN "fileCreatedAt" ELSE ${new Date(dto.fileCreatedAt)} END`,
+              localDateTime: sql<Date>`CASE WHEN EXISTS (SELECT 1 FROM asset_exif e WHERE e."assetId"=${dto.assetId}::uuid AND 'dateTimeOriginal'=ANY(coalesce(e."lockedProperties",'{}'::varchar[]))) THEN "localDateTime" ELSE ${new Date(dto.fileCreatedAt)} END`,
+            })
+            .where('id', '=', dto.assetId)
+            .execute();
+        }
         needsElevation = asset.visibility === AssetVisibility.Hidden || asset.locked;
       } else {
         const asset = await tx
@@ -448,7 +499,7 @@ export class PhotoSourceRepository {
         .where('id', '=', item.id)
         .returningAll()
         .executeTakeFirstOrThrow();
-      if (!previous) await admit(tx, dto.assetId);
+      if (!previous || changed) await admit(tx, dto.assetId, retired);
       const finalPhoto = await this.owner(tx, auth);
       if (needsElevation && (!finalPhoto.pinExpiresAt || new Date(finalPhoto.pinExpiresAt).getTime() <= Date.now()))
         throw conflict();

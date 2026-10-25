@@ -180,6 +180,15 @@ export class AssetEditRepository {
     return this.db.isTransaction ? execute(this.db as Transaction<DB>) : this.db.transaction().execute(execute);
   }
 
+  async sourceProjectionAssetIds(source: Pick<AssetSourceSnapshot, 'assetId' | 'ownerId'>): Promise<string[]> {
+    const { rows } = await sql<{ assetId: string }>`SELECT r."assetId" FROM public.asset_develop_revision r
+      JOIN asset a ON a.id=r."assetId" AND a."ownerId"=${source.ownerId}::uuid
+      WHERE r."ownerId"=${source.ownerId}::uuid AND r."isCurrent" AND r."sourceAssetId"=${source.assetId}::uuid`.execute(
+      this.db,
+    );
+    return [...new Set([source.assetId, ...rows.map(({ assetId }) => assetId)])].sort();
+  }
+
   /** Retire current projections in the source-version transaction; retained recipes and outputs remain history. */
   retireSourceProjection(
     expected: AssetSourceSnapshot,
@@ -197,15 +206,8 @@ export class AssetEditRepository {
         .forShare()
         .executeTakeFirst();
       if (!owner) throw new AssetSourceChangedError();
-      const dependents = async () => {
-        const { rows } = await sql<{ assetId: string }>`SELECT r."assetId" FROM public.asset_develop_revision r
-          JOIN asset a ON a.id=r."assetId" AND a."ownerId"=${expected.ownerId}::uuid
-          WHERE r."ownerId"=${expected.ownerId}::uuid AND r."isCurrent" AND r."sourceAssetId"=${expected.assetId}::uuid`.execute(
-          tx,
-        );
-        return rows.map(({ assetId }) => assetId);
-      };
-      const lockedIds = [...new Set([expected.assetId, ...(await dependents())])].sort();
+      const repository = new AssetEditRepository(tx);
+      const lockedIds = await repository.sourceProjectionAssetIds(expected);
       const files = (ids: string[]) =>
         tx.selectFrom('asset_file').select('path').where('assetId', 'in', ids).where('isEdited', '=', true).execute();
       const lockedPaths = new Set((await files(lockedIds)).map(({ path }) => path));
@@ -220,7 +222,7 @@ export class AssetEditRepository {
         .forUpdate()
         .execute();
       return withAssetSource(tx, expected, 'update', async () => {
-        const assetIds = [...new Set([expected.assetId, ...(await dependents())])].sort();
+        const assetIds = await repository.sourceProjectionAssetIds(expected);
         if (assetIds.some((id) => !lockedIds.includes(id))) throw new AssetSourceChangedError();
         if ((await files(assetIds)).some(({ path }) => !lockedPaths.has(path))) throw new AssetSourceChangedError();
         // Retained rows are inactive history, but existing sync clients still need deletion facts.

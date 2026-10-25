@@ -10018,6 +10018,11 @@ export type PhotoSourceReferenceDto = {
     fileCreatedAt: string;
     fileModifiedAt: string;
     originalFileName: string;
+    previous?: {
+        resourceId: string;
+        sha256: string;
+        version: string;
+    };
     "type": PhotoSourceReferenceAssetType;
 };
 export type PhotoSourceReferenceReceiptDto = {

@@ -66,6 +66,11 @@ test("reference publication transports only metadata and keeps session credentia
   const body = {
     assetId: "44444444-4444-4444-8444-444444444444",
     type: PhotoSourceReferenceAssetType.Image,
+    previous: {
+      resourceId: sourceId,
+      version: "c".repeat(64),
+      sha256: "d".repeat(64),
+    },
     originalFileName: "original.jpg",
     fileCreatedAt: "2026-10-01T00:00:00.000Z",
     fileModifiedAt: "2026-10-02T00:00:00.000Z",
@@ -108,4 +113,24 @@ test("reference publication transports only metadata and keeps session credentia
     },
   );
   assert.deepEqual(result, receipt);
+});
+
+test("reference replacement keeps the prior-resource fence optional and strict in the API", () => {
+  const dto = spec.components.schemas.PhotoSourceReferenceDto;
+  assert.ok(!dto.required.includes("previous"));
+  assert.deepEqual(dto.properties.previous.required.toSorted(), [
+    "resourceId",
+    "sha256",
+    "version",
+  ]);
+  assert.equal(dto.properties.previous.additionalProperties, false);
+  assert.equal(dto.properties.previous.properties.resourceId.format, "uuid");
+  assert.equal(
+    dto.properties.previous.properties.version.pattern,
+    "^[a-f0-9]{64}$",
+  );
+  assert.equal(
+    dto.properties.previous.properties.sha256.pattern,
+    "^[a-f0-9]{64}$",
+  );
 });

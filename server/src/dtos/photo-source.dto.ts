@@ -1,6 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { AssetType } from 'src/enum.js';
+import { sourceReferenceSchema } from 'src/utils/source-reference.js';
 
 const fingerprint = z.string().regex(/^[a-f0-9]{64}$/);
 const folderKind = z.enum(['folder']).meta({ id: 'PhotoSourceKind' });
@@ -72,6 +73,7 @@ export class PhotoSourceReferenceDto extends createZodDto(
         .refine((name) => name.trim().length > 0 && name !== '.' && name !== '..' && !/[\\/\p{Cc}]/u.test(name)),
       fileCreatedAt: z.iso.datetime(),
       fileModifiedAt: z.iso.datetime(),
+      previous: sourceReferenceSchema.optional(),
     })
     .strict(),
 ) {}

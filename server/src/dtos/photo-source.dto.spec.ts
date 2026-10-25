@@ -3,6 +3,7 @@ import {
   ApplePhotosSourceResponseDto,
   PhotoSourceCreateDto,
   PhotoSourceItemDto,
+  PhotoSourceReferenceDto,
   PhotoSourceResponseDto,
   PhotoSourceRunDto,
 } from 'src/dtos/photo-source.dto.js';
@@ -90,4 +91,26 @@ it('accepts explicit source modes without granting paths or asset publication au
   ]) {
     expect(ApplePhotosSourceCreateDto.schema.safeParse({ ...source, ...extra }).success).toBe(false);
   }
+});
+
+it('accepts only a complete opaque previous reference and keeps first publication compatible', () => {
+  const body = {
+    assetId: id,
+    type: 'IMAGE',
+    originalFileName: 'original.jpg',
+    fileCreatedAt: '2026-10-01T00:00:00.000Z',
+    fileModifiedAt: '2026-10-01T00:00:00.000Z',
+  };
+  expect(PhotoSourceReferenceDto.schema.safeParse(body).success).toBe(true);
+  const previous = { resourceId: id, version: 'a'.repeat(64), sha256: 'b'.repeat(64) };
+  expect(PhotoSourceReferenceDto.schema.parse({ ...body, previous }).previous).toEqual(previous);
+  for (const invalid of [
+    null,
+    {},
+    { ...previous, resourceId: 'local-path' },
+    { ...previous, version: '' },
+    { ...previous, sha256: 'A'.repeat(64) },
+    { ...previous, path: '/private/original.jpg' },
+  ])
+    expect(PhotoSourceReferenceDto.schema.safeParse({ ...body, previous: invalid }).success).toBe(false);
 });

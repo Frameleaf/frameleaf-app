@@ -3,12 +3,28 @@ import { createHash, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { PhotoSourceController } from 'src/controllers/photo-source.controller.js';
-import { AssetLockReason, AssetStatus, AssetType, AssetVisibility, JobName, QueueName } from 'src/enum.js';
+import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
+import {
+  AssetFileType,
+  AssetLockReason,
+  AssetStatus,
+  AssetType,
+  AssetVisibility,
+  DocumentEditAction,
+  JobName,
+  PetSpecies,
+  QueueName,
+  SourceType,
+  VideoMomentSource,
+} from 'src/enum.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
+import { DocumentRepository } from 'src/repositories/document.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhotoSourceRepository } from 'src/repositories/photo-source.repository.js';
+import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SourceResourceCacheRepository } from 'src/repositories/source-resource-cache.repository.js';
 import { SourceResourceReadRepository } from 'src/repositories/source-resource-read.repository.js';
@@ -17,7 +33,11 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { PhotoSourceService } from 'src/services/photo-source.service.js';
+import { assertAssetSource, readAssetSource } from 'src/utils/asset-source-authority.js';
+import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
+import { developSourceVersion } from 'src/utils/develop-source-binding.js';
 import { newMediumService } from 'test/medium.factory.js';
+import { newEmbedding } from 'test/small.factory.js';
 import { controllerSetup, getKyselyDB } from 'test/utils.js';
 
 let db: Kysely<DB>;
@@ -66,7 +86,7 @@ async function setup(mode: 'copy' | 'reference' = 'reference', kind: 'folder' | 
         {
           name: job.name,
           data: job.data,
-          queue: QueueName.MetadataExtraction,
+          queue: job.name === JobName.FileDelete ? QueueName.BackgroundTask : QueueName.MetadataExtraction,
           safeToRetry: true,
           sensitive: false,
           deadlineMs: 60_000,
@@ -317,7 +337,7 @@ it('refuses copy-mode publication, paused runs and foreign sessions', async () =
   }
 });
 
-it('refuses a new version instead of silently replacing existing pixels or accepting a different asset identity', async () => {
+it('requires the previous-resource fence before replacing existing pixels', async () => {
   const f = await setup();
   try {
     expect((await f.publish()).status).toBe(200);
@@ -341,6 +361,150 @@ it('refuses a new version instead of silently replacing existing pixels or accep
     await f.http.close();
   }
 });
+
+it('replaces the exact current reference atomically, retaining the logical asset and owner metadata', async () => {
+  const f = await setup();
+  try {
+    expect((await f.publish()).status).toBe(200);
+    const assetId = f.input.assetId;
+    await db
+      .updateTable('asset')
+      .set({ isFavorite: true, is_nsfw: true, isEdited: true, width: 400, height: 200 })
+      .where('id', '=', assetId)
+      .execute();
+    await db
+      .insertInto('asset_file')
+      .values({ assetId, type: AssetFileType.Preview, path: '/synthetic/' + assetId + '.jpg' })
+      .execute();
+    await db
+      .insertInto('asset_exif')
+      .values({
+        assetId,
+        description: 'Owner caption',
+        rating: 5,
+        make: 'Old camera',
+        lockedProperties: ['description', 'rating'],
+      })
+      .execute();
+    await db
+      .insertInto('asset_metadata')
+      .values([
+        { assetId, key: 'mobile-app', value: { owner: true } },
+        {
+          assetId,
+          key: 'ml-enrichment',
+          value: { description: { status: 'success', result: { description: 'Old pixels' } } },
+        },
+      ])
+      .execute();
+    const item = await f.repository.plan(f.authority, f.source.id, f.run.id, {
+      ...f.itemInput,
+      id: randomUUID(),
+      version: 'e'.repeat(64),
+      sha256: 'f'.repeat(64),
+      bytes: 6,
+    });
+    const previous = { resourceId: f.item.id, version: f.item.version, sha256: 'd'.repeat(64) };
+    const response = await f.publish({ ...f.input, previous }, f.run.id, item.id);
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      assetId,
+      resourceId: item.id,
+      version: item.version,
+      sha256: 'f'.repeat(64),
+      bytes: 6,
+    });
+    expect(
+      await db
+        .selectFrom('source_original')
+        .select('resourceId')
+        .where('assetId', '=', assetId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ resourceId: item.id });
+    expect(
+      await db
+        .selectFrom('photo_source_resource')
+        .select(['version', 'assetId'])
+        .where('id', '=', f.item.id)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ version: previous.version, assetId });
+    expect(
+      await db
+        .selectFrom('asset')
+        .select(['isFavorite', 'is_nsfw', 'isEdited', 'width', 'height'])
+        .where('id', '=', assetId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ isFavorite: true, is_nsfw: true, isEdited: false, width: null, height: null });
+    expect(
+      await db
+        .selectFrom('asset_exif')
+        .select(['description', 'rating', 'make'])
+        .where('assetId', '=', assetId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ description: 'Owner caption', rating: 5, make: null });
+    expect(await db.selectFrom('asset_file').select('id').where('assetId', '=', assetId).execute()).toEqual([]);
+    expect(
+      await db
+        .selectFrom('asset_metadata')
+        .select('value')
+        .where('assetId', '=', assetId)
+        .where('key', '=', 'mobile-app')
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ value: { owner: true } });
+    expect(
+      await db
+        .selectFrom('asset_metadata')
+        .select('value')
+        .where('assetId', '=', assetId)
+        .where('key', '=', 'ml-enrichment')
+        .execute(),
+    ).toEqual([]);
+    expect(
+      f.jobs.queueInTransaction.mock.calls.filter(([, job]) => job.name === JobName.AssetExtractMetadata),
+    ).toHaveLength(2);
+    expect(f.jobs.queueInTransaction).toHaveBeenCalledWith(expect.anything(), {
+      name: JobName.FileDelete,
+      data: { files: ['/synthetic/' + assetId + '.jpg'] },
+    });
+    // Committed retries return the desired current version without replaying invalidation or jobs.
+    expect((await f.publish({ ...f.input, previous }, f.run.id, item.id)).status).toBe(200);
+    expect(f.jobs.queueInTransaction).toHaveBeenCalledTimes(3);
+  } finally {
+    await f.http.close();
+  }
+});
+
+it.each(['resourceId', 'version', 'sha256'] as const)(
+  'refuses a stale previous %s without changing the source',
+  async (field) => {
+    const f = await setup();
+    try {
+      expect((await f.publish()).status).toBe(200);
+      const item = await f.repository.plan(f.authority, f.source.id, f.run.id, {
+        ...f.itemInput,
+        id: randomUUID(),
+        version: 'e'.repeat(64),
+      });
+      const previous = {
+        resourceId: f.item.id,
+        version: f.item.version,
+        sha256: 'd'.repeat(64),
+        [field]: field === 'resourceId' ? randomUUID() : 'f'.repeat(64),
+      };
+      expect((await f.publish({ ...f.input, previous }, f.run.id, item.id)).status).toBe(409);
+      expect(
+        await db
+          .selectFrom('source_original')
+          .select('resourceId')
+          .where('assetId', '=', f.input.assetId)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({ resourceId: f.item.id });
+      expect(f.jobs.queueInTransaction).toHaveBeenCalledOnce();
+    } finally {
+      await f.http.close();
+    }
+  },
+);
 
 it.each(['foreign', 'writable', 'paths', 'soft-deleted', 'unrelated-readonly'])(
   'refuses an existing %s library instead of taking it over',
@@ -506,6 +670,446 @@ it('validates filenames, dates and exact request shape without accepting any pro
       expect((await f.publish({ ...f.input, ...change })).status).toBe(400);
     }
     expect(f.jobs.queueInTransaction).not.toHaveBeenCalled();
+  } finally {
+    await f.http.close();
+  }
+});
+
+it('rolls back binding, current files, document history and queued deletions when admission fails', async () => {
+  const f = await setup();
+  try {
+    expect((await f.publish()).status).toBe(200);
+    const assetId = f.input.assetId;
+    const path = '/synthetic/' + assetId + '.jpg';
+    await db.insertInto('asset_file').values({ assetId, type: AssetFileType.Preview, path }).execute();
+    const document = await new DocumentRepository(db).create({
+      assetId,
+      key: 'field:total',
+      action: DocumentEditAction.Correct,
+      value: 'Owner total',
+      sourceText: 'Old total',
+      editedById: f.user.id,
+    });
+    const item = await f.repository.plan(f.authority, f.source.id, f.run.id, {
+      ...f.itemInput,
+      id: randomUUID(),
+      version: 'e'.repeat(64),
+    });
+    const admit = f.jobs.queueInTransaction.getMockImplementation()!;
+    f.jobs.queueInTransaction.mockImplementationOnce(async (tx, job) => {
+      await admit(tx, job);
+      throw new Error('synthetic admission failure');
+    });
+    const response = await f.publish(
+      { ...f.input, previous: { resourceId: f.item.id, version: f.item.version, sha256: 'd'.repeat(64) } },
+      f.run.id,
+      item.id,
+    );
+    expect(response.status).toBe(500);
+    expect(
+      await db
+        .selectFrom('source_original')
+        .select('resourceId')
+        .where('assetId', '=', assetId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ resourceId: f.item.id });
+    expect(await new DocumentRepository(db).getEdits(assetId)).toEqual([document]);
+    expect(await db.selectFrom('asset_file').select('path').where('assetId', '=', assetId).execute()).toEqual([
+      { path },
+    ]);
+    expect(
+      await db
+        .selectFrom('photo_source_resource')
+        .select(['state', 'assetId'])
+        .where('id', '=', item.id)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ state: 'planned', assetId: null });
+    expect(
+      await db
+        .selectFrom('job')
+        .select('id')
+        .where('name', '=', JobName.FileDelete)
+        .where(sql<boolean>`data->'files' @> ${JSON.stringify([path])}::text::jsonb`)
+        .execute(),
+    ).toEqual([]);
+  } finally {
+    await f.http.close();
+  }
+});
+
+it('admits only one of two replacements using the same previous resource', async () => {
+  const f = await setup();
+  try {
+    expect((await f.publish()).status).toBe(200);
+    const second = await f.repository.run(f.authority, f.source.id, { id: randomUUID(), maxItems: 2, maxBytes: 100 });
+    const a = await f.repository.plan(f.authority, f.source.id, f.run.id, {
+      ...f.itemInput,
+      id: randomUUID(),
+      version: 'e'.repeat(64),
+    });
+    const b = await f.repository.plan(f.authority, f.source.id, second.id, {
+      ...f.itemInput,
+      id: randomUUID(),
+      version: 'f'.repeat(64),
+    });
+    const body = { ...f.input, previous: { resourceId: f.item.id, version: f.item.version, sha256: 'd'.repeat(64) } };
+    const results = await Promise.all([f.publish(body, f.run.id, a.id), f.publish(body, second.id, b.id)]);
+    expect(results.map((r) => r.status).sort((a, b) => a - b)).toEqual([200, 409]);
+    expect(f.jobs.queueInTransaction).toHaveBeenCalledTimes(2);
+  } finally {
+    await f.http.close();
+  }
+});
+
+it('rejects old verified-item replay and never revives its source grant when content returns in a fresh item', async () => {
+  const f = await setup();
+  try {
+    expect((await f.publish()).status).toBe(200);
+    const old = (await readAssetSource(db, f.input.assetId, false))!;
+    const item = await f.repository.plan(f.authority, f.source.id, f.run.id, {
+      ...f.itemInput,
+      id: randomUUID(),
+      version: 'e'.repeat(64),
+    });
+    expect(
+      (
+        await f.publish(
+          { ...f.input, previous: { resourceId: f.item.id, version: f.item.version, sha256: 'd'.repeat(64) } },
+          f.run.id,
+          item.id,
+        )
+      ).status,
+    ).toBe(200);
+    const previous = { resourceId: item.id, version: item.version, sha256: 'd'.repeat(64) };
+    expect((await f.publish({ ...f.input, previous })).status).toBe(409);
+    const run = await f.repository.run(f.authority, f.source.id, { id: randomUUID(), maxItems: 2, maxBytes: 100 });
+    const fresh = await f.repository.plan(f.authority, f.source.id, run.id, { ...f.itemInput, id: randomUUID() });
+    const response = await f.publish({ ...f.input, previous }, run.id, fresh.id);
+    expect(response.status).toBe(200);
+    expect(response.body.resourceId).toBe(fresh.id);
+    await expect(assertAssetSource(db, old)).rejects.toThrow('Asset inputs changed before publication');
+  } finally {
+    await f.http.close();
+  }
+});
+
+it.each(['sha256', 'bytes'] as const)(
+  'rejects inconsistent declarations of the same provider version: %s',
+  async (field) => {
+    const f = await setup();
+    try {
+      expect((await f.publish()).status).toBe(200);
+      const run = await f.repository.run(f.authority, f.source.id, { id: randomUUID(), maxItems: 2, maxBytes: 100 });
+      const item = await f.repository.plan(f.authority, f.source.id, run.id, {
+        ...f.itemInput,
+        id: randomUUID(),
+        [field]: field === 'sha256' ? 'f'.repeat(64) : 6,
+      });
+      expect(
+        (
+          await f.publish(
+            { ...f.input, previous: { resourceId: f.item.id, version: f.item.version, sha256: 'd'.repeat(64) } },
+            run.id,
+            item.id,
+          )
+        ).status,
+      ).toBe(409);
+      expect(f.jobs.queueInTransaction).toHaveBeenCalledOnce();
+    } finally {
+      await f.http.close();
+    }
+  },
+);
+
+it('retires generated analysis while preserving manual tags, captions, document, face and pet decisions', async () => {
+  const f = await setup();
+  try {
+    expect((await f.publish()).status).toBe(200);
+    const assetId = f.input.assetId;
+    const { result: manual } = await f.ctx.newTag({ userId: f.user.id, value: 'Owner label' });
+    const { result: generated } = await f.ctx.newTag({ userId: f.user.id, value: 'Generated label' });
+    await f.ctx.newTagAsset({ tagIds: [manual.id, generated.id], assetIds: [assetId] });
+    await db
+      .insertInto('asset_exif')
+      .values({
+        assetId,
+        description: 'Owner caption\n\nAI description: Old generated caption',
+        rating: 5,
+        lockedProperties: ['description', 'rating', 'tags'],
+        tags: ['Owner label', 'Generated label'],
+      })
+      .execute();
+    await db
+      .insertInto('asset_metadata')
+      .values({
+        assetId,
+        key: 'ml-enrichment',
+        value: {
+          description: {
+            status: 'success',
+            appliedDescriptionHash: 'fixture',
+            appliedTagValues: ['Generated label'],
+            result: { description: 'Old generated caption' },
+          },
+          nsfwDetection: { status: 'success', review: { isNsfw: false }, result: { isNsfw: false } },
+        },
+      })
+      .execute();
+    const document = await new DocumentRepository(db).create({
+      assetId,
+      key: 'field:total',
+      action: DocumentEditAction.Correct,
+      value: 'Owner total',
+      sourceText: 'Old total',
+      editedById: f.user.id,
+    });
+    const correctedAt = new Date();
+    const { assetFace } = await f.ctx.newAssetFace({ assetId, sourceType: SourceType.Manual, correctedAt });
+    await db.insertInto('face_search').values({ faceId: assetFace.id, embedding: newEmbedding() }).execute();
+    const pet = await db
+      .insertInto('pet')
+      .values({ ownerId: f.user.id, species: PetSpecies.Cat, name: 'Owner cat' })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    await db.insertInto('pet_observation').values({ petId: pet.id, assetId }).execute();
+    await db.insertInto('pet_detection').values({ assetId, modelName: 'fixture', modelRevision: 'old' }).execute();
+    await db.insertInto('asset_job_status').values({ assetId, ocrAt: new Date() }).execute();
+    await db.insertInto('ocr_search').values({ assetId, text: 'Old recognized text' }).execute();
+    await db
+      .insertInto('smart_search')
+      .values({ assetId, embedding: newEmbedding(768) })
+      .execute();
+    await db
+      .insertInto('smart_search_description')
+      .values({ assetId, embedding: newEmbedding(768) })
+      .execute();
+    const item = await f.repository.plan(f.authority, f.source.id, f.run.id, {
+      ...f.itemInput,
+      id: randomUUID(),
+      version: 'e'.repeat(64),
+    });
+    expect(
+      (
+        await f.publish(
+          { ...f.input, previous: { resourceId: f.item.id, version: f.item.version, sha256: 'd'.repeat(64) } },
+          f.run.id,
+          item.id,
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      await db
+        .selectFrom('asset_exif')
+        .select(['description', 'rating', 'tags'])
+        .where('assetId', '=', assetId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ description: 'Owner caption', rating: 5, tags: ['Owner label'] });
+    expect(await db.selectFrom('tag_asset').select('tagId').where('assetId', '=', assetId).execute()).toEqual([
+      { tagId: manual.id },
+    ]);
+    expect(await new DocumentRepository(db).getEdits(assetId)).toEqual([]);
+    expect(
+      await db
+        .selectFrom('asset_document_edit')
+        .select(['value', 'sourceText'])
+        .where('id', '=', document.id)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ value: document.value, sourceText: document.sourceText });
+    expect(
+      await db
+        .selectFrom('asset_face')
+        .select(['sourceType', 'correctedAt', 'deletedAt'])
+        .where('id', '=', assetFace.id)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ sourceType: SourceType.Manual, correctedAt, deletedAt: expect.any(Date) });
+    expect(
+      await db
+        .selectFrom('pet_observation')
+        .select(['petId', 'staleAt'])
+        .where('assetId', '=', assetId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ petId: pet.id, staleAt: expect.any(Date) });
+    for (const table of [
+      'pet_detection',
+      'asset_job_status',
+      'ocr_search',
+      'smart_search',
+      'smart_search_description',
+    ] as const)
+      expect(await db.selectFrom(table).select('assetId').where('assetId', '=', assetId).execute()).toEqual([]);
+    expect(await db.selectFrom('face_search').select('faceId').where('faceId', '=', assetFace.id).execute()).toEqual(
+      [],
+    );
+    expect(
+      await db
+        .selectFrom('asset_metadata')
+        .select('value')
+        .where('assetId', '=', assetId)
+        .where('key', 'like', 'ml-enrichment:source-version:%')
+        .execute(),
+    ).toHaveLength(1);
+  } finally {
+    await f.http.close();
+  }
+});
+
+it('clears current restoration selection while retaining its independent output and history', async () => {
+  const f = await setup();
+  try {
+    expect((await f.publish()).status).toBe(200);
+    const assetId = f.input.assetId;
+    const path = `/synthetic/${assetId}-restoration.jpeg`;
+    const asset = await db.selectFrom('asset').select('checksum').where('id', '=', assetId).executeTakeFirstOrThrow();
+    const restoration = await db
+      .insertInto('asset_restoration')
+      .values({
+        assetId,
+        ownerId: f.user.id,
+        revision: 1,
+        status: 'restored',
+        mode: 'faithful',
+        workload: 'restoration-faithful',
+        destinationKind: 'local',
+        destinationName: 'Local',
+        sourceType: 'image',
+        sourceChecksum: asset.checksum,
+        sourceWidth: 32,
+        sourceHeight: 32,
+        previewRegion: {},
+        resultPath: path,
+        isCurrent: true,
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    await db.insertInto('asset_file').values({ assetId, path, type: AssetFileType.Preview }).execute();
+    const item = await f.repository.plan(f.authority, f.source.id, f.run.id, {
+      ...f.itemInput,
+      id: randomUUID(),
+      version: 'e'.repeat(64),
+    });
+    expect(
+      (
+        await f.publish(
+          { ...f.input, previous: { resourceId: f.item.id, version: f.item.version, sha256: 'd'.repeat(64) } },
+          f.run.id,
+          item.id,
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      await db
+        .selectFrom('asset_restoration')
+        .select(['isCurrent', 'resultPath', 'status'])
+        .where('id', '=', restoration.id)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ isCurrent: false, resultPath: path, status: 'restored' });
+    const unlink = vi.fn();
+    expect((await f.ctx.get(PhysicalFileRepository).deleteUnreferencedPath(path, unlink)).deleted).toBe(false);
+    expect(unlink).not.toHaveBeenCalled();
+  } finally {
+    await f.http.close();
+  }
+});
+
+it('replaces a video reference and retires dependent current key frames while keeping manual moments and saved render bytes', async () => {
+  const f = await setup();
+  try {
+    const input = { ...f.input, type: AssetType.Video };
+    expect((await f.publish(input)).status).toBe(200);
+    const assetId = input.assetId;
+    const framePath = `/synthetic/${assetId}-moment.jpeg`;
+    await db
+      .insertInto('video_moment_index')
+      .values({ assetId, sourceFingerprint: 'old', extractorVersion: 'fixture', frameCount: 1, coverTimestampMs: 50 })
+      .execute();
+    const frame = await db
+      .insertInto('video_moment_frame')
+      .values({ assetId, frameIndex: 0, timestampMs: 50, path: framePath, score: 1, rank: 1 })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    await db
+      .insertInto('video_moment')
+      .values([
+        {
+          assetId,
+          timestampMs: 50,
+          frameId: frame.id,
+          source: VideoMomentSource.Manual,
+          caption: 'Owner moment',
+          transcript: 'Owner transcript',
+          createdById: f.user.id,
+        },
+        {
+          assetId,
+          timestampMs: 50,
+          frameId: frame.id,
+          source: VideoMomentSource.Generated,
+          caption: 'Generated caption',
+        },
+      ])
+      .execute();
+    const { asset: parent } = await f.ctx.newAsset({ ownerId: f.user.id, livePhotoVideoId: assetId });
+    const develop = new AssetDevelopRepository(db);
+    const recipe = { ...defaultDevelopRecipe(), keyFrame: { timeMs: 50 } };
+    const saved = await develop.create({
+      assetId: parent.id,
+      ownerId: f.user.id,
+      recipe,
+      recipeVersion: 1,
+      label: 'Owner key frame',
+      status: AssetDevelopRevisionStatus.Saved,
+      expectedSourceVersion: developSourceVersion(await develop.getSourceBinding(parent.id, f.user.id, recipe)),
+    });
+    await develop.setCurrent(parent.id, saved.id);
+    const path = `/synthetic/${parent.id}-render.jpeg`;
+    await sql`UPDATE asset_develop_revision SET "masterPath"=${path} WHERE id=${saved.id}::uuid`.execute(db);
+    await db
+      .insertInto('asset_file')
+      .values({ assetId: parent.id, path, type: AssetFileType.Preview, isEdited: true })
+      .execute();
+    await db.updateTable('asset').set({ isEdited: true }).where('id', '=', parent.id).execute();
+    const item = await f.repository.plan(f.authority, f.source.id, f.run.id, {
+      ...f.itemInput,
+      id: randomUUID(),
+      version: 'e'.repeat(64),
+    });
+    expect(
+      (
+        await f.publish(
+          { ...input, previous: { resourceId: f.item.id, version: f.item.version, sha256: 'd'.repeat(64) } },
+          f.run.id,
+          item.id,
+        )
+      ).status,
+    ).toBe(200);
+    expect(await develop.get(saved.id)).toMatchObject({ isCurrent: false, masterPath: path, recipe: saved.recipe });
+    expect(
+      await db
+        .selectFrom('video_moment')
+        .select(['source', 'frameId', 'caption', 'transcript'])
+        .where('assetId', '=', assetId)
+        .execute(),
+    ).toEqual([
+      { source: VideoMomentSource.Manual, frameId: null, caption: 'Owner moment', transcript: 'Owner transcript' },
+    ]);
+    expect(
+      await db
+        .selectFrom('video_moment_index')
+        .select(['frameCount', 'coverTimestampMs'])
+        .where('assetId', '=', assetId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ frameCount: 0, coverTimestampMs: 50 });
+    expect(await db.selectFrom('video_moment_frame').select('id').where('assetId', '=', assetId).execute()).toEqual([]);
+    expect(f.jobs.queueInTransaction).toHaveBeenCalledWith(expect.anything(), {
+      name: JobName.AssetGenerateThumbnails,
+      data: { id: parent.id },
+    });
+    const unlink = vi.fn();
+    expect((await f.ctx.get(PhysicalFileRepository).deleteUnreferencedPath(path, unlink)).deleted).toBe(false);
+    expect(unlink).not.toHaveBeenCalled();
+    expect(
+      await db.selectFrom('asset_source_epoch').select('assetId').where('assetId', '=', assetId).execute(),
+    ).toEqual([]);
   } finally {
     await f.http.close();
   }
