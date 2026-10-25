@@ -6,9 +6,15 @@ import type { SourceReference } from 'src/utils/source-reference.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetEditActionItem, AssetEditActionItemResponseDto } from 'src/dtos/editing.dto.js';
-import { AssetFileType, AssetStatus, AssetType, ChecksumAlgorithm } from 'src/enum.js';
+import { AssetFileType, AssetStatus, AssetType, ChecksumAlgorithm, QueueName, UserStatus } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
+import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
+import {
+  AssetSourceChangedError,
+  type AssetSourceSnapshot,
+  withAssetSource,
+} from 'src/utils/asset-source-authority.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
 import { lockSourceAuthorities } from 'src/utils/source-authority-lock.js';
 import { parseSourceOriginalPath } from 'src/utils/source-original.js';
@@ -170,6 +176,77 @@ export class AssetEditRepository {
       }
       await this.assertEditAuthority(trx, assetId, authority);
       return result;
+    };
+    return this.db.isTransaction ? execute(this.db as Transaction<DB>) : this.db.transaction().execute(execute);
+  }
+
+  /** Retire current projections in the source-version transaction; retained recipes and outputs remain history. */
+  retireSourceProjection(
+    expected: AssetSourceSnapshot,
+    admit: (tx: Transaction<DB>, result: { paths: string[]; assetIds: string[] }) => Promise<void>,
+  ): Promise<{ paths: string[]; assetIds: string[] }> {
+    if (expected.derivatives) throw new AssetSourceChangedError();
+    const execute = async (tx: Transaction<DB>) => {
+      await sql`SELECT name FROM job_queue WHERE name=${QueueName.BackgroundTask} FOR NO KEY UPDATE`.execute(tx);
+      const owner = await tx
+        .selectFrom('user')
+        .select('id')
+        .where('id', '=', expected.ownerId)
+        .where('deletedAt', 'is', null)
+        .where('status', '=', UserStatus.Active)
+        .forShare()
+        .executeTakeFirst();
+      if (!owner) throw new AssetSourceChangedError();
+      const dependents = async () => {
+        const { rows } = await sql<{ assetId: string }>`SELECT r."assetId" FROM public.asset_develop_revision r
+          JOIN asset a ON a.id=r."assetId" AND a."ownerId"=${expected.ownerId}::uuid
+          WHERE r."ownerId"=${expected.ownerId}::uuid AND r."isCurrent" AND r."sourceAssetId"=${expected.assetId}::uuid`.execute(
+          tx,
+        );
+        return rows.map(({ assetId }) => assetId);
+      };
+      const lockedIds = [...new Set([expected.assetId, ...(await dependents())])].sort();
+      const files = (ids: string[]) =>
+        tx.selectFrom('asset_file').select('path').where('assetId', 'in', ids).where('isEdited', '=', true).execute();
+      const lockedPaths = new Set((await files(lockedIds)).map(({ path }) => path));
+      for (const path of [...lockedPaths].sort()) await lockFilePath(tx, path);
+      // The parent and all selected motion dependents share the same asset-row lock order as rendering.
+      await tx
+        .selectFrom('asset')
+        .select('id')
+        .where('id', 'in', lockedIds)
+        .where('ownerId', '=', expected.ownerId)
+        .orderBy('id')
+        .forUpdate()
+        .execute();
+      return withAssetSource(tx, expected, 'update', async () => {
+        const assetIds = [...new Set([expected.assetId, ...(await dependents())])].sort();
+        if (assetIds.some((id) => !lockedIds.includes(id))) throw new AssetSourceChangedError();
+        if ((await files(assetIds)).some(({ path }) => !lockedPaths.has(path))) throw new AssetSourceChangedError();
+        // Retained rows are inactive history, but existing sync clients still need deletion facts.
+        await sql`INSERT INTO asset_edit_audit ("editId", "assetId")
+          SELECT e.id, e."assetId" FROM asset_edit e JOIN asset a ON a.id=e."assetId"
+          WHERE a."isEdited" AND a.id=ANY(${assetIds}::uuid[])`.execute(tx);
+        await sql`UPDATE public.asset_develop_revision SET "isCurrent"=false, "updatedAt"=now()
+          WHERE "assetId"=ANY(${assetIds}::uuid[]) AND "ownerId"=${expected.ownerId}::uuid AND "isCurrent"`.execute(tx);
+        await sql`DELETE FROM public.video_edit_selection WHERE "assetId"=ANY(${assetIds}::uuid[])
+          AND "ownerId"=${expected.ownerId}::uuid`.execute(tx);
+        const removed = await tx
+          .deleteFrom('asset_file')
+          .where('assetId', 'in', assetIds)
+          .where('isEdited', '=', true)
+          .returning('path')
+          .execute();
+        await tx
+          .updateTable('asset')
+          .set({ isEdited: false, width: null, height: null, thumbhash: null })
+          .where('id', 'in', assetIds)
+          .where('ownerId', '=', expected.ownerId)
+          .execute();
+        const result = { paths: [...new Set(removed.map(({ path }) => path))].sort(), assetIds };
+        await admit(tx, result);
+        return result;
+      });
     };
     return this.db.isTransaction ? execute(this.db as Transaction<DB>) : this.db.transaction().execute(execute);
   }
