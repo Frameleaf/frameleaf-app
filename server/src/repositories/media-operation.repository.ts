@@ -34,7 +34,10 @@ import {
   SAFE_MEDIA_OPERATION_REPLAY_KINDS,
   TERMINAL_MEDIA_OPERATION_STATUSES,
 } from 'src/utils/media-operation.js';
+import { lockSourceAuthorities } from 'src/utils/source-authority-lock.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
+import { STUDIO_MAX_REFERENCES, isStudioUuid } from 'src/utils/studio-resources.js';
 import { sidecarSealOf } from 'src/utils/studio-subtitle-sidecar.js';
 
 export type MediaOperation = Selectable<MediaOperationTable>;
@@ -1231,8 +1234,8 @@ export class MediaOperationRepository {
   /**
    * Adopt a validated output and complete the job as one unit (FL-43).
    *
-   * The job's row is locked under its claim first, so for as long as `publish` runs nothing can
-   * take the job away: not the owner's cancel, not recovery of a lapsed lease, not a pause. Then:
+   * Source admission precedes the job's claim lock. For as long as `publish` runs nothing can take
+   * the job away: not the owner's cancel, not recovery of a lapsed lease, not a pause. Then:
    *
    * - `lost`: the claim is gone or the job is no longer validating — cancelled while it was being
    *   checked, or requeued after a lapse and perhaps already running elsewhere. `publish` is never
@@ -1252,25 +1255,77 @@ export class MediaOperationRepository {
   ): Promise<'completed' | 'rejected' | 'lost'> {
     let completed: MediaOperationChange | undefined;
     const outcome = await this.db.transaction().execute(async (trx): Promise<'completed' | 'rejected' | 'lost'> => {
-      const held = await trx
+      const observed = await trx
         .selectFrom('media_operation')
-        .select(['id', 'ownerId'])
+        .select(['ownerId', 'snapshot', 'assetId', 'kind', 'destination'])
         .where('id', '=', id)
         .where('claimToken', '=', claimToken)
         .where('status', '=', MediaOperationStatus.Validating)
+        .executeTakeFirst();
+      if (!observed) return 'lost';
+      const epochs = observed.snapshot.sourceEpochs;
+      const ids: string[] = [];
+      if (epochs !== undefined) {
+        if (!Array.isArray(epochs) || epochs.length > STUDIO_MAX_REFERENCES)
+          throw new ConflictException('studio_source_admission_changed');
+        for (const epoch of epochs) {
+          if (!isStudioUuid(epoch?.assetId)) throw new ConflictException('studio_source_admission_changed');
+          ids.push(epoch.assetId);
+        }
+      }
+      const hints =
+        ids.length > 0
+          ? await trx.selectFrom('asset').select(['ownerId', 'originalPath']).where('id', 'in', ids).execute()
+          : [];
+      const authorities = hints.flatMap((asset) => {
+        const source = parseSourceOriginalPath(asset.originalPath);
+        return source ? [{ sourceId: source.sourceId, ownerId: asset.ownerId }] : [];
+      });
+      if (!(await lockSourceAuthorities(trx, authorities)))
+        throw new ConflictException('studio_source_admission_changed');
+      // Match source publication: source parents, metadata fences, then asset rows.
+      for (const assetId of [...new Set(ids)].sort())
+        await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${assetId})::int)`.execute(trx);
+      await holdSourceAdmission(trx, observed.snapshot, observed.ownerId);
+      const held = await trx
+        .selectFrom('media_operation')
+        .select(['id', 'ownerId', 'snapshot', 'assetId', 'kind', 'destination'])
+        .where('id', '=', id)
+        .where('claimToken', '=', claimToken)
+        .where('status', '=', MediaOperationStatus.Validating)
+        .$if(epochs !== undefined, (qb) =>
+          qb.where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`).where('cancelRequestedAt', 'is', null),
+        )
         .forUpdate()
         .executeTakeFirst();
-      if (!held) {
-        return 'lost';
-      }
-      if (!(await publish(trx))) {
-        return 'rejected';
-      }
-      if (!(await this.complete(id, claimToken, { resultAssetId: null }, trx))) {
-        // Unreachable while the row is held above under the same predicates; throwing rolls the
-        // publication back, so an adopted output and an unfinished job are never committed apart.
+      if (!held) return 'lost';
+      if (
+        held.ownerId !== observed.ownerId ||
+        held.assetId !== observed.assetId ||
+        held.kind !== observed.kind ||
+        held.destination !== observed.destination ||
+        canonicalJson(held.snapshot) !== canonicalJson(observed.snapshot)
+      )
+        throw new ConflictException('studio_source_admission_changed');
+      if (!(await publish(trx))) return 'rejected';
+      await holdSourceAdmission(trx, held.snapshot, held.ownerId);
+      if (
+        epochs !== undefined &&
+        !(await trx
+          .selectFrom('media_operation')
+          .select('id')
+          .where('id', '=', id)
+          .where('claimToken', '=', claimToken)
+          .where('ownerId', '=', held.ownerId)
+          .where(sql<boolean>`snapshot = ${JSON.stringify(held.snapshot)}::text::jsonb`)
+          .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+          .where('cancelRequestedAt', 'is', null)
+          .executeTakeFirst())
+      )
+        throw new Error('Media operation admission or claim changed during publication');
+      if (!(await this.complete(id, claimToken, { resultAssetId: null }, trx, epochs !== undefined)))
         throw new Error(`Media operation ${id} could not complete under the claim that published it`);
-      }
+      await holdSourceAdmission(trx, held.snapshot, held.ownerId);
       completed = held;
       return 'completed';
     });

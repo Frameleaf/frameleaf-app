@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { AssetStatus } from 'src/enum.js';
-import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
+import { AssetLocalEffectRepository, sameSourceEpoch } from 'src/repositories/asset-local-effect.repository.js';
 import { scriptedKysely } from 'test/scripted-kysely.js';
 
 describe('local lock effect envelopes', () => {
@@ -59,4 +59,23 @@ describe('local lock effect envelopes', () => {
       await f.db.destroy();
     }
   });
+});
+
+it('requires exact resource evidence on both sides while keeping managed lifecycle comparisons compatible', () => {
+  const base = { assetId: randomUUID(), ownerId: randomUUID(), epoch: '0' };
+  const bound = { ...base, reference: { resourceId: randomUUID(), version: 'a'.repeat(64), sha256: 'b'.repeat(64) } };
+  expect(sameSourceEpoch(base, { ...base })).toBe(true);
+  expect(sameSourceEpoch(bound, structuredClone(bound))).toBe(true);
+  expect(sameSourceEpoch(base, bound)).toBe(false);
+  expect(sameSourceEpoch(bound, base)).toBe(false);
+  for (const field of ['resourceId', 'version', 'sha256'] as const)
+    expect(
+      sameSourceEpoch(bound, {
+        ...bound,
+        reference: { ...bound.reference, [field]: field === 'resourceId' ? randomUUID() : 'c'.repeat(64) },
+      }),
+    ).toBe(false);
+  expect(sameSourceEpoch(bound, { ...bound, reference: { ...bound.reference, path: '/private/cache' } } as never)).toBe(
+    false,
+  );
 });

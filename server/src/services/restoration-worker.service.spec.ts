@@ -1,4 +1,5 @@
 import { DummyDriver, Kysely, PostgresDialect } from 'kysely';
+import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DB } from 'src/schema/index.js';
 import {
@@ -8,6 +9,7 @@ import {
 } from 'src/dtos/asset-restoration.dto.js';
 import {
   AssetType,
+  ChecksumAlgorithm,
   JobName,
   MediaOperationCheckpointState,
   MediaOperationDestination,
@@ -25,6 +27,7 @@ import {
   MediaOperationRepository,
 } from 'src/repositories/media-operation.repository.js';
 import { RESTORATION_LEASE_MS, RestorationWorkerService } from 'src/services/restoration-worker.service.js';
+import { executionSignal } from 'src/utils/execution-signal.js';
 import { stripsVideoMetadata } from 'src/utils/media-privacy.js';
 import {
   RESTORATION_ABANDONED_RESULT_DAYS,
@@ -35,6 +38,7 @@ import {
   restorationAdmissionOf,
   restorationChunkIdentity,
 } from 'src/utils/restoration.js';
+import { sourceOriginalPath } from 'src/utils/source-original.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
@@ -279,6 +283,207 @@ describe(RestorationWorkerService.name, () => {
       mocks.job as never,
       mocks.database as never,
     );
+  });
+
+  it('retains managed scratch and stops admitting work when native shutdown is unconfirmed', async () => {
+    mocks.media.decodeImage.mockRejectedValue(new Error('media_process_shutdown_unconfirmed'));
+    await sut.run(operation(), CLAIM);
+    expect(operations.fail).not.toHaveBeenCalled();
+    expect(operations.requeue).not.toHaveBeenCalled();
+    expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    expect(await sut.tick()).toBe(false);
+    expect(operations.claimNext).not.toHaveBeenCalled();
+    expect(await sut.sweep()).toEqual({ aligned: { preview: 0, full: 0 }, removed: 0 });
+    expect(restorations.alignWithOperations).not.toHaveBeenCalled();
+  });
+
+  describe('reference originals', () => {
+    const fixture = () => {
+      const checksum = Buffer.alloc(32, 7);
+      const originalPath = sourceOriginalPath({
+        sourceId: '12345678-1234-4234-8234-123456789016',
+        resourceKey: 'b'.repeat(64),
+      });
+      const source = {
+        ...getForGenerateThumbnail(asset),
+        originalPath,
+        isExternal: true,
+        checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+        checksum: createHash('sha1').update(originalPath).digest(),
+      };
+      const epoch = {
+        assetId: asset.id,
+        ownerId: asset.ownerId,
+        epoch: '0',
+        reference: {
+          resourceId: '12345678-1234-4234-8234-123456789017',
+          version: 'c'.repeat(64),
+          sha256: checksum.toString('hex'),
+        },
+      };
+      const job = operation({
+        snapshot: { ...snapshot({ sourceChecksumHex: checksum.toString('hex') }), sourceEpochs: [epoch] },
+        claimExpiresAt: new Date(Date.now() + 90_000),
+      });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(source);
+      operations.getForOwner.mockResolvedValue(job);
+      mocks.integrityReport.sourceEpochs.mockResolvedValue([epoch]);
+      const controller = new AbortController();
+      const input = {
+        localPath: '/private/source-cache/original.jpg',
+        resourceId: epoch.reference.resourceId,
+        resourceVersion: epoch.reference.version,
+        verifiedSha256: epoch.reference.sha256,
+        signal: controller.signal,
+        check: vi.fn().mockResolvedValue(undefined),
+        release: vi.fn().mockResolvedValue(undefined),
+      };
+      const originals = {
+        open: vi.fn(async (_id, _reader, authorize) => {
+          await authorize();
+          input.check.mockImplementation(authorize);
+          return input;
+        }),
+      };
+      Object.assign(sut, { sourceOriginalService: originals, integrityRepository: mocks.integrityReport });
+      return { job, source, epoch, input, originals, controller };
+    };
+
+    it('renders a borrowed reference and retains it through publication', async () => {
+      const f = fixture();
+      mocks.media.decodeImage.mockImplementation(() => {
+        expect(executionSignal()).toBeDefined();
+        expect(f.input.release).not.toHaveBeenCalled();
+        return Promise.resolve({
+          data: Buffer.alloc(12, 128),
+          info: { width: 4000, height: 3000, channels: 3 },
+        } as never);
+      });
+      const publish = operations.publishValidated.getMockImplementation()!;
+      operations.publishValidated.mockImplementation((...args) => {
+        expect(f.input.release).not.toHaveBeenCalled();
+        return publish(...args);
+      });
+      await sut.run(f.job, CLAIM);
+      expect(restore.mock.calls[0][2].signal).toBe(f.input.signal);
+      expect(restorations.transition).toHaveBeenCalledWith(
+        RESTORATION_ID,
+        expect.anything(),
+        expect.objectContaining({
+          provenance: expect.objectContaining({
+            preview: expect.objectContaining({ sourceEpochs: f.job.snapshot.sourceEpochs }),
+          }),
+        }),
+        TRX,
+        expect.anything(),
+      );
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(f.input.localPath, expect.anything());
+      expect(f.originals.open).toHaveBeenCalledWith(
+        asset.id,
+        expect.objectContaining({ kind: 'http' }),
+        expect.any(Function),
+        expect.any(AbortSignal),
+      );
+      expect(f.input.check).toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+      expect(operations.complete).toHaveBeenCalled();
+    });
+
+    it.each(['checksum', 'algorithm', 'snapshot'] as const)(
+      'refuses a changed reference %s before delivery',
+      async (change) => {
+        const f = fixture();
+        if (change === 'checksum') f.source.checksum = Buffer.alloc(20, 1);
+        else if (change === 'algorithm') f.source.checksumAlgorithm = ChecksumAlgorithm.sha256File;
+        else f.job.snapshot.sourceChecksumHex = 'e'.repeat(64);
+        await sut.run(f.job, CLAIM);
+        expect(f.originals.open).not.toHaveBeenCalled();
+        expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+        expect(operations.fail).toHaveBeenCalledWith(
+          f.job.id,
+          CLAIM,
+          expect.objectContaining({ errorCode: RestorationErrorCode.SourceChanged }),
+        );
+      },
+    );
+
+    it('joins a slow native reader after cancellation before releasing its borrowed original', async () => {
+      const f = fixture();
+      const entered = Promise.withResolvers<void>();
+      const finished = Promise.withResolvers<Awaited<ReturnType<typeof mocks.media.decodeImage>>>();
+      mocks.media.decodeImage.mockImplementation(() => {
+        entered.resolve();
+        return finished.promise;
+      });
+      const running = sut.run(f.job, CLAIM);
+      await entered.promise;
+      f.controller.abort(new Error('source expired'));
+      await Promise.resolve();
+      expect(f.input.release).not.toHaveBeenCalled();
+      finished.resolve({ data: Buffer.alloc(12, 128), info: { width: 4000, height: 3000, channels: 3 } } as never);
+      await running;
+      expect(f.input.release).toHaveBeenCalledOnce();
+      expect(operations.publishValidated).not.toHaveBeenCalled();
+    });
+
+    it('refuses publication after the original version changes during inference', async () => {
+      const f = fixture();
+      restore.mockImplementation((_selection, _input, options) => {
+        mocks.integrityReport.sourceEpochs.mockResolvedValue([
+          { ...f.epoch, reference: { ...f.epoch.reference, version: 'e'.repeat(64) } },
+        ]);
+        return Promise.resolve({
+          outputPath: options.outputPath,
+          width: 2048,
+          height: 1536,
+          modelName: 'faithful-v1',
+          modelVersion: '1.0',
+        });
+      });
+      await sut.run(f.job, CLAIM);
+      expect(operations.publishValidated).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('refuses a delivered version that differs from its immutable admission', async () => {
+      const f = fixture();
+      f.input.resourceVersion = 'e'.repeat(64);
+      await sut.run(f.job, CLAIM);
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+      expect(operations.publishValidated).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('refuses an unbound legacy reference before media tools or provider delivery', async () => {
+      const f = fixture();
+      delete f.job.snapshot.sourceEpochs;
+      await sut.run(f.job, CLAIM);
+      expect(f.originals.open).not.toHaveBeenCalled();
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+      expect(operations.publishValidated).not.toHaveBeenCalled();
+    });
+
+    it('stops taking work when borrowed-input release fails', async () => {
+      const f = fixture();
+      f.input.release.mockRejectedValue(new Error('artifact_close_unconfirmed'));
+      await sut.run(f.job, CLAIM);
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('input retained'));
+      expect(await sut.tick()).toBe(false);
+      expect(operations.claimNext).not.toHaveBeenCalled();
+    });
+
+    it('retains the borrowed input and scratch on unconfirmed native shutdown', async () => {
+      const f = fixture();
+      mocks.media.decodeImage.mockRejectedValue(new Error('media_process_shutdown_unconfirmed'));
+      await sut.run(f.job, CLAIM);
+      expect(f.input.release).not.toHaveBeenCalled();
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(operations.requeue).not.toHaveBeenCalled();
+      expect(await sut.tick()).toBe(false);
+      expect(operations.claimNext).not.toHaveBeenCalled();
+      expect(await sut.sweep()).toEqual({ aligned: { preview: 0, full: 0 }, removed: 0 });
+      expect(restorations.alignWithOperations).not.toHaveBeenCalled();
+    });
   });
 
   describe('operation ownership', () => {

@@ -3,13 +3,20 @@ import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { AssetStatus, Permission } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
-import { AssetLocalEffectRepository, SourceEpoch } from 'src/repositories/asset-local-effect.repository.js';
+import {
+  AssetLocalEffectRepository,
+  SourceEpoch,
+  sameSourceEpoch,
+} from 'src/repositories/asset-local-effect.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { currentAuth } from 'src/repositories/icloud-audit.repository.js';
 import { DB } from 'src/schema/index.js';
 import { checkAccess } from 'src/utils/access.js';
 import { getLockedOwnerId, isLockedAssetRow } from 'src/utils/locked-visibility.js';
 import { isRevealedLockReason } from 'src/utils/locked.js';
+import { lockSourceAuthorities } from 'src/utils/source-authority-lock.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
+import { sourceReferenceSchema } from 'src/utils/source-reference.js';
 import { STUDIO_MAX_REFERENCES, isStudioUuid } from 'src/utils/studio-resources.js';
 
 export type InteractiveAdmissionOwner = { ownerId: string; streamEpoch: string | null; sequence: string };
@@ -40,6 +47,20 @@ export async function holdSourceAdmission(
   snapshot: Record<string, unknown>,
   actorId?: string,
 ): Promise<void> {
+  return holdAdmission(db, snapshot, actorId, 'original');
+}
+
+/** Owned output keeps its lifecycle fence; historical provider identity is provenance, not a read grant. */
+export async function holdOwnedOutputAdmission(db: Kysely<DB>, sourceEpochs: unknown): Promise<void> {
+  return holdAdmission(db, { sourceEpochs }, undefined, 'owned-output');
+}
+
+async function holdAdmission(
+  db: Kysely<DB>,
+  snapshot: Record<string, unknown>,
+  actorId: string | undefined,
+  kind: 'original' | 'owned-output',
+): Promise<void> {
   const value = snapshot.sourceEpochs;
   // Historical snapshots retain their original representation; worker reads re-resolve their sources.
   if (value === undefined) {
@@ -59,16 +80,42 @@ export async function holdSourceAdmission(
         !isStudioUuid(row.assetId) ||
         !isStudioUuid(row.ownerId) ||
         typeof row.epoch !== 'string' ||
-        !/^(0|[1-9][0-9]*)$/.test(row.epoch),
+        !/^(0|[1-9][0-9]*)$/.test(row.epoch) ||
+        (row.reference !== undefined && !sourceReferenceSchema.safeParse(row.reference).success),
     )
   )
     refuse();
   const ids = [...new Set(epochs.map((row) => row.assetId))].sort();
   if (ids.length !== epochs.length) refuse();
   if (ids.length === 0) return;
+  const hints = await db
+    .selectFrom('asset')
+    .select(['id', 'ownerId', 'originalPath', 'libraryId'])
+    .where('id', 'in', ids)
+    .execute();
+  const authorities =
+    kind === 'original'
+      ? hints.flatMap((asset) => {
+          const source = parseSourceOriginalPath(asset.originalPath);
+          return source ? [{ sourceId: source.sourceId, ownerId: asset.ownerId }] : [];
+        })
+      : [];
+  if (!(await lockSourceAuthorities(db, authorities))) refuse();
+  if (kind === 'original') {
+    const references = hints.filter((asset) => parseSourceOriginalPath(asset.originalPath));
+    const libraries = [...new Set(references.flatMap((asset) => (asset.libraryId ? [asset.libraryId] : [])))].sort();
+    if (libraries.length > 0)
+      await db.selectFrom('library').select('id').where('id', 'in', libraries).orderBy('id').forShare().execute();
+    if (references.length > 0)
+      await sql`SELECT b."assetId" FROM source_original b
+        JOIN photo_source_resource r ON r.id=b."resourceId" AND r."assetId"=b."assetId"
+        JOIN photo_source_run run ON run.id=r."runId"
+        WHERE b."assetId"=ANY(${references.map((asset) => asset.id).sort()}::uuid[])
+        ORDER BY b."assetId" FOR SHARE OF b,r,run`.execute(db);
+  }
   const assets = await db
     .selectFrom('asset')
-    .select(['id', 'ownerId', 'status', 'deletedAt'])
+    .select(['id', 'ownerId', 'status', 'deletedAt', 'originalPath', 'libraryId'])
     .where('id', 'in', ids)
     .orderBy('id')
     .forShare()
@@ -79,15 +126,29 @@ export async function holdSourceAdmission(
       (a) =>
         a.status !== AssetStatus.Active ||
         a.deletedAt !== null ||
+        hints.every(
+          (hint) =>
+            !(
+              hint.id === a.id &&
+              hint.ownerId === a.ownerId &&
+              hint.originalPath === a.originalPath &&
+              hint.libraryId === a.libraryId
+            ),
+        ) ||
         epochs.every((e) => e.assetId !== a.id || e.ownerId !== a.ownerId),
     )
   )
     refuse();
-  const current = await AssetLocalEffectRepository.sourceEpochs(db, ids);
+  const current = await (kind === 'original'
+    ? AssetLocalEffectRepository.sourceEpochs(db, ids)
+    : AssetLocalEffectRepository.lifecycleEpochs(db, ids));
   if (
     current.length !== epochs.length ||
     current.some((row) =>
-      epochs.every((e) => e.assetId !== row.assetId || e.ownerId !== row.ownerId || e.epoch !== row.epoch),
+      epochs.every(
+        (e) =>
+          !sameSourceEpoch(kind === 'original' ? e : { assetId: e.assetId, ownerId: e.ownerId, epoch: e.epoch }, row),
+      ),
     )
   )
     refuse();
@@ -174,4 +235,11 @@ export async function holdSourceAdmission(
     )
   )
     refuse();
+  // Counter and acting-session waits cannot extend a provider's expired read authority.
+  if (kind === 'original') {
+    const latest = await AssetLocalEffectRepository.sourceEpochs(db, ids);
+    if (latest.length !== epochs.length || latest.some((row) => epochs.every((e) => !sameSourceEpoch(e, row))))
+      refuse();
+  }
+  if (!(await currentAuth(db, view.actorId, view.sessionId!, true))) refuse();
 }

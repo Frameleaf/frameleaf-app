@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import {
   AssetStatus,
+  ChecksumAlgorithm,
   JobName,
   MediaOperationKind,
   MediaOperationStatus,
@@ -18,10 +19,27 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { DB } from 'src/schema/index.js';
 import { checkAccess } from 'src/utils/access.js';
 import { isLocked } from 'src/utils/locked.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
+import { type SourceReference, sourceReferenceSchema } from 'src/utils/source-reference.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 import { isStudioUuid } from 'src/utils/studio-resources.js';
 
-export type SourceEpoch = { assetId: string; ownerId: string; epoch: string };
+export type SourceEpoch = { assetId: string; ownerId: string; epoch: string; reference?: SourceReference };
+
+// Historical snapshots without a reference proof must be explicitly readmitted, never relabelled as current.
+export const sameSourceEpoch = (left: SourceEpoch, right: SourceEpoch): boolean => {
+  if (left.assetId !== right.assetId || left.ownerId !== right.ownerId || left.epoch !== right.epoch) return false;
+  if (left.reference === undefined && right.reference === undefined) return true;
+  const a = sourceReferenceSchema.safeParse(left.reference);
+  const b = sourceReferenceSchema.safeParse(right.reference);
+  return (
+    a.success &&
+    b.success &&
+    a.data.resourceId === b.data.resourceId &&
+    a.data.version === b.data.version &&
+    a.data.sha256 === b.data.sha256
+  );
+};
 export type LockedCascade = {
   assetIds: string[];
   interactiveAdmissions: { id: string; ownerId: string; kind: string; projectId: string | null }[];
@@ -70,13 +88,49 @@ export class AssetLocalEffectRepository {
     return head;
   }
 
-  static async sourceEpochs(db: Kysely<DB>, ids: string[]): Promise<SourceEpoch[]> {
+  /** Revocations must remain recordable even when the source can no longer authorize a read. */
+  static async lifecycleEpochs(db: Kysely<DB>, ids: string[]): Promise<SourceEpoch[]> {
     if (ids.length === 0) return [];
     const { rows } = await sql<SourceEpoch>`SELECT a.id AS "assetId",a."ownerId",
       coalesce(e."lastTrashSequence",0)::text AS epoch FROM asset a
       LEFT JOIN asset_source_epoch e ON e."assetId"=a.id AND e."ownerId"=a."ownerId"
       WHERE a.id=ANY(${[...new Set(ids)].sort()}::uuid[]) ORDER BY a.id`.execute(db);
     return rows;
+  }
+
+  static async sourceEpochs(db: Kysely<DB>, ids: string[]): Promise<SourceEpoch[]> {
+    if (ids.length === 0) return [];
+    const { rows } = await sql<
+      SourceEpoch & { originalPath: string; reference: unknown }
+    >`SELECT a.id AS "assetId",a."ownerId",a."originalPath",
+      (SELECT jsonb_build_object('resourceId',r.id,'version',r.version,'sha256',encode(r.checksum,'hex'))
+       FROM source_original b JOIN photo_source_resource r ON r.id=b."resourceId" AND r."assetId"=b."assetId"
+       JOIN photo_source_run run ON run.id=r."runId" JOIN photo_source s ON s.id=run."sourceId"
+       JOIN desktop_device d ON d.id=s."deviceId" AND d."userId"=s."ownerId"
+       JOIN session photo ON photo.id=s."photoSessionId" AND photo."userId"=s."ownerId"
+       JOIN "user" owner ON owner.id=s."ownerId"
+       JOIN library l ON l.id=a."libraryId" AND l."ownerId"=s."ownerId"
+       WHERE b."assetId"=a.id AND s."ownerId"=a."ownerId" AND s."revokedAt" IS NULL
+         AND r.state='verified' AND r."verifiedAt" IS NOT NULL AND s.mode='reference'
+         AND a."isExternal" AND a.status=${AssetStatus.Active} AND a."deletedAt" IS NULL AND NOT a."isOffline"
+         AND a."checksumAlgorithm"=${ChecksumAlgorithm.sha1Path} AND l."readOnly" AND l."deletedAt" IS NULL
+         AND b."scopeFingerprint"=s."scopeFingerprint" AND b."authorizationEpoch"=d."authorizationEpoch"
+         AND d."revokedAt" IS NULL AND d.state NOT IN ('paused','revoked') AND owner."deletedAt" IS NULL
+         AND (photo."expiresAt" IS NULL OR photo."expiresAt">clock_timestamp())
+         AND a."originalPath"='frameleaf-source://' || s.id::text || '/' || r."resourceKey") AS reference,
+      coalesce(e."lastTrashSequence",0)::text AS epoch FROM asset a
+      LEFT JOIN asset_source_epoch e ON e."assetId"=a.id AND e."ownerId"=a."ownerId"
+      WHERE a.id=ANY(${[...new Set(ids)].sort()}::uuid[]) ORDER BY a.id`.execute(db);
+    return rows.flatMap((row) => {
+      const epoch: SourceEpoch = { assetId: row.assetId, ownerId: row.ownerId, epoch: row.epoch };
+      try {
+        if (!parseSourceOriginalPath(row.originalPath)) return [epoch];
+      } catch {
+        return [];
+      }
+      const reference = sourceReferenceSchema.safeParse(row.reference);
+      return reference.success ? [{ ...epoch, reference: reference.data }] : [];
+    });
   }
 
   /** Legacy interactive source provenance is not upgraded into fresh authority. */
@@ -232,7 +286,7 @@ export class AssetLocalEffectRepository {
       if (canonicalJson(actual) !== canonicalJson(lockedCascade)) unavailable();
     }
     const stream = await AssetLocalEffectRepository.lockStreamHead(tx, ownerId);
-    const epochs = await AssetLocalEffectRepository.sourceEpochs(
+    const epochs = await AssetLocalEffectRepository.lifecycleEpochs(
       tx,
       assets.map((a) => a.assetId),
     );

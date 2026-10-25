@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { type Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AssetRestorationFileKind,
@@ -8,6 +9,7 @@ import {
 } from 'src/dtos/asset-restoration.dto.js';
 import {
   AssetType,
+  ChecksumAlgorithm,
   JobName,
   MediaOperationDestination,
   MediaOperationKind,
@@ -20,6 +22,7 @@ import { MediaOperationRepository } from 'src/repositories/media-operation.repos
 import { AssetRestorationService, parseDurationSeconds } from 'src/services/asset-restoration.service.js';
 import * as cloudDisclosure from 'src/utils/frameleaf-cloud.js';
 import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
+import { sourceOriginalPath } from 'src/utils/source-original.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
@@ -35,7 +38,10 @@ describe(AssetRestorationService.name, () => {
   let sut: AssetRestorationService;
   let mocks: ServiceMocks;
   let restorations: { [K in keyof AssetRestorationRepository]: AnyMock };
-  let operations: Pick<{ [K in keyof MediaOperationRepository]: AnyMock }, 'create' | 'createWithin' | 'requestCancel'>;
+  let operations: Pick<
+    { [K in keyof MediaOperationRepository]: AnyMock },
+    'create' | 'createWithin' | 'requestCancel' | 'getForOwner'
+  >;
   let recordedOperations: unknown[];
 
   const asset = AssetFactory.from({ ownerId: authStub.user1.user.id, type: AssetType.Image })
@@ -137,6 +143,7 @@ describe(AssetRestorationService.name, () => {
         }
       }),
       requestCancel: vi.fn().mockResolvedValue(undefined),
+      getForOwner: vi.fn(),
     };
 
     mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
@@ -172,6 +179,34 @@ describe(AssetRestorationService.name, () => {
       mocks.notification as never,
     );
   });
+
+  const referencedSource = () => {
+    const originalPath = sourceOriginalPath({
+      sourceId: '12345678-1234-4234-8234-123456789016',
+      resourceKey: 'b'.repeat(64),
+    });
+    const referenced = {
+      ...asset,
+      originalPath,
+      isExternal: true,
+      checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+      checksum: createHash('sha1').update(originalPath).digest(),
+    };
+    const epoch = {
+      assetId: asset.id,
+      ownerId: asset.ownerId,
+      epoch: '0',
+      reference: {
+        resourceId: '12345678-1234-4234-8234-123456789017',
+        version: 'c'.repeat(64),
+        sha256: Buffer.alloc(32, 7).toString('hex'),
+      },
+    };
+    mocks.asset.getById.mockResolvedValue(referenced as never);
+    mocks.integrityReport.sourceEpochs.mockResolvedValue([epoch]);
+    Object.assign(sut, { integrityRepository: mocks.integrityReport });
+    return { referenced, epoch };
+  };
 
   describe('access', () => {
     it('refuses every operation on an asset the user cannot edit, before anything is created', async () => {
@@ -412,6 +447,39 @@ describe(AssetRestorationService.name, () => {
       destinationId: mlDestinationStub.lan.id,
       region: DEFAULT_RESTORATION_REGION,
     };
+
+    it('records the exact reference admission in a new preview job', async () => {
+      const { epoch } = referencedSource();
+      await sut.requestPreview(authStub.user1, asset.id, request);
+      expect(restorations.create).toHaveBeenCalledWith(
+        expect.objectContaining({ sourceChecksum: Buffer.from(epoch.reference.sha256, 'hex') }),
+      );
+      expect(operations.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          snapshot: expect.objectContaining({ sourceEpochs: [epoch], sourceChecksumHex: epoch.reference.sha256 }),
+        }),
+      );
+    });
+
+    it('refuses an unavailable referenced source before recording a preview', async () => {
+      referencedSource();
+      mocks.integrityReport.sourceEpochs.mockResolvedValue([]);
+      await expect(sut.requestPreview(authStub.user1, asset.id, request)).rejects.toThrow('Source admission changed');
+      expect(restorations.create).not.toHaveBeenCalled();
+      expect(operations.create).not.toHaveBeenCalled();
+    });
+
+    it.each(['checksum', 'algorithm'] as const)(
+      'refuses a noncanonical reference %s before admission',
+      async (change) => {
+        const { referenced } = referencedSource();
+        if (change === 'checksum') referenced.checksum = Buffer.alloc(20, 1);
+        else referenced.checksumAlgorithm = ChecksumAlgorithm.sha256File;
+        await expect(sut.requestPreview(authStub.user1, asset.id, request)).rejects.toThrow('Source admission changed');
+        expect(restorations.create).not.toHaveBeenCalled();
+        expect(operations.create).not.toHaveBeenCalled();
+      },
+    );
 
     it('refuses restoration on a worker also allowed library analysis up front and creates nothing (FL-72)', async () => {
       const legacyPod = { ...mlDestinationStub.lan, workloads: [MlWorkload.Face, MlWorkload.RestorationFaithful] };
@@ -754,6 +822,58 @@ describe(AssetRestorationService.name, () => {
   });
 
   describe('accept', () => {
+    it('copies the exact preview reference admission into the full job', async () => {
+      const { epoch } = referencedSource();
+      restorations.getForOwner.mockResolvedValue(row({ sourceChecksum: Buffer.from(epoch.reference.sha256, 'hex') }));
+      operations.getForOwner.mockResolvedValue({
+        id: OPERATION_ID,
+        ownerId: asset.ownerId,
+        assetId: asset.id,
+        kind: MediaOperationKind.RestorationPreview,
+        revisionId: RESTORATION_ID,
+        snapshot: { sourceEpochs: [epoch] },
+      });
+      await sut.accept(authStub.user1, asset.id, RESTORATION_ID);
+      expect(operations.create).toHaveBeenCalledWith(
+        expect.objectContaining({ snapshot: expect.objectContaining({ sourceEpochs: [epoch] }) }),
+      );
+    });
+
+    it.each(['version', 'resourceId', 'sha256', 'epoch', 'missing', 'other-restoration'] as const)(
+      'refuses full acceptance with %s changed since the preview',
+      async (change) => {
+        const { epoch } = referencedSource();
+        restorations.getForOwner.mockResolvedValue(row({ sourceChecksum: Buffer.from(epoch.reference.sha256, 'hex') }));
+        const bound = structuredClone(epoch);
+        switch (change) {
+          case 'epoch': {
+            bound.epoch = '1';
+            break;
+          }
+          case 'resourceId': {
+            bound.reference.resourceId = '12345678-1234-4234-8234-123456789018';
+            break;
+          }
+          case 'version':
+          case 'sha256': {
+            bound.reference[change] = 'e'.repeat(64);
+            break;
+          }
+          // No default
+        }
+        operations.getForOwner.mockResolvedValue({
+          id: OPERATION_ID,
+          ownerId: asset.ownerId,
+          assetId: asset.id,
+          kind: MediaOperationKind.RestorationPreview,
+          revisionId: change === 'other-restoration' ? 'other' : RESTORATION_ID,
+          snapshot: change === 'missing' ? {} : { sourceEpochs: [bound] },
+        });
+        await expect(sut.accept(authStub.user1, asset.id, RESTORATION_ID)).rejects.toThrow('request a new preview');
+        expect(operations.create).not.toHaveBeenCalled();
+      },
+    );
+
     it('binds the full render to the previewed destination, mode and size', async () => {
       restorations.getForOwner.mockResolvedValue(row());
 

@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
+import { createHash, randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import path from 'node:path';
 import type { SystemConfig } from 'src/dtos/config.dto.js';
@@ -8,6 +9,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { AssetRestorationSourceType, AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
 import {
+  ChecksumAlgorithm,
   Colorspace,
   FrameleafWorker,
   ImageFormat,
@@ -17,10 +19,12 @@ import {
   StorageFolder,
 } from 'src/enum.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { type SourceEpoch, sameSourceEpoch } from 'src/repositories/asset-local-effect.repository.js';
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
@@ -33,7 +37,9 @@ import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
 import { getConfig } from 'src/utils/config.js';
+import { withExecutionCleanup, withExecutionSignal } from 'src/utils/execution-signal.js';
 import { StoredChunk, mediaOperationProgress, planChunkResume } from 'src/utils/media-operation.js';
 import { chunkClipOutputOptions, previewClipOutputOptions, strippedStillFormat } from 'src/utils/media-privacy.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -63,6 +69,7 @@ import {
   selectRestorationDestination,
   stageOfKind,
 } from 'src/utils/restoration.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 import { ALL_LIBRARY_ANALYSIS_QUEUES, libraryAnalysisBacklog, readQueueBacklogs } from 'src/utils/worker-inventory.js';
 /** How often an idle worker asks for the next restoration job. */
 export const RESTORATION_POLL_MS = 2000;
@@ -150,6 +157,12 @@ const even = (value: number) => Math.max(2, value - (value % 2));
  */
 @Injectable()
 export class RestorationWorkerService {
+  @Inject(SourceOriginalService)
+  private sourceOriginalService!: SourceOriginalService;
+  @Inject(IntegrityRepository)
+  private integrityRepository!: IntegrityRepository;
+  private readonly sourceReaderOwnerId = randomUUID();
+  private sourceStopUnconfirmed = false;
   private pollTimer?: ReturnType<typeof setInterval>;
   private sweepTimer?: ReturnType<typeof setInterval>;
   private activeController?: AbortController;
@@ -215,7 +228,7 @@ export class RestorationWorkerService {
 
   /** Claim and run at most one job. One at a time per process: restoration is heavy work. */
   tick(): Promise<boolean> {
-    if (this.active || this.stopping) return Promise.resolve(false);
+    if (this.active || this.stopping || this.sourceStopUnconfirmed) return Promise.resolve(false);
     this.active = this.takeNext().finally(() => {
       this.active = undefined;
     });
@@ -273,6 +286,7 @@ export class RestorationWorkerService {
    * expired; the row itself stays as history.
    */
   sweep() {
+    if (this.sourceStopUnconfirmed) return Promise.resolve({ aligned: { preview: 0, full: 0 }, removed: 0 });
     return (this.sweeping ??= this.sweepExpired().finally(() => {
       this.sweeping = undefined;
     }));
@@ -333,6 +347,7 @@ export class RestorationWorkerService {
   /* ------------------------------------------------------------------ */
 
   async run(operation: MediaOperation, claimToken: string): Promise<void> {
+    if (this.sourceStopUnconfirmed) return;
     const snapshot = parseRestorationSnapshot(operation.snapshot);
     const stage = stageOfKind(operation.kind);
     if (!snapshot || !stage || snapshot.stage !== stage) {
@@ -397,15 +412,15 @@ export class RestorationWorkerService {
     if (this.stopping) controller.abort(new RestorationInterrupted());
     this.activeController = controller;
     let renewing: Promise<void> | undefined;
+    let original: Awaited<ReturnType<SourceOriginalService['open']>> | undefined;
     const watch = setInterval(() => {
       if (renewing || controller.signal.aborted) {
         return;
       }
       renewing = this.renew(operation, claimToken)
-        .then((alive) => {
-          if (!alive) {
-            controller.abort(new RestorationInterrupted());
-          }
+        .then(async (alive) => {
+          if (!alive) controller.abort(new RestorationInterrupted());
+          else await original?.check();
         })
         .catch((error) => {
           this.logger.warn(`Restoration ${restoration.id} lease renewal failed: ${error}`);
@@ -418,7 +433,7 @@ export class RestorationWorkerService {
     controller.signal.addEventListener('abort', () => clearInterval(watch), { once: true });
 
     const base = StorageCore.getNestedFolder(StorageFolder.Thumbnails, restoration.ownerId, restoration.assetId);
-    const workDir = restorationWorkDir(base, restoration.id);
+    let workDir = restorationWorkDir(base, restoration.id);
     const context: Partial<RunContext> &
       Pick<
         RunContext,
@@ -442,15 +457,77 @@ export class RestorationWorkerService {
       await this.progress(context, MediaOperationStatus.Preparing, 0, total);
 
       // No visibility filter on purpose: the owner asked for this job on this asset.
-      const source = await this.assetJobRepository.getForGenerateThumbnailJob(snapshot.assetId);
+      let source = await this.assetJobRepository.getForGenerateThumbnailJob(snapshot.assetId);
       if (!source) {
         throw new RestorationFailure(RestorationErrorCode.SourceMissing, 'The original is no longer available');
       }
-      if (Buffer.from(source.checksum).toString('hex') !== snapshot.sourceChecksumHex) {
+      const referenced = !!parseSourceOriginalPath(source.originalPath);
+      if (!referenced && Buffer.from(source.checksum).toString('hex') !== snapshot.sourceChecksumHex) {
         throw new RestorationFailure(
           RestorationErrorCode.SourceChanged,
           'The original has changed since the preview was made; request a new preview',
         );
+      }
+
+      const epochs = operation.snapshot.sourceEpochs as SourceEpoch[] | undefined;
+      if (referenced || epochs !== undefined) {
+        const expected = Array.isArray(epochs) && epochs.length === 1 ? epochs[0] : undefined;
+        if (
+          !referenced ||
+          !expected?.reference ||
+          expected.assetId !== snapshot.assetId ||
+          expected.ownerId !== operation.ownerId ||
+          expected.reference.sha256 !== snapshot.sourceChecksumHex ||
+          source.checksumAlgorithm !== ChecksumAlgorithm.sha1Path ||
+          !Buffer.from(source.checksum).equals(createHash('sha1').update(source.originalPath).digest())
+        )
+          throw new RestorationFailure(RestorationErrorCode.SourceChanged, 'The reference needs a new preview');
+        const authorize = async () => {
+          controller.signal.throwIfAborted();
+          const current = await this.operationRepository.getForOwner(operation.id, operation.ownerId);
+          const bound = current?.snapshot.sourceEpochs as SourceEpoch[] | undefined;
+          if (
+            !current ||
+            current.claimToken !== claimToken ||
+            !current.claimExpiresAt ||
+            new Date(current.claimExpiresAt).getTime() <= Date.now() ||
+            current.cancelRequestedAt ||
+            (current.pauseRequestedAt && current.status !== MediaOperationStatus.Validating) ||
+            ![MediaOperationStatus.Preparing, MediaOperationStatus.Rendering, MediaOperationStatus.Validating].includes(
+              current.status as MediaOperationStatus,
+            ) ||
+            !Array.isArray(bound) ||
+            bound.length !== 1 ||
+            !bound[0] ||
+            !sameSourceEpoch(bound[0], expected)
+          )
+            throw new RestorationInterrupted();
+          const live = await this.integrityRepository.sourceEpochs([snapshot.assetId]);
+          if (live.length !== 1 || !sameSourceEpoch(live[0], expected))
+            throw new RestorationFailure(
+              RestorationErrorCode.SourceChanged,
+              'Source admission changed; request a new preview',
+            );
+        };
+        original = await this.sourceOriginalService.open(
+          snapshot.assetId,
+          { kind: 'http', ownerId: this.sourceReaderOwnerId, readerId: randomUUID() },
+          authorize,
+          controller.signal,
+        );
+        if (
+          original.resourceId !== expected.reference.resourceId ||
+          original.resourceVersion !== expected.reference.version ||
+          original.verifiedSha256 !== expected.reference.sha256
+        )
+          throw new RestorationFailure(
+            RestorationErrorCode.SourceChanged,
+            'The delivered original differs from the admitted version',
+          );
+        source = { ...source, originalPath: original.localPath };
+        // shortcut: reference chunks are attempt-private; cross-attempt reuse needs confirmed producer shutdown.
+        workDir = path.join(workDir, createHash('sha256').update(claimToken).digest('hex'));
+        context.workDir = workDir;
       }
 
       let selection: RestorationSelection;
@@ -481,27 +558,60 @@ export class RestorationWorkerService {
       await this.progress(context, MediaOperationStatus.Preparing, 1, total);
 
       this.storageRepository.mkdirSync(workDir);
-      const full: RunContext = { ...context, source, selection } as RunContext;
+      const full: RunContext = {
+        ...context,
+        source,
+        selection,
+        signal: original?.signal ?? controller.signal,
+      } as RunContext;
 
-      const output =
-        snapshot.sourceType === AssetRestorationSourceType.Video
-          ? stage === 'preview'
-            ? await this.previewVideo(full, total)
-            : await this.fullVideo(full, total)
-          : stage === 'preview'
-            ? await this.previewImage(full, total)
-            : await this.fullImage(full, total);
+      const render = async () => {
+        await original?.check();
+        const output =
+          snapshot.sourceType === AssetRestorationSourceType.Video
+            ? stage === 'preview'
+              ? await this.previewVideo(full, total)
+              : await this.fullVideo(full, total)
+            : stage === 'preview'
+              ? await this.previewImage(full, total)
+              : await this.fullImage(full, total);
 
-      await this.publish(full, output, statuses);
+        await original?.check();
+        await this.publish(full, output, statuses);
+      };
+      await withExecutionSignal(original?.signal ?? controller.signal, render);
     } catch (error) {
       clearInterval(watch);
       // Finish the in-flight heartbeat before handing the claim back to another attempt.
       await renewing;
+      if (
+        error instanceof Error &&
+        [
+          'media_process_shutdown_unconfirmed',
+          'source_original_shutdown_unconfirmed',
+          'artifact_close_unconfirmed',
+        ].includes(error.message)
+      ) {
+        this.sourceStopUnconfirmed = true;
+        this.stop();
+        controller.abort(error);
+        this.logger.error('Restoration source retained because native shutdown is unconfirmed');
+        return;
+      }
       await this.discard(context.scratch);
       await this.settle(context, error, statuses);
     } finally {
       clearInterval(watch);
       await renewing;
+      if (original && !this.sourceStopUnconfirmed) {
+        try {
+          await withExecutionCleanup(() => original!.release());
+        } catch (error) {
+          this.sourceStopUnconfirmed = true;
+          this.stop();
+          this.logger.error(`Restoration source release failed; worker stopped with its input retained: ${error}`);
+        }
+      }
       if (this.activeController === controller) {
         this.activeController = undefined;
       }
@@ -986,6 +1096,7 @@ export class RestorationWorkerService {
         modelName: output.modelName,
         modelVersion: output.modelVersion,
         sourceChecksumHex: snapshot.sourceChecksumHex,
+        ...(operation.snapshot.sourceEpochs !== undefined && { sourceEpochs: operation.snapshot.sourceEpochs }),
         finishedAt: now.toISOString(),
       },
     };

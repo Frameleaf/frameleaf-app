@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -24,6 +25,7 @@ import {
 import {
   AssetType,
   CacheControl,
+  ChecksumAlgorithm,
   JobName,
   MediaOperationKind,
   MlAdmissionRefusal,
@@ -35,9 +37,11 @@ import {
   StorageFolder,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { type SourceEpoch, sameSourceEpoch } from 'src/repositories/asset-local-effect.repository.js';
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
@@ -82,6 +86,7 @@ import {
   restorationWorkDir,
   workloadForMode,
 } from 'src/utils/restoration.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 /** Why a local Smooth motion is refused while the administrator routes interpolation to the cloud only. */
 const CLOUD_ONLY_DETAIL =
   'Smooth motion is set to Frameleaf Cloud only under Where each job runs; confirm it as a Frameleaf Cloud job';
@@ -101,6 +106,7 @@ type RestorationSource = {
   height: number;
   durationSeconds: number | null;
   sizeBytes: number;
+  sourceEpochs?: SourceEpoch[];
 };
 
 const windowStart = (days: number) => new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -201,6 +207,9 @@ const asEstimate = (value: unknown): AssetRestorationEstimateDto | null => {
  */
 @Injectable()
 export class AssetRestorationService {
+  @Inject(IntegrityRepository)
+  private integrityRepository!: IntegrityRepository;
+
   constructor(
     private logger: LoggingRepository,
     private accessRepository: AccessRepository,
@@ -549,6 +558,25 @@ export class AssetRestorationService {
     if (Buffer.compare(source.checksum, restoration.sourceChecksum) !== 0) {
       throw new ConflictException('The original has changed since this preview was made; request a new preview');
     }
+    const preview = restoration.previewOperationId
+      ? await this.operationRepository.getForOwner(restoration.previewOperationId, restoration.ownerId)
+      : undefined;
+    const bound = preview?.snapshot.sourceEpochs as SourceEpoch[] | undefined;
+    if (source.sourceEpochs || bound !== undefined) {
+      if (
+        !preview ||
+        preview.assetId !== assetId ||
+        preview.revisionId !== restoration.id ||
+        preview.kind !== MediaOperationKind.RestorationPreview ||
+        !Array.isArray(bound) ||
+        bound.length !== 1 ||
+        !bound[0] ||
+        !source.sourceEpochs?.[0] ||
+        !sameSourceEpoch(bound[0], source.sourceEpochs[0])
+      )
+        throw new ConflictException('Source admission changed since this preview was made; request a new preview');
+      source.sourceEpochs = structuredClone(bound);
+    }
     if (!restoration.destinationId) {
       throw new BadRequestException('The destination this preview ran on has been removed; request a new preview');
     }
@@ -878,18 +906,38 @@ export class AssetRestorationService {
       throw new BadRequestException('The length of this video is not known yet; run metadata extraction first');
     }
 
+    let sourceEpochs: SourceEpoch[] | undefined;
+    let checksum = asset.checksum;
+    if (parseSourceOriginalPath(asset.originalPath)) {
+      sourceEpochs = await this.integrityRepository.sourceEpochs([asset.id]);
+      const epoch = sourceEpochs[0];
+      if (
+        sourceEpochs.length !== 1 ||
+        !epoch?.reference ||
+        epoch.assetId !== asset.id ||
+        epoch.ownerId !== asset.ownerId ||
+        asset.checksumAlgorithm !== ChecksumAlgorithm.sha1Path ||
+        !asset.checksum.equals(createHash('sha1').update(asset.originalPath).digest())
+      )
+        throw new ConflictException('Source admission changed; request a new preview');
+      sourceEpochs = structuredClone(sourceEpochs);
+      // Reference rows hash a locator; the admitted resource identifies the bytes.
+      checksum = Buffer.from(epoch.reference.sha256, 'hex');
+    }
+
     return {
       id: asset.id,
       ownerId: asset.ownerId,
       type: asset.type,
       originalFileName: asset.originalFileName,
       originalPath: asset.originalPath,
-      checksum: asset.checksum,
+      checksum,
       sourceType,
       width,
       height,
       durationSeconds,
       sizeBytes: Number(exif?.fileSizeInByte ?? 0),
+      ...(sourceEpochs && { sourceEpochs }),
     };
   }
 
@@ -934,7 +982,7 @@ export class AssetRestorationService {
     output: { width: number; height: number },
     /** FL-423: the model the person chose for a preview; a full render is bound to the reviewed one. */
     modelId?: string,
-  ): RestorationSnapshot {
+  ): RestorationSnapshot & { sourceEpochs?: SourceEpoch[] } {
     const smooth = restoration.mode === AssetRestorationMode.SmoothMotion;
     return {
       version: 1,
@@ -944,6 +992,7 @@ export class AssetRestorationService {
       ownerId: restoration.ownerId,
       sourceType: restoration.sourceType as AssetRestorationSourceType,
       sourceChecksumHex: Buffer.from(restoration.sourceChecksum).toString('hex'),
+      ...(source.sourceEpochs && { sourceEpochs: structuredClone(source.sourceEpochs) }),
       sourceWidth: restoration.sourceWidth,
       sourceHeight: restoration.sourceHeight,
       sourceDurationSeconds: restoration.sourceDurationSeconds ?? source.durationSeconds,
