@@ -4,7 +4,7 @@
  * good preview stays on screen while the next one renders. Recent previews are kept, so holding the
  * original, undoing or going back to a photo shows them again at once.
  */
-import { PREVIEW_DEBOUNCE_MS, requestDevelopPreview } from '$lib/frameleaf/develop-api';
+import { PREVIEW_DEBOUNCE_MS, requestDevelopPreview, type PreviewResult } from '$lib/frameleaf/develop-api';
 import type { NativeRecipe } from '$lib/frameleaf/native-develop';
 
 const CACHE_SIZE = 16;
@@ -16,26 +16,28 @@ export class DevelopPreviewLoader {
   busy = $state(false);
   error = $state<unknown>(null);
 
-  #cache = new Map<string, { url: string; revoke: () => void }>();
+  constructor(private readonly onPreview?: (assetId: string, sourceVersion?: string, refreshed?: boolean) => void) {}
+
+  #cache = new Map<string, PreviewResult>();
   #timer: ReturnType<typeof setTimeout> | undefined;
   #abort: AbortController | undefined;
   #wanted: string | null = null;
 
   /** Shows the preview for this request, rendering it first unless it was rendered recently. */
-  request(assetId: string, recipe: NativeRecipe, size: number) {
+  request(assetId: string, recipe: NativeRecipe, size: number, refresh = false) {
     const key = `${assetId}:${size}:${JSON.stringify(recipe)}`;
-    if (key === this.#wanted) {
+    if (key === this.#wanted && !refresh) {
       return;
     }
     this.#wanted = key;
     clearTimeout(this.#timer);
     this.#abort?.abort();
-    const cached = this.#cache.get(key);
+    const cached = refresh ? undefined : this.#cache.get(key);
     if (cached) {
       // Most recently used last.
       this.#cache.delete(key);
       this.#cache.set(key, cached);
-      this.#show(key, cached.url);
+      this.#show(assetId, key, cached);
       this.busy = false;
       return;
     }
@@ -50,9 +52,18 @@ export class DevelopPreviewLoader {
             result?.revoke();
             return;
           }
+          if (refresh) {
+            // All settings cached for this photo may use the old original.
+            for (const [cachedKey, entry] of this.#cache) {
+              if (cachedKey.startsWith(`${assetId}:`)) {
+                entry.revoke();
+                this.#cache.delete(cachedKey);
+              }
+            }
+          }
           this.#remember(key, result);
           if (this.#wanted === key) {
-            this.#show(key, result.url);
+            this.#show(assetId, key, result, refresh);
             this.error = null;
           }
         } catch (error) {
@@ -76,12 +87,13 @@ export class DevelopPreviewLoader {
     }
   }
 
-  #show(key: string, url: string) {
-    this.url = url;
+  #show(assetId: string, key: string, result: PreviewResult, refreshed = false) {
+    this.onPreview?.(assetId, result.sourceVersion, refreshed);
+    this.url = result.url;
     this.key = key;
   }
 
-  #remember(key: string, result: { url: string; revoke: () => void }) {
+  #remember(key: string, result: PreviewResult) {
     this.#cache.set(key, result);
     while (this.#cache.size > CACHE_SIZE) {
       const [oldest, entry] = this.#cache.entries().next().value!;

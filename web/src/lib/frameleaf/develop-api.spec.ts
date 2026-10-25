@@ -59,3 +59,25 @@ it('collects HDR evidence through the configured SDK fetch wrapper', async () =>
     revoke.mockRestore();
   }
 });
+
+it('collects opaque source versions on SDR previews and rejects malformed evidence', async () => {
+  const previous = defaults.fetch;
+  const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:sdr');
+  const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+  try {
+    for (const header of ['d'.repeat(64), '/private/cache', '']) {
+      defaults.fetch = vi.fn().mockResolvedValue(
+        new Response(new Blob(['sdr']), {
+          headers: { 'X-Frameleaf-Develop-Source-Version': header, 'Content-Type': 'image/jpeg' },
+        }),
+      );
+      const result = await requestDevelopPreview('asset', { version: 1 }, 1280);
+      expect(result?.sourceVersion).toBe(header === 'd'.repeat(64) ? header : undefined);
+      result?.revoke();
+    }
+  } finally {
+    defaults.fetch = previous;
+    create.mockRestore();
+    revoke.mockRestore();
+  }
+});

@@ -51,6 +51,7 @@ export type PhotoRecord = {
    * Only this editor's own versions move it; another device's change makes the next save refuse.
    */
   baseCurrentRevisionId: string | null;
+  sourceVersion?: string;
   revisions: AssetDevelopRevisionResponseDto[];
   /** The library shows a version made in another editor; this editor starts from the original. */
   foreign: boolean;
@@ -306,6 +307,7 @@ export class RawDevelopSession {
           recipe,
           ...(record.revisionId && { sourceRevisionId: record.revisionId }),
           expectedCurrentRevisionId: record.baseCurrentRevisionId,
+          ...(record.sourceVersion && { expectedSourceVersion: record.sourceVersion }),
           replaceRecipe: true,
           ...(label?.trim() && { label: label.trim() }),
           render: true,

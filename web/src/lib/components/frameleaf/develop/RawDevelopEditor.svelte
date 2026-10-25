@@ -9,7 +9,7 @@
    * version stores a version that the server renders at full resolution. The original is never
    * changed. The viewer opens it for a single photo (`NativeRawEditor`).
    */
-  import { AssetMediaSize, getAssetInfo } from '@frameleaf/sdk';
+  import { AssetMediaSize, getAssetInfo, isHttpError } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
     mdiArrowLeft,
@@ -97,7 +97,14 @@
     onPublished: (id) => onRendered?.(id),
   });
   const tools = new DevelopTools();
-  const loader = new DevelopPreviewLoader();
+  const loader = new DevelopPreviewLoader((assetId, sourceVersion, refreshed) => {
+    const record = session.record(assetId);
+    record.sourceVersion = sourceVersion;
+    // An explicit refresh rebases the kept settings; an old version still owns its old original.
+    if (refreshed) {
+      record.revisionId = undefined;
+    }
+  });
   const TABS: [DevelopTab, Translations][] = [
     ['develop', 'frameleaf_develop_tab_develop'],
     ['masks', 'frameleaf_develop_tab_masks'],
@@ -185,7 +192,7 @@
 
   // The server develops what the stage shows: the original framing while comparing, the whole frame
   // while cropping, the whole sensor image while drawing masks.
-  $effect(() => {
+  function preview(refresh = false) {
     if (!id || record.status !== 'ready') {
       return;
     }
@@ -194,8 +201,9 @@
     if (mode === 'masks') {
       request.sensorCanvas = true;
     }
-    loader.request(id, request, tools.zoom === 'fit' ? 1280 : 2048);
-  });
+    loader.request(id, request, tools.zoom === 'fit' ? 1280 : 2048, refresh);
+  }
+  $effect(() => preview());
 
   // Another photo: its own preview, camera details and tools.
   $effect(() => {
@@ -253,10 +261,18 @@
   }
 
   /** FL-431: a save refused because another device changed the photo keeps the edits for a deliberate save. */
-  const notSaved = (error: unknown) =>
-    error instanceof DevelopConflictError
+  const notSaved = (error: unknown) => {
+    if (
+      isHttpError(error) &&
+      error.status === 409 &&
+      (error.data as { code?: unknown } | undefined)?.code === 'develop_source_changed'
+    ) {
+      return $t('frameleaf_develop_source_changed');
+    }
+    return error instanceof DevelopConflictError
       ? $t('frameleaf_editor_version_conflict')
       : $t('frameleaf_develop_version_not_saved');
+  };
 
   async function saveVersion(label?: string) {
     try {
@@ -598,6 +614,12 @@
           onblur={() => (tools.compare = false)}
           ><Icon icon={mdiCompare} size="16" aria-hidden={true} />{$t('frameleaf_develop_hold_original')}
           <kbd>\</kbd></button
+        >
+        <button
+          type="button"
+          class="rde-button"
+          disabled={loader.busy || record.status !== 'ready'}
+          onclick={() => preview(true)}>{$t('frameleaf_develop_refresh_preview')}</button
         >
         <select aria-label={$t('frameleaf_develop_zoom')} bind:value={tools.zoom}>
           <option value="fit">{$t('frameleaf_develop_zoom_fit')}</option>

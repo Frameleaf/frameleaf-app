@@ -54,6 +54,23 @@ describe('RawDevelopSession', () => {
     expect(session.isEdited('a')).toBe(true);
   });
 
+  it('sends only the source version from this photo preview and retains it on a conflict', async () => {
+    const session = new RawDevelopSession(photos, 'a');
+    await session.open('a');
+    await session.open('b');
+    session.record('a').sourceVersion = 'd'.repeat(64);
+    session.record('b').sourceVersion = 'e'.repeat(64);
+    sdkMock.saveAssetDevelop.mockRejectedValueOnce(new Error('source changed'));
+    await expect(session.save('a')).rejects.toThrow('source changed');
+    expect(sdkMock.saveAssetDevelop).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assetDevelopSaveDto: expect.objectContaining({ expectedSourceVersion: 'd'.repeat(64) }),
+      }),
+    );
+    expect(session.record('a').sourceVersion).toBe('d'.repeat(64));
+    session.dispose();
+  });
+
   it('starts from the original when the library shows a version from another editor', async () => {
     sdkMock.getAssetDevelop.mockResolvedValue({
       assetId: 'a',

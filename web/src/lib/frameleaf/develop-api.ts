@@ -47,7 +47,7 @@ export type HdrHistogram = HistogramBins & {
   referenceWhite: number;
   peakStops: number;
 };
-export type PreviewResult = { url: string; revoke: () => void; histogram?: HdrHistogram };
+export type PreviewResult = { url: string; revoke: () => void; histogram?: HdrHistogram; sourceVersion?: string };
 
 /** Treat response metadata as untrusted; invalid evidence must never become an HDR histogram. */
 export function parseHdrHistogram(header: string | null): HdrHistogram | undefined {
@@ -109,6 +109,7 @@ export async function requestDevelopPreview(
 ): Promise<PreviewResult | null> {
   try {
     let histogram: HdrHistogram | undefined;
+    let sourceVersion: string | undefined;
     const blob = await previewAssetDevelop(
       {
         id: assetId,
@@ -122,20 +123,27 @@ export async function requestDevelopPreview(
       },
       {
         signal,
-        ...([3, 4, 5, 6].includes(recipe.version) && {
-          fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
-            const response = await (defaults.fetch ?? fetch)(input, init);
-            histogram = parseHdrHistogram(response.headers.get('X-Frameleaf-HDR-Histogram'));
-            return response;
-          },
-        }),
+        fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+          const response = await (defaults.fetch ?? fetch)(input, init);
+          histogram = parseHdrHistogram(response.headers.get('X-Frameleaf-HDR-Histogram'));
+          const version = response.headers.get('X-Frameleaf-Develop-Source-Version');
+          if (version && /^[a-f0-9]{64}$/u.test(version)) {
+            sourceVersion = version;
+          }
+          return response;
+        },
       },
     );
     if (signal?.aborted) {
       return null;
     }
     const url = URL.createObjectURL(blob);
-    return { url, revoke: () => URL.revokeObjectURL(url), ...(histogram && { histogram }) };
+    return {
+      url,
+      revoke: () => URL.revokeObjectURL(url),
+      ...(histogram && { histogram }),
+      ...(sourceVersion && { sourceVersion }),
+    };
   } catch (error) {
     if (signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
       return null;

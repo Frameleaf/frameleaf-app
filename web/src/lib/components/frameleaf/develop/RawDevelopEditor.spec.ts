@@ -4,6 +4,7 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import RawDevelopEditor from './RawDevelopEditor.svelte';
 
 const previews = vi.hoisted(() => ({
+  includeVersion: true,
   calls: [] as Array<{ id: string; recipe: Record<string, unknown>; size: number }>,
 }));
 vi.mock('$lib/frameleaf/develop-api', () => ({
@@ -12,7 +13,11 @@ vi.mock('$lib/frameleaf/develop-api', () => ({
   followDevelop: () => () => {},
   requestDevelopPreview: (id: string, recipe: Record<string, unknown>, size: number) => {
     previews.calls.push({ id, recipe, size });
-    return Promise.resolve({ url: `blob:${previews.calls.length}`, revoke: () => {} });
+    return Promise.resolve({
+      url: `blob:${previews.calls.length}`,
+      ...(previews.includeVersion && { sourceVersion: previews.calls.length.toString(16).padStart(64, '0') }),
+      revoke: () => {},
+    });
   },
 }));
 
@@ -26,6 +31,7 @@ describe('RawDevelopEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     previews.calls = [];
+    previews.includeVersion = true;
     sdkMock.getAssetDevelop.mockImplementation(({ id }) =>
       Promise.resolve({ assetId: id, currentRevisionId: null, revisions: [] }),
     );
@@ -67,6 +73,80 @@ describe('RawDevelopEditor', () => {
     expect(screen.getByText('frameleaf_develop_status_unsaved')).toBeInTheDocument();
     await waitFor(() => expect(lastPreview()?.recipe).toMatchObject({ exposureEV: 1.5 }));
   });
+
+  it('refreshes the current preview without discarding the working settings', async () => {
+    renderShoot();
+    await waitFor(() => expect(lastPreview()).toMatchObject({ id: 'a' }));
+    await fireEvent.input(screen.getByRole('slider', { name: /frameleaf_editor_param_exposure/ }), {
+      target: { value: '1.5' },
+    });
+    await waitFor(() => expect(lastPreview()?.recipe.exposureEV).toBe(1.5));
+    const count = previews.calls.length;
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_develop_refresh_preview' }));
+    await waitFor(() => expect(previews.calls).toHaveLength(count + 1));
+    expect(lastPreview()).toMatchObject({ id: 'a', recipe: { exposureEV: 1.5 } });
+    expect(screen.getByText('frameleaf_develop_status_unsaved')).toBeInTheDocument();
+    expect(sdkMock.saveAssetDevelop).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])(
+    'refreshes a rejected source before an explicit save, versioned source: %s',
+    async (versionedRefresh) => {
+      sdkMock.getAssetDevelop.mockResolvedValueOnce({
+        assetId: 'a',
+        currentRevisionId: 'base',
+        revisions: [
+          { id: 'base', isCurrent: true, recipe: { version: 2, renderer: 'darktable/5.6.1', exposureEV: 0 } },
+        ],
+      } as never);
+      sdkMock.isHttpError.mockImplementation((error) => typeof (error as { status?: unknown }).status === 'number');
+      sdkMock.saveAssetDevelop.mockRejectedValueOnce(
+        Object.assign(new Error('Conflict'), {
+          status: 409,
+          data: { code: 'develop_source_changed' },
+        }),
+      );
+      renderShoot();
+      await waitFor(() => expect(lastPreview()).toMatchObject({ id: 'a' }));
+      await fireEvent.input(screen.getByRole('slider', { name: /frameleaf_editor_param_exposure/ }), {
+        target: { value: '1.5' },
+      });
+      await waitFor(() => expect(lastPreview()?.recipe.exposureEV).toBe(1.5));
+      const oldVersion = previews.calls.length.toString(16).padStart(64, '0');
+      const save = async () => {
+        await fireEvent.click(screen.getAllByRole('button', { name: /frameleaf_editor_save_version/ })[0]);
+        const name = await screen.findByRole('textbox', { name: 'frameleaf_raw_version_name' });
+        await fireEvent.input(name, { target: { value: 'Kept draft' } });
+        await fireEvent.submit(name.closest('form')!);
+      };
+      await save();
+      expect(await screen.findByText('frameleaf_develop_source_changed')).toBeInTheDocument();
+      expect(sdkMock.saveAssetDevelop).toHaveBeenCalledTimes(1);
+      expect(sdkMock.saveAssetDevelop.mock.calls[0][0].assetDevelopSaveDto.expectedSourceVersion).toBe(oldVersion);
+      previews.includeVersion = versionedRefresh;
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_develop_refresh_preview' }));
+      await waitFor(() => expect(previews.calls.length.toString(16).padStart(64, '0')).not.toBe(oldVersion));
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'frameleaf_develop_refresh_preview' })).toBeEnabled(),
+      );
+      expect(sdkMock.saveAssetDevelop).toHaveBeenCalledTimes(1);
+      sdkMock.saveAssetDevelop.mockResolvedValueOnce({ id: 'fresh', recipe: lastPreview()!.recipe } as never);
+      await save();
+      await waitFor(() => expect(sdkMock.saveAssetDevelop).toHaveBeenCalledTimes(2));
+      expect(sdkMock.saveAssetDevelop.mock.calls[0][0].assetDevelopSaveDto.sourceRevisionId).toBe('base');
+      expect(sdkMock.saveAssetDevelop.mock.calls[1][0].assetDevelopSaveDto).not.toHaveProperty('sourceRevisionId');
+      expect(sdkMock.saveAssetDevelop.mock.calls[1][0].assetDevelopSaveDto).toMatchObject({
+        recipe: { exposureEV: 1.5 },
+        ...(versionedRefresh && { expectedSourceVersion: previews.calls.length.toString(16).padStart(64, '0') }),
+        expectedCurrentRevisionId: 'base',
+      });
+      if (!versionedRefresh) {
+        expect(sdkMock.saveAssetDevelop.mock.calls[1][0].assetDevelopSaveDto).not.toHaveProperty(
+          'expectedSourceVersion',
+        );
+      }
+    },
+  );
 
   it('saves a named version that the server renders', async () => {
     sdkMock.saveAssetDevelop.mockResolvedValue({
