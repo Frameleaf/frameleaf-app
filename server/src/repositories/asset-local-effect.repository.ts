@@ -19,6 +19,7 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { DB } from 'src/schema/index.js';
 import { checkAccess } from 'src/utils/access.js';
 import { isLocked } from 'src/utils/locked.js';
+import { type SourceBackupRead, sourceBackupReadAuthority } from 'src/utils/source-backup-read.js';
 import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 import { type SourceReference, sourceReferenceSchema } from 'src/utils/source-reference.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
@@ -98,7 +99,7 @@ export class AssetLocalEffectRepository {
     return rows;
   }
 
-  static async sourceEpochs(db: Kysely<DB>, ids: string[]): Promise<SourceEpoch[]> {
+  static async sourceEpochs(db: Kysely<DB>, ids: string[], backup?: SourceBackupRead): Promise<SourceEpoch[]> {
     if (ids.length === 0) return [];
     const { rows } = await sql<
       SourceEpoch & { originalPath: string; reference: unknown }
@@ -112,7 +113,9 @@ export class AssetLocalEffectRepository {
        JOIN library l ON l.id=a."libraryId" AND l."ownerId"=s."ownerId"
        WHERE b."assetId"=a.id AND s."ownerId"=a."ownerId" AND s."revokedAt" IS NULL
          AND r.state='verified' AND r."verifiedAt" IS NOT NULL AND s.mode='reference'
-         AND a."isExternal" AND a.status=${AssetStatus.Active} AND a."deletedAt" IS NULL AND NOT a."isOffline"
+         AND a."isExternal" AND NOT a."isOffline"
+         AND ((a.status=${AssetStatus.Active} AND a."deletedAt" IS NULL) OR (a.status=${AssetStatus.Trashed} AND ${!!backup}))
+         AND ${backup ? sourceBackupReadAuthority(backup) : sql<boolean>`true`}
          AND a."checksumAlgorithm"=${ChecksumAlgorithm.sha1Path} AND l."readOnly" AND l."deletedAt" IS NULL
          AND b."scopeFingerprint"=s."scopeFingerprint" AND b."authorizationEpoch"=d."authorizationEpoch"
          AND d."revokedAt" IS NULL AND d.state NOT IN ('paused','revoked') AND owner."deletedAt" IS NULL

@@ -1,5 +1,5 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { addAbortSignal } from 'node:stream';
@@ -81,7 +81,15 @@ export class SourceOriginalService {
     authorize: () => Promise<void>,
     signal?: AbortSignal,
     maxBytes?: number,
+    backup?: { operationId: string; claimToken: string },
   ) {
+    if (backup && reader.kind !== 'http') throw new Error('source_backup_reader_required');
+    const proof = backup
+      ? {
+          operationId: backup.operationId,
+          claimTokenHash: createHash('sha256').update(backup.claimToken.toLowerCase()).digest(),
+        }
+      : undefined;
     const job = reader.kind === 'job' ? queueExecution.getStore() : undefined;
     const operation = AbortSignal.any([AbortSignal.timeout(600_000), ...(signal ? [signal] : [])]);
     const unavailable = () => new ServiceUnavailableException('source_original_unavailable');
@@ -99,7 +107,7 @@ export class SourceOriginalService {
       }
     };
     // Concurrent consumers share an in-flight delivery, never a previously ready request.
-    const request = await this.reads.enqueue(assetId, maxBytes, reader);
+    const request = await this.reads.enqueue(assetId, maxBytes, reader, proof);
     if (!request) throw unavailable();
     let pinned: Awaited<ReturnType<SourceResourceReadRepository['pinReady']>>;
     let renewAt = 0;
@@ -111,7 +119,7 @@ export class SourceOriginalService {
           if (!(await this.reads.renewConsumer(request.id, reader))) throw unavailable();
           renewAt = Date.now() + 30_000;
         }
-        pinned = await this.reads.pinReady(assetId, request.id, reader);
+        pinned = await this.reads.pinReady(assetId, request.id, reader, proof);
         if (pinned) break;
         await setTimeout(1000, undefined, { signal: operation });
       }
@@ -127,7 +135,7 @@ export class SourceOriginalService {
     const check = async () => {
       if (closing) throw unavailable();
       await guard();
-      if (!(await this.reads.checkPinned(assetId, request.id, entry.cacheId, entry.leaseId, reader)))
+      if (!(await this.reads.checkPinned(assetId, request.id, entry.cacheId, entry.leaseId, reader, proof)))
         throw unavailable();
       await guard();
       if (closing) throw unavailable();

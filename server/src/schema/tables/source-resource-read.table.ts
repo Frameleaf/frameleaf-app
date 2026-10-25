@@ -42,13 +42,31 @@ export class SourceOriginalTable {
   name: 'source_resource_read_active_uq',
   columns: ['assetId', 'resourceId', 'scopeFingerprint', 'authorizationEpoch'],
   unique: true,
-  where: `state IN ('pending', 'claimed', 'delivering')`,
+  where: `state IN ('pending', 'claimed', 'delivering') AND "backupOperationId" IS NULL`,
+})
+@Index({
+  name: 'source_resource_read_backup_active_uq',
+  columns: [
+    'assetId',
+    'resourceId',
+    'scopeFingerprint',
+    'authorizationEpoch',
+    'backupOperationId',
+    'backupClaimTokenHash',
+  ],
+  unique: true,
+  where: `state IN ('pending', 'claimed', 'delivering') AND "backupOperationId" IS NOT NULL`,
 })
 @Check({
   name: 'source_resource_read_state_check',
   expression: `state IN ('pending','claimed','delivering','ready','unavailable')`,
 })
 @Check({ name: 'source_resource_read_epoch_check', expression: '"authorizationEpoch" > 0 AND "claimFence" >= 0' })
+@Check({
+  name: 'source_resource_read_backup_check',
+  expression:
+    '("backupOperationId" IS NULL AND "backupClaimTokenHash" IS NULL) OR ("backupOperationId" IS NOT NULL AND "backupClaimTokenHash" IS NOT NULL AND octet_length("backupClaimTokenHash")=32)',
+})
 @Check({
   name: 'source_resource_read_claim_check',
   expression: `("claimTokenHash" IS NULL OR octet_length("claimTokenHash") = 32)
@@ -68,6 +86,9 @@ export class SourceResourceReadTable {
   @Column({ type: 'integer' }) authorizationEpoch!: number;
   @Column({ default: 'pending' }) state!: Generated<'pending' | 'claimed' | 'delivering' | 'ready' | 'unavailable'>;
   @Column({ default: false }) consumerManaged!: Generated<boolean>;
+  // Retain the proof after operation deletion; absence revokes admission, never filesystem ownership.
+  @Column({ type: 'uuid', nullable: true }) backupOperationId!: string | null;
+  @Column({ type: 'bytea', nullable: true }) backupClaimTokenHash!: Buffer | null;
   @Column({ type: 'integer', default: 0 }) claimFence!: Generated<number>;
   @Column({ type: 'bytea', nullable: true }) claimTokenHash!: Buffer | null;
   @Column({ type: 'bytea', nullable: true }) claimCredentialHash!: Buffer | null;

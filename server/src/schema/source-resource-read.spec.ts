@@ -21,3 +21,11 @@ it('registers bounded cache ownership and explicit reader and waiting-consumer l
   expect(columns('source_resource_read').has('consumerManaged')).toBe(true);
   expect(columns('source_resource_read_consumer').has('expiresAt')).toBe(true);
 });
+
+it('retains paired backup-operation proof independently of media operation lifetime', () => {
+  new ImmichDatabase();
+  const table = schemaFromCode().tables.find(({ name }) => name === 'source_resource_read')!;
+  expect(table.columns.map(({ name }) => name)).toEqual(
+    expect.arrayContaining(['backupOperationId', 'backupClaimTokenHash']),
+  );
+});

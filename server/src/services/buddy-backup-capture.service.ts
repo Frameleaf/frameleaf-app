@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
@@ -17,6 +17,7 @@ import {
   SystemMetadataKey,
   UserMetadataKey,
 } from 'src/enum.js';
+import { AssetLocalEffectRepository, sameSourceEpoch } from 'src/repositories/asset-local-effect.repository.js';
 import { BuddyBackupFidelityRepository } from 'src/repositories/buddy-backup-fidelity.repository.js';
 import { BuddyBackupMetadataRepository } from 'src/repositories/buddy-backup-metadata.repository.js';
 import { BuddyBackupStudioRepository } from 'src/repositories/buddy-backup-studio.repository.js';
@@ -26,6 +27,7 @@ import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repo
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
 import {
   BUDDY_BLOCK_BYTES,
   BUDDY_UUID,
@@ -47,6 +49,11 @@ import {
 } from 'src/utils/buddy-backup-vault.js';
 import { type BuddyBootConfiguration, captureBuddyBootConfiguration } from 'src/utils/buddy-boot-configuration.js';
 import {
+  type BuddyReferenceOriginal,
+  readBuddyReferenceOriginals,
+  referenceOriginalPath,
+} from 'src/utils/buddy-reference-originals.js';
+import {
   CLOUD_BACKUP_MANIFEST_FORMAT,
   type CloudBackupManifest,
   type CloudBackupManifestFile,
@@ -57,13 +64,19 @@ import { beginCloudNativeWork } from 'src/utils/cloud-native-work.js';
 import { getDiskUsage } from 'src/utils/disk-usage.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { withDatabaseCleanup } from 'src/utils/execution-database.js';
-import { advanceExecutionProgress, assertExecutionActive, executionSignal } from 'src/utils/execution-signal.js';
+import {
+  advanceExecutionProgress,
+  assertExecutionActive,
+  executionSignal,
+  withExecutionCleanup,
+} from 'src/utils/execution-signal.js';
 import { TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 
 export type BuddyContent = { blocks: string[]; keyVersion: number; bytes: number };
 export type BuddyManifest = {
-  version: 1;
+  version: 1 | 2;
   vaultId: string;
   snapshotId: string;
   sequence: number;
@@ -72,6 +85,7 @@ export type BuddyManifest = {
   library: CloudBackupManifest;
   metadata?: BuddyMetadata;
   contents: Record<string, BuddyContent>;
+  referenceOriginals?: Record<string, BuddyReferenceOriginal>;
   assetLinks: Record<string, { livePhotoVideoId: string | null; libraryId: string | null; isExternal: boolean }>;
   assetFiles: Record<
     string,
@@ -121,6 +135,13 @@ const inside = (directory: string, path: string) => {
   return !child || (!child.startsWith(`..${sep}`) && child !== '..' && !child.startsWith(sep));
 };
 
+const captureStopUnconfirmed = (error: unknown) =>
+  buddyFileStopUnconfirmed(error) ||
+  (error instanceof Error &&
+    ['artifact_close_unconfirmed', 'source_reader_stop_unconfirmed', 'source_original_shutdown_unconfirmed'].includes(
+      error.message,
+    ));
+
 class BuddyCaptureRetainedError extends Error {
   constructor(cause: unknown) {
     super('Buddy capture files are still owned by unfinished work', { cause });
@@ -143,6 +164,9 @@ const dependencyPaths = sql<{ path: string }>`SELECT path FROM public.studio_pro
 
 @Injectable()
 export class BuddyBackupCaptureService {
+  @Inject(SourceOriginalService)
+  private sourceOriginalService!: SourceOriginalService;
+  private readonly sourceReaderOwnerId = randomUUID();
   constructor(
     private repository: BuddyBackupRepository,
     private backups: DatabaseBackupService,
@@ -222,6 +246,7 @@ export class BuddyBackupCaptureService {
 
   async capture(options: {
     runId: string;
+    claimToken: string;
     instanceId: string;
     sequence: number;
     previous: string | null;
@@ -234,7 +259,7 @@ export class BuddyBackupCaptureService {
     try {
       return await this.captureOwned(options);
     } catch (error) {
-      stopped = !buddyFileStopUnconfirmed(error);
+      stopped = !captureStopUnconfirmed(error);
       throw error;
     } finally {
       if (stopped) await close();
@@ -244,6 +269,7 @@ export class BuddyBackupCaptureService {
   private async captureOwned(options: Parameters<BuddyBackupCaptureService['capture']>[0]): Promise<BuddyCapture> {
     const previousCapture = await this.readCapture(options.runId);
     if (previousCapture) {
+      readBuddyReferenceOriginals(previousCapture.manifest);
       if (options.settings.includeDerived && previousCapture.derivedInventoryVersion !== 1)
         throw new Error('This interrupted Buddy capture predates complete derived-file inventory. Start a new backup.');
       return previousCapture;
@@ -286,6 +312,12 @@ export class BuddyBackupCaptureService {
     const hostRoot = await realpath(settings.directory);
     const sourceRoot = await realpath(dirname(this.repository.root()));
     const pinnedPaths = new Map<string, string>();
+    const references = new Map<string, BuddyReferenceOriginal>();
+    const referencedPaths = new Set<string>();
+    const backup = {
+      operationId: options.runId,
+      claimTokenHash: createHash('sha256').update(options.claimToken.toLowerCase()).digest(),
+    };
     const configurationFile = readAliasedEnv('FRAMELEAF_CONFIG_FILE');
     const configurationPaths = [
       ...new Set(
@@ -354,6 +386,96 @@ export class BuddyBackupCaptureService {
       }
     };
 
+    const captureReference = async (
+      binding: BuddyReferenceOriginal,
+      name: string,
+    ): Promise<CloudBackupManifestFile> => {
+      const { assetId, ownerId, reference } = binding.sourceEpoch;
+      const target = referenceOriginalPath(manifest.storageRoot, ownerId, assetId, name);
+      if (inside(hostRoot, target) || inside(sourceRoot, target))
+        throw new Error('A backup contains a Buddy vault or server identity files');
+      const authorize = async () => {
+        await options.checkpoint();
+        assertExecutionActive();
+        const live = await AssetLocalEffectRepository.sourceEpochs(this.repository.db, [assetId], backup);
+        if (live.length !== 1 || !sameSourceEpoch(live[0], binding.sourceEpoch))
+          throw new Error('Buddy source original changed or permission is unavailable');
+        await options.checkpoint();
+        assertExecutionActive();
+      };
+      await authorize();
+      const input = await this.sourceOriginalService.open(
+        assetId,
+        { kind: 'http', ownerId: this.sourceReaderOwnerId, readerId: randomUUID() },
+        authorize,
+        executionSignal(),
+        undefined,
+        { operationId: options.runId, claimToken: options.claimToken },
+      );
+      const blocks: string[] = [];
+      let bytes = 0;
+      const hash = createHash('sha256');
+      const save = async (piece: Buffer) => {
+        await authorize();
+        await input.check();
+        input.signal.throwIfAborted();
+        const receipt = await this.block(ring, piece, options.runId);
+        objects.set(receipt.id, receipt);
+        blocks.push(receipt.id);
+      };
+      let sha256: string;
+      try {
+        if (
+          input.resourceId !== reference.resourceId ||
+          input.resourceVersion !== reference.version ||
+          input.verifiedSha256 !== reference.sha256 ||
+          !Number.isSafeInteger(input.byteLength) ||
+          input.byteLength < 0
+        )
+          throw new Error('Buddy source original identity changed');
+        await input.check();
+        const buffer = Buffer.alloc(BUDDY_BLOCK_BYTES);
+        let used = 0;
+        for await (const chunk of input.stream) {
+          input.signal.throwIfAborted();
+          if (!Buffer.isBuffer(chunk)) throw new Error('Buddy source original is not binary');
+          bytes += chunk.length;
+          if (bytes > input.byteLength) throw new Error('Buddy source original byte count changed');
+          hash.update(chunk);
+          advanceExecutionProgress(chunk.length);
+          let offset = 0;
+          while (offset < chunk.length) {
+            const count = Math.min(buffer.length - used, chunk.length - offset);
+            chunk.copy(buffer, used, offset, offset + count);
+            offset += count;
+            used += count;
+            if (used === buffer.length) {
+              await save(buffer);
+              used = 0;
+            }
+          }
+        }
+        if (used) await save(buffer.subarray(0, used));
+        sha256 = hash.digest('hex');
+        if (bytes !== input.byteLength || sha256 !== reference.sha256)
+          throw new Error('Buddy source original bytes changed');
+        await input.check();
+        await authorize();
+        input.signal.throwIfAborted();
+      } finally {
+        await withExecutionCleanup(() => input.release());
+      }
+      await authorize();
+      manifest.contents[sha256] = { blocks, keyVersion: ring.current, bytes };
+      return {
+        role: 'original',
+        path: target,
+        sha256,
+        size: bytes,
+        mtime: null,
+      };
+    };
+
     await this.repository.db.connection().execute(async (connection) => {
       // ponytail: one short global barrier during inventory/pinning; copying and network transfer never hold it.
       let barrier = true;
@@ -418,6 +540,36 @@ export class BuddyBackupCaptureService {
                   ]
                 : []),
             ];
+            const referenced = await trx
+              .selectFrom('asset')
+              .select(['id', 'ownerId', 'originalPath'])
+              .where('status', 'in', [AssetStatus.Active, AssetStatus.Trashed])
+              .where('isOffline', '=', false)
+              .where(sql<boolean>`lower("originalPath") LIKE 'frameleaf-source:%'`)
+              .execute();
+            for (let offset = 0; offset < referenced.length; offset += 1000) {
+              const page = referenced.slice(offset, offset + 1000);
+              const epochs = new Map(
+                (
+                  await AssetLocalEffectRepository.sourceEpochs(
+                    trx,
+                    page.map((row) => row.id),
+                    backup,
+                  )
+                ).map((epoch) => [epoch.assetId, epoch]),
+              );
+              for (const row of page) {
+                const epoch = epochs.get(row.id);
+                if (!parseSourceOriginalPath(row.originalPath) || !epoch?.reference || epoch.ownerId !== row.ownerId)
+                  throw new Error('Buddy source original snapshot is unavailable');
+                references.set(row.id, {
+                  version: 1,
+                  sourcePath: row.originalPath,
+                  sourceEpoch: structuredClone({ ...epoch, reference: epoch.reference }),
+                });
+                referencedPaths.add(row.originalPath);
+              }
+            }
             const required = await sql<{ path: string }>`SELECT "originalPath" AS path FROM public.asset
           WHERE status IN (${AssetStatus.Active}, ${AssetStatus.Trashed})
           UNION SELECT f.path FROM public.asset_file f JOIN public.asset a ON a.id=f."assetId"
@@ -440,6 +592,7 @@ export class BuddyBackupCaptureService {
               ...[...required.rows, ...dependencies, ...derived].map((entry) => entry.path).filter(Boolean),
               ...configurationPaths,
             ])) {
+              if (referencedPaths.has(path)) continue;
               const canonical = await realpath(path).catch((error: NodeJS.ErrnoException) => {
                 if (error.code === 'ENOENT' && offline.has(path)) return null;
                 if (error.code === 'ENOENT' && derivedRoleByPath.has(path))
@@ -556,12 +709,26 @@ export class BuddyBackupCaptureService {
                   const original = originals.find((row) => row.id === asset.id);
                   if (!metadata || !original) throw new Error('Snapshot inventory is incomplete');
                   if (!present(asset.originalPath)) continue;
-                  const files = [
-                    await captureFile(asset.originalPath, 'original', {
+                  let originalFile: CloudBackupManifestFile;
+                  if (parseSourceOriginalPath(asset.originalPath)) {
+                    const binding = references.get(asset.id);
+                    if (
+                      !binding ||
+                      binding.sourcePath !== asset.originalPath ||
+                      binding.sourceEpoch.ownerId !== asset.ownerId
+                    )
+                      throw new Error('Buddy source original inventory changed');
+                    originalFile = await captureReference(binding, metadata.record.originalFileName);
+                    manifest.version = 2;
+                    (manifest.referenceOriginals ??= {})[asset.id] = binding;
+                  } else {
+                    if (references.has(asset.id)) throw new Error('Buddy source original inventory changed');
+                    originalFile = await captureFile(asset.originalPath, 'original', {
                       checksum: original.checksum,
                       algorithm: original.checksumAlgorithm,
-                    }),
-                  ];
+                    });
+                  }
+                  const files = [originalFile];
                   for (const file of asset.files)
                     if (present(file.path)) files.push(await captureFile(file.path, file.type));
                   for (const file of derivedByAsset.get(asset.id) ?? [])
@@ -644,7 +811,7 @@ export class BuddyBackupCaptureService {
               const database = await captureFile(dump, 'database', undefined, true);
               manifest.library.database = { key: basename(dump), sha256: database.sha256, size: database.size };
             } catch (error) {
-              dumpReadStopped = !buddyFileStopUnconfirmed(error);
+              dumpReadStopped = !captureStopUnconfirmed(error);
               throw error;
             } finally {
               if (dumpReadStopped) await rm(dump, { force: true });
@@ -655,6 +822,9 @@ export class BuddyBackupCaptureService {
       }
     });
 
+    if (references.size !== Object.keys(manifest.referenceOriginals ?? {}).length)
+      throw new Error('Buddy source original inventory is incomplete');
+    readBuddyReferenceOriginals(manifest);
     const encoded = Buffer.from(JSON.stringify(manifest));
     const manifestBlocks: string[] = [];
     for (let offset = 0; offset < encoded.length; offset += BUDDY_BLOCK_BYTES) {
@@ -682,7 +852,7 @@ export class BuddyBackupCaptureService {
     try {
       await this.releaseOwned(runId);
     } catch (error) {
-      stopped = !buddyFileStopUnconfirmed(error);
+      stopped = !captureStopUnconfirmed(error);
       throw error;
     } finally {
       if (stopped) await close();

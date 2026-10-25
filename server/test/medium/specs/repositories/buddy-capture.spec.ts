@@ -3,12 +3,14 @@ import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from '
 import { mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
+import { Readable } from 'node:stream';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { BuddySettingsSchema } from 'src/dtos/buddy-backup.dto.js';
 import {
   AlbumKind,
   AssetFileType,
   AssetPathType,
+  AssetStatus,
   AssetType,
   ChecksumAlgorithm,
   JobName,
@@ -23,10 +25,15 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BuddyBackupRepository, type BuddySettings } from 'src/repositories/buddy-backup.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { PhotoSourceRepository } from 'src/repositories/photo-source.repository.js';
 import { BUDDY_CAPTURE_LOCK, PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -121,8 +128,9 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     });
     return { ...source, asset };
   };
-  const options = (runId = randomUUID()) => ({
+  const options = (runId: string = randomUUID()) => ({
     runId,
+    claimToken: randomUUID(),
     instanceId: randomUUID(),
     sequence: 1,
     previous: null,
@@ -203,6 +211,131 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       .execute();
     return { video, person, duplicate, moment, thumbnail };
   };
+
+  it.each([AssetStatus.Active, AssetStatus.Trashed])(
+    'captures independent reference bytes with real snapshot and live backup authority (%s)',
+    async (status) => {
+      const session = await new SessionRepository(db).create({ userId: ownerId, token: randomBytes(32) });
+      const device = (await new DesktopDeviceRepository(db).enroll({
+        userId: ownerId,
+        installationId: randomUUID(),
+        publicKey: randomBytes(32).toString('base64'),
+        name: 'Synthetic computer',
+        platform: 'linux',
+        architecture: 'x86_64',
+        mode: 'client-worker',
+        state: 'awaiting-approval',
+      }))!;
+      const sources = new PhotoSourceRepository(db);
+      const authority = { ownerId, sessionId: session.id };
+      const source = await sources.create(authority, {
+        id: randomUUID(),
+        deviceId: device.id,
+        kind: 'folder',
+        mode: 'copy',
+        name: 'Synthetic reference',
+        scopeFingerprint: 'a'.repeat(64),
+      });
+      const run = await sources.run(authority, source.id, { id: randomUUID(), maxBytes: 100, maxItems: 1 });
+      const bytes = Buffer.from('independent synthetic original');
+      const sha256 = createHash('sha256').update(bytes).digest('hex');
+      const resource = await sources.plan(authority, source.id, run.id, {
+        id: randomUUID(),
+        resourceKey: 'b'.repeat(64),
+        version: 'c'.repeat(64),
+        sha256,
+        bytes: bytes.length,
+      });
+      const library = await new LibraryRepository(db).create({
+        ownerId,
+        name: 'Synthetic reference',
+        readOnly: true,
+        importPaths: [],
+        exclusionPatterns: [],
+      });
+      const sourcePath = `frameleaf-source://${source.id}/${resource.resourceKey}`;
+      const { asset } = await ctx.newAsset({
+        ownerId,
+        libraryId: library.id,
+        isExternal: true,
+        originalFileName: 'synthetic.jpg',
+        originalPath: sourcePath,
+        checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+        checksum: createHash('sha1').update(sourcePath).digest(),
+        status,
+        deletedAt: status === AssetStatus.Trashed ? new Date() : null,
+      });
+      await db
+        .updateTable('photo_source_resource')
+        .set({ assetId: asset.id, state: 'verified', verifiedAt: new Date() })
+        .where('id', '=', resource.id)
+        .execute();
+      await sql`UPDATE photo_source SET mode='reference' WHERE id=${source.id}::uuid`.execute(db);
+      await db
+        .insertInto('source_original')
+        .values({
+          assetId: asset.id,
+          resourceId: resource.id,
+          scopeFingerprint: source.scopeFingerprint,
+          authorizationEpoch: device.authorizationEpoch,
+        })
+        .execute();
+      await db.updateTable('user').set({ isAdmin: true }).where('id', '=', ownerId).execute();
+      const operation = await new MediaOperationRepository(db).create({
+        ownerId,
+        kind: MediaOperationKind.BuddyBackup,
+        destination: MediaOperationDestination.Local,
+        label: 'Synthetic backup',
+        snapshot: { task: 'backup' },
+        settings: {},
+      });
+      const input = options(operation.id);
+      await db
+        .updateTable('media_operation')
+        .set({
+          claimToken: input.claimToken,
+          claimExpiresAt: new Date(Date.now() + 60_000),
+          status: MediaOperationStatus.Rendering,
+        })
+        .where('id', '=', operation.id)
+        .execute();
+      const { capture } = fixture();
+      const release = vi.fn().mockResolvedValue(undefined);
+      Object.assign(capture, {
+        sourceOriginalService: {
+          open: async (
+            _id: string,
+            _reader: unknown,
+            authorize: () => Promise<void>,
+            _signal: unknown,
+            _max: unknown,
+            proof: unknown,
+          ) => {
+            expect(proof).toEqual({ operationId: operation.id, claimToken: input.claimToken });
+            await authorize();
+            return {
+              stream: Readable.from([bytes]),
+              signal: new AbortController().signal,
+              resourceId: resource.id,
+              resourceVersion: resource.version,
+              verifiedSha256: sha256,
+              byteLength: bytes.length,
+              check: authorize,
+              release,
+            };
+          },
+        },
+      });
+      const captured = await capture.capture(input);
+      expect(captured.manifest.version).toBe(2);
+      expect(captured.manifest.referenceOriginals?.[asset.id].sourcePath).toBe(sourcePath);
+      expect(captured.manifest.library.assets[asset.id].files[0].path).toContain('/upload/');
+      expect(await restoreBytes(captured, input.runId, sha256)).toEqual(bytes);
+      expect((await references(input.runId)).some((row) => row.path === sourcePath)).toBe(false);
+      expect(release).toHaveBeenCalledTimes(1);
+      await capture.release(input.runId);
+    },
+  );
 
   it('leaves out an offline item whose original is gone instead of failing the whole capture', async () => {
     const kept = await original('kept.jpg');

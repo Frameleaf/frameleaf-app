@@ -108,6 +108,7 @@ it('keeps a job input pinned through deferred adoption, then releases after sett
       jobId: context.claim.id,
       attemptToken: context.claim.token,
     }),
+    undefined,
   );
   expect(Buffer.concat(await Array.fromAsync(result.stream))).toEqual(bytes);
   await result.settled;
@@ -229,7 +230,7 @@ it('forwards a consumer byte ceiling before enqueueing provider work', async () 
   await expect(service.open(assetId, reader, authorize, undefined, 512_000)).rejects.toThrow(
     'source_original_unavailable',
   );
-  expect(reads.enqueue).toHaveBeenCalledWith(assetId, 512_000, reader);
+  expect(reads.enqueue).toHaveBeenCalledWith(assetId, 512_000, reader, undefined);
   expect(reads.pinReady).not.toHaveBeenCalled();
 });
 
@@ -390,4 +391,29 @@ it('keeps actual failed job artifact acquisition from recording a stopped attemp
   );
   expect(context.executorStopUnconfirmed).toBe(true);
   expect(cache.release).not.toHaveBeenCalled();
+});
+
+it('carries the real backup claim as a token hash through admission, pin and continuing checks', async () => {
+  const backup = { operationId: randomUUID(), claimToken: randomUUID() };
+  const proof = {
+    operationId: backup.operationId,
+    claimTokenHash: createHash('sha256').update(backup.claimToken).digest(),
+  };
+  const input = await service.open(assetId, reader, authorize, undefined, undefined, backup);
+  expect(reads.enqueue).toHaveBeenCalledWith(assetId, undefined, reader, proof);
+  expect(reads.pinReady).toHaveBeenCalledWith(assetId, request.id, reader, proof);
+  await input.check();
+  expect(reads.checkPinned).toHaveBeenCalledWith(assetId, request.id, pinned.cacheId, pinned.leaseId, reader, proof);
+  await input.release();
+});
+
+it('rejects backup authority on an ordinary queue reader before requesting provider work', async () => {
+  const jobReader = { ...reader, kind: 'job' as const, jobId: randomUUID(), attemptToken: randomUUID() };
+  await expect(
+    service.open(assetId, jobReader, authorize, undefined, undefined, {
+      operationId: randomUUID(),
+      claimToken: randomUUID(),
+    }),
+  ).rejects.toThrow('source_backup_reader_required');
+  expect(reads.enqueue).not.toHaveBeenCalled();
 });

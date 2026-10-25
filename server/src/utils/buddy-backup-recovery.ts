@@ -5,6 +5,7 @@ import { lstat, open, readFile, readdir, realpath, rename, rm } from 'node:fs/pr
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { BUDDY_ID, BUDDY_UUID } from './buddy-backup-crypto.ts';
 import { createBuddyDirectory, flushBuddyDirectory, writeBuddyFile } from './buddy-backup-vault.ts';
+import { readBuddyReferenceOriginals } from './buddy-reference-originals.ts';
 import type { CloudBackupManifestFile } from './cloud-backup.ts';
 import type { BuddyManifest } from '../services/buddy-backup-capture.service.ts';
 
@@ -108,7 +109,7 @@ export const readBuddyRecovery = async (root: string, id: string): Promise<Buddy
     plan.version !== 1 ||
     !['server', 'settings'].includes(plan.scope) ||
     !['keep', 'replace'].includes(plan.mode) ||
-    plan.manifest?.version !== 1 ||
+    (plan.manifest?.version !== 1 && plan.manifest?.version !== 2) ||
     !Array.isArray(plan.files) ||
     plan.files.length > 1_000_000 ||
     plan.files.some(
@@ -121,6 +122,15 @@ export const readBuddyRecovery = async (root: string, id: string): Promise<Buddy
     )
   )
     throw new Error('Invalid prepared recovery');
+  const references = readBuddyReferenceOriginals(plan.manifest);
+  if (plan.scope === 'server') {
+    const files = new Map(plan.files.map((file) => [file.path, file]));
+    for (const id of Object.keys(references)) {
+      const original = plan.manifest.library.assets[id].files.find((file) => file.role === 'original')!;
+      const file = files.get(original.path);
+      if (file?.sha256 !== original.sha256 || file.size !== original.size) throw new Error('Invalid prepared recovery');
+    }
+  }
   return plan;
 };
 

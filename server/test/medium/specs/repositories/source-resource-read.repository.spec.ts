@@ -6,16 +6,28 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import type { DB } from 'src/schema/index.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { AssetStatus, ChecksumAlgorithm } from 'src/enum.js';
+import {
+  AssetStatus,
+  ChecksumAlgorithm,
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
+} from 'src/enum.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
+import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { PhotoSourceRepository } from 'src/repositories/photo-source.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SourceResourceCacheRepository } from 'src/repositories/source-resource-cache.repository.js';
 import { SourceResourceReadRepository } from 'src/repositories/source-resource-read.repository.js';
 import { SourceResourceRepository } from 'src/repositories/source-resource.repository.js';
+import {
+  down as removeBackupAuthority,
+  up as addBackupAuthority,
+} from 'src/schema/migrations/2100000003015-SourceBackupReadAuthority.js';
 import { BaseService } from 'src/services/base.service.js';
 import { SourceOriginalService } from 'src/services/source-original.service.js';
 import { SourceResourceDeliveryService } from 'src/services/source-resource-delivery.service.js';
@@ -1327,3 +1339,268 @@ it('revokes shared provider work only after its final original consumer disconne
     storage.mockRestore();
   }
 });
+
+const backupFixture = async () => {
+  const f = await fixture();
+  await db
+    .updateTable('asset')
+    .set({ status: AssetStatus.Trashed, deletedAt: new Date() })
+    .where('id', '=', f.asset.id)
+    .execute();
+  await db.updateTable('user').set({ isAdmin: true }).where('id', '=', f.user.id).execute();
+  const operation = await new MediaOperationRepository(db).create({
+    ownerId: f.user.id,
+    kind: MediaOperationKind.BuddyBackup,
+    destination: MediaOperationDestination.Local,
+    label: 'Synthetic independent-original backup',
+    snapshot: { task: 'backup' },
+    settings: {},
+  });
+  const token = randomUUID();
+  await db
+    .updateTable('media_operation')
+    .set({ claimToken: token, claimExpiresAt: new Date(Date.now() + 60_000), status: MediaOperationStatus.Rendering })
+    .where('id', '=', operation.id)
+    .execute();
+  const reader = { kind: 'http' as const, readerId: randomUUID(), ownerId: randomUUID() };
+  const backup = { operationId: operation.id, claimTokenHash: createHash('sha256').update(token).digest() };
+  return { ...f, operation, backup, reader };
+};
+
+it.each([
+  'expired',
+  'cancelled',
+  'paused',
+  'replaced',
+  'verify',
+  'not-admin',
+  'deleted-admin',
+  'wrong-kind',
+  'wrong-operation',
+  'wrong-token',
+  'source-revoked',
+] as const)('refuses trashed-original backup admission with %s authority', async (change) => {
+  const f = await backupFixture();
+  switch (change) {
+    case 'expired': {
+      await db
+        .updateTable('media_operation')
+        .set({ claimExpiresAt: new Date(0) })
+        .where('id', '=', f.operation.id)
+        .execute();
+      break;
+    }
+    case 'cancelled': {
+      await db
+        .updateTable('media_operation')
+        .set({ cancelRequestedAt: new Date() })
+        .where('id', '=', f.operation.id)
+        .execute();
+      break;
+    }
+    case 'paused': {
+      await db
+        .updateTable('media_operation')
+        .set({ pauseRequestedAt: new Date() })
+        .where('id', '=', f.operation.id)
+        .execute();
+      break;
+    }
+    case 'replaced': {
+      await db
+        .updateTable('media_operation')
+        .set({ claimToken: randomUUID() })
+        .where('id', '=', f.operation.id)
+        .execute();
+      break;
+    }
+    case 'verify': {
+      await db
+        .updateTable('media_operation')
+        .set({ snapshot: { task: 'verify' } })
+        .where('id', '=', f.operation.id)
+        .execute();
+      break;
+    }
+    case 'not-admin': {
+      await db.updateTable('user').set({ isAdmin: false }).where('id', '=', f.user.id).execute();
+      break;
+    }
+    case 'deleted-admin': {
+      await db.updateTable('user').set({ deletedAt: new Date() }).where('id', '=', f.user.id).execute();
+      break;
+    }
+    case 'wrong-kind': {
+      await db
+        .updateTable('media_operation')
+        .set({ kind: MediaOperationKind.BuddyRestore })
+        .where('id', '=', f.operation.id)
+        .execute();
+      break;
+    }
+    case 'wrong-operation': {
+      f.backup.operationId = randomUUID();
+      break;
+    }
+    case 'wrong-token': {
+      f.backup.claimTokenHash = randomBytes(32);
+      break;
+    }
+    case 'source-revoked': {
+      await db.updateTable('photo_source').set({ revokedAt: new Date() }).where('id', '=', f.source.id).execute();
+      break;
+    }
+  }
+  expect(await f.sut.enqueue(f.asset.id, 100, f.reader, f.backup)).toBeUndefined();
+  expect(await AssetLocalEffectRepository.sourceEpochs(db, [f.asset.id], f.backup)).toEqual([]);
+  expect(await db.selectFrom('source_resource_read').select('id').where('assetId', '=', f.asset.id).execute()).toEqual(
+    [],
+  );
+});
+
+it('admits a trashed original only for the live claimed backup and fences provider work on cancellation', async () => {
+  const f = await backupFixture();
+  expect(await f.sut.enqueue(f.asset.id, 100, f.reader)).toBeUndefined();
+  expect(await AssetLocalEffectRepository.sourceEpochs(db, [f.asset.id])).toEqual([]);
+  expect(await AssetLocalEffectRepository.sourceEpochs(db, [f.asset.id], f.backup)).toEqual([
+    expect.objectContaining({ assetId: f.asset.id, reference: expect.objectContaining({ resourceId: f.resource.id }) }),
+  ]);
+  const request = await f.sut.enqueue(f.asset.id, 100, f.reader, f.backup);
+  expect(request).toBeDefined();
+  const token = randomBytes(32);
+  const claim = (await f.sut.claim(f.grant, token, 100))!;
+  expect(claim.id).toBe(request!.id);
+  expect(await f.sut.heartbeat(f.grant, claim.id, claim.claimFence, token)).toBeDefined();
+  await db
+    .updateTable('media_operation')
+    .set({ cancelRequestedAt: new Date() })
+    .where('id', '=', f.operation.id)
+    .execute();
+  expect(await f.sut.beginDelivery(f.grant, claim.id, claim.claimFence, token)).toBeUndefined();
+  expect(await f.sut.enqueue(f.asset.id, 100, f.reader, f.backup)).toBeUndefined();
+  expect(
+    (await db.selectFrom('asset').select('status').where('id', '=', f.asset.id).executeTakeFirstOrThrow()).status,
+  ).toBe(AssetStatus.Trashed);
+});
+
+it.each([false, true])(
+  'pins backup bytes without exposing trash; authority expires during publication=%s',
+  async (expiresDuringPublish) => {
+    const f = await backupFixture();
+    const request = (await f.sut.enqueue(f.asset.id, 100, f.reader, f.backup))!;
+    const token = randomBytes(32);
+    const claim = (await f.sut.claim(f.grant, token, 100))!;
+    const original = (await f.sut.beginDelivery(f.grant, claim.id, claim.claimFence, token))!;
+    const cache = new SourceResourceCacheRepository(db);
+    const writer = { id: randomUUID(), ownerId: randomUUID() };
+    const disk = (await cache.inspectDisk(cacheFolder))!;
+    const entry = (await db
+      .transaction()
+      .execute((tx) => cache.reserve(tx, original, Number.MAX_SAFE_INTEGER, writer, disk)))!;
+    if (entry === 'snapshot-changed') throw new Error('Unexpected fixture race');
+    const completed = await f.sut.completeDelivery(f.grant, claim.id, claim.claimFence, token, original, async (tx) => {
+      const result = await cache.publishVerified(tx, entry.id, writer, {
+        fileName: `${randomUUID()}.artifact`,
+        bytes: original.bytes,
+        sha256: Buffer.from(original.sha256, 'hex'),
+      });
+      if (expiresDuringPublish)
+        await tx
+          .updateTable('media_operation')
+          .set({ claimExpiresAt: new Date(0) })
+          .where('id', '=', f.operation.id)
+          .execute();
+      return result;
+    });
+    if (expiresDuringPublish) {
+      expect(completed).toBeUndefined();
+      expect(
+        (
+          await db
+            .selectFrom('source_resource_cache')
+            .select('state')
+            .where('id', '=', entry.id)
+            .executeTakeFirstOrThrow()
+        ).state,
+      ).toBe('writing');
+      expect(await f.sut.pinReady(f.asset.id, request.id, f.reader, f.backup)).toBeUndefined();
+      return;
+    }
+    expect(completed).toBe(true);
+    expect(await f.sut.pinReady(f.asset.id, request.id, f.reader)).toBeUndefined();
+    const pinned = (await f.sut.pinReady(f.asset.id, request.id, f.reader, f.backup))!;
+    expect(pinned?.cacheId).toBe(entry.id);
+    expect(await f.sut.checkPinned(f.asset.id, request.id, entry.id, pinned.leaseId, f.reader, f.backup)).toBe(true);
+    expect(await f.sut.checkPinned(f.asset.id, request.id, entry.id, pinned.leaseId, f.reader)).toBe(false);
+    await db
+      .updateTable('media_operation')
+      .set({ claimToken: randomUUID() })
+      .where('id', '=', f.operation.id)
+      .execute();
+    expect(await f.sut.checkPinned(f.asset.id, request.id, entry.id, pinned.leaseId, f.reader, f.backup)).toBe(false);
+    expect(
+      await db
+        .selectFrom('source_resource_cache_lease')
+        .select('id')
+        .where('id', '=', pinned.leaseId)
+        .executeTakeFirst(),
+    ).toBeDefined();
+    expect(await cache.claimRemoval(entry.id)).toBeUndefined();
+  },
+);
+
+it('preserves backup authority on downgrade and validates the proof pair', async () => {
+  const f = await backupFixture();
+  const request = (await f.sut.enqueue(f.asset.id, 100, f.reader, f.backup))!;
+  await expect(db.transaction().execute((tx) => removeBackupAuthority(tx))).rejects.toThrow(
+    'Cannot discard source backup read authority',
+  );
+  await expect(
+    db.transaction().execute((tx) =>
+      tx
+        .updateTable('source_resource_read')
+        .set({ backupClaimTokenHash: Buffer.alloc(31) })
+        .where('id', '=', request.id)
+        .execute(),
+    ),
+  ).rejects.toThrow('source_resource_read_backup_check');
+  const clean = await getKyselyDB();
+  try {
+    await clean.transaction().execute((tx) => removeBackupAuthority(tx));
+    await addBackupAuthority(clean);
+    expect(
+      await clean.selectFrom('source_resource_read').select(['backupOperationId', 'backupClaimTokenHash']).execute(),
+    ).toEqual([]);
+  } finally {
+    await clean.destroy();
+  }
+});
+
+it.each(['ordinary-first', 'backup-first'])(
+  'keeps ordinary delivery independent of an expired backup (%s)',
+  async (order) => {
+    const f = await backupFixture();
+    await db
+      .updateTable('asset')
+      .set({ status: AssetStatus.Active, deletedAt: null })
+      .where('id', '=', f.asset.id)
+      .execute();
+    const reader = { kind: 'http' as const, readerId: randomUUID(), ownerId: randomUUID() };
+    const ordinary = () => f.sut.enqueue(f.asset.id, 100, reader);
+    const backup = () => f.sut.enqueue(f.asset.id, 100, f.reader, f.backup);
+    const [first, second] =
+      order === 'ordinary-first' ? [await ordinary(), await backup()] : [await backup(), await ordinary()];
+    expect(first!.id).not.toBe(second!.id);
+    const normal = order === 'ordinary-first' ? first! : second!;
+    await db
+      .updateTable('media_operation')
+      .set({ claimExpiresAt: new Date(0) })
+      .where('id', '=', f.operation.id)
+      .execute();
+    const token = randomBytes(32);
+    const claimed = (await f.sut.claim(f.grant, token, 100))!;
+    expect(claimed.id).toBe(normal.id);
+    expect(await f.sut.heartbeat(f.grant, claimed.id, claimed.claimFence, token)).toBeDefined();
+    expect(await f.sut.beginDelivery(f.grant, claimed.id, claimed.claimFence, token)).toBeDefined();
+  },
+);

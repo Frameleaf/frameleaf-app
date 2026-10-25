@@ -777,6 +777,7 @@ export class BuddyBackupService {
       } else {
         const captured = await this.capture.capture({
           runId: id,
+          claimToken: token,
           instanceId: (await this.peer.identity()).instanceId,
           sequence: (snapshots[0]?.sequence ?? 0) + 1,
           previous: snapshots[0]?.id ?? null,

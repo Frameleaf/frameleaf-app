@@ -11,6 +11,7 @@ import {
   createBuddyDirectory,
   flushBuddyDirectory,
 } from './buddy-backup-vault.ts';
+import { readBuddyReferenceOriginals } from './buddy-reference-originals.ts';
 import type { BuddyManifest } from '../services/buddy-backup-capture.service.ts';
 
 /** Both peer recovery and offline recovery use this authenticated reader; it has no Cloud dependency. */
@@ -72,7 +73,7 @@ export class BuddyBackupReader {
     }
     const manifest = JSON.parse(Buffer.concat(chunks).toString()) as BuddyManifest;
     if (
-      manifest.version !== 1 ||
+      (manifest.version !== 1 && manifest.version !== 2) ||
       manifest.vaultId !== this.ring.vaultId ||
       manifest.snapshotId !== snapshot.id ||
       manifest.sequence !== snapshot.sequence ||
@@ -82,6 +83,7 @@ export class BuddyBackupReader {
       !manifest.contents
     )
       throw new Error('Buddy snapshot manifest binding failed');
+    readBuddyReferenceOriginals(manifest);
     if (manifest.metadata !== undefined) {
       manifest.metadata = readBuddyMetadata(manifest.metadata);
     }
