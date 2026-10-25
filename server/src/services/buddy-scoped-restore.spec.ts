@@ -76,6 +76,8 @@ it.each([
         Promise.resolve({ [assetId]: { originalPath: files[0].path, isExternal: false } }),
     },
     operations: {
+      acknowledgeCancel: () => Promise.resolve(false),
+      settlePause: () => Promise.resolve(false),
       getOfKind: () => Promise.resolve(operation),
       reportProgress: () => Promise.resolve(true),
       setBulkResult: () => Promise.resolve({ cancelRequestedAt: null, pauseRequestedAt: null }),
@@ -181,6 +183,8 @@ it.each([
       getOwnerRestoreIdentities: () => Promise.resolve({ [assetId]: { originalPath: original, isExternal: true } }),
     },
     operations: {
+      acknowledgeCancel: () => Promise.resolve(false),
+      settlePause: () => Promise.resolve(false),
       getOfKind: () => Promise.resolve(operation),
       reportProgress: () => Promise.resolve(true),
       setBulkResult: () => Promise.resolve({ cancelRequestedAt: null, pauseRequestedAt: null }),
@@ -372,8 +376,9 @@ it('retains a terminal restore diagnostic without exposing exception text or det
   const fail = vi.fn().mockResolvedValue('failed');
   const service = Object.assign(Object.create(BuddyBackupRestoreService.prototype), {
     logger,
+    beginRestoreWork: () => Promise.resolve(() => Promise.resolve()),
     binding: () => Promise.reject(error),
-    operations: { fail },
+    operations: { fail, acknowledgeCancel: () => Promise.resolve(false), settlePause: () => Promise.resolve(false) },
   });
   await service.runClaim({ id: 'operation', snapshot: {} }, 'claim');
   expect(logger.error).toHaveBeenCalledExactlyOnceWith(
@@ -403,8 +408,14 @@ it.each(['direct', 'cause'] as const)(
     const logger = { error: vi.fn(), warn: vi.fn() };
     const service = Object.assign(Object.create(BuddyBackupRestoreService.prototype), {
       logger,
+      beginRestoreWork: () => Promise.resolve(() => Promise.resolve()),
       binding: () => Promise.reject(error),
-      operations: { fail, requeue },
+      operations: {
+        fail,
+        requeue,
+        acknowledgeCancel: () => Promise.resolve(false),
+        settlePause: () => Promise.resolve(false),
+      },
     });
     const diagnostic = 'BUDDY_RESTORE_DIAGNOSTIC {"category":"coded_error","code":"55P03","status":null}';
     await service.runClaim({ id: 'operation', snapshot: {}, attempt: 2 }, 'claim');
@@ -662,8 +673,9 @@ describe('a library restore on a fresh replacement server (FL-508)', () => {
     const fail = vi.fn().mockResolvedValue('failed');
     const service = Object.assign(Object.create(BuddyBackupRestoreService.prototype), {
       logger,
+      beginRestoreWork: () => Promise.resolve(() => Promise.resolve()),
       binding: () => Promise.reject(error),
-      operations: { fail },
+      operations: { fail, acknowledgeCancel: () => Promise.resolve(false), settlePause: () => Promise.resolve(false) },
     });
     await service.runClaim({ id: 'operation', snapshot: {} }, 'claim');
     expect(logger.error).toHaveBeenCalledExactlyOnceWith(

@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { NoResultError, type Transaction, sql } from 'kysely';
 import { createHash } from 'node:crypto';
-import { lstat, readFile, readdir, rm } from 'node:fs/promises';
+import { lstat, opendir, readFile, readdir, rm } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
 import { coerce, gt } from 'semver';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -63,14 +63,19 @@ import { BUDDY_UUID } from 'src/utils/buddy-backup-crypto.js';
 import { buddyFidelityFiles, buddyRestoreChecksum, readBuddyAssetFidelity } from 'src/utils/buddy-backup-fidelity.js';
 import { assertBuddyAlbumPlan, buddyLibraryForOwner, selectBuddyAlbumIds } from 'src/utils/buddy-backup-metadata.js';
 import { BuddyBackupReader } from 'src/utils/buddy-backup-reader.js';
-import { buddyFileHash } from 'src/utils/buddy-backup-recovery.js';
+import { buddyFileHash, withBuddyRecoveryWork } from 'src/utils/buddy-backup-recovery.js';
 import {
   buddyStudioAssetIds,
   buddyStudioFiles,
   buddyStudioProjectIds,
   readBuddyStudioProject,
 } from 'src/utils/buddy-backup-studio.js';
-import { type BuddySignedSnapshot, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
+import {
+  type BuddySignedSnapshot,
+  buddyFileStopUnconfirmed,
+  createBuddyDirectory,
+  writeBuddyFile,
+} from 'src/utils/buddy-backup-vault.js';
 import {
   assertOwnerRestoreFile,
   assertOwnerRestorePath,
@@ -82,6 +87,7 @@ import {
   readBackupAssetRecord,
 } from 'src/utils/cloud-backup-owner-restore.js';
 import { ownerBackupHistoryPage } from 'src/utils/cloud-backup-owner.js';
+import { beginCloudNativeWork, cloudNativeWorkStopped } from 'src/utils/cloud-native-work.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { getDiskUsage } from 'src/utils/disk-usage.js';
 import { advanceExecutionProgress, assertExecutionActive, executionSignal } from 'src/utils/execution-signal.js';
@@ -223,32 +229,36 @@ export class BuddyBackupRestoreService {
     const job = operation!.snapshot as unknown as RestoreJob;
     await this.binding(job);
     if (!job.admin || !['server', 'settings'].includes(job.request.scope)) throw new ForbiddenException();
-    const filename =
-      job.request.scope === 'server'
-        ? await this.recovery.prepare(id, async () => {
-            await this.administrator(auth);
-            await this.binding(job);
-            const latest = await this.operations.getOfKind(id, MediaOperationKind.BuddyRestore);
-            if (
-              !latest ||
-              latest.ownerId !== auth.user.id ||
-              latest.status !== MediaOperationStatus.Completed ||
-              latest.result?.recoveryId !== id ||
-              latest.result?.phase !== 'ready-to-apply'
-            )
-              throw new ForbiddenException();
-          })
-        : undefined;
-    return this.maintenance.startMaintenance(
-      {
-        action: MaintenanceAction.RestoreDatabase,
-        buddyRecoveryId: id,
-        restoreBackupFilename: filename,
-        keepSafetyBackup: true,
-        reason: 'Restoring Buddy Backup',
-      },
-      current.user.email,
-    );
+    await this.assertOnlineRestore();
+    const assertApply = async () => {
+      await this.administrator(auth);
+      await this.binding(job);
+      const latest = await this.operations.getOfKind(id, MediaOperationKind.BuddyRestore);
+      if (
+        !latest ||
+        latest.ownerId !== auth.user.id ||
+        latest.status !== MediaOperationStatus.Completed ||
+        latest.result?.recoveryId !== id ||
+        latest.result?.phase !== 'ready-to-apply'
+      )
+        throw new ForbiddenException();
+    };
+    return withBuddyRecoveryWork(this.repository.root(), id, async () => {
+      await this.assertOnlineRestore();
+      await assertApply();
+      const filename = job.request.scope === 'server' ? await this.recovery.prepare(id, assertApply) : undefined;
+      await assertApply();
+      return this.maintenance.startMaintenance(
+        {
+          action: MaintenanceAction.RestoreDatabase,
+          buddyRecoveryId: id,
+          restoreBackupFilename: filename,
+          keepSafetyBackup: true,
+          reason: 'Restoring Buddy Backup',
+        },
+        current.user.email,
+      );
+    });
   }
 
   async open(snapshotId: string) {
@@ -1006,6 +1016,57 @@ export class BuddyBackupRestoreService {
     );
   }
 
+  private async assertOnlineRestore() {
+    const maintenance = await lstat(join(this.repository.root(), 'recovery-active.json')).catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error;
+        return null;
+      },
+    );
+    if (maintenance) throw new Error('buddy_restore_maintenance_active');
+  }
+
+  private async beginRestoreWork(operationId: string) {
+    if (!BUDDY_UUID.test(operationId)) throw new Error('Invalid restore operation identity');
+    await this.assertOnlineRestore();
+    const root = join(this.repository.root(), 'restores');
+    await createBuddyDirectory(root);
+    const directory = await lstat(root);
+    if (!directory.isDirectory() || directory.isSymbolicLink()) throw new Error('cloud_ml_native_work_retained');
+    const shared = join(root, 'producer');
+    await createBuddyDirectory(shared);
+    const closeShared = await beginCloudNativeWork(shared).catch((error: unknown) => {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')
+        throw new Error('cloud_ml_native_work_retained', { cause: error });
+      throw error;
+    });
+    let closeOperation: () => Promise<void>;
+    try {
+      await this.assertOnlineRestore();
+      // Legacy operation markers also remain authoritative after SQL rewind or a new confirmation.
+      let entries = 0;
+      for await (const entry of await opendir(root, { bufferSize: 8 })) {
+        assertExecutionActive();
+        // shortcut: Refuse more than 2048 retained records; use indexed closure receipts for larger histories.
+        if (++entries > 2048) throw new Error('buddy_restore_history_limit');
+        if (BUDDY_UUID.test(entry.name) && !(await cloudNativeWorkStopped(join(root, entry.name))))
+          throw new Error('cloud_ml_native_work_retained');
+      }
+      const directory = join(root, operationId);
+      await createBuddyDirectory(directory);
+      closeOperation = await beginCloudNativeWork(directory);
+    } catch (error) {
+      await closeShared();
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')
+        throw new Error('cloud_ml_native_work_retained', { cause: error });
+      throw error;
+    }
+    return async () => {
+      await closeOperation();
+      await closeShared();
+    };
+  }
+
   private async drainRestoreJobs() {
     const root = join(this.repository.root(), 'restores');
     const names = (path: string) =>
@@ -1020,16 +1081,23 @@ export class BuddyBackupRestoreService {
       if (files.length === 0) continue;
       const operation = await this.operations.getOfKind(id, MediaOperationKind.BuddyRestore);
       if (operation?.status !== MediaOperationStatus.Completed || operation.claimToken) continue;
-      for (const file of files) {
-        if (!file.endsWith('.json') || !BUDDY_UUID.test(file.slice(0, -5))) continue;
-        const path = join(directory, file);
-        const pending = await readFile(path, 'utf8').catch((error: NodeJS.ErrnoException) => {
-          if (error.code !== 'ENOENT') throw error;
-          return '[]';
-        });
-        await this.jobs.queueAll(JSON.parse(pending));
-        // At-least-once dispatch: a crash before unlink may replay these idempotent metadata jobs.
-        await rm(path, { force: true });
+      const ownerDirectory = join(root, id);
+      if (!(await cloudNativeWorkStopped(ownerDirectory))) continue;
+      const close = await this.beginRestoreWork(id);
+      try {
+        for (const file of files) {
+          if (!file.endsWith('.json') || !BUDDY_UUID.test(file.slice(0, -5))) continue;
+          const path = join(directory, file);
+          const pending = await readFile(path, 'utf8').catch((error: NodeJS.ErrnoException) => {
+            if (error.code !== 'ENOENT') throw error;
+            return '[]';
+          });
+          await this.jobs.queueAll(JSON.parse(pending));
+          // At-least-once dispatch: a crash before unlink may replay these idempotent metadata jobs.
+          await rm(path, { force: true });
+        }
+      } finally {
+        await close();
       }
     }
   }
@@ -1046,7 +1114,12 @@ export class BuddyBackupRestoreService {
 
   private async runClaim(operation: MediaOperation, token: string) {
     const job = operation.snapshot as unknown as RestoreJob;
+    let closeWork: (() => Promise<void>) | undefined;
+    let ownedWork = false;
+    let stopped = true;
     try {
+      closeWork = await this.beginRestoreWork(operation.id);
+      ownedWork = true;
       await this.binding(job);
       const { reader, manifest } = await this.open(job.request.snapshotId);
       if (this.fingerprint(manifest) !== job.manifestHash) throw new Error('Buddy restore manifest changed');
@@ -1695,18 +1768,25 @@ export class BuddyBackupRestoreService {
           throw new RestoreStopped();
       }
       await checkpoint();
+      await closeWork();
+      closeWork = undefined;
       await this.operations.beginValidation(operation.id, token, true);
       if (!(await this.operations.complete(operation.id, token, { resultAssetId: null }, undefined, true)))
         throw new RestoreStopped();
       await this.drainRestoreJobs().catch(() => this.logger.warn('Buddy restore metadata jobs are waiting for retry.'));
     } catch (caughtError) {
-      const error = executionSignal()?.aborted ? executionSignal()!.reason : caughtError;
+      stopped = !buddyFileStopUnconfirmed(caughtError);
+      const error = !stopped ? caughtError : executionSignal()?.aborted ? executionSignal()!.reason : caughtError;
       if (await settleOperationStop(this.operations, operation, token)) return;
+      if (
+        stopped &&
+        ownedWork &&
+        ((await this.operations.acknowledgeCancel(operation.id, token, { released: true })) ||
+          (await this.operations.settlePause(operation.id, token)))
+      )
+        return;
       if (error instanceof RestoreStopped) {
-        const current = await this.operations.getOfKind(operation.id, MediaOperationKind.BuddyRestore);
-        if (current?.cancelRequestedAt)
-          await this.operations.acknowledgeCancel(operation.id, token, { released: true });
-        else await this.operations.requeue(operation.id, token, { delayMs: 30_000, returnAttempt: true });
+        await this.operations.requeue(operation.id, token, { delayMs: 30_000, returnAttempt: true });
       } else if (
         error instanceof BuddyPeerUnavailable ||
         (error instanceof FrameleafCloudError && [401, 403, 429, 507].includes(error.status ?? 0))
@@ -1729,6 +1809,10 @@ export class BuddyBackupRestoreService {
       else {
         // Only fixed categories enter retained CI diagnostics; error text can contain keys, paths or identities.
         const invariants: Record<string, string> = {
+          cloud_ml_native_work_retained: 'producer_retained',
+          buddy_restore_maintenance_active: 'maintenance_active',
+          buddy_restore_history_limit: 'producer_history_limit',
+          buddy_file_close_unconfirmed: 'producer_stop_unconfirmed',
           'Buddy restore key binding changed': 'key_binding',
           'Buddy restore album selection unavailable': 'album_selection',
           'Buddy restore manifest changed': 'manifest_changed',
@@ -1809,12 +1893,27 @@ export class BuddyBackupRestoreService {
                       ? 'unexpected'
                       : 'coded_error';
         this.logger.error(`BUDDY_RESTORE_DIAGNOSTIC ${JSON.stringify({ category, code, status })}`);
+        const producerRetained = error instanceof Error && error.message === 'cloud_ml_native_work_retained';
+        const historyLimit = error instanceof Error && error.message === 'buddy_restore_history_limit';
+        const maintenanceActive = error instanceof Error && error.message === 'buddy_restore_maintenance_active';
         await this.operations.fail(
           operation.id,
           token,
           {
-            error: 'Restore stopped. Check your PIN session, mounts, recovery kit, and backup integrity.',
-            errorCode: 'buddy_restore_failed',
+            error: producerRetained
+              ? 'A previous restore has not confirmed it stopped. Resolve that restore before starting another.'
+              : maintenanceActive
+                ? 'Server recovery is applying in maintenance mode. Wait for maintenance to finish.'
+                : historyLimit
+                  ? 'Restore history is too large to verify safely. Review recovery records before starting another restore.'
+                  : 'Restore stopped. Check your PIN session, mounts, recovery kit, and backup integrity.',
+            errorCode: producerRetained
+              ? 'buddy_restore_producer_retained'
+              : maintenanceActive
+                ? 'buddy_restore_maintenance_active'
+                : historyLimit
+                  ? 'buddy_restore_history_limit'
+                  : 'buddy_restore_failed',
           },
           {
             retry:
@@ -1826,6 +1925,8 @@ export class BuddyBackupRestoreService {
           },
         );
       }
+    } finally {
+      if (stopped) await closeWork?.();
     }
   }
 
