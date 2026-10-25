@@ -182,6 +182,128 @@ describe(JobRepository.name, () => {
     expect(notify).toHaveBeenCalledOnce();
   });
 
+  it.each(['success', 'handler-failure', 'publication-failure', 'cancelled', 'deferred', 'rejected', 'unknown'])(
+    'joins input cleanup after publication or stopped failure: %s',
+    async (outcome) => {
+      vi.spyOn(attemptEvidence, 'recordStoppedAttempt').mockResolvedValue(undefined);
+      const claim = {
+        ...context().claim,
+        name: JobName.VersionCheck,
+        queue: QueueName.BackgroundTask,
+        data: {},
+        startedAt: new Date(),
+      };
+      const abort = new AbortController();
+      const entered = Promise.withResolvers<void>();
+      const released = Promise.withResolvers<void>();
+      let cleanupStarted = false;
+      let handlerStopped = false;
+      const cleanup = vi.fn(async () => {
+        expect(handlerStopped).toBe(true);
+        cleanupStarted = true;
+        entered.resolve();
+        await released.promise;
+      });
+      sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+        const execution = queueExecution.getStore()!;
+        execution.afterSettled = [cleanup];
+        execution.adoptions.push(() => {
+          expect(cleanupStarted).toBe(false);
+          return Promise.resolve();
+        });
+        if (outcome === 'cancelled') abort.abort(new Error('cancelled'));
+        else if (outcome === 'deferred') execution.dependencyReason = 'source-unavailable';
+        handlerStopped = true;
+        if (outcome === 'handler-failure') return Promise.reject(new Error('handler failed'));
+        return Promise.resolve();
+      });
+      sut['store'].complete = vi.fn().mockImplementation(async (_claim, _followups, adopt) => {
+        expect(cleanupStarted).toBe(false);
+        await adopt({});
+        if (outcome === 'publication-failure' || outcome === 'unknown') throw new Error('publication failed');
+        return outcome !== 'rejected';
+      });
+      sut['store'].fail = vi.fn().mockImplementation(() => {
+        expect(cleanupStarted).toBe(false);
+        if (outcome === 'unknown') return Promise.reject(new Error('database unavailable'));
+        return Promise.resolve(true);
+      });
+      sut['store'].defer = vi.fn().mockImplementation(() => {
+        expect(cleanupStarted).toBe(false);
+        return Promise.resolve(true);
+      });
+      let finished = false;
+      const pending = sut['execute'](claim, abort).then(() => {
+        finished = true;
+      });
+      try {
+        await Promise.race([entered.promise, pending]);
+        expect(finished).toBe(false);
+        expect(cleanup).toHaveBeenCalledTimes(1);
+      } finally {
+        released.resolve();
+        await pending;
+      }
+    },
+  );
+
+  it('retains a cleanup failure without changing an accepted outcome or skipping other inputs', async () => {
+    vi.spyOn(attemptEvidence, 'recordStoppedAttempt').mockResolvedValue(undefined);
+    const claim = {
+      ...context().claim,
+      name: JobName.VersionCheck,
+      queue: QueueName.BackgroundTask,
+      data: {},
+      startedAt: new Date(),
+    };
+    const cleanup = vi.fn().mockRejectedValue(new Error('/private/input/path'));
+    const other = vi.fn().mockResolvedValue(undefined);
+    sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+      queueExecution.getStore()!.afterSettled = [cleanup, other];
+      return Promise.resolve();
+    });
+    sut['store'].complete = vi.fn().mockResolvedValue(true);
+    sut['store'].fail = vi.fn();
+    await sut['execute'](claim, new AbortController());
+    expect(cleanup).toHaveBeenCalledOnce();
+    expect(other).toHaveBeenCalledOnce();
+    expect(sut['store'].fail).not.toHaveBeenCalled();
+    expect(sut['logger'].warn).toHaveBeenCalledWith(
+      'Stopped job input cleanup unavailable; retained files require recovery',
+    );
+    expect(JSON.stringify(vi.mocked(sut['logger'].warn).mock.calls)).not.toContain('/private/input/path');
+  });
+
+  it.each([false, true])(
+    'never invents stopped evidence or retries an unconfirmed native reader (throw=%s)',
+    async (reject) => {
+      const stopped = vi.spyOn(attemptEvidence, 'recordStoppedAttempt').mockResolvedValue(undefined);
+      const claim = {
+        ...context().claim,
+        name: JobName.VersionCheck,
+        queue: QueueName.BackgroundTask,
+        data: {},
+        startedAt: new Date(),
+      };
+      const cleanup = vi.fn().mockResolvedValue(undefined);
+      sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+        const execution = queueExecution.getStore()!;
+        execution.executorStopUnconfirmed = true;
+        execution.afterSettled = [cleanup];
+        return reject ? Promise.reject(new Error('tool shutdown unconfirmed')) : Promise.resolve();
+      });
+      sut['store'].complete = vi.fn();
+      sut['store'].fail = vi.fn();
+      sut['store'].defer = vi.fn();
+      await sut['execute'](claim, new AbortController());
+      expect(stopped).not.toHaveBeenCalled();
+      expect(sut['store'].complete).not.toHaveBeenCalled();
+      expect(sut['store'].fail).not.toHaveBeenCalled();
+      expect(sut['store'].defer).not.toHaveBeenCalled();
+      expect(cleanup).toHaveBeenCalledOnce();
+    },
+  );
+
   it.each([
     ['Prepared output source changed', 'prepared_output_source_changed'],
     ['Thumbnail source changed before publication', 'thumbnail_source_changed'],

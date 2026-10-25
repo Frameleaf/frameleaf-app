@@ -3,6 +3,11 @@ import { Kysely, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { DB } from 'src/schema/index.js';
 import { AssetStatus, ChecksumAlgorithm } from 'src/enum.js';
+import { publicationDatabase } from 'src/queue/transaction.js';
+import {
+  type SourceCacheReader,
+  SourceResourceCacheRepository,
+} from 'src/repositories/source-resource-cache.repository.js';
 import { SourceResourceGrant, SourceResourceRepository } from 'src/repositories/source-resource.repository.js';
 import { lockSourceAuthorities } from 'src/utils/source-authority-lock.js';
 import { parseSourceOriginalPath, sourceOriginalPath } from 'src/utils/source-original.js';
@@ -29,7 +34,10 @@ export class SourceResourceReadRepository {
   constructor(
     @InjectKysely() private db: Kysely<DB>,
     private grants: SourceResourceRepository,
-  ) {}
+    private cache: SourceResourceCacheRepository,
+  ) {
+    this.db = publicationDatabase(this.db);
+  }
 
   private async original(
     tx: Transaction<DB>,
@@ -111,10 +119,11 @@ export class SourceResourceReadRepository {
       .execute();
   }
 
-  enqueue(assetId: string) {
+  enqueue(assetId: string, maxBytes = Number.MAX_SAFE_INTEGER, reader?: SourceCacheReader) {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) return Promise.resolve(undefined);
     return this.db.transaction().execute(async (tx) => {
       const original = await this.original(tx, assetId);
-      if (!original) return;
+      if (!original || original.bytes > maxBytes) return;
       await this.expire(tx, original);
       const existing = await tx
         .selectFrom('source_resource_read')
@@ -124,8 +133,12 @@ export class SourceResourceReadRepository {
         .where('scopeFingerprint', '=', original.scopeFingerprint)
         .where('authorizationEpoch', '=', original.authorizationEpoch)
         .where('state', 'in', active)
+        .forUpdate()
         .executeTakeFirst();
-      if (existing) return existing;
+      if (existing) {
+        if (!(await this.addConsumer(tx, existing.id, reader))) return;
+        return existing;
+      }
       const usage = await tx
         .selectFrom('source_resource_read')
         .select((eb) => eb.fn.countAll<string>().as('count'))
@@ -134,7 +147,7 @@ export class SourceResourceReadRepository {
         .executeTakeFirstOrThrow();
       if (Number(usage.count) >= 16) return;
       const { sourceId, resourceId, ownerId, deviceId, scopeFingerprint, authorizationEpoch } = original;
-      return tx
+      const request = await tx
         .insertInto('source_resource_read')
         .values({
           assetId,
@@ -144,10 +157,215 @@ export class SourceResourceReadRepository {
           deviceId,
           scopeFingerprint,
           authorizationEpoch,
+          consumerManaged: !!reader,
           deadline: sql`clock_timestamp()+interval '10 minutes'`,
         })
         .returning(['id', 'deadline'])
+        .executeTakeFirstOrThrow();
+      await this.addConsumer(tx, request.id, reader);
+      return request;
+    });
+  }
+
+  private async addConsumer(tx: Transaction<DB>, readId: string, reader?: SourceCacheReader) {
+    if (!reader) {
+      // Older callers own an untracked interest through the original bounded deadline.
+      await tx.updateTable('source_resource_read').set({ consumerManaged: false }).where('id', '=', readId).execute();
+      return true;
+    }
+    await tx
+      .deleteFrom('source_resource_read_consumer')
+      .where('readId', '=', readId)
+      .where('expiresAt', '<=', sql<Date>`clock_timestamp()`)
+      .execute();
+    const consumers = await tx
+      .selectFrom('source_resource_read_consumer')
+      .selectAll()
+      .where('readId', '=', readId)
+      .execute();
+    const existing = consumers.find((value) => value.readerId === reader.readerId);
+    if (existing) return existing.readerOwnerId === reader.ownerId;
+    if (consumers.length >= 64) return false;
+    await tx
+      .insertInto('source_resource_read_consumer')
+      .values({
+        readId,
+        readerId: reader.readerId,
+        readerOwnerId: reader.ownerId,
+        expiresAt: sql`least((SELECT deadline FROM source_resource_read WHERE id=${readId}::uuid),clock_timestamp()+interval '120 seconds')`,
+      })
+      .execute();
+    return true;
+  }
+
+  /** Relinquish only this caller's waiting interest; no file or producer lifetime is inferred. */
+  releaseConsumer(readId: string, reader: Pick<SourceCacheReader, 'readerId' | 'ownerId'>) {
+    return this.db.transaction().execute(async (tx) => {
+      const request = await tx
+        .selectFrom('source_resource_read')
+        .select(['id', 'consumerManaged', 'state'])
+        .where('id', '=', readId)
+        .forUpdate()
         .executeTakeFirst();
+      if (!request) return;
+      await tx
+        .deleteFrom('source_resource_read_consumer')
+        .where('readId', '=', readId)
+        .where('readerId', '=', reader.readerId)
+        .where('readerOwnerId', '=', reader.ownerId)
+        .execute();
+      if (request.state === 'ready') {
+        return (
+          await tx
+            .selectFrom('source_resource_cache')
+            .select('id')
+            .where('readId', '=', readId)
+            .where('state', '=', 'ready')
+            .executeTakeFirst()
+        )?.id;
+      }
+      if (!request.consumerManaged) return;
+      await tx
+        .updateTable('source_resource_read')
+        .set({ state: 'unavailable', leaseUntil: null })
+        .where('id', '=', readId)
+        .where('state', 'in', active)
+        .where(sql<boolean>`NOT ${sourceReadHasInterest}`)
+        .execute();
+    });
+  }
+
+  /** Renew only a still-live waiting consumer; an expired nonce cannot revive a request. */
+  renewConsumer(readId: string, reader: Pick<SourceCacheReader, 'readerId' | 'ownerId'>) {
+    return this.db.transaction().execute(async (tx) => {
+      const request = await tx
+        .selectFrom('source_resource_read')
+        .select('deadline')
+        .where('id', '=', readId)
+        .where('state', 'in', [...active, 'ready'])
+        .where('deadline', '>', sql<Date>`clock_timestamp()`)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!request) return false;
+      const renewed = await tx
+        .updateTable('source_resource_read_consumer')
+        .set({ expiresAt: sql`least(${request.deadline}::timestamptz,clock_timestamp()+interval '120 seconds')` })
+        .where('readId', '=', readId)
+        .where('readerId', '=', reader.readerId)
+        .where('readerOwnerId', '=', reader.ownerId)
+        .where((eb) => eb.or([eb('expiresAt', 'is', null), eb('expiresAt', '>', sql<Date>`clock_timestamp()`)]))
+        .where(sql<boolean>`${request.deadline}::timestamptz > clock_timestamp()`)
+        .returning('id')
+        .executeTakeFirst();
+      return !!renewed;
+    });
+  }
+
+  /** Caller must separately authorize the asset. A new read never reuses an old ready request. */
+  async pinReady(assetId: string, readId: string, reader: SourceCacheReader) {
+    const rejected = new Error('source_original_unavailable');
+    return this.db
+      .transaction()
+      .execute(async (tx) => {
+        const original = await this.original(tx, assetId);
+        if (!original) return;
+        const request = await tx
+          .selectFrom('source_resource_read')
+          .select('consumerManaged')
+          .where('id', '=', readId)
+          .executeTakeFirst();
+        if (!request) return;
+        const consumer = await tx
+          .selectFrom('source_resource_read_consumer')
+          .select('readerOwnerId')
+          .select(sql<boolean>`("expiresAt" IS NULL OR "expiresAt">clock_timestamp())`.as('live'))
+          .where('readId', '=', readId)
+          .where('readerId', '=', reader.readerId)
+          .executeTakeFirst();
+        if (
+          (request.consumerManaged && !consumer) ||
+          (consumer && (!consumer.live || consumer.readerOwnerId !== reader.ownerId))
+        )
+          throw rejected;
+        const ready = this.ready(tx, original, readId);
+        const entry = await ready.executeTakeFirst();
+        if (!entry?.fileName || !/^[a-f0-9-]{36}[.]artifact$/u.test(entry.fileName)) return;
+        const lease = await this.cache.pinInTransaction(tx, entry.id, reader);
+        if (!lease) return;
+        // Recheck time-sensitive authority after the cache lock wait; failure rolls back the pin.
+        const current = await this.original(tx, assetId);
+        const live = await ready.executeTakeFirst();
+        if (!current || !live || live.id !== entry.id) throw rejected;
+        const detached = await tx
+          .deleteFrom('source_resource_read_consumer')
+          .where('readId', '=', readId)
+          .where('readerId', '=', reader.readerId)
+          .where('readerOwnerId', '=', reader.ownerId)
+          .where((eb) => eb.or([eb('expiresAt', 'is', null), eb('expiresAt', '>', sql<Date>`clock_timestamp()`)]))
+          .returning('id')
+          .executeTakeFirst();
+        if ((request.consumerManaged || consumer) && !detached) throw rejected;
+        return { ...original, cacheId: entry.id, fileName: entry.fileName, leaseId: lease.id };
+      })
+      .catch((error) => {
+        if (error !== rejected) throw error;
+        return;
+      });
+  }
+
+  private ready(tx: Transaction<DB>, original: Original, readId: string) {
+    return tx
+      .selectFrom('source_resource_cache as c')
+      .innerJoin('source_resource_read as r', 'r.id', 'c.readId')
+      .select(['c.id', 'c.fileName'])
+      .where('r.id', '=', readId)
+      .where('r.assetId', '=', original.assetId)
+      .where('r.state', '=', 'ready')
+      .where('r.deadline', '>', sql<Date>`clock_timestamp()`)
+      .whereRef('r.claimFence', '=', 'c.claimFence')
+      .whereRef('r.resourceId', '=', 'c.resourceId')
+      .whereRef('r.sourceId', '=', 'c.sourceId')
+      .whereRef('r.ownerId', '=', 'c.ownerId')
+      .whereRef('r.deviceId', '=', 'c.deviceId')
+      .whereRef('r.scopeFingerprint', '=', 'c.scopeFingerprint')
+      .whereRef('r.authorizationEpoch', '=', 'c.authorizationEpoch')
+      .where('c.assetId', '=', original.assetId)
+      .where('c.resourceId', '=', original.resourceId)
+      .where('c.sourceId', '=', original.sourceId)
+      .where('c.ownerId', '=', original.ownerId)
+      .where('c.deviceId', '=', original.deviceId)
+      .where('c.scopeFingerprint', '=', original.scopeFingerprint)
+      .where('c.authorizationEpoch', '=', original.authorizationEpoch)
+      .where('c.resourceKey', '=', original.resourceKey)
+      .where('c.version', '=', original.version)
+      .where('c.sha256', '=', Buffer.from(original.sha256, 'hex'))
+      .where('c.bytes', '=', original.bytes)
+      .where('c.state', '=', 'ready')
+      .where('c.restoreHeld', '=', false)
+      .where('c.writerStoppedAt', 'is not', null)
+      .forUpdate('c');
+  }
+
+  async checkPinned(assetId: string, readId: string, cacheId: string, leaseId: string, reader: SourceCacheReader) {
+    return this.db.transaction().execute(async (tx) => {
+      const original = await this.original(tx, assetId);
+      if (!original) return false;
+      const ready = this.ready(tx, original, readId)
+        .where('c.id', '=', cacheId)
+        .where((eb) =>
+          eb.exists(
+            eb
+              .selectFrom('source_resource_cache_lease')
+              .select('id')
+              .where('id', '=', leaseId)
+              .where('cacheId', '=', cacheId)
+              .where('readerId', '=', reader.readerId)
+              .where('readerOwnerId', '=', reader.ownerId)
+              .where('readerStoppedAt', 'is', null),
+          ),
+        );
+      const entry = await ready.executeTakeFirst();
+      return !!entry && !!(await this.original(tx, assetId)) && !!(await ready.executeTakeFirst());
     });
   }
 
@@ -191,7 +409,7 @@ export class SourceResourceReadRepository {
         .limit(16)
         .execute();
       for (const request of requests) {
-        const original = await this.original(tx, request.assetId);
+        const original = await this.original(tx, request.assetId, grant);
         if (!original || !this.matches(original, grant, request.resourceId)) {
           await tx
             .updateTable('source_resource_read')
@@ -255,7 +473,7 @@ export class SourceResourceReadRepository {
         .where('leaseUntil', '>', sql<Date>`clock_timestamp()`)
         .executeTakeFirst();
       if (!request) return;
-      const original = await this.original(tx, request.assetId);
+      const original = await this.original(tx, request.assetId, grant);
       if (!original || !this.matches(original, grant, request.resourceId)) return;
       const row = await tx
         .updateTable('source_resource_read')

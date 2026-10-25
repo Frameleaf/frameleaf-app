@@ -75,6 +75,10 @@ export type QueueExecution = {
   /** Database-only owner settlement, accepted with a failed claim only after confirmed executor stop. */
   failureSettlements?: Array<(tx: Transaction<any>, reason: string, cancelled: boolean) => Promise<void>>;
   afterCommit?: Array<() => Promise<void>>;
+  /** Owned readers have stopped; retain input leases through adoption, then join their cleanup. */
+  afterSettled?: Array<() => Promise<void>>;
+  /** A native child may still own files: no stop proof, publication, or replay is authorized. */
+  executorStopUnconfirmed?: boolean;
   buffering: boolean;
   progressUnits: number;
   outcome?: 'completed' | 'failed';

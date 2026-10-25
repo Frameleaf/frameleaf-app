@@ -258,14 +258,17 @@ export class JobRepository {
       } finally {
         // Handler/native work has returned; lease expiry alone cannot attest this.
         // Keep this before durable completion, while the watchdog still owns the claim.
-        try {
-          await admission.publication.run(AbortSignal.timeout(DATABASE_ACQUIRE_TIMEOUT_MS), () =>
-            recordStoppedAttempt(this.store.db, claim.id, claim.token),
-          );
-        } catch {
-          this.logger.warn('Could not persist stopped-attempt evidence; output cleanup will retain it');
+        if (!context.executorStopUnconfirmed) {
+          try {
+            await admission.publication.run(AbortSignal.timeout(DATABASE_ACQUIRE_TIMEOUT_MS), () =>
+              recordStoppedAttempt(this.store.db, claim.id, claim.token),
+            );
+          } catch {
+            this.logger.warn('Could not persist stopped-attempt evidence; output cleanup will retain it');
+          }
         }
       }
+      if (context.executorStopUnconfirmed) throw new Error('Executor stop unconfirmed');
       abort.signal.throwIfAborted();
       if (context.dependencyReason) {
         this.warnDeferral(claim, context.dependencyReason);
@@ -305,6 +308,10 @@ export class JobRepository {
         }
       }
     } catch (error) {
+      if (context.executorStopUnconfirmed) {
+        this.logger.warn('Executor stop unconfirmed; retained claim and files require recovery');
+        return;
+      }
       if (context.dependencyReason) {
         // A dependency refusal is a wait, not a failure, and repeats for every job behind it.
         this.warnDeferral(claim, context.dependencyReason);
@@ -340,22 +347,36 @@ export class JobRepository {
         this.logger.error('Could not persist job outcome; lease recovery is pending');
       }
     } finally {
-      if (!settled) {
-        try {
-          // The database fence can observe cancellation before the coordinator's abort arrives.
-          // Settle only this stopped claim, never publish its rejected output or rerun its handler.
-          // A deferred operation also needs this handoff when expiry alone rejected publication.
-          await this.store.fail(claim, 'Job deadline or cancellation requested', undefined, {
-            stopRequestedOnly: !context.failureSettlements?.length,
-            settlements: context.failureSettlements,
-            publication: (publish) =>
-              admission.publication.run(AbortSignal.timeout(DATABASE_ACQUIRE_TIMEOUT_MS), publish),
-          });
-        } catch {
-          this.logger.error('Could not persist stopped job outcome; lease recovery is pending');
+      try {
+        if (!settled && !context.executorStopUnconfirmed) {
+          try {
+            // The database fence can observe cancellation before the coordinator's abort arrives.
+            // Settle only this stopped claim, never publish its rejected output or rerun its handler.
+            // A deferred operation also needs this handoff when expiry alone rejected publication.
+            await this.store.fail(claim, 'Job deadline or cancellation requested', undefined, {
+              stopRequestedOnly: !context.failureSettlements?.length,
+              settlements: context.failureSettlements,
+              publication: (publish) =>
+                admission.publication.run(AbortSignal.timeout(DATABASE_ACQUIRE_TIMEOUT_MS), publish),
+            });
+          } catch {
+            this.logger.error('Could not persist stopped job outcome; lease recovery is pending');
+          }
         }
+      } finally {
+        for (const cleanup of context.afterSettled ?? []) {
+          try {
+            await cleanup();
+          } catch {
+            try {
+              this.logger.warn('Stopped job input cleanup unavailable; retained files require recovery');
+            } catch {
+              // Cleanup failure must not skip another input or retain the execution slot.
+            }
+          }
+        }
+        releaseExecution?.();
       }
-      releaseExecution?.();
     }
   }
 

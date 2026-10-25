@@ -132,6 +132,7 @@ import { SharedLinkService } from 'src/services/shared-link.service.js';
 import { SharedSpaceService } from 'src/services/shared-space.service.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
 import { SourceResourceAuthService } from 'src/services/source-resource-auth.service.js';
 import { SourceResourceDeliveryService } from 'src/services/source-resource-delivery.service.js';
 import { SourceResourceReadService } from 'src/services/source-resource-read.service.js';
@@ -179,6 +180,7 @@ export const services = [
   DesktopAssistancePolicyService,
   DesktopDeviceService,
   PhotoSourceService,
+  SourceOriginalService,
   SourceResourceAuthService,
   SourceResourceReadService,
   SourceResourceDeliveryService,

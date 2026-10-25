@@ -1,12 +1,13 @@
 import { Kysely, sql } from 'kysely';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import type { DB } from 'src/schema/index.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetStatus, ChecksumAlgorithm } from 'src/enum.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -16,6 +17,7 @@ import { SourceResourceCacheRepository } from 'src/repositories/source-resource-
 import { SourceResourceReadRepository } from 'src/repositories/source-resource-read.repository.js';
 import { SourceResourceRepository } from 'src/repositories/source-resource.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
 import { SourceResourceDeliveryService } from 'src/services/source-resource-delivery.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -120,7 +122,7 @@ const fixture = async () => {
     device,
     library,
     grant,
-    sut: new SourceResourceReadRepository(db, grants),
+    sut: new SourceResourceReadRepository(db, grants, new SourceResourceCacheRepository(db)),
   };
 };
 
@@ -410,9 +412,11 @@ it('fences restored source credentials when recovery clears photo sessions witho
   });
 });
 
-const deliveryFixture = async () => {
+const deliveryFixture = async (readers: Parameters<SourceResourceReadRepository['enqueue']>[2][] = []) => {
   const f = await fixture();
-  await f.sut.enqueue(f.asset.id);
+  if (readers.length > 0) {
+    for (const reader of readers) await f.sut.enqueue(f.asset.id, undefined, reader);
+  } else await f.sut.enqueue(f.asset.id);
   const token = randomBytes(32);
   const claim = (await f.sut.claim(f.grant, token, 100))!;
   const original = (await f.sut.beginDelivery(f.grant, claim.id, claim.claimFence, token))!;
@@ -571,7 +575,7 @@ it.each([false, true])(
     const media = vi.spyOn(StorageCore, 'getMediaLocation').mockReturnValue(folder);
     const grants = new SourceResourceRepository(db);
     const cache = new SourceResourceCacheRepository(db);
-    const reads = new SourceResourceReadRepository(db, grants);
+    const reads = new SourceResourceReadRepository(db, grants, new SourceResourceCacheRepository(db));
     const transact = grants.withGrant.bind(grants);
     let published = false;
     const publish = cache.publishVerified.bind(cache);
@@ -631,3 +635,695 @@ it.each([false, true])(
     }
   },
 );
+
+it('rejects a consumer byte ceiling before creating or coalescing provider work', async () => {
+  const f = await fixture();
+  const tooSmall = Number(f.resource.bytes) - 1;
+  expect(await f.sut.enqueue(f.asset.id, tooSmall)).toBeUndefined();
+  expect(await db.selectFrom('source_resource_read').select('id').where('assetId', '=', f.asset.id).execute()).toEqual(
+    [],
+  );
+  const admitted = await f.sut.enqueue(f.asset.id, Number(f.resource.bytes));
+  expect(admitted?.id).toBeTruthy();
+  expect(await f.sut.enqueue(f.asset.id, tooSmall)).toBeUndefined();
+});
+
+const waitingReader = () => ({ kind: 'http' as const, readerId: randomUUID(), ownerId: randomUUID() });
+it('serves a signed delivered original through a live consumer and removes bytes only after reader release', async () => {
+  const f = await fixture();
+  const folder = await mkdtemp(join(tmpdir(), 'source-live-consumer-'));
+  const media = vi.spyOn(StorageCore, 'getMediaLocation').mockReturnValue(folder);
+  const cache = new SourceResourceCacheRepository(db);
+  const service = new SourceOriginalService(f.sut, cache);
+  const reader = waitingReader();
+  const abort = new AbortController();
+  const enqueue = vi.spyOn(f.sut, 'enqueue');
+  const input = service.open(f.asset.id, reader, () => Promise.resolve(), abort.signal);
+  void input.catch(() => {});
+  let opened: Awaited<typeof input> | undefined;
+  try {
+    await expect.poll(() => enqueue.mock.results.length).toBe(1);
+    const request = await enqueue.mock.results[0].value;
+    const token = 'e'.repeat(64);
+    const claim = (await f.sut.claim(f.grant, createHash('sha256').update(token).digest(), 100))!;
+    expect(claim.id).toBe(request!.id);
+    const delivery = new SourceResourceDeliveryService(
+      { authenticate: () => Promise.resolve(f.grant) } as never,
+      new SourceResourceRepository(db),
+      f.sut,
+      cache,
+      LoggingRepository.create(),
+    );
+    const metadata = {
+      requestId: claim.id,
+      claimFence: claim.claimFence,
+      claimToken: token,
+      resourceKey: claim.resourceKey,
+      version: claim.version,
+      sha256: claim.sha256,
+      bytes: claim.bytes,
+    };
+    await expect(
+      delivery.deliver(
+        'bearer',
+        'proof',
+        Buffer.from(JSON.stringify(metadata)).toString('base64'),
+        Readable.from([Buffer.from('hello')]),
+      ),
+    ).resolves.toEqual({ accepted: true });
+    opened = await input;
+    const path = opened.localPath;
+    expect(Buffer.concat(await Array.fromAsync(opened.stream))).toEqual(Buffer.from('hello'));
+    await opened.settled;
+    expect(await readFile(path)).toEqual(Buffer.from('hello'));
+    expect(
+      await db.selectFrom('source_resource_read_consumer').select('id').where('readId', '=', claim.id).execute(),
+    ).toEqual([]);
+    const entry = await db
+      .selectFrom('source_resource_cache')
+      .select('id')
+      .where('readId', '=', claim.id)
+      .executeTakeFirstOrThrow();
+    expect(await cache.claimRemoval(entry.id)).toBeUndefined();
+    await opened.release();
+    await expect(readFile(path)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await db.selectFrom('source_resource_cache').select('id').where('id', '=', entry.id).execute()).toEqual([]);
+  } finally {
+    abort.abort();
+    await input.catch(() => {});
+    await opened?.release();
+    enqueue.mockRestore();
+    media.mockRestore();
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+it('keeps ready bytes while a second consumer is still waiting to pin them', async () => {
+  const first = waitingReader(),
+    second = waitingReader();
+  const f = await deliveryFixture([first, second]);
+  expect(await f.sut.completeDelivery(f.grant, f.claim.id, f.claim.claimFence, f.token, f.original, f.publish)).toBe(
+    true,
+  );
+  const pinned = (await f.sut.pinReady(f.asset.id, f.claim.id, first))!;
+  expect(await f.cache.release(pinned.leaseId, first)).toBe(true);
+  expect(await f.cache.claimRemoval(f.entry.id)).toBeUndefined();
+  const next = (await f.sut.pinReady(f.asset.id, f.claim.id, second))!;
+  expect(next.cacheId).toBe(pinned.cacheId);
+  expect(await f.cache.release(next.leaseId, second)).toBe(true);
+  expect((await f.cache.claimRemoval(f.entry.id))?.id).toBe(f.entry.id);
+});
+it('fences a cancelled in-flight delivery without inventing writer shutdown', async () => {
+  const reader = waitingReader();
+  const f = await deliveryFixture([reader]);
+  await f.sut.releaseConsumer(f.claim.id, { ...reader, ownerId: randomUUID() });
+  expect(await f.sut.heartbeat(f.grant, f.claim.id, f.claim.claimFence, f.token)).toBeDefined();
+  await f.sut.releaseConsumer(f.claim.id, reader);
+  expect(await f.sut.heartbeat(f.grant, f.claim.id, f.claim.claimFence, f.token)).toBeUndefined();
+  expect(
+    await f.sut.completeDelivery(f.grant, f.claim.id, f.claim.claimFence, f.token, f.original, f.publish),
+  ).toBeUndefined();
+  expect(await f.cache.claimRemoval(f.entry.id)).toBeUndefined();
+  const entry = await db
+    .selectFrom('source_resource_cache')
+    .select(['state', 'writerStoppedAt'])
+    .where('id', '=', f.entry.id)
+    .executeTakeFirstOrThrow();
+  expect(entry).toEqual({ state: 'writing', writerStoppedAt: null });
+});
+it('serializes the last disconnect with a new consumer joining the same original', async () => {
+  const f = await fixture(),
+    first = waitingReader(),
+    second = waitingReader();
+  const request = (await f.sut.enqueue(f.asset.id, undefined, first))!;
+  const [, joined] = await Promise.all([
+    f.sut.releaseConsumer(request.id, first),
+    f.sut.enqueue(f.asset.id, undefined, second),
+  ]);
+  expect(joined).toBeDefined();
+  expect((await f.sut.claim(f.grant, randomBytes(32), 100))?.id).toBe(joined!.id);
+  await f.sut.releaseConsumer(joined!.id, second);
+  expect(await f.sut.claim(f.grant, randomBytes(32), 100)).toBeUndefined();
+});
+it('preserves untracked older callers through the existing request deadline', async () => {
+  const f = await fixture(),
+    reader = waitingReader();
+  const managed = (await f.sut.enqueue(f.asset.id, undefined, reader))!;
+  expect((await f.sut.enqueue(f.asset.id))?.id).toBe(managed.id);
+  await f.sut.releaseConsumer(managed.id, reader);
+  expect((await f.sut.claim(f.grant, randomBytes(32), 100))?.id).toBe(managed.id);
+});
+it('bounds waiting consumers and refuses a reused reader nonce from another process', async () => {
+  const f = await fixture(),
+    reader = waitingReader();
+  const request = (await f.sut.enqueue(f.asset.id, undefined, reader))!;
+  expect(await f.sut.enqueue(f.asset.id, undefined, { ...reader, ownerId: randomUUID() })).toBeUndefined();
+  for (let index = 1; index < 64; index++)
+    expect((await f.sut.enqueue(f.asset.id, undefined, waitingReader()))?.id).toBe(request.id);
+  expect(await f.sut.enqueue(f.asset.id, undefined, waitingReader())).toBeUndefined();
+  expect(
+    await db.selectFrom('source_resource_read_consumer').select('id').where('readId', '=', request.id).execute(),
+  ).toHaveLength(64);
+});
+
+it('releases the last ready waiter without invalidating an already pinned reader', async () => {
+  const first = waitingReader(),
+    second = waitingReader();
+  const f = await deliveryFixture([first, second]);
+  expect(await f.sut.completeDelivery(f.grant, f.claim.id, f.claim.claimFence, f.token, f.original, f.publish)).toBe(
+    true,
+  );
+  expect(await f.sut.pinReady(f.asset.id, f.claim.id, { ...second, ownerId: randomUUID() })).toBeUndefined();
+  const pinned = (await f.sut.pinReady(f.asset.id, f.claim.id, first))!;
+  expect(await f.sut.releaseConsumer(f.claim.id, second)).toBe(f.entry.id);
+  expect(await f.sut.pinReady(f.asset.id, f.claim.id, second)).toBeUndefined();
+  expect(await f.cache.claimRemoval(f.entry.id)).toBeUndefined();
+  expect(await f.sut.checkPinned(f.asset.id, f.claim.id, pinned.cacheId, pinned.leaseId, first)).toBe(true);
+  expect(await f.cache.release(pinned.leaseId, first)).toBe(true);
+  expect((await f.cache.claimRemoval(f.entry.id))?.id).toBe(f.entry.id);
+});
+it.each(['cancelled', 'expired'])(
+  'does not transfer a %s waiter into a cache pin after a cache lock wait',
+  async (reason) => {
+    const reader = waitingReader();
+    const f = await deliveryFixture([reader]);
+    expect(await f.sut.completeDelivery(f.grant, f.claim.id, f.claim.claimFence, f.token, f.original, f.publish)).toBe(
+      true,
+    );
+    const locked = Promise.withResolvers<void>(),
+      unlock = Promise.withResolvers<void>();
+    const blocker = db.transaction().execute(async (tx) => {
+      await tx.selectFrom('source_resource_cache').select('id').where('id', '=', f.entry.id).forUpdate().execute();
+      locked.resolve();
+      await unlock.promise;
+    });
+    await locked.promise;
+    const pending = f.sut.pinReady(f.asset.id, f.claim.id, reader);
+    try {
+      const limit = Date.now() + 5000;
+      for (;;) {
+        const { rows } = await sql<{ waiting: boolean }>`SELECT EXISTS (
+        SELECT 1 FROM pg_stat_activity WHERE pid<>pg_backend_pid() AND wait_event_type='Lock'
+          AND query LIKE '%for update of "c"%'
+      ) AS waiting`.execute(db);
+        if (rows[0].waiting) break;
+        if (Date.now() >= limit) throw new Error('Reader did not reach the cache lock');
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      if (reason === 'cancelled') await f.sut.releaseConsumer(f.claim.id, reader);
+      else
+        await db
+          .updateTable('source_resource_read_consumer')
+          .set({ expiresAt: new Date(0) })
+          .where('readId', '=', f.claim.id)
+          .execute();
+    } finally {
+      unlock.resolve();
+      await blocker;
+    }
+    expect(await pending).toBeUndefined();
+    expect(
+      await db.selectFrom('source_resource_cache_lease').select('id').where('cacheId', '=', f.entry.id).execute(),
+    ).toEqual([]);
+    expect((await f.cache.claimRemoval(f.entry.id))?.id).toBe(f.entry.id);
+  },
+);
+
+it('recovers expired ready caches while preserving a live untracked older caller', async () => {
+  const f = await deliveryFixture();
+  expect(await f.sut.completeDelivery(f.grant, f.claim.id, f.claim.claimFence, f.token, f.original, f.publish)).toBe(
+    true,
+  );
+  expect(await f.cache.removalCandidates()).not.toContainEqual({ id: f.entry.id });
+  expect(await f.cache.claimRemoval(f.entry.id, { expiredOnly: true })).toBeUndefined();
+  await db
+    .updateTable('source_resource_read')
+    .set({ deadline: new Date(0) })
+    .where('id', '=', f.claim.id)
+    .execute();
+  expect(await f.cache.removalCandidates()).toContainEqual({ id: f.entry.id });
+  // A stale candidate never authorizes removal after request liveness changes.
+  await db
+    .updateTable('source_resource_read')
+    .set({ deadline: new Date(Date.now() + 60_000) })
+    .where('id', '=', f.claim.id)
+    .execute();
+  expect(await f.cache.claimRemoval(f.entry.id, { expiredOnly: true })).toBeUndefined();
+  await db
+    .updateTable('source_resource_read')
+    .set({ deadline: new Date(0) })
+    .where('id', '=', f.claim.id)
+    .execute();
+  expect((await f.cache.claimRemoval(f.entry.id, { expiredOnly: true }))?.id).toBe(f.entry.id);
+  // Simulate interruption after deletion was admitted, with the original bytes still on disk.
+  const folder = await mkdtemp(join(tmpdir(), 'source-cache-recovery-'));
+  const path = join(folder, 'source-original-cache', f.entry.id);
+  const media = vi.spyOn(StorageCore, 'getMediaLocation').mockReturnValue(folder);
+  try {
+    await mkdir(path, { recursive: true });
+    await writeFile(join(path, 'orphan.artifact'), Buffer.from('hello'));
+    const service = new SourceResourceDeliveryService(
+      {} as never,
+      new SourceResourceRepository(db),
+      f.sut,
+      f.cache,
+      f.ctx.get(LoggingRepository),
+    );
+    await service.onBootstrap();
+    await expect(readFile(join(path, 'orphan.artifact'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await db.selectFrom('source_resource_cache').select('id').where('id', '=', f.entry.id).execute()).toEqual(
+      [],
+    );
+  } finally {
+    media.mockRestore();
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
+it.each(['claim', 'heartbeat', 'beginDelivery'] as const)(
+  'refuses %s after the final waiting caller crashes',
+  async (action) => {
+    const reader = waitingReader(),
+      f = await fixture();
+    const request = (await f.sut.enqueue(f.asset.id, undefined, reader))!;
+    const token = randomBytes(32);
+    const claim = action === 'claim' ? undefined : (await f.sut.claim(f.grant, token, 100))!;
+    await db
+      .updateTable('source_resource_read_consumer')
+      .set({ expiresAt: new Date(0) })
+      .where('readId', '=', request.id)
+      .execute();
+    expect(
+      action === 'claim'
+        ? await f.sut.claim(f.grant, token, 100)
+        : await f.sut[action](f.grant, claim!.id, claim!.claimFence, token),
+    ).toBeUndefined();
+  },
+);
+it('refuses completeDelivery after the final waiting caller crashes without proving writer stop', async () => {
+  const f = await deliveryFixture([waitingReader()]);
+  await db
+    .updateTable('source_resource_read_consumer')
+    .set({ expiresAt: new Date(0) })
+    .where('readId', '=', f.claim.id)
+    .execute();
+  expect(
+    await f.sut.completeDelivery(f.grant, f.claim.id, f.claim.claimFence, f.token, f.original, f.publish),
+  ).toBeUndefined();
+  expect(await f.cache.claimRemoval(f.entry.id)).toBeUndefined();
+});
+
+it('renews only the live owning waiter, bounds renewal to the request and preserves other callers', async () => {
+  const f = await fixture(),
+    first = waitingReader(),
+    second = waitingReader();
+  const request = (await f.sut.enqueue(f.asset.id, undefined, first))!;
+  await f.sut.enqueue(f.asset.id, undefined, second);
+  await db
+    .updateTable('source_resource_read_consumer')
+    .set({ expiresAt: new Date(0) })
+    .where('readerId', '=', first.readerId)
+    .execute();
+  expect(await f.sut.renewConsumer(request.id, first)).toBe(false);
+  expect(await f.sut.renewConsumer(request.id, { ...second, ownerId: randomUUID() })).toBe(false);
+  const deadline = new Date(Date.now() + 60_000);
+  await db.updateTable('source_resource_read').set({ deadline }).where('id', '=', request.id).execute();
+  expect(await f.sut.renewConsumer(request.id, second)).toBe(true);
+  const consumer = await db
+    .selectFrom('source_resource_read_consumer')
+    .select('expiresAt')
+    .where('readerId', '=', second.readerId)
+    .executeTakeFirstOrThrow();
+  expect(new Date(consumer.expiresAt!).getTime()).toBe(deadline.getTime());
+  expect((await f.sut.claim(f.grant, randomBytes(32), 100))?.id).toBe(request.id);
+  await db
+    .updateTable('source_resource_read')
+    .set({ deadline: new Date(0) })
+    .where('id', '=', request.id)
+    .execute();
+  expect(await f.sut.renewConsumer(request.id, second)).toBe(false);
+});
+it('keeps legacy null-expiry interest until its existing bounded request deadline', async () => {
+  const f = await fixture(),
+    reader = waitingReader();
+  const request = (await f.sut.enqueue(f.asset.id, undefined, reader))!;
+  await db
+    .updateTable('source_resource_read_consumer')
+    .set({ expiresAt: null })
+    .where('readId', '=', request.id)
+    .execute();
+  const token = randomBytes(32),
+    claim = (await f.sut.claim(f.grant, token, 100))!;
+  expect(claim.id).toBe(request.id);
+  expect(await f.sut.heartbeat(f.grant, claim.id, claim.claimFence, token)).toBeDefined();
+  await db
+    .updateTable('source_resource_read')
+    .set({ deadline: new Date(0) })
+    .where('id', '=', request.id)
+    .execute();
+  expect(await f.sut.heartbeat(f.grant, claim.id, claim.claimFence, token)).toBeUndefined();
+});
+it('expires abandoned ready interest without revoking an already borrowed file', async () => {
+  const first = waitingReader(),
+    second = waitingReader();
+  const f = await deliveryFixture([first, second]);
+  expect(await f.sut.completeDelivery(f.grant, f.claim.id, f.claim.claimFence, f.token, f.original, f.publish)).toBe(
+    true,
+  );
+  const pinned = (await f.sut.pinReady(f.asset.id, f.claim.id, first))!;
+  await db
+    .updateTable('source_resource_read_consumer')
+    .set({ expiresAt: new Date(0) })
+    .where('readId', '=', f.claim.id)
+    .execute();
+  expect(await f.sut.pinReady(f.asset.id, f.claim.id, second)).toBeUndefined();
+  expect(await f.cache.removalCandidates()).not.toContainEqual({ id: f.entry.id });
+  expect(await f.cache.claimRemoval(f.entry.id)).toBeUndefined();
+  expect(await f.sut.checkPinned(f.asset.id, f.claim.id, pinned.cacheId, pinned.leaseId, first)).toBe(true);
+  expect(await f.cache.release(pinned.leaseId, first)).toBe(true);
+  expect(await f.cache.removalCandidates()).toContainEqual({ id: f.entry.id });
+  expect((await f.cache.claimRemoval(f.entry.id, { expiredOnly: true }))?.id).toBe(f.entry.id);
+});
+it('rolls back verified cache publication if the final waiting lease expires during publication', async () => {
+  const reader = waitingReader(),
+    f = await deliveryFixture([reader]);
+  await sql`UPDATE source_resource_read_consumer SET "expiresAt"=clock_timestamp()+interval '500 milliseconds' WHERE "readId"=${f.claim.id}::uuid`.execute(
+    db,
+  );
+  const result = await f.sut.completeDelivery(
+    f.grant,
+    f.claim.id,
+    f.claim.claimFence,
+    f.token,
+    f.original,
+    async (tx) => {
+      const accepted = await f.publish(tx);
+      await sql`SELECT pg_sleep(0.6)`.execute(tx);
+      return accepted;
+    },
+  );
+  expect(result).toBeUndefined();
+  expect(
+    await db
+      .selectFrom('source_resource_cache')
+      .select(['state', 'writerStoppedAt'])
+      .where('id', '=', f.entry.id)
+      .executeTakeFirstOrThrow(),
+  ).toEqual({ state: 'writing', writerStoppedAt: null });
+});
+
+it('reuses an expired waiting slot without accumulating more than the consumer bound', async () => {
+  const f = await fixture(),
+    readers = Array.from({ length: 64 }, waitingReader);
+  const first = (await f.sut.enqueue(f.asset.id, undefined, readers[0]))!;
+  for (const reader of readers.slice(1)) await f.sut.enqueue(f.asset.id, undefined, reader);
+  await db
+    .updateTable('source_resource_read_consumer')
+    .set({ expiresAt: new Date(0) })
+    .where('readerId', '=', readers[0].readerId)
+    .execute();
+  expect((await f.sut.enqueue(f.asset.id, undefined, waitingReader()))?.id).toBe(first.id);
+  const consumers = await db
+    .selectFrom('source_resource_read_consumer')
+    .select('readerId')
+    .where('readId', '=', first.id)
+    .execute();
+  expect(consumers).toHaveLength(64);
+  expect(consumers).not.toContainEqual({ readerId: readers[0].readerId });
+});
+it.each(['claim', 'heartbeat', 'beginDelivery'] as const)(
+  'rechecks waiting interest after %s waits on source authority',
+  async (action) => {
+    const reader = waitingReader(),
+      f = await fixture();
+    const request = (await f.sut.enqueue(f.asset.id, undefined, reader))!;
+    const token = randomBytes(32),
+      claim = action === 'claim' ? undefined : (await f.sut.claim(f.grant, token, 100))!;
+    const locked = Promise.withResolvers<void>(),
+      unlock = Promise.withResolvers<void>();
+    const blocker = db.transaction().execute(async (tx) => {
+      await tx.selectFrom('asset').select('id').where('id', '=', f.asset.id).forUpdate().execute();
+      locked.resolve();
+      await unlock.promise;
+    });
+    await locked.promise;
+    const pending =
+      action === 'claim'
+        ? f.sut.claim(f.grant, token, 100)
+        : f.sut[action](f.grant, claim!.id, claim!.claimFence, token);
+    try {
+      const limit = Date.now() + 5000;
+      for (;;) {
+        const { rows } = await sql<{ waiting: boolean }>`SELECT EXISTS (
+        SELECT 1 FROM pg_stat_activity WHERE pid<>pg_backend_pid() AND wait_event_type='Lock'
+          AND query LIKE '%FROM asset a JOIN source_original%'
+      ) AS waiting`.execute(db);
+        if (rows[0].waiting) break;
+        if (Date.now() >= limit) throw new Error('Provider did not reach the source lock');
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      await db
+        .updateTable('source_resource_read_consumer')
+        .set({ expiresAt: new Date(0) })
+        .where('readId', '=', request.id)
+        .execute();
+    } finally {
+      unlock.resolve();
+      await blocker;
+    }
+    expect(await pending).toBeUndefined();
+  },
+);
+
+it('does not revive an expired managed waiter when an older caller shares its request', async () => {
+  const reader = waitingReader(),
+    f = await deliveryFixture([reader]);
+  expect((await f.sut.enqueue(f.asset.id))?.id).toBe(f.claim.id);
+  expect(await f.sut.completeDelivery(f.grant, f.claim.id, f.claim.claimFence, f.token, f.original, f.publish)).toBe(
+    true,
+  );
+  await db
+    .updateTable('source_resource_read_consumer')
+    .set({ expiresAt: new Date(0) })
+    .where('readId', '=', f.claim.id)
+    .execute();
+  expect(await f.sut.pinReady(f.asset.id, f.claim.id, reader)).toBeUndefined();
+  // The genuinely untracked caller still owns its original bounded request.
+  expect((await f.sut.pinReady(f.asset.id, f.claim.id, waitingReader()))?.cacheId).toBe(f.entry.id);
+});
+
+it('pins only the exact ready delivery while retaining storage ownership after authority ends', async () => {
+  const f = await deliveryFixture();
+  const reader = { kind: 'http' as const, readerId: randomUUID(), ownerId: randomUUID() };
+  expect(await f.sut.pinReady(f.asset.id, f.claim.id, reader)).toBeUndefined();
+  expect(await f.sut.completeDelivery(f.grant, f.claim.id, f.claim.claimFence, f.token, f.original, f.publish)).toBe(
+    true,
+  );
+  expect(await f.sut.pinReady(randomUUID(), f.claim.id, reader)).toBeUndefined();
+  expect(await f.sut.pinReady(f.asset.id, randomUUID(), reader)).toBeUndefined();
+  const pinned = (await f.sut.pinReady(f.asset.id, f.claim.id, reader))!;
+  expect(pinned).toMatchObject({
+    cacheId: f.entry.id,
+    bytes: 5,
+    sha256: f.original.sha256,
+    version: f.original.version,
+  });
+  expect(pinned.fileName).toMatch(/^[a-f0-9-]{36}[.]artifact$/u);
+  expect(await f.sut.checkPinned(f.asset.id, f.claim.id, pinned.cacheId, pinned.leaseId, reader)).toBe(true);
+  // A queued adoption already owns this asset lock; source checks must join that transaction.
+  await db.connection().execute(async (connection) => {
+    await sql`SET lock_timeout='200ms'`.execute(connection);
+    try {
+      const reads = new SourceResourceReadRepository(
+        connection,
+        new SourceResourceRepository(connection),
+        new SourceResourceCacheRepository(connection),
+      );
+      await db.transaction().execute(async (tx) => {
+        await tx.selectFrom('asset').select('id').where('id', '=', f.asset.id).forUpdate().execute();
+        await publicationTransaction.run(tx, async () => {
+          expect(await reads.checkPinned(f.asset.id, f.claim.id, pinned.cacheId, pinned.leaseId, reader)).toBe(true);
+        });
+      });
+    } finally {
+      await sql`RESET lock_timeout`.execute(connection);
+    }
+  });
+  expect(
+    await f.sut.checkPinned(f.asset.id, f.claim.id, pinned.cacheId, pinned.leaseId, {
+      ...reader,
+      ownerId: randomUUID(),
+    }),
+  ).toBe(false);
+  expect(await f.cache.claimRemoval(f.entry.id)).toBeUndefined();
+  await db.updateTable('desktop_device').set({ state: 'paused' }).where('id', '=', f.device.id).execute();
+  expect(await f.sut.pinReady(f.asset.id, f.claim.id, { ...reader, readerId: randomUUID() })).toBeUndefined();
+  expect(await f.cache.claimRemoval(f.entry.id)).toBeUndefined();
+  expect(await f.cache.release(pinned.leaseId, reader)).toBe(true);
+  expect(await f.cache.claimRemoval(f.entry.id)).toBeUndefined();
+  await db
+    .updateTable('source_resource_read')
+    .set({ deadline: new Date(0) })
+    .where('id', '=', f.claim.id)
+    .execute();
+  expect((await f.cache.claimRemoval(f.entry.id))?.state).toBe('deleting');
+});
+it.each(['version', 'scope', 'epoch', 'checksum', 'size', 'fence', 'expired', 'deleting'] as const)(
+  'refuses to pin a ready delivery after %s changes',
+  async (change) => {
+    const f = await deliveryFixture();
+    expect(await f.sut.completeDelivery(f.grant, f.claim.id, f.claim.claimFence, f.token, f.original, f.publish)).toBe(
+      true,
+    );
+    switch (change) {
+      case 'version': {
+        await db
+          .updateTable('photo_source_resource')
+          .set({ version: 'f'.repeat(64) })
+          .where('id', '=', f.resource.id)
+          .execute();
+        break;
+      }
+      case 'scope': {
+        await db
+          .updateTable('photo_source')
+          .set({ scopeFingerprint: 'f'.repeat(64) })
+          .where('id', '=', f.source.id)
+          .execute();
+        break;
+      }
+      case 'epoch': {
+        await db.updateTable('desktop_device').set({ authorizationEpoch: 2 }).where('id', '=', f.device.id).execute();
+        break;
+      }
+      case 'checksum': {
+        await db
+          .updateTable('source_resource_cache')
+          .set({ sha256: Buffer.alloc(32) })
+          .where('id', '=', f.entry.id)
+          .execute();
+        break;
+      }
+      case 'size': {
+        await db.updateTable('source_resource_cache').set({ bytes: 6 }).where('id', '=', f.entry.id).execute();
+        break;
+      }
+      case 'fence': {
+        await db
+          .updateTable('source_resource_read')
+          .set({ claimFence: f.claim.claimFence + 1 })
+          .where('id', '=', f.claim.id)
+          .execute();
+        break;
+      }
+      case 'expired': {
+        await db
+          .updateTable('source_resource_read')
+          .set({ deadline: sql`clock_timestamp()-interval '1 second'` })
+          .where('id', '=', f.claim.id)
+          .execute();
+        break;
+      }
+      case 'deleting': {
+        await db.updateTable('source_resource_cache').set({ state: 'deleting' }).where('id', '=', f.entry.id).execute();
+        break;
+      }
+      // No default
+    }
+    expect(
+      await f.sut.pinReady(f.asset.id, f.claim.id, { kind: 'http', readerId: randomUUID(), ownerId: randomUUID() }),
+    ).toBeUndefined();
+    expect(
+      await db.selectFrom('source_resource_cache_lease').select('id').where('cacheId', '=', f.entry.id).execute(),
+    ).toEqual([]);
+  },
+);
+it.each([
+  ['expired', false],
+  ['fence', false],
+  ['expired', true],
+  ['fence', true],
+] as const)('refuses %s changes during a cache lock wait (existing reader: %s)', async (change, existing) => {
+  const f = await deliveryFixture();
+  expect(await f.sut.completeDelivery(f.grant, f.claim.id, f.claim.claimFence, f.token, f.original, f.publish)).toBe(
+    true,
+  );
+  const reader = { kind: 'http' as const, readerId: randomUUID(), ownerId: randomUUID() };
+  const pin = existing ? (await f.sut.pinReady(f.asset.id, f.claim.id, reader))! : undefined;
+  const locked = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const blocker = db.transaction().execute(async (tx) => {
+    await tx.selectFrom('source_resource_cache').select('id').where('id', '=', f.entry.id).forUpdate().execute();
+    locked.resolve();
+    await release.promise;
+  });
+  await locked.promise;
+  const pending = existing
+    ? f.sut.checkPinned(f.asset.id, f.claim.id, pin!.cacheId, pin!.leaseId, reader)
+    : f.sut.pinReady(f.asset.id, f.claim.id, reader);
+  try {
+    const limit = Date.now() + 5000;
+    for (;;) {
+      const { rows } = await sql<{ waiting: boolean }>`SELECT EXISTS (
+        SELECT 1 FROM pg_stat_activity WHERE pid<>pg_backend_pid() AND wait_event_type='Lock'
+          AND query LIKE '%source_resource_cache%inner join%'
+      ) AS waiting`.execute(db);
+      if (rows[0].waiting) break;
+      if (Date.now() >= limit) throw new Error('Reader did not reach the cache lock');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    await db
+      .updateTable('source_resource_read')
+      .set(
+        change === 'expired'
+          ? { deadline: sql`clock_timestamp()-interval '1 second'` }
+          : { claimFence: f.claim.claimFence + 1 },
+      )
+      .where('id', '=', f.claim.id)
+      .execute();
+  } finally {
+    release.resolve();
+    await blocker;
+  }
+  expect(await pending).toBe(existing ? false : undefined);
+  expect(
+    await db.selectFrom('source_resource_cache_lease').select('id').where('cacheId', '=', f.entry.id).execute(),
+  ).toEqual(existing ? [{ id: pin!.leaseId }] : []);
+});
+
+it('revokes shared provider work only after its final original consumer disconnects', async () => {
+  const f = await fixture();
+  const storage = vi.spyOn(StorageCore, 'getMediaLocation').mockReturnValue(tmpdir());
+  const service = new SourceOriginalService(f.sut, new SourceResourceCacheRepository(db));
+  const enqueue = vi.spyOn(f.sut, 'enqueue');
+  const firstAbort = new AbortController(),
+    secondAbort = new AbortController();
+  const reader = () => ({ kind: 'http' as const, readerId: randomUUID(), ownerId: randomUUID() });
+  const first = service.open(f.asset.id, reader(), () => Promise.resolve(), firstAbort.signal);
+  const second = service.open(f.asset.id, reader(), () => Promise.resolve(), secondAbort.signal);
+  void first.catch(() => {});
+  void second.catch(() => {});
+  try {
+    await expect.poll(() => enqueue.mock.calls.length).toBe(2);
+    const requests = await Promise.all(enqueue.mock.results.map((result) => result.value));
+    expect(requests[0]?.id).toBe(requests[1]?.id);
+    firstAbort.abort();
+    await expect(first).rejects.toThrow();
+    const alive = await db
+      .selectFrom('source_resource_read')
+      .select('state')
+      .where('id', '=', requests[0]!.id)
+      .executeTakeFirstOrThrow();
+    expect(alive.state).toBe('pending');
+    secondAbort.abort();
+    await expect(second).rejects.toThrow();
+    // No consumer remains: even an authenticated companion must not begin hydration now.
+    const orphan = await f.sut.claim(f.grant, randomBytes(32), Number(f.resource.bytes));
+    expect(orphan).toBeUndefined();
+  } finally {
+    firstAbort.abort();
+    secondAbort.abort();
+    await Promise.allSettled([first, second]);
+    enqueue.mockRestore();
+    storage.mockRestore();
+  }
+});
