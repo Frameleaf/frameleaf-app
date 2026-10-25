@@ -2,7 +2,14 @@ import type { JobRepository } from 'src/repositories/job.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { JobStatus, MediaOperationStatus } from 'src/enum.js';
-import { advanceJobProgress, afterJobCommit, deferJobAdoption, deferJobFailure, jobSignal } from 'src/queue/context.js';
+import {
+  advanceJobProgress,
+  afterJobCommit,
+  deferJobAdoption,
+  deferJobFailure,
+  jobSignal,
+  queueExecution,
+} from 'src/queue/context.js';
 import {
   EDIT_OPERATION_LEASE_MS,
   EDIT_OPERATION_REDISPATCH_MS,
@@ -380,10 +387,11 @@ export class EditOperationTracker {
         return JobStatus.Skipped;
       }
       const status = await work(run);
+      if (queueExecution.getStore()?.executorStopUnconfirmed) throw new Error('media_process_shutdown_unconfirmed');
       await run.finish(status);
       return status;
     } catch (error) {
-      await run.fail(error, EDIT_RENDER_FAILED.errorCode);
+      if (!queueExecution.getStore()?.executorStopUnconfirmed) await run.fail(error, EDIT_RENDER_FAILED.errorCode);
       throw error;
     } finally {
       run.stop();

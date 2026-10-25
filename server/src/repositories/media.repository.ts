@@ -3,10 +3,9 @@ import { ExifDateTime, WriteTags, exiftool } from 'exiftool-vendored';
 import ffmpeg, { FfprobeData, FfprobeStream } from 'fluent-ffmpeg';
 import { camelCase, upperFirst } from 'lodash-es';
 import { Duration } from 'luxon';
-import { spawn } from 'node:child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import { Writable } from 'node:stream';
-import { parentPort } from 'node:worker_threads';
 import type { HdrCodecCapabilities } from 'src/queue/image-hdr.js';
 import type { SharpArguments } from 'src/queue/sharp-protocol.js';
 import type { SourceMediaMetadata } from 'src/repositories/metadata.repository.js';
@@ -37,8 +36,8 @@ import {
   LogLevel,
   RawExtractedFormat,
 } from 'src/enum.js';
-import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
-import { superviseMediaProcess } from 'src/queue/process-lifetime.js';
+import { advanceJobProgress, queueExecution } from 'src/queue/context.js';
+import { isMediaProcessShutdownUnconfirmed, superviseMediaProcess } from 'src/queue/process-lifetime.js';
 import { SharpOperationError, imageWorkerDiagnostics, sharpProcessPool } from 'src/queue/sharp-pool.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
@@ -110,6 +109,7 @@ export type ExtractResult = {
 
 @Injectable()
 export class MediaRepository {
+  private encoderShutdownUnconfirmed = false;
   private hdrCodecProbe?: { value: Promise<HdrCodecCapabilities | null>; expires: number };
 
   getHdrCodecCapabilities(): Promise<HdrCodecCapabilities | null> {
@@ -659,7 +659,9 @@ export class MediaRepository {
   }
 
   async transcode(input: string, output: string | Writable, options: TranscodeCommand): Promise<void> {
-    const signal = jobSignal();
+    if (this.encoderShutdownUnconfirmed || queueExecution.getStore()?.executorStopUnconfirmed)
+      throw new Error('media_process_shutdown_unconfirmed');
+    const signal = executionSignal();
     signal?.throwIfAborted();
     const run = (target: string | Writable, pass?: number) =>
       new Promise<void>((resolve, reject) => {
@@ -670,49 +672,46 @@ export class MediaRepository {
             command.addOptions('-f null');
           }
         }
-        let killTimer: ReturnType<typeof setTimeout> | undefined;
-        const abort = () => {
-          command.kill('SIGTERM');
-          killTimer ??= setTimeout(() => command.kill('SIGKILL'), 5000);
+        // Progress is measured in frames; fluent's parallel duration probe has no input owner.
+        command.ffprobe = (...args: unknown[]) => {
+          const callback = args.at(-1);
+          if (typeof callback === 'function') callback(null, { streams: [], format: {} });
         };
-        let pid: number | undefined;
+        let closed = Promise.resolve();
+        let lifetime: ReturnType<typeof superviseMediaProcess> | undefined;
         command.on('start', () => {
-          pid = (command as unknown as { ffmpegProc?: { pid?: number } }).ffmpegProc?.pid;
-          if (pid) {
-            parentPort?.postMessage({ type: 'queue-child', pid, active: true });
+          const child = (command as unknown as { ffmpegProc?: ChildProcess }).ffmpegProc;
+          if (!child) {
+            command.kill('SIGKILL');
+            this.encoderShutdownUnconfirmed = true;
+            const context = queueExecution.getStore();
+            if (context) context.executorStopUnconfirmed = true;
+            reject(new Error('media_process_shutdown_unconfirmed'));
+            return;
           }
+          closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
+          lifetime = superviseMediaProcess(child, { signal });
         });
-        const cleanup = () => {
-          if (pid) {
-            parentPort?.postMessage({ type: 'queue-child', pid, active: false });
-          }
-          signal?.removeEventListener('abort', abort);
-          clearTimeout(killTimer);
-        };
         let lastFrames = 0;
         command
           .on('progress', (progress: ProgressEvent) => {
             if (!(progress.frames > lastFrames)) return;
-            advanceJobProgress(progress.frames - lastFrames);
+            if (lifetime) lifetime.progress(progress.frames - lastFrames);
+            else advanceJobProgress(progress.frames - lastFrames);
             lastFrames = progress.frames;
           })
           .on('error', (error) => {
-            cleanup();
-            reject(error);
+            lifetime?.stop(error);
+            void closed.then(() => reject(lifetime?.error() ?? signal?.reason ?? error));
           })
           .on('end', () => {
-            cleanup();
-            if (signal?.aborted) {
-              reject(signal.reason);
-            } else {
-              resolve();
-            }
+            void closed.then(() => {
+              const error = lifetime?.error() ?? (signal?.aborted ? signal.reason : undefined);
+              if (error) reject(error);
+              else resolve();
+            });
           });
-        signal?.addEventListener('abort', abort, { once: true });
         command.run();
-        if (signal?.aborted) {
-          abort();
-        }
       });
     if (!options.twoPass) {
       await run(output);
@@ -721,12 +720,20 @@ export class MediaRepository {
     if (typeof output !== 'string') {
       throw new TypeError('Two-pass transcoding does not support writing to a stream');
     }
+    let stopUnconfirmed = false;
     try {
       await run('/dev/null', 1);
       signal?.throwIfAborted();
       await run(output, 2);
+    } catch (error) {
+      stopUnconfirmed = isMediaProcessShutdownUnconfirmed(error);
+      throw error;
     } finally {
-      await Promise.all([fs.rm(`${output}-0.log`, { force: true }), fs.rm(`${output}-0.log.mbtree`, { force: true })]);
+      if (!stopUnconfirmed)
+        await Promise.all([
+          fs.rm(`${output}-0.log`, { force: true }),
+          fs.rm(`${output}-0.log.mbtree`, { force: true }),
+        ]);
     }
   }
 

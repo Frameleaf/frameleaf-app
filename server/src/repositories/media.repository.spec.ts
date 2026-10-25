@@ -1,16 +1,21 @@
 import { exiftool } from 'exiftool-vendored';
 import { execFileSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
+import type { FfmpegCommand } from 'fluent-ffmpeg';
+import type { QueueExecution } from 'src/queue/types.js';
 import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { Colorspace, ImageFormat, RawExtractedFormat } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { SharpOperations } from 'src/queue/sharp-operations.js';
 import { sharpProcessPool } from 'src/queue/sharp-pool.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { orientedToOriginal } from 'src/utils/develop-cleanup.js';
+import { withExecutionSignal } from 'src/utils/execution-signal.js';
 import { AudioChannelPolicy, findAudioLayoutMismatch, findAvAlignmentMismatch } from 'src/utils/media-policy.js';
 import {
   audioReattachOffsetSeconds,
@@ -97,6 +102,205 @@ describe(MediaRepository.name, () => {
   beforeEach(() => {
     // eslint-disable-next-line no-sparse-arrays
     sut = new MediaRepository(automock(LoggingRepository, { args: [, { getEnv: () => ({}) }], strict: false }));
+  });
+
+  it('does not start another encoder after shutdown becomes unconfirmed', async () => {
+    const configure = vi.spyOn(sut as unknown as { configureFfmpegCall: () => unknown }, 'configureFfmpegCall');
+    try {
+      await expect(
+        queueExecution.run({ executorStopUnconfirmed: true } as QueueExecution, () =>
+          sut.transcode('/source', '/output', {
+            inputOptions: [],
+            outputOptions: [],
+            twoPass: false,
+            progress: { frameCount: 0, percentInterval: 5 },
+          }),
+        ),
+      ).rejects.toThrow('media_process_shutdown_unconfirmed');
+      expect(configure).not.toHaveBeenCalled();
+    } finally {
+      configure.mockRestore();
+    }
+  });
+
+  it('retains pass logs and refuses HTTP retries when the encoder process cannot be observed', async () => {
+    const folder = mkdtempSync(join(tmpdir(), 'unconfirmed-encoder-'));
+    const output = join(folder, 'proxy.mp4');
+    const command = Object.assign(new EventEmitter(), {
+      ffprobe: vi.fn(),
+      run: vi.fn(),
+      kill: vi.fn(),
+      addOptions: vi.fn(),
+    });
+    command.addOptions.mockReturnValue(command);
+    command.run.mockImplementation(() => command.emit('start'));
+    const configure = vi
+      .spyOn(sut as unknown as { configureFfmpegCall: () => unknown }, 'configureFfmpegCall')
+      .mockReturnValue(command);
+    const options = {
+      inputOptions: [],
+      outputOptions: [],
+      twoPass: true,
+      progress: { frameCount: 0, percentInterval: 5 },
+    };
+    try {
+      for (const suffix of ['-0.log', '-0.log.mbtree']) writeFileSync(output + suffix, 'owned by encoder');
+      await expect(sut.transcode('/source', output, options)).rejects.toThrow('media_process_shutdown_unconfirmed');
+      for (const suffix of ['-0.log', '-0.log.mbtree'])
+        expect(readFileSync(output + suffix, 'utf8')).toBe('owned by encoder');
+      await expect(sut.transcode('/source', output, options)).rejects.toThrow('media_process_shutdown_unconfirmed');
+      expect(configure).toHaveBeenCalledOnce();
+    } finally {
+      configure.mockRestore();
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
+  it.each(['end', 'error'] as const)('joins the encoder close before settling a premature %s event', async (event) => {
+    const child = Object.assign(new EventEmitter(), { pid: 123, kill: vi.fn() });
+    const unownedProbe = vi.fn();
+    const command = Object.assign(new EventEmitter(), {
+      ffmpegProc: child,
+      ffprobe: unownedProbe,
+      run: vi.fn(),
+      kill: vi.fn(),
+    });
+    const failure = new Error('encoder stream failed');
+    command.run.mockImplementation(() => {
+      command.ffprobe(0, vi.fn());
+      command.emit('start');
+      command.emit(event, failure);
+    });
+    const configure = vi
+      .spyOn(sut as unknown as { configureFfmpegCall: () => unknown }, 'configureFfmpegCall')
+      .mockReturnValue(command);
+    let settled = false;
+    const result = sut
+      .transcode('/private/video.artifact', '/derived.mp4', {
+        inputOptions: [],
+        outputOptions: [],
+        twoPass: false,
+        progress: { frameCount: 0, percentInterval: 5 },
+      })
+      .then(() => {
+        settled = true;
+      })
+      .catch((error: unknown) => {
+        settled = true;
+        return error;
+      });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(settled).toBe(false);
+    expect(unownedProbe).not.toHaveBeenCalled();
+    child.emit('close', event === 'end' ? 0 : 1);
+    expect(await result).toBe(event === 'end' ? undefined : failure);
+    if (event === 'error') expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+    configure.mockRestore();
+  });
+
+  it('does not start the second encoding pass until the first child has closed', async () => {
+    const folder = mkdtempSync(join(tmpdir(), 'media-pass-lifetime-'));
+    const children = [0, 1].map(() => Object.assign(new EventEmitter(), { pid: 123, kill: vi.fn() }));
+    const { promise: secondStarted, resolve: startedSecond } = Promise.withResolvers<void>();
+    const commands = children.map((child, index) => {
+      const command = Object.assign(new EventEmitter(), {
+        ffmpegProc: child,
+        ffprobe: vi.fn(),
+        run: vi.fn(),
+        addOptions: vi.fn(),
+      });
+      command.addOptions.mockReturnValue(command);
+      command.run.mockImplementation(() => {
+        command.emit('start');
+        command.emit('end');
+        if (index === 1) startedSecond();
+      });
+      return command;
+    });
+    const configure = vi
+      .spyOn(sut as unknown as { configureFfmpegCall: () => unknown }, 'configureFfmpegCall')
+      .mockReturnValueOnce(commands[0])
+      .mockReturnValueOnce(commands[1]);
+    try {
+      const result = sut.transcode('/source.artifact', join(folder, 'proxy.mp4'), {
+        inputOptions: [],
+        outputOptions: [],
+        twoPass: true,
+        progress: { frameCount: 0, percentInterval: 5 },
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(configure).toHaveBeenCalledTimes(1);
+      children[0].emit('close', 0);
+      await secondStarted;
+      expect(configure).toHaveBeenCalledTimes(2);
+      children[1].emit('close', 0);
+      await result;
+    } finally {
+      for (const child of children) child.emit('close', 0);
+      configure.mockRestore();
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('retains a queue claim when a started encoder has no observable process handle', async () => {
+    const command = Object.assign(new EventEmitter(), { ffprobe: vi.fn(), run: vi.fn(), kill: vi.fn() });
+    command.run.mockImplementation(() => command.emit('start'));
+    const configure = vi
+      .spyOn(sut as unknown as { configureFfmpegCall: () => unknown }, 'configureFfmpegCall')
+      .mockReturnValue(command);
+    const context = { signal: new AbortController().signal } as QueueExecution;
+    try {
+      await expect(
+        queueExecution.run(context, () =>
+          sut.transcode('/source.artifact', '/derived.mp4', {
+            inputOptions: [],
+            outputOptions: [],
+            twoPass: false,
+            progress: { frameCount: 0, percentInterval: 5 },
+          }),
+        ),
+      ).rejects.toThrow('media_process_shutdown_unconfirmed');
+      expect(command.kill).toHaveBeenCalledWith('SIGKILL');
+      expect(context.executorStopUnconfirmed).toBe(true);
+    } finally {
+      configure.mockRestore();
+    }
+  });
+
+  it('cancels an encoder with its input signal and joins child close', async () => {
+    const child = Object.assign(new EventEmitter(), { pid: 123, kill: vi.fn() });
+    const command = Object.assign(new EventEmitter(), {
+      ffmpegProc: child,
+      ffprobe: vi.fn(),
+      run: vi.fn(),
+      kill: vi.fn(),
+    });
+    command.run.mockImplementation(() => command.emit('start'));
+    const configure = vi
+      .spyOn(sut as unknown as { configureFfmpegCall: () => unknown }, 'configureFfmpegCall')
+      .mockReturnValue(command);
+    const abort = new AbortController();
+    const canceled = new Error('borrowed input canceled');
+    let settled = false;
+    const result = withExecutionSignal(abort.signal, () =>
+      sut.transcode('/private/video.artifact', '/derived.mp4', {
+        inputOptions: [],
+        outputOptions: [],
+        twoPass: false,
+        progress: { frameCount: 0, percentInterval: 5 },
+      }),
+    ).catch((error: unknown) => {
+      settled = true;
+      return error;
+    });
+    abort.abort(canceled);
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+    command.emit('error', new Error('encoder killed'));
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    child.emit('close', 1);
+    expect(await result).toBe(canceled);
+    configure.mockRestore();
   });
 
   it('uses the owned metadata reader for RAW extraction and panorama copying', async () => {
@@ -827,6 +1031,51 @@ describe(MediaRepository.name, () => {
 
     afterAll(() => {
       rmSync(dirPath, { recursive: true, force: true });
+    });
+
+    it('reads a borrowed artifact file and joins a real encoder close after input cancellation', async () => {
+      const borrowed = join(dirPath, 'source.artifact');
+      const original = readFileSync(fixture);
+      writeFileSync(borrowed, original);
+      await transcode(borrowed, join(dirPath, 'borrowed.mp4'), [], ['-map', '0:v:0', '-c:v', 'copy', '-an']);
+      const abort = new AbortController();
+      const canceled = new Error('source lease canceled');
+      const target = sut as unknown as { configureFfmpegCall: (...args: unknown[]) => FfmpegCommand };
+      const configureCall = target.configureFfmpegCall.bind(sut);
+      let closed = false;
+      let childClosed: Promise<void> | undefined;
+      const configure = vi.spyOn(target, 'configureFfmpegCall').mockImplementation((...args) => {
+        const command = configureCall(...args);
+        command.on('start', () => {
+          const child = (command as unknown as { ffmpegProc: import('node:child_process').ChildProcess }).ffmpegProc;
+          childClosed = new Promise<void>((resolve) =>
+            child.once('close', () => {
+              closed = true;
+              resolve();
+            }),
+          );
+          queueMicrotask(() => abort.abort(canceled));
+        });
+        return command;
+      });
+      try {
+        await expect(
+          withExecutionSignal(abort.signal, () =>
+            transcode(
+              borrowed,
+              join(dirPath, 'canceled.mp4'),
+              ['-re', '-stream_loop', '-1'],
+              ['-map', '0:v:0', '-c:v', 'copy', '-an'],
+            ),
+          ),
+        ).rejects.toBe(canceled);
+        expect(closed).toBe(true);
+        expect(readFileSync(borrowed)).toEqual(original);
+      } finally {
+        configure.mockRestore();
+        abort.abort(canceled);
+        await childClosed;
+      }
     });
 
     const ffprobe = (file: string) =>

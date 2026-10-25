@@ -1,5 +1,5 @@
 import { Kysely, sql } from 'kysely';
-import { AssetFileType, AssetVisibility, SourceType } from 'src/enum.js';
+import { AlbumUserRole, AssetFileType, AssetLockReason, AssetVisibility, SourceType } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -277,6 +277,40 @@ describe(PersonRepository.name, () => {
   });
 
   describe('getDataForThumbnailGenerationJob', () => {
+    it('requires current album access and excludes deleted or locked original sources', async () => {
+      const { ctx, sut } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: viewer } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: owner.id });
+      const { person } = await ctx.newPerson({ ownerId: viewer.id });
+      const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+      const source = { ownerId: viewer.id, personGroupId: person.personGroupId };
+      await sut.update({ ...source, faceAssetId: assetFace.id });
+      await expect(sut.getDataForThumbnailGenerationJob(source)).resolves.toBeUndefined();
+      const { album } = await ctx.newAlbum({ ownerId: owner.id }, [asset.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: viewer.id, role: AlbumUserRole.Viewer });
+      await expect(sut.getDataForThumbnailGenerationJob(source)).resolves.toMatchObject({
+        assetId: asset.id,
+        originalFileName: asset.originalFileName,
+      });
+      await ctx.database.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', asset.id).execute();
+      await expect(sut.getDataForThumbnailGenerationJob(source)).resolves.toBeUndefined();
+      await ctx.database.updateTable('asset').set({ deletedAt: null }).where('id', '=', asset.id).execute();
+      await ctx.database
+        .insertInto('asset_lock')
+        .values({ assetId: asset.id, reason: AssetLockReason.Marked, lockedBy: owner.id, previousVisibility: null })
+        .execute();
+      await expect(sut.getDataForThumbnailGenerationJob(source)).resolves.toBeUndefined();
+      await ctx.database.deleteFrom('asset_lock').where('assetId', '=', asset.id).execute();
+      await ctx.database
+        .deleteFrom('album_user')
+        .where('albumId', '=', album.id)
+        .where('userId', '=', viewer.id)
+        .execute();
+      await expect(sut.getDataForThumbnailGenerationJob(source)).resolves.toBeUndefined();
+      await expect(sut.getDataForThumbnailGenerationJob(source, assetFace.id)).resolves.toBeUndefined();
+    });
+
     it('makes the original featured-face source ineligible after reassignment', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

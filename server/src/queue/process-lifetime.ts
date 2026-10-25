@@ -1,7 +1,11 @@
 import type { ChildProcess } from 'node:child_process';
 import { trackQueueChild } from 'src/queue/child-process.js';
-import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
+import { advanceJobProgress, jobSignal, queueExecution } from 'src/queue/context.js';
 import { QUEUE_TIMING } from 'src/queue/types.js';
+
+export const isMediaProcessShutdownUnconfirmed = (error: unknown): boolean =>
+  queueExecution.getStore()?.executorStopUnconfirmed === true ||
+  (error instanceof Error && error.message === 'media_process_shutdown_unconfirmed');
 
 /** Own cancellation until child close; progress changes an opaque limit into an idle limit. */
 export function superviseMediaProcess(

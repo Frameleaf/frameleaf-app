@@ -80,6 +80,27 @@ describe(EditOperationTracker.name, () => {
   });
 
   describe('execute', () => {
+    it.each(['throw', 'return'] as const)(
+      'retains the Activity claim after unconfirmed native stop: %s',
+      async (mode) => {
+        const context = { signal: new AbortController().signal, executorStopUnconfirmed: false } as QueueExecution;
+        await expect(
+          queueExecution.run(context, () =>
+            sut.execute('op-1', () => {
+              context.executorStopUnconfirmed = true;
+              return mode === 'throw'
+                ? Promise.reject(new Error('media_process_shutdown_unconfirmed'))
+                : Promise.resolve(JobStatus.Failed);
+            }),
+          ),
+        ).rejects.toThrow('media_process_shutdown_unconfirmed');
+        expect(operations.fail).not.toHaveBeenCalled();
+        expect(operations.complete).not.toHaveBeenCalled();
+        expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
+        expect(operations.requeue).not.toHaveBeenCalled();
+      },
+    );
+
     it('registers one deferred operation completion when the executor completes before returning Skipped', async () => {
       const adoptions: Array<(tx: never) => Promise<void>> = [];
       const afterCommit: Array<() => Promise<void>> = [];

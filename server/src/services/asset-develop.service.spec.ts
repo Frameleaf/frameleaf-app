@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { stat, writeFile } from 'node:fs/promises';
+import { rm, stat, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import type { Mock } from 'vitest';
 import {
   AssetDevelopArtifactKind,
@@ -175,6 +176,24 @@ describe(AssetDevelopService.name, () => {
     vi.mocked(encodeNativeDevelopOutput).mockReset().mockResolvedValue(Buffer.from('jpeg'));
     mocks.mediaOperation.getTrackedRevisionIds.mockResolvedValue(new Set());
     mocks.mediaOperation.listActiveEditsOfRevision.mockResolvedValue([]);
+  });
+
+  it('retains a keyframe folder when native shutdown cannot be confirmed', async () => {
+    mocks.media.transcode.mockRejectedValue(new Error('media_process_shutdown_unconfirmed'));
+    try {
+      await expect(
+        sut['decodeKeyframe']({} as never, 0, undefined, {
+          originalPath: '/owned/motion.mp4',
+          videoStream: { index: 0 },
+        } as never),
+      ).rejects.toThrow('media_process_shutdown_unconfirmed');
+      const folder = dirname(mocks.media.transcode.mock.calls[0][1] as string);
+      expect((await stat(folder)).isDirectory()).toBe(true);
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+    } finally {
+      const output = mocks.media.transcode.mock.calls[0]?.[1];
+      if (typeof output === 'string') await rm(dirname(output), { recursive: true, force: true });
+    }
   });
 
   it('preserves raw recipe through save and readback rather than projecting the renderer (FL-233)', async () => {

@@ -656,6 +656,8 @@ export class PersonRepository {
         'asset_face.boundingBoxY2 as y2',
         'asset_face.imageWidth as oldWidth',
         'asset_face.imageHeight as oldHeight',
+        'asset.id as assetId',
+        'asset.originalFileName',
         'asset.type',
         'asset.originalPath',
         'asset_exif.orientation as exifOrientation',
@@ -666,6 +668,8 @@ export class PersonRepository {
       .where('asset_face.deletedAt', 'is', null)
       .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
       .where('asset_face.isVisible', '=', true)
+      .where('asset.deletedAt', 'is', null)
+      .where((eb) => eb.or([eb('asset.ownerId', '=', asUuid(ownerId)), inSharedAlbum(eb, ownerId)]))
       .where((eb) => isNotLockedAsset(eb))
       .executeTakeFirst();
   }

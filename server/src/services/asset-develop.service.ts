@@ -54,6 +54,7 @@ import {
   StorageFolder,
 } from 'src/enum.js';
 import { attemptOutputPath, jobSignal, publishJobResult } from 'src/queue/context.js';
+import { isMediaProcessShutdownUnconfirmed } from 'src/queue/process-lifetime.js';
 import { assertPublicationMotionSource, assertPublicationSource } from 'src/queue/transaction.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import {
@@ -1440,6 +1441,7 @@ export class AssetDevelopService {
     const motion = clip ?? (await this.requireMotionClip(source, timeMs));
     const { ffmpeg } = await this.getConfig();
     const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-key-frame-'));
+    let stopUnconfirmed = false;
     try {
       const output = path.join(folder, 'frame.png');
       await this.mediaRepository.transcode(
@@ -1453,8 +1455,11 @@ export class AssetDevelopService {
         size,
       });
       return { data, info: info as RawImageInfo, colorspace: Colorspace.Srgb };
+    } catch (error) {
+      stopUnconfirmed = isMediaProcessShutdownUnconfirmed(error);
+      throw error;
     } finally {
-      await rm(folder, { recursive: true, force: true });
+      if (!stopUnconfirmed) await rm(folder, { recursive: true, force: true });
     }
   }
 

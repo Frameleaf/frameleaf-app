@@ -13,6 +13,7 @@ import type { ArgOf } from 'src/repositories/event.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { CacheControl, Permission, StorageFolder } from 'src/enum.js';
+import { isMediaProcessShutdownUnconfirmed } from 'src/queue/process-lifetime.js';
 import { BaseService } from 'src/services/base.service.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import {
@@ -205,6 +206,7 @@ export class StudioMediaService extends BaseService {
 
       const work = join(source.folder, `.work-${randomUUID()}`);
       this.storageRepository.mkdirSync(work);
+      let stopUnconfirmed = false;
       try {
         const cut: Array<string | null> = [];
         for (const [frameIndex, timeMs] of plan.timesMs.entries()) {
@@ -217,6 +219,7 @@ export class StudioMediaService extends BaseService {
             );
             cut.push((await this.storageRepository.checkFileExists(output)) ? output : null);
           } catch (error) {
+            if (isMediaProcessShutdownUnconfirmed(error)) throw error;
             this.logger.warn(`Could not cut filmstrip frame of ${source.assetId} at ${timeMs} ms: ${error}`);
             cut.push(null);
           }
@@ -260,8 +263,12 @@ export class StudioMediaService extends BaseService {
         await this.storageRepository.createOrOverwriteFile(indexPath, Buffer.from(JSON.stringify(index)));
         await this.pruneFilmstrips(source.folder);
         return index;
+      } catch (error) {
+        stopUnconfirmed = isMediaProcessShutdownUnconfirmed(error);
+        throw error;
       } finally {
-        await this.storageRepository.unlinkDir(work, { recursive: true, force: true }).catch(() => {});
+        if (!stopUnconfirmed)
+          await this.storageRepository.unlinkDir(work, { recursive: true, force: true }).catch(() => {});
       }
     });
   }

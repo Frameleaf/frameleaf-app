@@ -90,6 +90,16 @@ describe(StudioMediaService.name, () => {
   });
 
   describe('filmstrip', () => {
+    it('retains encoder-owned work and stops the frame loop when shutdown is unconfirmed', async () => {
+      mocks.media.probe.mockResolvedValue(videoInfo(false));
+      mocks.media.transcode.mockRejectedValue(new Error('media_process_shutdown_unconfirmed'));
+      await expect(sut.getFilmstrip(authStub.admin, assetId, { count: 4, height: 90 })).rejects.toThrow(
+        'media_process_shutdown_unconfirmed',
+      );
+      expect(mocks.media.transcode).toHaveBeenCalledOnce();
+      expect(mocks.storage.unlinkDir).not.toHaveBeenCalled();
+      expect(mocks.media.composeFilmstrip).not.toHaveBeenCalled();
+    });
     it('cuts frames from the playback rendition, never the original, and composes a sprite', async () => {
       mocks.media.probe.mockResolvedValue(videoInfo(false));
       const index = await sut.getFilmstrip(authStub.admin, assetId, { count: 4, height: 90 });

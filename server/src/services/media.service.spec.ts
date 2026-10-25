@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OutputInfo } from 'sharp';
 import type { QueueExecution } from 'src/queue/types.js';
+import type { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
 import { Exif } from 'src/database.js';
 import { type SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { AssetEditAction, VideoTrimMode } from 'src/dtos/editing.dto.js';
@@ -44,9 +45,10 @@ import * as physicalFiles from 'src/repositories/physical-file.repository.js';
 import { MediaService } from 'src/services/media.service.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
-import { operationExecution } from 'src/utils/execution-signal.js';
+import { executionSignal, operationExecution } from 'src/utils/execution-signal.js';
 import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { sourceOriginalPath } from 'src/utils/source-original.js';
 import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { PersonFactory } from 'test/factories/person.factory.js';
@@ -74,6 +76,7 @@ describe(MediaService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(MediaService));
+    mocks.assetEdit.assertImageEditSource.mockResolvedValue(undefined);
     // Keep the child batch orchestration real while stubbing its native I/O. The pool tests exercise IPC.
     let decodeFailure: unknown;
     const operations = Object.assign(new SharpOperations(), {
@@ -288,6 +291,211 @@ describe(MediaService.name, () => {
       mocks.media.getImageMetadata.mockResolvedValue({ width: 100, height: 100, isTransparent: false });
       vi.mocked(renderRawWithLibRaw).mockReset();
       vi.mocked(renderRawWithLibRaw).mockResolvedValue(renderedRawBuffer);
+    });
+
+    const sourceFixture = (originalFileName = 'source.jpg') => {
+      const asset = AssetFactory.from({
+        originalFileName,
+        originalPath: sourceOriginalPath({ sourceId: newUuid(), resourceKey: 'b'.repeat(64) }),
+        checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+      })
+        .exif({ imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false } })
+        .build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      const abort = new AbortController();
+      const input = {
+        localPath: '/private/source.artifact',
+        verifiedSha256: 'c'.repeat(64),
+        signal: abort.signal,
+        check: vi.fn().mockResolvedValue(undefined),
+        retainOnUnconfirmedStop: vi.fn(),
+      };
+      const reader = { ...mocks.metadata, copyPanoramaTags: vi.fn().mockResolvedValue(true) };
+      const source = { openForJob: vi.fn().mockResolvedValue(input) };
+      Object.assign(sut, { sourceOriginalService: source });
+      mocks.metadata.withBorrowedRead.mockImplementation((_path, _name, work) => work(reader));
+      const context = {
+        claim: { id: newUuid(), token: newUuid(), name: JobName.AssetGenerateThumbnails },
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        afterCommit: [],
+        followups: [],
+        buffering: false,
+      } as unknown as QueueExecution;
+      return { asset, input, source, reader, abort, context };
+    };
+
+    it('refuses a source-mismatched saved image edit before requesting companion bytes', async () => {
+      const f = sourceFixture();
+      const current = getForGenerateThumbnail(f.asset);
+      current.edits = [{ action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 10, height: 10 } }];
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(current);
+      const guard = vi.fn().mockRejectedValue(new Error('asset_edit_source_changed'));
+      Object.assign(mocks.assetEdit, { assertImageEditSource: guard });
+      await expect(
+        queueExecution.run(f.context, () => sut.handleGenerateThumbnails({ id: f.asset.id })),
+      ).rejects.toThrow('asset_edit_source_changed');
+      expect(f.source.openForJob).not.toHaveBeenCalled();
+      expect(mocks.media.generateImageThumbnails).not.toHaveBeenCalled();
+    });
+
+    it('decodes a leased source while keeping its logical identity at publication', async () => {
+      const f = sourceFixture();
+      await expect(queueExecution.run(f.context, () => sut.handleGenerateThumbnails({ id: f.asset.id }))).resolves.toBe(
+        JobStatus.Success,
+      );
+      expect(f.source.openForJob).toHaveBeenCalledWith(f.asset.id, expect.any(Function));
+      expect(mocks.media.generateImageThumbnails).toHaveBeenCalledWith(
+        f.input.localPath,
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+      f.input.check.mockRejectedValue(new Error('source revoked'));
+      await expect(f.context.adoptions[0]({} as never)).rejects.toThrow('source revoked');
+    });
+
+    it('refuses an output that aliases the borrowed original before invoking any image worker', async () => {
+      const f = sourceFixture();
+      vi.spyOn(sut as unknown as { getImageFile(): { path: string } }, 'getImageFile').mockReturnValue({
+        path: f.input.localPath,
+      });
+      await expect(
+        queueExecution.run(f.context, () => sut.handleGenerateThumbnails({ id: f.asset.id })),
+      ).rejects.toThrow();
+      expect(mocks.media.generateImageThumbnails).not.toHaveBeenCalled();
+      expect(mocks.media.generateHdrRenditions).not.toHaveBeenCalled();
+    });
+
+    it('routes RAW extraction and fallback through the owned source input', async () => {
+      const f = sourceFixture('source.CR3');
+      mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true, fullsize: { enabled: false } } });
+      mocks.media.extract.mockResolvedValue(null);
+      await queueExecution.run(f.context, () => sut.handleGenerateThumbnails({ id: f.asset.id }));
+      expect(renderRawWithLibRaw).toHaveBeenCalledWith(f.input.localPath, expect.any(AbortSignal));
+      expect(mocks.media.extract).toHaveBeenCalledWith(f.input.localPath, f.reader);
+      expect(mocks.media.extract.mock.calls.every(([path]) => path === f.input.localPath)).toBe(true);
+    });
+
+    it('passes source cancellation to both the image batch and the owned metadata session', async () => {
+      const f = sourceFixture();
+      const entered = Promise.withResolvers<AbortSignal>();
+      const stopped = Promise.withResolvers<void>();
+      mocks.media.generateImageThumbnails.mockImplementation(async () => {
+        const signal = executionSignal()!;
+        entered.resolve(signal);
+        await stopped.promise;
+        signal.throwIfAborted();
+        return { info: rawInfo, thumbhash: Buffer.from('hash'), isTransparent: false };
+      });
+      const pending = queueExecution.run(f.context, () => sut.handleGenerateThumbnails({ id: f.asset.id }));
+      const rejected = expect(pending).rejects.toThrow('source cancelled');
+      try {
+        const signal = await entered.promise;
+        expect(mocks.metadata.withBorrowedRead.mock.calls[0][3]).toBe(signal);
+        f.abort.abort(new Error('source cancelled'));
+        expect(signal.aborted).toBe(true);
+        expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+      } finally {
+        stopped.resolve();
+        await rejected;
+      }
+    });
+
+    it('uses owned panorama copying without exposing a logical source URI to a path tool', async () => {
+      const f = sourceFixture();
+      const asset = AssetFactory.from(f.asset).exif({ projectionType: 'EQUIRECTANGULAR' }).build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      await queueExecution.run(f.context, () => sut.handleGenerateThumbnails({ id: asset.id }));
+      expect(mocks.media.copyTagGroup).toHaveBeenCalledWith(
+        'XMP-GPano',
+        f.input.localPath,
+        expect.any(String),
+        f.reader,
+      );
+    });
+
+    it('uses verified content rather than the logical path hash for source HDR renditions', async () => {
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      try {
+        const f = sourceFixture();
+        const asset = AssetFactory.from(f.asset)
+          .exif({ imageEncoding: { dynamicRange: 'hdr', gainMap: 'iso-21496', reconstructionAvailable: true } })
+          .build();
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.media.generateHdrRenditions.mockImplementation((_source, outputs) =>
+          Promise.resolve(
+            outputs.map((output) => ({
+              path: output.path,
+              width: 100,
+              height: 100,
+              gamut: 1,
+              encoding: { dynamicRange: 'hdr', gainMap: 'iso-21496', reconstructionAvailable: true },
+            })),
+          ),
+        );
+        await queueExecution.run(f.context, () => sut.handleGenerateThumbnails({ id: asset.id }));
+        expect(mocks.media.generateHdrRenditions).toHaveBeenCalledWith(
+          f.input.localPath,
+          expect.any(Array),
+          undefined,
+          undefined,
+          Buffer.from(f.input.verifiedSha256, 'hex'),
+        );
+        expect(mocks.crypto.hashFile).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it('renders video covers from the leased input and separates changed content under the same logical URI', async () => {
+      const f = sourceFixture('source.mp4');
+      const asset = AssetFactory.from({ ...f.asset, type: AssetType.Video })
+        .exif()
+        .build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        ...probeStub.videoStream2160p,
+        coverTimestampMs: 1000,
+      });
+      await queueExecution.run(f.context, () => sut.handleGenerateThumbnails({ id: asset.id }));
+      const first = mocks.media.transcode.mock.calls[0][1];
+      expect(mocks.media.transcode).toHaveBeenCalledTimes(2);
+      expect(mocks.media.transcode.mock.calls.every(([path]) => path === f.input.localPath)).toBe(true);
+      mocks.media.transcode.mockClear();
+      f.input.verifiedSha256 = 'd'.repeat(64);
+      await queueExecution.run(f.context, () => sut.handleGenerateThumbnails({ id: asset.id }));
+      expect(mocks.media.transcode.mock.calls[0][1]).not.toBe(first);
+    });
+
+    it('keeps edited still lineage logical while recording the measured source content', async () => {
+      const f = sourceFixture();
+      const asset = AssetFactory.from(f.asset)
+        .exif({ imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false } })
+        .edit({ action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 50, height: 50 } })
+        .build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      await queueExecution.run(f.context, () => sut.handleAssetEditThumbnailGeneration({ id: asset.id }));
+      expect(f.source.openForJob).toHaveBeenCalledTimes(1);
+      const lineage = mocks.storage.createOrOverwriteFile.mock.calls.map(([, data]) => String(data)).join('\n');
+      expect(lineage).toContain(asset.originalPath);
+      expect(lineage).toContain(Buffer.from(f.input.verifiedSha256, 'hex').toString('base64'));
+      expect(lineage).not.toContain(f.input.localPath);
+    });
+
+    it('retains an input and refuses publication after unconfirmed tool shutdown', async () => {
+      const f = sourceFixture();
+      mocks.metadata.withBorrowedRead.mockImplementation(async (_path, _name, work) => {
+        await work(f.reader);
+        throw new Error('source_original_shutdown_unconfirmed');
+      });
+      await expect(
+        queueExecution.run(f.context, () => sut.handleGenerateThumbnails({ id: f.asset.id })),
+      ).rejects.toThrow('source_original_shutdown_unconfirmed');
+      expect(f.input.retainOnUnconfirmedStop).toHaveBeenCalledOnce();
+      expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
     });
 
     it.each([AssetFileType.HdrPreview, AssetFileType.Preview, AssetFileType.Thumbnail])(
@@ -2566,6 +2774,190 @@ describe(MediaService.name, () => {
   });
 
   describe('handleGeneratePersonThumbnail', () => {
+    const sourcePersonFixture = (originalFileName = 'portrait.jpg', type = AssetType.Image) => {
+      const data = {
+        ...personThumbnailStub.newThumbnailMiddle,
+        assetId: newUuid(),
+        originalFileName,
+        type,
+        exifOrientation: '6',
+        originalPath: sourceOriginalPath({ sourceId: newUuid(), resourceKey: 'd'.repeat(64) }),
+      };
+      const person = PersonFactory.create({ faceAssetId: newUuid() });
+      mocks.person.getByGroupId.mockResolvedValue(person as never);
+      mocks.person.getFaceById.mockResolvedValue({ assetId: data.assetId } as never);
+      mocks.person.getDataForThumbnailGenerationJob.mockResolvedValue(data);
+      mocks.media.decodeImage.mockResolvedValue({ data: rawBuffer, info: { width: 400, height: 500 } as OutputInfo });
+      vi.mocked(renderRawWithLibRaw).mockResolvedValue(renderedRawBuffer);
+      const abort = new AbortController();
+      const input = {
+        localPath: '/private/person-source.artifact',
+        signal: abort.signal,
+        check: vi.fn().mockResolvedValue(undefined),
+        retainOnUnconfirmedStop: vi.fn(),
+      };
+      const source = {
+        openForJob: vi
+          .fn()
+          .mockImplementation((_id: string, _authorize: () => Promise<void>) => Promise.resolve(input)),
+      };
+      Object.assign(sut, { sourceOriginalService: source });
+      const reader = { ...mocks.metadata, copyPanoramaTags: vi.fn() };
+      mocks.metadata.withBorrowedRead.mockImplementation((_path, _name, work) => work(reader));
+      const context = {
+        claim: { id: newUuid(), token: newUuid(), name: JobName.PersonGenerateThumbnail },
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        followups: [],
+        buffering: false,
+      } as unknown as QueueExecution;
+      const run = () => queueExecution.run(context, () => sut.handleGeneratePersonThumbnail(person));
+      return { data, person, input, source, reader, context, abort, run };
+    };
+
+    it('reads a person portrait by leased asset identity and fences revoked publication', async () => {
+      const f = sourcePersonFixture();
+      const logicalPath = f.data.originalPath;
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      expect(f.source.openForJob).toHaveBeenCalledWith(f.data.assetId, expect.any(Function));
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(f.input.localPath, expect.anything());
+      expect(f.data.originalPath).toBe(logicalPath);
+      expect(f.context.adoptions).toHaveLength(2);
+      const query = {
+        select: vi.fn(),
+        where: vi.fn(),
+        forUpdate: vi.fn(),
+        set: vi.fn(),
+        execute: vi.fn().mockResolvedValue([]),
+      };
+      for (const name of ['select', 'where', 'forUpdate', 'set'] as const) query[name].mockReturnValue(query);
+      const tx = { selectFrom: vi.fn().mockReturnValue(query), updateTable: vi.fn().mockReturnValue(query) };
+      const lock = vi.spyOn(physicalFiles, 'lockFilePath').mockResolvedValue();
+      try {
+        for (const adopt of f.context.adoptions) await adopt(tx as never);
+        expect(query.set).toHaveBeenCalledWith({
+          faceAssetId: f.person.faceAssetId,
+          thumbnailPath: mocks.media.generateThumbnail.mock.calls[0][2],
+        });
+        expect(mocks.media.generateThumbnail.mock.calls[0][2]).not.toBe(f.input.localPath);
+        tx.updateTable.mockClear();
+        mocks.person.getByGroupId.mockResolvedValue({ ...f.person, faceAssetId: newUuid() } as never);
+        await expect(f.context.adoptions[1](tx as never)).rejects.toThrow('Person thumbnail source changed');
+        expect(tx.updateTable).not.toHaveBeenCalled();
+        mocks.person.getByGroupId.mockResolvedValue(f.person as never);
+      } finally {
+        lock.mockRestore();
+      }
+      f.input.check.mockRejectedValue(new Error('source revoked'));
+      await expect(f.context.adoptions[0]({} as never)).rejects.toThrow('source revoked');
+      const authorize = f.source.openForJob.mock.calls[0][1];
+      mocks.person.getDataForThumbnailGenerationJob.mockResolvedValue(undefined);
+      await expect(authorize()).rejects.toThrow('Person thumbnail source changed');
+      expect(mocks.person.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects a changed face source before requesting original bytes', async () => {
+      const f = sourcePersonFixture();
+      mocks.person.getFaceById.mockResolvedValue({ assetId: newUuid() } as never);
+      await expect(f.run()).rejects.toThrow('Person thumbnail source changed');
+      expect(f.source.openForJob).not.toHaveBeenCalled();
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+    });
+
+    it('uses a video face preview without requesting its source original', async () => {
+      const f = sourcePersonFixture('clip.mp4', AssetType.Video);
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(f.data.previewPath, expect.anything());
+      expect(f.source.openForJob).not.toHaveBeenCalled();
+    });
+
+    it('renders RAW source sensor data using the cache path without applying orientation twice', async () => {
+      const f = sourcePersonFixture('portrait.CR3');
+      mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: false } });
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      expect(renderRawWithLibRaw).toHaveBeenCalledWith(f.input.localPath, expect.any(AbortSignal));
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(
+        renderedRawBuffer,
+        expect.objectContaining({ orientation: undefined }),
+      );
+    });
+
+    it('extracts a source RAW preview with the owned reader and asset orientation', async () => {
+      const f = sourcePersonFixture('portrait.CR3');
+      mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true } });
+      mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 4000, height: 6000, isTransparent: false });
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      expect(mocks.media.extract).toHaveBeenCalledWith(f.input.localPath, f.reader);
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(
+        extractedBuffer,
+        expect.objectContaining({ orientation: 6 }),
+      );
+      expect(renderRawWithLibRaw).not.toHaveBeenCalled();
+    });
+
+    it('falls back once to source RAW sensor data when the embedded preview cannot decode', async () => {
+      const f = sourcePersonFixture('portrait.CR3');
+      mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true } });
+      mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 4000, height: 6000, isTransparent: false });
+      mocks.media.decodeImage.mockRejectedValueOnce(new SharpOperationError('bad embedded image'));
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      expect(renderRawWithLibRaw).toHaveBeenCalledOnce();
+      expect(mocks.media.decodeImage).toHaveBeenLastCalledWith(
+        renderedRawBuffer,
+        expect.objectContaining({ orientation: undefined }),
+      );
+    });
+
+    it('renders source RAW sensor data when there is no usable embedded preview', async () => {
+      const f = sourcePersonFixture('portrait.CR3');
+      mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true } });
+      mocks.media.extract.mockResolvedValue(null);
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      expect(renderRawWithLibRaw).toHaveBeenCalledWith(f.input.localPath, expect.any(AbortSignal));
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(
+        renderedRawBuffer,
+        expect.objectContaining({ orientation: undefined }),
+      );
+    });
+
+    it('propagates source cancellation into person rendering without attempting RAW fallback', async () => {
+      const f = sourcePersonFixture('portrait.CR3');
+      mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true } });
+      mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 4000, height: 6000, isTransparent: false });
+      const canceled = new Error('person source canceled');
+      mocks.media.decodeImage.mockImplementation(() => {
+        const signal = executionSignal();
+        expect(signal?.aborted).toBe(false);
+        f.abort.abort(canceled);
+        expect(signal?.aborted).toBe(true);
+        return Promise.reject(new SharpOperationError('canceled decode'));
+      });
+      await expect(f.run()).rejects.toBe(canceled);
+      expect(renderRawWithLibRaw).not.toHaveBeenCalled();
+      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+    });
+
+    it('does not overwrite the borrowed source with a person thumbnail', async () => {
+      const f = sourcePersonFixture();
+      await f.run();
+      f.input.localPath = mocks.media.generateThumbnail.mock.calls[0][2];
+      mocks.media.generateThumbnail.mockClear();
+      await expect(f.run()).rejects.toThrow('Refusing to render over the original');
+      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+    });
+
+    it('retains the person source lease when the owned tool cannot confirm exit', async () => {
+      const f = sourcePersonFixture();
+      mocks.metadata.withBorrowedRead.mockRejectedValue(new Error('source_original_shutdown_unconfirmed'));
+      await expect(f.run()).rejects.toThrow('source_original_shutdown_unconfirmed');
+      expect(f.input.retainOnUnconfirmedStop).toHaveBeenCalledOnce();
+    });
+
     it('releases the superseded path only after successful claim adoption, retaining it when the face changes', async () => {
       const person = PersonFactory.create({ faceAssetId: newUuid(), thumbnailPath: '/old-person.jpeg' });
       mocks.person.getByGroupId.mockResolvedValue(person as never);
@@ -3961,12 +4353,13 @@ describe(MediaService.name, () => {
     const versionFor = (
       asset: { id: string; ownerId: string; originalPath: string; checksum: Buffer },
       purpose: 'save' | 'export' | 'revert',
-    ) => ({
+    ): VideoEditVersion => ({
       id: newUuid(),
       assetId: asset.id,
       ownerId: asset.ownerId,
       sourcePath: asset.originalPath,
       sourceChecksum: asset.checksum,
+      sourceReference: null,
       recipe: [{ action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 200, height: 100 } }],
       purpose,
       status: 'pending' as const,
@@ -3974,6 +4367,318 @@ describe(MediaService.name, () => {
       proxyPath: null,
       files: [],
       createdAt: new Date(),
+    });
+
+    const referencedVersion = (purpose: 'save' | 'export' | 'revert' = 'export') => {
+      const videoStream = {
+        ...probeStub.videoStreamH264.videoStream,
+        timeBaseRational: { num: 1, den: 600 },
+        width: 300,
+        height: 200,
+        rotation: 0,
+      };
+      const asset = {
+        ...AssetFactory.from({
+          type: AssetType.Video,
+          originalPath: sourceOriginalPath({ sourceId: newUuid(), resourceKey: 'b'.repeat(64) }),
+          checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+        })
+          .exif({})
+          .build(),
+        videoStream,
+        audioStream: null,
+        format: { ...probeStub.videoStreamH264.format, duration: 30 },
+        files: [],
+      };
+      const version = {
+        ...versionFor(asset, purpose),
+        sourceReference: { resourceId: newUuid(), version: 'e'.repeat(64), sha256: 'd'.repeat(64) },
+      };
+      if (purpose === 'revert') version.recipe = [];
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+      mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(version);
+      mocks.assetEdit.getVideoVersion.mockResolvedValue(version);
+      mocks.assetEdit.publishVideoVersion.mockResolvedValue({ published: true, releasedPaths: [] });
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled } });
+      const abort = new AbortController();
+      const input = {
+        localPath: '/private/version-source.artifact',
+        verifiedSha256: 'd'.repeat(64),
+        signal: abort.signal,
+        check: vi.fn().mockResolvedValue(undefined),
+        retainOnUnconfirmedStop: vi.fn(),
+      };
+      const source = {
+        openForJob: vi.fn().mockImplementation((_id: string, authorize: () => Promise<void>) => {
+          input.check.mockImplementation(authorize);
+          return Promise.resolve(input);
+        }),
+      };
+      Object.assign(sut, { sourceOriginalService: source });
+      const context = {
+        claim: { id: newUuid(), token: newUuid(), name: JobName.AssetVideoEditGeneration },
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        followups: [],
+        afterCommit: [],
+        buffering: false,
+      } as unknown as QueueExecution;
+      mocks.media.probe.mockImplementation((file) =>
+        Promise.resolve({
+          videoStreams: [{ ...videoStream, ...(file === input.localPath ? {} : { width: 200, height: 100 }) }],
+          audioStreams: [],
+          format: asset.format,
+        }),
+      );
+      const run = (operationId?: string) =>
+        queueExecution.run(context, () =>
+          sut.handleAssetVideoEditGeneration({ id: asset.id, versionId: version.id, operationId }),
+        );
+      return { asset, version, source, input, abort, context, run };
+    };
+
+    it('renders and checks a leased version original while lineage keeps the logical URI and verified digest', async () => {
+      const f = referencedVersion();
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      expect(f.source.openForJob).toHaveBeenCalledExactlyOnceWith(f.asset.id, expect.any(Function));
+      expect(mocks.media.probe).toHaveBeenNthCalledWith(1, f.input.localPath);
+      expect(mocks.media.probePackets).toHaveBeenCalledWith(f.input.localPath, f.asset.videoStream.index);
+      expect(mocks.media.transcode.mock.calls[0][0]).toBe(f.input.localPath);
+      expect(mocks.media.transcode.mock.calls[1][0]).toBe(mocks.media.transcode.mock.calls[0][1]);
+      const lineage = JSON.parse(mocks.storage.createOrOverwriteFile.mock.calls[0][1].toString());
+      expect(lineage).toMatchObject({
+        sourceOriginalPath: f.version.sourcePath,
+        sourceChecksum: Buffer.from(f.input.verifiedSha256, 'hex').toString('base64'),
+      });
+      expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+      f.input.check.mockRejectedValue(new Error('source revoked'));
+      await expect(f.context.adoptions[0]({} as never)).rejects.toThrow('source revoked');
+      expect(mocks.metadata.withBorrowedRead).not.toHaveBeenCalled();
+    });
+
+    it('refuses a changed version snapshot before materializing its original', async () => {
+      const f = referencedVersion();
+      mocks.assetEdit.getVideoVersion.mockResolvedValueOnce(f.version).mockResolvedValue({
+        ...f.version,
+        sourceReference: { ...f.version.sourceReference, version: 'f'.repeat(64) },
+      });
+      f.source.openForJob.mockImplementation(async (_id, authorize) => {
+        await authorize();
+        return f.input;
+      });
+      await expect(f.run()).rejects.toThrow('Video version source changed');
+      expect(mocks.media.probe).not.toHaveBeenCalled();
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    it('rejects bytes that do not match the saved resource digest before native reads', async () => {
+      const f = referencedVersion();
+      f.input.verifiedSha256 = 'c'.repeat(64);
+      await expect(f.run()).rejects.toThrow('Video version source changed');
+      expect(mocks.media.probe).not.toHaveBeenCalled();
+    });
+
+    it('stops version rendering on input cancellation without retrying or failing the version', async () => {
+      const f = referencedVersion();
+      const canceled = new Error('version source canceled');
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { accel: TranscodeHardwareAcceleration.Nvenc } });
+      mocks.media.transcode.mockImplementation(() => {
+        f.abort.abort(canceled);
+        return Promise.reject(canceled);
+      });
+      await expect(f.run()).rejects.toBe(canceled);
+      expect(mocks.media.transcode).toHaveBeenCalledOnce();
+      expect(mocks.assetEdit.failVideoVersion).not.toHaveBeenCalled();
+      expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+    });
+
+    it('retains version files and input when native shutdown cannot be confirmed', async () => {
+      const f = referencedVersion();
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { accel: TranscodeHardwareAcceleration.Nvenc } });
+      mocks.media.transcode.mockImplementation(() => {
+        f.context.executorStopUnconfirmed = true;
+        return Promise.reject(new Error('media_process_shutdown_unconfirmed'));
+      });
+      await expect(f.run()).rejects.toThrow('media_process_shutdown_unconfirmed');
+      expect(mocks.media.transcode).toHaveBeenCalledOnce();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      expect(mocks.assetEdit.failVideoVersion).not.toHaveBeenCalled();
+      expect(f.input.retainOnUnconfirmedStop).toHaveBeenCalledOnce();
+    });
+
+    it('rebuilds reference revert previews from the leased original with the current cover choice', async () => {
+      const f = referencedVersion('revert');
+      const metadata = { ...getForGenerateThumbnail(f.asset), coverTimestampMs: 1500 };
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(metadata);
+      const fresh = {
+        files: [
+          {
+            assetId: f.asset.id,
+            type: AssetFileType.Preview,
+            path: '/owned/fresh.jpg',
+            isEdited: false,
+            isProgressive: false,
+            isTransparent: false,
+          },
+        ],
+        thumbhash: Buffer.from('fresh'),
+        fullsizeDimensions: { width: 300, height: 200 },
+      };
+      const thumbnails = vi.fn().mockResolvedValue(fresh);
+      Object.assign(sut, { generateVideoThumbnails: thumbnails });
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      expect(thumbnails).toHaveBeenCalledWith(
+        expect.objectContaining({ checksum: Buffer.from(f.input.verifiedSha256, 'hex') }),
+        expect.anything(),
+        expect.objectContaining({ sourcePath: f.input.localPath, coverSeconds: 1.5 }),
+      );
+      await f.context.adoptions.at(-1)!({} as never);
+      expect(mocks.assetEdit.publishVideoVersion).toHaveBeenCalledWith(
+        f.version,
+        expect.objectContaining({ thumbhash: fresh.thumbhash, files: [] }),
+      );
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({ ...metadata, coverTimestampMs: 2500 });
+      await expect(f.context.adoptions[1]({} as never)).rejects.toThrow('Video cover changed');
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('renders saved reference thumbnails from the new master and keeps all inputs outside logical URIs', async () => {
+      const f = referencedVersion('save');
+      mocks.media.generateThumbhash.mockResolvedValue(Buffer.from('saved'));
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      const master = mocks.media.transcode.mock.calls[0][1];
+      expect(mocks.media.transcode.mock.calls.slice(1).every(([input]) => input === master)).toBe(true);
+      expect(mocks.media.probe.mock.calls.every(([input]) => !input.startsWith('frameleaf-source:'))).toBe(true);
+      await f.context.adoptions.at(-1)!({} as never);
+      expect(mocks.assetEdit.publishVideoVersion).toHaveBeenCalledWith(
+        f.version,
+        expect.objectContaining({
+          files: expect.arrayContaining([expect.objectContaining({ type: AssetFileType.Preview, isEdited: true })]),
+        }),
+      );
+    });
+
+    it('rechecks the input lease before accepting a stopped version failure diagnostic', async () => {
+      const f = referencedVersion();
+      mocks.media.transcode.mockRejectedValue(new Error('known encoder failure'));
+      await expect(f.run()).resolves.toBe(JobStatus.Failed);
+      expect(mocks.assetEdit.failVideoVersion).not.toHaveBeenCalled();
+      expect(f.context.failureDiagnostics).toHaveLength(1);
+      f.input.check.mockRejectedValue(new Error('source revoked'));
+      await expect(f.context.failureDiagnostics![0]({} as never)).rejects.toThrow('source revoked');
+      expect(mocks.assetEdit.failVideoVersion).not.toHaveBeenCalled();
+    });
+
+    it('does not clean up independently staged revert previews when a newer save supersedes the version', async () => {
+      const f = referencedVersion('revert');
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(f.asset));
+      Object.assign(sut, {
+        generateVideoThumbnails: vi.fn().mockResolvedValue({
+          files: [
+            {
+              assetId: f.asset.id,
+              type: AssetFileType.Preview,
+              path: '/owned/revert.jpg',
+              isEdited: false,
+              isProgressive: false,
+              isTransparent: false,
+            },
+          ],
+          thumbhash: Buffer.from('revert'),
+          fullsizeDimensions: { width: 300, height: 200 },
+        }),
+      });
+      await f.run();
+      mocks.assetEdit.publishVideoVersion.mockResolvedValue({ published: false, superseded: true, releasedPaths: [] });
+      await queueExecution.run(f.context, () => f.context.adoptions.at(-1)!({} as never));
+      for (const commit of f.context.afterCommit ?? []) await commit();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('retains the Activity owner as well as version files after an unconfirmed encoder stop', async () => {
+      const f = referencedVersion();
+      mocks.mediaOperation.beginJobQueueRun.mockResolvedValue({
+        operation: { id: 'op-source', ownerId: f.asset.ownerId, assetId: f.asset.id },
+        claimToken: 'source-token',
+      } as never);
+      mocks.mediaOperation.reportProgress.mockResolvedValue(true);
+      mocks.media.transcode.mockImplementation(() => {
+        f.context.executorStopUnconfirmed = true;
+        return Promise.reject(new Error('media_process_shutdown_unconfirmed'));
+      });
+      await expect(f.run('op-source')).rejects.toThrow('media_process_shutdown_unconfirmed');
+      expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.complete).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.requeue).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      expect(f.input.retainOnUnconfirmedStop).toHaveBeenCalledOnce();
+    });
+
+    it('refuses an unversioned reference edit before requesting bytes or changing existing output', async () => {
+      const f = referencedVersion();
+      mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(undefined);
+      await expect(
+        queueExecution.run(f.context, () => sut.handleAssetVideoEditGeneration({ id: f.asset.id })),
+      ).resolves.toBe(JobStatus.Failed);
+      expect(f.source.openForJob).not.toHaveBeenCalled();
+      expect(mocks.media.probe).not.toHaveBeenCalled();
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('never removes a source that aliases a scored cover candidate', async () => {
+      const folder = await mkdtemp(join(tmpdir(), 'version-cover-alias-'));
+      const input = join(folder, 'source_candidate_0.jpg');
+      const bytes = Buffer.from('owned synthetic original');
+      await writeFile(input, bytes);
+      try {
+        const picker = sut as unknown as { pickVideoThumbnailStartTime: (...args: unknown[]) => Promise<number> };
+        await expect(
+          picker.pickVideoThumbnailStartTime(
+            input,
+            join(folder, 'source.jpg'),
+            probeStub.videoStreamH264.videoStream,
+            probeStub.videoStreamH264.format,
+            vi.fn(),
+          ),
+        ).rejects.toThrow('Refusing to render over the original');
+        expect(await readFile(input)).toEqual(bytes);
+        expect(mocks.media.transcode).not.toHaveBeenCalled();
+      } finally {
+        await rm(folder, { recursive: true, force: true });
+      }
+    });
+
+    it('retains a cover candidate until its writer shutdown is confirmed', async () => {
+      const folder = await mkdtemp(join(tmpdir(), 'version-cover-stop-'));
+      const context = { signal: new AbortController().signal, executorStopUnconfirmed: false } as QueueExecution;
+      const candidate = join(folder, 'cover_candidate_0.jpg');
+      mocks.media.transcode.mockImplementation(async (_input, output) => {
+        await writeFile(output as string, 'candidate');
+        context.executorStopUnconfirmed = true;
+        throw new Error('media_process_shutdown_unconfirmed');
+      });
+      try {
+        const picker = sut as unknown as { pickVideoThumbnailStartTime: (...args: unknown[]) => Promise<number> };
+        await expect(
+          queueExecution.run(context, () =>
+            picker.pickVideoThumbnailStartTime(
+              join(folder, 'input.mp4'),
+              join(folder, 'cover.jpg'),
+              probeStub.videoStreamH264.videoStream,
+              probeStub.videoStreamH264.format,
+              vi.fn(),
+            ),
+          ),
+        ).rejects.toThrow('media_process_shutdown_unconfirmed');
+        expect(await readFile(candidate, 'utf8')).toBe('candidate');
+        expect(mocks.media.transcode).toHaveBeenCalledOnce();
+      } finally {
+        await rm(folder, { recursive: true, force: true });
+      }
     });
 
     it('refuses an unqualified original before rendering and fails only that version', async () => {
@@ -4616,6 +5321,188 @@ describe(MediaService.name, () => {
   });
 
   describe('handleStudioHdrProxy (FL-97)', () => {
+    const sourceHdr = () => {
+      const asset = {
+        ...AssetFactory.create({
+          type: AssetType.Video,
+          originalPath: sourceOriginalPath({ sourceId: newUuid(), resourceKey: 'a'.repeat(64) }),
+        }),
+        videoStream: probeStub.videoStreamHDR10.videoStream,
+        format: probeStub.videoStreamHDR10.format,
+        audioStream: null,
+      };
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+      mocks.media.probe.mockResolvedValue(videoInfoStub.videoStreamHDR10);
+      const abort = new AbortController();
+      const input = {
+        localPath: '/private/hdr-source.artifact',
+        signal: abort.signal,
+        check: vi.fn().mockResolvedValue(undefined),
+        retainOnUnconfirmedStop: vi.fn(),
+      };
+      const source = {
+        openForJob: vi.fn().mockImplementation((_id: string, authorize: () => Promise<void>) => {
+          input.check.mockImplementation(authorize);
+          return Promise.resolve(input);
+        }),
+      };
+      Object.assign(sut, { sourceOriginalService: source });
+      const context = {
+        claim: { id: newUuid(), token: newUuid(), name: JobName.StudioHdrProxyGenerate },
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        followups: [],
+        buffering: false,
+      } as unknown as QueueExecution;
+      const run = () => queueExecution.run(context, () => sut.handleStudioHdrProxy({ id: asset.id }));
+      return { asset, source, abort, input, context, run };
+    };
+
+    it('renders a leased HDR original and waits for accepted publication before recording it', async () => {
+      const f = sourceHdr();
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      expect(f.source.openForJob).toHaveBeenCalledExactlyOnceWith(f.asset.id, expect.any(Function));
+      expect(mocks.media.transcode).toHaveBeenCalledWith(
+        f.input.localPath,
+        expect.stringContaining('.attempts'),
+        expect.anything(),
+      );
+      expect(mocks.asset.recordStudioHdrIntermediate).not.toHaveBeenCalled();
+      for (const adopt of f.context.adoptions) await adopt({} as never);
+      expect(mocks.asset.recordStudioHdrIntermediate).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'ready', path: mocks.media.transcode.mock.calls[0][1] }),
+      );
+      mocks.asset.recordStudioHdrIntermediate.mockClear();
+      f.input.check.mockRejectedValue(new Error('source revoked'));
+      await expect(f.context.adoptions[1]({} as never)).rejects.toThrow('source revoked');
+      expect(mocks.asset.recordStudioHdrIntermediate).not.toHaveBeenCalled();
+    });
+
+    it('classifies reference HDR from borrowed bytes even when persisted stream metadata is stale', async () => {
+      const f = sourceHdr();
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({
+        ...f.asset,
+        videoStream: probeStub.videoStreamH264.videoStream,
+      });
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      expect(mocks.media.probe).toHaveBeenCalledExactlyOnceWith(f.input.localPath);
+      expect(mocks.media.transcode).toHaveBeenCalledWith(
+        f.input.localPath,
+        expect.any(String),
+        expect.objectContaining({ outputOptions: expect.arrayContaining(['-color_trc', 'smpte2084']) }),
+      );
+    });
+
+    it('refuses a now-SDR reference according to the borrowed file rather than stale HDR metadata', async () => {
+      const f = sourceHdr();
+      mocks.media.probe.mockResolvedValue(videoInfoStub.videoStreamH264);
+      await expect(f.run()).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+      expect(mocks.asset.recordStudioHdrIntermediate).not.toHaveBeenCalled();
+      for (const adopt of f.context.adoptions) await adopt({} as never);
+      expect(mocks.asset.recordStudioHdrIntermediate).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'ineligible' }),
+      );
+    });
+
+    it('defers a failed source probe diagnostic without creating or deleting an HDR output', async () => {
+      const f = sourceHdr();
+      mocks.media.probe.mockRejectedValue(new Error('invalid reference video'));
+      await expect(f.run()).resolves.toBe(JobStatus.Failed);
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      expect(mocks.asset.recordStudioHdrIntermediate).not.toHaveBeenCalled();
+      await f.context.failureDiagnostics![0]({} as never);
+      expect(mocks.asset.recordStudioHdrIntermediate).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'failed' }),
+      );
+    });
+
+    it('keeps HDR failure diagnostics inside the failed claim and rechecks the source lease', async () => {
+      const f = sourceHdr();
+      mocks.media.transcode.mockRejectedValue(new Error('bad HDR clip'));
+      await expect(f.run()).resolves.toBe(JobStatus.Failed);
+      expect(mocks.asset.recordStudioHdrIntermediate).not.toHaveBeenCalled();
+      expect(f.context.failureDiagnostics).toHaveLength(1);
+      await f.context.failureDiagnostics![0]({} as never);
+      expect(mocks.asset.recordStudioHdrIntermediate).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'failed' }),
+      );
+      mocks.asset.recordStudioHdrIntermediate.mockClear();
+      f.input.check.mockRejectedValue(new Error('source revoked'));
+      await expect(f.context.failureDiagnostics![0]({} as never)).rejects.toThrow('source revoked');
+      expect(mocks.asset.recordStudioHdrIntermediate).not.toHaveBeenCalled();
+    });
+
+    it('rejects an HDR source changed or edited between rendering and publication', async () => {
+      const f = sourceHdr();
+      mocks.asset.recordStudioHdrIntermediate.mockResolvedValue({ recorded: true, replacedPath: '/old-hdr.mp4' });
+      await f.run();
+      mocks.asset.getStudioHdrSourceFingerprint.mockResolvedValue(Buffer.from('new source'));
+      await expect(f.context.adoptions[1]({} as never)).rejects.toThrow('Studio HDR source changed');
+      expect(mocks.asset.recordStudioHdrIntermediate).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      mocks.asset.getStudioHdrSourceFingerprint.mockResolvedValue(fingerprint);
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({
+        ...f.asset,
+        files: [
+          {
+            id: newUuid(),
+            type: AssetFileType.EncodedVideo,
+            path: '/edited.mp4',
+            isEdited: true,
+            physicalFileId: null,
+            renditionIdentity: null,
+          },
+        ],
+      });
+      await expect(f.context.adoptions[1]({} as never)).rejects.toThrow('Studio HDR source changed');
+      expect(mocks.asset.recordStudioHdrIntermediate).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('defers an ineligible HDR decision without acquiring original bytes', async () => {
+      const f = sourceHdr();
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({
+        ...f.asset,
+        originalPath: '/original/sdr.mp4',
+        videoStream: probeStub.videoStreamH264.videoStream,
+      });
+      await expect(f.run()).resolves.toBe(JobStatus.Skipped);
+      expect(f.source.openForJob).not.toHaveBeenCalled();
+      expect(mocks.asset.recordStudioHdrIntermediate).not.toHaveBeenCalled();
+      await f.context.adoptions[0]({} as never);
+      expect(mocks.asset.recordStudioHdrIntermediate).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'ineligible' }),
+      );
+    });
+
+    it('does not delete HDR output or mark the clip failed when encoder shutdown is unknown', async () => {
+      const f = sourceHdr();
+      mocks.media.transcode.mockImplementation(() => {
+        f.context.executorStopUnconfirmed = true;
+        return Promise.reject(new Error('media_process_shutdown_unconfirmed'));
+      });
+      await expect(f.run()).rejects.toThrow('media_process_shutdown_unconfirmed');
+      expect(f.input.retainOnUnconfirmedStop).toHaveBeenCalledOnce();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      expect(mocks.asset.recordStudioHdrIntermediate).not.toHaveBeenCalled();
+    });
+
+    it('does not record an HDR failure after source cancellation', async () => {
+      const f = sourceHdr();
+      const canceled = new Error('HDR source canceled');
+      mocks.media.transcode.mockImplementation(() => {
+        f.abort.abort(canceled);
+        return Promise.reject(canceled);
+      });
+      await expect(f.run()).rejects.toBe(canceled);
+      expect(mocks.asset.recordStudioHdrIntermediate).not.toHaveBeenCalled();
+      expect(f.context.failureDiagnostics ?? []).toHaveLength(0);
+    });
+
     const fingerprint = Buffer.from('fingerprint');
     const hdrAsset = (videoStream: any = probeStub.videoStreamHDR10.videoStream, files: any[] = []) => ({
       ...AssetFactory.create({ id: 'video-id', type: AssetType.Video, originalPath: '/original/path.mov' }),
@@ -4762,6 +5649,150 @@ describe(MediaService.name, () => {
   });
 
   describe('handleVideoConversion', () => {
+    const sourceConversion = () => {
+      const original = {
+        ...AssetFactory.create({
+          type: AssetType.Video,
+          originalFileName: 'source.mov',
+          originalPath: sourceOriginalPath({ sourceId: newUuid(), resourceKey: 'e'.repeat(64) }),
+        }),
+        videoStream: probeStub.videoStreamH264.videoStream,
+        audioStream: null,
+        format: probeStub.videoStreamH264.format,
+      };
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(original);
+      mocks.media.probe.mockResolvedValue(videoInfoStub.videoStreamH264);
+      mocks.systemMetadata.get.mockResolvedValue({
+        ffmpeg: { transcode: TranscodePolicy.All, accel: TranscodeHardwareAcceleration.Nvenc, accelDecode: true },
+      });
+      const abort = new AbortController();
+      const input = {
+        localPath: '/private/video-source.artifact',
+        verifiedSha256: 'f'.repeat(64),
+        signal: abort.signal,
+        check: vi.fn().mockResolvedValue(undefined),
+        retainOnUnconfirmedStop: vi.fn(),
+      };
+      const source = {
+        openForJob: vi
+          .fn()
+          .mockImplementation((_id: string, _authorize: () => Promise<void>) => Promise.resolve(input)),
+      };
+      Object.assign(sut, { sourceOriginalService: source });
+      const context = {
+        claim: { id: newUuid(), token: newUuid(), name: JobName.AssetEncodeVideo },
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        followups: [],
+        buffering: false,
+      } as unknown as QueueExecution;
+      const run = () => queueExecution.run(context, () => sut.handleVideoConversion({ id: original.id }));
+      return { original, input, source, abort, context, run };
+    };
+
+    it('encodes a leased source through hardware fallbacks without persisting the cache path', async () => {
+      const f = sourceConversion();
+      mocks.media.transcode
+        .mockRejectedValueOnce(new Error('hardware decode failed'))
+        .mockRejectedValueOnce(new Error('hardware encode failed'))
+        .mockResolvedValueOnce();
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      expect(f.source.openForJob).toHaveBeenCalledExactlyOnceWith(f.original.id, expect.any(Function));
+      expect(mocks.media.transcode).toHaveBeenCalledTimes(3);
+      for (const [input] of mocks.media.transcode.mock.calls) expect(input).toBe(f.input.localPath);
+      expect(mocks.metadata.withBorrowedRead).not.toHaveBeenCalled();
+      expect(f.original.originalPath).toMatch(/^frameleaf-source:/);
+      expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+      const authorize = f.source.openForJob.mock.calls[0][1];
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...f.original, ownerId: newUuid() });
+      await expect(authorize()).rejects.toThrow('Video source changed');
+      f.input.check.mockRejectedValue(new Error('source revoked'));
+      await expect(f.context.adoptions[1]({} as never)).rejects.toThrow('source revoked');
+    });
+
+    it('plans reference conversion from the borrowed video streams instead of persisted metadata', async () => {
+      const f = sourceConversion();
+      mocks.media.probe.mockResolvedValue(videoInfoStub.multipleVideoStreams);
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      expect(mocks.media.probe).toHaveBeenCalledExactlyOnceWith(f.input.localPath);
+      expect(mocks.media.transcode).toHaveBeenCalledWith(
+        f.input.localPath,
+        expect.any(String),
+        expect.objectContaining({ outputOptions: expect.arrayContaining(['-map', '0:1']) }),
+      );
+    });
+
+    it('does not encode a reference with no current video stream despite persisted video metadata', async () => {
+      const f = sourceConversion();
+      mocks.media.probe.mockResolvedValue(videoInfoStub.noVideoStreams);
+      await expect(f.run()).resolves.toBe(JobStatus.Failed);
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    it('defers obsolete source proxy removal until queue acceptance when conversion is disabled', async () => {
+      const f = sourceConversion();
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { transcode: TranscodePolicy.Disabled } });
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({
+        ...f.original,
+        files: [
+          {
+            id: newUuid(),
+            type: AssetFileType.EncodedVideo,
+            path: '/previous-proxy.mp4',
+            isEdited: false,
+            physicalFileId: null,
+            renditionIdentity: null,
+          },
+        ],
+      });
+      await expect(f.run()).resolves.toBe(JobStatus.Skipped);
+      expect(f.source.openForJob).not.toHaveBeenCalled();
+      expect(mocks.asset.deleteFiles).not.toHaveBeenCalled();
+      expect(f.context.adoptions).toHaveLength(2);
+    });
+
+    it('retains the leased input and refuses retries when encoder shutdown is unconfirmed', async () => {
+      const f = sourceConversion();
+      mocks.media.transcode.mockImplementation(() => {
+        f.context.executorStopUnconfirmed = true;
+        return Promise.reject(new Error('media_process_shutdown_unconfirmed'));
+      });
+      await expect(f.run()).rejects.toThrow('media_process_shutdown_unconfirmed');
+      expect(f.input.retainOnUnconfirmedStop).toHaveBeenCalledOnce();
+      expect(mocks.media.transcode).toHaveBeenCalledOnce();
+    });
+
+    it('refuses to overwrite the borrowed video input with the encoded proxy', async () => {
+      const f = sourceConversion();
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      f.input.localPath = mocks.media.transcode.mock.calls[0][1] as string;
+      mocks.media.transcode.mockClear();
+      await expect(f.run()).rejects.toThrow('Refusing to render over the original');
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    it('does not request source bytes when the transcode policy needs no output', async () => {
+      const f = sourceConversion();
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { transcode: TranscodePolicy.Disabled } });
+      await expect(f.run()).resolves.toBe(JobStatus.Skipped);
+      expect(f.source.openForJob).not.toHaveBeenCalled();
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    it('does not retry source encoding after the leased input is canceled', async () => {
+      const f = sourceConversion();
+      const canceled = new Error('video source canceled');
+      mocks.media.transcode.mockImplementation(() => {
+        f.abort.abort(canceled);
+        return Promise.reject(canceled);
+      });
+      await expect(f.run()).rejects.toBe(canceled);
+      expect(mocks.media.transcode).toHaveBeenCalledOnce();
+      expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+    });
+
     let asset: ReturnType<typeof AssetFactory.create> & {
       videoStream: VideoStreamInfo & { timeBase: number };
       audioStream: AudioStreamInfo | null;
