@@ -1,16 +1,28 @@
 import { BadRequestException, ConflictException, HttpStatus, Injectable } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { Kysely, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import { randomUUID } from 'node:crypto';
+import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import {
   type AssetDevelopRecipe,
   AssetDevelopRevisionKind,
   AssetDevelopRevisionStatus,
 } from 'src/dtos/asset-develop.dto.js';
-import { publicationDatabase } from 'src/queue/transaction.js';
+import { AssetType, AssetVisibility } from 'src/enum.js';
+import { assertPublicationSource, publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
+import { captureDevelopSourceBinding } from 'src/repositories/develop-source-binding.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
+import { type AssetSourceSnapshot, assetSourceFingerprint, readAssetSource } from 'src/utils/asset-source-authority.js';
 import { assertRenderableDevelopRecipe, developEnvelope, preserveDevelopEnvelope } from 'src/utils/develop-envelope.js';
-import { developRenderArtifacts } from 'src/utils/develop-recipe.js';
+import { defaultDevelopRecipe, developRenderArtifacts } from 'src/utils/develop-recipe.js';
+import {
+  type DevelopSourceBinding,
+  developSourceBindingSchema,
+  developSourceVersion,
+  sameDevelopSourceBinding,
+} from 'src/utils/develop-source-binding.js';
+import { canonicalJson } from 'src/utils/object.js';
 
 export type AssetDevelopRevision = {
   id: string;
@@ -36,6 +48,7 @@ export type AssetDevelopRevision = {
   kind: AssetDevelopRevisionKind;
   sourceAssetId?: string | null;
   sourceChecksum: Buffer | null;
+  sourceBinding: DevelopSourceBinding | null;
   renditionChecksum: Buffer | null;
   exportId: string | null;
   fileName: string | null;
@@ -44,6 +57,8 @@ export type AssetDevelopRevision = {
   createdAt: Date;
   updatedAt: Date;
   renderedAt: Date | null;
+  renderAttemptId?: string | null;
+  renderGenerationId?: string | null;
 };
 export type AssetDevelopRevisionUpdate = Partial<
   Pick<
@@ -65,8 +80,14 @@ export type AssetDevelopRevisionUpdate = Partial<
     | 'sourceChecksum'
     | 'renditionChecksum'
     | 'attempts'
+    | 'renderGenerationId'
   >
 >;
+export type DevelopArtifactSource = {
+  binding: DevelopSourceBinding;
+  policy: AssetSourceSnapshot;
+  check: () => Promise<void>;
+};
 const TABLE = sql`public.asset_develop_revision`;
 const ARTIFACTS = sql`public.asset_develop_artifact`;
 /** FL-233: the artifact ids a recipe's masks and Clean Up name (whether or not they render). */
@@ -150,6 +171,7 @@ export class AssetDevelopRepository {
     sourceRevisionId?: string;
     /** FL-431: undefined skips the check; null expects no current revision. */
     expectedCurrentRevisionId?: string | null;
+    expectedSourceVersion?: string;
     replaceRecipe?: boolean;
     requireRenderable?: boolean;
     label: string | null;
@@ -174,9 +196,50 @@ export class AssetDevelopRepository {
         .where('id', '=', input.assetId)
         .where('ownerId', '=', input.ownerId)
         .where('deletedAt', 'is', null)
-        .forShare()
         .executeTakeFirst();
       if (!asset) throw new BadRequestException('Develop source asset is no longer available');
+      let recipe = developEnvelope(input.recipe);
+      let inheritedBinding: DevelopSourceBinding | null = null;
+      let inheritedChecksum: Buffer | null = null;
+      let inheritedRecipe: AssetDevelopRecipe | undefined;
+      if (input.sourceRevisionId) {
+        const source =
+          await sql<AssetDevelopRevision>`SELECT revision.* FROM ${TABLE} revision JOIN public.asset asset ON asset.id = revision."assetId" WHERE revision.id = ${input.sourceRevisionId}::uuid AND revision."assetId" = ${input.assetId}::uuid AND revision."ownerId" = ${input.ownerId}::uuid AND asset."ownerId" = ${input.ownerId}::uuid AND asset."deletedAt" IS NULL`.execute(
+            trx,
+          );
+        if (!source.rows[0]) throw new BadRequestException('Develop source revision is not available for this asset');
+        inheritedBinding = developSourceBindingSchema.nullable().parse(source.rows[0].sourceBinding ?? null);
+        inheritedChecksum = inheritedBinding ? source.rows[0].sourceChecksum : null;
+        inheritedRecipe = source.rows[0].recipe;
+        if (!input.replaceRecipe) recipe = preserveDevelopEnvelope(source.rows[0].recipe, recipe);
+      }
+      const currentBinding = await captureDevelopSourceBinding(
+        trx,
+        input.assetId,
+        input.ownerId,
+        recipe,
+        inheritedBinding?.kind === 'bound',
+      );
+      if (input.expectedSourceVersion !== developSourceVersion(currentBinding)) {
+        throw new ConflictException({
+          code: 'develop_source_changed',
+          message: 'The original changed. Refresh its preview before saving.',
+        });
+      }
+      if (input.sourceRevisionId) {
+        const current =
+          await sql<AssetDevelopRevision>`SELECT * FROM ${TABLE} WHERE id=${input.sourceRevisionId}::uuid FOR SHARE`.execute(
+            trx,
+          );
+        if (
+          !current.rows[0] ||
+          JSON.stringify(current.rows[0].recipe) !== JSON.stringify(inheritedRecipe) ||
+          JSON.stringify(developSourceBindingSchema.nullable().parse(current.rows[0].sourceBinding ?? null)) !==
+            JSON.stringify(inheritedBinding)
+        )
+          throw new BadRequestException('Develop source revision changed');
+        inheritedChecksum = inheritedBinding ? current.rows[0].sourceChecksum : null;
+      }
       if (input.expectedCurrentRevisionId !== undefined) {
         // FL-431: read under the per-asset lock above, in the inserting transaction, so the
         // precondition and the new row are one decision. Saving never moves `isCurrent`, so a
@@ -195,15 +258,12 @@ export class AssetDevelopRepository {
           });
         }
       }
-      let recipe = developEnvelope(input.recipe);
-      if (input.sourceRevisionId) {
-        const source =
-          await sql<AssetDevelopRevision>`SELECT revision.* FROM ${TABLE} revision JOIN public.asset asset ON asset.id = revision."assetId" WHERE revision.id = ${input.sourceRevisionId}::uuid AND revision."assetId" = ${input.assetId}::uuid AND revision."ownerId" = ${input.ownerId}::uuid AND asset."ownerId" = ${input.ownerId}::uuid AND asset."deletedAt" IS NULL FOR SHARE OF revision, asset`.execute(
-            trx,
-          );
-        if (!source.rows[0]) throw new BadRequestException('Develop source revision is not available for this asset');
-        if (!input.replaceRecipe) recipe = preserveDevelopEnvelope(source.rows[0].recipe, recipe);
-      }
+      const sourceBinding = input.sourceRevisionId ? inheritedBinding : currentBinding;
+      if (!sameDevelopSourceBinding(sourceBinding, currentBinding))
+        throw new BadRequestException('Develop source binding changed');
+      const reference = sourceBinding?.kind === 'bound' ? sourceBinding.input.reference : null;
+      if (reference && input.sourceChecksum && !input.sourceChecksum.equals(Buffer.from(reference.sha256, 'hex')))
+        throw new BadRequestException('Develop source checksum changed');
       const projection = input.requireRenderable ? assertRenderableDevelopRecipe(recipe) : undefined;
       // FL-233: the artifacts this version names start their grace period again, under their row
       // locks, so the nightly release (which re-checks `createdAt` once these commit) never takes
@@ -231,10 +291,19 @@ export class AssetDevelopRepository {
           });
         }
       }
+      const finalBinding = await captureDevelopSourceBinding(
+        trx,
+        input.assetId,
+        input.ownerId,
+        recipe,
+        inheritedBinding?.kind === 'bound',
+      );
+      if (!sameDevelopSourceBinding(currentBinding, finalBinding))
+        throw new BadRequestException('Develop source binding changed');
       const { rows } = await sql<AssetDevelopRevision>`
         INSERT INTO ${TABLE} (
           "assetId", "ownerId", revision, "recipeVersion", recipe, label, status,
-          kind, "sourceChecksum", "renditionChecksum", "exportId", "fileName", software, "masterPath"
+          kind, "sourceChecksum", "renditionChecksum", "exportId", "fileName", software, "masterPath", "sourceAssetId", "sourceBinding"
         )
         VALUES (
           ${input.assetId}::uuid,
@@ -245,12 +314,14 @@ export class AssetDevelopRepository {
           ${input.label},
           ${input.status},
           ${input.kind ?? AssetDevelopRevisionKind.Recipe},
-          ${input.sourceChecksum ?? null},
+          ${input.sourceChecksum ?? (reference ? Buffer.from(reference.sha256, 'hex') : inheritedChecksum)},
           ${input.renditionChecksum ?? null},
           ${input.exportId ?? null}::uuid,
           ${input.fileName ?? null},
           ${input.software ?? null},
-          ${input.masterPath ?? null}
+          ${input.masterPath ?? null},
+          ${sourceBinding?.kind === 'bound' ? sourceBinding.input.assetId : null}::uuid,
+          ${sourceBinding ? JSON.stringify(sourceBinding) : null}::text::jsonb
         )
         RETURNING *
       `.execute(trx);
@@ -258,9 +329,13 @@ export class AssetDevelopRepository {
     });
   }
   /** Revisions whose render the queue may have lost (a restart, a flushed queue): queued or rendering. */
-  async listUnfinished(): Promise<Pick<AssetDevelopRevision, 'id' | 'status' | 'updatedAt' | 'recipe' | 'kind'>[]> {
-    const { rows } = await sql<Pick<AssetDevelopRevision, 'id' | 'status' | 'updatedAt' | 'recipe' | 'kind'>>`
-      SELECT id, status, "updatedAt", recipe, kind FROM ${TABLE}
+  async listUnfinished(): Promise<
+    Pick<AssetDevelopRevision, 'id' | 'status' | 'updatedAt' | 'recipe' | 'kind' | 'renderGenerationId'>[]
+  > {
+    const { rows } = await sql<
+      Pick<AssetDevelopRevision, 'id' | 'status' | 'updatedAt' | 'recipe' | 'kind' | 'renderGenerationId'>
+    >`
+      SELECT id, status, "updatedAt", recipe, kind, "renderGenerationId" FROM ${TABLE}
       WHERE status IN (${AssetDevelopRevisionStatus.Queued}, ${AssetDevelopRevisionStatus.Rendering})
       ORDER BY "updatedAt"
     `.execute(this.db);
@@ -275,13 +350,15 @@ export class AssetDevelopRepository {
     id: string,
     rendererVersion: string,
     leaseSeconds: number,
+    renderGenerationId?: string,
   ): Promise<AssetDevelopRevision | undefined> {
     const { rows } = await sql<AssetDevelopRevision>`
       UPDATE ${TABLE}
       SET status = ${AssetDevelopRevisionStatus.Rendering}, progress = 5, error = NULL,
-          attempts = attempts + 1, "rendererVersion" = ${rendererVersion}, "updatedAt" = now()
+          attempts = attempts + 1, "renderAttemptId" = gen_random_uuid(), "rendererVersion" = ${rendererVersion}, "updatedAt" = now()
       WHERE id = ${id}::uuid
         AND NOT "cancelRequested"
+        AND (${renderGenerationId === undefined} OR "renderGenerationId" = ${renderGenerationId ?? null}::uuid)
         AND (
           status = ${AssetDevelopRevisionStatus.Queued}
           OR (
@@ -293,27 +370,227 @@ export class AssetDevelopRepository {
     `.execute(this.db);
     return rows[0];
   }
+  private transaction<T>(work: (db: Kysely<DB>) => Promise<T>): Promise<T> {
+    return this.db.isTransaction ? work(this.db) : this.db.transaction().execute(work);
+  }
+
+  private async validateSource(db: Kysely<DB>, revision: AssetDevelopRevision) {
+    const binding = developSourceBindingSchema.nullable().parse(revision.sourceBinding ?? null);
+    const current = await captureDevelopSourceBinding(
+      db,
+      revision.assetId,
+      revision.ownerId,
+      revision.recipe,
+      binding?.kind === 'bound',
+      true,
+    );
+    if (
+      !sameDevelopSourceBinding(binding, current) ||
+      (binding?.kind === 'bound' && revision.sourceAssetId !== binding.input.assetId)
+    )
+      throw new BadRequestException('Develop source binding changed');
+    return binding;
+  }
+
+  private async lockRevisionSource(db: Kysely<DB>, id: string): Promise<AssetDevelopRevision | undefined> {
+    const { rows } = await sql<AssetDevelopRevision>`SELECT * FROM ${TABLE} WHERE id=${id}::uuid`.execute(db);
+    const original = rows[0];
+    if (!original) return;
+    // Asset/resource locks precede revision locks, matching queue publication.
+    await this.validateSource(db, original);
+    const current = await sql<AssetDevelopRevision>`SELECT * FROM ${TABLE} WHERE id=${id}::uuid FOR UPDATE`.execute(db);
+    const row = current.rows[0];
+    if (
+      !row ||
+      row.assetId !== original.assetId ||
+      row.ownerId !== original.ownerId ||
+      row.renderAttemptId !== original.renderAttemptId ||
+      row.renderGenerationId !== original.renderGenerationId ||
+      JSON.stringify(row.sourceBinding ?? null) !== JSON.stringify(original.sourceBinding ?? null)
+    )
+      throw new BadRequestException('Develop source binding changed');
+    await this.validateSource(db, row);
+    return row;
+  }
+
+  async getSourceBinding(
+    assetId: string,
+    ownerId: string,
+    recipe: AssetDevelopRecipe,
+  ): Promise<DevelopSourceBinding | null> {
+    return this.transaction((db) => captureDevelopSourceBinding(db, assetId, ownerId, recipe));
+  }
+
+  async assertRenderSource(
+    revision: Pick<AssetDevelopRevision, 'assetId' | 'ownerId'>,
+    expected?: AssetSourceSnapshot,
+  ): Promise<AssetSourceSnapshot> {
+    return this.transaction((db) => this.renderSource(db, revision, expected));
+  }
+
+  private async renderSource(
+    db: Kysely<DB>,
+    revision: Pick<AssetDevelopRevision, 'assetId' | 'ownerId'>,
+    expected?: AssetSourceSnapshot,
+  ): Promise<AssetSourceSnapshot> {
+    await captureDevelopSourceBinding(db, revision.assetId, revision.ownerId, defaultDevelopRecipe(), false, true);
+    const asset = await db
+      .selectFrom('asset')
+      .select('type')
+      .where('id', '=', revision.assetId)
+      .forUpdate()
+      .executeTakeFirst();
+    if (asset?.type !== AssetType.Image) throw new BadRequestException('Develop source is unavailable');
+    await db.selectFrom('asset_lock').select('assetId').where('assetId', '=', revision.assetId).forShare().execute();
+    const current = await readAssetSource(db, revision.assetId, false);
+    if (
+      !current ||
+      current.ownerId !== revision.ownerId ||
+      current.revision.deletedAt !== null ||
+      current.revision.visibility === AssetVisibility.Hidden ||
+      current.revision.isOffline === true
+    )
+      throw new BadRequestException('Develop source is unavailable');
+    if (expected && canonicalJson(current) !== canonicalJson(expected))
+      throw new BadRequestException('Develop source policy changed');
+    return current;
+  }
+
+  async admitReferenceRender(
+    revision: AssetDevelopRevision,
+    allowLocked: boolean,
+    record: (tx: Transaction<DB>, revision: AssetDevelopRevision, sourcePolicy: string) => Promise<MediaOperation>,
+  ): Promise<{ revision: AssetDevelopRevision; sourcePolicy: string; operation: MediaOperation }> {
+    return this.transaction(async (db) => {
+      const current = await this.lockRevisionSource(db, revision.id);
+      if (
+        !current ||
+        current.ownerId !== revision.ownerId ||
+        current.assetId !== revision.assetId ||
+        current.status !== revision.status ||
+        current.renderGenerationId !== revision.renderGenerationId ||
+        current.status === AssetDevelopRevisionStatus.Queued ||
+        current.status === AssetDevelopRevisionStatus.Rendering
+      )
+        throw new ConflictException('This version is already queued or changed; refresh before retrying');
+      const binding = current.sourceBinding;
+      if (binding?.kind !== 'bound' || (!binding.parent.reference && !binding.input.reference))
+        throw new BadRequestException('Reference render admission requires a bound source');
+      const policy = await this.renderSource(db, current);
+      if (!allowLocked && (policy.revision.lock !== null || policy.revision.visibility === AssetVisibility.Locked))
+        throw new BadRequestException('Unlock this photo before rendering it');
+      const { rows } = await sql<AssetDevelopRevision>`UPDATE ${TABLE} SET status=${AssetDevelopRevisionStatus.Queued},
+        progress=0, error=NULL, "cancelRequested"=false, attempts=0, "renderGenerationId"=${randomUUID()}::uuid,
+        "updatedAt"=now() WHERE id=${revision.id}::uuid RETURNING *`.execute(db);
+      const sourcePolicy = assetSourceFingerprint(policy);
+      // DB-only recording must share admission so a crash cannot leave an untracked generation.
+      const operation = await record(db as Transaction<DB>, rows[0], sourcePolicy);
+      await this.validateSource(db, rows[0]);
+      return { revision: rows[0], sourcePolicy, operation };
+    });
+  }
+
+  async assertSourceBinding(revision: AssetDevelopRevision): Promise<void> {
+    await this.transaction(async (db) => {
+      const row = await this.lockRevisionSource(db, revision.id);
+      if (
+        !row ||
+        row.assetId !== revision.assetId ||
+        row.ownerId !== revision.ownerId ||
+        (revision.renderAttemptId !== undefined && row.renderAttemptId !== revision.renderAttemptId) ||
+        (revision.renderGenerationId !== undefined && row.renderGenerationId !== revision.renderGenerationId) ||
+        JSON.stringify(developSourceBindingSchema.nullable().parse(row.sourceBinding ?? null)) !==
+          JSON.stringify(developSourceBindingSchema.nullable().parse(revision.sourceBinding ?? null))
+      )
+        throw new BadRequestException('Develop source binding changed');
+    });
+  }
+
+  async failSourceBinding(revision: AssetDevelopRevision, message: string): Promise<void> {
+    await this.settleAttempt(revision, { status: AssetDevelopRevisionStatus.Failed, error: message });
+  }
+
+  async cancelQueuedAttempt(id: string, renderGenerationId: string, operationId: string): Promise<void> {
+    await sql`WITH cancelled AS (
+      SELECT "ownerId" FROM media_operation WHERE id=${operationId}::uuid AND "revisionId"=${id}::text
+        AND "cancelRequestedAt" IS NOT NULL FOR SHARE
+    ) UPDATE ${TABLE} SET status=${AssetDevelopRevisionStatus.Cancelled}, "cancelRequested"=true, progress=0, "updatedAt"=now()
+      WHERE id=${id}::uuid AND "renderGenerationId"=${renderGenerationId}::uuid
+        AND status=${AssetDevelopRevisionStatus.Queued} AND "ownerId" IN (SELECT "ownerId" FROM cancelled)`.execute(
+      this.db,
+    );
+  }
+
+  async progressAttempt(revision: AssetDevelopRevision, progress: number): Promise<boolean> {
+    const { rows } = await sql`UPDATE ${TABLE} SET progress=${progress}, "updatedAt"=now()
+      WHERE id=${revision.id}::uuid AND "assetId"=${revision.assetId}::uuid AND "ownerId"=${revision.ownerId}::uuid
+        AND "renderAttemptId"=${revision.renderAttemptId ?? null}::uuid
+        AND status=${AssetDevelopRevisionStatus.Rendering} AND NOT "cancelRequested" RETURNING id`.execute(this.db);
+    return rows.length === 1;
+  }
+
+  async settleAttempt(
+    revision: AssetDevelopRevision,
+    patch: {
+      status:
+        AssetDevelopRevisionStatus.Queued | AssetDevelopRevisionStatus.Failed | AssetDevelopRevisionStatus.Cancelled;
+      error: string | null;
+    },
+  ): Promise<void> {
+    // A stopped attempt cannot overwrite a cancellation or a newer render attempt.
+    await sql`UPDATE ${TABLE} SET status=${patch.status}, error=${patch.error}, progress=0, "updatedAt"=now()
+      WHERE id=${revision.id}::uuid AND "assetId"=${revision.assetId}::uuid AND "ownerId"=${revision.ownerId}::uuid
+        AND status=${revision.status} AND attempts=${revision.attempts}
+        AND "renderAttemptId" IS NOT DISTINCT FROM ${revision.renderAttemptId ?? null}::uuid
+        AND "renderGenerationId" IS NOT DISTINCT FROM ${revision.renderGenerationId ?? null}::uuid
+        AND (${patch.status === AssetDevelopRevisionStatus.Cancelled} OR NOT "cancelRequested")
+        AND "sourceBinding" IS NOT DISTINCT FROM ${revision.sourceBinding ? JSON.stringify(revision.sourceBinding) : null}::text::jsonb`.execute(
+      this.db,
+    );
+  }
+
   async update(id: string, patch: AssetDevelopRevisionUpdate): Promise<AssetDevelopRevision | undefined> {
     const entries = Object.entries(patch).filter(([, value]) => value !== undefined);
     if (entries.length === 0) {
       return this.get(id);
     }
     const assignments = entries.map(([key, value]) => sql`${sql.ref(key)} = ${value}`);
-    const { rows } = await sql<AssetDevelopRevision>`
-      UPDATE ${TABLE}
-      SET ${sql.join(assignments, sql`, `)}, "updatedAt" = now()
-      WHERE id = ${id}::uuid
-      RETURNING *
-    `.execute(this.db);
-    return rows[0];
+    const update = async (db: Kysely<DB>) => {
+      if (patch.status === AssetDevelopRevisionStatus.Rendered) {
+        const row = await this.lockRevisionSource(db, id);
+        if (!row) return;
+        const binding = row.sourceBinding;
+        if (binding && row.sourceChecksum && patch.sourceChecksum && !row.sourceChecksum.equals(patch.sourceChecksum))
+          throw new BadRequestException('Develop source checksum changed');
+        if (
+          binding?.kind === 'bound' &&
+          ((patch.sourceAssetId !== undefined && patch.sourceAssetId !== binding.input.assetId) ||
+            (binding.input.reference &&
+              patch.sourceChecksum &&
+              !patch.sourceChecksum.equals(Buffer.from(binding.input.reference.sha256, 'hex'))))
+        )
+          throw new BadRequestException('Develop source publication changed');
+      }
+      const { rows } = await sql<AssetDevelopRevision>`UPDATE ${TABLE}
+        SET ${sql.join(assignments, sql`, `)}, "updatedAt" = now() WHERE id=${id}::uuid RETURNING *`.execute(db);
+      return rows[0];
+    };
+    return patch.status === AssetDevelopRevisionStatus.Rendered ? this.transaction(update) : update(this.db);
   }
+
   /**
    * Moves the asset's current flag to the given revision, or clears it entirely for the
    * original. One statement pair inside a transaction so the partial unique index never
    * sees two current rows.
    */
   async setCurrent(assetId: string, revisionId: string | null): Promise<void> {
-    await this.db.transaction().execute(async (trx) => {
+    await this.transaction(async (trx) => {
+      let selected: AssetDevelopRevision | undefined;
+      if (revisionId) {
+        const row = await this.lockRevisionSource(trx, revisionId);
+        selected = row;
+        if (!row || row.assetId !== assetId) throw new BadRequestException('Develop source revision is unavailable');
+      }
       await sql`
         UPDATE ${TABLE} SET "isCurrent" = false, "updatedAt" = now()
         WHERE "assetId" = ${assetId}::uuid AND "isCurrent"
@@ -324,6 +601,7 @@ export class AssetDevelopRepository {
           WHERE id = ${revisionId}::uuid AND "assetId" = ${assetId}::uuid
         `.execute(trx);
       }
+      if (selected) await this.validateSource(trx, selected);
     });
   }
   /** Marks a revision as wanting to stop; the renderer checks the flag between stages. */
@@ -398,8 +676,40 @@ export class AssetDevelopRepository {
    * owner's usage only rises while it stays within the quota, so uploads sent at the same time can
    * pass neither; a refused one leaves no row.
    */
-  async addArtifact(artifact: Omit<AssetDevelopArtifact, 'createdAt'>): Promise<boolean> {
+  async addArtifact(
+    artifact: Omit<AssetDevelopArtifact, 'createdAt'>,
+    source?: DevelopArtifactSource,
+  ): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
+      // Serialize quota writers before provider/asset locks; a SHARE-to-UPDATE upgrade can deadlock.
+      await trx
+        .selectFrom('user')
+        .select('id')
+        .where('id', '=', artifact.ownerId)
+        .forNoKeyUpdate()
+        .executeTakeFirstOrThrow();
+      if (source)
+        await publicationTransaction.run(trx, async () => {
+          if (
+            source.policy.assetId !== artifact.assetId ||
+            source.policy.ownerId !== artifact.ownerId ||
+            source.binding.kind !== 'bound'
+          )
+            throw new BadRequestException('Develop artifact source authority changed');
+          await assertPublicationSource(artifact.assetId, Buffer.from(source.policy.checksum, 'hex'), artifact.ownerId);
+          const current = await captureDevelopSourceBinding(
+            trx,
+            artifact.assetId,
+            artifact.ownerId,
+            defaultDevelopRecipe(),
+            false,
+            true,
+          );
+          if (!sameDevelopSourceBinding(source.binding, current))
+            throw new ConflictException('Develop artifact source changed');
+          await this.renderSource(trx, { assetId: artifact.assetId, ownerId: artifact.ownerId }, source.policy);
+          await source.check();
+        });
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`asset_develop_artifact:${artifact.assetId}`}, 0))`.execute(
         trx,
       );
@@ -415,6 +725,7 @@ export class AssetDevelopRepository {
         RETURNING (xmax = 0) AS inserted
       `.execute(trx);
       if (!rows[0]?.inserted) {
+        if (source) await publicationTransaction.run(trx, source.check);
         return false;
       }
       const count = await sql<{
@@ -428,7 +739,7 @@ export class AssetDevelopRepository {
           code: 'develop_artifact_limit',
         });
       }
-      // the artifact row first, the owner's row second: the order `releaseArtifacts` takes them in
+      // The owner lock above covers charging, including a concurrent upload or cleanup.
       const charged = await trx
         .updateTable('user')
         .set({ quotaUsageInBytes: sql`"quotaUsageInBytes" + ${artifact.bytes}` })
@@ -441,6 +752,7 @@ export class AssetDevelopRepository {
       if (!charged) {
         throw new BadRequestException({ message: 'Your storage is full', code: 'develop_artifact_quota' });
       }
+      if (source) await publicationTransaction.run(trx, source.check);
       return true;
     });
   }
@@ -459,13 +771,7 @@ export class AssetDevelopRepository {
     },
   ): Promise<string[]> {
     return this.db.transaction().execute(async (tx) => {
-      const { rows } = await sql<{
-        path: string;
-        ownerId: string;
-        bytes: string;
-      }>`
-        DELETE FROM ${ARTIFACTS} artifact
-        WHERE (
+      const eligible = sql`(
           NOT EXISTS (SELECT 1 FROM public.asset asset WHERE asset.id = artifact."assetId")
           ${
             options.unreferencedBefore
@@ -479,7 +785,20 @@ export class AssetDevelopRepository {
               : sql``
           }
         )
-        ${options.assetId ? sql`AND artifact."assetId" = ${options.assetId}::uuid` : sql``}
+        ${options.assetId ? sql`AND artifact."assetId" = ${options.assetId}::uuid` : sql``}`;
+      const { rows: owners } = await sql<{ ownerId: string }>`SELECT DISTINCT artifact."ownerId"
+        FROM ${ARTIFACTS} artifact WHERE ${eligible}`.execute(tx);
+      const ownerIds = owners.map(({ ownerId }) => ownerId).sort();
+      if (ownerIds.length === 0) return [];
+      // Match artifact admission: quota owners first, then eligible artifact rows, then file paths.
+      await tx.selectFrom('user').select('id').where('id', 'in', ownerIds).orderBy('id').forNoKeyUpdate().execute();
+      const { rows } = await sql<{
+        path: string;
+        ownerId: string;
+        bytes: string;
+      }>`
+        DELETE FROM ${ARTIFACTS} artifact
+        WHERE ${eligible} AND artifact."ownerId" = ANY(${ownerIds}::uuid[])
         RETURNING artifact.path, artifact."ownerId", artifact.bytes
       `.execute(tx);
       const released = new Map<string, number>();
@@ -507,12 +826,21 @@ export class AssetDevelopRepository {
   }
   /**
    * FL-304: recount storage usage (of user `id`, or of every live user) as `UserRepository.syncUsage`
-   * does, plus the develop artifacts each owner keeps, in one statement, so an upload committing
-   * meanwhile is never counted twice. `false`, having changed nothing, while the fork schema cannot
+   * does, plus the develop artifacts each owner keeps. Lock owners before taking the tally snapshot
+   * so a concurrent artifact admission cannot be overwritten by an older total. `false`, having changed nothing, while the fork schema cannot
    * be used (not installed, or a handoff holds it): the caller then recounts the photos alone.
    */
   async syncUsage(id?: string): Promise<boolean> {
     return this.db.transaction().execute(async (tx) => {
+      const owners = await tx
+        .selectFrom('user')
+        .select('id')
+        .where('deletedAt', 'is', null)
+        .$if(id !== undefined, (query) => query.where('id', '=', id!))
+        .orderBy('id')
+        .forNoKeyUpdate()
+        .execute();
+      if (owners.length === 0) return true;
       await sql`
         UPDATE public."user" AS "user"
         SET
@@ -526,7 +854,7 @@ export class AssetDevelopRepository {
           ),
           "updatedAt" = now()
         WHERE "user"."deletedAt" IS NULL
-        ${id ? sql`AND "user".id = ${id}::uuid` : sql``}
+        AND "user".id = ANY(${owners.map(({ id }) => id)}::uuid[])
       `.execute(tx);
       return true;
     });

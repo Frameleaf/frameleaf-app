@@ -261,8 +261,9 @@ export class MediaOperationRepository {
       }
     }
   }
-  async create(operation: MediaOperationCreate): Promise<MediaOperation> {
-    const row = await this.write(async (db) => {
+  async create(operation: MediaOperationCreate, executor?: Transaction<DB>): Promise<MediaOperation> {
+    if (executor && !executor.isTransaction) throw new Error('Media operation recording requires a transaction');
+    const create = async (db: Kysely<DB>) => {
       if (operation.kind === MediaOperationKind.StudioBundleExport) {
         await assertStudioStorageAdmission(db, operation.ownerId, 0);
         const existing = await db
@@ -303,8 +304,9 @@ export class MediaOperationRepository {
       const created = await db.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
       await holdSourceAdmission(db, operation.snapshot, operation.ownerId);
       return created;
-    });
-    this.changed(row as unknown as MediaOperationChange);
+    };
+    const row = await (executor ? create(executor) : this.write(create));
+    this.changed(row as unknown as MediaOperationChange, executor);
     return row as unknown as MediaOperation;
   }
   /** Commit batch rows and their DB-only acknowledgement before notifying observers. */

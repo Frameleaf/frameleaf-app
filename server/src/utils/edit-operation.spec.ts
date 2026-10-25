@@ -112,3 +112,36 @@ describe('edit operations (FL-43)', () => {
     });
   });
 });
+
+it('retains a valid develop generation fence during Activity redispatch and refuses malformed fences', () => {
+  const generation = '10000000-0000-4000-8000-000000000001';
+  const snapshot = {
+    executor: JOB_QUEUE_EXECUTOR,
+    job: { name: JobName.AssetDevelopRender, data: { id: 'revision', renderGenerationId: generation } },
+  };
+  expect(editOperationJobItem('operation', snapshot)).toMatchObject({
+    data: { id: 'revision', operationId: 'operation', renderGenerationId: generation },
+  });
+  for (const renderGenerationId of ['bad', null, {}])
+    expect(
+      editOperationJobItem('operation', {
+        ...snapshot,
+        job: { ...snapshot.job, data: { id: 'revision', renderGenerationId } },
+      }),
+    ).toBeUndefined();
+});
+
+it('preserves only a canonical admitted develop policy fingerprint during redispatch', () => {
+  const snapshot = {
+    executor: JOB_QUEUE_EXECUTOR,
+    job: { name: JobName.AssetDevelopRender, data: { id: 'revision', sourcePolicy: 'a'.repeat(64) } },
+  };
+  expect(editOperationJobItem('operation', snapshot)).toMatchObject({ data: { sourcePolicy: 'a'.repeat(64) } });
+  for (const sourcePolicy of [null, {}, 'bad', 'A'.repeat(64)])
+    expect(
+      editOperationJobItem('operation', {
+        ...snapshot,
+        job: { ...snapshot.job, data: { id: 'revision', sourcePolicy } },
+      }),
+    ).toBeUndefined();
+});

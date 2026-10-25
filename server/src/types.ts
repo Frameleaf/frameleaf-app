@@ -764,7 +764,10 @@ export type JobItem =
 
   // Editor
   | { name: JobName.AssetEditThumbnailGeneration; data: IEntityJob & IEditOperationJob }
-  | { name: JobName.AssetDevelopRender; data: IEntityJob & IDelayedJob & IEditOperationJob };
+  | {
+      name: JobName.AssetDevelopRender;
+      data: IEntityJob & IDelayedJob & IEditOperationJob & { renderGenerationId?: string; sourcePolicy?: string };
+    };
 
 export type VectorExtension = (typeof VECTOR_EXTENSIONS)[number];
 

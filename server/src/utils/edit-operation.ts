@@ -96,7 +96,7 @@ export const canRetryEdit = (edit: EditOperationEdit, status: MediaOperationStat
 export type EditOperationJob =
   | { name: JobName.AssetEditThumbnailGeneration; data: { id: string } }
   | { name: JobName.AssetVideoEditGeneration; data: { id: string; versionId?: string } }
-  | { name: JobName.AssetDevelopRender; data: { id: string } };
+  | { name: JobName.AssetDevelopRender; data: { id: string; renderGenerationId?: string; sourcePolicy?: string } };
 
 const EDIT_JOB_NAMES = new Set<string>([
   JobName.AssetEditThumbnailGeneration,
@@ -121,6 +121,19 @@ export const editOperationJobItem = (operationId: string, snapshot: unknown): Jo
   const data: Record<string, unknown> = { id: job.data.id, operationId };
   if (job.name === JobName.AssetVideoEditGeneration && typeof job.data.versionId === 'string') {
     data.versionId = job.data.versionId;
+  }
+  if (job.name === JobName.AssetDevelopRender && job.data.renderGenerationId !== undefined) {
+    const generation = job.data.renderGenerationId;
+    if (
+      typeof generation !== 'string' ||
+      !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/iu.test(generation)
+    )
+      return;
+    data.renderGenerationId = generation;
+  }
+  if (job.name === JobName.AssetDevelopRender && job.data.sourcePolicy !== undefined) {
+    if (typeof job.data.sourcePolicy !== 'string' || !/^[a-f0-9]{64}$/u.test(job.data.sourcePolicy)) return;
+    data.sourcePolicy = job.data.sourcePolicy;
   }
   return { name: job.name, data } as JobItem;
 };

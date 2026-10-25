@@ -1,4 +1,5 @@
 import { type Kysely, sql } from 'kysely';
+import { createHash } from 'node:crypto';
 import z from 'zod';
 import type { DB } from 'src/schema/index.js';
 import { canonicalJson } from 'src/utils/object.js';
@@ -13,6 +14,9 @@ export const assetSourceSnapshotSchema = z.strictObject({
   revision: z.record(z.string(), z.json()),
 });
 export type AssetSourceSnapshot = z.infer<typeof assetSourceSnapshotSchema>;
+
+export const assetSourceFingerprint = (source: AssetSourceSnapshot): string =>
+  createHash('sha256').update('frameleaf-asset-source/v1:').update(canonicalJson(source)).digest('hex');
 
 export async function readAssetSource(
   db: Kysely<DB>,

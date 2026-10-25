@@ -2,6 +2,8 @@ import { type Kysely, type Transaction, sql } from 'kysely';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { DB as DatabaseSchema } from 'src/schema/index.js';
 import { AssetType } from 'src/enum.js';
+import { lockSourceAuthorities } from 'src/utils/source-authority-lock.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 
 /** Only DB-only adoption callbacks enter this scope. No executor holds a transaction during I/O. */
 export const publicationTransaction = new AsyncLocalStorage<Transaction<DatabaseSchema>>();
@@ -28,19 +30,42 @@ export function publicationDatabase<DB>(database: Kysely<DB>): Kysely<DB> {
   });
 }
 
+async function lockPublicationAssets(tx: Transaction<DatabaseSchema>, assetIds: string[], ownerId?: string) {
+  const ids = [...new Set(assetIds)].sort();
+  const hints = await tx.selectFrom('asset').select(['id', 'ownerId', 'originalPath']).where('id', 'in', ids).execute();
+  if (ownerId && hints.some((asset) => asset.ownerId !== ownerId)) throw new Error('Prepared output source changed');
+  const authorities = hints.flatMap((asset) => {
+    const identity = parseSourceOriginalPath(asset.originalPath);
+    return identity ? [{ sourceId: identity.sourceId, ownerId: asset.ownerId }] : [];
+  });
+  if (!(await lockSourceAuthorities(tx, authorities))) throw new Error('Prepared output source authority changed');
+  for (const id of ids) await sql`select pg_advisory_xact_lock(-1, hashtext(${id})::int)`.execute(tx);
+  const assets = await tx
+    .selectFrom('asset')
+    .select(['id', 'ownerId', 'originalPath', 'livePhotoVideoId', 'checksum', 'deletedAt', 'isOffline', 'type'])
+    .where('id', 'in', ids)
+    .orderBy('id')
+    .forUpdate()
+    .execute();
+  if (
+    assets.length !== hints.length ||
+    assets.some((asset) =>
+      hints.every(
+        (hint) => !(hint.id === asset.id && hint.ownerId === asset.ownerId && hint.originalPath === asset.originalPath),
+      ),
+    )
+  )
+    throw new Error('Prepared output source changed');
+  return assets;
+}
+
 /** Lock the source identity only during adoption; a replaced original invalidates prepared output. */
-export async function assertPublicationSource(assetId: string, checksum: Buffer) {
+export async function assertPublicationSource(assetId: string, checksum: Buffer, ownerId?: string) {
   const tx = publicationTransaction.getStore();
   if (!tx) {
     return;
   }
-  await sql`select pg_advisory_xact_lock(-1, hashtext(${assetId})::int)`.execute(tx);
-  const asset = await tx
-    .selectFrom('asset')
-    .select('checksum')
-    .where('id', '=', assetId)
-    .forUpdate()
-    .executeTakeFirst();
+  const [asset] = await lockPublicationAssets(tx, [assetId], ownerId);
   if (!asset || !Buffer.from(asset.checksum).equals(checksum)) {
     throw new Error('Prepared output source changed');
   }
@@ -56,15 +81,7 @@ export async function assertPublicationMotionSource(
 ) {
   const tx = publicationTransaction.getStore();
   if (!tx) throw new Error('Motion publication requires a database transaction');
-  for (const id of [stillId, motionId].sort())
-    await sql`select pg_advisory_xact_lock(-1, hashtext(${id})::int)`.execute(tx);
-  const assets = await tx
-    .selectFrom('asset')
-    .select(['id', 'ownerId', 'livePhotoVideoId', 'checksum', 'deletedAt', 'isOffline', 'type'])
-    .where('id', 'in', [stillId, motionId])
-    .orderBy('id')
-    .forUpdate()
-    .execute();
+  const assets = await lockPublicationAssets(tx, [stillId, motionId]);
   const still = assets.find((asset) => asset.id === stillId);
   const motion = assets.find((asset) => asset.id === motionId);
   const locked = await tx.selectFrom('asset_lock').select('assetId').where('assetId', '=', motionId).executeTakeFirst();

@@ -72,6 +72,7 @@ const revisionStub = (overrides: Partial<AssetDevelopRevision> = {}): AssetDevel
   isCurrent: false,
   kind: AssetDevelopRevisionKind.Recipe,
   sourceChecksum: null,
+  sourceBinding: null,
   renditionChecksum: null,
   exportId: null,
   fileName: null,
@@ -105,6 +106,14 @@ describe(AssetDevelopService.name, () => {
     mocks.mediaOperation.create.mockResolvedValue({ id: 'op-1' } as never);
     developRepository = {
       getAssetIdsWithHistory: vi.fn().mockResolvedValue(new Set()),
+      getSourceBinding: vi.fn().mockResolvedValue(null),
+      assertRenderSource: vi.fn(),
+      admitReferenceRender: vi.fn(),
+      assertSourceBinding: vi.fn(),
+      failSourceBinding: vi.fn(),
+      cancelQueuedAttempt: vi.fn(),
+      progressAttempt: vi.fn(),
+      settleAttempt: vi.fn(),
       listByAsset: vi.fn().mockResolvedValue([]),
       get: vi.fn(),
       getCurrent: vi.fn(),
