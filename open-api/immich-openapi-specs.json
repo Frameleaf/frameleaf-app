@@ -14759,7 +14759,7 @@
             "description": ""
           },
           "409": {
-            "description": "expectedCurrentRevisionId no longer matches; nothing was saved. Body: { code: \"develop_current_revision_changed\", currentRevisionId: string | null, message, error, statusCode }"
+            "description": "The current revision or previewed source version changed; nothing was saved. The code is develop_current_revision_changed (with currentRevisionId) or develop_source_changed (refresh the preview before saving)."
           }
         },
         "security": [
@@ -15214,6 +15214,12 @@
             },
             "description": "",
             "headers": {
+              "X-Frameleaf-Develop-Source-Version": {
+                "description": "Opaque source version to send as expectedSourceVersion when saving this preview.",
+                "schema": {
+                  "type": "string"
+                }
+              },
               "X-Frameleaf-HDR-Histogram": {
                 "description": "Optional version 1 JSON histogram from linear HDR preview pixels, in stops relative to 203-nit reference white; see native API contract.",
                 "schema": {
@@ -15221,6 +15227,9 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "The selected original changed while previewing. The code is develop_source_changed; request a new preview before saving."
           }
         },
         "security": [
@@ -66081,6 +66090,11 @@
             "format": "uuid",
             "nullable": true,
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "expectedSourceVersion": {
+            "description": "Opaque X-Frameleaf-Develop-Source-Version from the displayed preview. Required for reference originals; a stale or missing version is refused with 409 code develop_source_changed before any revision is saved.",
+            "pattern": "^[a-f0-9]{64}$",
             "type": "string"
           },
           "label": {

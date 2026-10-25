@@ -92,3 +92,23 @@ it('delivers authoritative HDR histogram evidence on the private preview respons
   );
   expect(res.end).toHaveBeenCalledWith(Buffer.from('hdr'));
 });
+
+it('returns the opaque source version on SDR previews and exposes both preview headers', async () => {
+  const res = Object.assign(new EventEmitter(), { destroyed: false, set: vi.fn(), end: vi.fn() });
+  const sourceVersion = 'd'.repeat(64);
+  const service = {
+    preview: vi.fn().mockResolvedValue({ buffer: Buffer.from('sdr'), contentType: 'image/jpeg', sourceVersion }),
+  };
+  await new AssetDevelopController(service as never, {} as never).previewAssetDevelop(
+    authStub.user1,
+    { id: 'id' },
+    {} as never,
+    res as never,
+  );
+  expect(res.set).toHaveBeenCalledWith(
+    expect.objectContaining({
+      'X-Frameleaf-Develop-Source-Version': sourceVersion,
+      'Access-Control-Expose-Headers': expect.stringContaining('X-Frameleaf-Develop-Source-Version'),
+    }),
+  );
+});

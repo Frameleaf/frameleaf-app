@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { rm, stat, writeFile } from 'node:fs/promises';
+import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Mock } from 'vitest';
 import {
@@ -13,22 +13,32 @@ import {
 import { AssetType, AssetVisibility, ChecksumAlgorithm, JobName, JobStatus, Permission } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { QueueExecution } from 'src/queue/types.js';
-import { AssetDevelopRepository, type AssetDevelopRevision } from 'src/repositories/asset-develop.repository.js';
+import {
+  AssetDevelopRepository,
+  type AssetDevelopRevision,
+  type DevelopArtifactSource,
+} from 'src/repositories/asset-develop.repository.js';
 import { type DevelopExport, PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import {
   AssetDevelopService,
   DEVELOP_RENDER_LEASE_MS,
   developArtifactPath,
 } from 'src/services/asset-develop.service.js';
+import { assetSourceFingerprint } from 'src/utils/asset-source-authority.js';
 import {
   DARKTABLE_RENDERER_VERSION,
   encodeNativeDevelopOutput,
   renderDarktable,
 } from 'src/utils/darktable-renderer.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
+import { developSourceVersion } from 'src/utils/develop-source-binding.js';
+import { executionSignal } from 'src/utils/execution-signal.js';
 import { MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
+import * as rawRenderer from 'src/utils/raw-renderer.js';
+import { sourceOriginalPath } from 'src/utils/source-original.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { videoInfoStub } from 'test/fixtures/media.stub.js';
 import { getForGenerateThumbnail } from 'test/mappers.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
 
@@ -105,15 +115,36 @@ describe(AssetDevelopService.name, () => {
     mocks = getMocks();
     mocks.mediaOperation.create.mockResolvedValue({ id: 'op-1' } as never);
     developRepository = {
-      getAssetIdsWithHistory: vi.fn().mockResolvedValue(new Set()),
       getSourceBinding: vi.fn().mockResolvedValue(null),
-      assertRenderSource: vi.fn(),
-      admitReferenceRender: vi.fn(),
-      assertSourceBinding: vi.fn(),
-      failSourceBinding: vi.fn(),
-      cancelQueuedAttempt: vi.fn(),
-      progressAttempt: vi.fn(),
-      settleAttempt: vi.fn(),
+      assertSourceBinding: vi.fn().mockResolvedValue(undefined),
+      assertRenderSource: vi.fn().mockResolvedValue({
+        assetId: asset.id,
+        ownerId: asset.ownerId,
+        checksum: asset.checksum.toString('hex'),
+        derivatives: false,
+        revision: {},
+      }),
+      admitReferenceRender: vi.fn(
+        async (
+          revision: AssetDevelopRevision,
+          _allow: boolean,
+          record: Parameters<AssetDevelopRepository['admitReferenceRender']>[2],
+        ) => {
+          const queued = {
+            ...revision,
+            status: AssetDevelopRevisionStatus.Queued,
+            renderGenerationId: '10000000-0000-4000-8000-000000000005',
+          };
+          const sourcePolicy = assetSourceFingerprint(await developRepository.assertRenderSource(revision));
+          const operation = await record({ isTransaction: true } as never, queued, sourcePolicy);
+          return { revision: queued, sourcePolicy, operation };
+        },
+      ),
+      cancelQueuedAttempt: vi.fn().mockResolvedValue(false),
+      progressAttempt: vi.fn().mockResolvedValue(true),
+      settleAttempt: vi.fn().mockResolvedValue(undefined),
+      failSourceBinding: vi.fn().mockResolvedValue(undefined),
+      getAssetIdsWithHistory: vi.fn().mockResolvedValue(new Set()),
       listByAsset: vi.fn().mockResolvedValue([]),
       get: vi.fn(),
       getCurrent: vi.fn(),
@@ -307,6 +338,31 @@ describe(AssetDevelopService.name, () => {
         ...asset,
         exifInfo: { ...asset.exifInfo, exifImageWidth: 4000, exifImageHeight: 3000 },
       } as never);
+    });
+
+    it('carries the live generated-source authority through normalized artifact recording', async () => {
+      const snapshot = {
+        assetId: asset.id,
+        path: asset.originalPath,
+        checksum: asset.checksum.toString('hex'),
+        reference: { resourceId: asset.id, version: 'c'.repeat(64), sha256: originalSha.toString('hex') },
+      };
+      const authority: DevelopArtifactSource = {
+        binding: { kind: 'bound', parent: snapshot, input: snapshot },
+        policy: {
+          assetId: asset.id,
+          ownerId: asset.ownerId,
+          checksum: asset.checksum.toString('hex'),
+          derivatives: false,
+          revision: {},
+        },
+        check: vi.fn().mockResolvedValue(undefined),
+      };
+      await sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged, authority);
+      expect(developRepository.addArtifact).toHaveBeenCalledWith(
+        expect.objectContaining({ assetId: asset.id, ownerId: asset.ownerId }),
+        authority,
+      );
     });
 
     it('stores a normalized bitmap beside the versions, records it, and discards the upload', async () => {
@@ -537,16 +593,17 @@ describe(AssetDevelopService.name, () => {
       expect(response.hasMaster).toBe(false);
     });
 
-    it('hands the FL-431 current-version precondition to the locked insert, and nothing when omitted', async () => {
+    it('hands the current and source version preconditions to the locked insert, and nothing when omitted', async () => {
       const expected = '7d4b6d0e-3c1f-4c7a-9c55-2f1f0b8f2a10';
       developRepository.create.mockResolvedValue(revisionStub({ assetId: asset.id }));
       await sut.save(authStub.user1, asset.id, {
         recipe: defaultDevelopRecipe(),
         render: false,
         expectedCurrentRevisionId: expected,
+        expectedSourceVersion: 'd'.repeat(64),
       });
       expect(developRepository.create).toHaveBeenLastCalledWith(
-        expect.objectContaining({ expectedCurrentRevisionId: expected }),
+        expect.objectContaining({ expectedCurrentRevisionId: expected, expectedSourceVersion: 'd'.repeat(64) }),
       );
 
       await sut.save(authStub.user1, asset.id, {
@@ -560,6 +617,7 @@ describe(AssetDevelopService.name, () => {
 
       await sut.save(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), render: false });
       expect(developRepository.create.mock.lastCall?.[0].expectedCurrentRevisionId).toBeUndefined();
+      expect(developRepository.create.mock.lastCall?.[0].expectedSourceVersion).toBeUndefined();
     });
 
     it('can store a recipe without rendering', async () => {
@@ -880,6 +938,314 @@ describe(AssetDevelopService.name, () => {
     });
   });
 
+  describe('verified source previews', () => {
+    const reference = () => {
+      const source = {
+        ...getForGenerateThumbnail(asset),
+        originalPath: sourceOriginalPath({ sourceId: asset.id, resourceKey: 'b'.repeat(64) }),
+        originalFileName: 'photo.jpg',
+      };
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(source);
+      const abort = new AbortController();
+      const input = {
+        localPath: '/private/develop.artifact',
+        verifiedSha256: 'd'.repeat(64),
+        resourceId: asset.id,
+        resourceVersion: 'c'.repeat(64),
+        signal: abort.signal,
+        check: vi.fn().mockResolvedValue(undefined),
+        release: vi.fn().mockResolvedValue(undefined),
+      };
+      developRepository.getSourceBinding.mockImplementation(async (_id: string, _ownerId: string, recipe) => {
+        const selected =
+          recipe.version === 1 && recipe.keyFrame ? await mocks.assetJob.getForVideoConversion('motion') : source;
+        const snapshot = (value: typeof source) => ({
+          assetId: value.id,
+          path: value.originalPath,
+          checksum: value.checksum.toString('hex'),
+          reference: value.originalPath.startsWith('frameleaf-source:')
+            ? { resourceId: input.resourceId, version: input.resourceVersion, sha256: input.verifiedSha256 }
+            : null,
+        });
+        return { kind: 'bound', parent: snapshot(source), input: snapshot(selected as typeof source) };
+      });
+      const originals = {
+        open: vi.fn(async (_id: string, _reader: unknown, authorize: () => Promise<void>, _signal?: AbortSignal) => {
+          input.check.mockImplementation(authorize);
+          await authorize();
+          return input;
+        }),
+      };
+      Object.assign(sut, { sourceOriginalService: originals });
+      mocks.media.encodeDevelopOutput.mockResolvedValue(Buffer.from('preview'));
+      return { source, input, originals, abort };
+    };
+
+    it('holds verified original through SDR preview decoding and returns no private path or persistent revision', async () => {
+      const f = reference();
+      mocks.media.encodeDevelopOutput.mockImplementation(() => {
+        expect(f.input.release).not.toHaveBeenCalled();
+        return Promise.resolve(Buffer.from('preview'));
+      });
+      await expect(
+        sut.preview(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), size: 128 }),
+      ).resolves.toMatchObject({ buffer: Buffer.from('preview') });
+      expect(mocks.media.inspectImageEncoding).toHaveBeenCalledWith(f.input.localPath);
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(f.input.localPath, expect.anything());
+      expect(f.input.release).toHaveBeenCalledOnce();
+      expect(f.source.originalPath).toMatch(/^frameleaf-source:/);
+      expect(mocks.crypto.hashFile).not.toHaveBeenCalled();
+      expect(developRepository.create).not.toHaveBeenCalled();
+      expect(developRepository.setCurrent).not.toHaveBeenCalled();
+    });
+
+    it('refuses a lease that does not match the version captured before previewing', async () => {
+      const f = reference();
+      f.originals.open.mockImplementation(async (_id, _reader, authorize) => {
+        await authorize();
+        f.input.resourceVersion = 'e'.repeat(64);
+        return f.input;
+      });
+      await expect(
+        sut.preview(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), size: 128 }),
+      ).rejects.toThrow('original changed');
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('does not return a preview version when resource metadata changes during rendering', async () => {
+      const f = reference();
+      const binding = await developRepository.getSourceBinding(asset.id, asset.ownerId, defaultDevelopRecipe());
+      developRepository.getSourceBinding.mockResolvedValue(binding);
+      mocks.media.encodeDevelopOutput.mockImplementation(() => {
+        developRepository.getSourceBinding.mockResolvedValue({
+          ...binding,
+          input: { ...binding.input, reference: { ...binding.input.reference, version: 'e'.repeat(64) } },
+        });
+        return Promise.resolve(Buffer.from('preview'));
+      });
+      await expect(
+        sut.preview(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), size: 128 }),
+      ).rejects.toThrow('original changed');
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('renders legacy RAW previews from the leased sensor input with scoped cancellation', async () => {
+      const f = reference();
+      f.source.originalFileName = 'photo.CR2';
+      const sensor = Buffer.from('owned synthetic TIFF');
+      const render = vi.spyOn(rawRenderer, 'renderRawWithLibRaw').mockResolvedValue(sensor);
+      try {
+        await sut.preview(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), size: 128 });
+        expect(render).toHaveBeenCalledExactlyOnceWith(f.input.localPath, expect.any(AbortSignal));
+        expect(mocks.media.decodeImage).toHaveBeenCalledWith(sensor, expect.anything());
+        expect(mocks.media.extract).not.toHaveBeenCalled();
+        expect(f.input.release).toHaveBeenCalledOnce();
+      } finally {
+        render.mockRestore();
+      }
+    });
+
+    it('rejects an already canceled preview before querying or acquiring original bytes', async () => {
+      const f = reference();
+      const abort = new AbortController();
+      const error = new Error('request already closed');
+      abort.abort(error);
+      await expect(
+        sut.preview(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), size: 128 }, abort.signal),
+      ).rejects.toBe(error);
+      expect(mocks.assetJob.getForGenerateThumbnailJob).not.toHaveBeenCalled();
+      expect(f.originals.open).not.toHaveBeenCalled();
+    });
+
+    it('rechecks acting-user edit access before returning a source preview', async () => {
+      const f = reference();
+      mocks.media.encodeDevelopOutput.mockImplementation(() => {
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+        return Promise.resolve(Buffer.from('preview'));
+      });
+      await expect(
+        sut.preview(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), size: 128 }),
+      ).rejects.toThrow(Permission.AssetEditGet);
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('uses the borrowed original for native RAW without changing asset identity', async () => {
+      const f = reference();
+      f.source.originalFileName = 'photo.CR2';
+      vi.mocked(renderDarktable).mockResolvedValue(Buffer.from('mock-native'));
+      const recipe = { version: 2, renderer: 'darktable/5.6.1', exposureEV: 0 };
+      await sut.preview(authStub.user1, asset.id, { recipe, size: 128 });
+      expect(renderDarktable).toHaveBeenCalledWith(
+        f.input.localPath,
+        recipe,
+        expect.any(AbortSignal),
+        expect.any(Map),
+        f.source.originalFileName,
+      );
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it.each([3, 4, 5, 6])(
+      'uses verified bytes and their measured checksum for HDR preview version %s',
+      async (version) => {
+        const f = reference();
+        vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+        mocks.media.getHdrCodecCapabilities.mockResolvedValue({
+          renderer: `frameleaf-develop-hdr/${version - 2}`,
+        } as never);
+        mocks.media.generateHdrRenditions.mockImplementation(async (_input, outputs) => {
+          await writeFile(outputs[0].path, 'hdr-preview');
+          return [] as never;
+        });
+        mocks.storage.readFile.mockImplementation((file) => readFile(file));
+        try {
+          await expect(
+            sut.preview(authStub.user1, asset.id, { recipe: { version, exposure: 1 }, size: 128 }),
+          ).resolves.toMatchObject({ buffer: Buffer.from('hdr-preview') });
+          expect(mocks.media.generateHdrRenditions).toHaveBeenCalledWith(
+            f.input.localPath,
+            expect.anything(),
+            expect.anything(),
+            expect.any(AbortSignal),
+            Buffer.from(f.input.verifiedSha256, 'hex'),
+          );
+          expect(mocks.crypto.hashFile).not.toHaveBeenCalled();
+          expect(f.input.release).toHaveBeenCalledOnce();
+        } finally {
+          vi.unstubAllEnvs();
+        }
+      },
+    );
+
+    it('retains an HDR preview folder and source lease until an unknown native writer can be recovered', async () => {
+      const f = reference();
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      mocks.media.getHdrCodecCapabilities.mockResolvedValue({ renderer: 'frameleaf-develop-hdr/1' } as never);
+      mocks.media.generateHdrRenditions.mockImplementation(() => {
+        f.abort.abort(new Error('source canceled'));
+        return Promise.reject(new Error('media_process_shutdown_unconfirmed'));
+      });
+      try {
+        await expect(
+          sut.preview(authStub.user1, asset.id, { recipe: { version: 3, exposure: 1 }, size: 128 }),
+        ).rejects.toThrow('media_process_shutdown_unconfirmed');
+        const folder = dirname(mocks.media.generateHdrRenditions.mock.calls[0][1][0].path);
+        expect((await stat(folder)).isDirectory()).toBe(true);
+        expect(f.input.release).not.toHaveBeenCalled();
+      } finally {
+        const output = mocks.media.generateHdrRenditions.mock.calls[0]?.[1][0].path;
+        if (typeof output === 'string') await rm(dirname(output), { recursive: true, force: true });
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it('rejects late source revocation rather than returning rendered preview bytes', async () => {
+      const f = reference();
+      mocks.media.encodeDevelopOutput.mockImplementation(() => {
+        f.input.check.mockRejectedValue(new Error('source revoked'));
+        return Promise.resolve(Buffer.from('preview'));
+      });
+      await expect(
+        sut.preview(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), size: 128 }),
+      ).rejects.toThrow('source revoked');
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('holds the input after an unconfirmed native stop', async () => {
+      const f = reference();
+      mocks.media.decodeImage.mockRejectedValue(new Error('media_process_shutdown_unconfirmed'));
+      await expect(
+        sut.preview(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), size: 128 }),
+      ).rejects.toThrow('media_process_shutdown_unconfirmed');
+      expect(f.originals.open).toHaveBeenCalledOnce();
+      expect(f.input.release).not.toHaveBeenCalled();
+    });
+
+    it('refuses new preview admission after an unconfirmed writer instead of starting another original read', async () => {
+      const f = reference();
+      mocks.media.decodeImage.mockRejectedValue(new Error('media_process_shutdown_unconfirmed'));
+      await expect(
+        sut.preview(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), size: 128 }),
+      ).rejects.toThrow('media_process_shutdown_unconfirmed');
+      await expect(
+        sut.preview(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), size: 128 }),
+      ).rejects.toThrow('previous render is stopping');
+      expect(f.originals.open).toHaveBeenCalledOnce();
+      expect(mocks.media.decodeImage).toHaveBeenCalledOnce();
+      expect(f.input.release).not.toHaveBeenCalled();
+    });
+
+    it('propagates input cancellation through the legacy pixel pipeline without returning bytes', async () => {
+      const f = reference();
+      mocks.media.decodeImage.mockImplementation(() => {
+        f.abort.abort(new Error('source canceled'));
+        executionSignal()?.throwIfAborted();
+        return Promise.reject(new Error('unreachable'));
+      });
+      await expect(
+        sut.preview(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), size: 128 }),
+      ).rejects.toThrow('source canceled');
+      expect(mocks.media.encodeDevelopOutput).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it.each(['leased', 'managed', 'revoked-managed'] as const)(
+      'binds and authorizes the selected Live Photo motion preview: %s',
+      async (mode) => {
+        const f = reference();
+        const info = {
+          ...videoInfoStub.noAudioStreams,
+          format: { ...videoInfoStub.noAudioStreams.format, duration: 2 },
+        };
+        const motion = {
+          id: 'motion',
+          ownerId: asset.ownerId,
+          originalPath: mode === 'leased' ? f.source.originalPath : '/managed/motion.mov',
+          checksum: Buffer.alloc(20, 3),
+          videoStream: info.videoStreams[0],
+          format: { ...info.format, duration: mode === 'leased' ? 0.1 : 2000 },
+        };
+        mocks.asset.getById.mockImplementation((id) =>
+          Promise.resolve(
+            id === asset.id
+              ? ({ ...asset, livePhotoVideoId: motion.id } as never)
+              : ({ ...asset, ...motion, deletedAt: null, isOffline: false } as never),
+          ),
+        );
+        mocks.access.asset.checkOwnerAccess.mockImplementation((_owner, ids) =>
+          Promise.resolve(new Set([...ids].filter((id) => id === asset.id || id === motion.id))),
+        );
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(motion as never);
+        mocks.media.probe.mockResolvedValue(info);
+        if (mode === 'revoked-managed') {
+          mocks.media.encodeDevelopOutput.mockImplementation(() => {
+            mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+            return Promise.resolve(Buffer.from('preview'));
+          });
+        }
+        const result = sut.preview(authStub.user1, asset.id, {
+          recipe: { ...defaultDevelopRecipe(), keyFrame: { timeMs: 500 } },
+          size: 128,
+        });
+        if (mode === 'revoked-managed') {
+          await expect(result).rejects.toThrow();
+          return;
+        }
+        await expect(result).resolves.toHaveProperty('sourceVersion');
+        if (mode === 'managed') {
+          expect(f.originals.open).not.toHaveBeenCalled();
+          expect(mocks.media.transcode.mock.calls[0][0]).toBe(motion.originalPath);
+          return;
+        }
+        expect(f.originals.open.mock.calls[0][0]).toBe(motion.id);
+        expect(mocks.media.probe).toHaveBeenCalledWith(f.input.localPath, expect.anything());
+        expect(mocks.media.transcode.mock.calls[0][0]).toBe(f.input.localPath);
+        expect(f.input.release).toHaveBeenCalledOnce();
+      },
+    );
+  });
+
   describe('preview', () => {
     it.each([true, false])(
       'refuses silent HDR flattening even when reconstruction is available: %s',
@@ -1170,7 +1536,508 @@ describe(AssetDevelopService.name, () => {
     });
   });
 
+  describe('verified saved source renders', () => {
+    const fixture = () => {
+      const source = {
+        ...getForGenerateThumbnail(asset),
+        originalPath: sourceOriginalPath({ sourceId: asset.id, resourceKey: 'b'.repeat(64) }),
+        originalFileName: 'photo.jpg',
+      };
+      const reference = { resourceId: asset.id, version: 'c'.repeat(64), sha256: 'd'.repeat(64) };
+      const snapshot = {
+        assetId: asset.id,
+        path: source.originalPath,
+        checksum: source.checksum.toString('hex'),
+        reference,
+      };
+      const revision = revisionStub({
+        assetId: asset.id,
+        status: AssetDevelopRevisionStatus.Queued,
+        sourceAssetId: asset.id,
+        renderAttemptId: '10000000-0000-4000-8000-000000000003',
+        renderGenerationId: '10000000-0000-4000-8000-000000000004',
+        sourceChecksum: Buffer.from(reference.sha256, 'hex'),
+        sourceBinding: { kind: 'bound', parent: snapshot, input: snapshot },
+      });
+      developRepository.get.mockResolvedValue(revision);
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(source);
+      mocks.asset.getById.mockResolvedValue({ ...asset, originalPath: source.originalPath } as never);
+      const context: QueueExecution = {
+        claim: { id: 'job', token: 'token' } as QueueExecution['claim'],
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        buffering: false,
+        adoptions: [],
+        followups: [],
+      };
+      const release = vi.fn().mockResolvedValue(undefined);
+      let retained = false;
+      const input = {
+        localPath: '/private/saved-develop.artifact',
+        verifiedSha256: reference.sha256,
+        resourceId: reference.resourceId,
+        resourceVersion: reference.version,
+        signal: new AbortController().signal,
+        check: vi.fn().mockResolvedValue(undefined),
+        retainOnUnconfirmedStop: vi.fn(() => {
+          retained = true;
+          context.executorStopUnconfirmed = true;
+        }),
+      };
+      const originals = {
+        openForJob: vi.fn(async (_id: string, authorize: () => Promise<void>) => {
+          input.check.mockImplementation(authorize);
+          await authorize();
+          (context.afterSettled ??= []).push(async () => {
+            if (!retained) await release();
+          });
+          return input;
+        }),
+      };
+      Object.assign(sut, { sourceOriginalService: originals });
+      return {
+        source,
+        revision,
+        context,
+        input,
+        originals,
+        release,
+        run: () =>
+          queueExecution.run(context, () =>
+            sut.handleRender({
+              id: revision.id,
+              renderGenerationId: revision.renderGenerationId ?? undefined,
+              sourcePolicy: assetSourceFingerprint({
+                assetId: asset.id,
+                ownerId: asset.ownerId,
+                checksum: asset.checksum.toString('hex'),
+                derivatives: false,
+                revision: {},
+              }),
+            }),
+          ),
+      };
+    };
+
+    it('reads leased bytes, defers their exact digest and holds the input through accepted publication', async () => {
+      const f = fixture();
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      expect(f.originals.openForJob).toHaveBeenCalledWith(asset.id, expect.any(Function));
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(f.input.localPath, expect.anything());
+      expect(mocks.crypto.hashFile.mock.calls.every(([file]) => !String(file).startsWith('frameleaf-source:'))).toBe(
+        true,
+      );
+      expect(developRepository.setCurrent).not.toHaveBeenCalled();
+      expect(f.release).not.toHaveBeenCalled();
+      expect(developRepository.progressAttempt).toHaveBeenCalledWith(
+        expect.objectContaining({ renderAttemptId: f.revision.renderAttemptId }),
+        expect.any(Number),
+      );
+      await f.context.adoptions[0]({} as never);
+      expect(developRepository.update).toHaveBeenCalledWith(
+        f.revision.id,
+        expect.objectContaining({ sourceChecksum: Buffer.from(f.input.verifiedSha256, 'hex') }),
+      );
+      const publication = developRepository.update.mock.calls.find(
+        ([, patch]) => patch.status === AssetDevelopRevisionStatus.Rendered,
+      )![1];
+      developRepository.get.mockResolvedValue({ ...f.revision, ...publication });
+      for (const settled of f.context.afterSettled ?? []) await settled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(publication.masterPath);
+      expect(f.release).toHaveBeenCalledOnce();
+    });
+
+    it('refuses an input from a different resource version before any decoder starts', async () => {
+      const f = fixture();
+      f.input.resourceVersion = 'e'.repeat(64);
+      await expect(f.run()).resolves.toBe(JobStatus.Failed);
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+      expect(developRepository.setCurrent).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('rechecks the source lease inside accepted publication', async () => {
+      const f = fixture();
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      f.input.check.mockRejectedValue(new Error('source revoked'));
+      await expect(f.context.adoptions[0]({} as never)).rejects.toThrow('source revoked');
+      expect(developRepository.setCurrent).not.toHaveBeenCalled();
+    });
+
+    it('removes only its private prepared outputs after rejected publication', async () => {
+      const f = fixture();
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      const outputs = mocks.storage.rename.mock.calls.map(([, target]) => target);
+      f.input.check.mockRejectedValue(new Error('source revoked'));
+      await expect(f.context.adoptions[0]({} as never)).rejects.toThrow();
+      for (const settled of f.context.afterSettled ?? []) await settled();
+      for (const target of outputs) expect(mocks.storage.unlink).toHaveBeenCalledWith(target);
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(f.input.localPath);
+    });
+
+    it('retains the input and output ownership when a decoder cannot confirm shutdown', async () => {
+      const f = fixture();
+      mocks.media.decodeImage.mockImplementation(() => {
+        f.context.executorStopUnconfirmed = true;
+        return Promise.reject(new Error('media_process_shutdown_unconfirmed'));
+      });
+      await expect(f.run()).rejects.toThrow('media_process_shutdown_unconfirmed');
+      expect(f.input.retainOnUnconfirmedStop).toHaveBeenCalledOnce();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      expect(developRepository.setCurrent).not.toHaveBeenCalled();
+      for (const settled of f.context.afterSettled ?? []) await settled();
+      expect(f.release).not.toHaveBeenCalled();
+    });
+
+    it('defers a tracked source failure until the failed claim is accepted', async () => {
+      const f = fixture();
+      f.input.resourceVersion = 'e'.repeat(64);
+      mocks.mediaOperation.beginJobQueueRun.mockResolvedValue({
+        operation: { id: 'op-1', ownerId: asset.ownerId, assetId: asset.id },
+        claimToken: 'operation-token',
+      } as never);
+      mocks.mediaOperation.reportProgress.mockResolvedValue(true);
+      await expect(
+        queueExecution.run(f.context, () => sut.handleRender({ id: f.revision.id, operationId: 'op-1' })),
+      ).resolves.toBe(JobStatus.Failed);
+      expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+      expect(developRepository.settleAttempt).not.toHaveBeenCalled();
+      await f.context.failureDiagnostics![0]({} as never);
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        'op-1',
+        'operation-token',
+        expect.objectContaining({ errorCode: 'source_changed' }),
+        { retry: false },
+      );
+      expect(developRepository.settleAttempt).toHaveBeenCalledWith(
+        expect.objectContaining({ attempts: 1 }),
+        expect.objectContaining({ status: AssetDevelopRevisionStatus.Failed }),
+      );
+    });
+
+    it('hands a rejected publication back to this exact render attempt', async () => {
+      const f = fixture();
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      expect(f.context.failureSettlements).toHaveLength(1);
+      await f.context.failureSettlements![0]({} as never, 'source changed', false);
+      expect(developRepository.settleAttempt).toHaveBeenCalledWith(expect.objectContaining({ attempts: 1 }), {
+        status: AssetDevelopRevisionStatus.Failed,
+        error: 'source changed',
+      });
+      expect(developRepository.update).not.toHaveBeenCalledWith(
+        f.revision.id,
+        expect.objectContaining({ status: AssetDevelopRevisionStatus.Failed }),
+      );
+    });
+
+    it('defers confirmed render cancellation without touching another attempt', async () => {
+      const f = fixture();
+      mocks.media.encodeDevelopOutput.mockImplementation(() => {
+        developRepository.isCancelRequested.mockResolvedValue(true);
+        return Promise.resolve(Buffer.from('jpeg'));
+      });
+      await expect(f.run()).resolves.toBe(JobStatus.Skipped);
+      expect(developRepository.settleAttempt).not.toHaveBeenCalled();
+      await f.context.adoptions[0]({} as never);
+      expect(developRepository.settleAttempt).toHaveBeenCalledWith(expect.objectContaining({ attempts: 1 }), {
+        status: AssetDevelopRevisionStatus.Cancelled,
+        error: null,
+      });
+    });
+
+    it('uses the borrowed RAW path and preserves its filename hint for Darktable', async () => {
+      const f = fixture();
+      f.source.originalFileName = 'photo.CR2';
+      f.revision.recipe = { version: 2, renderer: 'darktable/5.6.1' };
+      f.revision.recipeVersion = 2;
+      vi.mocked(renderDarktable).mockResolvedValue(Buffer.from('native'));
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      expect(renderDarktable).toHaveBeenCalledWith(
+        f.input.localPath,
+        expect.anything(),
+        expect.any(AbortSignal),
+        expect.any(Map),
+        'photo.CR2',
+      );
+      expect(encodeNativeDevelopOutput).toHaveBeenCalledTimes(2);
+    });
+
+    it('uses leased sensor bytes and cancellation for legacy RAW recipes', async () => {
+      const f = fixture();
+      f.source.originalFileName = 'photo.CR2';
+      const raw = vi.spyOn(rawRenderer, 'renderRawWithLibRaw').mockResolvedValue(Buffer.from('sensor-tiff'));
+      try {
+        await expect(f.run()).resolves.toBe(JobStatus.Success);
+        expect(raw).toHaveBeenCalledWith(f.input.localPath, expect.any(AbortSignal));
+      } finally {
+        raw.mockRestore();
+      }
+    });
+
+    it.each([3, 4, 5, 6])('uses measured original bytes for saved HDR renderer %s', async (version) => {
+      const f = fixture();
+      f.revision.recipe = { version };
+      f.revision.recipeVersion = version;
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      mocks.media.getHdrCodecCapabilities.mockResolvedValue({
+        renderer: `frameleaf-develop-hdr/${version - 2}`,
+      } as never);
+      mocks.media.generateHdrRenditions.mockResolvedValue([{ width: 4, height: 4 }] as never);
+      try {
+        await expect(f.run()).resolves.toBe(JobStatus.Success);
+        expect(mocks.media.generateHdrRenditions).toHaveBeenCalledWith(
+          f.input.localPath,
+          expect.anything(),
+          expect.anything(),
+          expect.any(AbortSignal),
+          Buffer.from(f.input.verifiedSha256, 'hex'),
+        );
+        expect(mocks.crypto.hashFile.mock.calls.every(([file]) => !String(file).startsWith('frameleaf-source:'))).toBe(
+          true,
+        );
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it.each(['success', 'unknown-throw', 'unknown-return'] as const)(
+      'uses the selected leased motion resource and retains uncertain writer files: %s',
+      async (mode) => {
+        const f = fixture();
+        const info = {
+          ...videoInfoStub.noAudioStreams,
+          format: { ...videoInfoStub.noAudioStreams.format, duration: 2 },
+        };
+        const motion = {
+          id: '10000000-0000-4000-8000-000000000001',
+          ownerId: asset.ownerId,
+          originalPath: sourceOriginalPath({ sourceId: asset.id, resourceKey: 'e'.repeat(64) }),
+          checksum: Buffer.alloc(20, 3),
+          videoStream: info.videoStreams[0],
+          format: { ...info.format, duration: 0.1 },
+        };
+        f.revision.recipe = { ...defaultDevelopRecipe(), keyFrame: { timeMs: 500 } };
+        const binding = f.revision.sourceBinding!;
+        if (binding.kind !== 'bound') throw new Error('Expected bound fixture');
+        binding.input = {
+          assetId: motion.id,
+          path: motion.originalPath,
+          checksum: motion.checksum.toString('hex'),
+          reference: { resourceId: motion.id, version: f.input.resourceVersion, sha256: f.input.verifiedSha256 },
+        };
+        f.revision.sourceAssetId = motion.id;
+        f.input.resourceId = motion.id;
+        mocks.asset.getById.mockImplementation((id) =>
+          Promise.resolve(
+            (id === asset.id
+              ? { ...asset, originalPath: f.source.originalPath, livePhotoVideoId: motion.id }
+              : { ...asset, ...motion, deletedAt: null, isOffline: false, isLocked: false }) as never,
+          ),
+        );
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(motion as never);
+        mocks.media.probe.mockResolvedValue(info);
+        mocks.media.transcode.mockImplementation(() => {
+          expect(f.release).not.toHaveBeenCalled();
+          if (mode !== 'success') f.context.executorStopUnconfirmed = true;
+          return mode === 'unknown-throw'
+            ? Promise.reject(new Error('media_process_shutdown_unconfirmed'))
+            : Promise.resolve();
+        });
+        try {
+          if (mode === 'success') {
+            await expect(f.run()).resolves.toBe(JobStatus.Success);
+            expect(f.originals.openForJob).toHaveBeenCalledWith(motion.id, expect.any(Function));
+            expect(mocks.media.probe).toHaveBeenCalledWith(f.input.localPath, expect.anything());
+            expect(mocks.media.transcode.mock.calls[0][0]).toBe(f.input.localPath);
+          } else {
+            await expect(f.run()).rejects.toThrow('media_process_shutdown_unconfirmed');
+            const output = mocks.media.transcode.mock.calls[0][1];
+            if (typeof output !== 'string') throw new Error('Expected a private frame path');
+            const folder = dirname(output);
+            expect((await stat(folder)).isDirectory()).toBe(true);
+            expect(f.input.retainOnUnconfirmedStop).toHaveBeenCalledOnce();
+            for (const settled of f.context.afterSettled ?? []) await settled();
+            expect(f.release).not.toHaveBeenCalled();
+            expect(mocks.storage.unlink).not.toHaveBeenCalled();
+          }
+        } finally {
+          const output = mocks.media.transcode.mock.calls[0]?.[1];
+          if (typeof output === 'string') await rm(dirname(output), { recursive: true, force: true });
+        }
+      },
+    );
+
+    it('does not retry acquisition when the source reader cannot confirm descriptor close', async () => {
+      const f = fixture();
+      f.originals.openForJob.mockRejectedValue(new Error('artifact_close_unconfirmed'));
+      await expect(f.run()).rejects.toThrow('artifact_close_unconfirmed');
+      expect(f.context.executorStopUnconfirmed).toBe(true);
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+      expect(developRepository.settleAttempt).not.toHaveBeenCalled();
+      for (const settled of f.context.afterSettled ?? []) await settled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('cancels only the queued generation named by an old cancelled Activity delivery', async () => {
+      const f = fixture();
+      mocks.mediaOperation.beginJobQueueRun.mockResolvedValue(undefined);
+      mocks.mediaOperation.getForWorker.mockResolvedValue({ cancelRequestedAt: new Date(), claimToken: null } as never);
+      const generation = '10000000-0000-4000-8000-000000000001';
+      await expect(
+        queueExecution.run(f.context, () =>
+          sut.handleRender({ id: f.revision.id, operationId: 'old-operation', renderGenerationId: generation }),
+        ),
+      ).resolves.toBe(JobStatus.Skipped);
+      expect(developRepository.cancelQueuedAttempt).toHaveBeenCalledWith(f.revision.id, generation, 'old-operation');
+      expect(developRepository.update).not.toHaveBeenCalled();
+      expect(f.originals.openForJob).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, 'e'.repeat(64)])(
+      'refuses an absent or changed queued privacy fingerprint before acquiring pixels: %s',
+      async (sourcePolicy) => {
+        const f = fixture();
+        await expect(
+          queueExecution.run(f.context, () =>
+            sut.handleRender({
+              id: f.revision.id,
+              renderGenerationId: f.revision.renderGenerationId,
+              sourcePolicy,
+            } as never),
+          ),
+        ).resolves.toBe(JobStatus.Failed);
+        expect(f.originals.openForJob).not.toHaveBeenCalled();
+        expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+      },
+    );
+
+    it('records the queued reference generation in both the revision and its durable Activity intent', async () => {
+      const f = fixture();
+      developRepository.create.mockResolvedValue(f.revision);
+      await sut.save(authStub.user1, asset.id, {
+        recipe: defaultDevelopRecipe(),
+        render: true,
+        expectedSourceVersion: 'd'.repeat(64),
+      });
+      expect(developRepository.admitReferenceRender).toHaveBeenCalledWith(f.revision, false, expect.any(Function));
+      const { revision: queued, sourcePolicy } = await developRepository.admitReferenceRender.mock.results[0].value;
+      expect(sourcePolicy).toMatch(/^[a-f0-9]{64}$/u);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.queueInTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({ isTransaction: true }),
+        expect.objectContaining({
+          data: expect.objectContaining({
+            id: f.revision.id,
+            renderGenerationId: queued.renderGenerationId,
+            sourcePolicy,
+          }),
+        }),
+      );
+    });
+
+    it('refuses an unavailable still before requesting original bytes', async () => {
+      const f = fixture();
+      developRepository.assertRenderSource.mockRejectedValue(new BadRequestException('Develop source is unavailable'));
+      await expect(f.run()).resolves.toBe(JobStatus.Failed);
+      expect(f.originals.openForJob).not.toHaveBeenCalled();
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+    });
+
+    it('checks parent policy when a reference still selects managed motion bytes', async () => {
+      const f = fixture();
+      const motion = {
+        id: '10000000-0000-4000-8000-000000000001',
+        ownerId: asset.ownerId,
+        originalPath: '/library/motion.mov',
+        checksum: Buffer.alloc(20, 3),
+        format: { duration: 2000 },
+      };
+      f.revision.recipe = { ...defaultDevelopRecipe(), keyFrame: { timeMs: 500 } };
+      const binding = f.revision.sourceBinding!;
+      if (binding.kind !== 'bound') throw new Error('Expected bound fixture');
+      binding.input = {
+        assetId: motion.id,
+        path: motion.originalPath,
+        checksum: motion.checksum.toString('hex'),
+        reference: null,
+      };
+      f.revision.sourceAssetId = motion.id;
+      mocks.asset.getById.mockImplementation((id) =>
+        Promise.resolve(
+          (id === asset.id
+            ? { ...asset, livePhotoVideoId: motion.id }
+            : { ...asset, ...motion, deletedAt: null, isOffline: false, isLocked: false }) as never,
+        ),
+      );
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(motion as never);
+      developRepository.assertRenderSource.mockRejectedValue(new BadRequestException('Develop source is unavailable'));
+      await expect(f.run()).resolves.toBe(JobStatus.Failed);
+      expect(developRepository.assertRenderSource).toHaveBeenCalledOnce();
+      expect(f.originals.openForJob).not.toHaveBeenCalled();
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    it('refuses privacy changes after rendering and during accepted publication', async () => {
+      const f = fixture();
+      await expect(f.run()).resolves.toBe(JobStatus.Success);
+      developRepository.assertRenderSource.mockRejectedValue(new BadRequestException('Develop source policy changed'));
+      await expect(f.context.adoptions[0]({} as never)).rejects.toThrow('policy changed');
+      expect(developRepository.setCurrent).not.toHaveBeenCalled();
+    });
+
+    it('requires the durable queue claim before admitting reference work', async () => {
+      const f = fixture();
+      await expect(sut.handleRender({ id: f.revision.id })).rejects.toThrow('queue claim');
+      expect(f.originals.openForJob).not.toHaveBeenCalled();
+      expect(developRepository.beginAttempt).not.toHaveBeenCalled();
+    });
+  });
+
   describe('handleRender', () => {
+    it.each([
+      ['throw', undefined],
+      ['throw', 'op-unknown'],
+      ['return', undefined],
+      ['return', 'op-unknown'],
+    ] as const)(
+      'retains revision files and Activity ownership after unknown native stop: %s/%s',
+      async (mode, operationId) => {
+        const revision = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued });
+        developRepository.get.mockResolvedValue(revision);
+        const context = {
+          claim: { id: 'job', token: 'token', name: JobName.AssetDevelopRender },
+          signal: new AbortController().signal,
+          progress: vi.fn(),
+          progressUnits: 0,
+          adoptions: [],
+          followups: [],
+          afterCommit: [],
+          buffering: false,
+        } as unknown as QueueExecution;
+        mocks.mediaOperation.beginJobQueueRun.mockResolvedValue({
+          operation: { id: operationId, ownerId: asset.ownerId, assetId: asset.id },
+          claimToken: 'token',
+        } as never);
+        mocks.mediaOperation.reportProgress.mockResolvedValue(true);
+        mocks.media.decodeImage.mockImplementation(() => {
+          context.executorStopUnconfirmed = true;
+          return mode === 'throw'
+            ? Promise.reject(new Error('media_process_shutdown_unconfirmed'))
+            : Promise.resolve({ data: Buffer.alloc(48), info: { width: 4, height: 4, channels: 3 } } as never);
+        });
+        await expect(
+          queueExecution.run(context, () => sut.handleRender({ id: revision.id, operationId })),
+        ).rejects.toThrow('media_process_shutdown_unconfirmed');
+        expect(mocks.storage.unlink).not.toHaveBeenCalled();
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+        expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+        expect(mocks.mediaOperation.complete).not.toHaveBeenCalled();
+        expect(developRepository.setCurrent).not.toHaveBeenCalled();
+        expect(developRepository.update).not.toHaveBeenCalled();
+      },
+    );
+
     it('records native provenance and derives master and preview from the same native pixels', async () => {
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),
@@ -1318,6 +2185,31 @@ describe(AssetDevelopService.name, () => {
         status: AssetDevelopRevisionStatus.Failed,
         error: 'libvips: out of memory',
       });
+    });
+
+    it('defers a changed-source diagnostic and never claims or reads the original', async () => {
+      const revision = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued });
+      developRepository.get.mockResolvedValue(revision);
+      developRepository.assertSourceBinding.mockRejectedValue(new BadRequestException('source changed'));
+      const context: QueueExecution = {
+        claim: { id: 'queue-job', token: 'queue-token' } as QueueExecution['claim'],
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        buffering: false,
+        adoptions: [],
+        followups: [],
+      };
+      await expect(queueExecution.run(context, () => sut.handleRender({ id: revision.id }))).resolves.toBe(
+        JobStatus.Failed,
+      );
+      expect(developRepository.beginAttempt).not.toHaveBeenCalled();
+      expect(mocks.crypto.hashFile).not.toHaveBeenCalled();
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+      expect(developRepository.failSourceBinding).not.toHaveBeenCalled();
+      expect(context.failureDiagnostics).toHaveLength(1);
+      await context.failureDiagnostics![0]({} as never);
+      expect(developRepository.failSourceBinding).toHaveBeenCalledWith(revision, expect.any(String));
     });
 
     it('leaves a render another worker is still running alone', async () => {
@@ -1956,6 +2848,201 @@ describe(AssetDevelopService.name, () => {
       developRepository.create.mockImplementation((input: Partial<AssetDevelopRevision>) =>
         Promise.resolve(revisionStub({ ...input, id: 'imported', revision: 2 })),
       );
+    });
+
+    describe('reference original checksums', () => {
+      const referenceFixture = () => {
+        const current = {
+          ...asset,
+          originalPath: sourceOriginalPath({ sourceId: asset.id, resourceKey: 'b'.repeat(64) }),
+          checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+        };
+        mocks.asset.getById.mockResolvedValue(current as never);
+        const reference = { resourceId: asset.id, version: 'c'.repeat(64), sha256: originalSha.toString('hex') };
+        const snapshot = {
+          assetId: asset.id,
+          path: current.originalPath,
+          checksum: current.checksum.toString('hex'),
+          reference,
+        };
+        const binding = { kind: 'bound' as const, parent: snapshot, input: snapshot };
+        developRepository.getSourceBinding.mockResolvedValue(binding);
+        const input = {
+          verifiedSha256: reference.sha256,
+          resourceId: reference.resourceId,
+          resourceVersion: reference.version,
+          check: vi.fn(),
+          release: vi.fn().mockResolvedValue(undefined),
+        };
+        const originals = {
+          open: vi.fn(async (_id, _reader, authorize: () => Promise<void>, signal?: AbortSignal) => {
+            signal?.throwIfAborted();
+            input.check.mockImplementation(authorize);
+            await authorize();
+            return input;
+          }),
+        };
+        Object.assign(sut, { sourceOriginalService: originals });
+        photoTools.createExport.mockImplementation((row: Partial<DevelopExport>) => Promise.resolve(exportRow(row)));
+        photoTools.listExports.mockResolvedValue([exportRow()]);
+        photoTools.getExport.mockResolvedValue(exportRow());
+        return { current, binding, input, originals };
+      };
+
+      it.each(['list', 'create'] as const)(
+        'uses verified current bytes for %s and releases its reader',
+        async (action) => {
+          const f = referenceFixture();
+          const result =
+            action === 'list'
+              ? (await sut.listExports(authStub.user1, asset.id))[0]
+              : await sut.createExport(authStub.user1, asset.id);
+          expect(result).toMatchObject({ sourceChecksum: originalSha.toString('hex'), isCurrentOriginal: true });
+          expect(f.originals.open).toHaveBeenCalledWith(
+            asset.id,
+            expect.objectContaining({ kind: 'http' }),
+            expect.any(Function),
+            undefined,
+          );
+          expect(mocks.crypto.hashFile).not.toHaveBeenCalledWith(f.current.originalPath, 'sha256');
+          expect(f.input.check).toHaveBeenCalled();
+          expect(f.input.release).toHaveBeenCalledOnce();
+        },
+      );
+
+      it('pins the verified version when importing a developed reference file', async () => {
+        const f = referenceFixture();
+        await sut.importRendition(authStub.user1, asset.id, { exportId: exportRow().id }, staged);
+        expect(developRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            kind: AssetDevelopRevisionKind.External,
+            sourceChecksum: originalSha,
+            expectedSourceVersion: developSourceVersion(f.binding),
+          }),
+        );
+        expect(f.input.release).toHaveBeenCalledOnce();
+        expect(mocks.crypto.hashFile).not.toHaveBeenCalledWith(f.current.originalPath, 'sha256');
+      });
+
+      it.each(['resourceId', 'resourceVersion', 'verifiedSha256'] as const)(
+        'refuses mismatched delivered %s before export',
+        async (field) => {
+          const f = referenceFixture();
+          f.input[field] = field === 'resourceId' ? '10000000-0000-4000-8000-000000000099' : 'e'.repeat(64);
+          await expect(sut.createExport(authStub.user1, asset.id)).rejects.toBeInstanceOf(ConflictException);
+          expect(photoTools.createExport).not.toHaveBeenCalled();
+          expect(f.input.release).toHaveBeenCalledOnce();
+        },
+      );
+
+      it('rechecks edit access after the checksum lease opens', async () => {
+        const f = referenceFixture();
+        f.originals.open.mockImplementationOnce(async (_id, _reader, authorize) => {
+          f.input.check.mockImplementation(authorize);
+          await authorize();
+          mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+          return f.input;
+        });
+        await expect(sut.createExport(authStub.user1, asset.id)).rejects.toBeInstanceOf(BadRequestException);
+        expect(photoTools.createExport).not.toHaveBeenCalled();
+        expect(f.input.release).toHaveBeenCalledOnce();
+      });
+
+      it.each(['list', 'create', 'import'] as const)(
+        'does not fall back to a logical URI when the provider is unavailable: %s',
+        async (action) => {
+          const f = referenceFixture();
+          f.originals.open.mockRejectedValueOnce(new Error('source_original_unavailable'));
+          await expect(
+            action === 'list'
+              ? sut.listExports(authStub.user1, asset.id)
+              : action === 'create'
+                ? sut.createExport(authStub.user1, asset.id)
+                : sut.importRendition(authStub.user1, asset.id, { exportId: exportRow().id }, staged),
+          ).rejects.toThrow('source_original_unavailable');
+          expect(mocks.crypto.hashFile).not.toHaveBeenCalledWith(f.current.originalPath, 'sha256');
+          expect(photoTools.createExport).not.toHaveBeenCalled();
+          expect(developRepository.create).not.toHaveBeenCalled();
+          if (action === 'import') expect(mocks.storage.unlink).toHaveBeenCalledWith(staged.path);
+        },
+      );
+
+      it('still acquires reference bytes if a row advertises a stored file checksum', async () => {
+        const f = referenceFixture();
+        mocks.asset.getById.mockResolvedValue({
+          ...f.current,
+          checksumAlgorithm: ChecksumAlgorithm.sha256File,
+        } as never);
+        await sut.createExport(authStub.user1, asset.id);
+        expect(f.originals.open).toHaveBeenCalledOnce();
+      });
+
+      it('forwards cancellation to acquisition and releases before refusing a canceled checksum', async () => {
+        const f = referenceFixture();
+        const controller = new AbortController();
+        f.originals.open.mockImplementationOnce(async (_id, _reader, authorize, signal) => {
+          expect(signal).toBe(controller.signal);
+          await authorize();
+          f.input.check.mockImplementation(() => {
+            controller.abort();
+            return Promise.resolve();
+          });
+          return f.input;
+        });
+        await expect(sut.createExport(authStub.user1, asset.id, controller.signal)).rejects.toThrow();
+        expect(f.input.release).toHaveBeenCalledOnce();
+        expect(photoTools.createExport).not.toHaveBeenCalled();
+      });
+
+      it('waits for descriptor release and refuses an export canceled while closing', async () => {
+        const f = referenceFixture();
+        const controller = new AbortController();
+        const closing = Promise.withResolvers<void>();
+        const entered = Promise.withResolvers<void>();
+        f.input.release.mockImplementation(async () => {
+          entered.resolve();
+          await closing.promise;
+        });
+        const result = sut.createExport(authStub.user1, asset.id, controller.signal);
+        const rejected = expect(result).rejects.toThrow();
+        await entered.promise;
+        expect(photoTools.createExport).not.toHaveBeenCalled();
+        controller.abort();
+        closing.resolve();
+        await rejected;
+        expect(photoTools.createExport).not.toHaveBeenCalled();
+      });
+
+      it('cleans a pre-canceled uploaded rendition without touching the source', async () => {
+        const f = referenceFixture();
+        await expect(
+          sut.importRendition(authStub.user1, asset.id, { exportId: exportRow().id }, staged, AbortSignal.abort()),
+        ).rejects.toThrow();
+        expect(mocks.storage.unlink).toHaveBeenCalledWith(staged.path);
+        expect(mocks.storage.rename).not.toHaveBeenCalled();
+        expect(f.originals.open).not.toHaveBeenCalled();
+      });
+
+      it('removes a copied rendition if its saved source version is rejected', async () => {
+        const f = referenceFixture();
+        developRepository.create.mockRejectedValueOnce(new ConflictException('Develop source changed'));
+        await expect(
+          sut.importRendition(authStub.user1, asset.id, { exportId: exportRow().id }, staged),
+        ).rejects.toBeInstanceOf(ConflictException);
+        const kept = mocks.storage.rename.mock.calls[0][1];
+        expect(developRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({ expectedSourceVersion: developSourceVersion(f.binding) }),
+        );
+        expect(mocks.storage.unlink).toHaveBeenCalledWith(kept);
+        expect(f.input.release).toHaveBeenCalledOnce();
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      });
+
+      it('refuses a reference checksum without an authorized reader instead of hashing its URI', async () => {
+        const f = referenceFixture();
+        await expect(sut['currentSourceChecksum'](asset.id)).rejects.toThrow();
+        expect(mocks.crypto.hashFile).not.toHaveBeenCalledWith(f.current.originalPath, 'sha256');
+      });
     });
 
     it('records an export with the SHA-256 of the original', async () => {

@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import type { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import {
   JobName,
   MediaOperationBulkAction,
@@ -66,17 +67,25 @@ describe(MediaOperationService.name, () => {
   let mocks: ServiceMocks;
   let repository: MediaOperationRepository;
   let icloud: { queueOperation: ReturnType<typeof vi.fn>; endRun: ReturnType<typeof vi.fn> };
-  let jobs: { queue: ReturnType<typeof vi.fn> };
+  let jobs: { queue: ReturnType<typeof vi.fn>; queueInTransaction: ReturnType<typeof vi.fn> };
   let preservation: Record<string, ReturnType<typeof vi.fn>>;
   let archiveOperations: { relinkJob: ReturnType<typeof vi.fn> };
-  let develop: { get: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
+  let develop: {
+    get: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
+    admitReferenceRender: ReturnType<typeof vi.fn<AssetDevelopRepository['admitReferenceRender']>>;
+  };
 
   beforeEach(() => {
     mocks = getMocks();
     icloud = { queueOperation: vi.fn(), endRun: vi.fn() };
-    jobs = { queue: vi.fn().mockResolvedValue(undefined) };
+    jobs = { queue: vi.fn().mockResolvedValue(undefined), queueInTransaction: vi.fn().mockResolvedValue(undefined) };
     archiveOperations = { relinkJob: vi.fn().mockResolvedValue(true) };
-    develop = { get: vi.fn(), update: vi.fn().mockResolvedValue(undefined) };
+    develop = {
+      get: vi.fn(),
+      update: vi.fn().mockResolvedValue(undefined),
+      admitReferenceRender: vi.fn<AssetDevelopRepository['admitReferenceRender']>(),
+    };
     preservation = {
       activeOperation: vi.fn().mockResolvedValue(undefined),
       getPackage: vi.fn(),
@@ -1127,6 +1136,49 @@ describe(MediaOperationService.name, () => {
       });
       expect(result.retryOfId).toBe(failed.id);
     });
+
+    it.each([true, false])(
+      'reauthorizes reference policy and generation for a manual Activity retry: %s',
+      async (allowed) => {
+        const failed = editStub('photo_version');
+        vi.mocked(repository.getForOwner).mockResolvedValue(failed);
+        const revision = {
+          id: 'revision-1',
+          assetId,
+          ownerId: authStub.user1.user.id,
+          status: 'failed',
+          sourceBinding: { kind: 'bound', parent: { reference: {} }, input: { reference: {} } },
+        };
+        develop.get.mockResolvedValue(revision);
+        const generation = '10000000-0000-4000-8000-000000000003';
+        develop.admitReferenceRender.mockImplementation(async (_revision, _allow, record) => {
+          const queued = { ..._revision, renderGenerationId: generation };
+          const sourcePolicy = 'c'.repeat(64);
+          const operation = await record({ isTransaction: true } as never, queued, sourcePolicy);
+          return { revision: queued, sourcePolicy, operation };
+        });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(allowed ? [assetId] : []));
+        if (!allowed) {
+          await expect(sut.retry(authStub.user1, failed.id)).rejects.toBeInstanceOf(BadRequestException);
+          expect(develop.admitReferenceRender).not.toHaveBeenCalled();
+          expect(repository.createRetry).not.toHaveBeenCalled();
+          return;
+        }
+        await sut.retry(authStub.user1, failed.id);
+        expect(develop.admitReferenceRender).toHaveBeenCalledWith(revision, false, expect.any(Function));
+        expect(develop.update).not.toHaveBeenCalled();
+        expect(jobs.queue).not.toHaveBeenCalled();
+        expect(jobs.queueInTransaction).toHaveBeenCalledWith(expect.objectContaining({ isTransaction: true }), {
+          name: JobName.AssetDevelopRender,
+          data: {
+            id: 'revision-1',
+            operationId: 'retry-1',
+            renderGenerationId: generation,
+            sourcePolicy: 'c'.repeat(64),
+          },
+        });
+      },
+    );
 
     it('queues a photo version afresh before retrying its render', async () => {
       const failed = editStub('photo_version');

@@ -349,6 +349,7 @@ export async function renderDarktable(
   value: unknown,
   signal?: AbortSignal,
   bitmaps: ReadonlyMap<string, DevelopBitmap> = new Map(),
+  originalFileName?: string,
 ): Promise<Buffer> {
   const recipe = DarktableDevelopRecipeSchema.parse(value); // Reject unknown controls before touching a file/process.
   signal?.throwIfAborted();
@@ -364,7 +365,7 @@ export async function renderDarktable(
     verifyDarktableVersion(stdout);
     directory = await mkdtemp(join(tmpdir(), 'frameleaf-darktable-'));
     // A private copy also excludes adjacent imported sidecars and makes original writes impossible.
-    const source = join(directory, `original${extname(input)}`);
+    const source = join(directory, `original${extname(originalFileName ?? input)}`);
     const library = join(directory, 'library.db');
     const output = join(directory, 'developed.png');
     const config = join(directory, 'config');

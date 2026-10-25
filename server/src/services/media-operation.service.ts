@@ -57,6 +57,7 @@ import {
   JOB_QUEUE_CLAIMANT,
   canCancelEdit,
   canRetryEdit,
+  editOperationCreate,
   editOperationEdit,
   editOperationJobItem,
 } from 'src/utils/edit-operation.js';
@@ -1023,6 +1024,38 @@ export class MediaOperationService {
         revision.status === AssetDevelopRevisionStatus.Rendering
       ) {
         throw new BadRequestException('This version is already being rendered');
+      }
+      const binding = revision.sourceBinding;
+      if (binding?.kind === 'bound' && (binding.parent.reference || binding.input.reference)) {
+        await requireAccess(this.access, { auth, permission: Permission.AssetEditCreate, ids: [revision.assetId] });
+        const admitted = await this.develop.admitReferenceRender(
+          revision,
+          !!auth.session?.hasElevatedPermission,
+          async (tx, queued, sourcePolicy) => {
+            const job = {
+              name: JobName.AssetDevelopRender as const,
+              data: { id: revision.id, renderGenerationId: queued.renderGenerationId!, sourcePolicy },
+            };
+            const retry = await this.repository.create(
+              {
+                ...editOperationCreate({
+                  ownerId: operation.ownerId,
+                  edit,
+                  assetId: revision.assetId,
+                  label: operation.label,
+                  revisionId: revision.id,
+                  job,
+                }),
+                retryOfId: operation.id,
+                maxAttempts: operation.maxAttempts,
+              },
+              tx,
+            );
+            await this.jobs.queueInTransaction(tx, { ...job, data: { ...job.data, operationId: retry.id } });
+            return retry;
+          },
+        );
+        return this.present(auth, admitted.operation);
       }
       await this.develop.update(revision.id, {
         status: AssetDevelopRevisionStatus.Queued,

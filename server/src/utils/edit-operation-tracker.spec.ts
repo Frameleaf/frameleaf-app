@@ -179,6 +179,67 @@ describe(EditOperationTracker.name, () => {
       });
     });
 
+    it('keeps a deferred failure live in memory until its transaction commits', async () => {
+      const context: QueueExecution = {
+        claim: { id: 'job', token: 'token' } as QueueExecution['claim'],
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        buffering: false,
+        adoptions: [],
+        followups: [],
+      };
+      const run = (await sut.begin('op-1')) as EditOperationRun;
+      try {
+        await queueExecution.run(context, async () => {
+          await run.settleStopped(async () => {
+            await run.fail('source changed', 'source_changed', { retry: false });
+          });
+          const tx = {} as never;
+          await publicationTransaction.run(tx, () => context.failureDiagnostics![0](tx));
+          expect(run.done).toBe(false);
+          expect(operations.fail).toHaveBeenCalledWith('op-1', 'token-1', expect.anything(), {
+            retry: false,
+            executor: tx,
+            requireActiveClaim: true,
+          });
+          for (const notify of context.afterCommit ?? []) await notify();
+          expect(run.done).toBe(true);
+        });
+      } finally {
+        run.stop();
+      }
+    });
+
+    it('defers a stopped render settlement without letting finish fail it early', async () => {
+      const context: QueueExecution = {
+        claim: { id: 'job', token: 'token' } as QueueExecution['claim'],
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        buffering: false,
+        adoptions: [],
+        followups: [],
+      };
+      await queueExecution.run(context, () =>
+        sut.execute('op-1', async (run) => {
+          await run!.settleStopped(async () => {
+            await run!.fail('source revoked', 'source_changed', { retry: false });
+          });
+          return JobStatus.Failed;
+        }),
+      );
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(context.failureDiagnostics).toHaveLength(1);
+      await context.failureDiagnostics![0]({} as never);
+      expect(operations.fail).toHaveBeenCalledWith(
+        'op-1',
+        'token-1',
+        { error: 'source revoked', errorCode: 'source_changed' },
+        { retry: false },
+      );
+    });
+
     it('fails with the executor’s own reason, with the automatic retry', async () => {
       await sut.execute('op-1', (run) => {
         run!.noteError(new Error('ffmpeg exited with 1'));

@@ -66,7 +66,7 @@ export class AssetDevelopController {
   @ApiResponse({
     status: 409,
     description:
-      'expectedCurrentRevisionId no longer matches; nothing was saved. Body: { code: "develop_current_revision_changed", currentRevisionId: string | null, message, error, statusCode }',
+      'The current revision or previewed source version changed; nothing was saved. The code is develop_current_revision_changed (with currentRevisionId) or develop_source_changed (refresh the preview before saving).',
   })
   @Endpoint({
     summary: 'Save a develop recipe as a new version',
@@ -83,10 +83,19 @@ export class AssetDevelopController {
   }
 
   @Post(':id/develop/preview')
+  @ApiResponse({
+    status: 409,
+    description:
+      'The selected original changed while previewing. The code is develop_source_changed; request a new preview before saving.',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOkResponse({
     content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
     headers: {
+      'X-Frameleaf-Develop-Source-Version': {
+        description: 'Opaque source version to send as expectedSourceVersion when saving this preview.',
+        schema: { type: 'string' },
+      },
       'X-Frameleaf-HDR-Histogram': {
         description:
           'Optional version 1 JSON histogram from linear HDR preview pixels, in stops relative to 203-nit reference white; see native API contract.',
@@ -111,15 +120,21 @@ export class AssetDevelopController {
     res.once('close', abandon);
     if (res.destroyed) abandon();
     try {
-      const { buffer, contentType, histogram } = await this.service.preview(auth, id, dto, controller.signal);
+      const { buffer, contentType, histogram, sourceVersion } = await this.service.preview(
+        auth,
+        id,
+        dto,
+        controller.signal,
+      );
       if (!res.destroyed) {
         res.set({
           'Content-Type': contentType,
           'Cache-Control': 'private, no-store',
           'Content-Length': String(buffer.length),
+          ...(sourceVersion && { 'X-Frameleaf-Develop-Source-Version': sourceVersion }),
+          'Access-Control-Expose-Headers': 'X-Frameleaf-Develop-Source-Version, X-Frameleaf-HDR-Histogram',
           ...(histogram && {
             'X-Frameleaf-HDR-Histogram': JSON.stringify(histogram),
-            'Access-Control-Expose-Headers': 'X-Frameleaf-HDR-Histogram',
           }),
         });
         res.end(buffer);

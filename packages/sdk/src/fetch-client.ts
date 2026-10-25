@@ -5296,6 +5296,8 @@ export type AssetDevelopResponseDto = {
 export type AssetDevelopSaveDto = {
     /** Optimistic precondition: the currentRevisionId the client last read. null expects the original to be current (no current revision). When it no longer matches, the save is refused with 409 code develop_current_revision_changed and the actual currentRevisionId. Omit to save unconditionally */
     expectedCurrentRevisionId?: string | null;
+    /** Opaque X-Frameleaf-Develop-Source-Version from the displayed preview. Required for reference originals; a stale or missing version is refused with 409 code develop_source_changed before any revision is saved. */
+    expectedSourceVersion?: string;
     /** Optional name for the saved version */
     label?: string;
     recipe: AssetDevelopRecipeDto;
@@ -22292,6 +22294,8 @@ export function previewAssetDevelop({ id, assetDevelopPreviewDto }: {
     return oazapfts.ok(oazapfts.fetchBlob<{
         status: 200;
         data: Blob;
+    } | {
+        status: 409;
     }>(`/assets/${encodeURIComponent(id)}/develop/preview`, oazapfts.json({
         ...opts,
         method: "POST",

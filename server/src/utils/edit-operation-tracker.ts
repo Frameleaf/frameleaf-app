@@ -8,8 +8,10 @@ import {
   deferJobAdoption,
   deferJobFailure,
   jobSignal,
+  publishJobDiagnostic,
   queueExecution,
 } from 'src/queue/context.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
 import {
   EDIT_OPERATION_LEASE_MS,
   EDIT_OPERATION_REDISPATCH_MS,
@@ -64,6 +66,7 @@ export class EditOperationRun {
   private errorNote?: { error: string; errorCode: string };
   private progressUnits = 0;
   private publicationQueued = false;
+  private settlementQueued = false;
 
   constructor(
     private operations: Operations,
@@ -83,6 +86,10 @@ export class EditOperationRun {
   /** Settled or lost: nothing this run writes changes the row any more. */
   get done() {
     return this.state === 'settled' || this.state === 'lost';
+  }
+
+  get settlementPending() {
+    return this.settlementQueued;
   }
 
   /** The reason the executor gives for a failure it reports as `JobStatus.Failed`. */
@@ -226,6 +233,14 @@ export class EditOperationRun {
     return false;
   }
 
+  /** Call only after native work has stopped; the accepted queue claim owns terminal metadata. */
+  async settleStopped(settle: () => Promise<void>) {
+    if (queueExecution.getStore()?.executorStopUnconfirmed) throw new Error('media_process_shutdown_unconfirmed');
+    if (this.done || this.settlementQueued) return;
+    this.settlementQueued = true;
+    await publishJobDiagnostic(settle);
+  }
+
   /** Report a failure. It gets the row's one automatic retry unless `retry` is false. */
   async fail(error: unknown, errorCode: string, options: { retry?: boolean } = {}) {
     if (this.done) {
@@ -235,9 +250,16 @@ export class EditOperationRun {
       this.id,
       this.claimToken,
       { error: messageOf(error), errorCode },
-      { retry: options.retry ?? true },
+      {
+        retry: options.retry ?? true,
+        ...(publicationTransaction.getStore() && {
+          executor: publicationTransaction.getStore(),
+          requireActiveClaim: true,
+        }),
+      },
     );
-    this.settle();
+    if (publicationTransaction.getStore()) await afterJobCommit(() => Promise.resolve(this.settle()));
+    else this.settle();
     return outcome;
   }
 
@@ -246,9 +268,19 @@ export class EditOperationRun {
     if (this.done) {
       return false;
     }
-    await this.operations.requestCancel(this.id, this.operation.ownerId, this.claimToken);
-    const acknowledged = await this.operations.acknowledgeCancel(this.id, this.claimToken, { released: true });
-    this.settle();
+    const transaction = publicationTransaction.getStore();
+    if (transaction)
+      await this.operations.requestCancelWithin(transaction, this.id, this.operation.ownerId, this.claimToken);
+    else await this.operations.requestCancel(this.id, this.operation.ownerId, this.claimToken);
+    const acknowledged = await this.operations.acknowledgeCancel(this.id, this.claimToken, {
+      released: true,
+      ...(publicationTransaction.getStore() && {
+        executor: publicationTransaction.getStore(),
+        requireActiveClaim: true,
+      }),
+    });
+    if (publicationTransaction.getStore()) await afterJobCommit(() => Promise.resolve(this.settle()));
+    else this.settle();
     return acknowledged;
   }
 
@@ -270,6 +302,7 @@ export class EditOperationRun {
     if (this.done) {
       return;
     }
+    if (this.settlementQueued) return;
     switch (editOperationOutcome(status)) {
       case 'published': {
         await this.complete(this.operation.assetId);
@@ -391,7 +424,8 @@ export class EditOperationTracker {
       await run.finish(status);
       return status;
     } catch (error) {
-      if (!queueExecution.getStore()?.executorStopUnconfirmed) await run.fail(error, EDIT_RENDER_FAILED.errorCode);
+      if (!queueExecution.getStore()?.executorStopUnconfirmed && !run.settlementPending)
+        await run.fail(error, EDIT_RENDER_FAILED.errorCode);
       throw error;
     } finally {
       run.stop();

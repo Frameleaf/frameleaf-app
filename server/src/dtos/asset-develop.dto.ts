@@ -726,6 +726,13 @@ const AssetDevelopSaveSchema = z
       .describe(
         'Immutable revision of this owned asset whose omitted fields are preserved; never the implicit current revision',
       ),
+    expectedSourceVersion: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/u)
+      .optional()
+      .describe(
+        'Opaque X-Frameleaf-Develop-Source-Version from the displayed preview. Required for reference originals; a stale or missing version is refused with 409 code develop_source_changed before any revision is saved.',
+      ),
     expectedCurrentRevisionId: z
       .uuidv4()
       .nullable()

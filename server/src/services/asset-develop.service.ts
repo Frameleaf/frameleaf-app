@@ -2,10 +2,12 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -16,7 +18,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SystemConfig } from 'src/dtos/config.dto.js';
 import type { HdrHistogram } from 'src/queue/image-hdr-histogram.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { JobOf, RawImageInfo } from 'src/types.js';
+import type { JobOf, RawImageInfo, VideoStreamInfo } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
@@ -53,14 +55,21 @@ import {
   QueueName,
   StorageFolder,
 } from 'src/enum.js';
-import { attemptOutputPath, jobSignal, publishJobResult } from 'src/queue/context.js';
-import { isMediaProcessShutdownUnconfirmed } from 'src/queue/process-lifetime.js';
+import {
+  attemptOutputPath,
+  deferJobFailure,
+  jobSignal,
+  publishJobDiagnostic,
+  publishJobResult,
+  queueExecution,
+} from 'src/queue/context.js';
 import { assertPublicationMotionSource, assertPublicationSource } from 'src/queue/transaction.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import {
   AssetDevelopRepository,
   type AssetDevelopRevision,
   type AssetDevelopRevisionUpdate,
+  type DevelopArtifactSource,
 } from 'src/repositories/asset-develop.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -74,7 +83,9 @@ import { MediaRepository } from 'src/repositories/media.repository.js';
 import { type DevelopExport, PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
 import { isGranted, requireAccess } from 'src/utils/access.js';
+import { assetSourceFingerprint } from 'src/utils/asset-source-authority.js';
 import { getConfig } from 'src/utils/config.js';
 import {
   DARKTABLE_RENDERER_VERSION,
@@ -111,13 +122,20 @@ import {
   planDevelopDetail,
   planDevelopGeometry,
 } from 'src/utils/develop-recipe.js';
+import {
+  type DevelopSourceBinding,
+  developSourceVersion,
+  sameDevelopSourceBinding,
+} from 'src/utils/develop-source-binding.js';
 import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
-import { EditOperationEdit } from 'src/utils/edit-operation.js';
+import { EditOperationEdit, editOperationCreate } from 'src/utils/edit-operation.js';
+import { executionSignal, withExecutionSignal } from 'src/utils/execution-signal.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { MEDIA_OPERATION_AUTO_RETRIES, MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
 import { getKeyframeCommand } from 'src/utils/media.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 
 /** The edited master keeps the source resolution and is encoded well above the playback previews. */
 const MASTER_MIN_QUALITY = 92;
@@ -173,7 +191,18 @@ export const developImportStagingFolder = (ownerId: string) =>
 
 type ImportedFile = { path: string; originalname?: string; size: number };
 
-type DevelopSource = NonNullable<Awaited<ReturnType<AssetJobRepository['getForGenerateThumbnailJob']>>>;
+type DevelopOriginalInput = Awaited<ReturnType<SourceOriginalService['openForJob']>>;
+type DevelopSource = NonNullable<Awaited<ReturnType<AssetJobRepository['getForGenerateThumbnailJob']>>> & {
+  readPath?: string;
+  verifiedChecksum?: Buffer;
+};
+type DevelopMotion = Omit<
+  NonNullable<Awaited<ReturnType<AssetJobRepository['getForVideoConversion']>>>,
+  'videoStream'
+> & {
+  videoStream: VideoStreamInfo;
+  readPath?: string;
+};
 
 class DevelopRenderCancelled extends Error {
   constructor() {
@@ -192,6 +221,11 @@ class DevelopSourceChanged extends Error {}
  */
 @Injectable()
 export class AssetDevelopService {
+  @Inject(SourceOriginalService)
+  private sourceOriginalService!: SourceOriginalService;
+  private readonly sourceReaderOwnerId = randomUUID();
+  private previewStopUnconfirmed = false;
+
   constructor(
     private logger: LoggingRepository,
     private accessRepository: AccessRepository,
@@ -214,8 +248,11 @@ export class AssetDevelopService {
 
   /** FL-43: every render of a version is a job in Activity, run under its row's claim. */
   private editOperations: EditOperationTracker;
-  /** The runs in progress by revision, so a stage's progress and a cancel reach the job's row. */
-  private runs = new Map<string, EditOperationRun>();
+  private renderExecution = new AsyncLocalStorage<{
+    run?: EditOperationRun;
+    revision?: AssetDevelopRevision;
+    reference?: boolean;
+  }>();
 
   async get(auth: AuthDto, assetId: string): Promise<AssetDevelopResponseDto> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditGet, ids: [assetId] });
@@ -241,6 +278,7 @@ export class AssetDevelopService {
       recipeVersion: recipe.version,
       sourceRevisionId: dto.sourceRevisionId,
       expectedCurrentRevisionId: dto.expectedCurrentRevisionId,
+      expectedSourceVersion: dto.expectedSourceVersion,
       replaceRecipe: dto.replaceRecipe,
       requireRenderable: dto.render,
       label: dto.label ?? null,
@@ -248,7 +286,7 @@ export class AssetDevelopService {
     });
     if (dto.render) {
       if (dto.sourceRevisionId) await this.requireArtifacts(asset, revision.recipe, auth);
-      return this.queueRender(revision, asset.originalFileName);
+      return this.queueRender(revision, asset.originalFileName, auth);
     }
     return this.toRevisionDto(revision);
   }
@@ -257,6 +295,7 @@ export class AssetDevelopService {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
     const asset = await this.requireEditableStill(assetId);
     const revision = await this.requireRevision(assetId, revisionId);
+    await this.assetDevelopRepository.assertSourceBinding(revision);
     if (revision.kind === AssetDevelopRevisionKind.Recipe) {
       assertRenderableDevelopRecipe(revision.recipe);
       await this.requireArtifacts(asset, revision.recipe, auth);
@@ -267,7 +306,7 @@ export class AssetDevelopService {
     ) {
       return this.toRevisionDto(revision);
     }
-    return this.queueRender(revision, asset.originalFileName);
+    return this.queueRender(revision, asset.originalFileName, auth);
   }
 
   async cancel(auth: AuthDto, assetId: string, revisionId: string): Promise<AssetDevelopRevisionResponseDto> {
@@ -318,25 +357,211 @@ export class AssetDevelopService {
     assetId: string,
     dto: AssetDevelopPreviewDto,
     signal?: AbortSignal,
-  ): Promise<{ buffer: Buffer; contentType: string; histogram?: HdrHistogram }> {
+  ): Promise<{ buffer: Buffer; contentType: string; histogram?: HdrHistogram; sourceVersion?: string }> {
+    signal?.throwIfAborted();
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditGet, ids: [assetId] });
+    if (this.previewStopUnconfirmed)
+      throw new ServiceUnavailableException('Develop previews are unavailable while the previous render is stopping');
     const source = await this.assetJobRepository.getForGenerateThumbnailJob(assetId);
     if (!source || source.type !== AssetType.Image) {
       throw new BadRequestException('Only images have develop previews');
     }
     const { image } = await this.getConfig();
     const recipe = assertRenderableDevelopRecipe(dto.recipe);
-    // Preserve discriminated-union narrowing for the HDR renderer.
     // eslint-disable-next-line unicorn/prefer-includes-over-repeated-comparisons
-    if (recipe.version === 3 || recipe.version === 4 || recipe.version === 5 || recipe.version === 6)
-      return this.renderHdrPreview(source, recipe, dto, signal);
-    if (dto.dynamicRange === 'hdr') throw new BadRequestException('HDR previews require recipe version 3, 4, 5 or 6');
+    const hdr = recipe.version === 3 || recipe.version === 4 || recipe.version === 5 || recipe.version === 6;
+    if (hdr) await this.requireHdrRenderer(recipe);
+    else if (dto.dynamicRange === 'hdr')
+      throw new BadRequestException('HDR previews require recipe version 3, 4, 5 or 6');
     const motion =
       recipe.version === 1 && recipe.keyFrame
         ? await this.requireMotionClip(source, recipe.keyFrame.timeMs, auth, Permission.AssetEditGet)
         : undefined;
+    try {
+      const binding = await this.assetDevelopRepository.getSourceBinding(assetId, source.ownerId, recipe);
+      if (binding?.kind === 'bound') {
+        const selected = motion ?? source;
+        if (
+          binding.parent.assetId !== source.id ||
+          binding.parent.path !== source.originalPath ||
+          binding.parent.checksum !== source.checksum.toString('hex') ||
+          binding.input.assetId !== selected.id ||
+          binding.input.path !== selected.originalPath ||
+          binding.input.checksum !== selected.checksum.toString('hex')
+        )
+          throw new DevelopSourceChanged('The original changed before previewing');
+      } else if (
+        parseSourceOriginalPath(source.originalPath) ||
+        (motion && parseSourceOriginalPath(motion.originalPath))
+      ) {
+        throw new DevelopSourceChanged('The original changed before previewing');
+      }
+      return await this.withPreviewOriginal(
+        auth,
+        source,
+        motion,
+        recipe.version === 1 ? recipe.keyFrame?.timeMs : undefined,
+        signal,
+        async (source, motion, signal) => {
+          const result = await this.renderPreview(source, recipe, dto, image, signal, motion);
+          const current = await this.assetDevelopRepository.getSourceBinding(assetId, source.ownerId, recipe);
+          if (!sameDevelopSourceBinding(binding, current))
+            throw new DevelopSourceChanged('The original changed while previewing');
+          return { ...result, ...(binding && { sourceVersion: developSourceVersion(binding) }) };
+        },
+        binding,
+      );
+    } catch (error) {
+      if (this.nativeStopUnconfirmed(error)) this.previewStopUnconfirmed = true;
+      if (error instanceof DevelopSourceChanged)
+        throw new ConflictException({
+          code: 'develop_source_changed',
+          message: error.message + '. Refresh the preview before saving.',
+        });
+      throw error;
+    }
+  }
+
+  private async withPreviewOriginal<T>(
+    auth: AuthDto,
+    source: DevelopSource,
+    motion: DevelopMotion | undefined,
+    timeMs: number | undefined,
+    signal: AbortSignal | undefined,
+    work: (
+      source: DevelopSource,
+      motion: DevelopMotion | undefined,
+      signal: AbortSignal | undefined,
+      check: () => Promise<void>,
+    ) => Promise<T>,
+    binding: DevelopSourceBinding | null,
+    permission = Permission.AssetEditGet,
+  ): Promise<T> {
+    signal?.throwIfAborted();
+    const selected = motion ?? source;
+    const authorize = async () => {
+      await requireAccess(this.accessRepository, { auth, permission, ids: [source.id] });
+      const current = await this.assetJobRepository.getForGenerateThumbnailJob(source.id);
+      if (
+        !current ||
+        current.ownerId !== source.ownerId ||
+        current.originalPath !== source.originalPath ||
+        !current.checksum.equals(source.checksum)
+      )
+        throw new DevelopSourceChanged('The original changed while previewing');
+      if (motion) {
+        const current = await this.requireMotionClip(source, timeMs!, auth, permission);
+        if (
+          current.id !== motion.id ||
+          current.originalPath !== motion.originalPath ||
+          !current.checksum.equals(motion.checksum)
+        )
+          throw new DevelopSourceChanged('The motion clip changed while previewing');
+      }
+    };
+    if (!parseSourceOriginalPath(selected.originalPath)) {
+      const render = async () => {
+        if (binding) await authorize();
+        const result = await work(source, motion, signal, authorize);
+        this.assertNativeStopped();
+        signal?.throwIfAborted();
+        if (binding) await authorize();
+        return result;
+      };
+      return signal ? withExecutionSignal(signal, render) : render();
+    }
+    const input = await this.sourceOriginalService.open(
+      selected.id,
+      { kind: 'http', readerId: randomUUID(), ownerId: this.sourceReaderOwnerId },
+      authorize,
+      signal,
+    );
+    let confirmed = true;
+    try {
+      const expected = binding?.kind === 'bound' ? binding.input.reference : null;
+      if (
+        !expected ||
+        input.resourceId !== expected.resourceId ||
+        input.resourceVersion !== expected.version ||
+        input.verifiedSha256 !== expected.sha256
+      )
+        throw new DevelopSourceChanged('The original changed before previewing');
+      const render = () =>
+        withExecutionSignal(input.signal, async () => {
+          await input.check();
+          let previewMotion = motion;
+          if (motion) {
+            const info = await this.mediaRepository.probe(input.localPath, {
+              countFrames: false,
+              signal: executionSignal(),
+            });
+            if (
+              !info.videoStreams[0] ||
+              (Number.isFinite(info.format.duration) &&
+                info.format.duration > 0 &&
+                timeMs! >= info.format.duration * 1000)
+            )
+              throw new BadRequestException('The key frame is unavailable in the current motion original');
+            previewMotion = {
+              ...motion,
+              readPath: input.localPath,
+              videoStream: info.videoStreams[0],
+              format: info.format,
+            };
+          }
+          const previewSource: DevelopSource = motion
+            ? source
+            : {
+                ...source,
+                readPath: input.localPath,
+                verifiedChecksum: Buffer.from(input.verifiedSha256, 'hex'),
+                exifInfo: { ...source.exifInfo, colorspace: null, profileDescription: null },
+              };
+          const result = await work(previewSource, previewMotion, executionSignal(), input.check);
+          this.assertNativeStopped();
+          executionSignal()?.throwIfAborted();
+          await input.check();
+          executionSignal()?.throwIfAborted();
+          return result;
+        });
+      return await (signal ? withExecutionSignal(signal, render) : render());
+    } catch (error) {
+      confirmed = !this.nativeStopUnconfirmed(error);
+      throw error;
+    } finally {
+      if (confirmed) await input.release();
+    }
+  }
+
+  private nativeStopUnconfirmed(error?: unknown) {
+    return (
+      !!queueExecution.getStore()?.executorStopUnconfirmed ||
+      (error instanceof Error &&
+        [
+          'media_process_shutdown_unconfirmed',
+          'source_original_shutdown_unconfirmed',
+          'artifact_close_unconfirmed',
+        ].includes(error.message))
+    );
+  }
+
+  private assertNativeStopped() {
+    if (this.nativeStopUnconfirmed()) throw new Error('media_process_shutdown_unconfirmed');
+  }
+
+  private async renderPreview(
+    source: DevelopSource,
+    recipe: ReturnType<typeof assertRenderableDevelopRecipe>,
+    dto: AssetDevelopPreviewDto,
+    image: SystemConfig['image'],
+    signal?: AbortSignal,
+    motion?: DevelopMotion,
+  ): Promise<{ buffer: Buffer; contentType: string; histogram?: HdrHistogram }> {
+    // Preserve discriminated-union narrowing for the HDR renderer.
+    // eslint-disable-next-line unicorn/prefer-includes-over-repeated-comparisons
+    if (recipe.version === 3 || recipe.version === 4 || recipe.version === 5 || recipe.version === 6)
+      return this.renderHdrPreview(source, recipe, dto, signal);
     const native = recipe.version === 2 ? await this.renderNativeRecipe(source, recipe, undefined, signal) : undefined;
-    // Legacy recipes decode at preview scale; native previews share the full-resolution final pipeline.
     const keyframe = recipe.version === 1 ? recipe.keyFrame : undefined;
     const decoded =
       native ??
@@ -354,6 +579,7 @@ export class AssetDevelopService {
           quality: image.preview.quality,
           size: dto.size,
         });
+    signal?.throwIfAborted();
     return { buffer: buffer!, contentType: format === ImageFormat.Webp ? 'image/webp' : 'image/jpeg' };
   }
 
@@ -472,23 +698,25 @@ export class AssetDevelopService {
    * person to retry it.
    */
   @OnJob({ name: JobName.AssetDevelopRender, queue: QueueName.Editor })
-  async handleRender({ id, operationId }: JobOf<JobName.AssetDevelopRender>): Promise<JobStatus> {
+  async handleRender({
+    id,
+    operationId,
+    renderGenerationId,
+    sourcePolicy,
+  }: JobOf<JobName.AssetDevelopRender>): Promise<JobStatus> {
     // FL-43: a render queued with its Activity job runs under that job's claim. One cancelled in
     // Activity before it started never starts, and the version reads cancelled.
     return this.editOperations.execute(
       operationId,
-      async (run) => {
-        if (run) {
-          this.runs.set(id, run);
-        }
-        try {
-          return await this.renderRevision(id, run);
-        } finally {
-          this.runs.delete(id);
-        }
-      },
+      (run) => this.renderExecution.run({ run }, () => this.renderRevision(id, run, renderGenerationId, sourcePolicy)),
       {
         onCancelled: async () => {
+          if (renderGenerationId && operationId) {
+            await this.assetDevelopRepository.cancelQueuedAttempt(id, renderGenerationId, operationId);
+            return;
+          }
+          const revision = await this.assetDevelopRepository.get(id);
+          if (revision?.sourceBinding?.kind === 'bound') return;
           await this.assetDevelopRepository.update(id, {
             status: AssetDevelopRevisionStatus.Cancelled,
             cancelRequested: true,
@@ -499,11 +727,20 @@ export class AssetDevelopService {
     );
   }
 
-  private async renderRevision(id: string, run?: EditOperationRun): Promise<JobStatus> {
+  private async renderRevision(
+    id: string,
+    run?: EditOperationRun,
+    renderGenerationId?: string,
+    sourcePolicy?: string,
+  ): Promise<JobStatus> {
     const existing = await this.assetDevelopRepository.get(id);
     if (!existing) {
       this.logger.warn(`Develop render skipped: revision ${id} no longer exists`);
       await run?.fail('This version no longer exists', 'revision_missing', { retry: false });
+      return JobStatus.Skipped;
+    }
+    if (renderGenerationId !== undefined && existing.renderGenerationId !== renderGenerationId) {
+      await run?.complete(null);
       return JobStatus.Skipped;
     }
     if (existing.cancelRequested) {
@@ -530,6 +767,28 @@ export class AssetDevelopService {
       return JobStatus.Failed;
     }
 
+    try {
+      await this.assetDevelopRepository.assertSourceBinding(existing);
+    } catch (error) {
+      if (!(error instanceof BadRequestException)) throw error;
+      const message = 'The original resource changed; save a new version before rendering';
+      const settle = async () => {
+        if (run && (await run.fail(message, 'source_changed', { retry: false })) === false) return;
+        await this.assetDevelopRepository.failSourceBinding(existing, message);
+      };
+      if (run) await run.settleStopped(settle);
+      else await publishJobDiagnostic(settle);
+      return JobStatus.Failed;
+    }
+
+    const referenceRender =
+      !!parseSourceOriginalPath(source.originalPath) ||
+      (existing.sourceBinding?.kind === 'bound' &&
+        (existing.sourceBinding.parent.reference !== null || existing.sourceBinding.input.reference !== null));
+    if (referenceRender && !queueExecution.getStore())
+      throw new BadRequestException('Reference develop renders require a queue claim');
+
+    const generation: [string?] = renderGenerationId ? [renderGenerationId] : [];
     const revision = await this.assetDevelopRepository.beginAttempt(
       id,
       existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 2
@@ -544,13 +803,23 @@ export class AssetDevelopService {
                 ? 'frameleaf-develop-hdr/4'
                 : DEVELOP_RENDERER_VERSION,
       DEVELOP_RENDER_LEASE_MS / 1000,
+      ...generation,
     );
     if (!revision) {
+      if (
+        renderGenerationId !== undefined &&
+        (await this.assetDevelopRepository.get(id))?.renderGenerationId !== renderGenerationId
+      ) {
+        await run?.complete(null);
+        return JobStatus.Skipped;
+      }
       // Another delivery took it between the check above and here; this job waits its turn.
       await run?.release(DEVELOP_RENDER_LEASE_MS);
       return JobStatus.Skipped;
     }
 
+    const execution = this.renderExecution.getStore();
+    if (execution) Object.assign(execution, { revision, reference: referenceRender });
     const { image } = await this.getConfig();
     const outputs = this.getOutputPaths(source, revision, image);
     const external = revision.kind === AssetDevelopRevisionKind.External;
@@ -560,18 +829,130 @@ export class AssetDevelopService {
       hdrMaster: `${outputs.hdrMaster}.tmp`,
       hdrPreview: `${outputs.hdrPreview}.tmp`,
     };
+    if (referenceRender) {
+      const context = queueExecution.getStore()!;
+      (context.afterSettled ??= []).push(async () => {
+        if (context.executorStopUnconfirmed) return;
+        const current = await this.assetDevelopRepository.get(revision.id);
+        const accepted = new Set([
+          current?.masterPath,
+          current?.previewPath,
+          current?.hdrMasterPath,
+          current?.hdrPreviewPath,
+        ]);
+        await this.discard([...Object.values(tmp), ...Object.values(outputs)].filter((file) => !accepted.has(file)));
+      });
+      deferJobFailure(async (_tx, reason, cancelled) => {
+        await this.assetDevelopRepository.settleAttempt(revision, {
+          status: cancelled ? AssetDevelopRevisionStatus.Cancelled : AssetDevelopRevisionStatus.Failed,
+          error: cancelled ? null : reason.slice(0, 500),
+        });
+      });
+    }
+    let input: DevelopOriginalInput | undefined;
+    let authorizeRender: (() => Promise<void>) | undefined;
     try {
       const parsed = external ? undefined : assertRenderableDevelopRecipe(revision.recipe);
       const motion =
         parsed?.version === 1 && parsed.keyFrame
           ? await this.requireMotionClip(source, parsed.keyFrame.timeMs)
           : undefined;
-      const sourceChecksum = motion
-        ? await this.cryptoRepository.hashFile(motion.originalPath, 'sha256')
-        : await this.currentSourceChecksum(revision.assetId);
-      const publication: AssetDevelopRevisionUpdate = external
-        ? await this.renderExternal(revision, sourceChecksum, outputs.preview, tmp.preview, image)
-        : await this.renderRecipeRevision(revision, source, sourceChecksum, outputs, tmp, image, motion);
+      let renderSource: DevelopSource = source;
+      let renderMotion: DevelopMotion | undefined = motion;
+      const selected = motion ?? source;
+      if (referenceRender) {
+        const binding = revision.sourceBinding;
+        if (
+          binding?.kind !== 'bound' ||
+          binding.parent.assetId !== source.id ||
+          binding.parent.path !== source.originalPath ||
+          binding.parent.checksum !== source.checksum.toString('hex') ||
+          binding.input.assetId !== selected.id ||
+          binding.input.path !== selected.originalPath ||
+          binding.input.checksum !== selected.checksum.toString('hex')
+        )
+          throw new DevelopSourceChanged('The selected develop original changed');
+        const policy = await this.assetDevelopRepository.assertRenderSource(revision);
+        if (!renderGenerationId || sourcePolicy !== assetSourceFingerprint(policy))
+          throw new BadRequestException('The queued source policy is missing or changed; authorize a new render');
+        authorizeRender = async () => {
+          const current = await this.assetJobRepository.getForGenerateThumbnailJob(source.id);
+          if (
+            !current ||
+            current.ownerId !== source.ownerId ||
+            current.originalPath !== source.originalPath ||
+            !current.checksum.equals(source.checksum)
+          )
+            throw new DevelopSourceChanged('The develop original changed');
+          if (motion) {
+            const current = await this.requireMotionClip(source, parsed!.version === 1 ? parsed!.keyFrame!.timeMs : 0);
+            if (
+              current.id !== motion.id ||
+              current.originalPath !== motion.originalPath ||
+              !current.checksum.equals(motion.checksum)
+            )
+              throw new DevelopSourceChanged('The motion original changed');
+          }
+          await this.assetDevelopRepository.assertSourceBinding(revision);
+          await this.assetDevelopRepository.assertRenderSource(revision, policy);
+        };
+        await authorizeRender();
+        if (parseSourceOriginalPath(selected.originalPath)) {
+          const expected = binding.input.reference;
+          if (!expected)
+            throw new DevelopSourceChanged('The selected develop original has no retained resource version');
+          input = await this.sourceOriginalService.openForJob(selected.id, authorizeRender!);
+          if (
+            input.resourceId !== expected.resourceId ||
+            input.resourceVersion !== expected.version ||
+            input.verifiedSha256 !== expected.sha256
+          )
+            throw new DevelopSourceChanged('The delivered original does not match this saved version');
+          if (motion) renderMotion = { ...motion, readPath: input.localPath };
+          else
+            renderSource = {
+              ...source,
+              readPath: input.localPath,
+              verifiedChecksum: Buffer.from(input.verifiedSha256, 'hex'),
+              exifInfo: { ...source.exifInfo, colorspace: null, profileDescription: null },
+            };
+        }
+      }
+      const render = async () => {
+        await authorizeRender?.();
+        await input?.check();
+        this.assertNativeStopped();
+        if (input && renderMotion) {
+          const info = await this.mediaRepository.probe(input.localPath, {
+            countFrames: false,
+            signal: executionSignal(),
+          });
+          this.assertNativeStopped();
+          const timeMs = parsed!.version === 1 ? parsed!.keyFrame!.timeMs : 0;
+          if (
+            !info.videoStreams[0] ||
+            (Number.isFinite(info.format.duration) && info.format.duration > 0 && timeMs >= info.format.duration * 1000)
+          )
+            throw new DevelopSourceChanged('The saved key frame is unavailable in this motion original');
+          renderMotion = { ...renderMotion, videoStream: info.videoStreams[0], format: info.format };
+        }
+        const sourceChecksum = input
+          ? Buffer.from(input.verifiedSha256, 'hex')
+          : motion
+            ? await this.cryptoRepository.hashFile(motion.originalPath, 'sha256')
+            : await this.currentSourceChecksum(revision.assetId);
+        const publication = external
+          ? await this.renderExternal(revision, sourceChecksum, outputs.preview, tmp.preview, image)
+          : await this.renderRecipeRevision(revision, renderSource, sourceChecksum, outputs, tmp, image, renderMotion);
+        this.assertNativeStopped();
+        await input?.check();
+        await authorizeRender?.();
+        return publication;
+      };
+      const publication: AssetDevelopRevisionUpdate = input
+        ? await withExecutionSignal(input.signal, render)
+        : await render();
+      this.assertNativeStopped();
       publication.sourceAssetId = motion?.id ?? source.id;
       // FL-43: the version becomes the working one only under its job's claim. A run that lost its
       // claim, or was cancelled at the last moment, leaves the previous working version current.
@@ -581,15 +962,19 @@ export class AssetDevelopService {
       }
       // Rendering a version makes it the working version; Revert walks back through history.
       await publishJobResult(async () => {
+        this.assertNativeStopped();
         if (motion) {
           // Direct calls revalidate too; workers additionally lock these identities during adoption.
           const current = await this.requireMotionClip(source, parsed!.version === 1 ? parsed!.keyFrame!.timeMs : 0);
           if (current.id !== motion.id || !current.checksum.equals(motion.checksum))
             throw new DevelopSourceChanged('The motion clip changed while rendering');
-          await assertPublicationMotionSource(source.id, source.ownerId, source.checksum, motion.id, motion.checksum);
-        } else {
-          await assertPublicationSource(source.id, source.checksum);
         }
+        if (motion)
+          await assertPublicationMotionSource(source.id, source.ownerId, source.checksum, motion.id, motion.checksum);
+        else await assertPublicationSource(source.id, source.checksum);
+        await this.assetDevelopRepository.assertSourceBinding(revision);
+        await authorizeRender?.();
+        await input?.check();
         if (await this.assetDevelopRepository.isCancelRequested(id)) throw new DevelopRenderCancelled();
         await this.assetDevelopRepository.update(revision.id, publication);
         await this.assetDevelopRepository.setCurrent(revision.assetId, id);
@@ -608,6 +993,12 @@ export class AssetDevelopService {
       });
       return JobStatus.Success;
     } catch (error) {
+      if (this.nativeStopUnconfirmed(error)) {
+        const context = queueExecution.getStore();
+        if (context) context.executorStopUnconfirmed = true;
+        input?.retainOnUnconfirmedStop();
+        throw error;
+      }
       await this.discard(
         external
           ? [tmp.preview]
@@ -617,6 +1008,38 @@ export class AssetDevelopService {
       );
       jobSignal()?.throwIfAborted();
       if (run?.done) return JobStatus.Skipped;
+      if (referenceRender) {
+        const cancelled = error instanceof DevelopRenderCancelled;
+        const message = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+        const permanent =
+          error instanceof DevelopSourceChanged ||
+          error instanceof BadRequestException ||
+          error instanceof ServiceUnavailableException ||
+          !!input?.signal.aborted;
+        const settle = async () => {
+          if (cancelled) {
+            if (run && !(await run.cancelled())) return;
+            await this.assetDevelopRepository.settleAttempt(revision, {
+              status: AssetDevelopRevisionStatus.Cancelled,
+              error: null,
+            });
+            return;
+          }
+          const outcome = run
+            ? await run.fail(message, permanent ? 'source_changed' : 'edit_render_failed', { retry: !permanent })
+            : undefined;
+          if (outcome === false) return;
+          // Maintenance claims have no durable Activity retry owner; a person can retry through the editor.
+          const retry = run ? outcome === 'retrying' : false;
+          await this.assetDevelopRepository.settleAttempt(revision, {
+            status: retry ? AssetDevelopRevisionStatus.Queued : AssetDevelopRevisionStatus.Failed,
+            error: message,
+          });
+        };
+        if (run) await run.settleStopped(settle);
+        else await publishJobDiagnostic(settle);
+        return cancelled ? JobStatus.Skipped : JobStatus.Failed;
+      }
       if (error instanceof DevelopRenderCancelled) {
         await this.assetDevelopRepository.update(id, { status: AssetDevelopRevisionStatus.Cancelled, progress: 0 });
         await run?.cancelled();
@@ -738,18 +1161,25 @@ export class AssetDevelopService {
       return;
     }
     this.logger.log(`Requeueing ${lost.length} develop render(s) left unfinished`);
-    await this.jobRepository.queueAll(lost.map(({ id }) => ({ name: JobName.AssetDevelopRender, data: { id } })));
+    await this.jobRepository.queueAll(
+      lost.map(({ id, renderGenerationId }) => ({
+        name: JobName.AssetDevelopRender,
+        data: { id, ...(renderGenerationId && { renderGenerationId }) },
+      })),
+    );
   }
 
   /* External development round trip (FL-64) ---------------------------------------------------- */
 
-  async listExports(auth: AuthDto, assetId: string): Promise<DevelopExportResponseDto[]> {
+  async listExports(auth: AuthDto, assetId: string, signal?: AbortSignal): Promise<DevelopExportResponseDto[]> {
+    signal?.throwIfAborted();
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditGet, ids: [assetId] });
     const exports = await this.photoToolsRepository.listExports(assetId);
     if (exports.length === 0) {
       return [];
     }
-    const current = await this.currentSourceChecksum(assetId);
+    const current = await this.currentSourceChecksum(assetId, { auth, permission: Permission.AssetEditGet, signal });
+    signal?.throwIfAborted();
     return exports.map((item) => this.toExportDto(item, current));
   }
 
@@ -757,10 +1187,18 @@ export class AssetDevelopService {
    * Records that the original is going out for development elsewhere, with the SHA-256 of its
    * bytes now. The client then downloads the original through the ordinary download route.
    */
-  async createExport(auth: AuthDto, assetId: string): Promise<DevelopExportResponseDto> {
+  async createExport(auth: AuthDto, assetId: string, signal?: AbortSignal): Promise<DevelopExportResponseDto> {
+    signal?.throwIfAborted();
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
     const asset = await this.requireEditableStill(assetId);
-    const checksum = await this.currentSourceChecksum(assetId);
+    const checksum = await this.currentSourceChecksum(assetId, {
+      auth,
+      permission: Permission.AssetEditCreate,
+      signal,
+    });
+    signal?.throwIfAborted();
+    await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
+    await this.requireEditableStill(assetId);
     const created = await this.photoToolsRepository.createExport({
       assetId,
       ownerId: asset.ownerId,
@@ -782,12 +1220,14 @@ export class AssetDevelopService {
     assetId: string,
     dto: AssetDevelopImportDto,
     file: ImportedFile | undefined,
+    signal?: AbortSignal,
   ): Promise<AssetDevelopRevisionResponseDto> {
     if (!file?.path) {
       throw new BadRequestException('Choose the developed file to bring back');
     }
     let kept: string | undefined;
     try {
+      signal?.throwIfAborted();
       await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
       const asset = await this.requireEditableStill(assetId);
 
@@ -819,7 +1259,15 @@ export class AssetDevelopService {
       if (!expected) {
         throw new BadRequestException('Say which export or original checksum the file was developed from');
       }
-      const current = await this.currentSourceChecksum(assetId);
+      const sourceBinding = parseSourceOriginalPath(asset.originalPath)
+        ? await this.assetDevelopRepository.getSourceBinding(assetId, asset.ownerId, defaultDevelopRecipe())
+        : null;
+      const current = await this.currentSourceChecksum(assetId, {
+        auth,
+        permission: Permission.AssetEditCreate,
+        signal,
+      });
+      signal?.throwIfAborted();
       if (!current.equals(expected)) {
         throw new ConflictException(
           'This file was developed from a different original than the photo has now; nothing was changed',
@@ -832,11 +1280,16 @@ export class AssetDevelopService {
         throw new BadRequestException('The file is not a readable image');
       }
 
-      const received = await this.cryptoRepository.hashFile(file.path, 'sha256');
+      signal?.throwIfAborted();
+      const hash = () => this.cryptoRepository.hashFile(file.path, 'sha256');
+      const received = await (signal ? withExecutionSignal(signal, hash) : hash());
       if (dto.renditionChecksum && received.toString('hex') !== dto.renditionChecksum) {
         throw new BadRequestException('The file did not arrive intact; nothing was changed, try again');
       }
 
+      signal?.throwIfAborted();
+      await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
+      await this.requireEditableStill(assetId);
       const master = path.join(
         StorageCore.getNestedFolder(StorageFolder.Thumbnails, asset.ownerId, asset.id),
         `${asset.id}_develop_import_${randomUUID()}${extension}`,
@@ -845,6 +1298,7 @@ export class AssetDevelopService {
       await this.storageRepository.rename(file.path, master);
       kept = master;
 
+      signal?.throwIfAborted();
       const revision = await this.assetDevelopRepository.create({
         assetId,
         ownerId: asset.ownerId,
@@ -854,6 +1308,7 @@ export class AssetDevelopService {
         status: AssetDevelopRevisionStatus.Saved,
         kind: AssetDevelopRevisionKind.External,
         sourceChecksum: current,
+        ...(sourceBinding && { expectedSourceVersion: developSourceVersion(sourceBinding) }),
         renditionChecksum: received,
         exportId: exported?.id ?? null,
         fileName,
@@ -862,7 +1317,7 @@ export class AssetDevelopService {
       });
       kept = undefined;
       this.logger.log(`Developed file ${fileName} brought back as version ${revision.revision} of asset ${assetId}`);
-      return await this.queueRender(revision, asset.originalFileName);
+      return await this.queueRender(revision, asset.originalFileName, auth);
     } finally {
       // Whatever was not recorded is removed: the staged upload, or a kept copy with no row.
       await this.discard([file.path, ...(kept ? [kept] : [])]);
@@ -893,6 +1348,7 @@ export class AssetDevelopService {
     assetId: string,
     dto: AssetDevelopArtifactUploadDto,
     file: ImportedFile | undefined,
+    authority?: DevelopArtifactSource,
   ): Promise<AssetDevelopArtifactResponseDto> {
     if (!file?.path) {
       throw new BadRequestException('Choose the bitmap to upload');
@@ -922,7 +1378,7 @@ export class AssetDevelopService {
       if (existing) {
         // the same bitmap again: record it again, which restarts its grace period, and make sure its
         // file is still there (a release may have taken both since it was found)
-        await this.recordArtifact(asset, id, dto.kind, target, normalized);
+        await this.recordArtifact(asset, id, dto.kind, target, normalized, authority);
         return { id, kind: existing.kind as AssetDevelopArtifactKind, width: existing.width, height: existing.height };
       }
       this.storageRepository.mkdirSync(path.dirname(target));
@@ -930,7 +1386,7 @@ export class AssetDevelopService {
       try {
         // FL-304: recording it checks the photo's limit and the owner's quota and charges the
         // owner's storage usage, all in one transaction
-        await this.recordArtifact(asset, id, dto.kind, target, normalized);
+        await this.recordArtifact(asset, id, dto.kind, target, normalized, authority);
       } catch (error) {
         // not recorded (the photo is full, the owner's storage is, or the server is being handed
         // over): the file goes again, unless the same bitmap was recorded meanwhile
@@ -954,6 +1410,7 @@ export class AssetDevelopService {
     dto: AssetDevelopSemanticMaskDto,
     signal?: AbortSignal,
   ): Promise<AssetDevelopArtifactResponseDto> {
+    signal?.throwIfAborted();
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
     if (dto.coordinates === 'original') {
       return this.proposeOriginalMask(auth, assetId, dto.target, signal);
@@ -961,36 +1418,35 @@ export class AssetDevelopService {
     const source = await this.assetJobRepository.getForGenerateThumbnailJob(assetId);
     if (!source || !mimeTypes.isRaw(source.originalFileName))
       throw new BadRequestException('Native semantic masks require a RAW original');
-    const developed = await renderDarktable(
-      source.originalPath,
-      { version: 2, renderer: 'darktable/5.6.1', exposureEV: 0, sensorCanvas: true },
+    return this.generateOriginalArtifact(
+      auth,
+      source,
+      AssetDevelopArtifactKind.Mask,
       signal,
+      async (source, signal) => {
+        const developed = await renderDarktable(
+          source.readPath ?? source.originalPath,
+          { version: 2, renderer: 'darktable/5.6.1', exposureEV: 0, sensorCanvas: true },
+          signal,
+          undefined,
+          source.originalFileName,
+        );
+        this.assertNativeStopped();
+        signal?.throwIfAborted();
+        const canvas = await sharp(developed)
+          .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 92 })
+          .toBuffer();
+        signal?.throwIfAborted();
+        const png = await this.machineLearningRepository.semanticMaskLocal(canvas, dto.target, signal);
+        const metadata = await sharp(png, { failOn: 'warning', limitInputPixels: 2048 * 2048 }).metadata();
+        const reference = await sharp(canvas).metadata();
+        if (metadata.format !== 'png' || metadata.width !== reference.width || metadata.height !== reference.height)
+          throw new BadRequestException('Local worker returned an invalid sensor mask');
+        await sharp(png).stats();
+        return png;
+      },
     );
-    const canvas = await sharp(developed)
-      .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 92 })
-      .toBuffer();
-    signal?.throwIfAborted();
-    const png = await this.machineLearningRepository.semanticMaskLocal(canvas, dto.target, signal);
-    const metadata = await sharp(png, { failOn: 'warning', limitInputPixels: 2048 * 2048 }).metadata();
-    const reference = await sharp(canvas).metadata();
-    if (metadata.format !== 'png' || metadata.width !== reference.width || metadata.height !== reference.height)
-      throw new BadRequestException('Local worker returned an invalid sensor mask');
-    await sharp(png).stats();
-    const directory = await mkdtemp(path.join(tmpdir(), 'frameleaf-semantic-mask-'));
-    const file = path.join(directory, 'mask.png');
-    try {
-      await writeFile(file, png, { flag: 'wx' });
-      signal?.throwIfAborted();
-      return await this.uploadArtifact(
-        auth,
-        assetId,
-        { kind: AssetDevelopArtifactKind.Mask },
-        { path: file, size: png.length },
-      );
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
   }
 
   /**
@@ -1007,22 +1463,30 @@ export class AssetDevelopService {
     await this.requireEditableStill(assetId);
     const source = await this.assetJobRepository.getForGenerateThumbnailJob(assetId);
     if (!source || source.type !== AssetType.Image) throw new BadRequestException('Only stills have develop masks');
-    const canvas = await sharp(await this.orientedOriginal(source, signal), {
-      failOn: 'error',
-      limitInputPixels: 200_000_000,
-    })
-      .rotate()
-      .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
-      .toColourspace('srgb')
-      .jpeg({ quality: 92 })
-      .toBuffer();
-    signal?.throwIfAborted();
-    const png = await this.machineLearningRepository.semanticMaskLocal(canvas, target, signal);
-    const metadata = await sharp(png, { failOn: 'warning', limitInputPixels: 2048 * 2048 }).metadata();
-    const reference = await sharp(canvas).metadata();
-    if (metadata.format !== 'png' || metadata.width !== reference.width || metadata.height !== reference.height)
-      throw new BadRequestException('Local worker returned an invalid mask');
-    return this.admitGeneratedArtifact(auth, assetId, AssetDevelopArtifactKind.Mask, png, signal);
+    return this.generateOriginalArtifact(
+      auth,
+      source,
+      AssetDevelopArtifactKind.Mask,
+      signal,
+      async (source, signal) => {
+        const canvas = await sharp(await this.orientedOriginal(source, signal), {
+          failOn: 'error',
+          limitInputPixels: 200_000_000,
+        })
+          .rotate()
+          .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+          .toColourspace('srgb')
+          .jpeg({ quality: 92 })
+          .toBuffer();
+        signal?.throwIfAborted();
+        const png = await this.machineLearningRepository.semanticMaskLocal(canvas, target, signal);
+        const metadata = await sharp(png, { failOn: 'warning', limitInputPixels: 2048 * 2048 }).metadata();
+        const reference = await sharp(canvas).metadata();
+        if (metadata.format !== 'png' || metadata.width !== reference.width || metadata.height !== reference.height)
+          throw new BadRequestException('Local worker returned an invalid mask');
+        return png;
+      },
+    );
   }
 
   /**
@@ -1038,77 +1502,144 @@ export class AssetDevelopService {
     dto: AssetDevelopFillGenerateDto,
     signal?: AbortSignal,
   ): Promise<AssetDevelopArtifactResponseDto> {
+    signal?.throwIfAborted();
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
     await this.requireEditableStill(assetId);
     const source = await this.assetJobRepository.getForGenerateThumbnailJob(assetId);
     if (!source || source.type !== AssetType.Image) throw new BadRequestException('Only stills have Clean Up');
-    const input = await this.orientedOriginal(source, signal);
-    const metadata = await sharp(input, { failOn: 'error', limitInputPixels: 200_000_000 }).metadata();
-    const swapped = (metadata.orientation ?? 1) >= 5 && !Buffer.isBuffer(input);
-    const original = {
-      width: (swapped ? metadata.height : metadata.width) ?? 0,
-      height: (swapped ? metadata.width : metadata.height) ?? 0,
-    };
-    const area = { region: dto.region, strokes: dto.strokes, feather: dto.feather };
-    const box = cleanupOperationBox(
-      {
-        ...area,
-        id: 'fill',
-        method: AssetDevelopCleanupMethod.Remove,
-        enabled: true,
-        blockSize: 0.02,
-        strokes: dto.strokes && normalizeStrokes(dto.strokes, false),
+    return this.generateOriginalArtifact(
+      auth,
+      source,
+      AssetDevelopArtifactKind.Fill,
+      signal,
+      async (source, signal) => {
+        const input = await this.orientedOriginal(source, signal);
+        const metadata = await sharp(input, { failOn: 'error', limitInputPixels: 200_000_000 }).metadata();
+        const swapped = (metadata.orientation ?? 1) >= 5 && !Buffer.isBuffer(input);
+        const original = {
+          width: (swapped ? metadata.height : metadata.width) ?? 0,
+          height: (swapped ? metadata.width : metadata.height) ?? 0,
+        };
+        const area = { region: dto.region, strokes: dto.strokes, feather: dto.feather };
+        const box = cleanupOperationBox(
+          {
+            ...area,
+            id: 'fill',
+            method: AssetDevelopCleanupMethod.Remove,
+            enabled: true,
+            blockSize: 0.02,
+            strokes: dto.strokes && normalizeStrokes(dto.strokes, false),
+          },
+          original,
+        );
+        if (!(original.width > 0 && original.height > 0) || box.right <= box.left || box.bottom <= box.top) {
+          throw new BadRequestException('The area to remove is empty');
+        }
+        const fill = developFillWindow(box, original);
+        const { window } = fill;
+        const image = await sharp(input, { failOn: 'error', limitInputPixels: 200_000_000 })
+          .rotate()
+          .extract({
+            left: window.left,
+            top: window.top,
+            width: window.right - window.left,
+            height: window.bottom - window.top,
+          })
+          .resize(fill.width, fill.height, { fit: 'fill' })
+          .toColourspace('srgb')
+          .removeAlpha()
+          .png()
+          .toBuffer();
+        const mask = await sharp(Buffer.from(developFillMask(area, original, fill)), {
+          raw: { width: fill.width, height: fill.height, channels: 1 },
+        })
+          .toColourspace('b-w')
+          .png()
+          .toBuffer();
+        signal?.throwIfAborted();
+        let filled: Buffer;
+        try {
+          filled = await this.machineLearningRepository.inpaintLocal(image, mask, signal);
+        } catch (error) {
+          if (error instanceof InpaintUnavailableError) {
+            throw new ServiceUnavailableException({
+              message: 'No inpainting model is available on this server; Remove needs a fill made on the device',
+              code: 'develop_inpaint_unavailable',
+            });
+          }
+          throw error;
+        }
+        const result = await sharp(filled, { failOn: 'warning', limitInputPixels: 4096 * 4096 }).metadata();
+        if (result.format !== 'png' || result.width !== fill.width || result.height !== fill.height)
+          throw new BadRequestException('Local worker returned an invalid fill');
+        const png = await sharp(filled).extract(fill.area).removeAlpha().ensureAlpha(1).png().toBuffer();
+        return png;
       },
-      original,
     );
-    if (!(original.width > 0 && original.height > 0) || box.right <= box.left || box.bottom <= box.top) {
-      throw new BadRequestException('The area to remove is empty');
-    }
-    const fill = developFillWindow(box, original);
-    const { window } = fill;
-    const image = await sharp(input, { failOn: 'error', limitInputPixels: 200_000_000 })
-      .rotate()
-      .extract({
-        left: window.left,
-        top: window.top,
-        width: window.right - window.left,
-        height: window.bottom - window.top,
-      })
-      .resize(fill.width, fill.height, { fit: 'fill' })
-      .toColourspace('srgb')
-      .removeAlpha()
-      .png()
-      .toBuffer();
-    const mask = await sharp(Buffer.from(developFillMask(area, original, fill)), {
-      raw: { width: fill.width, height: fill.height, channels: 1 },
-    })
-      .toColourspace('b-w')
-      .png()
-      .toBuffer();
-    signal?.throwIfAborted();
-    let filled: Buffer;
-    try {
-      filled = await this.machineLearningRepository.inpaintLocal(image, mask, signal);
-    } catch (error) {
-      if (error instanceof InpaintUnavailableError) {
-        throw new ServiceUnavailableException({
-          message: 'No inpainting model is available on this server; Remove needs a fill made on the device',
-          code: 'develop_inpaint_unavailable',
-        });
-      }
-      throw error;
-    }
-    const result = await sharp(filled, { failOn: 'warning', limitInputPixels: 4096 * 4096 }).metadata();
-    if (result.format !== 'png' || result.width !== fill.width || result.height !== fill.height)
-      throw new BadRequestException('Local worker returned an invalid fill');
-    const png = await sharp(filled).extract(fill.area).removeAlpha().ensureAlpha(1).png().toBuffer();
-    return this.admitGeneratedArtifact(auth, assetId, AssetDevelopArtifactKind.Fill, png, signal);
   }
 
   /** The original to compute on: the file itself, or a RAW developed by LibRaw (orientation applied). */
   private async orientedOriginal(source: DevelopSource, signal?: AbortSignal): Promise<string | Buffer> {
     const isRaw = mimeTypes.isRaw(source.originalFileName) && !source.originalFileName.toLowerCase().endsWith('.psd');
-    return isRaw ? renderRawWithLibRaw(source.originalPath, signal) : source.originalPath;
+    if (!isRaw) return source.readPath ?? source.originalPath;
+    const input = await renderRawWithLibRaw(source.readPath ?? source.originalPath, signal);
+    this.assertNativeStopped();
+    signal?.throwIfAborted();
+    return input;
+  }
+
+  private async generateOriginalArtifact(
+    auth: AuthDto,
+    source: DevelopSource,
+    kind: AssetDevelopArtifactKind,
+    signal: AbortSignal | undefined,
+    compute: (source: DevelopSource, signal?: AbortSignal) => Promise<Buffer>,
+  ): Promise<AssetDevelopArtifactResponseDto> {
+    signal?.throwIfAborted();
+    if (this.previewStopUnconfirmed)
+      throw new ServiceUnavailableException('Develop helpers are unavailable while the previous render is stopping');
+    await this.requireEditableStill(source.id);
+    const reference = !!parseSourceOriginalPath(source.originalPath);
+    try {
+      const binding = reference
+        ? await this.assetDevelopRepository.getSourceBinding(source.id, source.ownerId, defaultDevelopRecipe())
+        : null;
+      if (
+        reference &&
+        (binding?.kind !== 'bound' ||
+          binding.parent.path !== source.originalPath ||
+          binding.parent.checksum !== source.checksum.toString('hex') ||
+          binding.input.assetId !== source.id ||
+          !binding.input.reference)
+      )
+        throw new DevelopSourceChanged('The original changed before preparing the artifact');
+      const policy = reference
+        ? await this.assetDevelopRepository.assertRenderSource({ assetId: source.id, ownerId: source.ownerId })
+        : undefined;
+      return await this.withPreviewOriginal(
+        auth,
+        source,
+        undefined,
+        undefined,
+        signal,
+        async (source, _motion, signal, check) => {
+          const png = await compute(source, signal);
+          this.assertNativeStopped();
+          signal?.throwIfAborted();
+          await check();
+          return binding && policy
+            ? this.admitGeneratedArtifact(auth, source.id, kind, png, signal, { binding, policy, check })
+            : this.admitGeneratedArtifact(auth, source.id, kind, png, signal);
+        },
+        binding,
+        Permission.AssetEditCreate,
+      );
+    } catch (error) {
+      if (this.nativeStopUnconfirmed(error)) this.previewStopUnconfirmed = true;
+      if (error instanceof DevelopSourceChanged)
+        throw new ConflictException({ code: 'develop_source_changed', message: error.message });
+      throw error;
+    }
   }
 
   /** A bitmap the server generated goes through the same admission as an uploaded one. */
@@ -1118,13 +1649,14 @@ export class AssetDevelopService {
     kind: AssetDevelopArtifactKind,
     png: Buffer,
     signal?: AbortSignal,
+    authority?: DevelopArtifactSource,
   ) {
     const directory = await mkdtemp(path.join(tmpdir(), 'frameleaf-develop-artifact-'));
     const file = path.join(directory, 'artifact.png');
     try {
       await writeFile(file, png, { flag: 'wx' });
       signal?.throwIfAborted();
-      return await this.uploadArtifact(auth, assetId, { kind }, { path: file, size: png.length });
+      return await this.uploadArtifact(auth, assetId, { kind }, { path: file, size: png.length }, authority);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -1152,8 +1684,9 @@ export class AssetDevelopService {
     kind: AssetDevelopArtifactKind,
     target: string,
     normalized: { data: Buffer; width: number; height: number },
+    authority?: DevelopArtifactSource,
   ) {
-    await this.assetDevelopRepository.addArtifact({
+    const artifact = {
       assetId: asset.id,
       id,
       ownerId: asset.ownerId,
@@ -1162,7 +1695,9 @@ export class AssetDevelopService {
       bytes: normalized.data.length,
       width: normalized.width,
       height: normalized.height,
-    });
+    };
+    if (authority) await this.assetDevelopRepository.addArtifact(artifact, authority);
+    else await this.assetDevelopRepository.addArtifact(artifact);
     if (!(await this.storageRepository.checkFileExists(target))) {
       this.storageRepository.mkdirSync(path.dirname(target));
       await this.writeArtifactFile(target, normalized.data);
@@ -1270,12 +1805,46 @@ export class AssetDevelopService {
     await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
   }
 
-  private async queueRender(revision: AssetDevelopRevision, label: string): Promise<AssetDevelopRevisionResponseDto> {
+  private async queueRender(
+    revision: AssetDevelopRevision,
+    label: string,
+    auth: AuthDto,
+  ): Promise<AssetDevelopRevisionResponseDto> {
     if (revision.kind === AssetDevelopRevisionKind.Recipe) {
       assertRenderableDevelopRecipe(revision.recipe);
       await this.requireArtifacts({ id: revision.assetId, ownerId: revision.ownerId }, revision.recipe);
     }
-    // A person asking for a render starts afresh: it gets its own automatic retry.
+    const reference =
+      revision.sourceBinding?.kind === 'bound' &&
+      (revision.sourceBinding.parent.reference !== null || revision.sourceBinding.input.reference !== null);
+    const edit = {
+      ownerId: revision.ownerId,
+      edit: EditOperationEdit.PhotoVersion,
+      assetId: revision.assetId,
+      label,
+      revisionId: revision.id,
+    };
+    if (reference) {
+      await requireAccess(this.accessRepository, {
+        auth,
+        permission: Permission.AssetEditCreate,
+        ids: [revision.assetId],
+      });
+      const admitted = await this.assetDevelopRepository.admitReferenceRender(
+        revision,
+        !!auth.session?.hasElevatedPermission,
+        async (tx, queued, sourcePolicy) => {
+          const job = {
+            name: JobName.AssetDevelopRender as const,
+            data: { id: revision.id, renderGenerationId: queued.renderGenerationId!, sourcePolicy },
+          };
+          const operation = await this.mediaOperationRepository.create(editOperationCreate({ ...edit, job }), tx);
+          await this.jobRepository.queueInTransaction(tx, { ...job, data: { ...job.data, operationId: operation.id } });
+          return operation;
+        },
+      );
+      return this.toRevisionDto(admitted.revision);
+    }
     const queued = await this.assetDevelopRepository.update(revision.id, {
       status: AssetDevelopRevisionStatus.Queued,
       progress: 0,
@@ -1283,15 +1852,7 @@ export class AssetDevelopService {
       cancelRequested: false,
       attempts: 0,
     });
-    // FL-43: the render is a job in Activity, named by the photo, pointing at this version.
-    await this.editOperations.queue({
-      ownerId: revision.ownerId,
-      edit: EditOperationEdit.PhotoVersion,
-      assetId: revision.assetId,
-      label,
-      revisionId: revision.id,
-      job: { name: JobName.AssetDevelopRender, data: { id: revision.id } },
-    });
+    await this.editOperations.queue({ ...edit, job: { name: JobName.AssetDevelopRender, data: { id: revision.id } } });
     return this.toRevisionDto(queued ?? revision);
   }
 
@@ -1367,7 +1928,7 @@ export class AssetDevelopService {
     }
     const isRaw = mimeTypes.isRaw(source.originalFileName) && !source.originalFileName.toLowerCase().endsWith('.psd');
     if (!isRaw) {
-      const encoding = await this.mediaRepository.inspectImageEncoding(source.originalPath);
+      const encoding = await this.mediaRepository.inspectImageEncoding(source.readPath ?? source.originalPath);
       if (encoding.dynamicRange === 'hdr') {
         // The historical SDR renderer must never be reused for a new HDR-preserving result.
         throw new BadRequestException({
@@ -1379,7 +1940,9 @@ export class AssetDevelopService {
     }
     const colorspace = this.isSRGB(source.exifInfo) ? Colorspace.Srgb : image.colorspace;
     // Camera JPEGs are preview evidence, never develop source. LibRaw applies orientation once.
-    const input = isRaw ? await renderRawWithLibRaw(source.originalPath, jobSignal()) : source.originalPath;
+    const input = isRaw
+      ? await renderRawWithLibRaw(source.readPath ?? source.originalPath, executionSignal())
+      : (source.readPath ?? source.originalPath);
     const { data, info } = await this.mediaRepository.decodeImage(input, {
       colorspace,
       processInvalidImages: false,
@@ -1420,9 +1983,14 @@ export class AssetDevelopService {
         code: 'develop_key_frame_unavailable',
       });
     }
-    // the stored format carries asset.duration, which is in milliseconds
+    // Stored formats use milliseconds; leased inputs are checked against a fresh probe in seconds.
     const duration = motion.format.duration;
-    if (Number.isFinite(duration) && duration > 0 && timeMs >= duration) {
+    if (
+      !parseSourceOriginalPath(motion.originalPath) &&
+      Number.isFinite(duration) &&
+      duration > 0 &&
+      timeMs >= duration
+    ) {
       throw new BadRequestException({
         message: 'The key frame is past the end of the motion clip',
         code: 'develop_key_frame_out_of_range',
@@ -1432,34 +2000,33 @@ export class AssetDevelopService {
   }
 
   /** The key frame as the develop source: one PNG frame of the motion clip, decoded like a still (sRGB). */
-  private async decodeKeyframe(
-    source: DevelopSource,
-    timeMs: number,
-    size?: number,
-    clip?: NonNullable<Awaited<ReturnType<AssetJobRepository['getForVideoConversion']>>>,
-  ) {
-    const motion = clip ?? (await this.requireMotionClip(source, timeMs));
+  private async decodeKeyframe(source: DevelopSource, timeMs: number, size?: number, clip?: DevelopMotion) {
+    const motion: DevelopMotion = clip ?? (await this.requireMotionClip(source, timeMs));
     const { ffmpeg } = await this.getConfig();
     const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-key-frame-'));
-    let stopUnconfirmed = false;
+    let confirmed = true;
     try {
       const output = path.join(folder, 'frame.png');
       await this.mediaRepository.transcode(
-        motion.originalPath,
+        motion.readPath ?? motion.originalPath,
         output,
         getKeyframeCommand(ffmpeg, motion.videoStream, timeMs),
       );
+      this.assertNativeStopped();
+      executionSignal()?.throwIfAborted();
       const { data, info } = await this.mediaRepository.decodeImage(output, {
         colorspace: Colorspace.Srgb,
         processInvalidImages: false,
         size,
       });
+      this.assertNativeStopped();
+      executionSignal()?.throwIfAborted();
       return { data, info: info as RawImageInfo, colorspace: Colorspace.Srgb };
     } catch (error) {
-      stopUnconfirmed = isMediaProcessShutdownUnconfirmed(error);
+      confirmed = !this.nativeStopUnconfirmed(error);
       throw error;
     } finally {
-      if (!stopUnconfirmed) await rm(folder, { recursive: true, force: true });
+      if (confirmed) await rm(folder, { recursive: true, force: true });
     }
   }
 
@@ -1502,7 +2069,10 @@ export class AssetDevelopService {
         .filter((mask) => mask.enabled && mask.artifact)
         .map((mask) => mask.artifact!);
       const bitmaps = await this.loadArtifacts(source, artifacts, AssetDevelopArtifactKind.Mask);
-      const buffer = await renderDarktable(source.originalPath, recipe, abort, bitmaps);
+      const buffer = source.readPath
+        ? await renderDarktable(source.readPath, recipe, abort, bitmaps, source.originalFileName)
+        : await renderDarktable(source.originalPath, recipe, abort, bitmaps);
+      this.assertNativeStopped();
       const { width, height } = await this.mediaRepository.getImageMetadata(buffer);
       abort.throwIfAborted();
       return {
@@ -1524,7 +2094,7 @@ export class AssetDevelopService {
     const abort = AbortSignal.any([
       controller.signal,
       ...(signal ? [signal] : []),
-      ...(jobSignal() ? [jobSignal()!] : []),
+      ...(executionSignal() ? [executionSignal()!] : []),
     ]);
     const watching = (async () => {
       if (!revisionId) return;
@@ -1537,8 +2107,11 @@ export class AssetDevelopService {
     })();
     try {
       abort.throwIfAborted();
-      return await operation(abort);
+      const result = await operation(abort);
+      this.assertNativeStopped();
+      return result;
     } catch (error) {
+      if (this.nativeStopUnconfirmed(error)) throw error;
       if (abort.aborted) throw abort.reason;
       throw error;
     } finally {
@@ -1576,11 +2149,11 @@ export class AssetDevelopService {
     const needed = developRenderArtifacts(recipe);
     const masks = await this.loadArtifacts(source, needed.mask, AssetDevelopArtifactKind.Mask, true);
     const fills = await this.loadArtifacts(source, needed.fill, AssetDevelopArtifactKind.Fill, true);
-    const contentChecksum = checksum ?? (await this.currentSourceChecksum(source.id));
+    const contentChecksum = checksum ?? source.verifiedChecksum ?? (await this.currentSourceChecksum(source.id));
     const { version: _version, renderer: _renderer, hdr: _hdr, ...fields } = recipe;
     return this.withRenderCancellation(revisionId, signal, (abort) =>
       this.mediaRepository.generateHdrRenditions(
-        source.originalPath,
+        source.readPath ?? source.originalPath,
         outputs,
         { recipe: { ...fields, version: 1 }, seed, masks: Object.fromEntries(masks), fills: Object.fromEntries(fills) },
         abort,
@@ -1598,6 +2171,7 @@ export class AssetDevelopService {
     await this.requireHdrRenderer(recipe);
     const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-hdr-preview-'));
     const output = path.join(folder, 'preview.jpg');
+    let confirmed = true;
     try {
       const result = await this.hdrRender(
         source,
@@ -1620,8 +2194,11 @@ export class AssetDevelopService {
         contentType: 'image/jpeg',
         histogram: result[0]?.histogram,
       };
+    } catch (error) {
+      confirmed = !this.nativeStopUnconfirmed(error);
+      throw error;
     } finally {
-      await rm(folder, { recursive: true, force: true });
+      if (confirmed) await rm(folder, { recursive: true, force: true });
     }
   }
 
@@ -1686,17 +2263,83 @@ export class AssetDevelopService {
 
   /**
    * SHA-256 of the asset's original bytes now. New uploads already store it; older rows (SHA-1,
-   * or the path-based checksum of external libraries) are hashed from the file.
+   * or the path-based checksum of external libraries) are hashed from the file. Reference originals
+   * require a separately authorized, verified source lease.
    */
-  private async currentSourceChecksum(assetId: string): Promise<Buffer> {
+  private async currentSourceChecksum(
+    assetId: string,
+    reader?: { auth: AuthDto; permission: Permission; signal?: AbortSignal },
+  ): Promise<Buffer> {
+    reader?.signal?.throwIfAborted();
     const asset = await this.assetRepository.getById(assetId);
     if (!asset) {
       throw new NotFoundException('Asset not found');
     }
+    if (parseSourceOriginalPath(asset.originalPath)) {
+      if (!reader) throw new BadRequestException('A reference checksum requires an authorized source reader');
+      const changed = () =>
+        new ConflictException({
+          code: 'develop_source_changed',
+          message: 'The original changed. Refresh it before trying again.',
+        });
+      const binding = await this.assetDevelopRepository.getSourceBinding(
+        assetId,
+        asset.ownerId,
+        defaultDevelopRecipe(),
+      );
+      if (
+        binding?.kind !== 'bound' ||
+        binding.parent.path !== asset.originalPath ||
+        binding.parent.checksum !== asset.checksum.toString('hex') ||
+        binding.input.assetId !== assetId ||
+        !binding.input.reference
+      )
+        throw changed();
+      const authorize = async () => {
+        await requireAccess(this.accessRepository, {
+          auth: reader.auth,
+          permission: reader.permission,
+          ids: [assetId],
+        });
+        const current = await this.assetRepository.getById(assetId);
+        if (
+          !current ||
+          current.ownerId !== asset.ownerId ||
+          current.originalPath !== asset.originalPath ||
+          !current.checksum.equals(asset.checksum) ||
+          !sameDevelopSourceBinding(
+            binding,
+            await this.assetDevelopRepository.getSourceBinding(assetId, asset.ownerId, defaultDevelopRecipe()),
+          )
+        )
+          throw changed();
+      };
+      const input = await this.sourceOriginalService.open(
+        assetId,
+        { kind: 'http', readerId: randomUUID(), ownerId: this.sourceReaderOwnerId },
+        authorize,
+        reader.signal,
+      );
+      try {
+        const expected = binding.input.reference;
+        if (
+          input.resourceId !== expected.resourceId ||
+          input.resourceVersion !== expected.version ||
+          input.verifiedSha256 !== expected.sha256
+        )
+          throw changed();
+        await input.check();
+        reader.signal?.throwIfAborted();
+        return Buffer.from(input.verifiedSha256, 'hex');
+      } finally {
+        await input.release();
+      }
+    }
     if (asset.checksumAlgorithm === ChecksumAlgorithm.sha256File) {
       return asset.checksum;
     }
-    return this.cryptoRepository.hashFile(asset.originalPath, 'sha256');
+    const hash = () => this.cryptoRepository.hashFile(asset.originalPath, 'sha256');
+    return reader?.signal ? withExecutionSignal(reader.signal, hash) : hash();
   }
 
   private async renderRecipeRevision(
@@ -1706,7 +2349,7 @@ export class AssetDevelopService {
     outputs: { master: string; preview: string; hdrMaster: string; hdrPreview: string },
     tmp: { master: string; preview: string; hdrMaster: string; hdrPreview: string },
     image: SystemConfig['image'],
-    motion?: NonNullable<Awaited<ReturnType<AssetJobRepository['getForVideoConversion']>>>,
+    motion?: DevelopMotion,
   ) {
     const recipe = assertRenderableDevelopRecipe(revision.recipe);
     // Preserve discriminated-union narrowing for the HDR renderer.
@@ -1849,10 +2492,12 @@ export class AssetDevelopService {
   }
 
   private async progress(id: string, progress: number) {
-    jobSignal()?.throwIfAborted();
+    this.assertNativeStopped();
+    executionSignal()?.throwIfAborted();
     // FL-43: the stage reaches the version's Activity job too, and a cancel asked for there stops
     // the render at this stage exactly as one asked for from the editor does.
-    const run = this.runs.get(id);
+    const execution = this.renderExecution.getStore();
+    const run = execution?.run;
     if (run && !(await run.progress(progress))) {
       if (await run.cancelRequested()) throw new DevelopRenderCancelled();
       throw new Error('Develop render lost its operation claim');
@@ -1860,7 +2505,11 @@ export class AssetDevelopService {
     if (await this.assetDevelopRepository.isCancelRequested(id)) {
       throw new DevelopRenderCancelled();
     }
-    await this.assetDevelopRepository.update(id, { progress });
+    this.assertNativeStopped();
+    if (execution?.reference && execution.revision) {
+      if (!(await this.assetDevelopRepository.progressAttempt(execution.revision, progress)))
+        throw new DevelopSourceChanged('This render attempt is no longer current');
+    } else await this.assetDevelopRepository.update(id, { progress });
   }
 
   private async discard(paths: string[]) {

@@ -104,6 +104,14 @@ describe('pinned darktable adapter', () => {
     mocks.tempRoot = undefined;
     await rm(directory, { recursive: true, force: true });
   });
+  it('uses the original RAW extension for an opaque borrowed input while preserving its bytes', async () => {
+    const opaque = join(directory, 'source.artifact');
+    await writeFile(opaque, 'unit-test original');
+    await renderDarktable(opaque, recipe, undefined, new Map(), 'camera.CR2');
+    expect((mocks.exec.mock.calls[1][1] as string[])[0]).toMatch(/original[.]CR2$/);
+    expect(await readFile(opaque, 'utf8')).toBe('unit-test original');
+  });
+
   it('preserves literal output paths containing native pattern syntax', async () => {
     mocks.tempRoot = join(directory, String.raw`literal\Photos-$(HOME)`);
     await mkdir(mocks.tempRoot, { recursive: true });
