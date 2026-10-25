@@ -1,4 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { PassThrough, addAbortSignal } from 'node:stream';
+import { finished } from 'node:stream/promises';
 import { MemoryExport } from 'src/database.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import {
@@ -11,6 +13,7 @@ import {
 } from 'src/enum.js';
 import { StudioExportVersion } from 'src/repositories/studio-export.repository.js';
 import { MemoryHighlightService } from 'src/services/memory-highlight.service.js';
+import { sourceOriginalPath } from 'src/utils/source-original.js';
 import { STUDIO_ENGINE_REVISION } from 'src/utils/studio-commands.generated.js';
 import { extractStudioResourceReferences } from 'src/utils/studio-resources.js';
 
@@ -112,6 +115,7 @@ describe(MemoryHighlightService.name, () => {
       deleteExport: vi.fn().mockResolvedValue(undefined),
       requestExportCancel: vi.fn(() => Promise.resolve(runRow({ cancelRequestedAt: new Date() }))),
       searchExports: vi.fn().mockResolvedValue([]),
+      getHiddenItemIds: vi.fn().mockResolvedValue(new Set()),
       getHighlightsOfExpiredMemories: vi.fn().mockResolvedValue([]),
     };
     studioProjects = {
@@ -152,6 +156,7 @@ describe(MemoryHighlightService.name, () => {
       access as never,
       storage as never,
     );
+    Object.assign(sut, { sessionRepository: { getAuth: vi.fn().mockResolvedValue(auth) } });
   });
 
   describe('create', () => {
@@ -343,14 +348,163 @@ describe(MemoryHighlightService.name, () => {
     it('serves a saved result from its library asset while the owner still has it', async () => {
       const saved = published({ scope: StudioExportScope.Library, resultAssetId: 'asset-saved' });
       versions.getForOwner.mockResolvedValue(saved);
-      assets.getByIds.mockResolvedValue([{ id: 'asset-saved', originalPath: '/data/upload/v.mp4', deletedAt: null }]);
+      assets.getByIds.mockResolvedValue([
+        { id: 'asset-saved', ownerId: OWNER, originalPath: '/data/upload/v.mp4', deletedAt: null },
+      ]);
       await sut.download(auth, runRow({ status: MemoryExportStatus.Ready }));
       expect(storage.createReadStream).toHaveBeenCalledWith('/data/upload/v.mp4', 'video/mp4');
 
-      assets.getByIds.mockResolvedValue([{ id: 'asset-saved', originalPath: '/x', deletedAt: new Date() }]);
+      assets.getByIds.mockResolvedValue([
+        { id: 'asset-saved', ownerId: OWNER, originalPath: '/x', deletedAt: new Date() },
+      ]);
       await expect(sut.download(auth, runRow({ status: MemoryExportStatus.Ready }))).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+
+    const referenceResult = () => {
+      const run = runRow({ status: MemoryExportStatus.Ready });
+      const saved = published({
+        scope: StudioExportScope.Library,
+        resultAssetId: PHOTO,
+        outputChecksum: Buffer.from('a'.repeat(64), 'hex'),
+        outputSizeInBytes: '17' as never,
+      });
+      const asset = {
+        id: PHOTO,
+        ownerId: OWNER,
+        originalPath: sourceOriginalPath({ sourceId: PROJECT, resourceKey: 'b'.repeat(64) }),
+        deletedAt: null,
+      };
+      versions.getForOwner.mockResolvedValue(saved);
+      memories.getExport = vi.fn().mockResolvedValue(run);
+      assets.getByIds.mockResolvedValue([asset]);
+      const stream = new PassThrough();
+      const release = vi.fn(() => {
+        stream.destroy();
+        return Promise.resolve();
+      });
+      let authorize!: () => Promise<void>;
+      const originals = {
+        open: vi.fn(async (_id, _reader, check, signal) => {
+          authorize = check;
+          await check();
+          if (signal) addAbortSignal(signal, stream);
+          return { stream, byteLength: 17, verifiedSha256: 'a'.repeat(64), release };
+        }),
+      };
+      Object.assign(sut, { sourceOriginalService: originals });
+      return { run, saved, asset, stream, release, originals, check: () => authorize() };
+    };
+
+    it('streams a reference saved result and releases it after consumption', async () => {
+      const f = referenceResult();
+      const file = await sut.download(auth, f.run);
+      expect(storage.createReadStream).not.toHaveBeenCalled();
+      expect(file.stream).toBe(f.stream);
+      expect(file.length).toBe(17);
+      expect(f.release).not.toHaveBeenCalled();
+      f.stream.resume();
+      f.stream.end('verified original');
+      await file.inputsSettled;
+      expect(f.release).toHaveBeenCalledOnce();
+    });
+
+    it('stops a saved-result transfer when the acting session is revoked', async () => {
+      const f = referenceResult();
+      const file = await sut.download(auth, f.run);
+      const sessions = (sut as unknown as { sessionRepository: { getAuth: ReturnType<typeof vi.fn> } })
+        .sessionRepository;
+      sessions.getAuth.mockResolvedValue(undefined);
+      try {
+        await expect(f.check()).rejects.toThrow();
+      } finally {
+        f.stream.destroy();
+        await file.inputsSettled;
+      }
+    });
+
+    it.each(['new lock', 'expired elevation'] as const)(
+      'stops a transfer after contributor privacy changes: %s',
+      async (change) => {
+        const f = referenceResult();
+        const elevated = { ...auth, session: { ...auth.session!, hasElevatedPermission: true } };
+        const sessions = (sut as unknown as { sessionRepository: { getAuth: ReturnType<typeof vi.fn> } })
+          .sessionRepository;
+        sessions.getAuth.mockResolvedValue(elevated);
+        memories.getHiddenItemIds = vi.fn((_ids, options) =>
+          Promise.resolve(options.revealLockedOwnerId ? new Set() : new Set([CLIP])),
+        );
+        const file = await sut.download(elevated, f.run);
+        if (change === 'new lock') memories.getHiddenItemIds.mockResolvedValue(new Set([CLIP]));
+        else sessions.getAuth.mockResolvedValue(auth);
+        try {
+          await expect(f.check()).rejects.toThrow('Highlight not found');
+        } finally {
+          f.stream.destroy();
+          await file.inputsSettled;
+        }
+      },
+    );
+
+    it('applies live suppression to the saved result during transfer', async () => {
+      const f = referenceResult();
+      const file = await sut.download(auth, f.run);
+      const sessions = (sut as unknown as { sessionRepository: { getAuth: ReturnType<typeof vi.fn> } })
+        .sessionRepository;
+      const privacy = { userId: OWNER, includeNsfw: false, personIds: [PHOTO], petIds: [], tagIds: [] };
+      sessions.getAuth.mockResolvedValue({ ...auth, hiddenContent: privacy });
+      access.asset.checkOwnerAccess = vi.fn((_owner, ids, _elevated, hidden) =>
+        Promise.resolve(hidden ? new Set() : new Set(ids)),
+      );
+      try {
+        await expect(f.check()).rejects.toThrow('Highlight not found');
+      } finally {
+        f.stream.destroy();
+        await file.inputsSettled;
+      }
+    });
+
+    it('refuses provider bytes that no longer match the saved render', async () => {
+      const f = referenceResult();
+      f.saved.outputChecksum = Buffer.from('e'.repeat(64), 'hex');
+      await expect(sut.download(auth, f.run)).rejects.toThrow('Highlight not found');
+      expect(f.release).toHaveBeenCalledOnce();
+      expect(storage.createReadStream).not.toHaveBeenCalled();
+    });
+
+    it('rechecks owner/PIN access and original identity during a saved-result transfer', async () => {
+      const f = referenceResult();
+      const file = await sut.download(auth, f.run);
+      access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+      await expect(f.check()).rejects.toThrow();
+      access.asset.checkOwnerAccess.mockResolvedValue(new Set([PHOTO]));
+      assets.getByIds.mockResolvedValue([{ ...f.asset, originalPath: '/replacement' }]);
+      await expect(f.check()).rejects.toThrow();
+      f.stream.destroy();
+      await file.inputsSettled;
+      expect(f.release).toHaveBeenCalledOnce();
+    });
+
+    it('refuses a saved result after the memory export disappears', async () => {
+      const f = referenceResult();
+      const file = await sut.download(auth, f.run);
+      memories.getExport.mockResolvedValue(undefined);
+      await expect(f.check()).rejects.toThrow();
+      f.stream.destroy();
+      await file.inputsSettled;
+    });
+
+    it('forwards acquisition cancellation and releases on disconnect', async () => {
+      const f = referenceResult();
+      const abort = new AbortController();
+      const file = await sut.download(auth, f.run, abort.signal);
+      expect(f.originals.open.mock.calls[0][3]).toBe(abort.signal);
+      const settled = finished(f.stream).catch(() => {});
+      abort.abort();
+      await settled;
+      await file.inputsSettled;
+      expect(f.release).toHaveBeenCalledOnce();
     });
 
     it('refuses before the render is ready, and a version that is not the owner’s', async () => {

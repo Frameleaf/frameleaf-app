@@ -10,9 +10,12 @@ import {
   Post,
   Put,
   Query,
+  Res,
   StreamableFile,
 } from '@nestjs/common';
 import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
+import type { Readable } from 'node:stream';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
@@ -193,8 +196,29 @@ export class MemoryController {
       "Download the finished archive for one of the caller's own exports. The archive is not reachable by any other route and is deleted when it expires.",
     history: new HistoryBuilder().added('v3'),
   })
-  downloadMemoryExport(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<StreamableFile> {
-    return this.service.downloadExport(auth, id).then(asStreamableFile);
+  async downloadMemoryExport(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const abort = new AbortController();
+    let stream: Readable | undefined;
+    const abandon = () => {
+      abort.abort();
+      if (!stream?.readableEnded) stream?.destroy();
+    };
+    res.once('close', abandon);
+    if (res.destroyed || res.writableEnded) abandon();
+    try {
+      const file = await this.service.downloadExport(auth, id, abort.signal);
+      stream = file.stream;
+      stream.once('close', () => res.removeListener('close', abandon));
+      if (res.destroyed || res.writableEnded) abandon();
+      return asStreamableFile(file);
+    } catch (error) {
+      res.removeListener('close', abandon);
+      throw error;
+    }
   }
 
   // `MemoryUpdate`, not `MemoryRead`: starting an export queues work and writes a file, so

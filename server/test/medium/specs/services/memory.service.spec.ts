@@ -251,8 +251,9 @@ describe(MemoryService.name, () => {
   });
 
   // several tests set the system time; none may leak a fake clock into the next
-  afterEach(() => {
+  afterEach(async () => {
     vi.useRealTimers();
+    await defaultDatabase?.destroy();
   });
 
   describe('create', () => {

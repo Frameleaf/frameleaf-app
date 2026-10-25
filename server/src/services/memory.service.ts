@@ -2,9 +2,9 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from '@nes
 import { isUndefined, omitBy } from 'lodash-es';
 import { DateTime } from 'luxon';
 import { basename } from 'node:path';
-import { pipeline } from 'node:stream/promises';
+import { addAbortSignal } from 'node:stream';
+import { finished, pipeline } from 'node:stream/promises';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { MemoryCurationFilter, MemoryShowLessRow } from 'src/repositories/memory.repository.js';
 import type { JobOf } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { Memory, MemoryExport } from 'src/database.js';
@@ -39,9 +39,18 @@ import {
   StorageFolder,
   SystemMetadataKey,
 } from 'src/enum.js';
-import { ReadStreamResponse } from 'src/repositories/storage.repository.js';
+import { attemptOutputPath, deferJobAdoption, deferJobFailure, jobSignal, queueExecution } from 'src/queue/context.js';
+import {
+  MEMORY_EXPORT_MAX_ASSETS,
+  type MemoryArchiveClaim,
+  type MemoryArchiveSource,
+  type MemoryCurationFilter,
+  type MemoryShowLessRow,
+} from 'src/repositories/memory.repository.js';
+import { ReadStreamResponse, type ZipDownloadStream } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { MemoryHighlightService } from 'src/services/memory-highlight.service.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { nextArchiveName } from 'src/utils/file.js';
 import {
@@ -63,6 +72,7 @@ import {
   suppressBursts,
 } from 'src/utils/memory-story.js';
 import { findOrFail } from 'src/utils/misc.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 
 const DAYS = 3;
 
@@ -83,9 +93,6 @@ const EXPORT_TTL_HOURS = 24;
 
 /** a run that has not been touched for this long is assumed to have lost its worker */
 const EXPORT_STALE_MINUTES = 60;
-
-/** the most assets one export may carry */
-const EXPORT_MAX_ASSETS = 2000;
 
 /** a year with fewer assets than this does not get a recap */
 const MIN_YEAR_IN_REVIEW_ASSETS = 20;
@@ -156,6 +163,8 @@ const memorySubject = (memory: Memory): { kind: 'person' | 'pet'; id: string } |
 
 @Injectable()
 export class MemoryService extends BaseService {
+  @Inject(SourceOriginalService)
+  private sourceOriginalService!: SourceOriginalService;
   /** FL-194: highlight videos, rendered through Studio's render pipeline. */
   @Inject(MemoryHighlightService)
   private highlights!: MemoryHighlightService;
@@ -741,8 +750,8 @@ export class MemoryService extends BaseService {
     if (assets.length === 0) {
       throw new BadRequestException('Memory has no assets to export');
     }
-    if (assets.length > EXPORT_MAX_ASSETS) {
-      throw new BadRequestException(`Memory has more than ${EXPORT_MAX_ASSETS} assets`);
+    if (assets.length > MEMORY_EXPORT_MAX_ASSETS) {
+      throw new BadRequestException(`Memory has more than ${MEMORY_EXPORT_MAX_ASSETS} assets`);
     }
 
     // An export reads originals, which is a stronger right than viewing a memory, so the
@@ -867,7 +876,7 @@ export class MemoryService extends BaseService {
 
     const removed = await this.memoryRepository.deleteExport(id, auth.user.id);
     if (removed?.path) {
-      await this.storageRepository.unlink(removed.path);
+      await this.memoryRepository.removeArchiveFilesIfStopped(id, () => this.removeExportFiles(removed));
     }
   }
 
@@ -876,10 +885,10 @@ export class MemoryService extends BaseService {
    * file is reachable: the archive lives outside any served folder and its path is never
    * exposed. An expired run is treated as gone rather than served late.
    */
-  async downloadExport(auth: AuthDto, id: string): Promise<ReadStreamResponse> {
+  async downloadExport(auth: AuthDto, id: string, signal?: AbortSignal): Promise<ReadStreamResponse> {
     const run = await this.findExportOrFail(auth, id);
     if (run.format === MemoryExportFormat.Highlight) {
-      return this.highlights.download(auth, run as MemoryExport);
+      return this.highlights.download(auth, run as MemoryExport, signal);
     }
 
     if (run.status !== MemoryExportStatus.Ready || !run.path) {
@@ -918,8 +927,14 @@ export class MemoryService extends BaseService {
     const target = StorageCore.getNestedPath(StorageFolder.Exports, claimed.ownerId, `${claimed.id}.zip`);
     // written under a partial name and renamed only once the archive is complete, so an
     // interrupted worker can never leave a half-written file that looks downloadable
-    const partial = `${target}.partial`;
+    const partial = attemptOutputPath(`${target}.partial`);
 
+    let zip: ZipDownloadStream | undefined;
+    let writing: Promise<void> | undefined;
+    let referenceArchive = false;
+    let cancelled = false;
+    const abort = new AbortController();
+    const signal = AbortSignal.any([abort.signal, ...(jobSignal() ? [jobSignal()!] : [])]);
     try {
       this.storageCore.ensureFolders(partial);
 
@@ -931,17 +946,36 @@ export class MemoryService extends BaseService {
       const assets = await this.assetRepository.getByIds(assetIds);
       const byId = new Map(assets.map((asset) => [asset.id, asset]));
 
-      const zip = this.storageRepository.createZipStream();
+      const eligible = assets.filter(
+        (a) => a.ownerId === claimed.ownerId && a.deletedAt === null && a.visibility === AssetVisibility.Timeline,
+      );
+      referenceArchive = eligible.some((a) => !!parseSourceOriginalPath(a.originalPath));
+      const sources = new Map<string, MemoryArchiveSource>();
+      if (referenceArchive) {
+        const epochs = await this.integrityRepository.sourceEpochs(eligible.map((a) => a.id));
+        if (epochs.length !== eligible.length) throw new Error('An original is unavailable; create a new archive');
+        for (const asset of eligible) {
+          const epoch = epochs.find((e) => e.assetId === asset.id && e.ownerId === claimed.ownerId);
+          if (!epoch) throw new Error('An original changed; create a new archive');
+          sources.set(asset.id, {
+            ...structuredClone(epoch),
+            originalPath: asset.originalPath,
+            checksum: Buffer.from(asset.checksum),
+          });
+        }
+      }
+      zip = this.storageRepository.createZipStream();
+      addAbortSignal(signal, zip.stream);
+      zip.stream.once('error', (error) => abort.abort(error));
       const output = this.storageRepository.createWriteStream(partial);
-      const finished = pipeline(zip.stream, output);
+      writing = pipeline(zip.stream, output);
       // A throw inside the loop below skips `await finished`, which would leave this
       // promise rejected and unobserved. Attaching a handler now prevents an unhandled
       // rejection from taking the worker down; `await finished` still rethrows.
-      void finished.catch(() => {});
+      void writing.catch(() => {});
 
       const names = new Map<string, number>();
       let processed = 0;
-      let cancelled = false;
       let lastPoll = Date.now();
 
       for (const assetId of assetIds) {
@@ -970,6 +1004,39 @@ export class MemoryService extends BaseService {
           continue;
         }
 
+        if (referenceArchive && parseSourceOriginalPath(asset.originalPath)) {
+          const source = sources.get(asset.id)!;
+          const input = await this.sourceOriginalService.openForJobEntry(asset.id, async () => {
+            signal.throwIfAborted();
+            if (!(await this.memoryRepository.checkArchiveSource(claimed, source))) {
+              const current = await this.memoryRepository.getExportForJob(id);
+              cancelled = !current || !!current.cancelRequestedAt;
+              throw new Error(cancelled ? 'Archive cancelled' : 'An original changed; create a new archive');
+            }
+          });
+          try {
+            const expected = source.reference;
+            if (
+              !expected ||
+              input.resourceId !== expected.resourceId ||
+              input.resourceVersion !== expected.version ||
+              input.verifiedSha256 !== expected.sha256
+            )
+              throw new Error('An original changed; create a new archive');
+            await input.check();
+            await Promise.all([
+              zip.addFile(input.stream, nextArchiveName(names, asset.originalFileName)),
+              finished(input.stream),
+            ]);
+          } finally {
+            await input.release().catch(async (error) => {
+              await input.settled.catch(() => input.retainOnUnconfirmedStop());
+              throw error;
+            });
+          }
+          continue;
+        }
+
         let realpath = asset.originalPath;
         try {
           realpath = await this.storageRepository.realpath(realpath);
@@ -981,7 +1048,7 @@ export class MemoryService extends BaseService {
       }
 
       await zip.finalize();
-      await finished;
+      await writing;
 
       // a cancel that lands while the last files are being written still discards the
       // archive rather than handing over a download the owner said to stop
@@ -994,36 +1061,116 @@ export class MemoryService extends BaseService {
 
       if (cancelled) {
         await this.storageRepository.unlink(partial);
-        await this.memoryRepository.updateExport(id, {
-          status: MemoryExportStatus.Cancelled,
-          finishedAt: new Date(),
-          processedAssets: processed,
-        });
+        if (referenceArchive) await this.memoryRepository.settleArchiveExport(claimed, MemoryExportStatus.Cancelled);
+        else
+          await this.memoryRepository.updateExport(id, {
+            status: MemoryExportStatus.Cancelled,
+            finishedAt: new Date(),
+            processedAssets: processed,
+          });
         return JobStatus.Skipped;
       }
 
-      await this.storageRepository.rename(partial, target);
-      const { size } = await this.storageRepository.stat(target);
-
-      await this.memoryRepository.updateExport(id, {
-        status: MemoryExportStatus.Ready,
-        path: target,
-        sizeInBytes: size,
-        processedAssets: processed,
-        finishedAt: new Date(),
-        expiresAt: DateTime.utc().plus({ hours: EXPORT_TTL_HOURS }).toJSDate(),
-      });
-
+      await this.publishArchive(claimed, sources.values().toArray(), partial, target, processed);
       return JobStatus.Success;
     } catch (error) {
       this.logger.error(`Memory export ${id} failed: ${error}`);
-      await this.storageRepository.unlink(partial);
-      await this.memoryRepository.updateExport(id, {
-        status: MemoryExportStatus.Failed,
-        error: error instanceof Error ? error.message : String(error),
-        finishedAt: new Date(),
-      });
+      abort.abort(error);
+      zip?.stream.destroy(error instanceof Error ? error : new Error(String(error)));
+      await writing?.catch(() => {});
+      if (!queueExecution.getStore()?.executorStopUnconfirmed) await this.storageRepository.unlink(partial);
+      if (referenceArchive) {
+        const current = await this.memoryRepository.getExportForJob(id);
+        cancelled ||= !current || !!current.cancelRequestedAt;
+        await this.memoryRepository.settleArchiveExport(
+          claimed,
+          cancelled ? MemoryExportStatus.Cancelled : MemoryExportStatus.Failed,
+          error instanceof Error ? error.message : String(error),
+        );
+        return cancelled ? JobStatus.Skipped : JobStatus.Failed;
+      }
+      await this.memoryRepository.settleArchiveExport(
+        claimed,
+        MemoryExportStatus.Failed,
+        error instanceof Error ? error.message : String(error),
+      );
       return JobStatus.Failed;
+    }
+  }
+
+  private async publishArchive(
+    claim: MemoryArchiveClaim,
+    sources: MemoryArchiveSource[],
+    partial: string,
+    target: string,
+    processedAssets: number,
+  ): Promise<void> {
+    let moved = false,
+      cancelled = false;
+    const context = queueExecution.getStore();
+    const cleanup = async () => {
+      if (context?.executorStopUnconfirmed) return;
+      try {
+        const current = await this.memoryRepository.getExportForJob(claim.id);
+        if (current?.status === MemoryExportStatus.Ready && current.path === target) return;
+        if (
+          current &&
+          (current.ownerId !== claim.ownerId ||
+            new Date(current.startedAt ?? 0).getTime() !== new Date(claim.startedAt ?? 0).getTime())
+        )
+          return;
+        if (moved) await this.storageRepository.unlink(target);
+        await this.storageRepository.unlink(partial);
+        await this.memoryRepository.settleArchiveExport(
+          claim,
+          cancelled ? MemoryExportStatus.Cancelled : MemoryExportStatus.Failed,
+          'Archive was not committed',
+        );
+      } catch (error) {
+        // Keep uncertain receipts until the failed-archive reconciliation can confirm their state.
+        this.logger.error(`Memory archive receipt cleanup unconfirmed: ${error}`);
+      }
+    };
+    if (context) {
+      (context.afterSettled ??= []).push(cleanup);
+      deferJobFailure(async (tx, reason, wasCancelled) => {
+        await this.memoryRepository.settleArchiveExport(
+          claim,
+          wasCancelled || cancelled ? MemoryExportStatus.Cancelled : MemoryExportStatus.Failed,
+          reason,
+          tx,
+        );
+      });
+    }
+    const publish = async (tx?: Parameters<MemoryService['memoryRepository']['publishArchiveExport']>[3]) => {
+      const install = async () => {
+        await this.storageRepository.rename(partial, target);
+        moved = true;
+        const { size } = await this.storageRepository.stat(target);
+        return {
+          path: target,
+          sizeInBytes: size,
+          processedAssets,
+          expiresAt: DateTime.utc().plus({ hours: EXPORT_TTL_HOURS }).toJSDate(),
+        };
+      };
+      const accepted =
+        sources.length > 0
+          ? await this.memoryRepository.publishArchiveExport(claim, sources, install, tx)
+          : await this.memoryRepository.publishManagedArchive(claim, install, tx);
+      if (!accepted) {
+        const current = await this.memoryRepository.getExportForJob(claim.id);
+        cancelled = !current || !!current.cancelRequestedAt;
+        throw new Error(cancelled ? 'Archive cancelled' : 'Archive changed before it could be saved');
+      }
+    };
+    if (!deferJobAdoption(publish)) {
+      try {
+        await publish();
+      } catch (error) {
+        await cleanup();
+        throw error;
+      }
     }
   }
 
@@ -1038,33 +1185,19 @@ export class MemoryService extends BaseService {
     const runs = (await this.memoryRepository.getReclaimableExports(now, staleBefore)) ?? [];
 
     for (const run of runs) {
-      await this.removeExportFiles(run);
-
-      if (run.status === MemoryExportStatus.Ready) {
-        // the archive is gone, so the run goes with it rather than lingering as a
-        // download that would 404
-        await this.memoryRepository.deleteExport(run.id, run.ownerId);
-        continue;
-      }
-
-      await this.memoryRepository.updateExport(run.id, {
-        status: run.cancelRequestedAt ? MemoryExportStatus.Cancelled : MemoryExportStatus.Failed,
-        path: null,
-        error: run.cancelRequestedAt ? null : 'Export was interrupted and did not resume',
-        finishedAt: now,
-      });
+      await this.memoryRepository.reclaimArchive(run, now, staleBefore, (current) => this.removeExportFiles(current));
     }
 
-    await this.removeOrphanedExportFiles();
+    await this.removeOrphanedExportFiles(now, staleBefore);
   }
 
   private async removeExportFiles(run: { id: string; ownerId: string; path: string | null }) {
     if (run.path) {
       await this.storageRepository.unlink(run.path);
     }
-    await this.storageRepository.unlink(
-      StorageCore.getNestedPath(StorageFolder.Exports, run.ownerId, `${run.id}.zip.partial`),
-    );
+    const target = StorageCore.getNestedPath(StorageFolder.Exports, run.ownerId, `${run.id}.zip`);
+    if (run.path !== target) await this.storageRepository.unlink(target);
+    await this.storageRepository.unlink(`${target}.partial`);
   }
 
   /**
@@ -1072,7 +1205,7 @@ export class MemoryService extends BaseService {
    * cascade, which cannot remove the archive on disk. Any archive or partial whose run no
    * longer exists is therefore removed here, so a deleted memory never leaves a private copy.
    */
-  private async removeOrphanedExportFiles() {
+  private async removeOrphanedExportFiles(now: Date, staleBefore: Date) {
     const files = new Map<string, string[]>();
     for await (const file of this.storageRepository.walkFiles(StorageCore.getBaseFolder(StorageFolder.Exports))) {
       const match = /^([\da-f-]{36})\.zip(\.partial)?$/i.exec(basename(file));
@@ -1087,13 +1220,19 @@ export class MemoryService extends BaseService {
     }
 
     const existing = await this.memoryRepository.getExistingExportIds(files.keys().toArray());
+    for (const run of await this.memoryRepository.getFailedArchiveExports(files.keys().toArray())) {
+      await this.memoryRepository.reclaimArchive(run, now, staleBefore, async (current) => {
+        await this.removeExportFiles(current);
+        for (const path of files.get(run.id) ?? []) await this.storageRepository.unlink(path);
+      });
+    }
     for (const [id, paths] of files) {
       if (existing.has(id)) {
         continue;
       }
-      for (const path of paths) {
-        await this.storageRepository.unlink(path);
-      }
+      await this.memoryRepository.removeArchiveFilesIfStopped(id, async () => {
+        for (const path of paths) await this.storageRepository.unlink(path);
+      });
     }
   }
 
@@ -1351,7 +1490,7 @@ export class MemoryService extends BaseService {
     const exports = await this.memoryRepository.searchExports(auth.user.id, { memoryId: id });
     for (const run of exports) {
       if (run.format !== MemoryExportFormat.Highlight) {
-        await this.removeExportFiles(run);
+        await this.memoryRepository.removeArchiveFilesIfStopped(run.id, () => this.removeExportFiles(run));
       }
     }
     // FL-194: a highlight's render stops, and its project and private result go with the memory

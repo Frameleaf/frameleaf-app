@@ -1,4 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { finished } from 'node:stream/promises';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { MemoryExport } from 'src/database.js';
 import { MemoryHighlightOptionsDto, MemoryHighlightSettings, mapMemoryHighlight } from 'src/dtos/memory.dto.js';
@@ -14,18 +16,22 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
-import { MemoryRepository } from 'src/repositories/memory.repository.js';
+import { MEMORY_EXPORT_MAX_ASSETS, MemoryRepository } from 'src/repositories/memory.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { type ReadStreamResponse, StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioExportRepository, StudioExportVersion } from 'src/repositories/studio-export.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import {
   MEMORY_HIGHLIGHT_DEFAULT_LENGTH,
   MemoryHighlightAsset,
   buildMemoryHighlightGraph,
 } from 'src/utils/memory-highlight.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 import { STUDIO_ENGINE_REVISION } from 'src/utils/studio-commands.generated.js';
 import { STUDIO_ENGINE, STUDIO_ENVELOPE_SCHEMA_VERSION } from 'src/utils/studio-project.js';
 
@@ -59,6 +65,11 @@ const errorMessage = (error: unknown) => (error instanceof Error ? error.message
  */
 @Injectable()
 export class MemoryHighlightService {
+  @Inject(SourceOriginalService)
+  private sourceOriginalService!: SourceOriginalService;
+  @Inject(SessionRepository)
+  private sessionRepository!: SessionRepository;
+  private readonly sourceReaderOwnerId = randomUUID();
   constructor(
     private logger: LoggingRepository,
     private memoryRepository: MemoryRepository,
@@ -244,21 +255,63 @@ export class MemoryHighlightService {
   }
 
   /** The result, as a download, re-checked like any Studio export result. */
-  async download(auth: AuthDto, run: MemoryExport): Promise<ReadStreamResponse> {
+  async download(auth: AuthDto, run: MemoryExport, signal?: AbortSignal): Promise<ReadStreamResponse> {
     const version = await this.requireResult(auth, run);
     let path: string;
     let contentType = version.outputContentType ?? 'video/mp4';
     if (version.scope === StudioExportScope.Library) {
-      // Saved to the library: the asset is served while it is the owner's and not in the trash.
-      const assetId = version.resultAssetId;
-      const allowed = assetId
-        ? await this.accessRepository.asset.checkOwnerAccess(auth.user.id, new Set([assetId]), !!getLockedOwnerId(auth))
-        : new Set<string>();
-      const [asset] = assetId && allowed.has(assetId) ? await this.assetRepository.getByIds([assetId]) : [];
-      if (!asset || asset.deletedAt) {
-        throw new NotFoundException('Highlight not found');
-      }
+      const asset = await this.libraryResult(auth, version);
       path = asset.originalPath;
+      if (parseSourceOriginalPath(path)) {
+        const original = await this.sourceOriginalService.open(
+          asset.id,
+          { kind: 'http', readerId: randomUUID(), ownerId: this.sourceReaderOwnerId },
+          async () => {
+            signal?.throwIfAborted();
+            const live = auth.session ? await this.sessionRepository.getAuth(auth.user.id, auth.session.id) : auth;
+            if (!live) throw new NotFoundException('Highlight not found');
+            const current = await this.memoryRepository.getExport(run.id, live.user.id);
+            if (!current || current.studioExportVersionId !== version.id)
+              throw new NotFoundException('Highlight not found');
+            if (!Array.isArray(current.assetIds) || current.assetIds.length > MEMORY_EXPORT_MAX_ASSETS)
+              throw new NotFoundException('Highlight not found');
+            const hidden = await this.memoryRepository.getHiddenItemIds(
+              current.assetIds.filter((id): id is string => typeof id === 'string'),
+              getHiddenContentQueryOptions(live),
+            );
+            if (hidden.size > 0) throw new NotFoundException('Highlight not found');
+            const result = await this.requireResult(live, current as MemoryExport);
+            if (result.scope !== StudioExportScope.Library || result.resultAssetId !== asset.id)
+              throw new NotFoundException('Highlight not found');
+            const currentAsset = await this.libraryResult(live, result);
+            if (currentAsset.originalPath !== path) throw new NotFoundException('Highlight not found');
+            signal?.throwIfAborted();
+          },
+          signal,
+        );
+        if (
+          !version.outputChecksum ||
+          original.verifiedSha256 !== version.outputChecksum.toString('hex') ||
+          version.outputSizeInBytes === null ||
+          original.byteLength !== Number(version.outputSizeInBytes)
+        ) {
+          await original.release();
+          throw new NotFoundException('Highlight not found');
+        }
+        const inputsSettled = finished(original.stream, { cleanup: true })
+          .catch(() => {})
+          .then(() => original.release());
+        void inputsSettled.catch((error) =>
+          this.logger.error(`Highlight input release unconfirmed: ${errorMessage(error)}`),
+        );
+        return {
+          stream: original.stream,
+          length: original.byteLength,
+          type: contentType,
+          inputsSettled,
+          disposition: this.downloadDisposition(run.title, contentType),
+        };
+      }
     } else {
       const file = await this.studioExports.download(auth, version.id);
       path = file.path;
@@ -266,11 +319,27 @@ export class MemoryHighlightService {
     }
 
     const stream = await this.storageRepository.createReadStream(path, contentType);
+    return { ...stream, disposition: this.downloadDisposition(run.title, contentType) };
+  }
+
+  private downloadDisposition(title: string, contentType: string) {
     const extension = contentType === 'video/webm' ? 'webm' : contentType === 'video/quicktime' ? 'mov' : 'mp4';
-    return {
-      ...stream,
-      disposition: `attachment; filename*=UTF-8''${encodeURIComponent(run.title || 'highlight')}.${extension}`,
-    };
+    return `attachment; filename*=UTF-8''${encodeURIComponent(title || 'highlight')}.${extension}`;
+  }
+
+  private async libraryResult(auth: AuthDto, version: StudioExportVersion) {
+    const assetId = version.resultAssetId;
+    const allowed = assetId
+      ? await this.accessRepository.asset.checkOwnerAccess(
+          auth.user.id,
+          new Set([assetId]),
+          !!getLockedOwnerId(auth),
+          auth.hiddenContent ?? auth.hideNsfwAssets,
+        )
+      : new Set<string>();
+    const [asset] = assetId && allowed.has(assetId) ? await this.assetRepository.getByIds([assetId]) : [];
+    if (!asset || asset.ownerId !== auth.user.id || asset.deletedAt) throw new NotFoundException('Highlight not found');
+    return asset;
   }
 
   /** Save the result to the owner's library, on their request only. */

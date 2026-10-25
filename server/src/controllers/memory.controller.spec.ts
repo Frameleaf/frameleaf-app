@@ -1,6 +1,10 @@
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
+import { finished } from 'node:stream/promises';
 import request from 'supertest';
 import { MemoryController } from 'src/controllers/memory.controller.js';
 import { MemoryService } from 'src/services/memory.service.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
 import { errorDto } from 'test/medium/responses.js';
 import { factory } from 'test/small.factory.js';
 import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.js';
@@ -163,4 +167,45 @@ describe(MemoryController.name, () => {
       expect(order.status).toBe(400);
     });
   });
+});
+
+it('cancels a pending export acquisition when its response closes', async () => {
+  const res = Object.assign(new EventEmitter(), { destroyed: false, writableEnded: false });
+  const entered = Promise.withResolvers<void>();
+  const service = {
+    downloadExport: vi.fn(
+      (_auth, _id, signal: AbortSignal) =>
+        new Promise((_resolve, reject) => {
+          entered.resolve();
+          signal.addEventListener('abort', () => reject(new Error('request cancelled')), { once: true });
+        }),
+    ),
+  };
+  const work = new MemoryController(service as never).downloadMemoryExport(
+    authStub.user1,
+    { id: 'export' },
+    res as never,
+  );
+  const refusal = expect(work).rejects.toThrow('request cancelled');
+  await entered.promise;
+  res.emit('close');
+  await refusal;
+  expect(res.listenerCount('close')).toBe(0);
+});
+
+it('destroys a handed-off export stream on disconnect and removes its response listener', async () => {
+  const res = Object.assign(new EventEmitter(), { destroyed: false, writableEnded: false });
+  const stream = new PassThrough();
+  const service = { downloadExport: vi.fn().mockResolvedValue({ stream, type: 'video/mp4', length: 10 }) };
+  const file = await new MemoryController(service as never).downloadMemoryExport(
+    authStub.user1,
+    { id: 'export' },
+    res as never,
+  );
+  expect(file.getStream()).toBe(stream);
+  const stopped = finished(stream).catch(() => {});
+  res.emit('close');
+  await stopped;
+  expect(stream.destroyed).toBe(true);
+  expect(res.listenerCount('close')).toBe(0);
 });

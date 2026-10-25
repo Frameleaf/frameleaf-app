@@ -1,6 +1,9 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { PassThrough } from 'node:stream';
+import { createHash } from 'node:crypto';
+import { PassThrough, Readable } from 'node:stream';
+import type { QueueExecution } from 'src/queue/types.js';
 import type { OnThisDayData } from 'src/types.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import {
   JobName,
   JobStatus,
@@ -10,10 +13,13 @@ import {
   MemoryType,
   PetSpecies,
   PushEventType,
+  StorageFolder,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { MemoryService } from 'src/services/memory.service.js';
 import { emptyHiddenContentFilter } from 'src/utils/hidden-content.js';
+import { sourceOriginalPath } from 'src/utils/source-original.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { MemoryFactory } from 'test/factories/memory.factory.js';
 import { getForMemory } from 'test/mappers.js';
@@ -48,6 +54,15 @@ describe(MemoryService.name, () => {
     mocks.memory.cleanupCurations.mockResolvedValue();
     mocks.memory.searchExports.mockResolvedValue([]);
     mocks.memory.getExistingExportIds.mockResolvedValue(new Set());
+    Object.assign(mocks.memory, {
+      getFailedArchiveExports: vi.fn().mockResolvedValue([]),
+      settleArchiveExport: vi.fn(),
+      publishManagedArchive: vi.fn(),
+    });
+    mocks.memory.removeArchiveFilesIfStopped.mockImplementation(async (_id, remove) => {
+      await remove();
+      return true;
+    });
     mocks.memory.getHiddenItemIds.mockResolvedValue(new Set());
   });
 
@@ -63,6 +78,33 @@ describe(MemoryService.name, () => {
       await sut.onMemoriesCleanup();
       expect(mocks.memory.cleanup).toHaveBeenCalled();
       expect(mocks.memory.getReclaimableExports).toHaveBeenCalled();
+    });
+
+    it('reconciles failed archive receipts that have no recorded file path', async () => {
+      const run = exportRun({ status: MemoryExportStatus.Failed, path: null });
+      const target = StorageCore.getNestedPath(StorageFolder.Exports, run.ownerId, `${run.id}.zip`);
+      mocks.memory.cleanup.mockResolvedValue([]);
+      mocks.memory.getReclaimableExports.mockResolvedValue([]);
+      Object.assign(mocks.memory, {
+        getFailedArchiveExports: vi.fn().mockResolvedValue([run]),
+        reclaimArchive: vi.fn(async (claim, _now, _stale, remove) => {
+          await remove(claim);
+          return true;
+        }),
+      });
+      mocks.memory.getExistingExportIds.mockResolvedValue(new Set([run.id]));
+      mocks.storage.walkFiles.mockImplementation(async function* () {
+        yield* await Promise.resolve([target, `${target}.partial`]);
+      });
+      await sut.onMemoriesCleanup();
+      expect(mocks.memory.reclaimArchive).toHaveBeenCalledWith(
+        run,
+        expect.any(Date),
+        expect.any(Date),
+        expect.any(Function),
+      );
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(target);
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(`${target}.partial`);
     });
 
     it('removes export archives whose run is gone with its memory or owner', async () => {
@@ -621,6 +663,18 @@ describe(MemoryService.name, () => {
       expect(mocks.memory.delete).not.toHaveBeenCalled();
     });
 
+    it('retains archive files when deleting a memory whose executor has not stopped', async () => {
+      const memory = MemoryFactory.create();
+      const run = exportRun({ memoryId: memory.id, status: MemoryExportStatus.Running, path: '/owned/active.zip' });
+      mocks.access.memory.checkOwnerAccess.mockResolvedValue(new Set([memory.id]));
+      mocks.memory.searchExports.mockResolvedValue([run] as never);
+      mocks.memory.delete.mockResolvedValue(undefined);
+      Object.assign(mocks.memory, { removeArchiveFilesIfStopped: vi.fn().mockResolvedValue(false) });
+      await sut.remove(factory.auth(), memory.id);
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      expect(mocks.memory.delete).toHaveBeenCalledWith(memory.id);
+    });
+
     it('should delete a memory', async () => {
       const memoryId = newUuid();
 
@@ -910,7 +964,7 @@ describe(MemoryService.name, () => {
       await sut.cancelExport(auth, run.id);
       expect(highlights.cancel).toHaveBeenCalledWith(auth, run);
       await sut.downloadExport(auth, run.id);
-      expect(highlights.download).toHaveBeenCalledWith(auth, run);
+      expect(highlights.download).toHaveBeenCalledWith(auth, run, undefined);
       await sut.saveExportToLibrary(auth, run.id);
       expect(highlights.saveToLibrary).toHaveBeenCalledWith(auth, run);
       await sut.deleteExport(auth, run.id);
@@ -1124,6 +1178,11 @@ describe(MemoryService.name, () => {
     beforeEach(() => {
       // The run row is the worker's only record of progress; every path writes to it.
       mocks.memory.updateExport.mockResolvedValue(void 0);
+      mocks.memory.settleArchiveExport.mockResolvedValue(void 0);
+      mocks.memory.publishManagedArchive.mockImplementation(async (_claim, install) => {
+        await install();
+        return true;
+      });
     });
 
     const givenZip = () => {
@@ -1137,6 +1196,221 @@ describe(MemoryService.name, () => {
       mocks.storage.createWriteStream.mockReturnValue(new PassThrough());
       return { addFile };
     };
+
+    const referenceArchive = (count = 1) => {
+      const ownerId = newUuid(),
+        bytes = Buffer.from('approved photo');
+      const checksum = createHash('sha256').update(bytes).digest();
+      const assets = Array.from({ length: count }, () => ({
+        ...AssetFactory.create({ ownerId }),
+        checksum,
+        originalPath: sourceOriginalPath({ sourceId: newUuid(), resourceKey: 'b'.repeat(64) }),
+      }));
+      const run = exportRun({
+        ownerId,
+        assetIds: assets.map((asset) => asset.id),
+        assetCount: count,
+        status: MemoryExportStatus.Running,
+        startedAt: new Date(),
+      });
+      const epochs = assets.map((asset) => ({
+        assetId: asset.id,
+        ownerId,
+        epoch: '0',
+        reference: { resourceId: newUuid(), version: 'c'.repeat(64), sha256: checksum.toString('hex') },
+      }));
+      mocks.memory.claimExport.mockResolvedValue(run as never);
+      mocks.memory.getExportForJob.mockResolvedValue(run as never);
+      mocks.asset.getByIds.mockResolvedValue(assets as never);
+      mocks.integrityReport.sourceEpochs.mockResolvedValue(epochs);
+      mocks.storage.stat.mockResolvedValue({ size: 42 } as never);
+      Object.assign(mocks.memory, {
+        checkArchiveSource: vi.fn().mockResolvedValue(true),
+        settleArchiveExport: vi.fn().mockResolvedValue(undefined),
+        publishArchiveExport: vi.fn(async (_claim, _sources, install) => {
+          await install();
+          return true;
+        }),
+      });
+      const inputs = epochs.map((epoch) => ({
+        stream: Readable.from([bytes]),
+        resourceId: epoch.reference.resourceId,
+        resourceVersion: epoch.reference.version,
+        verifiedSha256: epoch.reference.sha256,
+        check: vi.fn().mockResolvedValue(undefined),
+        release: vi.fn().mockResolvedValue(undefined),
+        settled: Promise.resolve(),
+        retainOnUnconfirmedStop: vi.fn(),
+      }));
+      const originals = {
+        openForJobEntry: vi.fn(async (assetId, authorize) => {
+          await authorize();
+          return inputs[assets.findIndex((asset) => asset.id === assetId)];
+        }),
+      };
+      Object.assign(sut, { sourceOriginalService: originals });
+      const zip = new PassThrough();
+      const addFile = vi.fn((input, _name) =>
+        typeof input === 'string'
+          ? undefined
+          : (async () => {
+              for await (const chunk of input) zip.write(chunk);
+            })(),
+      );
+      mocks.storage.createZipStream.mockReturnValue({
+        stream: zip,
+        addFile,
+        finalize: vi.fn(() => Promise.resolve(zip.end())),
+      } as never);
+      mocks.storage.createWriteStream.mockReturnValue(new PassThrough());
+      return { run, assets, epochs, inputs, originals, addFile, bytes };
+    };
+
+    it('streams a verified reference into its entry and publishes under source admission', async () => {
+      const f = referenceArchive();
+      expect(await sut.handleMemoryExport({ id: f.run.id })).toBe(JobStatus.Success);
+      expect(f.originals.openForJobEntry).toHaveBeenCalledWith(f.assets[0].id, expect.any(Function));
+      expect(f.addFile).toHaveBeenCalledWith(f.inputs[0].stream, expect.any(String));
+      expect(f.inputs[0].release).toHaveBeenCalledOnce();
+      expect(mocks.storage.realpath).not.toHaveBeenCalled();
+      expect(mocks.memory.publishArchiveExport).toHaveBeenCalled();
+    });
+
+    it('publishes only inside the accepted queue transaction and preserves its committed receipt', async () => {
+      const f = referenceArchive();
+      const context: QueueExecution = {
+        claim: { id: newUuid(), token: newUuid() } as QueueExecution['claim'],
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        followups: [],
+        adoptions: [],
+        buffering: false,
+      };
+      expect(await queueExecution.run(context, () => sut.handleMemoryExport({ id: f.run.id }))).toBe(JobStatus.Success);
+      expect(mocks.memory.publishArchiveExport).not.toHaveBeenCalled();
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(f.inputs[0].release).toHaveBeenCalledOnce();
+      expect(context.adoptions).toHaveLength(1);
+      const tx = {};
+      await context.adoptions[0](tx as never);
+      expect(mocks.memory.publishArchiveExport).toHaveBeenCalledWith(
+        f.run,
+        expect.any(Array),
+        expect.any(Function),
+        tx,
+      );
+      const target = mocks.storage.rename.mock.calls[0][1];
+      mocks.memory.getExportForJob.mockResolvedValue({
+        ...f.run,
+        status: MemoryExportStatus.Ready,
+        path: target,
+      } as never);
+      for (const cleanup of context.afterSettled ?? []) await cleanup();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('also defers managed archive publication into the accepted queue transaction', async () => {
+      const f = referenceArchive();
+      f.assets[0].originalPath = '/managed/photo.jpg';
+      const context: QueueExecution = {
+        claim: { id: newUuid(), token: newUuid() } as QueueExecution['claim'],
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        followups: [],
+        adoptions: [],
+        buffering: false,
+      };
+      expect(await queueExecution.run(context, () => sut.handleMemoryExport({ id: f.run.id }))).toBe(JobStatus.Success);
+      expect(mocks.memory.publishManagedArchive).not.toHaveBeenCalled();
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      const tx = {};
+      await context.adoptions[0](tx as never);
+      expect(mocks.memory.publishManagedArchive).toHaveBeenCalledWith(f.run, expect.any(Function), tx);
+      expect(f.originals.openForJobEntry).not.toHaveBeenCalled();
+    });
+
+    it('discards a prepared archive when its queue claim is not accepted', async () => {
+      const f = referenceArchive();
+      const context: QueueExecution = {
+        claim: { id: newUuid(), token: newUuid() } as QueueExecution['claim'],
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        followups: [],
+        adoptions: [],
+        buffering: false,
+      };
+      await queueExecution.run(context, () => sut.handleMemoryExport({ id: f.run.id }));
+      for (const cleanup of context.afterSettled ?? []) await cleanup();
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringContaining('.zip.partial'));
+      expect(mocks.memory.settleArchiveExport).toHaveBeenCalledWith(
+        f.run,
+        MemoryExportStatus.Failed,
+        'Archive was not committed',
+      );
+    });
+
+    it('waits for a reference entry to finish and release before opening the next', async () => {
+      const f = referenceArchive(2);
+      const first = new PassThrough();
+      f.inputs[0].stream = first;
+      const pending = sut.handleMemoryExport({ id: f.run.id });
+      await expect.poll(() => f.originals.openForJobEntry.mock.calls.length).toBe(1);
+      expect(f.inputs[0].release).not.toHaveBeenCalled();
+      first.end(f.bytes);
+      expect(await pending).toBe(JobStatus.Success);
+      expect(f.inputs[0].release.mock.invocationCallOrder[0]).toBeLessThan(
+        f.originals.openForJobEntry.mock.invocationCallOrder[1],
+      );
+    });
+
+    it.each(['closed', 'unconfirmed'] as const)(
+      'distinguishes cleanup metadata failure from %s descriptor closure',
+      async (closure) => {
+        const f = referenceArchive();
+        const context: QueueExecution = {
+          claim: { id: newUuid(), token: newUuid() } as QueueExecution['claim'],
+          signal: new AbortController().signal,
+          progress: vi.fn(),
+          progressUnits: 0,
+          followups: [],
+          adoptions: [],
+          buffering: false,
+        };
+        f.inputs[0].retainOnUnconfirmedStop.mockImplementation(() => {
+          context.executorStopUnconfirmed = true;
+        });
+        f.inputs[0].release.mockRejectedValueOnce(new Error('reader cleanup unavailable'));
+        if (closure === 'unconfirmed') {
+          f.inputs[0].settled = Promise.reject(new Error('artifact_close_unconfirmed'));
+          void f.inputs[0].settled.catch(() => {});
+        }
+        expect(await queueExecution.run(context, () => sut.handleMemoryExport({ id: f.run.id }))).toBe(
+          JobStatus.Failed,
+        );
+        expect(context.executorStopUnconfirmed === true).toBe(closure === 'unconfirmed');
+        expect(context.adoptions).toEqual([]);
+        expect(mocks.memory.publishArchiveExport).not.toHaveBeenCalled();
+      },
+    );
+
+    it('refuses a delivered version that changed after archive admission', async () => {
+      const f = referenceArchive();
+      f.inputs[0].resourceVersion = 'e'.repeat(64);
+      expect(await sut.handleMemoryExport({ id: f.run.id })).toBe(JobStatus.Failed);
+      expect(mocks.memory.publishArchiveExport).not.toHaveBeenCalled();
+      expect(f.inputs[0].release).toHaveBeenCalledOnce();
+    });
+
+    it('refuses source access withdrawn before delivery', async () => {
+      const f = referenceArchive();
+      mocks.memory.checkArchiveSource.mockResolvedValue(false);
+      expect(await sut.handleMemoryExport({ id: f.run.id })).toBe(JobStatus.Failed);
+      expect(mocks.memory.publishArchiveExport).not.toHaveBeenCalled();
+    });
 
     it('should skip a run it cannot claim', async () => {
       mocks.memory.claimExport.mockResolvedValue(void 0);
@@ -1173,9 +1447,10 @@ describe(MemoryService.name, () => {
 
       expect(addFile).toHaveBeenCalledTimes(1);
       expect(addFile).toHaveBeenCalledWith(mine.originalPath, expect.any(String));
-      expect(mocks.memory.updateExport).toHaveBeenCalledWith(
-        run.id,
-        expect.objectContaining({ status: MemoryExportStatus.Ready, sizeInBytes: 42 }),
+      expect(mocks.memory.publishManagedArchive).toHaveBeenCalledWith(
+        expect.objectContaining({ id: run.id, ownerId }),
+        expect.any(Function),
+        undefined,
       );
     });
 
@@ -1242,9 +1517,10 @@ describe(MemoryService.name, () => {
 
       await expect(sut.handleMemoryExport({ id: run.id })).resolves.toBe(JobStatus.Failed);
       expect(mocks.storage.unlink).toHaveBeenCalled();
-      expect(mocks.memory.updateExport).toHaveBeenCalledWith(
-        run.id,
-        expect.objectContaining({ status: MemoryExportStatus.Failed, error: 'database is gone' }),
+      expect(mocks.memory.settleArchiveExport).toHaveBeenCalledWith(
+        expect.objectContaining({ id: run.id }),
+        MemoryExportStatus.Failed,
+        'database is gone',
       );
     });
   });

@@ -1,10 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import {
   type ExpressionBuilder,
   type Insertable,
   type Kysely,
   type OrderByDirection,
   type SelectQueryBuilder,
+  type Selectable,
+  type Transaction,
   type Updateable,
   sql,
 } from 'kysely';
@@ -18,13 +20,22 @@ import { MemorySearchDto } from 'src/dtos/memory.dto.js';
 import {
   AssetFileType,
   AssetOrderWithRandom,
+  AssetStatus,
   AssetVisibility,
+  JobName,
   MemoryExportFormat,
   MemoryExportStatus,
   MemoryType,
   PetObservationState,
 } from 'src/enum.js';
 
+import { stoppedJobAttempts } from 'src/queue/attempt-stop.js';
+import {
+  AssetLocalEffectRepository,
+  type SourceEpoch,
+  sameSourceEpoch,
+} from 'src/repositories/asset-local-effect.repository.js';
+import { holdSourceAdmission } from 'src/repositories/studio-source-admission.js';
 import { DB } from 'src/schema/index.js';
 import { MemoryExportTable } from 'src/schema/tables/memory-export.table.js';
 import { MemoryTable } from 'src/schema/tables/memory.table.js';
@@ -36,6 +47,15 @@ import {
   withHiddenContentFilter,
 } from 'src/utils/database.js';
 import { isOnTimelineWhateverLock, isTimelineVisible, revealedLockScope } from 'src/utils/locked.js';
+import { lockSourceAuthorities } from 'src/utils/source-authority-lock.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
+import { canonicalJson } from 'src/utils/studio-project.js';
+
+export const MEMORY_EXPORT_MAX_ASSETS = 2000;
+export type MemoryArchiveSource = SourceEpoch & { originalPath: string; checksum: Buffer };
+type MemoryArchiveOutput = { path: string; sizeInBytes: number; processedAssets: number; expiresAt: Date };
+export type MemoryArchiveClaim = Pick<Selectable<MemoryExportTable>, 'id' | 'ownerId' | 'startedAt' | 'assetIds'>;
+
 /**
  * FL-62: the owner's own curation narrows what a search returns — memories they hid, and their
  * "show less" rules. Every field is optional and only changes the query when it is set.
@@ -592,6 +612,261 @@ export class MemoryRepository implements IBulkAsset {
       .orderBy('createdAt', 'desc')
       .execute();
   }
+  async checkArchiveSource(claim: MemoryArchiveClaim, source: MemoryArchiveSource): Promise<boolean> {
+    if (!claim.startedAt) return false;
+    const { rows } = await sql`SELECT e.id FROM memory_export e JOIN "user" u ON u.id=e."ownerId"
+      JOIN asset a ON a.id=${source.assetId}::uuid
+      LEFT JOIN asset_source_epoch epoch ON epoch."assetId"=a.id AND epoch."ownerId"=a."ownerId"
+      WHERE e.id=${claim.id}::uuid AND e."ownerId"=${claim.ownerId}::uuid AND e."startedAt"=${claim.startedAt}
+      AND e.status=${MemoryExportStatus.Running} AND e.format=${MemoryExportFormat.Archive} AND e."cancelRequestedAt" IS NULL
+      AND u."deletedAt" IS NULL AND e."assetIds" ? ${source.assetId}
+      AND a."ownerId"=e."ownerId" AND a."deletedAt" IS NULL AND a.status=${AssetStatus.Active}
+      AND a.visibility=${AssetVisibility.Timeline} AND NOT a."isOffline"
+      AND a."originalPath"=${source.originalPath} AND a.checksum=${source.checksum}
+      AND coalesce(epoch."lastTrashSequence",0)::text=${source.epoch}`.execute(this.db);
+    if (rows.length !== 1) return false;
+    const current = await AssetLocalEffectRepository.sourceEpochs(this.db, [source.assetId]);
+    return current.length === 1 && sameSourceEpoch(source, current[0]);
+  }
+
+  async settleArchiveExport(
+    claim: MemoryArchiveClaim,
+    status: MemoryExportStatus.Failed | MemoryExportStatus.Cancelled,
+    error?: string,
+    executor?: Transaction<DB>,
+  ) {
+    if (!claim.startedAt) return;
+    return (executor ?? this.db)
+      .updateTable('memory_export')
+      .set({ status, error: error ?? null, finishedAt: new Date(), updatedAt: new Date() })
+      .where('id', '=', claim.id)
+      .where('ownerId', '=', claim.ownerId)
+      .where('startedAt', '=', claim.startedAt)
+      .where('status', 'in', [MemoryExportStatus.Running, MemoryExportStatus.Cancelling])
+      .where('format', '=', MemoryExportFormat.Archive)
+      .execute();
+  }
+
+  async publishArchiveExport(
+    claim: MemoryArchiveClaim,
+    sources: MemoryArchiveSource[],
+    install: () => Promise<MemoryArchiveOutput>,
+    executor?: Transaction<DB>,
+  ): Promise<boolean> {
+    const publish = async (tx: Transaction<DB>) => {
+      if (
+        !claim.startedAt ||
+        sources.length === 0 ||
+        sources.length > MEMORY_EXPORT_MAX_ASSETS ||
+        sources.some((s) => !isUuid(s.assetId) || s.ownerId !== claim.ownerId || !claim.assetIds.includes(s.assetId)) ||
+        new Set(sources.map((s) => s.assetId)).size !== sources.length
+      )
+        throw new ConflictException('Memory archive source admission changed');
+      const ordered = sources.toSorted((a, b) => a.assetId.localeCompare(b.assetId));
+      const ids = ordered.map((s) => s.assetId);
+      const expected = new Map(ordered.map((s) => [s.assetId, s]));
+      const hints = await tx
+        .selectFrom('asset')
+        .select(['id', 'ownerId', 'originalPath'])
+        .where('id', 'in', ids)
+        .execute();
+      const authorities = hints.flatMap((a) => {
+        const source = parseSourceOriginalPath(a.originalPath);
+        return source ? [{ sourceId: source.sourceId, ownerId: a.ownerId }] : [];
+      });
+      if (!(await lockSourceAuthorities(tx, authorities)))
+        throw new ConflictException('Memory archive source admission changed');
+      for (const id of ids) await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${id})::int)`.execute(tx);
+      const admission = {
+        sourceEpochs: ordered.map(({ assetId, ownerId, epoch, reference }) => ({
+          assetId,
+          ownerId,
+          epoch,
+          ...(reference && { reference }),
+        })),
+      };
+      const check = async () => {
+        try {
+          await holdSourceAdmission(tx, admission, claim.ownerId);
+        } catch (error) {
+          if (error instanceof ConflictException)
+            throw new ConflictException('Memory archive source admission changed');
+          throw error;
+        }
+      };
+      await check();
+      const assets = await tx
+        .selectFrom('asset')
+        .select(['id', 'ownerId', 'originalPath', 'checksum'])
+        .where('id', 'in', ids)
+        .where('deletedAt', 'is', null)
+        .where('status', '=', AssetStatus.Active)
+        .where('visibility', '=', AssetVisibility.Timeline)
+        .where('isOffline', '=', false)
+        .orderBy('id')
+        .forShare()
+        .execute();
+      const hinted = new Map(hints.map((a) => [a.id, a]));
+      if (
+        assets.length !== sources.length ||
+        assets.some((a) => {
+          const s = expected.get(a.id),
+            hint = hinted.get(a.id);
+          return (
+            !s ||
+            !hint ||
+            hint.ownerId !== a.ownerId ||
+            hint.originalPath !== a.originalPath ||
+            s.ownerId !== a.ownerId ||
+            s.originalPath !== a.originalPath ||
+            !s.checksum.equals(a.checksum)
+          );
+        })
+      )
+        throw new ConflictException('Memory archive source admission changed');
+      const run = await tx
+        .selectFrom('memory_export')
+        .selectAll()
+        .where('id', '=', claim.id)
+        .where('ownerId', '=', claim.ownerId)
+        .where('startedAt', '=', claim.startedAt)
+        .where('status', '=', MemoryExportStatus.Running)
+        .where('format', '=', MemoryExportFormat.Archive)
+        .where('cancelRequestedAt', 'is', null)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!run || canonicalJson(run.assetIds) !== canonicalJson(claim.assetIds)) return false;
+      const output = await install();
+      await check();
+      await tx
+        .updateTable('memory_export')
+        .set({
+          ...output,
+          status: MemoryExportStatus.Ready,
+          finishedAt: new Date(),
+          updatedAt: new Date(),
+          settings: {
+            ...run.settings,
+            sourceEpochs: ordered.map(({ assetId, ownerId, epoch, reference }) => ({
+              assetId,
+              ownerId,
+              epoch,
+              ...(reference && { reference }),
+            })),
+          },
+        })
+        .where('id', '=', claim.id)
+        .execute();
+      await check();
+      return true;
+    };
+    return executor ? publish(executor) : this.db.transaction().execute(publish);
+  }
+
+  async publishManagedArchive(
+    claim: MemoryArchiveClaim,
+    install: () => Promise<MemoryArchiveOutput>,
+    executor?: Transaction<DB>,
+  ): Promise<boolean> {
+    if (!claim.startedAt) return false;
+    const publish = async (tx: Transaction<DB>) => {
+      const run = await tx
+        .selectFrom('memory_export')
+        .select('id')
+        .where('id', '=', claim.id)
+        .where('ownerId', '=', claim.ownerId)
+        .where('startedAt', '=', claim.startedAt!)
+        .where('format', '=', MemoryExportFormat.Archive)
+        .where('status', '=', MemoryExportStatus.Running)
+        .where('cancelRequestedAt', 'is', null)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!run) return false;
+      const output = await install();
+      await tx
+        .updateTable('memory_export')
+        .set({ ...output, status: MemoryExportStatus.Ready, finishedAt: new Date(), updatedAt: new Date() })
+        .where('id', '=', run.id)
+        .execute();
+      return true;
+    };
+    return executor ? publish(executor) : this.db.transaction().execute(publish);
+  }
+
+  getFailedArchiveExports(ids: string[]) {
+    if (ids.length === 0) return Promise.resolve([]);
+    return this.db
+      .selectFrom('memory_export')
+      .selectAll()
+      .where('id', 'in', ids)
+      .where('format', '=', MemoryExportFormat.Archive)
+      .where('status', 'in', [MemoryExportStatus.Failed, MemoryExportStatus.Cancelled])
+      .execute();
+  }
+
+  async removeArchiveFilesIfStopped(id: string, remove: () => Promise<void>): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) => {
+      const { rows } = await sql<{ state: string; stopped: boolean }>`SELECT j.state,${stoppedJobAttempts} AS stopped
+        FROM job j WHERE j.name=${JobName.MemoryExport} AND j.data->>'id'=${id}
+        ORDER BY j.id FOR SHARE OF j`.execute(tx);
+      if (rows.some((row) => ['pending', 'waiting', 'active', 'blocked'].includes(row.state) || !row.stopped))
+        return false;
+      await remove();
+      return true;
+    });
+  }
+
+  async reclaimArchive(
+    claim: MemoryArchiveClaim,
+    now: Date,
+    staleBefore: Date,
+    remove: (run: Selectable<MemoryExportTable>) => Promise<void>,
+  ): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) => {
+      const run = await tx
+        .selectFrom('memory_export')
+        .selectAll()
+        .where('id', '=', claim.id)
+        .where('ownerId', '=', claim.ownerId)
+        .where(sql<boolean>`"startedAt" IS NOT DISTINCT FROM ${claim.startedAt}`)
+        .where('format', '=', MemoryExportFormat.Archive)
+        .forUpdate()
+        .skipLocked()
+        .executeTakeFirst();
+      if (!run) return false;
+      const expired =
+        run.status === MemoryExportStatus.Ready && run.expiresAt !== null && new Date(run.expiresAt) <= now;
+      const failed = [MemoryExportStatus.Failed, MemoryExportStatus.Cancelled].includes(run.status);
+      const stale =
+        [MemoryExportStatus.Pending, MemoryExportStatus.Running, MemoryExportStatus.Cancelling].includes(run.status) &&
+        new Date(run.updatedAt) <= staleBefore;
+      if (!expired && !failed && !stale) return false;
+      const { rows: executors } = await sql`SELECT j.id FROM job j
+        WHERE j.name=${JobName.MemoryExport} AND j.data->>'id'=${run.id}
+        AND (j.state IN ('pending','waiting','active','blocked') OR NOT ${stoppedJobAttempts}) LIMIT 1`.execute(tx);
+      if (executors.length > 0) return false;
+      await remove(run);
+      if (expired) await tx.deleteFrom('memory_export').where('id', '=', run.id).execute();
+      else
+        await tx
+          .updateTable('memory_export')
+          .set({
+            path: null,
+            sizeInBytes: null,
+            expiresAt: null,
+            updatedAt: now,
+            ...(stale && {
+              status: run.cancelRequestedAt ? MemoryExportStatus.Cancelled : MemoryExportStatus.Failed,
+              error: run.cancelRequestedAt ? null : 'Export was interrupted and did not resume',
+              finishedAt: now,
+            }),
+          })
+          .where('id', '=', run.id)
+          .execute();
+      return true;
+    });
+  }
+
   async updateExport(id: string, update: Updateable<MemoryExportTable>) {
     return this.db
       .updateTable('memory_export')
@@ -665,14 +940,13 @@ export class MemoryRepository implements IBulkAsset {
     return this.db
       .selectFrom('memory_export')
       .selectAll()
+      .where('format', '=', MemoryExportFormat.Archive)
       .where((eb) =>
         eb.or([
           eb.and([eb('status', '=', MemoryExportStatus.Ready), eb('expiresAt', '<=', now)]),
           eb.and([
             eb('status', 'in', [MemoryExportStatus.Pending, MemoryExportStatus.Running, MemoryExportStatus.Cancelling]),
             eb('updatedAt', '<=', staleBefore),
-            // a highlight renders as a Studio export, whose lease and sweep recover a lost worker (FL-194)
-            eb('format', '=', MemoryExportFormat.Archive),
           ]),
         ]),
       )

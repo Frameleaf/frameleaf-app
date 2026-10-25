@@ -2,6 +2,7 @@ import { Kysely, type QueryExecutorProvider, Transaction, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import type { DB } from 'src/schema/index.js';
 import { JobName, QueueName } from 'src/enum.js';
+import { stoppedJobAttempts } from 'src/queue/attempt-stop.js';
 import {
   publishLibraryFollowups,
   redactLibraryPayloads,
@@ -43,16 +44,6 @@ import {
 } from 'src/queue/types.js';
 
 type Executor = Kysely<DB>;
-
-// An unclaimed row no longer carries its token. Retained attempts, not its state, prove it stopped.
-const stoppedJobAttempts = sql`((j.attempt = 0 or exists (
-  select 1 from job_attempt a where a."jobId" = j.id and a.attempt = j.attempt))
-  and not exists (select 1 from job_attempt a where a."jobId" = j.id
-    and (a.outcome is distinct from 'completed' or a."finishedAt" is null)
-    and not exists (select 1 from system_metadata m where m.key = 'frameleaf-attempt-evidence:' || a.token::text
-      and m.value->>'jobId' = j.id::text and m.value ? 'stoppedAt')
-    and not exists (select 1 from system_metadata m where m.key = 'frameleaf-worker-stopped:' || a."workerId"::text
-      and m.value->>'workerId' = a."workerId"::text and m.value ? 'stoppedAt')))`;
 
 /**
  * Local capacity frees up within seconds. Any other dependency (machine learning off or unreachable,
