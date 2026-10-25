@@ -1,4 +1,6 @@
+import { EventEmitter } from 'node:events';
 import request from 'supertest';
+import type { Response } from 'express';
 import { StudioMediaController } from 'src/controllers/studio-media.controller.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StudioMediaService } from 'src/services/studio-media.service.js';
@@ -33,7 +35,12 @@ describe(StudioMediaController.name, () => {
       await request(ctx.getHttpServer())
         .get(`/assets/${id}/filmstrip`)
         .query({ count: '12', height: '64', format: 'webp' });
-      expect(service.getFilmstrip).toHaveBeenCalledWith(undefined, id, { count: 12, height: 64, format: 'webp' });
+      expect(service.getFilmstrip).toHaveBeenCalledWith(
+        undefined,
+        id,
+        { count: 12, height: 64, format: 'webp' },
+        expect.any(AbortSignal),
+      );
     });
 
     it('should reject out-of-range sizes and unknown formats', async () => {
@@ -68,7 +75,12 @@ describe(StudioMediaController.name, () => {
 
     it('should parse buckets and channels', async () => {
       await request(ctx.getHttpServer()).get(`/assets/${id}/waveform`).query({ buckets: '500', channels: 'all' });
-      expect(service.getWaveform).toHaveBeenCalledWith(undefined, id, { buckets: 500, channels: 'all' });
+      expect(service.getWaveform).toHaveBeenCalledWith(
+        undefined,
+        id,
+        { buckets: 500, channels: 'all' },
+        expect.any(AbortSignal),
+      );
     });
 
     it('should reject out-of-range buckets', async () => {
@@ -78,5 +90,24 @@ describe(StudioMediaController.name, () => {
       }
       expect(service.getWaveform).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('Studio timeline request cancellation', () => {
+  it.each(['getAssetFilmstrip', 'getAssetWaveform'] as const)('joins %s after client disconnect', async (method) => {
+    const response = Object.assign(new EventEmitter(), { destroyed: false });
+    const work = vi.fn(
+      (_auth, _id, _dto, signal: AbortSignal) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        }),
+    );
+    const controller = new StudioMediaController({ getFilmstrip: work, getWaveform: work } as never, {} as never);
+    const result = controller[method](undefined as never, { id }, {}, response as unknown as Response);
+    const rejected = expect(result).rejects.toThrow();
+    response.emit('close');
+    await rejected;
+    expect(work.mock.calls[0][3].aborted).toBe(true);
+    expect(response.listenerCount('close')).toBe(0);
   });
 });

@@ -1,10 +1,13 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Stats } from 'node:fs';
 import { Writable } from 'node:stream';
+import { setImmediate } from 'node:timers/promises';
 import { CacheControl } from 'src/enum.js';
 import { StudioMediaService, fillMissingFrames, getStudioMediaFolder } from 'src/services/studio-media.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
+import { executionSignal } from 'src/utils/execution-signal.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
+import { sourceOriginalPath } from 'src/utils/source-original.js';
 import { PeakAccumulator, encodeWaveformPeaks, studioMediaFingerprint } from 'src/utils/studio-media.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { videoInfoStub } from 'test/fixtures/media.stub.js';
@@ -43,6 +46,248 @@ describe(StudioMediaService.name, () => {
     mocks.storage.readFile.mockRejectedValue(new Error('ENOENT'));
     mocks.storage.checkFileExists.mockResolvedValue(true);
     mocks.storage.unlinkDir.mockResolvedValue();
+  });
+
+  describe('reference timeline originals', () => {
+    const reference = () => {
+      const path = sourceOriginalPath({ sourceId: assetId, resourceKey: 'b'.repeat(64) });
+      mocks.asset.getForVideo.mockResolvedValue({
+        ownerId,
+        originalPath: path,
+        encodedVideoPath: null,
+        editedVideoPath: null,
+      });
+      mocks.media.probe.mockResolvedValue(videoInfo(false));
+      const abort = new AbortController();
+      const input = {
+        localPath: '/private/source.artifact',
+        resourceId: assetId,
+        resourceVersion: 'e'.repeat(64),
+        verifiedSha256: 'd'.repeat(64),
+        byteLength: 100,
+        signal: abort.signal,
+        check: vi.fn().mockResolvedValue(undefined),
+        release: vi.fn().mockResolvedValue(undefined),
+      };
+      const originals = {
+        open: vi.fn(async (_id: string, _reader: unknown, authorize: () => Promise<void>, _signal?: AbortSignal) => {
+          await authorize();
+          return input;
+        }),
+      };
+      Object.assign(sut, { sourceOriginalService: originals });
+      return { path, input, originals, abort };
+    };
+
+    it('shares one verified input across identical filmstrip requests and joins its release after publication', async () => {
+      const f = reference();
+      mocks.media.composeFilmstrip.mockImplementation(() => {
+        expect(f.input.release).not.toHaveBeenCalled();
+        return Promise.resolve();
+      });
+      const results = await Promise.all([
+        sut.getFilmstrip(authStub.admin, assetId, { count: 2 }),
+        sut.getFilmstrip(authStub.admin, assetId, { count: 2 }),
+      ]);
+      expect(f.originals.open).toHaveBeenCalledOnce();
+      expect(mocks.media.probe).toHaveBeenCalledWith(f.input.localPath);
+      expect(mocks.media.transcode.mock.calls.every(([path]) => path === f.input.localPath)).toBe(true);
+      expect(mocks.media.transcode).toHaveBeenCalledTimes(2);
+      expect(f.input.release).toHaveBeenCalledOnce();
+      expect(mocks.storage.stat).not.toHaveBeenCalledWith(f.path);
+      expect(results[0].version).toBe(results[1].version);
+      expect(JSON.stringify(results)).not.toContain('/private');
+    });
+
+    it('keys cached waveform results by verified resource version and digest, not temporary file times', async () => {
+      const f = reference();
+      mocks.storage.readFile.mockResolvedValue(encodeWaveformPeaks(new PeakAccumulator(1, 1).finish()));
+      const first = await sut.getWaveform(authStub.admin, assetId, {});
+      f.input.resourceVersion = 'f'.repeat(64);
+      const second = await sut.getWaveform(authStub.admin, assetId, {});
+      f.input.verifiedSha256 = 'c'.repeat(64);
+      const third = await sut.getWaveform(authStub.admin, assetId, {});
+      expect(new Set([first.version, second.version, third.version]).size).toBe(3);
+      expect(mocks.media.probe).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledTimes(3);
+      expect(mocks.storage.stat).not.toHaveBeenCalledWith(f.path);
+    });
+
+    it('rechecks source authority before publishing a generated filmstrip', async () => {
+      const f = reference();
+      mocks.media.transcode.mockImplementation(() => {
+        f.input.check.mockRejectedValue(new Error('source revoked'));
+        return Promise.resolve();
+      });
+      await expect(sut.getFilmstrip(authStub.admin, assetId, { count: 2 })).rejects.toThrow('source revoked');
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('retains original and work files without retrying after unconfirmed encoder shutdown', async () => {
+      const f = reference();
+      mocks.media.transcode.mockRejectedValue(new Error('media_process_shutdown_unconfirmed'));
+      await expect(sut.getFilmstrip(authStub.admin, assetId, { count: 2 })).rejects.toThrow(
+        'media_process_shutdown_unconfirmed',
+      );
+      expect(mocks.media.transcode).toHaveBeenCalledOnce();
+      expect(f.input.release).not.toHaveBeenCalled();
+      expect(mocks.storage.unlinkDir).not.toHaveBeenCalled();
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      await expect(sut.getFilmstrip(authStub.admin, assetId, { count: 2 })).rejects.toThrow('generation is stopping');
+      expect(f.originals.open).toHaveBeenCalledOnce();
+      expect(mocks.media.transcode).toHaveBeenCalledOnce();
+    });
+
+    it.each(['confirmed', 'unconfirmed'] as const)(
+      'joins active work before asset deletion and retains %s shutdown ownership',
+      async (shutdown) => {
+        const f = reference();
+        const { promise: started, resolve: start } = Promise.withResolvers<void>();
+        const { promise: stopped, resolve: stop } = Promise.withResolvers<void>();
+        let nativeSignal: AbortSignal | undefined;
+        mocks.media.transcode.mockImplementation(() => {
+          nativeSignal = executionSignal();
+          start();
+          return stopped.then(() => {
+            if (shutdown === 'unconfirmed') throw new Error('media_process_shutdown_unconfirmed');
+            nativeSignal?.throwIfAborted();
+          });
+        });
+        const result = sut.getFilmstrip(authStub.admin, assetId, { count: 1 });
+        const rejected = expect(result).rejects.toThrow();
+        await started;
+        const deletion = sut.onAssetDelete({ assetId, userId: ownerId });
+        try {
+          await setImmediate();
+          expect(nativeSignal?.aborted).toBe(true);
+          expect(mocks.storage.unlinkDir).not.toHaveBeenCalledWith(folder, expect.anything());
+          expect(f.input.release).not.toHaveBeenCalled();
+        } finally {
+          stop();
+          await Promise.all([rejected, deletion]);
+        }
+        if (shutdown === 'confirmed') {
+          expect(f.input.release).toHaveBeenCalledOnce();
+          expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(folder, { recursive: true, force: true });
+        } else {
+          expect(f.input.release).not.toHaveBeenCalled();
+          expect(mocks.storage.unlinkDir).not.toHaveBeenCalled();
+          await sut.onAssetDelete({ assetId, userId: ownerId });
+          expect(mocks.storage.unlinkDir).not.toHaveBeenCalled();
+        }
+      },
+    );
+
+    it('retains quarantined generation when its asset is deleted later', async () => {
+      const f = reference();
+      mocks.media.transcode.mockRejectedValue(new Error('media_process_shutdown_unconfirmed'));
+      await expect(sut.getFilmstrip(authStub.admin, assetId, { count: 1 })).rejects.toThrow('shutdown_unconfirmed');
+      await sut.onAssetDelete({ assetId, userId: ownerId });
+      expect(mocks.storage.unlinkDir).not.toHaveBeenCalled();
+      expect(f.input.release).not.toHaveBeenCalled();
+    });
+
+    it.each(['write', 'recheck'])('cleans only its private waveform staging file after %s failure', async (failure) => {
+      const f = reference();
+      mocks.storage.createOrOverwriteFile.mockImplementation(() => {
+        if (failure === 'write') return Promise.reject(new Error('waveform write failed'));
+        f.input.check.mockRejectedValue(new Error('source revoked'));
+        return Promise.resolve();
+      });
+      await expect(sut.getWaveform(authStub.admin, assetId, {})).rejects.toThrow();
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/waveform-.*[.]tmp$/));
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(f.input.localPath);
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('does not cancel shared processing when one of two waiters disconnects', async () => {
+      const f = reference();
+      const first = new AbortController();
+      const { promise: started, resolve: start } = Promise.withResolvers<void>();
+      const { promise: held, resolve: finish } = Promise.withResolvers<void>();
+      let nativeSignal: AbortSignal | undefined;
+      mocks.media.transcode.mockImplementation(() => {
+        nativeSignal = executionSignal();
+        start();
+        return held;
+      });
+      const a = sut.getFilmstrip(authStub.admin, assetId, { count: 1 }, first.signal);
+      const b = sut.getFilmstrip(authStub.admin, assetId, { count: 1 });
+      const rejected = expect(a).rejects.toThrow();
+      await started;
+      first.abort();
+      await rejected;
+      expect(nativeSignal?.aborted).toBe(false);
+      expect(f.input.release).not.toHaveBeenCalled();
+      finish();
+      await expect(b).resolves.toMatchObject({ assetId });
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('keeps each borrowed input until its own native work stops across index and sprite requests', async () => {
+      const f = reference();
+      const abort = new AbortController();
+      const inputs: (typeof f.input)[] = [];
+      f.originals.open.mockImplementation(async (_id, _reader, authorize, signal) => {
+        await authorize();
+        const input = { ...f.input, signal: signal!, release: vi.fn().mockResolvedValue(undefined) };
+        inputs.push(input);
+        return input;
+      });
+      const { promise: started, resolve: start } = Promise.withResolvers<void>();
+      const { promise: stopped, resolve: stop } = Promise.withResolvers<void>();
+      mocks.media.transcode.mockImplementation(() => {
+        const signal = executionSignal();
+        start();
+        return stopped.then(() => {
+          signal?.throwIfAborted();
+        });
+      });
+      const a = sut.getFilmstrip(authStub.admin, assetId, { count: 1 }, abort.signal);
+      const rejected = expect(a).rejects.toThrow();
+      const b = sut.viewFilmstripSprite(authStub.admin, assetId, { count: 1 });
+      const outcome = b.then((value) => ({ value })).catch((error: unknown) => ({ error }));
+      try {
+        await started;
+        await setImmediate();
+        expect(inputs).toHaveLength(2);
+        abort.abort();
+        await setImmediate();
+        expect(inputs[0].release).not.toHaveBeenCalled();
+        stop();
+        await rejected;
+        expect(await outcome).toHaveProperty('value');
+        expect(inputs.every((input) => input.release.mock.calls.length === 1)).toBe(true);
+      } finally {
+        stop();
+        await Promise.allSettled([a, b, rejected]);
+      }
+    });
+
+    it('joins native shutdown before releasing the last canceled waiter input', async () => {
+      const f = reference();
+      const abort = new AbortController();
+      const { promise: started, resolve: start } = Promise.withResolvers<void>();
+      const { promise: stopped, resolve: stop } = Promise.withResolvers<void>();
+      mocks.media.transcode.mockImplementation(() => {
+        start();
+        return stopped.then(() => {
+          executionSignal()?.throwIfAborted();
+        });
+      });
+      const result = sut.getFilmstrip(authStub.admin, assetId, { count: 1 }, abort.signal);
+      const rejected = expect(result).rejects.toThrow();
+      await started;
+      abort.abort();
+      await Promise.resolve();
+      expect(f.input.release).not.toHaveBeenCalled();
+      stop();
+      await rejected;
+      expect(f.input.release).toHaveBeenCalledOnce();
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+    });
   });
 
   it('keeps its cache in a hidden folder beside the thumbnails', () => {
@@ -89,6 +334,46 @@ describe(StudioMediaService.name, () => {
     await expect(limited(() => Promise.resolve())).resolves.toBeUndefined();
   });
 
+  it('removes canceled capacity waiters without starting their work', async () => {
+    const limited = (work: () => Promise<void>, signal?: AbortSignal) =>
+      (sut as unknown as { limited: (work: () => Promise<void>, signal?: AbortSignal) => Promise<void> }).limited(
+        work,
+        signal,
+      );
+    const { promise: held, resolve: finish } = Promise.withResolvers<void>();
+    const active = [limited(() => held), limited(() => held)];
+    const abort = new AbortController();
+    const queued = vi.fn(() => Promise.resolve());
+    const result = limited(queued, abort.signal);
+    const rejected = expect(result).rejects.toThrow();
+    abort.abort();
+    await rejected;
+    expect(queued).not.toHaveBeenCalled();
+    finish();
+    await Promise.all(active);
+    await limited(queued);
+    expect(queued).toHaveBeenCalledOnce();
+  });
+
+  it('keeps capacity reserved while native shutdown is unconfirmed', async () => {
+    const limited = (work: () => Promise<void>, signal?: AbortSignal) =>
+      (sut as unknown as { limited: (work: () => Promise<void>, signal?: AbortSignal) => Promise<void> }).limited(
+        work,
+        signal,
+      );
+    for (let index = 0; index < 2; index++)
+      await expect(limited(() => Promise.reject(new Error('media_process_shutdown_unconfirmed')))).rejects.toThrow(
+        'shutdown_unconfirmed',
+      );
+    const abort = new AbortController();
+    const work = vi.fn(() => Promise.resolve());
+    const result = limited(work, abort.signal);
+    const rejected = expect(result).rejects.toThrow();
+    abort.abort();
+    await rejected;
+    expect(work).not.toHaveBeenCalled();
+  });
+
   describe('filmstrip', () => {
     it('retains encoder-owned work and stops the frame loop when shutdown is unconfirmed', async () => {
       mocks.media.probe.mockResolvedValue(videoInfo(false));
@@ -121,7 +406,7 @@ describe(StudioMediaService.name, () => {
       const spritePath = `${folder}/filmstrip-${version}-4x90.jpg`;
       expect(mocks.storage.rename).toHaveBeenCalledWith(expect.stringContaining('/.work-'), spritePath);
       expect(mocks.storage.createOrOverwriteFile).toHaveBeenCalledWith(
-        `${folder}/filmstrip-${version}-4x90.jpeg.json`,
+        expect.stringMatching(/[.]work-.*\/index[.]json$/),
         expect.any(Buffer),
       );
       expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(expect.stringContaining('/.work-'), {
@@ -147,6 +432,19 @@ describe(StudioMediaService.name, () => {
           { index: 3, timeMs: 8750, x: 480, y: 0 },
         ],
       });
+    });
+
+    it('stages its index privately before atomically publishing the cache entry', async () => {
+      mocks.media.probe.mockResolvedValue(videoInfo(false));
+      await sut.getFilmstrip(authStub.admin, assetId, { count: 1 });
+      expect(mocks.storage.createOrOverwriteFile).toHaveBeenCalledWith(
+        expect.stringMatching(/[.]work-.*\/index[.]json$/),
+        expect.any(Buffer),
+      );
+      expect(mocks.storage.rename).toHaveBeenCalledWith(
+        expect.stringMatching(/[.]work-.*\/index[.]json$/),
+        `${folder}/filmstrip-${version}-1x90.jpeg.json`,
+      );
     });
 
     it('serves the cached index and sprite without running ffmpeg', async () => {

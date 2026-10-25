@@ -41,8 +41,9 @@ export class StudioMediaController {
     @Auth() auth: AuthDto,
     @Param() { id }: UUIDParamDto,
     @Query() dto: AssetFilmstripOptionsDto,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<AssetFilmstripResponseDto> {
-    return this.service.getFilmstrip(auth, id, dto);
+    return this.withResponseSignal(res, (signal) => this.service.getFilmstrip(auth, id, dto, signal));
   }
 
   @Get(':id/filmstrip/sprite')
@@ -62,7 +63,7 @@ export class StudioMediaController {
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
-    await sendFile(res, next, () => this.service.viewFilmstripSprite(auth, id, dto), this.logger);
+    await sendFile(res, next, (signal) => this.service.viewFilmstripSprite(auth, id, dto, signal), this.logger);
   }
 
   @Get(':id/waveform')
@@ -77,7 +78,22 @@ export class StudioMediaController {
     @Auth() auth: AuthDto,
     @Param() { id }: UUIDParamDto,
     @Query() dto: AssetWaveformOptionsDto,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<AssetWaveformResponseDto> {
-    return this.service.getWaveform(auth, id, dto);
+    return this.withResponseSignal(res, (signal) => this.service.getWaveform(auth, id, dto, signal));
+  }
+  private async withResponseSignal<T>(res: Response, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const controller = new AbortController();
+    const abandon = () => controller.abort();
+    res.once('close', abandon);
+    try {
+      if (res.destroyed) abandon();
+      controller.signal.throwIfAborted();
+      const result = await work(controller.signal);
+      controller.signal.throwIfAborted();
+      return result;
+    } finally {
+      res.off('close', abandon);
+    }
   }
 }
