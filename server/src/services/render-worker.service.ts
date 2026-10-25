@@ -7,7 +7,7 @@ import {
   Optional,
   UnauthorizedException,
 } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import type { Transaction } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -77,11 +77,13 @@ import {
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { RENDER_WORKER_LIMIT_INSTANCE_SUBJECT } from 'src/schema/tables/render-worker.table.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.service.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { RenderWorkerOrigin, isBundledRenderWorker, isInternalWorkerOrigin } from 'src/utils/bundled-render-worker.js';
+import { withExecutionCleanup } from 'src/utils/execution-signal.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import {
   GpuMemoryBytesSchema,
@@ -110,9 +112,11 @@ import {
   verifyInputGrant,
 } from 'src/utils/render-admission.js';
 import { RenderArtifact, openRenderArtifact, receiveRenderArtifact } from 'src/utils/render-artifact.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 import { sameTimeBase } from 'src/utils/studio-export-contract.js';
 import { studioExportFormatSpec } from 'src/utils/studio-export-formats.js';
 import { studioFontFileInputId } from 'src/utils/studio-fonts.js';
+import { canonicalJson } from 'src/utils/studio-project.js';
 import { StudioDestination, isStudioDestination } from 'src/utils/studio-resources.js';
 import { sidecarSealOf } from 'src/utils/studio-subtitle-sidecar.js';
 
@@ -330,6 +334,9 @@ export const RENDER_DEVICE_LOST = 'device_lost';
 @Injectable()
 export class RenderWorkerService {
   private destinationHealth: DestinationHealthProvider;
+  @Inject(SourceOriginalService)
+  private sourceOriginalService!: SourceOriginalService;
+  private readonly sourceReaderOwnerId = randomUUID();
 
   constructor(
     private logger: LoggingRepository,
@@ -1384,7 +1391,7 @@ export class RenderWorkerService {
     operationId: string,
     dto: RenderWorkerCompleteDto,
   ): Promise<RenderWorkerWriteResultDto> {
-    const { worker } = await this.authenticate(sessionToken);
+    const { worker, session } = await this.authenticate(sessionToken);
     const operation = await this.requireClaimed(worker.id, operationId, dto.claimToken);
 
     if (operation.kind === MediaOperationKind.StudioExport) {
@@ -1474,7 +1481,13 @@ export class RenderWorkerService {
       return { accepted: false, refusal: null };
     }
 
-    const accepted = await this.operations.complete(operation.id, dto.claimToken, { resultAssetId: dto.resultAssetId });
+    const accepted =
+      (await this.operations.publishValidated(operation.id, dto.claimToken, () => Promise.resolve(true), {
+        workerId: worker.id,
+        sessionId: session.id,
+        sessionTokenHash: session.token,
+        resultAssetId: dto.resultAssetId,
+      })) === 'completed';
     if (accepted) {
       this.logger.log(`Render worker ${worker.id} completed media operation ${operation.id}`);
     }
@@ -1619,7 +1632,13 @@ export class RenderWorkerService {
    * the claim is served even while the grant is unexpired. Locked is not "lost access": a
    * background task reads every asset the owner's job names (owner decision, September 22, 2026).
    */
-  async readInput(sessionToken: string | undefined, operationId: string, grant: string): Promise<FileDownloadResponse> {
+  async readInput(
+    sessionToken: string | undefined,
+    operationId: string,
+    grant: string,
+    signal?: AbortSignal,
+  ): Promise<FileDownloadResponse> {
+    signal?.throwIfAborted();
     const { worker, session } = await this.authenticate(sessionToken);
 
     const operation = (await this.repository.getClaimedByWorker(operationId, worker.id)) as unknown as
@@ -1640,6 +1659,81 @@ export class RenderWorkerService {
     const path = decision.payload.token
       ? await this.studioInputPath(operation, worker.id, session.id, decision.payload)
       : await this.assetInputPath(operation, session.id, decision.payload);
+
+    if (parseSourceOriginalPath(path)) {
+      const claimToken = operation.claimToken;
+      const ownerId = operation.ownerId;
+      const workerId = worker.id;
+      const sessionId = session.id;
+      const sourceSnapshot = canonicalJson(operation.snapshot);
+      const authorize = async () => {
+        signal?.throwIfAborted();
+        const live = await this.authenticate(sessionToken, false);
+        const current = (await this.repository.getClaimedByWorker(operationId, workerId)) as MediaOperation | undefined;
+        if (
+          live.worker.id !== workerId ||
+          live.session.id !== sessionId ||
+          !current ||
+          current.claimToken !== claimToken ||
+          current.ownerId !== ownerId ||
+          current.assetId !== operation.assetId ||
+          current.projectId !== operation.projectId ||
+          current.revisionId !== operation.revisionId ||
+          current.kind !== operation.kind ||
+          current.destination !== operation.destination ||
+          canonicalJson(current.snapshot) !== sourceSnapshot ||
+          !live.session.scopes.includes(current.kind as MediaOperationKind) ||
+          !live.worker.kinds.includes(current.kind as MediaOperationKind) ||
+          live.worker.destination !== current.destination ||
+          live.worker.engineDigest !== live.session.engineDigest ||
+          (typeof current.snapshot.engineDigest === 'string' &&
+            current.snapshot.engineDigest !== live.worker.engineDigest) ||
+          current.claimedBy !== workerId ||
+          current.cancelRequestedAt ||
+          current.pauseRequestedAt ||
+          current.status === MediaOperationStatus.Cancelling ||
+          !current.claimExpiresAt ||
+          !(new Date(current.claimExpiresAt).getTime() > Date.now()) ||
+          !verifyInputGrant(grant, {
+            operationId,
+            binding: { claimToken, sessionTokenHash: live.session.token },
+            now: new Date(),
+          }).valid
+        )
+          throw new ForbiddenException('Input grant invalid');
+        const currentPath = decision.payload.token
+          ? await this.studioInputPath(current, workerId, sessionId, decision.payload)
+          : await this.assetInputPath(current, sessionId, decision.payload);
+        if (currentPath !== path) throw new ForbiddenException('Input grant invalid');
+        signal?.throwIfAborted();
+      };
+      const asset = await this.assetRepository.getById(decision.payload.resourceId);
+      if (!asset || asset.originalPath !== path) throw new NotFoundException('Input not available');
+      const input = await this.sourceOriginalService.open(
+        asset.id,
+        {
+          kind: 'http',
+          ownerId: this.sourceReaderOwnerId,
+          readerId: randomUUID(),
+        },
+        authorize,
+        signal,
+      );
+      try {
+        await input.check();
+        return new FileDownloadResponse({
+          path,
+          stream: input.stream,
+          contentLength: input.byteLength,
+          contentType: mimeTypes.lookup(asset.originalFileName),
+          cacheControl: CacheControl.PrivateWithoutCache,
+          release: () => withExecutionCleanup(() => input.release()),
+        });
+      } catch (error) {
+        await withExecutionCleanup(() => input.release());
+        throw error;
+      }
+    }
 
     return new FileDownloadResponse({
       path,
@@ -1769,6 +1863,20 @@ export class RenderWorkerService {
         true,
       );
       if (allowed.has(operation.assetId)) {
+        const asset = await this.assetRepository.getById(operation.assetId);
+        const bound = operation.snapshot.sourceEpochs as StudioAuthorizedManifest['sourceEpochs'];
+        if (
+          ((asset && parseSourceOriginalPath(asset.originalPath)) || bound !== undefined) &&
+          (!asset ||
+            asset.ownerId !== operation.ownerId ||
+            !Array.isArray(bound) ||
+            bound.length !== 1 ||
+            !bound[0] ||
+            bound[0].assetId !== operation.assetId ||
+            bound[0].ownerId !== operation.ownerId ||
+            !(await this.studioResources.sourceEpochsMatch(bound, [operation.assetId])))
+        )
+          return { complete: false, refused: [{ key: 'source', reason: 'source-admission-revoked' }] };
         inputs.push({
           inputId: 'source',
           kind: 'library-asset',

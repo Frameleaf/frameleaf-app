@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import type { PostgresError } from 'postgres';
 import type { RenderArtifact } from 'src/utils/render-artifact.js';
 import {
+  AssetStatus,
   DatabaseLock,
   MediaOperationCheckpointState,
   MediaOperationDestination,
@@ -33,6 +34,7 @@ import {
   PAUSABLE_MEDIA_OPERATION_STATUSES,
   SAFE_MEDIA_OPERATION_REPLAY_KINDS,
   TERMINAL_MEDIA_OPERATION_STATUSES,
+  isRenderWorkerMediaOperationKind,
 } from 'src/utils/media-operation.js';
 import { lockSourceAuthorities } from 'src/utils/source-authority-lock.js';
 import { parseSourceOriginalPath } from 'src/utils/source-original.js';
@@ -1252,6 +1254,7 @@ export class MediaOperationRepository {
     id: string,
     claimToken: string,
     publish: (trx: Transaction<DB>) => Promise<boolean>,
+    remote?: { workerId: string; sessionId: string; sessionTokenHash: Buffer; resultAssetId: string | null },
   ): Promise<'completed' | 'rejected' | 'lost'> {
     let completed: MediaOperationChange | undefined;
     const outcome = await this.db.transaction().execute(async (trx): Promise<'completed' | 'rejected' | 'lost'> => {
@@ -1262,17 +1265,33 @@ export class MediaOperationRepository {
         .where('claimToken', '=', claimToken)
         .where('status', '=', MediaOperationStatus.Validating)
         .executeTakeFirst();
-      if (!observed) return 'lost';
+      if (!observed || (remote && !isRenderWorkerMediaOperationKind(observed.kind as MediaOperationKind)))
+        return 'lost';
+      const singleAsset =
+        !!remote &&
+        [MediaOperationKind.Restoration, MediaOperationKind.RestorationPreview, MediaOperationKind.QuickEdit].includes(
+          observed.kind as MediaOperationKind,
+        );
       const epochs = observed.snapshot.sourceEpochs;
+      if (
+        singleAsset &&
+        (!observed.assetId ||
+          (epochs !== undefined &&
+            (!Array.isArray(epochs) ||
+              epochs.length !== 1 ||
+              epochs[0]?.assetId !== observed.assetId ||
+              epochs[0]?.ownerId !== observed.ownerId)))
+      )
+        throw new ConflictException('studio_source_admission_changed');
+      // Match metadata writers across the entire source/result cohort before taking asset rows.
       const ids: string[] = [];
-      if (epochs !== undefined) {
-        if (!Array.isArray(epochs) || epochs.length > STUDIO_MAX_REFERENCES)
-          throw new ConflictException('studio_source_admission_changed');
-        for (const epoch of epochs) {
-          if (!isStudioUuid(epoch?.assetId)) throw new ConflictException('studio_source_admission_changed');
-          ids.push(epoch.assetId);
-        }
+      if (Array.isArray(epochs)) {
+        if (epochs.length > STUDIO_MAX_REFERENCES) throw new ConflictException('studio_source_admission_changed');
+        ids.push(...epochs.flatMap((row) => (isStudioUuid(row?.assetId) ? [row.assetId] : [])));
+        if (ids.length !== epochs.length) throw new ConflictException('studio_source_admission_changed');
       }
+      if (singleAsset) ids.push(observed.assetId!);
+      if (remote?.resultAssetId) ids.push(remote.resultAssetId.toLowerCase());
       const hints =
         ids.length > 0
           ? await trx.selectFrom('asset').select(['ownerId', 'originalPath']).where('id', 'in', ids).execute()
@@ -1283,22 +1302,98 @@ export class MediaOperationRepository {
       });
       if (!(await lockSourceAuthorities(trx, authorities)))
         throw new ConflictException('studio_source_admission_changed');
-      // Match source publication: source parents, metadata fences, then asset rows.
-      for (const assetId of [...new Set(ids)].sort())
+      // Keep source parents before metadata fences and asset rows, including the result cohort.
+      for (const assetId of [...new Set(ids)].sort((a, b) => a.localeCompare(b)))
         await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${assetId})::int)`.execute(trx);
       await holdSourceAdmission(trx, observed.snapshot, observed.ownerId);
+      if (singleAsset) {
+        const source = await trx
+          .selectFrom('asset')
+          .select(['ownerId', 'originalPath', 'status', 'deletedAt', 'isOffline'])
+          .where('id', '=', observed.assetId!)
+          .forShare()
+          .executeTakeFirst();
+        if (
+          !source ||
+          source.ownerId !== observed.ownerId ||
+          source.deletedAt ||
+          source.status !== AssetStatus.Active ||
+          source.isOffline ||
+          (parseSourceOriginalPath(source.originalPath) && (!Array.isArray(epochs) || !epochs[0]?.reference))
+        )
+          throw new ConflictException('studio_source_admission_changed');
+      }
+      if (
+        remote?.resultAssetId &&
+        !(await trx
+          .selectFrom('asset')
+          .select('id')
+          .where('id', '=', remote.resultAssetId)
+          .where('ownerId', '=', observed.ownerId)
+          .where('deletedAt', 'is', null)
+          .forShare()
+          .executeTakeFirst())
+      )
+        return 'rejected';
+      const remoteAuthority = remote
+        ? trx
+            .selectFrom('render_worker_session')
+            .innerJoin('render_worker', 'render_worker.id', 'render_worker_session.workerId')
+            .select('render_worker_session.id')
+            .where('render_worker_session.id', '=', remote.sessionId)
+            .where('render_worker_session.workerId', '=', remote.workerId)
+            .where('render_worker_session.token', '=', remote.sessionTokenHash)
+            .where('render_worker.status', '=', RenderWorkerStatus.Active)
+            .where('render_worker_session.revokedAt', 'is', null)
+            .where('render_worker_session.expiresAt', '>', sql<Date>`clock_timestamp()`)
+            .whereRef('render_worker_session.engineDigest', '=', 'render_worker.engineDigest')
+            .$if(typeof observed.snapshot.engineDigest === 'string', (qb) =>
+              qb.where('render_worker.engineDigest', '=', observed.snapshot.engineDigest as string),
+            )
+            .where('render_worker.destination', '=', observed.destination)
+            .where(
+              sql<boolean>`${observed.kind} = ANY(render_worker_session.scopes) AND ${observed.kind} = ANY(render_worker.kinds)`,
+            )
+        : undefined;
+      if (remote) {
+        if (
+          !(await trx
+            .selectFrom('render_worker')
+            .select('id')
+            .where('id', '=', remote.workerId)
+            .forShare()
+            .executeTakeFirst())
+        )
+          return 'lost';
+        if (
+          !(await trx
+            .selectFrom('render_worker_session')
+            .select('id')
+            .where('id', '=', remote.sessionId)
+            .forShare()
+            .executeTakeFirst())
+        )
+          return 'lost';
+        if (!(await remoteAuthority!.executeTakeFirst())) return 'lost';
+      }
       const held = await trx
         .selectFrom('media_operation')
         .select(['id', 'ownerId', 'snapshot', 'assetId', 'kind', 'destination'])
         .where('id', '=', id)
         .where('claimToken', '=', claimToken)
         .where('status', '=', MediaOperationStatus.Validating)
-        .$if(epochs !== undefined, (qb) =>
-          qb.where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`).where('cancelRequestedAt', 'is', null),
+        .$if(!!remote, (qb) => qb.where('claimedBy', '=', remote!.workerId))
+        .$if(!!remote || observed.snapshot.sourceEpochs !== undefined, (qb) =>
+          qb
+            .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+            .where('cancelRequestedAt', 'is', null)
+            .where('pauseRequestedAt', 'is', null),
         )
         .forUpdate()
         .executeTakeFirst();
-      if (!held) return 'lost';
+      if (!held) {
+        return 'lost';
+      }
       if (
         held.ownerId !== observed.ownerId ||
         held.assetId !== observed.assetId ||
@@ -1307,24 +1402,42 @@ export class MediaOperationRepository {
         canonicalJson(held.snapshot) !== canonicalJson(observed.snapshot)
       )
         throw new ConflictException('studio_source_admission_changed');
-      if (!(await publish(trx))) return 'rejected';
+      await holdSourceAdmission(trx, held.snapshot, held.ownerId);
+      if (!(await publish(trx))) {
+        return 'rejected';
+      }
       await holdSourceAdmission(trx, held.snapshot, held.ownerId);
       if (
-        epochs !== undefined &&
+        (!!remote || held.snapshot.sourceEpochs !== undefined) &&
         !(await trx
           .selectFrom('media_operation')
           .select('id')
           .where('id', '=', id)
           .where('claimToken', '=', claimToken)
+          .$if(!!remote, (qb) => qb.where('claimedBy', '=', remote!.workerId))
           .where('ownerId', '=', held.ownerId)
           .where(sql<boolean>`snapshot = ${JSON.stringify(held.snapshot)}::text::jsonb`)
           .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
           .where('cancelRequestedAt', 'is', null)
+          .where('pauseRequestedAt', 'is', null)
           .executeTakeFirst())
       )
         throw new Error('Media operation admission or claim changed during publication');
-      if (!(await this.complete(id, claimToken, { resultAssetId: null }, trx, epochs !== undefined)))
+      if (remoteAuthority && !(await remoteAuthority.executeTakeFirst()))
+        throw new ConflictException('render_worker_authority_changed');
+      if (
+        !(await this.complete(
+          id,
+          claimToken,
+          { resultAssetId: remote?.resultAssetId ?? null },
+          trx,
+          !!remote || epochs !== undefined,
+        ))
+      ) {
+        // Unreachable while the row is held above under the same predicates; throwing rolls the
+        // publication back, so an adopted output and an unfinished job are never committed apart.
         throw new Error(`Media operation ${id} could not complete under the claim that published it`);
+      }
       await holdSourceAdmission(trx, held.snapshot, held.ownerId);
       completed = held;
       return 'completed';

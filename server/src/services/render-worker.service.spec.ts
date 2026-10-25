@@ -26,6 +26,7 @@ import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.s
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { signInputGrant } from 'src/utils/render-admission.js';
+import { sourceOriginalPath } from 'src/utils/source-original.js';
 import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
@@ -203,6 +204,7 @@ describe(RenderWorkerService.name, () => {
     resolveProjectResources: ReturnType<typeof vi.fn>;
     issueReadGrants: ReturnType<typeof vi.fn>;
     verifyReadGrant: ReturnType<typeof vi.fn>;
+    sourceEpochsMatch: ReturnType<typeof vi.fn>;
   };
   let studioExports: Record<
     | 'stagingFolder'
@@ -285,6 +287,7 @@ describe(RenderWorkerService.name, () => {
       beginValidation: vi.fn().mockResolvedValue(true),
       invalidateCheckpointsFrom: vi.fn().mockResolvedValue(true),
       complete: vi.fn().mockResolvedValue(true),
+      publishValidated: vi.fn().mockResolvedValue('completed'),
       fail: vi.fn().mockResolvedValue('failed'),
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
       settlePause: vi.fn().mockResolvedValue(true),
@@ -292,6 +295,7 @@ describe(RenderWorkerService.name, () => {
     } as unknown as MediaOperationRepository;
 
     studioResources = {
+      sourceEpochsMatch: vi.fn().mockResolvedValue(true),
       resolveProjectResources: vi.fn(),
       issueReadGrants: vi.fn().mockReturnValue([]),
       verifyReadGrant: vi.fn(),
@@ -582,6 +586,45 @@ describe(RenderWorkerService.name, () => {
       );
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([queued.assetId!]));
     });
+
+    it.each(['missing', 'revoked'] as const)(
+      'refuses a single-asset reference claim with %s admission',
+      async (state) => {
+        const sourceEpochs = [
+          {
+            assetId: queued.assetId,
+            ownerId: OWNER_A,
+            epoch: '0',
+            reference: {
+              resourceId: '12345678-1234-4234-8234-123456789017',
+              version: 'c'.repeat(64),
+              sha256: 'd'.repeat(64),
+            },
+          },
+        ];
+        const candidate = operationStub({
+          kind: MediaOperationKind.Restoration,
+          projectId: null,
+          snapshot: state === 'missing' ? {} : { sourceEpochs },
+        });
+        mocks.asset.getById.mockResolvedValue({
+          id: candidate.assetId,
+          ownerId: OWNER_A,
+          originalPath: sourceOriginalPath({
+            sourceId: '12345678-1234-4234-8234-123456789016',
+            resourceKey: 'b'.repeat(64),
+          }),
+        } as never);
+        vi.mocked(workers.peekQueued)
+          .mockReset()
+          .mockResolvedValueOnce([candidate] as never)
+          .mockResolvedValue([]);
+        studioResources.sourceEpochsMatch.mockResolvedValue(false);
+        expect(await sut.claim(SESSION_A, {} as never)).toBeUndefined();
+        expect(workers.claimQueued).not.toHaveBeenCalled();
+        expect(workers.recordRefusal).toHaveBeenCalledWith(candidate.id, RenderWorkerRefusalReason.ManifestIncomplete);
+      },
+    );
 
     it('hands out the claim with grants only for inputs the owner can still read', async () => {
       const claim = await sut.claim(SESSION_A, {} as never);
@@ -1520,8 +1563,23 @@ describe(RenderWorkerService.name, () => {
       } as never);
 
       expect(result).toEqual({ accepted: true, refusal: null });
-      expect(operations.complete).toHaveBeenCalledWith(claimedByA.id, 'claim-1', { resultAssetId: mine });
+      expect(operations.publishValidated).toHaveBeenCalledWith(claimedByA.id, 'claim-1', expect.any(Function), {
+        workerId: workerA.id,
+        sessionId: sessionA.id,
+        sessionTokenHash: sessionA.token,
+        resultAssetId: mine,
+      });
+      expect(operations.complete).not.toHaveBeenCalled();
       expect(operations.fail).not.toHaveBeenCalled();
+    });
+
+    it.each(['lost', 'rejected'] as const)('does not report a %s remote publication as completed', async (outcome) => {
+      vi.mocked(workers.getClaimed).mockResolvedValue({ ...claimedByA, kind: MediaOperationKind.QuickEdit } as never);
+      vi.mocked(operations.publishValidated).mockResolvedValue(outcome);
+      expect(
+        await sut.complete(SESSION_A, claimedByA.id, { claimToken: 'claim-1', resultAssetId: null } as never),
+      ).toEqual({ accepted: false, refusal: null });
+      expect(operations.complete).not.toHaveBeenCalled();
     });
 
     it('refuses every write without a live session', async () => {
@@ -1952,6 +2010,7 @@ describe(RenderWorkerService.name, () => {
       status: MediaOperationStatus.Rendering,
       claimToken: 'claim-1',
       claimedBy: workerA.id,
+      claimExpiresAt: new Date(Date.now() + 600_000),
     });
     const asset = {
       id: claimedByA.assetId,
@@ -1977,6 +2036,195 @@ describe(RenderWorkerService.name, () => {
       );
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([claimedByA.assetId!]));
       mocks.asset.getById.mockResolvedValue(asset as never);
+      claimedByA.snapshot = { engineDigest: 'engine-1' };
+    });
+
+    const referenceInput = () => {
+      const path = sourceOriginalPath({
+        sourceId: '12345678-1234-4234-8234-123456789016',
+        resourceKey: 'b'.repeat(64),
+      });
+      mocks.asset.getById.mockResolvedValue({ ...asset, originalPath: path, originalFileName: 'summer.mov' } as never);
+      const input = {
+        stream: Readable.from([Buffer.from('video')]),
+        byteLength: 5,
+        check: vi.fn().mockResolvedValue(undefined),
+        release: vi.fn().mockResolvedValue(undefined),
+      };
+      const originals = {
+        open: vi.fn(async (_id, _reader, authorize) => {
+          await authorize();
+          return input;
+        }),
+      };
+      Object.assign(sut, { sourceOriginalService: originals });
+      claimedByA.snapshot.sourceEpochs = [
+        {
+          assetId: claimedByA.assetId,
+          ownerId: OWNER_A,
+          epoch: '0',
+          reference: {
+            resourceId: '12345678-1234-4234-8234-123456789017',
+            version: 'c'.repeat(64),
+            sha256: 'd'.repeat(64),
+          },
+        },
+      ];
+      return { path, input, originals };
+    };
+
+    it('refuses an unbound legacy reference input before borrowing provider bytes', async () => {
+      const f = referenceInput();
+      delete claimedByA.snapshot.sourceEpochs;
+      await expect(sut.readInput(SESSION_A, claimedByA.id, grantFor(claimedByA, sessionA))).rejects.toThrow(
+        'Input grant invalid',
+      );
+      expect(f.originals.open).not.toHaveBeenCalled();
+    });
+
+    it('serves a reference as a leased stream and retains its logical identity', async () => {
+      const f = referenceInput();
+      const controller = new AbortController();
+      const file = await sut.readInput(SESSION_A, claimedByA.id, grantFor(claimedByA, sessionA), controller.signal);
+      expect(file.path).toBe(f.path);
+      expect(file.stream).toBe(f.input.stream);
+      expect(file.contentLength).toBe(5);
+      expect(file.contentType).toBe('video/quicktime');
+      expect(f.originals.open).toHaveBeenCalledWith(
+        claimedByA.assetId,
+        expect.objectContaining({ kind: 'http' }),
+        expect.any(Function),
+        controller.signal,
+      );
+      expect(f.input.release).not.toHaveBeenCalled();
+      await file.release?.();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('rechecks the immutable source proof while a reference is borrowed', async () => {
+      const f = referenceInput();
+      const bound = structuredClone(claimedByA.snapshot.sourceEpochs);
+      const file = await sut.readInput(SESSION_A, claimedByA.id, grantFor(claimedByA, sessionA));
+      expect(studioResources.sourceEpochsMatch).toHaveBeenCalledWith(bound, [claimedByA.assetId]);
+      const authorize = f.originals.open.mock.calls[0][2] as () => Promise<void>;
+      studioResources.sourceEpochsMatch.mockResolvedValue(false);
+      await expect(authorize()).rejects.toThrow('Input grant invalid');
+      expect(claimedByA.snapshot.sourceEpochs).toEqual(bound);
+      await file.release?.();
+    });
+
+    it('refuses a rewritten source admission under an otherwise unchanged claim', async () => {
+      const f = referenceInput();
+      const file = await sut.readInput(SESSION_A, claimedByA.id, grantFor(claimedByA, sessionA));
+      const authorize = f.originals.open.mock.calls[0][2];
+      claimedByA.snapshot = { ...claimedByA.snapshot, sourceEpochs: [] };
+      await expect(authorize()).rejects.toThrow('Input grant invalid');
+      await file.release?.();
+    });
+
+    it.each(['session-scope', 'worker-kinds', 'session-engine', 'both-engines', 'destination'])(
+      'refuses changed worker authority during a source transfer: %s',
+      async (change) => {
+        const f = referenceInput();
+        const file = await sut.readInput(SESSION_A, claimedByA.id, grantFor(claimedByA, sessionA));
+        const authorize = f.originals.open.mock.calls[0][2];
+        const worker = { ...workerA },
+          session = { ...sessionA };
+        switch (change) {
+          case 'session-scope': {
+            session.scopes = [];
+            break;
+          }
+          case 'worker-kinds': {
+            worker.kinds = [];
+            break;
+          }
+          case 'session-engine': {
+            session.engineDigest = 'replacement';
+            break;
+          }
+          case 'both-engines': {
+            session.engineDigest = 'replacement';
+            worker.engineDigest = 'replacement';
+
+            break;
+          }
+          default: {
+            worker.destination = MediaOperationDestination.FrameleafCloud;
+          }
+        }
+        vi.mocked(workers.getSessionByToken).mockResolvedValueOnce({ worker, session });
+        await expect(authorize()).rejects.toThrow('Input grant invalid');
+        await file.release?.();
+      },
+    );
+
+    it('rechecks the exact claim while a reference is borrowed', async () => {
+      const f = referenceInput();
+      const file = await sut.readInput(SESSION_A, claimedByA.id, grantFor(claimedByA, sessionA));
+      const authorize = f.originals.open.mock.calls[0][2] as () => Promise<void>;
+      await authorize();
+      vi.mocked(workers.getClaimedByWorker).mockResolvedValueOnce({
+        ...claimedByA,
+        claimToken: 'replacement',
+      } as never);
+      await expect(authorize()).rejects.toThrow();
+      await file.release?.();
+    });
+
+    it('refuses a reference whose owner access is withdrawn during transfer', async () => {
+      const f = referenceInput();
+      const file = await sut.readInput(SESSION_A, claimedByA.id, grantFor(claimedByA, sessionA));
+      const authorize = f.originals.open.mock.calls[0][2] as () => Promise<void>;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValueOnce(new Set());
+      await expect(authorize()).rejects.toThrow('Input grant invalid');
+      await file.release?.();
+    });
+
+    it.each([
+      { claimExpiresAt: new Date(0) },
+      { claimExpiresAt: null },
+      { cancelRequestedAt: new Date() },
+      { status: MediaOperationStatus.Cancelling },
+      { pauseRequestedAt: new Date() },
+    ])('refuses a stopped or expired claim during source transfer (%j)', async (change) => {
+      const f = referenceInput();
+      const file = await sut.readInput(SESSION_A, claimedByA.id, grantFor(claimedByA, sessionA));
+      const authorize = f.originals.open.mock.calls[0][2];
+      vi.mocked(workers.getClaimedByWorker).mockResolvedValueOnce({ ...claimedByA, ...change } as never);
+      await expect(authorize()).rejects.toThrow('Input grant invalid');
+      await file.release?.();
+    });
+
+    it('refuses a replaced logical original and a revoked worker session during transfer', async () => {
+      const f = referenceInput();
+      const file = await sut.readInput(SESSION_A, claimedByA.id, grantFor(claimedByA, sessionA));
+      const authorize = f.originals.open.mock.calls[0][2];
+      mocks.asset.getById.mockResolvedValue({ ...asset, originalPath: '/managed/replaced.mov' } as never);
+      await expect(authorize()).rejects.toThrow('Input grant invalid');
+      vi.mocked(workers.getSessionByToken).mockResolvedValueOnce(undefined);
+      await expect(authorize()).rejects.toThrow('Worker session invalid');
+      await file.release?.();
+    });
+
+    it('does no work for a request that was already disconnected', async () => {
+      const f = referenceInput();
+      const controller = new AbortController();
+      controller.abort(new Error('request disconnected'));
+      await expect(
+        sut.readInput(SESSION_A, claimedByA.id, grantFor(claimedByA, sessionA), controller.signal),
+      ).rejects.toThrow('request disconnected');
+      expect(f.originals.open).not.toHaveBeenCalled();
+      expect(workers.getSessionByToken).not.toHaveBeenCalled();
+    });
+
+    it('releases a reference when its initial provider check fails', async () => {
+      const f = referenceInput();
+      f.input.check.mockRejectedValueOnce(new Error('source revoked'));
+      await expect(sut.readInput(SESSION_A, claimedByA.id, grantFor(claimedByA, sessionA))).rejects.toThrow(
+        'source revoked',
+      );
+      expect(f.input.release).toHaveBeenCalledOnce();
     });
 
     it('serves the input to the claiming worker under a grant minted for its claim and session', async () => {
@@ -2070,6 +2318,7 @@ describe(RenderWorkerService.name, () => {
         status: MediaOperationStatus.Rendering,
         claimToken: 'claim-1',
         claimedBy: workerA.id,
+        claimExpiresAt: new Date(Date.now() + 600_000),
       });
       const studioGrant = (input: { inputId: string; resourceId: string; token: string }, claimToken = 'claim-1') =>
         signInputGrant(
@@ -2098,6 +2347,35 @@ describe(RenderWorkerService.name, () => {
           Promise.resolve(id === studioClaimed.id && workerId === workerA.id ? (studioClaimed as never) : undefined),
         );
         studioResources.resolveProjectResources.mockResolvedValue({ manifest: studioManifestStub(), refused: [] });
+      });
+
+      it('holds a referenced Studio input under the live FL-90 grant until the HTTP stream is released', async () => {
+        const f = referenceInput();
+        mocks.asset.getById.mockResolvedValue({
+          ...asset,
+          id: 'clip-1',
+          originalPath: f.path,
+          originalFileName: 'clip.mov',
+        } as never);
+        const manifest = studioManifestStub();
+        manifest.entries[0] = { ...manifest.entries[0], path: f.path };
+        studioResources.resolveProjectResources.mockResolvedValue({ manifest, refused: [] });
+        studioResources.verifyReadGrant.mockResolvedValue(
+          verified({ kind: StudioResourceKind.LibraryAsset, id: 'clip-1', key: 'library-asset:clip-1' }, f.path),
+        );
+        const file = await sut.readInput(
+          SESSION_A,
+          studioClaimed.id,
+          studioGrant({ inputId: 'library-asset:clip-1', resourceId: 'clip-1', token: 'fl90-clip-1' }),
+        );
+        expect(file.stream).toBe(f.input.stream);
+        expect(file.path).toBe(f.path);
+        const authorize = f.originals.open.mock.calls[0][2];
+        studioResources.verifyReadGrant.mockResolvedValueOnce({ valid: false, reason: 'source-revoked' });
+        await expect(authorize()).rejects.toThrow('Input grant invalid');
+        expect(f.input.release).not.toHaveBeenCalled();
+        await file.release?.();
+        expect(f.input.release).toHaveBeenCalledOnce();
       });
 
       it('serves a library source only after FL-90 re-verifies the grant as the owner for this worker', async () => {

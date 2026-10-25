@@ -539,6 +539,6 @@ export class RenderWorkerController {
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
-    await sendFile(res, next, () => this.service.readInput(session, id, grant), this.logger);
+    await sendFile(res, next, (signal) => this.service.readInput(session, id, grant, signal), this.logger);
   }
 }
