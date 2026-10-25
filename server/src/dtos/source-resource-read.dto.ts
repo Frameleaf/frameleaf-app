@@ -11,6 +11,12 @@ export const SourceReadHeartbeatSchema = z.strictObject({
   claimFence: counter,
   claimToken: fingerprint,
 });
+export const SourceReadDeliverySchema = SourceReadHeartbeatSchema.extend({
+  resourceKey: fingerprint,
+  version: fingerprint,
+  sha256: fingerprint,
+  bytes: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+});
 export class SourceResourcePayloadDto extends createZodDto(
   z.strictObject({
     payload: z
@@ -41,3 +47,5 @@ export class SourceReadPollDto extends createZodDto(
 export class SourceReadHeartbeatDto extends createZodDto(
   z.strictObject({ leaseUntil: z.iso.datetime(), deadline: z.iso.datetime() }),
 ) {}
+
+export class SourceReadDeliveryResultDto extends createZodDto(z.strictObject({ accepted: z.boolean() })) {}

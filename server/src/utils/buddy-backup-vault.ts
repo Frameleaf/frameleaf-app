@@ -1,7 +1,7 @@
 /* eslint-disable no-restricted-imports -- Offline recovery runs directly under Node without application aliases. */
 import { createHash, createPublicKey, randomUUID, verify } from 'node:crypto';
 import { constants } from 'node:fs';
-import { link, lstat, mkdir, open, readFile, readdir, rename, rm } from 'node:fs/promises';
+import { type FileHandle, link, lstat, mkdir, open, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { BUDDY_BLOCK_BYTES, BUDDY_ID, BUDDY_SEALED_OVERHEAD, BUDDY_UUID } from './buddy-backup-crypto.ts';
 
@@ -29,12 +29,20 @@ type BuddyPublicKey = { kty: 'OKP'; crv: 'Ed25519'; x: string };
 export const buddySnapshotBytes = (snapshot: BuddySnapshot) => Buffer.from(JSON.stringify(snapshot));
 export const buddyDigest = (data: Buffer) => createHash('sha256').update(data).digest('hex');
 
+export const buddyFileStopUnconfirmed = (error: unknown) =>
+  error instanceof Error && error.message === 'buddy_file_close_unconfirmed';
+
+export const closeBuddyFile = (handle: FileHandle) =>
+  handle.close().catch((error) => {
+    throw new Error('buddy_file_close_unconfirmed', { cause: error });
+  });
+
 export const flushBuddyDirectory = async (directory: string) => {
   const handle = await open(directory, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     await handle.sync();
   } finally {
-    await handle.close();
+    await closeBuddyFile(handle);
   }
 };
 
@@ -52,7 +60,7 @@ export const createBuddyDirectory = async (directory: string): Promise<void> => 
   await flushBuddyDirectory(parent);
 };
 
-/** The caller holds the vault's PostgreSQL advisory lock for all writes, including staging cleanup. */
+/** Callers serialize writes and cleanup; an unconfirmed close never authorizes temporary-file removal. */
 export const writeBuddyFile = async (
   path: string,
   bytes: Buffer | string,
@@ -61,21 +69,27 @@ export const writeBuddyFile = async (
 ) => {
   await createBuddyDirectory(dirname(path));
   const temporary = join(dirname(path), `.tmp-${randomUUID()}`);
+  let stopped = true;
   try {
     const handle = await open(temporary, 'wx', 0o600);
     try {
       await handle.writeFile(bytes);
       await handle.sync();
     } finally {
-      await handle.close();
+      await closeBuddyFile(handle);
     }
     await authorize?.();
     if (immutable) await link(temporary, path);
     else await rename(temporary, path);
     await flushBuddyDirectory(dirname(path));
+  } catch (error) {
+    stopped = !buddyFileStopUnconfirmed(error);
+    throw error;
   } finally {
-    await rm(temporary, { force: true });
-    await flushBuddyDirectory(dirname(path));
+    if (stopped) {
+      await rm(temporary, { force: true });
+      await flushBuddyDirectory(dirname(path));
+    }
   }
 };
 

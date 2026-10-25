@@ -3,6 +3,7 @@ import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { SourceGrantRequestDto, SourceResourceBinding } from 'src/dtos/source-resource.dto.js';
 import type { DB } from 'src/schema/index.js';
+import { lockSourceAuthorities } from 'src/utils/source-authority-lock.js';
 
 export type SourceResourceGrant = Omit<SourceResourceBinding, 'serverId'> & {
   grantId: string;
@@ -60,7 +61,8 @@ export class SourceResourceRepository {
     return this.authority(this.db, { ownerId, photoSessionId, request }).executeTakeFirst();
   }
 
-  private lockedAuthority(tx: Transaction<DB>, input: Authority) {
+  private async lockedAuthority(tx: Transaction<DB>, input: Authority) {
+    if (!(await lockSourceAuthorities(tx, [{ sourceId: input.request.sourceId, ownerId: input.ownerId }]))) return;
     // Lock source before grant in both issuance and consumption, so rotation cannot deadlock a request.
     return this.authority(tx, input)
       .forShare('owner')

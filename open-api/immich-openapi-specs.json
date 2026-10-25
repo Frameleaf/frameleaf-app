@@ -45523,6 +45523,74 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/source-resources/deliver": {
+      "put": {
+        "operationId": "deliverSourceResource",
+        "parameters": [
+          {
+            "name": "x-frameleaf-source-payload",
+            "in": "header",
+            "description": "Canonical base64 UTF-8 JSON binding requestId, claimFence, claimToken, resourceKey, version, sha256 and bytes. At most 4096 base64 characters.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-source-proof",
+            "in": "header",
+            "description": "Canonical base64 installation-signed source request proof.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceReadDeliveryResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Deliver the exact verified original under a signed source claim",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/source-resources/grants": {
       "post": {
         "operationId": "createSourceResourceGrant",
@@ -126549,6 +126617,18 @@
           "signature",
           "sourceId",
           "timestamp"
+        ],
+        "type": "object"
+      },
+      "SourceReadDeliveryResultDto": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accepted"
         ],
         "type": "object"
       },

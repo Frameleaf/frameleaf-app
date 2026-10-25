@@ -14568,6 +14568,9 @@ export type SmartAlbumHiddenDto = {
     /** Hide the album from your own library, or show it again */
     hidden: boolean;
 };
+export type SourceReadDeliveryResultDto = {
+    accepted: boolean;
+};
 export type SourceGrantRequestDto = {
     deviceId: string;
     requestId: string;
@@ -29709,6 +29712,27 @@ export function setMySmartAlbumHidden({ kind, smartAlbumHiddenDto }: {
         method: "PUT",
         body: smartAlbumHiddenDto
     })));
+}
+/**
+ * Deliver the exact verified original under a signed source claim
+ */
+export function deliverSourceResource({ xFrameleafSourcePayload, xFrameleafSourceProof, body }: {
+    xFrameleafSourcePayload: string;
+    xFrameleafSourceProof: string;
+    body: Blob;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SourceReadDeliveryResultDto;
+    }>("/source-resources/deliver", {
+        ...opts,
+        method: "PUT",
+        body,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-source-payload": xFrameleafSourcePayload,
+            "x-frameleaf-source-proof": xFrameleafSourceProof
+        })
+    }));
 }
 /**
  * Issue a source-only credential for an approved desktop reference source

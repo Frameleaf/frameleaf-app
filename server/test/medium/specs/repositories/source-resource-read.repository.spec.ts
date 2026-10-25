@@ -1,23 +1,35 @@
 import { Kysely, sql } from 'kysely';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import type { DB } from 'src/schema/index.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { ChecksumAlgorithm } from 'src/enum.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhotoSourceRepository } from 'src/repositories/photo-source.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
+import { SourceResourceCacheRepository } from 'src/repositories/source-resource-cache.repository.js';
 import { SourceResourceReadRepository } from 'src/repositories/source-resource-read.repository.js';
 import { SourceResourceRepository } from 'src/repositories/source-resource.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { SourceResourceDeliveryService } from 'src/services/source-resource-delivery.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let db: Kysely<DB>;
+let cacheFolder: string;
 beforeAll(async () => {
   db = await getKyselyDB();
+  cacheFolder = await mkdtemp(join(tmpdir(), 'source-publication-budget-'));
 });
-afterAll(async () => db?.destroy());
+afterAll(async () => {
+  await db?.destroy();
+  await rm(cacheFolder, { recursive: true, force: true });
+});
 const fixture = async () => {
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
   const { user } = await ctx.newUser();
@@ -359,5 +371,253 @@ it.each(['heartbeat', 'beginDelivery', 'claim'] as const)(
       await blocker;
     }
     expect(await pending).toBeUndefined();
+  },
+);
+
+it('fences restored source credentials when recovery clears photo sessions without deleting reference provenance', async () => {
+  const f = await fixture();
+  const request = (await f.sut.enqueue(f.asset.id))!;
+  const token = randomBytes(32);
+  const claim = (await f.sut.claim(f.grant, token, 100))!;
+  expect(claim.id).toBe(request.id);
+  // Recovery clears every photo session; this source's authority must disappear through the same FK.
+  await db.deleteFrom('session').where('id', '=', f.session.id).execute();
+  expect(
+    await db.selectFrom('source_resource_grant').select('id').where('sourceId', '=', f.source.id).execute(),
+  ).toEqual([]);
+  expect(await f.sut.heartbeat(f.grant, claim.id, claim.claimFence, token)).toBeUndefined();
+  expect(await f.sut.beginDelivery(f.grant, claim.id, claim.claimFence, token)).toBeUndefined();
+  expect(await f.sut.claim(f.grant, randomBytes(32), 100)).toBeUndefined();
+  expect(await f.sut.enqueue(f.asset.id)).toBeUndefined();
+  expect(
+    await db.selectFrom('source_original').select('resourceId').where('assetId', '=', f.asset.id).executeTakeFirst(),
+  ).toEqual({ resourceId: f.resource.id });
+  expect(
+    await db.selectFrom('photo_source_resource').select('assetId').where('id', '=', f.resource.id).executeTakeFirst(),
+  ).toEqual({ assetId: f.asset.id });
+  expect(await db.selectFrom('asset').select('originalPath').where('id', '=', f.asset.id).executeTakeFirst()).toEqual({
+    originalPath: f.asset.originalPath,
+  });
+});
+
+const deliveryFixture = async () => {
+  const f = await fixture();
+  await f.sut.enqueue(f.asset.id);
+  const token = randomBytes(32);
+  const claim = (await f.sut.claim(f.grant, token, 100))!;
+  const original = (await f.sut.beginDelivery(f.grant, claim.id, claim.claimFence, token))!;
+  const cache = new SourceResourceCacheRepository(db);
+  const writer = { id: randomUUID(), ownerId: randomUUID() };
+  const disk = (await cache.inspectDisk(cacheFolder))!;
+  const entry = await db
+    .transaction()
+    .execute((tx) => cache.reserve(tx, original, Number.MAX_SAFE_INTEGER, writer, disk));
+  if (!entry || entry === 'snapshot-changed') throw new Error('Unexpected fixture admission failure');
+  const publish = (tx: Parameters<SourceResourceCacheRepository['reserve']>[0]) =>
+    cache.publishVerified(tx, entry.id, writer, {
+      fileName: `${randomUUID()}.artifact`,
+      bytes: original.bytes,
+      sha256: Buffer.from(original.sha256, 'hex'),
+    });
+  return { ...f, token, claim, original, cache, writer, entry, publish };
+};
+it.each(['missing', 'expired', 'live'] as const)(
+  'publishes managed delivery only for %s consumer interest',
+  async (state) => {
+    const f = await deliveryFixture();
+    await db.updateTable('source_resource_read').set({ consumerManaged: true }).where('id', '=', f.claim.id).execute();
+    if (state !== 'missing')
+      await db
+        .insertInto('source_resource_read_consumer')
+        .values({
+          readId: f.claim.id,
+          readerId: randomUUID(),
+          readerOwnerId: randomUUID(),
+          expiresAt: new Date(Date.now() + (state === 'live' ? 60_000 : -60_000)),
+        })
+        .execute();
+    const publish = vi.fn(f.publish);
+    const result = await f.sut.completeDelivery(f.grant, f.claim.id, f.claim.claimFence, f.token, f.original, publish);
+    if (state === 'live') expect(result).toBe(true);
+    else expect(result).toBeUndefined();
+    expect(publish).toHaveBeenCalledTimes(state === 'live' ? 1 : 0);
+  },
+);
+it('atomically publishes the verified cache and completes only one delivery', async () => {
+  const f = await deliveryFixture();
+  const publish = vi.fn(f.publish);
+  const complete = () => f.sut.completeDelivery(f.grant, f.claim.id, f.claim.claimFence, f.token, f.original, publish);
+  const results = await Promise.all([complete(), complete()]);
+  expect(results.filter(Boolean)).toHaveLength(1);
+  expect(await complete()).toBeUndefined();
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(
+    (await db.selectFrom('source_resource_read').select('state').where('id', '=', f.claim.id).executeTakeFirst())
+      ?.state,
+  ).toBe('ready');
+  expect(
+    (await db.selectFrom('source_resource_cache').select('state').where('id', '=', f.entry.id).executeTakeFirst())
+      ?.state,
+  ).toBe('ready');
+});
+it.each(['resourceKey', 'version', 'sha256', 'bytes'] as const)(
+  'refuses publication when the delivered %s differs',
+  async (field) => {
+    const f = await deliveryFixture();
+    const expected = { ...f.original, [field]: field === 'bytes' ? 6 : 'f'.repeat(64) };
+    const publish = vi.fn(f.publish);
+    expect(
+      await f.sut.completeDelivery(f.grant, f.claim.id, f.claim.claimFence, f.token, expected, publish),
+    ).toBeUndefined();
+    expect(publish).not.toHaveBeenCalled();
+  },
+);
+it('refuses publication after the provider version changes during transfer', async () => {
+  const f = await deliveryFixture();
+  await db
+    .updateTable('photo_source_resource')
+    .set({ version: 'e'.repeat(64) })
+    .where('id', '=', f.resource.id)
+    .execute();
+  const publish = vi.fn(f.publish);
+  expect(
+    await f.sut.completeDelivery(f.grant, f.claim.id, f.claim.claimFence, f.token, f.original, publish),
+  ).toBeUndefined();
+  expect(publish).not.toHaveBeenCalled();
+});
+it.each(['fence', 'token', 'paused', 'expired'] as const)(
+  'refuses final publication for %s authority',
+  async (change) => {
+    const f = await deliveryFixture();
+    if (change === 'paused')
+      await db.updateTable('desktop_device').set({ state: 'paused' }).where('id', '=', f.device.id).execute();
+    else if (change === 'expired')
+      await db
+        .updateTable('source_resource_read')
+        .set({ leaseUntil: new Date(0) })
+        .where('id', '=', f.claim.id)
+        .execute();
+    const publish = vi.fn(f.publish);
+    expect(
+      await f.sut.completeDelivery(
+        f.grant,
+        f.claim.id,
+        f.claim.claimFence + (change === 'fence' ? 1 : 0),
+        change === 'token' ? randomBytes(32) : f.token,
+        f.original,
+        publish,
+      ),
+    ).toBeUndefined();
+    expect(publish).not.toHaveBeenCalled();
+  },
+);
+it.each(['deadline', 'rejected'] as const)('rolls back cache publication on final %s failure', async (change) => {
+  const f = await deliveryFixture();
+  const result = await f.sut.completeDelivery(
+    f.grant,
+    f.claim.id,
+    f.claim.claimFence,
+    f.token,
+    f.original,
+    async (tx) => {
+      expect(await f.publish(tx)).toBe(true);
+      if (change === 'deadline')
+        await tx
+          .updateTable('source_resource_read')
+          .set({ deadline: new Date(0) })
+          .where('id', '=', f.claim.id)
+          .execute();
+      return change !== 'rejected';
+    },
+  );
+  expect(result).toBeUndefined();
+  expect(
+    (await db.selectFrom('source_resource_read').select('state').where('id', '=', f.claim.id).executeTakeFirst())
+      ?.state,
+  ).toBe('delivering');
+  expect(
+    (await db.selectFrom('source_resource_cache').select('state').where('id', '=', f.entry.id).executeTakeFirst())
+      ?.state,
+  ).toBe('writing');
+});
+
+it.each([false, true])(
+  'keeps verified bytes and ready state together with a lost commit acknowledgement=%s',
+  async (lostAcknowledgement) => {
+    const f = await fixture();
+    await f.sut.enqueue(f.asset.id);
+    const token = 'e'.repeat(64);
+    const claim = (await f.sut.claim(f.grant, createHash('sha256').update(token).digest(), 100))!;
+    const metadata = {
+      requestId: claim.id,
+      claimFence: claim.claimFence,
+      claimToken: token,
+      resourceKey: claim.resourceKey,
+      version: claim.version,
+      sha256: claim.sha256,
+      bytes: claim.bytes,
+    };
+    const folder = await mkdtemp(join(tmpdir(), 'source-pg-delivery-'));
+    const media = vi.spyOn(StorageCore, 'getMediaLocation').mockReturnValue(folder);
+    const grants = new SourceResourceRepository(db);
+    const cache = new SourceResourceCacheRepository(db);
+    const reads = new SourceResourceReadRepository(db, grants);
+    const transact = grants.withGrant.bind(grants);
+    let published = false;
+    const publish = cache.publishVerified.bind(cache);
+    vi.spyOn(cache, 'publishVerified').mockImplementation(async (...args) => {
+      const result = await publish(...args);
+      published = result;
+      return result;
+    });
+    vi.spyOn(grants, 'withGrant').mockImplementation(async (grant, action) => {
+      const result = await transact(grant, action);
+      if (published && lostAcknowledgement) throw new Error('commit acknowledgement lost');
+      return result;
+    });
+    const service = new SourceResourceDeliveryService(
+      { authenticate: () => Promise.resolve(f.grant) } as never,
+      grants,
+      reads,
+      cache,
+      LoggingRepository.create(),
+    );
+    try {
+      const delivery = service.deliver(
+        'bearer',
+        'proof',
+        Buffer.from(JSON.stringify(metadata)).toString('base64'),
+        Readable.from([Buffer.from('hello')]),
+      );
+      if (lostAcknowledgement) await expect(delivery).rejects.toThrow('commit acknowledgement lost');
+      else await expect(delivery).resolves.toEqual({ accepted: true });
+      const row = await db
+        .selectFrom('source_resource_cache')
+        .selectAll()
+        .where('readId', '=', claim.id)
+        .executeTakeFirstOrThrow();
+      expect(row.state).toBe('ready');
+      expect(row.writerStoppedAt).not.toBeNull();
+      expect(await readFile(join(folder, 'source-original-cache', row.id, row.fileName!))).toEqual(
+        Buffer.from('hello'),
+      );
+      expect(
+        (
+          await db
+            .selectFrom('source_resource_read')
+            .select('state')
+            .where('id', '=', claim.id)
+            .executeTakeFirstOrThrow()
+        ).state,
+      ).toBe('ready');
+      expect(await cache.claimRemoval(row.id)).toBeUndefined();
+      await db.updateTable('source_resource_read').set({ state: 'unavailable' }).where('id', '=', claim.id).execute();
+      expect((await cache.claimRemoval(row.id))?.state).toBe('deleting');
+      await rm(join(folder, 'source-original-cache', row.id), { recursive: true });
+      expect(await cache.confirmRemoved(row.id)).toBe(true);
+    } finally {
+      media.mockRestore();
+      await rm(folder, { recursive: true, force: true });
+    }
   },
 );
