@@ -1,5 +1,6 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
@@ -35,11 +36,20 @@ export class CloudMlController {
       'Prepares the preview or the whole file without metadata and asks Frameleaf Cloud for a sealed estimate: metered GPU time × rate + a start fee per worker, as a p50–p90 range with a per-photo or per-minute figure, the AI Wallet and the consent version. Nothing is sent to be processed. 409 model-mismatch sends the person back to the model slider.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
-  estimateCloudMlJob(
+  async estimateCloudMlJob(
     @Auth() auth: AuthDto,
     @Body() dto: CloudMlJobEstimateRequestDto,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<CloudMlJobEstimateResponseDto> {
-    return this.service.estimate(auth, dto);
+    const controller = new AbortController();
+    const abandon = () => controller.abort();
+    res.once('close', abandon);
+    if (res.destroyed) abandon();
+    try {
+      return await this.service.estimate(auth, dto, undefined, controller.signal);
+    } finally {
+      res.removeListener('close', abandon);
+    }
   }
 
   @Post()

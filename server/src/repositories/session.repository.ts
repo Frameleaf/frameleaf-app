@@ -6,6 +6,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { Insertable, Kysely, Updateable } from 'kysely';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { currentAuth } from 'src/repositories/icloud-audit.repository.js';
 import { DB } from 'src/schema/index.js';
 import { SessionTable } from 'src/schema/tables/session.table.js';
 import { asUuid } from 'src/utils/database.js';
@@ -13,6 +14,10 @@ import { asUuid } from 'src/utils/database.js';
 @Injectable()
 export class SessionRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
+
+  getAuth(userId: string, sessionId: string) {
+    return currentAuth(this.db, userId, sessionId, false);
+  }
 
   cleanup() {
     return this.db

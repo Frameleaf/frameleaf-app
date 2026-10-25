@@ -360,17 +360,24 @@ export class FrameleafCloudMlRepository {
     options: {
       done?: ReadonlyArray<CloudUploadedPart>;
       onPart?: (part: CloudUploadedPart) => Promise<boolean>;
+      /** Recheck admission after file reads and before every storage request. */
+      beforeSend?: () => Promise<boolean>;
       /** Aborting stops the transfer in flight with `stopped`. */
       signal?: AbortSignal;
     } = {},
   ): Promise<void> {
     const { signal } = options;
+    const authorize = async () => {
+      if (signal?.aborted || (options.beforeSend && !(await options.beforeSend())))
+        throw new CloudTransferError('stopped', 'The caller stopped this upload');
+    };
     if (target.inline) {
       this.checkStorageAddress(gateway, target.inline.url);
       const body = await readFile(file);
       if (body.length !== target.bytes) {
         throw new CloudTransferError('input-changed', `The prepared input ${target.inputId} changed size`);
       }
+      await authorize();
       await this.storageSend(target.inline.url, 'PUT', target.headers, body, signal);
       return;
     }
@@ -404,6 +411,7 @@ export class FrameleafCloudMlRepository {
           }
           read += bytesRead;
         }
+        await authorize();
         const response = await this.storageSend(part.url, 'PUT', target.headers, body, signal);
         const etag = response.headers.get('etag');
         if (!etag) {
@@ -423,6 +431,7 @@ export class FrameleafCloudMlRepository {
       .toSorted(([a], [b]) => a - b)
       .map(([number, etag]) => `<Part><PartNumber>${number}</PartNumber><ETag>${escapeXml(etag)}</ETag></Part>`);
     const xml = `<CompleteMultipartUpload>${parts.join('')}</CompleteMultipartUpload>`;
+    await authorize();
     const response = await this.storageSend(multipart.completeUrl, 'POST', target.headers, Buffer.from(xml), signal);
     // S3 can answer 200 with an error document when completing a multipart upload
     const answer = await response.text();

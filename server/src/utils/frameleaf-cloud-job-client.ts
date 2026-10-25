@@ -106,8 +106,8 @@ export class FrameleafCloudJobClient {
   /**
    * Upload every input that is not up yet. `given` are the targets an admission answered with (else
    * they are read). A target close to expiring, or one storage refuses as expired, is signed again.
-   * `record` checks the caller’s admission and lease before each transfer attempt and records the
-   * whole state after every finished part and input. False stops before another request. `closed`
+   * `record` checks admission and lease before attempts and again after reads, before dispatch.
+   * It records the whole state after every finished part and input. False stops another request. `closed`
    * means the job no longer takes uploads (it was started already).
    */
   async upload(
@@ -194,7 +194,12 @@ export class FrameleafCloudJobClient {
       if (!(await record())) {
         throw new CloudTransferError('stopped', 'The caller stopped this upload');
       }
-      await this.repository.uploadInput(this.gateway, upload, input.path, { done: done(), onPart, signal });
+      await this.repository.uploadInput(this.gateway, upload, input.path, {
+        done: done(),
+        onPart,
+        beforeSend: record,
+        signal,
+      });
     };
     try {
       await this.withRetries(() => transfer(target));

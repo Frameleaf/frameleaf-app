@@ -1515,7 +1515,15 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafCloudMlJobEstimates]: {
     records: CloudMlJobEstimateRecord[];
     /** FL-162: whole videos prepared once for their estimates, dropped a day after nothing uses them. */
-    prepared?: { dir: string; ownerId: string; at: string }[];
+    prepared?: {
+      dir: string;
+      ownerId: string;
+      at: string;
+      referenceKey?: string;
+      assetId?: string;
+      writerId?: string;
+      state?: 'writing' | 'ready' | 'deleting';
+    }[];
   };
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;

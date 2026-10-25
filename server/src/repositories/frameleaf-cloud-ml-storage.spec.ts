@@ -166,6 +166,43 @@ describe('Frameleaf Cloud job storage and job reads (FL-162, FC-39, FC-42)', () 
         expect(fake.seen[0].headers[name]).toBe(value);
       }
     });
+    it('does not send an inline body when admission is refused after reading it', async () => {
+      const file = join(folder, 'refused-inline.mp4');
+      await writeFile(file, Buffer.from('0123456789'));
+      const beforeSend = vi.fn().mockResolvedValue(false);
+      await expect(sut.uploadInput({ url: fake.url }, target({}), file, { beforeSend })).rejects.toMatchObject({
+        failure: 'stopped',
+      });
+      expect(beforeSend).toHaveBeenCalledOnce();
+      expect(fake.seen).toHaveLength(0);
+    });
+    it.each(['next-part', 'completion'])('rechecks dispatch admission before multipart %s', async (stop) => {
+      const bytes = CLOUD_UPLOAD_PART_BYTES + 5;
+      const file = join(folder, 'dispatch.mp4');
+      await writeFile(file, Buffer.alloc(bytes, 7));
+      const multipart = target({
+        method: 'multipart',
+        bytes,
+        inline: null,
+        multipart: {
+          partBytes: CLOUD_UPLOAD_PART_BYTES,
+          parts: [
+            { partNumber: 1, url: `${fake.url}/in/v1?partNumber=1`, bytes: CLOUD_UPLOAD_PART_BYTES },
+            { partNumber: 2, url: `${fake.url}/in/v1?partNumber=2`, bytes: 5 },
+          ],
+          completeUrl: `${fake.url}/in/v1?uploadId=u1`,
+        },
+      });
+      fake.handle = (_request, response) => response.writeHead(200, { etag: '"part"' }).end();
+      let calls = 0;
+      const beforeSend = vi.fn(() => Promise.resolve(++calls < (stop === 'next-part' ? 2 : 3)));
+      await expect(sut.uploadInput({ url: fake.url }, multipart, file, { beforeSend })).rejects.toMatchObject({
+        failure: 'stopped',
+      });
+      expect(fake.seen.map((request) => request.path)).toEqual(
+        stop === 'next-part' ? ['/in/v1?partNumber=1'] : ['/in/v1?partNumber=1', '/in/v1?partNumber=2'],
+      );
+    });
 
     it('sends a large input in 8 MiB parts, records each part, completes it, and resumes without the parts it has', async () => {
       const bytes = CLOUD_UPLOAD_PART_BYTES + 5;

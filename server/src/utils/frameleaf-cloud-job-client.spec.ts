@@ -40,6 +40,19 @@ const repository = () =>
   }) as unknown as { [K in keyof FrameleafCloudMlRepository]: ReturnType<typeof vi.fn> };
 
 describe(FrameleafCloudJobClient.name, () => {
+  it('passes dispatch revalidation into storage after an initial successful admission', async () => {
+    const repo = repository();
+    const client = new FrameleafCloudJobClient(repo as unknown as FrameleafCloudMlRepository, gateway);
+    const record = vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false);
+    const upload = repo.uploadInput as Mock<FrameleafCloudMlRepository['uploadInput']>;
+    upload.mockImplementation(async (_gateway, _target, _path, options) => {
+      if (!options?.beforeSend) throw new Error('dispatch guard missing');
+      if (!(await options.beforeSend())) throw new CloudTransferError('stopped', 'dispatch refused');
+    });
+    await expect(client.upload('job-1', [input], {}, { now, record })).resolves.toBe('stopped');
+    expect(record).toHaveBeenCalledTimes(2);
+    expect(repo.startJob).not.toHaveBeenCalled();
+  });
   it('uploads each input once, recording the state, and skips what is already up', async () => {
     const repo = repository();
     const client = new FrameleafCloudJobClient(repo as unknown as FrameleafCloudMlRepository, gateway);

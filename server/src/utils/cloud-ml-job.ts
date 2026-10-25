@@ -7,6 +7,7 @@ import {
   CloudOutputDownload,
   isFinalCloudJobStatus,
 } from 'src/utils/frameleaf-cloud.js';
+import { sourceReferenceSchema } from 'src/utils/source-reference.js';
 
 /**
  * Frameleaf Cloud restoration, upscaling and Smooth motion jobs (FL-162, `CLD-202`).
@@ -161,6 +162,19 @@ export const CloudMlJobSnapshotSchema = z.object({
   assetId: z.string().min(1),
   ownerId: z.string().min(1),
   sourceChecksumHex: z.string().min(1),
+  sourceEpochs: z
+    .array(
+      z
+        .object({
+          assetId: z.string().min(1),
+          ownerId: z.string().min(1),
+          epoch: z.string().regex(/^(0|[1-9][0-9]*)$/u),
+          reference: sourceReferenceSchema,
+        })
+        .strict(),
+    )
+    .length(1)
+    .optional(),
   sourceType: z.enum(['image', 'video']),
   destinationId: z.string().min(1),
   workload: z.enum(['restoration', 'upscale', 'interpolation']),
@@ -263,6 +277,7 @@ export type CloudMlJobEstimateRecord = {
   assetId: string;
   restorationId: string | null;
   sourceChecksumHex: string;
+  sourceEpochs?: CloudMlJobSnapshot['sourceEpochs'];
   sourceType: 'image' | 'video';
   destinationId: string;
   workload: CloudMlJobWorkload;

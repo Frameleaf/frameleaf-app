@@ -4,17 +4,19 @@ import {
   ForbiddenException,
   HttpException,
   HttpStatus,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { type Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import type { DB } from 'src/schema/index.js';
-import type { RawImageInfo } from 'src/types.js';
+import type { RawImageInfo, SystemMetadata } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import {
@@ -33,6 +35,7 @@ import {
 } from 'src/dtos/cloud-ml-job.dto.js';
 import {
   AssetType,
+  ChecksumAlgorithm,
   Colorspace,
   DatabaseLock,
   FrameleafWorker,
@@ -50,6 +53,7 @@ import {
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { sameSourceEpoch } from 'src/repositories/asset-local-effect.repository.js';
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -62,15 +66,19 @@ import {
 } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
+import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
+import { MetadataRepository, type SourceMediaMetadata } from 'src/repositories/metadata.repository.js';
 import { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { parseDurationSeconds } from 'src/services/asset-restoration.service.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
 import { requireAccess } from 'src/utils/access.js';
 import {
   CLOUD_ML_JOB_COST_POLL_MS,
@@ -95,6 +103,7 @@ import {
   CloudMlJobPhase,
   CloudMlJobResult,
   CloudMlJobSnapshot,
+  CloudMlJobSnapshotSchema,
   CloudMlJobUpscale,
   CloudMlJobWorkload,
   cloudMlJobActivity,
@@ -114,7 +123,9 @@ import {
   perUnitEstimate,
   plannedWorkers,
 } from 'src/utils/cloud-ml-job.js';
+import { beginCloudNativeWork, cloudNativeWorkStopped } from 'src/utils/cloud-native-work.js';
 import { getConfig } from 'src/utils/config.js';
+import { executionSignal, withExecutionCleanup, withExecutionSignal } from 'src/utils/execution-signal.js';
 import { CloudConnectionState, CloudMlGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
 import { CloudJobInputError, FrameleafCloudJobClient } from 'src/utils/frameleaf-cloud-job-client.js';
 import {
@@ -156,6 +167,7 @@ import {
   consentUnconfirmedOf,
   selectMlDestination,
 } from 'src/utils/ml-destination.js';
+import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import {
   RESTORATION_PREVIEW_EDGE,
   STAGE_STATUSES,
@@ -167,10 +179,14 @@ import {
   restorationOutputPaths,
   resultExpiryAfterAbandon,
 } from 'src/utils/restoration.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
+import { isStudioUuid } from 'src/utils/studio-resources.js';
 
 type CloudMlSettings = SystemConfig['frameleafCloud']['cloudMl'];
 
-type Source = NonNullable<Awaited<ReturnType<AssetJobRepository['getForGenerateThumbnailJob']>>>;
+type Source = NonNullable<Awaited<ReturnType<AssetJobRepository['getForGenerateThumbnailJob']>>> & {
+  originalInput?: { localPath: string; reader?: SourceMediaMetadata };
+};
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -183,7 +199,14 @@ const PREPARED_INPUT_VERSION = 2;
 /** The record written next to a prepared copy once it is complete. */
 const PREPARED_INPUT_RECORD = 'prepared.json';
 
-type PreparedCopy = { file: string; contentType: string; bytes: number; sha256: string };
+type PreparedCopy = {
+  file: string;
+  contentType: string;
+  bytes: number;
+  sha256: string;
+  video?: { width: number; height: number; durationSeconds: number };
+};
+type PreparedInput = NonNullable<SystemMetadata[SystemMetadataKey.FrameleafCloudMlJobEstimates]['prepared']>[number];
 
 /** Why a step was stopped from outside: its claim was lost, the owner cancelled, or the server stops. */
 type StepAbort = 'lost' | 'cancel' | 'shutdown';
@@ -216,6 +239,12 @@ export class CloudMlJobFailure extends Error {
   }
 }
 
+class CloudMlJobInterrupted extends Error {
+  constructor(readonly reason: 'lost' | 'cancel') {
+    super(reason);
+  }
+}
+
 /** One claimed job in hand. */
 type JobRun = {
   operation: MediaOperation;
@@ -223,6 +252,7 @@ type JobRun = {
   snapshot: CloudMlJobSnapshot;
   result: CloudMlJobResult;
   now: Date;
+  signal: AbortSignal;
 };
 
 /** A published file: moved from its work path to its final path inside the publishing transaction. */
@@ -291,6 +321,15 @@ const failureOf = (error: unknown): CloudMlJobFailure | null => {
  */
 @Injectable()
 export class CloudMlJobService {
+  @Inject(IntegrityRepository)
+  private integrityRepository!: IntegrityRepository;
+  @Inject(SourceOriginalService)
+  private sourceOriginalService!: SourceOriginalService;
+  @Inject(MetadataRepository)
+  private metadataRepository!: MetadataRepository;
+  @Inject(SessionRepository)
+  private sessionRepository!: SessionRepository;
+  private readonly sourceReaderOwnerId = randomUUID();
   private tickHandle?: ReturnType<typeof setInterval>;
   private cleanupHandle?: ReturnType<typeof setInterval>;
   private active?: Promise<void>;
@@ -353,7 +392,7 @@ export class CloudMlJobService {
       clearInterval(this.cleanupHandle);
       this.cleanupHandle = undefined;
     }
-    await Promise.all([this.active, this.cleaning]);
+    await Promise.all([this.active, this.cleaning, ...this.preparing.values()]);
   }
 
   tick() {
@@ -418,9 +457,13 @@ export class CloudMlJobService {
     auth: AuthDto,
     dto: CloudMlJobEstimateRequestDto,
     now = new Date(),
+    cancelled?: AbortSignal,
   ): Promise<CloudMlJobEstimateResponseDto> {
+    const signal = AbortSignal.any([this.shutdown.signal, ...(cancelled ? [cancelled] : [])]);
+    signal.throwIfAborted();
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [dto.assetId] });
     const source = await this.requireSource(dto.assetId);
+    const sourceEpochs = await this.sourceEpochs(source);
     const video = source.type === AssetType.Video;
     const sourceType = video ? AssetRestorationSourceType.Video : AssetRestorationSourceType.Image;
     const sizes = this.sourceSize(source);
@@ -433,6 +476,12 @@ export class CloudMlJobService {
     // estimate is a quote for the whole file with the given settings, which cannot be confirmed (FL-348)
     const quoteOnly = dto.stage === 'full' && !dto.restorationId;
     const preview = dto.stage === 'full' && !quoteOnly ? await this.requireReviewedPreview(auth, dto) : null;
+    if (preview) {
+      const provenance = preview.provenance as {
+        preview?: { sourceEpochs?: CloudMlJobSnapshot['sourceEpochs'] };
+      } | null;
+      await this.requireSourceEpochs(source, provenance?.preview?.sourceEpochs);
+    }
     const smooth = dto.purpose === 'smooth-motion';
     const settings = preview
       ? {
@@ -479,148 +528,171 @@ export class CloudMlJobService {
       `cloud_ml_${id}`,
     );
     // a whole video is prepared once, in the background, and reused by every estimate of it
-    const copy = video && dto.stage === 'full' ? await this.preparedWholeVideo(auth, source) : null;
-    this.storageRepository.mkdirSync(workDir);
-    let prepared: Awaited<ReturnType<CloudMlJobService['prepareInput']>>;
+    const copy =
+      video && dto.stage === 'full' ? await this.preparedWholeVideo(auth, source, sourceEpochs, signal) : null;
     try {
-      prepared = copy
-        ? this.fromPreparedCopy(copy, workload, sizes, durationSeconds, smooth ? 1 : settings.upscale)
-        : await this.prepareInput(source, {
-            workDir,
-            stage: dto.stage,
-            workload,
-            sourceType,
-            sizes,
-            durationSeconds,
-            region: settings.region,
-            crop: !smooth,
-            upscale: smooth ? 1 : settings.upscale,
-          });
-    } catch (error) {
-      await this.removeWorkDir(workDir);
-      throw error instanceof CloudMlJobFailure ? new BadRequestException(error.message) : error;
-    }
-
-    const request = this.requestOf(workload, settings, prepared.size);
-    let sealed: CloudEstimate;
-    let wallet: Awaited<ReturnType<FrameleafCloudMlRepository['getWallet']>>;
-    let consent: Awaited<ReturnType<FrameleafCloudMlRepository['getConsent']>>;
-    try {
-      sealed = await this.frameleafCloudMlRepository.createEstimate(gateway, {
-        workload,
-        modelSku: model.sku,
-        inputs: [this.toCloudInput(prepared.input)],
-        request,
-      } as Parameters<FrameleafCloudMlRepository['createEstimate']>[1]);
-      if (sealed.modelSku !== model.sku || sealed.modelRev !== model.rev) {
-        throw this.modelMismatch('Frameleaf Cloud estimated another revision of this model; choose the model again');
+      this.storageRepository.mkdirSync(workDir);
+      let prepared: Awaited<ReturnType<CloudMlJobService['prepareInput']>>;
+      try {
+        prepared = copy
+          ? this.fromPreparedCopy(copy, workload, sizes, durationSeconds, smooth ? 1 : settings.upscale)
+          : await this.withNativeWork(workDir, () =>
+              this.withOriginal(auth, source, sourceEpochs, signal, (source) =>
+                this.prepareInput(source, {
+                  workDir,
+                  stage: dto.stage,
+                  workload,
+                  sourceType,
+                  sizes,
+                  durationSeconds,
+                  region: settings.region,
+                  crop: !smooth,
+                  upscale: smooth ? 1 : settings.upscale,
+                }),
+              ),
+            );
+      } catch (error) {
+        if (!this.sourceShutdownUnconfirmed(error)) await this.removeWorkDir(workDir);
+        throw error instanceof CloudMlJobFailure ? new BadRequestException(error.message) : error;
       }
-      [wallet, consent] = await Promise.all([
-        this.frameleafCloudMlRepository.getWallet(gateway),
-        this.frameleafCloudMlRepository.getConsent(gateway),
-      ]);
-    } catch (error) {
-      await this.removeWorkDir(workDir);
-      throw this.clientError(error);
-    }
 
-    let upscale: CloudMlJobUpscale | undefined;
-    try {
-      upscale = workload === 'upscale' ? this.upscaleQuote(sealed, settings.upscale, prepared.size) : undefined;
-    } catch (error) {
-      await this.removeWorkDir(workDir);
-      throw error instanceof CloudMlJobFailure ? new BadRequestException(error.message) : error;
-    }
-    // the version is the photo times the factor it really gets, never capped again here
-    const output = upscale
-      ? { width: upscale.input.width * upscale.appliedScale, height: upscale.input.height * upscale.appliedScale }
-      : prepared.output;
-    const workers = plannedWorkers(sealed, model.rate.startFeeUsd);
-    const quantity = video
-      ? { unit: 'minute' as const, value: (prepared.durationSeconds ?? 0) / 60 }
-      : { unit: 'photo' as const, value: 1 };
-    const availableUsd = Math.max(0, wallet.balanceUsd - wallet.heldUsd);
-    const record: CloudMlJobEstimateRecord = {
-      id,
-      ownerId: source.ownerId,
-      createdBy: auth.user.id,
-      createdAt: now.toISOString(),
-      expiresAt: sealed.expiresAt,
-      purpose: dto.purpose,
-      stage: dto.stage,
-      assetId: source.id,
-      restorationId: preview?.id ?? null,
-      sourceChecksumHex: Buffer.from(source.checksum).toString('hex'),
-      sourceType: video ? 'video' : 'image',
-      destinationId: destination.id,
-      workload,
-      appWorkload,
-      settings,
-      model: { sku: model.sku, rev: model.rev, label: model.label },
-      computeSku: sealed.computeSku,
-      request,
-      inputs: [prepared.input],
-      workDir,
-      beforePath: prepared.beforePath,
-      output,
-      durationSeconds: prepared.durationSeconds,
-      ...(upscale && { upscale }),
-      sealed: sealed.estimate,
-      approved: {
+      const request = this.requestOf(workload, settings, prepared.size);
+      let sealed: CloudEstimate;
+      let wallet: Awaited<ReturnType<FrameleafCloudMlRepository['getWallet']>>;
+      let consent: Awaited<ReturnType<FrameleafCloudMlRepository['getConsent']>>;
+      try {
+        sealed = await this.frameleafCloudMlRepository.createEstimate(gateway, {
+          workload,
+          modelSku: model.sku,
+          inputs: [this.toCloudInput(prepared.input)],
+          request,
+        } as Parameters<FrameleafCloudMlRepository['createEstimate']>[1]);
+        if (sealed.modelSku !== model.sku || sealed.modelRev !== model.rev) {
+          throw this.modelMismatch('Frameleaf Cloud estimated another revision of this model; choose the model again');
+        }
+        [wallet, consent] = await Promise.all([
+          this.frameleafCloudMlRepository.getWallet(gateway),
+          this.frameleafCloudMlRepository.getConsent(gateway),
+        ]);
+      } catch (error) {
+        await this.removeWorkDir(workDir);
+        throw this.clientError(error);
+      }
+
+      let upscale: CloudMlJobUpscale | undefined;
+      try {
+        upscale = workload === 'upscale' ? this.upscaleQuote(sealed, settings.upscale, prepared.size) : undefined;
+      } catch (error) {
+        await this.removeWorkDir(workDir);
+        throw error instanceof CloudMlJobFailure ? new BadRequestException(error.message) : error;
+      }
+      // the version is the photo times the factor it really gets, never capped again here
+      const output = upscale
+        ? { width: upscale.input.width * upscale.appliedScale, height: upscale.input.height * upscale.appliedScale }
+        : prepared.output;
+      const workers = plannedWorkers(sealed, model.rate.startFeeUsd);
+      const quantity = video
+        ? { unit: 'minute' as const, value: (prepared.durationSeconds ?? 0) / 60 }
+        : { unit: 'photo' as const, value: 1 };
+      const availableUsd = Math.max(0, wallet.balanceUsd - wallet.heldUsd);
+      const record: CloudMlJobEstimateRecord = {
+        id,
+        ownerId: source.ownerId,
+        createdBy: auth.user.id,
+        createdAt: now.toISOString(),
+        expiresAt: sealed.expiresAt,
+        purpose: dto.purpose,
+        stage: dto.stage,
+        assetId: source.id,
+        restorationId: preview?.id ?? null,
+        sourceChecksumHex: Buffer.from(source.checksum).toString('hex'),
+        ...(sourceEpochs && { sourceEpochs }),
+        sourceType: video ? 'video' : 'image',
+        destinationId: destination.id,
+        workload,
+        appWorkload,
+        settings,
+        model: { sku: model.sku, rev: model.rev, label: model.label },
+        computeSku: sealed.computeSku,
+        request,
+        inputs: [prepared.input],
+        workDir,
+        beforePath: prepared.beforePath,
+        output,
+        durationSeconds: prepared.durationSeconds,
+        ...(upscale && { upscale }),
+        sealed: sealed.estimate,
+        approved: {
+          estimateId: id,
+          p50Usd: sealed.cost.p50,
+          p90Usd: sealed.cost.p90,
+          holdUsd: sealed.cost.hold,
+          startupUsd: sealed.cost.startup,
+          minimumUsd: sealed.cost.minimum,
+          startFeeUsd: model.rate.startFeeUsd,
+          perSecondUsd: model.rate.perSecondUsd,
+          plannedWorkers: workers,
+          coldStartSeconds: sealed.seconds.coldStart,
+          runSeconds: sealed.seconds.run,
+          basis: sealed.basis,
+        },
+        consent: { version: consent.requiredVersion, textSha256: consent.textSha256 },
+        operationId: null,
+      };
+      try {
+        signal.throwIfAborted();
+        await this.requireSourceEpochs(source, sourceEpochs);
+        if (sourceEpochs)
+          await requireAccess(this.accessRepository, {
+            auth: await this.preparationAuth(auth),
+            permission: Permission.AssetEditCreate,
+            ids: [source.id],
+          });
+      } catch (error) {
+        await this.removeWorkDir(workDir);
+        throw error;
+      }
+      await this.keepEstimate(record, now);
+
+      return {
         estimateId: id,
+        expiresAt: sealed.expiresAt,
+        workload: appWorkload,
+        model: this.modelOf(model),
+        models: offered.toSorted((a, b) => a.rank - b.rank).map((entry) => this.modelOf(entry)),
+        basis: sealed.basis,
         p50Usd: sealed.cost.p50,
         p90Usd: sealed.cost.p90,
-        holdUsd: sealed.cost.hold,
         startupUsd: sealed.cost.startup,
-        minimumUsd: sealed.cost.minimum,
         startFeeUsd: model.rate.startFeeUsd,
         perSecondUsd: model.rate.perSecondUsd,
+        holdUsd: sealed.cost.hold,
+        minimumUsd: sealed.cost.minimum,
         plannedWorkers: workers,
         coldStartSeconds: sealed.seconds.coldStart,
         runSeconds: sealed.seconds.run,
-        basis: sealed.basis,
-      },
-      consent: { version: consent.requiredVersion, textSha256: consent.textSha256 },
-      operationId: null,
-    };
-    await this.keepEstimate(record, now);
-
-    return {
-      estimateId: id,
-      expiresAt: sealed.expiresAt,
-      workload: appWorkload,
-      model: this.modelOf(model),
-      models: offered.toSorted((a, b) => a.rank - b.rank).map((entry) => this.modelOf(entry)),
-      basis: sealed.basis,
-      p50Usd: sealed.cost.p50,
-      p90Usd: sealed.cost.p90,
-      startupUsd: sealed.cost.startup,
-      startFeeUsd: model.rate.startFeeUsd,
-      perSecondUsd: model.rate.perSecondUsd,
-      holdUsd: sealed.cost.hold,
-      minimumUsd: sealed.cost.minimum,
-      plannedWorkers: workers,
-      coldStartSeconds: sealed.seconds.coldStart,
-      runSeconds: sealed.seconds.run,
-      perUnit: { ...perUnitEstimate(sealed, quantity), quantity: Math.round(quantity.value * 100) / 100 },
-      availableUsd,
-      dailyCapUsd: wallet.dailyCapUsd,
-      spentTodayUsd: wallet.spentTodayUsd,
-      consent: { version: consent.requiredVersion, summary: consent.summary, documentUrl: consent.documentUrl },
-      refusal: this.walletRefusal(wallet, availableUsd, sealed.cost.hold),
-      // everyone may see what a job would cost; only those allowed may confirm it
-      permission: await this.spendPermission(auth, sealed.cost.hold, now),
-      upscale: upscale
-        ? {
-            requestedScale: upscale.requestedScale,
-            appliedScale: upscale.appliedScale,
-            lowered: upscale.lowered,
-            outputWidth: output.width,
-            outputHeight: output.height,
-          }
-        : null,
-      quoteOnly,
-    };
+        perUnit: { ...perUnitEstimate(sealed, quantity), quantity: Math.round(quantity.value * 100) / 100 },
+        availableUsd,
+        dailyCapUsd: wallet.dailyCapUsd,
+        spentTodayUsd: wallet.spentTodayUsd,
+        consent: { version: consent.requiredVersion, summary: consent.summary, documentUrl: consent.documentUrl },
+        refusal: this.walletRefusal(wallet, availableUsd, sealed.cost.hold),
+        // everyone may see what a job would cost; only those allowed may confirm it
+        permission: await this.spendPermission(auth, sealed.cost.hold, now),
+        upscale: upscale
+          ? {
+              requestedScale: upscale.requestedScale,
+              appliedScale: upscale.appliedScale,
+              lowered: upscale.lowered,
+              outputWidth: output.width,
+              outputHeight: output.height,
+            }
+          : null,
+        quoteOnly,
+      };
+    } finally {
+      await copy?.release?.();
+    }
   }
 
   /**
@@ -777,6 +849,7 @@ export class CloudMlJobService {
       if (Buffer.from(source.checksum).toString('hex') !== record.sourceChecksumHex) {
         throw new ConflictException('The original changed since the estimate; estimate again');
       }
+      await this.requireSourceEpochs(source, record.sourceEpochs);
       const destination = await this.requireCloudDestination(record.destinationId, record.appWorkload);
 
       // the version, the job and the version's link to the job land together, or not at all
@@ -801,7 +874,7 @@ export class CloudMlJobService {
 
   /** Write a confirmed estimate's job back to it, so a repeated confirmation answers the same. */
   private async linkEstimate(
-    store: { records: CloudMlJobEstimateRecord[]; prepared?: { dir: string; ownerId: string; at: string }[] },
+    store: SystemMetadata[SystemMetadataKey.FrameleafCloudMlJobEstimates],
     estimateId: string,
     operationId: string,
     restorationId: string,
@@ -832,6 +905,7 @@ export class CloudMlJobService {
       assetId: record.assetId,
       ownerId: record.ownerId,
       sourceChecksumHex: record.sourceChecksumHex,
+      ...(record.sourceEpochs && { sourceEpochs: structuredClone(record.sourceEpochs) }),
       sourceType: record.sourceType,
       destinationId: record.destinationId,
       workload: record.workload,
@@ -995,6 +1069,7 @@ export class CloudMlJobService {
    */
   async pruneEstimates(now: Date, add?: CloudMlJobEstimateRecord): Promise<void> {
     const removed: string[] = [];
+    const referenceRemovals: PreparedInput[] = [];
     await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudMlJobEstimates, async () => {
       const store = (await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)) ?? {
         records: [],
@@ -1033,20 +1108,45 @@ export class CloudMlJobService {
           removed.push(entry.workDir);
         }
       }
-      const prepared = (store.prepared ?? []).filter((entry) => {
-        const keep =
-          inUse.has(entry.dir) || this.preparing.has(entry.dir) || now.getTime() - Date.parse(entry.at) < DAY_MS;
-        if (!keep) {
-          removed.push(entry.dir);
-        }
-        return keep;
-      });
-      if (records.length !== store.records.length || prepared.length !== (store.prepared ?? []).length || add) {
+      const prepared: PreparedInput[] = [];
+      for (const entry of store.prepared ?? []) {
+        if (entry.referenceKey !== undefined) {
+          if (
+            this.validReferencePreparation(entry) &&
+            !inUse.has(entry.dir) &&
+            !this.preparing.has(entry.dir) &&
+            (entry.state === 'deleting' ||
+              (entry.state === 'ready' && now.getTime() - Date.parse(entry.at) >= DAY_MS)) &&
+            (await cloudNativeWorkStopped(entry.dir))
+          ) {
+            referenceRemovals.push(entry);
+            prepared.push({ ...entry, state: 'deleting' });
+          } else prepared.push(entry);
+        } else if (
+          inUse.has(entry.dir) ||
+          this.preparing.has(entry.dir) ||
+          now.getTime() - Date.parse(entry.at) < DAY_MS
+        ) {
+          prepared.push(entry);
+        } else removed.push(entry.dir);
+      }
+      if (
+        records.length !== store.records.length ||
+        prepared.length !== (store.prepared ?? []).length ||
+        referenceRemovals.length > 0 ||
+        add
+      ) {
         await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudMlJobEstimates, { records, prepared });
       }
     });
     for (const dir of removed) {
       await this.removeWorkDir(dir);
+    }
+    for (const entry of referenceRemovals) {
+      if (await this.removeWorkDir(entry.dir))
+        await this.setReferencePreparation(entry, 'delete').catch(() =>
+          this.logger.warn('Prepared video cleanup is pending; its ownership record is retained'),
+        );
     }
   }
 
@@ -1067,10 +1167,17 @@ export class CloudMlJobService {
       );
       return;
     }
-    const run: JobRun = { operation, claimToken, snapshot, result: parseCloudMlJobResult(operation.result), now };
     // a transfer in flight stops when the claim is lost, the owner cancels, or the server shuts down
     const abort = new AbortController();
     const signal = AbortSignal.any([abort.signal, this.shutdown.signal]);
+    const run: JobRun = {
+      operation,
+      claimToken,
+      snapshot,
+      result: parseCloudMlJobResult(operation.result),
+      now,
+      signal,
+    };
     const keepAlive = setInterval(
       () => void this.watchStep(operation.id, claimToken, abort),
       CLOUD_ML_JOB_LEASE_MS / 4,
@@ -1097,10 +1204,12 @@ export class CloudMlJobService {
           break;
         }
         case CloudMlJobPhase.Started: {
+          await this.readmitSource(run, client);
           await this.poll(run, client);
           break;
         }
         case CloudMlJobPhase.Ending: {
+          await this.readmitSource(run, client);
           await this.end(run, client, null);
           break;
         }
@@ -1115,6 +1224,10 @@ export class CloudMlJobService {
         }
       }
     } catch (error) {
+      if (error instanceof CloudMlJobInterrupted) {
+        if (error.reason === 'cancel') await this.save(run);
+        return;
+      }
       if (signal.aborted) {
         await this.afterAbort(run, signal);
         return;
@@ -1557,23 +1670,27 @@ export class CloudMlJobService {
       now: run.now,
       record: async (state) => {
         run.result = { ...run.result, uploads: structuredClone(state) };
-        if (!(await this.save(run))) {
+        if (!(await this.save(run, { deferCancel: true }))) {
           return false;
         }
         await this.readmit(run, client);
+        if (!(await this.save(run, { deferCancel: true }))) return false;
+        await this.readmitSource(run, client);
         return true;
       },
     });
     if (outcome === 'stopped') {
       if (signal?.aborted) {
         await this.afterAbort(run, signal);
-      }
+      } else await this.save(run);
       return;
     }
     if (outcome === 'uploaded') {
       try {
         // metering can only begin once every input is uploaded and the job is started
         await this.readmit(run, client);
+        if (!(await this.save(run))) return;
+        await this.readmitSource(run, client);
         const view = await client.start(job.jobId);
         run.result = { ...run.result, job: cloudMlJobRecordOf(view, job, null) };
       } catch (error) {
@@ -1658,6 +1775,25 @@ export class CloudMlJobService {
    * The cost is recorded once, when settled.
    */
   private async end(run: JobRun, client: FrameleafCloudJobClient, known: CloudJobView | null) {
+    let outcome: 'completed' | 'rejected' | 'lost' | undefined;
+    try {
+      outcome = await this.withNativeWork(run.snapshot.workDir, () =>
+        withExecutionSignal(run.signal, () => this.collect(run, client, known)),
+      );
+    } catch (error) {
+      if (this.sourceShutdownUnconfirmed(error))
+        throw new CloudMlJobFailure(
+          'cloud_ml_native_work_retained',
+          'Native output ownership is unconfirmed; its files have been retained',
+          false,
+        );
+      throw error;
+    }
+    if (outcome === 'completed' || outcome === 'rejected' || run.result.phase === CloudMlJobPhase.Finished)
+      await this.removeJobFiles(run.snapshot);
+  }
+
+  private async collect(run: JobRun, client: FrameleafCloudJobClient, known: CloudJobView | null) {
     const job = run.result.job!;
     let view = known;
     if (!view) {
@@ -1756,6 +1892,7 @@ export class CloudMlJobService {
       // the version is committed (or was discarded): the cloud may purge the job now
       await this.releaseFinished(run, client);
     }
+    return published;
   }
 
   /**
@@ -1831,9 +1968,14 @@ export class CloudMlJobService {
     const base = StorageCore.getNestedFolder(StorageFolder.Thumbnails, row.ownerId, row.assetId);
     const paths = restorationOutputPaths(base, row.assetId, row.id);
     const original = snapshot.stage === 'preview' ? null : source.originalPath;
+    if (snapshot.stage === 'full' && snapshot.sourceType === 'video') await this.checkSourceAuthority(run);
     const output =
       snapshot.sourceType === 'video'
-        ? await this.assembleVideo(run, outputs, original)
+        ? snapshot.stage === 'full' && (snapshot.sourceEpochs || parseSourceOriginalPath(source.originalPath))
+          ? await this.withOperationOriginal(run, source, (selected) =>
+              this.assembleVideo(run, outputs, selected.originalInput!.localPath),
+            )
+          : await this.assembleVideo(run, outputs, original)
         : await this.assembleImage(run, outputs[0]);
 
     const files: PublishedFile[] = [];
@@ -1850,6 +1992,7 @@ export class CloudMlJobService {
       }
     }
 
+    run.signal.throwIfAborted();
     if (!(await this.mediaOperationRepository.beginValidation(operation.id, claimToken))) {
       return 'lost';
     }
@@ -1867,6 +2010,7 @@ export class CloudMlJobService {
         modelName: snapshot.model.label,
         consentVersion: snapshot.consent.version,
         sourceChecksumHex: snapshot.sourceChecksumHex,
+        ...(snapshot.sourceEpochs && { sourceEpochs: structuredClone(snapshot.sourceEpochs) }),
         finishedAt: now.toISOString(),
       },
     };
@@ -1906,8 +2050,11 @@ export class CloudMlJobService {
         return true;
       });
     } catch (error) {
-      for (const file of placed) {
-        await this.storageRepository.unlink(file).catch(() => {});
+      // A lost COMMIT reply may have published the files; preserve them if readback is unavailable.
+      const current = await this.restorationRepository.get(row.id).catch(() => null);
+      if (current !== null) {
+        const kept = current?.status === statuses.done ? files.map((file) => current[file.column]) : [];
+        for (const file of placed) if (!kept.includes(file)) await this.storageRepository.unlink(file).catch(() => {});
       }
       throw error;
     }
@@ -1919,11 +2066,9 @@ export class CloudMlJobService {
         { error: 'The version was discarded while Frameleaf Cloud was working on it', errorCode: 'cloud_ml_discarded' },
         { retry: false },
       );
-      await this.removeJobFiles(snapshot);
       return 'rejected';
     }
     if (outcome === 'completed') {
-      await this.removeJobFiles(snapshot);
       this.logger.log(`Frameleaf Cloud job ${operation.id} published ${snapshot.purpose} ${snapshot.stage} ${row.id}`);
     }
     return outcome;
@@ -2141,7 +2286,7 @@ export class CloudMlJobService {
    * a cancel stops the cloud job; a pause lands only before the cloud job was started, since a started
    * job keeps running (and metering) on Frameleaf Cloud whether this server watches it or not.
    */
-  private async save(run: JobRun, options: { quiet?: boolean } = {}): Promise<boolean> {
+  private async save(run: JobRun, options: { quiet?: boolean; deferCancel?: boolean } = {}): Promise<boolean> {
     const progress = run.result.job?.progress;
     const counted = !!progress && progress.total > 0;
     const written = await this.mediaOperationRepository.setBulkResult(run.operation.id, run.claimToken, {
@@ -2161,6 +2306,7 @@ export class CloudMlJobService {
       return true;
     }
     if (written.status === MediaOperationStatus.Cancelling || written.cancelRequestedAt) {
+      if (options.deferCancel) return false;
       await this.cancel(run);
       return false;
     }
@@ -2516,6 +2662,25 @@ export class CloudMlJobService {
     output: { width: number; height: number };
     durationSeconds: number | null;
   }> {
+    if (source.originalInput && options.sourceType === AssetRestorationSourceType.Video) {
+      const probe = await this.mediaRepository.probe(source.originalInput.localPath);
+      const stream = probe.videoStreams[0];
+      const durationSeconds = parseDurationSeconds(probe.format.duration);
+      if (
+        !stream ||
+        !Number.isSafeInteger(stream.width) ||
+        !Number.isSafeInteger(stream.height) ||
+        stream.width <= 0 ||
+        stream.height <= 0 ||
+        durationSeconds === null
+      )
+        throw new BadRequestException('The source video metadata could not be verified');
+      const sizes =
+        Math.abs(stream.rotation ?? 0) % 180 === 90
+          ? { width: stream.height, height: stream.width }
+          : { width: stream.width, height: stream.height };
+      options = { ...options, sizes, durationSeconds };
+    }
     const { stage, sourceType } = options;
     let prepared: { file: string; contentType: string; beforePath: string | null; width: number; height: number };
     let durationSeconds = options.durationSeconds;
@@ -2529,6 +2694,10 @@ export class CloudMlJobService {
       prepared = await this.preparePhotoCrop(source, options);
     } else {
       prepared = { ...(await this.prepareFullPhoto(source, options.workDir)), beforePath: null, ...options.sizes };
+      if (source.originalInput) {
+        const { width, height } = await this.mediaRepository.getImageMetadata(prepared.file);
+        prepared = { ...prepared, width, height };
+      }
     }
 
     if (!CLOUD_ML_JOB_INPUT_TYPES[options.workload].includes(prepared.contentType)) {
@@ -2580,7 +2749,7 @@ export class CloudMlJobService {
         ? ['-vf', `crop=${even(rect.width)}:${even(rect.height)}:${rect.left}:${rect.top}`]
         : [];
     const beforePath = path.join(workDir, 'before.mp4');
-    await this.mediaRepository.transcode(source.originalPath, beforePath, {
+    await this.mediaRepository.transcode(source.originalInput?.localPath ?? source.originalPath, beforePath, {
       inputOptions: ['-ss', start.toFixed(3), '-t', clip.toFixed(3)],
       outputOptions: previewClipOutputOptions(crop),
       twoPass: false,
@@ -2614,7 +2783,7 @@ export class CloudMlJobService {
    * container Frameleaf Cloud takes when its codec allows it, otherwise re-encoded at high quality.
    */
   private async prepareFullVideo(source: Source, workDir: string): Promise<{ file: string; contentType: string }> {
-    const probe = await this.mediaRepository.probe(source.originalPath);
+    const probe = await this.mediaRepository.probe(source.originalInput?.localPath ?? source.originalPath);
     const codec = probe.videoStreams[0]?.codecName ?? null;
     const extension = path.extname(source.originalFileName).toLowerCase();
     const copyable: Record<string, { container: string; contentType: string; codecs: string[] }> = {
@@ -2633,7 +2802,7 @@ export class CloudMlJobService {
       hevc: 'filter_units=remove_types=39|40',
     };
     const filter = copy && codec ? sei[codec] : undefined;
-    await this.mediaRepository.transcode(source.originalPath, file, {
+    await this.mediaRepository.transcode(source.originalInput?.localPath ?? source.originalPath, file, {
       inputOptions: [],
       outputOptions: fullVideoUploadOutputOptions({ copy, bsf: filter, webm: container === 'webm' }),
       twoPass: false,
@@ -2706,7 +2875,11 @@ export class CloudMlJobService {
     if (mimeTypes.isWebSupportedImage(source.originalFileName)) {
       const format = strippedStillFormat(source.originalFileName);
       const file = path.join(workDir, format === 'jpeg' ? 'input.jpg' : 'input.png');
-      await this.mediaRepository.writeStrippedStill(source.originalPath, file, format);
+      await this.mediaRepository.writeStrippedStill(
+        source.originalInput?.localPath ?? source.originalPath,
+        file,
+        format,
+      );
       return { file, contentType: format === 'jpeg' ? 'image/jpeg' : 'image/png' };
     }
     const { image } = await this.getConfig();
@@ -2723,21 +2896,7 @@ export class CloudMlJobService {
 
   /** The prepared inputs must still be what was estimated: the original unchanged, the copy's size the same. */
   private async checkInputs(run: JobRun) {
-    const source = await this.assetJobRepository.getForGenerateThumbnailJob(run.snapshot.assetId);
-    if (!source) {
-      throw new CloudMlJobFailure(
-        'cloud_ml_source_missing',
-        'The original is no longer available; nothing was sent',
-        false,
-      );
-    }
-    if (Buffer.from(source.checksum).toString('hex') !== run.snapshot.sourceChecksumHex) {
-      throw new CloudMlJobFailure(
-        'cloud_ml_source_changed',
-        'The original changed since the estimate; nothing was sent. Estimate it again.',
-        false,
-      );
-    }
+    await this.checkSourceAuthority(run);
     for (const input of run.snapshot.inputs) {
       const stat = await this.storageRepository.stat(input.path).catch(() => null);
       if (stat?.size !== input.bytes) {
@@ -2751,6 +2910,49 @@ export class CloudMlJobService {
         // checked again before anything is sent: a copy prepared by an older version is never uploaded with audio
         await this.requireSilentUpload(input.path);
       }
+    }
+  }
+
+  private async checkSourceAuthority(run: JobRun) {
+    try {
+      const source = await this.assetJobRepository.getForGenerateThumbnailJob(run.snapshot.assetId);
+      if (!source) {
+        throw new CloudMlJobFailure(
+          'cloud_ml_source_missing',
+          'The original is no longer available; nothing more is sent',
+          false,
+        );
+      }
+      if (
+        source.id !== run.snapshot.assetId ||
+        source.ownerId !== run.snapshot.ownerId ||
+        run.operation.ownerId !== run.snapshot.ownerId ||
+        run.operation.assetId !== run.snapshot.assetId ||
+        Buffer.from(source.checksum).toString('hex') !== run.snapshot.sourceChecksumHex
+      ) {
+        throw new CloudMlJobFailure(
+          'cloud_ml_source_changed',
+          'The original changed since the estimate; nothing more is sent. Estimate it again.',
+          false,
+        );
+      }
+      await this.requireSourceEpochs(source, run.snapshot.sourceEpochs);
+    } catch (error) {
+      if (error instanceof CloudMlJobFailure) throw error;
+      if (
+        error instanceof ConflictException ||
+        (error instanceof Error && error.message === 'source_reference_invalid')
+      )
+        throw new CloudMlJobFailure(
+          'cloud_ml_source_changed',
+          'The source reference changed or was revoked; nothing more is sent. Estimate it again.',
+          false,
+        );
+      throw new CloudMlJobFailure(
+        'cloud_ml_source_unconfirmed',
+        'Current source permission could not be confirmed; nothing more is sent. It will be checked again.',
+        true,
+      );
     }
   }
 
@@ -2804,11 +3006,23 @@ export class CloudMlJobService {
   }
 
   private async decodeSource(source: Source, image: SystemConfig['image']) {
-    const isRaw = mimeTypes.isRaw(source.originalFileName);
-    const extracted = isRaw && image.extractEmbedded ? await this.mediaRepository.extract(source.originalPath) : null;
-    const colorspace = this.isSRGB(source.exifInfo) ? Colorspace.Srgb : image.colorspace;
-    const input = extracted ? extracted.buffer : source.originalPath;
-    const orientation = extracted && source.exifInfo.orientation ? Number(source.exifInfo.orientation) : undefined;
+    const isRaw = mimeTypes.isRaw(source.originalFileName) && !source.originalFileName.toLowerCase().endsWith('.psd');
+    const readPath = source.originalInput?.localPath ?? source.originalPath;
+    const reader = source.originalInput?.reader;
+    const extracted =
+      isRaw && image.extractEmbedded
+        ? reader
+          ? await this.mediaRepository.extract(readPath, reader)
+          : await this.mediaRepository.extract(readPath)
+        : null;
+    const sensor =
+      source.originalInput && isRaw && !extracted ? await renderRawWithLibRaw(readPath, executionSignal()) : null;
+    const colorspace =
+      sensor || (!source.originalInput && this.isSRGB(source.exifInfo)) ? Colorspace.Srgb : image.colorspace;
+    const input = extracted ? extracted.buffer : (sensor ?? readPath);
+    const tags = extracted && reader ? await reader.readTags(readPath) : null;
+    const embeddedOrientation = reader ? tags?.Orientation : source.exifInfo.orientation;
+    const orientation = extracted && embeddedOrientation ? Number(embeddedOrientation) : undefined;
     const { data, info } = await this.mediaRepository.decodeImage(input, {
       colorspace,
       processInvalidImages: false,
@@ -2846,6 +3060,180 @@ export class CloudMlJobService {
       throw new BadRequestException('Only photos and videos can be sent to Frameleaf Cloud');
     }
     return source;
+  }
+
+  private async sourceEpochs(source: Source): Promise<CloudMlJobSnapshot['sourceEpochs']> {
+    if (!parseSourceOriginalPath(source.originalPath)) return;
+    const parsed = CloudMlJobSnapshotSchema.shape.sourceEpochs.safeParse(
+      await this.integrityRepository.sourceEpochs([source.id]),
+    );
+    const epoch = parsed.success ? parsed.data?.[0] : undefined;
+    if (
+      !epoch ||
+      epoch.assetId !== source.id ||
+      epoch.ownerId !== source.ownerId ||
+      source.checksumAlgorithm !== ChecksumAlgorithm.sha1Path ||
+      !Buffer.from(source.checksum).equals(createHash('sha1').update(source.originalPath).digest())
+    )
+      throw new ConflictException('The source reference is unavailable; estimate again');
+    return structuredClone(parsed.data);
+  }
+
+  private sourceShutdownUnconfirmed(error: unknown) {
+    return (
+      error instanceof Error &&
+      [
+        'media_process_shutdown_unconfirmed',
+        'source_original_shutdown_unconfirmed',
+        'artifact_close_unconfirmed',
+        'source_reader_stop_unconfirmed',
+        'cloud_ml_native_work_retained',
+      ].includes(error.message)
+    );
+  }
+
+  private async preparationAuth(auth: AuthDto): Promise<AuthDto> {
+    if (!auth.session) return auth;
+    const live = await this.sessionRepository.getAuth(auth.user.id, auth.session.id);
+    if (!live) throw new ForbiddenException('The preparation session has expired or was revoked');
+    return live;
+  }
+
+  private async withOriginal<T>(
+    auth: AuthDto,
+    source: Source,
+    epochs: CloudMlJobSnapshot['sourceEpochs'],
+    signal: AbortSignal,
+    work: (source: Source) => Promise<T>,
+  ): Promise<T> {
+    if (!epochs) return withExecutionSignal(signal, () => work(source));
+    const authorize = async () => {
+      signal.throwIfAborted();
+      const live = await this.preparationAuth(auth);
+      await requireAccess(this.accessRepository, {
+        auth: live,
+        permission: Permission.AssetEditCreate,
+        ids: [source.id],
+      });
+      const current = await this.requireSource(source.id);
+      if (
+        current.ownerId !== source.ownerId ||
+        current.originalPath !== source.originalPath ||
+        !current.checksum.equals(source.checksum)
+      )
+        throw new ConflictException('The source original changed during preparation');
+      await this.requireSourceEpochs(current, epochs);
+      signal.throwIfAborted();
+    };
+    await authorize();
+    return this.withResolvedOriginal(source, epochs, signal, authorize, work);
+  }
+
+  private async withOperationOriginal<T>(run: JobRun, source: Source, work: (source: Source) => Promise<T>) {
+    const epochs = run.snapshot.sourceEpochs;
+    if (!epochs) throw new CloudMlJobFailure('cloud_ml_source_changed', 'The reference needs a new preview', false);
+    const requireClaim = async () => {
+      run.signal.throwIfAborted();
+      const current = await this.mediaOperationRepository.getForWorker(run.operation.id);
+      const expires = current?.claimExpiresAt ? new Date(current.claimExpiresAt).getTime() : NaN;
+      const snapshot = CloudMlJobSnapshotSchema.safeParse(current?.snapshot);
+      if (
+        !current ||
+        current.id !== run.operation.id ||
+        current.ownerId !== run.snapshot.ownerId ||
+        current.assetId !== run.snapshot.assetId ||
+        current.revisionId !== run.snapshot.restorationId ||
+        current.kind !== MediaOperationKind.CloudMlJob ||
+        current.destination !== MediaOperationDestination.FrameleafCloud ||
+        current.claimToken !== run.claimToken ||
+        !Number.isFinite(expires) ||
+        expires <= Date.now() ||
+        !snapshot.success ||
+        !isDeepStrictEqual(snapshot.data, run.snapshot)
+      )
+        throw new CloudMlJobInterrupted('lost');
+      if (current.cancelRequestedAt) throw new CloudMlJobInterrupted('cancel');
+      if (
+        (current.pauseRequestedAt && current.status !== MediaOperationStatus.Validating) ||
+        ![MediaOperationStatus.Preparing, MediaOperationStatus.Rendering, MediaOperationStatus.Validating].includes(
+          current.status as MediaOperationStatus,
+        )
+      )
+        throw new CloudMlJobInterrupted('lost');
+    };
+    const authorize = async () => {
+      await requireClaim();
+      await this.checkSourceAuthority(run);
+      await requireClaim();
+      run.signal.throwIfAborted();
+    };
+    try {
+      await authorize();
+      const result = await this.withResolvedOriginal(source, epochs, run.signal, authorize, work);
+      // Input cleanup can outlast the claim; publication belongs to the current owner only.
+      await authorize();
+      return result;
+    } catch (error) {
+      if (error instanceof ConflictException)
+        throw new CloudMlJobFailure('cloud_ml_source_changed', 'The delivered source original changed', false);
+      throw error;
+    }
+  }
+
+  private async withResolvedOriginal<T>(
+    source: Source,
+    epochs: NonNullable<CloudMlJobSnapshot['sourceEpochs']>,
+    signal: AbortSignal,
+    authorize: () => Promise<void>,
+    work: (source: Source) => Promise<T>,
+  ): Promise<T> {
+    const input = await this.sourceOriginalService.open(
+      source.id,
+      { kind: 'http', readerId: randomUUID(), ownerId: this.sourceReaderOwnerId },
+      authorize,
+      signal,
+    );
+    let stopped = true;
+    try {
+      return await withExecutionSignal(input.signal, async () => {
+        const expected = epochs[0].reference;
+        if (
+          input.resourceId !== expected.resourceId ||
+          input.resourceVersion !== expected.version ||
+          input.verifiedSha256 !== expected.sha256
+        )
+          throw new ConflictException('The delivered source original changed');
+        await authorize();
+        await input.check();
+        let result!: T;
+        const read = async (reader?: SourceMediaMetadata) => {
+          result = await work({ ...source, originalInput: { localPath: input.localPath, reader } });
+        };
+        if (mimeTypes.isRaw(source.originalFileName) && !source.originalFileName.toLowerCase().endsWith('.psd'))
+          await this.metadataRepository.withBorrowedRead(input.localPath, source.originalFileName, read, input.signal);
+        else await read();
+        await input.check();
+        await authorize();
+        input.signal.throwIfAborted();
+        return result;
+      });
+    } catch (error) {
+      stopped = !this.sourceShutdownUnconfirmed(error);
+      throw error;
+    } finally {
+      if (stopped) await withExecutionCleanup(() => input.release());
+    }
+  }
+
+  private async requireSourceEpochs(source: Source, expected: CloudMlJobSnapshot['sourceEpochs']) {
+    const current = await this.sourceEpochs(source);
+    const parsed = CloudMlJobSnapshotSchema.shape.sourceEpochs.safeParse(expected);
+    const bound = parsed.success ? parsed.data : undefined;
+    if (
+      !parsed.success ||
+      ((current || bound) && (!current?.[0] || !bound?.[0] || !sameSourceEpoch(current[0], bound[0])))
+    )
+      throw new ConflictException('The source reference changed since the estimate; estimate again');
   }
 
   private sourceSize(source: Source): { width: number; height: number } {
@@ -2939,6 +3327,18 @@ export class CloudMlJobService {
     return destination;
   }
 
+  private async readmitSource(run: JobRun, client: FrameleafCloudJobClient) {
+    try {
+      await this.checkSourceAuthority(run);
+    } catch (error) {
+      if (error instanceof CloudMlJobFailure && !error.retry)
+        await this.sendCancel(run, client).catch(() =>
+          this.logger.warn('Could not cancel a cloud job after source authority changed; cleanup will retry'),
+        );
+      throw error;
+    }
+  }
+
   /**
    * FL-201: before a created job's inputs leave this server, admission runs again. Only a refusal that
    * means the files may no longer be sent (`STOPS_CREATED_CLOUD_JOB`: consent missing or older than the
@@ -2948,6 +3348,7 @@ export class CloudMlJobService {
    * and a cloud that does not answer leaves the job for its retry.
    */
   private async readmit(run: JobRun, client: FrameleafCloudJobClient) {
+    await this.readmitSource(run, client);
     try {
       await this.admit(run.snapshot, null, run.operation.id, true);
     } catch (error) {
@@ -2976,6 +3377,7 @@ export class CloudMlJobService {
       }
       // any other refusal (wallet, cap, model), checked after consent, is for new work only: this job goes on
     }
+    await this.readmitSource(run, client);
   }
 
   private async admit(
@@ -3116,8 +3518,40 @@ export class CloudMlJobService {
     return resolution.gateway;
   }
 
+  private async withNativeWork<T>(workDir: string, work: () => Promise<T>): Promise<T> {
+    const close = await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudMlJobEstimates, () =>
+      beginCloudNativeWork(workDir),
+    );
+    const release = async () => {
+      try {
+        await close();
+      } catch {
+        throw new Error('cloud_ml_native_work_retained');
+      }
+    };
+    try {
+      const result = await work();
+      await release();
+      return result;
+    } catch (error) {
+      if (!this.sourceShutdownUnconfirmed(error)) await release();
+      throw error;
+    }
+  }
+
   private async removeWorkDir(workDir: string) {
-    await this.storageRepository.unlinkDir(workDir, { recursive: true, force: true }).catch(() => {});
+    return this.databaseRepository
+      .withLock(DatabaseLock.FrameleafCloudMlJobEstimates, async () => {
+        if (!(await cloudNativeWorkStopped(workDir))) return false;
+        const close = await beginCloudNativeWork(workDir);
+        try {
+          await this.storageRepository.unlinkDir(workDir, { recursive: true, force: true });
+          return true;
+        } finally {
+          await close();
+        }
+      })
+      .catch(() => false);
   }
 
   /**
@@ -3130,13 +3564,21 @@ export class CloudMlJobService {
 
   /**
    * The whole video, prepared for Frameleaf Cloud once and kept for every estimate of it (by the
-   * original's checksum). Preparing a long video takes a while, so it runs in the background: until
+   * original's checksum and reference version). Preparing a long video runs in the background: until
    * the copy is ready, the estimate answers 409 `input-preparing` with `retryAfterSeconds`, and asking
    * again picks up the finished copy. One person prepares one video at a time (429 otherwise).
    */
-  private async preparedWholeVideo(auth: AuthDto, source: Source): Promise<PreparedCopy> {
+  private async preparedWholeVideo(
+    auth: AuthDto,
+    source: Source,
+    sourceEpochs: CloudMlJobSnapshot['sourceEpochs'],
+    signal: AbortSignal,
+  ): Promise<PreparedCopy & { release?: () => Promise<void> }> {
+    this.shutdown.signal.throwIfAborted();
     const checksumHex = Buffer.from(source.checksum).toString('hex');
-    const key = createHash('sha256').update(`${checksumHex}:${PREPARED_INPUT_VERSION}`).digest('hex').slice(0, 32);
+    const identity = `${checksumHex}:${PREPARED_INPUT_VERSION}${sourceEpochs ? `:${JSON.stringify(sourceEpochs)}` : ''}`;
+    const key = createHash('sha256').update(identity).digest('hex').slice(0, 32);
+    if (sourceEpochs) return this.preparedReferenceVideo(auth, source, sourceEpochs, signal, key);
     const dir = path.join(
       StorageCore.getNestedFolder(StorageFolder.Thumbnails, source.ownerId, source.id),
       `${PREPARED_INPUT_PREFIX}${key}`,
@@ -3163,7 +3605,7 @@ export class CloudMlJobService {
           HttpStatus.TOO_MANY_REQUESTS,
         );
       }
-      this.startPreparing(auth.user.id, source, dir);
+      this.startPreparing(auth, source, dir, sourceEpochs);
     }
     throw new ConflictException({
       message: 'The video is being prepared for its estimate. A long video takes a moment.',
@@ -3174,38 +3616,216 @@ export class CloudMlJobService {
     });
   }
 
-  private startPreparing(userId: string, source: Source, dir: string) {
+  private startPreparing(
+    auth: AuthDto,
+    source: Source,
+    dir: string,
+    sourceEpochs: CloudMlJobSnapshot['sourceEpochs'],
+    reference?: PreparedInput,
+  ) {
+    const userId = auth.user.id;
+    let stopped = true;
+    let publicationUncertain = false;
+    const failureKey = reference?.referenceKey ?? dir;
     this.preparingBy.set(userId, dir);
     const work = (async () => {
-      await this.removeWorkDir(dir);
+      if (!reference) await this.removeWorkDir(dir);
       this.storageRepository.mkdirSync(dir);
-      await this.notePrepared(dir, source.ownerId);
-      const { file, contentType } = await this.prepareFullVideo(source, dir);
-      const { sha256, sizeInBytes } = await this.cryptoRepository.hashFileDigests(file);
-      const copy: PreparedCopy = { file, contentType, bytes: sizeInBytes, sha256: sha256.toString('hex') };
-      // written last: a copy without its record is never used
-      await this.storageRepository.createOrOverwriteFile(
-        path.join(dir, PREPARED_INPUT_RECORD),
-        Buffer.from(JSON.stringify(copy)),
-      );
+      if (!reference) await this.notePrepared(dir, source.ownerId);
+      await this.withNativeWork(dir, async () => {
+        await this.requireSourceEpochs(source, sourceEpochs);
+        const copy = await this.withOriginal(auth, source, sourceEpochs, this.shutdown.signal, async (selected) => {
+          const { file, contentType } = await this.prepareFullVideo(selected, dir);
+          const { sha256, sizeInBytes } = await this.cryptoRepository.hashFileDigests(file);
+          let video: PreparedCopy['video'];
+          if (reference) {
+            const probe = await this.mediaRepository.probe(file);
+            const stream = probe.videoStreams[0];
+            const durationSeconds = parseDurationSeconds(probe.format.duration);
+            if (
+              !stream ||
+              !Number.isSafeInteger(stream.width) ||
+              !Number.isSafeInteger(stream.height) ||
+              stream.width <= 0 ||
+              stream.height <= 0 ||
+              durationSeconds === null
+            )
+              throw new BadRequestException('The prepared video metadata could not be verified');
+            video =
+              Math.abs(stream.rotation ?? 0) % 180 === 90
+                ? { width: stream.height, height: stream.width, durationSeconds }
+                : { width: stream.width, height: stream.height, durationSeconds };
+          }
+          return { file, contentType, bytes: sizeInBytes, sha256: sha256.toString('hex'), ...(video && { video }) };
+        });
+        await this.requireSourceEpochs(source, sourceEpochs);
+        // written last: a copy without its record is never used
+        await this.storageRepository.createOrOverwriteFile(
+          path.join(dir, PREPARED_INPUT_RECORD),
+          Buffer.from(JSON.stringify(copy)),
+        );
+        if (reference) {
+          publicationUncertain = true;
+          await this.setReferencePreparation(reference, 'ready');
+        }
+      });
     })()
       .catch(async (error) => {
         this.logger.warn(`Preparing ${source.id} for a Frameleaf Cloud estimate failed: ${errorMessage(error)}`);
-        this.preparingFailed.set(dir, error instanceof CloudMlJobFailure ? error.code : 'cloud_ml_prepare_failed');
-        await this.removeWorkDir(dir);
+        stopped = !this.sourceShutdownUnconfirmed(error);
+        this.preparingFailed.set(
+          failureKey,
+          error instanceof CloudMlJobFailure ? error.code : 'cloud_ml_prepare_failed',
+        );
+        if (stopped && !publicationUncertain) {
+          if (reference) {
+            if (await this.removeWorkDir(dir))
+              await this.setReferencePreparation(reference, 'remove').catch(() =>
+                this.logger.warn('Video preparation cleanup could not be confirmed; its ownership record is retained'),
+              );
+          } else await this.removeWorkDir(dir);
+        }
       })
       .finally(() => {
-        this.preparing.delete(dir);
-        if (this.preparingBy.get(userId) === dir) {
-          this.preparingBy.delete(userId);
+        if (stopped) {
+          this.preparing.delete(dir);
+          if (this.preparingBy.get(userId) === dir) this.preparingBy.delete(userId);
         }
       });
     this.preparing.set(dir, work);
   }
 
+  private async preparedReferenceVideo(
+    auth: AuthDto,
+    source: Source,
+    epochs: NonNullable<CloudMlJobSnapshot['sourceEpochs']>,
+    signal: AbortSignal,
+    key: string,
+  ): Promise<PreparedCopy & { release?: () => Promise<void> }> {
+    const base = StorageCore.getNestedFolder(StorageFolder.Thumbnails, source.ownerId, source.id);
+    const claimed = await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudMlJobEstimates, async () => {
+      const store = (await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)) ?? {
+        records: [],
+      };
+      const entry = store.prepared?.find((entry) => entry.referenceKey === key);
+      if (entry) {
+        if (
+          entry.ownerId !== source.ownerId ||
+          entry.assetId !== source.id ||
+          !this.validReferencePreparation(entry) ||
+          !['writing', 'ready', 'deleting'].includes(entry.state ?? '')
+        )
+          throw new ConflictException('The saved video preparation could not be verified');
+        return { entry, created: false };
+      }
+      if (
+        this.preparingBy.has(auth.user.id) ||
+        store.prepared?.some(
+          (entry) => entry.ownerId === source.ownerId && entry.referenceKey !== undefined && entry.state !== 'ready',
+        )
+      )
+        throw new ConflictException('Another video still owns preparation resources');
+      if (this.preparingFailed.has(key)) {
+        this.preparingFailed.delete(key);
+        throw new BadRequestException('This video could not be prepared. Nothing was sent; try again.');
+      }
+      const writerId = randomUUID();
+      const next: PreparedInput = {
+        dir: path.join(base, `${PREPARED_INPUT_PREFIX}${key}_${writerId}`),
+        ownerId: source.ownerId,
+        assetId: source.id,
+        at: new Date().toISOString(),
+        referenceKey: key,
+        writerId,
+        state: 'writing',
+      };
+      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudMlJobEstimates, {
+        ...store,
+        prepared: [...(store.prepared ?? []), next],
+      });
+      return { entry: next, created: true };
+    });
+    const { entry, created } = claimed;
+    if (entry.state === 'ready') {
+      const reserved = await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudMlJobEstimates, async () => {
+        const store = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudMlJobEstimates);
+        const current = store?.prepared?.find(
+          (row) => row.dir === entry.dir && row.writerId === entry.writerId && row.state === 'ready',
+        );
+        if (!current || !this.validReferencePreparation(current))
+          throw new ConflictException('The saved video preparation changed');
+        const copy = await this.readPreparedCopy(entry.dir);
+        if (!copy?.video) throw new ConflictException('The saved video preparation is unavailable');
+        const release = await beginCloudNativeWork(entry.dir);
+        return { ...copy, release };
+      });
+      try {
+        await this.withOriginal(auth, source, epochs, signal, () => Promise.resolve());
+      } catch (error) {
+        await reserved.release();
+        throw error;
+      }
+      this.preparingFailed.delete(key);
+      return reserved;
+    }
+    if (created) this.startPreparing(auth, source, entry.dir, epochs, entry);
+    else if (entry.state === 'deleting' || !this.preparing.has(entry.dir) || this.preparingFailed.has(key))
+      throw new ConflictException({
+        message: 'A previous video preparation still owns its files. Recovery or confirmed cleanup is required.',
+        code: 'input-preparation-retained',
+      });
+    throw new ConflictException({
+      message: 'The video is being prepared for its estimate.',
+      code: 'input-preparing',
+      retryAfterSeconds: CLOUD_ML_JOB_PREPARING_RETRY_SECONDS,
+    });
+  }
+
+  private validReferencePreparation(entry: PreparedInput) {
+    return (
+      /^[a-zA-Z0-9-]+$/u.test(entry.ownerId) &&
+      typeof entry.assetId === 'string' &&
+      /^[a-zA-Z0-9-]+$/u.test(entry.assetId) &&
+      typeof entry.referenceKey === 'string' &&
+      /^[a-f0-9]{32}$/u.test(entry.referenceKey) &&
+      isStudioUuid(entry.writerId) &&
+      entry.dir ===
+        path.join(
+          StorageCore.getNestedFolder(StorageFolder.Thumbnails, entry.ownerId, entry.assetId),
+          `${PREPARED_INPUT_PREFIX}${entry.referenceKey}_${entry.writerId}`,
+        )
+    );
+  }
+
+  private async setReferencePreparation(expected: PreparedInput, action: 'ready' | 'remove' | 'delete') {
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudMlJobEstimates, async () => {
+      const store = (await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)) ?? {
+        records: [],
+      };
+      const entry = store.prepared?.find(
+        (entry) =>
+          entry.dir === expected.dir &&
+          entry.referenceKey === expected.referenceKey &&
+          entry.writerId === expected.writerId &&
+          entry.ownerId === expected.ownerId &&
+          entry.assetId === expected.assetId &&
+          entry.state === (action === 'delete' ? 'deleting' : 'writing'),
+      );
+      if (!entry) throw new ConflictException('Video preparation ownership changed');
+      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudMlJobEstimates, {
+        ...store,
+        prepared:
+          action === 'ready'
+            ? store.prepared!.map((row) => (row === entry ? { ...row, state: 'ready' as const } : row))
+            : store.prepared!.filter((row) => row !== entry),
+      });
+    });
+  }
+
   /** A finished prepared copy, or null when there is none, it is incomplete, or its file changed size. */
   private async readPreparedCopy(dir: string): Promise<PreparedCopy | null> {
     try {
+      if (!(await cloudNativeWorkStopped(dir))) return null;
       const copy = await this.storageRepository.readJsonFile<PreparedCopy>(path.join(dir, PREPARED_INPUT_RECORD));
       if (
         typeof copy?.file !== 'string' ||
@@ -3216,6 +3836,16 @@ export class CloudMlJobService {
       ) {
         return null;
       }
+      if (
+        copy.video &&
+        (!Number.isSafeInteger(copy.video.width) ||
+          copy.video.width <= 0 ||
+          !Number.isSafeInteger(copy.video.height) ||
+          copy.video.height <= 0 ||
+          !Number.isFinite(copy.video.durationSeconds) ||
+          copy.video.durationSeconds <= 0)
+      )
+        return null;
       const stat = await this.storageRepository.stat(copy.file);
       return stat.size === copy.bytes ? copy : null;
     } catch {
@@ -3252,6 +3882,8 @@ export class CloudMlJobService {
         false,
       );
     }
+    sizes = copy.video ? { width: copy.video.width, height: copy.video.height } : sizes;
+    durationSeconds = copy.video?.durationSeconds ?? durationSeconds;
     return {
       input: { inputId: 'v1', contentType: copy.contentType, bytes: copy.bytes, sha256: copy.sha256, path: copy.file },
       beforePath: null,
