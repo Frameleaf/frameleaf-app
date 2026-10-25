@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import {
+  publishPhotoSourceReference,
+  PhotoSourceReferenceAssetType,
+} from "../build/index.js";
 const spec = JSON.parse(
   readFileSync(
     new URL("../../../open-api/immich-openapi-specs.json", import.meta.url),
@@ -53,4 +57,55 @@ test("photo source schemas use named enums without renumbering existing client e
     spec.paths["/photo-sources/apple-photos"].post.operationId,
     "createApplePhotosSource",
   );
+});
+
+test("reference publication transports only metadata and keeps session credentials in headers", async () => {
+  const sourceId = "11111111-1111-4111-8111-111111111111";
+  const runId = "22222222-2222-4222-8222-222222222222";
+  const itemId = "33333333-3333-4333-8333-333333333333";
+  const body = {
+    assetId: "44444444-4444-4444-8444-444444444444",
+    type: PhotoSourceReferenceAssetType.Image,
+    originalFileName: "original.jpg",
+    fileCreatedAt: "2026-10-01T00:00:00.000Z",
+    fileModifiedAt: "2026-10-02T00:00:00.000Z",
+  };
+  const receipt = {
+    sourceId,
+    runId,
+    itemId,
+    assetId: body.assetId,
+    ownerId: sourceId,
+    serverId: "synthetic-server",
+    resourceId: itemId,
+    version: "a".repeat(64),
+    sha256: "b".repeat(64),
+    bytes: 5,
+    publishedAt: "2026-10-03T00:00:00.000Z",
+    storage: "reference",
+  };
+  const result = await publishPhotoSourceReference(
+    { id: sourceId, runId, itemId, photoSourceReferenceDto: body },
+    {
+      headers: { Authorization: "Bearer synthetic-photo-session" },
+      fetch: async (url, options) => {
+        assert.equal(
+          url,
+          `/api/photo-sources/${sourceId}/runs/${runId}/items/${itemId}/reference`,
+        );
+        assert.equal(options.method, "POST");
+        assert.equal(
+          new Headers(options.headers).get("authorization"),
+          "Bearer synthetic-photo-session",
+        );
+        assert.deepEqual(JSON.parse(options.body), body);
+        assert.ok(!options.body.includes("synthetic-photo-session"));
+        return new Response(JSON.stringify(receipt), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    },
+  );
+  assert.deepEqual(result, receipt);
 });

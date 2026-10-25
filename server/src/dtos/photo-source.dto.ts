@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { AssetType } from 'src/enum.js';
 
 const fingerprint = z.string().regex(/^[a-f0-9]{64}$/);
 const folderKind = z.enum(['folder']).meta({ id: 'PhotoSourceKind' });
@@ -59,6 +60,37 @@ export class PhotoSourceItemDto extends createZodDto(
     .strict(),
 ) {}
 export class PhotoSourceVerifyDto extends createZodDto(z.object({ uploadResourceId: z.uuid() }).strict()) {}
+export class PhotoSourceReferenceDto extends createZodDto(
+  z
+    .object({
+      assetId: z.uuid(),
+      type: z.enum([AssetType.Image, AssetType.Video]).meta({ id: 'PhotoSourceReferenceAssetType' }),
+      originalFileName: z
+        .string()
+        .min(1)
+        .max(255)
+        .refine((name) => name.trim().length > 0 && name !== '.' && name !== '..' && !/[\\/\p{Cc}]/u.test(name)),
+      fileCreatedAt: z.iso.datetime(),
+      fileModifiedAt: z.iso.datetime(),
+    })
+    .strict(),
+) {}
+export class PhotoSourceReferenceReceiptDto extends createZodDto(
+  z.object({
+    sourceId: z.uuid(),
+    runId: z.uuid(),
+    itemId: z.uuid(),
+    assetId: z.uuid(),
+    ownerId: z.uuid(),
+    serverId: z.string(),
+    resourceId: z.uuid(),
+    version: fingerprint,
+    sha256: fingerprint,
+    bytes: z.number().int(),
+    publishedAt: z.iso.datetime(),
+    storage: z.enum(['reference']).meta({ id: 'PhotoSourceReferenceStorage' }),
+  }),
+) {}
 export class PhotoSourceRunStateDto extends createZodDto(
   z.object({ state: runState, inventoryComplete: z.boolean() }).strict(),
 ) {}

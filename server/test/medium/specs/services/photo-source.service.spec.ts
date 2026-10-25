@@ -63,6 +63,7 @@ async function setup() {
     new SystemMetadataRepository(db),
     limits as never,
     LoggingRepository.create(),
+    {} as never,
   );
   const source = await service.create(auth, {
     id: randomUUID(),

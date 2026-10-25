@@ -12,6 +12,8 @@ import {
   PhotoSourceItemParamsDto,
   PhotoSourceItemResponseDto,
   PhotoSourceReceiptDto,
+  PhotoSourceReferenceDto,
+  PhotoSourceReferenceReceiptDto,
   PhotoSourceResponseDto,
   PhotoSourceRunDto,
   PhotoSourceRunParamsDto,
@@ -66,11 +68,27 @@ export class PhotoSourceController {
   revokePhotoSource(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
     return this.service.revoke(auth, id);
   }
+  @Post(':id/runs/:runId/items/:itemId/reference')
+  @HttpCode(200)
+  @Header('Cache-Control', 'private, no-store')
+  @Authenticated({ permission: Permission.AssetUpload })
+  @ApiResponse({ status: 200, type: PhotoSourceReferenceReceiptDto })
+  @Endpoint({
+    summary: 'Publish an approved desktop reference without importing its original bytes',
+    history: history(),
+  })
+  publishPhotoSourceReference(
+    @Auth() auth: AuthDto,
+    @Param() { id, runId, itemId }: PhotoSourceItemParamsDto,
+    @Body() dto: PhotoSourceReferenceDto,
+  ): Promise<PhotoSourceReferenceReceiptDto> {
+    return this.service.publishReference(auth, id, runId, itemId, dto);
+  }
   @Post(':id/runs')
   @Header('Cache-Control', 'private, no-store')
   @Authenticated({ permission: Permission.AssetUpload })
   @ApiResponse({ status: 201, type: PhotoSourceRunResponseDto })
-  @Endpoint({ summary: 'Start or recover a bounded photo-copy run', history: history() })
+  @Endpoint({ summary: 'Start or recover a bounded photo-source run', history: history() })
   createPhotoSourceRun(
     @Auth() auth: AuthDto,
     @Param() { id }: UUIDParamDto,
@@ -82,7 +100,7 @@ export class PhotoSourceController {
   @Header('Cache-Control', 'private, no-store')
   @Authenticated({ permission: Permission.AssetUpload })
   @ApiResponse({ status: 200, type: PhotoSourceSnapshotDto })
-  @Endpoint({ summary: 'Read paginated copy-run dispositions without source paths or asset IDs', history: history() })
+  @Endpoint({ summary: 'Read paginated source-run dispositions without source paths or asset IDs', history: history() })
   getPhotoSourceRun(
     @Auth() auth: AuthDto,
     @Param() { id, runId }: PhotoSourceRunParamsDto,
@@ -95,7 +113,7 @@ export class PhotoSourceController {
   @Authenticated({ permission: Permission.AssetUpload })
   @ApiResponse({ status: 200, type: PhotoSourceRunResponseDto })
   @Endpoint({
-    summary: 'Pause, resume, cancel or finish a copy run; incomplete inventory never removes originals',
+    summary: 'Pause, resume, cancel or finish a source run; incomplete inventory never removes originals',
     history: history(),
   })
   setPhotoSourceRunState(

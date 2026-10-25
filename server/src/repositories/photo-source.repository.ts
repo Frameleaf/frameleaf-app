@@ -1,17 +1,22 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import { createHash } from 'node:crypto';
 import type {
   PhotoSourceCreateInput,
   PhotoSourceItemDto,
+  PhotoSourceReferenceDto,
   PhotoSourceRunDto,
   PhotoSourceRunStateDto,
 } from 'src/dtos/photo-source.dto.js';
 import type { DB } from 'src/schema/index.js';
 import type { PhotoSourceResourceTable } from 'src/schema/tables/photo-source.table.js';
 import type { FolderUploadSourceIdentity } from 'src/utils/asset-upload-resource.js';
-import { AssetStatus, AssetVisibility } from 'src/enum.js';
+import { AssetStatus, AssetVisibility, ChecksumAlgorithm, QueueName } from 'src/enum.js';
 import { lockChecksum, lockFilePath } from 'src/repositories/physical-file.repository.js';
+import { isLocked, isNotLocked } from 'src/utils/locked.js';
+import { lockSourceAuthorities } from 'src/utils/source-authority-lock.js';
+import { sourceOriginalPath } from 'src/utils/source-original.js';
 
 export type SourceAuthority = { ownerId: string; sessionId: string };
 type Item = Selectable<PhotoSourceResourceTable>;
@@ -50,7 +55,7 @@ export class PhotoSourceRepository {
     if (!source) throw new NotFoundException('Photo source unavailable');
     const device = await tx
       .selectFrom('desktop_device')
-      .select(['state'])
+      .select(['state', 'authorizationEpoch'])
       .where('id', '=', source.deviceId)
       .where('userId', '=', auth.ownerId)
       .where('revokedAt', 'is', null)
@@ -58,7 +63,7 @@ export class PhotoSourceRepository {
       .executeTakeFirst();
     if (!device || device.state === 'paused' || device.state === 'revoked' || source.photoSessionId !== auth.sessionId)
       throw new ConflictException('photo_source_device_changed');
-    return { source, photo };
+    return { source, photo, device };
   }
   private async activeRun(tx: Transaction<DB>, auth: SourceAuthority, sourceId: string, runId: string, open = true) {
     const context = await this.source(tx, auth, sourceId);
@@ -257,6 +262,197 @@ export class PhotoSourceRepository {
         .where('id', '=', runId)
         .returningAll()
         .executeTakeFirstOrThrow();
+    });
+  }
+  publishReference(
+    auth: SourceAuthority,
+    sourceId: string,
+    runId: string,
+    itemId: string,
+    dto: PhotoSourceReferenceDto,
+    admit: (tx: Transaction<DB>, assetId: string) => Promise<void>,
+  ) {
+    return this.db.transaction().execute(async (tx) => {
+      // Queue admission precedes source/asset locks everywhere, including first publication.
+      await sql`SELECT name FROM job_queue WHERE name=${QueueName.MetadataExtraction} FOR NO KEY UPDATE`.execute(tx);
+      if (!(await lockSourceAuthorities(tx, [{ sourceId, ownerId: auth.ownerId }])))
+        throw new NotFoundException('Photo source unavailable');
+      const { source, photo, device, run } = await this.activeRun(tx, auth, sourceId, runId, false);
+      if (source.mode !== 'reference') throw new ConflictException('photo_source_reference_required');
+      const item = await tx
+        .selectFrom('photo_source_resource')
+        .selectAll()
+        .where('id', '=', itemId)
+        .where('runId', '=', runId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!item) throw new NotFoundException('Photo source item unavailable');
+      if (run.state !== 'open' && (item.state !== 'verified' || item.assetId !== dto.assetId))
+        throw new ConflictException('photo_source_run_not_open');
+      const previous = await tx
+        .selectFrom('photo_source_resource as resource')
+        .innerJoin('photo_source_run as run', 'run.id', 'resource.runId')
+        .selectAll('resource')
+        .where('run.sourceId', '=', sourceId)
+        .where('resource.resourceKey', '=', item.resourceKey)
+        .where('resource.assetId', 'is not', null)
+        .orderBy('resource.createdAt')
+        .orderBy('resource.id')
+        .limit(1)
+        .executeTakeFirst();
+      const conflict = () => new ConflictException('photo_source_reference_changed');
+      // shortcut: refuse version changes until replacement also invalidates derived files and edit bindings.
+      if (
+        previous &&
+        (previous.assetId !== dto.assetId ||
+          previous.version !== item.version ||
+          !previous.checksum.equals(item.checksum) ||
+          Number(previous.bytes) !== Number(item.bytes))
+      )
+        throw conflict();
+      const known = await tx
+        .selectFrom('photo_source_resource as resource')
+        .innerJoin('photo_source_run as run', 'run.id', 'resource.runId')
+        .select('resource.id')
+        .where('run.sourceId', '=', sourceId)
+        .where('resource.assetId', 'is not', null)
+        .limit(1)
+        .executeTakeFirst();
+      let library = await tx
+        .selectFrom('library')
+        .selectAll()
+        .where('id', '=', source.id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!library) {
+        // Resource associations are tombstones: deleting a library never authorizes its recreation.
+        if (known) throw conflict();
+        library = await tx
+          .insertInto('library')
+          .values({
+            id: source.id,
+            ownerId: auth.ownerId,
+            name: source.name,
+            readOnly: true,
+            importPaths: [],
+            exclusionPatterns: [],
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow();
+      } else if (!known) throw conflict();
+      if (
+        library.ownerId !== auth.ownerId ||
+        library.deletedAt ||
+        !library.readOnly ||
+        library.importPaths.length > 0 ||
+        library.exclusionPatterns.length > 0
+      )
+        throw conflict();
+      const originalPath = sourceOriginalPath({ sourceId, resourceKey: item.resourceKey });
+      const checksum = createHash('sha1').update(originalPath).digest();
+      let resourceId = item.id;
+      let needsElevation = false;
+      if (previous) {
+        const unlocked = !!photo.pinExpiresAt && new Date(photo.pinExpiresAt).getTime() > Date.now();
+        const asset = await tx
+          .selectFrom('asset')
+          .select(['id', 'visibility'])
+          .select(isLocked().as('locked'))
+          .where('id', '=', dto.assetId)
+          .where('ownerId', '=', auth.ownerId)
+          .where('libraryId', '=', library.id)
+          .where('isExternal', '=', true)
+          .where('physicalOriginalFileId', 'is', null)
+          .where('originalPath', '=', originalPath)
+          .where('checksum', '=', checksum)
+          .where('checksumAlgorithm', '=', ChecksumAlgorithm.sha1Path)
+          .where('type', '=', dto.type)
+          .where('status', '=', AssetStatus.Active)
+          .where('deletedAt', 'is', null)
+          .where('isOffline', '=', false)
+          .$if(!unlocked, (qb) => qb.where('visibility', '!=', AssetVisibility.Hidden).where(isNotLocked()))
+          .forShare()
+          .executeTakeFirst();
+        const binding = await tx
+          .selectFrom('source_original')
+          .innerJoin('photo_source_resource as bound', 'bound.id', 'source_original.resourceId')
+          .innerJoin('photo_source_run as run', 'run.id', 'bound.runId')
+          .select([
+            'source_original.resourceId',
+            'scopeFingerprint',
+            'authorizationEpoch',
+            'run.sourceId',
+            'bound.resourceKey',
+            'bound.version',
+            'bound.checksum',
+            'bound.bytes',
+            'bound.state',
+            'bound.assetId',
+          ])
+          .where('source_original.assetId', '=', dto.assetId)
+          .executeTakeFirst();
+        if (
+          !asset ||
+          !binding ||
+          binding.sourceId !== sourceId ||
+          binding.resourceKey !== item.resourceKey ||
+          binding.version !== item.version ||
+          !binding.checksum.equals(item.checksum) ||
+          Number(binding.bytes) !== Number(item.bytes) ||
+          binding.state !== 'verified' ||
+          binding.assetId !== dto.assetId ||
+          binding.scopeFingerprint !== source.scopeFingerprint ||
+          binding.authorizationEpoch !== device.authorizationEpoch
+        )
+          throw conflict();
+        resourceId = binding.resourceId;
+        needsElevation = asset.visibility === AssetVisibility.Hidden || asset.locked;
+      } else {
+        const asset = await tx
+          .insertInto('asset')
+          .values({
+            id: dto.assetId,
+            ownerId: auth.ownerId,
+            libraryId: library.id,
+            type: dto.type,
+            originalPath,
+            checksum,
+            checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+            isExternal: true,
+            originalFileName: dto.originalFileName,
+            fileCreatedAt: new Date(dto.fileCreatedAt),
+            fileModifiedAt: new Date(dto.fileModifiedAt),
+            localDateTime: new Date(dto.fileCreatedAt),
+          })
+          .onConflict((oc) => oc.doNothing())
+          .returning('id')
+          .executeTakeFirst();
+        if (!asset) throw conflict();
+        await tx
+          .insertInto('source_original')
+          .values({
+            assetId: asset.id,
+            resourceId: item.id,
+            scopeFingerprint: source.scopeFingerprint,
+            authorizationEpoch: device.authorizationEpoch,
+          })
+          .execute();
+      }
+      const published = await tx
+        .updateTable('photo_source_resource')
+        .set({
+          assetId: dto.assetId,
+          state: 'verified',
+          verifiedAt: item.verifiedAt ?? new Date(),
+        })
+        .where('id', '=', item.id)
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      if (!previous) await admit(tx, dto.assetId);
+      const finalPhoto = await this.owner(tx, auth);
+      if (needsElevation && (!finalPhoto.pinExpiresAt || new Date(finalPhoto.pinExpiresAt).getTime() <= Date.now()))
+        throw conflict();
+      return { item: published, assetId: dto.assetId, resourceId };
     });
   }
   private async copyTarget(

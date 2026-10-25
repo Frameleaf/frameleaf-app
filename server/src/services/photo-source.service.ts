@@ -12,6 +12,8 @@ import {
   PhotoSourceItemDto,
   PhotoSourceItemResponseDto,
   PhotoSourceReceiptDto,
+  PhotoSourceReferenceDto,
+  PhotoSourceReferenceReceiptDto,
   PhotoSourceRunDto,
   PhotoSourceRunResponseDto,
   PhotoSourceRunStateDto,
@@ -20,9 +22,10 @@ import {
   photoSourceCreateSchema,
   photoSourceViewSchema,
 } from 'src/dtos/photo-source.dto.js';
-import { Permission } from 'src/enum.js';
+import { JobName, Permission } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhotoSourceRepository, type SourceAuthority } from 'src/repositories/photo-source.repository.js';
 import { type RateLimitHit, RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
@@ -44,6 +47,7 @@ export class PhotoSourceService {
     private metadata: SystemMetadataRepository,
     private limits: RateLimitRepository,
     private logger: LoggingRepository,
+    private jobs: JobRepository,
   ) {}
   private authority(auth: AuthDto): SourceAuthority {
     if (!auth.session || auth.apiKey || auth.sharedLink || auth.system)
@@ -60,6 +64,39 @@ export class PhotoSourceService {
   }
   async revoke(auth: AuthDto, id: string): Promise<void> {
     await this.repository.revoke(this.authority(auth), id);
+  }
+  async publishReference(
+    auth: AuthDto,
+    sourceId: string,
+    runId: string,
+    itemId: string,
+    input: PhotoSourceReferenceDto,
+  ): Promise<PhotoSourceReferenceReceiptDto> {
+    const authority = this.authority(auth);
+    const serverId = await stableServerId({ systemMetadataRepository: this.metadata });
+    const result = await this.repository.publishReference(
+      authority,
+      sourceId,
+      runId,
+      itemId,
+      PhotoSourceReferenceDto.schema.parse(input),
+      (tx, id) =>
+        this.jobs.queueInTransaction(tx, { name: JobName.AssetExtractMetadata, data: { id, source: 'upload' } }),
+    );
+    return PhotoSourceReferenceReceiptDto.schema.parse({
+      sourceId,
+      runId,
+      itemId,
+      assetId: result.assetId,
+      ownerId: authority.ownerId,
+      serverId,
+      resourceId: result.resourceId,
+      version: result.item.version,
+      sha256: result.item.checksum.toString('hex'),
+      bytes: Number(result.item.bytes),
+      publishedAt: iso(result.item.verifiedAt!),
+      storage: 'reference',
+    });
   }
   async run(auth: AuthDto, sourceId: string, input: PhotoSourceRunDto): Promise<PhotoSourceRunResponseDto> {
     const row = await this.repository.run(this.authority(auth), sourceId, PhotoSourceRunDto.schema.parse(input));

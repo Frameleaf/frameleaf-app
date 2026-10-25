@@ -188,6 +188,7 @@ it('publishes a folder upload through the real native pipeline and verifies its 
     f.ctx.get(SystemMetadataRepository),
     admission,
     f.ctx.getMock(LoggingRepository),
+    {} as never,
   );
   const receipt = await service.verify(f.auth, f.source.id, f.run.id, f.item.id, {
     uploadResourceId: created.resource.id,
@@ -277,6 +278,7 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
       metadata,
       admission,
       f.ctx.getMock(LoggingRepository),
+      {} as never,
     );
     const verify = service.verify.bind(service);
     let loseReply = true;

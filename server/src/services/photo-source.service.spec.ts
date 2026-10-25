@@ -19,6 +19,7 @@ describe('photo source verification admission', () => {
       {} as never,
       limits as never,
       { warn: vi.fn() } as never,
+      {} as never,
     );
     await expect(service.verify(authStub.user1, id, id, id, { uploadResourceId: id })).rejects.toThrow(
       'photo_source_verification_busy',

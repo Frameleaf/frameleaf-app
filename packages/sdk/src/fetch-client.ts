@@ -10013,6 +10013,27 @@ export type PhotoSourceItemResponseDto = {
     verifiedAt: string | null;
     version: string;
 };
+export type PhotoSourceReferenceDto = {
+    assetId: string;
+    fileCreatedAt: string;
+    fileModifiedAt: string;
+    originalFileName: string;
+    "type": PhotoSourceReferenceAssetType;
+};
+export type PhotoSourceReferenceReceiptDto = {
+    assetId: string;
+    bytes: number;
+    itemId: string;
+    ownerId: string;
+    publishedAt: string;
+    resourceId: string;
+    runId: string;
+    serverId: string;
+    sha256: string;
+    sourceId: string;
+    storage: PhotoSourceReferenceStorage;
+    version: string;
+};
 export type PhotoSourceVerifyDto = {
     uploadResourceId: string;
 };
@@ -26822,7 +26843,7 @@ export function revokePhotoSource({ id }: {
     }));
 }
 /**
- * Start or recover a bounded photo-copy run
+ * Start or recover a bounded photo-source run
  */
 export function createPhotoSourceRun({ id, photoSourceRunDto }: {
     id: string;
@@ -26838,7 +26859,7 @@ export function createPhotoSourceRun({ id, photoSourceRunDto }: {
     })));
 }
 /**
- * Read paginated copy-run dispositions without source paths or asset IDs
+ * Read paginated source-run dispositions without source paths or asset IDs
  */
 export function getPhotoSourceRun({ after, id, runId }: {
     after?: string;
@@ -26855,7 +26876,7 @@ export function getPhotoSourceRun({ after, id, runId }: {
     }));
 }
 /**
- * Pause, resume, cancel or finish a copy run; incomplete inventory never removes originals
+ * Pause, resume, cancel or finish a source run; incomplete inventory never removes originals
  */
 export function setPhotoSourceRunState({ id, runId, photoSourceRunStateDto }: {
     id: string;
@@ -26886,6 +26907,24 @@ export function planPhotoSourceCopy({ id, runId, photoSourceItemDto }: {
         ...opts,
         method: "POST",
         body: photoSourceItemDto
+    })));
+}
+/**
+ * Publish an approved desktop reference without importing its original bytes
+ */
+export function publishPhotoSourceReference({ id, itemId, runId, photoSourceReferenceDto }: {
+    id: string;
+    itemId: string;
+    runId: string;
+    photoSourceReferenceDto: PhotoSourceReferenceDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotoSourceReferenceReceiptDto;
+    }>(`/photo-sources/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/items/${encodeURIComponent(itemId)}/reference`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photoSourceReferenceDto
     })));
 }
 /**
@@ -35002,6 +35041,13 @@ export enum PhotoSourceRunState {
 export enum PhotoSourceItemState {
     Planned = "planned",
     Verified = "verified"
+}
+export enum PhotoSourceReferenceAssetType {
+    Image = "IMAGE",
+    Video = "VIDEO"
+}
+export enum PhotoSourceReferenceStorage {
+    Reference = "reference"
 }
 export enum PhotoSourceStorage {
     Managed = "managed"
