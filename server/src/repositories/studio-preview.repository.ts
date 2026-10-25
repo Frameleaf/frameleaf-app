@@ -1,6 +1,7 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { SourceEpoch } from 'src/repositories/asset-local-effect.repository.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { AlbumUserRole, MediaOperationKind, MediaOperationStatus, StudioPreviewStatus } from 'src/enum.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
@@ -466,6 +467,27 @@ export class StudioPreviewRepository {
     },
   ): Promise<boolean> {
     return this.db.transaction().execute(async (tx) => {
+      const ids = [...new Set(authorization.assetIds)].sort();
+      const operation = authorization.operationId
+        ? await tx
+            .selectFrom('media_operation')
+            .select('snapshot')
+            .where('id', '=', authorization.operationId)
+            .where('ownerId', '=', authorization.ownerId)
+            .where('kind', '=', MediaOperationKind.StudioPreview)
+            .executeTakeFirst()
+        : undefined;
+      if ((authorization.operationId && !operation) || (!authorization.operationId && ids.length > 0)) return false;
+      const admission: Record<string, unknown> | undefined = operation
+        ? { ...operation.snapshot, kind: 'studio-preview' }
+        : undefined;
+      if (admission) {
+        // Lock source parents before assets; the stored operation, not the worker, supplies the expected version.
+        await holdSourceAdmission(tx, admission, authorization.ownerId);
+        const bound = (admission.sourceEpochs as SourceEpoch[]).map((source) => source.assetId).sort();
+        if (bound.length !== ids.length || bound.some((id, index) => id !== ids[index]))
+          throw new ConflictException('studio_source_admission_changed');
+      }
       const current = await tx
         .selectFrom('studio_preview_frame')
         .select(['id', 'projectId', 'projectRevision'])
@@ -512,7 +534,6 @@ export class StudioPreviewRepository {
       }
       // The signed preview grant names these sources. As for exports, source and granting rows
       // stay share-locked until publication commits, so revocation cannot land between checks.
-      const ids = [...new Set(authorization.assetIds)];
       const sources = await this.privacy.lockSources(tx, ids);
       const foreign = sources
         .values()
@@ -554,6 +575,7 @@ export class StudioPreviewRepository {
         .where('revisionDigest', '=', revisionDigest)
         .where('status', 'in', [StudioPreviewStatus.Pending, StudioPreviewStatus.Rendering])
         .executeTakeFirst();
+      if (admission) await holdSourceAdmission(tx, admission, authorization.ownerId);
       return Number(result.numUpdatedRows) > 0;
     });
   }
