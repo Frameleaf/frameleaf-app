@@ -23,6 +23,7 @@ export class AssetEditFactory {
       action: AssetEditAction.Crop,
       parameters: { x: 5, y: 6, width: 200, height: 100 },
       sequence: 1,
+      sourceReference: null,
       updateId,
       updatedAt: newDate(),
       ...dto,

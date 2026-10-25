@@ -9,6 +9,7 @@ import {
   UpdateDateColumn,
 } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import type { ImageEditSource } from 'src/utils/image-edit-source.js';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { AssetEditAction, type AssetEditParameters } from 'src/dtos/editing.dto.js';
 import { asset_edit_audit, asset_edit_delete, asset_edit_insert } from 'src/schema/functions.js';
@@ -42,6 +43,9 @@ export class AssetEditTable {
 
   @Column({ type: 'jsonb' })
   parameters!: AssetEditParameters;
+
+  @Column({ type: 'jsonb', nullable: true })
+  sourceReference!: ImageEditSource | null;
 
   @Column({ type: 'integer' })
   sequence!: number;
