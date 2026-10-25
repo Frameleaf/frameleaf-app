@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import type { DB } from 'src/schema/index.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { ChecksumAlgorithm } from 'src/enum.js';
+import { AssetStatus, ChecksumAlgorithm } from 'src/enum.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -123,6 +123,16 @@ const fixture = async () => {
     sut: new SourceResourceReadRepository(db, grants),
   };
 };
+
+it('refuses an ordinary original read for a trashed asset with no deletion timestamp', async () => {
+  const f = await fixture();
+  await db
+    .updateTable('asset')
+    .set({ status: AssetStatus.Trashed, deletedAt: null })
+    .where('id', '=', f.asset.id)
+    .execute();
+  expect(await f.sut.enqueue(f.asset.id)).toBeUndefined();
+});
 
 it('coalesces only a live approved original and never treats an arbitrary asset path as a source request', async () => {
   const f = await fixture();

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { DB } from 'src/schema/index.js';
-import { ChecksumAlgorithm } from 'src/enum.js';
+import { AssetStatus, ChecksumAlgorithm } from 'src/enum.js';
 import { SourceResourceGrant, SourceResourceRepository } from 'src/repositories/source-resource.repository.js';
 import { lockSourceAuthorities } from 'src/utils/source-authority-lock.js';
 import { parseSourceOriginalPath, sourceOriginalPath } from 'src/utils/source-original.js';
@@ -63,7 +63,7 @@ export class SourceResourceReadRepository {
       JOIN "user" owner ON owner.id=s."ownerId"
       WHERE a.id=${assetId}::uuid AND s.id=${identity.sourceId}::uuid
         AND a."originalPath"=${hint.originalPath} AND a."ownerId"=${hint.ownerId}::uuid AND a."ownerId"=s."ownerId" AND a."isExternal"
-        AND a."checksumAlgorithm"=${ChecksumAlgorithm.sha1Path} AND a."deletedAt" IS NULL
+        AND a."checksumAlgorithm"=${ChecksumAlgorithm.sha1Path} AND a.status=${AssetStatus.Active} AND a."deletedAt" IS NULL
         AND l."readOnly" AND l."deletedAt" IS NULL AND r.state='verified' AND r."verifiedAt" IS NOT NULL
         AND s.mode='reference' AND s."revokedAt" IS NULL AND owner."deletedAt" IS NULL
         AND b."scopeFingerprint"=s."scopeFingerprint" AND b."authorizationEpoch"=d."authorizationEpoch"
