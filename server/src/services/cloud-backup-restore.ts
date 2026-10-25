@@ -5,6 +5,7 @@ import type { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type { StorageRepository } from 'src/repositories/storage.repository.js';
 import type { RestoreDetailsMode } from 'src/utils/cloud-backup-details.js';
+import type { SourceReference } from 'src/utils/source-reference.js';
 import { CloudBackupStoreError, CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.repository.js';
 import { CloudBackupBucket, CloudBackupCheckpoint } from 'src/services/cloud-backup-maintenance.js';
 import { flushBuddyDirectory } from 'src/utils/buddy-backup-vault.js';
@@ -51,7 +52,15 @@ export type CloudBackupRestoreSnapshot = {
     assetHashes: Record<string, string>;
     current: Record<
       string,
-      { ownerId: string; originalPath: string; checksum: string; checksumAlgorithm: string; isExternal: boolean }
+      {
+        ownerId: string;
+        originalPath: string;
+        checksum: string;
+        checksumAlgorithm: string;
+        isExternal: boolean;
+        sourceEpoch?: string;
+        sourceReference?: SourceReference | null;
+      }
     >;
   };
   bucketRef: string;

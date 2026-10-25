@@ -1,7 +1,18 @@
 import { Kysely, sql } from 'kysely';
-import { randomUUID } from 'node:crypto';
-import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus, SystemMetadataKey } from 'src/enum.js';
+import { createHash, randomUUID } from 'node:crypto';
+import type { CloudBackupRestoreSnapshot } from 'src/services/cloud-backup-restore.js';
+import {
+  AssetStatus,
+  ChecksumAlgorithm,
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
+  SystemMetadataKey,
+} from 'src/enum.js';
+import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
+import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
+import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
@@ -14,6 +25,10 @@ import { getKyselyDB } from 'test/utils.js';
 let database: Kysely<DB>;
 beforeAll(async () => {
   database = await getKyselyDB();
+});
+
+afterAll(async () => {
+  await database?.destroy();
 });
 
 const setup = async () => {
@@ -274,4 +289,215 @@ it('refuses a contended Buddy publication and rechecks authority after the conte
   await database.updateTable('session').set({ pinExpiresAt: null }).where('id', '=', owner.sessionId).execute();
   await expect(run()).rejects.toThrow('Owner restore authorization unavailable');
   expect(publish).toHaveBeenCalledTimes(1);
+});
+
+describe('current owner restore source identity', () => {
+  const changeLifecycle = (f: Awaited<ReturnType<typeof setup>>) =>
+    database.transaction().execute(async (tx) => {
+      for (const status of [AssetStatus.Trashed, AssetStatus.Active] as const) {
+        await tx
+          .updateTable('asset')
+          .set({ status, deletedAt: status === AssetStatus.Trashed ? new Date() : null })
+          .where('id', '=', f.asset.id)
+          .execute();
+        await new AssetLocalEffectRepository(tx).append(tx, f.user.id, randomUUID(), {
+          origin: { kind: status === AssetStatus.Trashed ? 'trash' : 'restore' },
+          assets: [{ assetId: f.asset.id, status, revoke: status === AssetStatus.Trashed }],
+          stacks: [],
+        });
+      }
+    });
+  const reference = async () => {
+    const f = await setup();
+    const device = (await new DesktopDeviceRepository(database).enroll({
+      userId: f.user.id,
+      installationId: randomUUID(),
+      publicKey: Buffer.alloc(32, 7).toString('base64'),
+      name: 'Offline desktop',
+      platform: 'linux',
+      architecture: 'x86_64',
+      mode: 'client-worker',
+      state: 'revoked',
+    }))!;
+    const { session: photo } = await f.ctx.newSession({ userId: f.user.id });
+    const source = await database
+      .insertInto('photo_source')
+      .values({
+        ownerId: f.user.id,
+        deviceId: device.id,
+        photoSessionId: photo.id,
+        kind: 'folder',
+        mode: 'copy',
+        name: 'Snapshot provenance',
+        scopeFingerprint: 'a'.repeat(64),
+        revokedAt: new Date(),
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+    await sql`UPDATE photo_source SET mode='reference' WHERE id=${source.id}::uuid`.execute(database);
+    const run = await database
+      .insertInto('photo_source_run')
+      .values({ sourceId: source.id, maxBytes: 10, maxItems: 1 })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+    const resource = await database
+      .insertInto('photo_source_resource')
+      .values({
+        runId: run.id,
+        resourceKey: 'b'.repeat(64),
+        version: 'c'.repeat(64),
+        checksum: Buffer.alloc(32, 8),
+        bytes: 5,
+        state: 'verified',
+        verifiedAt: new Date(),
+        assetId: f.asset.id,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+    const library = await new LibraryRepository(database).create({
+      ownerId: f.user.id,
+      name: 'Reference metadata',
+      readOnly: true,
+      importPaths: [],
+      exclusionPatterns: [],
+    });
+    const path = `frameleaf-source://${source.id}/${resource.resourceKey}`;
+    await database
+      .updateTable('asset')
+      .set({
+        originalPath: path,
+        checksum: createHash('sha1').update(path).digest(),
+        checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+        isExternal: true,
+        libraryId: library.id,
+      })
+      .where('id', '=', f.asset.id)
+      .execute();
+    await database
+      .insertInto('source_original')
+      .values({
+        assetId: f.asset.id,
+        resourceId: resource.id,
+        scopeFingerprint: source.scopeFingerprint,
+        authorizationEpoch: device.authorizationEpoch,
+      })
+      .execute();
+    const current = await f.index.getOwnerRestoreIdentities([f.asset.id]);
+    const owner: NonNullable<CloudBackupRestoreSnapshot['owner']> = { ...f.owner, current, assetHashes: {} };
+    const identity = { ...f.identity, owner };
+    const publish = vi.fn().mockResolvedValue('published');
+    const restore = () => f.index.withOwnerRestore(f.owner, identity, f.asset.id, f.lease, publish);
+    return { ...f, source, resource, photo, identity, publish, restore };
+  };
+
+  it('freezes recorded identity without borrowing permission from an offline or revoked source', async () => {
+    const f = await reference();
+    await database.deleteFrom('session').where('id', '=', f.photo.id).execute();
+    expect(f.identity.owner.current[f.asset.id]).toMatchObject({
+      sourceEpoch: '0',
+      sourceReference: {
+        resourceId: f.resource.id,
+        version: f.resource.version,
+        sha256: f.resource.checksum.toString('hex'),
+      },
+    });
+    await expect(f.restore()).resolves.toBe('published');
+  });
+
+  it.each(['version', 'sha256', 'lifecycle', 'binding'] as const)(
+    'refuses a changed %s before the owner callback',
+    async (change) => {
+      const f = await reference();
+      const before = f.identity.owner.current[f.asset.id];
+      switch (change) {
+        case 'version': {
+          await database
+            .updateTable('photo_source_resource')
+            .set({ version: 'd'.repeat(64) })
+            .where('id', '=', f.resource.id)
+            .execute();
+          break;
+        }
+        case 'sha256': {
+          await database
+            .updateTable('photo_source_resource')
+            .set({ checksum: Buffer.alloc(32, 9) })
+            .where('id', '=', f.resource.id)
+            .execute();
+          break;
+        }
+        case 'lifecycle': {
+          await changeLifecycle(f);
+          break;
+        }
+        case 'binding': {
+          await database.deleteFrom('source_original').where('assetId', '=', f.asset.id).execute();
+          break;
+        }
+      }
+      const current = (await f.index.getOwnerRestoreIdentities([f.asset.id]))[f.asset.id];
+      expect(current.originalPath).toBe(before.originalPath);
+      expect(current.checksum).toBe(before.checksum);
+      await expect(f.restore()).rejects.toThrow('Owner restore source changed');
+      expect(f.publish).not.toHaveBeenCalled();
+    },
+  );
+
+  it('holds source provenance before asset publication and refuses contention without waiting', async () => {
+    const f = await reference();
+    await f.index.withOwnerRestore(f.owner, f.identity, f.asset.id, f.lease, async () => {
+      await expect(
+        database
+          .transaction()
+          .execute((tx) =>
+            tx.selectFrom('photo_source').select('id').where('id', '=', f.source.id).forUpdate().noWait().execute(),
+          ),
+      ).rejects.toMatchObject({ code: '55P03' });
+      await expect(
+        database.transaction().execute((tx) => {
+          return tx
+            .selectFrom('photo_source_resource')
+            .select('id')
+            .where('id', '=', f.resource.id)
+            .forUpdate()
+            .noWait()
+            .execute();
+        }),
+      ).rejects.toMatchObject({ code: '55P03' });
+    });
+    const { promise: held, resolve: locked } = Promise.withResolvers<void>();
+    const { promise: done, resolve: release } = Promise.withResolvers<void>();
+    const contender = database.transaction().execute(async (tx) => {
+      await tx.selectFrom('photo_source').select('id').where('id', '=', f.source.id).forUpdate().execute();
+      locked();
+      await done;
+    });
+    try {
+      await held;
+      await expect(f.restore()).rejects.toMatchObject({ code: '55P03' });
+      expect(f.publish).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await contender;
+    }
+    await expect(f.restore()).resolves.toBe('published');
+  });
+
+  it('permits legacy managed snapshots only while their lifecycle remains unchanged', async () => {
+    const f = await setup();
+    const current: NonNullable<CloudBackupRestoreSnapshot['owner']>['current'] =
+      await f.index.getOwnerRestoreIdentities([f.asset.id]);
+    delete current[f.asset.id].sourceEpoch;
+    delete current[f.asset.id].sourceReference;
+    const identity = { ...f.identity, owner: { ...f.owner, current, assetHashes: {} } };
+    await expect(
+      f.index.withOwnerRestore(f.owner, identity, f.asset.id, f.lease, () => Promise.resolve('published')),
+    ).resolves.toBe('published');
+    await changeLifecycle(f);
+    const publish = vi.fn();
+    await expect(f.index.withOwnerRestore(f.owner, identity, f.asset.id, f.lease, publish)).rejects.toThrow(
+      'Owner restore source changed',
+    );
+    expect(publish).not.toHaveBeenCalled();
+  });
 });

@@ -3,11 +3,20 @@ import { createHash } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import type { CloudBackupRestoreSnapshot } from 'src/services/cloud-backup-restore.js';
+import type { BuddyReferenceAdoption } from 'src/utils/buddy-reference-adoption.js';
 import type { CloudBackupAssetRecord, CloudBackupManifest } from 'src/utils/cloud-backup.js';
-import { AssetStatus } from 'src/enum.js';
+import { AssetStatus, ChecksumAlgorithm } from 'src/enum.js';
 import { ownerBackupHistoryPage } from 'src/utils/cloud-backup-owner.js';
 import { hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { canonicalJson } from 'src/utils/object.js';
+
+type RestoreSource = Pick<
+  NonNullable<CloudBackupRestoreSnapshot['owner']>['current'][string],
+  'sourceEpoch' | 'sourceReference'
+>;
+export const sameOwnerRestoreSource = (before: RestoreSource, current: RestoreSource) =>
+  (before.sourceEpoch ?? '0') === (current.sourceEpoch ?? '0') &&
+  canonicalJson(before.sourceReference ?? null) === canonicalJson(current.sourceReference ?? null);
 
 export const readBackupAssetRecord = (asset: CloudBackupManifest['assets'][string]): CloudBackupAssetRecord | null =>
   asset.type && asset.originalFileName && asset.fileCreatedAt && asset.fileModifiedAt && asset.localDateTime
@@ -48,6 +57,8 @@ export const checkOwnerRestoreItems = async (
   ids = snapshot.assetIds ?? [],
   allowCurrent = false,
   motionParent?: string,
+  referenceDestination?: BuddyReferenceAdoption,
+  referenceParentDestination?: BuddyReferenceAdoption,
 ) => {
   const owner = snapshot.owner;
   if (
@@ -60,7 +71,17 @@ export const checkOwnerRestoreItems = async (
   if (motionParent) {
     if (ids.includes(motionParent) || !snapshot.assetIds?.includes(motionParent))
       throw new NotFoundException('Backup item unavailable');
-    await checkOwnerRestoreItems(auth, manifest, snapshot, resumed, index, [motionParent], allowCurrent);
+    await checkOwnerRestoreItems(
+      auth,
+      manifest,
+      snapshot,
+      resumed,
+      index,
+      [motionParent],
+      allowCurrent,
+      undefined,
+      referenceParentDestination,
+    );
   }
   const states = await index.getOwnerHistoryState(auth, ids);
   const library = await index.getAssetDetails(ids);
@@ -86,10 +107,28 @@ export const checkOwnerRestoreItems = async (
     const current = library.get(id);
     const identities = await index.getOwnerRestoreIdentities([id]);
     const identity = identities[id];
-    // Current external originals need a separate atomic staging/aside counterpart.
-    // Missing records are confined to live owner-managed roots at publication; a historical path is never authority.
-    if (identity?.isExternal) throw new NotFoundException('Owner restore external destination unavailable');
     const before = owner.current[id];
+    if (before && identity && !sameOwnerRestoreSource(before, identity))
+      throw new NotFoundException('Owner restore source changed');
+    // Only the separately guarded independent-original transaction can admit a reference destination.
+    if (
+      identity?.isExternal &&
+      (!referenceDestination ||
+        referenceDestination.assetId !== id ||
+        referenceDestination.ownerId !== auth.user.id ||
+        referenceDestination.type !== asset.type ||
+        current?.record.type !== referenceDestination.type ||
+        referenceDestination.file.sha256 !== original.sha256 ||
+        referenceDestination.file.size !== original.size ||
+        referenceDestination.source.sourcePath !== identity.originalPath ||
+        identity.checksumAlgorithm !== ChecksumAlgorithm.sha1Path ||
+        identity.checksum !== createHash('sha1').update(identity.originalPath).digest('hex') ||
+        !sameOwnerRestoreSource(identity, {
+          sourceEpoch: referenceDestination.source.sourceEpoch.epoch,
+          sourceReference: referenceDestination.source.sourceEpoch.reference,
+        }))
+    )
+      throw new NotFoundException('Owner restore external destination unavailable');
     if (
       identity &&
       (identity.ownerId !== owner.ownerId ||

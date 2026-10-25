@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { NoResultError, type Transaction, sql } from 'kysely';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { lstat, opendir, readFile, readdir, rm } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
 import { coerce, gt } from 'semver';
@@ -15,6 +15,7 @@ import type { BuddyRestoreDto } from 'src/dtos/buddy-backup.dto.js';
 import type { DB } from 'src/schema/index.js';
 import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
 import type { BuddyAlbumPlan } from 'src/utils/buddy-backup-metadata.js';
+import type { BuddyReferenceAdoption } from 'src/utils/buddy-reference-adoption.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
@@ -76,6 +77,7 @@ import {
   createBuddyDirectory,
   writeBuddyFile,
 } from 'src/utils/buddy-backup-vault.js';
+import { referenceOriginalPath } from 'src/utils/buddy-reference-originals.js';
 import {
   assertOwnerRestoreFile,
   assertOwnerRestorePath,
@@ -93,10 +95,11 @@ import { getDiskUsage } from 'src/utils/disk-usage.js';
 import { advanceExecutionProgress, assertExecutionActive, executionSignal } from 'src/utils/execution-signal.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { OperationDeadlineError, settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 import { isManagedStudioImportPath } from 'src/utils/studio-managed-paths.js';
 import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
 
-type RestoreJob = {
+export type RestoreJob = {
   version: 1;
   request: BuddyRestoreDto;
   sessionId: string;
@@ -111,6 +114,7 @@ type RestoreJob = {
    * administrator who restores their items. Their albums are not recreated.
    */
   owners?: Record<string, string>;
+  referenceAdoptions?: Record<string, BuddyReferenceAdoption>;
 };
 const LEASE_MS = 300_000;
 
@@ -431,6 +435,23 @@ export class BuddyBackupRestoreService {
     if (admin && !current.user.isAdmin) throw new ForbiddenException();
     const { reader, manifest } = await this.open(request.snapshotId);
     const ids = await this.selection(current, request, manifest, admin);
+    const identities = await this.index.getOwnerRestoreIdentities(ids);
+    const owner = {
+      ownerId: current.user.id,
+      sessionId: current.session!.id,
+      current: identities,
+      assetHashes: Object.fromEntries(
+        ids.map((id) => [
+          id,
+          ownerRestoreHash(
+            manifest.library.assets[id],
+            buddyLibraryForOwner(manifest, manifest.library.assets[id].owner!),
+          ),
+        ]),
+      ),
+    };
+    const preserved = this.preservedReferenceIds({ request: { ...request, assetIds: ids }, admin, owner }, manifest);
+    const restoreIds = ids.filter((id) => !preserved.has(id));
     const projectIds = buddyStudioProjectIds(manifest, request.scope);
     for (const projectId of projectIds) {
       const project = readBuddyStudioProject(manifest, projectId);
@@ -451,7 +472,7 @@ export class BuddyBackupRestoreService {
     const selectedFiles: Array<{ size: number }> =
       request.scope === 'settings'
         ? manifest.configurationFiles
-        : ids.flatMap((id) =>
+        : restoreIds.flatMap((id) =>
             manifest.library.assets[id].files.filter(
               (file) =>
                 request.scope === 'server' ||
@@ -462,7 +483,7 @@ export class BuddyBackupRestoreService {
             ),
           );
     if (!['settings', 'server'].includes(request.scope))
-      for (const id of ids) selectedFiles.push(...(readBuddyAssetFidelity(manifest, id)?.files ?? []));
+      for (const id of restoreIds) selectedFiles.push(...(readBuddyAssetFidelity(manifest, id)?.files ?? []));
     for (const projectId of projectIds) selectedFiles.push(...readBuddyStudioProject(manifest, projectId).files);
     if (request.scope === 'server')
       selectedFiles.push(
@@ -475,7 +496,6 @@ export class BuddyBackupRestoreService {
     const free = await getDiskUsage(StorageCore.getMediaLocation());
     if (bytes + 1024 ** 3 > free.available)
       throw new BadRequestException('More free space is needed to stage and verify this restore.');
-    const identities = await this.index.getOwnerRestoreIdentities(ids);
     const owners =
       admin && !['server', 'settings'].includes(request.scope)
         ? await this.missingOwners(manifest, ids, current.user.id)
@@ -496,20 +516,6 @@ export class BuddyBackupRestoreService {
     const albums = manifest.metadata
       ? await new BuddyBackupMetadataRepository(this.repository.db).plan(manifest.metadata, albumIds, request.mode)
       : undefined;
-    const owner = {
-      ownerId: current.user.id,
-      sessionId: current.session!.id,
-      current: identities,
-      assetHashes: Object.fromEntries(
-        ids.map((id) => [
-          id,
-          ownerRestoreHash(
-            manifest.library.assets[id],
-            buddyLibraryForOwner(manifest, manifest.library.assets[id].owner!),
-          ),
-        ]),
-      ),
-    };
     const projectConflicts =
       projectIds.length > 0
         ? await this.repository.db.selectFrom('studio_project').select('id').where('id', 'in', projectIds).execute()
@@ -541,6 +547,50 @@ export class BuddyBackupRestoreService {
       ...(albums && { albums }),
       ...(owners && { owners }),
     };
+    const referenceAdoptions: Record<string, BuddyReferenceAdoption> = {};
+    if (!['settings', 'server'].includes(request.scope))
+      for (const id of ids) {
+        if (preserved.has(id)) continue;
+        const before = owner.current[id];
+        if (!before?.isExternal || !manifest.referenceOriginals?.[id]) continue;
+        const assetOwnerId = manifest.library.assets[id].owner;
+        const record = readBackupAssetRecord(manifest.library.assets[id]);
+        const original = manifest.library.assets[id].files.find((file) => file.role === 'original');
+        if (
+          !record ||
+          !original ||
+          !assetOwnerId ||
+          before.ownerId !== assetOwnerId ||
+          (!admin && assetOwnerId !== current.user.id) ||
+          before.sourceEpoch === undefined ||
+          !before.sourceReference ||
+          !parseSourceOriginalPath(before.originalPath)
+        )
+          throw new BadRequestException('Reference restore source identity unavailable');
+        if (request.mode === 'keep' && before.sourceReference.sha256 !== original.sha256) continue;
+        referenceAdoptions[id] = {
+          assetId: id,
+          ownerId: assetOwnerId,
+          type: record.type,
+          source: {
+            version: 1,
+            sourcePath: before.originalPath,
+            sourceEpoch: {
+              assetId: id,
+              ownerId: assetOwnerId,
+              epoch: before.sourceEpoch,
+              reference: before.sourceReference,
+            },
+          },
+          file: {
+            path: referenceOriginalPath(StorageCore.getMediaLocation(), assetOwnerId, id, record.originalFileName),
+            sha256: original.sha256,
+            size: original.size,
+          },
+          physicalFileId: randomUUID(),
+        };
+      }
+    if (Object.keys(referenceAdoptions).length > 0) job.referenceAdoptions = referenceAdoptions;
     const result = await this.operations.createExclusive(
       {
         ownerId: current.user.id,
@@ -553,7 +603,7 @@ export class BuddyBackupRestoreService {
         retryOfId: null,
         projectId: null,
         revisionId: null,
-        snapshot: job as unknown as Record<string, unknown>,
+        snapshot: structuredClone(job) as unknown as Record<string, unknown>,
         settings: {},
         estimate: null,
         result: {},
@@ -631,6 +681,34 @@ export class BuddyBackupRestoreService {
     const ring = await this.backup.keyring(job.vaultId);
     if (ring.vaultId !== job.vaultId || this.fingerprint(ring) !== job.fingerprint)
       throw new Error('Buddy restore key binding changed');
+  }
+
+  private preservedReferenceIds(job: Pick<RestoreJob, 'admin' | 'request' | 'owner'>, manifest: BuddyManifest) {
+    const preserved = new Set<string>();
+    if (job.request.mode !== 'keep' || !['asset', 'album', 'library'].includes(job.request.scope)) return preserved;
+    const ids = new Set(job.request.assetIds);
+    for (const id of ids) {
+      const before = job.owner.current[id];
+      if (!before?.isExternal || !parseSourceOriginalPath(before.originalPath)) continue;
+      const original = manifest.library.assets[id]?.files.find((file) => file.role === 'original');
+      if (!before.sourceReference || !original)
+        throw new BadRequestException('Reference restore source identity unavailable');
+      if (before.sourceReference.sha256 !== original.sha256) preserved.add(id);
+    }
+    // Keep the selected Live Photo dependency group together, even when only one resource is newer.
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const [id, link] of Object.entries(manifest.assetLinks ?? {})) {
+        const motion = link.livePhotoVideoId;
+        if (!motion || !ids.has(id) || !ids.has(motion) || (!preserved.has(id) && !preserved.has(motion))) continue;
+        const size = preserved.size;
+        preserved.add(id);
+        preserved.add(motion);
+        changed ||= preserved.size !== size;
+      }
+    }
+    return preserved;
   }
 
   private async restoreAlbums(

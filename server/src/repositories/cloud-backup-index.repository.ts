@@ -3,7 +3,11 @@ import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { IntegrityRepository } from 'src/repositories/integrity.repository.js';
+import type { RestoreJob } from 'src/services/buddy-backup-restore.service.js';
+import type { CloudBackupRestoreSnapshot } from 'src/services/cloud-backup-restore.js';
 import type { SystemMetadata } from 'src/types.js';
+import type { BuddyReferenceAdoption } from 'src/utils/buddy-reference-adoption.js';
+import type { BuddyReferenceRestoreIntent } from 'src/utils/buddy-reference-intent.js';
 import type { OwnerBackupState } from 'src/utils/cloud-backup-owner.js';
 import type {
   CloudBackupAlbum,
@@ -14,11 +18,19 @@ import type {
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { defaults } from 'src/dtos/config.dto.js';
 import { AssetFileType, AssetStatus, MediaOperationKind, MediaOperationStatus, SystemMetadataKey } from 'src/enum.js';
+import { PhysicalFileRepository, lockChecksum } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { CloudBackupVerificationMethod, CloudBackupVerificationResult } from 'src/schema/tables/safety-proof.table.js';
+import { BUDDY_ID, BUDDY_UUID } from 'src/utils/buddy-backup-crypto.js';
+import { adoptBuddyReferenceOriginal } from 'src/utils/buddy-reference-adoption.js';
+import { buddyReferenceIntent } from 'src/utils/buddy-reference-intent.js';
+import { sameOwnerRestoreSource } from 'src/utils/cloud-backup-owner-restore.js';
 import { bucketRef } from 'src/utils/cloud-backup.js';
 import { isMotionOfLockedStill, withHiddenContentFilter } from 'src/utils/database.js';
 import { effectiveVisibilityOf, isLocked, isNotLocked } from 'src/utils/locked.js';
+import { canonicalJson } from 'src/utils/object.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
+import { sourceReferenceSchema } from 'src/utils/source-reference.js';
 
 export type CloudBackupIndexedObject = {
   sha256: string;
@@ -795,11 +807,76 @@ export class CloudBackupIndexRepository {
     const rows = await this.db
       .selectFrom('asset')
       .select(['id', 'ownerId', 'originalPath', 'checksum', 'checksumAlgorithm', 'isExternal'])
+      .select([
+        sql<string>`coalesce((SELECT "lastTrashSequence" FROM asset_source_epoch e
+          WHERE e."assetId"=asset.id AND e."ownerId"=asset."ownerId"),0)::text`.as('sourceEpoch'),
+        sql<unknown>`(SELECT jsonb_build_object('resourceId',r.id,'version',r.version,'sha256',encode(r.checksum,'hex'))
+          FROM source_original b JOIN photo_source_resource r ON r.id=b."resourceId" AND r."assetId"=asset.id
+          JOIN photo_source_run run ON run.id=r."runId" JOIN photo_source s ON s.id=run."sourceId"
+          WHERE b."assetId"=asset.id AND s."ownerId"=asset."ownerId" AND s.mode='reference'
+            AND r.state='verified' AND r."verifiedAt" IS NOT NULL
+            AND asset."originalPath"='frameleaf-source://' || s.id::text || '/' || r."resourceKey")`.as(
+          'sourceReference',
+        ),
+      ])
       .where('id', '=', sql<string>`any(${ids}::uuid[])`)
       .execute();
     return Object.fromEntries(
-      rows.map(({ id, checksum, ...rest }) => [id, { ...rest, checksum: checksum.toString('hex') }]),
+      rows.map(({ id, checksum, sourceReference, ...rest }) => [
+        id,
+        {
+          ...rest,
+          checksum: checksum.toString('hex'),
+          sourceReference: sourceReferenceSchema.nullable().parse(sourceReference),
+        },
+      ]),
     );
+  }
+  /** Archive recovery locks existing provenance; the actor's live restore session supplies authority. */
+  private async lockOwnerRestoreSource(trx: Transaction<DB>, ownerId: string, assetId: string) {
+    const asset = await trx
+      .selectFrom('asset')
+      .select(['ownerId', 'originalPath'])
+      .where('id', '=', assetId)
+      .executeTakeFirst();
+    if (!asset) return;
+    if (asset.ownerId !== ownerId) throw new Error('Owner restore item unavailable');
+    const source = parseSourceOriginalPath(asset.originalPath);
+    if (!source) return;
+    const hint = await trx
+      .selectFrom('photo_source')
+      .select(['ownerId', 'photoSessionId', 'deviceId'])
+      .where('id', '=', source.sourceId)
+      .executeTakeFirst();
+    if (!hint || hint.ownerId !== ownerId) throw new Error('Owner restore source unavailable');
+    await trx.selectFrom('session').select('id').where('id', '=', hint.photoSessionId).forShare().noWait().execute();
+    const device = await trx
+      .selectFrom('desktop_device')
+      .select('id')
+      .where('id', '=', hint.deviceId)
+      .where('userId', '=', ownerId)
+      .forShare()
+      .noWait()
+      .executeTakeFirst();
+    const locked = await trx
+      .selectFrom('photo_source')
+      .select('id')
+      .where('id', '=', source.sourceId)
+      .where('ownerId', '=', ownerId)
+      .where('photoSessionId', '=', hint.photoSessionId)
+      .where('deviceId', '=', hint.deviceId)
+      .forUpdate()
+      .noWait()
+      .executeTakeFirst();
+    if (!device || !locked) throw new Error('Owner restore source changed');
+    const binding =
+      await sql`SELECT b."assetId" FROM source_original b JOIN photo_source_resource r ON r.id=b."resourceId"
+      JOIN photo_source_run run ON run.id=r."runId" JOIN photo_source s ON s.id=run."sourceId"
+      WHERE b."assetId"=${assetId}::uuid AND r."assetId"=${assetId}::uuid AND s.id=${source.sourceId}::uuid
+        AND s."ownerId"=${ownerId}::uuid AND s.mode='reference' AND r."resourceKey"=${source.resourceKey}
+        AND b."scopeFingerprint"=s."scopeFingerprint"
+        AND r.state='verified' AND r."verifiedAt" IS NOT NULL FOR SHARE OF b,r,run NOWAIT`.execute(trx);
+    if (binding.rows.length !== 1) throw new Error('Owner restore source changed');
   }
   async getOwnerRestoreAuth(owner: { ownerId: string; sessionId: string }): Promise<{
     auth: AuthDto;
@@ -841,21 +918,31 @@ export class CloudBackupIndexRepository {
       bucketRef: string;
       keyFingerprint: string;
       manifestKey: string;
+      owner?: CloudBackupRestoreSnapshot['owner'];
     },
     assetId: string,
     lease: {
       operationId: string;
       claimToken: string;
     },
-    callback: (trx: Transaction<DB>) => Promise<T>,
+    callback: (
+      trx: Transaction<DB>,
+      adoptedReference?: BuddyReferenceAdoption,
+      pendingReference?: BuddyReferenceAdoption,
+    ) => Promise<T>,
     buddy?: {
       authorize: () => Promise<void>;
+      reference?: { intent: BuddyReferenceRestoreIntent; verify: () => Promise<void> };
+      administrator?: { assetOwnerId: string };
     },
   ): Promise<T> {
-    return this.db.transaction().execute(async (trx) => {
+    const assetOwnerId = buddy?.administrator?.assetOwnerId ?? owner.ownerId;
+    const execute = async (trx: Transaction<DB>) => {
+      // Bound advisory/stream/unique-lock waits as well as the explicit NOWAIT authority rows.
+      if (buddy?.reference) await sql`SET LOCAL lock_timeout='100ms'`.execute(trx);
       const operation = await trx
         .selectFrom('media_operation')
-        .select('id')
+        .select(['id', 'snapshot'])
         .where('id', '=', lease.operationId)
         .where('kind', '=', buddy ? MediaOperationKind.BuddyRestore : MediaOperationKind.CloudRestore)
         .where('ownerId', '=', owner.ownerId)
@@ -868,6 +955,24 @@ export class CloudBackupIndexRepository {
         .noWait()
         .executeTakeFirst();
       if (!operation) throw new Error('Owner restore claim unavailable');
+      if (buddy?.administrator) {
+        const job = operation.snapshot as unknown as RestoreJob;
+        const before = identity.owner?.current[assetId];
+        if (
+          !BUDDY_UUID.test(assetOwnerId) ||
+          !job.admin ||
+          job.sessionId !== owner.sessionId ||
+          job.owner.ownerId !== owner.ownerId ||
+          canonicalJson(identity.owner) !== canonicalJson(job.owner) ||
+          identity.bucketRef !== job.vaultId ||
+          identity.keyFingerprint !== job.fingerprint ||
+          identity.manifestKey !== job.request.snapshotId ||
+          !job.request.assetIds?.includes(assetId) ||
+          !job.owner.assetHashes[assetId] ||
+          (before && before.ownerId !== assetOwnerId)
+        )
+          throw new Error('Buddy administrator restore context changed');
+      }
       const session = await trx
         .selectFrom('session')
         .select('id')
@@ -883,14 +988,28 @@ export class CloudBackupIndexRepository {
         .select('id')
         .where('id', '=', owner.ownerId)
         .where('deletedAt', 'is', null)
-        .forShare()
+        .$if(!!buddy?.administrator, (query) => query.where('isAdmin', '=', true))
+        .$if(!!buddy?.reference && assetOwnerId === owner.ownerId, (query) => query.forUpdate())
+        .$if(!buddy?.reference || assetOwnerId !== owner.ownerId, (query) => query.forShare())
         .noWait()
         .executeTakeFirst();
       if (!session || !user) throw new Error('Owner restore authorization unavailable');
+      if (assetOwnerId !== owner.ownerId) {
+        const assetOwner = await trx
+          .selectFrom('user')
+          .select('id')
+          .where('id', '=', assetOwnerId)
+          .where('deletedAt', 'is', null)
+          .$if(!!buddy?.reference, (query) => query.forUpdate())
+          .$if(!buddy?.reference, (query) => query.forShare())
+          .noWait()
+          .executeTakeFirst();
+        if (!assetOwner) throw new Error('Owner restore item unavailable');
+      }
       await trx
         .selectFrom('user_metadata')
         .select('key')
-        .where('userId', '=', owner.ownerId)
+        .where('userId', '=', assetOwnerId)
         .forShare()
         .noWait()
         .execute();
@@ -945,7 +1064,43 @@ export class CloudBackupIndexRepository {
         if (!kept || claim?.bucketRef !== identity.bucketRef || claim.keyFingerprint !== identity.keyFingerprint)
           throw new Error('Owner restore backup unavailable');
       }
+      const reference = buddy?.reference;
+      if (reference) {
+        const job = operation.snapshot as unknown as RestoreJob;
+        const expected = buddyReferenceIntent(operation.id, job, assetId);
+        const before = identity.owner?.current[assetId];
+        const adoption = reference.intent.adoption;
+        if (
+          !expected ||
+          job.admin !== !!buddy?.administrator ||
+          job.sessionId !== owner.sessionId ||
+          job.owner.ownerId !== owner.ownerId ||
+          canonicalJson(identity.owner) !== canonicalJson(job.owner) ||
+          canonicalJson(reference.intent) !== canonicalJson(expected) ||
+          identity.bucketRef !== reference.intent.vaultId ||
+          identity.keyFingerprint !== reference.intent.keyFingerprint ||
+          identity.manifestKey !== reference.intent.snapshotId ||
+          identity.owner?.sessionId !== owner.sessionId ||
+          !before?.isExternal ||
+          before.sourceEpoch === undefined ||
+          !before.sourceReference ||
+          before.originalPath !== adoption.source.sourcePath ||
+          adoption.assetId !== assetId ||
+          adoption.ownerId !== assetOwnerId ||
+          before.ownerId !== assetOwnerId ||
+          !sameOwnerRestoreSource(before, {
+            sourceEpoch: adoption.source.sourceEpoch.epoch,
+            sourceReference: adoption.source.sourceEpoch.reference,
+          }) ||
+          !BUDDY_ID.test(adoption.file.sha256) ||
+          (job.request.mode === 'keep' && adoption.source.sourceEpoch.reference.sha256 !== adoption.file.sha256)
+        )
+          throw new Error('Buddy reference restore intent changed');
+        await lockChecksum(trx, Buffer.from(adoption.file.sha256, 'hex'));
+        await new PhysicalFileRepository(trx).inspectOwnerRestorePath(adoption.file.path, assetId, assetOwnerId);
+      }
       // Lock the current item and its immediate authority rows, never across remote I/O.
+      await this.lockOwnerRestoreSource(trx, assetOwnerId, assetId);
       const asset = await trx
         .selectFrom('asset')
         .select(['ownerId', 'libraryId'])
@@ -953,7 +1108,39 @@ export class CloudBackupIndexRepository {
         .forUpdate()
         .noWait()
         .executeTakeFirst();
-      if (asset && asset.ownerId !== owner.ownerId) throw new Error('Owner restore item unavailable');
+      if (asset && asset.ownerId !== assetOwnerId) throw new Error('Owner restore item unavailable');
+      const before = identity.owner?.current[assetId];
+      let adoptedReference: BuddyReferenceAdoption | undefined;
+      let pendingReference: BuddyReferenceAdoption | undefined;
+      if (before) {
+        const current = (await new CloudBackupIndexRepository(trx).getOwnerRestoreIdentities([assetId]))[assetId];
+        if (!current) throw new Error('Owner restore source changed');
+        if (!sameOwnerRestoreSource(before, current)) {
+          if (
+            !reference ||
+            current.isExternal ||
+            current.originalPath !== reference.intent.adoption.file.path ||
+            (await adoptBuddyReferenceOriginal(trx, reference.intent.adoption, reference.verify)) !== 'verified'
+          )
+            throw new Error('Owner restore source changed');
+          adoptedReference = reference.intent.adoption;
+        } else if (
+          reference &&
+          current.isExternal &&
+          current.originalPath === reference.intent.adoption.source.sourcePath
+        ) {
+          const adoption = reference.intent.adoption;
+          if (adoption.source.sourceEpoch.reference.sha256 === adoption.file.sha256) {
+            const resource = await trx
+              .selectFrom('photo_source_resource')
+              .select('bytes')
+              .where('id', '=', adoption.source.sourceEpoch.reference.resourceId)
+              .executeTakeFirstOrThrow();
+            if (BigInt(resource.bytes) !== BigInt(adoption.file.size)) throw new Error('Owner restore source changed');
+          }
+          pendingReference = adoption;
+        }
+      }
       if (asset?.libraryId) {
         const library = await trx
           .selectFrom('library')
@@ -962,7 +1149,7 @@ export class CloudBackupIndexRepository {
           .forShare()
           .noWait()
           .executeTakeFirst();
-        if (!library || library.ownerId !== owner.ownerId || library.deletedAt)
+        if (!library || library.ownerId !== assetOwnerId || library.deletedAt)
           throw new Error('Owner restore library unavailable');
       }
       await trx
@@ -972,8 +1159,35 @@ export class CloudBackupIndexRepository {
         .forUpdate()
         .noWait()
         .execute();
-      return callback(trx);
-    });
+      const result = await callback(trx, adoptedReference, pendingReference);
+      if (reference || buddy?.administrator) {
+        const { auth } = await new CloudBackupIndexRepository(trx).getOwnerRestoreAuth(owner);
+        if (buddy?.administrator && !auth.user.isAdmin) throw new Error('Owner restore authorization unavailable');
+        if (
+          assetOwnerId !== owner.ownerId &&
+          !(await trx
+            .selectFrom('user')
+            .select('id')
+            .where('id', '=', assetOwnerId)
+            .where('deletedAt', 'is', null)
+            .executeTakeFirst())
+        )
+          throw new Error('Owner restore item unavailable');
+        const active = await trx
+          .selectFrom('media_operation')
+          .select('id')
+          .where('id', '=', lease.operationId)
+          .where('claimToken', '=', lease.claimToken)
+          .where('status', '=', MediaOperationStatus.Rendering)
+          .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+          .where('cancelRequestedAt', 'is', null)
+          .where('pauseRequestedAt', 'is', null)
+          .executeTakeFirst();
+        if (!active) throw new Error('Owner restore claim unavailable');
+      }
+      return result;
+    };
+    return this.db.isTransaction ? execute(this.db as Transaction<DB>) : this.db.transaction().execute(execute);
   }
   /** FL-164: the names of these accounts, for the restore list's owner column. */
   @GenerateSql({ params: [[DummyValue.UUID]] })

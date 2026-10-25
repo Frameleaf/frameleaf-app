@@ -4,19 +4,31 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { DB } from 'src/schema/index.js';
+import type { RestoreJob } from 'src/services/buddy-backup-restore.service.js';
 import type { BuddyRecovery } from 'src/utils/buddy-backup-recovery.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
-import { AssetStatus, ChecksumAlgorithm, PhysicalFileType } from 'src/enum.js';
+import {
+  AssetStatus,
+  ChecksumAlgorithm,
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
+  PhysicalFileType,
+} from 'src/enum.js';
 import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
+import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { BuddyBackupFidelityRepository } from 'src/repositories/buddy-backup-fidelity.repository.js';
+import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { SourceResourceCacheRepository } from 'src/repositories/source-resource-cache.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { BuddyRecoveryFiles, buddyFileHash, readBuddyRecovery } from 'src/utils/buddy-backup-recovery.js';
 import { type BuddyReferenceAdoption, adoptBuddyReferenceOriginal } from 'src/utils/buddy-reference-adoption.js';
+import { buddyReferenceIntent } from 'src/utils/buddy-reference-intent.js';
 import { referenceOriginalPath } from 'src/utils/buddy-reference-originals.js';
 import { recoverBuddyReferenceOriginals } from 'src/utils/buddy-reference-recovery.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
@@ -166,6 +178,227 @@ describe('Buddy independent reference recovery in stopped-server maintenance', (
     } as unknown as BuddyRecovery;
     return { ctx, user, asset, album, source, resource, plan, file };
   };
+  const submitted = async (admin = false) => {
+    const f = await fixture();
+    const actor = admin ? (await f.ctx.newUser()).user : f.user;
+    if (admin) {
+      owners.push(actor.id);
+      await db.updateTable('user').set({ isAdmin: true }).where('id', '=', actor.id).execute();
+    }
+    const session = await db
+      .insertInto('session')
+      .values({ userId: actor.id, token: randomBytes(32), pinExpiresAt: new Date(Date.now() + 60_000) })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+    const index = new CloudBackupIndexRepository(db);
+    const owner = {
+      ownerId: actor.id,
+      sessionId: session.id,
+      current: await index.getOwnerRestoreIdentities([f.asset.id]),
+      assetHashes: { [f.asset.id]: 'a'.repeat(64) },
+    };
+    const adoption: BuddyReferenceAdoption = {
+      assetId: f.asset.id,
+      ownerId: f.user.id,
+      type: f.asset.type,
+      source: f.plan.manifest.referenceOriginals![f.asset.id],
+      file: f.file,
+      physicalFileId: randomUUID(),
+    };
+    const job = {
+      version: 1,
+      request: { scope: 'asset', assetIds: [f.asset.id], snapshotId: randomUUID(), mode: 'replace', confirm: true },
+      sessionId: session.id,
+      admin,
+      owner,
+      vaultId: randomUUID(),
+      fingerprint: 'b'.repeat(64),
+      manifestHash: 'c'.repeat(64),
+      referenceAdoptions: { [f.asset.id]: adoption },
+    } as RestoreJob;
+    const operations = new MediaOperationRepository(db);
+    const operation = await operations.create({
+      ownerId: actor.id,
+      kind: MediaOperationKind.BuddyRestore,
+      destination: MediaOperationDestination.Local,
+      label: 'Synthetic confirmed restore',
+      snapshot: job as unknown as Record<string, unknown>,
+      settings: {},
+    });
+    const claim = (await operations.claimNext({
+      kinds: [MediaOperationKind.BuddyRestore],
+      workerId: 'synthetic-reference-admission',
+      leaseMs: 60_000,
+    }))!;
+    expect(claim.operation.id).toBe(operation.id);
+    await operations.reportProgress(operation.id, claim.claimToken, {
+      status: MediaOperationStatus.Rendering,
+      processedUnits: 0,
+      totalUnits: null,
+      progress: 0,
+    });
+    const lease = { operationId: operation.id, claimToken: claim.claimToken };
+    const identity = {
+      bucketRef: job.vaultId,
+      keyFingerprint: job.fingerprint,
+      manifestKey: job.request.snapshotId,
+      owner,
+    };
+    const intent = buddyReferenceIntent(operation.id, job, f.asset.id)!;
+    const verify = async () => {
+      expect(await buddyFileHash(f.file.path)).toEqual({ sha256: f.file.sha256, size: f.file.size });
+    };
+    const run = (action: Parameters<CloudBackupIndexRepository['withOwnerRestore']>[4], expected = intent) =>
+      index.withOwnerRestore(owner, identity, f.asset.id, lease, action, {
+        authorize: () => Promise.resolve(),
+        reference: { intent: expected, verify },
+        ...(admin && { administrator: { assetOwnerId: f.user.id } }),
+      });
+    return { ...f, actor, session, index, job, operation, owner, identity, intent, lease, verify, run };
+  };
+
+  it.each([false, true])(
+    'admits only the submitted owner transition and verifies committed replay: admin=%s',
+    async (admin) => {
+      const f = await submitted(admin);
+      await expect(
+        f.run(async (trx, adopted, pending) => {
+          expect(adopted).toBeUndefined();
+          expect(pending).toEqual(f.intent.adoption);
+          return adoptBuddyReferenceOriginal(trx, pending!, f.verify);
+        }),
+      ).resolves.toBe('adopted');
+      await expect(
+        f.run((_trx, adopted, pending) => {
+          expect(adopted).toEqual(f.intent.adoption);
+          expect(pending).toBeUndefined();
+          return Promise.resolve('verified');
+        }),
+      ).resolves.toBe('verified');
+      expect(f.owner.current[f.asset.id].isExternal).toBe(true);
+      expect(
+        Number(
+          (
+            await db
+              .selectFrom('user')
+              .select('quotaUsageInBytes')
+              .where('id', '=', f.user.id)
+              .executeTakeFirstOrThrow()
+          ).quotaUsageInBytes,
+        ),
+      ).toBe(105);
+    },
+  );
+
+  it.each([
+    'physical-id',
+    'mode',
+    'source-version',
+    'scope',
+    'lifecycle',
+    'claim',
+    'pin',
+    'admin-role',
+    'target-owner',
+  ] as const)('refuses changed confirmation authority before any callback: %s', async (change) => {
+    const f = await submitted(true);
+    const intent = structuredClone(f.intent);
+    switch (change) {
+      case 'physical-id': {
+        intent.adoption.physicalFileId = randomUUID();
+        break;
+      }
+      case 'mode': {
+        intent.mode = 'keep';
+        break;
+      }
+      case 'source-version': {
+        await db
+          .updateTable('photo_source_resource')
+          .set({ version: 'e'.repeat(64) })
+          .where('id', '=', f.resource.id)
+          .execute();
+        break;
+      }
+      case 'scope': {
+        await db
+          .updateTable('photo_source')
+          .set({ scopeFingerprint: 'e'.repeat(64) })
+          .where('id', '=', f.source.id)
+          .execute();
+        break;
+      }
+      case 'lifecycle': {
+        await db.transaction().execute(async (tx) => {
+          await tx
+            .updateTable('asset')
+            .set({ status: AssetStatus.Trashed, deletedAt: new Date() })
+            .where('id', '=', f.asset.id)
+            .execute();
+          await new AssetLocalEffectRepository(tx).append(tx, f.user.id, randomUUID(), {
+            origin: { kind: 'trash' },
+            assets: [{ assetId: f.asset.id, status: AssetStatus.Trashed, revoke: true }],
+            stacks: [],
+          });
+          await tx
+            .updateTable('asset')
+            .set({ status: AssetStatus.Active, deletedAt: null })
+            .where('id', '=', f.asset.id)
+            .execute();
+        });
+        break;
+      }
+      case 'claim': {
+        await db
+          .updateTable('media_operation')
+          .set({ claimToken: randomUUID() })
+          .where('id', '=', f.operation.id)
+          .execute();
+        break;
+      }
+      case 'pin': {
+        await db
+          .updateTable('session')
+          .set({ pinExpiresAt: new Date(0) })
+          .where('id', '=', f.session.id)
+          .execute();
+        break;
+      }
+      case 'admin-role': {
+        await db.updateTable('user').set({ isAdmin: false }).where('id', '=', f.actor.id).execute();
+        break;
+      }
+      case 'target-owner': {
+        intent.adoption.ownerId = f.actor.id;
+        break;
+      }
+    }
+    const callback = vi.fn().mockResolvedValue('must not publish');
+    await expect(f.run(callback, intent)).rejects.toThrow();
+    expect(callback).not.toHaveBeenCalled();
+  });
+
+  it('rolls back callback changes when PIN authority expires before commit', async () => {
+    const f = await submitted();
+    const before = (
+      await db.selectFrom('asset').select('isFavorite').where('id', '=', f.asset.id).executeTakeFirstOrThrow()
+    ).isFavorite;
+    await expect(
+      f.run(async (trx) => {
+        await trx.updateTable('asset').set({ isFavorite: !before }).where('id', '=', f.asset.id).execute();
+        await trx
+          .updateTable('session')
+          .set({ pinExpiresAt: new Date(0) })
+          .where('id', '=', f.session.id)
+          .execute();
+      }),
+    ).rejects.toThrow('Owner restore authorization unavailable');
+    expect(
+      (await db.selectFrom('asset').select('isFavorite').where('id', '=', f.asset.id).executeTakeFirstOrThrow())
+        .isFavorite,
+    ).toBe(before);
+  });
+
   it('revokes restored grants and read claims while retaining cache writer and reader ownership', async () => {
     const f = await fixture();
     const session = await db
