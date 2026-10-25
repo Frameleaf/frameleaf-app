@@ -36,6 +36,7 @@ export class DesktopDeviceService {
         workerSession: true,
         qualificationMemory: true,
         sources: false,
+        referencePublication: 1,
         nativeHost: false,
       },
     };

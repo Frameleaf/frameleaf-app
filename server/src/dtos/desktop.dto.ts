@@ -58,6 +58,7 @@ export class DesktopCapabilitiesDto extends createZodDto(
       workerSession: z.literal(true),
       qualificationMemory: z.literal(true),
       sources: z.literal(false),
+      referencePublication: z.literal(1).meta({ id: 'ReferencePublicationVersion' }),
       nativeHost: z.literal(false),
     }),
     enrollmentPolicy: z.enum(['administrators', 'account-approved']).meta({ id: 'DesktopEnrollmentPolicy' }),

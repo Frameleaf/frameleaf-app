@@ -134,6 +134,7 @@ describe('desktop enrollment authority', () => {
         workerSession: true,
         qualificationMemory: true,
         sources: false,
+        referencePublication: 1,
         nativeHost: false,
       },
     });

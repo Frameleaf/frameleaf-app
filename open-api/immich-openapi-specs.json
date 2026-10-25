@@ -77538,6 +77538,9 @@
                 ],
                 "type": "boolean"
               },
+              "referencePublication": {
+                "$ref": "#/components/schemas/ReferencePublicationVersion"
+              },
               "sources": {
                 "enum": [
                   false
@@ -77563,6 +77566,7 @@
               "workerSession",
               "qualificationMemory",
               "sources",
+              "referencePublication",
               "nativeHost"
             ],
             "type": "object"
@@ -118457,6 +118461,12 @@
           "buckets"
         ],
         "type": "object"
+      },
+      "ReferencePublicationVersion": {
+        "enum": [
+          1
+        ],
+        "type": "number"
       },
       "ReleaseChannel": {
         "description": "Release channel",

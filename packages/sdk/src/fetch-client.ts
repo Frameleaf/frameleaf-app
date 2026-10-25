@@ -6575,6 +6575,7 @@ export type DesktopCapabilitiesDto = {
         enrollment: true;
         nativeHost: false;
         qualificationMemory: true;
+        referencePublication: ReferencePublicationVersion;
         sources: false;
         worker: false;
         workerSession: true;
@@ -34331,6 +34332,9 @@ export enum Unit {
 export enum DesktopEnrollmentPolicy {
     Administrators = "administrators",
     AccountApproved = "account-approved"
+}
+export enum ReferencePublicationVersion {
+    $1 = 1
 }
 export enum DesktopArchitecture {
     Arm64 = "arm64",
