@@ -14588,6 +14588,29 @@ export type SourceGrantDto = {
     sourceId: string;
     sourceToken: string;
 };
+export type SourceResourcePayloadDto = {
+    payload: string;
+};
+export type SourceReadHeartbeatDto = {
+    deadline: string;
+    leaseUntil: string;
+};
+export type SourceReadPollDto = {
+    request: {
+        authorizationEpoch: number;
+        bytes: number;
+        claimFence: number;
+        claimToken: string;
+        deadline: string;
+        id: string;
+        leaseUntil: string;
+        resourceKey: string;
+        scopeFingerprint: string;
+        sha256: string;
+        sourceId: string;
+        version: string;
+    } | null;
+};
 export type StackResponseDto = {
     assets: AssetResponseDto[];
     /** Stack ID */
@@ -29700,6 +29723,44 @@ export function createSourceResourceGrant({ sourceGrantRequestDto }: {
         ...opts,
         method: "POST",
         body: sourceGrantRequestDto
+    })));
+}
+/**
+ * Renew the exact current original request claim for a signed source companion
+ */
+export function heartbeatSourceResource({ xFrameleafSourceProof, sourceResourcePayloadDto }: {
+    xFrameleafSourceProof: string;
+    sourceResourcePayloadDto: SourceResourcePayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SourceReadHeartbeatDto;
+    }>("/source-resources/heartbeat", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: sourceResourcePayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-source-proof": xFrameleafSourceProof
+        })
+    })));
+}
+/**
+ * Claim one bounded original request for a signed source companion
+ */
+export function pollSourceResource({ xFrameleafSourceProof, sourceResourcePayloadDto }: {
+    xFrameleafSourceProof: string;
+    sourceResourcePayloadDto: SourceResourcePayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SourceReadPollDto;
+    }>("/source-resources/poll", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: sourceResourcePayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-source-proof": xFrameleafSourceProof
+        })
     })));
 }
 /**
