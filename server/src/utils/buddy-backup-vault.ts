@@ -37,6 +37,15 @@ export const closeBuddyFile = (handle: FileHandle) =>
     throw new Error('buddy_file_close_unconfirmed', { cause: error });
   });
 
+export const readBuddyFile = async (path: string): Promise<Buffer> => {
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    return await handle.readFile();
+  } finally {
+    await closeBuddyFile(handle);
+  }
+};
+
 export const flushBuddyDirectory = async (directory: string) => {
   const handle = await open(directory, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {

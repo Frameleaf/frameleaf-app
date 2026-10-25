@@ -8,9 +8,10 @@ import {
   PostgresQueryCompiler,
 } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, open, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { FileHandle } from 'node:fs/promises';
 import type { DB } from 'src/schema/index.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { BuddySettingsSchema } from 'src/dtos/buddy-backup.dto.js';
@@ -19,7 +20,13 @@ import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repo
 import { ConfigRepository, clearEnvCache } from 'src/repositories/config.repository.js';
 import { BuddyBackupCaptureService } from 'src/services/buddy-backup-capture.service.js';
 import { createBuddyKeyring, decryptBuddyBlock } from 'src/utils/buddy-backup-crypto.js';
+import { cloudNativeWorkStopped } from 'src/utils/cloud-native-work.js';
 import { KEY, LINEAGE } from 'test/fixtures/studio-import-retention.js';
+
+vi.mock('node:fs/promises', async (original) => {
+  const fs = await original<typeof import('node:fs/promises')>();
+  return { ...fs, open: vi.fn(fs.open) };
+});
 
 vi.mock('src/utils/disk-usage.js', () => ({
   getDiskUsage: () =>
@@ -37,10 +44,13 @@ describe('Buddy effective configuration file capture', () => {
   let studioProject: Record<string, unknown> | undefined;
   let studioImport: Record<string, unknown> | undefined;
   let queries: string[];
+  const retained: FileHandle[] = [];
   const plaintext = Buffer.from('{"oauth":{"clientSecret":"synthetic-config-secret"}}');
   const ring = createBuddyKeyring(randomUUID());
 
   beforeEach(async () => {
+    const fs = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    vi.mocked(open).mockReset().mockImplementation(fs.open);
     directory = await realpath(await mkdtemp(join(tmpdir(), 'buddy-config-capture-')));
     configPath = join(directory, 'effective-settings.json');
     dumpPath = join(directory, 'synthetic-database.sql.gz');
@@ -98,7 +108,11 @@ describe('Buddy effective configuration file capture', () => {
     );
   });
 
-  const capture = (runId: string, configurationFiles: string[] = []) =>
+  const capture = (
+    runId: string,
+    configurationFiles: string[] = [],
+    checkpoint: () => Promise<void> = () => Promise.resolve(),
+  ) =>
     service.capture({
       runId,
       instanceId: randomUUID(),
@@ -111,16 +125,79 @@ describe('Buddy effective configuration file capture', () => {
         timezone: 'UTC',
         configurationFiles,
       }),
-      checkpoint: () => Promise.resolve(),
+      checkpoint,
     });
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    await Promise.all(retained.splice(0).map((file) => file.close()));
     vi.unstubAllEnvs();
     process.env = environment;
     clearEnvCache();
     await db.destroy();
     await rm(directory, { recursive: true, force: true });
+  });
+
+  it('refuses cleanup while a capture owns local file work', async () => {
+    const runId = randomUUID();
+    const entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    const pending = capture(runId, [], () => {
+      entered.resolve();
+      return release.promise;
+    });
+    await entered.promise;
+    try {
+      await expect(service.release(runId)).rejects.toThrow('still owned by unfinished work');
+      expect(await cloudNativeWorkStopped(service.runDirectory(runId))).toBe(false);
+    } finally {
+      release.resolve();
+      await pending;
+    }
+    expect(await cloudNativeWorkStopped(service.runDirectory(runId))).toBe(true);
+    await service.release(runId);
+  });
+
+  it('does not let database reconciliation remove an active filesystem producer', async () => {
+    const runId = randomUUID();
+    await mkdir(service.runDirectory(runId), { recursive: true });
+    const entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    const pending = capture(runId, [], () => {
+      entered.resolve();
+      return release.promise;
+    });
+    await entered.promise;
+    try {
+      await service.reconcile();
+      expect(await cloudNativeWorkStopped(service.runDirectory(runId))).toBe(false);
+    } finally {
+      release.resolve();
+      await pending;
+    }
+    await service.reconcile();
+    expect(await cloudNativeWorkStopped(service.runDirectory(runId))).toBe(true);
+  });
+
+  it('retains the database dump and ownership when a capture descriptor cannot confirm close', async () => {
+    const real = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    vi.mocked(open).mockImplementation(async (...args) => {
+      const file = await real.open(...args);
+      if (String(args[0]) !== dumpPath) return file;
+      retained.push(file);
+      return new Proxy(file, {
+        get(target, key) {
+          if (key === 'close') return () => Promise.reject(new Error('synthetic close failure'));
+          const value = Reflect.get(target, key);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+    });
+    const runId = randomUUID();
+    await expect(capture(runId)).rejects.toThrow('buddy_file_close_unconfirmed');
+    expect(await readFile(dumpPath, 'utf8')).toBe('synthetic database dump');
+    expect(await cloudNativeWorkStopped(service.runDirectory(runId))).toBe(false);
+    await expect(service.release(runId)).rejects.toThrow('still owned by unfinished work');
   });
 
   it('captures ready import lineage and its pinned bytes without operational journal records', async () => {

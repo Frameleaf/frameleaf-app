@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { open, readFile, readdir, realpath, rm } from 'node:fs/promises';
+import { open, readdir, realpath, rm } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { FrameleafCloudBackup, IDeleteFilesJob } from 'src/types.js';
 import type { BuddyMetadata } from 'src/utils/buddy-backup-metadata.js';
@@ -28,6 +28,7 @@ import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import {
   BUDDY_BLOCK_BYTES,
+  BUDDY_UUID,
   type BuddyKeyring,
   buddyObjectId,
   decryptBuddyBlock,
@@ -35,7 +36,15 @@ import {
 } from 'src/utils/buddy-backup-crypto.js';
 import { type BuddyAssetFidelity, readBuddyAssetFidelity } from 'src/utils/buddy-backup-fidelity.js';
 import { type BuddySettingsSnapshot, readBuddySettingsSnapshot } from 'src/utils/buddy-backup-settings.js';
-import { type BuddyReceipt, BuddyVault, createBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
+import {
+  type BuddyReceipt,
+  BuddyVault,
+  buddyFileStopUnconfirmed,
+  closeBuddyFile,
+  createBuddyDirectory,
+  readBuddyFile,
+  writeBuddyFile,
+} from 'src/utils/buddy-backup-vault.js';
 import { type BuddyBootConfiguration, captureBuddyBootConfiguration } from 'src/utils/buddy-boot-configuration.js';
 import {
   CLOUD_BACKUP_MANIFEST_FORMAT,
@@ -44,6 +53,7 @@ import {
   keyFingerprint,
   parseBackupKey,
 } from 'src/utils/cloud-backup.js';
+import { beginCloudNativeWork } from 'src/utils/cloud-native-work.js';
 import { getDiskUsage } from 'src/utils/disk-usage.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { withDatabaseCleanup } from 'src/utils/execution-database.js';
@@ -111,6 +121,12 @@ const inside = (directory: string, path: string) => {
   return !child || (!child.startsWith(`..${sep}`) && child !== '..' && !child.startsWith(sep));
 };
 
+class BuddyCaptureRetainedError extends Error {
+  constructor(cause: unknown) {
+    super('Buddy capture files are still owned by unfinished work', { cause });
+  }
+}
+
 const dependencyPaths = sql<{ path: string }>`SELECT path FROM public.studio_project_import
   UNION SELECT path FROM public.studio_generated_resource
   UNION SELECT path FROM public.asset_develop_artifact
@@ -135,8 +151,19 @@ export class BuddyBackupCaptureService {
   ) {}
 
   runDirectory(runId: string) {
+    if (!BUDDY_UUID.test(runId)) throw new Error('Invalid Buddy capture identifier');
     return join(this.repository.root(), 'runs', runId);
   }
+  private async ownRun(runId: string) {
+    const directory = this.runDirectory(runId);
+    await createBuddyDirectory(directory);
+    try {
+      return await beginCloudNativeWork(directory);
+    } catch (error) {
+      throw new BuddyCaptureRetainedError(error);
+    }
+  }
+
   blockPath(id: string, runId: string) {
     return join(this.runDirectory(runId), 'blocks', id);
   }
@@ -148,14 +175,14 @@ export class BuddyBackupCaptureService {
     const path = this.blockPath(id, runId);
     let encrypted: Buffer;
     try {
-      encrypted = await readFile(path);
+      encrypted = await readBuddyFile(path);
       decryptBuddyBlock(key, { vaultId: ring.vaultId, id, keyVersion: ring.current }, encrypted);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       const journalPath = join(this.repository.root(), 'nonces', id);
       let journal: { nonce: string; digest: string; bytes: number };
       try {
-        journal = JSON.parse(await readFile(journalPath, 'utf8'));
+        journal = JSON.parse((await readBuddyFile(journalPath)).toString('utf8'));
       } catch (readError) {
         if ((readError as NodeJS.ErrnoException).code !== 'ENOENT') throw readError;
         const nonce = randomBytes(12);
@@ -186,7 +213,7 @@ export class BuddyBackupCaptureService {
 
   async readCapture(runId: string): Promise<BuddyCapture | null> {
     try {
-      return JSON.parse(await readFile(join(this.runDirectory(runId), 'capture.json'), 'utf8'));
+      return JSON.parse((await readBuddyFile(join(this.runDirectory(runId), 'capture.json'))).toString('utf8'));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       return null;
@@ -202,6 +229,19 @@ export class BuddyBackupCaptureService {
     settings: BuddySettings;
     checkpoint: () => Promise<void>;
   }): Promise<BuddyCapture> {
+    const close = await this.ownRun(options.runId);
+    let stopped = true;
+    try {
+      return await this.captureOwned(options);
+    } catch (error) {
+      stopped = !buddyFileStopUnconfirmed(error);
+      throw error;
+    } finally {
+      if (stopped) await close();
+    }
+  }
+
+  private async captureOwned(options: Parameters<BuddyBackupCaptureService['capture']>[0]): Promise<BuddyCapture> {
     const previousCapture = await this.readCapture(options.runId);
     if (previousCapture) {
       if (options.settings.includeDerived && previousCapture.derivedInventoryVersion !== 1)
@@ -310,7 +350,7 @@ export class BuddyBackupCaptureService {
         manifest.contents[sha256] = { blocks, keyVersion: ring.current, bytes };
         return { role, path, sha256, size: bytes, mtime: new Date(Number(before.mtimeNs / 1_000_000n)).toISOString() };
       } finally {
-        await file.close();
+        await closeBuddyFile(file);
       }
     };
 
@@ -487,6 +527,7 @@ export class BuddyBackupCaptureService {
               progress: advanceExecutionProgress,
               verify: true,
             });
+            let dumpReadStopped = true;
             try {
               let afterId: string | null = null;
               const albums = new Set<string>();
@@ -602,8 +643,11 @@ export class BuddyBackupCaptureService {
                 manifest.configurationFiles.push(await captureFile(path, 'configuration'));
               const database = await captureFile(dump, 'database', undefined, true);
               manifest.library.database = { key: basename(dump), sha256: database.sha256, size: database.size };
+            } catch (error) {
+              dumpReadStopped = !buddyFileStopUnconfirmed(error);
+              throw error;
             } finally {
-              await rm(dump, { force: true });
+              if (dumpReadStopped) await rm(dump, { force: true });
             }
           });
       } finally {
@@ -633,6 +677,19 @@ export class BuddyBackupCaptureService {
   }
 
   async release(runId: string) {
+    const close = await this.ownRun(runId);
+    let stopped = true;
+    try {
+      await this.releaseOwned(runId);
+    } catch (error) {
+      stopped = !buddyFileStopUnconfirmed(error);
+      throw error;
+    } finally {
+      if (stopped) await close();
+    }
+  }
+
+  private async releaseOwned(runId: string) {
     const { rows } = await sql<{ path: string }>`SELECT path FROM public.buddy_backup_reference
       WHERE "runId" = ${runId}::uuid ORDER BY path`.execute(this.repository.db);
     let originals: Map<string, PinnedOriginal> | undefined;
@@ -650,10 +707,12 @@ export class BuddyBackupCaptureService {
         originals ??= new Map(
           (
             JSON.parse(
-              await readFile(this.originalsPath(runId), 'utf8').catch((error: NodeJS.ErrnoException) => {
-                if (error.code !== 'ENOENT') throw error;
-                return '[]';
-              }),
+              (
+                await readBuddyFile(this.originalsPath(runId)).catch((error: NodeJS.ErrnoException) => {
+                  if (error.code !== 'ENOENT') throw error;
+                  return Buffer.from('[]');
+                })
+              ).toString('utf8'),
             ) as PinnedOriginal[]
           ).map((entry) => [entry.path, entry]),
         );
@@ -694,8 +753,13 @@ export class BuddyBackupCaptureService {
         .where('id', '=', runId)
         .executeTakeFirst();
       // Terminal rows never become active again. Missing rows cannot own a claim or be resumed.
-      if (!operation || (!operation.claimToken && TERMINAL_MEDIA_OPERATION_STATUSES.includes(operation.status)))
-        await this.release(runId);
+      if (!operation || (!operation.claimToken && TERMINAL_MEDIA_OPERATION_STATUSES.includes(operation.status))) {
+        try {
+          await this.release(runId);
+        } catch (error) {
+          if (!(error instanceof BuddyCaptureRetainedError)) throw error;
+        }
+      }
     }
   }
 }
