@@ -7,12 +7,14 @@ export const newMetadataRepositoryMock = (): Mocked<RepositoryInterface<Metadata
     setMaxConcurrency: vitest.fn(),
     teardown: vitest.fn(),
     readTags: vitest.fn(),
+    withBorrowedRead: vitest.fn(),
     readJpegSignature: vitest.fn(),
     writeTags: vitest.fn(),
     extractBinaryTag: vitest.fn(),
     inspectLocation: vitest.fn(),
     sweepLocationFree: vitest.fn(),
     writeLocationFreeCopy: vitest.fn(),
+    acquireBorrowedLocationFreeOriginal: vitest.fn(),
     acquireLocationFreeOriginal: vitest.fn(),
   };
 };

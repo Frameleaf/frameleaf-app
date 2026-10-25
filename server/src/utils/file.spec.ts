@@ -1,8 +1,11 @@
 import { NotFoundException } from '@nestjs/common';
 import express, { type NextFunction, type Response } from 'express';
+import { EventEmitter } from 'node:events';
 import { access, constants, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { get } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { promisify } from 'node:util';
 import request from 'supertest';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -23,11 +26,11 @@ vi.mock('node:fs/promises', async (importOriginal) => ({
 const accessMock = vi.mocked(access);
 
 const fixture = () => {
-  const response = {
+  const response = Object.assign(new EventEmitter(), {
     headersSent: false,
     header: vi.fn(),
     sendFile: vi.fn((_path: string, _options: unknown, callback: (error?: Error) => void) => callback()),
-  };
+  });
   const res = response as unknown as Response;
   const next = vi.fn() as unknown as NextFunction;
   const logger = { debug: vi.fn(), error: vi.fn() };
@@ -46,6 +49,81 @@ beforeEach(() => {
 });
 
 describe('file delivery', () => {
+  it('does not prepare a file for an already disconnected response', async () => {
+    const f = fixture();
+    Object.assign(f.response, { destroyed: true });
+    const handler = vi.fn(() => f.file);
+    await sendFile(f.res, f.next, handler, f.log);
+    expect(handler).not.toHaveBeenCalled();
+    expect(f.response.listenerCount('close')).toBe(0);
+  });
+  it('cancels pending preparation on disconnect and removes its close listener', async () => {
+    const f = fixture();
+    const entered = Promise.withResolvers<AbortSignal>();
+    const preparing = Promise.withResolvers<FileDownloadResponse>();
+    const pending = sendFile(
+      f.res,
+      f.next,
+      (signal) => {
+        entered.resolve(signal);
+        return preparing.promise;
+      },
+      f.log,
+    );
+    const signal = await entered.promise;
+    f.response.emit('close');
+    expect(signal.aborted).toBe(true);
+    preparing.resolve(f.file);
+    await pending;
+    expect(f.release).toHaveBeenCalledTimes(1);
+    expect(f.response.sendFile).not.toHaveBeenCalled();
+    expect(f.response.listenerCount('close')).toBe(0);
+  });
+  it.each([
+    [undefined, 200, 'abcdef', undefined],
+    ['bytes=1-3', 206, 'bcd', 'bytes 1-3/6'],
+    ['bytes=-2', 206, 'ef', 'bytes 4-5/6'],
+    ['bytes=3-', 206, 'def', 'bytes 3-5/6'],
+    ['bytes=100-', 416, '', 'bytes */6'],
+    ['bytes=abc', 200, 'abcdef', undefined],
+    ['items=1-3', 200, 'abcdef', undefined],
+    ['bytes=0-0,4-4', 200, 'abcdef', undefined],
+    ['bytes=0-2,2-4', 206, 'abcde', 'bytes 0-4/6'],
+  ] as const)(
+    'sends owned binary streams with Express range semantics: %s',
+    async (range, status, body, contentRange) => {
+      const app = express();
+      const f = fixture();
+      const closed = Promise.withResolvers<void>();
+      const release = vi.fn(() => closed.resolve());
+      app.get('/file', (req, res, next) =>
+        sendFile(
+          res,
+          next,
+          () =>
+            new FileDownloadResponse({
+              path: 'frameleaf-source://logical-only',
+              stream: Readable.from([Buffer.from('ab'), Buffer.from('cd'), Buffer.from('ef')]),
+              contentLength: 6,
+              contentType: 'text/plain',
+              fileName: 'Photo original.txt',
+              cacheControl: CacheControl.PrivateWithoutCache,
+              release,
+            }),
+          f.log,
+        ),
+      );
+      const call = request(app).get('/file');
+      if (range) call.set('Range', range);
+      const result = await call.expect(status);
+      await closed.promise;
+      expect(result.text).toBe(body);
+      expect(result.headers['content-range']).toBe(contentRange);
+      expect(result.headers['content-length']).toBe(String(body.length));
+      expect(release).toHaveBeenCalledTimes(1);
+      expect(accessMock).not.toHaveBeenCalled();
+    },
+  );
   it('retains private cache policies, type, filename encoding and receiver context', async () => {
     const policies: [CacheControl, string | null][] = [
       [
@@ -72,6 +150,91 @@ describe('file delivery', () => {
       expect(f.release.mock.contexts).toEqual([file]);
       expect(f.next).not.toHaveBeenCalled();
     }
+  });
+  it('joins cleanup when a client disconnects from an unfinished source stream', async () => {
+    const app = express();
+    const f = fixture();
+    const released = Promise.withResolvers<void>();
+    let sent = false;
+    const stream = new Readable({
+      read() {
+        if (!sent) {
+          sent = true;
+          stream.push(Buffer.from('first'));
+        }
+      },
+    });
+    const release = vi.fn(() => {
+      expect(stream.destroyed).toBe(true);
+      released.resolve();
+    });
+    app.get('/file', (req, res, next) =>
+      sendFile(
+        res,
+        next,
+        () =>
+          new FileDownloadResponse({
+            path: 'frameleaf-source://logical',
+            stream,
+            contentLength: 1000,
+            contentType: 'text/plain',
+            cacheControl: CacheControl.PrivateWithoutCache,
+            release,
+          }),
+        f.log,
+      ),
+    );
+    const server = app.listen(0, '127.0.0.1');
+    try {
+      await new Promise<void>((resolve) => server.once('listening', resolve));
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('fixture listener missing');
+      await new Promise<void>((resolve, reject) => {
+        const call = get({ host: '127.0.0.1', port: address.port, path: '/file' }, (res) => {
+          res.once('data', () => {
+            res.destroy();
+            resolve();
+          });
+          res.on('error', () => {});
+        });
+        call.on('error', reject);
+      });
+      await released.promise;
+      expect(release).toHaveBeenCalledTimes(1);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+    }
+  });
+  it.each(['HEAD', 'If-Range'] as const)('retains HTTP %s behavior for a verified stream', async (mode) => {
+    const app = express();
+    const f = fixture();
+    const released = Promise.withResolvers<void>();
+    const release = vi.fn(() => released.resolve());
+    app.get('/file', (req, res, next) =>
+      sendFile(
+        res,
+        next,
+        () =>
+          new FileDownloadResponse({
+            path: 'frameleaf-source://logical',
+            stream: Readable.from(['abcdef']),
+            contentLength: 6,
+            contentType: 'text/plain',
+            cacheControl: CacheControl.PrivateWithoutCache,
+            release,
+          }),
+        f.log,
+      ),
+    );
+    const result =
+      mode === 'HEAD'
+        ? await request(app).head('/file').set('Range', 'bytes=1-3').expect(200)
+        : await request(app).get('/file').set('Range', 'bytes=1-3').set('If-Range', '"older"').expect(200);
+    await released.promise;
+    expect(result.headers['content-length']).toBe('6');
+    expect(result.headers['content-range']).toBeUndefined();
+    expect(result.text).toBe(mode === 'HEAD' ? undefined : 'abcdef');
+    expect(release).toHaveBeenCalledTimes(1);
   });
 
   it('releases a temporary file only after its asynchronous transfer finishes', async () => {

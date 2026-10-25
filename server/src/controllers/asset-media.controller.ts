@@ -158,15 +158,7 @@ export class AssetMediaController {
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
-    const controller = new AbortController();
-    const abandon = () => controller.abort();
-    res.once('close', abandon);
-    if (res.destroyed) abandon();
-    try {
-      await sendFile(res, next, () => this.service.downloadOriginal(auth, id, dto, controller.signal), this.logger);
-    } finally {
-      res.removeListener('close', abandon);
-    }
+    await sendFile(res, next, (signal) => this.service.downloadOriginal(auth, id, dto, signal), this.logger);
   }
 
   @Get(':id/thumbnail')
@@ -265,11 +257,11 @@ export class AssetMediaController {
     await sendFile(
       res,
       next,
-      async () =>
+      async (signal) =>
         edited === false
-          ? this.service.playbackVideo(auth, id, false)
+          ? this.service.playbackVideo(auth, id, false, signal)
           : ((await this.withPlaybackChoice(auth, id, 'video', () =>
-              this.service.playbackVideo(auth, id, edited ?? true),
+              this.service.playbackVideo(auth, id, edited ?? true, signal),
             )) as FileDownloadResponse),
       this.logger,
     );

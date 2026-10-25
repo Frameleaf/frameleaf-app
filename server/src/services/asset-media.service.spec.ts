@@ -6,8 +6,10 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { stat } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { Readable } from 'node:stream';
 import { vitest } from 'vitest';
 import { AssetFile } from 'src/database.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
@@ -23,6 +25,7 @@ import { clearConfigCache } from 'src/utils/config.js';
 import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { tryPromise } from 'src/utils/promise.js';
+import { sourceOriginalPath } from 'src/utils/source-original.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -1069,6 +1072,65 @@ describe(AssetMediaService.name, () => {
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
       return asset;
     };
+    it.each(['success', 'revoked', 'cancelled', 'failed', 'release-failed'] as const)(
+      'holds a source-owned original through still conversion: %s',
+      async (outcome) => {
+        const asset = source();
+        const logical = sourceOriginalPath({ sourceId: asset.ownerId, resourceKey: 'a'.repeat(64) });
+        const reference = { ...asset, originalPath: logical };
+        mocks.asset.getForOriginal.mockResolvedValue(reference);
+        mocks.asset.getById.mockResolvedValue(getForAsset(reference));
+        const abort = new AbortController();
+        const check = vitest.fn().mockResolvedValue(undefined);
+        const release = vitest.fn().mockResolvedValue(undefined);
+        if (outcome === 'release-failed') release.mockRejectedValue(new Error('source cleanup unconfirmed'));
+        const input = {
+          localPath: '/private/verified-input.artifact',
+          verifiedSha256: 'b'.repeat(64),
+          signal: abort.signal,
+          check,
+          release,
+        };
+        const original = { open: vitest.fn().mockResolvedValue(input) };
+        Object.assign(sut, { sourceOriginalService: original });
+        const entered = Promise.withResolvers<void>();
+        const finished = Promise.withResolvers<void>();
+        mocks.media.exportPhotoStill.mockImplementation(async () => {
+          entered.resolve();
+          await finished.promise;
+          if (outcome === 'failed') throw new Error('conversion failed');
+          if (outcome === 'cancelled') abort.abort();
+          else if (outcome === 'revoked') check.mockRejectedValue(new Error('source_original_unavailable'));
+        });
+        const pending = sut.downloadOriginal(AuthFactory.create(), asset.id, { format: 'sdr-jpeg' }, abort.signal);
+        await entered.promise;
+        const releasedBeforeCompletion = release.mock.calls.length;
+        const supplied = mocks.media.exportPhotoStill.mock.calls[0];
+        finished.resolve();
+        const output = mocks.media.exportPhotoStill.mock.calls[0][1];
+        if (outcome === 'success') {
+          const result = await pending;
+          expect(release).toHaveBeenCalledTimes(1);
+          expect(result.path).toBe(output);
+          expect(result.fileName).toContain('_still_sdr-jpeg');
+          await result.release?.();
+          await vitest.waitFor(async () => expect(stat(dirname(output))).rejects.toMatchObject({ code: 'ENOENT' }));
+        } else {
+          await expect(pending).rejects.toThrow();
+          await expect(stat(dirname(output))).rejects.toMatchObject({ code: 'ENOENT' });
+          expect(release).toHaveBeenCalledTimes(1);
+        }
+        expect(releasedBeforeCompletion).toBe(0);
+        expect(supplied).toEqual([
+          input.localPath,
+          expect.any(String),
+          'sdr-jpeg',
+          Buffer.from(input.verifiedSha256, 'hex'),
+          input.signal,
+        ]);
+        expect(mocks.asset.update).not.toHaveBeenCalled();
+      },
+    );
     it.each(['sdr-jpeg', 'hdr-jpeg', 'hdr-heic'] as const)(
       'exports %s as a private still and retains motion',
       async (format) => {
@@ -1181,6 +1243,82 @@ describe(AssetMediaService.name, () => {
     });
   });
 
+  describe('source reference original downloads', () => {
+    const setup = () => {
+      const owner = UserFactory.create();
+      const asset = AssetFactory.create({
+        ownerId: owner.id,
+        originalFileName: 'Original Photo.JPG',
+        originalPath: sourceOriginalPath({ sourceId: owner.id, resourceKey: 'a'.repeat(64) }),
+      });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: null });
+      const stream = Readable.from([Buffer.from('source bytes')]);
+      const release = vitest.fn();
+      const source = { open: vitest.fn().mockResolvedValue({ stream, release, byteLength: 12 }) };
+      Object.assign(sut, { sourceOriginalService: source });
+      return { owner, asset, source, stream, release };
+    };
+    it('returns verified bytes with the logical identity and original filename, not a private cache path', async () => {
+      const f = setup();
+      const abort = new AbortController();
+      const response = await sut.downloadOriginal(AuthFactory.create(f.owner), f.asset.id, {}, abort.signal);
+      expect(response).toMatchObject({
+        path: f.asset.originalPath,
+        fileName: 'Original Photo.JPG',
+        contentType: 'image/jpeg',
+        contentLength: 12,
+        stream: f.stream,
+        cacheControl: CacheControl.PrivateWithoutCache,
+      });
+      expect(f.source.open).toHaveBeenCalledWith(
+        f.asset.id,
+        expect.objectContaining({ kind: 'http' }),
+        expect.any(Function),
+        abort.signal,
+      );
+      expect(f.release).not.toHaveBeenCalled();
+      await response.release?.();
+      expect(f.release).toHaveBeenCalledTimes(1);
+      f.stream.destroy();
+    });
+    it('rechecks live asset access and the logical original binding during streaming', async () => {
+      const f = setup();
+      const response = await sut.downloadOriginal(AuthFactory.create(f.owner), f.asset.id, {});
+      const authorize = f.source.open.mock.calls[0][2];
+      await expect(authorize()).resolves.toBeUndefined();
+      mocks.asset.getForOriginal.mockResolvedValue({
+        ...f.asset,
+        originalPath: '/another/original.jpg',
+        editedPath: null,
+      });
+      await expect(authorize()).rejects.toBeInstanceOf(ConflictException);
+      await response.release?.();
+      f.stream.destroy();
+    });
+    it('refuses a metadata-hidden shared link before requesting an original', async () => {
+      const f = setup();
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([f.asset.id]));
+      await expect(
+        sut.downloadOriginal(
+          AuthFactory.from().sharedLink({ showExif: false, allowDownload: true }).build(),
+          f.asset.id,
+          {},
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(f.source.open).not.toHaveBeenCalled();
+      f.stream.destroy();
+    });
+    it('keeps managed edits independent from a source-owned original', async () => {
+      const f = setup();
+      mocks.asset.getForOriginal.mockResolvedValue({ ...f.asset, editedPath: '/managed/edit.jpg' });
+      const response = await sut.downloadOriginal(AuthFactory.create(f.owner), f.asset.id, { edited: true });
+      expect(response.path).toBe('/managed/edit.jpg');
+      expect(f.source.open).not.toHaveBeenCalled();
+      f.stream.destroy();
+    });
+  });
+
   describe('downloadOriginal location policy (FL-54)', () => {
     const lease = { path: '/tmp/immich-location-free/copy.jpg', release: vitest.fn() };
 
@@ -1193,6 +1331,61 @@ describe(AssetMediaService.name, () => {
       mocks.metadata.acquireLocationFreeOriginal.mockResolvedValue(lease);
       return { auth: AuthFactory.create(me), asset };
     };
+
+    it.each([false, true])(
+      'retains the input lease through stripping and releases both leases (output failure: %s)',
+      async (fails) => {
+        const asset = AssetFactory.create();
+        const auth = AuthFactory.from().sharedLink({ showExif: false, allowDownload: true }).build();
+        const released: string[] = [];
+        const inputRelease = vitest.fn(() =>
+          Promise.try(() => {
+            released.push('input');
+          }),
+        );
+        const outputRelease = vitest.fn(() => {
+          released.push('output');
+          if (fails) throw new Error('output cleanup failed');
+        });
+        mocks.metadata.acquireLocationFreeOriginal.mockImplementation(() => {
+          expect(inputRelease).not.toHaveBeenCalled();
+          return Promise.resolve({ path: '/private/sanitized.jpg', release: outputRelease });
+        });
+        const response = await sut['withOriginalLocationPolicy'](auth, asset, 'playback', {
+          path: asset.originalPath,
+          contentType: 'image/jpeg',
+          cacheControl: CacheControl.PrivateWithoutCache,
+          release: inputRelease,
+        });
+        expect(response.path).toBe('/private/sanitized.jpg');
+        expect(released).toEqual([]);
+        if (fails) await expect(response.release!()).rejects.toThrow('output cleanup failed');
+        else await response.release!();
+        expect(released).toEqual(['output', 'input']);
+        expect(inputRelease).toHaveBeenCalledTimes(1);
+        expect(outputRelease).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it.each(['refused', 'preparation failed'])(
+      'releases the input lease when location policy is %s',
+      async (failure) => {
+        const asset = AssetFactory.create();
+        const auth = AuthFactory.from().sharedLink({ showExif: false, allowDownload: true }).build();
+        const release = vitest.fn();
+        mocks.metadata.acquireLocationFreeOriginal.mockRejectedValue(new Error('strip failed'));
+        await expect(
+          sut['withOriginalLocationPolicy'](auth, asset, failure === 'refused' ? 'download' : 'playback', {
+            path: asset.originalPath,
+            contentType: 'image/jpeg',
+            cacheControl: CacheControl.PrivateWithoutCache,
+            release,
+          }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(release).toHaveBeenCalledTimes(1);
+        if (failure === 'refused') expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
+      },
+    );
 
     it('serves the owner the original bytes without a partner lookup or a copy', async () => {
       const owner = UserFactory.create();
@@ -1764,6 +1957,174 @@ describe(AssetMediaService.name, () => {
   });
 
   describe('playbackVideo', () => {
+    const sourceVideo = () => {
+      const owner = UserFactory.create();
+      const asset = AssetFactory.create({
+        ownerId: owner.id,
+        type: AssetType.Video,
+        originalFileName: 'Private trip.mp4',
+        originalPath: sourceOriginalPath({ sourceId: owner.id, resourceKey: 'b'.repeat(64) }),
+      });
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForVideo.mockResolvedValue({ ...asset, encodedVideoPath: null, editedVideoPath: null });
+      mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: null });
+      const original = {
+        stream: Readable.from([Buffer.from('original')]),
+        byteLength: 8,
+        localPath: '/private/input.artifact',
+        signal: new AbortController().signal,
+        check: vitest.fn().mockResolvedValue(undefined),
+        release: vitest.fn(),
+      };
+      const source = { open: vitest.fn().mockResolvedValue(original) };
+      Object.assign(sut, { sourceOriginalService: source });
+      const auth = AuthFactory.from().sharedLink({ allowDownload: false, showExif: true }).build();
+      return { asset, original, source, auth };
+    };
+
+    it('plays a source video with view access even when downloads are disabled', async () => {
+      const f = sourceVideo();
+      const response = await sut.playbackVideo(f.auth, f.asset.id);
+      expect(response).toMatchObject({
+        path: f.asset.originalPath,
+        stream: f.original.stream,
+        contentLength: 8,
+        contentType: 'video/mp4',
+        cacheControl: CacheControl.PrivateWithoutCache,
+      });
+      await expect(f.source.open.mock.calls[0][2]()).resolves.toBeUndefined();
+      mocks.asset.getForOriginal.mockResolvedValue({ ...f.asset, originalPath: '/changed.mp4', editedPath: null });
+      await expect(f.source.open.mock.calls[0][2]()).rejects.toBeInstanceOf(ConflictException);
+      await response.release?.();
+      f.original.stream.destroy();
+    });
+
+    it('streams only the sanitized copy and retains both leases until release', async () => {
+      const f = sourceVideo();
+      f.auth.sharedLink!.showExif = false;
+      const folder = await mkdtemp(join(tmpdir(), 'source-playback-'));
+      const clean = join(folder, 'original.mp4');
+      const release = vitest.fn();
+      await writeFile(clean, 'clean!');
+      mocks.metadata.acquireBorrowedLocationFreeOriginal.mockResolvedValue({ path: clean, release });
+      try {
+        const response = await sut.playbackVideo(f.auth, f.asset.id);
+        expect(mocks.metadata.acquireBorrowedLocationFreeOriginal).toHaveBeenCalledWith(
+          f.original.localPath,
+          '.mp4',
+          f.original.signal,
+        );
+        expect(response).toMatchObject({
+          path: f.asset.originalPath,
+          fileName: `${f.asset.id}.mp4`,
+          contentType: 'video/mp4',
+          contentLength: 6,
+        });
+        const chunks = [];
+        for await (const chunk of response.stream!) chunks.push(Buffer.from(chunk));
+        expect(Buffer.concat(chunks).toString()).toBe('clean!');
+        expect(f.original.check).toHaveBeenCalled();
+        expect(release).not.toHaveBeenCalled();
+        expect(f.original.release).not.toHaveBeenCalled();
+        await response.release?.();
+        await response.release?.();
+        expect(release).toHaveBeenCalledTimes(1);
+        expect(f.original.release).toHaveBeenCalledTimes(1);
+      } finally {
+        f.original.stream.destroy();
+        await rm(folder, { recursive: true, force: true });
+      }
+    });
+
+    it.each(['copy failed', 'source_original_shutdown_unconfirmed'])(
+      'refuses source playback on sanitizer failure and retains unknown readers: %s',
+      async (failure) => {
+        const f = sourceVideo();
+        f.auth.sharedLink!.showExif = false;
+        mocks.metadata.acquireBorrowedLocationFreeOriginal.mockRejectedValue(new Error(failure));
+        await expect(sut.playbackVideo(f.auth, f.asset.id)).rejects.toBeInstanceOf(ForbiddenException);
+        expect(f.original.release).toHaveBeenCalledTimes(failure === 'copy failed' ? 1 : 0);
+        f.original.stream.destroy();
+      },
+    );
+
+    it('rechecks source authority before emitting sanitized bytes', async () => {
+      const f = sourceVideo();
+      f.auth.sharedLink!.showExif = false;
+      const folder = await mkdtemp(join(tmpdir(), 'source-playback-'));
+      const clean = join(folder, 'original.mp4');
+      const release = vitest.fn();
+      await writeFile(clean, 'clean!');
+      mocks.metadata.acquireBorrowedLocationFreeOriginal.mockResolvedValue({ path: clean, release });
+      try {
+        const response = await sut.playbackVideo(f.auth, f.asset.id);
+        f.original.check.mockRejectedValue(new Error('source revoked'));
+        await expect(Array.fromAsync(response.stream!)).rejects.toThrow('source revoked');
+        expect(release).not.toHaveBeenCalled();
+        await response.release?.();
+        expect(release).toHaveBeenCalledTimes(1);
+        expect(f.original.release).toHaveBeenCalledTimes(1);
+      } finally {
+        f.original.stream.destroy();
+        await rm(folder, { recursive: true, force: true });
+      }
+    });
+
+    it('keeps the verified stream when the owned inspection finds no location', async () => {
+      const f = sourceVideo();
+      f.auth.sharedLink!.showExif = false;
+      const release = vitest.fn();
+      mocks.metadata.acquireBorrowedLocationFreeOriginal.mockResolvedValue({ path: f.original.localPath, release });
+      const response = await sut.playbackVideo(f.auth, f.asset.id);
+      expect(response.stream).toBe(f.original.stream);
+      expect(response.fileName).toBe(`${f.asset.id}.mp4`);
+      expect(Buffer.concat(await Array.fromAsync(response.stream!)).toString()).toBe('original');
+      await response.release?.();
+      expect(release).toHaveBeenCalledTimes(1);
+      expect(f.original.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a managed rendition independent from a source-backed original', async () => {
+      const f = sourceVideo();
+      mocks.asset.getForVideo.mockResolvedValue({
+        ...f.asset,
+        encodedVideoPath: '/managed/video.mp4',
+        editedVideoPath: null,
+      });
+      const response = await sut.playbackVideo(f.auth, f.asset.id);
+      expect(response.path).toBe('/managed/video.mp4');
+      expect(f.source.open).not.toHaveBeenCalled();
+      f.original.stream.destroy();
+    });
+
+    it('waits for an active sanitizer after cancellation before releasing its borrowed input', async () => {
+      const f = sourceVideo();
+      f.auth.sharedLink!.showExif = false;
+      const controller = new AbortController();
+      f.original.signal = controller.signal;
+      f.original.check.mockImplementation(() => {
+        controller.signal.throwIfAborted();
+        return Promise.resolve();
+      });
+      const entered = Promise.withResolvers<void>();
+      const stopped = Promise.withResolvers<{ path: string; release: () => void }>();
+      const release = vitest.fn();
+      mocks.metadata.acquireBorrowedLocationFreeOriginal.mockImplementation(() => {
+        entered.resolve();
+        return stopped.promise;
+      });
+      const pending = sut.playbackVideo(f.auth, f.asset.id, true, controller.signal);
+      const rejected = expect(pending).rejects.toBeInstanceOf(ForbiddenException);
+      await entered.promise;
+      controller.abort();
+      expect(f.original.release).not.toHaveBeenCalled();
+      stopped.resolve({ path: f.original.localPath, release });
+      await rejected;
+      expect(release).toHaveBeenCalledTimes(1);
+      expect(f.original.release).toHaveBeenCalledTimes(1);
+      f.original.stream.destroy();
+    });
+
     it('should require asset.view permissions', async () => {
       await expect(sut.playbackVideo(authStub.admin, 'id')).rejects.toBeInstanceOf(BadRequestException);
 

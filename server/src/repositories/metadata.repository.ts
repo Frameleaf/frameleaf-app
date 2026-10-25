@@ -1,11 +1,21 @@
 import { Injectable } from '@nestjs/common';
-import { BinaryField, DefaultReadTaskOptions, ExifTool, ExifToolTask, ReadTaskOptions, Tags } from 'exiftool-vendored';
+import AsyncLock from 'async-lock';
+import {
+  BinaryField,
+  DefaultReadTaskOptions,
+  ExifTool,
+  ExifToolOptions,
+  ExifToolTask,
+  ReadTaskOptions,
+  Tags,
+} from 'exiftool-vendored';
 import geotz from 'geo-tz';
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, readdir, realpath, rm, stat, utimes } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readdir, realpath, rename, rm, stat, utimes } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
 import type { CameraIdentification } from 'src/utils/camera-identification.js';
 import { StorageCore } from 'src/cores/storage.core.js';
+import { trackQueueChild } from 'src/queue/child-process.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { LOCATION_DELETE_ARGS, LOCATION_TAG_SELECTORS, SAMSUNG_TRAILER_DELETE_ARGS } from 'src/utils/location-tags.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -156,7 +166,7 @@ export type LocationFreeLease = {
   /** the file to serve: the original itself when it carries no location, otherwise a stripped copy */
   path: string;
   /** call once the file has been sent; the copy is removed after it has been idle for a while */
-  release: () => void;
+  release: () => void | Promise<void>;
 };
 
 type LocationFreeEntry = {
@@ -168,9 +178,12 @@ type LocationFreeEntry = {
   timer?: NodeJS.Timeout;
 };
 
+export type MetadataReadContext = Pick<MetadataRepository, 'readTags' | 'readJpegSignature' | 'extractBinaryTag'>;
+export type SourceMediaMetadata = MetadataReadContext & { copyPanoramaTags(target: string): Promise<boolean> };
+
 @Injectable()
 export class MetadataRepository {
-  private exiftool = new ExifTool({
+  private readonly readOptions: Partial<ExifToolOptions> = {
     defaultVideosToUTC: true,
     backfillTimezones: true,
     inferTimezoneFromDatestamps: true,
@@ -195,7 +208,8 @@ export class MetadataRepository {
     ],
     writeArgs: ['-api', 'largefilesupport=1', '-overwrite_original'],
     taskTimeoutMillis: 2 * 60 * 1000,
-  });
+  };
+  private exiftool = new ExifTool(this.readOptions);
 
   constructor(private logger: LoggingRepository) {
     this.logger.setContext(MetadataRepository.name);
@@ -215,6 +229,8 @@ export class MetadataRepository {
     useMWG: false,
   });
   private locationFree = new Map<string, LocationFreeEntry>();
+  private borrowedTools = new AsyncLock({ maxPending: 8 });
+  private borrowedToolShutdownUnconfirmed = false;
   private locationFreeSweep?: NodeJS.Timeout;
   private locationFreeDirProblemReported = false;
 
@@ -227,10 +243,10 @@ export class MetadataRepository {
     await Promise.all([this.exiftool.end(), this.locationTool.end()]);
   }
 
-  async readTags(path: string): Promise<ImmichTags> {
-    const options: ReadTaskOptions | undefined = mimeTypes.isVideo(path) ? { readArgs: ['-ee'] } : undefined;
+  async readTags(path: string, tool: ExifTool = this.exiftool, fileName = path): Promise<ImmichTags> {
+    const options: ReadTaskOptions | undefined = mimeTypes.isVideo(fileName) ? { readArgs: ['-ee'] } : undefined;
     try {
-      const tags = await this.exiftool.read(path, options);
+      const tags = await tool.read(path, options);
       // The vendored reader can resolve with errors rather than reject the promise.
       if (tags.errors?.length || tags.Error) {
         throw new Error([...(tags.errors ?? []), tags.Error].filter(Boolean).join('; '));
@@ -242,10 +258,10 @@ export class MetadataRepository {
     }
   }
 
-  async readJpegSignature(path: string): Promise<CameraIdentification['suggestion']> {
+  async readJpegSignature(path: string, tool: ExifTool = this.exiftool): Promise<CameraIdentification['suggestion']> {
     // Per-tag raw and print selectors collapse to one JSON key. Read each explicitly,
     // using the installed tool's table instead of importing or maintaining a camera catalogue.
-    const raw = await this.exiftool.readRaw<Tags & { JPEGDigest?: string }>(path, { readArgs: ['-JPEGDigest', '-n'] });
+    const raw = await tool.readRaw<Tags & { JPEGDigest?: string }>(path, { readArgs: ['-JPEGDigest', '-n'] });
     if (raw.errors?.length || raw.Error) {
       throw new Error([...(raw.errors ?? []), raw.Error].filter(Boolean).join('; '));
     }
@@ -253,7 +269,7 @@ export class MetadataRepository {
     if (!signature) {
       return null;
     }
-    const interpreted = await this.exiftool.readRaw<Tags & { JPEGDigest?: string }>(path, {
+    const interpreted = await tool.readRaw<Tags & { JPEGDigest?: string }>(path, {
       readArgs: ['-JPEGDigest'],
     });
     if (interpreted.errors?.length || interpreted.Error) {
@@ -267,8 +283,70 @@ export class MetadataRepository {
     };
   }
 
-  extractBinaryTag(path: string, tagName: string): Promise<Buffer> {
-    return this.exiftool.extractBinaryTagToBuffer(tagName, path);
+  extractBinaryTag(path: string, tagName: string, tool: ExifTool = this.exiftool): Promise<Buffer> {
+    return tool.extractBinaryTagToBuffer(tagName, path);
+  }
+
+  private async createBorrowedProcess() {
+    const child = await this.exiftool.options.processFactory();
+    trackQueueChild(child);
+    return child;
+  }
+
+  /** Owned original reads and panorama copies; an unknown shutdown requires retaining the borrowed input. */
+  async withBorrowedRead(
+    source: string,
+    fileName: string,
+    work: (reader: SourceMediaMetadata) => Promise<void>,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    return this.borrowedTools.acquire('source', async () => {
+      signal?.throwIfAborted();
+      if (this.borrowedToolShutdownUnconfirmed) throw new Error('source_original_shutdown_unconfirmed');
+      const tool = new ExifTool({
+        ...this.readOptions,
+        maxProcs: 1,
+        processFactory: () => this.createBorrowedProcess(),
+      });
+      const stop = () => {
+        void tool.end(false).catch(() => {});
+      };
+      signal?.addEventListener('abort', stop, { once: true });
+      try {
+        try {
+          await work({
+            readTags: (path) => this.readTags(path, tool, path === source ? fileName : path),
+            readJpegSignature: (path) => this.readJpegSignature(path, tool),
+            extractBinaryTag: (path, tag) => this.extractBinaryTag(path, tag, tool),
+            copyPanoramaTags: async (target) => {
+              if (resolve(target) === resolve(source)) throw new Error('source_read_only');
+              try {
+                await tool.write(
+                  target,
+                  {},
+                  {
+                    ignoreMinorErrors: true,
+                    writeArgs: ['-TagsFromFile', source, '-XMP-GPano:all>XMP-GPano:all', '-overwrite_original'],
+                  },
+                );
+                return true;
+              } catch {
+                signal?.throwIfAborted();
+                return false;
+              }
+            },
+          });
+        } finally {
+          await tool.end().catch(() => {
+            this.borrowedToolShutdownUnconfirmed = true;
+            throw new Error('source_original_shutdown_unconfirmed');
+          });
+        }
+        signal?.throwIfAborted();
+      } finally {
+        signal?.removeEventListener('abort', stop);
+      }
+    });
   }
 
   async writeTags(path: string, tags: Partial<Tags>): Promise<void> {
@@ -291,8 +369,8 @@ export class MetadataRepository {
    * A `[minor]` warning is exiftool noting something it skipped and carrying on; any other warning or an
    * error means it may have stopped early, so the file is not vouched for.
    */
-  async inspectLocation(path: string): Promise<LocationInspection> {
-    const tags = await this.locationTool.readRaw(path, { readArgs: LOCATION_READ_ARGS });
+  async inspectLocation(path: string, tool: ExifTool = this.locationTool): Promise<LocationInspection> {
+    const tags = await tool.readRaw(path, { readArgs: LOCATION_READ_ARGS });
     const inspection: LocationInspection = { locationTags: [], problems: [], samsungTrailer: false };
 
     for (const [key, value] of Object.entries(tags)) {
@@ -327,11 +405,78 @@ export class MetadataRepository {
     source: string,
     destination: string,
     { removeSamsungTrailer = false }: { removeSamsungTrailer?: boolean } = {},
+    tool: ExifTool = this.locationTool,
   ): Promise<void> {
-    await this.locationTool.enqueueTask(
-      () => RemoveLocationTask.for(source, destination, { removeSamsungTrailer }),
-      false,
-    );
+    await tool.enqueueTask(() => RemoveLocationTask.for(source, destination, { removeSamsungTrailer }), false);
+  }
+
+  /** An unconfirmed shutdown forbids releasing the caller's borrowed input lease. */
+  async acquireBorrowedLocationFreeOriginal(
+    source: string,
+    extension: string,
+    signal?: AbortSignal,
+  ): Promise<LocationFreeLease> {
+    if (!/^\.[a-z0-9]{1,10}$/i.test(extension) || !mimeTypes.isAsset(`original${extension}`))
+      throw new Error('source_format_unavailable');
+    return this.borrowedTools.acquire('source', async () => {
+      signal?.throwIfAborted();
+      if (this.borrowedToolShutdownUnconfirmed) throw new Error('source_original_shutdown_unconfirmed');
+      const tool = new ExifTool({
+        maxProcs: 1,
+        processFactory: () => this.createBorrowedProcess(),
+        taskTimeoutMillis: LOCATION_TASK_TIMEOUT_MS,
+        maxProcAgeMillis: 2 * LOCATION_TASK_TIMEOUT_MS,
+        geolocation: false,
+        useMWG: false,
+      });
+      const stop = () => {
+        void tool.end(false).catch(() => {});
+      };
+      signal?.addEventListener('abort', stop, { once: true });
+      let folder: string | undefined;
+      let stopped = false;
+      let returned = false;
+      let output = source;
+      try {
+        try {
+          const found = await this.inspectLocation(source, tool);
+          signal?.throwIfAborted();
+          if (!isLocationFree(found)) {
+            folder = await mkdtemp(join(await this.prepareLocationFreeDir(), 'borrowed-'));
+            // ExifTool interprets a different output suffix as a format conversion.
+            output = join(folder, `original${extname(source)}`);
+            await this.writeLocationFreeCopy(source, output, { removeSamsungTrailer: found.samsungTrailer }, tool);
+            if (!isLocationFree(await this.inspectLocation(output, tool)))
+              throw new Error('source_location_removal_failed');
+          }
+        } finally {
+          await tool.end().catch(() => {
+            this.borrowedToolShutdownUnconfirmed = true;
+            throw new Error('source_original_shutdown_unconfirmed');
+          });
+          stopped = true;
+        }
+        signal?.throwIfAborted();
+        if (folder) {
+          const named = join(folder, `original${extension.toLowerCase()}`);
+          await rename(output, named);
+          output = named;
+        }
+        signal?.throwIfAborted();
+        let releasing: Promise<void> | undefined;
+        returned = true;
+        return {
+          path: output,
+          release: () => {
+            releasing ??= folder ? rm(folder, { recursive: true, force: true }) : Promise.resolve();
+            return releasing;
+          },
+        };
+      } finally {
+        signal?.removeEventListener('abort', stop);
+        if (!returned && stopped && folder) await rm(folder, { recursive: true, force: true });
+      }
+    });
   }
 
   /**
@@ -515,7 +660,7 @@ export class MetadataRepository {
     for (const name of await readdir(directory).catch(() => [] as string[])) {
       const path = join(directory, name);
       const info = await lstat(path).catch(() => null);
-      if (info && !active.has(path) && now - info.mtimeMs > LOCATION_FREE_STALE_MS) {
+      if (info && !info.isDirectory() && !active.has(path) && now - info.mtimeMs > LOCATION_FREE_STALE_MS) {
         await this.removeCopy(path);
       }
     }

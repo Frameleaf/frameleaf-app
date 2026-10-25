@@ -2,6 +2,8 @@ import { NotFoundException, StreamableFile } from '@nestjs/common';
 import { NextFunction, Response } from 'express';
 import { access, constants } from 'node:fs/promises';
 import { basename, extname, parse } from 'node:path';
+import { Readable } from 'node:stream';
+import { finished, pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 import sanitize from 'sanitize-filename';
 import { CacheControl } from 'src/enum.js';
@@ -47,6 +49,8 @@ export class FileDownloadResponse {
   public readonly fileName?: string;
   /** called once the file has been sent or the send failed, e.g. to let a temporary copy go (FL-54) */
   public readonly release?: () => void | Promise<void>;
+  public readonly stream?: Readable;
+  public readonly contentLength?: number;
 
   constructor(response: FileDownloadResponse) {
     Object.assign(this, response);
@@ -65,14 +69,20 @@ const cacheControlHeaders: Record<CacheControl, string | null> = {
 export const sendFile = async (
   res: Response,
   next: NextFunction,
-  handler: () => Promise<FileDownloadResponse> | FileDownloadResponse,
+  handler: (signal: AbortSignal) => Promise<FileDownloadResponse> | FileDownloadResponse,
   logger: LoggingRepository,
 ): Promise<void> => {
   let file: FileDownloadResponse | undefined;
+  const controller = new AbortController();
+  const abandon = () => controller.abort();
+  res.once('close', abandon);
+  if (res.destroyed) abandon();
   try {
-    file = await handler();
+    controller.signal.throwIfAborted();
+    file = await handler(controller.signal);
+    controller.signal.throwIfAborted();
 
-    await access(file.path, constants.R_OK);
+    if (!file.stream) await access(file.path, constants.R_OK);
 
     const cacheControlHeader = cacheControlHeaders[file.cacheControl];
     if (cacheControlHeader) {
@@ -85,6 +95,43 @@ export const sendFile = async (
       res.header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(file.fileName)}`);
     }
 
+    if (file.stream) {
+      const length = file.contentLength;
+      if (!Number.isSafeInteger(length) || length! < 0) throw new Error('file_stream_length_invalid');
+      res.header('Accept-Ranges', 'bytes');
+      const ranges =
+        res.req.method === 'GET' && !res.req.get('If-Range') ? res.req.range(length!, { combine: true }) : undefined;
+      if (ranges === -1) {
+        res.status(416).header('Content-Range', `bytes */${length}`).header('Content-Length', '0').end();
+        await finished(res);
+        return;
+      }
+      const range = Array.isArray(ranges) && ranges.type === 'bytes' && ranges.length === 1 ? ranges[0] : undefined;
+      let body = file.stream;
+      if (range) {
+        res.status(206).header('Content-Range', `bytes ${range.start}-${range.end}/${length}`);
+        body = Readable.from(
+          (async function* () {
+            let position = 0;
+            for await (const chunk of file!.stream!) {
+              const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+              const start = Math.max(0, range.start - position);
+              const end = Math.min(bytes.length, range.end + 1 - position);
+              if (start < end) yield bytes.subarray(start, end);
+              position += bytes.length;
+              if (position > range.end) break;
+            }
+          })(),
+        );
+      }
+      res.header('Content-Length', String(range ? range.end - range.start + 1 : length));
+      if (res.req.method === 'HEAD') {
+        res.end();
+        await finished(res);
+      } else await pipeline(body, res);
+      return;
+    }
+
     const path = file.path;
     const options: SendFileOptions = { dotfiles: 'allow' };
     return await promisify<string, SendFileOptions>(res.sendFile).call(res, path, options);
@@ -94,7 +141,12 @@ export const sendFile = async (
       next(new NotFoundException());
     }
   } finally {
-    await file?.release?.();
+    try {
+      file?.stream?.destroy();
+      await file?.release?.();
+    } finally {
+      res.removeListener('close', abandon);
+    }
   }
 };
 

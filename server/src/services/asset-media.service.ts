@@ -2,13 +2,17 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
+import { mkdtemp, open, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Readable, addAbortSignal } from 'node:stream';
 import sanitize from 'sanitize-filename';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { UploadFile, UploadRequest } from 'src/types.js';
@@ -44,6 +48,7 @@ import {
 import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { BaseService } from 'src/services/base.service.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
 import { requireUploadAccess, requireUploadsNotPaused } from 'src/utils/access.js';
 import { asUploadRequest } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
@@ -60,6 +65,7 @@ import {
   getOriginalLocationPolicies,
 } from 'src/utils/partner-location.js';
 import { fromChecksum } from 'src/utils/request.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 
 export interface AssetMediaRedirectResponse {
   targetSize: AssetMediaSize | 'original';
@@ -67,6 +73,9 @@ export interface AssetMediaRedirectResponse {
 
 @Injectable()
 export class AssetMediaService extends BaseService {
+  @Inject(SourceOriginalService)
+  private sourceOriginalService!: SourceOriginalService;
+  private readonly sourceReaderOwnerId = randomUUID();
   async getUploadAssetIdByChecksum(auth: AuthDto, checksum?: string): Promise<AssetMediaResponseDto | undefined> {
     requireUploadAccess(auth);
     // A link visitor may upload, but may not probe the owner's private library before sending a file.
@@ -366,6 +375,24 @@ export class AssetMediaService extends BaseService {
     // Downloaded as shown (owner, 2026-10-16): the owner's viewer shows their current develop version.
     const developedPath = dto.edited && !dto.format ? await this.getShownDevelopMaster(auth, id, ownerId) : undefined;
     const filePath = developedPath ?? editedPath ?? originalPath!;
+    if (!dto.format && parseSourceOriginalPath(filePath)) {
+      const asset = { id, ownerId };
+      if (
+        getOriginalLocationPolicies({ auth, assets: [asset], purpose: 'download' })(asset) !==
+        OriginalLocationPolicy.Serve
+      )
+        throw new ForbiddenException('Downloads are turned off while metadata is hidden');
+      const original = await this.openSourceOriginal(auth, { id, ownerId }, filePath, Permission.AssetDownload, signal);
+      return new FileDownloadResponse({
+        path: filePath,
+        stream: original.stream,
+        contentLength: original.byteLength,
+        fileName: originalFileName,
+        contentType: mimeTypes.lookup(originalFileName),
+        cacheControl: CacheControl.PrivateWithoutCache,
+        release: original.release,
+      });
+    }
     if (dto.format) {
       const source = await this.assetRepository.getById(id);
       if (!source || source.type !== AssetType.Image || source.originalPath !== filePath)
@@ -388,8 +415,20 @@ export class AssetMediaService extends BaseService {
         void rm(folder, { recursive: true, force: true }).catch(() => {
           this.logger.warn('Unable to remove a temporary still export');
         });
+      let original: Awaited<ReturnType<SourceOriginalService['open']>> | undefined;
       try {
-        await this.mediaRepository.exportPhotoStill(filePath, output, dto.format, checksum, signal);
+        if (parseSourceOriginalPath(filePath)) {
+          original = await this.openSourceOriginal(auth, { id, ownerId }, filePath, Permission.AssetDownload, signal);
+          await original.check();
+        }
+        await this.mediaRepository.exportPhotoStill(
+          original?.localPath ?? filePath,
+          output,
+          dto.format,
+          original ? Buffer.from(original.verifiedSha256, 'hex') : checksum,
+          original?.signal ?? signal,
+        );
+        await original?.check();
         signal?.throwIfAborted();
         await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
         const current = await this.assetRepository.getById(id);
@@ -424,6 +463,11 @@ export class AssetMediaService extends BaseService {
             message: 'HDR reconstruction is unavailable for this photo; choose SDR JPEG',
           });
         throw error;
+      } finally {
+        await original?.release().catch(async (error) => {
+          await rm(folder, { recursive: true, force: true });
+          throw error;
+        });
       }
     }
 
@@ -434,6 +478,32 @@ export class AssetMediaService extends BaseService {
       // The current version can change under the same URL; a cached copy could be the one before.
       cacheControl: developedPath ? CacheControl.PrivateWithoutCache : CacheControl.PrivateWithCache,
     });
+  }
+
+  private openSourceOriginal(
+    auth: AuthDto,
+    asset: OriginalAsset,
+    logicalPath: string,
+    permission: Permission.AssetView | Permission.AssetDownload,
+    signal?: AbortSignal,
+  ) {
+    return this.sourceOriginalService.open(
+      asset.id,
+      {
+        kind: 'http',
+        readerId: randomUUID(),
+        ownerId: this.sourceReaderOwnerId,
+      },
+      async () => {
+        signal?.throwIfAborted();
+        await this.requireAccess({ auth, permission, ids: [asset.id] });
+        const current = await this.assetRepository.getForOriginal(asset.id, false);
+        if (current.ownerId !== asset.ownerId || current.originalPath !== logicalPath)
+          throw new ConflictException('This asset changed during transfer; try again');
+        signal?.throwIfAborted();
+      },
+      signal,
+    );
   }
 
   /**
@@ -464,8 +534,17 @@ export class AssetMediaService extends BaseService {
     asset: OriginalAsset,
     purpose: OriginalPurpose,
     response: FileDownloadResponse,
+    signal?: AbortSignal,
   ): Promise<FileDownloadResponse> {
     const policyFor = getOriginalLocationPolicies({ auth, assets: [asset], purpose });
+
+    if (
+      purpose === 'playback' &&
+      parseSourceOriginalPath(response.path) &&
+      policyFor(asset) !== OriginalLocationPolicy.Refuse
+    ) {
+      return this.sourcePlayback(auth, asset, response.path, policyFor(asset), signal);
+    }
 
     switch (policyFor(asset)) {
       case OriginalLocationPolicy.Serve: {
@@ -473,15 +552,109 @@ export class AssetMediaService extends BaseService {
       }
 
       case OriginalLocationPolicy.Refuse: {
+        await response.release?.();
         throw new ForbiddenException('Downloads are turned off while metadata is hidden');
       }
 
       case OriginalLocationPolicy.RemoveLocation: {
-        const lease = await this.metadataRepository.acquireLocationFreeOriginal(response.path).catch(() => {
+        const lease = await this.metadataRepository.acquireLocationFreeOriginal(response.path).catch(async () => {
+          await response.release?.();
           throw new ForbiddenException('The location of this file could not be removed');
         });
-        return new FileDownloadResponse({ ...response, path: lease.path, release: lease.release });
+        return new FileDownloadResponse({
+          ...response,
+          path: lease.path,
+          release: async () => {
+            try {
+              await Promise.resolve(lease.release());
+            } finally {
+              await response.release?.();
+            }
+          },
+        });
       }
+    }
+  }
+
+  private async sourcePlayback(
+    auth: AuthDto,
+    asset: OriginalAsset,
+    logicalPath: string,
+    policy: OriginalLocationPolicy,
+    signal?: AbortSignal,
+  ): Promise<FileDownloadResponse> {
+    const { originalFileName } = await this.assetRepository.getForOriginal(asset.id, false);
+    const extension = getFilenameExtension(originalFileName);
+    const original = await this.openSourceOriginal(auth, asset, logicalPath, Permission.AssetView, signal);
+    let sanitized: Awaited<ReturnType<typeof this.metadataRepository.acquireBorrowedLocationFreeOriginal>> | undefined;
+    let stream: Readable = original.stream;
+    let disk: Readable | undefined;
+    let closeOutput = async () => {};
+    let releasing: Promise<void> | undefined;
+    const release = () =>
+      (releasing ??= (async () => {
+        stream.destroy();
+        disk?.destroy();
+        await closeOutput();
+        await sanitized?.release();
+        await original.release();
+      })());
+    try {
+      let length = original.byteLength;
+      if (policy === OriginalLocationPolicy.RemoveLocation) {
+        await original.check();
+        sanitized = await this.metadataRepository.acquireBorrowedLocationFreeOriginal(
+          original.localPath,
+          extension,
+          original.signal,
+        );
+        await original.check();
+        if (sanitized.path !== original.localPath) {
+          const file = await open(sanitized.path, constants.O_RDONLY | constants.O_NOFOLLOW);
+          closeOutput = () =>
+            file.close().catch(() => {
+              throw new Error('artifact_close_unconfirmed');
+            });
+          const info = await file.stat();
+          if (!info.isFile() || !Number.isSafeInteger(info.size)) throw new Error('source_location_removal_failed');
+          length = info.size;
+          const input = file.createReadStream({ autoClose: false });
+          disk = input;
+          stream = addAbortSignal(
+            original.signal,
+            Readable.from(
+              (async function* () {
+                for await (const chunk of input) {
+                  await original.check();
+                  yield chunk;
+                }
+                await original.check();
+              })(),
+            ),
+          );
+        }
+      }
+      await original.check();
+      return new FileDownloadResponse({
+        path: logicalPath,
+        stream,
+        contentLength: length,
+        contentType: mimeTypes.lookup(originalFileName),
+        fileName: auth.sharedLink && !auth.sharedLink.showExif ? `${asset.id}${extension}` : originalFileName,
+        cacheControl: CacheControl.PrivateWithoutCache,
+        release,
+      });
+    } catch (error) {
+      // Unknown tool/descriptor shutdown retains every borrowed file until positive recovery.
+      if (!(
+        error instanceof Error &&
+        ['source_original_shutdown_unconfirmed', 'artifact_close_unconfirmed'].includes(error.message)
+      )) {
+        await release();
+      }
+      if (policy === OriginalLocationPolicy.RemoveLocation)
+        throw new ForbiddenException('The location of this file could not be removed');
+      throw error;
     }
   }
 
@@ -652,7 +825,8 @@ export class AssetMediaService extends BaseService {
     });
   }
 
-  async playbackVideo(auth: AuthDto, id: string, edited = true): Promise<FileDownloadResponse> {
+  async playbackVideo(auth: AuthDto, id: string, edited = true, signal?: AbortSignal): Promise<FileDownloadResponse> {
+    signal?.throwIfAborted();
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [id] });
 
     const asset = await this.assetRepository.getForVideo(id);
@@ -666,11 +840,17 @@ export class AssetMediaService extends BaseService {
     const unedited = !edited && auth.user?.id === asset.ownerId && !auth.sharedLink;
     const filepath = (unedited ? null : asset.editedVideoPath) || asset.encodedVideoPath || asset.originalPath;
 
-    return this.withOriginalLocationPolicy(auth, { id, ownerId: asset.ownerId }, 'playback', {
-      path: filepath,
-      contentType: mimeTypes.lookup(filepath),
-      cacheControl: CacheControl.PrivateWithCache,
-    });
+    return this.withOriginalLocationPolicy(
+      auth,
+      { id, ownerId: asset.ownerId },
+      'playback',
+      {
+        path: filepath,
+        contentType: mimeTypes.lookup(filepath),
+        cacheControl: CacheControl.PrivateWithCache,
+      },
+      signal,
+    );
   }
 
   /**
