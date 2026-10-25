@@ -1,7 +1,7 @@
 import { type Kysely, type Transaction, sql } from 'kysely';
 import type { DB } from 'src/schema/index.js';
 import type { CloudBackupManifestFile } from 'src/utils/cloud-backup.js';
-import { AssetType, ChecksumAlgorithm } from 'src/enum.js';
+import { AssetStatus, AssetType, ChecksumAlgorithm } from 'src/enum.js';
 import { DEVELOP_ARTIFACT_PER_ASSET } from 'src/repositories/asset-develop.repository.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import {
@@ -21,6 +21,11 @@ import { canonicalJson } from 'src/utils/object.js';
 import { sourceReferenceSchema } from 'src/utils/source-reference.js';
 
 type Row = Record<string, unknown>;
+export type BuddyRestoreOriginal = {
+  source: BuddyAssetFidelity['source'];
+  path: string;
+  verify: () => Promise<void>;
+};
 const tables = {
   video: 'public.video_edit_version',
   develop: 'public.asset_develop_revision',
@@ -138,6 +143,7 @@ export class BuddyBackupFidelityRepository {
     mode: 'keep' | 'replace';
     paths: ReadonlyMap<string, string>;
     verify: () => Promise<void>;
+    originals?: ReadonlyMap<string, BuddyRestoreOriginal>;
   }): Promise<'restored' | 'preserved-source'> {
     if (!this.db.isTransaction) throw new Error('Buddy metadata publication requires its authorization transaction');
     const trx = this.db as Transaction<DB>;
@@ -154,7 +160,7 @@ export class BuddyBackupFidelityRepository {
       if (row.ownerId !== ownerId || row.assetId !== state.assetId) throw new Error('Buddy version ownership changed');
     const asset = await trx
       .selectFrom('asset')
-      .select(['id', 'ownerId', 'checksum', 'originalPath', 'type'])
+      .select(['id', 'ownerId', 'checksum', 'originalPath', 'type', 'livePhotoVideoId'])
       .where('id', '=', state.assetId)
       .forUpdate()
       .executeTakeFirstOrThrow();
@@ -170,8 +176,57 @@ export class BuddyBackupFidelityRepository {
       }>`SELECT pg_try_advisory_xact_lock(hashtextextended(${`${name}:${asset.id}`}, 0)) AS locked`.execute(trx);
       if (!lock.rows[0]?.locked) throw new Error('An edit is changing; retry this restore');
     }
-    for (const path of [...new Set(options.paths.values())].sort()) await lockFilePath(trx, path);
+    for (const path of [
+      ...new Set([
+        ...options.paths.values(),
+        ...[...(options.originals?.values() ?? [])].map((original) => original.path),
+      ]),
+    ].sort())
+      await lockFilePath(trx, path);
     await options.verify();
+    const inputs = new Map<string, { original: BuddyRestoreOriginal; checksum: string }>();
+    for (const revision of state.developRevisions) {
+      const binding = revision.sourceBinding;
+      if (binding?.kind !== 'bound' || binding.input.assetId === asset.id || inputs.has(binding.input.assetId))
+        continue;
+      const original = options.originals?.get(binding.input.assetId);
+      if (
+        !original ||
+        revision.recipe.version !== 1 ||
+        !revision.recipe.keyFrame ||
+        asset.livePhotoVideoId !== binding.input.assetId
+      )
+        continue;
+      const input = await trx
+        .selectFrom('asset')
+        .select(['checksum', 'checksumAlgorithm', 'originalPath'])
+        .where('id', '=', binding.input.assetId)
+        .where('ownerId', '=', ownerId)
+        .where('type', '=', AssetType.Video)
+        .where('status', '=', AssetStatus.Active)
+        .where('deletedAt', 'is', null)
+        .where('isExternal', '=', false)
+        .where('isOffline', '=', false)
+        .where('libraryId', 'is', null)
+        .forShare()
+        .noWait()
+        .executeTakeFirst();
+      if (
+        !input ||
+        input.originalPath !== original.path ||
+        original.source.type !== AssetType.Video ||
+        input.checksumAlgorithm === ChecksumAlgorithm.sha1Path ||
+        input.checksum.toString('hex') !==
+          (input.checksumAlgorithm === ChecksumAlgorithm.sha256File
+            ? original.source.sha256
+            : original.source.checksum) ||
+        (input.checksumAlgorithm !== ChecksumAlgorithm.sha256File &&
+          input.checksumAlgorithm !== original.source.checksumAlgorithm)
+      )
+        continue;
+      await original.verify();
+      inputs.set(binding.input.assetId, { original, checksum: input.checksum.toString('hex') });
+    }
     const path = (value: string | null): string | null => {
       if (value === null) return null;
       const target = options.paths.get(value);
@@ -195,23 +250,25 @@ export class BuddyBackupFidelityRepository {
     const restoredDevelopBinding = (revision: BuddyAssetFidelity['developRevisions'][number]) => {
       const binding = revision.sourceBinding;
       if (binding?.kind !== 'bound' || asset.originalPath.toLowerCase().startsWith('frameleaf-source:')) return binding;
-      const originals = [binding.parent, binding.input];
-      if (
-        originals.some(
-          (source) =>
-            source.assetId !== state.assetId ||
-            source.checksum !== state.source.checksum ||
-            (source.reference && source.reference.sha256 !== state.source.sha256),
+      const restored = (source: typeof binding.input) => {
+        const input = inputs.get(source.assetId);
+        const captured = source.assetId === asset.id ? state.source : input?.original.source;
+        if (
+          !captured ||
+          source.checksum !== captured.checksum ||
+          (source.reference && source.reference.sha256 !== captured.sha256)
         )
-      )
-        return binding;
-      const original = {
-        assetId: asset.id,
-        path: asset.originalPath,
-        checksum: asset.checksum.toString('hex'),
-        reference: null,
+          return;
+        return {
+          assetId: source.assetId,
+          path: source.assetId === asset.id ? asset.originalPath : input!.original.path,
+          checksum: source.assetId === asset.id ? asset.checksum.toString('hex') : input!.checksum,
+          reference: null,
+        };
       };
-      return { kind: 'bound' as const, parent: original, input: original };
+      const parent = restored(binding.parent);
+      const input = restored(binding.input);
+      return parent && input ? { kind: 'bound' as const, parent, input } : binding;
     };
     const restoredDevelopSourceAsset = (revision: BuddyAssetFidelity['developRevisions'][number]) => {
       // A legacy null and the parent asset id both mean the still itself.
@@ -226,19 +283,31 @@ export class BuddyBackupFidelityRepository {
       const binding = restoredDevelopBinding(revision);
       if (binding === null)
         return (
-          state.source.checksumAlgorithm !== ChecksumAlgorithm.sha1Path ||
-          revision.sourceChecksum === state.source.sha256
+          (revision.sourceAssetId === null || revision.sourceAssetId === state.assetId) &&
+          (state.source.checksumAlgorithm !== ChecksumAlgorithm.sha1Path ||
+            revision.sourceChecksum === state.source.sha256)
         );
       return (
         binding.kind === 'bound' &&
         binding.parent.assetId === asset.id &&
-        binding.input.assetId === asset.id &&
+        (binding.input.assetId === asset.id ||
+          (revision.recipe.version === 1 &&
+            !!revision.recipe.keyFrame &&
+            asset.livePhotoVideoId === binding.input.assetId &&
+            inputs.has(binding.input.assetId))) &&
         binding.parent.reference === null &&
         binding.input.reference === null &&
         binding.parent.checksum === asset.checksum.toString('hex') &&
-        binding.input.checksum === asset.checksum.toString('hex')
+        binding.input.checksum ===
+          (binding.input.assetId === asset.id
+            ? asset.checksum.toString('hex')
+            : inputs.get(binding.input.assetId)?.checksum)
       );
     };
+    const developSourceSha256 = (revision: BuddyAssetFidelity['developRevisions'][number]) =>
+      revision.sourceBinding?.kind === 'bound' && revision.sourceBinding.input.assetId !== asset.id
+        ? inputs.get(revision.sourceBinding.input.assetId)?.original.source.sha256
+        : state.source.sha256;
     const archivedImageSource = readBuddyImageEditSource(state);
     const imageEditSource =
       archivedImageSource &&
@@ -469,7 +538,7 @@ export class BuddyBackupFidelityRepository {
           row.isCurrent &&
           row.status === 'rendered' &&
           canRestoreDevelop(row) &&
-          (row.sourceChecksum === null || row.sourceChecksum === state.source.sha256),
+          (row.sourceChecksum === null || row.sourceChecksum === developSourceSha256(row)),
       );
       await sql`UPDATE public.asset_develop_revision SET "isCurrent"=false WHERE "assetId"=${asset.id}::uuid`.execute(
         trx,
@@ -572,7 +641,8 @@ export class BuddyBackupFidelityRepository {
       const invalidDevelop =
         currentDevelop &&
         (!canRestoreDevelop(currentDevelop) ||
-          (currentDevelop.sourceChecksum !== null && currentDevelop.sourceChecksum !== state.source.sha256));
+          (currentDevelop.sourceChecksum !== null &&
+            currentDevelop.sourceChecksum !== developSourceSha256(currentDevelop)));
       const projection =
         (currentVideo && !referenceMatches(currentVideo)) ||
         invalidDevelop ||

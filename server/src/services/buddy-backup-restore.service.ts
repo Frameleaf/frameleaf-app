@@ -34,7 +34,10 @@ import {
 } from 'src/enum.js';
 import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
-import { BuddyBackupFidelityRepository } from 'src/repositories/buddy-backup-fidelity.repository.js';
+import {
+  BuddyBackupFidelityRepository,
+  type BuddyRestoreOriginal,
+} from 'src/repositories/buddy-backup-fidelity.repository.js';
 import { BuddyBackupMetadataRepository } from 'src/repositories/buddy-backup-metadata.repository.js';
 import { BuddyBackupStudioRepository } from 'src/repositories/buddy-backup-studio.repository.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
@@ -1939,6 +1942,38 @@ export class BuddyBackupRestoreService {
                   'metadata',
                 );
               }
+            }
+            for (const assetId of restoreIds) {
+              const motion = manifest.assetLinks?.[assetId]?.livePhotoVideoId;
+              if (!motion || (job.request.mode === 'keep' && job.owner.current[assetId])) {
+                continue;
+              }
+              const original = plan.files.find((entry) => entry.assetId === assetId && entry.role === 'original')!;
+              await this.guarded(
+                operation,
+                token,
+                job,
+                manifest,
+                snapshot,
+                original,
+                async (trx, ownerId) => {
+                  await trx
+                    .selectFrom('asset')
+                    .select('id')
+                    .where('id', '=', motion)
+                    .where('ownerId', '=', ownerId)
+                    .where('status', '=', AssetStatus.Active)
+                    .forShare()
+                    .executeTakeFirstOrThrow();
+                  let update = trx.updateTable('asset').set({ livePhotoVideoId: motion }).where('id', '=', assetId);
+                  if (job.request.mode === 'keep') update = update.where('livePhotoVideoId', 'is', null);
+                  await update.execute();
+                },
+                'metadata',
+              );
+            }
+            for (const assetId of restoreIds) {
+              const file = plan.files.find((entry) => entry.assetId === assetId && entry.role === 'original')!;
               const state = readBuddyAssetFidelity(manifest, assetId);
               if (state) {
                 const versionFiles = buddyFidelityFiles(manifest, assetId);
@@ -1953,10 +1988,30 @@ export class BuddyBackupRestoreService {
                     const current = await captureOwnerRestoreFile(file.target, async (path) =>
                       (await this.crypto.hashFile(path, 'sha256')).toString('hex'),
                     );
+                    const originals = new Map<string, BuddyRestoreOriginal>();
+                    for (const revision of state.developRevisions) {
+                      if (revision.sourceBinding?.kind !== 'bound') continue;
+                      const inputId = revision.sourceBinding.input.assetId;
+                      if (inputId === assetId || manifest.library.assets[inputId]?.owner !== ownerId) continue;
+                      const input = plan.files.find((entry) => entry.assetId === inputId && entry.role === 'original');
+                      const captured = input && readBuddyAssetFidelity(manifest, inputId);
+                      if (!input || !captured || verified.get(input.fileKey)?.sha256 !== captured.source.sha256)
+                        continue;
+                      originals.set(inputId, {
+                        source: captured.source,
+                        path: input.target,
+                        verify: async () => {
+                          const evidence = (await this.verifyFiles(operation.id, [input])).get(input.fileKey)!;
+                          if (evidence.sha256 !== captured.source.sha256 || evidence.size !== String(input.size))
+                            throw new Error('Buddy restored original changed');
+                        },
+                      });
+                    }
                     const outcome = await new BuddyBackupFidelityRepository(trx).publish({
                       state,
                       ownerId,
                       originalSha256: current.sha256 ?? '',
+                      originals,
                       mode: job.request.mode,
                       paths: new Map(state.files.map((source, index) => [source.path, versionFiles[index].target])),
                       verify: async () => {
@@ -1994,35 +2049,6 @@ export class BuddyBackupRestoreService {
                 if (published.retainedEditedProjection) await this.saveRestoreJobs(operation.id, assetId, [], true);
                 if (published.outcome === 'preserved-source') preservedVersionAssetIds.push(assetId);
               }
-            }
-            for (const assetId of restoreIds) {
-              const motion = manifest.assetLinks?.[assetId]?.livePhotoVideoId;
-              if (!motion || (job.request.mode === 'keep' && job.owner.current[assetId])) {
-                continue;
-              }
-              const original = plan.files.find((entry) => entry.assetId === assetId && entry.role === 'original')!;
-              await this.guarded(
-                operation,
-                token,
-                job,
-                manifest,
-                snapshot,
-                original,
-                async (trx, ownerId) => {
-                  await trx
-                    .selectFrom('asset')
-                    .select('id')
-                    .where('id', '=', motion)
-                    .where('ownerId', '=', ownerId)
-                    .where('status', '=', AssetStatus.Active)
-                    .forShare()
-                    .executeTakeFirstOrThrow();
-                  let update = trx.updateTable('asset').set({ livePhotoVideoId: motion }).where('id', '=', assetId);
-                  if (job.request.mode === 'keep') update = update.where('livePhotoVideoId', 'is', null);
-                  await update.execute();
-                },
-                'metadata',
-              );
             }
             for (const sourceOwnerId of new Set(restoreIds.map((id) => manifest.library.assets[id].owner!))) {
               const ownerId = restoreOwner(job, sourceOwnerId);

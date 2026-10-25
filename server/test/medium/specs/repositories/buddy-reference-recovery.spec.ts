@@ -18,6 +18,7 @@ import {
   MediaOperationKind,
   MediaOperationStatus,
   PhysicalFileType,
+  StorageFolder,
 } from 'src/enum.js';
 import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
@@ -327,7 +328,7 @@ describe('Buddy independent reference recovery in stopped-server maintenance', (
       open: () =>
         Promise.resolve({
           manifest,
-          reader: { download: (_manifest: unknown, _hash: string, path: string) => read('', path) },
+          reader: { download: (_manifest: unknown, hash: string, path: string) => read('', path, hash) },
         }),
       fingerprint: () => f.job.manifestHash,
       details: Object.assign(Object.create(CloudBackupDetailsService.prototype), { logger }),
@@ -342,7 +343,7 @@ describe('Buddy independent reference recovery in stopped-server maintenance', (
       size: f.file.size,
       inPlace: true,
     };
-    const read = vi.fn(async (_key: string, path: string) => {
+    const read = vi.fn(async (_key: string, path: string, _hash?: string) => {
       await writeFile(path, 'hello');
       return buddyFileHash(path);
     });
@@ -1068,6 +1069,208 @@ describe('Buddy independent reference recovery in stopped-server maintenance', (
     ]);
     await restore(plan);
   });
+
+  it.each([
+    ['matching', true, false],
+    ['matching', false, false],
+    ['changed', false, false],
+    ['omitted', false, false],
+    ['unrelated', false, false],
+    ['trashed', false, false],
+    ['unbound', false, false],
+    ['matching', true, true],
+    ['matching', false, true],
+    ['changed', false, true],
+  ] as const)(
+    'restores a Live Photo key-frame binding with %s motion proof, motion first=%s, online=%s',
+    async (proof, motionFirst, online) => {
+      const active = online ? await onlinePublisher() : undefined;
+      const f = active ? { ...active, file: active.plan.files[0] } : await fixture();
+      const sourcePath = `frameleaf-source://${f.source.id}/${'d'.repeat(64)}`;
+      const { asset: motion } = await f.ctx.newAsset({
+        id: `${motionFirst ? '00000000' : 'ffffffff'}-${randomUUID().slice(9)}`,
+        ownerId: f.user.id,
+        libraryId: f.asset.libraryId,
+        isExternal: true,
+        isOffline: true,
+        originalPath: sourcePath,
+        originalFileName: 'motion.mov',
+        type: AssetType.Video,
+        visibility: AssetVisibility.Hidden,
+        checksum: createHash('sha1').update(sourcePath).digest(),
+        checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+      });
+      const sha256 = createHash('sha256').update('movie').digest('hex');
+      const resource = await db
+        .insertInto('photo_source_resource')
+        .values({
+          runId: f.resource.runId,
+          resourceKey: 'd'.repeat(64),
+          version: 'e'.repeat(64),
+          checksum: Buffer.from(sha256, 'hex'),
+          bytes: 5,
+          assetId: motion.id,
+          state: 'verified',
+          verifiedAt: new Date(),
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      const original = await db
+        .selectFrom('source_original')
+        .selectAll()
+        .where('assetId', '=', f.asset.id)
+        .executeTakeFirstOrThrow();
+      await db
+        .insertInto('source_original')
+        .values({ ...original, assetId: motion.id, resourceId: resource.id })
+        .execute();
+      await db.updateTable('asset').set({ livePhotoVideoId: motion.id }).where('id', '=', f.asset.id).execute();
+      const file = {
+        path: referenceOriginalPath(root, f.user.id, motion.id, motion.originalFileName),
+        role: 'original',
+        size: 5,
+        sha256,
+        mtime: null,
+      };
+      await mkdir(dirname(file.path), { recursive: true });
+      await writeFile(file.path, 'movie');
+      const reference = { resourceId: resource.id, version: resource.version, sha256 };
+      if (proof !== 'omitted') {
+        const details = (await new CloudBackupIndexRepository(db).getAssetDetails([motion.id])).get(motion.id)!;
+        f.plan.manifest.library.assets[motion.id] = {
+          ...details.record,
+          details: details.details,
+          owner: f.user.id,
+          files: [file],
+        };
+        f.plan.manifest.referenceOriginals![motion.id] = {
+          version: 1,
+          sourcePath,
+          sourceEpoch: { assetId: motion.id, ownerId: f.user.id, epoch: '0', reference },
+        };
+        f.plan.manifest.assetFidelity![motion.id] = await new BuddyBackupFidelityRepository(db).capture(
+          motion.id,
+          sha256,
+          [],
+          [],
+        );
+        f.plan.manifest.contents[sha256] = { bytes: 5, keyVersion: 1, blocks: ['d'.repeat(64)] };
+        f.plan.files.push(file);
+      }
+      const parent = {
+        assetId: f.asset.id,
+        path: f.asset.originalPath,
+        checksum: f.asset.checksum.toString('hex'),
+        reference: { resourceId: f.resource.id, version: f.resource.version, sha256: f.file.sha256 },
+      };
+      const input = {
+        assetId: motion.id,
+        path: sourcePath,
+        checksum: motion.checksum.toString('hex'),
+        reference: { ...reference, sha256: proof === 'changed' ? 'f'.repeat(64) : sha256 },
+      };
+      const binding = { kind: 'bound', parent, input };
+      const recipe = { ...defaultDevelopRecipe(), keyFrame: { timeMs: 500 } };
+      const master = join(root, 'rendered.jpg');
+      await writeFile(master, 'rendered');
+      const masterFile = { path: master, role: 'edited', ...(await buddyFileHash(master)), mtime: null };
+      f.plan.files.push(masterFile);
+      f.plan.manifest.contents[masterFile.sha256] = { bytes: masterFile.size, keyVersion: 1, blocks: ['d'.repeat(64)] };
+      await sql`INSERT INTO public.asset_develop_revision
+      ("assetId","ownerId",revision,recipe,status,"sourceAssetId","sourceBinding","sourceChecksum","masterPath","isCurrent","renditionChecksum")
+      VALUES (${f.asset.id}::uuid,${f.user.id}::uuid,1,${JSON.stringify(recipe)}::text::jsonb,'rendered',
+        ${motion.id}::uuid,${JSON.stringify(binding)}::text::jsonb,${Buffer.from(sha256, 'hex')},${master},true,${Buffer.from(masterFile.sha256, 'hex')})`.execute(
+        db,
+      );
+      const fidelity = new BuddyBackupFidelityRepository(db);
+      const state = await fidelity.capture(f.asset.id, f.file.sha256, [], []);
+      fidelity.bindFiles(state, new Map([[master, masterFile]]));
+      switch (proof) {
+        case 'unrelated': {
+          await db.updateTable('asset').set({ livePhotoVideoId: null }).where('id', '=', f.asset.id).execute();
+          break;
+        }
+        case 'trashed': {
+          await db
+            .updateTable('asset')
+            .set({ status: AssetStatus.Trashed, deletedAt: new Date() })
+            .where('id', '=', motion.id)
+            .execute();
+          break;
+        }
+        case 'unbound': {
+          state.source = { ...state.source, checksum: f.file.sha256, checksumAlgorithm: ChecksumAlgorithm.sha256File };
+          state.developRevisions[0].sourceBinding = null;
+          state.developRevisions[0].sourceChecksum = f.file.sha256;
+          await sql`UPDATE public.asset_develop_revision SET "sourceBinding"=NULL,"sourceChecksum"=${Buffer.from(f.file.sha256, 'hex')}
+          WHERE "assetId"=${f.asset.id}::uuid`.execute(db);
+
+          break;
+        }
+        // No default
+      }
+      f.plan.manifest.assetFidelity![f.asset.id] = state;
+      if (active) {
+        await mkdir(StorageCore.getBaseFolder(StorageFolder.Thumbnails), { recursive: true });
+        active.manifest.library.assets[motion.id] = f.plan.manifest.library.assets[motion.id];
+        active.manifest.assetLinks![f.asset.id].livePhotoVideoId = motion.id;
+        active.manifest.assetLinks![motion.id] = {
+          isExternal: true,
+          libraryId: motion.libraryId ?? null,
+          livePhotoVideoId: null,
+        };
+        active.job.request.assetIds!.push(motion.id);
+        active.job.owner.current = await active.index.getOwnerRestoreIdentities(active.job.request.assetIds!);
+        active.job.owner.assetHashes[motion.id] = ownerRestoreHash(
+          active.manifest.library.assets[motion.id],
+          buddyLibraryForOwner(active.manifest, f.user.id),
+        );
+        active.job.referenceAdoptions![motion.id] = {
+          assetId: motion.id,
+          ownerId: f.user.id,
+          type: AssetType.Video,
+          source: f.plan.manifest.referenceOriginals![motion.id],
+          file,
+          physicalFileId: randomUUID(),
+        };
+        active.read.mockImplementation(async (_key, path, hash) => {
+          const source = f.plan.files.find((entry) => entry.sha256 === hash)!;
+          await writeFile(path, await readFile(source.path));
+          return buddyFileHash(path);
+        });
+        await active.persist();
+        const errors = vi.spyOn(active.service.logger, 'error');
+        await active.worker();
+        expect(errors).not.toHaveBeenCalled();
+        expect(
+          await new MediaOperationRepository(db).getOfKind(active.operation.id, MediaOperationKind.BuddyRestore),
+        ).toMatchObject({ status: MediaOperationStatus.Completed, error: null });
+      } else await restore(f.plan);
+      const { rows } = await sql<{
+        binding: unknown;
+        isCurrent: boolean;
+        sourceAssetId: string;
+      }>`SELECT "sourceBinding" AS binding,"isCurrent","sourceAssetId"
+      FROM public.asset_develop_revision WHERE "assetId"=${f.asset.id}::uuid`.execute(db);
+      expect(rows).toEqual([
+        {
+          binding:
+            proof === 'matching'
+              ? {
+                  kind: 'bound',
+                  parent: { assetId: f.asset.id, path: f.file.path, checksum: f.file.sha256, reference: null },
+                  input: { assetId: motion.id, path: file.path, checksum: sha256, reference: null },
+                }
+              : proof === 'unbound'
+                ? null
+                : binding,
+          isCurrent: proof === 'matching',
+          sourceAssetId: motion.id,
+        },
+      ]);
+      if (!active) await restore(f.plan);
+    },
+  );
 
   it('preserves omitted offline reference metadata without reviving provider authority', async () => {
     const { ctx, user, plan } = await fixture();

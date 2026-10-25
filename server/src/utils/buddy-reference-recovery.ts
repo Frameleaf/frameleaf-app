@@ -3,7 +3,10 @@ import { randomUUID } from 'node:crypto';
 import type { DB } from 'src/schema/index.js';
 import type { BuddyRecovery } from 'src/utils/buddy-backup-recovery.js';
 import { AssetStatus } from 'src/enum.js';
-import { BuddyBackupFidelityRepository } from 'src/repositories/buddy-backup-fidelity.repository.js';
+import {
+  BuddyBackupFidelityRepository,
+  type BuddyRestoreOriginal,
+} from 'src/repositories/buddy-backup-fidelity.repository.js';
 import { lockChecksum } from 'src/repositories/physical-file.repository.js';
 import { readBuddyAssetFidelity } from 'src/utils/buddy-backup-fidelity.js';
 import { buddyFileHash, buddyRecoveryTarget } from 'src/utils/buddy-backup-recovery.js';
@@ -60,8 +63,25 @@ export async function recoverBuddyReferenceOriginals(
       },
       () => verify(file),
     );
+  }
+  // Every independent original must be adopted before any edit can bind to another asset's pixels.
+  for (const id of ids) {
+    const record = plan.manifest.library.assets[id];
+    if (!record.owner) throw new Error('Reference recovery asset identity changed');
+    const file = record.files.find((entry) => entry.role === 'original')!;
     const state = readBuddyAssetFidelity(plan.manifest, id);
     if (state) {
+      const originals = new Map<string, BuddyRestoreOriginal>();
+      for (const revision of state.developRevisions) {
+        if (revision.sourceBinding?.kind !== 'bound') continue;
+        const inputId = revision.sourceBinding.input.assetId;
+        if (inputId === id) continue;
+        const input = plan.manifest.library.assets[inputId];
+        const original = input?.files.find((entry) => entry.role === 'original');
+        const captured = input && readBuddyAssetFidelity(plan.manifest, inputId);
+        if (input?.owner === record.owner && original && captured)
+          originals.set(inputId, { source: captured.source, path: original.path, verify: () => verify(original) });
+      }
       const interrupted = state.developRevisions
         .filter((revision) => ['queued', 'rendering'].includes(revision.status))
         .map((revision) => revision.id);
@@ -78,6 +98,7 @@ export async function recoverBuddyReferenceOriginals(
         ownerId: record.owner,
         mode: 'replace',
         originalSha256: file.sha256,
+        originals,
         paths: new Map(state.files.map((file) => [file.path, file.path])),
         verify: async () => {
           for (const file of state.files) await verify(file);
