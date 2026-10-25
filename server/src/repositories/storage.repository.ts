@@ -35,11 +35,15 @@ export interface ReadStreamResponse {
   type?: string;
   disposition?: string | string[];
   length?: number;
+  /** Awaitable closure and release of owned archive inputs, including after cancellation. */
+  inputsSettled?: Promise<void>;
 }
 
 export interface ZipDownloadStream extends ReadStreamResponse {
   /** Adds the file at a path, or (FL-423) bytes made for the archive, such as a generated details file. */
-  addFile: (input: string | Buffer, filename: string) => void;
+  addFile(input: string | Buffer, filename: string): void;
+  /** Resolves after this stream's entry is processed, rather than just buffered by append. */
+  addFile(input: Readable, filename: string): Promise<void>;
   finalize: () => Promise<void>;
 }
 
@@ -103,14 +107,58 @@ export class StorageRepository {
 
   createZipStream(): ZipDownloadStream {
     const archive = new ZipArchive({ store: true });
+    const inputs = new Set<Readable>();
+    const stopInputs = () => {
+      for (const input of inputs) input.destroy();
+    };
+    archive.on('error', stopInputs);
+    archive.once('close', () => {
+      archive.abort();
+      stopInputs();
+    });
 
-    const addFile = (input: string | Buffer, filename: string) => {
+    function addFile(input: string | Buffer, filename: string): void;
+    function addFile(input: Readable, filename: string): Promise<void>;
+    function addFile(input: string | Buffer | Readable, filename: string): void | Promise<void> {
+      if (input instanceof Readable) {
+        inputs.add(input);
+        const fail = (error: Error) => archive.destroy(error);
+        input.once('error', fail);
+        input.once('close', () => {
+          inputs.delete(input);
+          input.removeListener('error', fail);
+        });
+        const identity = Symbol('archive-input');
+        return new Promise<void>((resolve, reject) => {
+          const complete = (error?: Error) => {
+            archive.removeListener('entry', entry);
+            archive.removeListener('error', failed);
+            archive.removeListener('close', closed);
+            if (error) reject(error);
+            else resolve();
+          };
+          const entry = (data: Record<symbol, unknown>) => {
+            if (data[identity]) complete();
+          };
+          const failed = (error: Error) => complete(error);
+          const closed = () => complete(new Error('Archive closed before its input was processed'));
+          archive.on('entry', entry);
+          archive.once('error', failed);
+          archive.once('close', closed);
+          try {
+            const data = { name: filename, mode: 0o644, [identity]: true };
+            archive.append(input, data);
+          } catch (error) {
+            failed(error as Error);
+          }
+        });
+      }
       if (typeof input === 'string') {
         archive.file(input, { name: filename, mode: 0o644 });
       } else {
         archive.append(input, { name: filename, mode: 0o644 });
       }
-    };
+    }
 
     const finalize = () => archive.finalize();
 

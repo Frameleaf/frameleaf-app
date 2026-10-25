@@ -1,10 +1,18 @@
 import { BadRequestException } from '@nestjs/common';
+import { createHash } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { vitest } from 'vitest';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import { DownloadResponseDto } from 'src/dtos/download.dto.js';
-import { AssetVisibility, UserMetadataKey } from 'src/enum.js';
+import { AssetVisibility, StorageFolder, UserMetadataKey } from 'src/enum.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { DownloadService } from 'src/services/download.service.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
+import { sourceOriginalPath } from 'src/utils/source-original.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { newDate, newUuid } from 'test/small.factory.js';
@@ -63,6 +71,216 @@ describe(DownloadService.name, () => {
   });
 
   describe('downloadArchive', () => {
+    const sourceArchive = (count = 1) => {
+      const assets = Array.from({ length: count }, () =>
+        AssetFactory.create({
+          originalFileName: 'Photo.jpg',
+          originalPath: sourceOriginalPath({ sourceId: newUuid(), resourceKey: 'a'.repeat(64) }),
+        }),
+      );
+      const ids = assets.map(({ id }) => id);
+      mocks.access.asset.checkOwnerAccess.mockImplementation((_user, requested) =>
+        Promise.resolve(new Set([...requested].filter((id) => ids.includes(id)))),
+      );
+      mocks.asset.getForOriginals.mockResolvedValue(assets);
+      mocks.asset.getForOriginal.mockImplementation((id) =>
+        Promise.resolve({ ...assets.find((asset) => asset.id === id)!, editedPath: null }),
+      );
+      const storage = new StorageRepository({ setContext: vitest.fn() } as never);
+      mocks.storage.createZipStream.mockImplementation(() => storage.createZipStream());
+      const source = { open: vitest.fn() };
+      Object.assign(sut, { sourceOriginalService: source });
+      return { assets, ids, source };
+    };
+
+    it('archives verified descriptors sequentially and joins each lease before opening the next', async () => {
+      const f = sourceArchive(2);
+      const releases: Array<ReturnType<typeof vitest.fn>> = [];
+      const entered = Promise.withResolvers<void>();
+      const closed = Promise.withResolvers<void>();
+      const completed: boolean[] = [];
+      f.source.open.mockImplementation(async (_id, _reader, authorize) => {
+        await authorize();
+        expect(completed.every(Boolean)).toBe(true);
+        const index = completed.length;
+        completed.push(false);
+        const stream = Readable.from([Buffer.from('verified original')]);
+        const release = vitest.fn(async () => {
+          expect(stream.destroyed).toBe(true);
+          if (index === 0) {
+            entered.resolve();
+            await closed.promise;
+          }
+          completed[index] = true;
+        });
+        releases.push(release);
+        return { stream, release };
+      });
+      const response = await sut.downloadArchive(authStub.admin, { assetIds: f.ids, includeSidecar: false });
+      const consuming = Array.fromAsync(response.stream);
+      try {
+        await entered.promise;
+        expect(f.source.open).toHaveBeenCalledTimes(1);
+      } finally {
+        closed.resolve();
+      }
+      const body = Buffer.concat(await consuming).toString('latin1');
+      await response.inputsSettled;
+      expect(body).toContain('Photo.jpg');
+      expect(body).toContain('Photo+1.jpg');
+      expect(body.match(/verified original/g)).toHaveLength(2);
+      expect(f.source.open).toHaveBeenCalledTimes(2);
+      expect(releases.every((release) => release.mock.calls.length === 1)).toBe(true);
+      expect(mocks.storage.realpath).not.toHaveBeenCalled();
+    });
+
+    it('streams a real verified descriptor before removing its owned cache file', async () => {
+      const f = sourceArchive();
+      const root = await mkdtemp(join(tmpdir(), 'source-zip-'));
+      const location = vitest.spyOn(StorageCore, 'getMediaLocation').mockReturnValue(root);
+      const bytes = Buffer.from('synthetic verified original bytes');
+      const pinned = {
+        cacheId: newUuid(),
+        leaseId: newUuid(),
+        fileName: `${newUuid()}.artifact`,
+        bytes: bytes.length,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+      };
+      const folder = join(root, 'source-original-cache', pinned.cacheId);
+      const file = join(folder, pinned.fileName);
+      const reads = {
+        renewConsumer: vitest.fn().mockResolvedValue(true),
+        releaseConsumer: vitest.fn(),
+        enqueue: vitest.fn().mockResolvedValue({ id: newUuid(), deadline: new Date(Date.now() + 60_000) }),
+        pinReady: vitest.fn().mockResolvedValue(pinned),
+        checkPinned: vitest.fn().mockResolvedValue(true),
+      };
+      const cache = {
+        release: vitest.fn().mockImplementation(async (_id, _reader, stopped) => {
+          await stopped?.();
+          return true;
+        }),
+        claimRemoval: vitest.fn().mockResolvedValue({ id: pinned.cacheId }),
+        confirmRemoved: vitest.fn().mockResolvedValue(true),
+      };
+      Object.assign(sut, { sourceOriginalService: new SourceOriginalService(reads as never, cache as never) });
+      let response: Awaited<ReturnType<DownloadService['downloadArchive']>> | undefined;
+      try {
+        await mkdir(folder, { recursive: true });
+        await writeFile(file, bytes);
+        response = await sut.downloadArchive(authStub.admin, { assetIds: f.ids, includeSidecar: false });
+        expect(Buffer.concat(await Array.fromAsync(response.stream)).includes(bytes)).toBe(true);
+        await response.inputsSettled;
+        expect(cache.release).toHaveBeenCalledTimes(1);
+        expect(cache.confirmRemoved).toHaveBeenCalledWith(pinned.cacheId);
+        await expect(readFile(file)).rejects.toMatchObject({ code: 'ENOENT' });
+      } finally {
+        response?.stream.destroy();
+        await response?.inputsSettled?.catch(() => {});
+        location.mockRestore();
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it.each(['input-error', 'output-abandoned'])(
+      'joins an active original on %s and never opens another source',
+      async (failure) => {
+        const f = sourceArchive(2);
+        const entered = Promise.withResolvers<void>();
+        let sent = false;
+        const stream = new Readable({
+          read() {
+            if (sent) return;
+            sent = true;
+            stream.push(Buffer.from('verified prefix'));
+            entered.resolve();
+            if (failure === 'input-error') stream.destroy(new Error('source revoked'));
+          },
+        });
+        const release = vitest.fn(() => {
+          stream.destroy();
+        });
+        f.source.open.mockResolvedValue({ stream, release });
+        const response = await sut.downloadArchive(authStub.admin, { assetIds: f.ids, includeSidecar: false });
+        const settled = expect(response.inputsSettled).rejects.toThrow();
+        response.stream.on('error', () => {});
+        if (failure === 'output-abandoned') {
+          await entered.promise;
+          response.stream.destroy();
+        }
+        await settled;
+        expect(stream.destroyed).toBe(true);
+        expect(release).toHaveBeenCalledTimes(1);
+        expect(f.source.open).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('refuses hidden-metadata links before constructing the archive or requesting source bytes', async () => {
+      const f = sourceArchive();
+      const auth = {
+        ...authStub.adminSharedLink,
+        sharedLink: { ...authStub.adminSharedLink.sharedLink!, showExif: false, allowDownload: true },
+      };
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set(f.ids));
+      await expect(sut.downloadArchive(auth, { assetIds: f.ids })).rejects.toThrow('Downloads are turned off');
+      expect(f.source.open).not.toHaveBeenCalled();
+      expect(mocks.storage.createZipStream).not.toHaveBeenCalled();
+    });
+
+    it('aborts pending source acquisition when the output is abandoned', async () => {
+      const f = sourceArchive();
+      const entered = Promise.withResolvers<AbortSignal>();
+      f.source.open.mockImplementation(
+        (_asset, _reader, _authorize, signal: AbortSignal) =>
+          new Promise((_resolve, reject) => {
+            entered.resolve(signal);
+            signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+          }),
+      );
+      const response = await sut.downloadArchive(authStub.admin, { assetIds: f.ids, includeSidecar: false });
+      const signal = await entered.promise;
+      response.stream.destroy();
+      await expect(response.inputsSettled).rejects.toThrow();
+      expect(signal.aborted).toBe(true);
+    });
+
+    it('closes an acquired input after archive setup fails', async () => {
+      const f = sourceArchive();
+      const stream = Readable.from([Buffer.from('verified source')]);
+      const release = vitest.fn(() => {
+        stream.destroy();
+      });
+      f.source.open.mockResolvedValue({ stream, release });
+      mocks.storage.createZipStream.mockReturnValue({
+        stream: new Readable({ read() {} }),
+        addFile: vitest.fn(() => {
+          throw new Error('append failed');
+        }),
+        finalize: vitest.fn(),
+      });
+      const response = await sut.downloadArchive(authStub.admin, { assetIds: f.ids, includeSidecar: false });
+      await expect(response.inputsSettled).rejects.toThrow('append failed');
+      expect(release).toHaveBeenCalledTimes(1);
+      expect(stream.destroyed).toBe(true);
+    });
+
+    it.each(['foreign', 'missing'])(
+      'refuses a %s source sidecar before reading it or materializing originals',
+      async (state) => {
+        const f = sourceArchive();
+        const asset = f.assets[0];
+        const owned = StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, `${asset.id}.xmp`);
+        mocks.downloadRepository.getSidecars.mockResolvedValue([
+          { assetId: asset.id, path: state === 'foreign' ? '/unowned/sidecar.xmp' : owned },
+        ]);
+        mocks.storage.checkFileExists.mockResolvedValue(false);
+        await expect(sut.downloadArchive(authStub.admin, { assetIds: f.ids, includeSidecar: true })).rejects.toThrow(
+          'source_sidecar_unavailable',
+        );
+        expect(f.source.open).not.toHaveBeenCalled();
+        if (state === 'foreign') expect(mocks.storage.checkFileExists).not.toHaveBeenCalled();
+      },
+    );
     it.each([
       { names: ['constructor', 'constructor'], expected: ['constructor', 'constructor+1'] },
       { names: ['__proto__', '__proto__'], expected: ['__proto__', '__proto__+1'] },

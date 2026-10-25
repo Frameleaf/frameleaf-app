@@ -1,5 +1,8 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { parse } from 'node:path';
+import { addAbortSignal } from 'node:stream';
+import { finished } from 'node:stream/promises';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
@@ -10,8 +13,9 @@ import {
   DownloadResponseDto,
 } from 'src/dtos/download.dto.js';
 import { AssetVisibility, Permission } from 'src/enum.js';
-import { ReadStreamResponse } from 'src/repositories/storage.repository.js';
+import { ReadStreamResponse, ZipDownloadStream } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
 import { AssetDetails, assetDetailsXmp } from 'src/utils/asset-details-xmp.js';
 import { DecimalSize } from 'src/utils/bytes.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
@@ -20,6 +24,14 @@ import { getHiddenContentQueryOptions, getOthersRulesQueryOptions } from 'src/ut
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { OriginalLocationPolicy, getOriginalLocationPolicies } from 'src/utils/partner-location.js';
 import { getPreferences } from 'src/utils/preferences.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
+import { sourceSidecarPath } from 'src/utils/source-sidecar.js';
+
+type ArchiveEntry = {
+  input: string | Buffer;
+  name: string;
+  source?: { id: string; ownerId: string; originalPath: string };
+};
 
 /** Whether the archive holds the edited file rather than the original. */
 const usesEditedFile = (asset: { editedPath?: string | null }, dto: DownloadArchiveDto) =>
@@ -32,6 +44,9 @@ const archiveFileName = (asset: { originalFileName: string; editedPath?: string 
 
 @Injectable()
 export class DownloadService extends BaseService {
+  @Inject(SourceOriginalService)
+  private sourceOriginalService!: SourceOriginalService;
+  private readonly sourceReaderOwnerId = randomUUID();
   async getDownloadInfo(auth: AuthDto, dto: DownloadInfoDto): Promise<DownloadResponseDto> {
     let assets;
     const nsfwOptions = this.nsfwOptions(auth);
@@ -108,7 +123,8 @@ export class DownloadService extends BaseService {
     return { totalSize, archives };
   }
 
-  async downloadArchive(auth: AuthDto, request: DownloadArchiveDto): Promise<ReadStreamResponse> {
+  async downloadArchive(auth: AuthDto, request: DownloadArchiveDto, signal?: AbortSignal): Promise<ReadStreamResponse> {
+    signal?.throwIfAborted();
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: request.assetIds });
 
     const dto = await this.withDownloadPreferences(auth, request);
@@ -123,7 +139,7 @@ export class DownloadService extends BaseService {
     const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
     const disposition = dto.archiveName && `attachment; filename*=UTF-8''${encodeURIComponent(dto.archiveName)}.zip`;
 
-    const sidecars = dto.includeSidecar ? await this.getSidecarPaths(assets.map(({ id }) => id)) : new Map();
+    const sidecars = dto.includeSidecar ? await this.getSidecarPaths(assets) : new Map();
     const details = dto.includeSidecar
       ? await this.getGeneratedDetails(
           auth,
@@ -131,7 +147,7 @@ export class DownloadService extends BaseService {
         )
       : new Map<string, AssetDetails>();
     const developed = dto.edited ? await this.getShownDevelopMasters(auth, assets) : new Map<string, string>();
-    const zip = this.storageRepository.createZipStream();
+    const entries: ArchiveEntry[] = [];
     const paths = new Map<string, number>();
 
     for (const assetId of dto.assetIds) {
@@ -143,23 +159,90 @@ export class DownloadService extends BaseService {
       // As shown: the owner's current develop version takes the place of any other edited file.
       const asset = { ...found, editedPath: developed.get(assetId) ?? found.editedPath };
       const name = nextArchiveName(paths, archiveFileName(asset, dto));
-      zip.addFile(await this.resolveArchivePath(asset, dto), name);
+      const selected = usesEditedFile(asset, dto) ? asset.editedPath! : asset.originalPath;
+      const source = parseSourceOriginalPath(selected)
+        ? { id: asset.id, ownerId: asset.ownerId, originalPath: selected }
+        : undefined;
+      entries.push({ input: source ? selected : await this.resolveArchivePath(asset, dto), name, source });
 
       // ACCOUNT-P5: "IMG_1.HEIC.xmp" beside "IMG_1.HEIC", so a RAW and a JPEG of one shot never share one
       const sidecar = sidecars.get(assetId);
       const generated = details.get(assetId);
       if (sidecar) {
-        zip.addFile(sidecar, nextArchiveName(paths, `${name}.xmp`));
+        entries.push({ input: sidecar, name: nextArchiveName(paths, `${name}.xmp`) });
       } else if (generated) {
         // FL-423: a photo without a sidecar gets one made from what this person's asset response shows
         const xmp = assetDetailsXmp(generated, { orientation: !usesEditedFile(asset, dto) });
-        zip.addFile(Buffer.from(xmp, 'utf8'), nextArchiveName(paths, `${name}.xmp`));
+        entries.push({ input: Buffer.from(xmp, 'utf8'), name: nextArchiveName(paths, `${name}.xmp`) });
       }
     }
 
-    void zip.finalize();
-
+    signal?.throwIfAborted();
+    const zip = this.storageRepository.createZipStream();
+    if (entries.some((entry) => entry.source)) {
+      return { ...this.sourceArchive(auth, entries, zip, signal), disposition };
+    }
+    for (const entry of entries) zip.addFile(entry.input, entry.name);
+    void Promise.resolve(zip.finalize()).catch((error) => zip.stream.destroy(error));
     return { stream: zip.stream, disposition };
+  }
+
+  private sourceArchive(
+    auth: AuthDto,
+    entries: ArchiveEntry[],
+    zip: ZipDownloadStream,
+    signal?: AbortSignal,
+  ): ReadStreamResponse {
+    const abort = new AbortController();
+    const operation = AbortSignal.any([abort.signal, ...(signal ? [signal] : [])]);
+    const stop = () => abort.abort();
+    zip.stream.once('close', stop);
+    zip.stream.once('error', stop);
+    addAbortSignal(operation, zip.stream);
+    const closed = new Promise<void>((resolve) => zip.stream.once('close', resolve));
+    const inputsSettled = (async () => {
+      try {
+        for (const entry of entries) {
+          operation.throwIfAborted();
+          if (!entry.source) {
+            zip.addFile(entry.input, entry.name);
+            continue;
+          }
+          const asset = entry.source;
+          const original = await this.sourceOriginalService.open(
+            asset.id,
+            {
+              kind: 'http',
+              readerId: randomUUID(),
+              ownerId: this.sourceReaderOwnerId,
+            },
+            async () => {
+              operation.throwIfAborted();
+              await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [asset.id] });
+              const current = await this.assetRepository.getForOriginal(asset.id, false);
+              if (current.ownerId !== asset.ownerId || current.originalPath !== asset.originalPath)
+                throw new ConflictException('This asset changed during transfer; try again');
+              operation.throwIfAborted();
+            },
+            operation,
+          );
+          try {
+            operation.throwIfAborted();
+            await Promise.all([zip.addFile(original.stream, entry.name), finished(original.stream)]);
+          } finally {
+            // A verified stream, not a lazy pathname: its descriptor must close before advancing.
+            await original.release();
+          }
+        }
+        operation.throwIfAborted();
+        await Promise.race([zip.finalize(), closed]);
+      } finally {
+        zip.stream.removeListener('close', stop);
+        zip.stream.removeListener('error', stop);
+      }
+    })();
+    void inputsSettled.catch((error) => zip.stream.destroy(error));
+    return { stream: zip.stream, inputsSettled };
   }
 
   /**
@@ -224,15 +307,22 @@ export class DownloadService extends BaseService {
   }
 
   /** The details file on disk for each asset that has one; a missing file is left out, not an error. */
-  private async getSidecarPaths(assetIds: string[]): Promise<Map<string, string>> {
+  private async getSidecarPaths(
+    assets: { id: string; ownerId: string; originalPath: string }[],
+  ): Promise<Map<string, string>> {
     const sidecars = new Map<string, string>();
+    const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
+    const assetIds = assets.map(({ id }) => id);
     if (assetIds.length === 0) {
       return sidecars;
     }
     for (const { assetId, path } of await this.downloadRepository.getSidecars(assetIds)) {
-      if (!sidecars.has(assetId) && (await this.storageRepository.checkFileExists(path))) {
-        sidecars.set(assetId, path);
-      }
+      const asset = assetMap.get(assetId);
+      if (!asset || sidecars.has(assetId)) continue;
+      const owned = sourceSidecarPath(asset, path);
+      const exists = await this.storageRepository.checkFileExists(path);
+      if (owned && !exists) throw new Error('source_sidecar_unavailable');
+      if (exists) sidecars.set(assetId, path);
     }
     return sidecars;
   }

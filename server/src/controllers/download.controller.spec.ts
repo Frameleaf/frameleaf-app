@@ -32,7 +32,7 @@ describe(DownloadController.name, () => {
         .type('form')
         .send({ assetIds: ids.join(',') });
       expect(status).toBe(200);
-      expect(downloadArchiveSpy).toHaveBeenCalledWith(undefined, { assetIds: ids });
+      expect(downloadArchiveSpy).toHaveBeenCalledWith(undefined, { assetIds: ids }, expect.any(AbortSignal));
     });
 
     it('destroys the archive stream when the client goes away (FL-54 review B2)', async () => {
@@ -67,7 +67,9 @@ describe(DownloadController.name, () => {
       const stream = new Readable({ read() {} });
       let clientGone!: () => void;
       const gone = new Promise<void>((resolve) => (clientGone = resolve));
-      service.downloadArchive.mockImplementation(async () => {
+      let signal: AbortSignal;
+      service.downloadArchive.mockImplementation(async (_auth, _dto, operation) => {
+        signal = operation!;
         await gone; // the queries finish only after the client has disconnected
         await new Promise((resolve) => setTimeout(resolve, 50));
         return { stream };
@@ -89,6 +91,7 @@ describe(DownloadController.name, () => {
       req.end(JSON.stringify({ assetIds: [factory.uuid()] }));
       await vi.waitFor(() => expect(service.downloadArchive).toHaveBeenCalled());
       req.destroy();
+      await vi.waitFor(() => expect(signal.aborted).toBe(true));
       clientGone();
 
       await vi.waitFor(() => expect(stream.destroyed).toBe(true));
@@ -103,7 +106,7 @@ describe(DownloadController.name, () => {
         assetIds: ids,
       });
       expect(status).toBe(200);
-      expect(downloadArchiveSpy).toHaveBeenCalledWith(undefined, { assetIds: ids });
+      expect(downloadArchiveSpy).toHaveBeenCalledWith(undefined, { assetIds: ids }, expect.any(AbortSignal));
     });
   });
 });

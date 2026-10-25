@@ -1,6 +1,7 @@
 import { Body, Controller, HttpCode, HttpStatus, Post, Res, StreamableFile } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import type { Readable } from 'node:stream';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { DownloadArchiveDto, DownloadInfoDto, DownloadResponseDto } from 'src/dtos/download.dto.js';
@@ -42,18 +43,23 @@ export class DownloadController {
     @Body() dto: DownloadArchiveDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    const archive = await this.service.downloadArchive(auth, dto);
-    // FL-54: a client that goes away must not leave the archive, and any copy it is writing, waiting forever
+    const abort = new AbortController();
+    let stream: Readable | undefined;
     const abandon = () => {
-      if (!archive.stream.readableEnded) {
-        archive.stream.destroy();
-      }
+      abort.abort();
+      if (!stream?.readableEnded) stream?.destroy();
     };
     res.once('close', abandon);
-    // a client that dropped while the archive was being prepared has already closed: stop at once
-    if (res.destroyed || res.writableEnded) {
-      abandon();
+    if (res.destroyed || res.writableEnded) abandon();
+    try {
+      const archive = await this.service.downloadArchive(auth, dto, abort.signal);
+      stream = archive.stream;
+      stream.once('close', () => res.removeListener('close', abandon));
+      if (res.destroyed || res.writableEnded) abandon();
+      return asStreamableFile(archive);
+    } catch (error) {
+      res.removeListener('close', abandon);
+      throw error;
     }
-    return asStreamableFile(archive);
   }
 }

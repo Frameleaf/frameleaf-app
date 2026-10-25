@@ -2,6 +2,8 @@ import { Dirent } from 'node:fs';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative } from 'node:path';
+import { Readable } from 'node:stream';
+import { finished } from 'node:stream/promises';
 import { CrawlOptionsDto } from 'src/dtos/library.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -206,6 +208,21 @@ describe(StorageRepository.name, () => {
   });
 
   describe('createZipStream', () => {
+    it('joins the actual entry rather than an eagerly buffered input, even with repeated names', async () => {
+      const zip = sut.createZipStream();
+      zip.addFile(Buffer.alloc(2 * 1024 * 1024, 1), 'same');
+      const input = Readable.from([Buffer.from('verified source')]);
+      let processed = false;
+      const appended = zip.addFile(input, 'same').then(() => {
+        processed = true;
+      });
+      await finished(input);
+      expect(processed).toBe(false);
+      const consuming = Array.fromAsync(zip.stream);
+      await appended;
+      await zip.finalize();
+      expect(Buffer.concat(await consuming).includes(Buffer.from('verified source'))).toBe(true);
+    });
     it('stores a file from disk and bytes made for the archive, such as a details file (FL-423)', async () => {
       await writeFiles({ '/zip/IMG_1.JPG': 'original pixels' });
       const zip = sut.createZipStream();
