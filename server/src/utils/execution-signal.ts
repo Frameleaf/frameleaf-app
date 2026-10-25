@@ -10,11 +10,23 @@ export type OperationExecution = {
   completed: Map<string, number>;
 };
 export const operationExecution = new AsyncLocalStorage<OperationExecution>();
+const inputExecution = new AsyncLocalStorage<{ signal: AbortSignal; operation: OperationExecution | undefined }>();
 
 /** An operation never invents a queue claim or a second queue retry owner. */
 export const executionSignal = () => {
   const operation = operationExecution.getStore();
+  const input = inputExecution.getStore();
+  if (input && input.operation === operation) return input.signal;
   return operation && !operation.settled ? operation.signal : jobSignal();
+};
+
+/** Preserve the operation owner; a separate cleanup context keeps its independent lifetime. */
+export const withExecutionSignal = <T>(signal: AbortSignal, work: () => Promise<T>): Promise<T> => {
+  const parent = executionSignal();
+  return inputExecution.run(
+    { signal: parent ? AbortSignal.any([signal, parent]) : signal, operation: operationExecution.getStore() },
+    work,
+  );
 };
 export const assertExecutionActive = () => executionSignal()?.throwIfAborted();
 export const advanceExecutionProgress = (units: number) => {

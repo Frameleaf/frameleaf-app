@@ -1,10 +1,11 @@
+import { exiftool } from 'exiftool-vendored';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
-import { Colorspace, ImageFormat } from 'src/enum.js';
+import { Colorspace, ImageFormat, RawExtractedFormat } from 'src/enum.js';
 import { SharpOperations } from 'src/queue/sharp-operations.js';
 import { sharpProcessPool } from 'src/queue/sharp-pool.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -96,6 +97,39 @@ describe(MediaRepository.name, () => {
   beforeEach(() => {
     // eslint-disable-next-line no-sparse-arrays
     sut = new MediaRepository(automock(LoggingRepository, { args: [, { getEnv: () => ({}) }], strict: false }));
+  });
+
+  it('uses the owned metadata reader for RAW extraction and panorama copying', async () => {
+    const sharedRead = vi
+      .spyOn(exiftool, 'extractBinaryTagToBuffer')
+      .mockRejectedValue(new Error('shared read forbidden'));
+    const sharedWrite = vi.spyOn(exiftool, 'write').mockRejectedValue(new Error('shared write forbidden'));
+    const bytes = Buffer.from('embedded preview');
+    const reader = {
+      readTags: vi.fn(),
+      readJpegSignature: vi.fn(),
+      extractBinaryTag: vi.fn().mockRejectedValueOnce(new Error('missing tag')).mockResolvedValue(bytes),
+      copyPanoramaTags: vi.fn().mockResolvedValue(true),
+    };
+    try {
+      await expect(sut.extract('/private/input.artifact', reader)).resolves.toEqual({
+        buffer: bytes,
+        format: RawExtractedFormat.Jpeg,
+      });
+      expect(reader.extractBinaryTag.mock.calls).toEqual([
+        ['/private/input.artifact', 'JpgFromRaw2'],
+        ['/private/input.artifact', 'JpgFromRaw'],
+      ]);
+      await expect(
+        sut.copyTagGroup('XMP-GPano', '/private/input.artifact', '/owned/preview.jpg', reader),
+      ).resolves.toBe(true);
+      expect(reader.copyPanoramaTags).toHaveBeenCalledWith('/owned/preview.jpg');
+      expect(sharedRead).not.toHaveBeenCalled();
+      expect(sharedWrite).not.toHaveBeenCalled();
+    } finally {
+      sharedRead.mockRestore();
+      sharedWrite.mockRestore();
+    }
   });
 
   describe('HDR capability discovery', () => {

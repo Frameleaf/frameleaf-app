@@ -9,6 +9,7 @@ import { Writable } from 'node:stream';
 import { parentPort } from 'node:worker_threads';
 import type { HdrCodecCapabilities } from 'src/queue/image-hdr.js';
 import type { SharpArguments } from 'src/queue/sharp-protocol.js';
+import type { SourceMediaMetadata } from 'src/repositories/metadata.repository.js';
 import type {
   DecodeToBufferOptions,
   GenerateThumbhashOptions,
@@ -175,7 +176,7 @@ export class MediaRepository {
    * @param input file path to the input image
    * @returns ExtractResult if succeeded, or null if failed
    */
-  async extract(input: string): Promise<ExtractResult | null> {
+  async extract(input: string, reader?: SourceMediaMetadata): Promise<ExtractResult | null> {
     for (const { tag, format } of [
       { tag: 'JpgFromRaw2', format: RawExtractedFormat.Jpeg },
       { tag: 'JpgFromRaw', format: RawExtractedFormat.Jpeg },
@@ -183,7 +184,9 @@ export class MediaRepository {
       { tag: 'PreviewImage', format: RawExtractedFormat.Jpeg },
     ]) {
       try {
-        const buffer = await exiftool.extractBinaryTagToBuffer(tag, input);
+        const buffer = reader
+          ? await reader.extractBinaryTag(input, tag)
+          : await exiftool.extractBinaryTagToBuffer(tag, input);
         this.logger.debug(`Successfully extracted ${tag} buffer from image`);
         return { buffer, format };
       } catch (error: any) {
@@ -246,7 +249,11 @@ export class MediaRepository {
     }
   }
 
-  async copyTagGroup(tagGroup: string, source: string, target: string): Promise<boolean> {
+  async copyTagGroup(tagGroup: string, source: string, target: string, reader?: SourceMediaMetadata): Promise<boolean> {
+    if (reader) {
+      if (tagGroup !== 'XMP-GPano') throw new Error('source_tag_group_unavailable');
+      return reader.copyPanoramaTags(target);
+    }
     try {
       await exiftool.write(
         target,
@@ -737,8 +744,11 @@ export class MediaRepository {
     return sharpProcessPool.run('decodeDevelopArtifact', [input, kind]);
   }
 
-  async getImageMetadata(input: string | Buffer): Promise<ImageDimensions & { isTransparent: boolean }> {
-    return sharpProcessPool.run('getImageMetadata', [input]);
+  async getImageMetadata(
+    input: string | Buffer,
+    signal?: AbortSignal,
+  ): Promise<ImageDimensions & { isTransparent: boolean; format?: string; orientation?: number }> {
+    return sharpProcessPool.run('getImageMetadata', [input], signal);
   }
 
   async getOrientedSize(input: string): Promise<ImageDimensions> {
