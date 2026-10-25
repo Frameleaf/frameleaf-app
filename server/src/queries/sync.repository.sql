@@ -1456,7 +1456,8 @@ from
 where
   "asset_edit"."updateId" < $1
   and "asset_edit"."updateId" > $2
-  and "asset"."ownerId" = $3
+  and "asset"."isEdited" = $3
+  and "asset"."ownerId" = $4
   and not (
     exists (
       select

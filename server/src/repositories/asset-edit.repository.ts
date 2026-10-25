@@ -493,6 +493,15 @@ export class AssetEditRepository {
       .selectFrom('asset_edit')
       .select(['id', 'action', 'parameters'])
       .where('assetId', '=', assetId)
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('asset')
+            .select('id')
+            .whereRef('asset.id', '=', 'asset_edit.assetId')
+            .where('isEdited', '=', true),
+        ),
+      )
       .orderBy('sequence', 'asc')
       .execute();
   }
@@ -502,6 +511,15 @@ export class AssetEditRepository {
       .selectFrom('asset_edit')
       .select(columns.syncAssetEdit)
       .where('assetId', '=', assetId)
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('asset')
+            .select('id')
+            .whereRef('asset.id', '=', 'asset_edit.assetId')
+            .where('isEdited', '=', true),
+        ),
+      )
       .orderBy('sequence', 'asc')
       .execute();
   }

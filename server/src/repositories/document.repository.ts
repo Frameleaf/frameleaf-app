@@ -108,6 +108,7 @@ export class DocumentRepository {
                         edit
                           .selectFrom('asset_edit')
                           .select(sql`1`.as('found'))
+                          .where('asset.isEdited', '=', true)
                           .whereRef('asset_edit.assetId', '=', 'asset.id')
                           .where('asset_edit.action', '=', sql.lit(AssetEditAction.Crop)),
                       ),

@@ -881,6 +881,7 @@ class AssetEditSync extends BaseSync {
     return this.upsertQuery('asset_edit', options)
       .select([...columns.syncAssetEdit, 'asset_edit.updateId'])
       .innerJoin('asset', 'asset.id', 'asset_edit.assetId')
+      .where('asset.isEdited', '=', true)
       .where('asset.ownerId', '=', options.userId)
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();

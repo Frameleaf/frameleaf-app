@@ -1592,7 +1592,8 @@ select
         from
           "asset_edit"
         where
-          "asset_edit"."assetId" = "asset"."id"
+          "asset"."isEdited" = $1
+          and "asset_edit"."assetId" = "asset"."id"
       ) as agg
   ) as "edits",
   "asset_exif"."exifImageWidth",
@@ -1602,7 +1603,7 @@ from
   "asset"
   inner join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
 where
-  "asset"."id" = $1
+  "asset"."id" = $2
 
 -- AssetRepository.getForEdit
 select
@@ -1647,14 +1648,15 @@ select
         from
           "asset_edit"
         where
-          "asset_edit"."assetId" = "asset"."id"
+          "asset"."isEdited" = $1
+          and "asset_edit"."assetId" = "asset"."id"
       ) as agg
   ) as "edits"
 from
   "asset"
   inner join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
 where
-  "asset"."id" = $1
+  "asset"."id" = $2
 
 -- AssetRepository.getForUpdateTags
 select

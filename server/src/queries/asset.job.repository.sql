@@ -271,7 +271,8 @@ select
         from
           "asset_edit"
         where
-          "asset_edit"."assetId" = "asset"."id"
+          "asset"."isEdited" = $6
+          and "asset_edit"."assetId" = "asset"."id"
       ) as agg
   ) as "edits",
   to_json("asset_exif") as "exifInfo",
@@ -345,7 +346,7 @@ from
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
   left join "asset_video" on "asset_video"."assetId" = "asset"."id"
 where
-  "asset"."id" = $6
+  "asset"."id" = $7
 
 -- AssetJobRepository.getForMetadataExtraction
 select

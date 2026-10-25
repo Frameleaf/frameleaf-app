@@ -770,7 +770,7 @@ export class PartnerOriginRepository {
       if (source.type === AssetType.Image) {
         await sql`INSERT INTO asset_edit ("assetId", action, parameters, sequence)
           SELECT ${copy.id}::uuid, action, parameters, sequence FROM asset_edit
-          WHERE "assetId" = ${source.id}::uuid`.execute(trx);
+          WHERE "assetId" = ${source.id}::uuid AND ${source.isEdited}`.execute(trx);
         await sql`INSERT INTO public.asset_develop_revision
           SELECT (jsonb_populate_record(NULL::public.asset_develop_revision,
             to_jsonb(snapshot) || jsonb_build_object('id', gen_random_uuid(),

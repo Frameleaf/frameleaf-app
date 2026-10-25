@@ -6,6 +6,8 @@ import { AssetType } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
+import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -38,6 +40,20 @@ const fixture = async () => {
   };
   return { asset, resource, sourceReference, expected, sut: new AssetEditRepository(db) };
 };
+it('keeps inactive saved actions stored without exposing them as the current photo or render projection', async () => {
+  const f = await fixture();
+  await f.sut.replaceAll(f.asset.id, recipe, 'save', f.expected);
+  const saved = await db.selectFrom('asset_edit').selectAll().where('assetId', '=', f.asset.id).execute();
+  await db.insertInto('asset_exif').values({ assetId: f.asset.id }).execute();
+  await db.updateTable('asset').set({ isEdited: false }).where('id', '=', f.asset.id).execute();
+  expect((await new AssetRepository(db).getById(f.asset.id, { edits: true }))?.edits).toEqual([]);
+  expect((await new AssetJobRepository(db).getForGenerateThumbnailJob(f.asset.id))?.edits).toEqual([]);
+  expect(await f.sut.getAll(f.asset.id)).toEqual([]);
+  expect(await f.sut.getWithSyncInfo(f.asset.id)).toEqual([]);
+  expect(await db.selectFrom('asset_edit').selectAll().where('assetId', '=', f.asset.id).execute()).toEqual(saved);
+  await f.sut.replaceAll(f.asset.id, recipe, 'save', f.expected);
+  expect(await f.sut.getAll(f.asset.id)).toEqual([expect.objectContaining(recipe[0])]);
+});
 it.each(['matching', 'changed-version', 'changed-checksum', 'unbound', 'missing'] as const)(
   'retains the saved image source through later render admission: %s',
   async (kind) => {

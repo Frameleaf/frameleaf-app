@@ -278,6 +278,8 @@ select
   "asset_face"."boundingBoxY2" as "y2",
   "asset_face"."imageWidth" as "oldWidth",
   "asset_face"."imageHeight" as "oldHeight",
+  "asset"."id" as "assetId",
+  "asset"."originalFileName",
   "asset"."type",
   "asset"."originalPath",
   "asset_exif"."orientation" as "exifOrientation",
@@ -302,6 +304,22 @@ where
   and "asset_face"."deletedAt" is null
   and "asset_face"."personGroupId" = "person"."personGroupId"
   and "asset_face"."isVisible" = $3
+  and "asset"."deletedAt" is null
+  and (
+    "asset"."ownerId" = $4::uuid
+    or exists (
+      select
+        1 as "exists"
+      from
+        "album_asset"
+        inner join "album" on "album"."id" = "album_asset"."albumId"
+        and "album"."deletedAt" is null
+        inner join "album_user" on "album_user"."albumId" = "album"."id"
+        and "album_user"."userId" = $5::uuid
+      where
+        "album_asset"."assetId" = "asset"."id"
+    )
+  )
   and not exists (
     select
       1

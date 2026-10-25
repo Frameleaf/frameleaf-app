@@ -18,8 +18,21 @@ const setup = async (db?: Kysely<DB>) => {
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
+afterAll(async () => defaultDatabase?.destroy());
 
 describe(SyncRequestType.AssetEditsV1, () => {
+  it('withholds inactive edit projections without deleting retained actions', async () => {
+    const { auth, ctx } = await setup();
+    const { asset } = await ctx.newAsset({ ownerId: auth.user.id });
+    await ctx
+      .get(AssetEditRepository)
+      .replaceAll(asset.id, [{ action: AssetEditAction.Rotate, parameters: { angle: 90 } }]);
+    await defaultDatabase.updateTable('asset').set({ isEdited: false }).where('id', '=', asset.id).execute();
+    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AssetEditsV1]);
+    expect(
+      await defaultDatabase.selectFrom('asset_edit').select('id').where('assetId', '=', asset.id).execute(),
+    ).toHaveLength(1);
+  });
   it('should detect and sync the first asset edit', async () => {
     const { auth, ctx } = await setup();
     const { asset } = await ctx.newAsset({ ownerId: auth.user.id });

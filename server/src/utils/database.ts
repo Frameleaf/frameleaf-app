@@ -564,10 +564,12 @@ export const tokenizeForSearch = (text: string): string[] => {
 // needed to properly type the return with the EditActionItem discriminated union type
 type AliasedEditActions = AliasedRawBuilder<AssetEditActionItem[], 'edits'>;
 export function withEdits(eb: ExpressionBuilder<DB, 'asset'>): AliasedEditActions {
+  // Retained actions can belong to an older original; only the current projection is executable.
   return jsonArrayFrom(
     eb
       .selectFrom('asset_edit')
       .select(['asset_edit.action', 'asset_edit.parameters'])
+      .where('asset.isEdited', '=', true)
       .whereRef('asset_edit.assetId', '=', 'asset.id'),
   ).as('edits') as AliasedEditActions;
 }

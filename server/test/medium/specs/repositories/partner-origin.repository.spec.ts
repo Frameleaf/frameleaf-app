@@ -1,4 +1,6 @@
 import { Kysely } from 'kysely';
+import { AssetEditAction } from 'src/dtos/editing.dto.js';
+import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   AssetOriginField,
@@ -31,6 +33,33 @@ it('installs feature tables in the real canonical baseline', async () => {
 });
 
 describe(PartnerOriginRepository.name, () => {
+  it('copies current pixels without reactivating inactive legacy actions on an independent copy', async () => {
+    const { ctx, sut } = setup();
+    const { user: alice } = await ctx.newUser();
+    const { user: bob } = await ctx.newUser();
+    await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+    const { asset: source } = await ctx.newAsset({ ownerId: alice.id });
+    await ctx.newExif({ assetId: source.id, fileSizeInByte: 1000 });
+    const original = await ctx.get(PhysicalFileRepository).ensureOriginalPhysicalFile(source.id);
+    if (!original) throw new Error('Expected source physical file');
+    await ctx
+      .get(AssetEditRepository)
+      .replaceAll(source.id, [{ action: AssetEditAction.Rotate, parameters: { angle: 90 } }]);
+    await db.updateTable('asset').set({ isEdited: false }).where('id', '=', source.id).execute();
+    const copy = await sut.insertAssetCopy({
+      sourceAssetId: source.id,
+      ownerId: bob.id,
+      rootOwnerId: alice.id,
+      partnerSharedById: alice.id,
+      original,
+    });
+    expect(copy).toBeDefined();
+    expect(
+      (await db.selectFrom('asset').select('isEdited').where('id', '=', copy!).executeTakeFirstOrThrow()).isEdited,
+    ).toBe(false);
+    expect(await db.selectFrom('asset_edit').select('id').where('assetId', '=', copy!).execute()).toEqual([]);
+    expect(await db.selectFrom('asset_edit').select('id').where('assetId', '=', source.id).execute()).toHaveLength(1);
+  });
   it.each(['copy', 'propagation'] as const)('keeps incoming %s behind an owner-wide tag edit', async (operation) => {
     const { ctx, sut } = setup();
     const { user: alice } = await ctx.newUser();

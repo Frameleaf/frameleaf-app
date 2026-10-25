@@ -3,6 +3,14 @@
 -- AssetEditRepository.replaceAll
 begin
 select
+  "ownerId",
+  "originalPath",
+  "type"
+from
+  "asset"
+where
+  "id" = $1
+select
   "type"
 from
   "asset"
@@ -21,6 +29,15 @@ from
   "asset_edit"
 where
   "assetId" = $1
+  and exists (
+    select
+      "id"
+    from
+      "asset"
+    where
+      "asset"."id" = "asset_edit"."assetId"
+      and "isEdited" = $2
+  )
 order by
   "sequence" asc
 
@@ -35,5 +52,14 @@ from
   "asset_edit"
 where
   "assetId" = $1
+  and exists (
+    select
+      "id"
+    from
+      "asset"
+    where
+      "asset"."id" = "asset_edit"."assetId"
+      and "isEdited" = $2
+  )
 order by
   "sequence" asc

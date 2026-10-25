@@ -19,6 +19,7 @@ let database: Kysely<DB>;
 beforeAll(async () => {
   database = await getKyselyDB();
 });
+afterAll(async () => database?.destroy());
 
 const setup = () => {
   const { ctx } = newMediumService(BaseService, { database, real: [], mock: [LoggingRepository] });
@@ -26,6 +27,35 @@ const setup = () => {
 };
 
 describe(DocumentRepository.name, () => {
+  it('does not let an inactive crop suppress original-coordinate document corrections', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    await database.insertInto('ocr_search').values({ assetId: asset.id, text: 'source words' }).execute();
+    await sut.create({
+      assetId: asset.id,
+      key: 'field:total',
+      action: DocumentEditAction.Correct,
+      value: 'retained-total',
+      sourceText: null,
+      editedById: user.id,
+      x1: 0.1,
+      y1: 0.1,
+      x2: 0.4,
+      y2: 0.1,
+      x3: 0.4,
+      y3: 0.4,
+      x4: 0.1,
+      y4: 0.4,
+    });
+    await ctx
+      .get(AssetEditRepository)
+      .replaceAll(asset.id, [{ action: AssetEditAction.Crop, parameters: { x: 50, y: 50, width: 50, height: 50 } }]);
+    const search = () => sut.search({ ownerId: user.id, query: 'retained-total', page: 1, size: 20 });
+    expect((await search()).items).toEqual([]);
+    await database.updateTable('asset').set({ isEdited: false }).where('id', '=', asset.id).execute();
+    expect((await search()).items.map((item) => item.id)).toEqual([asset.id]);
+  });
   it('searches visible OCR and corrections without leaking cropped, Locked, or other owners’ text', async () => {
     const { ctx, sut } = setup();
     const { user: owner } = await ctx.newUser();
