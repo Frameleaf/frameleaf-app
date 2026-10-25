@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { promisify } from 'node:util';
+import { gzipSync } from 'node:zlib';
 import type { Kysely } from 'kysely';
 import type { QueueExecution } from 'src/queue/types.js';
 import type { DB } from 'src/schema/index.js';
@@ -56,6 +57,8 @@ import { OcrService } from 'src/services/ocr.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
+import { parseDesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
+import { verifyDesktopRuntimeAttestation } from 'src/utils/desktop-runtime-attestation.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { controllerSetup, getKyselyDB } from 'test/utils.js';
 
@@ -92,7 +95,8 @@ const workload = process.env.FRAMELEAF_FACTORY_TEST_WORKLOAD ?? 'clip';
 const ocr = workload === 'ocr';
 const face = workload === 'face';
 const automatic = !!process.env.FRAMELEAF_FACTORY_AUTOMATIC_SETUP;
-if (automatic && !ocr && workload !== 'clip') throw new Error('automatic fixture requires OCR or CLIP');
+if (automatic && !['ocr', 'clip', 'face'].includes(workload))
+  throw new Error('automatic fixture requires a supported library workload');
 const port = async () => {
   const socket = createTcpServer();
   await new Promise<void>((resolve) => socket.listen(0, '127.0.0.1', resolve));
@@ -108,7 +112,7 @@ const stop = async (child: ChildProcess | undefined) => {
 };
 
 it.skipIf(!desktop || !pack || !cache)(
-  'executes native NAS library jobs and refuses stale-source publication',
+  'executes native remote-server library jobs and refuses stale-source publication',
   async () => {
     let db: Kysely<DB> | undefined;
     let python: ChildProcess | undefined;
@@ -122,7 +126,8 @@ it.skipIf(!desktop || !pack || !cache)(
     let tls: ReturnType<typeof createServer> | undefined;
     clearConfigCache();
     try {
-      const runtime = JSON.parse(await readFile(join(pack!, 'manifest.json'), 'utf8'));
+      const manifestBytes = await readFile(join(pack!, 'manifest.json'));
+      const runtime = JSON.parse(manifestBytes.toString('utf8'));
       if (process.env.FRAMELEAF_TEST_COREML_NAS === '1') {
         expect(workload).toBe('clip');
         expect(runtime).toMatchObject({ provider: 'CoreMLExecutionProvider', deviceObserver: { kind: 'metal-v1' } });
@@ -130,13 +135,22 @@ it.skipIf(!desktop || !pack || !cache)(
       const moduleNamespace = runtime.moduleNamespace ?? 'immich_ml';
       expect(['immich_ml', 'frameleaf_ml']).toContain(moduleNamespace);
       const catalogue = JSON.parse(readFileSync('resources/desktop/model-catalogue.json', 'utf8'));
+      parseDesktopModelCatalogue(catalogue);
       const profile = catalogue.profiles.find(
-        (p: { workload: string; runtimeSourceRevision: string; spec: { fixtureKind: string } }) =>
+        (p: { workload: string; runtimeSourceRevision: string; spec: { fixtureKind: string; provider: string } }) =>
           p.runtimeSourceRevision === runtime.sourceRevision &&
+          p.spec.provider === runtime.provider &&
           p.spec.fixtureKind === 'image' &&
           p.workload === workload,
-      );
+      )!;
       expect(profile).toBeDefined();
+      verifyDesktopRuntimeAttestation(
+        {
+          manifestGzipBase64: gzipSync(manifestBytes).toString('base64'),
+          signatureBase64: (await readFile(join(pack!, 'manifest.sig'))).toString('base64'),
+        },
+        profile,
+      );
       const image = Buffer.from(profile.fixtureBase64, 'base64');
       const path = join(root, 'synthetic.png');
       await writeFile(path, image, { mode: 0o600 });
@@ -144,16 +158,20 @@ it.skipIf(!desktop || !pack || !cache)(
       const mlToken = randomBytes(32).toString('hex');
       const nasUrl = `http://127.0.0.1:${mlPort}`;
       if (!ocr) {
+        const interpreter = join(pack!, 'payload', runtime.python);
+        const executable = await readFile(interpreter);
+        expect(executable.length).toBe(runtime.files[runtime.python].bytes);
+        expect(createHash('sha256').update(executable).digest('hex')).toBe(runtime.files[runtime.python].sha256);
         python = spawn(
-          face ? join(process.cwd(), '../machine-learning/.venv/bin/python') : join(pack!, 'payload', runtime.python),
+          interpreter,
           [
-            ...(face ? [] : ['-I']),
+            '-I',
             '-B',
             '-c',
             `from ${moduleNamespace}.native_ort import configure; configure('CPUExecutionProvider'); import uvicorn; uvicorn.run('${moduleNamespace}.${face ? 'nas_app' : 'main'}:app',host='127.0.0.1',port=${mlPort},workers=1,access_log=False)`,
           ],
           {
-            cwd: face ? join(process.cwd(), '../machine-learning') : root,
+            cwd: root,
             stdio: ['ignore', 'ignore', 'pipe'],
             env: {
               PATH: process.env.PATH,
@@ -176,6 +194,9 @@ it.skipIf(!desktop || !pack || !cache)(
           },
         );
         let pythonErrors = '';
+        python.on('error', (error) => {
+          pythonErrors = (pythonErrors + error.message).slice(-4096);
+        });
         python.stderr?.on('data', (bytes) => {
           pythonErrors = (pythonErrors + String(bytes)).slice(-4096);
         });
@@ -208,7 +229,11 @@ it.skipIf(!desktop || !pack || !cache)(
         ...structuredClone(defaults),
         machineLearning: { ...structuredClone(defaults.machineLearning), urls: [nasUrl] },
       };
-      if (automatic) config.machineLearning.facialRecognition.enabled = false;
+      if (automatic) {
+        config.machineLearning.clip.enabled = workload === 'clip';
+        config.machineLearning.ocr.enabled = ocr;
+        config.machineLearning.facialRecognition.enabled = face;
+      }
       await metadata.withConfigTransaction((metadataRepo) =>
         sut.updateConfig(config, { configRepo, metadataRepo, logger: LoggingRepository.create() }),
       );

@@ -14,7 +14,7 @@ const spaces = parseDesktopClipSpaces(
   JSON.parse(readFileSync('resources/desktop/model-spaces.json', 'utf8')),
   catalogue,
 );
-const request = { provider: 'CPUExecutionProvider', runtimeSourceRevision: 'f2c451a6bf71ca3f3aec986e07f0852937268e2f' };
+const request = { provider: 'CPUExecutionProvider', runtimeSourceRevision: '1bf2ad55521c49f574cba2f450eb13d49652ea80' };
 const setup = () => ({
   ...request,
   catalogue,
@@ -114,7 +114,7 @@ it.each(['disabled', 'cloud', 'url', 'allowlist', 'route'])(
     expect(selectDesktopModelInventory(input)[1]).toMatchObject({ state: 'unavailable', modelKeys: [] });
   },
 );
-it('keeps disabled models disabled and never relies on NAS inference health for inventory', () => {
+it('keeps disabled models disabled and never relies on server inference health for inventory', () => {
   const input = setup();
   input.config.facialRecognition.enabled = false;
   input.destinations[0].lastProbeWorkloads = [];
@@ -136,6 +136,8 @@ it.each([
   '25b22c16e47a27a2eb50017d838497abce850d11',
   '1ca4d52e2b8158d89d8de8b17e1e6535e17691f4',
   'f93c34d196955da3e2760c095c08b27ccbf53315',
+  'f2c451a6bf71ca3f3aec986e07f0852937268e2f',
+  '088560702a69022b6eee705d8a67306f1075cea0',
 ])('retains legacy CLIP spaces but refuses outdated default image producer %s', (source) => {
   const input = setup();
   input.runtimeSourceRevision = source;
@@ -148,7 +150,7 @@ it.each([
 
 it('offers all qualified current-main CPU groups without changing routes or model configuration', () => {
   const input = setup();
-  input.runtimeSourceRevision = 'f2c451a6bf71ca3f3aec986e07f0852937268e2f';
+  input.runtimeSourceRevision = '1bf2ad55521c49f574cba2f450eb13d49652ea80';
   const original = structuredClone(input);
   const result = selectDesktopModelInventory(input);
   expect(result.slice(0, 3).map(({ state, modelKeys }) => [state, modelKeys.length])).toEqual([

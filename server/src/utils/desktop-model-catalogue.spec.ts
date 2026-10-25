@@ -31,8 +31,8 @@ it('preserves every prior binding and selects the qualified precision-corrected 
   }
   expect(current.map((profile) => profile.workload)).toEqual(['clip', 'clip', 'clip', 'ocr', 'face']);
   expect(desktopImageModelKeys).toEqual({
-    ocr: catalogue.profiles[35].modelKey,
-    face: catalogue.profiles[36].modelKey,
+    ocr: catalogue.profiles[65].modelKey,
+    face: catalogue.profiles[66].modelKey,
   });
 });
 it('validates the approved default model and preserves exact config, source and provider identity', () => {

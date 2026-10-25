@@ -10,7 +10,7 @@ const catalogue = parseDesktopModelCatalogue(
 it.each(['ocr', 'face'] as const)('selects the released %s identity and revalidates exact legacy tasks', (workload) => {
   const profiles = catalogue.profiles.filter((profile) => profile.workload === workload);
   const current = profiles.find(
-    (profile) => profile.runtimeSourceRevision === 'f2c451a6bf71ca3f3aec986e07f0852937268e2f',
+    (profile) => profile.runtimeSourceRevision === '1bf2ad55521c49f574cba2f450eb13d49652ea80',
   )!;
   const select = (key?: string) =>
     workload === 'ocr'
@@ -20,13 +20,9 @@ it.each(['ocr', 'face'] as const)('selects the released %s identity and revalida
   expect(currentVariants.map((profile) => profile.spec.provider)).toEqual([
     'CPUExecutionProvider',
     'CoreMLExecutionProvider',
-    'CUDAExecutionProvider',
-    'OpenVINOExecutionProvider',
-    'CPUExecutionProvider',
-    'CoreMLExecutionProvider',
   ]);
   expect(new Set(currentVariants.map((profile) => profile.runtimeSourceRevision))).toEqual(
-    new Set(['f2c451a6bf71ca3f3aec986e07f0852937268e2f', '088560702a69022b6eee705d8a67306f1075cea0']),
+    new Set(['1bf2ad55521c49f574cba2f450eb13d49652ea80']),
   );
   expect(select().modelKey).toBe(current.modelKey);
   if (workload === 'ocr') {
