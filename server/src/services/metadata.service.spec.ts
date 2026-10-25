@@ -27,6 +27,7 @@ import { queueExecution } from 'src/queue/context.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ImmichTags, MetadataRepository } from 'src/repositories/metadata.repository.js';
 import { MetadataService, firstDateTime } from 'src/services/metadata.service.js';
+import { sourceOriginalPath } from 'src/utils/source-original.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { PersonGroupFactory } from 'test/factories/person-group.factory.js';
 import { PersonFactory } from 'test/factories/person.factory.js';
@@ -269,6 +270,201 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleMetadataExtraction', () => {
+    const sourceFixture = (options: { type?: AssetType; originalFileName?: string } = {}) => {
+      const asset = AssetFactory.create({
+        originalFileName: 'PHOTO.HEIC',
+        originalPath: sourceOriginalPath({ sourceId: factory.uuid(), resourceKey: 'a'.repeat(64) }),
+        fileCreatedAt: new Date('2020-01-01'),
+        fileModifiedAt: new Date('2020-02-02'),
+        ...options,
+      });
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.storage.stat.mockResolvedValue({
+        size: 123,
+        mtime: new Date('2030-01-01'),
+        mtimeMs: new Date('2030-01-01').getTime(),
+        birthtimeMs: 0,
+      } as Stats);
+      const input = {
+        localPath: '/private/source.artifact',
+        signal: new AbortController().signal,
+        check: vi.fn().mockResolvedValue(undefined),
+        retainOnUnconfirmedStop: vi.fn(),
+      };
+      const source = { openForJob: vi.fn().mockResolvedValue(input) };
+      Object.assign(sut, { sourceOriginalService: source });
+      mocks.metadata.withBorrowedRead.mockImplementation((_path, _name, work) =>
+        work({ ...mocks.metadata, copyPanoramaTags: vi.fn().mockResolvedValue(true) }),
+      );
+      const context: QueueExecution = {
+        claim: { id: factory.uuid(), token: factory.uuid() } as QueueExecution['claim'],
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        followups: [],
+        buffering: false,
+      };
+      return { asset, input, source, context };
+    };
+
+    it('reads borrowed bytes but publishes the logical identity and provider dates', async () => {
+      const f = sourceFixture();
+      mockReadTags({ Rotation: 0, Orientation: ExifOrientation.Rotate90CW });
+      await queueExecution.run(f.context, () => sut.handleMetadataExtraction({ id: f.asset.id }));
+      expect(f.source.openForJob).toHaveBeenCalledWith(f.asset.id, expect.any(Function));
+      expect(mocks.metadata.withBorrowedRead).toHaveBeenCalledWith(
+        f.input.localPath,
+        'PHOTO.HEIC',
+        expect.any(Function),
+        f.input.signal,
+      );
+      expect(mocks.metadata.readTags).toHaveBeenCalledWith(f.input.localPath);
+      expect(mocks.media.inspectImageEncoding).toHaveBeenCalledWith(f.input.localPath);
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      for (const adopt of f.context.adoptions) await adopt({} as never);
+      expect(mocks.asset.update).toHaveBeenCalledWith(
+        expect.objectContaining({ fileModifiedAt: f.asset.fileModifiedAt, fileCreatedAt: f.asset.fileCreatedAt }),
+      );
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: expect.objectContaining({ orientation: ExifOrientation.Horizontal.toString() }),
+        }),
+      );
+      expect(mocks.asset.update).not.toHaveBeenCalledWith(expect.objectContaining({ originalPath: f.input.localPath }));
+      await expect(f.source.openForJob.mock.calls[0][1]()).resolves.toBeUndefined();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(
+        getForMetadataExtraction({ ...f.asset, ownerId: factory.uuid() }),
+      );
+      await expect(f.source.openForJob.mock.calls[0][1]()).rejects.toThrow('Metadata source changed');
+    });
+
+    it('rejects revoked source authority at deferred metadata publication', async () => {
+      const f = sourceFixture();
+      await queueExecution.run(f.context, () => sut.handleMetadataExtraction({ id: f.asset.id }));
+      f.input.check.mockRejectedValue(new Error('source revoked'));
+      await expect(f.context.adoptions[0]({} as never)).rejects.toThrow('source revoked');
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+    });
+
+    it('refuses an unowned source sidecar before requesting original bytes', async () => {
+      const f = sourceFixture();
+      const asset = AssetFactory.from(f.asset)
+        .file({ type: AssetFileType.Sidecar, path: '/unowned/source.xmp' })
+        .build();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      await expect(queueExecution.run(f.context, () => sut.handleMetadataExtraction({ id: asset.id }))).rejects.toThrow(
+        'source_sidecar_unavailable',
+      );
+      expect(f.source.openForJob).not.toHaveBeenCalled();
+      expect(mocks.metadata.readTags).not.toHaveBeenCalled();
+    });
+
+    it('refuses a missing owned sidecar before requesting original bytes', async () => {
+      const f = sourceFixture();
+      const sidecar = StorageCore.getNestedPath(StorageFolder.Upload, f.asset.ownerId, `${f.asset.id}.xmp`);
+      const asset = AssetFactory.from(f.asset).file({ type: AssetFileType.Sidecar, path: sidecar }).build();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.storage.checkFileExists.mockResolvedValue(false);
+      await expect(queueExecution.run(f.context, () => sut.handleMetadataExtraction({ id: asset.id }))).rejects.toThrow(
+        'source_sidecar_unavailable',
+      );
+      expect(f.source.openForJob).not.toHaveBeenCalled();
+      expect(mocks.metadata.readTags).not.toHaveBeenCalled();
+    });
+
+    it('reads and applies its own sidecar without treating the logical URI as a path', async () => {
+      const f = sourceFixture();
+      const sidecar = StorageCore.getNestedPath(StorageFolder.Upload, f.asset.ownerId, `${f.asset.id}.xmp`);
+      const asset = AssetFactory.from(f.asset).file({ type: AssetFileType.Sidecar, path: sidecar }).build();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mockReadTags({}, { Description: 'App metadata' });
+      mocks.storage.checkFileExists.mockResolvedValue(true);
+      await queueExecution.run(f.context, () => sut.handleMetadataExtraction({ id: asset.id }));
+      expect(mocks.metadata.readTags).toHaveBeenCalledWith(f.input.localPath);
+      expect(mocks.metadata.readTags).toHaveBeenCalledWith(sidecar);
+      for (const adopt of f.context.adoptions) await adopt({} as never);
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({ exif: expect.objectContaining({ description: 'App metadata' }) }),
+      );
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(f.asset));
+      await expect(f.source.openForJob.mock.calls[0][1]()).rejects.toThrow('Metadata source changed');
+    });
+
+    it('retains the job input when the metadata reader cannot confirm shutdown', async () => {
+      const f = sourceFixture();
+      mocks.metadata.withBorrowedRead.mockImplementation(async (_path, _name, work) => {
+        await work({ ...mocks.metadata, copyPanoramaTags: vi.fn().mockResolvedValue(true) });
+        throw new Error('source_original_shutdown_unconfirmed');
+      });
+      await expect(
+        queueExecution.run(f.context, () => sut.handleMetadataExtraction({ id: f.asset.id })),
+      ).rejects.toThrow('source_original_shutdown_unconfirmed');
+      expect(f.input.retainOnUnconfirmedStop).toHaveBeenCalledOnce();
+      expect(f.context.adoptions).toHaveLength(1);
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
+    it.each(['EXIF', 'stat'])('joins a pending video probe after a parallel %s read fails', async (failed) => {
+      const f = sourceFixture({ type: AssetType.Video, originalFileName: 'clip.mp4' });
+      const entered = Promise.withResolvers<void>();
+      const stopped = Promise.withResolvers<void>();
+      const failure = new Error('EXIF failed');
+      let scopeEnded = false;
+      mocks.metadata.withBorrowedRead.mockImplementation(async (_path, _name, work) => {
+        try {
+          await work({ ...mocks.metadata, copyPanoramaTags: vi.fn().mockResolvedValue(true) });
+        } finally {
+          scopeEnded = true;
+        }
+      });
+      if (failed === 'EXIF') mocks.metadata.readTags.mockReset().mockRejectedValue(failure);
+      else
+        mocks.storage.stat.mockImplementation(() => {
+          throw failure;
+        });
+      mocks.media.probe.mockImplementation(async () => {
+        entered.resolve();
+        await stopped.promise;
+        return videoInfoStub.noVideoStreams;
+      });
+      const pending = queueExecution.run(f.context, () => sut.handleMetadataExtraction({ id: f.asset.id }));
+      const rejected = expect(pending).rejects.toBe(failure);
+      try {
+        await entered.promise;
+        await Promise.resolve();
+        expect(scopeEnded).toBe(false);
+        expect(mocks.media.probe).toHaveBeenCalledWith(f.input.localPath, {
+          signal: f.input.signal,
+          countFrames: false,
+        });
+      } finally {
+        stopped.resolve();
+        await rejected;
+      }
+      expect(scopeEnded).toBe(true);
+      expect(f.context.adoptions).toHaveLength(0);
+    });
+
+    it('reads embedded motion video from the borrowed input and stages an independent output', async () => {
+      const f = sourceFixture();
+      mockReadTags({ MotionPhoto: 1, MotionPhotoVideo: new BinaryField(0, '') });
+      mocks.crypto.randomUUID.mockReturnValue(factory.uuid());
+      mocks.crypto.hashSha1.mockReturnValue(Buffer.alloc(20));
+      mocks.metadata.extractBinaryTag.mockResolvedValue(Buffer.from('motion video'));
+      await queueExecution.run(f.context, () => sut.handleMetadataExtraction({ id: f.asset.id }));
+      expect(mocks.metadata.extractBinaryTag).toHaveBeenCalledWith(f.input.localPath, 'MotionPhotoVideo');
+      expect(mocks.storage.createFile).toHaveBeenCalledWith(
+        expect.not.stringContaining('/private/'),
+        Buffer.from('motion video'),
+      );
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+      expect(f.context.adoptions).toHaveLength(2);
+      f.input.check.mockRejectedValue(new Error('source revoked'));
+      await expect(f.context.adoptions[0]({} as never)).rejects.toThrow('source revoked');
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+    });
     it.each([false, true])(
       'starts publication writes concurrently and awaits their completion (faces: %s)',
       async (faces) => {
@@ -2646,6 +2842,54 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleSidecarCheck', () => {
+    it('retains a missing owned source-sidecar binding instead of falling back to embedded metadata', async () => {
+      const asset = forSidecarJob({
+        originalPath: sourceOriginalPath({ sourceId: factory.uuid(), resourceKey: 'b'.repeat(64) }),
+      });
+      const sidecar = StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, `${asset.id}.xmp`);
+      asset.files = [
+        {
+          id: factory.uuid(),
+          path: sidecar,
+          type: AssetFileType.Sidecar,
+          isEdited: false,
+          physicalFileId: null,
+          renditionIdentity: null,
+        },
+      ];
+      mocks.assetJob.getForSidecarCheckJob.mockResolvedValue(asset);
+      mocks.storage.checkFileExists.mockResolvedValue(false);
+      await expect(sut.handleSidecarCheck({ id: asset.id })).rejects.toThrow('source_sidecar_unavailable');
+      expect(mocks.asset.deleteFile).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+    });
+    it('discovers only an app-owned sidecar for a source reference', async () => {
+      const asset = forSidecarJob({
+        originalPath: sourceOriginalPath({ sourceId: factory.uuid(), resourceKey: 'b'.repeat(64) }),
+      });
+      const sidecar = StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, `${asset.id}.xmp`);
+      mocks.assetJob.getForSidecarCheckJob.mockResolvedValue(asset);
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === sidecar));
+      await expect(sut.handleSidecarCheck({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(mocks.storage.checkFileExists).toHaveBeenCalledExactlyOnceWith(sidecar, expect.anything());
+      expect(mocks.asset.upsertFile).toHaveBeenCalledWith({
+        assetId: asset.id,
+        type: AssetFileType.Sidecar,
+        path: sidecar,
+      });
+    });
+
+    it('retains an unowned source-sidecar binding for recovery without probing or deleting it', async () => {
+      const asset = forSidecarJob({
+        originalPath: sourceOriginalPath({ sourceId: factory.uuid(), resourceKey: 'b'.repeat(64) }),
+        files: [{ id: factory.uuid(), path: '/unowned/source.xmp', type: AssetFileType.Sidecar, isEdited: false }],
+      });
+      mocks.assetJob.getForSidecarCheckJob.mockResolvedValue(asset);
+      await expect(sut.handleSidecarCheck({ id: asset.id })).rejects.toThrow('source_sidecar_unavailable');
+      expect(mocks.storage.checkFileExists).not.toHaveBeenCalled();
+      expect(mocks.asset.deleteFile).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+    });
     it('should do nothing if asset could not be found', async () => {
       mocks.assetJob.getForSidecarCheckJob.mockResolvedValue(void 0);
 
@@ -2747,6 +2991,64 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleSidecarWrite', () => {
+    it.each([true, false])('requires a bound source sidecar to exist before editing (exists=%s)', async (exists) => {
+      const original = AssetFactory.create({
+        originalPath: sourceOriginalPath({ sourceId: factory.uuid(), resourceKey: 'c'.repeat(64) }),
+      });
+      const sidecar = StorageCore.getNestedPath(StorageFolder.Upload, original.ownerId, `${original.id}.xmp`);
+      const asset = AssetFactory.from(original)
+        .file({ type: AssetFileType.Sidecar, path: sidecar })
+        .exif({ description: 'App metadata' })
+        .build();
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue({ ...getForSidecarWrite(asset), libraryReadOnly: false });
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['description']);
+      mocks.storage.checkFileExists.mockResolvedValue(exists);
+      const pending = sut.handleSidecarWrite({ id: asset.id });
+      if (exists) {
+        await expect(pending).resolves.toBe(JobStatus.Success);
+        expect(mocks.metadata.writeTags).toHaveBeenCalledWith(sidecar, expect.anything());
+      } else {
+        await expect(pending).rejects.toThrow('source_sidecar_unavailable');
+        expect(mocks.metadata.writeTags).not.toHaveBeenCalled();
+        expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+      }
+      expect(mocks.storage.copyFile).not.toHaveBeenCalled();
+    });
+    it.each([true, false, null])(
+      'writes source metadata only to owned storage regardless of library flag %s',
+      async (libraryReadOnly) => {
+        const asset = AssetFactory.from({
+          originalPath: sourceOriginalPath({ sourceId: factory.uuid(), resourceKey: 'c'.repeat(64) }),
+        })
+          .exif({ description: 'App metadata' })
+          .build();
+        const sidecar = StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, `${asset.id}.xmp`);
+        mocks.assetJob.getForSidecarWriteJob.mockResolvedValue({ ...getForSidecarWrite(asset), libraryReadOnly });
+        mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['description']);
+        await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+        expect(mocks.metadata.writeTags).toHaveBeenCalledExactlyOnceWith(sidecar, {
+          Description: 'App metadata',
+          ImageDescription: 'App metadata',
+        });
+        expect(mocks.storage.copyFile).not.toHaveBeenCalled();
+      },
+    );
+
+    it('refuses an unowned source sidecar without copying, writing or unlocking metadata', async () => {
+      const asset = AssetFactory.from({
+        originalPath: sourceOriginalPath({ sourceId: factory.uuid(), resourceKey: 'c'.repeat(64) }),
+      })
+        .file({ type: AssetFileType.Sidecar, path: '/unowned/source.xmp' })
+        .exif({ description: 'App metadata' })
+        .build();
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue({ ...getForSidecarWrite(asset), libraryReadOnly: true });
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['description']);
+      await expect(sut.handleSidecarWrite({ id: asset.id })).rejects.toThrow('source_sidecar_unavailable');
+      expect(mocks.storage.copyFile).not.toHaveBeenCalled();
+      expect(mocks.metadata.writeTags).not.toHaveBeenCalled();
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+    });
     it('preserves source XMP fields through a real managed-sidecar edit and read', async () => {
       const root = await mkdtemp(join(tmpdir(), 'frameleaf-readonly-xmp-'));
       const source = join(root, 'source.jpg.xmp');

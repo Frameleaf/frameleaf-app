@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ContainerDirectoryItem, ExifDateTime, Tags } from 'exiftool-vendored';
 import { Insertable, Kysely } from 'kysely';
 import { isUndefined, omitBy, pick } from 'lodash-es';
@@ -6,6 +6,7 @@ import { DateTime, Duration } from 'luxon';
 import { Stats } from 'node:fs';
 import { constants } from 'node:fs/promises';
 import { join, parse } from 'node:path';
+import type { SystemConfig } from 'src/dtos/config.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { LANDMARK_ICON_PACK } from 'src/constants.js';
@@ -32,17 +33,20 @@ import { afterJobCommit, attemptOutputPath, jobSignal, publishJobResult, queueEx
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { assertPublicationSource } from 'src/queue/transaction.js';
 import { ReverseGeocodeResult } from 'src/repositories/map.repository.js';
-import { ImmichTags } from 'src/repositories/metadata.repository.js';
+import { ImmichTags, MetadataReadContext } from 'src/repositories/metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { BaseService } from 'src/services/base.service.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
 import { getAssetFiles } from 'src/utils/asset.util.js';
 import { resolveCameraIdentification } from 'src/utils/camera-identification.js';
 import { mergeTimeZone } from 'src/utils/date.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isFaceImportEnabled } from 'src/utils/misc.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
+import { sourceSidecarPath } from 'src/utils/source-sidecar.js';
 import { normalizeTagValue, upsertTags } from 'src/utils/tag.js';
 
 const POSTGRES_INT_MAX = 2_147_483_647;
@@ -132,6 +136,8 @@ const getLensModel = (exifTags: ImmichTags): string | null => {
   return null;
 };
 
+type MetadataFileStats = Pick<Stats, 'size' | 'mtime' | 'mtimeMs' | 'birthtimeMs'>;
+
 type ImmichTagsWithFaces = ImmichTags & { RegionInfo: NonNullable<ImmichTags['RegionInfo']> };
 
 type Dates = {
@@ -141,6 +147,8 @@ type Dates = {
 
 @Injectable()
 export class MetadataService extends BaseService {
+  @Inject(SourceOriginalService)
+  private sourceOriginalService!: SourceOriginalService;
   @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   async onBootstrap() {
     this.logger.log('Bootstrapping metadata service');
@@ -286,10 +294,68 @@ export class MetadataService extends BaseService {
     if (!asset) {
       return;
     }
-    const [exifResult, stats] = await Promise.all([
-      this.getExifTags(asset),
-      this.storageRepository.stat(asset.originalPath),
-    ]);
+    if (parseSourceOriginalPath(asset.originalPath)) {
+      const { sidecarFile } = getAssetFiles(asset.files);
+      sourceSidecarPath(asset, sidecarFile?.path);
+      if (sidecarFile && !(await this.storageRepository.checkFileExists(sidecarFile.path, constants.R_OK)))
+        throw new Error('source_sidecar_unavailable');
+      const input = await this.sourceOriginalService.openForJob(asset.id, async () => {
+        const current = await this.assetJobRepository.getForMetadataExtraction(asset.id);
+        if (
+          !current ||
+          current.ownerId !== asset.ownerId ||
+          current.originalPath !== asset.originalPath ||
+          !current.checksum.equals(asset.checksum)
+        )
+          throw new Error('Metadata source changed before publication');
+        const currentSidecar = getAssetFiles(current.files).sidecarFile;
+        if (currentSidecar?.id !== sidecarFile?.id || currentSidecar?.path !== sidecarFile?.path)
+          throw new Error('Metadata source changed before publication');
+      });
+      try {
+        return await this.metadataRepository.withBorrowedRead(
+          input.localPath,
+          asset.originalFileName,
+          (reader) => this.extractMetadata(data, asset, { metadata, reverseGeocoding }, previous, { ...input, reader }),
+          input.signal,
+        );
+      } catch (error) {
+        if (error instanceof Error && error.message === 'source_original_shutdown_unconfirmed')
+          input.retainOnUnconfirmedStop();
+        throw error;
+      }
+    }
+    return this.extractMetadata(data, asset, { metadata, reverseGeocoding }, previous);
+  }
+
+  private async extractMetadata(
+    data: JobOf<JobName.AssetExtractMetadata>,
+    asset: NonNullable<Awaited<ReturnType<typeof this.assetJobRepository.getForMetadataExtraction>>>,
+    { metadata, reverseGeocoding }: Pick<SystemConfig, 'metadata' | 'reverseGeocoding'>,
+    previous: Awaited<ReturnType<typeof this.assetRepository.getForMetadataExtractionTags>>,
+    input?: Awaited<ReturnType<SourceOriginalService['openForJob']>> & { reader: MetadataReadContext },
+  ) {
+    const readPath = input?.localPath ?? asset.originalPath;
+    const reader = input?.reader ?? this.metadataRepository;
+    await input?.check();
+    const reads = [
+      this.getExifTags(asset, readPath, reader, input?.signal),
+      Promise.try(() => this.storageRepository.stat(readPath)),
+    ] as const;
+    const [exifResult, fileStats] = await Promise.all(reads).catch(async (error) => {
+      await Promise.allSettled(reads);
+      throw error;
+    });
+    // Materialization timestamps describe the cache, never the owner's original.
+    const stats: MetadataFileStats = input
+      ? {
+          size: fileStats.size,
+          mtime: asset.fileModifiedAt,
+          mtimeMs: asset.fileModifiedAt.getTime(),
+          birthtimeMs: asset.fileCreatedAt.getTime(),
+        }
+      : fileStats;
+    await input?.check();
     const { tags: exifTags, originalTags, cameraEvidence, audio, video, packets, format } = exifResult;
     this.logger.verbose('Exif Tags', exifTags);
 
@@ -312,7 +378,7 @@ export class MetadataService extends BaseService {
       !cameraEvidence.recorded
     ) {
       try {
-        cameraEvidence.suggestion = await this.metadataRepository.readJpegSignature(asset.originalPath);
+        cameraEvidence.suggestion = await reader.readJpegSignature(readPath);
       } catch (error) {
         this.logger.warn(`Unable to read optional JPEG encoding clue for ${asset.id}: ${error}`);
       }
@@ -334,7 +400,7 @@ export class MetadataService extends BaseService {
     if (asset.type === AssetType.Image && !mimeTypes.isRaw(asset.originalFileName)) {
       try {
         imageEncoding = ImageEncodingSchema.parse({
-          ...(await this.mediaRepository.inspectImageEncoding(asset.originalPath)),
+          ...(await this.mediaRepository.inspectImageEncoding(readPath)),
           inspectionStatus: 'identified',
         });
       } catch (error) {
@@ -453,9 +519,11 @@ export class MetadataService extends BaseService {
     const assetHeight = validate(isSidewards ? width : height);
 
     if (this.isMotionPhoto(asset, exifTags)) {
-      await this.applyMotionPhotos(asset, exifTags, dates, stats);
+      await this.applyMotionPhotos(asset, exifTags, dates, stats, readPath, reader, input?.check);
     }
+    await input?.check();
     await publishJobResult(async () => {
+      await input?.check();
       await assertPublicationSource(asset.id, asset.checksum);
       const current = await this.assetJobRepository.getForMetadataExtraction(asset.id);
       if (!current || !current.checksum.equals(asset.checksum) || current.originalPath !== asset.originalPath) {
@@ -556,6 +624,9 @@ export class MetadataService extends BaseService {
 
     const { sidecarFile } = getAssetFiles(asset.files);
 
+    if (sidecarFile && !sidecarPath && parseSourceOriginalPath(asset.originalPath))
+      throw new Error('source_sidecar_unavailable');
+
     const isChanged = sidecarPath !== sidecarFile?.path;
 
     if (sidecarFile?.path || sidecarPath) {
@@ -604,12 +675,16 @@ export class MetadataService extends BaseService {
     const lockedProperties = await this.assetJobRepository.getLockedPropertiesForMetadataExtraction(id, kysely);
 
     const { sidecarFile } = getAssetFiles(asset.files);
+    const sourceSidecar = sourceSidecarPath(asset, sidecarFile?.path);
+    if (sourceSidecar && sidecarFile && !(await this.storageRepository.checkFileExists(sourceSidecar, constants.R_OK)))
+      throw new Error('source_sidecar_unavailable');
     const sidecarPath =
-      !asset.libraryReadOnly &&
+      sourceSidecar ??
+      (!asset.libraryReadOnly &&
       sidecarFile?.path &&
       (await this.canUseExistingSidecarPath(asset, sidecarFile.path, kysely))
         ? sidecarFile.path
-        : await this.getSidecarWritePath(asset, kysely);
+        : await this.getSidecarWritePath(asset, kysely));
 
     // An asset sharing another asset's original (a partner copy, a deduplicated upload) never reads that
     // asset's sidecar, so values its row took from there (time zone, GPS) live only in the row. Its own
@@ -749,6 +824,8 @@ export class MetadataService extends BaseService {
     const candidates: string[] = [];
 
     const { sidecarFile } = getAssetFiles(files);
+    const sourceSidecar = sourceSidecarPath({ id, ownerId, originalPath }, sidecarFile?.path);
+    if (sourceSidecar) return [sourceSidecar];
     if (
       sidecarFile?.path &&
       (await this.canUseExistingSidecarPath({ id, originalPath, physicalOriginalFileId }, sidecarFile.path))
@@ -795,15 +872,27 @@ export class MetadataService extends BaseService {
     return { width, height };
   }
 
-  private async getExifTags(asset: { originalPath: string; files: AssetFile[]; type: AssetType }) {
+  private async getExifTags(
+    asset: { originalPath: string; originalFileName?: string; files: AssetFile[]; type: AssetType },
+    readPath = asset.originalPath,
+    reader: MetadataReadContext = this.metadataRepository,
+    signal?: AbortSignal,
+  ) {
     const { sidecarFile } = getAssetFiles(asset.files);
-    const shouldProbe = asset.type === AssetType.Video || asset.originalPath.toLowerCase().endsWith('.gif');
+    const fileName = parseSourceOriginalPath(asset.originalPath)
+      ? (asset.originalFileName ?? asset.originalPath)
+      : asset.originalPath;
+    const shouldProbe = asset.type === AssetType.Video || fileName.toLowerCase().endsWith('.gif');
 
-    const [mediaTags, sidecarTags, videoResult] = await Promise.all([
-      this.metadataRepository.readTags(asset.originalPath),
-      sidecarFile ? this.metadataRepository.readTags(sidecarFile.path) : null,
-      shouldProbe ? this.getVideoTags(asset.originalPath) : null,
-    ]);
+    const reads = [
+      Promise.try(() => reader.readTags(readPath)),
+      sidecarFile ? Promise.try(() => reader.readTags(sidecarFile.path)) : Promise.resolve(null),
+      shouldProbe ? this.getVideoTags(readPath, signal) : Promise.resolve(null),
+    ] as const;
+    const [mediaTags, sidecarTags, videoResult] = await Promise.all(reads).catch(async (error) => {
+      await Promise.allSettled(reads);
+      throw error;
+    });
 
     // Resolve capture identity before merging sidecar tags or deleting any original fields.
     const cameraEvidence = resolveCameraIdentification(mediaTags, sidecarTags);
@@ -831,7 +920,7 @@ export class MetadataService extends BaseService {
 
     // prefer duration from video tags
     // don't save duration if asset is definitely not an animated image (see e.g. CR3 with Duration: 1s)
-    if (videoResult || !mimeTypes.isPossiblyAnimatedImage(asset.originalPath)) {
+    if (videoResult || !mimeTypes.isPossiblyAnimatedImage(fileName)) {
       delete mediaTags.Duration;
     }
 
@@ -840,7 +929,7 @@ export class MetadataService extends BaseService {
 
     // don't use Exif Orientation for HEIF based images, it's usually missing or invalid.
     // prefer irot (ExifTool QuickTime:Rotation) mapped to ExifOrientation.
-    if (mimeTypes.isHeifImage(asset.originalPath)) {
+    if (mimeTypes.isHeifImage(fileName)) {
       const orientation = this.getHeifOrientation(mediaTags);
       if (orientation === null) {
         delete mediaTags.Orientation;
@@ -908,7 +997,15 @@ export class MetadataService extends BaseService {
     return asset.type === AssetType.Image && !!(tags.MotionPhoto || tags.MicroVideo);
   }
 
-  private async applyMotionPhotos(asset: Asset, tags: ImmichTags, dates: Dates, stats: Stats) {
+  private async applyMotionPhotos(
+    asset: Asset,
+    tags: ImmichTags,
+    dates: Dates,
+    stats: MetadataFileStats,
+    readPath = asset.originalPath,
+    reader: MetadataReadContext = this.metadataRepository,
+    check?: () => Promise<void>,
+  ) {
     const isMotionPhoto = tags.MotionPhoto;
     const isMicroVideo = tags.MicroVideo;
     const videoOffset = tags.MicroVideoOffset;
@@ -947,15 +1044,15 @@ export class MetadataService extends BaseService {
       // Samsung MotionPhoto video extraction
       //     HEIC-encoded
       if (hasMotionPhotoVideo) {
-        video = await this.metadataRepository.extractBinaryTag(asset.originalPath, 'MotionPhotoVideo');
+        video = await reader.extractBinaryTag(readPath, 'MotionPhotoVideo');
       }
       //     JPEG-encoded; HEIC also contains these tags, so this conditional must come second
       else if (hasEmbeddedVideoFile) {
-        video = await this.metadataRepository.extractBinaryTag(asset.originalPath, 'EmbeddedVideoFile');
+        video = await reader.extractBinaryTag(readPath, 'EmbeddedVideoFile');
       }
       // Default video extraction
       else {
-        video = await this.storageRepository.readFile(asset.originalPath, {
+        video = await this.storageRepository.readFile(readPath, {
           buffer: Buffer.alloc(length),
           position,
           length,
@@ -967,6 +1064,7 @@ export class MetadataService extends BaseService {
       return;
     }
 
+    await check?.();
     try {
       const checksum = this.cryptoRepository.hashSha1(video);
       const existing = await this.assetRepository.getByChecksum({
@@ -1001,6 +1099,7 @@ export class MetadataService extends BaseService {
       this.storageCore.ensureFolders(outputPath);
       await this.storageRepository.createFile(outputPath, video);
       await publishJobResult(async () => {
+        await check?.();
         await assertPublicationSource(asset.id, asset.checksum);
         const checksumQuery = { ownerId: asset.ownerId, libraryId: asset.libraryId ?? undefined, checksum };
         let motionAsset = await this.assetRepository.getByChecksum(checksumQuery);
@@ -1228,7 +1327,7 @@ export class MetadataService extends BaseService {
   private getDates(
     asset: { id: string; originalPath: string; fileCreatedAt: Date },
     exifTags: ImmichTags,
-    stats: Stats,
+    stats: MetadataFileStats,
     lockedTimeZone?: string | null,
   ) {
     const result = firstDateTime(exifTags);
@@ -1328,14 +1427,18 @@ export class MetadataService extends BaseService {
     return Number.isFinite(seconds) ? Math.round(Duration.fromObject({ seconds }).toMillis()) : null;
   }
 
-  private async getVideoTags(originalPath: string) {
-    const { videoStreams, audioStreams, format } = await this.mediaRepository.probe(originalPath);
+  private async getVideoTags(originalPath: string, signal?: AbortSignal) {
+    const { videoStreams, audioStreams, format } = signal
+      ? await this.mediaRepository.probe(originalPath, { signal, countFrames: false })
+      : await this.mediaRepository.probe(originalPath);
     const video = videoStreams[0];
     const audio = audioStreams[0];
     let packets = null;
     if (video?.timeBase) {
       try {
-        packets = await this.mediaRepository.probePackets(originalPath, video.index);
+        packets = signal
+          ? await this.mediaRepository.probePackets(originalPath, video.index, { signal })
+          : await this.mediaRepository.probePackets(originalPath, video.index);
       } catch (error) {
         if ((error as NodeJS.ErrnoException)?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
           this.logger.warn(`Skipping packet scan for ${originalPath}: ffprobe stdout maxBuffer exceeded`);
