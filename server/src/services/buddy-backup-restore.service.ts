@@ -32,6 +32,7 @@ import {
   MediaOperationStatus,
   StorageFolder,
 } from 'src/enum.js';
+import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BuddyBackupFidelityRepository } from 'src/repositories/buddy-backup-fidelity.repository.js';
 import { BuddyBackupMetadataRepository } from 'src/repositories/buddy-backup-metadata.repository.js';
@@ -42,7 +43,11 @@ import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { type MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
-import { PhysicalFileRepository, lockFilePath } from 'src/repositories/physical-file.repository.js';
+import {
+  PhysicalFileRepository,
+  countPathReferences,
+  lockFilePath,
+} from 'src/repositories/physical-file.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
 import { BuddyBackupService } from 'src/services/buddy-backup.service.js';
@@ -78,6 +83,12 @@ import {
   createBuddyDirectory,
   writeBuddyFile,
 } from 'src/utils/buddy-backup-vault.js';
+import { adoptBuddyReferenceOriginal } from 'src/utils/buddy-reference-adoption.js';
+import {
+  type BuddyReferenceRestoreIntent,
+  buddyReferenceIntent,
+  loadBuddyReferenceIntent,
+} from 'src/utils/buddy-reference-intent.js';
 import { referenceOriginalPath } from 'src/utils/buddy-reference-originals.js';
 import {
   assertOwnerRestoreFile,
@@ -95,6 +106,7 @@ import { compareCodeUnits } from 'src/utils/compare.js';
 import { getDiskUsage } from 'src/utils/disk-usage.js';
 import { advanceExecutionProgress, assertExecutionActive, executionSignal } from 'src/utils/execution-signal.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
+import { canonicalJson } from 'src/utils/object.js';
 import { OperationDeadlineError, settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
 import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 import { isManagedStudioImportPath } from 'src/utils/studio-managed-paths.js';
@@ -286,12 +298,12 @@ export class BuddyBackupRestoreService {
     return { reader, manifest, envelope };
   }
 
-  private async visible(auth: AuthDto, manifest: BuddyManifest) {
+  private async visible(auth: AuthDto, manifest: BuddyManifest, index = this.index) {
     const ids = Object.keys(manifest.library.assets).filter((id) => manifest.library.assets[id].owner === auth.user.id);
     const allowed: string[] = [];
     for (let offset = 0; offset < ids.length; offset += 100) {
       const page = ids.slice(offset, offset + 100);
-      const states = await this.index.getOwnerHistoryState(auth, page);
+      const states = await index.getOwnerHistoryState(auth, page);
       const history = ownerBackupHistoryPage(
         auth,
         { ...manifest.library, assets: Object.fromEntries(page.map((id) => [id, manifest.library.assets[id]])) },
@@ -506,7 +518,7 @@ export class BuddyBackupRestoreService {
           manifest,
           selectBuddyAlbumIds(
             manifest.metadata,
-            { ...request, assetIds: request.mode === 'keep' ? ids.filter((id) => !identities[id]) : ids },
+            { ...request, assetIds: request.mode === 'keep' ? restoreIds.filter((id) => !identities[id]) : restoreIds },
             manifest.library.assets,
             current.user.id,
             admin,
@@ -712,6 +724,97 @@ export class BuddyBackupRestoreService {
     return preserved;
   }
 
+  private async validatePreservedReferences(
+    operation: MediaOperation,
+    token: string,
+    job: RestoreJob,
+    manifest: BuddyManifest,
+    snapshot: CloudBackupRestoreSnapshot,
+  ) {
+    const preserved = this.preservedReferenceIds(job, manifest);
+    if (preserved.size === 0) return preserved;
+    await new BuddyBackupMetadataRepository(this.repository.db).withRestore(
+      job.owner,
+      { operationId: operation.id, claimToken: token },
+      job.admin,
+      async () => {
+        await this.binding(job);
+        if (this.fingerprint(manifest) !== job.manifestHash) throw new Error('Buddy restore manifest changed');
+      },
+      async (trx) => {
+        const saved = await trx
+          .selectFrom('media_operation')
+          .select('snapshot')
+          .where('id', '=', operation.id)
+          .executeTakeFirstOrThrow();
+        if (
+          canonicalJson(saved.snapshot) !== canonicalJson(job) ||
+          canonicalJson(snapshot.owner) !== canonicalJson(job.owner)
+        )
+          throw new Error('Buddy reference preservation changed');
+        const index = new CloudBackupIndexRepository(trx);
+        const { auth } = await index.getOwnerRestoreAuth(job.owner);
+        const library = buddyLibraryForOwner(manifest, auth.user.id);
+        for (const id of [...preserved].sort()) {
+          const asset = manifest.library.assets[id];
+          const original = asset?.files.find((file) => file.role === 'original');
+          if (
+            !asset ||
+            !asset.owner ||
+            (!job.admin && asset.owner !== auth.user.id) ||
+            !readBackupAssetRecord(asset) ||
+            !asset.details ||
+            !original ||
+            !/^[a-f\d]{64}$/.test(original.sha256) ||
+            !Number.isSafeInteger(original.size) ||
+            original.size === 0 ||
+            job.owner.assetHashes[id] !== ownerRestoreHash(asset, buddyLibraryForOwner(manifest, asset.owner))
+          )
+            throw new Error('Buddy reference preservation changed');
+          await index.withOwnerRestore(
+            job.owner,
+            snapshot,
+            id,
+            { operationId: operation.id, claimToken: token },
+            async () => {
+              const current = (await index.getOwnerRestoreIdentities([id]))[id];
+              if (canonicalJson(current) !== canonicalJson(job.owner.current[id]))
+                throw new Error('Owner restore source changed');
+            },
+            { authorize: () => this.binding(job), ...(job.admin && { administrator: { assetOwnerId: asset.owner } }) },
+          );
+        }
+        if (job.admin) return;
+        const selected = {
+          ...manifest,
+          library: {
+            ...manifest.library,
+            assets: Object.fromEntries([...preserved].map((id) => [id, library.assets[id]])),
+          },
+        };
+        const allowed = new Set(await this.visible(auth, selected, index));
+        const states = await index.getOwnerHistoryState(auth, [...preserved]);
+        for (const id of preserved) {
+          if (allowed.has(id)) continue;
+          const parentAllowed = [...preserved].some(
+            (parent) => manifest.assetLinks?.[parent]?.livePhotoVideoId === id && allowed.has(parent),
+          );
+          const state = states.get(id);
+          if (
+            !parentAllowed ||
+            library.assets[id].owner !== auth.user.id ||
+            (state?.ownerId &&
+              (state.ownerId !== auth.user.id ||
+                !state.allowed ||
+                ![AssetStatus.Active, AssetStatus.Trashed].includes(state.status as AssetStatus)))
+          )
+            throw new Error('Owner restore item unavailable');
+        }
+      },
+    );
+    return preserved;
+  }
+
   private async restoreAlbums(
     operation: MediaOperation,
     token: string,
@@ -725,16 +828,15 @@ export class BuddyBackupRestoreService {
     if (!job.albums || job.owner.ownerId !== operation.ownerId || job.owner.sessionId !== job.sessionId) {
       throw new Error('Buddy restore album selection unavailable');
     }
+    const preserved = this.preservedReferenceIds(job, manifest);
+    const ids = job.request.assetIds?.filter((id) => !preserved.has(id)) ?? [];
     const selected = this.restorableAlbums(
       manifest,
       selectBuddyAlbumIds(
         manifest.metadata,
         {
           ...job.request,
-          assetIds:
-            job.request.mode === 'keep'
-              ? job.request.assetIds?.filter((id) => !job.owner.current[id])
-              : job.request.assetIds,
+          assetIds: job.request.mode === 'keep' ? ids.filter((id) => !job.owner.current[id]) : ids,
         },
         manifest.library.assets,
         operation.ownerId,
@@ -743,6 +845,8 @@ export class BuddyBackupRestoreService {
       job.owners,
     );
     assertBuddyAlbumPlan(manifest.metadata, job.albums, selected, job.request.mode);
+    const references = new Map<string, Awaited<ReturnType<typeof this.referenceProof>>>();
+    for (const id of ids) references.set(id, await this.referenceProof(operation, job, manifest, id));
     const metadata = new BuddyBackupMetadataRepository(this.repository.db);
     await metadata.withRestore(
       job.owner,
@@ -757,18 +861,120 @@ export class BuddyBackupRestoreService {
       async (trx) => {
         const index = new CloudBackupIndexRepository(trx);
         const { auth } = await index.getOwnerRestoreAuth({ ownerId: operation.ownerId, sessionId: job.sessionId });
+        const expected = { ...snapshot, owner: { ...snapshot.owner!, current: { ...snapshot.owner!.current } } };
+        for (const id of [...ids].sort()) {
+          const reference = references.get(id);
+          if (!reference) continue;
+          await index.withOwnerRestore(
+            job.owner,
+            snapshot,
+            id,
+            { operationId: operation.id, claimToken: token },
+            async (_trx, adopted, pending) => {
+              if (pending) throw new Error('Reference original must be restored first');
+              if (adopted) expected.owner.current[id] = (await index.getOwnerRestoreIdentities([id]))[id];
+            },
+            {
+              authorize: () => this.binding(job),
+              ...(reference && { reference }),
+              ...(job.admin && { administrator: { assetOwnerId: manifest.library.assets[id].owner! } }),
+            },
+          );
+        }
         if (!job.admin) {
           const library = buddyLibraryForOwner(manifest, auth.user.id);
-          for (const id of job.request.assetIds ?? []) {
+          for (const id of ids) {
             const parent = job.request.assetIds?.find(
               (assetId) => manifest.assetLinks?.[assetId]?.livePhotoVideoId === id,
             );
-            await checkOwnerRestoreItems(auth, library, snapshot, true, index, [id], true, parent);
+            await checkOwnerRestoreItems(auth, library, expected, true, index, [id], true, parent);
           }
         }
         await new BuddyBackupMetadataRepository(trx).publish(job.albums!, operation.ownerId, job.admin);
       },
     );
+  }
+
+  private async referenceProof(
+    operation: MediaOperation,
+    job: RestoreJob,
+    manifest: BuddyManifest,
+    assetId: string,
+    file?: CloudBackupRestoreFile,
+  ) {
+    const intent = buddyReferenceIntent(operation.id, job, assetId);
+    let reference:
+      | {
+          intent: BuddyReferenceRestoreIntent;
+          evidence: Awaited<ReturnType<typeof captureOwnerRestoreFile>>;
+          verify: () => Promise<void>;
+        }
+      | undefined;
+    if (intent) {
+      const assetOwnerId = manifest.library.assets[assetId]?.owner;
+      if (
+        !assetOwnerId ||
+        intent.adoption.assetId !== assetId ||
+        intent.adoption.ownerId !== assetOwnerId ||
+        (!job.admin && assetOwnerId !== operation.ownerId)
+      )
+        throw new Error('Buddy reference restore intent changed');
+      if (job.admin) {
+        const { auth } = await this.index.getOwnerRestoreAuth({ ownerId: operation.ownerId, sessionId: job.sessionId });
+        if (!auth.user.isAdmin) throw new Error('Buddy administrator authorization changed');
+        const saved = await this.repository.db
+          .selectFrom('media_operation')
+          .select('snapshot')
+          .where('id', '=', operation.id)
+          .where('ownerId', '=', operation.ownerId)
+          .executeTakeFirstOrThrow();
+        const submitted = saved.snapshot as unknown as RestoreJob;
+        if (
+          !submitted.admin ||
+          canonicalJson(submitted.owner) !== canonicalJson(job.owner) ||
+          canonicalJson(buddyReferenceIntent(operation.id, submitted, assetId)) !== canonicalJson(intent)
+        )
+          throw new Error('Buddy reference restore intent changed');
+      }
+      if (
+        file?.role === 'original' &&
+        (file.target !== intent.adoption.file.path ||
+          file.sha256 !== intent.adoption.file.sha256 ||
+          file.size !== intent.adoption.file.size)
+      )
+        throw new Error('Buddy reference restore intent changed');
+      const record = readBackupAssetRecord(manifest.library.assets[assetId]);
+      const original = manifest.library.assets[assetId].files.find((entry) => entry.role === 'original');
+      if (
+        !record ||
+        !original ||
+        intent.adoption.file.path !==
+          referenceOriginalPath(StorageCore.getMediaLocation(), assetOwnerId, assetId, record.originalFileName) ||
+        intent.adoption.file.sha256 !== original.sha256 ||
+        intent.adoption.file.size !== original.size
+      )
+        throw new Error('Buddy reference restore intent changed');
+      await loadBuddyReferenceIntent(this.repository.root(), intent);
+      // The recomputed owner/asset target may precede creation of its private upload directory.
+      await assertOwnerRestorePath([StorageCore.getBaseFolder(StorageFolder.Upload)], intent.adoption.file.path);
+      const evidence = await captureOwnerRestoreFile(intent.adoption.file.path, async (path) =>
+        (await this.crypto.hashFile(path, 'sha256')).toString('hex'),
+      );
+      reference = {
+        intent,
+        evidence,
+        verify: async () => {
+          if (
+            !evidence.identity ||
+            evidence.sha256 !== intent.adoption.file.sha256 ||
+            evidence.size !== BigInt(intent.adoption.file.size)
+          )
+            throw new Error('Buddy restored original changed');
+          await assertOwnerRestoreFile(intent.adoption.file.path, evidence.identity);
+        },
+      };
+    }
+    return reference;
   }
 
   private async guarded<T>(
@@ -779,7 +985,7 @@ export class BuddyBackupRestoreService {
     snapshot: CloudBackupRestoreSnapshot,
     file: CloudBackupRestoreFile,
     action: (trx: Transaction<DB>, ownerId: string) => Promise<T>,
-    inspect = false,
+    phase: 'inspect' | 'metadata' | 'publish' | { kind: 'publish'; proof?: OwnerRestoreStagedProof } = 'publish',
   ) {
     if (file.role === 'buddy-studio')
       return this.guardedStudio(
@@ -793,19 +999,50 @@ export class BuddyBackupRestoreService {
       );
     if (!file.assetId) throw new Error('Buddy restore item is missing');
     const assetId = file.assetId;
-    const execute = async (trx: Transaction<DB>) => {
+    const reference = await this.referenceProof(operation, job, manifest, assetId, file);
+    const parentId = snapshot.assetIds?.find((id) => manifest.assetLinks?.[id]?.livePhotoVideoId === assetId);
+    const parentReference = parentId ? await this.referenceProof(operation, job, manifest, parentId) : undefined;
+    const inspect = phase === 'inspect' || phase === 'metadata';
+    const execute = async (
+      trx: Transaction<DB>,
+      adoptedReference?: BuddyReferenceAdoption,
+      pendingReference?: BuddyReferenceAdoption,
+      adoptedParent?: BuddyReferenceAdoption,
+      pendingParent?: BuddyReferenceAdoption,
+    ) => {
+      if (pendingParent && phase === 'metadata') throw new Error('Reference original must be restored first');
+      if (
+        pendingReference &&
+        (phase === 'metadata' || file.role !== 'original' || file.target !== pendingReference.file.path)
+      )
+        throw new Error('Reference original must be restored first');
       const index = new CloudBackupIndexRepository(trx);
       const { auth } = await index.getOwnerRestoreAuth({ ownerId: operation.ownerId, sessionId: job.sessionId });
       if (job.admin ? !auth.user.isAdmin : auth.user.id !== job.owner.ownerId)
         throw new Error('Buddy restore authorization changed');
       if (!job.admin) {
-        const parentId = snapshot.assetIds?.find((id) => manifest.assetLinks?.[id]?.livePhotoVideoId === assetId);
+        // Only the guarded database proof can replace the expected current source for this call.
+        const adoptedIds = [adoptedReference, adoptedParent].flatMap((proof) => (proof ? [proof.assetId] : []));
+        const expected =
+          adoptedIds.length > 0
+            ? {
+                ...snapshot,
+                owner: {
+                  ...snapshot.owner!,
+                  current: {
+                    ...snapshot.owner!.current,
+                    ...(await index.getOwnerRestoreIdentities(adoptedIds)),
+                  },
+                },
+              }
+            : snapshot;
         if (parentId) {
           const parent = await trx
             .selectFrom('asset')
             .select(['ownerId', 'livePhotoVideoId'])
             .where('id', '=', parentId)
             .forShare()
+            .noWait()
             .executeTakeFirst();
           const motion = await trx.selectFrom('asset').select('id').where('id', '=', assetId).executeTakeFirst();
           if (
@@ -820,12 +1057,14 @@ export class BuddyBackupRestoreService {
         await checkOwnerRestoreItems(
           auth,
           buddyLibraryForOwner(manifest, auth.user.id),
-          snapshot,
+          expected,
           true,
           index,
           [assetId],
           true,
           parentId,
+          pendingReference,
+          pendingParent,
         );
       }
       const ownerId = restoreOwner(job, manifest.library.assets[assetId].owner!);
@@ -845,7 +1084,8 @@ export class BuddyBackupRestoreService {
         .executeTakeFirst();
       if (
         current &&
-        (current.ownerId !== ownerId || (file.role === 'original' && current.originalPath !== file.target))
+        (current.ownerId !== ownerId ||
+          (file.role === 'original' && current.originalPath !== file.target && !pendingReference))
       )
         throw new Error('Buddy restore destination changed');
       const roots = [
@@ -855,7 +1095,7 @@ export class BuddyBackupRestoreService {
         StorageCore.getFolderLocation(StorageFolder.EncodedVideo, ownerId),
       ];
       const external = manifest.assetLinks?.[assetId];
-      if (external?.isExternal) {
+      if (external?.isExternal && !adoptedReference && !pendingReference) {
         if (!job.admin || !external.libraryId || (current && current.libraryId !== external.libraryId))
           throw new Error('External library identity changed');
         const library = await trx
@@ -881,6 +1121,7 @@ export class BuddyBackupRestoreService {
         // may be created below the current managed mount; all existing ancestors are checked.
         roots.push(StorageCore.getBaseFolder(StorageFolder.Thumbnails));
       }
+      if (pendingReference) roots.push(StorageCore.getBaseFolder(StorageFolder.Upload));
       await assertOwnerRestorePath(roots, file.target);
       if (file.role === 'buddy-version' && inspect) {
         // These deterministic owner-private copies are immutable. Publication still uses the ordinary
@@ -894,12 +1135,114 @@ export class BuddyBackupRestoreService {
           ? undefined
           : manifest.assetFiles?.[assetId]?.find((entry) => entry.path === source?.path);
       const physical = new PhysicalFileRepository(trx);
+      if (pendingReference) {
+        const binding = reference;
+        if (!current || !binding) throw new Error('Buddy reference restore intent changed');
+        if (
+          (await countPathReferences(trx, file.target)) ||
+          (await trx.selectFrom('physical_file').select('id').where('path', '=', file.target).executeTakeFirst())
+        )
+          throw new Error('Reference restore target is already referenced');
+        if (job.request.mode === 'keep' && binding.evidence.identity && binding.evidence.sha256 !== file.sha256)
+          throw new Error('Reference restore destination is occupied');
+        const exif = await trx
+          .selectFrom('asset_exif')
+          .select('fileSizeInByte')
+          .where('assetId', '=', assetId)
+          .forUpdate()
+          .noWait()
+          .executeTakeFirst();
+        const quota = await trx
+          .selectFrom('user')
+          .select(['quotaSizeInBytes', 'quotaUsageInBytes'])
+          .where('id', '=', ownerId)
+          .executeTakeFirstOrThrow();
+        const delta = BigInt(file.size) - (current.libraryId === null ? BigInt(exif?.fileSizeInByte ?? 0) : 0n);
+        if (
+          delta > 0n &&
+          quota.quotaSizeInBytes !== null &&
+          BigInt(quota.quotaUsageInBytes) + delta > BigInt(quota.quotaSizeInBytes)
+        )
+          throw new Error('Not enough quota to restore this original');
+        if (inspect) {
+          await physical.inspectOwnerRestorePath(file.target, assetId, ownerId);
+          return action(trx, ownerId);
+        }
+        return physical.withOwnerRestorePath(file.target, assetId, ownerId, async () => {
+          const outcome = await action(trx, ownerId);
+          if (outcome !== 'written' && outcome !== 'replaced' && outcome !== 'skipped')
+            throw new Error('Reference restore publication outcome unavailable');
+          const verify = async () => {
+            if (outcome === 'skipped') return binding.verify();
+            if (
+              typeof phase === 'string' ||
+              !phase.proof ||
+              phase.proof.sha256 !== file.sha256 ||
+              phase.proof.size !== file.size
+            )
+              throw new Error('Reference restore staged proof unavailable');
+            await assertOwnerRestoreFile(file.target, phase.proof.identity, true);
+          };
+          if ((await adoptBuddyReferenceOriginal(trx, pendingReference, verify)) !== 'adopted')
+            throw new Error('Reference restore adoption changed');
+          await new AssetRepository(trx).update({ id: assetId, status: AssetStatus.Active, deletedAt: null });
+          await new AssetLocalEffectRepository(trx).append(trx, ownerId, pendingReference.physicalFileId, {
+            origin: { kind: 'restore', decisionId: operation.id },
+            assets: [{ assetId, status: AssetStatus.Active, revoke: false }],
+            stacks: [],
+          });
+          return outcome;
+        });
+      }
       if (inspect) {
         await physical.inspectOwnerRestorePath(file.target, assetId, ownerId, derivative);
         return action(trx, ownerId);
       }
       return physical.withOwnerRestorePath(file.target, assetId, ownerId, () => action(trx, ownerId), derivative);
     };
+    if (reference || parentReference) {
+      const authorize = async (id: string) => {
+        await this.binding(job);
+        if (
+          job.admin &&
+          job.owner.assetHashes[id] !==
+            ownerRestoreHash(
+              manifest.library.assets[id],
+              buddyLibraryForOwner(manifest, manifest.library.assets[id].owner!),
+            )
+        )
+          throw new Error('Buddy restore manifest changed');
+      };
+      await this.binding(job);
+      return this.index.withOwnerRestore(
+        job.owner,
+        snapshot,
+        assetId,
+        { operationId: operation.id, claimToken: token },
+        (trx, adopted, pending) =>
+          parentId
+            ? new CloudBackupIndexRepository(trx).withOwnerRestore(
+                job.owner,
+                snapshot,
+                parentId,
+                { operationId: operation.id, claimToken: token },
+                (_trx, adoptedParent, pendingParent) => {
+                  return execute(trx, adopted, pending, adoptedParent, pendingParent);
+                },
+                {
+                  authorize: () => authorize(parentId),
+                  ...(parentReference && { reference: parentReference }),
+                  ...(job.admin && { administrator: { assetOwnerId: manifest.library.assets[parentId].owner! } }),
+                },
+              )
+            : execute(trx, adopted, pending),
+        {
+          authorize: () => authorize(assetId),
+          ...(reference && { reference }),
+          ...(job.admin && { administrator: { assetOwnerId: manifest.library.assets[assetId].owner! } }),
+        },
+      );
+    }
     await this.binding(job);
     if (!job.admin)
       return this.index.withOwnerRestore(
@@ -1255,11 +1598,13 @@ export class BuddyBackupRestoreService {
           details: job.request.mode,
           owner: job.owner,
         };
+        const preserved = await this.validatePreservedReferences(operation, token, job, manifest, snapshot);
+        const restoreIds = ids.filter((id) => !preserved.has(id));
         const current = await this.index.getOwnerRestoreIdentities(ids);
         const plan = restorePlan({
           manifest: manifest.library,
           scope: 'asset',
-          assetIds: ids,
+          assetIds: restoreIds,
           operationId: operation.id,
           mediaLocation: StorageCore.getMediaLocation(),
           currentOriginals: new Map(
@@ -1283,7 +1628,12 @@ export class BuddyBackupRestoreService {
             file.target = existing?.path ?? source.path;
             file.inPlace = true; // The current owner and mount guard validates every publication.
           }
-          if (job.admin && manifest.assetLinks?.[assetId]?.isExternal && file.role === 'original') {
+          const reference = job.referenceAdoptions?.[assetId];
+          if (reference && file.role === 'original') {
+            file.target = reference.file.path;
+            file.inPlace = true;
+          }
+          if (job.admin && !reference && manifest.assetLinks?.[assetId]?.isExternal && file.role === 'original') {
             file.target = current[assetId]?.originalPath ?? source.path;
             file.inPlace = true;
           }
@@ -1315,7 +1665,7 @@ export class BuddyBackupRestoreService {
                     manifest.library.assets[file.assetId!].files[Number(file.fileKey.split(':').at(-1))].path,
               )),
         );
-        plan.files.push(...ids.flatMap((id) => buddyFidelityFiles(manifest, id)));
+        plan.files.push(...restoreIds.flatMap((id) => buddyFidelityFiles(manifest, id)));
         const projectIds = buddyStudioProjectIds(manifest, job.request.scope);
         for (const projectId of projectIds) {
           if (
@@ -1329,7 +1679,12 @@ export class BuddyBackupRestoreService {
           throw new Error('Restore the original storage mounts before restoring these items.');
         // FL-490: a read-only library's folder is never written, not even a staged copy. Its files
         // must already be there; the restore then only puts the library details back.
-        const readOnly = job.admin ? await this.readOnlyLibraryFiles(manifest, plan.files) : [];
+        const readOnly = job.admin
+          ? await this.readOnlyLibraryFiles(
+              manifest,
+              plan.files.filter((file) => !(file.role === 'original' && job.referenceAdoptions?.[file.assetId!])),
+            )
+          : [];
         for (const file of readOnly) {
           const evidence = await captureOwnerRestoreFile(file.target, async (path) =>
             (await this.crypto.hashFile(path, 'sha256')).toString('hex'),
@@ -1383,7 +1738,7 @@ export class BuddyBackupRestoreService {
                 snapshot,
                 file,
                 () => Promise.resolve('skipped' as const),
-                true,
+                'inspect',
               );
             const evidence = await captureOwnerRestoreFile(file.target, async (path) =>
               (await this.crypto.hashFile(path, 'sha256')).toString('hex'),
@@ -1394,7 +1749,11 @@ export class BuddyBackupRestoreService {
               evidence.sha256 !== file.sha256
             )
               throw new Error('A retained Buddy version copy changed');
-            if (evidence.identity && (job.request.mode === 'keep' || evidence.sha256 === file.sha256))
+            if (
+              !(file.role === 'original' && job.referenceAdoptions?.[file.assetId!]) &&
+              evidence.identity &&
+              (job.request.mode === 'keep' || evidence.sha256 === file.sha256)
+            )
               return this.guarded(
                 operation,
                 token,
@@ -1406,17 +1765,24 @@ export class BuddyBackupRestoreService {
                   await assertOwnerRestoreFile(file.target, evidence.identity);
                   return 'skipped' as const;
                 },
-                true,
+                'inspect',
               );
-            return this.guarded(operation, token, job, manifest, snapshot, file, () =>
-              this.publishStaged(file, staged, publish, proof),
+            return this.guarded(
+              operation,
+              token,
+              job,
+              manifest,
+              snapshot,
+              file,
+              () => this.publishStaged(file, staged, publish, proof),
+              { kind: 'publish', proof },
             );
           },
           library: async (result) => {
             const verified = await this.verifyFiles(operation.id, plan.files);
             const preservedVersionAssetIds: string[] = [];
             await this.restoreAlbums(operation, token, job, manifest, snapshot);
-            for (const assetId of ids) {
+            for (const assetId of restoreIds) {
               await checkpoint();
               const file = plan.files.find((entry) => entry.assetId === assetId && entry.role === 'original')!;
               const evidence = await captureOwnerRestoreFile(file.target, async (path) =>
@@ -1532,7 +1898,7 @@ export class BuddyBackupRestoreService {
                   }
                   await this.saveRestoreJobs(operation.id, assetId, queued);
                 },
-                true,
+                'metadata',
               );
               for (const restored of plan.files) {
                 if (restored.assetId !== assetId || restored.role === 'original' || restored.role === 'buddy-version')
@@ -1570,7 +1936,7 @@ export class BuddyBackupRestoreService {
                       )
                       .execute();
                   },
-                  true,
+                  'metadata',
                 );
               }
               const state = readBuddyAssetFidelity(manifest, assetId);
@@ -1621,7 +1987,7 @@ export class BuddyBackupRestoreService {
                       );
                     return { outcome, retainedEditedProjection };
                   },
-                  true,
+                  'metadata',
                 );
                 // Remove the re-render only after the guarded publication commits. A crash before
                 // this write cannot complete the restore; replay will prune the saved job again.
@@ -1629,7 +1995,7 @@ export class BuddyBackupRestoreService {
                 if (published.outcome === 'preserved-source') preservedVersionAssetIds.push(assetId);
               }
             }
-            for (const assetId of ids) {
+            for (const assetId of restoreIds) {
               const motion = manifest.assetLinks?.[assetId]?.livePhotoVideoId;
               if (!motion || (job.request.mode === 'keep' && job.owner.current[assetId])) {
                 continue;
@@ -1655,12 +2021,12 @@ export class BuddyBackupRestoreService {
                   if (job.request.mode === 'keep') update = update.where('livePhotoVideoId', 'is', null);
                   await update.execute();
                 },
-                true,
+                'metadata',
               );
             }
-            for (const sourceOwnerId of new Set(ids.map((id) => manifest.library.assets[id].owner!))) {
+            for (const sourceOwnerId of new Set(restoreIds.map((id) => manifest.library.assets[id].owner!))) {
               const ownerId = restoreOwner(job, sourceOwnerId);
-              const members = ids.filter((id) => manifest.library.assets[id].owner === sourceOwnerId);
+              const members = restoreIds.filter((id) => manifest.library.assets[id].owner === sourceOwnerId);
               const anchor = plan.files.find((file) => file.assetId === members[0] && file.role === 'original')!;
               await this.guarded(
                 operation,
@@ -1739,7 +2105,7 @@ export class BuddyBackupRestoreService {
                   await this.details.restoreStacks(stacks, context);
                   await this.saveRestoreJobs(operation.id, members[0], queued);
                 },
-                true,
+                'metadata',
               );
             }
             const restoredProjectIds: string[] = [];
@@ -1846,11 +2212,17 @@ export class BuddyBackupRestoreService {
                 new BuddyBackupStudioRepository(trx).restoreLineage(project, job.request.mode),
               );
             }
-            return { ...result, preservedVersionAssetIds, restoredProjectIds };
+            return {
+              ...result,
+              preservedVersionAssetIds,
+              restoredProjectIds,
+              preservedReferenceAssetIds: [...preserved].filter((id) => job.owner.current[id]).sort(),
+            };
           },
         });
         if (!done) throw new RestoreStopped();
         await this.verifyFiles(operation.id, plan.files);
+        await this.validatePreservedReferences(operation, token, job, manifest, snapshot);
         if (
           !(await this.operations.setBulkResult(operation.id, token, {
             result: done,

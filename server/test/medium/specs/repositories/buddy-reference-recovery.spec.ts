@@ -4,12 +4,15 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { DB } from 'src/schema/index.js';
-import type { RestoreJob } from 'src/services/buddy-backup-restore.service.js';
+import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
+import type { CloudBackupRestoreSnapshot } from 'src/services/cloud-backup-restore.js';
 import type { BuddyRecovery } from 'src/utils/buddy-backup-recovery.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import {
   AssetStatus,
+  AssetType,
+  AssetVisibility,
   ChecksumAlgorithm,
   MediaOperationDestination,
   MediaOperationKind,
@@ -19,18 +22,26 @@ import {
 import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { BuddyBackupFidelityRepository } from 'src/repositories/buddy-backup-fidelity.repository.js';
+import { BuddyBackupMetadataRepository } from 'src/repositories/buddy-backup-metadata.repository.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { SourceResourceCacheRepository } from 'src/repositories/source-resource-cache.repository.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { BuddyBackupRestoreService, type RestoreJob } from 'src/services/buddy-backup-restore.service.js';
+import { CloudBackupDetailsService } from 'src/services/cloud-backup-details.service.js';
+import { CloudBackupRestorer, emptyRestoreResult } from 'src/services/cloud-backup-restore.js';
+import { buddyLibraryForOwner } from 'src/utils/buddy-backup-metadata.js';
 import { BuddyRecoveryFiles, buddyFileHash, readBuddyRecovery } from 'src/utils/buddy-backup-recovery.js';
 import { type BuddyReferenceAdoption, adoptBuddyReferenceOriginal } from 'src/utils/buddy-reference-adoption.js';
 import { buddyReferenceIntent } from 'src/utils/buddy-reference-intent.js';
 import { referenceOriginalPath } from 'src/utils/buddy-reference-originals.js';
 import { recoverBuddyReferenceOriginals } from 'src/utils/buddy-reference-recovery.js';
+import { ownerRestoreHash } from 'src/utils/cloud-backup-owner-restore.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
 import { resetSourceResourcesAfterRestore } from 'src/utils/source-resource-restore.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -256,6 +267,413 @@ describe('Buddy independent reference recovery in stopped-server maintenance', (
       });
     return { ...f, actor, session, index, job, operation, owner, identity, intent, lease, verify, run };
   };
+
+  const onlinePublisher = async (admin = false) => {
+    const f = await submitted(admin);
+    const details = (await f.index.getAssetDetails([f.asset.id])).get(f.asset.id)!;
+    const manifest = {
+      ...f.plan.manifest,
+      snapshotId: f.job.request.snapshotId,
+      assetLinks: { [f.asset.id]: { isExternal: true, libraryId: f.asset.libraryId } },
+      library: {
+        format: 'frameleaf-backup-manifest',
+        version: 3,
+        instanceId: randomUUID(),
+        createdAt: new Date().toISOString(),
+        database: null,
+        profiles: {},
+        albums: {},
+        people: {},
+        assets: {
+          [f.asset.id]: {
+            ...details.record,
+            owner: f.user.id,
+            files: [f.file],
+            details: details.details,
+          },
+        },
+      },
+    } as unknown as BuddyManifest;
+    const metadata = new BuddyBackupMetadataRepository(db);
+    manifest.metadata = await metadata.capture([]);
+    f.job.albums = await metadata.plan(manifest.metadata, [f.album.id], f.job.request.mode);
+    f.job.owner.assetHashes[f.asset.id] = ownerRestoreHash(
+      manifest.library.assets[f.asset.id],
+      buddyLibraryForOwner(manifest, f.user.id),
+    );
+    await db
+      .updateTable('media_operation')
+      .set({ snapshot: f.job as unknown as Record<string, unknown> })
+      .where('id', '=', f.operation.id)
+      .execute();
+    const snapshot: CloudBackupRestoreSnapshot = {
+      ...f.identity,
+      version: 1,
+      scope: 'asset',
+      assetIds: [f.asset.id],
+      details: f.job.request.mode,
+    };
+    const logger = LoggingRepository.create();
+    const crypto = new CryptoRepository();
+    const storage = new StorageRepository(logger);
+    const service = Object.assign(Object.create(BuddyBackupRestoreService.prototype), {
+      repository: { db, root: () => root },
+      index: f.index,
+      crypto,
+      binding: () => Promise.resolve(),
+      storage,
+      logger,
+      operations: new MediaOperationRepository(db),
+      open: () =>
+        Promise.resolve({
+          manifest,
+          reader: { download: (_manifest: unknown, _hash: string, path: string) => read('', path) },
+        }),
+      fingerprint: () => f.job.manifestHash,
+      details: Object.assign(Object.create(CloudBackupDetailsService.prototype), { logger }),
+      drainRestoreJobs: vi.fn().mockResolvedValue(undefined),
+    });
+    const file = {
+      fileKey: `${f.asset.id}:000`,
+      assetId: f.asset.id,
+      role: 'original',
+      target: f.file.path,
+      sha256: f.file.sha256,
+      size: f.file.size,
+      inPlace: true,
+    };
+    const read = vi.fn(async (_key: string, path: string) => {
+      await writeFile(path, 'hello');
+      return buddyFileHash(path);
+    });
+    const run = (afterPublish?: (trx: Kysely<DB>) => Promise<void>) =>
+      new CloudBackupRestorer(null, storage, crypto, logger).restore({
+        manifest: manifest.library,
+        scope: 'asset',
+        files: [file],
+        destination: null,
+        stageBesideTarget: true,
+        mediaLocation: root,
+        backupsFolder: join(root, 'backups'),
+        operationId: f.operation.id,
+        start: emptyRestoreResult(),
+        checkpoint: () => Promise.resolve(true),
+        read,
+        publish: (entry, staged, publish, phase, proof) =>
+          service.guarded(
+            f.operation,
+            f.lease.claimToken,
+            f.job,
+            manifest,
+            snapshot,
+            entry,
+            async (trx: Kysely<DB>) => {
+              const outcome =
+                phase === 'inspect' ? await publish() : await service.publishStaged(entry, staged, publish, proof);
+              if (phase === 'publish') await afterPublish?.(trx);
+              return outcome;
+            },
+            phase === 'inspect' ? 'inspect' : { kind: 'publish', proof },
+          ),
+      });
+    const persist = () =>
+      db
+        .updateTable('media_operation')
+        .set({ snapshot: f.job as unknown as Record<string, unknown> })
+        .where('id', '=', f.operation.id)
+        .execute();
+    const worker = () => service.runClaim({ ...f.operation, snapshot: f.job }, f.lease.claimToken);
+    return { ...f, manifest, snapshot, service, file, read, publish: run, persist, worker };
+  };
+
+  it.each([false, true])('publishes an independent managed original and verifies replay: admin=%s', async (admin) => {
+    const f = await onlinePublisher(admin);
+    await rm(f.file.target);
+    expect(await f.publish()).toMatchObject({ files: 1, skipped: 0, replaced: 0 });
+    const asset = await db.selectFrom('asset').selectAll().where('id', '=', f.asset.id).executeTakeFirstOrThrow();
+    expect(asset).toMatchObject({
+      originalPath: f.file.target,
+      isExternal: false,
+      isOffline: false,
+      libraryId: null,
+      physicalOriginalFileId: f.intent.adoption.physicalFileId,
+    });
+    expect(await readFile(f.file.target, 'utf8')).toBe('hello');
+    expect((await f.publish())?.skipped).toBe(1);
+    expect(await db.selectFrom('physical_file').select('id').where('path', '=', f.file.target).execute()).toEqual([
+      { id: f.intent.adoption.physicalFileId },
+    ]);
+    expect(
+      Number(
+        (await db.selectFrom('user').select('quotaUsageInBytes').where('id', '=', f.user.id).executeTakeFirstOrThrow())
+          .quotaUsageInBytes,
+      ),
+    ).toBe(105);
+    expect(f.owner.current[f.asset.id].isExternal).toBe(true);
+  });
+
+  it.each([false, true])(
+    'runs the online worker through managed original and metadata completion: admin=%s',
+    async (admin) => {
+      const f = await onlinePublisher(admin);
+      await rm(f.file.target);
+      await f.worker();
+      const operation = await new MediaOperationRepository(db).getOfKind(
+        f.operation.id,
+        MediaOperationKind.BuddyRestore,
+      );
+      expect(operation).toMatchObject({ status: MediaOperationStatus.Completed, error: null });
+      expect(f.read).toHaveBeenCalledOnce();
+      expect(
+        await db
+          .selectFrom('asset')
+          .select(['originalPath', 'isExternal', 'isOffline'])
+          .where('id', '=', f.asset.id)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({ originalPath: f.file.target, isExternal: false, isOffline: false });
+      expect(
+        await db
+          .selectFrom('asset_local_effect')
+          .select('effectId')
+          .where('effectId', '=', f.intent.adoption.physicalFileId)
+          .execute(),
+      ).toEqual([{ effectId: f.intent.adoption.physicalFileId }]);
+    },
+  );
+
+  it('checks quota before downloading independent original bytes', async () => {
+    const f = await onlinePublisher();
+    await rm(f.file.target);
+    await db.updateTable('user').set({ quotaSizeInBytes: 104 }).where('id', '=', f.user.id).execute();
+    await expect(f.publish()).rejects.toThrow('Not enough quota');
+    expect(f.read).not.toHaveBeenCalled();
+    expect(
+      await db.selectFrom('source_original').select('assetId').where('assetId', '=', f.asset.id).execute(),
+    ).toHaveLength(1);
+  });
+
+  it.each(['PIN', 'claim'] as const)(
+    'rolls back adoption when %s expires before commit and safely retries retained bytes',
+    async (change) => {
+      const f = await onlinePublisher();
+      await rm(f.file.target);
+      await expect(
+        f.publish(async (trx) => {
+          if (change === 'PIN')
+            await trx
+              .updateTable('session')
+              .set({ pinExpiresAt: new Date(0) })
+              .where('id', '=', f.session.id)
+              .execute();
+          else
+            await trx
+              .updateTable('media_operation')
+              .set({ claimExpiresAt: new Date(0) })
+              .where('id', '=', f.operation.id)
+              .execute();
+        }),
+      ).rejects.toThrow();
+      expect(await readFile(f.file.target, 'utf8')).toBe('hello');
+      expect(
+        await db.selectFrom('source_original').select('assetId').where('assetId', '=', f.asset.id).execute(),
+      ).toHaveLength(1);
+      expect(
+        await db.selectFrom('physical_file').select('id').where('path', '=', f.file.target).execute(),
+      ).toHaveLength(0);
+      expect((await f.publish())?.skipped).toBe(1);
+      expect(
+        Number(
+          (
+            await db
+              .selectFrom('user')
+              .select('quotaUsageInBytes')
+              .where('id', '=', f.user.id)
+              .executeTakeFirstOrThrow()
+          ).quotaUsageInBytes,
+        ),
+      ).toBe(105);
+    },
+  );
+
+  it('refuses reference metadata before the independent original has been adopted', async () => {
+    const f = await onlinePublisher();
+    const action = vi.fn().mockResolvedValue(undefined);
+    await expect(
+      f.service.guarded(f.operation, f.lease.claimToken, f.job, f.manifest, f.snapshot, f.file, action, 'metadata'),
+    ).rejects.toThrow('Reference original must be restored first');
+    expect(action).not.toHaveBeenCalled();
+  });
+
+  it('keeps an occupied managed destination untouched in keep mode', async () => {
+    const f = await onlinePublisher();
+    f.job.request.mode = 'keep';
+    await f.persist();
+    await writeFile(f.file.target, 'other original');
+    await expect(f.publish()).rejects.toThrow('Reference restore destination is occupied');
+    expect(f.read).not.toHaveBeenCalled();
+    expect(await readFile(f.file.target, 'utf8')).toBe('other original');
+  });
+
+  it('adopts a hash-equal destination in keep mode instead of bypassing reference publication', async () => {
+    const f = await onlinePublisher();
+    f.job.request.mode = 'keep';
+    f.job.albums = { version: 1, albums: {} };
+    await f.persist();
+    await f.worker();
+    expect(
+      await new MediaOperationRepository(db).getOfKind(f.operation.id, MediaOperationKind.BuddyRestore),
+    ).toMatchObject({ status: MediaOperationStatus.Completed, result: { skipped: 1 } });
+    expect(
+      await db
+        .selectFrom('asset')
+        .select('physicalOriginalFileId')
+        .where('id', '=', f.asset.id)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ physicalOriginalFileId: f.intent.adoption.physicalFileId });
+  });
+
+  it.each([false, true])(
+    'keeps a confirmed newer source reference without downloading or adopting it: admin=%s',
+    async (admin) => {
+      const f = await onlinePublisher(admin);
+      f.job.request.mode = 'keep';
+      f.job.referenceAdoptions = {};
+      f.job.albums = { version: 1, albums: {} };
+      const newer = createHash('sha256').update('newer').digest();
+      await db.updateTable('photo_source_resource').set({ checksum: newer }).where('id', '=', f.resource.id).execute();
+      f.job.owner.current = await f.index.getOwnerRestoreIdentities([f.asset.id]);
+      await f.persist();
+      await rm(f.file.target);
+      await f.worker();
+      const operation = await new MediaOperationRepository(db).getOfKind(
+        f.operation.id,
+        MediaOperationKind.BuddyRestore,
+      );
+      expect(operation).toMatchObject({
+        status: MediaOperationStatus.Completed,
+        result: { preservedReferenceAssetIds: [f.asset.id], files: 0 },
+      });
+      expect(f.read).not.toHaveBeenCalled();
+      expect(
+        await db
+          .selectFrom('asset')
+          .select(['originalPath', 'isExternal'])
+          .where('id', '=', f.asset.id)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({ originalPath: f.asset.originalPath, isExternal: true });
+      expect(
+        Number(
+          (
+            await db
+              .selectFrom('user')
+              .select('quotaUsageInBytes')
+              .where('id', '=', f.user.id)
+              .executeTakeFirstOrThrow()
+          ).quotaUsageInBytes,
+        ),
+      ).toBe(100);
+    },
+  );
+
+  it('preserves the selected Live Photo group when only the still reference is newer', async () => {
+    const f = await onlinePublisher();
+    const sourcePath = `frameleaf-source://${f.source.id}/${'d'.repeat(64)}`;
+    const { asset: motion } = await f.ctx.newAsset({
+      ownerId: f.user.id,
+      libraryId: f.asset.libraryId,
+      isExternal: true,
+      isOffline: true,
+      originalPath: sourcePath,
+      originalFileName: 'motion.mov',
+      type: AssetType.Video,
+      visibility: AssetVisibility.Hidden,
+      checksum: createHash('sha1').update(sourcePath).digest(),
+      checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+    });
+    const sha256 = createHash('sha256').update('movie').digest('hex');
+    const resource = await db
+      .insertInto('photo_source_resource')
+      .values({
+        runId: f.resource.runId,
+        resourceKey: 'd'.repeat(64),
+        version: 'e'.repeat(64),
+        checksum: Buffer.from(sha256, 'hex'),
+        bytes: 5,
+        assetId: motion.id,
+        state: 'verified',
+        verifiedAt: new Date(),
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+    await db
+      .insertInto('source_original')
+      .values({
+        assetId: motion.id,
+        resourceId: resource.id,
+        scopeFingerprint: f.source.scopeFingerprint,
+        authorizationEpoch: (
+          await db
+            .selectFrom('source_original')
+            .select('authorizationEpoch')
+            .where('assetId', '=', f.asset.id)
+            .executeTakeFirstOrThrow()
+        ).authorizationEpoch,
+      })
+      .execute();
+    await db.updateTable('asset').set({ livePhotoVideoId: motion.id }).where('id', '=', f.asset.id).execute();
+    const details = (await f.index.getAssetDetails([motion.id])).get(motion.id)!;
+    f.manifest.library.assets[motion.id] = {
+      ...details.record,
+      details: details.details,
+      owner: f.user.id,
+      files: [
+        {
+          role: 'original',
+          path: referenceOriginalPath(root, f.user.id, motion.id, motion.originalFileName),
+          size: 5,
+          sha256,
+          mtime: null,
+        },
+      ],
+    };
+    f.manifest.assetLinks![f.asset.id].livePhotoVideoId = motion.id;
+    f.manifest.assetLinks![motion.id] = {
+      isExternal: true,
+      libraryId: motion.libraryId ?? null,
+      livePhotoVideoId: null,
+    };
+    f.job.request.mode = 'keep';
+    f.job.request.assetIds!.push(motion.id);
+    f.job.referenceAdoptions = {};
+    f.job.albums = { version: 1, albums: {} };
+    await db
+      .updateTable('photo_source_resource')
+      .set({ checksum: createHash('sha256').update('newer').digest() })
+      .where('id', '=', f.resource.id)
+      .execute();
+    f.job.owner.current = await f.index.getOwnerRestoreIdentities([f.asset.id, motion.id]);
+    f.job.owner.assetHashes[motion.id] = ownerRestoreHash(
+      f.manifest.library.assets[motion.id],
+      buddyLibraryForOwner(f.manifest, f.user.id),
+    );
+    await f.persist();
+    await f.worker();
+    expect(
+      await new MediaOperationRepository(db).getOfKind(f.operation.id, MediaOperationKind.BuddyRestore),
+    ).toMatchObject({
+      status: MediaOperationStatus.Completed,
+      result: { preservedReferenceAssetIds: [f.asset.id, motion.id].sort(), files: 0 },
+    });
+    expect(f.read).not.toHaveBeenCalled();
+    expect(
+      await db.selectFrom('asset').select(['id', 'isExternal']).where('id', 'in', [f.asset.id, motion.id]).execute(),
+    ).toEqual(
+      expect.arrayContaining([
+        { id: f.asset.id, isExternal: true },
+        { id: motion.id, isExternal: true },
+      ]),
+    );
+  });
 
   it.each([false, true])(
     'admits only the submitted owner transition and verifies committed replay: admin=%s',

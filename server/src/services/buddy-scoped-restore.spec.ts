@@ -54,8 +54,8 @@ it.each([
   };
   const complete = vi.fn().mockResolvedValue(true);
   const fail = vi.fn();
-  const guard = vi.fn(async (_operation, _token, _job, _manifest, _snapshot, _file, action, inspect) => {
-    if (!inspect) throw new Error('Owner restore destination unavailable');
+  const guard = vi.fn(async (_operation, _token, _job, _manifest, _snapshot, _file, action, phase) => {
+    if (phase !== 'inspect' && phase !== 'metadata') throw new Error('Owner restore destination unavailable');
     return await action();
   });
   const service = Object.assign(Object.create(BuddyBackupRestoreService.prototype), {
@@ -113,7 +113,7 @@ it.each([
     expect(complete).toHaveBeenCalledTimes(completes ? 1 : 0);
     expect(fail).toHaveBeenCalledTimes(completes ? 0 : 1);
     expect(await readFile(files[1].path, 'utf8')).toBe(currentEdit);
-    expect(guard.mock.calls.some((call) => !call[7])).toBe(!completes);
+    expect(guard.mock.calls.some((call) => typeof call[7] === 'object' && call[7].kind === 'publish')).toBe(!completes);
   } finally {
     restorer.mockRestore();
     media.mockRestore();
@@ -525,7 +525,7 @@ describe('a library restore on a fresh replacement server (FL-508)', () => {
 
     // The replacement has no account for the backed-up owner: a named failure, never an unnamed "no result".
     await expect(
-      restoreService(users).guarded(operation, 'token', job(), manifest, {}, file, action, true),
+      restoreService(users).guarded(operation, 'token', job(), manifest, {}, file, action, 'metadata'),
     ).rejects.toThrow('Buddy restore owner is missing');
     expect(action).not.toHaveBeenCalled();
 
@@ -537,7 +537,7 @@ describe('a library restore on a fresh replacement server (FL-508)', () => {
       {},
       file,
       action,
-      true,
+      'metadata',
     );
     expect(action).toHaveBeenCalledExactlyOnceWith(expect.anything(), administrator);
     expect(inspect).toHaveBeenCalledWith(file.target, assetId, administrator, undefined);
