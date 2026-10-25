@@ -8,6 +8,8 @@ import {
   type BuddyReceipt,
   type BuddySignedSnapshot,
   buddyDigest,
+  buddyFileStopUnconfirmed,
+  closeBuddyFile,
   createBuddyDirectory,
   flushBuddyDirectory,
 } from './buddy-backup-vault.ts';
@@ -109,6 +111,7 @@ export class BuddyBackupReader {
       throw new Error('Buddy file is not in the encrypted manifest');
     await createBuddyDirectory(dirname(destination));
     const temporary = join(dirname(destination), `.tmp-${randomUUID()}`);
+    let stopped = true;
     try {
       const file = await open(temporary, 'wx', 0o600);
       const hash = createHash('sha256');
@@ -128,14 +131,17 @@ export class BuddyBackupReader {
         if (size !== content.bytes || hash.digest('hex') !== sha256) throw new Error('Buddy plaintext checksum failed');
         await file.sync();
       } finally {
-        await file.close();
+        await closeBuddyFile(file);
       }
       this.execution.signal?.throwIfAborted();
       await rename(temporary, destination);
       await flushBuddyDirectory(dirname(destination));
       return { sha256, size };
+    } catch (error) {
+      stopped = !buddyFileStopUnconfirmed(error);
+      throw error;
     } finally {
-      await rm(temporary, { force: true });
+      if (stopped) await rm(temporary, { force: true });
     }
   }
 }

@@ -1,13 +1,28 @@
 /* eslint-disable no-restricted-imports -- Offline recovery runs directly under Node without application aliases. */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open, readFile, readdir, realpath, rename, rm } from 'node:fs/promises';
+import { lstat, open, opendir, readFile, readdir, realpath, rename, rm } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { BUDDY_ID, BUDDY_UUID } from './buddy-backup-crypto.ts';
-import { createBuddyDirectory, flushBuddyDirectory, writeBuddyFile } from './buddy-backup-vault.ts';
+import {
+  buddyFileStopUnconfirmed,
+  closeBuddyFile,
+  createBuddyDirectory,
+  flushBuddyDirectory,
+  writeBuddyFile,
+} from './buddy-backup-vault.ts';
 import { readBuddyReferenceOriginals } from './buddy-reference-originals.ts';
 import type { CloudBackupManifestFile } from './cloud-backup.ts';
+import { beginCloudNativeWork, cloudNativeWorkStopped } from './cloud-native-work.ts';
 import type { BuddyManifest } from '../services/buddy-backup-capture.service.ts';
+
+const recoveryWork = new AsyncLocalStorage<{
+  root: string;
+  id: string;
+  stopped: boolean;
+  owns: () => Promise<boolean>;
+}>();
 
 export type BuddyRecovery = {
   version: 1;
@@ -56,7 +71,7 @@ export const buddyFileHash = async (
       throw new Error('Buddy recovery file changed during verification');
     return { sha256: hash.digest('hex'), size: Number(after.size) };
   } finally {
-    await file.close();
+    await closeBuddyFile(file);
   }
 };
 
@@ -93,8 +108,35 @@ export const buddyRecoveryTarget = async (target: string, roots: string[], confi
   }
 };
 
+const assertRecoveryProducers = async (root: string, id: string) => {
+  // A completed SQL row or boot journal cannot prove an earlier file producer stopped.
+  const producers = join(root, 'restores');
+  const reservation = recoveryWork.getStore();
+  const directory = await lstat(producers).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== 'ENOENT') throw error;
+    return null;
+  });
+  if (directory) {
+    if (
+      !directory.isDirectory() ||
+      directory.isSymbolicLink() ||
+      !(await (reservation?.root === root && reservation.id === id
+        ? reservation.stopped && reservation.owns()
+        : cloudNativeWorkStopped(join(producers, 'producer'))))
+    )
+      throw new Error('cloud_ml_native_work_retained');
+    let entries = 0;
+    for await (const entry of await opendir(producers, { bufferSize: 8 })) {
+      if (++entries > 2048) throw new Error('buddy_restore_history_limit');
+      if (BUDDY_UUID.test(entry.name) && !(await cloudNativeWorkStopped(join(producers, entry.name))))
+        throw new Error('cloud_ml_native_work_retained');
+    }
+  }
+};
+
 export const readBuddyRecovery = async (root: string, id: string): Promise<BuddyRecovery> => {
   if (!BUDDY_UUID.test(id)) throw new Error('Invalid recovery identifier');
+  await assertRecoveryProducers(root, id);
   const file = await open(join(root, 'recovery', id, 'prepared.json'), constants.O_RDONLY | constants.O_NOFOLLOW);
   let plan: BuddyRecovery;
   try {
@@ -103,7 +145,7 @@ export const readBuddyRecovery = async (root: string, id: string): Promise<Buddy
     const content = await file.readFile('utf8');
     plan = JSON.parse(content);
   } finally {
-    await file.close();
+    await closeBuddyFile(file);
   }
   if (
     plan.version !== 1 ||
@@ -133,6 +175,45 @@ export const readBuddyRecovery = async (root: string, id: string): Promise<Buddy
   }
   return plan;
 };
+
+/** Share the online writer's filesystem exclusion through the complete recovery action. */
+export async function withBuddyRecoveryWork<T>(root: string, id: string, action: () => Promise<T>): Promise<T> {
+  const active = recoveryWork.getStore();
+  if (active) {
+    if (active.root !== root || active.id !== id || !active.stopped) throw new Error('cloud_ml_native_work_retained');
+    try {
+      await readBuddyRecovery(root, id);
+      return await action();
+    } catch (error) {
+      if (buddyFileStopUnconfirmed(error)) active.stopped = false;
+      throw error;
+    }
+  }
+  if (!BUDDY_UUID.test(id)) throw new Error('Invalid recovery identifier');
+  if ((await realpath(root)) !== resolve(root)) throw new Error('Unsafe recovery path');
+  await assertRecoveryProducers(root, id);
+  const shared = join(root, 'restores', 'producer');
+  await createBuddyDirectory(shared);
+  const close = await beginCloudNativeWork(shared).catch((error: unknown) => {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')
+      throw new Error('cloud_ml_native_work_retained', { cause: error });
+    throw error;
+  });
+  const owner = { root, id, stopped: true, owns: close.owns };
+  try {
+    return await recoveryWork.run(owner, async () => {
+      await readBuddyRecovery(root, id);
+      const result = await action();
+      if (!owner.stopped) throw new Error('buddy_file_close_unconfirmed');
+      return result;
+    });
+  } catch (error) {
+    if (buddyFileStopUnconfirmed(error)) owner.stopped = false;
+    throw error;
+  } finally {
+    if (owner.stopped) await close();
+  }
+}
 
 /** Maintenance is the publication barrier. Journal before every rename; keep rollback copies after success. */
 export class BuddyRecoveryFiles {
@@ -262,6 +343,7 @@ export class BuddyRecoveryFiles {
       }
       await createBuddyDirectory(dirname(file.path));
       const temporary = `${file.path}.buddy-${randomUUID()}`;
+      let stopped = true;
       try {
         const source = await open(
           join(this.directory, 'objects', file.sha256),
@@ -276,10 +358,10 @@ export class BuddyRecoveryFiles {
             }
             await output.sync();
           } finally {
-            await output.close();
+            await closeBuddyFile(output);
           }
         } finally {
-          await source.close();
+          await closeBuddyFile(source);
         }
         const copied = await buddyFileHash(temporary);
         if (copied.sha256 !== file.sha256 || copied.size !== file.size)
@@ -288,8 +370,11 @@ export class BuddyRecoveryFiles {
         await this.assert();
         await rename(temporary, file.path);
         await flushBuddyDirectory(dirname(file.path));
+      } catch (error) {
+        stopped = !buddyFileStopUnconfirmed(error);
+        throw error;
       } finally {
-        await rm(temporary, { force: true });
+        if (stopped) await rm(temporary, { force: true });
       }
     }
     await this.state('files-ready');

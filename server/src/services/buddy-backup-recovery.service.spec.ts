@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { BuddySettings, BuddyState } from 'src/repositories/buddy-backup.repository.js';
@@ -8,8 +8,10 @@ import { SystemMetadataKey } from 'src/enum.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
+import { BuddyRecoveryFiles } from 'src/utils/buddy-backup-recovery.js';
 import { flushBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
 import { backupKeyFile, keyFingerprint } from 'src/utils/cloud-backup.js';
+import { beginCloudNativeWork } from 'src/utils/cloud-native-work.js';
 import { recoveryAuthorityDigest, recoveryMlConfigOf } from 'src/utils/recovery-ml-authority.js';
 
 const fixture = vi.hoisted(() => ({
@@ -21,6 +23,10 @@ const fixture = vi.hoisted(() => ({
   authority: {} as any,
 }));
 // These tests isolate real file/publication barriers; canonical PG tests exercise the authority helpers.
+vi.mock('node:fs/promises', async () => {
+  const fs = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+  return { ...fs, open: vi.fn(fs.open) };
+});
 vi.mock('src/utils/buddy-recovery-ml.js', () => ({
   captureReplacementMl: () => Promise.resolve(fixture.authority),
   readReplacementMl: () => Promise.resolve(fixture.authority),
@@ -58,6 +64,8 @@ describe('Buddy recovery crash barriers', () => {
   const assert = async () => {};
 
   beforeEach(async () => {
+    const fs = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    vi.mocked(open).mockReset().mockImplementation(fs.open);
     root = await realpath(await mkdtemp(join(tmpdir(), 'buddy-service-')));
     fixture.media = join(root, 'media');
     await mkdir(fixture.media);
@@ -173,7 +181,166 @@ describe('Buddy recovery crash barriers', () => {
     await writeFile(join(directory, 'prepared.json'), JSON.stringify(plan));
   });
   afterEach(async () => {
+    vi.mocked(open).mockRestore();
     await rm(root, { recursive: true, force: true });
+  });
+
+  it('retains ownership when the first prepared-plan descriptor cannot confirm close', async () => {
+    const fs = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    let descriptor: Awaited<ReturnType<typeof fs.open>> | undefined;
+    vi.mocked(open).mockImplementation(async (...args) => {
+      const file = await fs.open(...args);
+      if (args[0] !== join(directory, 'prepared.json')) return file;
+      descriptor = file;
+      return new Proxy(file, {
+        get(target, key) {
+          if (key === 'close') return () => Promise.reject(new Error('first plan close unconfirmed'));
+          const value = Reflect.get(target, key);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+    });
+    try {
+      await expect(service.settings(id, assert)).rejects.toThrow('buddy_file_close_unconfirmed');
+      expect(descriptor).toBeDefined();
+      expect((await descriptor!.stat()).isFile()).toBe(true);
+      await expect(beginCloudNativeWork(join(repository.root(), 'restores', 'producer'))).rejects.toThrow(
+        'cloud_ml_native_work_retained',
+      );
+      await expect(lstat(join(directory, 'publication.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await descriptor?.close();
+    }
+  });
+
+  it('holds the shared producer reservation until settings recovery settles', async () => {
+    const shared = join(repository.root(), 'restores', 'producer');
+    await mkdir(shared, { recursive: true });
+    const entered = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    let waiting = false;
+    let contender: (() => Promise<void>) | undefined;
+    const running = service.settings(id, async () => {
+      if (!waiting) {
+        waiting = true;
+        entered.resolve();
+        await released.promise;
+      }
+    });
+    try {
+      await Promise.race([
+        entered.promise,
+        running.then(() => {
+          throw new Error('Recovery skipped its authority checkpoint');
+        }),
+      ]);
+      const outcome = await beginCloudNativeWork(shared)
+        .then((close) => {
+          contender = close;
+          return 'accepted';
+        })
+        .catch((error: Error) => error.message);
+      expect(outcome).toBe('cloud_ml_native_work_retained');
+    } finally {
+      await contender?.();
+      released.resolve();
+      await running;
+    }
+    expect(await readFile(target, 'utf8')).toBe('recovered');
+    const next = await beginCloudNativeWork(shared);
+    await next();
+  });
+
+  it('retains admission and skips rollback when settings publication cannot confirm file closure', async () => {
+    const descriptor = await open(join(directory, 'pending-publisher'), 'w+');
+    const publish = BuddyRecoveryFiles.prototype.publish;
+    const publishing = vi.spyOn(BuddyRecoveryFiles.prototype, 'publish').mockImplementationOnce(async function (
+      this: BuddyRecoveryFiles,
+      ...args
+    ) {
+      await publish.apply(this, args);
+      await descriptor.writeFile('pending');
+      throw new Error('buddy_file_close_unconfirmed');
+    });
+    const rollback = vi.spyOn(BuddyRecoveryFiles.prototype, 'rollback');
+    try {
+      await expect(service.settings(id, assert)).rejects.toThrow('buddy_file_close_unconfirmed');
+      expect(rollback).not.toHaveBeenCalled();
+      expect(await readFile(target, 'utf8')).toBe('recovered');
+      expect(await descriptor.stat()).toMatchObject({ size: 7 });
+      await expect(beginCloudNativeWork(join(repository.root(), 'restores', 'producer'))).rejects.toThrow(
+        'cloud_ml_native_work_retained',
+      );
+    } finally {
+      await descriptor.close();
+      publishing.mockRestore();
+      rollback.mockRestore();
+    }
+  });
+
+  it('retains admission when the actual rollback file read cannot confirm closure', async () => {
+    const real = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    let failed = false;
+    let descriptor: Awaited<ReturnType<typeof real.open>> | undefined;
+    vi.mocked(open).mockImplementation(async (...args) => {
+      const file = await real.open(...args);
+      if (!failed || args[0] !== target) return file;
+      descriptor = file;
+      return new Proxy(file, {
+        get(target, key) {
+          if (key === 'close') return () => Promise.reject(new Error('rollback close unconfirmed'));
+          const value = Reflect.get(target, key);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+    });
+    const rollback = vi.spyOn(BuddyRecoveryFiles.prototype, 'rollback');
+    await writeFile(target, 'previous');
+    try {
+      const outcome = await service
+        .settings(id, async () => {
+          const current = await readFile(target, 'utf8').catch((error: NodeJS.ErrnoException) => {
+            if (error.code !== 'ENOENT') throw error;
+            return null;
+          });
+          if (!failed && current === 'recovered') {
+            failed = true;
+            throw new Error('interrupted after file publication');
+          }
+        })
+        .catch((error: Error) => error);
+      expect(rollback).toHaveBeenCalledOnce();
+      await expect(rollback.mock.results[0].value).rejects.toThrow('buddy_file_close_unconfirmed');
+      expect(outcome).toMatchObject({ message: 'buddy_file_close_unconfirmed' });
+      expect(descriptor).toBeDefined();
+      expect(await descriptor!.stat()).toMatchObject({ size: 9 });
+      expect(await readFile(target, 'utf8')).toBe('recovered');
+      expect(await readFile(`${target}.buddy-rollback-${id}`, 'utf8')).toBe('previous');
+      await expect(beginCloudNativeWork(join(repository.root(), 'restores', 'producer'))).rejects.toThrow(
+        'cloud_ml_native_work_retained',
+      );
+    } finally {
+      rollback.mockRestore();
+      vi.mocked(open).mockRestore();
+      await descriptor?.close();
+    }
+  });
+
+  it('refuses settings publication while an earlier producer is retained', async () => {
+    const owner = join(repository.root(), 'restores', randomUUID());
+    await mkdir(owner, { recursive: true });
+    const release = await beginCloudNativeWork(owner);
+    await writeFile(target, 'replacement settings');
+    try {
+      await expect(service.prepare(id, assert)).rejects.toThrow('cloud_ml_native_work_retained');
+      await expect(service.settings(id, assert)).rejects.toThrow('cloud_ml_native_work_retained');
+      expect(await readFile(target, 'utf8')).toBe('replacement settings');
+      expect(await readdir(directory)).not.toContain('publication.json');
+    } finally {
+      await release();
+    }
+    await service.settings(id, assert);
+    expect(await readFile(target, 'utf8')).toBe('recovered');
   });
 
   it('restores stored Cloud Backup keys without restoring or overwriting instance credentials', async () => {

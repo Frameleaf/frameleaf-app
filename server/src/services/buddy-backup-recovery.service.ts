@@ -23,9 +23,16 @@ import {
   buddyInside,
   buddyRecoveryTarget,
   readBuddyRecovery,
+  withBuddyRecoveryWork,
 } from 'src/utils/buddy-backup-recovery.js';
 import { type BuddySettingsSnapshot, readBuddySettingsSnapshot } from 'src/utils/buddy-backup-settings.js';
-import { createBuddyDirectory, flushBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
+import {
+  buddyFileStopUnconfirmed,
+  closeBuddyFile,
+  createBuddyDirectory,
+  flushBuddyDirectory,
+  writeBuddyFile,
+} from 'src/utils/buddy-backup-vault.js';
 import { finalizeBuddyBootBinding, verifyBuddyRecoveryBootBinding } from 'src/utils/buddy-boot-binding.js';
 import {
   admitReplacementMl,
@@ -138,7 +145,10 @@ export class BuddyBackupRecoveryService {
     return { plan, buddy };
   }
 
-  async prepare(id: string, assert: () => Promise<void> = () => Promise.reject(recoveryMlRefusal())) {
+  prepare(id: string, assert: () => Promise<void> = () => Promise.reject(recoveryMlRefusal())) {
+    return withBuddyRecoveryWork(this.repository.root(), id, () => this.prepareOwned(id, assert));
+  }
+  private async prepareOwned(id: string, assert: () => Promise<void>) {
     const { plan } = await this.plan(id);
     if (plan.scope !== 'server' || !plan.manifest.library.database)
       throw new Error('A staged full server recovery is required');
@@ -153,6 +163,7 @@ export class BuddyBackupRecoveryService {
     const destination = join(StorageCore.getBaseFolder(StorageFolder.Backups), filename);
     await createBuddyDirectory(StorageCore.getBaseFolder(StorageFolder.Backups));
     const temporary = `${destination}.${randomUUID()}.tmp`;
+    let stopped = true;
     try {
       await copyFile(source, temporary, constants.COPYFILE_EXCL);
       const handle = await open(temporary, 'r+');
@@ -160,7 +171,7 @@ export class BuddyBackupRecoveryService {
         await handle.chmod(0o600);
         await handle.sync();
       } finally {
-        await handle.close();
+        await closeBuddyFile(handle);
       }
       const copied = await buddyFileHash(temporary);
       if (copied.sha256 !== dump.sha256 || copied.size !== dump.size)
@@ -174,8 +185,11 @@ export class BuddyBackupRecoveryService {
       if (final.sha256 !== dump.sha256 || final.size !== dump.size)
         throw new Error('Recovery database destination differs');
       await flushBuddyDirectory(StorageCore.getBaseFolder(StorageFolder.Backups));
+    } catch (error) {
+      stopped = !buddyFileStopUnconfirmed(error);
+      throw error;
     } finally {
-      await rm(temporary, { force: true });
+      if (stopped) await rm(temporary, { force: true });
     }
     // Keep replacement identity/link across database replacement; never resurrect the source identity.
     const keys = [
@@ -223,7 +237,17 @@ export class BuddyBackupRecoveryService {
   }
 
   /** Called only after every ordinary worker has stopped. Failures leave maintenance active. */
-  async restore(
+  restore(
+    id: string,
+    restoreDatabase: () => Promise<void>,
+    maintenance: MaintenanceModeState,
+    assert: () => Promise<void>,
+  ) {
+    return withBuddyRecoveryWork(this.repository.root(), id, () =>
+      this.restoreOwned(id, restoreDatabase, maintenance, assert),
+    );
+  }
+  private async restoreOwned(
     id: string,
     restoreDatabase: () => Promise<void>,
     maintenance: MaintenanceModeState,
@@ -266,6 +290,7 @@ export class BuddyBackupRecoveryService {
       try {
         await restoreDatabase();
       } catch (error) {
+        if (buddyFileStopUnconfirmed(error)) throw error;
         await files.rollback(roots, settings.configurationFiles);
         throw error;
       }
@@ -348,7 +373,10 @@ export class BuddyBackupRecoveryService {
     await finalizeBuddyBootBinding(this.repository.root(), id, assert);
   }
 
-  async settings(id: string, assert: () => Promise<void>) {
+  settings(id: string, assert: () => Promise<void>) {
+    return withBuddyRecoveryWork(this.repository.root(), id, () => this.settingsOwned(id, assert));
+  }
+  private async settingsOwned(id: string, assert: () => Promise<void>) {
     const { plan, buddy } = await this.plan(id);
     if (plan.scope !== 'settings') throw new Error('A staged settings recovery is required');
     const settings = (await this.repository.state()).settings;
@@ -409,7 +437,8 @@ export class BuddyBackupRecoveryService {
       async (metadataRepo, tx) => {
         try {
           return await readReplacementMl(directory, id, plan);
-        } catch {
+        } catch (error) {
+          if (buddyFileStopUnconfirmed(error)) throw error;
           return captureReplacementMl(
             { metadataRepo, configRepo: this.config, logger: LoggingRepository.create() },
             tx,
@@ -484,6 +513,7 @@ export class BuddyBackupRecoveryService {
         },
       );
     } catch (error) {
+      if (buddyFileStopUnconfirmed(error)) throw error;
       if (published) {
         // Once the callback finished, COMMIT may have succeeded even if its response was lost.
         // An idempotent replay can commit the same epoch, so equality cannot prove rollback.
@@ -503,7 +533,9 @@ export class BuddyBackupRecoveryService {
               throw new Error('Settings recovery commit outcome requires review');
             await files.rollback([], settings.configurationFiles);
           });
-        } catch {
+        } catch (error) {
+          if (buddyFileStopUnconfirmed(error)) throw error;
+          // eslint-disable-next-line preserve-caught-error -- Recovery errors may contain private settings or paths.
           throw new Error('Settings recovery commit outcome requires review');
         }
       }
