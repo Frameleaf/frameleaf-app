@@ -12,13 +12,17 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { SourceReference } from 'src/utils/source-reference.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
-import { AssetStatus, AssetVisibility, ChecksumAlgorithm, DocumentEditAction, UserStatus } from 'src/enum.js';
+import { AssetStatus, AssetVisibility, ChecksumAlgorithm, DocumentEditAction } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AssetDocumentEditTable } from 'src/schema/tables/asset-document-edit.table.js';
-import { type AssetSourceSnapshot, readAssetSource } from 'src/utils/asset-source-authority.js';
+import {
+  AssetSourceChangedError,
+  type AssetSourceSnapshot,
+  readAssetSource,
+  withAssetSource,
+} from 'src/utils/asset-source-authority.js';
 import { asUuid, tokenizeForSearch, withEdits, withHiddenContentFilter } from 'src/utils/database.js';
 import { isLocked, revealedLockScope } from 'src/utils/locked.js';
-import { canonicalJson } from 'src/utils/object.js';
 import { paginationHelper } from 'src/utils/pagination.js';
 
 export type DocumentEdit = Selectable<AssetDocumentEditTable>;
@@ -178,35 +182,17 @@ export class DocumentRepository {
   }
 
   /** Cached-text decisions need stable pixels and projection, not permission to fetch the original again. */
-  withSource<T>(expected: AssetSourceSnapshot, write: (repository: DocumentRepository) => Promise<T>): Promise<T> {
-    const execute = async (tx: Transaction<DB>) => {
-      const owner = await tx
-        .selectFrom('user')
-        .select('id')
-        .where('id', '=', expected.ownerId)
-        .where('deletedAt', 'is', null)
-        .where('status', '=', UserStatus.Active)
-        .forShare()
-        .executeTakeFirst();
-      if (!owner) throw new DocumentEditConflictError('The document owner is unavailable');
-      const asset = await tx
-        .selectFrom('asset')
-        .select('id')
-        .where('id', '=', expected.assetId)
-        .where('ownerId', '=', expected.ownerId)
-        .forShare()
-        .executeTakeFirst();
-      const check = async () => {
-        const current = await readAssetSource(tx, expected.assetId, true);
-        if (!asset || !current || canonicalJson(current) !== canonicalJson(expected))
-          throw new DocumentEditConflictError('The document original or projection changed');
-      };
-      await check();
-      const result = await write(new DocumentRepository(tx));
-      await check();
-      return result;
-    };
-    return this.db.isTransaction ? execute(this.db as Transaction<DB>) : this.db.transaction().execute(execute);
+  async withSource<T>(
+    expected: AssetSourceSnapshot,
+    write: (repository: DocumentRepository) => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await withAssetSource(this.db, expected, 'share', (tx) => write(new DocumentRepository(tx)));
+    } catch (error) {
+      if (error instanceof AssetSourceChangedError)
+        throw new DocumentEditConflictError('The document original or projection changed');
+      throw error;
+    }
   }
 
   /** A new decision. Refused when one for the same key already exists (someone was first). */

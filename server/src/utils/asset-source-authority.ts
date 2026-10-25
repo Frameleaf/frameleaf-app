@@ -1,7 +1,8 @@
-import { type Kysely, sql } from 'kysely';
+import { type Kysely, type Transaction, sql } from 'kysely';
 import { createHash } from 'node:crypto';
 import z from 'zod';
 import type { DB } from 'src/schema/index.js';
+import { UserStatus } from 'src/enum.js';
 import { canonicalJson } from 'src/utils/object.js';
 import { lockSourceAuthorities } from 'src/utils/source-authority-lock.js';
 import { parseSourceOriginalPath } from 'src/utils/source-original.js';
@@ -61,4 +62,45 @@ export async function assertAssetSource(db: Kysely<DB>, source: AssetSourceSnaps
   const current = await readAssetSource(db, source.assetId, source.derivatives);
   if (!current || canonicalJson(current) !== canonicalJson(source))
     throw new Error('Asset inputs changed before publication');
+}
+
+export class AssetSourceChangedError extends Error {
+  constructor() {
+    super('Asset inputs changed before publication');
+  }
+}
+
+/** Metadata-only writes fence cached inputs without acquiring permission to fetch the original. */
+export function withAssetSource<T>(
+  db: Kysely<DB>,
+  expected: AssetSourceSnapshot,
+  lock: 'share' | 'update',
+  write: (tx: Transaction<DB>) => Promise<T>,
+): Promise<T> {
+  const execute = async (tx: Transaction<DB>) => {
+    const owner = await tx
+      .selectFrom('user')
+      .select('id')
+      .where('id', '=', expected.ownerId)
+      .where('deletedAt', 'is', null)
+      .where('status', '=', UserStatus.Active)
+      .forShare()
+      .executeTakeFirst();
+    if (!owner) throw new AssetSourceChangedError();
+    const query = tx
+      .selectFrom('asset')
+      .select('id')
+      .where('id', '=', expected.assetId)
+      .where('ownerId', '=', expected.ownerId);
+    const asset = await (lock === 'update' ? query.forUpdate() : query.forShare()).executeTakeFirst();
+    const check = async () => {
+      const current = await readAssetSource(tx, expected.assetId, expected.derivatives);
+      if (!asset || !current || canonicalJson(current) !== canonicalJson(expected)) throw new AssetSourceChangedError();
+    };
+    await check();
+    const result = await write(tx);
+    await check();
+    return result;
+  };
+  return db.isTransaction ? execute(db as Transaction<DB>) : db.transaction().execute(execute);
 }

@@ -1,16 +1,23 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
+import { Insertable, Kysely, Selectable, type Transaction, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetStatus, AssetType, AssetVisibility, VideoMomentSource } from 'src/enum.js';
+import { AssetStatus, AssetType, AssetVisibility, QueueName, UserStatus, VideoMomentSource } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
+import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
   VideoMomentFrameTable,
   VideoMomentIndexTable,
   VideoMomentTable,
 } from 'src/schema/tables/video-moment.table.js';
+import {
+  AssetSourceChangedError,
+  type AssetSourceSnapshot,
+  readAssetSource,
+  withAssetSource,
+} from 'src/utils/asset-source-authority.js';
 import { type ClipEmbedding, clipEmbeddingForStorage } from 'src/utils/clip-embedding.js';
 import { anyUuid, asUuid, withHiddenContentFilter, withVideoFormat, withVideoStream } from 'src/utils/database.js';
 import { sourceFingerprint } from 'src/utils/enrichment-plan.js';
@@ -321,42 +328,89 @@ export class VideoMomentRepository {
     });
   }
 
+  readSource(assetId: string) {
+    return readAssetSource(this.db, assetId, false);
+  }
+
   /**
    * Drop every generated result of a video whose original changed (FL-59): frames, their
    * embeddings and generated moments. Manual moments, transcripts and the cover choice stay. The
    * index row records the new fingerprint with no frames, so the next plan knows to cut them again.
    */
-  async invalidateGenerated(assetId: string, newFingerprint: string): Promise<string[]> {
-    return this.db.transaction().execute(async (trx) => {
-      await trx
-        .deleteFrom('video_moment')
-        .where('assetId', '=', asUuid(assetId))
-        .where('source', '=', VideoMomentSource.Generated)
-        .execute();
-      const removed = await trx
-        .deleteFrom('video_moment_frame')
-        .where('assetId', '=', asUuid(assetId))
-        .returning('path')
-        .execute();
-      await trx
-        .updateTable('video_moment_index')
-        .set({
-          sourceFingerprint: newFingerprint,
-          frameCount: 0,
-          framesExtractedAt: null,
-          embeddingModel: null,
-          embeddingDestinationId: null,
-          indexedAt: null,
-          captionModel: null,
-          captionConfigHash: null,
-          captionIdentityHash: null,
-          captionDestinationId: null,
-          captionedAt: null,
-        })
+  async invalidateGenerated(
+    assetId: string,
+    newFingerprint: string,
+    expectedSource: AssetSourceSnapshot,
+    expectedIndexFingerprint: string | null,
+    admit: (tx: Transaction<DB>, paths: string[]) => Promise<void>,
+  ): Promise<string[]> {
+    if (expectedSource.assetId !== assetId || expectedSource.derivatives) throw new AssetSourceChangedError();
+    const execute = async (trx: Transaction<DB>) => {
+      // Queue catalogue and file locks precede domain rows, as in guarded deletion and publication.
+      await sql`SELECT name FROM job_queue WHERE name=${QueueName.BackgroundTask} FOR NO KEY UPDATE`.execute(trx);
+      const owner = await trx
+        .selectFrom('user')
+        .select('id')
+        .where('id', '=', expectedSource.ownerId)
+        .where('deletedAt', 'is', null)
+        .where('status', '=', UserStatus.Active)
+        .forShare()
+        .executeTakeFirst();
+      if (!owner) throw new AssetSourceChangedError();
+      const frames = await trx
+        .selectFrom('video_moment_frame')
+        .select('path')
         .where('assetId', '=', asUuid(assetId))
         .execute();
-      return removed.map(({ path }) => path);
-    });
+      const lockedPaths = new Set(frames.map(({ path }) => path));
+      for (const path of [...lockedPaths].sort()) await lockFilePath(trx, path);
+      return withAssetSource(trx, expectedSource, 'update', async () => {
+        const index = await trx
+          .selectFrom('video_moment_index')
+          .select('sourceFingerprint')
+          .where('assetId', '=', asUuid(assetId))
+          .forUpdate()
+          .executeTakeFirst();
+        if ((index?.sourceFingerprint ?? null) !== expectedIndexFingerprint) return [];
+        const current = await trx
+          .selectFrom('video_moment_frame')
+          .select('path')
+          .where('assetId', '=', asUuid(assetId))
+          .execute();
+        if (current.some(({ path }) => !lockedPaths.has(path))) throw new AssetSourceChangedError();
+        await trx
+          .deleteFrom('video_moment')
+          .where('assetId', '=', asUuid(assetId))
+          .where('source', '=', VideoMomentSource.Generated)
+          .execute();
+        const removed = await trx
+          .deleteFrom('video_moment_frame')
+          .where('assetId', '=', asUuid(assetId))
+          .returning('path')
+          .execute();
+        await trx
+          .updateTable('video_moment_index')
+          .set({
+            sourceFingerprint: newFingerprint,
+            frameCount: 0,
+            framesExtractedAt: null,
+            embeddingModel: null,
+            embeddingDestinationId: null,
+            indexedAt: null,
+            captionModel: null,
+            captionConfigHash: null,
+            captionIdentityHash: null,
+            captionDestinationId: null,
+            captionedAt: null,
+          })
+          .where('assetId', '=', asUuid(assetId))
+          .execute();
+        const paths = removed.map(({ path }) => path);
+        await admit(trx, paths);
+        return paths;
+      });
+    };
+    return this.db.isTransaction ? execute(this.db as Transaction<DB>) : this.db.transaction().execute(execute);
   }
 
   /**

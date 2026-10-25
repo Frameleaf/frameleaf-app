@@ -1,5 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
+import type { Transaction } from 'kysely';
 import type { QueueExecution } from 'src/queue/types.js';
+import type { DB } from 'src/schema/index.js';
 import { defaults } from 'src/config.js';
 import {
   AssetStatus,
@@ -89,7 +91,19 @@ describe(VideoMomentIndexService.name, () => {
       updateManualMoment: vi.fn(),
       deleteManualMoment: vi.fn(),
       setCover: vi.fn(),
-      invalidateGenerated: vi.fn().mockResolvedValue(['/thumbs/a.jpeg']),
+      readSource: vi.fn().mockResolvedValue({ assetId, ownerId, derivatives: false, checksum: 'aa', revision: {} }),
+      invalidateGenerated: vi.fn(
+        async (
+          _assetId,
+          _fingerprint,
+          _source,
+          _index,
+          admit: (tx: Transaction<DB>, paths: string[]) => Promise<void>,
+        ) => {
+          await admit({} as Transaction<DB>, ['/thumbs/a.jpeg']);
+          return ['/thumbs/a.jpeg'];
+        },
+      ),
       searchFrames: vi.fn().mockResolvedValue([]),
       searchMomentText: vi.fn().mockResolvedValue([]),
     };
@@ -523,8 +537,60 @@ describe(VideoMomentIndexService.name, () => {
 
       await sut.onAssetMetadataExtracted({ assetId, userId: ownerId });
 
-      expect(moments.invalidateGenerated).toHaveBeenCalledWith(assetId, 'replaced');
-      expect(mocks.storage.unlink).toHaveBeenCalledWith('/thumbs/a.jpeg');
+      expect(moments.invalidateGenerated).toHaveBeenCalledWith(
+        assetId,
+        'replaced',
+        { assetId, ownerId, derivatives: false, checksum: 'aa', revision: {} },
+        fingerprint,
+        expect.any(Function),
+      );
+      expect(mocks.job.queueInTransaction).toHaveBeenCalledWith(
+        {},
+        { name: JobName.FileDelete, data: { files: ['/thumbs/a.jpeg'] } },
+      );
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('defers retirement and guarded deletion until a queue claim is accepted', async () => {
+      const execution: QueueExecution = {
+        claim: {
+          id: 'fixture',
+          queue: 'fixture',
+          name: 'fixture',
+          data: {},
+          token: 'fixture',
+          workerId: 'fixture',
+          attempt: 1,
+          runId: null,
+          itemKey: null,
+          deadlineMs: 600_000,
+          startedAt: new Date(),
+        },
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        followups: [],
+        buffering: false,
+      };
+      moments.getFingerprints.mockResolvedValue(new Map([[assetId, 'replaced']]));
+      await queueExecution.run(execution, () => sut.onAssetMetadataExtracted({ assetId, userId: ownerId }));
+      expect(moments.invalidateGenerated).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(execution.adoptions).toHaveLength(1);
+      await queueExecution.run(execution, () => execution.adoptions[0]({} as never));
+      expect(moments.invalidateGenerated).toHaveBeenCalledTimes(1);
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: ['/thumbs/a.jpeg'] } });
+      expect(mocks.job.queueInTransaction).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('propagates cleanup admission failures', async () => {
+      moments.getFingerprints.mockResolvedValue(new Map([[assetId, 'replaced']]));
+      mocks.job.queueInTransaction.mockRejectedValueOnce(new Error('admission failed'));
+      await expect(sut.onAssetMetadataExtracted({ assetId, userId: ownerId })).rejects.toThrow('admission failed');
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
     });
 
     it('leaves everything alone when the original is unchanged', async () => {

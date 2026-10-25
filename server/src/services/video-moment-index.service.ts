@@ -619,14 +619,29 @@ export class VideoMomentIndexService {
       return;
     }
 
+    const source = await this.moments.readSource(assetId);
+    if (!source) return;
     const fingerprint = (await this.moments.getFingerprints([assetId])).get(assetId);
     if (!fingerprint || fingerprint === index.sourceFingerprint) {
       return;
     }
 
-    const paths = await this.moments.invalidateGenerated(assetId, fingerprint);
-    await Promise.all(paths.map((path) => this.storage.unlink(path).catch(() => {})));
-    this.logger.log(`Video ${assetId} changed; dropped ${paths.length} generated moment frames`);
+    const retire = async () => {
+      const paths = await this.moments.invalidateGenerated(
+        assetId,
+        fingerprint,
+        source,
+        index.sourceFingerprint,
+        async (tx, files) => {
+          if (files.length === 0) return;
+          const item = { name: JobName.FileDelete, data: { files } } as const;
+          if (queueExecution.getStore()) await this.jobs.queue(item);
+          else await this.jobs.queueInTransaction(tx, item);
+        },
+      );
+      this.logger.log(`Video ${assetId} changed; retired ${paths.length} generated moment frames`);
+    };
+    if (!deferJobAdoption(retire)) await retire();
   }
 
   /** The rows go with the asset; the frame files are named after it and removed here. */

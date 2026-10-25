@@ -7,10 +7,12 @@ import {
   AssetVisibility,
   EnrichmentItemState,
   JobName,
+  QueueName,
   VideoMomentIndexState,
   VideoMomentMatch,
   VideoMomentSource,
 } from 'src/enum.js';
+import { SqlQueueStore } from 'src/queue/store.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -83,6 +85,19 @@ const setup = () => {
   jobs.queue.mockResolvedValue();
   jobs.queueAll.mockResolvedValue();
   useRealJobPublication(database, jobs);
+  jobs.queueInTransaction.mockImplementation(async (tx, item) => {
+    if (item.name !== JobName.FileDelete) throw new Error('Unexpected transactional job');
+    await new SqlQueueStore(tx).enqueue([
+      {
+        name: item.name,
+        data: { ...item.data },
+        queue: QueueName.BackgroundTask,
+        safeToRetry: true,
+        sensitive: false,
+        deadlineMs: 60_000,
+      },
+    ]);
+  });
   const sut = new VideoMomentIndexService(
     ctx.getMock(LoggingRepository),
     ctx.get(AccessRepository),
@@ -393,9 +408,11 @@ describe(VideoMomentIndexService.name, () => {
           endMs: 15_000,
         }),
       ]);
-      for (const { path } of oldFrames) {
-        expect(storage.unlink).toHaveBeenCalledWith(path);
-      }
+      expect(jobs.queueInTransaction).toHaveBeenCalledWith(expect.anything(), {
+        name: JobName.FileDelete,
+        data: { files: oldFrames.map(({ path }) => path) },
+      });
+      expect(storage.unlink).not.toHaveBeenCalled();
 
       const view = await sut.getMoments(auth, video.id);
       expect(view).toMatchObject({
