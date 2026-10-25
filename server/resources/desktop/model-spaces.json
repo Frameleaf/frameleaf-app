@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "epoch": 6,
+  "epoch": 7,
   "spaces": [
     {
       "spaceKey": "clip-space:fcbf57323b51dfc38ff89ceb12ceeb2b33e1c80d84a5afeb0717df54855e708d",
@@ -56,6 +56,14 @@
       "textModelKeys": [
         "clip:240f796b83fd60cf268fd02d71473be3382e42bb78dc5d7b99fc6add425adcfd",
         "clip:b6e9c781f52d417cd84729a3efb592bca5c714da884925be40a50cc588e79423"
+      ]
+    },
+    {
+      "spaceKey": "clip-space:77c3a7b485939be455c85a5c9cf6999ed6077a4e8e925236b14c394bb6d0fbda",
+      "visualModelKey": "clip:79a3361d7192d40b8b9cc5641493d33e22ab1fdbe84e85214b89043955fcbe52",
+      "textModelKeys": [
+        "clip:25b9801d67d3850829bc7d836ea6d10b990342d497751d46818e058f749a22d0",
+        "clip:9e4de64a882ea79960634582246f3f8d388fc8dfc1a07de6f9269f91f93d74c6"
       ]
     }
   ]

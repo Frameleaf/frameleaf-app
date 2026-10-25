@@ -22,7 +22,12 @@ it.each(['ocr', 'face'] as const)('selects the released %s identity and revalida
     'CoreMLExecutionProvider',
     'CUDAExecutionProvider',
     'OpenVINOExecutionProvider',
+    'CPUExecutionProvider',
+    'CoreMLExecutionProvider',
   ]);
+  expect(new Set(currentVariants.map((profile) => profile.runtimeSourceRevision))).toEqual(
+    new Set(['f2c451a6bf71ca3f3aec986e07f0852937268e2f', '088560702a69022b6eee705d8a67306f1075cea0']),
+  );
   expect(select().modelKey).toBe(current.modelKey);
   if (workload === 'ocr') {
     expect(() =>
