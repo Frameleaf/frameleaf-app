@@ -6,6 +6,7 @@ import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetFileType, AssetStatus, ChecksumAlgorithm, IntegrityReport } from 'src/enum.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
 import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { DB } from 'src/schema/index.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
@@ -23,6 +24,35 @@ export class IntegrityRepository {
     @InjectKysely()
     private db: Kysely<DB>,
   ) {}
+  getReferenceReport(reportId: string, path: string, type: IntegrityReport.MissingFile | IntegrityReport.ChecksumFail) {
+    return this.db
+      .selectFrom('integrity_report')
+      .select(['assetId', 'fileAssetId'])
+      .where('id', '=', reportId)
+      .where('path', '=', path)
+      .where('type', '=', type)
+      .executeTakeFirst();
+  }
+
+  /** A source availability verdict may clear only this original's report under its publication fence. */
+  resolveReferenceReport(input: {
+    assetId: string;
+    path: string;
+    reportId?: string | null;
+    type: IntegrityReport.MissingFile | IntegrityReport.ChecksumFail;
+  }) {
+    const tx = publicationTransaction.getStore();
+    if (!tx) throw new Error('Reference report resolution requires a publication transaction');
+    return tx
+      .deleteFrom('integrity_report')
+      .where('assetId', '=', input.assetId)
+      .where('fileAssetId', 'is', null)
+      .where('path', '=', input.path)
+      .where('type', '=', input.type)
+      .$if(!!input.reportId, (qb) => qb.where('id', '=', input.reportId!))
+      .execute();
+  }
+
   /** Source-owner revocation facts, independent of the requesting viewer's account. */
   sourceEpochs(ids: string[]) {
     return AssetLocalEffectRepository.sourceEpochs(this.db, ids);
@@ -497,7 +527,12 @@ export class IntegrityRepository {
         'asset.id as assetId',
         'integrity_report.id as reportId',
       ])
-      .where('asset.isExternal', '=', sql.lit(false))
+      .where((eb) =>
+        eb.or([
+          eb('asset.isExternal', '=', sql.lit(false)),
+          eb('asset.originalPath', 'ilike', sql.lit('frameleaf-source:%')),
+        ]),
+      )
       .$if(startMarker !== undefined, (qb) => qb.where('asset.createdAt', '>=', startMarker!))
       .orderBy('asset.createdAt', 'asc')
       .stream();

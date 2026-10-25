@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { ChecksumAlgorithm, IntegrityReport, JobStatus, SystemMetadataKey } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
+import { sourceOriginalPath } from 'src/utils/source-original.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 describe(IntegrityService.name, () => {
@@ -41,6 +43,297 @@ describe(IntegrityService.name, () => {
         expect(mocks.cron.create).toHaveBeenCalledWith(expect.objectContaining({ name, start: false }));
         expect(mocks.cron.update).toHaveBeenCalledWith(expect.objectContaining({ name, start: false }));
       }
+    });
+  });
+
+  describe('reference integrity reports', () => {
+    const fixture = () => {
+      const path = sourceOriginalPath({
+        sourceId: '12345678-1234-4234-8234-123456789016',
+        resourceKey: 'b'.repeat(64),
+      });
+      const asset = { id: 'asset-1', ownerId: 'owner-1', originalPath: path };
+      const policy = { assetId: asset.id };
+      const input = {
+        check: vi.fn().mockResolvedValue(undefined),
+        release: vi.fn().mockResolvedValue(undefined),
+        signal: new AbortController().signal,
+      };
+      const health = {
+        getAssets: vi.fn().mockResolvedValue([asset]),
+        captureHealthSource: vi.fn().mockResolvedValue(policy),
+        assertHealthSource: vi.fn().mockResolvedValue(undefined),
+        publishHealthSource: vi.fn().mockImplementation(async (_asset, _policy, check, publish) => {
+          await check();
+          const result = await publish();
+          await check();
+          return result;
+        }),
+      };
+      const originals = { open: vi.fn().mockResolvedValue(input) };
+      Object.assign(sut, { sourceOriginalService: originals, mediaHealthRepository: health });
+      Object.assign(mocks.integrityReport, { resolveReferenceReport: vi.fn().mockResolvedValue(undefined) });
+      Object.assign(mocks.integrityReport, { getReferenceReport: vi.fn() });
+      mocks.integrityReport.getReferenceReport.mockResolvedValue({ assetId: asset.id, fileAssetId: null });
+      return { path, asset, policy, input, health, originals };
+    };
+
+    it.each([ChecksumAlgorithm.sha1Path, ChecksumAlgorithm.sha256File])(
+      'verifies a reference checksum using its current resource rather than stored %s identity',
+      async (algorithm) => {
+        const f = fixture();
+        await sut['checkAssetChecksum'](f.path, Buffer.alloc(32, 1), algorithm, f.asset.id, 'report-1');
+        expect(f.originals.open).toHaveBeenCalledOnce();
+        expect(mocks.integrityReport.resolveReferenceReport).toHaveBeenCalledWith({
+          assetId: f.asset.id,
+          path: f.path,
+          reportId: 'report-1',
+          type: IntegrityReport.ChecksumFail,
+        });
+        expect(mocks.storage.createPlainReadStream).not.toHaveBeenCalled();
+        expect(mocks.integrityReport.recordVerification).not.toHaveBeenCalled();
+        expect(mocks.forkSchema.recordAssetChecksums).not.toHaveBeenCalled();
+        expect(f.input.release).toHaveBeenCalledOnce();
+      },
+    );
+
+    it('rechecks a reference checksum report even when its queued legacy checksum is absent', async () => {
+      const f = fixture();
+      await sut.handleChecksumRefresh({ items: [{ path: f.path, reportId: 'report-1' }] });
+      expect(f.originals.open).toHaveBeenCalledOnce();
+      expect(mocks.integrityReport.deleteByIds).not.toHaveBeenCalled();
+      expect(mocks.storage.createPlainReadStream).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('retains a reference checksum report if the source cannot be verified', async () => {
+      const f = fixture();
+      f.originals.open.mockRejectedValueOnce(new Error('source_original_unavailable'));
+      await expect(
+        sut.handleChecksumRefresh({
+          items: [{ path: f.path, reportId: 'report-1', checksumAlgorithm: ChecksumAlgorithm.sha1Path }],
+        }),
+      ).rejects.toThrow('source_original_unavailable');
+      expect(mocks.integrityReport.deleteByIds).not.toHaveBeenCalled();
+      expect(mocks.integrityReport.resolveReferenceReport).not.toHaveBeenCalled();
+      expect(mocks.storage.createPlainReadStream).not.toHaveBeenCalled();
+    });
+
+    it('does not advance checksum completion or its checkpoint after an unavailable source', async () => {
+      const f = fixture();
+      mocks.integrityReport.getAssetCount.mockResolvedValue({ count: 1 } as never);
+      mocks.systemMetadata.get.mockResolvedValue(null);
+      mocks.integrityReport.streamAssetChecksums.mockReturnValue(
+        (function* () {
+          yield {
+            assetId: f.asset.id,
+            originalPath: f.path,
+            checksum: Buffer.alloc(20),
+            checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+            createdAt: new Date(),
+            reportId: null,
+          };
+        })() as never,
+      );
+      f.originals.open.mockRejectedValueOnce(new Error('source_original_unavailable'));
+      await expect(sut.handleChecksumFiles()).rejects.toThrow('source_original_unavailable');
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.completeIntegrityRun).not.toHaveBeenCalled();
+      expect(mocks.integrityReport.recordVerification).not.toHaveBeenCalled();
+    });
+
+    it('checks the referenced original and resolves its missing report without a filesystem URI probe', async () => {
+      const f = fixture();
+      await sut.handleMissingFiles({
+        items: [{ path: f.path, assetId: f.asset.id, fileAssetId: null, reportId: 'report-1' }],
+      });
+      expect(f.originals.open).toHaveBeenCalledWith(
+        f.asset.id,
+        expect.objectContaining({ kind: 'http' }),
+        expect.any(Function),
+        undefined,
+      );
+      expect(f.health.publishHealthSource).toHaveBeenCalledWith(f.asset, f.policy, f.input.check, expect.any(Function));
+      expect(mocks.integrityReport.resolveReferenceReport).toHaveBeenCalledWith({
+        assetId: f.asset.id,
+        path: f.path,
+        reportId: 'report-1',
+        type: IntegrityReport.MissingFile,
+      });
+      expect(mocks.storage.stat).not.toHaveBeenCalled();
+      expect(mocks.integrityReport.create).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('uses the exact active job attempt and its cancellation signal for a source check', async () => {
+      const f = fixture();
+      const controller = new AbortController();
+      await queueExecution.run(
+        {
+          claim: { id: 'job-1', token: 'attempt-1' },
+          signal: controller.signal,
+        } as never,
+        () =>
+          sut.handleMissingFiles({
+            items: [{ path: f.path, assetId: f.asset.id, fileAssetId: null, reportId: 'report-1' }],
+          }),
+      );
+      expect(f.originals.open).toHaveBeenCalledWith(
+        f.asset.id,
+        expect.objectContaining({ kind: 'job', jobId: 'job-1', attemptToken: 'attempt-1' }),
+        expect.any(Function),
+        controller.signal,
+      );
+      const authorize = f.originals.open.mock.calls[0][2] as () => Promise<void>;
+      await authorize();
+      expect(f.health.assertHealthSource).toHaveBeenCalledWith(f.asset, f.policy);
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('uses the current report association for a source report refresh', async () => {
+      const f = fixture();
+      await sut.handleMissingRefresh({ items: [{ path: f.path, reportId: 'report-1' }] });
+      expect(mocks.integrityReport.getReferenceReport).toHaveBeenCalledWith(
+        'report-1',
+        f.path,
+        IntegrityReport.MissingFile,
+      );
+      expect(f.originals.open).toHaveBeenCalledOnce();
+      expect(mocks.storage.stat).not.toHaveBeenCalled();
+      expect(mocks.integrityReport.deleteByIds).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('keeps reports and run progress when the referenced source is unavailable', async () => {
+      const f = fixture();
+      f.originals.open.mockRejectedValueOnce(new Error('source_original_unavailable'));
+      await expect(
+        sut.handleMissingFiles({
+          runId: 'run-1',
+          items: [{ path: f.path, assetId: f.asset.id, fileAssetId: null, reportId: 'report-1' }],
+        }),
+      ).rejects.toThrow('source_original_unavailable');
+      expect(mocks.integrityReport.create).not.toHaveBeenCalled();
+      expect(mocks.integrityReport.resolveReferenceReport).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.updateIntegrityRun).not.toHaveBeenCalled();
+      expect(mocks.storage.stat).not.toHaveBeenCalled();
+    });
+
+    it('refuses a stale logical path before acquiring a different original', async () => {
+      const f = fixture();
+      f.asset.originalPath = '/managed/replacement.jpg';
+      await expect(
+        sut.handleMissingFiles({
+          items: [{ path: f.path, assetId: f.asset.id, fileAssetId: null, reportId: 'report-1' }],
+        }),
+      ).rejects.toThrow('source_original_unavailable');
+      expect(f.originals.open).not.toHaveBeenCalled();
+      expect(mocks.integrityReport.resolveReferenceReport).not.toHaveBeenCalled();
+      expect(mocks.storage.stat).not.toHaveBeenCalled();
+    });
+
+    it('releases a borrowed original when its final check fails', async () => {
+      const f = fixture();
+      f.input.check.mockRejectedValue(new Error('source revoked'));
+      await expect(sut.handleMissingRefresh({ items: [{ path: f.path, reportId: 'report-1' }] })).rejects.toThrow(
+        'source revoked',
+      );
+      expect(mocks.integrityReport.resolveReferenceReport).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('keeps a source lease until the report transaction finishes', async () => {
+      const f = fixture();
+      const committed = Promise.withResolvers<void>();
+      f.health.publishHealthSource.mockReturnValueOnce(committed.promise);
+      const pending = sut.handleMissingRefresh({ items: [{ path: f.path, reportId: 'report-1' }] });
+      await vi.waitFor(() => expect(f.health.publishHealthSource).toHaveBeenCalledOnce());
+      expect(f.input.release).not.toHaveBeenCalled();
+      committed.resolve();
+      await pending;
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('finishes one reference before starting the next in a refresh batch', async () => {
+      const f = fixture();
+      const committed = Promise.withResolvers<void>();
+      f.health.publishHealthSource.mockReturnValueOnce(committed.promise);
+      const pending = sut.handleMissingRefresh({
+        items: [
+          { path: f.path, reportId: 'report-1' },
+          { path: f.path, reportId: 'report-1' },
+        ],
+      });
+      await vi.waitFor(() => expect(f.health.publishHealthSource).toHaveBeenCalledOnce());
+      expect(f.originals.open).toHaveBeenCalledOnce();
+      expect(f.input.release).not.toHaveBeenCalled();
+      committed.resolve();
+      await pending;
+      expect(f.originals.open).toHaveBeenCalledTimes(2);
+      expect(f.input.release).toHaveBeenCalledTimes(2);
+    });
+
+    it.each(['artifact_close_unconfirmed', 'source_original_shutdown_unconfirmed', 'source_reader_stop_unconfirmed'])(
+      'retains unknown-stop ownership after acquisition failure %s',
+      async (code) => {
+        const f = fixture();
+        const context = {
+          claim: { id: 'job-1', token: 'attempt-1' },
+          signal: new AbortController().signal,
+          executorStopUnconfirmed: false,
+        };
+        f.originals.open.mockRejectedValueOnce(new Error(code));
+        await expect(
+          queueExecution.run(context as never, () =>
+            sut.handleMissingRefresh({ items: [{ path: f.path, reportId: 'report-1' }] }),
+          ),
+        ).rejects.toThrow(code);
+        expect(context.executorStopUnconfirmed).toBe(true);
+        await expect(sut.handleMissingRefresh({ items: [{ path: f.path, reportId: 'report-1' }] })).rejects.toThrow(
+          'source_original_shutdown_unconfirmed',
+        );
+        expect(f.originals.open).toHaveBeenCalledOnce();
+        expect(mocks.integrityReport.resolveReferenceReport).not.toHaveBeenCalled();
+      },
+    );
+
+    it('marks unknown descriptor close on the queue owner and quarantines further reference reads', async () => {
+      const f = fixture();
+      const context = {
+        claim: { id: 'job-1', token: 'attempt-1' },
+        signal: new AbortController().signal,
+        assertCurrent: vi.fn().mockResolvedValue(undefined),
+        executorStopUnconfirmed: false,
+      };
+      f.input.release.mockRejectedValueOnce(new Error('artifact_close_unconfirmed'));
+      await expect(
+        queueExecution.run(context as never, () =>
+          sut.handleMissingRefresh({ items: [{ path: f.path, reportId: 'report-1' }] }),
+        ),
+      ).rejects.toThrow('artifact_close_unconfirmed');
+      expect(context.executorStopUnconfirmed).toBe(true);
+      await expect(sut.handleMissingRefresh({ items: [{ path: f.path, reportId: 'report-1' }] })).rejects.toThrow(
+        'source_original_shutdown_unconfirmed',
+      );
+      expect(f.originals.open).toHaveBeenCalledOnce();
+    });
+
+    it('does no media IO when the queued report has already disappeared', async () => {
+      const f = fixture();
+      mocks.integrityReport.getReferenceReport.mockResolvedValueOnce(undefined);
+      await sut.handleMissingRefresh({ items: [{ path: f.path, reportId: 'report-1' }] });
+      expect(f.originals.open).not.toHaveBeenCalled();
+      expect(mocks.storage.stat).not.toHaveBeenCalled();
+      expect(mocks.integrityReport.resolveReferenceReport).not.toHaveBeenCalled();
+    });
+
+    it('refuses a source URI attached to a derivative instead of a registered original', async () => {
+      const f = fixture();
+      await expect(
+        sut.handleMissingFiles({ items: [{ path: f.path, assetId: null, fileAssetId: 'file-1', reportId: null }] }),
+      ).rejects.toThrow('source_original_unavailable');
+      expect(f.originals.open).not.toHaveBeenCalled();
+      expect(mocks.storage.stat).not.toHaveBeenCalled();
     });
   });
 

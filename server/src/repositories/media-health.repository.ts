@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
@@ -15,6 +15,8 @@ import {
   MediaHealthStatus,
   PhysicalFileType,
 } from 'src/enum.js';
+import { assertPublicationSource, publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
+import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -23,9 +25,12 @@ import {
   AssetHealthTable,
 } from 'src/schema/tables/asset-health.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { type AssetSourceSnapshot, assertAssetSource, readAssetSource } from 'src/utils/asset-source-authority.js';
 import { anyUuid, asUuid, lockedOwnerScope, withHiddenContentFilter } from 'src/utils/database.js';
 import { libraryPathOnRelink } from 'src/utils/library-path.js';
 import { isLocked } from 'src/utils/locked.js';
+import { lockSourceAuthorities } from 'src/utils/source-authority-lock.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 /**
  * What an interactive read may show: the viewer's hidden-content settings, and their Locked media only
  * in their elevated session (`lockedOwnerId`, FL-34). Background jobs pass no privacy and see every
@@ -130,7 +135,83 @@ export class MediaHealthRepository {
   constructor(
     @InjectKysely()
     private db: Kysely<DB>,
-  ) {}
+  ) {
+    this.db = publicationDatabase(this.db);
+  }
+
+  async captureHealthSource(asset: MediaHealthAsset): Promise<AssetSourceSnapshot> {
+    return this.db.transaction().execute(async (tx) => {
+      const policy = await readAssetSource(tx, asset.id, false);
+      if (!policy) throw new ConflictException('Media health source changed. Scan and confirm it again.');
+      await this.checkHealthSource(tx, asset, policy);
+      return policy;
+    });
+  }
+
+  assertHealthSource(asset: MediaHealthAsset, policy: AssetSourceSnapshot): Promise<void> {
+    return this.db.transaction().execute((tx) => this.checkHealthSource(tx, asset, policy));
+  }
+
+  private async checkHealthSource(db: Kysely<DB>, asset: MediaHealthAsset, policy: AssetSourceSnapshot) {
+    const source = parseSourceOriginalPath(asset.originalPath);
+    if (source) {
+      if (!(await lockSourceAuthorities(db, [{ sourceId: source.sourceId, ownerId: asset.ownerId }])))
+        throw new ConflictException('Media health source changed. Scan and confirm it again.');
+      if (
+        !asset.libraryId ||
+        !(await db.selectFrom('library').select('id').where('id', '=', asset.libraryId).forShare().executeTakeFirst())
+      )
+        throw new ConflictException('Media health source changed. Scan and confirm it again.');
+      await assertAssetSource(db, policy);
+      const [epoch] = await AssetLocalEffectRepository.sourceEpochs(db, [asset.id]);
+      if (!epoch?.reference) throw new ConflictException('Media health source changed. Scan and confirm it again.');
+    }
+    await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${asset.id})::int)`.execute(db);
+    const current = await db
+      .selectFrom('asset')
+      .select(['ownerId', 'originalPath', 'checksum', 'updateId', 'status', 'deletedAt', 'isOffline', 'libraryId'])
+      .where('id', '=', asset.id)
+      .forShare()
+      .executeTakeFirst();
+    if (
+      !current ||
+      current.ownerId !== asset.ownerId ||
+      current.originalPath !== asset.originalPath ||
+      current.libraryId !== asset.libraryId ||
+      !current.checksum.equals(asset.checksum) ||
+      current.updateId !== asset.updateId ||
+      current.status !== AssetStatus.Active ||
+      current.deletedAt ||
+      current.isOffline ||
+      policy.assetId !== asset.id ||
+      policy.ownerId !== asset.ownerId
+    ) {
+      throw new ConflictException('Media health source changed. Scan and confirm it again.');
+    }
+    await db.selectFrom('asset_lock').select('assetId').where('assetId', '=', asset.id).forShare().execute();
+    await assertAssetSource(db, policy);
+  }
+
+  /** DB-only verdict publication; no source read or decoder may run inside this callback. */
+  publishHealthSource<T>(
+    asset: MediaHealthAsset,
+    policy: AssetSourceSnapshot,
+    check: () => Promise<void>,
+    publish: () => Promise<T>,
+  ): Promise<T> {
+    return this.db.transaction().execute((tx) =>
+      publicationTransaction.run(tx, async () => {
+        await this.checkHealthSource(tx, asset, policy);
+        await assertPublicationSource(asset.id, asset.checksum, asset.ownerId);
+        await check();
+        const result = await publish();
+        await this.checkHealthSource(tx, asset, policy);
+        await check();
+        return result;
+      }),
+    );
+  }
+
   async createRun(category: MediaHealthCategory, ownerId?: string): Promise<MediaHealthRun>;
   async createRun(
     category: MediaHealthCategory,

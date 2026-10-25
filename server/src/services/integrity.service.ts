@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { createHash, randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -41,11 +41,16 @@ import {
   StorageFolder,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
+import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
+import { executionSignal, withExecutionCleanup } from 'src/utils/execution-signal.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, handlePromiseError } from 'src/utils/misc.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 
 /** FL-520: how many past checks "Recent checks" keeps. */
 export const INTEGRITY_HISTORY_KEPT = 30;
@@ -81,6 +86,12 @@ const CHECKSUM_PROGRESS_EVERY = 100;
 @Injectable()
 export class IntegrityService extends BaseService {
   private integrityLock = false;
+  @Inject(SourceOriginalService)
+  private sourceOriginalService!: SourceOriginalService;
+  @Inject(MediaHealthRepository)
+  private mediaHealthRepository!: MediaHealthRepository;
+  private readonly sourceReaderOwnerId = randomUUID();
+  private sourceStopUnconfirmed = false;
 
   /**
    * FL-363: the three checks no longer start on timers of their own. The overnight schedule's
@@ -653,9 +664,76 @@ export class IntegrityService extends BaseService {
     return status;
   }
 
+  private async checkReferenceIntegrity(
+    path: string,
+    type: IntegrityReport.MissingFile | IntegrityReport.ChecksumFail,
+    assetId?: string | null,
+    reportId?: string | null,
+  ) {
+    if (this.sourceStopUnconfirmed) throw new Error('source_original_shutdown_unconfirmed');
+    if (!assetId) {
+      if (!reportId) throw new ServiceUnavailableException('source_original_unavailable');
+      const report = await this.integrityRepository.getReferenceReport(reportId, path, type);
+      // A report removed or changed since queueing has no verdict left to refresh.
+      if (!report) return;
+      if (!report.assetId || report.fileAssetId) throw new ServiceUnavailableException('source_original_unavailable');
+      assetId = report.assetId;
+    }
+    const [asset] = await this.mediaHealthRepository.getAssets([assetId]);
+    if (!asset || asset.originalPath !== path) throw new ServiceUnavailableException('source_original_unavailable');
+    const policy = await this.mediaHealthRepository.captureHealthSource(asset);
+    const context = queueExecution.getStore();
+    let input: Awaited<ReturnType<SourceOriginalService['open']>> | undefined;
+    let confirmed = true;
+    try {
+      input = await this.sourceOriginalService.open(
+        asset.id,
+        {
+          ownerId: this.sourceReaderOwnerId,
+          readerId: randomUUID(),
+          ...(context
+            ? { kind: 'job' as const, jobId: context.claim.id, attemptToken: context.claim.token }
+            : { kind: 'http' as const }),
+        },
+        async () => {
+          context?.signal.throwIfAborted();
+          await this.mediaHealthRepository.assertHealthSource(asset, policy);
+          context?.signal.throwIfAborted();
+        },
+        executionSignal(),
+      );
+      await input.check();
+      await this.mediaHealthRepository.publishHealthSource(asset, policy, input.check, () =>
+        this.integrityRepository.resolveReferenceReport({ assetId: asset.id, path, reportId, type }),
+      );
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        [
+          'artifact_close_unconfirmed',
+          'source_original_shutdown_unconfirmed',
+          'source_reader_stop_unconfirmed',
+        ].includes(error.message)
+      ) {
+        confirmed = false;
+        this.sourceStopUnconfirmed = true;
+        if (context) context.executorStopUnconfirmed = true;
+      }
+      throw error;
+    } finally {
+      if (confirmed && input)
+        await withExecutionCleanup(() => input!.release()).catch((error) => {
+          this.sourceStopUnconfirmed = true;
+          if (context) context.executorStopUnconfirmed = true;
+          throw error;
+        });
+    }
+  }
+
   /** Whether the path exists, or undefined when it cannot be checked (EACCES, EIO, ENOTDIR …): such a path is never reported
    * missing, and must not fail its batch. */
   private async pathExists(path: string): Promise<boolean | undefined> {
+    if (parseSourceOriginalPath(path)) throw new Error('source_path_requires_resolution');
     try {
       await this.storageRepository.stat(path);
       return true;
@@ -672,11 +750,18 @@ export class IntegrityService extends BaseService {
   private async checkMissingFiles({ items }: Omit<IIntegrityMissingFilesJob, 'runId'>): Promise<JobStatus> {
     this.logger.log(`Processing batch of ${items.length} files to check if they are missing.`);
 
-    const exists = await Promise.all(items.map(({ path }) => this.pathExists(path)));
+    const managed: typeof items = [];
+    for (const item of items) {
+      if (parseSourceOriginalPath(item.path)) {
+        if (!item.assetId || item.fileAssetId) throw new ServiceUnavailableException('source_original_unavailable');
+        await this.checkReferenceIntegrity(item.path, IntegrityReport.MissingFile, item.assetId, item.reportId);
+      } else managed.push(item);
+    }
+    const exists = await Promise.all(managed.map(({ path }) => this.pathExists(path)));
 
     const outdatedReports: string[] = [];
     const missingFiles = [];
-    for (const [index, { reportId, path, assetId, fileAssetId }] of items.entries()) {
+    for (const [index, { reportId, path, assetId, fileAssetId }] of managed.entries()) {
       if (exists[index] === false) {
         missingFiles.push({ type: IntegrityReport.MissingFile, path, assetId, fileAssetId });
       } else if (exists[index] && reportId) {
@@ -698,8 +783,14 @@ export class IntegrityService extends BaseService {
   async handleMissingRefresh({ items: paths }: IIntegrityPathWithReportJob): Promise<JobStatus> {
     this.logger.log(`Processing batch of ${paths.length} reports to check if they are out of date.`);
 
+    const managed: typeof paths = [];
+    for (const item of paths) {
+      if (parseSourceOriginalPath(item.path))
+        await this.checkReferenceIntegrity(item.path, IntegrityReport.MissingFile, undefined, item.reportId);
+      else managed.push(item);
+    }
     const results = await Promise.all(
-      paths.map(async ({ reportId, path }) => {
+      managed.map(async ({ reportId, path }) => {
         return (await this.pathExists(path)) === true ? reportId : undefined;
       }),
     );
@@ -767,6 +858,10 @@ export class IntegrityService extends BaseService {
     assetId: string,
     reportId: string | null,
   ) {
+    if (parseSourceOriginalPath(originalPath)) {
+      await this.checkReferenceIntegrity(originalPath, IntegrityReport.ChecksumFail, assetId, reportId);
+      return;
+    }
     if (!this.hashForAlgorithm(checksumAlgorithm)) {
       return;
     }
@@ -938,8 +1033,14 @@ export class IntegrityService extends BaseService {
   async handleChecksumRefresh({ items: paths }: IIntegrityPathWithChecksumJob): Promise<JobStatus> {
     this.logger.log(`Processing batch of ${paths.length} reports to check if they are out of date.`);
 
+    const managed: typeof paths = [];
+    for (const item of paths) {
+      if (parseSourceOriginalPath(item.path))
+        await this.checkReferenceIntegrity(item.path, IntegrityReport.ChecksumFail, undefined, item.reportId);
+      else managed.push(item);
+    }
     const results = await Promise.all(
-      paths.map(async ({ reportId, path, checksum, checksumAlgorithm }) => {
+      managed.map(async ({ reportId, path, checksum, checksumAlgorithm }) => {
         if (!checksum) {
           return reportId;
         }

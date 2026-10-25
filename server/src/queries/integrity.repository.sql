@@ -173,7 +173,10 @@ from
   and "integrity_report"."type" = $1
 where
   "asset"."deletedAt" is null
-  and "asset"."isExternal" = false
+  and (
+    "asset"."isExternal" = false
+    or "asset"."originalPath" ilike 'frameleaf-source:%'
+  )
   and "asset"."createdAt" >= $2
 order by
   "asset"."createdAt" asc
