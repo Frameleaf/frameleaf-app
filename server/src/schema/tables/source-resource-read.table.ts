@@ -67,10 +67,22 @@ export class SourceResourceReadTable {
   @Column() scopeFingerprint!: string;
   @Column({ type: 'integer' }) authorizationEpoch!: number;
   @Column({ default: 'pending' }) state!: Generated<'pending' | 'claimed' | 'delivering' | 'ready' | 'unavailable'>;
+  @Column({ default: false }) consumerManaged!: Generated<boolean>;
   @Column({ type: 'integer', default: 0 }) claimFence!: Generated<number>;
   @Column({ type: 'bytea', nullable: true }) claimTokenHash!: Buffer | null;
   @Column({ type: 'bytea', nullable: true }) claimCredentialHash!: Buffer | null;
   @Column({ type: 'timestamp with time zone', nullable: true }) leaseUntil!: Timestamp | null;
   @Column({ type: 'timestamp with time zone' }) deadline!: Timestamp;
   @CreateDateColumn() createdAt!: Generated<Timestamp>;
+}
+
+/** Waiting interest only: releasing it never proves a cache reader or native writer stopped. */
+@Table('source_resource_read_consumer')
+@Unique({ columns: ['readId', 'readerId'] })
+export class SourceResourceReadConsumerTable {
+  @PrimaryGeneratedColumn() id!: Generated<string>;
+  @ForeignKeyColumn(() => SourceResourceReadTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE' }) readId!: string;
+  @Column({ type: 'uuid' }) readerId!: string;
+  @Column({ type: 'uuid' }) readerOwnerId!: string;
+  @Column({ type: 'timestamp with time zone', nullable: true }) expiresAt!: Timestamp | null;
 }
