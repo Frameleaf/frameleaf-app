@@ -22,7 +22,7 @@ export class PhotoSourceTable {
   // Keep provenance after logout; a fresh photo session must explicitly rebind the grant.
   @Column({ type: 'uuid' }) photoSessionId!: string;
   @Column() kind!: 'folder' | 'apple-photos';
-  @Column() mode!: 'copy';
+  @Column() mode!: 'copy' | 'reference';
   @Column() name!: string;
   @Column() scopeFingerprint!: string;
   @Column({ type: 'timestamp with time zone', nullable: true }) revokedAt!: Timestamp | null;

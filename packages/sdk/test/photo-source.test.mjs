@@ -14,7 +14,7 @@ test("photo source schemas use named enums without renumbering existing client e
   for (const [name, values] of Object.entries({
     PhotoSourceKind: ["folder"],
     ApplePhotosSourceKind: ["apple-photos"],
-    PhotoSourceCopyMode: ["copy"],
+    PhotoSourceCopyMode: ["copy", "reference"],
     PhotoSourceRunState: ["open", "paused", "cancelled", "complete"],
     PhotoSourceItemState: ["planned", "verified"],
     PhotoSourceStorage: ["managed"],

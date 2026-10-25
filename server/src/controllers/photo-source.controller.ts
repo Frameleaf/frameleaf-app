@@ -34,7 +34,10 @@ export class PhotoSourceController {
   @Header('Cache-Control', 'private, no-store')
   @Authenticated({ permission: Permission.AssetUpload })
   @ApiResponse({ status: 201, type: PhotoSourceResponseDto })
-  @Endpoint({ summary: 'Approve an owner-scoped desktop folder-copy source', history: history() })
+  @Endpoint({
+    summary: 'Approve an owner-scoped desktop folder source with explicit copy or reference mode',
+    history: history(),
+  })
   async createPhotoSource(@Auth() auth: AuthDto, @Body() dto: PhotoSourceCreateDto): Promise<PhotoSourceResponseDto> {
     return PhotoSourceResponseDto.schema.parse(await this.service.create(auth, dto));
   }
@@ -42,7 +45,10 @@ export class PhotoSourceController {
   @Header('Cache-Control', 'private, no-store')
   @Authenticated({ permission: Permission.AssetUpload })
   @ApiResponse({ status: 201, type: ApplePhotosSourceResponseDto })
-  @Endpoint({ summary: 'Approve an owner-scoped Apple Photos copy source', history: history() })
+  @Endpoint({
+    summary: 'Approve an owner-scoped Apple Photos source with explicit copy or reference mode',
+    history: history(),
+  })
   async createApplePhotosSource(
     @Auth() auth: AuthDto,
     @Body() dto: ApplePhotosSourceCreateDto,

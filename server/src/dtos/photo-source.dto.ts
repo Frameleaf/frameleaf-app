@@ -5,7 +5,8 @@ const fingerprint = z.string().regex(/^[a-f0-9]{64}$/);
 const folderKind = z.enum(['folder']).meta({ id: 'PhotoSourceKind' });
 const applePhotosKind = z.enum(['apple-photos']).meta({ id: 'ApplePhotosSourceKind' });
 const sourceKind = z.union([folderKind, applePhotosKind]);
-const copyMode = z.enum(['copy']).meta({ id: 'PhotoSourceCopyMode' });
+// Preserve the published schema name for existing clients.
+const sourceMode = z.enum(['copy', 'reference']).meta({ id: 'PhotoSourceCopyMode' });
 const runState = z.enum(['open', 'paused', 'cancelled', 'complete']).meta({ id: 'PhotoSourceRunState' });
 const itemState = z.enum(['planned', 'verified']).meta({ id: 'PhotoSourceItemState' });
 const storage = z.enum(['managed']).meta({ id: 'PhotoSourceStorage' });
@@ -14,7 +15,7 @@ export const photoSourceCreateSchema = z
     id: z.uuid(),
     deviceId: z.uuid(),
     kind: sourceKind,
-    mode: copyMode,
+    mode: sourceMode,
     name: z
       .string()
       .trim()
@@ -65,7 +66,7 @@ export const photoSourceViewSchema = z.object({
   id: z.uuid(),
   deviceId: z.uuid(),
   kind: sourceKind,
-  mode: copyMode,
+  mode: sourceMode,
   name: z.string(),
   scopeFingerprint: fingerprint,
   revokedAt: z.iso.datetime().nullable(),

@@ -26781,7 +26781,7 @@ export function createPetObservation({ id, petObservationCreateDto }: {
     })));
 }
 /**
- * Approve an owner-scoped desktop folder-copy source
+ * Approve an owner-scoped desktop folder source with explicit copy or reference mode
  */
 export function createPhotoSource({ photoSourceCreateDto }: {
     photoSourceCreateDto: PhotoSourceCreateDto;
@@ -26796,7 +26796,7 @@ export function createPhotoSource({ photoSourceCreateDto }: {
     })));
 }
 /**
- * Approve an owner-scoped Apple Photos copy source
+ * Approve an owner-scoped Apple Photos source with explicit copy or reference mode
  */
 export function createApplePhotosSource({ applePhotosSourceCreateDto }: {
     applePhotosSourceCreateDto: ApplePhotosSourceCreateDto;
@@ -34987,7 +34987,8 @@ export enum PhotoSourceKind {
     Folder = "folder"
 }
 export enum PhotoSourceCopyMode {
-    Copy = "copy"
+    Copy = "copy",
+    Reference = "reference"
 }
 export enum ApplePhotosSourceKind {
     ApplePhotos = "apple-photos"

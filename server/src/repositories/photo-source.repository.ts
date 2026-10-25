@@ -56,7 +56,7 @@ export class PhotoSourceRepository {
       .where('revokedAt', 'is', null)
       .forShare()
       .executeTakeFirst();
-    if (!device || device.state === 'paused' || source.photoSessionId !== auth.sessionId)
+    if (!device || device.state === 'paused' || device.state === 'revoked' || source.photoSessionId !== auth.sessionId)
       throw new ConflictException('photo_source_device_changed');
     return { source, photo };
   }
@@ -81,7 +81,8 @@ export class PhotoSourceRepository {
     transaction?: Transaction<DB>,
   ): Promise<void> {
     const check = async (tx: Transaction<DB>) => {
-      await this.activeRun(tx, auth, binding.sourceId, binding.runId);
+      const { source } = await this.activeRun(tx, auth, binding.sourceId, binding.runId);
+      if (source.mode !== 'copy') throw new ConflictException('photo_source_copy_required');
       const item = await tx
         .selectFrom('photo_source_resource')
         .selectAll()
@@ -107,7 +108,8 @@ export class PhotoSourceRepository {
         .where('revokedAt', 'is', null)
         .forShare()
         .executeTakeFirst();
-      if (!device || device.state === 'paused') throw new NotFoundException('Photo source device unavailable');
+      if (!device || device.state === 'paused' || device.state === 'revoked')
+        throw new NotFoundException('Photo source device unavailable');
       const row = await tx
         .insertInto('photo_source')
         .values({ ...dto, ownerId: auth.ownerId, photoSessionId: auth.sessionId })
@@ -306,7 +308,8 @@ export class PhotoSourceRepository {
   }
   target(auth: SourceAuthority, sourceId: string, runId: string, itemId: string, uploadResourceId: string) {
     return this.db.transaction().execute(async (tx) => {
-      const { photo } = await this.activeRun(tx, auth, sourceId, runId);
+      const { photo, source } = await this.activeRun(tx, auth, sourceId, runId);
+      if (source.mode !== 'copy') throw new ConflictException('photo_source_copy_required');
       return this.copyTarget(
         tx,
         auth,
@@ -326,7 +329,8 @@ export class PhotoSourceRepository {
     identify: (path: string) => Promise<string | null>,
   ) {
     return this.db.transaction().execute(async (tx) => {
-      const { photo } = await this.activeRun(tx, auth, sourceId, runId);
+      const { photo, source } = await this.activeRun(tx, auth, sourceId, runId);
+      if (source.mode !== 'copy') throw new ConflictException('photo_source_copy_required');
       await lockChecksum(tx, target.item.checksum);
       const current = await this.copyTarget(
         tx,

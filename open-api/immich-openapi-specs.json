@@ -33753,7 +33753,7 @@
             "api_key": []
           }
         ],
-        "summary": "Approve an owner-scoped desktop folder-copy source",
+        "summary": "Approve an owner-scoped desktop folder source with explicit copy or reference mode",
         "tags": [
           "Libraries"
         ],
@@ -33808,7 +33808,7 @@
             "api_key": []
           }
         ],
-        "summary": "Approve an owner-scoped Apple Photos copy source",
+        "summary": "Approve an owner-scoped Apple Photos source with explicit copy or reference mode",
         "tags": [
           "Libraries"
         ],
@@ -99114,7 +99114,8 @@
       },
       "PhotoSourceCopyMode": {
         "enum": [
-          "copy"
+          "copy",
+          "reference"
         ],
         "type": "string"
       },

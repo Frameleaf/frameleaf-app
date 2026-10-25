@@ -20,7 +20,7 @@ it('accepts explicit folder-copy scope with opaque bounded fingerprints', () => 
   expect(PhotoSourceCreateDto.schema.parse(valid)).toEqual(valid);
   expect(PhotoSourceCreateDto.schema.safeParse({ ...valid, kind: 'apple-photos' }).success).toBe(false);
   for (const extra of [
-    { mode: 'reference' },
+    { mode: 'external' },
     { kind: 'icloud' },
     { root: '/Users/private' },
     { scopeFingerprint: '../escape' },
@@ -56,7 +56,7 @@ it('bounds whole-run reservations and separates source identity from content', (
   }
 });
 
-it('accepts Apple Photos copy provenance without asset identifiers, paths, or external-reference authority', () => {
+it('accepts explicit source modes without granting paths or asset publication authority', () => {
   const source = {
     id,
     deviceId: id,
@@ -66,13 +66,24 @@ it('accepts Apple Photos copy provenance without asset identifiers, paths, or ex
     scopeFingerprint: 'a'.repeat(64),
   };
   expect(ApplePhotosSourceCreateDto.schema.parse(source)).toEqual(source);
+  for (const mode of ['copy', 'reference']) {
+    expect(ApplePhotosSourceCreateDto.schema.parse({ ...source, mode }).mode).toBe(mode);
+    expect(PhotoSourceCreateDto.schema.parse({ ...source, kind: 'folder', mode }).mode).toBe(mode);
+    expect(
+      ApplePhotosSourceResponseDto.schema.parse({
+        ...source,
+        mode,
+        revokedAt: null,
+        createdAt: '2026-10-21T00:00:00.000Z',
+      }).mode,
+    ).toBe(mode);
+  }
   expect(ApplePhotosSourceCreateDto.schema.safeParse({ ...source, kind: 'folder' }).success).toBe(false);
   const response = { ...source, revokedAt: null, createdAt: '2026-10-21T00:00:00.000Z' };
   expect(ApplePhotosSourceResponseDto.schema.parse(response)).toEqual(response);
   expect(PhotoSourceResponseDto.schema.safeParse(response).success).toBe(false);
   expect(PhotoSourceResponseDto.schema.parse({ ...response, kind: 'folder' }).kind).toBe('folder');
   for (const extra of [
-    { mode: 'reference' },
     { mode: 'external' },
     { assetId: 'opaque-local-id' },
     { root: '/Users/private/Photos.photoslibrary' },

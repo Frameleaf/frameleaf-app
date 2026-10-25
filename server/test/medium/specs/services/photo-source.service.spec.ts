@@ -1,4 +1,4 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -129,6 +129,27 @@ async function setup() {
     upload,
   };
 }
+it('reference mode refuses copy verification and finalization before inspecting any original', async () => {
+  const f = await setup();
+  const target = await f.repository.target(f.authority, f.source.id, f.run.id, f.item.id, f.upload.id);
+  await sql`UPDATE photo_source SET mode='reference' WHERE id=${f.source.id}::uuid`.execute(db);
+  const identify = vi.fn().mockResolvedValue('proof');
+  await expect(
+    f.service.verify(f.auth, f.source.id, f.run.id, f.item.id, { uploadResourceId: f.upload.id }),
+  ).rejects.toThrow('photo_source_copy_required');
+  await expect(f.repository.complete(f.authority, f.source.id, f.run.id, target, 'proof', identify)).rejects.toThrow(
+    'photo_source_copy_required',
+  );
+  expect(identify).not.toHaveBeenCalled();
+  expect(f.limits.hit).not.toHaveBeenCalled();
+  expect(
+    await db
+      .selectFrom('photo_source_resource')
+      .select(['state', 'uploadResourceId', 'assetId'])
+      .where('id', '=', f.item.id)
+      .executeTakeFirstOrThrow(),
+  ).toEqual({ state: 'planned', uploadResourceId: null, assetId: null });
+});
 it('records real healthy managed bytes and preserves distinct source associations after deduplication', async () => {
   const f = await setup();
   const receipt = await f.service.verify(f.auth, f.source.id, f.run.id, f.item.id, { uploadResourceId: f.upload.id });
@@ -279,6 +300,47 @@ it('verification admission is bounded and is always released on refusal', async 
   expect(f.limits.release).toHaveBeenCalledExactlyOnceWith(`photo-source-verify:${f.auth.user.id}`, WINDOW);
 });
 
+it('registers folder and Apple Photos references through the session-authenticated HTTP boundary', async () => {
+  const f = await setup();
+  const http = await controllerSetup(PhotoSourceController, [{ provide: PhotoSourceService, useValue: f.service }]);
+  try {
+    http.authenticate.mockResolvedValue(f.auth);
+    for (const kind of ['folder', 'apple-photos']) {
+      const source = {
+        id: randomUUID(),
+        deviceId: f.source.deviceId,
+        kind,
+        mode: 'reference',
+        name: 'Reference',
+        scopeFingerprint: 'a'.repeat(64),
+      };
+      const route = kind === 'folder' ? '/photo-sources' : '/photo-sources/apple-photos';
+      const response = await request(http.getHttpServer()).post(route).send(source);
+      expect(response.status).toBe(201);
+      expect(response.body).toMatchObject(source);
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(
+        (
+          await request(http.getHttpServer())
+            .post(route)
+            .send({ ...source, mode: 'copy' })
+        ).status,
+      ).toBe(409);
+      expect(
+        (
+          await request(http.getHttpServer())
+            .post(route)
+            .send({ ...source, root: '/private' })
+        ).status,
+      ).toBe(400);
+    }
+    expect(await db.selectFrom('asset').select('id').where('ownerId', '=', f.authority.ownerId).execute()).toEqual([
+      { id: f.asset.id },
+    ]);
+  } finally {
+    await http.close();
+  }
+});
 it('serves a real copy receipt through the HTTP boundary and rejects paths and malformed cursors', async () => {
   const f = await setup();
   const http = await controllerSetup(PhotoSourceController, [{ provide: PhotoSourceService, useValue: f.service }]);

@@ -1,4 +1,4 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -47,6 +47,47 @@ it('photo-copy authority is independent of ML approval and retries preserve one 
   expect(await sut.create(authority, input)).toEqual(source);
   await expect(sut.create(authority, { ...input, scopeFingerprint: 'b'.repeat(64) })).rejects.toThrow();
   expect(await db.selectFrom('photo_source').select('id').where('id', '=', source.id).execute()).toHaveLength(1);
+});
+it('registers an explicit reference mode without converting existing copy consent or creating assets', async () => {
+  const { sut, input, authority } = await setup();
+  const reference = { ...input, id: randomUUID(), mode: 'reference' as const };
+  const created = await sut.create(authority, reference);
+  expect(created.mode).toBe('reference');
+  expect(await sut.create(authority, reference)).toEqual(created);
+  await expect(sut.create(authority, { ...input, mode: 'reference' })).rejects.toThrow('photo_source_identity_changed');
+  await expect(sut.create(authority, { ...reference, mode: 'copy' })).rejects.toThrow('photo_source_identity_changed');
+  expect(await db.selectFrom('asset').select('id').where('ownerId', '=', authority.ownerId).execute()).toEqual([]);
+});
+it('reference runs reserve inventory but cannot admit managed-original uploads', async () => {
+  const { sut, source, authority } = await setup();
+  await sql`UPDATE photo_source SET mode='reference' WHERE id=${source.id}::uuid`.execute(db);
+  const run = await sut.run(authority, source.id, { id: randomUUID(), maxItems: 1, maxBytes: 6 });
+  const item = {
+    id: randomUUID(),
+    resourceKey: 'a'.repeat(64),
+    version: 'b'.repeat(64),
+    sha256: 'c'.repeat(64),
+    bytes: 6,
+  };
+  await sut.plan(authority, source.id, run.id, item);
+  await expect(
+    sut.assertUpload(
+      authority,
+      { kind: 'folder', sourceId: source.id, runId: run.id, itemId: item.id },
+      Buffer.from(item.sha256, 'hex'),
+      item.bytes,
+    ),
+  ).rejects.toThrow('photo_source_copy_required');
+});
+it('a revoked device state fences registration and existing source work even without its timestamp', async () => {
+  const { sut, source, input, authority, device } = await setup();
+  await db.updateTable('desktop_device').set({ state: 'revoked' }).where('id', '=', device.id).execute();
+  await expect(sut.create(authority, { ...input, id: randomUUID() })).rejects.toThrow(
+    'Photo source device unavailable',
+  );
+  await expect(sut.run(authority, source.id, { id: randomUUID(), maxItems: 1, maxBytes: 1 })).rejects.toThrow(
+    'photo_source_device_changed',
+  );
 });
 it('foreign accounts and dead/expired photo sessions cannot use source authority', async () => {
   const owner = await setup();

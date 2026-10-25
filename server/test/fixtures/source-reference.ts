@@ -1,4 +1,3 @@
-import { sql } from 'kysely';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Kysely } from 'kysely';
 import type { DB } from 'src/schema/index.js';
@@ -8,7 +7,7 @@ import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { PhotoSourceRepository } from 'src/repositories/photo-source.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 
-/** Seed an approved reference binding; product registration stays disabled. */
+/** Seed a reference asset binding; desktop publication remains gated. */
 export const bindSourceReference = async (db: Kysely<DB>, asset: { id: string; ownerId: string }) => {
   const session = await new SessionRepository(db).create({ userId: asset.ownerId, token: randomBytes(32) });
   const device = (await new DesktopDeviceRepository(db).enroll({
@@ -27,7 +26,7 @@ export const bindSourceReference = async (db: Kysely<DB>, asset: { id: string; o
     id: randomUUID(),
     deviceId: device.id,
     kind: 'folder',
-    mode: 'copy',
+    mode: 'reference',
     name: 'Reference fixture',
     scopeFingerprint: 'a'.repeat(64),
   });
@@ -63,7 +62,6 @@ export const bindSourceReference = async (db: Kysely<DB>, asset: { id: string; o
     .set({ assetId: asset.id, state: 'verified', verifiedAt: new Date() })
     .where('id', '=', resource.id)
     .execute();
-  await sql`UPDATE photo_source SET mode='reference' WHERE id=${source.id}::uuid`.execute(db);
   await db
     .insertInto('source_original')
     .values({
