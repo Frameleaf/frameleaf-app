@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import type { DB } from 'src/schema/index.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SourceResourceCacheRepository } from 'src/repositories/source-resource-cache.repository.js';
+import { down as revertCacheOwnership } from 'src/schema/migrations/2100000003012-SourceCacheOwnership.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -377,4 +378,24 @@ it('keeps cache accounting when final stop-journal cleanup cannot commit', async
   }
   expect(await sut.confirmRemoved(row!.id)).toBe(true);
   expect((await sql`SELECT key FROM system_metadata WHERE key=${key}`.execute(db)).rows).toEqual([]);
+});
+
+it.each(['cache', 'receipt'] as const)('refuses migration rollback while %s ownership is retained', async (kind) => {
+  const key = `frameleaf-source-reader-stopped:${randomUUID()}`;
+  if (kind === 'cache') expect((await reserve()).row).toBeDefined();
+  else await sql`INSERT INTO system_metadata(key,value) VALUES (${key},'{}'::jsonb)`.execute(db);
+  try {
+    await expect(
+      db.transaction().execute(async (tx) => {
+        await revertCacheOwnership(tx);
+        throw new Error('rollback_guard_absent');
+      }),
+    ).rejects.toThrow('Cannot discard retained source cache ownership');
+    const result = await sql<{
+      name: string | null;
+    }>`SELECT to_regclass('source_resource_cache')::text AS name`.execute(db);
+    expect(result.rows[0].name).toBe('source_resource_cache');
+  } finally {
+    await sql`DELETE FROM system_metadata WHERE key=${key}`.execute(db);
+  }
 });
