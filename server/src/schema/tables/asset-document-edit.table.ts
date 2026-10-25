@@ -22,6 +22,8 @@ import { UserTable } from 'src/schema/tables/user.table.js';
  *
  * - `key` names what the decision is about: `line:<asset_ocr id at the time>` for one line of
  *   text, `field:<DocumentField>` for a suggested value. One decision per key and asset.
+ *   Retired reference decisions use `source-version:<resource id>:<decision id>:<old key>`;
+ *   they retain their provenance but never enter current document reads or edits.
  * - `x1`..`y4` copy the region of the recognized line the decision was made against, in the same
  *   normalized coordinates of the original image as `asset_ocr`. After a new reading the decision
  *   attaches to the line that now covers the same region (`src/utils/documents.ts`).

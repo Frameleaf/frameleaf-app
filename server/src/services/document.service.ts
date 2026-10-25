@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { AssetSourceSnapshot } from 'src/utils/asset-source-authority.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
   DocumentFieldEditDto,
@@ -41,6 +42,7 @@ type DocumentAsset = NonNullable<Awaited<ReturnType<DocumentRepository['getAsset
 
 type DocumentContext = {
   asset: DocumentAsset;
+  source: AssetSourceSnapshot;
   isOwner: boolean;
   fieldsEnabled: boolean;
   /** Visible recognized lines, original-image coordinates. */
@@ -120,28 +122,30 @@ export class DocumentService {
     const existing = editId ? context.edits.find((edit) => edit.id === editId) : undefined;
     this.assertRevision(existing, dto.revision);
 
-    await this.write(async () => {
-      if (dto.action === DocumentEditAction.Correct && dto.value === line.text) {
-        // correcting a line back to what was read is removing the correction
-        if (existing) {
-          await this.documentRepository.delete(existing.id, id, existing.revision);
+    await this.write(() =>
+      this.documentRepository.withSource(context.source, async (repository) => {
+        if (dto.action === DocumentEditAction.Correct && dto.value === line.text) {
+          // correcting a line back to what was read is removing the correction
+          if (existing) {
+            await repository.delete(existing.id, id, existing.revision);
+          }
+          return;
         }
-        return;
-      }
 
-      const values = {
-        key: lineKey(line.id),
-        action: dto.action,
-        value: dto.action === DocumentEditAction.Correct ? dto.value! : null,
-        sourceText: line.text,
-        ...regionOf(line),
-        editedById: auth.user.id,
-      };
+        const values = {
+          key: lineKey(line.id),
+          action: dto.action,
+          value: dto.action === DocumentEditAction.Correct ? dto.value! : null,
+          sourceText: line.text,
+          ...regionOf(line),
+          editedById: auth.user.id,
+        };
 
-      await (existing
-        ? this.documentRepository.update(existing.id, existing.revision, values)
-        : this.documentRepository.create({ ...values, assetId: id }));
-    });
+        await (existing
+          ? repository.update(existing.id, existing.revision, values)
+          : repository.create({ ...values, assetId: id }));
+      }),
+    );
 
     return this.respond(await this.loadContext(auth, id));
   }
@@ -232,9 +236,9 @@ export class DocumentService {
     };
 
     await this.write(() =>
-      stored
-        ? this.documentRepository.update(stored.id, stored.revision, row)
-        : this.documentRepository.create({ ...row, assetId: id }),
+      this.documentRepository.withSource(context.source, (repository) =>
+        stored ? repository.update(stored.id, stored.revision, row) : repository.create({ ...row, assetId: id }),
+      ),
     );
 
     return this.respond(await this.loadContext(auth, id));
@@ -278,8 +282,9 @@ export class DocumentService {
   }
 
   private async loadContext(auth: AuthDto, id: string): Promise<DocumentContext> {
+    const source = await this.documentRepository.readSource(id);
     const asset = await this.documentRepository.getAsset(id);
-    if (!asset) {
+    if (!asset || !source) {
       throw new BadRequestException('Asset not found');
     }
 
@@ -317,7 +322,7 @@ export class DocumentService {
         ),
       );
 
-    return { asset, isOwner, fieldsEnabled, lines, edits, document, display };
+    return { asset, source, isOwner, fieldsEnabled, lines, edits, document, display };
   }
 
   private async respond({ asset, isOwner, fieldsEnabled, document, display }: DocumentContext) {

@@ -40,12 +40,27 @@ const fixture = async () => {
   };
   return { asset, resource, sourceReference, expected, sut: new AssetEditRepository(db) };
 };
+it('preserves the existing managed-source snapshot shape and active action encoding', async () => {
+  const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+  const { user } = await ctx.newUser();
+  const { asset } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Image });
+  await new AssetEditRepository(db).replaceAll(asset.id, recipe);
+  const source = (await readAssetSource(db, asset.id, true))!;
+  expect(Object.keys(source.revision).sort()).toEqual(
+    ['originalPath', 'modifiedAt', 'ownerId', 'visibility', 'deletedAt', 'isOffline', 'lock', 'files', 'edits'].sort(),
+  );
+  expect(source.revision.edits).toEqual([[0, recipe[0].action, recipe[0].parameters]]);
+  await expect(assertAssetSource(db, source)).resolves.toBeUndefined();
+  expect((await readAssetSource(db, asset.id, false))?.revision.edits).toBeNull();
+});
 it('keeps inactive saved actions stored without exposing them as the current photo or render projection', async () => {
   const f = await fixture();
   await f.sut.replaceAll(f.asset.id, recipe, 'save', f.expected);
   const saved = await db.selectFrom('asset_edit').selectAll().where('assetId', '=', f.asset.id).execute();
+  const activeSource = (await readAssetSource(db, f.asset.id, true))!;
   await db.insertInto('asset_exif').values({ assetId: f.asset.id }).execute();
   await db.updateTable('asset').set({ isEdited: false }).where('id', '=', f.asset.id).execute();
+  await expect(assertAssetSource(db, activeSource)).rejects.toThrow('Asset inputs changed before publication');
   expect((await new AssetRepository(db).getById(f.asset.id, { edits: true }))?.edits).toEqual([]);
   expect((await new AssetJobRepository(db).getForGenerateThumbnailJob(f.asset.id))?.edits).toEqual([]);
   expect(await f.sut.getAll(f.asset.id)).toEqual([]);

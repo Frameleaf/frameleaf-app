@@ -85,6 +85,8 @@ describe(DocumentService.name, () => {
   let documentRepository: {
     search: ReturnType<typeof vi.fn>;
     getAsset: ReturnType<typeof vi.fn>;
+    readSource: ReturnType<typeof vi.fn>;
+    withSource: ReturnType<typeof vi.fn>;
     getEdits: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
@@ -100,6 +102,8 @@ describe(DocumentService.name, () => {
     documentRepository = {
       search: vi.fn().mockResolvedValue({ items: [], hasNextPage: false, total: 0 }),
       getAsset: vi.fn().mockResolvedValue(documentAsset()),
+      readSource: vi.fn().mockResolvedValue({ assetId, ownerId, derivatives: true, checksum: 'aa', revision: {} }),
+      withSource: vi.fn().mockImplementation((_source, action) => action(documentRepository)),
       getEdits: vi.fn().mockResolvedValue([]),
       create: vi.fn().mockImplementation((value) => Promise.resolve(storedEdit(value))),
       update: vi.fn().mockImplementation((id, _revision, value) => Promise.resolve(storedEdit({ ...value, id }))),
@@ -253,6 +257,18 @@ describe(DocumentService.name, () => {
   });
 
   describe('editLine', () => {
+    it('refuses a correction when its original or crop changed before the write transaction', async () => {
+      documentRepository.withSource.mockRejectedValueOnce(new DocumentEditConflictError('source changed'));
+      await expect(
+        sut.editLine(authStub.user1, assetId, {
+          ocrId: lineId,
+          recognizedText: 'LAKE AGNES',
+          action: DocumentEditAction.Correct,
+          value: 'Lake Agnes',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(documentRepository.create).not.toHaveBeenCalled();
+    });
     it('records a correction beside the recognized text, never over it', async () => {
       await sut.editLine(authStub.user1, assetId, {
         ocrId: lineId,
@@ -371,6 +387,17 @@ describe(DocumentService.name, () => {
   });
 
   describe('editField', () => {
+    it('refuses a field decision when the source publication fence fails', async () => {
+      withFieldSuggestions();
+      documentRepository.withSource.mockRejectedValueOnce(new DocumentEditConflictError('source changed'));
+      await expect(
+        sut.editField(authStub.user1, assetId, DocumentField.Total, {
+          action: DocumentEditAction.Correct,
+          value: '99.00',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(documentRepository.create).not.toHaveBeenCalled();
+    });
     beforeEach(() => {
       mocks.ocr.getByAssetId.mockResolvedValue([
         ocrLine(lineId, 'Date 2026-09-23', 0.1),

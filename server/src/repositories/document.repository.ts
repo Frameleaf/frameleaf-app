@@ -1,13 +1,24 @@
-import { Injectable } from '@nestjs/common';
-import { type Insertable, type Kysely, type Selectable, type SqlBool, type Updateable, sql } from 'kysely';
+import { ConflictException, Injectable } from '@nestjs/common';
+import {
+  type Insertable,
+  type Kysely,
+  type Selectable,
+  type SqlBool,
+  type Transaction,
+  type Updateable,
+  sql,
+} from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { SourceReference } from 'src/utils/source-reference.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
-import { AssetStatus, AssetVisibility, DocumentEditAction } from 'src/enum.js';
+import { AssetStatus, AssetVisibility, ChecksumAlgorithm, DocumentEditAction, UserStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AssetDocumentEditTable } from 'src/schema/tables/asset-document-edit.table.js';
+import { type AssetSourceSnapshot, readAssetSource } from 'src/utils/asset-source-authority.js';
 import { asUuid, tokenizeForSearch, withEdits, withHiddenContentFilter } from 'src/utils/database.js';
 import { isLocked, revealedLockScope } from 'src/utils/locked.js';
+import { canonicalJson } from 'src/utils/object.js';
 import { paginationHelper } from 'src/utils/pagination.js';
 
 export type DocumentEdit = Selectable<AssetDocumentEditTable>;
@@ -30,6 +41,8 @@ export class DocumentEditConflictError extends Error {}
 const isUniqueViolation = (error: unknown): boolean => (error as { code?: string } | null)?.code === '23505';
 
 const escapeLike = (value: string) => value.replaceAll(/[\\%_]/g, String.raw`\$&`);
+const SOURCE_VERSION_ARCHIVE_PREFIX = 'source-version:';
+const archivedSourcePattern = `${SOURCE_VERSION_ARCHIVE_PREFIX}%`;
 
 /**
  * Documents (FL-63): photos with recognized text, and the owner's decisions about that text.
@@ -92,6 +105,7 @@ export class DocumentRepository {
               eb
                 .selectFrom('asset_document_edit')
                 .select(sql`1`.as('found'))
+                .where('asset_document_edit.key', 'not like', archivedSourcePattern)
                 .whereRef('asset_document_edit.assetId', '=', 'asset.id')
                 .where('asset_document_edit.action', 'in', [
                   sql.lit(DocumentEditAction.Correct),
@@ -154,8 +168,45 @@ export class DocumentRepository {
       .selectFrom('asset_document_edit')
       .selectAll()
       .where('assetId', '=', asUuid(assetId))
+      .where('key', 'not like', archivedSourcePattern)
       .orderBy('createdAt', 'asc')
       .execute();
+  }
+
+  readSource(assetId: string) {
+    return readAssetSource(this.db, assetId, true);
+  }
+
+  /** Cached-text decisions need stable pixels and projection, not permission to fetch the original again. */
+  withSource<T>(expected: AssetSourceSnapshot, write: (repository: DocumentRepository) => Promise<T>): Promise<T> {
+    const execute = async (tx: Transaction<DB>) => {
+      const owner = await tx
+        .selectFrom('user')
+        .select('id')
+        .where('id', '=', expected.ownerId)
+        .where('deletedAt', 'is', null)
+        .where('status', '=', UserStatus.Active)
+        .forShare()
+        .executeTakeFirst();
+      if (!owner) throw new DocumentEditConflictError('The document owner is unavailable');
+      const asset = await tx
+        .selectFrom('asset')
+        .select('id')
+        .where('id', '=', expected.assetId)
+        .where('ownerId', '=', expected.ownerId)
+        .forShare()
+        .executeTakeFirst();
+      const check = async () => {
+        const current = await readAssetSource(tx, expected.assetId, true);
+        if (!asset || !current || canonicalJson(current) !== canonicalJson(expected))
+          throw new DocumentEditConflictError('The document original or projection changed');
+      };
+      await check();
+      const result = await write(new DocumentRepository(tx));
+      await check();
+      return result;
+    };
+    return this.db.isTransaction ? execute(this.db as Transaction<DB>) : this.db.transaction().execute(execute);
   }
 
   /** A new decision. Refused when one for the same key already exists (someone was first). */
@@ -181,6 +232,7 @@ export class DocumentRepository {
       .set({ ...values, revision: sql<number>`"revision" + 1`, updatedAt: new Date() })
       .where('id', '=', asUuid(id))
       .where('revision', '=', revision)
+      .where('key', 'not like', archivedSourcePattern)
       .returningAll()
       .executeTakeFirst();
     if (!updated) {
@@ -196,9 +248,39 @@ export class DocumentRepository {
       .where('id', '=', asUuid(id))
       .where('assetId', '=', asUuid(assetId))
       .where('revision', '=', revision)
+      .where('key', 'not like', archivedSourcePattern)
       .executeTakeFirst();
     if (Number(result.numDeletedRows) === 0) {
       throw new DocumentEditConflictError('The decision changed since it was read');
     }
+  }
+
+  /** Retire decisions inside the owner's source-publication transaction; this does not grant original-read authority. */
+  archiveForSourceChange(assetId: string, expected: SourceReference): Promise<number> {
+    const execute = async (tx: Transaction<DB>) => {
+      const { rows } = await sql`SELECT b."assetId" FROM source_original b
+        JOIN photo_source_resource r ON r.id=b."resourceId" AND r."assetId"=b."assetId"
+        JOIN photo_source_run run ON run.id=r."runId"
+        JOIN photo_source s ON s.id=run."sourceId" AND s.mode='reference'
+        JOIN asset a ON a.id=b."assetId" AND a."ownerId"=s."ownerId" AND a."isExternal"
+          AND a."checksumAlgorithm"=${ChecksumAlgorithm.sha1Path}
+          AND a."originalPath"='frameleaf-source://' || s.id::text || '/' || r."resourceKey"
+        WHERE b."assetId"=${assetId}::uuid AND r.id=${expected.resourceId}::uuid
+          AND r.version=${expected.version} AND encode(r.checksum,'hex')=${expected.sha256}
+          AND r.state='verified' AND r."verifiedAt" IS NOT NULL FOR SHARE OF b,r`.execute(tx);
+      if (!rows[0]) throw new ConflictException('document_source_changed');
+      const result = await tx
+        .updateTable('asset_document_edit')
+        .set({
+          key: sql<string>`${SOURCE_VERSION_ARCHIVE_PREFIX} || ${expected.resourceId}::text || ':' || id::text || ':' || key`,
+          revision: sql<number>`revision + 1`,
+          updatedAt: new Date(),
+        })
+        .where('assetId', '=', assetId)
+        .where('key', 'not like', archivedSourcePattern)
+        .executeTakeFirst();
+      return Number(result.numUpdatedRows);
+    };
+    return this.db.isTransaction ? execute(this.db as Transaction<DB>) : this.db.transaction().execute(execute);
   }
 }

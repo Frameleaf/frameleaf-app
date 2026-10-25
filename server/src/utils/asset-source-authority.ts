@@ -33,7 +33,7 @@ export async function readAssetSource(
         'files', (select jsonb_agg(jsonb_build_array(f.id, f.path, f.type, f."isEdited") order by f.id)
           from asset_file f where f."assetId" = a.id and ${derivatives}::boolean),
         'edits', (select jsonb_agg((jsonb_build_array(e.sequence, e.action, e.parameters) || CASE WHEN e."sourceReference" IS NOT NULL THEN jsonb_build_array(e."sourceReference") ELSE '[]'::jsonb END) order by e.sequence, e.id)
-          from asset_edit e where e."assetId" = a.id and ${derivatives}::boolean))
+          from asset_edit e where e."assetId" = a.id and ${derivatives}::boolean and a."isEdited"))
       || CASE WHEN a."originalPath" ILIKE 'frameleaf-source:%' THEN jsonb_build_object('sourceOriginal',
         (SELECT jsonb_build_object('resourceId', r.id, 'resourceKey', r."resourceKey", 'version', r.version,
           'sha256', encode(r.checksum, 'hex'), 'bytes', r.bytes::text, 'state', r.state, 'verifiedAt', r."verifiedAt",
