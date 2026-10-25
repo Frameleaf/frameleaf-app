@@ -5,7 +5,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import type { Transaction } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { DB } from 'src/schema/index.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import {
   MediaOperationBulkCreateDto,
@@ -417,7 +419,7 @@ export class MediaOperationService {
   async createBulk(
     auth: AuthDto,
     dto: MediaOperationBulkCreateDto,
-    options: { libraryCare?: boolean; archiveOperationId?: string } = {},
+    options: { libraryCare?: boolean; archiveOperationId?: string; executor?: Transaction<DB> } = {},
   ): Promise<MediaOperationDto> {
     if (auth.sharedLink) {
       throw new ForbiddenException('Bulk operations are not available on a shared link');
@@ -480,7 +482,7 @@ export class MediaOperationService {
       elevated: auth.session?.hasElevatedPermission === true,
     };
 
-    const created = await this.repository.create({
+    const operation = {
       ownerId: auth.user.id,
       kind: MediaOperationKind.Bulk,
       // Bulk work runs on this server's own workers; there is no remote to choose.
@@ -497,7 +499,10 @@ export class MediaOperationService {
       estimate: null,
       result: emptyBulkResult(assetIds.length) as unknown as Record<string, unknown>,
       totalUnits: String(assetIds.length),
-    });
+    };
+    const created = options.executor
+      ? await this.repository.create(operation, options.executor)
+      : await this.repository.create(operation);
 
     this.logger.log(`Bulk ${dto.action} queued as media operation ${created.id} (${assetIds.length} items)`);
     return this.present(auth, created);

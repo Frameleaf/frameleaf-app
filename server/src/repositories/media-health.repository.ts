@@ -1,11 +1,12 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
+import { Insertable, Kysely, Selectable, type Transaction, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
+import { CORRUPT_MEDIA_DELETE_RECENT_MS } from 'src/dtos/media-health.dto.js';
 import {
   AssetFileType,
   AssetStatus,
@@ -29,6 +30,13 @@ import { type AssetSourceSnapshot, assertAssetSource, readAssetSource } from 'sr
 import { anyUuid, asUuid, lockedOwnerScope, withHiddenContentFilter } from 'src/utils/database.js';
 import { libraryPathOnRelink } from 'src/utils/library-path.js';
 import { isLocked } from 'src/utils/locked.js';
+import {
+  type HealthSourceReview,
+  type HealthSourceTrashIntent,
+  sameHealthSourceReview,
+  sameHealthSourceTrashIntent,
+} from 'src/utils/media-health.js';
+import { canonicalJson } from 'src/utils/object.js';
 import { lockSourceAuthorities } from 'src/utils/source-authority-lock.js';
 import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 /**
@@ -82,6 +90,16 @@ export type MediaHealthAsset = Pick<
   /** FL-34: selected by `getAssets`, so a listed asset reports `locked` (`effectiveVisibilityOf`) */
   isLocked?: boolean | null;
 };
+export type MediaHealthTrashAdmission = {
+  asset: MediaHealthAsset;
+  finding: MediaHealthFinding;
+  reference?: {
+    policy: AssetSourceSnapshot;
+    check: () => Promise<void>;
+    intent: HealthSourceTrashIntent;
+  };
+};
+
 export type UpsertMediaHealthFinding = Omit<
   Insertable<AssetHealthTable>,
   'id' | 'createdAt' | 'updatedAt' | 'dismissedAt' | 'resolvedAt'
@@ -580,6 +598,140 @@ export class MediaHealthRepository {
         .execute();
     });
   }
+  async assertReviewedHealthFinding(asset: MediaHealthAsset, finding: MediaHealthFinding): Promise<void> {
+    const tx = publicationTransaction.getStore();
+    if (!tx) throw new Error('Finding review requires a publication transaction');
+    const current = await tx
+      .selectFrom('asset_health')
+      .selectAll()
+      .where('id', '=', finding.id)
+      .where('assetId', '=', asset.id)
+      .forUpdate()
+      .executeTakeFirst();
+    if (
+      !current ||
+      current.category !== MediaHealthCategory.Corrupt ||
+      current.resolvedAt ||
+      current.originalPath !== asset.originalPath ||
+      current.status !== finding.status ||
+      current.updatedAt.getTime() !== finding.updatedAt.getTime() ||
+      current.checkedAt.getTime() !== finding.checkedAt.getTime() ||
+      canonicalJson(current.evidence) !== canonicalJson(finding.evidence) ||
+      canonicalJson(current.resolution) !== canonicalJson(finding.resolution) ||
+      Date.now() - current.checkedAt.getTime() > CORRUPT_MEDIA_DELETE_RECENT_MS ||
+      (parseSourceOriginalPath(asset.originalPath) &&
+        !sameHealthSourceReview(current.evidence?.sourceOriginal, finding.evidence?.sourceOriginal))
+    ) {
+      throw new ConflictException('Media health confirmation changed. Scan and confirm it again.');
+    }
+  }
+
+  /** Queue markers and immutable job intent commit together; failure needs no compensating update. */
+  recordTrashIntent<T>(entries: MediaHealthTrashAdmission[], record: (tx: Transaction<DB>) => Promise<T>): Promise<T> {
+    return this.db.transaction().execute((tx) =>
+      publicationTransaction.run(tx, async () => {
+        const ordered = [...entries].sort((a, b) => a.asset.id.localeCompare(b.asset.id));
+        const authorities = ordered.flatMap(({ asset }) => {
+          const source = parseSourceOriginalPath(asset.originalPath);
+          return source ? [{ sourceId: source.sourceId, ownerId: asset.ownerId }] : [];
+        });
+        // Lock every authority before any asset; mixed-source requests keep the global lock order.
+        if (!(await lockSourceAuthorities(tx, authorities)))
+          throw new ConflictException('Media health source changed. Scan and confirm it again.');
+        for (const { asset, finding, reference } of ordered) {
+          if (reference) await this.checkHealthSource(tx, asset, reference.policy);
+          await assertPublicationSource(asset.id, asset.checksum, asset.ownerId);
+          const current = await tx
+            .selectFrom('asset')
+            .select(['updateId', 'originalPath', 'deletedAt', 'status'])
+            .where('id', '=', asset.id)
+            .executeTakeFirst();
+          if (
+            !current ||
+            current.updateId !== asset.updateId ||
+            current.originalPath !== asset.originalPath ||
+            current.deletedAt ||
+            current.status !== AssetStatus.Active
+          )
+            throw new ConflictException('Media health source changed. Scan and confirm it again.');
+          await this.assertReviewedHealthFinding(asset, finding);
+          if (reference) {
+            if (
+              reference.intent.ownerId !== asset.ownerId ||
+              !sameHealthSourceReview(finding.evidence?.sourceOriginal, reference.intent.source)
+            )
+              throw new ConflictException('Media health confirmation changed. Scan and confirm it again.');
+            await this.checkHealthSource(tx, asset, reference.policy);
+            await reference.check();
+          } else if (parseSourceOriginalPath(asset.originalPath)) throw new Error('Reference confirmation missing');
+          await tx
+            .updateTable('asset_health')
+            .set({
+              status: MediaHealthStatus.TrashQueued,
+              ...(reference ? { resolution: { ...finding.resolution, sourceTrash: reference.intent } } : {}),
+            })
+            .where('id', '=', finding.id)
+            .execute();
+        }
+        const result = await record(tx);
+        for (const { asset, reference } of ordered) {
+          if (reference) {
+            await this.checkHealthSource(tx, asset, reference.policy);
+            await reference.check();
+          }
+        }
+        return result;
+      }),
+    );
+  }
+
+  async matchesHealthTrashIntent(
+    asset: MediaHealthAsset,
+    healthId: string,
+    intent: HealthSourceTrashIntent,
+  ): Promise<boolean> {
+    const tx = publicationTransaction.getStore();
+    if (!tx) throw new Error('Reference trash requires a publication transaction');
+    const finding = await tx
+      .selectFrom('asset_health')
+      .select(['status', 'originalPath', 'resolvedAt', 'evidence', 'resolution'])
+      .where('id', '=', healthId)
+      .where('assetId', '=', asset.id)
+      .where('category', '=', MediaHealthCategory.Corrupt)
+      .forUpdate()
+      .executeTakeFirst();
+    return (
+      !!finding &&
+      finding.status === MediaHealthStatus.TrashQueued &&
+      !finding.resolvedAt &&
+      finding.originalPath === asset.originalPath &&
+      asset.ownerId === intent.ownerId &&
+      sameHealthSourceReview(finding.evidence?.sourceOriginal, intent.source) &&
+      sameHealthSourceTrashIntent(finding.resolution?.sourceTrash, intent)
+    );
+  }
+
+  async trashReferenceIfUnchanged(input: {
+    asset: MediaHealthAsset;
+    healthId: string;
+    reviewed: HealthSourceReview;
+    intent: HealthSourceTrashIntent;
+    policy: AssetSourceSnapshot;
+    check: () => Promise<void>;
+  }): Promise<boolean> {
+    return this.db.transaction().execute((tx) =>
+      publicationTransaction.run(tx, async () => {
+        await this.checkHealthSource(tx, input.asset, input.policy);
+        await assertPublicationSource(input.asset.id, input.asset.checksum, input.asset.ownerId);
+        if (!(await this.matchesHealthTrashIntent(input.asset, input.healthId, input.intent))) return false;
+        if (!sameHealthSourceReview(input.reviewed, input.intent.source)) return false;
+        await input.check();
+        // This deliberate state change makes the original unreadable; its locks protect the mutation.
+        return this.trashCorruptIfUnchanged({ healthId: input.healthId, asset: input.asset });
+      }),
+    );
+  }
+
   async trashCorruptIfUnchanged(input: {
     healthId: string;
     asset: Pick<MediaHealthAsset, 'id' | 'ownerId' | 'updateId' | 'originalPath'>;

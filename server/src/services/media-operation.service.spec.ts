@@ -1285,6 +1285,23 @@ describe(MediaOperationService.name, () => {
       );
     });
 
+    it('records Library Care intent on the transaction supplied by its guarded admission', async () => {
+      const executor = { isTransaction: true };
+      await sut.createBulk(
+        authStub.user1,
+        {
+          action: MediaOperationBulkAction.TrashDamagedMedia,
+          assetIds: [assetIds[0]],
+          payload: { mediaHealth: [{ assetId: assetIds[0], findingId: newUuid() }] },
+        },
+        { libraryCare: true, executor: executor as never },
+      );
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: MediaOperationKind.Bulk }),
+        executor,
+      );
+    });
+
     it('freezes the de-duplicated set, in order, as a queued local job', async () => {
       await sut.createBulk(authStub.user1, {
         action: MediaOperationBulkAction.Favorite,

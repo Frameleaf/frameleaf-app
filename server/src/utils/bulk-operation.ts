@@ -1,3 +1,4 @@
+import type { HealthSourceTrashIntent } from 'src/utils/media-health.js';
 import { AssetJobName } from 'src/dtos/asset.dto.js';
 import { AssetVisibility, MediaOperationBulkAction, MediaOperationItemStatus, Permission } from 'src/enum.js';
 import {
@@ -74,7 +75,13 @@ export type BulkOperationPayload = {
 };
 
 /** One reviewed Library Care finding in a bulk job (FL-69). */
-export type BulkMediaHealthEntry = { assetId: string; findingId: string; candidateId?: string };
+export type BulkMediaHealthEntry = {
+  assetId: string;
+  findingId: string;
+  candidateId?: string;
+  /** Server-only authority frozen by the typed Library Care confirmation, never a client payload. */
+  sourceTrash?: HealthSourceTrashIntent;
+};
 
 /** The Library Care bulk actions (FL-69). */
 export const MEDIA_HEALTH_BULK_ACTIONS: readonly MediaOperationBulkAction[] = [

@@ -19,6 +19,7 @@ import {
   MediaOperationKind,
   MediaOperationStatus,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -30,6 +31,7 @@ import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { MANAGED_ROOT_ID, recoveryRootId } from 'src/utils/media-health-roots.js';
 import { classifyImageDecodeFailure } from 'src/utils/media-health.js';
+import { sourceOriginalPath } from 'src/utils/source-original.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
@@ -79,6 +81,9 @@ describe(MediaHealthService.name, () => {
       reopenFinding: vi.fn().mockResolvedValue(true),
       withLibraryCareLock: vi.fn().mockImplementation((_ownerId: string, work: () => Promise<unknown>) => work()),
       trashCorruptIfUnchanged: vi.fn().mockResolvedValue(true),
+      recordTrashIntent: vi.fn().mockImplementation((_entries, record) => record()),
+      matchesHealthTrashIntent: vi.fn().mockResolvedValue(true),
+      assertReviewedHealthFinding: vi.fn().mockResolvedValue(undefined),
       replaceCandidates: vi.fn(),
       relinkManagedAsset: vi.fn(),
       relinkExternalAsset: vi.fn(),
@@ -136,6 +141,496 @@ describe(MediaHealthService.name, () => {
         }
       }
       cursor.length = 0;
+    });
+  });
+
+  describe('reference source scans', () => {
+    const fixture = () => {
+      const asset = {
+        ...AssetFactory.create({
+          originalPath: sourceOriginalPath({
+            sourceId: '12345678-1234-4234-8234-123456789012',
+            resourceKey: 'a'.repeat(64),
+          }),
+          checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+          isExternal: true,
+          isOffline: false,
+        }),
+        previewPath: null,
+        thumbnailPath: null,
+      };
+      const controller = new AbortController();
+      const policy = { assetId: asset.id };
+      const publish = vi.fn(async (_asset, _policy, check, work) => {
+        await check();
+        const result = await work();
+        await check();
+        return result;
+      });
+      Object.assign(mediaHealthRepository, {
+        captureHealthSource: vi.fn().mockResolvedValue(policy),
+        assertHealthSource: vi.fn().mockResolvedValue(undefined),
+        publishHealthSource: publish,
+      });
+      const input = {
+        localPath: '/fixture/verified.artifact',
+        verifiedSha256: 'd'.repeat(64),
+        byteLength: 5,
+        resourceId: '12345678-1234-4234-8234-123456789016',
+        resourceVersion: 'c'.repeat(64),
+        signal: controller.signal,
+        check: vi.fn(() => {
+          controller.signal.throwIfAborted();
+          return Promise.resolve();
+        }),
+        release: vi.fn().mockResolvedValue(undefined),
+      };
+      const originals = {
+        open: vi.fn(async (_id, _reader, authorize) => {
+          await authorize();
+          return input;
+        }),
+      };
+      const validation = {
+        result: Promise.resolve({ status: 'healthy', reason: 'verified' }),
+        settled: Promise.resolve(),
+        cancel: vi.fn(),
+      };
+      const checker = { validateWithSettlement: vi.fn().mockReturnValue(validation) };
+      Object.assign(sut, { sourceOriginalService: originals, integrityService: checker });
+      mocks.storage.checkFileExists.mockResolvedValue(false);
+      const scan = () => sut['scanAsset'](asset, 'missing-run', 'corrupt-run');
+      return { asset, controller, input, originals, checker, validation, publish, scan };
+    };
+
+    const queuedTrash = (f: ReturnType<typeof fixture>) => {
+      const reviewed = {
+        resourceId: f.input.resourceId,
+        version: f.input.resourceVersion,
+        sha256: f.input.verifiedSha256,
+      };
+      const intent = {
+        ownerId: f.asset.ownerId,
+        confirmationId: '12345678-1234-4234-8234-123456789020',
+        source: reviewed,
+      };
+      const finding = {
+        id: 'reference-finding',
+        assetId: f.asset.id,
+        category: MediaHealthCategory.Corrupt,
+        status: MediaHealthStatus.TrashQueued,
+        originalPath: f.asset.originalPath,
+        evidence: { sourceOriginal: reviewed },
+        resolution: { sourceTrash: intent },
+        checkedAt: new Date(),
+      };
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([finding] as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([f.asset]);
+      const trash = vi.fn(async (input) => {
+        await input.check();
+        return true;
+      });
+      Object.assign(mediaHealthRepository, { trashReferenceIfUnchanged: trash });
+      f.validation.result = Promise.resolve({ status: 'corrupt', reason: 'decode_failed' });
+      return {
+        reviewed,
+        finding,
+        trash,
+        entry: { assetId: f.asset.id, findingId: finding.id, sourceTrash: intent },
+        legacyRun: () => sut.handleDeleteCorrupt({ ids: [finding.id], userId: f.asset.ownerId }),
+        run: () => sut['trashOne'](authStub.admin, { assetId: f.asset.id, findingId: finding.id, sourceTrash: intent }),
+      };
+    };
+
+    it('revalidates the reviewed reference and trashes metadata without touching provider files', async () => {
+      const f = fixture();
+      const queued = queuedTrash(f);
+      queued.trash.mockImplementationOnce(() => {
+        // Deletion deliberately makes subsequent source reads ineligible.
+        f.input.check.mockRejectedValue(new Error('asset is in trash'));
+        return Promise.resolve(true);
+      });
+      await expect(queued.run()).resolves.toEqual(expect.objectContaining({ status: MediaOperationItemStatus.Ok }));
+      expect(queued.trash).toHaveBeenCalledWith(
+        expect.objectContaining({ asset: f.asset, healthId: queued.finding.id, reviewed: queued.reviewed }),
+      );
+      expect(mediaHealthRepository.trashCorruptIfUnchanged).not.toHaveBeenCalled();
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetTrashAll', {
+        assetIds: [f.asset.id],
+        userId: f.asset.ownerId,
+      });
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it.each([true, false])('uses the reviewed source guard for the bulk trash worker (%s)', async (applied) => {
+      const f = fixture();
+      const queued = queuedTrash(f);
+      queued.trash.mockResolvedValueOnce(applied);
+      const result = await sut['trashOne'](authStub.admin, queued.entry);
+      expect(result.status).toBe(applied ? MediaOperationItemStatus.Ok : MediaOperationItemStatus.Skipped);
+      expect(queued.trash).toHaveBeenCalledOnce();
+      if (applied) expect(mocks.event.emit).toHaveBeenCalledOnce();
+      else expect(mocks.event.emit).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it.each(['resourceId', 'resourceVersion', 'verifiedSha256'] as const)(
+      'refuses a changed reviewed %s before decoding or trash',
+      async (field) => {
+        const f = fixture();
+        const queued = queuedTrash(f);
+        f.input[field] = field === 'resourceId' ? '12345678-1234-4234-8234-123456789017' : 'e'.repeat(64);
+        await expect(queued.run()).rejects.toThrow('Reference original changed');
+        expect(f.checker.validateWithSettlement).not.toHaveBeenCalled();
+        expect(queued.trash).not.toHaveBeenCalled();
+        expect(mocks.event.emit).not.toHaveBeenCalled();
+        expect(f.input.release).toHaveBeenCalledOnce();
+      },
+    );
+
+    it('refuses a reference trash finding with no versioned review before acquisition', async () => {
+      const f = fixture();
+      const queued = queuedTrash(f);
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([{ ...queued.finding, evidence: {} }] as never);
+      await expect(queued.run()).resolves.toEqual(
+        expect.objectContaining({ status: MediaOperationItemStatus.Skipped }),
+      );
+      expect(f.originals.open).not.toHaveBeenCalled();
+      expect(queued.trash).not.toHaveBeenCalled();
+    });
+
+    it('keeps a reviewed reference that no longer fails decoding', async () => {
+      const f = fixture();
+      const queued = queuedTrash(f);
+      f.validation.result = Promise.resolve({ status: 'healthy', reason: 'verified' });
+      await expect(queued.run()).resolves.toEqual(
+        expect.objectContaining({ status: MediaOperationItemStatus.Skipped }),
+      );
+      expect(queued.trash).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: MediaHealthStatus.Resolved,
+          evidence: expect.objectContaining({ sourceOriginal: queued.reviewed }),
+        }),
+      );
+      expect(f.publish).toHaveBeenCalledOnce();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+
+    it('refuses a bulk reference attempt without immutable confirmation authority', async () => {
+      const f = fixture();
+      const queued = queuedTrash(f);
+      const result = await sut['trashOne'](authStub.admin, { assetId: f.asset.id, findingId: queued.finding.id });
+      expect(result.status).toBe(MediaOperationItemStatus.Skipped);
+      expect(f.originals.open).not.toHaveBeenCalled();
+      expect(queued.trash).not.toHaveBeenCalled();
+    });
+
+    it('does not borrow a newer confirmation from the current finding', async () => {
+      const f = fixture();
+      const queued = queuedTrash(f);
+      const sourceTrash = {
+        ownerId: f.asset.ownerId,
+        confirmationId: '12345678-1234-4234-8234-123456789020',
+        source: queued.reviewed,
+      };
+      queued.finding.resolution = {
+        sourceTrash: { ...sourceTrash, confirmationId: '12345678-1234-4234-8234-123456789021' },
+      };
+      const result = await sut['trashOne'](authStub.admin, {
+        assetId: f.asset.id,
+        findingId: queued.finding.id,
+        sourceTrash,
+      } as never);
+      expect(result.status).toBe(MediaOperationItemStatus.Skipped);
+      expect(f.originals.open).not.toHaveBeenCalled();
+      expect(queued.trash).not.toHaveBeenCalled();
+    });
+
+    it('refuses legacy reference jobs which cannot carry a reviewed confirmation', async () => {
+      const f = fixture();
+      const queued = queuedTrash(f);
+      await expect(queued.legacyRun()).rejects.toThrow('newly confirmed durable request');
+      expect(f.originals.open).not.toHaveBeenCalled();
+    });
+
+    it('does not resolve a newer confirmation after healthy revalidation', async () => {
+      const f = fixture();
+      const queued = queuedTrash(f);
+      f.validation.result = Promise.resolve({ status: 'healthy', reason: 'verified' });
+      vi.mocked(mediaHealthRepository.matchesHealthTrashIntent).mockResolvedValueOnce(false);
+      await expect(queued.run()).resolves.toEqual(
+        expect.objectContaining({ status: MediaOperationItemStatus.Skipped }),
+      );
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('refuses a changed reference owner even for an administrator', async () => {
+      const f = fixture();
+      const queued = queuedTrash(f);
+      f.asset.ownerId = '12345678-1234-4234-8234-123456789022';
+      await expect(queued.run()).resolves.toEqual(
+        expect.objectContaining({ status: MediaOperationItemStatus.Skipped }),
+      );
+      expect(f.originals.open).not.toHaveBeenCalled();
+      expect(queued.trash).not.toHaveBeenCalled();
+    });
+
+    it('records a fresh reference confirmation and the job in one guarded admission while holding the input', async () => {
+      const f = fixture();
+      const queued = queuedTrash(f);
+      vi.mocked(mocks.user.getForPinCode).mockResolvedValue({ password: '', pinCode: null });
+      const executor = { isTransaction: true };
+      vi.mocked(mediaHealthRepository.recordTrashIntent).mockImplementationOnce(async (entries, record) => {
+        expect(f.input.release).not.toHaveBeenCalled();
+        expect(entries[0].reference?.intent).toEqual(
+          expect.objectContaining({ ownerId: f.asset.ownerId, source: queued.reviewed }),
+        );
+        expect(entries[0].reference?.intent.confirmationId).not.toBe(queued.entry.sourceTrash.confirmationId);
+        await entries[0].reference?.check();
+        return record(executor as never);
+      });
+      await expect(
+        sut.deleteCorrupt(authStub.admin, { ids: [queued.finding.id], confirmText: CORRUPT_MEDIA_DELETE_CONFIRM_TEXT }),
+      ).resolves.toEqual(expect.objectContaining({ operationId: expect.any(String) }));
+      expect(mediaOperationService.createBulk).toHaveBeenCalledWith(
+        authStub.admin,
+        expect.objectContaining({
+          payload: {
+            mediaHealth: [
+              expect.objectContaining({
+                sourceTrash: expect.objectContaining({ ownerId: f.asset.ownerId, source: queued.reviewed }),
+              }),
+            ],
+          },
+        }),
+        { libraryCare: true, executor },
+      );
+      expect(mediaHealthRepository.markStatus).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('releases reference inputs without an unfenced status reset when intent recording fails', async () => {
+      const f = fixture();
+      const queued = queuedTrash(f);
+      vi.mocked(mocks.user.getForPinCode).mockResolvedValue({ password: '', pinCode: null });
+      vi.mocked(mediaOperationService.createBulk).mockRejectedValueOnce(new Error('intent insert failed'));
+      await expect(
+        sut.deleteCorrupt(authStub.admin, { ids: [queued.finding.id], confirmText: CORRUPT_MEDIA_DELETE_CONFIRM_TEXT }),
+      ).rejects.toThrow('intent insert failed');
+      expect(mediaHealthRepository.markStatus).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('decodes borrowed bytes and publishes healthy resolutions without statting the logical URI', async () => {
+      const f = fixture();
+      await expect(f.scan()).resolves.toBe('healthy');
+      expect(f.originals.open).toHaveBeenCalledOnce();
+      expect(f.checker.validateWithSettlement).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: f.input.localPath,
+          originalFileName: f.asset.originalFileName,
+          expected: { sha256: Buffer.from(f.input.verifiedSha256, 'hex'), sizeInBytes: 5 },
+          deep: true,
+        }),
+      );
+      expect(mocks.storage.checkFileExists).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.markResolvedForAssets).toHaveBeenCalledWith(
+        [MediaHealthCategory.Missing, MediaHealthCategory.Corrupt],
+        [f.asset],
+      );
+      expect(f.publish).toHaveBeenCalledOnce();
+      expect(f.input.release).toHaveBeenCalledOnce();
+      expect(mocks.forkSchema.recordExternalScanChecksums).not.toHaveBeenCalled();
+    });
+
+    it('holds the original until decoding actually settles, then checks authority before publication', async () => {
+      const f = fixture();
+      const stopped = Promise.withResolvers<void>();
+      f.validation.settled = stopped.promise;
+      const pending = f.scan();
+      await vi.waitFor(() => expect(f.checker.validateWithSettlement).toHaveBeenCalledOnce());
+      expect(f.input.release).not.toHaveBeenCalled();
+      expect(f.publish).not.toHaveBeenCalled();
+      f.controller.abort(new Error('source permission revoked'));
+      stopped.resolve();
+      await expect(pending).rejects.toThrow('source permission revoked');
+      expect(f.publish).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.markResolvedForAssets).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('cancels native validation immediately on source cancellation but joins its real settlement', async () => {
+      const f = fixture();
+      const refused = Promise.withResolvers<{ status: string; reason: string }>();
+      const stopped = Promise.withResolvers<void>();
+      f.validation.result = refused.promise;
+      f.validation.settled = stopped.promise;
+      f.validation.cancel.mockImplementation(() =>
+        refused.resolve({ status: 'timeout', reason: 'validation_timeout' }),
+      );
+      const pending = f.scan();
+      await vi.waitFor(() => expect(f.checker.validateWithSettlement).toHaveBeenCalledOnce());
+      f.controller.abort(new Error('source revoked during validation'));
+      try {
+        await vi.waitFor(() => expect(f.validation.cancel).toHaveBeenCalledOnce(), { timeout: 1000 });
+        expect(f.input.release).not.toHaveBeenCalled();
+      } finally {
+        refused.resolve({ status: 'timeout', reason: 'validation_timeout' });
+        stopped.resolve();
+        await expect(pending).rejects.toThrow('source revoked during validation');
+      }
+      expect(f.input.release).toHaveBeenCalledOnce();
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+    });
+
+    it('does not turn an unavailable companion into a missing original', async () => {
+      const f = fixture();
+      f.originals.open.mockRejectedValueOnce(new Error('source_original_unavailable'));
+      await expect(f.scan()).rejects.toThrow('source_original_unavailable');
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.markResolvedForAssets).not.toHaveBeenCalled();
+      expect(mocks.storage.checkFileExists).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { status: 'missing', reason: 'file_missing' },
+      { status: 'unreadable', reason: 'access_denied' },
+      { status: 'timeout', reason: 'decode_timeout' },
+      { status: 'transient', reason: 'io_failed' },
+      { status: 'corrupt', reason: 'expected_mismatch' },
+      { status: 'corrupt', reason: 'empty_file' },
+    ])('refuses cache/transport failure %j without changing findings', async (result) => {
+      const f = fixture();
+      f.validation.result = Promise.resolve(result);
+      await expect(f.scan()).rejects.toThrow('source_original_unavailable');
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.markResolvedForAssets).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('keeps the lease held until the verdict transaction finishes', async () => {
+      const f = fixture();
+      const committed = Promise.withResolvers<'healthy'>();
+      f.publish.mockReturnValueOnce(committed.promise);
+      const pending = f.scan();
+      await vi.waitFor(() => expect(f.publish).toHaveBeenCalledOnce());
+      expect(f.input.release).not.toHaveBeenCalled();
+      committed.resolve('healthy');
+      await expect(pending).resolves.toBe('healthy');
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('checks missing-only references without requesting a native decode', async () => {
+      const f = fixture();
+      await expect(sut['scanAsset'](f.asset, 'missing-run', null)).resolves.toBe('healthy');
+      expect(f.checker.validateWithSettlement).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.markResolvedForAssets).toHaveBeenCalledWith(
+        [MediaHealthCategory.Missing],
+        [f.asset],
+      );
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('publishes reference corrupt-scan resolutions separately from the managed resolve buffer', async () => {
+      const f = fixture();
+      const managed = { ...f.asset, id: 'managed-id', originalPath: '/fixture/managed.jpg' };
+      Object.assign(f.checker, { validate: vi.fn().mockResolvedValue({ status: 'healthy' }) });
+      const resolved: string[][] = [];
+      vi.mocked(mediaHealthRepository.markResolvedForAssets).mockImplementation((_categories, assets) => {
+        resolved.push(assets.map(({ id }) => id));
+        return Promise.resolve();
+      });
+      const queuedRows = Promise.resolve([f.asset, managed]);
+      vi.mocked(mediaHealthRepository.streamAssets).mockReturnValue(
+        (async function* () {
+          for (const asset of await queuedRows) yield asset;
+        })(),
+      );
+      await expect(sut.handleCorruptScan({ runId: 'corrupt-run' })).resolves.toBe(JobStatus.Success);
+      expect(f.publish).toHaveBeenCalledOnce();
+      expect(resolved).toEqual([[f.asset.id], [managed.id]]);
+    });
+
+    it('refuses legacy reference repair validation before local-path IO', async () => {
+      const f = fixture();
+      await expect(sut['validateReadableAssetIntegrity'](f.asset)).rejects.toThrow('source_health_validation_required');
+      expect(f.originals.open).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+    });
+
+    it.each(['artifact_close_unconfirmed', 'source_original_shutdown_unconfirmed', 'source_reader_stop_unconfirmed'])(
+      'quarantines unknown source acquisition %s and marks its queue owner',
+      async (code) => {
+        const f = fixture();
+        const context = {
+          signal: new AbortController().signal,
+          claim: { id: 'job', token: 'attempt' },
+          executorStopUnconfirmed: false,
+        };
+        f.originals.open.mockRejectedValueOnce(new Error(code));
+        await expect(queueExecution.run(context as never, f.scan)).rejects.toThrow(code);
+        expect(context.executorStopUnconfirmed).toBe(true);
+        await expect(f.scan()).rejects.toThrow('source_original_shutdown_unconfirmed');
+        expect(f.originals.open).toHaveBeenCalledOnce();
+        expect(mediaHealthRepository.markResolvedForAssets).not.toHaveBeenCalled();
+      },
+    );
+
+    it('retains the borrowed original when native settlement cannot confirm shutdown', async () => {
+      const f = fixture();
+      const error = new Error('media_process_shutdown_unconfirmed');
+      f.validation.result = Promise.reject(error);
+      f.validation.settled = Promise.reject(error);
+      void f.validation.result.catch(() => {});
+      void f.validation.settled.catch(() => {});
+      const context = {
+        signal: new AbortController().signal,
+        claim: { id: 'job', token: 'attempt' },
+        executorStopUnconfirmed: false,
+      };
+      await expect(queueExecution.run(context as never, f.scan)).rejects.toBe(error);
+      expect(f.input.release).not.toHaveBeenCalled();
+      expect(context.executorStopUnconfirmed).toBe(true);
+      await expect(f.scan()).rejects.toThrow('source_original_shutdown_unconfirmed');
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+    });
+
+    it('quarantines an unknown descriptor close after a source scan', async () => {
+      const f = fixture();
+      f.input.release.mockRejectedValueOnce(new Error('artifact_close_unconfirmed'));
+      const context = {
+        signal: new AbortController().signal,
+        claim: { id: 'job', token: 'attempt' },
+        executorStopUnconfirmed: false,
+      };
+      await expect(queueExecution.run(context as never, f.scan)).rejects.toThrow('artifact_close_unconfirmed');
+      expect(context.executorStopUnconfirmed).toBe(true);
+      await expect(f.scan()).rejects.toThrow('source_original_shutdown_unconfirmed');
+      expect(f.originals.open).toHaveBeenCalledOnce();
+    });
+
+    it('records confirmed decode damage only with the current source resource evidence', async () => {
+      const f = fixture();
+      f.validation.result = Promise.resolve({ status: 'corrupt', reason: 'decode_failed' });
+      await expect(f.scan()).resolves.toBe('corrupt');
+      expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+        expect.objectContaining({
+          originalPath: f.asset.originalPath,
+          status: MediaHealthStatus.CorruptConfirmed,
+          evidence: expect.objectContaining({
+            sourceOriginal: {
+              resourceId: f.input.resourceId,
+              version: f.input.resourceVersion,
+              sha256: f.input.verifiedSha256,
+            },
+          }),
+        }),
+      );
+      expect(f.publish).toHaveBeenCalledOnce();
     });
   });
 
@@ -826,7 +1321,8 @@ describe(MediaHealthService.name, () => {
         operationId: '0195e2a0-0000-7000-8000-0000000000b1',
       });
 
-      expect(mediaHealthRepository.markStatus).toHaveBeenCalledWith(['health-1'], MediaHealthStatus.TrashQueued);
+      expect(mediaHealthRepository.recordTrashIntent).toHaveBeenCalledOnce();
+      expect(mediaHealthRepository.markStatus).not.toHaveBeenCalled();
       expect(mediaOperationService.createBulk).toHaveBeenCalledWith(
         authStub.user1,
         expect.objectContaining({

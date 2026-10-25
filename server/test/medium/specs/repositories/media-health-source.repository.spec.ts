@@ -7,13 +7,18 @@ import {
   MediaHealthCategory,
   MediaHealthSeverity,
   MediaHealthStatus,
+  MediaOperationBulkAction,
+  MediaOperationDestination,
+  MediaOperationKind,
 } from 'src/enum.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { type DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { emptyBulkResult } from 'src/utils/bulk-operation.js';
 import { bindSourceReference } from 'test/fixtures/source-reference.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -307,4 +312,229 @@ it('rolls back a proposed health verdict and an input mutation made by its callb
     (await db.selectFrom('asset').select('visibility').where('id', '=', f.asset.id).executeTakeFirstOrThrow())
       .visibility,
   ).toBe(f.asset.visibility);
+});
+
+const queuedReference = async () => {
+  const f = await setup();
+  const intent = {
+    ownerId: f.asset.ownerId,
+    confirmationId: '12345678-1234-4234-8234-123456789020',
+    source: f.reference.sourceReference,
+  };
+  await db
+    .updateTable('asset_health')
+    .set({
+      status: MediaHealthStatus.TrashQueued,
+      evidence: { sourceOriginal: f.reference.sourceReference },
+      resolution: { sourceTrash: intent },
+    })
+    .where('id', '=', f.finding!.id)
+    .execute();
+  const active = async () =>
+    (await db.selectFrom('asset').select('deletedAt').where('id', '=', f.asset.id).executeTakeFirstOrThrow())
+      .deletedAt === null;
+  return {
+    ...f,
+    active,
+    input: { asset: f.asset, healthId: f.finding!.id, reviewed: f.reference.sourceReference, policy: f.policy, intent },
+  };
+};
+
+it('trashes only metadata after a live reviewed-source check and retains the provider association', async () => {
+  const f = await queuedReference();
+  const check = vi.fn(async () => {
+    const current = await publicationTransaction
+      .getStore()!
+      .selectFrom('asset')
+      .select('deletedAt')
+      .where('id', '=', f.asset.id)
+      .executeTakeFirstOrThrow();
+    if (current.deletedAt) throw new Error('source is now in trash');
+  });
+  await expect(f.repo.trashReferenceIfUnchanged({ ...f.input, check })).resolves.toBe(true);
+  expect(check).toHaveBeenCalledOnce();
+  expect(await f.active()).toBe(false);
+  expect(await f.status()).toBe(MediaHealthStatus.Trashed);
+  const asset = await db
+    .selectFrom('asset')
+    .select(['originalPath', 'isExternal'])
+    .where('id', '=', f.asset.id)
+    .executeTakeFirstOrThrow();
+  expect(asset).toEqual({ originalPath: f.asset.originalPath, isExternal: true });
+  const association = await db
+    .selectFrom('source_original')
+    .select('resourceId')
+    .where('assetId', '=', f.asset.id)
+    .executeTakeFirstOrThrow();
+  expect(association.resourceId).toBe(f.reference.resource.id);
+});
+
+it.each(['resourceId', 'version', 'sha256'] as const)(
+  'refuses changed finding review %s under the write lock',
+  async (field) => {
+    const f = await queuedReference();
+    await db
+      .updateTable('asset_health')
+      .set({
+        evidence: {
+          sourceOriginal: {
+            ...f.input.reviewed,
+            [field]: field === 'resourceId' ? '12345678-1234-4234-8234-123456789019' : 'e'.repeat(64),
+          },
+        },
+      })
+      .where('id', '=', f.input.healthId)
+      .execute();
+    const check = vi.fn().mockResolvedValue(undefined);
+    await expect(f.repo.trashReferenceIfUnchanged({ ...f.input, check })).resolves.toBe(false);
+    expect(check).not.toHaveBeenCalled();
+    expect(await f.active()).toBe(true);
+    expect(await f.status()).toBe(MediaHealthStatus.TrashQueued);
+  },
+);
+
+it('preserves the original and queued finding when final provider authority is refused', async () => {
+  const f = await queuedReference();
+  await expect(
+    f.repo.trashReferenceIfUnchanged({
+      ...f.input,
+      check: () => Promise.reject(new Error('source_original_unavailable')),
+    }),
+  ).rejects.toThrow('source_original_unavailable');
+  expect(await f.active()).toBe(true);
+  expect(await f.status()).toBe(MediaHealthStatus.TrashQueued);
+});
+
+const trashAdmission = async () => {
+  const f = await queuedReference();
+  // The review entering admission must be the precise latest row, not a stale pre-marker copy.
+  const [finding] = await f.repo.getByIds([f.input.healthId]);
+  const admission = {
+    asset: f.asset,
+    finding,
+    reference: { policy: f.policy, intent: f.input.intent, check: vi.fn().mockResolvedValue(undefined) },
+  };
+  const operations = new MediaOperationRepository(db);
+  const record = (tx: Parameters<MediaOperationRepository['create']>[1]) =>
+    operations.create(
+      {
+        ownerId: f.user.id,
+        kind: MediaOperationKind.Bulk,
+        destination: MediaOperationDestination.Local,
+        label: 'Synthetic reviewed reference trash',
+        snapshot: {
+          action: MediaOperationBulkAction.TrashDamagedMedia,
+          assetIds: [f.asset.id],
+          payload: { mediaHealth: [{ assetId: f.asset.id, findingId: finding.id, sourceTrash: f.input.intent }] },
+        },
+        settings: {},
+        result: emptyBulkResult(1) as never,
+        totalUnits: '1',
+      },
+      tx,
+    );
+  return { ...f, admission, operations, record };
+};
+
+it('commits the queued marker and exact owner/source confirmation with one durable operation', async () => {
+  const f = await trashAdmission();
+  const job = await f.repo.recordTrashIntent([f.admission], f.record);
+  const [finding] = await f.repo.getByIds([f.input.healthId]);
+  expect(finding.resolution?.sourceTrash).toEqual(f.input.intent);
+  const row = await db
+    .selectFrom('media_operation')
+    .select('snapshot')
+    .where('id', '=', job.id)
+    .executeTakeFirstOrThrow();
+  expect(row.snapshot).toEqual(
+    expect.objectContaining({ payload: { mediaHealth: [expect.objectContaining({ sourceTrash: f.input.intent })] } }),
+  );
+  expect(f.admission.reference.check).toHaveBeenCalledTimes(2);
+});
+
+it.each(['record', 'late-source'] as const)(
+  'rolls back the marker and durable job after %s failure',
+  async (failure) => {
+    const f = await trashAdmission();
+    await db
+      .updateTable('asset_health')
+      .set({ status: MediaHealthStatus.CorruptConfirmed, resolution: {} })
+      .where('id', '=', f.input.healthId)
+      .execute();
+    const [review] = await f.repo.getByIds([f.input.healthId]);
+    f.admission.finding = review;
+    if (failure === 'late-source')
+      f.admission.reference.check.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('source revoked'));
+    let id: string | undefined;
+    await expect(
+      f.repo.recordTrashIntent([f.admission], async (tx) => {
+        const job = await f.record(tx);
+        id = job.id;
+        if (failure === 'record') throw new Error('recording interrupted');
+        return job;
+      }),
+    ).rejects.toThrow(failure === 'record' ? 'recording interrupted' : 'source revoked');
+    expect(await f.status()).toBe(MediaHealthStatus.CorruptConfirmed);
+    const [finding] = await f.repo.getByIds([f.input.healthId]);
+    expect(finding.resolution).toEqual({});
+    expect(
+      await db.selectFrom('media_operation').select('id').where('id', '=', id!).executeTakeFirst(),
+    ).toBeUndefined();
+  },
+);
+
+it('refuses a changed finding before recording or resetting another confirmation', async () => {
+  const f = await trashAdmission();
+  await db
+    .updateTable('asset_health')
+    .set({ resolution: { sourceTrash: { ...f.input.intent, confirmationId: '12345678-1234-4234-8234-123456789022' } } })
+    .where('id', '=', f.input.healthId)
+    .execute();
+  const record = vi.fn(f.record);
+  await expect(f.repo.recordTrashIntent([f.admission], record)).rejects.toThrow('confirmation changed');
+  expect(record).not.toHaveBeenCalled();
+  const [current] = await f.repo.getByIds([f.input.healthId]);
+  expect(current.resolution?.sourceTrash).not.toEqual(f.input.intent);
+});
+
+it('refuses an older worker confirmation under the final trash lock', async () => {
+  const f = await queuedReference();
+  await db
+    .updateTable('asset_health')
+    .set({ resolution: { sourceTrash: { ...f.input.intent, confirmationId: '12345678-1234-4234-8234-123456789022' } } })
+    .where('id', '=', f.input.healthId)
+    .execute();
+  const check = vi.fn().mockResolvedValue(undefined);
+  await expect(f.repo.trashReferenceIfUnchanged({ ...f.input, check })).resolves.toBe(false);
+  expect(check).not.toHaveBeenCalled();
+  expect(await f.active()).toBe(true);
+});
+
+it('rolls back every marker in a multi-source request when a later source refuses admission', async () => {
+  const fixtures = [await trashAdmission(), await trashAdmission()].sort((a, b) =>
+    a.asset.id.localeCompare(b.asset.id),
+  );
+  for (const f of fixtures) {
+    await db
+      .updateTable('asset_health')
+      .set({ status: MediaHealthStatus.CorruptConfirmed, resolution: {} })
+      .where('id', '=', f.input.healthId)
+      .execute();
+    const [finding] = await f.repo.getByIds([f.input.healthId]);
+    f.admission.finding = finding;
+  }
+  fixtures[1].admission.reference.check.mockRejectedValueOnce(new Error('second source unavailable'));
+  const record = vi.fn(fixtures[0].record);
+  await expect(
+    fixtures[0].repo.recordTrashIntent(
+      fixtures.map((f) => f.admission),
+      record,
+    ),
+  ).rejects.toThrow('second source unavailable');
+  expect(record).not.toHaveBeenCalled();
+  for (const f of fixtures) {
+    expect(await f.status()).toBe(MediaHealthStatus.CorruptConfirmed);
+    const [finding] = await f.repo.getByIds([f.input.healthId]);
+    expect(finding.resolution).toEqual({});
+  }
 });

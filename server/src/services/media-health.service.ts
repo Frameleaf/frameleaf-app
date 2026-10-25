@@ -4,13 +4,20 @@ import {
   ForbiddenException,
   HttpException,
   HttpStatus,
+  Inject,
   Injectable,
+  ServiceUnavailableException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import path from 'node:path';
+import type { Transaction } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { MediaHealthTrashAdmission } from 'src/repositories/media-health.repository.js';
+import type { DB } from 'src/schema/index.js';
 import type { JobOf } from 'src/types.js';
+import type { AssetSourceSnapshot } from 'src/utils/asset-source-authority.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
@@ -56,6 +63,8 @@ import {
   QueueName,
   StorageFolder,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
+import { isMediaProcessShutdownUnconfirmed } from 'src/queue/process-lifetime.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -79,12 +88,18 @@ import { PhysicalFileRepository } from 'src/repositories/physical-file.repositor
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
-import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
+import {
+  type MediaIntegrityResult,
+  MediaIntegrityService,
+  type MediaIntegrityValidation,
+} from 'src/services/media-integrity.service.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
 import { BulkMediaHealthEntry, BulkOperationItem, bulkErrorMessage } from 'src/utils/bulk-operation.js';
 import { getConfig } from 'src/utils/config.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { asDateTimeString } from 'src/utils/date.js';
+import { executionSignal, withExecutionCleanup, withExecutionSignal } from 'src/utils/execution-signal.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import {
@@ -106,10 +121,19 @@ import {
   rootForPath,
   rootKindOf,
 } from 'src/utils/media-health-roots.js';
-import { getErrorMessage } from 'src/utils/media-health.js';
+import {
+  type HealthSourceReview,
+  type HealthSourceTrashIntent,
+  getErrorMessage,
+  healthSourceReviewSchema,
+  healthSourceTrashIntentSchema,
+  sameHealthSourceReview,
+  sameHealthSourceTrashIntent,
+} from 'src/utils/media-health.js';
 import { ACTIVE_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { handlePromiseError } from 'src/utils/misc.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
 
 const MEDIA_HEALTH_PAGE_SIZE = 100;
 const MANAGED_LOOKUP_MAX_ENTRIES = 10_000;
@@ -236,6 +260,11 @@ const transient = (id: string, message: string) =>
 
 @Injectable()
 export class MediaHealthService {
+  @Inject(SourceOriginalService)
+  private sourceOriginalService!: SourceOriginalService;
+  private readonly sourceReaderOwnerId = randomUUID();
+  private sourceStopUnconfirmed = false;
+
   constructor(
     private logger: LoggingRepository,
     private assetRepository: AssetRepository,
@@ -1076,59 +1105,91 @@ export class MediaHealthService {
       privacy,
     );
     const assetsById = new Map(assets.map((asset) => [asset.id, asset]));
-    const queued: MediaHealthFinding[] = [];
+    const queued: MediaHealthTrashAdmission[] = [];
     const resultStatusById = new Map<string, MediaHealthStatus>();
 
-    for (const finding of accepted) {
+    // Retain every verified source lease until its queue marker and immutable intent have committed.
+    const prepare = async (index: number): Promise<string | null> => {
+      if (index === accepted.length) {
+        if (queued.length === 0)
+          throw new BadRequestException('Selected corrupt media no longer failed deletion revalidation');
+        return this.mediaHealthRepository.recordTrashIntent(queued, (executor) =>
+          this.submitBulk(
+            auth,
+            MediaOperationBulkAction.TrashDamagedMedia,
+            queued.map(({ asset, finding, reference }) => ({
+              assetId: asset.id,
+              findingId: finding.id,
+              ...(reference ? { sourceTrash: reference.intent } : {}),
+            })),
+            executor,
+          ),
+        );
+      }
+      const finding = accepted[index];
       const asset = assetsById.get(finding.assetId);
-      if (!asset) {
-        continue;
+      if (!asset) return prepare(index + 1);
+      if (parseSourceOriginalPath(asset.originalPath)) {
+        const reviewed = healthSourceReviewSchema.safeParse(finding.evidence?.sourceOriginal);
+        if (!reviewed.success) throw new ConflictException('Reference original changed. Scan and confirm it again.');
+        return this.withReferenceIntegrity(
+          asset,
+          true,
+          async (result, policy, input) => {
+            if (result?.status === 'corrupt') {
+              queued.push({
+                asset,
+                finding,
+                reference: {
+                  policy,
+                  check: input.check,
+                  intent: { ownerId: asset.ownerId, confirmationId: randomUUID(), source: reviewed.data },
+                },
+              });
+              resultStatusById.set(finding.id, MediaHealthStatus.TrashQueued);
+            } else {
+              const status = result ? MediaHealthStatus.UnsupportedRaw : MediaHealthStatus.Resolved;
+              await this.mediaHealthRepository.publishHealthSource(asset, policy, input.check, async () => {
+                await this.mediaHealthRepository.assertReviewedHealthFinding(asset, finding);
+                await this.mediaHealthRepository.upsertFinding({
+                  ...finding,
+                  expectedUpdateId: asset.updateId,
+                  status,
+                  severity: MediaHealthSeverity.Info,
+                  evidence: { reason: result?.reason ?? 'trash_revalidation_passed', sourceOriginal: reviewed.data },
+                  resolution: { trashSkipped: true },
+                  checkedAt: new Date(),
+                  resolvedAt: result ? null : new Date(),
+                });
+              });
+              resultStatusById.set(finding.id, status);
+            }
+            return prepare(index + 1);
+          },
+          reviewed.data,
+        );
       }
       const result = await this.validateAssetIntegrity(asset);
-
       if (result?.status === MediaHealthStatus.CorruptConfirmed) {
-        queued.push(finding);
+        queued.push({ asset, finding });
         resultStatusById.set(finding.id, MediaHealthStatus.TrashQueued);
-        continue;
+      } else {
+        const status = result?.status ?? MediaHealthStatus.Resolved;
+        resultStatusById.set(finding.id, status);
+        await this.mediaHealthRepository.upsertFinding({
+          ...finding,
+          expectedUpdateId: asset.updateId,
+          status,
+          severity: result ? MediaHealthSeverity.Warning : MediaHealthSeverity.Info,
+          evidence: result?.evidence ?? { reason: 'trash_revalidation_passed' },
+          resolution: result?.resolution ?? { trashSkipped: true },
+          checkedAt: new Date(),
+          resolvedAt: result ? null : new Date(),
+        });
       }
-
-      const status = result?.status ?? MediaHealthStatus.Resolved;
-      resultStatusById.set(finding.id, status);
-      await this.mediaHealthRepository.upsertFinding({
-        ...finding,
-        expectedUpdateId: asset.updateId,
-        status,
-        severity: result ? MediaHealthSeverity.Warning : MediaHealthSeverity.Info,
-        evidence: result?.evidence ?? { reason: 'trash_revalidation_passed' },
-        resolution: result?.resolution ?? { trashSkipped: true },
-        checkedAt: new Date(),
-        resolvedAt: result ? null : new Date(),
-      });
-    }
-
-    if (queued.length === 0) {
-      throw new BadRequestException('Selected corrupt media no longer failed deletion revalidation');
-    }
-
-    await this.mediaHealthRepository.markStatus(
-      queued.map(({ id }) => id),
-      MediaHealthStatus.TrashQueued,
-    );
-    let operationId: string | null;
-    try {
-      operationId = await this.submitBulk(
-        auth,
-        MediaOperationBulkAction.TrashDamagedMedia,
-        queued.map((finding) => ({ assetId: finding.assetId, findingId: finding.id })),
-      );
-    } catch (error) {
-      // Nothing was queued: put the findings back as they were so they can be reviewed again.
-      await this.mediaHealthRepository.markStatus(
-        queued.map(({ id }) => id),
-        MediaHealthStatus.CorruptConfirmed,
-      );
-      throw error;
-    }
+      return prepare(index + 1);
+    };
+    const operationId = await prepare(0);
 
     return {
       results: findings.map((finding) => ({
@@ -1294,6 +1355,19 @@ export class MediaHealthService {
     const { finding, asset } = target;
     const id = entry.assetId;
 
+    const reference = parseSourceOriginalPath(asset.originalPath);
+    const intent = healthSourceTrashIntentSchema.safeParse(entry.sourceTrash);
+    if (
+      (reference || entry.sourceTrash) &&
+      (!reference ||
+        !intent.success ||
+        intent.data.ownerId !== asset.ownerId ||
+        !sameHealthSourceTrashIntent(intent.data, finding.resolution?.sourceTrash) ||
+        !sameHealthSourceReview(intent.data.source, finding.evidence?.sourceOriginal))
+    ) {
+      return changed(id, 'Reference confirmation changed. Scan and confirm it again.');
+    }
+
     if (finding.status === MediaHealthStatus.Trashed) {
       // A batch applied again after a lost worker: this one is already in the trash.
       return outcome(id, MediaOperationItemStatus.Ok);
@@ -1306,6 +1380,20 @@ export class MediaHealthService {
       return changed(id, 'The finding was not confirmed for the trash');
     }
 
+    if (parseSourceOriginalPath(asset.originalPath)) {
+      const result = await this.trashReference(asset, finding, intent.data!);
+      if (result === 'trashed') {
+        await this.eventRepository.emit('AssetTrashAll', { assetIds: [asset.id], userId: asset.ownerId });
+        return outcome(id, MediaOperationItemStatus.Ok);
+      }
+      if (result === 'changed') return changed(id, 'Reference or finding changed before trash');
+      return outcome(
+        id,
+        MediaOperationItemStatus.Skipped,
+        'frameleaf_bulk_reason_media_health_not_damaged',
+        'Revalidation did not confirm damage, so it was kept',
+      );
+    }
     const result = await this.validateAssetIntegrity(asset);
     if (result?.status === MediaHealthStatus.CorruptConfirmed) {
       if (!(await this.mediaHealthRepository.trashCorruptIfUnchanged({ healthId: finding.id, asset }))) {
@@ -1567,6 +1655,7 @@ export class MediaHealthService {
     auth: AuthDto,
     action: MediaOperationBulkAction,
     entries: BulkMediaHealthEntry[],
+    executor?: Transaction<DB>,
   ): Promise<string | null> {
     if (entries.length === 0) {
       return null;
@@ -1579,7 +1668,7 @@ export class MediaHealthService {
         payload: { mediaHealth: entries },
         scope: { source: 'library-care' },
       },
-      { libraryCare: true },
+      { libraryCare: true, ...(executor ? { executor } : {}) },
     );
     return operation.id;
   }
@@ -2024,6 +2113,10 @@ export class MediaHealthService {
         ownerId: job.userId,
       })) {
         checkedAssets++;
+        if (parseSourceOriginalPath(asset.originalPath)) {
+          if ((await this.scanReferenceAsset(asset, null, run)) === 'corrupt') foundAssets++;
+          continue;
+        }
         const result = await this.validateAssetIntegrity(asset);
         if (!result) {
           resolveBuffer.push(asset);
@@ -2089,6 +2182,9 @@ export class MediaHealthService {
         continue;
       }
 
+      if (parseSourceOriginalPath(asset.originalPath)) {
+        throw new ConflictException('Reference trash requires a newly confirmed durable request');
+      }
       const result = await this.validateAssetIntegrity(asset);
       if (result?.status === MediaHealthStatus.CorruptConfirmed) {
         if (await this.mediaHealthRepository.trashCorruptIfUnchanged({ healthId: finding.id, asset })) {
@@ -2220,6 +2316,9 @@ export class MediaHealthService {
     corruptRunId: string | null,
     { checksumScan = true }: { checksumScan?: boolean } = {},
   ): Promise<'missing' | 'corrupt' | 'healthy'> {
+    if (parseSourceOriginalPath(asset.originalPath)) {
+      return this.scanReferenceAsset(asset, missingRunId, corruptRunId);
+    }
     const sourceExists = await this.storageRepository.checkFileExists(asset.originalPath, constants.R_OK);
     if (!sourceExists) {
       await this.mediaHealthRepository.upsertFinding({
@@ -2289,6 +2388,200 @@ export class MediaHealthService {
       checkedAt: new Date(),
     });
     return 'corrupt';
+  }
+
+  private async scanReferenceAsset(
+    asset: MediaHealthAsset,
+    missingRunId: string | null,
+    corruptRunId: string | null,
+  ): Promise<'healthy' | 'corrupt'> {
+    return this.withReferenceIntegrity(asset, !!corruptRunId, (result, policy, input) => {
+      return this.mediaHealthRepository.publishHealthSource(asset, policy, input.check, async () => {
+        if (!result) {
+          await this.mediaHealthRepository.markResolvedForAssets(
+            [
+              ...(missingRunId ? [MediaHealthCategory.Missing] : []),
+              ...(corruptRunId ? [MediaHealthCategory.Corrupt] : []),
+            ],
+            [asset],
+          );
+          return 'healthy' as const;
+        }
+        if (missingRunId)
+          await this.mediaHealthRepository.markResolvedForAssets([MediaHealthCategory.Missing], [asset]);
+        await this.mediaHealthRepository.upsertFinding({
+          runId: corruptRunId!,
+          assetId: asset.id,
+          expectedUpdateId: asset.updateId,
+          category: MediaHealthCategory.Corrupt,
+          status: result.status === 'corrupt' ? MediaHealthStatus.CorruptConfirmed : MediaHealthStatus.UnsupportedRaw,
+          severity: result.status === 'corrupt' ? MediaHealthSeverity.Critical : MediaHealthSeverity.Info,
+          originalPath: asset.originalPath,
+          originalFileName: asset.originalFileName,
+          evidence: {
+            reason: result.reason,
+            validationStatus: result.status,
+            sourceOriginal: {
+              resourceId: input.resourceId,
+              version: input.resourceVersion,
+              sha256: input.verifiedSha256,
+            },
+          },
+          resolution: { reuploadRecommended: result.status === 'corrupt' },
+          checkedAt: new Date(),
+        });
+        return 'corrupt' as const;
+      });
+    });
+  }
+
+  private async withReferenceIntegrity<T>(
+    asset: MediaHealthAsset,
+    deep: boolean,
+    work: (
+      result: Exclude<MediaIntegrityResult, { status: 'healthy' }> | undefined,
+      policy: AssetSourceSnapshot,
+      input: Awaited<ReturnType<SourceOriginalService['open']>>,
+    ) => Promise<T>,
+    reviewed?: HealthSourceReview,
+  ): Promise<T> {
+    if (this.sourceStopUnconfirmed) throw new Error('source_original_shutdown_unconfirmed');
+    const policy = await this.mediaHealthRepository.captureHealthSource(asset);
+    const context = queueExecution.getStore();
+    const reader = {
+      readerId: randomUUID(),
+      ownerId: this.sourceReaderOwnerId,
+      ...(context
+        ? { kind: 'job' as const, jobId: context.claim.id, attemptToken: context.claim.token }
+        : { kind: 'http' as const }),
+    };
+    let input: Awaited<ReturnType<SourceOriginalService['open']>> | undefined;
+    let validation: MediaIntegrityValidation | undefined;
+    let confirmed = true;
+    try {
+      input = await this.sourceOriginalService.open(
+        asset.id,
+        reader,
+        async () => {
+          context?.signal.throwIfAborted();
+          await this.mediaHealthRepository.assertHealthSource(asset, policy);
+          context?.signal.throwIfAborted();
+        },
+        executionSignal(),
+      );
+      const acquired = input;
+      return await withExecutionSignal(acquired.signal, async () => {
+        await acquired.check();
+        if (
+          reviewed &&
+          !sameHealthSourceReview(reviewed, {
+            resourceId: acquired.resourceId,
+            version: acquired.resourceVersion,
+            sha256: acquired.verifiedSha256,
+          })
+        )
+          throw new ConflictException('Reference original changed. Scan and confirm it again.');
+        let result: Exclude<MediaIntegrityResult, { status: 'healthy' }> | undefined;
+        if (deep) {
+          validation = this.integrityService.validateWithSettlement({
+            path: acquired.localPath,
+            originalFileName: asset.originalFileName,
+            type: asset.type,
+            expected: { sha256: Buffer.from(acquired.verifiedSha256, 'hex'), sizeInBytes: acquired.byteLength },
+            deep: true,
+          });
+          const active = validation;
+          const cancel = () => active.cancel();
+          acquired.signal.addEventListener('abort', cancel, { once: true });
+          if (acquired.signal.aborted) cancel();
+          try {
+            const decoded = await active.result;
+            await active.settled;
+            if (decoded.status !== 'healthy') result = decoded;
+          } finally {
+            acquired.signal.removeEventListener('abort', cancel);
+          }
+        }
+        await acquired.check();
+        if (
+          result &&
+          !(result.status === 'unsupported' || (result.status === 'corrupt' && result.reason === 'decode_failed'))
+        ) {
+          throw new ServiceUnavailableException('source_original_unavailable');
+        }
+        return work(result, policy, acquired);
+      });
+    } catch (error) {
+      if (
+        isMediaProcessShutdownUnconfirmed(error) ||
+        (error instanceof Error &&
+          [
+            'artifact_close_unconfirmed',
+            'source_original_shutdown_unconfirmed',
+            'source_reader_stop_unconfirmed',
+          ].includes(error.message))
+      ) {
+        confirmed = false;
+        this.sourceStopUnconfirmed = true;
+        if (context) context.executorStopUnconfirmed = true;
+      }
+      throw error;
+    } finally {
+      validation?.cancel();
+      await validation?.settled.catch((error) => {
+        this.sourceStopUnconfirmed = true;
+        if (context) context.executorStopUnconfirmed = true;
+        throw error;
+      });
+      if (confirmed && input)
+        await withExecutionCleanup(() => input!.release()).catch((error) => {
+          this.sourceStopUnconfirmed = true;
+          if (context) context.executorStopUnconfirmed = true;
+          throw error;
+        });
+    }
+  }
+
+  private async trashReference(
+    asset: MediaHealthAsset,
+    finding: MediaHealthFinding,
+    intent: HealthSourceTrashIntent,
+  ): Promise<'trashed' | 'kept' | 'changed'> {
+    const reviewed = healthSourceReviewSchema.safeParse(intent.source);
+    if (!reviewed.success) throw new ConflictException('Reference original changed. Scan and confirm it again.');
+    return this.withReferenceIntegrity(
+      asset,
+      true,
+      async (result, policy, input) => {
+        if (result?.status === 'corrupt') {
+          const applied = await this.mediaHealthRepository.trashReferenceIfUnchanged({
+            asset,
+            healthId: finding.id,
+            reviewed: reviewed.data,
+            intent,
+            policy,
+            check: input.check,
+          });
+          return applied ? 'trashed' : 'changed';
+        }
+        return this.mediaHealthRepository.publishHealthSource(asset, policy, input.check, async () => {
+          if (!(await this.mediaHealthRepository.matchesHealthTrashIntent(asset, finding.id, intent)))
+            return 'changed' as const;
+          await this.mediaHealthRepository.upsertFinding({
+            ...finding,
+            expectedUpdateId: asset.updateId,
+            status: result ? MediaHealthStatus.UnsupportedRaw : MediaHealthStatus.Resolved,
+            severity: MediaHealthSeverity.Info,
+            evidence: { reason: result?.reason ?? 'revalidation_passed', sourceOriginal: reviewed.data },
+            resolution: { trashSkipped: true },
+            checkedAt: new Date(),
+            resolvedAt: result ? null : new Date(),
+          });
+          return 'kept' as const;
+        });
+      },
+      reviewed.data,
+    );
   }
 
   private async validateAssetIntegrity(asset: MediaHealthAsset): Promise<CandidateValidation | null> {
@@ -2409,6 +2702,9 @@ export class MediaHealthService {
     asset: MediaHealthAsset,
     { verifyChecksum = true }: { verifyChecksum?: boolean } = {},
   ): Promise<CandidateValidation | null> {
+    if (parseSourceOriginalPath(asset.originalPath)) {
+      throw new ServiceUnavailableException('source_health_validation_required');
+    }
     const result = await this.integrityService.validate({
       path: asset.originalPath,
       originalFileName: asset.originalFileName,
