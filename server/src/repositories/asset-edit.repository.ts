@@ -2,21 +2,29 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
+import type { SourceReference } from 'src/utils/source-reference.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetEditActionItem, AssetEditActionItemResponseDto } from 'src/dtos/editing.dto.js';
-import { AssetFileType, AssetType } from 'src/enum.js';
+import { AssetFileType, AssetStatus, AssetType, ChecksumAlgorithm } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
+import { lockSourceAuthorities } from 'src/utils/source-authority-lock.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
+
+export type AssetEditSource = { ownerId: string; path: string; checksum: Buffer; reference: SourceReference };
+type EditAuthority = { sourceId: string; ownerId: string; path: string; type: AssetType };
 
 export type VideoEditVersion = {
   id: string;
   assetId: string;
   ownerId: string;
-  /** The asset's current original path. A version is tied to its original by asset and checksum, not path. */
+  /** Current managed path, or the logical locator of the pinned reference resource. */
   sourcePath: string;
   sourceChecksum: Buffer;
+  /** Null for managed files; a reference version must retain its exact verified resource identity. */
+  sourceReference: SourceReference | null;
   recipe: AssetEditActionItem[];
   purpose: 'save' | 'export' | 'revert';
   status: 'pending' | 'ready' | 'failed';
@@ -38,11 +46,19 @@ export type VideoVersionPublication = {
  * A retained version belongs to its asset's original by asset, owner and content checksum. The path
  * is deliberately not part of that identity: physical deduplication and the storage template may
  * move an original, and a version stays valid across the move. The current path is reported as
- * `sourcePath`.
+ * `sourcePath`. References additionally pin their logical locator and verified resource snapshot.
  */
-const versionColumns = sql`v.id, v."assetId", v."ownerId", a."originalPath" AS "sourcePath", v."sourceChecksum",
+const versionColumns = sql`v.id, v."assetId", v."ownerId", a."originalPath" AS "sourcePath", v."sourceChecksum", v."sourceReference",
   v.recipe, v.purpose, v.status, v."masterPath", v."proxyPath", v.files, v."createdAt"`;
-const sourceJoin = sql`JOIN public.asset a ON a.id=v."assetId" AND a."ownerId"=v."ownerId" AND a.checksum=v."sourceChecksum"`;
+const referenceSnapshot = sql`(SELECT jsonb_build_object('resourceId', r.id, 'version', r.version, 'sha256', encode(r.checksum, 'hex'))
+  FROM source_original b JOIN photo_source_resource r ON r.id=b."resourceId" AND r."assetId"=a.id
+  JOIN photo_source_run run ON run.id=r."runId" JOIN photo_source s ON s.id=run."sourceId" AND s."ownerId"=a."ownerId"
+  WHERE b."assetId"=a.id AND r.state='verified' AND r."verifiedAt" IS NOT NULL
+    AND a."originalPath"='frameleaf-source://' || s.id::text || '/' || r."resourceKey")`;
+const sourceMatches = sql`a.checksum=v."sourceChecksum" AND CASE WHEN a."originalPath" ILIKE 'frameleaf-source:%'
+  THEN v."sourceReference" IS NOT NULL AND v."sourcePath"=a."originalPath" AND v."sourceReference"=${referenceSnapshot}
+  ELSE v."sourceReference" IS NULL AND v."sourcePath" NOT ILIKE 'frameleaf-source:%' END`;
+const sourceJoin = sql`JOIN public.asset a ON a.id=v."assetId" AND a."ownerId"=v."ownerId" AND ${sourceMatches}`;
 const versionPaths = (version: Pick<VideoEditVersion, 'masterPath' | 'proxyPath' | 'files'>) => [
   version.masterPath,
   version.masterPath && getEditedMasterLineagePath(version.masterPath),
@@ -57,13 +73,67 @@ export class AssetEditRepository {
   ) {
     this.db = publicationDatabase(db);
   }
+  private async lockEditAuthority(db: Transaction<DB>, assetId: string): Promise<EditAuthority | undefined> {
+    const asset = await db
+      .selectFrom('asset')
+      .select(['ownerId', 'originalPath', 'type'])
+      .where('id', '=', assetId)
+      .executeTakeFirst();
+    if (!asset) return;
+    const identity = parseSourceOriginalPath(asset.originalPath);
+    if (!identity) return;
+    if (!(await lockSourceAuthorities(db, [{ sourceId: identity.sourceId, ownerId: asset.ownerId }])))
+      throw new Error(asset.type === AssetType.Video ? 'video_version_source_changed' : 'asset_edit_source_changed');
+    return { sourceId: identity.sourceId, ownerId: asset.ownerId, path: asset.originalPath, type: asset.type };
+  }
+
+  private async assertEditAuthority(db: Transaction<DB>, assetId: string, authority?: EditAuthority) {
+    if (!authority) {
+      const asset = await db
+        .selectFrom('asset')
+        .select(['originalPath', 'type'])
+        .where('id', '=', assetId)
+        .executeTakeFirst();
+      if (!asset || !parseSourceOriginalPath(asset.originalPath)) return;
+      throw new Error(asset.type === AssetType.Video ? 'video_version_source_changed' : 'asset_edit_source_changed');
+    }
+    const { rows } = await sql`SELECT a.id FROM asset a
+      JOIN source_original b ON b."assetId"=a.id
+      JOIN photo_source_resource r ON r.id=b."resourceId" AND r."assetId"=a.id
+      JOIN photo_source_run run ON run.id=r."runId"
+      JOIN photo_source s ON s.id=run."sourceId" AND s."ownerId"=a."ownerId"
+      JOIN library l ON l.id=a."libraryId" AND l."ownerId"=s."ownerId"
+      JOIN desktop_device d ON d.id=s."deviceId" AND d."userId"=s."ownerId"
+      JOIN session p ON p.id=s."photoSessionId" AND p."userId"=s."ownerId"
+      JOIN "user" owner ON owner.id=s."ownerId"
+      WHERE a.id=${assetId}::uuid AND a."ownerId"=${authority.ownerId}::uuid AND a."originalPath"=${authority.path}
+        AND a.type=${authority.type} AND a.status=${AssetStatus.Active} AND a."deletedAt" IS NULL AND a."isExternal"
+        AND a."checksumAlgorithm"=${ChecksumAlgorithm.sha1Path} AND s.id=${authority.sourceId}::uuid
+        AND a."originalPath"='frameleaf-source://' || s.id::text || '/' || r."resourceKey"
+        AND l."readOnly" AND l."deletedAt" IS NULL AND r.state='verified' AND r."verifiedAt" IS NOT NULL
+        AND s.mode='reference' AND s."revokedAt" IS NULL AND owner."deletedAt" IS NULL
+        AND b."scopeFingerprint"=s."scopeFingerprint" AND b."authorizationEpoch"=d."authorizationEpoch"
+        AND d."revokedAt" IS NULL AND d.state NOT IN ('paused','revoked')
+        AND (p."expiresAt" IS NULL OR p."expiresAt">clock_timestamp())`.execute(db);
+    if (!rows[0])
+      throw new Error(
+        authority.type === AssetType.Video ? 'video_version_source_changed' : 'asset_edit_source_changed',
+      );
+  }
+
+  private async lockSourceReference(db: Transaction<DB>, assetId: string) {
+    await sql`SELECT b."assetId" FROM source_original b JOIN photo_source_resource r ON r.id=b."resourceId"
+      WHERE b."assetId"=${assetId}::uuid FOR SHARE OF b,r`.execute(db);
+  }
   @GenerateSql({ params: [DummyValue.UUID] })
   replaceAll(
     assetId: string,
     edits: AssetEditActionItem[],
     purpose: 'save' | 'revert' = 'save',
+    expected?: AssetEditSource,
   ): Promise<AssetEditActionItemResponseDto[]> {
     const execute = async (trx: Transaction<DB>) => {
+      const authority = await this.lockEditAuthority(trx, assetId);
       // Only video edits are versioned; a photo edit never waits on the fork schema's write phase.
       const target = await trx
         .selectFrom('asset')
@@ -74,19 +144,44 @@ export class AssetEditRepository {
         .executeTakeFirst();
       if (!target) throw new BadRequestException('Edit source asset is no longer available');
       if (target?.type === AssetType.Video) {
-        await this.recordVideoVersion(trx, assetId, edits, purpose);
+        await this.recordVideoVersion(trx, assetId, edits, purpose, expected);
+      } else if (expected) {
+        await this.lockSourceReference(trx, assetId);
+        const { rows } = await sql`SELECT a.id FROM asset a WHERE a.id=${assetId}::uuid
+          AND a."ownerId"=${expected.ownerId}::uuid AND a."originalPath"=${expected.path} AND a.checksum=${expected.checksum}
+          AND ${referenceSnapshot}=${JSON.stringify(expected.reference)}::text::jsonb`.execute(trx);
+        if (!rows[0]) throw new Error('asset_edit_source_changed');
       }
       await trx.deleteFrom('asset_edit').where('assetId', '=', assetId).execute();
+      let result: AssetEditActionItemResponseDto[] = [];
       if (edits.length > 0) {
-        return trx
+        result = await trx
           .insertInto('asset_edit')
-          .values(edits.map((edit, i) => ({ assetId, sequence: i, ...edit })))
+          .values(
+            edits.map((edit, i) => ({
+              assetId,
+              sequence: i,
+              ...edit,
+              sourceReference: target.type === AssetType.Image ? (expected?.reference ?? null) : null,
+            })),
+          )
           .returning(['id', 'action', 'parameters'])
           .execute();
       }
-      return [];
+      await this.assertEditAuthority(trx, assetId, authority);
+      return result;
     };
     return this.db.isTransaction ? execute(this.db as Transaction<DB>) : this.db.transaction().execute(execute);
+  }
+
+  /** A mutable still recipe may render only the exact reference its owner saved. */
+  async assertImageEditSource(assetId: string): Promise<void> {
+    const { rows } = await sql`SELECT a.id FROM asset a WHERE a.id=${assetId}::uuid AND a.type=${AssetType.Image}
+      AND NOT EXISTS (SELECT 1 FROM asset_edit e WHERE e."assetId"=a.id AND CASE
+        WHEN a."originalPath" ILIKE 'frameleaf-source:%' THEN
+          e."sourceReference" IS NULL OR e."sourceReference" IS DISTINCT FROM ${referenceSnapshot}
+        ELSE e."sourceReference" IS NOT NULL END) FOR SHARE OF a`.execute(this.db);
+    if (!rows[0]) throw new Error('asset_edit_source_changed');
   }
 
   private async recordVideoVersion(
@@ -94,6 +189,7 @@ export class AssetEditRepository {
     assetId: string,
     recipe: AssetEditActionItem[],
     purpose: 'save' | 'revert',
+    expected?: AssetEditSource,
   ) {
     const asset = await db
       .selectFrom('asset')
@@ -102,13 +198,33 @@ export class AssetEditRepository {
       .forUpdate()
       .executeTakeFirst();
     if (!asset || asset.type !== AssetType.Video) return;
+    await this.lockSourceReference(db, assetId);
+    const { rows: snapshots } = await sql<{
+      reference: SourceReference | null;
+    }>`SELECT ${referenceSnapshot} AS reference
+      FROM asset a WHERE a.id=${assetId}::uuid`.execute(db);
+    const sourceReference = snapshots[0]?.reference ?? null;
+    if (
+      expected &&
+      (asset.ownerId !== expected.ownerId ||
+        asset.originalPath !== expected.path ||
+        !asset.checksum.equals(expected.checksum) ||
+        !sourceReference ||
+        sourceReference.resourceId !== expected.reference.resourceId ||
+        sourceReference.version !== expected.reference.version ||
+        sourceReference.sha256 !== expected.reference.sha256)
+    )
+      throw new Error('video_version_source_changed');
+
+    if (parseSourceOriginalPath(asset.originalPath) && !sourceReference)
+      throw new BadRequestException('Edit source resource is no longer available');
     // A pending save or revert that is superseded before it renders will never be published.
     await sql`UPDATE public.video_edit_version v SET status='failed'
       FROM public.video_edit_selection s
       WHERE s."assetId"=${asset.id}::uuid AND v.id=s."requestedVersionId" AND v.status='pending'`.execute(db);
     const { rows } = await sql<VideoEditVersion>`INSERT INTO public.video_edit_version
-      ("assetId","ownerId","sourcePath","sourceChecksum",recipe,purpose)
-      VALUES(${asset.id}::uuid,${asset.ownerId}::uuid,${asset.originalPath},${asset.checksum},${JSON.stringify(recipe)}::text::jsonb,${purpose}) RETURNING *`.execute(
+      ("assetId","ownerId","sourcePath","sourceChecksum","sourceReference",recipe,purpose)
+      VALUES(${asset.id}::uuid,${asset.ownerId}::uuid,${asset.originalPath},${asset.checksum},${sourceReference ? JSON.stringify(sourceReference) : null}::text::jsonb,${JSON.stringify(recipe)}::text::jsonb,${purpose}) RETURNING *`.execute(
       db,
     );
     await sql`INSERT INTO public.video_edit_selection ("assetId","ownerId","requestedVersionId")
@@ -148,6 +264,7 @@ export class AssetEditRepository {
   ): Promise<VideoVersionPublication> {
     const refused = { published: false, releasedPaths: [] };
     return this.db.transaction().execute(async (db) => {
+      const authority = await this.lockEditAuthority(db, version.assetId);
       // Match PhysicalFileRepository's advisory keys, before taking the asset row lock.
       // A retained version cannot race the final reference check in FileDelete.
       const ownedPaths = [result.masterPath, ...result.files.map((file) => file.path)].filter(
@@ -168,9 +285,15 @@ export class AssetEditRepository {
           WHERE id=${version.id}::uuid AND status='pending'`.execute(db);
         return refused;
       };
-      if (!asset || asset.ownerId !== version.ownerId || !asset.checksum.equals(version.sourceChecksum)) {
-        return fail();
-      }
+      if (!asset || asset.ownerId !== version.ownerId || !asset.checksum.equals(version.sourceChecksum)) return fail();
+      await this.assertEditAuthority(db, version.assetId, authority);
+      await this.lockSourceReference(db, version.assetId);
+      const { rows: sources } = await sql`SELECT v.id FROM video_edit_version v ${sourceJoin}
+        WHERE v.id=${version.id}::uuid AND v."assetId"=${version.assetId}::uuid
+          AND v."sourceReference" IS NOT DISTINCT FROM ${version.sourceReference ? JSON.stringify(version.sourceReference) : null}::text::jsonb`.execute(
+        db,
+      );
+      if (!sources[0]) return fail();
       const proxyPath = result.files.find((file) => file.type === AssetFileType.EncodedVideo)?.path ?? null;
       if (
         ownedPaths.includes(asset.originalPath) ||
@@ -197,7 +320,10 @@ export class AssetEditRepository {
         ) AS superseded`.execute(db);
         return { ...(await fail()), ...(selections[0].superseded && { superseded: true }) };
       }
-      if (rows[0].purpose === 'export') return { published: true, releasedPaths: [] };
+      if (rows[0].purpose === 'export') {
+        await this.assertEditAuthority(db, version.assetId, authority);
+        return { published: true, releasedPaths: [] };
+      }
       await sql`UPDATE public.video_edit_selection SET "currentVersionId"=${version.id}::uuid WHERE "assetId"=${version.assetId}::uuid`.execute(
         db,
       );
@@ -232,6 +358,7 @@ export class AssetEditRepository {
         })
         .where('id', '=', version.assetId)
         .execute();
+      await this.assertEditAuthority(db, version.assetId, authority);
       return { published: true, releasedPaths };
     });
   }
@@ -278,6 +405,7 @@ export class AssetEditRepository {
   }
   async createVideoExport(assetId: string, ownerId: string): Promise<VideoEditVersion> {
     return this.db.transaction().execute(async (db) => {
+      const authority = await this.lockEditAuthority(db, assetId);
       const asset = await db
         .selectFrom('asset')
         .select('id')
@@ -286,15 +414,18 @@ export class AssetEditRepository {
         .forUpdate()
         .executeTakeFirst();
       if (!asset) throw new Error('video_version_not_found');
+      await this.assertEditAuthority(db, assetId, authority);
+      await this.lockSourceReference(db, assetId);
       const { rows } = await sql<VideoEditVersion>`INSERT INTO public.video_edit_version
-        ("assetId","ownerId","sourcePath","sourceChecksum",recipe,purpose)
-        SELECT v."assetId",v."ownerId",a."originalPath",v."sourceChecksum",v.recipe,'export'
+        ("assetId","ownerId","sourcePath","sourceChecksum","sourceReference",recipe,purpose)
+        SELECT v."assetId",v."ownerId",a."originalPath",v."sourceChecksum",v."sourceReference",v.recipe,'export'
         FROM public.video_edit_selection s JOIN public.video_edit_version v ON v.id=s."currentVersionId"
         ${sourceJoin}
         WHERE s."assetId"=${assetId}::uuid AND s."ownerId"=${ownerId}::uuid AND v.status='ready' RETURNING *`.execute(
         db,
       );
       if (!rows[0]) throw new Error('video_version_not_ready');
+      await this.assertEditAuthority(db, assetId, authority);
       return rows[0];
     });
   }

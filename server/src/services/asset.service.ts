@@ -1,6 +1,7 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { isNumber, isUndefined, omitBy } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
+import { randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobItem, JobOf } from 'src/types.js';
@@ -52,6 +53,7 @@ import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.service.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
 import { requireAccess, requireElevatedPermission } from 'src/utils/access.js';
 import { getAssetFiles, getDimensions, getLivePhotoMotion, isPanorama } from 'src/utils/asset.util.js';
 import { updateLockedColumns } from 'src/utils/database.js';
@@ -65,6 +67,8 @@ import { DecodeSupport, qualifySourceDecode } from 'src/utils/media-decode.js';
 import { EditedMasterColorPolicy, MediaPolicyError, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
+import { parseSourceOriginalPath } from 'src/utils/source-original.js';
+import { sourceSidecarPath } from 'src/utils/source-sidecar.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 import { TrashReviewAction } from 'src/utils/trash-review.js';
 
@@ -115,6 +119,7 @@ const videoVersionErrors: Record<string, string> = {
   video_version_not_ready: 'The current video version is not ready to export',
   video_version_selected_or_missing: 'Only an unselected saved video version can be pruned',
   video_version_source_changed: 'The original video changed after this version was saved',
+  asset_edit_source_changed: 'The original changed while these edits were being saved',
 };
 
 /** Repository refusals for retained video versions are client errors, not server faults. */
@@ -135,6 +140,47 @@ const withVideoVersionErrors = async <T>(call: () => Promise<T>): Promise<T> => 
 
 @Injectable()
 export class AssetService extends BaseService {
+  @Inject(SourceOriginalService)
+  private sourceOriginalService!: SourceOriginalService;
+  private readonly sourceReaderOwnerId = randomUUID();
+
+  private async openEditOriginal(
+    auth: AuthDto,
+    id: string,
+    path: string,
+    permission: Permission,
+    signal?: AbortSignal,
+  ) {
+    if (!parseSourceOriginalPath(path)) return;
+    const source = await this.assetRepository.getById(id);
+    if (!source || source.originalPath !== path) throw new ConflictException('Original changed');
+    const input = await this.sourceOriginalService.open(
+      id,
+      { kind: 'http', readerId: randomUUID(), ownerId: this.sourceReaderOwnerId },
+      async () => {
+        signal?.throwIfAborted();
+        await this.requireAccess({ auth, permission, ids: [id] });
+        const current = await this.assetRepository.getById(id);
+        if (
+          !current ||
+          current.ownerId !== source.ownerId ||
+          current.originalPath !== path ||
+          !current.checksum.equals(source.checksum)
+        )
+          throw new ConflictException('Original changed');
+      },
+      signal,
+    );
+    return Object.assign(input, {
+      editSource: {
+        ownerId: source.ownerId,
+        path,
+        checksum: source.checksum,
+        reference: { resourceId: input.resourceId, version: input.resourceVersion, sha256: input.verifiedSha256 },
+      },
+    });
+  }
+
   async getStatistics(auth: AuthDto, dto: AssetStatsDto) {
     if (dto.visibility === AssetVisibility.Locked) {
       requireElevatedPermission(auth);
@@ -846,7 +892,7 @@ export class AssetService extends BaseService {
     sourceAsset,
     targetAsset,
   }: {
-    sourceAsset: { files: AssetFile[] };
+    sourceAsset: { id: string; ownerId: string; originalPath: string; files: AssetFile[] };
     targetAsset: {
       id: string;
       ownerId: string;
@@ -861,19 +907,23 @@ export class AssetService extends BaseService {
       return;
     }
 
+    sourceSidecarPath(sourceAsset, sourceFile.path);
+    const { sidecarFile: targetFile } = getAssetFiles(targetAsset.files ?? []);
+    const sourceTarget = sourceSidecarPath(targetAsset, targetFile?.path);
+
     // universal storage: beside a shared original lives the primary owner's sidecar, so a non-primary
     // target writes its own, in its owner's upload folder (as metadata extraction does)
     const isSharedNonCanonical =
+      !sourceTarget &&
       !!targetAsset.physicalOriginalFileId &&
       !(await this.physicalFileRepository.isOriginalCanonical(targetAsset.id, targetAsset.physicalOriginalFileId));
     const targetPath =
-      targetAsset.libraryReadOnly || isSharedNonCanonical
+      sourceTarget ??
+      (targetAsset.libraryReadOnly || isSharedNonCanonical
         ? StorageCore.getNestedPath(StorageFolder.Upload, targetAsset.ownerId, `${targetAsset.id}.xmp`)
-        : `${targetAsset.originalPath}.xmp`;
+        : `${targetAsset.originalPath}.xmp`);
 
-    const { sidecarFile: targetFile } = getAssetFiles(targetAsset.files ?? []);
-
-    if (targetAsset.libraryReadOnly || isSharedNonCanonical) {
+    if (sourceTarget || targetAsset.libraryReadOnly || isSharedNonCanonical) {
       this.storageCore.ensureFolders(targetPath);
     }
     await this.storageRepository.copyFile(sourceFile.path, targetPath);
@@ -1332,7 +1382,7 @@ export class AssetService extends BaseService {
     return value?.trim() || null;
   }
 
-  async getAssetEdits(auth: AuthDto, id: string): Promise<AssetEditsResponseDto> {
+  async getAssetEdits(auth: AuthDto, id: string, signal?: AbortSignal): Promise<AssetEditsResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [id] });
     const asset = await this.assetRepository.getById(id);
     if (!asset) throw new BadRequestException('Asset not found');
@@ -1341,8 +1391,19 @@ export class AssetService extends BaseService {
     let originalVideo: AssetEditsResponseDto['originalVideo'];
     if (asset.type === AssetType.Video) {
       try {
-        originalVideo = await this.getOriginalVideoMetadata(asset.originalPath);
+        const input = await this.openEditOriginal(auth, id, asset.originalPath, Permission.AssetRead, signal);
+        try {
+          originalVideo = await this.getOriginalVideoMetadata(
+            input?.localPath ?? asset.originalPath,
+            input?.signal ?? signal,
+          );
+          await input?.check();
+        } finally {
+          await input?.release();
+        }
       } catch (error: any) {
+        originalVideo = undefined;
+        signal?.throwIfAborted();
         this.logger.warn(`Original video metadata is unavailable for asset ${id}: ${error?.message ?? error}`);
       }
     }
@@ -1355,32 +1416,51 @@ export class AssetService extends BaseService {
    * FL-113 (VID-105, "exact versus fast trim shows actual boundaries"): the original's keyframes,
    * read from its packets without decoding, so the editor can show where a fast trim cuts.
    */
-  async getAssetEditKeyframes(auth: AuthDto, id: string): Promise<AssetEditKeyframesResponseDto> {
+  async getAssetEditKeyframes(auth: AuthDto, id: string, signal?: AbortSignal): Promise<AssetEditKeyframesResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetEditGet, ids: [id] });
     const asset = await this.assetRepository.getById(id);
     if (!asset || asset.type !== AssetType.Video) {
       throw new BadRequestException('Asset not found or asset is not a video');
     }
-    const { videoStreams } = await this.mediaRepository.probe(asset.originalPath);
-    const video = videoStreams[0];
-    const ticks = video?.timeBaseRational ?? (video?.timeBase ? { num: 1, den: video.timeBase } : null);
-    if (!video || !ticks) {
-      throw new BadRequestException('Original video keyframes are not available');
-    }
-    const packets = await this.mediaRepository.probePackets(asset.originalPath, video.index);
-    const start = packets?.startPts ?? 0;
-    const keyframesMs = [
-      ...new Set(
-        (packets?.keyframePts ?? []).map((pts) =>
-          Math.max(0, Math.round(((pts - start) * Number(ticks.num) * 1000) / Number(ticks.den))),
+    const input = await this.openEditOriginal(auth, id, asset.originalPath, Permission.AssetEditGet, signal);
+    try {
+      const path = input?.localPath ?? asset.originalPath;
+      const operation = input?.signal ?? signal;
+      const { videoStreams } = operation
+        ? await this.mediaRepository.probe(path, { countFrames: false, signal: operation })
+        : await this.mediaRepository.probe(path);
+      await input?.check();
+      const video = videoStreams[0];
+      const ticks = video?.timeBaseRational ?? (video?.timeBase ? { num: 1, den: video.timeBase } : null);
+      if (!video || !ticks) {
+        throw new BadRequestException('Original video keyframes are not available');
+      }
+      const packets = operation
+        ? await this.mediaRepository.probePackets(path, video.index, { signal: operation })
+        : await this.mediaRepository.probePackets(path, video.index);
+      await input?.check();
+      operation?.throwIfAborted();
+      const start = packets?.startPts ?? 0;
+      const keyframesMs = [
+        ...new Set(
+          (packets?.keyframePts ?? []).map((pts) =>
+            Math.max(0, Math.round(((pts - start) * Number(ticks.num) * 1000) / Number(ticks.den))),
+          ),
         ),
-      ),
-    ].sort((a, b) => a - b);
-    return { keyframesMs };
+      ].sort((a, b) => a - b);
+      return { keyframesMs };
+    } finally {
+      await input?.release();
+    }
   }
 
-  private async getOriginalVideoMetadata(path: string): Promise<NonNullable<AssetEditsResponseDto['originalVideo']>> {
-    const source = await this.mediaRepository.probe(path);
+  private async getOriginalVideoMetadata(
+    path: string,
+    signal?: AbortSignal,
+  ): Promise<NonNullable<AssetEditsResponseDto['originalVideo']>> {
+    const source = signal
+      ? await this.mediaRepository.probe(path, { countFrames: false, signal })
+      : await this.mediaRepository.probe(path);
     const video = source.videoStreams[0];
     const durationMs = getDurationMs(Math.round(source.format.duration * 1000));
     if (
@@ -1436,7 +1516,7 @@ export class AssetService extends BaseService {
     dto: AssetEditsCreateDto,
     purpose: 'save' | 'revert' = 'save',
     /** Store the recipe exactly as given: a revert, or a preserved recipe being put back. */
-    { exact = purpose === 'revert' }: { exact?: boolean } = {},
+    { exact = purpose === 'revert', signal }: { exact?: boolean; signal?: AbortSignal } = {},
   ): Promise<AssetEditsResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetEditCreate, ids: [id] });
 
@@ -1477,90 +1557,124 @@ export class AssetService extends BaseService {
       throw new BadRequestException('Editing SVG images is not supported');
     }
 
-    const originalVideo =
-      asset.type === AssetType.Video ? await this.getOriginalVideoMetadata(asset.originalPath) : undefined;
-    const { width: assetWidth, height: assetHeight } = originalVideo ?? getDimensions(asset);
-    if (!assetWidth || !assetHeight) {
-      throw new BadRequestException('Asset dimensions are not available for editing');
-    }
-
-    const originalDurationMs = originalVideo?.durationMs ?? null;
-
-    // FL-113/FL-101: an edited version that cannot be decoded or rendered honestly is refused here, before
-    // anything is queued, with the reason; the original is never touched. Reverting to the original stays allowed.
-    if (originalVideo?.colorPolicy === 'unsupported' && purpose === 'save' && edits.length > 0) {
-      throw new BadRequestException(originalVideo.colorReason ?? 'This video cannot be edited on this server');
-    }
-
-    const crop = edits.find((e) => e.action === AssetEditAction.Crop);
-    if (crop) {
-      if (edits[0].action !== AssetEditAction.Crop) {
-        throw new BadRequestException('Crop action must be the first edit action');
+    const input = await this.openEditOriginal(auth, id, asset.originalPath, Permission.AssetEditCreate, signal);
+    try {
+      const originalVideo =
+        asset.type === AssetType.Video
+          ? await this.getOriginalVideoMetadata(input?.localPath ?? asset.originalPath, input?.signal ?? signal)
+          : undefined;
+      const image =
+        input && asset.type === AssetType.Image
+          ? await this.mediaRepository.getImageMetadata(input.localPath, input.signal)
+          : undefined;
+      await input?.check();
+      if (image) {
+        if (
+          !image.format ||
+          !Number.isSafeInteger(image.width) ||
+          image.width <= 0 ||
+          !Number.isSafeInteger(image.height) ||
+          image.height <= 0 ||
+          (image.orientation !== undefined &&
+            (!Number.isSafeInteger(image.orientation) || image.orientation < 1 || image.orientation > 8))
+        )
+          throw new BadRequestException('Original image format or dimensions are not available for editing');
+        if (image.format === 'gif' || image.format === 'svg')
+          throw new BadRequestException(`Editing ${image.format.toUpperCase()} images is not supported`);
+      }
+      const imageDimensions =
+        image && image.orientation && image.orientation >= 5 ? { width: image.height, height: image.width } : image;
+      const { width: assetWidth, height: assetHeight } = originalVideo ?? imageDimensions ?? getDimensions(asset);
+      if (!assetWidth || !assetHeight) {
+        throw new BadRequestException('Asset dimensions are not available for editing');
       }
 
-      const { x, y, width, height } = crop.parameters;
-      if (x + width > assetWidth || y + height > assetHeight) {
-        throw new BadRequestException('Crop parameters are out of bounds');
-      }
-    }
+      const originalDurationMs = originalVideo?.durationMs ?? null;
 
-    if (asset.type === AssetType.Video) {
-      const durationMs = originalDurationMs!;
-      const trimEdit = edits.find(
-        (edit): edit is Extract<AssetEditActionItem, { action: AssetEditAction.Trim }> =>
-          edit.action === AssetEditAction.Trim,
-      );
-      const trimStartMs = trimEdit?.parameters.startMs ?? 0;
-      const trimEndMs = trimEdit?.parameters.endMs ?? durationMs;
-      const speedEdits = edits.filter((edit) => edit.action === AssetEditAction.Speed);
-      const globalSpeedEdits = speedEdits.filter(
-        (edit) => edit.parameters.startMs === undefined && edit.parameters.endMs === undefined,
-      );
-      const speedSegments = speedEdits
-        .filter((edit) => edit.parameters.startMs !== undefined && edit.parameters.endMs !== undefined)
-        .sort((a, b) => a.parameters.startMs! - b.parameters.startMs!);
-
-      // FL-113: a whole-clip speed and speed ranges combine. The ranges override it and it plays in
-      // the gaps between them (`MediaService.getVideoEditTimeline`, `develop.mjs` speedAt).
-      if (globalSpeedEdits.length > 1) {
-        throw new BadRequestException('Only one whole-clip speed edit is allowed');
+      // FL-113/FL-101: an edited version that cannot be decoded or rendered honestly is refused here, before
+      // anything is queued, with the reason; the original is never touched. Reverting to the original stays allowed.
+      if (originalVideo?.colorPolicy === 'unsupported' && purpose === 'save' && edits.length > 0) {
+        throw new BadRequestException(originalVideo.colorReason ?? 'This video cannot be edited on this server');
       }
 
-      for (let index = 1; index < speedSegments.length; index++) {
-        if (speedSegments[index].parameters.startMs! < speedSegments[index - 1].parameters.endMs!) {
-          throw new BadRequestException('Speed segments cannot overlap');
+      const crop = edits.find((e) => e.action === AssetEditAction.Crop);
+      if (crop) {
+        if (edits[0].action !== AssetEditAction.Crop) {
+          throw new BadRequestException('Crop action must be the first edit action');
+        }
+
+        const { x, y, width, height } = crop.parameters;
+        if (x + width > assetWidth || y + height > assetHeight) {
+          throw new BadRequestException('Crop parameters are out of bounds');
         }
       }
 
-      for (const edit of edits) {
-        if (edit.action === AssetEditAction.Trim && edit.parameters.endMs > durationMs) {
-          throw new BadRequestException('Trim parameters are out of bounds');
+      if (asset.type === AssetType.Video) {
+        const durationMs = originalDurationMs!;
+        const trimEdit = edits.find(
+          (edit): edit is Extract<AssetEditActionItem, { action: AssetEditAction.Trim }> =>
+            edit.action === AssetEditAction.Trim,
+        );
+        const trimStartMs = trimEdit?.parameters.startMs ?? 0;
+        const trimEndMs = trimEdit?.parameters.endMs ?? durationMs;
+        const speedEdits = edits.filter((edit) => edit.action === AssetEditAction.Speed);
+        const globalSpeedEdits = speedEdits.filter(
+          (edit) => edit.parameters.startMs === undefined && edit.parameters.endMs === undefined,
+        );
+        const speedSegments = speedEdits
+          .filter((edit) => edit.parameters.startMs !== undefined && edit.parameters.endMs !== undefined)
+          .sort((a, b) => a.parameters.startMs! - b.parameters.startMs!);
+
+        // FL-113: a whole-clip speed and speed ranges combine. The ranges override it and it plays in
+        // the gaps between them (`MediaService.getVideoEditTimeline`, `develop.mjs` speedAt).
+        if (globalSpeedEdits.length > 1) {
+          throw new BadRequestException('Only one whole-clip speed edit is allowed');
         }
 
-        if (edit.action === AssetEditAction.Speed || edit.action === AssetEditAction.TextOverlay) {
-          const { startMs, endMs } = edit.parameters;
-          if ((startMs !== undefined && startMs > durationMs) || (endMs !== undefined && endMs > durationMs)) {
-            throw new BadRequestException(`${edit.action} parameters are out of bounds`);
+        for (let index = 1; index < speedSegments.length; index++) {
+          if (speedSegments[index].parameters.startMs! < speedSegments[index - 1].parameters.endMs!) {
+            throw new BadRequestException('Speed segments cannot overlap');
+          }
+        }
+
+        for (const edit of edits) {
+          if (edit.action === AssetEditAction.Trim && edit.parameters.endMs > durationMs) {
+            throw new BadRequestException('Trim parameters are out of bounds');
           }
 
-          if (
-            trimEdit &&
-            ((startMs !== undefined && startMs < trimStartMs) || (endMs !== undefined && endMs > trimEndMs))
-          ) {
-            throw new BadRequestException(`${edit.action} parameters must be within the trimmed video range`);
+          if (edit.action === AssetEditAction.Speed || edit.action === AssetEditAction.TextOverlay) {
+            const { startMs, endMs } = edit.parameters;
+            if ((startMs !== undefined && startMs > durationMs) || (endMs !== undefined && endMs > durationMs)) {
+              throw new BadRequestException(`${edit.action} parameters are out of bounds`);
+            }
+
+            if (
+              trimEdit &&
+              ((startMs !== undefined && startMs < trimStartMs) || (endMs !== undefined && endMs > trimEndMs))
+            ) {
+              throw new BadRequestException(`${edit.action} parameters must be within the trimmed video range`);
+            }
           }
         }
       }
+
+      await input?.check();
+      signal?.throwIfAborted();
+      const newEdits = await withVideoVersionErrors(() =>
+        input
+          ? this.assetEditRepository.replaceAll(id, edits, purpose, input.editSource)
+          : this.assetEditRepository.replaceAll(id, edits, purpose),
+      );
+      await this.queueEditRender({ id, ownerId: auth.user.id, type: asset.type, label: asset.originalFileName });
+
+      // Return the asset and its applied edits
+      return {
+        assetId: id,
+        edits: newEdits,
+      };
+    } finally {
+      await input?.release();
     }
-
-    const newEdits = await withVideoVersionErrors(() => this.assetEditRepository.replaceAll(id, edits, purpose));
-    await this.queueEditRender({ id, ownerId: auth.user.id, type: asset.type, label: asset.originalFileName });
-
-    // Return the asset and its applied edits
-    return {
-      assetId: id,
-      edits: newEdits,
-    };
   }
 
   /**

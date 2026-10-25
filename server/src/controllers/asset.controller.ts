@@ -1,5 +1,19 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  Res,
+} from '@nestjs/common';
 import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
@@ -39,6 +53,21 @@ import { UUIDParamDto } from 'src/validation.js';
 @ApiTags(ApiTag.Assets)
 @Controller(RouteKey.Asset)
 export class AssetController {
+  private async withEditSignal<T>(res: Response, read: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const controller = new AbortController();
+    const abandon = () => controller.abort();
+    res.once('close', abandon);
+    try {
+      if (res.destroyed) abandon();
+      controller.signal.throwIfAborted();
+      const result = await read(controller.signal);
+      controller.signal.throwIfAborted();
+      return result;
+    } finally {
+      res.off('close', abandon);
+    }
+  }
+
   constructor(
     private service: AssetService,
     private imageEnrichmentService: ImageEnrichmentService,
@@ -307,8 +336,12 @@ export class AssetController {
     description: 'Retrieve a series of edit actions (crop, rotate, mirror) associated with the specified asset.',
     history: new HistoryBuilder().added('v2.5.0').beta('v2.5.0'),
   })
-  getAssetEdits(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<AssetEditsResponseDto> {
-    return this.service.getAssetEdits(auth, id);
+  getAssetEdits(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AssetEditsResponseDto> {
+    return this.withEditSignal(res, (signal) => this.service.getAssetEdits(auth, id, signal));
   }
 
   @Get(':id/edits/keyframes')
@@ -319,8 +352,12 @@ export class AssetController {
       "The keyframe times of the original video, so an editor can show where a fast (keyframe) trim actually cuts. Owner's edit permission only; never the edited version.",
     history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
   })
-  getAssetEditKeyframes(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<AssetEditKeyframesResponseDto> {
-    return this.service.getAssetEditKeyframes(auth, id);
+  getAssetEditKeyframes(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AssetEditKeyframesResponseDto> {
+    return this.withEditSignal(res, (signal) => this.service.getAssetEditKeyframes(auth, id, signal));
   }
 
   @Put(':id/edits')
@@ -334,8 +371,9 @@ export class AssetController {
     @Auth() auth: AuthDto,
     @Param() { id }: UUIDParamDto,
     @Body() dto: AssetEditsCreateDto,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<AssetEditsResponseDto> {
-    return this.service.editAsset(auth, id, dto);
+    return this.withEditSignal(res, (signal) => this.service.editAsset(auth, id, dto, 'save', { signal }));
   }
 
   @Get(':id/edit-versions')

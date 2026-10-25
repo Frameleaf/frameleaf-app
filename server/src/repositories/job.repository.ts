@@ -756,6 +756,8 @@ export class JobRepository {
       assertCurrent,
     });
     deferJobAdoption(async () => {
+      // Source parents precede the asset lock; recheck the snapshot after that lock wait too.
+      await assertCurrent();
       await assertPublicationSource(assetId, Buffer.from(source.checksum, 'hex'));
       await assertCurrent();
     });

@@ -18,9 +18,11 @@ import { PhysicalFileRepository } from 'src/repositories/physical-file.repositor
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
+import { down as removeSourceReferences } from 'src/schema/migrations/2100000003013-SavedEditSourceReferences.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
+import { bindSourceReference } from 'test/fixtures/source-reference.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -64,6 +66,99 @@ const rendered = (assetId: string, label: string) => ({
 it('installs feature tables in the real canonical baseline', async () => {
   await expectCanonicalTables(db, ['video_edit_version', 'video_edit_selection']);
 });
+
+it('captures a reference resource snapshot and retains it through export', async () => {
+  const { asset, sut } = await setup();
+  const { sourceReference } = await bindSourceReference(db, asset);
+  await sut.replaceAll(asset.id, recipe);
+  const version = (await sut.getRequestedVideoVersion(asset.id))!;
+  expect(version).toMatchObject({ sourceReference });
+  expect(
+    await publish(
+      sut,
+      { ...version, sourceReference: { ...sourceReference, version: 'e'.repeat(64) } },
+      rendered(asset.id, version.id),
+    ),
+  ).toBe(false);
+  expect(await publish(sut, version, rendered(asset.id, version.id))).toBe(true);
+  await expect(db.transaction().execute((tx) => removeSourceReferences(tx))).rejects.toThrow(
+    'Cannot discard saved edit source references',
+  );
+  const exported = await sut.createVideoExport(asset.id, asset.ownerId);
+  expect(exported).toMatchObject({ sourceReference });
+});
+
+it.each(['publish', 'export'] as const)('does not %s reference history after source revocation', async (action) => {
+  const { asset, sut } = await setup();
+  const { resource } = await bindSourceReference(db, asset);
+  await sut.replaceAll(asset.id, recipe);
+  const version = (await sut.getRequestedVideoVersion(asset.id))!;
+  if (action === 'export') expect(await publish(sut, version, rendered(asset.id, version.id))).toBe(true);
+  const before = (await sql`SELECT id,status FROM video_edit_version WHERE "assetId"=${asset.id}::uuid`.execute(db))
+    .rows;
+  const run = await db
+    .selectFrom('photo_source_run')
+    .select('sourceId')
+    .where('id', '=', resource.runId)
+    .executeTakeFirstOrThrow();
+  await db.updateTable('photo_source').set({ revokedAt: new Date() }).where('id', '=', run.sourceId).execute();
+  const pending =
+    action === 'publish'
+      ? publish(sut, version, rendered(asset.id, version.id))
+      : sut.createVideoExport(asset.id, asset.ownerId);
+  await expect(pending).rejects.toThrow('video_version_source_changed');
+  expect(
+    (await sql`SELECT id,status FROM video_edit_version WHERE "assetId"=${asset.id}::uuid`.execute(db)).rows,
+  ).toEqual(before);
+});
+
+it.each(['version', 'digest'] as const)(
+  'rejects retained reference history after its resource %s changes',
+  async (field) => {
+    const { asset, sut } = await setup();
+    const { resource } = await bindSourceReference(db, asset);
+    await sut.replaceAll(asset.id, recipe);
+    const version = (await sut.getRequestedVideoVersion(asset.id))!;
+    await db
+      .updateTable('photo_source_resource')
+      .set(field === 'version' ? { version: 'e'.repeat(64) } : { checksum: Buffer.alloc(32, 7) })
+      .where('id', '=', resource.id)
+      .execute();
+    await expect(sut.getRequestedVideoVersion(asset.id)).rejects.toThrow('video_version_source_changed');
+    await expect(sut.getVideoVersion(asset.id, version.id)).resolves.toBeUndefined();
+    expect(await publish(sut, version, rendered(asset.id, version.id))).toBe(false);
+    await expect(sut.createVideoExport(asset.id, asset.ownerId)).rejects.toThrow('video_version_not_ready');
+    await sut.replaceAll(asset.id, recipe);
+    const current = (await sut.getRequestedVideoVersion(asset.id))!;
+    expect(current.id).not.toBe(version.id);
+    expect(await publish(sut, current, rendered(asset.id, current.id))).toBe(true);
+  },
+);
+
+it.each(['removed', 'misdirected'] as const)(
+  'refuses a new reference version when the resource binding is %s',
+  async (reason) => {
+    const { asset, sut } = await setup();
+    await bindSourceReference(db, asset);
+    if (reason === 'removed') await db.deleteFrom('source_original').where('assetId', '=', asset.id).execute();
+    else {
+      const current = await db
+        .selectFrom('asset')
+        .select('originalPath')
+        .where('id', '=', asset.id)
+        .executeTakeFirstOrThrow();
+      await db
+        .updateTable('asset')
+        .set({ originalPath: current.originalPath.slice(0, -64) + 'f'.repeat(64) })
+        .where('id', '=', asset.id)
+        .execute();
+    }
+    await expect(sut.replaceAll(asset.id, recipe)).rejects.toThrow('Edit source resource is no longer available');
+    expect((await sql`SELECT id FROM video_edit_version WHERE "assetId"=${asset.id}::uuid`.execute(db)).rows).toEqual(
+      [],
+    );
+  },
+);
 
 it('stores original-derived recipes and publishes only the requested version while retaining history', async () => {
   const { asset, sut } = await setup();
@@ -456,3 +551,119 @@ it('exempts version files and master lineage sidecars from the untracked-file sc
   const tracked = await new IntegrityRepository(db).getDevelopRevisionPathsByPaths(candidates);
   expect(tracked.map(({ path }) => path).toSorted()).toEqual(candidates.slice(0, 4).toSorted());
 });
+
+it.each(['version', 'sha256', 'checksum', 'ownerId', 'path'] as const)(
+  'refuses a save whose probed %s no longer matches without superseding prior edits',
+  async (field) => {
+    const { asset, sut } = await setup();
+    const { resource, sourceReference } = await bindSourceReference(db, asset);
+    await sut.replaceAll(asset.id, recipe);
+    const before = (await sut.getRequestedVideoVersion(asset.id))!;
+    const current = await db
+      .selectFrom('asset')
+      .select(['ownerId', 'originalPath', 'checksum'])
+      .where('id', '=', asset.id)
+      .executeTakeFirstOrThrow();
+    const expected = {
+      ownerId: current.ownerId,
+      path: current.originalPath,
+      checksum: current.checksum,
+      reference: sourceReference,
+    };
+    switch (field) {
+      case 'version': {
+        await db
+          .updateTable('photo_source_resource')
+          .set({ version: 'e'.repeat(64) })
+          .where('id', '=', resource.id)
+          .execute();
+        break;
+      }
+      case 'sha256': {
+        await db
+          .updateTable('photo_source_resource')
+          .set({ checksum: Buffer.from('e'.repeat(64), 'hex') })
+          .where('id', '=', resource.id)
+          .execute();
+        break;
+      }
+      case 'checksum': {
+        expected.checksum = Buffer.from('changed logical checksum');
+        break;
+      }
+      default: {
+        expected[field] = 'changed';
+      }
+    }
+    await expect(sut.replaceAll(asset.id, [], 'save', expected)).rejects.toThrow('video_version_source_changed');
+    expect(await sut.getAll(asset.id)).toEqual(expect.arrayContaining([expect.objectContaining(recipe[0])]));
+    expect(
+      (
+        await sql<{
+          id: string;
+          status: string;
+        }>`SELECT id,status FROM video_edit_version WHERE "assetId"=${asset.id}::uuid`.execute(db)
+      ).rows,
+    ).toEqual([{ id: before.id, status: 'pending' }]);
+  },
+);
+
+it('saves the exact probed reference source as a retained version', async () => {
+  const { asset, sut } = await setup();
+  const { sourceReference } = await bindSourceReference(db, asset);
+  const current = await db
+    .selectFrom('asset')
+    .select(['ownerId', 'originalPath', 'checksum'])
+    .where('id', '=', asset.id)
+    .executeTakeFirstOrThrow();
+  await sut.replaceAll(asset.id, recipe, 'save', {
+    ownerId: current.ownerId,
+    path: current.originalPath,
+    checksum: current.checksum,
+    reference: sourceReference,
+  });
+  expect(await sut.getRequestedVideoVersion(asset.id)).toMatchObject({
+    sourcePath: current.originalPath,
+    sourceChecksum: current.checksum,
+    sourceReference,
+    recipe,
+  });
+});
+
+it.each([false, true])(
+  'validates a probed reference image source inside the edit transaction; changed=%s',
+  async (changed) => {
+    const { asset, sut } = await setup();
+    await db.updateTable('asset').set({ type: AssetType.Image }).where('id', '=', asset.id).execute();
+    const { resource, sourceReference } = await bindSourceReference(db, asset);
+    await sut.replaceAll(asset.id, recipe);
+    const current = await db
+      .selectFrom('asset')
+      .select(['ownerId', 'originalPath', 'checksum'])
+      .where('id', '=', asset.id)
+      .executeTakeFirstOrThrow();
+    const expected = {
+      ownerId: current.ownerId,
+      path: current.originalPath,
+      checksum: current.checksum,
+      reference: sourceReference,
+    };
+    if (changed)
+      await db
+        .updateTable('photo_source_resource')
+        .set({ version: 'e'.repeat(64) })
+        .where('id', '=', resource.id)
+        .execute();
+    const save = sut.replaceAll(asset.id, [], 'save', expected);
+    if (changed) {
+      await expect(save).rejects.toThrow('asset_edit_source_changed');
+      expect(await sut.getAll(asset.id)).toEqual(expect.arrayContaining([expect.objectContaining(recipe[0])]));
+    } else {
+      expect(await save).toEqual([]);
+      expect(await sut.getAll(asset.id)).toEqual([]);
+    }
+    expect((await sql`SELECT id FROM video_edit_version WHERE "assetId"=${asset.id}::uuid`.execute(db)).rows).toEqual(
+      [],
+    );
+  },
+);

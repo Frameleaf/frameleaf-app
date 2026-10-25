@@ -26,6 +26,7 @@ import { AssetStats, RemovedAsset } from 'src/repositories/asset.repository.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { tryPromise } from 'src/utils/promise.js';
+import { sourceOriginalPath } from 'src/utils/source-original.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
@@ -2414,45 +2415,110 @@ describe(AssetService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['source', 'target']));
     });
 
-    it('copies into a fresh managed directory without deleting a read-only library source sidecar', async () => {
-      const root = await mkdtemp(join(tmpdir(), 'frameleaf-readonly-copy-'));
-      const sourcePath = join(root, 'source.xmp');
-      const ownPath = join(root, 'managed', 'nested', 'target.xmp');
-      const path = vi.spyOn(StorageCore, 'getNestedPath').mockReturnValue(ownPath);
-      try {
-        await writeFile(sourcePath, 'synthetic metadata bytes');
-        const source = forCopy('source', { files: [sidecar('source', sourcePath)] });
-        const target = forCopy('target', {
-          libraryReadOnly: true,
-          physicalOriginalFileId: 'physical-file-id',
-          files: [sidecar('target', '/source/original.jpg.xmp')],
+    it.each([false, true])(
+      'copies into app-owned storage and preserves the source sidecar (reference=%s)',
+      async (reference) => {
+        const root = await mkdtemp(join(tmpdir(), 'frameleaf-readonly-copy-'));
+        const sourcePath = join(root, 'source.xmp');
+        const ownPath = join(root, 'managed', 'nested', 'target.xmp');
+        const path = vi.spyOn(StorageCore, 'getNestedPath').mockReturnValue(ownPath);
+        try {
+          await writeFile(sourcePath, 'synthetic metadata bytes');
+          const source = forCopy('source', { files: [sidecar('source', sourcePath)] });
+          const target = forCopy('target', {
+            libraryReadOnly: reference ? null : true,
+            ...(reference && {
+              originalPath: sourceOriginalPath({
+                sourceId: '11111111-1111-4111-8111-111111111111',
+                resourceKey: 'a'.repeat(64),
+              }),
+            }),
+            physicalOriginalFileId: 'physical-file-id',
+            files: reference ? [] : [sidecar('target', '/source/original.jpg.xmp')],
+          });
+          mocks.asset.getForCopy.mockResolvedValueOnce(source as never).mockResolvedValueOnce(target as never);
+          mocks.physicalFile.isOriginalCanonical.mockResolvedValue(true);
+          mocks.storage.mkdirSync.mockImplementation((directory) => {
+            mkdirSync(directory, { recursive: true });
+          });
+          mocks.storage.copyFile.mockImplementation(async (from, to) => copyFile(from, to));
+
+          await sut.copy(authStub.user1, {
+            sourceId: 'source',
+            targetId: 'target',
+            albums: false,
+            sharedLinks: false,
+            stack: false,
+            favorite: false,
+          });
+
+          expect(await readFile(ownPath, 'utf8')).toBe('synthetic metadata bytes');
+          expect(await readFile(sourcePath, 'utf8')).toBe('synthetic metadata bytes');
+          expect(mocks.storage.copyFile).toHaveBeenCalledExactlyOnceWith(sourcePath, ownPath);
+          expect(mocks.storage.unlink).not.toHaveBeenCalled();
+          expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
+        } finally {
+          path.mockRestore();
+          await rm(root, { recursive: true, force: true });
+        }
+      },
+    );
+
+    it('copies only app-owned sidecars between two references', async () => {
+      const originalPath = sourceOriginalPath({
+        sourceId: '11111111-1111-4111-8111-111111111111',
+        resourceKey: 'a'.repeat(64),
+      });
+      const sourcePath = StorageCore.getNestedPath(StorageFolder.Upload, 'target-owner', 'source.xmp');
+      const targetPath = StorageCore.getNestedPath(StorageFolder.Upload, 'target-owner', 'target.xmp');
+      const source = forCopy('source', { originalPath, files: [sidecar('source', sourcePath)] });
+      const target = forCopy('target', { originalPath, files: [sidecar('target', targetPath)] });
+      mocks.asset.getForCopy.mockResolvedValueOnce(source as never).mockResolvedValueOnce(target as never);
+      await sut.copy(authStub.user1, {
+        sourceId: 'source',
+        targetId: 'target',
+        albums: false,
+        sharedLinks: false,
+        stack: false,
+        favorite: false,
+      });
+      expect(mocks.storage.copyFile).toHaveBeenCalledExactlyOnceWith(sourcePath, targetPath);
+      expect(mocks.asset.upsertFile).toHaveBeenCalledWith({
+        assetId: 'target',
+        type: AssetFileType.Sidecar,
+        path: targetPath,
+      });
+      expect(mocks.physicalFile.isOriginalCanonical).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
+    });
+
+    it.each(['source', 'target'] as const)(
+      'refuses an unknown %s reference sidecar before file access',
+      async (referenceAsset) => {
+        const source = forCopy('source', { files: [sidecar('source', '/unknown/source.xmp')] });
+        const target = forCopy('target', { files: [sidecar('target', '/unknown/target.xmp')] });
+        const asset = referenceAsset === 'source' ? source : target;
+        asset.originalPath = sourceOriginalPath({
+          sourceId: '11111111-1111-4111-8111-111111111111',
+          resourceKey: 'a'.repeat(64),
         });
         mocks.asset.getForCopy.mockResolvedValueOnce(source as never).mockResolvedValueOnce(target as never);
-        mocks.physicalFile.isOriginalCanonical.mockResolvedValue(true);
-        mocks.storage.mkdirSync.mockImplementation((directory) => {
-          mkdirSync(directory, { recursive: true });
-        });
-        mocks.storage.copyFile.mockImplementation(async (from, to) => copyFile(from, to));
-
-        await sut.copy(authStub.user1, {
-          sourceId: 'source',
-          targetId: 'target',
-          albums: false,
-          sharedLinks: false,
-          stack: false,
-          favorite: false,
-        });
-
-        expect(await readFile(ownPath, 'utf8')).toBe('synthetic metadata bytes');
-        expect(await readFile(sourcePath, 'utf8')).toBe('synthetic metadata bytes');
-        expect(mocks.storage.copyFile).toHaveBeenCalledExactlyOnceWith(sourcePath, ownPath);
+        await expect(
+          sut.copy(authStub.user1, {
+            sourceId: 'source',
+            targetId: 'target',
+            albums: false,
+            sharedLinks: false,
+            stack: false,
+            favorite: false,
+          }),
+        ).rejects.toThrow('source_sidecar_unavailable');
+        expect(mocks.storage.copyFile).not.toHaveBeenCalled();
         expect(mocks.storage.unlink).not.toHaveBeenCalled();
-        expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
-      } finally {
-        path.mockRestore();
-        await rm(root, { recursive: true, force: true });
-      }
-    });
+        expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      },
+    );
 
     it("writes a non-primary target's sidecar to its own upload path, not the primary owner's", async () => {
       const source = forCopy('source', { files: [sidecar('source', '/data/upload/source.xmp')] });
@@ -3475,6 +3541,270 @@ describe(AssetService.name, () => {
       ).rejects.toThrow('Speed segments cannot overlap');
 
       expect(mocks.assetEdit.replaceAll).not.toHaveBeenCalled();
+    });
+  });
+  describe('reference video editor', () => {
+    const reference = () => {
+      const asset = {
+        id: 'asset-1',
+        ownerId: authStub.admin.user.id,
+        type: AssetType.Video,
+        originalPath: sourceOriginalPath({
+          sourceId: '4b0f4b2e-5d3a-4c55-9e0e-6b9f4c7d8e01',
+          resourceKey: 'b'.repeat(64),
+        }),
+        checksum: Buffer.from('logical identity'),
+        originalFileName: 'video.mov',
+        livePhotoVideoId: null,
+        projectionType: null,
+      };
+      const input = {
+        localPath: '/private/leased.artifact',
+        signal: new AbortController().signal,
+        resourceId: '4b0f4b2e-5d3a-4c55-9e0e-6b9f4c7d8e02',
+        resourceVersion: 'c'.repeat(64),
+        verifiedSha256: 'd'.repeat(64),
+        check: vi.fn().mockResolvedValue(undefined),
+        release: vi.fn().mockResolvedValue(undefined),
+      };
+      const originals = {
+        open: vi.fn().mockImplementation(async (_id, _reader, authorize) => {
+          await authorize();
+          return input;
+        }),
+      };
+      Object.assign(sut, { sourceOriginalService: originals });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(asset as never);
+      mocks.asset.getForEdit.mockResolvedValue(asset as never);
+      mocks.assetEdit.getAll.mockResolvedValue([]);
+      mocks.assetEdit.replaceAll.mockResolvedValue([]);
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 10 },
+        videoStreams: [
+          {
+            index: 0,
+            width: 1920,
+            height: 1080,
+            rotation: 0,
+            pixelFormat: 'yuv420p',
+            timeBaseRational: { num: 1, den: 1000 },
+          },
+        ],
+      } as never);
+      mocks.media.probePackets.mockResolvedValue({ startPts: 0, keyframePts: [0, 1000] } as never);
+      return { asset, input, originals };
+    };
+
+    it('reads keyframes from one leased original through both native probes', async () => {
+      const f = reference();
+      mocks.media.probePackets.mockImplementation((path) => {
+        expect(path).toBe(f.input.localPath);
+        expect(f.input.release).not.toHaveBeenCalled();
+        return Promise.resolve({ startPts: 0, keyframePts: [0, 1000] } as never);
+      });
+      expect(await sut.getAssetEditKeyframes(authStub.admin, 'asset-1')).toEqual({ keyframesMs: [0, 1000] });
+      expect(mocks.media.probe).toHaveBeenCalledWith(f.input.localPath, { countFrames: false, signal: f.input.signal });
+      expect(f.originals.open).toHaveBeenCalledOnce();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('lists edit geometry from a leased original without passing its logical URI to ffprobe', async () => {
+      const f = reference();
+      expect(await sut.getAssetEdits(authStub.admin, 'asset-1')).toMatchObject({
+        originalVideo: { width: 1920, height: 1080, durationMs: 10_000 },
+      });
+      expect(mocks.media.probe).toHaveBeenCalledWith(f.input.localPath, { countFrames: false, signal: f.input.signal });
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('keeps the exact probed source pinned through a saved version and queues only afterward', async () => {
+      const f = reference();
+      const edits = [
+        { action: AssetEditAction.Trim, parameters: { startMs: 0, endMs: 1000 } },
+      ] as AssetEditActionItem[];
+      mocks.assetEdit.replaceAll.mockImplementation(() => {
+        expect(f.input.release).not.toHaveBeenCalled();
+        return Promise.resolve([]);
+      });
+      await sut.editAsset(authStub.admin, 'asset-1', { edits });
+      expect(mocks.assetEdit.replaceAll).toHaveBeenCalledWith('asset-1', edits, 'save', {
+        ownerId: f.asset.ownerId,
+        path: f.asset.originalPath,
+        checksum: f.asset.checksum,
+        reference: { resourceId: f.input.resourceId, version: f.input.resourceVersion, sha256: f.input.verifiedSha256 },
+      });
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('refuses a source revoked during probing before saving or queueing edits', async () => {
+      const f = reference();
+      mocks.media.probe.mockImplementation(() => {
+        f.input.check.mockRejectedValue(new Error('source revoked'));
+        return Promise.resolve({
+          format: { duration: 10 },
+          videoStreams: [{ width: 1920, height: 1080, rotation: 0, pixelFormat: 'yuv420p' }],
+        } as never);
+      });
+      await expect(sut.editAsset(authStub.admin, 'asset-1', { edits: [] })).rejects.toThrow('source revoked');
+      expect(mocks.assetEdit.replaceAll).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('retains a cancelled probe input until the native probe actually settles', async () => {
+      const f = reference();
+      const controller = new AbortController();
+      f.input.signal = controller.signal;
+      const entered = Promise.withResolvers<void>();
+      const stopped = Promise.withResolvers<never>();
+      mocks.media.probe.mockImplementation(() => {
+        entered.resolve();
+        return stopped.promise;
+      });
+      const result = sut.getAssetEditKeyframes(authStub.admin, 'asset-1', controller.signal);
+      const rejected = expect(result).rejects.toThrow('native stopped');
+      try {
+        await entered.promise;
+        controller.abort();
+        expect(f.input.release).not.toHaveBeenCalled();
+        expect(mocks.media.probePackets).not.toHaveBeenCalled();
+        stopped.reject(new Error('native stopped'));
+        await rejected;
+        expect(f.input.release).toHaveBeenCalledOnce();
+      } finally {
+        stopped.reject(new Error('native stopped'));
+        await result.catch(() => {});
+      }
+    });
+
+    it('omits stale geometry when source access is revoked during a best-effort edit listing', async () => {
+      const f = reference();
+      mocks.media.probe.mockImplementation(() => {
+        f.input.check.mockRejectedValue(new Error('source revoked'));
+        return Promise.resolve({
+          format: { duration: 10 },
+          videoStreams: [{ width: 1920, height: 1080, rotation: 0, pixelFormat: 'yuv420p' }],
+        } as never);
+      });
+      expect(await sut.getAssetEdits(authStub.admin, 'asset-1')).toEqual({ assetId: 'asset-1', edits: [] });
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it.each(['gif', 'svg', undefined])(
+      'refuses a reference image with decoded format %s before saving',
+      async (format) => {
+        const f = reference();
+        Object.assign(f.asset, { type: AssetType.Image, exifImageWidth: 640, exifImageHeight: 480, orientation: 1 });
+        mocks.media.getImageMetadata.mockResolvedValue({
+          width: 100,
+          height: 100,
+          format,
+          isTransparent: false,
+        } as never);
+        await expect(sut.editAsset(authStub.admin, 'asset-1', { edits: [] })).rejects.toThrow();
+        expect(mocks.assetEdit.replaceAll).not.toHaveBeenCalled();
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+        expect(f.input.release).toHaveBeenCalledOnce();
+      },
+    );
+
+    it('checks reference image crops against decoded original dimensions instead of stored edited dimensions', async () => {
+      const f = reference();
+      Object.assign(f.asset, { type: AssetType.Image, exifImageWidth: 640, exifImageHeight: 480, orientation: 1 });
+      mocks.media.getImageMetadata.mockResolvedValue({
+        width: 100,
+        height: 100,
+        format: 'jpeg',
+        isTransparent: false,
+      } as never);
+      await expect(
+        sut.editAsset(authStub.admin, 'asset-1', {
+          edits: [{ action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 150, height: 50 } }],
+        }),
+      ).rejects.toThrow('Crop parameters are out of bounds');
+      expect(mocks.assetEdit.replaceAll).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('keeps a rotated reference image pinned through a source-checked edit save', async () => {
+      const f = reference();
+      Object.assign(f.asset, { type: AssetType.Image, exifImageWidth: 20, exifImageHeight: 20, orientation: 1 });
+      mocks.media.getImageMetadata.mockResolvedValue({
+        width: 100,
+        height: 200,
+        orientation: 6,
+        format: 'jpeg',
+        isTransparent: false,
+      } as never);
+      const edits = [
+        { action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 150, height: 50 } },
+      ] as AssetEditActionItem[];
+      mocks.assetEdit.replaceAll.mockImplementation(() => {
+        expect(f.input.release).not.toHaveBeenCalled();
+        return Promise.resolve([]);
+      });
+      await sut.editAsset(authStub.admin, 'asset-1', { edits });
+      expect(mocks.media.getImageMetadata).toHaveBeenCalledWith(f.input.localPath, f.input.signal);
+      expect(mocks.assetEdit.replaceAll).toHaveBeenCalledWith(
+        'asset-1',
+        edits,
+        'save',
+        expect.objectContaining({
+          path: f.asset.originalPath,
+          reference: {
+            resourceId: f.input.resourceId,
+            version: f.input.resourceVersion,
+            sha256: f.input.verifiedSha256,
+          },
+        }),
+      );
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+
+    it('joins cancelled reference image metadata inspection before releasing its source', async () => {
+      const f = reference();
+      Object.assign(f.asset, { type: AssetType.Image, exifImageWidth: 640, exifImageHeight: 480, orientation: 1 });
+      const controller = new AbortController();
+      f.input.signal = controller.signal;
+      const entered = Promise.withResolvers<void>();
+      const stopped = Promise.withResolvers<never>();
+      mocks.media.getImageMetadata.mockImplementation(() => {
+        entered.resolve();
+        return stopped.promise;
+      });
+      const save = sut.editAsset(authStub.admin, 'asset-1', { edits: [] }, 'save', { signal: controller.signal });
+      const rejected = expect(save).rejects.toThrow('decoder stopped');
+      try {
+        await entered.promise;
+        controller.abort();
+        expect(f.input.release).not.toHaveBeenCalled();
+        stopped.reject(new Error('decoder stopped'));
+        await rejected;
+        expect(f.input.release).toHaveBeenCalledOnce();
+        expect(mocks.assetEdit.replaceAll).not.toHaveBeenCalled();
+      } finally {
+        stopped.reject(new Error('decoder stopped'));
+        await save.catch(() => {});
+      }
+    });
+
+    it('does not save reference image geometry after its source authority changes during decoding', async () => {
+      const f = reference();
+      Object.assign(f.asset, { type: AssetType.Image, exifImageWidth: 640, exifImageHeight: 480, orientation: 1 });
+      mocks.media.getImageMetadata.mockImplementation(() => {
+        f.input.check.mockRejectedValue(new Error('source revoked'));
+        return Promise.resolve({ width: 100, height: 100, format: 'jpeg', isTransparent: false });
+      });
+      await expect(sut.editAsset(authStub.admin, 'asset-1', { edits: [] })).rejects.toThrow('source revoked');
+      expect(mocks.assetEdit.replaceAll).not.toHaveBeenCalled();
+      expect(f.input.release).toHaveBeenCalledOnce();
+    });
+    it('does not probe an unavailable reference URI', async () => {
+      const f = reference();
+      f.originals.open.mockRejectedValue(new Error('source_original_unavailable'));
+      await expect(sut.getAssetEditKeyframes(authStub.admin, 'asset-1')).rejects.toThrow('source_original_unavailable');
+      expect(mocks.media.probe).not.toHaveBeenCalled();
     });
   });
 });

@@ -1,4 +1,6 @@
+import { EventEmitter } from 'node:events';
 import request from 'supertest';
+import type { Response } from 'express';
 import { AssetController } from 'src/controllers/asset.controller.js';
 import { AssetImageEnrichmentAction } from 'src/dtos/asset.dto.js';
 import { AssetMetadataKey, Permission } from 'src/enum.js';
@@ -484,7 +486,9 @@ describe(AssetController.name, () => {
         edits,
       });
 
-      expect(service.editAsset).toHaveBeenCalledWith(undefined, assetId, { edits });
+      expect(service.editAsset).toHaveBeenCalledWith(undefined, assetId, { edits }, 'save', {
+        signal: expect.any(AbortSignal),
+      });
       expect(status).toBe(200);
     });
 
@@ -614,4 +618,33 @@ describe(AssetController.name, () => {
       );
     });
   });
+});
+
+describe('legacy video editor request ownership', () => {
+  it.each(['edits', 'keyframes', 'save'] as const)(
+    'cancels %s input when the response closes and joins service settlement',
+    async (kind) => {
+      const response = Object.assign(new EventEmitter(), { destroyed: false });
+      let signal: AbortSignal | undefined;
+      const run = (...args: unknown[]) => {
+        signal = (kind === 'save' ? (args[4] as { signal: AbortSignal }).signal : args[2]) as AbortSignal;
+        return new Promise((_resolve, reject) =>
+          signal!.addEventListener('abort', () => reject(signal!.reason), { once: true }),
+        );
+      };
+      const service = { getAssetEdits: vi.fn(run), getAssetEditKeyframes: vi.fn(run), editAsset: vi.fn(run) };
+      const sut = new AssetController(service as never, {} as never);
+      const result =
+        kind === 'save'
+          ? sut.editAsset({} as never, { id: 'asset' }, { edits: [] }, response as unknown as Response)
+          : kind === 'edits'
+            ? sut.getAssetEdits({} as never, { id: 'asset' }, response as unknown as Response)
+            : sut.getAssetEditKeyframes({} as never, { id: 'asset' }, response as unknown as Response);
+      const rejected = expect(result).rejects.toThrow();
+      response.emit('close');
+      await rejected;
+      expect(signal?.aborted).toBe(true);
+      expect(response.listenerCount('close')).toBe(0);
+    },
+  );
 });
