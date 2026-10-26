@@ -793,10 +793,32 @@ export class CloudBackupService {
         // FL-228: the plan is active and the server has it; storage is being prepared (step 3 of 4)
         await this.announceActivation({ preparing: true });
       }
-      const managed = dto.target === 'managed' ? await this.managedGrantForSetup() : null;
-      const connection = managed ? managed.connection : await this.connectionFor(dto.s3!);
       const identity = await loadInstanceIdentity(this.gatewayDeps());
-      this.readClientKeys(dto.key, key, identity.instanceId, false);
+      const clientKeys = this.readClientKeys(dto.key, key, identity.instanceId, false);
+      let legacyBinding: FrameleafCloudBackup | undefined;
+      if (dto.target === 'managed' && !clientKeys && process.env.FRAMELEAF_BACKUP_CLIENT_ENCRYPTION !== '0') {
+        const existing = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+        if (
+          existing?.target !== 'managed' ||
+          existing.instanceId !== identity.instanceId ||
+          existing.keyFingerprint !== fingerprint
+        )
+          throw new BadRequestException('Use a complete client backup recovery key file for new managed backups.');
+        const stored =
+          existing.keyMode !== 'own-memory'
+            ? await this.keys.read(identityDirectory(this.configRepository), fingerprint)
+            : null;
+        if (
+          this.clientKeys.has(fingerprint) ||
+          existing.lastManifestKey?.startsWith('m/v1/') ||
+          (stored &&
+            (!this.parseKey(stored).equals(key) || this.readClientKeys(stored, key, identity.instanceId, false)))
+        )
+          throw new BadRequestException('Use the complete existing client backup recovery key file.');
+        legacyBinding = existing;
+      }
+      const managed = dto.target === 'managed' ? await this.managedGrantForSetup(legacyBinding) : null;
+      const connection = managed ? managed.connection : await this.connectionFor(dto.s3!);
       recovery = dto.keyMode === 'own-memory' ? this.memoryRecovery(dto.key, key, identity.instanceId) : null;
 
       // Keep the stored key even on claim failure: the provider may commit before its response is lost.
@@ -1019,7 +1041,7 @@ export class CloudBackupService {
    * FL-164: this server's managed bucket and a key for the claim. A first grant answers with a key; a repeated
    * one does not, and is followed by a rotation. Refusals are answered with what they mean.
    */
-  private async managedGrantForSetup(): Promise<{
+  private async managedGrantForSetup(metadata?: FrameleafCloudBackup): Promise<{
     connection: CloudBackupConnection;
     state: NonNullable<FrameleafCloudBackup['managed']> & {
       storageId: string;
@@ -1067,7 +1089,7 @@ export class CloudBackupService {
       );
     }
     return {
-      connection: this.managedConnection(issued, undefined, 'upload'),
+      connection: this.managedConnection(issued, metadata, 'upload'),
       state: {
         storageId: issued.storageId,
         location: issued.location,
@@ -1758,12 +1780,21 @@ export class CloudBackupService {
     }
 
     if (
-      (run.progress.result.manifestKey?.startsWith('m/v1/') ?? clientBackupWritesEnabled()) &&
+      run.metadata.target === 'managed' &&
+      !run.progress.result.manifestKey &&
+      !run.clientKeys &&
+      run.metadata.lastManifestKey?.startsWith('m/v1/') &&
+      process.env.FRAMELEAF_BACKUP_CLIENT_ENCRYPTION !== '0'
+    )
+      throw new Error('Load the complete client backup recovery key file before starting a new backup.');
+    if (
+      (run.progress.result.manifestKey?.startsWith('m/v1/') ??
+        clientBackupWritesEnabled(run.metadata.target, !!run.clientKeys)) &&
       run.metadata.target === 'managed' &&
       !run.connection.clientFormatSupported
     )
       throw new Error(
-        'Client-encrypted managed writes require a qualified opaque-storage grant; use legacy writes until that contract is available.',
+        'Client-encrypted managed writes require a qualified opaque-storage grant. Update the server and retry.',
       );
     await this.openManifest(run);
     await this.recordRun(operation, progress.result, 'running');
@@ -2277,7 +2308,7 @@ export class CloudBackupService {
     }
     const manifest = await this.index.createManifest({
       bucket: run.metadata.bucketRef,
-      key: clientBackupWritesEnabled()
+      key: clientBackupWritesEnabled(run.metadata.target, !!run.clientKeys)
         ? clientBackupManifestKey(run.metadata.instanceId, this.clientWriteVersion(run), manifestKey(new Date()))
         : manifestKey(new Date()),
       operationId: run.id,
