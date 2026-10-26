@@ -1654,58 +1654,75 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
         originalReadAllowance: 0,
         transferAllowance: edited.length,
       });
-      const abort = new AbortController();
-      const enqueue = vi.spyOn(reads, 'enqueue');
-      const input = originals.open(
-        first.assetId!,
-        { kind: 'http', readerId: randomUUID(), ownerId: randomUUID() },
-        async () => {
-          await lookup(
-            { ...f.auth, session: { ...fresh, hasElevatedPermission: false } },
-            lost.sourceId,
-            rescanned.receipt.runId,
-            rescanned.receipt.itemId,
+      for (const attempt of [1, 2]) {
+        if (attempt === 2) {
+          native.stdin!.write(JSON.stringify({ command: 'approve-repeat' }) + '\n');
+          expect(await message()).toMatchObject({
+            phase: 'repeat-ready',
+            readRemaining: edited.length,
+            transferRemaining: edited.length,
+            priorTransferSpent: edited.length,
+          });
+        }
+        const abort = new AbortController();
+        const enqueue = vi.spyOn(reads, 'enqueue');
+        const input = originals.open(
+          first.assetId!,
+          { kind: 'http', readerId: randomUUID(), ownerId: randomUUID() },
+          async () => {
+            await lookup(
+              { ...f.auth, session: { ...fresh, hasElevatedPermission: false } },
+              lost.sourceId,
+              rescanned.receipt.runId,
+              rescanned.receipt.itemId,
+            );
+          },
+          abort.signal,
+          edited.length,
+        );
+        void input.catch(() => {});
+        let opened: Awaited<typeof input> | undefined;
+        try {
+          await expect.poll(() => enqueue.mock.results.length).toBe(1);
+          expect(await enqueue.mock.results[0].value).toBeDefined();
+          native.stdin!.write(
+            JSON.stringify({ command: attempt === 1 ? 'start-serving' : 'start-repeat-serving' }) + '\n',
           );
-        },
-        abort.signal,
-        edited.length,
-      );
-      void input.catch(() => {});
-      let opened: Awaited<typeof input> | undefined;
-      try {
-        await expect.poll(() => enqueue.mock.results.length).toBe(1);
-        expect(await enqueue.mock.results[0].value).toBeDefined();
-        native.stdin!.write(JSON.stringify({ command: 'start-serving' }) + '\n');
-        expect(await message()).toMatchObject({ phase: 'serving-started' });
-        opened = await input;
-        expect(Buffer.concat(await Array.fromAsync(opened.stream))).toEqual(edited);
-        await opened.settled;
-        expect(opened.verifiedSha256).toBe(createHash('sha256').update(edited).digest('hex'));
-        expect(opened.resourceId).toBe(rescanned.receipt.resourceId);
-        expect(await readFile(opened.localPath)).toEqual(edited);
-        await opened.release();
-        await expect(readFile(opened.localPath)).rejects.toMatchObject({ code: 'ENOENT' });
-        expect(
-          await db
-            .selectFrom('source_resource_cache')
-            .select('id')
-            .where('resourceId', '=', rescanned.receipt.resourceId)
-            .execute(),
-        ).toEqual([]);
-        native.stdin!.write(JSON.stringify({ command: 'stop-serving' }) + '\n');
-        expect(await message()).toMatchObject({
-          phase: 'served-original',
-          bytes: edited.length,
-          additionalOriginalReads: 0,
-          transferUsed: edited.length,
-          workerStopped: true,
-          sourceAndPriorCacheRetained: true,
-        });
-      } finally {
-        abort.abort();
-        await opened?.release();
-        await input.catch(() => {});
-        enqueue.mockRestore();
+          expect(await message()).toMatchObject({
+            phase: attempt === 1 ? 'serving-started' : 'repeat-serving-started',
+          });
+          opened = await input;
+          expect(Buffer.concat(await Array.fromAsync(opened.stream))).toEqual(edited);
+          await opened.settled;
+          expect(opened.verifiedSha256).toBe(createHash('sha256').update(edited).digest('hex'));
+          expect(opened.resourceId).toBe(rescanned.receipt.resourceId);
+          expect(await readFile(opened.localPath)).toEqual(edited);
+          await opened.release();
+          await expect(readFile(opened.localPath)).rejects.toMatchObject({ code: 'ENOENT' });
+          expect(
+            await db
+              .selectFrom('source_resource_cache')
+              .select('id')
+              .where('resourceId', '=', rescanned.receipt.resourceId)
+              .execute(),
+          ).toEqual([]);
+          native.stdin!.write(
+            JSON.stringify({ command: attempt === 1 ? 'stop-serving' : 'stop-repeat-serving' }) + '\n',
+          );
+          expect(await message()).toMatchObject({
+            phase: attempt === 1 ? 'served-original' : 'served-again',
+            bytes: edited.length,
+            additionalOriginalReads: attempt === 1 ? 0 : edited.length,
+            transferUsed: edited.length * attempt,
+            workerStopped: true,
+            sourceAndPriorCacheRetained: true,
+          });
+        } finally {
+          abort.abort();
+          await opened?.release();
+          await input.catch(() => {});
+          enqueue.mockRestore();
+        }
       }
       native.stdin!.write(JSON.stringify({ command: 'forget' }) + '\n');
       expect(await message()).toMatchObject({ phase: 'forgotten', originalAndCacheRetained: true });
@@ -1730,7 +1747,7 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
         }),
       ]).finally(() => clearTimeout(timer));
       expect(code, errors).toBe(0);
-      expect(requests.filter(({ path }) => path === '/api/source-resources/grants')).toHaveLength(2);
+      expect(requests.filter(({ path }) => path === '/api/source-resources/grants')).toHaveLength(3);
       const binding = await db
         .selectFrom('photo_source_resource')
         .select(['resourceKey', 'version'])
@@ -1744,7 +1761,13 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
       const deliveries = requests.filter(
         ({ method, path }) => method === 'PUT' && path === '/api/source-resources/deliver',
       );
-      expect(deliveries).toEqual([{ method: 'PUT', path: '/api/source-resources/deliver', sourceCredential: true }]);
+      expect(deliveries).toEqual(
+        Array.from({ length: 2 }, () => ({
+          method: 'PUT',
+          path: '/api/source-resources/deliver',
+          sourceCredential: true,
+        })),
+      );
       expect(attempts).toBe(2);
       expect(lookups).toBe(5);
       expect(requests.filter(({ method, path }) => method === 'POST' && path.endsWith('/reference'))).toHaveLength(2);
