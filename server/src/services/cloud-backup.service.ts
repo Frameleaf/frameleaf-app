@@ -301,14 +301,13 @@ const LIBRARY_STATE_BATCH = 5000;
 
 /** FL-164: what `frameleaf-admin cloud-backup restore` restores from, and how much of it. */
 export type CloudBackupBareMetalRestore = {
-  s3: CloudBackupS3;
   /** The key file's content, the base64 key, or the recovery code. Never logged. */
   key: string;
   manifestKey?: string;
   scope: Extract<CloudBackupRestoreScope, 'files' | 'database' | 'library'>;
   restoreDatabase: boolean;
   offlineDirectory?: string;
-};
+} & ({ managed: true; s3?: never } | { managed?: false; s3: CloudBackupS3 });
 
 /** FL-164: what a `cloud_backup` operation does; a row from before FL-164 has no task and is a backup run. */
 type BackupTask = 'backup' | 'verify' | 'prune';
@@ -4335,6 +4334,7 @@ export class CloudBackupService {
     options: CloudBackupBareMetalRestore,
     report: (line: string) => void,
   ): Promise<CloudBackupRestoreResult & { manifestKey: string; databaseRestored: boolean }> {
+    if (options.managed) throw new Error('Managed mode only exports this server’s configured backup.');
     const key = parseBackupKey(options.key);
     const file = options.key.trimStart().startsWith('{')
       ? (JSON.parse(options.key) as {
@@ -4479,6 +4479,8 @@ export class CloudBackupService {
   /** Export one selected snapshot and its independent recovery authority, without modifying remote storage. */
   async exportFromBucket(options: CloudBackupBareMetalRestore, destination: string) {
     if (options.offlineDirectory) throw new Error('Export requires the source storage bucket');
+    if (options.managed && options.restoreDatabase)
+      throw new Error('Managed mode only exports this server’s configured backup.');
     const root = parseBackupKey(options.key);
     const original = JSON.parse(options.key) as {
       format: string;
@@ -4488,7 +4490,24 @@ export class CloudBackupService {
       recovery?: unknown;
     };
     const ring = parseClientBackupKeys(original.client, root, original.instanceId);
-    const connection = await this.connectionFor(options.s3);
+    let connection: CloudBackupConnection;
+    if (options.managed) {
+      const metadata = await this.requireClaim();
+      if (metadata.target !== 'managed') throw new Error('This server has no managed backup to export.');
+      if (
+        original.instanceId !== metadata.instanceId ||
+        original.bucket !== metadata.bucket ||
+        keyFingerprint(root) !== metadata.keyFingerprint
+      )
+        throw new Error('The recovery file does not match this server’s managed backup.');
+      connection = this.managedConnection(
+        await this.cloudBackup.rotate(await this.managedApi(), 'restore'),
+        metadata,
+        'restore',
+      );
+    } else {
+      connection = await this.connectionFor(options.s3);
+    }
     const marker = await this.store.readMarker(connection, root);
     if (marker.instanceId !== original.instanceId || original.bucket !== connection.bucket)
       throw new Error('Export key file does not match this vault');
