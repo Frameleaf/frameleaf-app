@@ -213,6 +213,7 @@ import {
   runProgress,
   s3SettingsProblem,
   signingRegion,
+  withoutTrailingSlashes,
 } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { recordConfigHistory } from 'src/utils/config-history.js';
@@ -5064,7 +5065,7 @@ export class CloudBackupService {
 
   /** The connection for your own bucket; an empty secret uses the stored one for the same bucket and key. */
   private async connectionFor(s3: CloudBackupS3): Promise<CloudBackupConnection> {
-    const endpoint = s3.endpoint.trim().replace(/\/+$/, '');
+    const endpoint = withoutTrailingSlashes(s3.endpoint.trim());
     const bucket = s3.bucket.trim();
     const accessKeyId = s3.accessKeyId.trim();
     let secretAccessKey = s3.secretAccessKey;

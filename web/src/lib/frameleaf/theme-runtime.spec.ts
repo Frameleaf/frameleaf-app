@@ -6,7 +6,7 @@ const load = () => import('../../../../packages/ui/dist/services/theme-manager.s
 const locks = () => document.head.querySelectorAll('meta[name="darkreader-lock"]');
 const boot = () => {
   const html = readFileSync('src/app.html', 'utf8');
-  for (const [, script] of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
+  for (const [, script] of html.matchAll(/<script>([\s\S]*?)<\/script\s*>/gi)) {
     if (script.includes('prefers-color-scheme: dark')) {
       new Function(script)();
       return;
