@@ -187,6 +187,87 @@ it('fences concurrent and expired claims, bounds renewal and requires the exact 
   expect(renewed.leaseUntil.getTime()).toBeLessThanOrEqual(renewed.deadline.getTime());
 });
 
+it('claims the selected version past unrelated pending work without consuming that work', async () => {
+  const f = await fixture();
+  const seed = await db
+    .selectFrom('photo_source_resource')
+    .selectAll()
+    .where('id', '=', f.resource.id)
+    .executeTakeFirstOrThrow();
+  const request = (await f.sut.enqueue(f.asset.id))!;
+  const unrelated = [];
+  // Seed beyond enqueue's 16-request admission bound to exercise the independent claim candidate limit.
+  for (let i = 0; i < 16; i++) {
+    const resourceKey = i.toString(16).padStart(64, '0');
+    const originalPath = `frameleaf-source://${f.source.id}/${resourceKey}`;
+    const { asset } = await f.ctx.newAsset({
+      ownerId: f.user.id,
+      libraryId: f.library.id,
+      isExternal: true,
+      originalPath,
+      checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+      checksum: createHash('sha1').update(`path:${originalPath}`).digest(),
+    });
+    const resource = await db
+      .insertInto('photo_source_resource')
+      .values({
+        ...seed,
+        id: randomUUID(),
+        resourceKey,
+        assetId: asset.id,
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    await db
+      .insertInto('source_original')
+      .values({
+        assetId: asset.id,
+        resourceId: resource.id,
+        scopeFingerprint: f.source.scopeFingerprint,
+        authorizationEpoch: f.device.authorizationEpoch,
+      })
+      .execute();
+    const pending = await db
+      .insertInto('source_resource_read')
+      .values({
+        assetId: asset.id,
+        resourceId: resource.id,
+        sourceId: f.source.id,
+        ownerId: f.user.id,
+        deviceId: f.device.id,
+        scopeFingerprint: f.source.scopeFingerprint,
+        authorizationEpoch: f.device.authorizationEpoch,
+        deadline: sql`clock_timestamp()+interval '10 minutes'`,
+        createdAt: sql`clock_timestamp()-interval '1 hour'`,
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    unrelated.push(pending.id);
+  }
+  const resources = [{ resourceKey: f.resource.resourceKey, version: f.resource.version }];
+  expect(await f.sut.claim(f.grant, randomBytes(32), 100, [])).toBeUndefined();
+  expect(
+    await f.sut.claim(f.grant, randomBytes(32), 100, [{ ...resources[0], version: 'f'.repeat(64) }]),
+  ).toBeUndefined();
+  expect(
+    await f.sut.claim(f.grant, randomBytes(32), 100, [
+      { ...resources[0], version: 'f'.repeat(64) },
+      { resourceKey: 'e'.repeat(64), version: resources[0].version },
+    ]),
+  ).toBeUndefined();
+  const other = await fixture();
+  expect(await f.sut.claim(other.grant, randomBytes(32), 100, resources)).toBeUndefined();
+  const claimed = await f.sut.claim(f.grant, randomBytes(32), 100, resources);
+  expect(claimed).toMatchObject({ id: request.id, ...resources[0] });
+  const untouched = await db
+    .selectFrom('source_resource_read')
+    .select(['state', 'claimFence'])
+    .where('id', 'in', unrelated)
+    .execute();
+  expect(untouched).toHaveLength(16);
+  expect(untouched.every((row) => row.state === 'pending' && row.claimFence === 0)).toBe(true);
+});
+
 it('refuses delivery after authority or the current resource binding changes, while an inventory gap preserves it', async () => {
   const f = await fixture();
   const request = (await f.sut.enqueue(f.asset.id))!;
@@ -285,6 +366,11 @@ it.each([
     }
   }
   expect(await f.sut.enqueue(f.asset.id)).toBeUndefined();
+  expect(
+    await f.sut.claim(f.grant, randomBytes(32), 100, [
+      { resourceKey: f.resource.resourceKey, version: f.resource.version },
+    ]),
+  ).toBeUndefined();
   expect(await f.sut.claim(f.grant, randomBytes(32), 100)).toBeUndefined();
 });
 

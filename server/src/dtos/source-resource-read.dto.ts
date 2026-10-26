@@ -3,8 +3,13 @@ import z from 'zod';
 
 const fingerprint = z.string().regex(/^[a-f0-9]{64}$/u);
 const counter = z.number().int().min(1).max(2_147_483_647);
+export const SourceReadResourcesSchema = z
+  .array(z.strictObject({ resourceKey: fingerprint, version: fingerprint }))
+  .min(1)
+  .max(256);
 export const SourceReadPollSchema = z.strictObject({
   maxBytes: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+  resources: SourceReadResourcesSchema.optional(),
 });
 export const SourceReadHeartbeatSchema = z.strictObject({
   requestId: z.uuid(),

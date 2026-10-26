@@ -51,10 +51,35 @@ it('issues a bounded source-only claim and persists only a hash of its random be
     leaseUntil: row.leaseUntil.toISOString(),
     deadline: row.deadline.toISOString(),
   });
-  expect(reads.claim).toHaveBeenCalledWith(grant, hash(result.request!.claimToken), 128);
+  expect(reads.claim).toHaveBeenCalledWith(grant, hash(result.request!.claimToken), 128, undefined);
   const second = await service.poll('source bearer', 'next proof', payload);
   expect(second.request!.claimToken).not.toBe(result.request!.claimToken);
   expect(JSON.stringify(result)).not.toContain('/private');
+});
+it('authenticates and forwards a bounded exact resource selection without broadening it', async () => {
+  const resources = Array.from({ length: 256 }, (_, i) => ({
+    resourceKey: i.toString(16).padStart(64, '0'),
+    version: row.version,
+  }));
+  const payload = JSON.stringify({ maxBytes: 128, resources });
+  expect(Buffer.byteLength(payload)).toBeLessThanOrEqual(65_536);
+  await service.poll('source bearer', 'installation proof', payload);
+  expect(auth.authenticate).toHaveBeenCalledWith('source bearer', 'installation proof', 'poll', payload);
+  expect(reads.claim).toHaveBeenCalledWith(grant, expect.any(Buffer), 128, resources);
+});
+it.each([
+  [],
+  Array.from({ length: 257 }, () => ({ resourceKey: row.resourceKey, version: row.version })),
+  [{ resourceKey: row.resourceKey }],
+  [{ resourceKey: row.resourceKey, version: 'C'.repeat(64) }],
+  [{ resourceKey: row.resourceKey, version: row.version, path: '/private' }],
+  null,
+])('rejects invalid selections before authentication or queue work', async (resources) => {
+  await expect(service.poll('bearer', 'proof', JSON.stringify({ maxBytes: 128, resources }))).rejects.toThrow(
+    'source_read_payload_invalid',
+  );
+  expect(auth.authenticate).not.toHaveBeenCalled();
+  expect(reads.claim).not.toHaveBeenCalled();
 });
 it('returns no request when the durable queue has no admissible resource', async () => {
   reads.claim.mockResolvedValue(undefined);

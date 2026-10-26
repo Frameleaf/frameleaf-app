@@ -36,7 +36,7 @@ export class SourceResourceReadService {
     const input = parse(SourceReadPollSchema, payload);
     const grant = await this.auth.authenticate(authorization, proof, 'poll', payload);
     const token = randomBytes(32).toString('hex');
-    const row = await this.reads.claim(grant, hash(token), input.maxBytes);
+    const row = await this.reads.claim(grant, hash(token), input.maxBytes, input.resources);
     if (!row) return { request: null };
     return SourceReadPollDto.schema.parse({
       request: {

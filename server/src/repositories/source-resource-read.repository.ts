@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { DB } from 'src/schema/index.js';
+import { SourceReadResourcesSchema } from 'src/dtos/source-resource-read.dto.js';
 import { AssetStatus, ChecksumAlgorithm } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import {
@@ -394,8 +395,14 @@ export class SourceResourceReadRepository {
     });
   }
 
-  async claim(grant: SourceResourceGrant, tokenHash: Buffer, maxBytes: number) {
+  async claim(
+    grant: SourceResourceGrant,
+    tokenHash: Buffer,
+    maxBytes: number,
+    resources?: readonly { resourceKey: string; version: string }[],
+  ) {
     if (tokenHash.length !== 32 || !Number.isSafeInteger(maxBytes) || maxBytes < 1) return;
+    if (resources !== undefined && !SourceReadResourcesSchema.safeParse(resources).success) return;
     return this.grants.withGrant(grant, async (tx) => {
       await this.expire(tx, grant);
       await tx
@@ -428,6 +435,26 @@ export class SourceResourceReadRepository {
         .where('authorizationEpoch', '=', grant.authorizationEpoch)
         .where('deadline', '>', sql<Date>`clock_timestamp()`)
         .where('state', 'in', active)
+        .$if(resources !== undefined, (query) =>
+          query.where((eb) =>
+            eb.exists(
+              eb
+                .selectFrom('photo_source_resource as selected')
+                .select('selected.id')
+                .whereRef('selected.id', '=', 'source_resource_read.resourceId')
+                .where((eb) =>
+                  eb.or(
+                    resources!.map((resource) =>
+                      eb.and([
+                        eb('selected.resourceKey', '=', resource.resourceKey),
+                        eb('selected.version', '=', resource.version),
+                      ]),
+                    ),
+                  ),
+                ),
+            ),
+          ),
+        )
         .orderBy('createdAt')
         .orderBy('id')
         .limit(16)
