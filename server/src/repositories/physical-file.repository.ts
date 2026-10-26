@@ -773,12 +773,24 @@ export class PhysicalFileRepository {
       }
       const asset = await trx
         .selectFrom('asset')
-        .select(['id', 'originalPath', 'libraryId', 'isExternal', 'physicalOriginalFileId', 'checksum'])
+        .select([
+          'id',
+          'originalPath',
+          'libraryId',
+          'isExternal',
+          'physicalOriginalFileId',
+          'checksum',
+          'deletedAt',
+          'status',
+        ])
         .where('id', '=', asUuid(input.assetId))
         .forUpdate()
         .executeTakeFirst();
+      // A photo in the Trash or awaiting removal (a resolved duplicate, say) is never brought back.
       if (
         !asset ||
+        asset.deletedAt ||
+        asset.status !== AssetStatus.Active ||
         asset.originalPath !== input.expectedOriginalPath ||
         asset.libraryId ||
         asset.isExternal ||
@@ -818,10 +830,19 @@ export class PhysicalFileRepository {
       }
       const moved = await trx
         .updateTable('asset')
-        .set({ originalPath: restored, physicalOriginalFileId: physicalId, isOffline: false })
+        .set({
+          originalPath: restored,
+          physicalOriginalFileId: physicalId,
+          isOffline: false,
+          // The restored photo now owns its file; others sharing the lost file keep showing their own path.
+          libraryPath: sql`CASE WHEN id = ${asset.id}::uuid THEN ${libraryPathOnRelink(restored, true)}
+            ELSE ${libraryPathOnRelink(restored, false)} END`,
+        })
         .where('originalPath', '=', input.expectedOriginalPath)
         .where('libraryId', 'is', null)
         .where('isExternal', '=', false)
+        // Trashed sharers follow the file (they stay in the Trash); rows awaiting removal do not.
+        .where('status', '!=', AssetStatus.Deleted)
         .returning('id')
         .execute();
       const ids = moved.map(({ id }) => id);
