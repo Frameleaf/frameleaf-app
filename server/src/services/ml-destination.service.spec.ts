@@ -1632,8 +1632,28 @@ describe(MlDestinationService.name, () => {
         previewStreamWorker: false,
         restorationWorker: false,
         transcriptionWorker: false,
+        generationWorker: false,
         render: [],
       });
+    });
+
+    it('offers music for a movie only from this server or a home-network worker that serves Studio AI (FL-561)', async () => {
+      const serving = {
+        lastProbeHealth: MlDestinationHealth.Healthy,
+        lastProbeAt: new Date(),
+        workloads: [MlWorkload.StudioAi],
+        lastProbeWorkloads: [MlWorkload.StudioAi],
+      };
+      mocks.mlDestination.getAll.mockResolvedValue([{ ...mlDestinationStub.lan, ...serving }]);
+      await expect(sut.getCapabilities()).resolves.toMatchObject({
+        studio: { transcriptionWorker: true, generationWorker: true },
+      });
+
+      mocks.mlDestination.getAll.mockResolvedValue([
+        { ...mlDestinationStub.frameleafCloud, ...serving, consentGranted: true },
+      ]);
+      const cloudOnly = await sut.getCapabilities();
+      expect(cloudOnly.studio.generationWorker).toBe(false);
     });
 
     it('does not count an unconsented cloud destination even when it is healthy and serves the workload', async () => {

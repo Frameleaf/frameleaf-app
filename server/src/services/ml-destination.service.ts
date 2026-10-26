@@ -915,6 +915,12 @@ export class MlDestinationService extends BaseService {
         ),
         restorationWorker: available(MlWorkload.RestorationFaithful) || available(MlWorkload.RestorationCreative),
         transcriptionWorker: available(MlWorkload.StudioAi),
+        // FL-561: music for Make a movie runs on this server or a home-network worker that serves
+        // Studio AI. Frameleaf Cloud has no music workload yet (FL-181), so it never counts here.
+        generationWorker:
+          workloads
+            .find((entry) => entry.workload === MlWorkload.StudioAi)
+            ?.destinations.some((destination) => destination.available && !destination.leavesNetwork) ?? false,
         render,
       },
       probedAt: new Date().toISOString(),

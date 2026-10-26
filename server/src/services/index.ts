@@ -150,6 +150,7 @@ import { StudioReverseConformCommandService } from 'src/services/studio-reverse-
 import { StudioReverseConformService } from 'src/services/studio-reverse-conform.service.js';
 import { StudioRevocationService } from 'src/services/studio-revocation.service.js';
 import { StudioSourceResolutionService } from 'src/services/studio-source-resolution.service.js';
+import { StudioMovieService } from 'src/services/studio-movie.service.js';
 import { StudioTranscriptionService } from 'src/services/studio-transcription.service.js';
 import { StudioWorkspaceService } from 'src/services/studio-workspace.service.js';
 import { SyncService } from 'src/services/sync.service.js';
@@ -324,6 +325,7 @@ export const services = [
   StudioProjectService,
   StudioReverseConformService,
   StudioReverseConformCommandService,
+  StudioMovieService,
   StudioTranscriptionService,
   StudioResourceService,
   StudioRevocationService,

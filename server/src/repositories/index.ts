@@ -115,6 +115,7 @@ import { StudioPreviewRepository } from 'src/repositories/studio-preview.reposit
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StudioReverseConformRepository } from 'src/repositories/studio-reverse-conform.repository.js';
 import { StudioSourceResolutionRepository } from 'src/repositories/studio-source-resolution.repository.js';
+import { StudioMovieRepository } from 'src/repositories/studio-movie.repository.js';
 import { StudioTranscriptionRepository } from 'src/repositories/studio-transcription.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
 import { SyncRepository } from 'src/repositories/sync.repository.js';
@@ -238,6 +239,7 @@ export const repositories = [
   StudioImportPublicationRepository,
   StudioImportFileRepository,
   StudioReverseConformRepository,
+  StudioMovieRepository,
   StudioTranscriptionRepository,
   StudioExportRepository,
   DerivativePrivacyRepository,
