@@ -84,7 +84,7 @@ describe('bulk action descriptors', () => {
     }
   });
 
-  it('offers no Unmark for Locked-rule matches, which have no lock to remove (FL-34)', () => {
+  it('offers no Unlock for Locked-rule matches, which have no lock to remove (FL-34)', () => {
     // the Locked view also lists what the owner's Locked rules hide; only changing the rules shows them
     const ruleMatch = photo('a', { isLocked: false });
     expect(available({ assets: [ruleMatch], locked: true })).not.toContain('unmark-sensitive');
@@ -102,7 +102,7 @@ describe('bulk action descriptors', () => {
     expect(primaryBulkActions(actions, false, true).map((action) => action.id)).toContain('add-to-album');
   });
 
-  it('offers Mark Sensitive from the ordinary destinations only (FL-34)', () => {
+  it('offers Lock from the ordinary destinations only (FL-34)', () => {
     expect(available({ assets: [photo('a')] })).toContain('mark-sensitive');
     expect(available({ assets: [photo('a')], trash: true })).not.toContain('mark-sensitive');
     expect(available({ assets: [photo('a')], locked: true })).not.toContain('mark-sensitive');

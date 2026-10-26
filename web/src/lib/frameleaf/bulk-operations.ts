@@ -878,8 +878,8 @@ export const runBulkAction = async (
     }
 
     /*
-     * POST /assets/lock and /assets/unlock — Mark Sensitive is the lock (FL-34): a lock record, never a
-     * visibility or an album change. Only Unmark is undone here: undoing a mark would need the PIN.
+     * POST /assets/lock and /assets/unlock — Lock (FL-34) writes a lock record, never a
+     * visibility or an album change. Only Unlock is undone here: undoing a lock would need the PIN.
      */
     case 'mark-sensitive': {
       return finish(await runInChunks(runner, (batch) => gateway.lockAssets({ bulkIdsDto: { ids: batch } })));

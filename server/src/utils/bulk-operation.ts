@@ -609,7 +609,7 @@ export const BULK_ITEM_PERMISSION: Readonly<Record<MediaOperationBulkAction, Per
   [MediaOperationBulkAction.ChangeDate]: Permission.AssetUpdate,
   [MediaOperationBulkAction.ChangeDescription]: Permission.AssetUpdate,
   [MediaOperationBulkAction.ChangeLocation]: Permission.AssetUpdate,
-  // Mark Sensitive is the lock (FL-34): the lock and unlock endpoints reject a whole list.
+  // Lock and Unlock (FL-34): the lock and unlock endpoints reject a whole list.
   [MediaOperationBulkAction.MarkSensitive]: Permission.AssetUpdate,
   [MediaOperationBulkAction.UnmarkSensitive]: Permission.AssetUpdate,
   [MediaOperationBulkAction.Delete]: Permission.AssetDelete,

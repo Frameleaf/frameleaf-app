@@ -222,7 +222,7 @@
     switch (action.type) {
       case AssetAction.SET_VISIBILITY_LOCKED:
       case AssetAction.SET_VISIBILITY_TIMELINE: {
-        // FL-34: Mark and Unmark Sensitive only take the item out of a view it no longer belongs in
+        // FL-34: Lock and Unlock only take the item out of a view it no longer belongs in
         if (timelineManager.keepsAfterLockChange(action.type === AssetAction.SET_VISIBILITY_LOCKED)) {
           break;
         }
