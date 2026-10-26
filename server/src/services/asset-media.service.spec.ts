@@ -539,6 +539,14 @@ describe(AssetMediaService.name, () => {
       expect(mocks.asset.create).not.toHaveBeenCalled();
     });
 
+    it('never restores a photo removed as a duplicate (in the Trash)', async () => {
+      mocks.asset.getByChecksums.mockResolvedValue([{ ...lost, deletedAt: new Date() }]);
+      mocks.asset.create.mockResolvedValue(assetEntity);
+      await sut.uploadAsset(authStub.admin, createDto, upload);
+      expect(mocks.physicalFile.restoreLostOriginal).not.toHaveBeenCalled();
+      expect(mocks.asset.create).toHaveBeenCalled();
+    });
+
     it('uploads normally when the photo changed before it could be restored', async () => {
       mocks.physicalFile.restoreLostOriginal.mockResolvedValue(false);
       mocks.asset.create.mockResolvedValue(assetEntity);
