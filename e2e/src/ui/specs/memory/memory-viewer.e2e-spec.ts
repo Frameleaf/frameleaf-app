@@ -213,7 +213,7 @@ test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
       await memoryAssetViewerUtils.waitForViewerOpen(page);
       await memoryAssetViewerUtils.waitForAssetLoad(page, firstAssetOfSecond);
 
-      await page.keyboard.press('ArrowLeft');
+      await memoryAssetViewerUtils.previousButton(page).press('ArrowLeft');
       await memoryAssetViewerUtils.waitForAssetLoad(page, lastAssetOfFirst);
     });
 
@@ -229,7 +229,8 @@ test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
       await memoryAssetViewerUtils.waitForViewerOpen(page);
       await memoryAssetViewerUtils.waitForAssetLoad(page, lastAssetOfFirst);
 
-      await page.keyboard.press('ArrowRight');
+      // Focus navigation chrome; a focused video owns its arrow keys.
+      await memoryAssetViewerUtils.nextButton(page).press('ArrowRight');
       await memoryAssetViewerUtils.waitForAssetLoad(page, firstAssetOfSecond);
     });
   });
