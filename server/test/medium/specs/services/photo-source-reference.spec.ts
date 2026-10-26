@@ -1,7 +1,18 @@
+import { ServiceUnavailableException } from '@nestjs/common';
+import { json } from 'body-parser';
 import { Kysely, sql } from 'kysely';
-import { createHash, randomUUID } from 'node:crypto';
+import { type ChildProcess, execFile, spawn } from 'node:child_process';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { createServer } from 'node:https';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createInterface } from 'node:readline';
+import { promisify } from 'node:util';
 import request from 'supertest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { DesktopDeviceController } from 'src/controllers/desktop-device.controller.js';
 import { PhotoSourceController } from 'src/controllers/photo-source.controller.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import {
@@ -32,6 +43,9 @@ import { SourceResourceRepository } from 'src/repositories/source-resource.repos
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
+import { DesktopDeviceService } from 'src/services/desktop-device.service.js';
+import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { PhotoSourceService } from 'src/services/photo-source.service.js';
 import { assertAssetSource, readAssetSource } from 'src/utils/asset-source-authority.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
@@ -130,6 +144,7 @@ async function setup(mode: 'copy' | 'reference' = 'reference', kind: 'folder' | 
     item,
     itemInput,
     jobs,
+    service,
     http,
     input,
     publish,
@@ -1114,3 +1129,209 @@ it('replaces a video reference and retires dependent current key frames while ke
     await f.http.close();
   }
 });
+
+it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
+  'runs the actual native reference publisher over HTTPS through lost and foreign receipts without uploading originals',
+  async () => {
+    const desktop = process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT!;
+    const f = await setup();
+    const root = await mkdtemp(join(await realpath(tmpdir()), 'frameleaf-native-reference-'));
+    const metadata = new SystemMetadataRepository(db);
+    const policies = new DesktopAssistancePolicyService(metadata);
+    const http = await controllerSetup(
+      [DesktopDeviceController, PhotoSourceController],
+      [
+        {
+          provide: DesktopDeviceService,
+          useValue: new DesktopDeviceService(new DesktopDeviceRepository(db), metadata, policies),
+        },
+        { provide: DesktopAssistancePolicyService, useValue: policies },
+        { provide: DesktopWorkerAuthService, useValue: {} },
+        { provide: PhotoSourceService, useValue: f.service },
+      ],
+    );
+    http.authenticate.mockResolvedValue(f.auth);
+    const publish = f.service.publishReference.bind(f.service);
+    let attempts = 0;
+    const replies = vi.spyOn(f.service, 'publishReference').mockImplementation(async (...args) => {
+      const receipt = await publish(...args);
+      attempts++;
+      if (attempts === 1) throw new ServiceUnavailableException('Synthetic lost receipt');
+      if (attempts === 2) return { ...receipt, ownerId: randomUUID() };
+      return receipt;
+    });
+    const token = randomBytes(32).toString('base64url');
+    const requests: { method: string | undefined; path: string }[] = [];
+    const parse = json({ limit: '16kb' });
+    const tls = createServer(
+      {
+        key: readFileSync('test/fixtures/frameleaf-relay/tun.key.pem'),
+        cert: readFileSync('test/fixtures/frameleaf-relay/tun.cert.pem'),
+      },
+      (incoming, outgoing) => {
+        if (!incoming.url?.startsWith('/api/') || incoming.headers.authorization !== `Bearer ${token}`) {
+          outgoing.writeHead(401).end();
+          return;
+        }
+        requests.push({ method: incoming.method, path: incoming.url });
+        incoming.url = incoming.url.slice(4);
+        parse(incoming, outgoing, (error) => {
+          if (error) {
+            outgoing.writeHead(error.status ?? 400).end();
+            return;
+          }
+          http.getHttpServer().emit('request', incoming, outgoing);
+        });
+      },
+    );
+    let native: ChildProcess | undefined;
+    let exit: Promise<number | null> | undefined;
+    try {
+      await new Promise<void>((resolve) => tls.listen(0, '127.0.0.1', resolve));
+      const address = tls.address() as { port: number };
+      const built = await promisify(execFile)(
+        'cargo',
+        [
+          'test',
+          '--manifest-path',
+          'src-tauri/Cargo.toml',
+          '--lib',
+          '--offline',
+          '--locked',
+          '--no-run',
+          '--message-format=json',
+        ],
+        { cwd: desktop, timeout: 300_000, maxBuffer: 8 * 1024 * 1024 },
+      );
+      const artifact = built.stdout
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+        .find(
+          (item) =>
+            item.reason === 'compiler-artifact' &&
+            item.target.name === 'frameleaf_desktop' &&
+            item.profile.test &&
+            item.executable,
+        );
+      expect(artifact?.executable).toBeTruthy();
+      native = spawn(
+        artifact.executable,
+        [
+          'source_reads::native_reference_tests::actual_native_reference_publication',
+          '--ignored',
+          '--exact',
+          '--nocapture',
+        ],
+        { cwd: desktop, stdio: ['pipe', 'pipe', 'pipe'] },
+      );
+      exit = new Promise((resolve) => {
+        native!.once('exit', resolve);
+        native!.once('error', () => resolve(-1));
+      });
+      let errors = '';
+      native.stderr!.on('data', (bytes) => {
+        errors = (errors + String(bytes)).slice(-8192);
+      });
+      const lines = createInterface({ input: native.stdout! })[Symbol.asyncIterator]();
+      const message = async () => {
+        for (;;) {
+          let timer: NodeJS.Timeout | undefined;
+          const next = await Promise.race([
+            lines.next(),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(() => reject(new Error('Native reference fixture deadline')), 60_000);
+            }),
+          ]).finally(() => clearTimeout(timer));
+          if (next.done) throw new Error('Native reference fixture stopped: ' + errors);
+          if (next.value.startsWith('REFERENCE_PUBLICATION ')) return JSON.parse(next.value.slice(22));
+        }
+      };
+      native.stdin!.write(
+        JSON.stringify({
+          server: `https://tun.eu1.relays.frameleaf.test:${address.port}`,
+          accountId: f.user.id,
+          token,
+          caPem: readFileSync('test/fixtures/frameleaf-relay/ca.cert.pem', 'utf8'),
+          root,
+        }) + '\n',
+      );
+      const lost = await message();
+      expect(lost.phase).toBe('lost-receipt');
+      const first = await db
+        .selectFrom('photo_source_resource as resource')
+        .innerJoin('photo_source_run as run', 'run.id', 'resource.runId')
+        .selectAll('resource')
+        .where('run.sourceId', '=', lost.sourceId)
+        .executeTakeFirstOrThrow();
+      expect(first.state).toBe('verified');
+      expect(first.assetId).toBeTruthy();
+      native.stdin!.write(JSON.stringify({ command: 'resume' }) + '\n');
+      expect((await message()).phase).toBe('foreign-receipt-refused');
+      native.stdin!.write(JSON.stringify({ command: 'resume' }) + '\n');
+      const done = await message();
+      expect(done).toMatchObject({
+        phase: 'complete',
+        independentOriginalUnchanged: true,
+        cacheRetained: true,
+        readAndUploadAllowancesUnchanged: true,
+        receipt: {
+          sourceId: lost.sourceId,
+          runId: first.runId,
+          itemId: first.id,
+          resourceId: first.id,
+          assetId: first.assetId,
+          ownerId: f.user.id,
+          version: first.version,
+          sha256: lost.sha256,
+          bytes: lost.bytes,
+          storage: 'reference',
+        },
+      });
+      native.stdin!.end();
+      let timer: NodeJS.Timeout | undefined;
+      const code = await Promise.race([
+        exit,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Native reference shutdown deadline')), 10_000);
+        }),
+      ]).finally(() => clearTimeout(timer));
+      expect(code, errors).toBe(0);
+      expect(attempts).toBe(4);
+      expect(
+        await db.selectFrom('photo_source_run').selectAll().where('sourceId', '=', lost.sourceId).execute(),
+      ).toMatchObject([{ id: first.runId, state: 'complete' }]);
+      expect(
+        await db
+          .selectFrom('photo_source_resource as resource')
+          .innerJoin('photo_source_run as run', 'run.id', 'resource.runId')
+          .select('resource.id')
+          .where('run.sourceId', '=', lost.sourceId)
+          .execute(),
+      ).toEqual([{ id: first.id }]);
+      expect(
+        await db.selectFrom('asset_upload_resource').select('id').where('ownerId', '=', f.user.id).execute(),
+      ).toHaveLength(0);
+      expect(f.jobs.queueInTransaction).toHaveBeenCalledTimes(1);
+      expect(requests.some(({ path }) => path.includes('?') || path.includes(token) || path.includes('/assets'))).toBe(
+        false,
+      );
+    } finally {
+      if (native && native.exitCode === null) {
+        native.kill('SIGTERM');
+        await Promise.race([exit, new Promise((resolve) => setTimeout(resolve, 5000))]);
+        if (native.exitCode === null) {
+          native.kill('SIGKILL');
+          await exit;
+        }
+      }
+      tls.closeAllConnections();
+      await new Promise<void>((resolve) => tls.close(() => resolve()));
+      replies.mockRestore();
+      await http.close();
+      await f.http.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+  360_000,
+);
