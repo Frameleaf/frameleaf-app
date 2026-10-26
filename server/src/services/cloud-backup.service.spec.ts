@@ -809,7 +809,12 @@ describe(CloudBackupService.name, () => {
     });
 
     it('refuses Frameleaf-managed storage while this server is not linked to Frameleaf Cloud', async () => {
-      await expect(setup({ target: 'managed' })).rejects.toThrow('not linked to Frameleaf Cloud');
+      const vaultId = 'f0000000-0000-4000-8000-000000000001';
+      mocks.instanceIdentity.loadOrCreate.mockResolvedValue({ ...instance, instanceId: vaultId } as never);
+      const file = addClientBackupKeys({ ...JSON.parse(keyFileOf()), instanceId: vaultId });
+      await expect(setup({ target: 'managed', key: JSON.stringify(file) })).rejects.toThrow(
+        'not linked to Frameleaf Cloud',
+      );
       expect(store.claim).not.toHaveBeenCalled();
     });
 
@@ -2579,6 +2584,7 @@ describe(CloudBackupService.name, () => {
       operationOf({ snapshot: { version: 1, bucketRef: managedRef, keyFingerprint: fingerprint } });
 
     beforeEach(() => {
+      vi.stubEnv('FRAMELEAF_BACKUP_CLIENT_ENCRYPTION', '0');
       mocks.config.getEnv.mockReturnValue(
         mockEnvData({ frameleafCloud: { ...mockEnvData({}).frameleafCloud, identityDir: '/identity', url: cloudUrl } }),
       );
@@ -2592,6 +2598,96 @@ describe(CloudBackupService.name, () => {
       mocks.frameleafCloud.accessToken.mockResolvedValue({ accessToken: 'token' } as never);
       cloudBackup.rotate.mockResolvedValue(rotated);
       vi.mocked(selectBackupLocation).mockResolvedValue({ ...grant.location, probeUrl: grant.endpoint });
+    });
+
+    afterEach(() => vi.unstubAllEnvs());
+
+    it('refuses default managed writes without the client format contract before writing any objects', async () => {
+      vi.stubEnv('FRAMELEAF_BACKUP_CLIENT_ENCRYPTION', undefined);
+      const vaultId = 'f0000000-0000-4000-8000-000000000001';
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = managedClaim({ instanceId: vaultId });
+      keys.read.mockResolvedValue(
+        JSON.stringify(addClientBackupKeys({ ...JSON.parse(keyFileOf()), instanceId: vaultId })),
+      );
+      store.readMarker.mockResolvedValue({ instanceId: vaultId });
+      cloudBackup.rotate.mockResolvedValue({ ...rotated, objectFormats: { ...rotated.objectFormats, write: [] } });
+
+      await sut.run(managedOperation(), 'claim-1');
+
+      expect(operations.fail).toHaveBeenCalledWith(
+        'run-1',
+        'claim-1',
+        expect.objectContaining({ error: expect.stringContaining('qualified opaque-storage grant') }),
+      );
+      expect(index.createManifest).not.toHaveBeenCalled();
+      expect(store.uploadFile).not.toHaveBeenCalled();
+      expect(store.uploadStream).not.toHaveBeenCalled();
+    });
+
+    it('keeps existing rootless managed backups on their legacy format with no environment override', async () => {
+      vi.stubEnv('FRAMELEAF_BACKUP_CLIENT_ENCRYPTION', undefined);
+      await sut.run(managedOperation(), 'claim-1');
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(operations.complete).toHaveBeenCalled();
+      expect(index.createManifest).toHaveBeenCalledWith(
+        expect.objectContaining({ key: expect.stringMatching(/^m\/\d/) }),
+      );
+    });
+
+    it('does not fall back to legacy writes if a previously encrypted backup loses its roots', async () => {
+      vi.stubEnv('FRAMELEAF_BACKUP_CLIENT_ENCRYPTION', undefined);
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = managedClaim({
+        lastManifestKey: 'm/v1/f0000000-0000-4000-8000-000000000001/1/20261011T000000Z.json.gz',
+      });
+      await sut.run(managedOperation(), 'claim-1');
+      expect(operations.fail).toHaveBeenCalledWith(
+        'run-1',
+        'claim-1',
+        expect.objectContaining({ error: expect.stringContaining('complete client backup recovery key file') }),
+      );
+      expect(index.createManifest).not.toHaveBeenCalled();
+      expect(store.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it('refuses fresh managed setup without complete roots before requesting or claiming storage', async () => {
+      vi.stubEnv('FRAMELEAF_BACKUP_CLIENT_ENCRYPTION', undefined);
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = undefined;
+      await expect(
+        sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') }),
+      ).rejects.toThrow('complete client backup recovery key file');
+      expect(cloudBackup.grant).not.toHaveBeenCalled();
+      expect(store.claim).not.toHaveBeenCalled();
+    });
+
+    it('does not replace an existing encrypted keyring with its legacy key during setup', async () => {
+      vi.stubEnv('FRAMELEAF_BACKUP_CLIENT_ENCRYPTION', undefined);
+      const vaultId = 'f0000000-0000-4000-8000-000000000001';
+      mocks.instanceIdentity.loadOrCreate.mockResolvedValue({ ...instance, instanceId: vaultId } as never);
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = managedClaim({ instanceId: vaultId });
+      keys.read.mockResolvedValue(
+        JSON.stringify(addClientBackupKeys({ ...JSON.parse(keyFileOf()), instanceId: vaultId })),
+      );
+      await expect(
+        sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') }),
+      ).rejects.toThrow('complete existing client backup recovery key file');
+      expect(cloudBackup.grant).not.toHaveBeenCalled();
+      expect(keys.write).not.toHaveBeenCalled();
+    });
+
+    it('allows a rootless legacy reconfiguration only for its unchanged storage binding', async () => {
+      vi.stubEnv('FRAMELEAF_BACKUP_CLIENT_ENCRYPTION', undefined);
+      cloudBackup.metadata.mockResolvedValue(grant);
+      cloudBackup.grant.mockResolvedValue(rotated);
+      store.claim.mockResolvedValue({ existing: true, claimedAt: '2026-09-25T00:00:00.000Z' });
+      await expect(
+        sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') }),
+      ).resolves.toBeDefined();
+      store.claim.mockClear();
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = managedClaim({ bucket: 'different-bucket' });
+      await expect(
+        sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') }),
+      ).rejects.toThrow('different storage binding');
+      expect(store.claim).not.toHaveBeenCalled();
     });
 
     it('rotates the key at the start of every run and never keeps it', async () => {
@@ -2865,7 +2961,7 @@ describe(CloudBackupService.name, () => {
       expect(operations.complete).not.toHaveBeenCalled();
     });
 
-    it('retains a pinned CSE dump and journal through renewal outage, root rotation and a paused replacement claim', async () => {
+    it('defaults managed writes to CSE and retains a pinned dump through renewal outage, root rotation and pause', async () => {
       const vaultId = 'f0000000-0000-4000-8000-000000000001';
       const file = addClientBackupKeys({ ...JSON.parse(keyFileOf()), instanceId: vaultId });
       metadata[SystemMetadataKey.FrameleafCloudBackup] = managedClaim({ instanceId: vaultId });
@@ -2888,7 +2984,7 @@ describe(CloudBackupService.name, () => {
         throw new ManagedBackupAuthorizationError(undefined, 60_000);
       });
       const first = managedOperation();
-      vi.stubEnv('FRAMELEAF_BACKUP_CLIENT_ENCRYPTION', '1');
+      vi.stubEnv('FRAMELEAF_BACKUP_CLIENT_ENCRYPTION', undefined);
       try {
         await sut.run(first, 'claim-1');
         const pinned = operations.setBulkResult.mock.calls
@@ -3331,6 +3427,7 @@ describe(CloudBackupService.name, () => {
         expect(transport).toHaveBeenLastCalledWith(expect.anything(), {
           method: 'POST',
           url: 'https://api.frameleaf.test/v4/backup/grant',
+          timeoutMs: 120_000,
           dpop: expect.anything(),
           body: { locationId: 'loc-07', operation: 'upload' },
         });
