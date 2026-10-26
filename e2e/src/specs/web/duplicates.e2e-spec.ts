@@ -3,9 +3,11 @@ import {
   AssetMediaResponseDto,
   AssetTypeEnum,
   DuplicateDecisionKind,
+  DuplicateGroupKind,
   getDuplicateDecisions,
   getDuplicateReview,
   LoginResponseDto,
+  updateAsset,
   updateAssets,
   updateConfig,
   VideoCodec,
@@ -17,6 +19,14 @@ import { app, asBearerAuth, baseUrl, utils } from 'src/utils.js';
 import { test } from 'src/web-test.js';
 
 const byId = (a: string[], b: string[]) => a[0].localeCompare(b[0]);
+const sorted = (ids: string[]) => ids.toSorted((a, b) => a.localeCompare(b));
+
+/** FL-558: capture times decide the lane. One instant reads as copies of one photo. */
+const SAME_INSTANT = '2025-08-12T06:42:10.000Z';
+
+/** Opens a review lane by its tab: "Same photo" or "Look-alikes". */
+const openLane = (page: Page, lane: 'Same photo' | 'Look-alikes') =>
+  page.getByRole('tab', { name: new RegExp(`^${lane}`) }).click();
 
 /**
  * FL-144: Playwright's Linux arm64 Chromium has no H.264 decoder (the server's default transcode
@@ -79,6 +89,7 @@ test.describe('Duplicate review', () => {
         assetBulkUpdateDto: {
           ids: [firstAsset.id, secondAsset.id],
           duplicateId: crypto.randomUUID(),
+          dateTimeOriginal: SAME_INSTANT,
         },
       },
       { headers: asBearerAuth(admin.accessToken) },
@@ -88,6 +99,13 @@ test.describe('Duplicate review', () => {
   });
 
   const reviewGroups = () => getDuplicateReview({ headers: asBearerAuth(admin.accessToken) });
+
+  /** The applied decision of one group, as the server recorded it, or null while it runs. */
+  const appliedDecision = async (duplicateId: string) => {
+    const history = await getDuplicateDecisions({ headers: asBearerAuth(admin.accessToken) });
+    const decision = history.recent.flatMap((batch) => batch.groups).find((group) => group.duplicateId === duplicateId);
+    return decision?.applied ? { kind: decision.decision, keepAssetIds: sorted(decision.keepAssetIds) } : null;
+  };
 
   test('opens a copy in the viewer and steps through its group with the arrow keys', async ({ page }) => {
     await page.goto('/utilities/duplicates');
@@ -147,7 +165,7 @@ test.describe('Duplicate review', () => {
       .toBe(before);
   });
 
-  test('keeps two copies from a contact sheet with keyboard shortcuts', async ({ page }) => {
+  test('keeps two look-alikes from a contact sheet with keyboard shortcuts', async ({ page }) => {
     const initialGroups = await reviewGroups();
     const duplicateId = initialGroups.find((group) =>
       group.assets.some((asset) => asset.id === firstAsset.id),
@@ -161,44 +179,41 @@ test.describe('Duplicate review', () => {
       { headers: asBearerAuth(admin.accessToken) },
     );
 
+    // retakes minutes apart: a look-alike group, reviewed on a contact sheet
+    await Promise.all(
+      [firstAsset.id, secondAsset.id, thirdAsset.id].map((id, index) =>
+        updateAsset(
+          { id, updateAssetDto: { dateTimeOriginal: `2025-08-12T06:4${index * 3}:10.000Z` } },
+          { headers: asBearerAuth(admin.accessToken) },
+        ),
+      ),
+    );
+
     const updatedGroups = await reviewGroups();
     const group = updatedGroups.find((group) => group.duplicateId === duplicateId);
-    if (!group || group.assets.length !== 3) {
-      throw new Error('Expected a three-copy duplicate group');
+    if (!group || group.assets.length !== 3 || group.kind !== DuplicateGroupKind.LookAlike) {
+      throw new Error('Expected a three-photo look-alike group');
     }
     const keepAssetIds = group.assets.slice(0, 2).map((asset) => asset.id);
 
     await page.goto('/utilities/duplicates');
     const review = page.getByTestId('frameleaf-duplicate-review');
+    await openLane(page, 'Look-alikes');
     await review.locator('input[type="search"]').fill(duplicateId);
     await review.getByRole('heading', { level: 2 }).focus();
     await page.keyboard.press('1');
     await page.keyboard.press('2');
 
     const sheet = review.getByRole('group', { name: 'Group contact sheet' });
-    await expect(sheet.getByRole('checkbox', { name: 'Keep frame 1' })).toBeChecked();
-    await expect(sheet.getByRole('checkbox', { name: 'Keep frame 2' })).toBeChecked();
-    await expect(sheet.getByRole('checkbox', { name: 'Keep frame 3' })).not.toBeChecked();
+    await expect(sheet.getByRole('button', { name: 'Keep frame 1' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(sheet.getByRole('button', { name: 'Keep frame 2' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(sheet.getByRole('button', { name: 'Keep frame 3' })).toHaveAttribute('aria-pressed', 'false');
     await page.keyboard.press('e');
     await expect(page.getByRole('dialog')).toHaveCount(0);
 
     await expect
-      .poll(
-        async () => {
-          const history = await getDuplicateDecisions({ headers: asBearerAuth(admin.accessToken) });
-          const decision = history.recent
-            .flatMap((batch) => batch.groups)
-            .find((group) => group.duplicateId === duplicateId);
-          return decision?.applied
-            ? { kind: decision.decision, keepAssetIds: decision.keepAssetIds.toSorted((a, b) => a.localeCompare(b)) }
-            : null;
-        },
-        { timeout: 30_000 },
-      )
-      .toEqual({
-        kind: DuplicateDecisionKind.Keepers,
-        keepAssetIds: keepAssetIds.toSorted((a, b) => a.localeCompare(b)),
-      });
+      .poll(() => appliedDecision(duplicateId), { timeout: 30_000 })
+      .toEqual({ kind: DuplicateDecisionKind.Keepers, keepAssetIds: sorted(keepAssetIds) });
 
     await page.reload();
     const undo = review.getByRole('button', { name: /^Undo/ }).first();
@@ -216,6 +231,63 @@ test.describe('Duplicate review', () => {
         { timeout: 30_000 },
       )
       .toEqual(group.assets.map((asset) => asset.id).toSorted((a, b) => a.localeCompare(b)));
+  });
+
+  test('keeps copies from the same-photo lane with Keep in the same place for every group (FL-558)', async ({
+    page,
+  }) => {
+    const seeded: string[] = [];
+    for (const name of ['triage-a', 'triage-b']) {
+      const [first, second] = await Promise.all([
+        utils.createAsset(admin.accessToken, { assetData: { filename: `${name}-1.png` } }),
+        utils.createAsset(admin.accessToken, { assetData: { filename: `${name}-2.png` } }),
+      ]);
+      const duplicateId = crypto.randomUUID();
+      await updateAssets(
+        { assetBulkUpdateDto: { ids: [first.id, second.id], duplicateId, dateTimeOriginal: SAME_INSTANT } },
+        { headers: asBearerAuth(admin.accessToken) },
+      );
+      seeded.push(duplicateId);
+    }
+    const all = await reviewGroups();
+    const groups = all.filter((group) => seeded.includes(group.duplicateId));
+    expect(groups.map((group) => group.kind)).toEqual([DuplicateGroupKind.Duplicates, DuplicateGroupKind.Duplicates]);
+
+    await page.goto('/utilities/duplicates');
+    const review = page.getByTestId('frameleaf-duplicate-review');
+    await openLane(page, 'Same photo');
+    await review.locator('input[type="search"]').fill('triage-');
+    const heading = review.getByRole('heading', { level: 2 });
+    const keep = review.getByTestId('frameleaf-duplicate-keep');
+    const headingText = await heading.textContent();
+    const firstTitle = headingText?.trim() ?? '';
+    // test files carry no quality evidence, so choose the copy rather than rely on a suggestion
+    await review.getByRole('radio').first().click();
+    await expect(keep).toBeEnabled();
+    const before = await keep.boundingBox();
+
+    // one click keeps it, and the next group arrives with Keep under the pointer
+    await keep.click();
+    await expect(heading).not.toHaveText(firstTitle);
+    await expect(keep).toBeEnabled();
+    expect(await keep.boundingBox()).toEqual(before);
+
+    const decided = groups.find((group) => group.assets.some((asset) => asset.originalFileName.startsWith(firstTitle)));
+    const next = groups.find((group) => group !== decided);
+    if (!decided || !next) {
+      throw new Error('Expected both seeded groups in the review');
+    }
+    await expect
+      .poll(() => appliedDecision(decided.duplicateId), { timeout: 30_000 })
+      .toEqual({ kind: DuplicateDecisionKind.Keepers, keepAssetIds: [decided.assets[0].id] });
+
+    // another copy, by number, then Enter
+    await heading.focus();
+    await page.keyboard.press('2');
+    await page.keyboard.press('Enter');
+    await expect
+      .poll(() => appliedDecision(next.duplicateId), { timeout: 30_000 })
+      .toEqual({ kind: DuplicateDecisionKind.Keepers, keepAssetIds: [next.assets[1].id] });
   });
 
   test('plays two real duplicate videos side by side while keeping keyboard focus', async ({ page, assetReady }) => {
@@ -310,7 +382,7 @@ test.describe('Duplicate review', () => {
           ]);
           const duplicateId = crypto.randomUUID();
           await updateAssets(
-            { assetBulkUpdateDto: { ids: [first.id, second.id], duplicateId } },
+            { assetBulkUpdateDto: { ids: [first.id, second.id], duplicateId, dateTimeOriginal: SAME_INSTANT } },
             { headers: asBearerAuth(admin.accessToken) },
           );
           return duplicateId;
@@ -332,6 +404,7 @@ test.describe('Duplicate review', () => {
 
     await page.goto('/utilities/duplicates');
     const review = page.getByTestId('frameleaf-duplicate-review');
+    await openLane(page, 'Same photo');
     const heading = review.getByRole('heading', { level: 2 });
     const queue = review.locator('.fl-dr-queue-scroll');
     await expect(heading).toBeVisible();

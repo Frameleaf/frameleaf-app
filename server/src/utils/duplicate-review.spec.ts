@@ -45,7 +45,14 @@ describe('duplicate review rules', () => {
       expect(classifyDuplicateGroup(frames)).toBe(DuplicateGroupKind.Burst);
     });
 
-    it('reads a group as copies when two share an instant, a time is missing, or it spans too long', () => {
+    it('reads distinct instants further apart than a burst as look-alikes (FL-558)', () => {
+      const later = image('b', '2026-09-06T16:30:12.000Z');
+      expect(classifyDuplicateGroup([image('a', '2026-09-06T16:24:12.000Z'), later])).toBe(
+        DuplicateGroupKind.LookAlike,
+      );
+    });
+
+    it('reads a group as copies when two share an instant or a time is missing', () => {
       expect(
         classifyDuplicateGroup([
           image('a', '2026-09-06T16:24:12.000Z'),
@@ -57,10 +64,12 @@ describe('duplicate review rules', () => {
       expect(classifyDuplicateGroup([image('a', '2026-09-06T16:24:12.000Z'), undated])).toBe(
         DuplicateGroupKind.Duplicates,
       );
-      const later = image('b', '2026-09-06T16:30:12.000Z');
-      expect(classifyDuplicateGroup([image('a', '2026-09-06T16:24:12.000Z'), later])).toBe(
-        DuplicateGroupKind.Duplicates,
-      );
+    });
+
+    it('reads byte-identical files as copies, whatever times their files carry', () => {
+      const a = { ...rawImage('a', null), localDateTime: '2026-09-06T16:24:12.000Z', checksum: 'same' } as never;
+      const b = { ...rawImage('b', null), localDateTime: '2026-09-07T09:00:00.000Z', checksum: 'same' } as never;
+      expect(classifyDuplicateGroup([a, b])).toBe(DuplicateGroupKind.Duplicates);
     });
 
     it('never reads videos as a burst', () => {

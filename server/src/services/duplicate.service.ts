@@ -149,9 +149,9 @@ export class DuplicateService extends BaseService {
       duplicates.map(async ({ duplicateId, assets }) => {
         const mappedAssets = assets.map((asset) => mapAsset(asset, { auth }));
         const suggestedKeepAssetIds =
-          classifyDuplicateGroup(mappedAssets) === DuplicateGroupKind.Burst
-            ? []
-            : suggestDuplicateKeepAssetIds(mappedAssets);
+          classifyDuplicateGroup(mappedAssets) === DuplicateGroupKind.Duplicates
+            ? suggestDuplicateKeepAssetIds(mappedAssets)
+            : [];
         let motionId: string | undefined;
         if (suggestedKeepAssetIds.length === 1 && assets.some((asset) => asset.livePhotoVideoId)) {
           try {

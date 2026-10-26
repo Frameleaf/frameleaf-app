@@ -172,6 +172,13 @@ export class DuplicateDecisionService {
         ? []
         : (await this.repository.getOwnerNames(otherOwnerIds)).map(({ id, name }) => [id, name] as const),
     );
+    const albumNames = new Map<string, string[]>();
+    for (const { assetId, albumName } of await this.repository.getAlbumNames(
+      auth.user.id,
+      groups.flatMap(({ assets }) => assets.map(({ id }) => id)),
+    )) {
+      albumNames.set(assetId, [...(albumNames.get(assetId) ?? []), albumName]);
+    }
 
     return groups.map((group) => {
       const all = byGroup.get(group.duplicateId) ?? [];
@@ -199,8 +206,8 @@ export class DuplicateDecisionService {
       return {
         duplicateId: group.duplicateId,
         assets: group.assets,
-        // related burst frames are different moments, never disposable copies (FL-61)
-        suggestedKeepAssetIds: kind === DuplicateGroupKind.Burst ? [] : group.suggestedKeepAssetIds,
+        // burst frames and look-alikes are different moments, never disposable copies (FL-61, FL-558)
+        suggestedKeepAssetIds: kind === DuplicateGroupKind.Duplicates ? group.suggestedKeepAssetIds : [],
         kind,
         ...(group.reviewRequiredReasons && { reviewRequiredReasons: group.reviewRequiredReasons }),
         editable: blockedReason === null,
@@ -209,6 +216,7 @@ export class DuplicateDecisionService {
         ...(otherOwnerNames && { otherOwnerNames }),
         totalBytes: group.assets.reduce((sum, asset) => sum + (asset.exifInfo?.fileSizeInByte ?? 0), 0),
         qualities: group.assets.map((asset) => ({ assetId: asset.id, reasons: reasons.get(asset.id) ?? [] })),
+        albums: group.assets.map((asset) => ({ assetId: asset.id, names: albumNames.get(asset.id) ?? [] })),
       };
     });
   }

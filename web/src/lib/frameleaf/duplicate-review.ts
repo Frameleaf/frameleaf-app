@@ -23,6 +23,11 @@ import { durableItemStates } from '$lib/frameleaf/bulk-operations';
 
 /** Height of one row of the virtualised queue, in pixels. The prototype's 68. */
 export const DUPLICATE_QUEUE_ROW_HEIGHT = 68;
+/**
+ * After a decision brings the next group in, the decision bar ignores clicks this long, so a
+ * double-click on Keep never decides the group that just arrived under the pointer (FL-558).
+ */
+export const DUPLICATE_DECISION_GUARD_MS = 400;
 /** Frames shown per page of a contact sheet. */
 export const DUPLICATE_FRAME_PAGE_SIZE = 48;
 /** What one decision job accepts; larger selections are split into several jobs, in order. */
@@ -37,6 +42,12 @@ export type ReviewDecision = 'suggested' | 'keeper' | 'keepers' | 'keep-all' | '
 /** `open` is "Needs attention"; `all` also shows groups decided in this session and blocked ones. */
 export type ReviewFilter = 'open' | 'all';
 
+/**
+ * The two review lanes (FL-558). `same`: one moment saved as different files, the best copy chosen
+ * for you. `alike`: different moments that look alike, bursts and retakes, with nothing chosen.
+ */
+export type ReviewLane = 'same' | 'alike';
+
 /** A group's tile while a job works on it, and after. Absent means nothing is happening to it. */
 export type GroupProgress = { state: 'pending' } | { state: 'failed'; reasonKey: Translations } | { state: 'done' };
 
@@ -46,16 +57,19 @@ type Asset = ReviewGroup['assets'][number];
 export const isBurst = (group: Pick<ReviewGroup, 'kind'> | undefined): boolean =>
   group?.kind === DuplicateGroupKind.Burst;
 
-/** A burst, or more than two copies, is reviewed as a contact sheet with several keepers. */
-export const usesContactSheet = (group: Pick<ReviewGroup, 'kind' | 'assets'> | undefined): boolean =>
-  !!group && (isBurst(group) || group.assets.length > 2);
+export const laneOf = (group: Pick<ReviewGroup, 'kind'>): ReviewLane =>
+  group.kind === DuplicateGroupKind.Duplicates ? 'same' : 'alike';
+
+/** Bursts and look-alikes are reviewed as a contact sheet of every photo; copies as a comparison. */
+export const usesContactSheet = (group: Pick<ReviewGroup, 'kind'> | undefined): boolean =>
+  !!group && laneOf(group) === 'alike';
 
 export const groupTitle = (group: Pick<ReviewGroup, 'assets' | 'duplicateId'>): string =>
   group.assets[0]?.originalFileName?.replace(/\.[^.]+$/, '') || group.duplicateId;
 
-/** The one suggested keeper, or null: never for a burst, and never a guess between two. */
+/** The one suggested keeper, or null: only for copies of one photo, and never a guess between two. */
 export const suggestedKeeper = (group: Pick<ReviewGroup, 'kind' | 'suggestedKeepAssetIds' | 'assets'>) => {
-  if (isBurst(group) || group.suggestedKeepAssetIds.length !== 1) {
+  if (laneOf(group) !== 'same' || group.suggestedKeepAssetIds.length !== 1) {
     return null;
   }
   const [id] = group.suggestedKeepAssetIds;
@@ -72,18 +86,22 @@ export const canSuggest = (group: ReviewGroup, progress?: GroupProgress): boolea
 /**
  * The groups a filter shows, in the queue's order: groups the person can decide first, in the
  * server's order. A query matches names and kinds; it never narrows a group to some of its photos —
- * a group is always reviewed whole.
+ * a group is always reviewed whole. With a `lane`, only that lane's groups.
  */
 export const filterReviewGroups = (
   groups: readonly ReviewGroup[],
   {
     query = '',
     filter = 'open',
+    lane,
     progress,
-  }: { query?: string; filter?: ReviewFilter; progress: ReadonlyMap<string, GroupProgress> },
+  }: { query?: string; filter?: ReviewFilter; lane?: ReviewLane; progress: ReadonlyMap<string, GroupProgress> },
 ): ReviewGroup[] => {
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   const shown = groups.filter((group) => {
+    if (lane && laneOf(group) !== lane) {
+      return false;
+    }
     if (filter === 'open' && progress.get(group.duplicateId)?.state === 'done') {
       return false;
     }
@@ -131,7 +149,7 @@ export const buildDecisionGroups = (
 
     switch (decision) {
       case 'suggested': {
-        if (isBurst(group)) {
+        if (laneOf(group) !== 'same') {
           throw new DuplicateDecisionError('frameleaf_duplicates_error_burst_suggestion');
         }
         const suggested = suggestedKeeper(group);
@@ -235,7 +253,7 @@ export const undoGroupsFor = (batch: DuplicateDecisionBatchDto): MediaOperationD
  * carry everything over; the review says so before anyone merges it.
  */
 export const isIdenticalGroup = (group: Pick<ReviewGroup, 'kind' | 'assets'>): boolean =>
-  group.kind !== DuplicateGroupKind.Burst &&
+  group.kind === DuplicateGroupKind.Duplicates &&
   group.assets.length > 1 &&
   group.assets.every((asset) => !!asset.checksum && asset.checksum === group.assets[0].checksum);
 
@@ -366,7 +384,8 @@ export const matchReviewShortcut = (event: KeyLike): ReviewShortcut | null => {
     case 's': {
       return { id: 'stack' };
     }
-    case 'e': {
+    case 'e':
+    case 'enter': {
       return { id: 'keepers' };
     }
   }
@@ -401,3 +420,19 @@ export const qualityReasonKey = (reason: string, fileName = ''): Translations =>
   reason === 'original-format' && /\.(heic|heif|hif)$/i.test(fileName)
     ? 'frameleaf_duplicates_quality_original_heic_format'
     : (`frameleaf_duplicates_quality_${reason.replaceAll('-', '_')}` as Translations);
+
+/** One row of the copies comparison: a fact's value for each copy, and whether they disagree. */
+export type ComparisonRow = { key: string; values: string[]; differs: boolean };
+
+/**
+ * The comparison table of a group of copies (FL-558): one row per fact, values lined up across the
+ * copies. A row differs when any two copies disagree, which is what the table makes stand out.
+ */
+export const comparisonRows = (facts: readonly { key: string; values: readonly string[] }[]): ComparisonRow[] =>
+  facts.map(({ key, values }) => ({ key, values: [...values], differs: new Set(values).size > 1 }));
+
+/** The folder a file sits in, from its path: everything before the last separator. */
+export const folderOf = (path: string | undefined): string => {
+  const index = Math.max(path?.lastIndexOf('/') ?? -1, path?.lastIndexOf('\\') ?? -1);
+  return index > 0 && path ? path.slice(0, index) : '';
+};

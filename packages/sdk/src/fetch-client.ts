@@ -7159,12 +7159,19 @@ export type DuplicateResolveDto = {
     /** List of duplicate groups to resolve */
     groups: DuplicateResolveGroupDto[];
 };
+export type DuplicateReviewAlbumsDto = {
+    assetId: string;
+    /** Albums of the viewer that hold this photo */
+    names: string[];
+};
 export type DuplicateReviewQualityDto = {
     assetId: string;
     /** Evidence for or against keeping this copy */
     reasons: DuplicateQualityReason[];
 };
 export type DuplicateReviewGroupDto = {
+    /** Per photo, the albums the viewer can see it in (FL-558): what is lost with a copy */
+    albums: DuplicateReviewAlbumsDto[];
     /** The photos of the group this session may see */
     assets: AssetResponseDto[];
     blockedReason: (DuplicateGroupBlock) | null;
@@ -34340,7 +34347,8 @@ export enum DuplicateGroupBlock {
 }
 export enum DuplicateGroupKind {
     Duplicates = "duplicates",
-    Burst = "burst"
+    Burst = "burst",
+    LookAlike = "look-alike"
 }
 export enum DuplicateQualityReason {
     OriginalFormat = "original-format",

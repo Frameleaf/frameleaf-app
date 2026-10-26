@@ -206,7 +206,8 @@ export const duplicateDisposalReasons = (
   return [...reasons];
 };
 
-type ReviewAsset = Pick<AssetResponseDto, 'id' | 'type' | 'localDateTime' | 'originalFileName' | 'exifInfo'>;
+type ReviewAsset = Pick<AssetResponseDto, 'id' | 'type' | 'localDateTime' | 'originalFileName' | 'exifInfo'> &
+  Partial<Pick<AssetResponseDto, 'checksum'>>;
 
 const captureTime = (asset: ReviewAsset): number | null => {
   const value = asset.exifInfo?.dateTimeOriginal ?? asset.localDateTime;
@@ -215,14 +216,20 @@ const captureTime = (asset: ReviewAsset): number | null => {
 };
 
 /**
- * Copies of one photo, or frames of a burst.
+ * Copies of one photo, frames of a burst, or look-alikes (FL-558).
  *
- * A burst is photos (never videos) captured at distinct instants within `DUPLICATE_BURST_SECONDS` of
- * one another. Copies of one photo share their capture time — an export, a resized share, a RAW and
- * its JPEG — so any two members captured at the same instant make the group read as copies.
+ * Copies of one photo share their capture time — an export, a resized share, a RAW and its JPEG — so
+ * any two members captured at the same instant make the group read as copies. Photos (never videos)
+ * captured at distinct instants are a burst within `DUPLICATE_BURST_SECONDS` of one another, and
+ * look-alikes (retakes) when further apart. Neither burst frames nor look-alikes get a suggested keeper.
+ * Byte-identical files are always copies, whatever times their files carry.
  */
 export const classifyDuplicateGroup = (assets: readonly ReviewAsset[]): DuplicateGroupKind => {
   if (assets.length < 2 || assets.some((asset) => asset.type !== AssetType.Image)) {
+    return DuplicateGroupKind.Duplicates;
+  }
+  const checksum = assets[0].checksum;
+  if (checksum && assets.every((asset) => asset.checksum === checksum)) {
     return DuplicateGroupKind.Duplicates;
   }
   const times = assets.map((asset) => captureTime(asset));
@@ -234,7 +241,7 @@ export const classifyDuplicateGroup = (assets: readonly ReviewAsset[]): Duplicat
     return DuplicateGroupKind.Duplicates;
   }
   const span = Math.max(...values) - Math.min(...values);
-  return span <= DUPLICATE_BURST_SECONDS * 1000 ? DuplicateGroupKind.Burst : DuplicateGroupKind.Duplicates;
+  return span <= DUPLICATE_BURST_SECONDS * 1000 ? DuplicateGroupKind.Burst : DuplicateGroupKind.LookAlike;
 };
 
 const pixels = (asset: ReviewAsset) => (asset.exifInfo?.exifImageWidth ?? 0) * (asset.exifInfo?.exifImageHeight ?? 0);

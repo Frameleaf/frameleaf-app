@@ -79376,10 +79376,11 @@
         "type": "string"
       },
       "DuplicateGroupKind": {
-        "description": "Whether a duplicate group holds copies of one photo or frames of a burst",
+        "description": "Whether a duplicate group holds copies of one photo, frames of a burst, or look-alike photos taken apart",
         "enum": [
           "duplicates",
-          "burst"
+          "burst",
+          "look-alike"
         ],
         "type": "string"
       },
@@ -79502,8 +79503,36 @@
         ],
         "type": "object"
       },
+      "DuplicateReviewAlbumsDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "names": {
+            "description": "Albums of the viewer that hold this photo",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetId",
+          "names"
+        ],
+        "type": "object"
+      },
       "DuplicateReviewGroupDto": {
         "properties": {
+          "albums": {
+            "description": "Per photo, the albums the viewer can see it in (FL-558): what is lost with a copy",
+            "items": {
+              "$ref": "#/components/schemas/DuplicateReviewAlbumsDto"
+            },
+            "type": "array"
+          },
           "assets": {
             "description": "The photos of the group this session may see",
             "items": {
@@ -79575,6 +79604,7 @@
           }
         },
         "required": [
+          "albums",
           "assets",
           "blockedReason",
           "duplicateId",

@@ -105,6 +105,28 @@ export class DuplicateDecisionRepository {
       .execute();
   }
 
+  /**
+   * The names of this user's albums that hold each of these photos, for the review's comparison
+   * (FL-558). Only albums the user is a member of are read, so no other account's album is named.
+   */
+  getAlbumNames(userId: string, assetIds: string[]): Promise<{ assetId: string; albumName: string }[]> {
+    if (assetIds.length === 0) {
+      return Promise.resolve([]);
+    }
+
+    return this.db
+      .selectFrom('album_asset')
+      .innerJoin('album', 'album.id', 'album_asset.albumId')
+      .innerJoin('album_user', (join) =>
+        join.onRef('album_user.albumId', '=', 'album.id').on('album_user.userId', '=', asUuid(userId)),
+      )
+      .select(['album_asset.assetId', 'album.albumName'])
+      .where('album_asset.assetId', '=', anyUuid(assetIds))
+      .where('album.deletedAt', 'is', null)
+      .orderBy('album.albumName')
+      .execute();
+  }
+
   /** Where each of these photos stands now. Photos that no longer exist are simply absent. */
   getAssetStates(assetIds: string[]): Promise<DuplicateAssetState[]> {
     if (assetIds.length === 0) {

@@ -1663,11 +1663,12 @@ export const DuplicateDecisionKindSchema = z
 export enum DuplicateGroupKind {
   Duplicates = 'duplicates',
   Burst = 'burst',
+  LookAlike = 'look-alike',
 }
 
 export const DuplicateGroupKindSchema = z
   .enum(DuplicateGroupKind)
-  .describe('Whether a duplicate group holds copies of one photo or frames of a burst')
+  .describe('Whether a duplicate group holds copies of one photo, frames of a burst, or look-alike photos taken apart')
   .meta({ id: 'DuplicateGroupKind' });
 
 /** Why a duplicate group cannot be decided from this session (FL-61). */
