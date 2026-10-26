@@ -285,7 +285,7 @@
     top: 38%;
     width: 14px;
     height: 14px;
-    margin-left: -7px;
+    margin-left: -7px; /* rtl: physical (centres on the image-space left) */
     border: 2px solid #fff;
     border-radius: 50%;
     background: color-mix(in srgb, var(--fl-accent) 70%, transparent);

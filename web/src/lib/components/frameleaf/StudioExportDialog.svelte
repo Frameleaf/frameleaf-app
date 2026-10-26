@@ -877,7 +877,7 @@
     color: var(--fl-text);
     font: inherit;
     font-size: 13px;
-    text-align: left;
+    text-align: start;
     cursor: pointer;
   }
   .shape[aria-checked='true'] {
