@@ -2602,6 +2602,75 @@ describe(CloudBackupService.name, () => {
 
     afterEach(() => vi.unstubAllEnvs());
 
+    it('exports through renewable restore-only managed credentials, including read-only storage', async () => {
+      const read = {
+        ...rotated,
+        readOnly: true,
+        readOnlyReason: 'plan_full',
+        capability: { ...rotated.capability, operation: 'restore' },
+      };
+      cloudBackup.rotate.mockResolvedValue(read);
+      store.readMarker.mockRejectedValue(new Error('managed export reader reached'));
+      const file = JSON.stringify({ ...JSON.parse(keyFileOf()), bucket: grant.bucket });
+      await expect(
+        sut.exportFromBucket({ managed: true, key: file, scope: 'library', restoreDatabase: false }, '/unused'),
+      ).rejects.toThrow('managed export reader reached');
+
+      const connection = store.readMarker.mock.calls[0][0];
+      expect(connection.sessionToken).toBe(read.capability.credentials.sessionToken);
+      expect(await connection.managedCredentials()).toEqual(read.capability.credentials);
+      const renewed = {
+        ...read,
+        capability: { ...read.capability, credentials: { ...read.capability.credentials, accessKeyId: 'renewed' } },
+      };
+      cloudBackup.rotate.mockResolvedValueOnce(renewed);
+      expect(await connection.managedCredentials(read.capability.credentials.accessKeyId)).toEqual(
+        renewed.capability.credentials,
+      );
+      expect(cloudBackup.rotate).toHaveBeenNthCalledWith(1, expect.anything(), 'restore');
+      expect(cloudBackup.rotate).toHaveBeenNthCalledWith(2, expect.anything(), 'restore');
+      cloudBackup.rotate.mockResolvedValueOnce({ ...renewed, bucket: 'changed' });
+      await expect(connection.managedCredentials('renewed')).rejects.toThrow('changed');
+    });
+
+    it.each([
+      { instanceId: 'another-vault' },
+      { bucket: 'another-bucket' },
+      { key: Buffer.alloc(32, 9).toString('base64'), fingerprint: keyFingerprint(Buffer.alloc(32, 9)) },
+    ])(
+      'refuses a managed export with a different recovery binding before requesting credentials: %j',
+      async (change) => {
+        const file = JSON.stringify({ ...JSON.parse(keyFileOf()), bucket: grant.bucket, ...change });
+        await expect(
+          sut.exportFromBucket({ managed: true, key: file, scope: 'library', restoreDatabase: false }, '/unused'),
+        ).rejects.toThrow('recovery file does not match');
+        expect(cloudBackup.rotate).not.toHaveBeenCalled();
+        expect(store.readMarker).not.toHaveBeenCalled();
+      },
+    );
+
+    it('never falls back to own storage when managed export authorization fails', async () => {
+      const own = vi.spyOn(sut as never, 'connectionFor');
+      cloudBackup.rotate.mockRejectedValue(new Error('authorization refused'));
+      const file = JSON.stringify({ ...JSON.parse(keyFileOf()), bucket: grant.bucket });
+      await expect(
+        sut.exportFromBucket({ managed: true, key: file, scope: 'library', restoreDatabase: false }, '/unused'),
+      ).rejects.toThrow('authorization refused');
+      expect(own).not.toHaveBeenCalled();
+      expect(store.readMarker).not.toHaveBeenCalled();
+    });
+
+    it('refuses managed mode for database restoration and for a server with own storage', async () => {
+      const options = { managed: true as const, key: keyFileOf(), scope: 'library' as const, restoreDatabase: true };
+      await expect(sut.restoreFromBucket(options, vi.fn())).rejects.toThrow('only exports');
+      await expect(sut.exportFromBucket(options, '/unused')).rejects.toThrow('only exports');
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+      await expect(sut.exportFromBucket({ ...options, restoreDatabase: false }, '/unused')).rejects.toThrow(
+        'no managed backup',
+      );
+      expect(cloudBackup.rotate).not.toHaveBeenCalled();
+    });
+
     it('refuses default managed writes without the client format contract before writing any objects', async () => {
       vi.stubEnv('FRAMELEAF_BACKUP_CLIENT_ENCRYPTION', undefined);
       const vaultId = 'f0000000-0000-4000-8000-000000000001';
@@ -4583,12 +4652,49 @@ describe(CloudBackupService.name, () => {
     it.each(['byo-s3', 'managed'] as const)(
       'keeps the established %s anchor when an older kit is supplied to restore or export',
       async (target) => {
-        const binding = target === 'managed' ? managedStorageRef('f0000000-0000-4000-8000-000000000099') : ref;
+        const managed = managedGrantFixture('backup/grant-rotate-response.json');
+        const source =
+          target === 'managed'
+            ? { ...s3, endpoint: managed.endpoint, region: managed.region, bucket: managed.bucket }
+            : s3;
+        const binding = target === 'managed' ? managedStorageRef(managed.storageId) : ref;
         metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({
           target,
           bucketRef: binding,
           instanceId: fixture.vaultId,
+          endpoint: source.endpoint,
+          bucket: source.bucket,
+          ...(target === 'managed' && {
+            region: managed.region,
+            managed: {
+              storageId: managed.storageId,
+              location: managed.location,
+              readOnly: false,
+              readOnlyReason: null,
+              quotaBytes: managed.quotaBytes,
+              checkedAt: '2026-10-11T00:00:00.000Z',
+            },
+          }),
         });
+        if (target === 'managed') {
+          const cloudUrl = 'https://cloud.frameleaf.test';
+          mocks.config.getEnv.mockReturnValue(
+            mockEnvData({
+              frameleafCloud: {
+                ...mockEnvData({}).frameleafCloud,
+                identityDir: directory,
+                url: cloudUrl,
+              },
+            }),
+          );
+          metadata[SystemMetadataKey.FrameleafCloudLink] = { status: 'linked', cloudUrl, instanceId: fixture.vaultId };
+          mocks.frameleafCloud.discovery.mockResolvedValue({ api: 'https://api.frameleaf.test' } as never);
+          mocks.frameleafCloud.accessToken.mockResolvedValue({ accessToken: 'token' } as never);
+          cloudBackup.rotate.mockResolvedValue({
+            ...managed,
+            capability: { ...managed.capability, operation: 'restore' },
+          });
+        }
         await writeBackupHistory(sut['clientHistoryPath'](binding), fixture.history);
         const bytes = manifestBytes(fixture.vaultId);
         store.get.mockResolvedValue(bytes);
@@ -4597,21 +4703,30 @@ describe(CloudBackupService.name, () => {
           .fn()
           .mockResolvedValue({ sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length });
         const options = {
-          s3,
-          key: JSON.stringify({ ...fixture.file, recovery: fixture.older }),
+          s3: source,
+          key: JSON.stringify({ ...fixture.file, bucket: source.bucket, recovery: fixture.older }),
           scope: 'files' as const,
           restoreDatabase: false,
         };
         const restored = await sut.restoreFromBucket(options, vi.fn());
         expect(restored.manifestKey).toBe(fixture.second.descriptor.manifest.objectKey);
-        const exported = await sut.exportFromBucket(options, join(directory, 'export'));
+        const exportOptions =
+          target === 'managed'
+            ? { managed: true as const, key: options.key, scope: options.scope, restoreDatabase: false }
+            : options;
+        const exported = await sut.exportFromBucket(exportOptions, join(directory, 'export'));
         expect(exported.manifestKey).toBe(restored.manifestKey);
+        const kit = JSON.parse(await readFile(join(directory, 'export', 'key-file.json'), 'utf8'));
+        expect(kit.recovery.anchor).toEqual(fixture.history.anchor);
         const conflicting = appendBackupSnapshot(null, fixture.snapshot(1, null, 'conflicting-version'));
-        const poisoned = { ...options, key: JSON.stringify({ ...fixture.file, recovery: conflicting }) };
+        const poisoned = {
+          ...options,
+          key: JSON.stringify({ ...fixture.file, bucket: source.bucket, recovery: conflicting }),
+        };
         await expect(sut.restoreFromBucket(poisoned, vi.fn())).rejects.toThrow('conflicts with the local anchor');
-        await expect(sut.exportFromBucket(poisoned, join(directory, 'conflict'))).rejects.toThrow(
-          'conflicts with the local anchor',
-        );
+        await expect(
+          sut.exportFromBucket({ ...exportOptions, key: poisoned.key }, join(directory, 'conflict')),
+        ).rejects.toThrow('conflicts with the local anchor');
       },
     );
 
