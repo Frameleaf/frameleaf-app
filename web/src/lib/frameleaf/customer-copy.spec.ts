@@ -32,8 +32,8 @@ const files = (dir: string): string[] =>
 /** A component's text: its markup without scripts, styles, comments, tags and `{expressions}`. */
 const componentText = (source: string) =>
   source
-    .replaceAll(/<script[\s\S]*?<\/script>/g, '')
-    .replaceAll(/<style[\s\S]*?<\/style>/g, '')
+    .replaceAll(/<script\b[\s\S]*?<\/script\s*>/gi, '')
+    .replaceAll(/<style\b[\s\S]*?<\/style\s*>/gi, '')
     .replaceAll(/<!--[\s\S]*?-->/g, '')
     .replaceAll(/<[^>]*>/g, ' ')
     .replaceAll(/\{[^{}]*\}/g, ' ');

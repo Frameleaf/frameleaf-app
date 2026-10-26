@@ -81,7 +81,7 @@ const libraryEvent = (
 export class LibraryService extends BaseService {
   private watchLibraries = false;
   private lock = false;
-  private watchers: Record<string, () => Promise<void>> = {};
+  private watchers = new Map<string, () => Promise<void>>();
   private watchRequests = new Map<string, symbol>();
 
   @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
@@ -221,15 +221,15 @@ export class LibraryService extends BaseService {
       });
       return closing;
     };
-    this.watchers[id] = close;
+    this.watchers.set(id, close);
     try {
       await ready.promise;
       return active && this.watchRequests.get(id) === request;
     } catch (error) {
       try {
         await close();
-        if (this.watchers[id] === close) {
-          delete this.watchers[id];
+        if (this.watchers.get(id) === close) {
+          this.watchers.delete(id);
         }
       } catch (closeError) {
         this.logger.error(`Unable to close library watcher ${id}: ${closeError}`);
@@ -239,11 +239,11 @@ export class LibraryService extends BaseService {
   }
 
   private async stopWatcher(id: string) {
-    const close = this.watchers[id];
+    const close = this.watchers.get(id);
     if (close) {
       await close();
-      if (this.watchers[id] === close) {
-        delete this.watchers[id];
+      if (this.watchers.get(id) === close) {
+        this.watchers.delete(id);
       }
     }
   }
@@ -264,7 +264,7 @@ export class LibraryService extends BaseService {
       return false;
     }
 
-    const ids = new Set([...Object.keys(this.watchers), ...this.watchRequests.keys()]);
+    const ids = new Set([...this.watchers.keys(), ...this.watchRequests.keys()]);
     const results = await Promise.allSettled([...ids].map((id) => this.unwatch(id)));
     for (const result of results) {
       if (result.status === 'rejected') {

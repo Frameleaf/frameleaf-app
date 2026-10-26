@@ -1413,6 +1413,11 @@ export enum MediaOperationKind {
    */
   StudioTranscription = 'studio_transcription',
   /**
+   * Make a movie (FL-561): the best moments of an album, a memory or a selection, cut on the beat of
+   * music made for it or a song from the library, saved as a Studio project.
+   */
+  StudioMovie = 'studio_movie',
+  /**
    * A bounded WebRTC playback session of a stored Studio revision (FL-96): the worker holding the
    * claim streams to the browser that opened it, signalled and authorised through the server. It
    * lives as long as its lease, its keepalive and its bound allow, and never produces a file.

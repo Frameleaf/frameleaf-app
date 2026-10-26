@@ -26,7 +26,9 @@
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import LandmarkBadge from '$lib/components/frameleaf/LandmarkBadge.svelte';
+  import MakeMovieSheet from '$lib/components/frameleaf/MakeMovieSheet.svelte';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
+  import type { MakeMovieSource } from '$lib/frameleaf/studio/make-movie';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
@@ -76,6 +78,7 @@
     mdiMapMarkerOutline,
     mdiMinusCircleOutline,
     mdiPawOutline,
+    mdiMovieOpenPlayOutline,
     mdiPlay,
     mdiRestore,
     mdiStarOutline,
@@ -159,6 +162,20 @@
     if (href) {
       void goto(href);
     }
+  };
+
+  /** Make a movie (FL-561) from a memory, from its card's "…" menu. */
+  let movieOpen = $state(false);
+  let movieSource = $state<MakeMovieSource | null>(null);
+  const makeMovie = (memory: MemoryResponseDto, title: string) => {
+    movieSource = {
+      kind: 'memory',
+      memoryId: memory.id,
+      name: title,
+      itemCount: memory.assets.length,
+      previewIds: memory.assets.slice(0, 3).map(({ id }) => id),
+    };
+    movieOpen = true;
   };
 
   const run = async (action: () => Promise<void>, message: string) => {
@@ -344,6 +361,10 @@
         <MenuItem onSelect={() => play(memory)}>
           <Icon icon={mdiPlay} size="16" aria-hidden="true" />
           {$t('frameleaf_memories_play')}
+        </MenuItem>
+        <MenuItem disabled={memory.assets.length === 0} onSelect={() => makeMovie(memory, headline.title)}>
+          <Icon icon={mdiMovieOpenPlayOutline} size="16" aria-hidden="true" />
+          {$t('frameleaf_movie_make')}
         </MenuItem>
         <MenuItem onSelect={() => void toggleFavorite(memory)}>
           <Icon icon={memory.isSaved ? mdiHeart : mdiHeartOutline} size="16" aria-hidden="true" />
@@ -598,6 +619,10 @@
     </section>
   {/if}
 </div>
+
+{#if movieSource}
+  <MakeMovieSheet bind:open={movieOpen} source={movieSource} />
+{/if}
 
 <style>
   /* The same page frame as Explore, Places, Tags and Folders (discovery.css `.fl-discovery`). */

@@ -46718,6 +46718,176 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/movies": {
+      "post": {
+        "description": "Queues a movie made from one album, memory or set of photos and videos you can read: the best moments, cut on the bars of music made for it (a mood) or of a song from your library (an audio file, or a video whose soundtrack is used), with a title at the start. It is saved as a Studio project; nothing reaches the library until it is exported. With `previousId` the new cut is saved as the next revision of the earlier version’s project, so the earlier cut stays in its history. Follow the job here or in Activity (`/media-operations/{id}`).",
+        "operationId": "createStudioMovie",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioMovieCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioMovieQueuedDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Make a movie",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.3.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/movies/songs": {
+      "get": {
+        "description": "Your audio files, then your videos long enough to lend their soundtrack, newest first, optionally filtered by part of the file name.",
+        "operationId": "getStudioMovieSongs",
+        "parameters": [
+          {
+            "name": "query",
+            "required": false,
+            "in": "query",
+            "description": "Part of the file name",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StudioMovieSongDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List songs for a movie",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.3.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/movies/{id}": {
+      "get": {
+        "description": "Owner only. The job status, step and progress, and once it has completed the movie: its project, length, shots, beats and music.",
+        "operationId": "getStudioMovie",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioMovieDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a movie",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.3.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/preview-streams": {
       "post": {
         "description": "Opens a bounded WebRTC playback session of the project's current stored revision from an exact rational time. Refused for a superseded revision, an unavailable source, or when the account already holds the most sessions it may; an open session of the same project is superseded.",
@@ -79558,8 +79728,36 @@
         ],
         "type": "object"
       },
+      "DuplicateReviewAlbumsDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "names": {
+            "description": "Albums of the viewer that hold this photo",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetId",
+          "names"
+        ],
+        "type": "object"
+      },
       "DuplicateReviewGroupDto": {
         "properties": {
+          "albums": {
+            "description": "Per photo, the albums the viewer can see it in (FL-558): what is lost with a copy",
+            "items": {
+              "$ref": "#/components/schemas/DuplicateReviewAlbumsDto"
+            },
+            "type": "array"
+          },
           "assets": {
             "description": "The photos of the group this session may see",
             "items": {
@@ -79593,6 +79791,10 @@
           },
           "kind": {
             "$ref": "#/components/schemas/DuplicateGroupKind"
+          },
+          "lookAlike": {
+            "description": "Photos taken at distinct moments further apart than a burst: retakes, reviewed as look-alikes and never suggested for the trash. Their kind stays duplicates (FL-558)",
+            "type": "boolean"
           },
           "otherOwnerNames": {
             "description": "Display names of the other accounts owning photos of a group blocked by another owner",
@@ -79631,12 +79833,14 @@
           }
         },
         "required": [
+          "albums",
           "assets",
           "blockedReason",
           "duplicateId",
           "editable",
           "hiddenMemberCount",
           "kind",
+          "lookAlike",
           "qualities",
           "suggestedKeepAssetIds",
           "totalBytes"
@@ -93104,6 +93308,7 @@
           "studio_preview",
           "studio_reverse_conform",
           "studio_transcription",
+          "studio_movie",
           "studio_preview_stream",
           "restoration",
           "restoration_preview",
@@ -127976,6 +128181,10 @@
       },
       "StudioCapabilitiesDto": {
         "properties": {
+          "generationWorker": {
+            "description": "This server or a home-network worker can make music for a movie right now (FL-561)",
+            "type": "boolean"
+          },
           "gpuWorker": {
             "description": "False until the Studio render worker admission (FL-95, FL-104) reports one",
             "type": "boolean"
@@ -129204,6 +129413,351 @@
         "enum": [
           "probe",
           "stored"
+        ],
+        "type": "string"
+      },
+      "StudioMovieCreateDto": {
+        "properties": {
+          "albumId": {
+            "description": "Make the movie from this album",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "assetIds": {
+            "description": "Make the movie from these photos and videos",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 2000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "lengthSeconds": {
+            "anyOf": [
+              {
+                "type": "number",
+                "enum": [
+                  30
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  60
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  180
+                ]
+              }
+            ],
+            "description": "30, 60 or 180 seconds; a song shorter than this sets the length"
+          },
+          "memoryId": {
+            "description": "Make the movie from this memory",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "mood": {
+            "$ref": "#/components/schemas/StudioMovieMood",
+            "description": "For `generated` music"
+          },
+          "music": {
+            "$ref": "#/components/schemas/StudioMovieMusicKind"
+          },
+          "previousId": {
+            "description": "Try another version: the earlier job. Its project gets the new cut as a new revision, so the current one stays in its history.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "songAssetId": {
+            "description": "For `song`: an audio file, or a video whose soundtrack is used",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "sourceName": {
+            "description": "What the movie is made from, as the person sees it (the album or memory name)",
+            "maxLength": 120,
+            "type": "string"
+          },
+          "title": {
+            "description": "The title at the start; defaults to the source name",
+            "maxLength": 80,
+            "type": "string"
+          }
+        },
+        "required": [
+          "lengthSeconds",
+          "music"
+        ],
+        "type": "object"
+      },
+      "StudioMovieDto": {
+        "properties": {
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "progress": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "result": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioMovieResultDto"
+              }
+            ],
+            "description": "Present once the job has completed",
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          },
+          "step": {
+            "$ref": "#/components/schemas/StudioMovieStep"
+          }
+        },
+        "required": [
+          "error",
+          "id",
+          "progress",
+          "result",
+          "status",
+          "step"
+        ],
+        "type": "object"
+      },
+      "StudioMovieMood": {
+        "description": "The mood of music made for the movie: Calm, Warm, Upbeat or Big moments",
+        "enum": [
+          "calm",
+          "warm",
+          "upbeat",
+          "big"
+        ],
+        "type": "string"
+      },
+      "StudioMovieMusicKind": {
+        "description": "`generated`: new music made for the movie; `song`: a song from the library",
+        "enum": [
+          "generated",
+          "song"
+        ],
+        "type": "string"
+      },
+      "StudioMovieQueuedDto": {
+        "properties": {
+          "id": {
+            "description": "The job id; it also shows in Activity (`/media-operations/{id}`)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "StudioMovieResultDto": {
+        "properties": {
+          "bars": {
+            "description": "Bar starts, in seconds",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "beats": {
+            "description": "Every beat, in seconds",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "bpm": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "downbeat": {
+            "description": "Which of the first four beats starts a bar",
+            "maximum": 3,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lengthSeconds": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "mood": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioMovieMood"
+              }
+            ],
+            "nullable": true
+          },
+          "music": {
+            "$ref": "#/components/schemas/StudioMovieMusicKind"
+          },
+          "musicImportId": {
+            "description": "The music, kept with the project",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "musicName": {
+            "description": "The song name, or empty for music made for the movie",
+            "type": "string"
+          },
+          "musicSeconds": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "projectId": {
+            "description": "The Studio project the movie is saved in",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "revision": {
+            "description": "The project revision this version is",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "shots": {
+            "items": {
+              "$ref": "#/components/schemas/StudioMovieShot"
+            },
+            "type": "array"
+          },
+          "sourceName": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bars",
+          "beats",
+          "bpm",
+          "downbeat",
+          "lengthSeconds",
+          "mood",
+          "music",
+          "musicImportId",
+          "musicName",
+          "musicSeconds",
+          "projectId",
+          "revision",
+          "shots",
+          "sourceName",
+          "title",
+          "version"
+        ],
+        "type": "object"
+      },
+      "StudioMovieShot": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "end": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "start": {
+            "description": "Seconds into the movie",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "assetId",
+          "end",
+          "start"
+        ],
+        "type": "object"
+      },
+      "StudioMovieSongDto": {
+        "properties": {
+          "durationSeconds": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/StudioMovieSongKind"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "durationSeconds",
+          "id",
+          "kind",
+          "name"
+        ],
+        "type": "object"
+      },
+      "StudioMovieSongKind": {
+        "description": "An audio file, or a video whose soundtrack is used",
+        "enum": [
+          "audio",
+          "video"
+        ],
+        "type": "string"
+      },
+      "StudioMovieStep": {
+        "description": "What the job is doing: choosing moments, making or reading the music, cutting, adding the title",
+        "enum": [
+          "moments",
+          "music",
+          "cuts",
+          "title",
+          "done"
         ],
         "type": "string"
       },

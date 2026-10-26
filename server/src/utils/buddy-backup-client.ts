@@ -31,6 +31,8 @@ export class BuddyBackupClient {
   ) {}
 
   async request<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, block?: Buffer): Promise<T> {
+    // every route is a fixed word or a hex/uuid id, so the path can never leave the vault's routes
+    if (!/^[\w-]+(?:\/[\w-]+)*$/.test(path)) throw new BuddyExecutionError('Invalid Buddy route');
     assertExecutionActive();
     const grant = await this.grant();
     assertExecutionActive();

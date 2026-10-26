@@ -94,8 +94,8 @@ describe('Merged for you (FL-416)', () => {
 
   it('tells identical files from look-alikes by their checksum', () => {
     const asset = (checksum: string) => ({ checksum }) as never;
-    expect(isIdenticalGroup({ kind: 'similar', assets: [asset('a'), asset('a')] } as never)).toBe(true);
-    expect(isIdenticalGroup({ kind: 'similar', assets: [asset('a'), asset('b')] } as never)).toBe(false);
+    expect(isIdenticalGroup({ kind: 'duplicates', assets: [asset('a'), asset('a')] } as never)).toBe(true);
+    expect(isIdenticalGroup({ kind: 'duplicates', assets: [asset('a'), asset('b')] } as never)).toBe(false);
     expect(isIdenticalGroup({ kind: 'burst', assets: [asset('a'), asset('a')] } as never)).toBe(false);
   });
 });

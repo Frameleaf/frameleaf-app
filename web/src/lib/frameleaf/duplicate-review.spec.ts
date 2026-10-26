@@ -11,6 +11,9 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDecisionGroups,
   canSuggest,
+  comparisonRows,
+  folderOf,
+  laneOf,
   qualityReasonKey,
   decisionAssetIds,
   decisionParts,
@@ -49,6 +52,8 @@ const group = (id: string, ids: string[], overrides: Partial<ReviewGroup> = {}):
   hiddenMemberCount: 0,
   totalBytes: ids.length * 1000,
   qualities: [],
+  albums: [],
+  lookAlike: false,
   ...overrides,
 });
 
@@ -93,8 +98,9 @@ describe('duplicate review', () => {
       expect(canSuggest(group('g', ['a', 'b'], { reviewRequiredReasons: ['distinct-motion'] }))).toBe(false);
     });
 
-    it('never suggests a keeper in a burst, nor guesses between two suggestions', () => {
+    it('never suggests a keeper in a burst or among look-alikes, nor guesses between two suggestions', () => {
       expect(suggestedKeeper(group('b', ['a', 'b'], { kind: DuplicateGroupKind.Burst }))).toBeNull();
+      expect(suggestedKeeper(group('l', ['a', 'b'], { lookAlike: true }))).toBeNull();
       expect(suggestedKeeper(group('g', ['a', 'b'], { suggestedKeepAssetIds: ['a', 'b'] }))).toBeNull();
       expect(suggestedKeeper(group('g', ['a', 'b']))).toBe('a');
     });
@@ -106,10 +112,26 @@ describe('duplicate review', () => {
       expect(canSuggest(g, { state: 'done' })).toBe(false);
     });
 
-    it('reviews bursts and larger groups on a contact sheet', () => {
+    it('compares copies of one photo, however many, and reviews bursts and look-alikes on a contact sheet', () => {
       expect(usesContactSheet(group('g', ['a', 'b']))).toBe(false);
-      expect(usesContactSheet(group('g', ['a', 'b', 'c']))).toBe(true);
+      expect(usesContactSheet(group('g', ['a', 'b', 'c']))).toBe(false);
       expect(usesContactSheet(group('g', ['a', 'b'], { kind: DuplicateGroupKind.Burst }))).toBe(true);
+      expect(usesContactSheet(group('g', ['a', 'b'], { lookAlike: true }))).toBe(true);
+    });
+
+    it('puts copies in the same-photo lane and bursts and look-alikes in the look-alike lane (FL-558)', () => {
+      expect(laneOf(group('g', ['a', 'b']))).toBe('same');
+      expect(laneOf(group('g', ['a', 'b'], { kind: DuplicateGroupKind.Burst }))).toBe('alike');
+      expect(laneOf(group('g', ['a', 'b'], { lookAlike: true }))).toBe('alike');
+      const groups = [
+        group('copies', ['a', 'b']),
+        group('burst', ['c', 'd'], { kind: DuplicateGroupKind.Burst }),
+        group('retakes', ['e', 'f'], { lookAlike: true }),
+      ];
+      const ids = (lane: 'same' | 'alike') =>
+        filterReviewGroups(groups, { lane, progress: none }).map(({ duplicateId }) => duplicateId);
+      expect(ids('same')).toEqual(['copies']);
+      expect(ids('alike')).toEqual(['burst', 'retakes']);
     });
   });
 
@@ -123,6 +145,8 @@ describe('duplicate review', () => {
     it('refuses to decide a burst by suggestion or a group the person cannot decide', () => {
       const burst = group('b', ['a', 'b'], { kind: DuplicateGroupKind.Burst });
       expect(() => buildDecisionGroups([burst], 'suggested')).toThrow(DuplicateDecisionError);
+      const retakes = group('l', ['a', 'b'], { lookAlike: true });
+      expect(() => buildDecisionGroups([retakes], 'suggested')).toThrow(DuplicateDecisionError);
       expect(() => buildDecisionGroups([group('g', ['a', 'b'], { editable: false })], 'keep-all')).toThrow(
         'frameleaf_duplicates_error_not_editable',
       );
@@ -299,6 +323,11 @@ describe('duplicate review', () => {
         ...modifiers,
       });
 
+    it('keeps the chosen photos on Enter, as on E (FL-558)', () => {
+      expect(key('Enter')).toEqual({ id: 'keepers' });
+      expect(key('e')).toEqual({ id: 'keepers' });
+    });
+
     it('maps the prototype keys', () => {
       expect(key('k')).toEqual({ id: 'suggested' });
       expect(key('A')).toEqual({ id: 'keep-all' });
@@ -311,6 +340,29 @@ describe('duplicate review', () => {
       expect(key('z', { ctrlKey: true, shiftKey: true })).toBeNull();
       expect(key('k', { repeat: true })).toBeNull();
       expect(key('0')).toBeNull();
+    });
+  });
+
+  describe('comparisonRows', () => {
+    it('marks a row that differs between copies and leaves matching rows alone', () => {
+      expect(
+        comparisonRows([
+          { key: 'taken', values: ['12 Aug 2025', '12 Aug 2025'] },
+          { key: 'folder', values: ['Photos/2025', 'Exports'] },
+        ]),
+      ).toEqual([
+        { key: 'taken', values: ['12 Aug 2025', '12 Aug 2025'], differs: false },
+        { key: 'folder', values: ['Photos/2025', 'Exports'], differs: true },
+      ]);
+    });
+  });
+
+  describe('folderOf', () => {
+    it('reads the folder from a path, either separator', () => {
+      expect(folderOf('/photos/2025/Banff/DSC04417.ARW')).toBe('/photos/2025/Banff');
+      expect(folderOf(String.raw`C:\Pictures\img.jpg`)).toBe(String.raw`C:\Pictures`);
+      expect(folderOf('img.jpg')).toBe('');
+      expect(folderOf(undefined)).toBe('');
     });
   });
 });

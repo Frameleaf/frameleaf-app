@@ -168,6 +168,17 @@ describe(HelpService.name, () => {
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
+    it('never fetches an index entry whose id is not a guide path', async () => {
+      const id = '/evil.example/x';
+      metadata[SystemMetadataKey.HelpIndex] = {
+        index: { ...fresh, articles: [article(id)] },
+        etag: null,
+        fetchedAt: new Date().toISOString(),
+      };
+      await expect(sut.getArticle(id)).rejects.toBeInstanceOf(NotFoundException);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
     it('says so when the website cannot be reached', async () => {
       fetchSpy.mockResolvedValue(new Response('', { status: 502 }));
       await expect(sut.getArticle('using/sharing')).rejects.toBeInstanceOf(ServiceUnavailableException);

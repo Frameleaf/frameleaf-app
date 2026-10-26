@@ -412,6 +412,10 @@ const StudioCapabilitiesSchema = z
     previewStreamWorker: z.boolean().optional().describe('A qualified local session can stream Studio previews'),
     restorationWorker: z.boolean().describe('A destination can serve a restoration workload right now'),
     transcriptionWorker: z.boolean().describe('A destination can serve the Studio AI workload right now'),
+    generationWorker: z
+      .boolean()
+      .optional()
+      .describe('This server or a home-network worker can make music for a movie right now (FL-561)'),
     // FL-42
     render: z
       .array(StudioRenderEvidenceSchema)

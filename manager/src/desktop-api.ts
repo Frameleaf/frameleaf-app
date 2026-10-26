@@ -112,8 +112,11 @@ export function desktopApi(
       }
       security.guard(request, response, () => {
         try {
-          if (request.method === 'POST')
-            security.limit(request.socket.remoteAddress ?? 'unknown', 'login');
+          // Every desktop route is rate limited per client; password-bearing POSTs use the strict login budget.
+          security.limit(
+            request.socket.remoteAddress ?? 'unknown',
+            request.method === 'POST' ? 'login' : 'desktop',
+          );
           json(request, response, next);
         } catch (error) {
           next(error);

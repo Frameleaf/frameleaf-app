@@ -40,8 +40,8 @@ test("server identifiers use Frameleaf throughout the tracked source", () => {
 });
 
 for (const [filename, project, rootless] of [
-  ["docker-compose.yml", "immich", false],
-  ["docker-compose.rootless.yml", "immich", true],
+  ["docker-compose.yml", "frameleaf", false],
+  ["docker-compose.rootless.yml", "frameleaf", true],
 ]) {
   test(`${filename}: Frameleaf images preserve installed storage and network contracts`, () => {
     const config = compose(`docker/${filename}`);
@@ -90,15 +90,34 @@ for (const [filename, project, rootless] of [
       config.services.database.environment.POSTGRES_USER,
       "${DB_USERNAME}",
     );
-    assert.deepEqual(server.depends_on, ["database"]);
+    // A fresh database restarts once after initdb; the server waits for it instead of crash-looping.
+    assert.deepEqual(server.depends_on, {
+      database: { condition: "service_healthy" },
+    });
+    const health = config.services.database.healthcheck;
+    // the socket answers during initdb before TCP does, so the check must use TCP
+    assert.match(health.test[1], /^pg_isready --host=127\.0\.0\.1 /);
+    assert.match(health.test[1], /&& \/usr\/local\/bin\/healthcheck\.sh$/);
     assert.deepEqual(server.env_file, [".env"]);
     // FL-165: the edge worker's direct HTTPS listener for LAN names and direct remote connections.
-    assert.deepEqual(server.ports, ["2283:2283", "2443:2443"]);
+    assert.deepEqual(server.ports, [
+      "${FRAMELEAF_HOST_PORT:-2283}:2283",
+      "${FRAMELEAF_HOST_HTTPS_PORT:-2443}:2443",
+    ]);
+    if (!rootless)
+      assert.equal(
+        config.services["frameleaf-lan-discovery"].environment
+          .FRAMELEAF_DISCOVERY_URL,
+        "http://127.0.0.1:${FRAMELEAF_HOST_PORT:-2283}",
+      );
     if (rootless) {
       assert.equal(server.user, "1000:1000");
       assert.equal(ml.user, "1000:1000");
     } else {
-      assert.deepEqual(config.volumes, { "model-cache": null, "studio-worker": null });
+      assert.deepEqual(config.volumes, {
+        "model-cache": null,
+        "studio-worker": null,
+      });
     }
   });
 }
@@ -572,8 +591,8 @@ test("Compose resolves all deployment files and hardware overlays without a daem
       "nvidia",
     );
     assert.equal(
-      hardware.services["frameleaf-machine-learning"].deploy.resources.reservations
-        .devices[0].driver,
+      hardware.services["frameleaf-machine-learning"].deploy.resources
+        .reservations.devices[0].driver,
       "nvidia",
     );
     // FL-294: the .env above is an unchanged Immich one (IMMICH_VERSION). FRAMELEAF_VERSION is the
@@ -612,6 +631,69 @@ test("Compose resolves all deployment files and hardware overlays without a daem
         );
       }
     }
+    // Fresh installs are project "frameleaf" on the default ports.
+    writeFileSync(resolve(directory, ".env"), env);
+    for (const filename of [
+      "docker-compose.yml",
+      "docker-compose.rootless.yml",
+    ]) {
+      const fresh = run([filename]);
+      assert.equal(fresh.name, "frameleaf");
+      assert.deepEqual(
+        fresh.services["frameleaf-server"].ports.map((port) => port.published),
+        ["2283", "2443"],
+      );
+    }
+    assert.equal(
+      run(["docker-compose.yml"]).volumes["model-cache"].name,
+      "frameleaf_model-cache",
+    );
+    // Earlier stacks keep project "immich" (containers, network and volumes) and can move ports.
+    writeFileSync(
+      resolve(directory, ".env"),
+      [
+        env,
+        "COMPOSE_PROJECT_NAME=immich",
+        "FRAMELEAF_HOST_PORT=8283",
+        "FRAMELEAF_HOST_HTTPS_PORT=8443",
+      ].join("\n"),
+    );
+    const upgraded = run(["docker-compose.yml"]);
+    assert.equal(upgraded.name, "immich");
+    assert.equal(upgraded.volumes["model-cache"].name, "immich_model-cache");
+    assert.equal(
+      upgraded.volumes["studio-worker"].name,
+      "immich_studio-worker",
+    );
+    assert.deepEqual(
+      upgraded.services["frameleaf-server"].ports.map((port) => port.published),
+      ["8283", "8443"],
+    );
+    assert.equal(
+      upgraded.services["frameleaf-lan-discovery"].environment
+        .FRAMELEAF_DISCOVERY_URL,
+      "http://127.0.0.1:8283",
+    );
+    // docker-compose.override.yml beside the bundle is merged by default.
+    writeFileSync(
+      resolve(directory, "docker-compose.override.yml"),
+      [
+        "services:",
+        "  frameleaf-server:",
+        "    environment:",
+        "      TZ: Europe/Paris",
+        "",
+      ].join("\n"),
+    );
+    const overridden = run([]);
+    assert.equal(
+      overridden.services["frameleaf-server"].environment.TZ,
+      "Europe/Paris",
+    );
+    assert.equal(
+      overridden.services["frameleaf-server"].container_name,
+      "frameleaf_server",
+    );
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }

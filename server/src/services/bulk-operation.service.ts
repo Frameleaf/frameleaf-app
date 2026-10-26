@@ -148,9 +148,9 @@ const inBatchOrder = (batch: readonly string[], outcomes: readonly Outcome[]): O
  *   are still checked for every item and every batch. The Locked folder's PIN is enforced where it
  *   belongs, at submit: a job that includes Locked items can only be queued from an unlocked
  *   session (see `MediaOperationService.createBulk`). A job queued without the PIN skips any item
- *   that was locked after it was queued; nothing but Unmark Sensitive ever removes a lock.
- * - **Sensitive marking is the lock** (FL-34). Mark Sensitive writes a lock record and Unmark
- *   Sensitive removes it: no visibility change, no album write, no enrichment tags.
+ *   that was locked after it was queued; nothing but Unlock ever removes a lock.
+ * - **Lock is metadata** (FL-34). Lock writes a lock record and Unlock removes it:
+ *   no visibility change, no album write, no enrichment tags.
  * - **Cancel is honoured between batches** and the items already changed are reported, not hidden.
  * - **A worker that dies** leaves an in-flight marker, and the next claim applies that batch again.
  *   Every action is safe to repeat. The relative date shift is made so: before a batch is marked in
@@ -790,7 +790,7 @@ export class BulkOperationService {
       }
 
       case MediaOperationBulkAction.MarkSensitive: {
-        // Mark Sensitive is the lock (FL-34): a lock record for each item, its stack and live photo.
+        // Lock (FL-34) writes a lock record for each item, its stack and live photo.
         // Album membership and the stored visibility are not touched.
         outcomes.push(...(await this.inLists(allowed, (ids) => this.assets.lock(auth, { ids }))));
         break;

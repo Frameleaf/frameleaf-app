@@ -348,12 +348,14 @@ test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
       await expect(page.getByRole('button', { name: 'Mute soundtrack' })).toHaveAttribute('aria-pressed', 'true');
     });
 
-    test('Make a movie opens Studio with the memory items', async ({ page }) => {
+    // FL-561: the player's Make a movie opens the Make a movie sheet for the memory, not Studio.
+    test('Make a movie opens the Make a movie sheet for the memory', async ({ page }) => {
       const firstMemory = memories[0];
       await memoryViewerUtils.openMemoryPageWithAsset(page, firstMemory.id, firstMemory.assets[1].id);
 
-      await page.getByRole('button', { name: 'Make a movie in Studio' }).click();
-      await expect(page).toHaveURL(new RegExp(String.raw`/studio\?.*${firstMemory.assets[0].id}`));
+      await page.getByRole('button', { name: 'Make a movie', exact: true }).click();
+      await expect(page.getByRole('dialog', { name: 'Make a movie' })).toBeVisible();
+      await expect(page).not.toHaveURL(/\/studio/);
     });
   });
 

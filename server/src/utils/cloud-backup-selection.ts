@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { withoutTrailingSlashes } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 
 /** Why one owned original is, or is not, in a run's Cloud Backup. */
@@ -38,7 +39,7 @@ export type CloudBackupSelection = CloudBackupChosen | null;
 const unique = (values: string[]) => [...new Set(values)].toSorted(compareCodeUnits);
 
 /** A folder as the Folders view names it, without a trailing slash; empty when it names no folder. */
-export const normalizeBackupFolder = (path: string) => path.trim().replace(/\/+$/, '');
+export const normalizeBackupFolder = (path: string) => withoutTrailingSlashes(path.trim());
 
 /** The choice in canonical order, so the same choice always hashes the same. */
 export const canonicalSelection = (chosen: CloudBackupChosen): CloudBackupChosen => ({

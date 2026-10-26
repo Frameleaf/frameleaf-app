@@ -12,6 +12,7 @@ import { compareCodeUnits } from 'src/utils/compare.js';
 import { getDiskUsage } from 'src/utils/disk-usage.js';
 import { tryPromise } from 'src/utils/promise.js';
 import {
+  TAKEOUT_ZIP_MAX_DIRECTORY_BYTES,
   TakeoutZipEntry,
   TakeoutZipSource,
   readTakeoutZipDirectory,
@@ -32,7 +33,13 @@ export type StagedDigest = { size: number; checksum: Buffer; legacyChecksum: Buf
 
 const UUID = /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i;
 
+/** No read is larger than an archive's central directory may be; chunks are far smaller. */
+const READ_RANGE_MAX_BYTES = TAKEOUT_ZIP_MAX_DIRECTORY_BYTES;
+
 const readRange = async (handle: FileHandle, position: number, length: number): Promise<Buffer> => {
+  if (!Number.isSafeInteger(length) || length < 0 || length > READ_RANGE_MAX_BYTES) {
+    throw new TakeoutStagingError('A read from the archive is larger than an import needs');
+  }
   const buffer = Buffer.alloc(length);
   let offset = 0;
   while (offset < length) {

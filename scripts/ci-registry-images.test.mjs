@@ -179,7 +179,7 @@ test("Dockerfile override seams preserve all original customer default identitie
         ? 1
         : 2,
     );
-    assert.doesNotMatch(source, /mirror.gcr.io/);
+    assert.doesNotMatch(source, /mirror\.gcr\.io/);
   }
   assert.ok(
     read("server/Dockerfile").includes(
@@ -201,7 +201,7 @@ test("Dockerfile override seams preserve all original customer default identitie
       2,
     );
   }
-  assert.doesNotMatch(ml, /mirror.gcr.io/);
+  assert.doesNotMatch(ml, /mirror\.gcr\.io/);
   assert.ok(
     read("docker/postgres/Dockerfile").includes(
       `ARG POSTGRES_IMAGE=${defaults.postgres}\n`,
@@ -248,7 +248,7 @@ test("native medium and both OpenAPI policy callers consume the explicit overrid
     setup,
     /\.withBuildArgs\(\s*process.env.FRAMELEAF_CI_POSTGRES_IMAGE\s*\? \{ POSTGRES_IMAGE: process.env.FRAMELEAF_CI_POSTGRES_IMAGE \}\s*: \{\},?\s*\)/,
   );
-  assert.doesNotMatch(setup, /mirror.gcr.io|RYUK_DISABLED/);
+  assert.doesNotMatch(setup, /mirror\.gcr\.io|RYUK_DISABLED/);
   const buildArgs = setup
     .match(/\.withBuildArgs\(\s*([\s\S]*?)\s*\)\s*\.build/)[1]
     .trim()

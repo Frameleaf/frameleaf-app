@@ -94,9 +94,9 @@ describe('AssetViewerNavBar component', () => {
       expect(getByLabelText('frameleaf_viewer_move_to_trash')).toBeInTheDocument();
     });
 
-    // FL-34: sensitivity is the one lock, offered as a single Mark Sensitive entry (the prototype's
+    // FL-34: sensitivity is the one lock, offered as a single Lock entry (the prototype's
     // `lock`); the separate NSFW review entries were removed with the old mark.
-    it('offers Mark Sensitive, and no separate NSFW review entries, for a full-size owned image', () => {
+    it('offers Lock, and no separate NSFW review entries, for a full-size owned image', () => {
       const ownerId = 'id-of-the-user';
       const user = userAdminFactory.build({ id: ownerId });
       const asset = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Image });
@@ -111,9 +111,9 @@ describe('AssetViewerNavBar component', () => {
       expect(queryByRole('menuitem', { name: 'mark_safe' })).not.toBeInTheDocument();
     });
 
-    // FL-34: sensitivity is the one lock, offered as a single Mark Sensitive entry (the prototype's
+    // FL-34: sensitivity is the one lock, offered as a single Lock entry (the prototype's
     // `lock`); the separate NSFW review entries were removed with the old mark.
-    it('offers Mark Sensitive, and no separate NSFW review entries, for a full-size owned video', () => {
+    it('offers Lock, and no separate NSFW review entries, for a full-size owned video', () => {
       const ownerId = 'id-of-the-user';
       const user = userAdminFactory.build({ id: ownerId });
       const asset = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Video });

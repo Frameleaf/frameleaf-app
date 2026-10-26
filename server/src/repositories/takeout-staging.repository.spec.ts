@@ -140,6 +140,19 @@ describe(TakeoutStagingRepository.name, () => {
     }
   });
 
+  it('refuses a range read larger than any archive read needs, before allocating it', async () => {
+    const path = join(directory, 'archive');
+    await writeFile(path, Buffer.from('01234567'));
+    const allocate = vi.spyOn(Buffer, 'alloc');
+    const archive = await sut.openArchive(path);
+    try {
+      await expect(archive.source.read(0, 2 ** 40)).rejects.toThrow('larger than an import needs');
+      expect(allocate).not.toHaveBeenCalledWith(2 ** 40);
+    } finally {
+      await archive.close();
+    }
+  });
+
   it('refuses a descendant directory swapped for a link before descending into it', async () => {
     const selected = join(directory, 'selected'),
       outside = join(directory, 'outside');
