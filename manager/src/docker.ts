@@ -336,11 +336,11 @@ export class Docker {
       )
     )
       throw new Refusal('invalid_managed_project');
+    const unraid = action === 'up' && process.env.MANAGER_PLATFORM === 'unraid';
+    // DockerMan templates are optional: catalog templates published before the mapping existed still start.
+    const dockerman = unraid && (await access(DOCKERMAN_TEMPLATES).then(() => true, () => false));
     if (action === 'up') {
-      if (process.env.MANAGER_PLATFORM === 'unraid') {
-        await access(DOCKERMAN_TEMPLATES).catch(() => { throw new Refusal('unraid_dockerman_templates_mount_required'); });
-        await configureUnraidCompose(directory);
-      }
+      if (unraid) await configureUnraidCompose(directory);
       await this.pullMissing(directory, services);
     }
     await this.execute(
@@ -357,7 +357,7 @@ export class Docker {
       ],
       { cwd: directory, timeout: 1_200_000 },
     );
-    if (action === 'up' && process.env.MANAGER_PLATFORM === 'unraid') {
+    if (dockerman) {
       const ids = (await this.execute('docker', ['ps', '--all', '--quiet', '--no-trunc',
         '--filter', `label=com.docker.compose.project=${project}`, '--filter', 'label=com.docker.compose.oneoff=False']))
         .trim().split(/\s+/).filter(Boolean);
