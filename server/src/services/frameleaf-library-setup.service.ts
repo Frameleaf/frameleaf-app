@@ -91,6 +91,16 @@ export class FrameleafLibrarySetupService {
     });
   }
 
+  private async setupOwners(db: Kysely<DB>): Promise<string[]> {
+    const owners = await db
+      .selectFrom('user')
+      .select('id')
+      .where('deletedAt', 'is', null)
+      .union(db.selectFrom('asset').select('ownerId as id').distinct())
+      .execute();
+    return owners.map(({ id }) => id);
+  }
+
   private async read<T>(key: string, db = this.db): Promise<T | null> {
     const result = await sql<{ value: T }>`SELECT value FROM system_metadata WHERE key = ${key}`.execute(db);
     return result.rows[0]?.value ?? null;
@@ -140,7 +150,8 @@ export class FrameleafLibrarySetupService {
       }
       const hasAdmin = await this.users.hasAdmin();
       const libraries = hasAdmin ? await this.libraries.getAll() : [];
-      const owners = hasAdmin ? await db.selectFrom('asset').select('ownerId').distinct().execute() : [];
+      // Every account, including one whose photos survive only as untracked files in its upload folder.
+      const owners = hasAdmin ? await this.setupOwners(db) : [];
       // Commit intent independently of queue submission so a process restart can resume it.
       const state: SetupState = {
         ...identity,
@@ -150,7 +161,7 @@ export class FrameleafLibrarySetupService {
         libraries: libraries.map((l) => l.id),
         scans: {},
         health: {},
-        owners: owners.map((owner) => owner.ownerId),
+        owners,
         healthAfter: null,
         revision: null,
         quietSince: null,
@@ -364,9 +375,7 @@ export class FrameleafLibrarySetupService {
           // Commit full-scan admission after external discovery. The following call can safely
           // recover a lost queue acknowledgement, and must cover the resulting inventory.
           state.healthAfter = new Date().toISOString();
-          state.owners = (await db.selectFrom('asset').select('ownerId').distinct().execute()).map(
-            (owner) => owner.ownerId,
-          );
+          state.owners = await this.setupOwners(db);
           await this.write(this.key(), state, db);
           return state;
         }

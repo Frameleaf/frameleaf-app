@@ -393,6 +393,61 @@ describe('Immich import into the canonical Frameleaf baseline', () => {
     await expect(stat(targetPath)).rejects.toMatchObject({ code: 'ENOENT' });
   }, 30_000);
 
+  it('keeps an original Immich had already lost, activates, and reports it to its owner and the admin', async () => {
+    configure('3.2.4');
+    addLibrary();
+    const lostId = '9d0c8a6e-3b63-4f0e-9d55-1f7f5d1f8b21';
+    const lostPath = join(directory, 'source', 'upload', owner2, 'ab', 'cd', 'IMG_0420.HEIC');
+    content.asset.push({
+      ...content.asset[0],
+      id: lostId,
+      ownerId: owner2,
+      originalPath: lostPath,
+      originalFileName: 'IMG_0420.HEIC',
+      checksum: String.raw`\x${'ab'.repeat(32)}`,
+      visibility: 'timeline',
+      deletedAt: null,
+    });
+    await importer.run();
+    await importer.verify(acknowledgeWork);
+    expect((await importer.status()).status).toBe('activated');
+    expect(
+      await connection.db.query('SELECT id,"ownerId","originalPath" FROM public.asset WHERE id=$1', [lostId]),
+    ).toEqual([
+      {
+        id: lostId,
+        ownerId: owner2,
+        originalPath: join(directory, 'destination', 'upload', owner2, 'ab', 'cd', 'IMG_0420.HEIC'),
+      },
+    ]);
+    const notifications = await connection.db.query(
+      'SELECT "userId",level,type,title,description,data FROM public.notification ORDER BY "userId"',
+    );
+    // The owner hears about their own photo; the admin, who lost nothing, gets the all-accounts list.
+    expect(notifications.map(({ userId }) => userId)).toEqual([owner1, owner2]);
+    for (const notification of notifications) {
+      expect(notification).toMatchObject({ level: 'warning', type: 'SystemMessage' });
+      expect(notification.description).toContain('IMG_0420.HEIC');
+      expect(notification.description).toContain('1 already missing in Immich');
+      expect(notification.data).toMatchObject({
+        kind: 'immich-import-lost-originals',
+        total: 1,
+        items: [
+          {
+            id: lostId,
+            ownerId: owner2,
+            originalFileName: 'IMG_0420.HEIC',
+            immichPath: lostPath,
+            reason: 'missing',
+            checksum: 'ab'.repeat(32),
+            type: 'IMAGE',
+          },
+        ],
+      });
+    }
+    expect(notifications[0].description).toContain('By account:');
+  }, 30_000);
+
   it('rolls back failed batches/checkpoints, resumes a committed checkpoint once and leaves abandonment inactive', async () => {
     configure();
     const transaction = connection.db.transaction.bind(connection.db);

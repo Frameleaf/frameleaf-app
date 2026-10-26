@@ -186,6 +186,8 @@ describe(AssetMediaService.name, () => {
     clearConfigCache();
     ({ sut, mocks } = newTestService(AssetMediaService));
     mocks.partner.getAll.mockResolvedValue([]);
+    mocks.asset.getByChecksums.mockResolvedValue([]);
+    mocks.storage.checkFileExists.mockResolvedValue(true);
   });
 
   describe('getUploadAssetIdByChecksum', () => {
@@ -425,6 +427,112 @@ describe(AssetMediaService.name, () => {
         { reason: AssetLockReason.Marked, lockedBy: auth.user.id },
       );
       expect(mocks.event.emit).toHaveBeenCalledWith('AssetLocked', { assetIds: ['id_1', 'motion'] });
+    });
+  });
+
+  describe('a lost original (media health)', () => {
+    const lost = {
+      id: 'lost-asset',
+      checksum: file1,
+      deletedAt: null,
+      originalPath: '/data/upload/user-id/aa/bb/IMG_0420.jpg',
+      libraryId: null,
+      isExternal: false,
+    };
+    const upload = {
+      uuid: 'random-uuid',
+      originalPath: '/data/upload/user-id/cc/dd/random-uuid.jpg',
+      mimeType: 'image/jpeg',
+      checksum: Buffer.from('sha256-of-the-file'),
+      legacyChecksum: file1,
+      originalName: 'IMG_0420.jpg',
+      size: 42,
+    };
+
+    beforeEach(() => {
+      mocks.asset.getByChecksums.mockResolvedValue([lost]);
+      mocks.storage.checkFileExists.mockResolvedValue(false);
+    });
+
+    it('does not answer a checksum preflight with a duplicate', async () => {
+      mocks.asset.getUploadAssetIdByChecksum.mockResolvedValue(lost.id);
+      await expect(sut.getUploadAssetIdByChecksum(authStub.admin, file1.toString('hex'))).resolves.toBeUndefined();
+    });
+
+    it('accepts the file in the bulk upload check', async () => {
+      await expect(
+        sut.bulkUploadCheck(authStub.admin, { assets: [{ id: '1', checksum: file1.toString('hex') }] }),
+      ).resolves.toEqual({ results: [{ id: '1', action: AssetUploadAction.ACCEPT }] });
+    });
+
+    it('still rejects the file when another matching photo has its original', async () => {
+      mocks.asset.getByChecksums.mockResolvedValue([lost, { ...lost, id: 'kept', originalPath: '/data/kept.jpg' }]);
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === '/data/kept.jpg'));
+      await expect(
+        sut.bulkUploadCheck(authStub.admin, { assets: [{ id: '1', checksum: file1.toString('hex') }] }),
+      ).resolves.toEqual({
+        results: [
+          {
+            id: '1',
+            action: AssetUploadAction.REJECT,
+            reason: AssetRejectReason.DUPLICATE,
+            assetId: 'kept',
+            isTrashed: false,
+          },
+        ],
+      });
+    });
+
+    it('restores the photo from the upload instead of creating another one', async () => {
+      mocks.physicalFile.restoreLostOriginal.mockResolvedValue(true);
+      await expect(sut.uploadAsset(authStub.admin, createDto, upload)).resolves.toEqual({
+        id: lost.id,
+        status: AssetMediaStatus.CREATED,
+      });
+      expect(mocks.asset.getByChecksums).toHaveBeenCalledWith(authStub.admin.user.id, [upload.checksum, file1]);
+      expect(mocks.physicalFile.restoreLostOriginal).toHaveBeenCalledWith({
+        assetId: lost.id,
+        expectedOriginalPath: lost.originalPath,
+        originalPath: upload.originalPath,
+        sha1: file1,
+        sha256: upload.checksum,
+        sizeInBytes: 42,
+        reason: 'restored_by_upload',
+      });
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.SidecarCheck, data: { id: lost.id, source: 'upload' } },
+        { name: JobName.AssetGenerateThumbnails, data: { id: lost.id, source: 'upload' } },
+      ]);
+    });
+
+    it('repairs a hidden photo but answers like a hidden duplicate, without its id', async () => {
+      // NSFW privacy mode hides the photo from this session.
+      const locked = { ...AuthFactory.create(), hideNsfwAssets: true };
+      mocks.asset.getByChecksums.mockImplementation((_owner, _checksums, options) =>
+        Promise.resolve(options ? [] : [lost]),
+      );
+      mocks.physicalFile.restoreLostOriginal.mockResolvedValue(true);
+      await expect(sut.uploadAsset(locked, createDto, upload)).resolves.toEqual({
+        id: '00000000-0000-0000-0000-000000000000',
+        status: AssetMediaStatus.DUPLICATE,
+      });
+      // Looked up without the session's hidden-content filter, so the Locked photo was found and repaired.
+      expect(mocks.asset.getByChecksums).toHaveBeenCalledWith(locked.user.id, [upload.checksum, file1]);
+      expect(mocks.physicalFile.restoreLostOriginal).toHaveBeenCalledWith(
+        expect.objectContaining({ assetId: lost.id, originalPath: upload.originalPath }),
+      );
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+    });
+
+    it('uploads normally when the photo changed before it could be restored', async () => {
+      mocks.physicalFile.restoreLostOriginal.mockResolvedValue(false);
+      mocks.asset.create.mockResolvedValue(assetEntity);
+      await expect(sut.uploadAsset(authStub.admin, createDto, upload)).resolves.toMatchObject({
+        status: AssetMediaStatus.CREATED,
+      });
+      expect(mocks.asset.create).toHaveBeenCalled();
     });
   });
 
@@ -1863,8 +1971,22 @@ describe(AssetMediaService.name, () => {
       const file2 = Buffer.from('53be335e99f18a66ff12e9a901c7a6171dd76573', 'hex');
 
       mocks.asset.getByChecksums.mockResolvedValue([
-        { id: 'asset-1', checksum: file1, deletedAt: null },
-        { id: 'asset-2', checksum: file2, deletedAt: null },
+        {
+          id: 'asset-1',
+          checksum: file1,
+          deletedAt: null,
+          originalPath: '/data/upload/asset-1',
+          libraryId: null,
+          isExternal: false,
+        },
+        {
+          id: 'asset-2',
+          checksum: file2,
+          deletedAt: null,
+          originalPath: '/data/upload/asset-2',
+          libraryId: null,
+          isExternal: false,
+        },
       ]);
 
       await expect(
@@ -1904,7 +2026,16 @@ describe(AssetMediaService.name, () => {
       const sha256 = Buffer.from('9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08', 'hex');
 
       mocks.forkSchema.getChecksumTranslations.mockResolvedValue([{ sha1, checksum: sha256 }]);
-      mocks.asset.getByChecksums.mockResolvedValue([{ id: 'asset-1', checksum: sha256, deletedAt: null }]);
+      mocks.asset.getByChecksums.mockResolvedValue([
+        {
+          id: 'asset-1',
+          checksum: sha256,
+          deletedAt: null,
+          originalPath: '/data/upload/asset-1',
+          libraryId: null,
+          isExternal: false,
+        },
+      ]);
 
       await expect(
         sut.bulkUploadCheck(authStub.admin, { assets: [{ id: '1', checksum: sha1.toString('hex') }] }),
@@ -1927,7 +2058,16 @@ describe(AssetMediaService.name, () => {
       const file1 = Buffer.from('d2947b871a706081be194569951b7db246907957', 'hex');
       const file2 = Buffer.from('53be335e99f18a66ff12e9a901c7a6171dd76573', 'hex');
 
-      mocks.asset.getByChecksums.mockResolvedValue([{ id: 'asset-1', checksum: file1, deletedAt: null }]);
+      mocks.asset.getByChecksums.mockResolvedValue([
+        {
+          id: 'asset-1',
+          checksum: file1,
+          deletedAt: null,
+          originalPath: '/data/upload/asset-1',
+          libraryId: null,
+          isExternal: false,
+        },
+      ]);
 
       await expect(
         sut.bulkUploadCheck(authStub.admin, {
@@ -1959,7 +2099,16 @@ describe(AssetMediaService.name, () => {
       const file1 = Buffer.from('d2947b871a706081be194569951b7db246907957', 'hex');
       const file2 = Buffer.from('53be335e99f18a66ff12e9a901c7a6171dd76573', 'hex');
 
-      mocks.asset.getByChecksums.mockResolvedValue([{ id: 'asset-1', checksum: file1, deletedAt: null }]);
+      mocks.asset.getByChecksums.mockResolvedValue([
+        {
+          id: 'asset-1',
+          checksum: file1,
+          deletedAt: null,
+          originalPath: '/data/upload/asset-1',
+          libraryId: null,
+          isExternal: false,
+        },
+      ]);
 
       await expect(
         sut.bulkUploadCheck(

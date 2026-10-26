@@ -15,7 +15,7 @@ import {
   MediaHealthStatus,
   PhysicalFileType,
 } from 'src/enum.js';
-import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file.repository.js';
+import { BUDDY_CAPTURE_LOCK, countPathReferences, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
   AssetHealthCandidateTable,
@@ -415,6 +415,19 @@ export class MediaHealthRepository {
       retainedPath: string;
     }>) {
       tracked.add(retainedPath);
+    }
+    // Frameleaf's own outputs (Studio exports, develop masters, backups, Unused files…) live in library
+    // storage too; restoring one would duplicate it. Same authoritative count the file trash uses.
+    // ponytail: a few queries per untracked file, fine while untracked files stay rare.
+    const untracked = paths.filter((candidate) => !tracked.has(candidate));
+    if (untracked.length > 0) {
+      await this.db.transaction().execute(async (trx) => {
+        for (const candidate of untracked) {
+          if ((await countPathReferences(trx, candidate)) > 0) {
+            tracked.add(candidate);
+          }
+        }
+      });
     }
     return tracked;
   }

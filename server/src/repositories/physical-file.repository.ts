@@ -3,7 +3,7 @@ import { Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
-import { join, parse } from 'node:path';
+import { join, normalize, parse } from 'node:path';
 import type { PhysicalDeduplicationEvidenceRow } from 'src/utils/physical-deduplication-plan.js';
 import type { ReleasingPublicationRole } from 'src/utils/studio-import-reference-roles.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -829,6 +829,95 @@ export class PhysicalFileRepository {
       .execute();
     return rows as unknown as PhysicalDeduplicationEvidenceRow[];
   }
+  /**
+   * Media health: a verified copy of an asset's lost original (a re-upload, or an untracked file found
+   * in the owner's storage) becomes its original again. Every record that pointed at the lost file
+   * follows it, and their open "missing" findings resolve. False when the asset changed meanwhile.
+   * The caller has checked the copy's digests and that the lost file is really gone.
+   */
+  async restoreLostOriginal(input: {
+    assetId: string;
+    expectedOriginalPath: string;
+    originalPath: string;
+    sha1: Buffer;
+    sha256: Buffer;
+    sizeInBytes: number;
+    reason: 'restored_by_upload' | 'restored_from_untracked_file';
+  }): Promise<boolean> {
+    const restored = normalize(input.originalPath);
+    return this.db.transaction().execute(async (trx) => {
+      for (const path of [input.expectedOriginalPath, restored].sort()) {
+        await lockFilePath(trx, path);
+      }
+      const asset = await trx
+        .selectFrom('asset')
+        .select(['id', 'originalPath', 'libraryId', 'isExternal', 'physicalOriginalFileId', 'checksum'])
+        .where('id', '=', asUuid(input.assetId))
+        .forUpdate()
+        .executeTakeFirst();
+      if (
+        !asset ||
+        asset.originalPath !== input.expectedOriginalPath ||
+        asset.libraryId ||
+        asset.isExternal ||
+        !(asset.checksum.equals(input.sha256) || asset.checksum.equals(input.sha1))
+      ) {
+        return false;
+      }
+      const physical = asset.physicalOriginalFileId
+        ? await trx
+            .selectFrom('physical_file')
+            .select(['id', 'path'])
+            .where('id', '=', asset.physicalOriginalFileId)
+            .forUpdate()
+            .executeTakeFirst()
+        : undefined;
+      let physicalId: string;
+      if (physical?.path === input.expectedOriginalPath) {
+        physicalId = physical.id;
+        await trx
+          .updateTable('physical_file')
+          .set({ path: restored, checksum: input.sha256, sizeInBytes: input.sizeInBytes })
+          .where('id', '=', physicalId)
+          .execute();
+      } else {
+        physicalId = randomUUID();
+        await trx
+          .insertInto('physical_file')
+          .values({
+            id: physicalId,
+            canonicalAssetId: asset.id,
+            checksum: input.sha256,
+            path: restored,
+            sizeInBytes: input.sizeInBytes,
+            type: PhysicalFileType.Original,
+          })
+          .execute();
+      }
+      const moved = await trx
+        .updateTable('asset')
+        .set({ originalPath: restored, physicalOriginalFileId: physicalId, isOffline: false })
+        .where('originalPath', '=', input.expectedOriginalPath)
+        .where('libraryId', 'is', null)
+        .where('isExternal', '=', false)
+        .returning('id')
+        .execute();
+      const ids = moved.map(({ id }) => id);
+      await sql`INSERT INTO asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
+        SELECT id, ${input.sha1}, ${input.sha256}, ${input.sizeInBytes}, ARRAY[${restored}]::text[], 1,
+          jsonb_build_object('source', 'recovery'), now(), now() FROM unnest(${ids}::uuid[]) id
+        ON CONFLICT ("assetId") DO UPDATE SET sha1=EXCLUDED.sha1, sha256=EXCLUDED.sha256, "sizeInBytes"=EXCLUDED."sizeInBytes",
+          "verifiedPaths"=EXCLUDED."verifiedPaths", evidence=EXCLUDED.evidence, "verifiedAt"=now(), "updatedAt"=now()`.execute(
+        trx,
+      );
+      await sql`UPDATE asset_health SET "runId"=NULL, status='relinked', severity='info', "originalPath"=${restored},
+          evidence=jsonb_build_object('reason', ${input.reason}::text, 'previousPath', ${input.expectedOriginalPath}::text),
+          "checkedAt"=now(), "resolvedAt"=now()
+        WHERE "assetId"=ANY(${ids}::uuid[]) AND category='missing' AND "resolvedAt" IS NULL`.execute(trx);
+      return true;
+    });
+  }
+
   getPhysicalFile(id: string, kysely: Kysely<DB> = this.db): Promise<PhysicalFile | undefined> {
     return kysely.selectFrom('physical_file').selectAll().where('id', '=', asUuid(id)).executeTakeFirst();
   }
