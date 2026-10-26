@@ -170,7 +170,7 @@ describe('frameleaf-license (FL-156)', () => {
       expect(verifyLicenseCertificate(certificate, { ...context, accountId: null })).toMatchObject({ ok: true });
     });
 
-    it('never trusts the placeholder pins with a key this build does not hold', () => {
+    it('refuses an unrelated signer against the production pins', () => {
       const certificate = signCertificate(active.privateKey, active.key.kid);
       expect(verifyLicenseCertificate(certificate, { ...context, keys: FRAMELEAF_LICENSE_KEYS })).toEqual({
         ok: false,
