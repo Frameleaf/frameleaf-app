@@ -41,14 +41,14 @@ describe('Users manager (FL-71, AccountsLibraries.jsx)', () => {
     Element.prototype.scrollIntoView = vi.fn();
   });
 
-  it("carries the template's heading with Create account as its primary action", async () => {
+  it("carries the template's heading with Add a person as its primary action (FL-516)", async () => {
     state.url = new URL('http://localhost/user-settings?area=users&section=accounts');
     render(UsersSection);
 
     expect(screen.getByText('Your server')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Users' })).toBeInTheDocument();
-    expect(screen.getByText('Manage profiles, features, preferences, storage and sign-in.')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
+    expect(screen.getByText('Everyone with an account, and how much space each has.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Add a person' }));
     expect(state.goto).toHaveBeenCalledWith('/user-settings?area=users&section=accounts&new=1');
   });
 

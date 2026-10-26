@@ -53,6 +53,17 @@ describe('bulk action descriptors', () => {
     expect(ids).not.toContain('delete-permanently');
   });
 
+  it('makes Delete the confirmed permanent delete when the server has no trash', () => {
+    const assets = [photo('a'), photo('b')];
+    const ids = available({ assets, trashEnabled: false });
+    expect(ids).not.toContain('delete');
+    expect(ids).toContain('delete-permanently');
+    expect(bulkActionById(bulkActions({ assets, trashEnabled: false }))['delete-permanently']?.confirm).toBe(true);
+    const primary = primaryBulkActions(bulkActions({ assets, trashEnabled: false }), false).map((action) => action.id);
+    expect(primary.at(-1)).toBe('delete-permanently');
+    expect(available({ assets, trashEnabled: false, readOnly: true })).not.toContain('delete-permanently');
+  });
+
   it('replaces the live actions with restore and permanent delete in the trash', () => {
     const ids = available({ assets: [photo('a')], trash: true });
     expect(ids).toEqual(expect.arrayContaining(['restore', 'delete-permanently', 'download']));

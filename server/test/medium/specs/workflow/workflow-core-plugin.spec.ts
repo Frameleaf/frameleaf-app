@@ -18,6 +18,7 @@ import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
+import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -54,6 +55,8 @@ class WorkflowTestContext extends MediumTestContext<typeof WorkflowExecutionServ
         PluginRepository,
         // a step that reads an item with coordinates asks the place pack where it was taken (FL-353)
         SearchRepository,
+        // album search leaves out smart albums their owner hid (FL-522)
+        SmartAlbumRepository,
         StorageRepository,
         UserRepository,
         WorkflowRepository,

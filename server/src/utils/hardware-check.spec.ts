@@ -4,9 +4,11 @@ import {
   type MlContainerReport,
   type RenderNode,
   type ServerHardwareFacts,
+  WORKER_MODEL_MODES,
   benchmarkFactors,
   detectHardwareFindings,
   detectHardwareIssues,
+  integratedGpu,
   isIntegratedGpu,
   measuredWorkload,
   median,
@@ -215,6 +217,49 @@ describe('hardware check (FL-159)', () => {
       expect(isIntegratedGpu('AMD', '0000:03:00.0', 16 * GB)).toBe(false);
       expect(isIntegratedGpu('NVIDIA', '0000:01:00.0', null)).toBe(false);
     });
+
+    it('classifies the GPU a container uses as integrated from the host list, else by its missing memory', () => {
+      // The host names the GPU behind the render node in use.
+      expect(integratedGpu('Intel', null, node(), host({ gpus: [intelIgpu, radeon] }))).toBe(true);
+      const card = node({ node: 'renderD129', hostNode: 'renderD129', vendor: 'AMD' });
+      expect(integratedGpu('AMD', 16 * GB, card, host({ gpus: [intelIgpu, radeon] }))).toBe(false);
+      // One GPU of the vendor on the host is the one in use, whatever the node is called inside.
+      expect(integratedGpu('Intel', null, null, host({ gpus: [intelIgpu] }))).toBe(true);
+      // Without a host list, an Intel GPU with no memory of its own is the integrated one; a card reports its memory.
+      expect(integratedGpu('Intel', null, null, null)).toBe(true);
+      expect(integratedGpu('Intel', 16 * GB, null, null)).toBeNull();
+      expect(integratedGpu('AMD', null, null, null)).toBeNull();
+      expect(integratedGpu('NVIDIA', null, null, null)).toBe(false);
+      expect(integratedGpu(null, null, null, null)).toBeNull();
+    });
+
+    it('reports an OpenVINO integrated GPU as the GPU in use, not the processor', () => {
+      const igpu = ml(
+        {
+          image: 'openvino',
+          backend: 'OpenVINO',
+          gpus: [{ name: 'Intel(R) Iris(R) Xe Graphics', vendor: 'Intel', memoryTotalBytes: null }],
+          host: host({ gpus: [intelIgpu] }),
+        },
+        { renderNodes: [node()] },
+      );
+      expect(mlCheckFrom(igpu, null)).toMatchObject({
+        vendor: 'Intel',
+        model: 'Intel(R) Iris(R) Xe Graphics',
+        vramGb: null,
+        integrated: true,
+        backend: 'OpenVINO',
+        gpu: { present: true, visible: true, usable: true },
+      });
+      const arc = ml({
+        image: 'openvino',
+        backend: 'OpenVINO',
+        gpus: [{ name: 'Intel(R) Arc(TM) A770 Graphics', vendor: 'Intel', memoryTotalBytes: 16 * GB }],
+      });
+      expect(mlCheckFrom(arc, null)).toMatchObject({ vramGb: 16, integrated: null, backend: 'OpenVINO' });
+      expect(mlCheckFrom(ml(), null).integrated).toBeNull();
+      expect(mlCheckFrom(null, null).integrated).toBeNull();
+    });
   });
 
   describe('workers', () => {
@@ -240,9 +285,23 @@ describe('hardware check (FL-159)', () => {
       const report = {
         gpus: [{ name: 'NVIDIA GeForce RTX 4090', memoryTotalBytes: 24 * GB }],
         models: [
-          { state: 'available', measured: [{ gpu: 'NVIDIA GeForce RTX 4090', framesPerSecond: 3.2 }] },
-          { state: 'available', measured: [{ gpu: 'NVIDIA A100', framesPerSecond: 11 }] },
-          { state: 'weights-missing', measured: [{ gpu: 'NVIDIA GeForce RTX 4090', framesPerSecond: 20 }] },
+          {
+            state: 'available',
+            mode: 'faithful',
+            measured: [{ gpu: 'NVIDIA GeForce RTX 4090', framesPerSecond: 3.2 }],
+          },
+          { state: 'available', mode: 'creative', measured: [{ gpu: 'NVIDIA A100', framesPerSecond: 11 }] },
+          {
+            state: 'weights-missing',
+            mode: 'faithful',
+            measured: [{ gpu: 'NVIDIA GeForce RTX 4090', framesPerSecond: 20 }],
+          },
+          // Smooth motion (RIFE) is the interpolation workload, not restoration.
+          {
+            state: 'available',
+            mode: 'smooth_motion',
+            measured: [{ gpu: 'NVIDIA GeForce RTX 4090', framesPerSecond: 48 }],
+          },
         ],
       };
       expect(restorationWorkerCheckFrom({ id: 'd1', name: 'Restoration' }, report)).toMatchObject({
@@ -252,8 +311,12 @@ describe('hardware check (FL-159)', () => {
         vramGb: 24,
         gpu: { present: true, visible: true, usable: true },
       });
-      // Only a ready model measured on the GPU the worker has now counts.
+      // Only a ready model of the workload's modes, measured on the GPU the worker has now, counts.
       expect(restorationThroughput(report)).toBe(3.2);
+      expect(restorationThroughput(report, WORKER_MODEL_MODES.interpolation)).toBe(48);
+      expect(
+        restorationThroughput({ ...report, models: report.models.slice(0, 3) }, WORKER_MODEL_MODES.interpolation),
+      ).toBeNull();
       expect(restorationWorkerCheckFrom({ id: 'd1', name: 'Restoration' }, { gpus: [], models: [] }).gpu).toEqual({
         present: null,
         visible: null,

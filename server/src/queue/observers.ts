@@ -1,4 +1,5 @@
 import { setTimeout as sleep } from 'node:timers/promises';
+import { tryPromise } from 'src/utils/promise.js';
 
 /** Best-effort observers never own an item outcome. A timed-out promise still consumes its allowance. */
 export function createObserverDelivery({ maxInFlight = 16, budgetMs = 5000, warningIntervalMs = 30_000 } = {}) {
@@ -19,7 +20,7 @@ export function createObserverDelivery({ maxInFlight = 16, budgetMs = 5000, warn
       }
       inFlight++;
       const timer = new AbortController();
-      const delivery = Promise.try(observe)
+      const delivery = tryPromise(observe)
         .then(() => true)
         .catch(() => {
           unavailable();

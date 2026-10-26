@@ -266,7 +266,7 @@
               type="number"
               min="0"
               max="100"
-              step="0.5"
+              step="any"
               value={toPercent(box[field])}
               onchange={(event) => setField(field, event.currentTarget.value)}
             />

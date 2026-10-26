@@ -64,6 +64,28 @@ describe('cloud backup keys in the browser (FL-160)', () => {
     });
   });
 
+  it('retains an independent client root in the managed recovery file', () => {
+    const legacy = createBackupKey();
+    const root = createBackupKey();
+    const file = backupKeyFile({
+      ...legacy,
+      clientRoot: root.key,
+      instanceId: 'f0000000-0000-4000-8000-000000000001',
+      bucket: 'managed-backup',
+      mode: CloudBackupKeyMode.OwnMemory,
+    });
+    expect(JSON.parse(file)).toMatchObject({
+      key: legacy.key,
+      client: {
+        vaultId: 'f0000000-0000-4000-8000-000000000001',
+        current: 1,
+        keys: { 1: root.key },
+      },
+    });
+    expect(root.key).not.toBe(legacy.key);
+    expect(readBackupKeyFile(file, legacy.fingerprint)).toEqual({ key: file });
+  });
+
   it.each(['client', 'recovery', 'both'])('preserves the complete %s authority in an imported key file', (kind) => {
     const key = createBackupKey(fixed);
     const file = JSON.stringify({

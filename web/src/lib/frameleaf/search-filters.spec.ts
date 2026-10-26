@@ -85,6 +85,8 @@ describe('rating', () => {
     expect(ratingControlValue({ eq: -1 })).toBe('-1');
     expect(ratingControlValue({ gte: 3 })).toBe('min3');
     expect(ratingControlValue({ gte: 9 })).toBe(CUSTOM_CONDITION);
+    // "0 stars or more" is no longer a choice; an old link keeps it as a custom condition
+    expect(ratingControlValue({ gte: 0 })).toBe(CUSTOM_CONDITION);
     expect(ratingControlValue({ lte: 3 })).toBe(CUSTOM_CONDITION);
   });
 

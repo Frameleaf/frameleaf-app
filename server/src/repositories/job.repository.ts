@@ -109,6 +109,8 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.SmartAlbumReevaluateAll,
   JobName.SmartAlbumReevaluate,
   JobName.LandmarkMatchAll,
+  // FL-413: every batch saves the run's cursor; a retry carries on from it
+  JobName.IdenticalFilesCheck,
 ]);
 // A dependency that stays down defers every job behind it; say so once per queue and reason, not per job.
 const DEFERRAL_WARNING_INTERVAL_MS = 10 * 60_000;
@@ -128,7 +130,7 @@ export class JobRepository {
     private configRepository: ConfigRepository,
     private eventRepository: EventRepository,
     private logger: LoggingRepository,
-    @InjectKysely() db: Kysely<any>,
+    @InjectKysely() db: Kysely<DB>,
   ) {
     this.logger.setContext(JobRepository.name);
     this.store = new SqlQueueStore(db);
@@ -507,7 +509,7 @@ export class JobRepository {
     }
     const context = queueExecution.getStore();
     context?.signal.throwIfAborted();
-    const admit = (tx: Transaction<any>) => this.store.admitRun(id, kind, selection, admission.intents, tx);
+    const admit = (tx: Transaction<DB>) => this.store.admitRun(id, kind, selection, admission.intents, tx);
     if (context?.buffering) {
       // The run and its parent-dependent intents become visible only with successful publication.
       context.adoptions.push(admit);
@@ -557,11 +559,16 @@ export class JobRepository {
       QueueName.Ocr,
       QueueName.PetRecognition,
     ].includes(queue);
+    const options = this.getNamedJobOptions(item) ?? undefined;
+    const subject = String(data.id ?? data.assetId ?? createHash('sha256').update(JSON.stringify(data)).digest('hex'));
+    // A job with its own identity (one per workflow execution, one per album recipient) is its own run item:
+    // keyed by subject alone, the second one would hit job_run_stage and be dropped.
+    const identity = options?.deduplication?.id ?? options?.jobId;
     return {
       name: item.name,
       data,
       queue,
-      options: this.getNamedJobOptions(item) ?? undefined,
+      options,
       safeToRetry:
         !data.operationId &&
         !(
@@ -575,7 +582,8 @@ export class JobRepository {
       deadlineMs: isMl ? QUEUE_TIMING.mlDeadline : QUEUE_TIMING.opaqueDeadline,
       runId,
       itemKey: runId
-        ? String(data.id ?? data.assetId ?? createHash('sha256').update(JSON.stringify(data)).digest('hex')) +
+        ? subject +
+          (identity && identity !== subject ? `/${identity}` : '') +
           (item.name === JobName.FacialRecognition && data.deferred ? '/deferred' : '')
         : undefined,
       rootItemKey: context?.claim.rootItemKey ?? null,
@@ -733,6 +741,23 @@ export class JobRepository {
   }
 
   /** Persist before admission. A retry keeps its original destination even if routing changes. */
+  /**
+   * FL-456: the destination this job already pinned for `workload`, if any, without pinning one. Outside
+   * a queued job there is none.
+   */
+  async pinnedDestination(workload: string): Promise<string | null> {
+    const context = queueExecution.getStore();
+    if (!context) {
+      return null;
+    }
+    context.signal.throwIfAborted();
+    const {
+      rows: [row],
+    } = await sql<{ destination: string | null }>`select data->'_queueDestinations'->>${workload}::text as destination
+      from job where id = ${context.claim.id}::uuid and token = ${context.claim.token}::uuid`.execute(this.store.db);
+    return row?.destination ?? null;
+  }
+
   async pinDestination(workload: string, destinationId: string): Promise<string> {
     const context = queueExecution.getStore();
     if (!context) {
@@ -754,7 +779,7 @@ export class JobRepository {
   }
 
   /** Database-only producer already holding its domain claim; admission commits with that publication. */
-  async queueInTransaction(tx: Transaction<any>, item: JobItem, runId?: string): Promise<void> {
+  async queueInTransaction(tx: Transaction<DB>, item: JobItem, runId?: string): Promise<void> {
     if (runAdmission.getStore()) throw new Error('Run admission cannot use an independent transaction');
     const context = queueExecution.getStore();
     const committedEffect = item.name === JobName.DuplicateResolutionLifecycle;
@@ -839,7 +864,9 @@ export class JobRepository {
   }
 
   async removeJob(name: JobName, jobID: string): Promise<void> {
-    await sql`update job set state = 'cancelled', data = '{}'::jsonb, "finishedAt" = now()
+    // The removed job gives up its run stage, so the replacement queued in the same run takes over the run item.
+    await sql`update job set state = 'cancelled', data = '{}'::jsonb, "finishedAt" = now(),
+        "runId" = null, "itemKey" = null, "rootItemKey" = null
       where queue = ${this.getQueueName(name)} and "externalId" = ${jobID} and state in ('pending','waiting')`.execute(
       this.store.db,
     );
@@ -858,6 +885,10 @@ export class JobRepository {
     switch (item.name) {
       case JobName.ICloudSync: {
         return { deduplication: { id: `${JobName.ICloudSync}:${item.data.id}`, keepLastIfActive: true } };
+      }
+      case JobName.IdenticalFilesCheck: {
+        // FL-413: one run at a time; a check asked for while one runs is the same run carrying on
+        return { deduplication: { id: JobName.IdenticalFilesCheck, keepLastIfActive: true } };
       }
       case JobName.LibraryScanRun: {
         // FL-78: one waiting wake-up is enough; a scan queued while one drains is picked up after it
@@ -934,6 +965,10 @@ export class JobRepository {
       // FL-362: one start of the backup schedule at a time
       case JobName.BackupSequence: {
         return { deduplication: { id: JobName.BackupSequence } };
+      }
+      // FL-363: one start of the overnight schedule at a time
+      case JobName.OvernightSequence: {
+        return { deduplication: { id: JobName.OvernightSequence } };
       }
       // FL-164: one schedule tick and one verification check at a time
       case JobName.CloudBackupSchedule: {

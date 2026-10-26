@@ -65,6 +65,21 @@ export const applyPreviewQuality = (image: PreviewNumbers, quality: PreviewQuali
   writeCopy(image.preview, PREVIEW_SETS[quality].preview);
 };
 
+/**
+ * FL-521: roughly how much a copy weighs against another: its pixels, its quality number and its format
+ * (WebP is about a quarter smaller than JPEG at the same quality). Only ever used as a ratio.
+ */
+const copyWeight = (copy: ImageCopy) =>
+  copy.size ** 2 * (copy.quality / 80) * (copy.format === ImageFormat.Webp ? 0.75 : 1);
+const setWeight = (numbers: PreviewNumbers) => copyWeight(numbers.preview) + copyWeight(numbers.thumbnail);
+
+/**
+ * FL-521: about how much space previews would take with a choice, from the space they take now with the
+ * saved numbers. "About": the real size depends on the photos.
+ */
+export const previewSpaceFor = (bytes: number, saved: PreviewNumbers, quality: PreviewQuality) =>
+  Math.round((bytes * setWeight(PREVIEW_SETS[quality])) / setWeight(saved));
+
 export type PlaybackQuality = 'good' | 'better' | 'best';
 export const PLAYBACK_QUALITIES: readonly PlaybackQuality[] = ['good', 'better', 'best'];
 
@@ -101,3 +116,31 @@ export const copyRuleOf = (policy: TranscodePolicy): CopyRule | undefined =>
   COPY_RULES.find((rule) => RULE_POLICY[rule] === policy);
 
 export const policyOf = (rule: CopyRule) => RULE_POLICY[rule];
+
+/**
+ * FL-537: about how much a minute of playback copy takes at each quality, in MB: the prototype's
+ * figures (`PLAYBACK`), which hold for a typical phone video.
+ */
+export const TYPICAL_MB_PER_MINUTE: Record<PlaybackQuality, number> = { good: 30, better: 60, best: 250 };
+
+const roundMegabytes = (value: number) => (value >= 100 ? Math.round(value / 10) * 10 : Math.max(1, Math.round(value)));
+
+/**
+ * FL-537: "about N MB a minute" for each quality. Once the copies this server made have been measured
+ * (their space over the length of the videos that have one), the saved quality says what they really
+ * take and the others are scaled from it; until then the typical figures are said.
+ */
+export const megabytesPerMinute = (
+  saved: PlaybackQuality | undefined,
+  measured: { bytes: number | null; minutes: number } | undefined,
+): Record<PlaybackQuality, number> => {
+  const scale =
+    saved && measured?.bytes && measured.minutes >= 1
+      ? measured.bytes / 1_000_000 / measured.minutes / TYPICAL_MB_PER_MINUTE[saved]
+      : 1;
+  return {
+    good: roundMegabytes(TYPICAL_MB_PER_MINUTE.good * scale),
+    better: roundMegabytes(TYPICAL_MB_PER_MINUTE.better * scale),
+    best: roundMegabytes(TYPICAL_MB_PER_MINUTE.best * scale),
+  };
+};

@@ -129,8 +129,6 @@ export const PAUSABLE_MEDIA_OPERATION_KINDS: readonly MediaOperationKind[] = [
   MediaOperationKind.ICloudSync,
   // A Google Photos import records every staged file and imported item as it goes (FL-65).
   MediaOperationKind.TakeoutImport,
-  // FL-73: a reviewed deduplication plan records every copy as it finishes and resumes from its cursor.
-  MediaOperationKind.PhysicalDeduplication,
   // FL-78: an external library scan records its phase and item cursor after every batch.
   MediaOperationKind.LibraryScan,
   // FL-74: every preservation job records each item as it finishes and carries on from the rest.

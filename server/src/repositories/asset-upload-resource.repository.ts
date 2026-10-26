@@ -242,6 +242,23 @@ export class AssetUploadResourceRepository {
         .executeTakeFirstOrThrow();
     });
   }
+  /**
+   * The upload restored an existing photo's lost original: the file now belongs to that photo, so
+   * nothing is created, charged or ingested. A photo the uploader may not see reads as a duplicate.
+   */
+  publishRestored(tx: Kysely<DB>, resource: AssetUploadResource, assetId: string, visible: boolean) {
+    return tx
+      .updateTable('asset_upload_resource')
+      .set({
+        resultAssetId: assetId,
+        resultStatus: visible ? AssetMediaStatus.CREATED : AssetMediaStatus.DUPLICATE,
+        state: 'published',
+        ingested: true,
+      })
+      .where('id', '=', resource.id)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
   /** Asset, initial privacy/enrichment, quota, checksum evidence and upload result commit together. */
   async publish(
     tx: Transaction<DB>,

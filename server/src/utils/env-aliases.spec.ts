@@ -207,6 +207,12 @@ describe('env aliases (FL-294)', () => {
       expect(readAliasedEnv('FRAMELEAF_ICLOUD_CA_FILE', {})).toBeUndefined();
     });
 
+    it('returns undefined when both names are empty, so a caller default applies', () => {
+      const env = { FRAMELEAF_MEDIA_VALIDATION_TIMEOUT_MS: '', IMMICH_MEDIA_VALIDATION_TIMEOUT_MS: '' };
+      expect(readAliasedEnv('FRAMELEAF_MEDIA_VALIDATION_TIMEOUT_MS', env)).toBeUndefined();
+      expect(readAliasedEnv('FRAMELEAF_ICLOUD_CA_FILE', { FRAMELEAF_ICLOUD_CA_FILE: '' })).toBeUndefined();
+    });
+
     it('reads process.env by default', () => {
       vi.stubEnv('FRAMELEAF_PROCESS_INVALID_IMAGES', '');
       vi.stubEnv('IMMICH_PROCESS_INVALID_IMAGES', 'true');

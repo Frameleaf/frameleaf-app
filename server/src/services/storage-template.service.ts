@@ -139,11 +139,12 @@ export class StorageTemplateService extends BaseService {
   async getMigrationStatus(): Promise<StorageMigrationStatusResponseDto> {
     const { storageTemplate } = await this.getConfig({ withCache: false });
     const name = QueueName.StorageTemplateMigration;
-    const [isActive, isPaused, hasUnfinishedWork, statistics] = await Promise.all([
+    const [isActive, isPaused, hasUnfinishedWork, statistics, candidates] = await Promise.all([
       this.jobRepository.isActive(name),
       this.jobRepository.isPaused(name),
       this.jobRepository.hasUnfinishedWork(name),
       this.jobRepository.getJobCounts(name),
+      this.assetRepository.countUploadedOriginals(),
     ]);
     return {
       enabled: storageTemplate.enabled,
@@ -152,6 +153,7 @@ export class StorageTemplateService extends BaseService {
       isPaused,
       hasUnfinishedWork,
       statistics,
+      candidates,
     };
   }
 
@@ -374,6 +376,9 @@ export class StorageTemplateService extends BaseService {
           if (moved) {
             await this.physicalFileRepository.updateOriginalPhysicalPathForAsset(id, newPath);
           }
+        } else if (asset.libraryPath !== newPath) {
+          // FL-417: the shared file stays where it is; the photo shows its own template path
+          await this.assetRepository.update({ id, libraryPath: newPath });
         }
 
         const sidecarPath = getAssetFile(asset.files, AssetFileType.Sidecar, { isEdited: false })?.path;

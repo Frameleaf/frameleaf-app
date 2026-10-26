@@ -14,7 +14,8 @@ const versionCheckUrl = '/user-settings?area=server&section=version-check';
 
 // i18n/en.json
 const labels = {
-  trashDays: 'Number of days', // admin.trash_number_of_days
+  trashDays: 'Keep deleted photos for, in days', // frameleaf_deleted_keep_photos_days (FL-365)
+  trashKeep: 'Keep deleted photos for', // frameleaf_deleted_keep_photos
   bar: 'Unsaved settings', // frameleaf_settings_draft_bar_label
   discard: 'Discard', // frameleaf_settings_draft_discard
   review: 'Review changes', // frameleaf_settings_draft_review
@@ -40,6 +41,22 @@ const labels = {
   daily: 'Every day', // frameleaf_server_updates_look_daily
   weekly: 'Every week', // frameleaf_server_updates_look_weekly
   updates: 'Updates', // frameleaf_cc_section_versions
+};
+
+/**
+ * FL-365: Deleted items offers lengths in a list and a box for another length; the box shows for a
+ * length the list does not have. Choosing "Another length…" shows it for any length.
+ */
+const trashDays = async (page: Page) => {
+  const field = page.getByLabel(labels.trashDays, { exact: true });
+  if (!(await field.isVisible())) {
+    await page.getByRole('combobox', { name: labels.trashKeep, exact: true }).selectOption('custom');
+  }
+  return field;
+};
+const fillTrashDays = async (page: Page, value: string) => {
+  const field = await trashDays(page);
+  await field.fill(value);
 };
 
 const frequencyLabel = { [VersionCheckFrequency.Daily]: labels.daily, [VersionCheckFrequency.Weekly]: labels.weekly };
@@ -97,7 +114,7 @@ test.describe('Command Center settings', () => {
     const days = before.trash.days + 15;
 
     await page.goto(trashUrl);
-    const field = page.getByLabel(labels.trashDays);
+    const field = await trashDays(page);
     await expect(field).toHaveValue(String(before.trash.days));
     await field.fill(String(days));
 
@@ -114,7 +131,7 @@ test.describe('Command Center settings', () => {
 
     await expect.poll(() => savedTrashDays(admin)).toBe(days);
     await page.reload();
-    await expect(page.getByLabel(labels.trashDays)).toHaveValue(String(days));
+    await expect(await trashDays(page)).toHaveValue(String(days));
   });
 
   // FL-71: "Reset this page" puts the page's defaults into the draft for review; saving writes the defaults.
@@ -124,7 +141,7 @@ test.describe('Command Center settings', () => {
     await setTrashDays(admin, savedDays);
 
     await page.goto(trashUrl);
-    const field = page.getByLabel(labels.trashDays);
+    const field = await trashDays(page);
     await expect(field).toHaveValue(String(savedDays));
     await field.fill(String(savedDays + 5));
 
@@ -143,7 +160,7 @@ test.describe('Command Center settings', () => {
     const before = await readConfig(admin);
 
     await page.goto(trashUrl);
-    const field = page.getByLabel(labels.trashDays);
+    const field = await trashDays(page);
     await field.fill(String(before.trash.days + 7));
 
     const bar = page.getByRole('region', { name: labels.bar });
@@ -344,11 +361,11 @@ test.describe('Command Center settings', () => {
 
     await page.goto(trashUrl);
     await other.goto(trashUrl);
-    await expect(other.getByLabel(labels.trashDays)).toHaveValue(String(before.trash.days));
-    await other.getByLabel(labels.trashDays).fill(String(before.trash.days + 3));
+    await expect(await trashDays(other)).toHaveValue(String(before.trash.days));
+    await fillTrashDays(other, String(before.trash.days + 3));
     await expect(other.getByRole('region', { name: labels.bar })).toBeVisible();
 
-    await page.getByLabel(labels.trashDays).fill(String(before.trash.days + 9));
+    await fillTrashDays(page, String(before.trash.days + 9));
     await reviewAndSave(page);
 
     const banner = other.getByRole('alert').filter({ hasText: labels.conflict });
@@ -375,7 +392,7 @@ test.describe('Command Center settings', () => {
         : VersionCheckFrequency.Daily;
 
     await page.goto(trashUrl);
-    await page.getByLabel(labels.trashDays).fill(String(draftDays));
+    await fillTrashDays(page, String(draftDays));
     const navigation = page.getByRole('navigation', { name: 'Settings navigation' });
     // Server & updates opens on its own landing page (FL-368); its pages are listed there.
     await navigation.getByRole('button', { name: 'Server & updates' }).click();
@@ -396,8 +413,8 @@ test.describe('Command Center settings', () => {
       await utils.setAuthCookies(otherContext, secondAdmin.accessToken);
       const otherPage = await otherContext.newPage();
       await otherPage.goto(trashUrl);
-      await expect(otherPage.getByLabel(labels.trashDays)).toHaveValue(String(savedDays));
-      await otherPage.getByLabel(labels.trashDays).fill(String(otherDays));
+      await expect(await trashDays(otherPage)).toHaveValue(String(savedDays));
+      await fillTrashDays(otherPage, String(otherDays));
       await reviewAndSave(otherPage);
       await expect.poll(() => savedTrashDays(admin)).toBe(otherDays);
     } finally {
@@ -416,8 +433,8 @@ test.describe('Command Center settings', () => {
     await expect(bar.getByRole('button', { name: labels.review })).toBeDisabled();
 
     await navigation.getByRole('button', { name: 'Storage & originals' }).click();
-    await navigation.getByRole('button', { name: 'Trash & retention' }).click();
-    const days = page.getByLabel(labels.trashDays);
+    await page.getByRole('link', { name: /Deleted items/ }).click();
+    const days = await trashDays(page);
     await expect(days).toHaveValue(String(draftDays));
     await conflict.getByRole('button', { name: 'Keep my changes' }).click();
     await expect(conflict).toBeHidden();

@@ -16,6 +16,7 @@
   import './gpu-models.css';
   import { formatDuration, formatUsd } from '$lib/frameleaf/cloud-ml';
   import {
+    isMatchedWorkload,
     ladderStates,
     modelLicenceNoteKey,
     modelNoteKey,
@@ -72,7 +73,15 @@
     entry.reasons.map((reason) => $t(reason.key as Translations, { values: reason.values })).join(' ');
 
   const stops = $derived(
-    ladderStates(workload, { gpu, route, benchmark, cpuProfile, cloudMatched }).map((entry) =>
+    ladderStates(workload, {
+      gpu,
+      route,
+      benchmark,
+      cpuProfile,
+      cloudMatched,
+      // a search or faces slider shows the cloud stop of the model this server is set to, no other
+      model: isMatchedWorkload(workload) ? value : undefined,
+    }).map((entry) =>
       localDisabledReason && entry.runsOn === 'local' && !entry.disabled
         ? { ...entry, disabled: true, reasonText: localDisabledReason }
         : { ...entry, reasonText: reasonText(entry) },
@@ -196,9 +205,11 @@
       {#if bandsPresent.has('gpu')}
         <li class="is-gpu">
           <Icon icon={mdiExpansionCard} size="14" aria-hidden={true} />
-          {gpu
-            ? $t('frameleaf_model_key_gpu_named', { values: { gpu: gpu.name, memory: gpu.vramGb } })
-            : $t('frameleaf_model_key_gpu')}
+          {gpu?.integrated
+            ? $t('frameleaf_model_key_gpu_integrated', { values: { gpu: gpu.name } })
+            : gpu
+              ? $t('frameleaf_model_key_gpu_named', { values: { gpu: gpu.name, memory: gpu.vramGb } })
+              : $t('frameleaf_model_key_gpu')}
         </li>
       {/if}
       {#if bandsPresent.has('cloud')}

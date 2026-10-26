@@ -473,9 +473,21 @@ export class AssetUploadResourceService {
     if (row.state === 'verified' && row.metadata.publication !== 'live-photo') {
       await check();
       const prepared = await this.media.prepareUploadAsset(auth, this.metadata(row), this.file(row));
+      // Media health: the bytes of a photo whose original is gone go back under that photo (an
+      // iCloud edit render is bound to its own asset and is never a repair).
+      const source = row.metadata.sourceIdentity;
+      const restored =
+        source?.kind === 'icloud' && source.role === 'edit-render'
+          ? undefined
+          : await this.media.restoreLostOriginal(auth, this.metadata(row), this.file(row));
       row = await this.uploads.locked(id, auth.user.id, async (tx, current) => {
         await check(tx);
-        return current.state === 'published' ? current : this.uploads.publish(tx, current, prepared);
+        if (current.state === 'published') {
+          return current;
+        }
+        return restored
+          ? this.uploads.publishRestored(tx, current, restored.id, restored.visible)
+          : this.uploads.publish(tx, current, prepared);
       });
     }
     if (

@@ -348,6 +348,8 @@ export class ServerService extends BaseService {
     const isInitialized = !(await this.isSetupAvailable());
     // FL-176: the server counts as onboarded once Frameleaf first-run setup is complete.
     const setup = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafSetup);
+    // FL-402: the worker flags this while it re-imports the place data (MapRepository.init)
+    const geocoding = await this.systemMetadataRepository.get(SystemMetadataKey.ReverseGeocodingState);
     // FL-161: how this request arrived and what that asks of it, for the web app and the apps
     const deps = { configRepository: this.configRepository, systemMetadataRepository: this.systemMetadataRepository };
     const { link, linked } = await readCloudLink(deps);
@@ -369,6 +371,7 @@ export class ServerService extends BaseService {
       mapDarkStyleUrl: config.map.darkStyle,
       mapLightStyleUrl: config.map.lightStyle,
       maintenanceMode: false,
+      placesRestoring: geocoding?.restoring === true,
       defaultImageDescriptionRawPromptTemplate: DEFAULT_RAW_PROMPT_TEMPLATE,
       minFaces: config.machineLearning.facialRecognition.minFaces,
       frameleaf: {

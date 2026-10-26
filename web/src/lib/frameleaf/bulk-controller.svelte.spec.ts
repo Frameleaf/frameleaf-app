@@ -109,6 +109,16 @@ describe('the bulk controller', () => {
 
   it('runs a small selection here, with undo, and never queues a job', async () => {
     const ids = Array.from({ length: DURABLE_BULK_THRESHOLD }, (_, index) => `id-${index}`);
+    // Undo reverses only items known to have changed (FL-529).
+    const stateById = Object.fromEntries(ids.map((id) => [id, { isFavorite: false }]));
+    controller = new BulkController({
+      dispatch,
+      gateway: api,
+      queued,
+      tracker,
+      archive: archive as never,
+      context: () => ({ stateById }),
+    });
 
     await controller.run('favorite', ids);
 

@@ -238,7 +238,8 @@ class ImageDescriptionOptions(_OptionsBase):
 
 class SemanticMaskOptions(_OptionsBase):
     target: Literal["subject", "sky"] = "subject"
-    device: Literal["cpu", "cuda"] = "cpu"
+    # None leaves the choice to MACHINE_LEARNING_SEMANTIC_MASK_DEVICE.
+    device: Literal["cpu", "cuda"] | None = None
 
 
 class InpaintOptions(_OptionsBase):

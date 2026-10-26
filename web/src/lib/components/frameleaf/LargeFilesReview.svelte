@@ -23,7 +23,7 @@
     largeFileStatus,
     type LargeFileShow,
   } from '$lib/frameleaf/large-files';
-  import { formatBytes } from '$lib/frameleaf/physical-dedup';
+  import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { isStaleReview } from '$lib/frameleaf/trash';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';

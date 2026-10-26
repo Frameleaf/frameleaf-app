@@ -1,5 +1,6 @@
-import { Kysely, Transaction, sql } from 'kysely';
+import { Kysely, type QueryExecutorProvider, Transaction, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
+import type { DB } from 'src/schema/index.js';
 import { JobName, QueueName } from 'src/enum.js';
 import {
   publishLibraryFollowups,
@@ -41,7 +42,7 @@ import {
   QueueState,
 } from 'src/queue/types.js';
 
-type Executor = Kysely<any> | Transaction<any>;
+type Executor = Kysely<DB>;
 
 // An unclaimed row no longer carries its token. Retained attempts, not its state, prove it stopped.
 const stoppedJobAttempts = sql`((j.attempt = 0 or exists (
@@ -75,7 +76,7 @@ export const settleRunQuery = (runIds: string[]) => sql`update job_run r set "fi
  * Bind serialized JSON as text before casting: postgres.js otherwise JSON-encodes it a second time.
  */
 export class SqlQueueStore {
-  constructor(readonly db: Kysely<any>) {}
+  constructor(readonly db: Kysely<DB>) {}
 
   async initialize(queues: string[], workerId?: string) {
     for (const name of queues) {
@@ -291,7 +292,7 @@ export class SqlQueueStore {
     kind: string,
     selection: Record<string, unknown>,
     intents: QueueIntent[],
-    tx: Transaction<any>,
+    tx: Transaction<DB>,
   ) {
     // Lock every prepared destination before insertBatch can take any job/item locks.
     for (const queue of [...new Set(intents.map((intent) => intent.queue))].sort()) {
@@ -411,7 +412,7 @@ export class SqlQueueStore {
   async complete(
     claim: QueueClaim,
     followups: QueueIntent[],
-    adopt?: (tx: Transaction<any>) => Promise<void>,
+    adopt?: (tx: Transaction<DB>) => Promise<void>,
     publication?: QueuePublication,
   ) {
     return withSelectionSharing(
@@ -528,7 +529,7 @@ export class SqlQueueStore {
   async fail(
     claim: Pick<QueueClaim, 'id' | 'queue'> & { token: string | null },
     reason: string,
-    diagnostic?: (tx: Transaction<any>) => Promise<void>,
+    diagnostic?: (tx: Transaction<DB>) => Promise<void>,
     options: {
       expiredRecovery?: boolean;
       stopRequestedOnly?: boolean;
@@ -950,7 +951,7 @@ export class SqlQueueStore {
 /** Restore runs with all workers stopped. Only audited repeatable work retains its existing retry budget.
  * Operation-owned jobs are never resumed here; the media-operation dispatcher owns their retry.
  */
-export async function resetQueueAfterRestore(db: Executor) {
+export async function resetQueueAfterRestore(db: QueryExecutorProvider) {
   // Older dumps serialized this audited local job as unsafe. Its current handler publishes a
   // unique verified dump per attempt; retain the same one-retry budget and operation exclusions.
   const backup = sql`(name = ${JobName.DatabaseBackup} and queue = ${QueueName.BackupDatabase})`;

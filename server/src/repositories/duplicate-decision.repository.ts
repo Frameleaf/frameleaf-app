@@ -456,6 +456,22 @@ export class DuplicateDecisionRepository {
   }
 
   /**
+   * FL-416: which of these decision jobs Frameleaf started itself, merging identical photos in one library
+   * (the identical-files run's `scope.source`), so the review can list them under "Merged for you".
+   */
+  async getAutomaticOperationIds(operationIds: string[]): Promise<Set<string>> {
+    if (operationIds.length === 0) {
+      return new Set();
+    }
+    const { rows } = await sql<{ id: string }>`
+      SELECT id FROM public.media_operation
+      WHERE id = ANY(${operationIds}::uuid[]) AND snapshot -> 'scope' ->> 'source' = 'identical-files'`.execute(
+      this.db,
+    );
+    return new Set(rows.map(({ id }) => id));
+  }
+
+  /**
    * The owner's duplicate decision jobs that have not finished, with the groups each one holds, so the
    * review can show which groups are still being worked on after a reload.
    */

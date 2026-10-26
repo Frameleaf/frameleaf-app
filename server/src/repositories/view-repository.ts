@@ -4,6 +4,7 @@ import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { DB } from 'src/schema/index.js';
 import { asUuid, withExif, withHiddenContentFilter } from 'src/utils/database.js';
+import { displayPathSql } from 'src/utils/library-path.js';
 import { isLocked, isTimelineVisible } from 'src/utils/locked.js';
 import { escapeLikeTerm } from 'src/utils/trash-review.js';
 
@@ -46,7 +47,7 @@ export class ViewRepository {
   async getUniqueOriginalPaths(userId: string, options?: HiddenContentQueryOptions) {
     const results = await this.db
       .selectFrom('asset')
-      .select((eb) => eb.fn<string>('substring', ['asset.originalPath', eb.val(DIRECTORY_PATTERN)]).as('directoryPath'))
+      .select((eb) => eb.fn<string>('substring', [displayPathSql(), eb.val(DIRECTORY_PATTERN)]).as('directoryPath'))
       .distinct()
       .where('ownerId', '=', asUuid(userId))
       .where(isTimelineVisible('asset', options?.revealLockedOwnerId))
@@ -78,13 +79,10 @@ export class ViewRepository {
         .where('fileCreatedAt', 'is not', null)
         .where('fileModifiedAt', 'is not', null)
         .where('localDateTime', 'is not', null)
-        .where('originalPath', 'like', `%${normalizedPath}/%`)
-        .where('originalPath', 'not like', `%${normalizedPath}/%/%`)
+        .where(displayPathSql(), 'like', `%${normalizedPath}/%`)
+        .where(displayPathSql(), 'not like', `%${normalizedPath}/%/%`)
         .$call((qb) => withHiddenContentFilter(qb, options))
-        .orderBy(
-          (eb) => eb.fn('regexp_replace', ['asset.originalPath', eb.val('.*/(.+)'), eb.val(String.raw`\1`)]),
-          'asc',
-        )
+        .orderBy((eb) => eb.fn('regexp_replace', [displayPathSql(), eb.val('.*/(.+)'), eb.val(String.raw`\1`)]), 'asc')
         .execute()
     );
   }
@@ -101,7 +99,7 @@ export class ViewRepository {
     // the pattern is a literal, not a bound parameter: Postgres works the folder out once per file only
     // when the partitioned expression is the selected one exactly, and two parameters with the same
     // value are two different expressions to it
-    const directoryPath = sql<string>`substring("asset"."originalPath", ${sql.lit(DIRECTORY_PATTERN)})`;
+    const directoryPath = sql<string>`substring(${displayPathSql()}, ${sql.lit(DIRECTORY_PATTERN)})`;
     const files = this.folderAssets(userId, options)
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
       .select([

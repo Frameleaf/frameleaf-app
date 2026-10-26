@@ -337,17 +337,18 @@
       ? { primaries: Primaries.Bt2020, maxNits, minNits }
       : null,
   );
-  const selectedRange = $derived(
-    rangeMode === 'frames' &&
-      typeof inPoint === 'number' &&
-      typeof outPoint === 'number' &&
-      Number.isSafeInteger(inPoint) &&
-      Number.isSafeInteger(outPoint) &&
-      inPoint >= 0 &&
-      outPoint > inPoint
-      ? { inPoint, outPoint: photo ? inPoint + 1 : outPoint }
-      : null,
-  );
+  // A still is the one frame at Start; its End field is hidden, so only video reads outPoint.
+  const selectedRange = $derived.by(() => {
+    if (rangeMode !== 'frames' || typeof inPoint !== 'number' || !Number.isSafeInteger(inPoint) || inPoint < 0) {
+      return null;
+    }
+    if (photo) {
+      return { inPoint, outPoint: inPoint + 1 };
+    }
+    return typeof outPoint === 'number' && Number.isSafeInteger(outPoint) && outPoint > inPoint
+      ? { inPoint, outPoint }
+      : null;
+  });
   const canExport = $derived(
     !busy &&
       verdict.supported &&

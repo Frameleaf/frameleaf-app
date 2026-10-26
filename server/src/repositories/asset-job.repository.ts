@@ -606,6 +606,7 @@ export class AssetJobRepository {
         'asset.type',
         'asset.checksum',
         'asset.originalPath',
+        'asset.libraryPath',
         'asset.physicalOriginalFileId',
         'asset.isExternal',
         'asset.visibility',
@@ -810,6 +811,83 @@ export class AssetJobRepository {
 
   selectionForNsfwDetectionJob(force?: boolean) {
     return this.selectionForImageEnrichmentTask(force, 'nsfwDetection');
+  }
+
+  /**
+   * FL-521: how far each reading feature has got, as "N of M read": the photos and videos it reads (with
+   * a preview, not deleted or hidden, Locked included as background work is) and how many of them it has
+   * finished. Text in photos and Locked detection read photos only.
+   */
+  async countFeatureProgress(): Promise<Record<'search' | 'faces' | 'text' | 'captions' | 'locked', [number, number]>> {
+    const enrichment = (task: string) => sql<boolean>`EXISTS (
+      SELECT 1 FROM public.asset_metadata m
+      WHERE m."assetId" = a.id AND m.key = ${AssetMetadataKey.MlEnrichment} AND m.value -> ${task} ->> 'status' = 'success'
+    )`;
+    const { rows } = await sql<Record<string, number>>`
+      SELECT
+        count(*)::int AS "all",
+        count(*) FILTER (WHERE a.type = ${AssetType.Image})::int AS "photos",
+        count(*) FILTER (WHERE EXISTS (SELECT 1 FROM public.smart_search s WHERE s."assetId" = a.id))::int AS "search",
+        count(*) FILTER (WHERE j."facesRecognizedAt" IS NOT NULL)::int AS "faces",
+        count(*) FILTER (WHERE a.type = ${AssetType.Image} AND j."ocrAt" IS NOT NULL)::int AS "text",
+        count(*) FILTER (WHERE ${enrichment('description')})::int AS "captions",
+        count(*) FILTER (WHERE a.type = ${AssetType.Image} AND ${enrichment('nsfwDetection')})::int AS "locked"
+      FROM public.asset a
+      JOIN public.asset_job_status j ON j."assetId" = a.id
+      WHERE a."deletedAt" IS NULL
+        AND a.visibility IN (${AssetVisibility.Archive}, ${AssetVisibility.Timeline})
+        AND a.type IN (${AssetType.Image}, ${AssetType.Video})
+        AND EXISTS (SELECT 1 FROM public.asset_file f WHERE f."assetId" = a.id AND f.type = ${AssetFileType.Preview})`.execute(
+      this.db,
+    );
+    const row = rows[0];
+    return {
+      search: [row.search, row.all],
+      faces: [row.faces, row.all],
+      text: [row.text, row.photos],
+      captions: [row.captions, row.all],
+      locked: [row.locked, row.photos],
+    };
+  }
+
+  /**
+   * FL-521: the photos and videos behind Editing & playback's status: photos and how many have no
+   * preview yet, videos and how many have a playback copy. FL-537: and how long those videos are, for
+   * "about N MB a minute".
+   */
+  async countMediaCopies(): Promise<{
+    photos: number;
+    withoutPreview: number;
+    videos: number;
+    withCopy: number;
+    videoMs: number;
+    copyMs: number;
+  }> {
+    const { rows } = await sql<{
+      photos: number;
+      withoutPreview: number;
+      videos: number;
+      withCopy: number;
+      videoMs: number;
+      copyMs: number;
+    }>`
+      SELECT
+        count(*) FILTER (WHERE a.type = ${AssetType.Image})::int AS photos,
+        count(*) FILTER (WHERE NOT EXISTS (
+          SELECT 1 FROM public.asset_file f WHERE f."assetId" = a.id AND f.type = ${AssetFileType.Preview}
+        ))::int AS "withoutPreview",
+        count(*) FILTER (WHERE a.type = ${AssetType.Video})::int AS videos,
+        count(*) FILTER (WHERE a.type = ${AssetType.Video} AND EXISTS (
+          SELECT 1 FROM public.asset_file f WHERE f."assetId" = a.id AND f.type = ${AssetFileType.EncodedVideo}
+        ))::int AS "withCopy",
+        coalesce(sum(a.duration) FILTER (WHERE a.type = ${AssetType.Video}), 0)::float8 AS "videoMs",
+        coalesce(sum(a.duration) FILTER (WHERE a.type = ${AssetType.Video} AND EXISTS (
+          SELECT 1 FROM public.asset_file f WHERE f."assetId" = a.id AND f.type = ${AssetFileType.EncodedVideo}
+        )), 0)::float8 AS "copyMs"
+      FROM public.asset a
+      WHERE a."deletedAt" IS NULL AND a.visibility != ${AssetVisibility.Hidden}
+        AND a.type IN (${AssetType.Image}, ${AssetType.Video})`.execute(this.db);
+    return rows[0];
   }
 
   @GenerateSql({ params: [DummyValue.DATE], stream: true })

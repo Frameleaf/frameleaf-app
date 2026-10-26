@@ -166,6 +166,11 @@ export type BulkActionContext = {
   spaceViewerMatching?: boolean;
   /** The browser's share sheet takes files, so "Send a copy…" can be offered (`canSendCopies`). */
   canSendCopy?: boolean;
+  /**
+   * False when the server has trash turned off. A delete then cannot be undone, so the bar offers the
+   * confirmed permanent delete in its place, as the viewer's delete does (FL-529).
+   */
+  trashEnabled?: boolean;
 };
 
 /** The only actions a shared space's "select everything matching" offers a viewer (FL-48). */
@@ -227,6 +232,7 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
   const readOnly = !!context.readOnly;
   /** The ordinary library destinations: neither trash nor the Locked folder. */
   const live = !trash && !locked && !readOnly;
+  const noTrash = context.trashEnabled === false;
   const snapshot = !!context.snapshot;
   /** A shared-space viewer's matching set: only download and add-to-album are ever available. */
   const spaceViewerMatching = snapshot && !!context.spaceViewerMatching;
@@ -301,7 +307,7 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       danger: true,
       // Trash is reversible: it offers undo rather than a confirmation.
       undoable: true,
-      available: live && has,
+      available: live && has && !noTrash,
     },
     {
       id: 'restore',
@@ -317,8 +323,9 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       group: 'primary',
       danger: true,
       confirm: true,
-      // The Locked folder has no trash step of its own: a delete there is the permanent one.
-      available: !readOnly && (trash || locked) && has,
+      // The Locked folder has no trash step of its own: a delete there is the permanent one. Neither
+      // does a server with trash turned off.
+      available: !readOnly && (trash || locked || noTrash) && has,
     },
     {
       id: 'stack',
@@ -532,9 +539,16 @@ export const primaryBulkActions = (actions: BulkAction[], trash: boolean, locked
   const byId = bulkActionById(actions);
   const order = trash ? TRASH_PRIMARY_BULK_ACTIONS : locked ? LOCKED_PRIMARY_BULK_ACTIONS : PRIMARY_BULK_ACTIONS;
   return order
-    .map((id) =>
-      id === 'favorite' && !byId.favorite?.available && byId.unfavorite?.available ? byId.unfavorite : byId[id],
-    )
+    .map((id) => {
+      if (id === 'favorite' && !byId.favorite?.available && byId.unfavorite?.available) {
+        return byId.unfavorite;
+      }
+      // With trash off the permanent delete takes Delete's slot.
+      if (id === 'delete' && !byId.delete?.available) {
+        return byId['delete-permanently'];
+      }
+      return byId[id];
+    })
     .filter((action): action is BulkAction => !!action?.available);
 };
 

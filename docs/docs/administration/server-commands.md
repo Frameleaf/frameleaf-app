@@ -27,6 +27,29 @@ From your Compose directory, run `docker compose exec frameleaf-server frameleaf
 
 ## Examples
 
+### Export a managed backup for offline recovery
+
+Frameleaf 1.1.12 and later can export a managed backup from its linked source server. Use the complete current recovery key file on [private storage](private-backup-storage.md). The command obtains read-only access and renews it during the export:
+
+```bash
+frameleaf-admin cloud-backup restore --managed \
+  --key-file /private/current-recovery-key.json \
+  --export-directory /private/backup-export
+```
+
+The destination must be a new directory with an existing parent. The export contains the complete selected snapshot, its encrypted objects and a key file with trusted snapshot history. Add `--manifest <key>` to select a specific trusted snapshot. Keep the complete export privately on another device.
+
+On a replacement server, restore from that copy without storage credentials or a working Cloud account:
+
+```bash
+frameleaf-admin cloud-backup restore \
+  --offline-directory /private/backup-export \
+  --key-file /private/backup-export/key-file.json \
+  --scope library --restore-database
+```
+
+Stop the replacement server's API and job writers before restoring its database. This replaces that database and restores the snapshot's files; use a matching server/database version. `--managed` is an export option on the linked source server; use `--offline-directory` on the replacement server.
+
 Reset Admin Password
 
 ```

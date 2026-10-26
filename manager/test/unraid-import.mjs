@@ -387,13 +387,18 @@ EOF
       nas(`docker exec $(docker ps -qf label=com.docker.compose.service=database -f name=frameleaf-) sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -c "SELECT value FROM system_metadata WHERE key='"'"'system-config'"'"'"'`),
     );
     assert.equal(stored.forkExperiments, undefined);
-    // Manager fences Immich's application containers; its database and Redis are left as they were.
+    // Manager fences Immich's application containers, and after the verified import (FL-476) also stops its
+    // database and Redis with no restart policy and takes them out of autostart.
     const state = (name) => nas(`docker inspect -f '{{.State.Running}} {{.HostConfig.RestartPolicy.Name}}' ${name}`).trim();
     report.immichAfter = Object.fromEntries(['immich_server', 'immich_postgres', 'immich_redis'].map((n) => [n, state(n)]));
-    assert.equal(report.immichAfter.immich_server, 'false no');
+    assert.deepEqual(report.immichAfter, {
+      immich_server: 'false no',
+      immich_postgres: 'false no',
+      immich_redis: 'false no',
+    });
     const lines = nas(`cat ${autostart}`).split('\n').map((l) => l.split(/\s+/)[0]).filter(Boolean);
     report.autostartAfter = lines;
-    assert.deepEqual(lines, ['immich_redis', 'immich_postgres', 'filebrowser', 'frameleaf-manager']);
+    assert.deepEqual(lines, ['filebrowser', 'frameleaf-manager']);
     assert.equal(nas(`docker inspect -f '{{.State.Running}}' filebrowser`).trim(), 'true');
   });
 }

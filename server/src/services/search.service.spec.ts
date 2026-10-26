@@ -1069,7 +1069,7 @@ describe(SearchService.name, () => {
         includeNsfw: false,
         tagIds: ['tag-locked'],
         personIds: ['person-locked'],
-        petIds: [],
+        petIds: ['pet-locked'],
         scope: 'owned' as const,
       };
       const auth = { ...authStub.user1, hiddenContent };
@@ -1100,6 +1100,7 @@ describe(SearchService.name, () => {
         limit: 10,
         suppressedPersonIds: ['person-locked'],
         suppressedTagIds: ['tag-locked'],
+        suppressedPetIds: ['pet-locked'],
         covers: false,
       });
     });

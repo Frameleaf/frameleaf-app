@@ -117,6 +117,15 @@
         break;
       }
 
+      // The Immich import's report of originals that came across without a file opens Missing media.
+      case NotificationType.SystemMessage: {
+        const data = typeof notification.data === 'string' ? JSON.parse(notification.data) : notification.data;
+        if (data?.kind === 'immich-import-lost-originals') {
+          await goto(Route.missingMediaUtility());
+        }
+        break;
+      }
+
       default: {
         break;
       }

@@ -87,39 +87,102 @@ export const chapterIndex = (chapterId: SetupChapterId) =>
 export type ModelTier = 'light' | 'balanced' | 'best';
 export type ProcessingChoice = 'local' | 'cloud' | 'later';
 
-/** The CLIP model each tier uses; a model outside the list reads as the recommended tier. */
+/**
+ * The search (CLIP) and face models each tier uses; a model outside the list reads as the default
+ * tier. Which tier is recommended follows the hardware (`recommendedTier`), not the list.
+ */
 export const modelTiers: readonly {
   id: ModelTier;
   label: Translations;
   summary: Translations;
   model: string;
+  face: string;
   speed: number;
-  recommended?: boolean;
 }[] = [
   {
     id: 'light',
     label: 'frameleaf_setup_tier_light',
     summary: 'frameleaf_setup_tier_light_summary',
     model: 'ViT-B-32__openai',
+    face: 'buffalo_s',
     speed: 1.6,
   },
   {
     id: 'balanced',
     label: 'frameleaf_setup_tier_balanced',
     summary: 'frameleaf_setup_tier_balanced_summary',
-    // The server's default CLIP model (config.dto), which the image stages: choosing it downloads nothing.
+    // The server's default models (config.dto), which the image stages: choosing it downloads nothing.
     model: 'ViT-B-16-SigLIP-384__webli',
+    face: 'buffalo_l',
     speed: 1,
-    recommended: true,
   },
   {
     id: 'best',
     label: 'frameleaf_setup_tier_best',
     summary: 'frameleaf_setup_tier_best_summary',
     model: 'ViT-SO400M-16-SigLIP2-384__webli',
+    face: 'antelopev2',
     speed: 0.5,
   },
 ];
+
+/** The tier a server with no hardware check yet, or an unknown library model, starts from. */
+export const DEFAULT_TIER: ModelTier = 'balanced';
+
+/** What the tier recommendation reads from the hardware check (`HardwareCheckResponseDto.ml`). */
+export type TierHardware = {
+  ml: { reachable: boolean; backend: string; vramGb: number | null; integrated: boolean | null };
+};
+
+/**
+ * The tier this hardware is recommended (A2): a processor or an integrated GPU runs the light models
+ * at a usable speed; a graphics card with 6 GB or more of its own memory runs the balanced ones; one
+ * with 12 GB or more runs the best. Unknown hardware, an unreachable ML container or a card whose
+ * memory the check could not read reads as balanced, the server's own default.
+ */
+export const recommendedTier = (check: TierHardware | null | undefined): ModelTier => {
+  const ml = check?.ml;
+  if (!ml || !ml.reachable) {
+    return DEFAULT_TIER;
+  }
+  if (ml.backend === 'CPU' || ml.integrated) {
+    return 'light';
+  }
+  if (ml.vramGb === null || !Number.isFinite(ml.vramGb)) {
+    return DEFAULT_TIER;
+  }
+  if (ml.vramGb >= 12) {
+    return 'best';
+  }
+  return ml.vramGb >= 6 ? 'balanced' : 'light';
+};
+
+/**
+ * The tier setup starts from once the server has answered: on a new server the hardware's recommended
+ * tier; on an existing library the tier of the model it already uses (an unlisted model reads as the
+ * default), so finishing never switches its models and re-embeds it unless the administrator chose to.
+ */
+export const defaultTier = (
+  flow: SetupFlow,
+  { hardware, currentModel }: { hardware?: TierHardware | null; currentModel?: string | null },
+): ModelTier =>
+  flow === 'existing' ? (tierForModel(currentModel ?? undefined) ?? DEFAULT_TIER) : recommendedTier(hardware);
+
+/**
+ * Applies the default tier to a setup the administrator has not taken a tier decision in yet: the
+ * tier step (`processing`) is not reached. A tier chosen there, or saved progress past it, stays.
+ */
+export const withDefaultTier = (
+  state: SetupState,
+  context: { hardware?: TierHardware | null; currentModel?: string | null },
+): SetupState => {
+  const tierStep = flowSteps(state.flow).findIndex((entry) => entry.id === 'processing');
+  if (tierStep === -1 || state.reached >= tierStep) {
+    return state;
+  }
+  const model = defaultTier(state.flow, context);
+  return model === state.choices.model ? state : { ...state, choices: { ...state.choices, model } };
+};
 
 export const KEEP_LAYOUT = 'keep';
 export const layoutPresets: readonly { id: string; label: Translations; pattern: string; recommended?: boolean }[] = [
@@ -193,7 +256,7 @@ export const createSetup = (flow: SetupFlow = 'new'): SetupState => {
       adminName: '',
       adminEmail: '',
       layout: existing ? KEEP_LAYOUT : 'year-month',
-      model: 'balanced',
+      model: DEFAULT_TIER,
       processing: 'local',
       nightlyBackup: true,
       updates: true,
@@ -294,10 +357,12 @@ export const setLinked = (state: SetupState, linked: boolean): SetupState => {
   return { ...state, choices };
 };
 
-/** Where processing can run: the Cloud option only shows when the server is already linked. */
+/**
+ * Where processing can run. FL-544: the Cloud option is gone from setup (it was recorded and never
+ * applied); cloud processing is turned on from the Get Frameleaf Cloud sheet after setup.
+ */
 export const processingOptions = (state: SetupState): ProcessingChoice[] => [
   'local',
-  ...(state.choices.linked ? (['cloud'] as const) : []),
   ...(state.flow === 'existing' ? (['later'] as const) : []),
 ];
 
@@ -444,7 +509,8 @@ export const itemsPerHour = (gpu: boolean, embeddingMs?: number | null) =>
 
 /** Hours to re-index a library locally at the chosen model tier. */
 export const reindexHours = (items: number, tierId: ModelTier, perHour: number) => {
-  const tier = modelTiers.find((entry) => entry.id === tierId) ?? modelTiers[1];
+  const tier =
+    modelTiers.find((entry) => entry.id === tierId) ?? modelTiers.find((entry) => entry.id === DEFAULT_TIER)!;
   const rate = Math.max(1, perHour * tier.speed);
   return Math.max(1, Math.round(Math.max(0, items || 0) / rate));
 };
@@ -456,7 +522,10 @@ export const tierForModel = (modelName: string | undefined): ModelTier | null =>
 
 /**
  * The settings the finished setup writes. Nothing changes for a choice the administrator left at
- * "keep" or "decide later": the existing layout and the current models stay as they are.
+ * "keep" or "decide later": the existing layout and the current models stay as they are. An existing
+ * library keeps its face model unless the administrator moved it from one tier to another
+ * (`defaultTier`); a library on a search model outside the tiers keeps it too. Switching the search
+ * or face model re-embeds the whole library, so it only ever follows a choice.
  */
 export const applySetupChoices = (config: AdminConfigDto, state: SetupState): AdminConfigDto => {
   const { choices } = state;
@@ -469,6 +538,10 @@ export const applySetupChoices = (config: AdminConfigDto, state: SetupState): Ad
     const tier = modelTiers.find((entry) => entry.id === choices.model);
     if (tier) {
       next.machineLearning.clip.modelName = tier.model;
+      const current = tierForModel(config.machineLearning.clip.modelName);
+      if (state.flow === 'new' || (current !== null && current !== tier.id)) {
+        next.machineLearning.facialRecognition.modelName = tier.face;
+      }
     }
   }
   next.backup.database.enabled = choices.nightlyBackup;
@@ -477,11 +550,17 @@ export const applySetupChoices = (config: AdminConfigDto, state: SetupState): Ad
   return next;
 };
 
-/** Whether finishing re-indexes the library: the model changes and processing isn't deferred. */
-export const needsReindex = (config: AdminConfigDto, state: SetupState) =>
-  state.flow === 'existing' &&
-  state.choices.processing !== 'later' &&
-  applySetupChoices(config, state).machineLearning.clip.modelName !== config.machineLearning.clip.modelName;
+/** Whether finishing re-indexes the library: a search or face model changes and processing isn't deferred. */
+export const needsReindex = (config: AdminConfigDto, state: SetupState) => {
+  if (state.flow !== 'existing' || state.choices.processing === 'later') {
+    return false;
+  }
+  const next = applySetupChoices(config, state).machineLearning;
+  return (
+    next.clip.modelName !== config.machineLearning.clip.modelName ||
+    next.facialRecognition?.modelName !== config.machineLearning.facialRecognition?.modelName
+  );
+};
 
 // -------------------------------------------------------- route guard
 

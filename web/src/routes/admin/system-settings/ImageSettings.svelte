@@ -7,8 +7,8 @@
    * starts the thumbnail job for every photo (`force`), as the Job manager does. Every `image.*` field
    * stays in four closed Advanced groups.
    *
-   * Left for later (server work): the space previews take and each choice would take, a rebuild
-   * scheduled for tonight from the save, a count of photos without a preview, and stopping a rebuild.
+   * FL-521: the space previews take (as last measured) and about what each choice would take, photos
+   * still without a preview, "Save and rebuild tonight" from the save, and Stop while a rebuild runs.
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -18,6 +18,7 @@
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
+  import Reread from '$lib/components/frameleaf/settings/kit/Reread.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
@@ -28,14 +29,30 @@
     applyPreviewQuality,
     PREVIEW_QUALITIES,
     previewQualityOf,
+    previewSpaceFor,
     type PreviewQuality,
   } from '$lib/frameleaf/playback-presets';
+  import { formatBytes } from '$lib/frameleaf/format-bytes';
+  import { saveAndRedo } from '$lib/frameleaf/library-progress';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { Colorspace, getQueue, ImageFormat, QueueCommand, QueueName, runQueueCommandLegacy } from '@frameleaf/sdk';
-  import { mdiImageMultipleOutline, mdiSync } from '@mdi/js';
+  import {
+    Colorspace,
+    emptyQueue,
+    getMediaCopies,
+    getQueue,
+    ImageFormat,
+    LibraryRedoQueue,
+    LibraryRedoWhen,
+    QueueCommand,
+    QueueName,
+    runQueueCommandLegacy,
+    type MediaCopiesResponseDto,
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiImageMultipleOutline, mdiStop, mdiSync } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
 
@@ -101,15 +118,74 @@
   let waiting = $state(0);
   let said = $state('');
   let rebuilding = $state(false);
+  let stopping = $state(false);
+  /** FL-521: the space previews take and how many photos have none yet. */
+  let copies = $state<MediaCopiesResponseDto>();
 
-  onMount(async () => {
+  const readWaiting = async () => {
     try {
       const queue = await getQueue({ name: QueueName.ThumbnailGeneration });
       waiting = (queue?.statistics.active ?? 0) + (queue?.statistics.waiting ?? 0);
     } catch {
       // The status then says what previews are, without a count.
     }
+  };
+
+  onMount(async () => {
+    await readWaiting();
+    try {
+      copies = await getMediaCopies();
+    } catch {
+      // Without the counts the page says what previews are, without sizes.
+    }
   });
+
+  const library = $derived(copies ? copies.photos + copies.videos : 0);
+  const okBody = $derived(
+    copies && copies.previewsBytes !== null
+      ? $t('frameleaf_play_img_ok_space', {
+          values: { size: formatBytes(copies.previewsBytes), count: library },
+        })
+      : $t('frameleaf_play_img_ok_body'),
+  );
+  /** About what each choice would take, from what previews take now with the saved numbers. */
+  const spaceFor = (choice: PreviewQuality) =>
+    copies && copies.previewsBytes !== null && copies.previewsBytes > 0
+      ? $t('frameleaf_play_img_space_choice', {
+          values: { size: formatBytes(previewSpaceFor(copies.previewsBytes, config.image, choice)) },
+        })
+      : '';
+  const rebuildTonight = $derived(copies?.tonight.includes(LibraryRedoQueue.ThumbnailGeneration) ?? false);
+
+  /** FL-521: Stop. What is already made stays; the rest keeps its old preview until the next rebuild. */
+  const stop = async () => {
+    stopping = true;
+    try {
+      await emptyQueue({ name: QueueName.ThumbnailGeneration, queueDeleteDto: { failed: false } });
+      said = $t('frameleaf_play_img_stopped');
+      await readWaiting();
+    } catch (error) {
+      handleError(error, $t('frameleaf_play_img_stop_failed'));
+    } finally {
+      stopping = false;
+    }
+  };
+
+  const saveForNew = async () => {
+    if (await settingsDraft.saveKeys(['image'])) {
+      said = $t('frameleaf_play_img_saved_new');
+    }
+  };
+  const saveAndRebuildTonight = async () => {
+    try {
+      if (await saveAndRedo(settingsDraft, ['image'], LibraryRedoQueue.ThumbnailGeneration, LibraryRedoWhen.Tonight)) {
+        said = $t('frameleaf_play_img_saved_tonight');
+        copies = copies ? { ...copies, tonight: [...copies.tonight, LibraryRedoQueue.ThumbnailGeneration] } : copies;
+      }
+    } catch (error) {
+      handleError(error, $t('frameleaf_play_img_rebuild_failed'));
+    }
+  };
 
   const rebuild = async () => {
     rebuilding = true;
@@ -136,20 +212,40 @@
       title={$t('frameleaf_play_img_working')}
       body={$t('frameleaf_play_img_working_body', { values: { count: waiting } })}
       label={$t('frameleaf_play_img_label')}
+    >
+      {#snippet actions()}
+        <Button disabled={stopping || disabled} onclick={stop}>
+          <Icon icon={mdiStop} size="1em" aria-hidden />
+          {$t('frameleaf_play_stop')}
+        </Button>
+      {/snippet}
+    </Hero>
+  {:else if copies && copies.withoutPreview > 0}
+    <Hero
+      tone="warn"
+      icon={mdiImageMultipleOutline}
+      title={$t('frameleaf_play_img_missing', { values: { count: copies.withoutPreview } })}
+      body={$t('frameleaf_play_img_missing_body')}
+      label={$t('frameleaf_play_img_label')}
     />
   {:else}
     <Hero
       icon={mdiImageMultipleOutline}
       title={$t('frameleaf_play_img_ok')}
-      body={$t('frameleaf_play_img_ok_body')}
+      body={okBody}
       label={$t('frameleaf_play_img_label')}
     />
+  {/if}
+  {#if rebuildTonight && waiting === 0}
+    <Notice title={$t('frameleaf_play_img_tonight')}>{$t('frameleaf_play_img_tonight_body')}</Notice>
   {/if}
 
   <Section title={$t('frameleaf_play_img_section')}>
     <Row
       label={$t('frameleaf_play_img_quality')}
-      help={quality ? $t(`frameleaf_play_img_${quality}_help` as Translations) : $t('frameleaf_play_img_custom_help')}
+      help={quality
+        ? `${$t(`frameleaf_play_img_${quality}_help` as Translations)} ${spaceFor(quality)}`.trim()
+        : $t('frameleaf_play_img_custom_help')}
       lead={quality ? $t(QUALITY_NAME[quality]) : $t('frameleaf_play_custom')}
     >
       <SegmentedControl
@@ -176,12 +272,16 @@
       />
     </Row>
     {#if changed}
-      <Notice title={$t('frameleaf_play_img_changed')} tone="warn">
-        {$t('frameleaf_play_img_changed_body')}
-        {#snippet action()}
-          <Button onclick={undo}>{$t('frameleaf_play_undo')}</Button>
-        {/snippet}
-      </Notice>
+      <Reread
+        title={$t('frameleaf_play_img_changed')}
+        body={$t('frameleaf_play_img_changed_reread', { values: { count: library } })}
+        {disabled}
+        choices={[
+          { label: $t('frameleaf_play_img_save_tonight'), run: saveAndRebuildTonight },
+          { label: $t('frameleaf_play_img_save_new'), run: saveForNew },
+        ]}
+        onUndo={undo}
+      />
     {/if}
     <Row label={$t('frameleaf_play_img_rebuild_row')} help={$t('frameleaf_play_img_rebuild_help')}>
       <Button disabled={rebuilding} onclick={rebuild}>{$t('frameleaf_play_img_rebuild')}</Button>

@@ -44,9 +44,53 @@ describe('atomic initial run admission', () => {
     workerId = randomUUID();
     await store.initialize([queue], workerId);
     jobs = new JobRepository({} as never, {} as never, {} as never, LoggingRepository.create(), db);
-    for (const name of [JobName.ImageDescriptionQueueAll, JobName.LibraryScanRun, JobName.AssetEncodeVideoQueueAll]) {
+    for (const name of [
+      JobName.ImageDescriptionQueueAll,
+      JobName.LibraryScanRun,
+      JobName.AssetEncodeVideoQueueAll,
+      JobName.WorkflowAssetTrigger,
+      JobName.NotifyAlbumUpdate,
+    ]) {
       jobs['handlers'][name] = { queueName: queue as QueueName } as never;
     }
+  });
+
+  it('keeps same-subject jobs with their own identity in one run, including a debounced re-queue', async () => {
+    const asset = randomUUID();
+    const album = randomUUID();
+    const notify = (recipientId: string) =>
+      jobs.queue({ name: JobName.NotifyAlbumUpdate, data: { id: album, recipientId, delay: 60_000 } });
+    const runId = await jobs.createRun(queue, {}, async () => {
+      for (const workflowId of [randomUUID(), randomUUID()]) {
+        await jobs.queue({
+          name: JobName.WorkflowAssetTrigger,
+          data: { workflowId, assetId: asset, runId: randomUUID(), executionId: randomUUID() },
+        });
+      }
+      await notify('u1');
+      await notify('u2');
+    });
+    // a later job of the same run postpones the same album email: cancel the waiting one, queue it again
+    const execution = { claim: { runId, rootItemKey: null }, buffering: false } as unknown as QueueExecution;
+    const again = queueExecution.run(execution, () =>
+      jobs['intent']({ name: JobName.NotifyAlbumUpdate, data: { id: album, recipientId: 'u1', delay: 60_000 } }),
+    );
+    await jobs.removeJob(JobName.NotifyAlbumUpdate, `${album}/u1`);
+    await store.enqueue([again]);
+    const rows = await db
+      .selectFrom('job')
+      .select(['name', 'state', 'runId', 'externalId'])
+      .where('queue', '=', queue)
+      .where('state', '!=', 'cancelled')
+      .orderBy('externalId')
+      .execute();
+    expect(rows.filter((row) => row.name === JobName.WorkflowAssetTrigger)).toHaveLength(2);
+    expect(
+      rows.filter((row) => row.name === JobName.NotifyAlbumUpdate).map((row) => [row.externalId, row.runId]),
+    ).toEqual([
+      [`${album}/u1`, runId],
+      [`${album}/u2`, runId],
+    ]);
   });
 
   it('discards prepared intents when later validation fails and exposes nothing during preparation', async () => {
