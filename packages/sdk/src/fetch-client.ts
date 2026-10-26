@@ -35745,7 +35745,8 @@ export enum SearchFacetField {
     LensModel = "lensModel",
     Rating = "rating",
     IsFavorite = "isFavorite",
-    Tags = "tags"
+    Tags = "tags",
+    Pets = "pets"
 }
 export enum SearchHistogramGranularity {
     Day = "day",

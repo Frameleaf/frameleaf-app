@@ -4386,6 +4386,31 @@ with
       t.id
     union all
     select
+      $19::text as field,
+      pet.id::text as value,
+      max(nullif(pet.name, '')) as label,
+      count(distinct m.id) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
+    from
+      matched m
+      inner join pet_observation po on po."assetId" = m.id
+      and po.state = $20
+      inner join pet on pet.id = po."petId"
+      and pet."ownerId" = $21::uuid
+      and not pet."isHidden"
+    where
+      not (pet.id = any ($22::uuid[]))
+    group by
+      pet.id
+    union all
+    select
       'total'::text as field,
       null::text as value,
       null::text as label,
@@ -4416,7 +4441,7 @@ select
 from
   ranked
 where
-  rank <= $19
+  rank <= $23
 order by
   field,
   rank
@@ -4694,6 +4719,31 @@ with
       t.id
     union all
     select
+      $21::text as field,
+      pet.id::text as value,
+      max(nullif(pet.name, '')) as label,
+      count(distinct m.id) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
+    from
+      matched m
+      inner join pet_observation po on po."assetId" = m.id
+      and po.state = $22
+      inner join pet on pet.id = po."petId"
+      and pet."ownerId" = $23::uuid
+      and not pet."isHidden"
+    where
+      not (pet.id = any ($24::uuid[]))
+    group by
+      pet.id
+    union all
+    select
       'total'::text as field,
       null::text as value,
       null::text as label,
@@ -4724,7 +4774,7 @@ select
 from
   ranked
 where
-  rank <= $21
+  rank <= $25
 order by
   field,
   rank

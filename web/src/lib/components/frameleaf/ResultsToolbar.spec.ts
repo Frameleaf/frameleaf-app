@@ -15,6 +15,24 @@ vi.mock('$lib/components/assets/thumbnail/ImageThumbnail.svelte', async () => {
 const person = (id: string, isHidden = false) =>
   ({ id, name: 'Jamie', isHidden, updatedAt: '2026-09-25T00:00:00.000Z', thumbnailPath: '/t.jpg' }) as never;
 
+/** LIB-11: a pet chip names the pet it narrows by. */
+describe('ResultsToolbar pet chip', () => {
+  beforeAll(async () => {
+    await init({ fallbackLocale: 'en-US' });
+    register('en-US', () => import('$i18n/en.json'));
+    await waitLocale('en-US');
+  });
+  beforeEach(() => vi.resetAllMocks());
+
+  it('reads "Pet: Max" for the one pet the filter names', async () => {
+    sdkMock.getPet.mockResolvedValue({ id: 'max', name: 'Max', isHidden: false } as never);
+    const session = new LibrarySessionStore({ storage: null });
+    session.setQuery({ ...emptyDiscoveryQuery(), filter: { petIds: { any: ['max'] } } });
+    render(ResultsToolbar, { session });
+    await waitFor(() => expect(screen.getByTestId('frameleaf-filter-chips')).toHaveTextContent('Pet: Max'));
+  });
+});
+
 /** FL-29: a people chip shows the person's real face, and never after access narrows. */
 describe('ResultsToolbar people chip', () => {
   const withPerson = (id: string) => {

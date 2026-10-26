@@ -249,6 +249,7 @@
   const typeCounts = $derived(countsFor(SearchFacetField.Type));
   const peopleCounts = $derived(countsFor(SearchFacetField.People));
   const tagCounts = $derived(countsFor(SearchFacetField.Tags));
+  const petCounts = $derived(countsFor(SearchFacetField.Pets));
 
   const visibilityOptions = $derived(facetOptions('visibility', $t('visibility'), Object.values(AssetVisibility)));
 
@@ -306,7 +307,11 @@
         field="petIds"
         anchor="pets"
         label={$t('frameleaf_pets_title')}
-        options={options.pets.map((pet) => ({ value: pet.id, label: pet.name || $t('frameleaf_pets_unnamed') }))}
+        options={options.pets.map((pet) => ({
+          value: pet.id,
+          label: pet.name || $t('frameleaf_pets_unnamed'),
+          count: petCounts.get(pet.id),
+        }))}
         condition={filter.petIds as SetCondition}
         onChange={setCondition}
       />

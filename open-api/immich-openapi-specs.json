@@ -121517,7 +121517,8 @@
           "lensModel",
           "rating",
           "isFavorite",
-          "tags"
+          "tags",
+          "pets"
         ],
         "type": "string"
       },
@@ -121696,7 +121697,7 @@
             "items": {
               "$ref": "#/components/schemas/SearchFacetField"
             },
-            "maxItems": 10,
+            "maxItems": 11,
             "minItems": 1,
             "type": "array"
           },
