@@ -26,7 +26,9 @@ class BoundPredictor:
         self._lock = threading.Lock()
 
     def predict(self, raw: str, image: bytes | None, text: str | None) -> dict[str, Any]:
-        if not self._lock.acquire(blocking=False):
+        # Overlapping server calls (smart-search jobs, interactive search) queue rather than fail.
+        # ponytail: one request at a time; cache verified sessions if NAS measurements need parallel throughput.
+        if not self._lock.acquire(timeout=300):
             raise ValueError("producer_busy")
         try:
             result = None

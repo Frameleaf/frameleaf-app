@@ -1026,8 +1026,14 @@ export class RestorationWorkerService {
         return true;
       });
     } catch (error) {
-      // Nothing was recorded; the files this attempt moved into place belong to no row.
-      await this.discard(placed);
+      // Usually nothing was recorded and the placed files belong to no row. But a COMMIT whose
+      // acknowledgement was lost may have landed: keep every file the row now names. When the row
+      // cannot be read either, keep them all; an orphaned file is better than a result without one.
+      const current = await this.restorationRepository.get(restoration.id).catch(() => null);
+      if (current !== null) {
+        const kept = current?.status === statuses.done ? output.files.map((file) => current[file.column]) : [];
+        await this.discard(placed.filter((file) => !kept.includes(file)));
+      }
       throw error;
     }
 

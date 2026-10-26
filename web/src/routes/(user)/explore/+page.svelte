@@ -6,6 +6,7 @@
    * section is real, already-accessible data gathered by `+page.ts` — there is no sample or
    * fixture data anywhere in this path.
    */
+  import PlacesRestoringNotice from '$lib/components/frameleaf/PlacesRestoringNotice.svelte';
   import ExplorePanel from '$lib/components/frameleaf/ExplorePanel.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
@@ -138,6 +139,7 @@
 <OnEvents {onPersonThumbnailReady} />
 
 <UserPageLayout use={[captureScroller]}>
+  <PlacesRestoringNotice />
   <ExplorePanel
     people={peopleCards}
     places={data.places}

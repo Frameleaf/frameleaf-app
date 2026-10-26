@@ -4,7 +4,11 @@ import { Writable } from 'node:stream';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { FrameleafLibrarySetupController } from 'src/controllers/frameleaf-library-setup.controller.js';
 import { JobName, QueueName, SyncEntityType } from 'src/enum.js';
-import { IMPORT_DERIVED_RUN_KIND, IMPORT_DERIVED_STAGES, importDerivedRunId } from 'src/immich-import/derived-work.js';
+import {
+  IMPORT_DERIVED_RUN_KIND,
+  IMPORT_DERIVED_RUN_STAGES,
+  importDerivedRunId,
+} from 'src/immich-import/derived-work.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
@@ -26,7 +30,7 @@ it('starts the retained import regeneration during first setup once ready, resum
   const source = 'verified-source',
     configFingerprint = 'verified-config';
   const id = importDerivedRunId(source, configFingerprint);
-  const stages = [...IMPORT_DERIVED_STAGES.map(([, name]) => name), JobName.PersonGenerateThumbnail];
+  const stages = [...IMPORT_DERIVED_RUN_STAGES];
   const users = {
     hasAdmin: vi.fn().mockResolvedValue(false),
     getAdmin: vi.fn().mockResolvedValue({ id: randomUUID() }),

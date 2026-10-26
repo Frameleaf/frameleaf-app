@@ -50,7 +50,11 @@ const time = (value: string | null | undefined) => {
 /** The drive the library is on, as `StorageRepository.checkDiskUsage` reads it. */
 export type DiskFacts = { available: number; free: number; total: number };
 
-export const storageSignal = (disk: DiskFacts): SignalResult => {
+/**
+ * FL-365: `nearlyFullPercent` is Storage & originals › "Warn me when the disk is nearly full"
+ * (`storageWarning.percent`); 0 turns that warning off. Under 10 GB free always needs the person.
+ */
+export const storageSignal = (disk: DiskFacts, nearlyFullPercent = NEARLY_FULL_PERCENT): SignalResult => {
   if (!(disk.total > 0)) {
     return { state: 'unknown', items: [] };
   }
@@ -63,7 +67,7 @@ export const storageSignal = (disk: DiskFacts): SignalResult => {
   if (disk.available < OUT_OF_SPACE_BYTES) {
     return outcome([item({ id: 'storage', kind: 'storage', reason: 'out-of-space', level: 'now', storage })]);
   }
-  if (usedPercent >= NEARLY_FULL_PERCENT) {
+  if (nearlyFullPercent > 0 && usedPercent >= nearlyFullPercent) {
     return outcome([item({ id: 'storage', kind: 'storage', reason: 'nearly-full', level: 'soon', storage })]);
   }
   return outcome([]);

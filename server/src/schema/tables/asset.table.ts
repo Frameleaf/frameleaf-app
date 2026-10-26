@@ -92,6 +92,13 @@ export class AssetTable {
   @Column()
   originalPath!: string;
 
+  /**
+   * FL-417: the photo's own path in its owner's library, shown and browsed instead of `originalPath`
+   * while the photo shares a stored file kept in another folder. Null when `originalPath` is its own.
+   */
+  @Column({ nullable: true })
+  libraryPath!: string | null;
+
   @ForeignKeyColumn(() => PhysicalFileTable, { nullable: true, onDelete: 'SET NULL', onUpdate: 'CASCADE', index: true })
   physicalOriginalFileId!: string | null;
 

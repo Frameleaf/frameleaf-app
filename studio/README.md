@@ -104,7 +104,7 @@ HDR pictures, Dolby decoding, float edits, licensed tools or device playback.
 
 ## Reproducible engine workspace
 
-Use Node 26.11.1 and npm 12.2.0. `engine-build.json` pins the upstream revision, patch hashes, independent npm lockfile and adapted source digest. Versioned patches set the private package identity and toolchain declaration, remove automatic `prepare`, and omit embedded source text from worker source maps. Vite embeds transient asset handles in that text, which otherwise makes identical fresh builds differ. Worker maps retain their mappings, names and source paths; use the preserved source files for debugging. Application maps retain embedded sources. The first three patches preserve feature behavior. Patch 0004 adds default-deny resource admission in the isolated editor/headless engine; unresolved model/font/Lottie/resource operations are explicit release blockers. This npm workspace is intentionally outside the application's pnpm workspace.
+Use Node 22.23.4 and npm 12.2.0. `engine-build.json` pins the upstream revision, patch hashes, independent npm lockfile and adapted source digest. Versioned patches set the private package identity and toolchain declaration, remove automatic `prepare`, and omit embedded source text from worker source maps. Vite embeds transient asset handles in that text, which otherwise makes identical fresh builds differ. Worker maps retain their mappings, names and source paths; use the preserved source files for debugging. Application maps retain embedded sources. The first three patches preserve feature behavior. Patch 0004 adds default-deny resource admission in the isolated editor/headless engine; unresolved model/font/Lottie/resource operations are explicit release blockers. This npm workspace is intentionally outside the application's pnpm workspace.
 
 The October 13, 2026 dependency overlay uses npm 12.2.0, React 19.3.0, Vite+ 1.1.0, Transformers.js 4.3.1 and stable ONNX Runtime Web 1.30.0. Vite+ bundles Vitest 5.0.3; its [official migration guide](https://viteplus.dev/guide/vitest-v5#entry-points-and-packages) requires the coverage provider at that exact version (registry latest is 5.0.4). Transformers.js constrains its own ONNX Runtime Web 1.31.0 development build; its matching JS/WASM pair is separate from the stable root runtime. `node --test studio/tools/runtime-pairs.test.mjs` checks installed payload identities and rejects mixed pairs.
 
@@ -421,6 +421,20 @@ Patch 0032 adds the float route and the explicit output conversion (FL-97, FL-10
   probes and decodes the result back. Matrix/range conversion uses FFmpeg's libzimg
   `zscale` filter in both directions; an RGB round trip through `scale` alone can
   hide shifted native ten-bit Y/Cb/Cr codes.
+- **Bundled worker (FL-107).** The machine-learning container's Studio worker writes
+  `mp4-hevc-main10` as an HDR10 master (`hdr10` colour, or PQ sources kept) or an HLG
+  master (HLG sources kept). `tools/bundled-worker-hdr.mjs` streams the engine's
+  `renderFrameSignal` frames into the `hdr-master.mjs` encoder one at a time. A PQ master
+  renders twice: the first pass measures MaxCLL/MaxFALL, and the encoding pass must
+  measure the same light. Before upload the file is decoded back. Every frame must be
+  ten-bit 4:2:0 BT.2020 NCL limited range with the promised transfer, and the sampled
+  frames' luma must match the render. At admission the worker proves each transfer on its
+  own ffmpeg: a lossless patch fixture within the two-code limit, then a ten-bit ramp
+  through the production path. It advertises `mp4-hevc-main10+pq` / `+hlg` and its
+  colour precision only for the transfers that passed. The server offers an HLG export
+  only to a session naming `+hlg`, and a kept PQ picture only to one that verified HDR10.
+  HDR masters are written at the project size, with captions burned in. The sound comes
+  from the engine's ordinary render.
 
 Tests:
 

@@ -39,6 +39,7 @@ describe('/api-keys', () => {
         permissions: [Permission.ApiKeyRead],
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
+        lastUsedAt: null,
         secret: expect.any(String),
         // TODO: remove in v4
         apiKey: expect.any(Object),
@@ -77,6 +78,7 @@ describe('/api-keys', () => {
         permissions: [Permission.All],
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
+        lastUsedAt: null,
         secret: expect.any(String),
         // TODO: remove in v4
         apiKey: expect.any(Object),
@@ -125,6 +127,7 @@ describe('/api-keys', () => {
         permissions: [Permission.All],
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
+        lastUsedAt: null,
       });
     });
   });
@@ -146,6 +149,7 @@ describe('/api-keys', () => {
         permissions: [Permission.ActivityCreate, Permission.ActivityRead, Permission.ActivityUpdate],
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
+        lastUsedAt: null,
       });
     });
   });

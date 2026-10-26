@@ -220,6 +220,7 @@ export class SearchService extends BaseService {
       limit: facetLimit ?? SEARCH_FACET_DEFAULT_LIMIT,
       suppressedPersonIds: auth.hiddenContent?.personIds ?? [],
       suppressedTagIds: auth.hiddenContent?.tagIds ?? [],
+      suppressedPetIds: auth.hiddenContent?.petIds ?? [],
       covers: facetCovers ?? false,
     };
 
@@ -244,7 +245,7 @@ export class SearchService extends BaseService {
         counts: rows
           .filter((row) => row.field === fieldName)
           .map(({ value, label, count, coverAssetId }) => ({
-            ...(fieldName === SearchFacetField.People || fieldName === SearchFacetField.Tags
+            ...([SearchFacetField.People, SearchFacetField.Tags, SearchFacetField.Pets].includes(fieldName)
               ? { value, label, count }
               : { value, count }),
             // only when asked for (Explore's cards): the newest match, inside the same scope as the count

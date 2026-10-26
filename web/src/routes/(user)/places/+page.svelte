@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PlacesRestoringNotice from '$lib/components/frameleaf/PlacesRestoringNotice.svelte';
   import PlacesPanel from '$lib/components/frameleaf/PlacesPanel.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
@@ -29,6 +30,7 @@
 
 <UserPageLayout>
   <Theme theme={appTheme}>
+    <PlacesRestoringNotice />
     <PlacesPanel
       places={data.items}
       {counts}

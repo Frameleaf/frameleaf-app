@@ -13,7 +13,7 @@ config_roots = [
 ]
 
 [tools]
-node = "26.11.1"
+node = "22.23.4"
 pnpm = "12.11.2"
 "npm:oazapfts" = "7.5.0"
 "github:extism/cli" = "1.6.3"

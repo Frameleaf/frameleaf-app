@@ -24,6 +24,7 @@ import {
 } from 'src/schema/tables/asset-health.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { anyUuid, asUuid, lockedOwnerScope, withHiddenContentFilter } from 'src/utils/database.js';
+import { libraryPathOnRelink } from 'src/utils/library-path.js';
 import { isLocked } from 'src/utils/locked.js';
 /**
  * What an interactive read may show: the viewer's hidden-content settings, and their Locked media only
@@ -1134,6 +1135,8 @@ export class MediaHealthRepository {
           .updateTable('asset')
           .set({
             originalPath: recoveredPath,
+            // FL-417: the recovered file is the photo's own
+            libraryPath: libraryPathOnRelink(recoveredPath, true),
             checksum: input.sha256,
             checksumAlgorithm: ChecksumAlgorithm.sha256File,
             fileModifiedAt: input.fileModifiedAt,

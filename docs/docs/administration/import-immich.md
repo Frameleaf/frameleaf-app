@@ -65,4 +65,17 @@ Embedding reuse requires finite values, matching source and destination dimensio
 
 For an import performed by Frameleaf Manager, offline verification prepares a durable regeneration run for imported metadata, thumbnails, search and face data, including person thumbnails. The first Manager setup releases that run once an application administrator and processing settings are ready. Manager shows its progress and work that needs attention. Processing continues in the background: finishing setup does not mean regeneration is complete. Restarts reuse the same run and its saved progress; canonical Manager recovery retains the original run and recorded import lineage. Failed or cancelled work is not automatically retried just because setup or the server restarts, and unsafe external work is not automatically replayed on recovery. A standalone `import-immich` CLI import does not require Manager setup.
 
+## After the import: identical files, orphans and unused copies
+
+The import keeps the source library's folders as they are. Once it is activated, Frameleaf checks the whole library in the background as one more part of the same run:
+
+- Every original is read again from disk. Older SHA-1 records are upgraded to SHA-256, and your devices keep matching against the SHA-1.
+- Identical files are stored once. Files are identical when their SHA-256 and size match. Across people, everyone keeps their own photo, and all of them use the oldest copy. Inside one library, two identical photos become one: the oldest is kept, and the other goes to the Trash, where you can restore it.
+- Orphaned files are recovered. These are media files in the storage folders that no photo points at, such as the files the source server listed as untracked. Each one comes back to the owner of its folder, in an album called **Recovered Media**. Files the owner already has, and damaged files, are not imported.
+- Extra copies wait in Unused files until the server owner empties it. Nothing is deleted.
+
+While this runs, **Settings > Library care** shows **Checking your imported library**: files checked, photos merged, photos recovered into Recovered Media and the space moved to Unused files, with Pause and Resume.
+
+External libraries are never touched. In independent-copy mode the source media is not touched either. For an in-place import, Manager first checks that the Frameleaf server can write to every media folder. If one isn't writable, Manager stops before importing anything and names the folder.
+
 A changed source or configuration requires diagnosis, not forcing a checkpoint. Abandoning an import permanently marks that destination inactive. Preserve the journal for diagnosis; dispose of the partial destination explicitly and bootstrap another fresh one if starting over. Source files and database remain unchanged throughout.

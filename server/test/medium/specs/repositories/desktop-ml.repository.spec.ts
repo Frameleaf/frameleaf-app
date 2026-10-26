@@ -116,6 +116,25 @@ it('lets an approved member claim its own work and never another account with th
   expect(await own.sut.hasLiveAttempt(task.id)).toBe(true);
 });
 
+it('knows when an online, qualified helper of the owner is ready for a model (FL-456)', async () => {
+  const own = await setup();
+  const other = await setup();
+  expect(await own.sut.hasReadyWorker(own.request.ownerId, own.request.modelKey)).toBe(true);
+  // another account's helpers, or another model, never count
+  expect(await own.sut.hasReadyWorker(other.request.ownerId, own.request.modelKey)).toBe(false);
+  expect(await own.sut.hasReadyWorker(own.request.ownerId, randomUUID())).toBe(false);
+  const counts = await new MlDestinationRepository(db).getDesktopCounts();
+  expect(counts.ready).toBeGreaterThanOrEqual(4);
+
+  // not seen for a while: not ready
+  await sql`UPDATE desktop_worker_session SET "lastSeenAt" = clock_timestamp() - interval '5 minutes'
+    WHERE "deviceId" IN (${sql.join(own.grants.map((grant) => grant.deviceId))})`.execute(db);
+  expect(await own.sut.hasReadyWorker(own.request.ownerId, own.request.modelKey)).toBe(false);
+
+  const unqualified = await setup(false);
+  expect(await unqualified.sut.hasReadyWorker(unqualified.request.ownerId, unqualified.request.modelKey)).toBe(false);
+});
+
 it('two repository instances racing claim one task once and preserve scoped input', async () => {
   const { sut, second, grants, request } = await setup();
   const task = await sut.create(request);

@@ -28,6 +28,7 @@ describe(FrameleafCloudBackupRepository.name, () => {
       method: 'POST',
       url: 'https://api.frameleaf.test/v4/backup/grant',
       dpop: token,
+      timeoutMs: 120_000,
       body: { locationId: 'loc-07', operation: 'upload' },
     });
     expect(requestJsonTimed).toHaveBeenNthCalledWith(2, expect.anything(), {

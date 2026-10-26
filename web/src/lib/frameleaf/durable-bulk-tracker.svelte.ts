@@ -8,6 +8,7 @@ import {
   type BulkView,
   type DurableItemState,
 } from '$lib/frameleaf/bulk-operations';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 
 /**
  * Durable bulk jobs on the page they were started from (FL-32, owner decision September 22, 2026).
@@ -71,6 +72,8 @@ export class DurableBulkTracker {
   }: { fetch?: Fetch; pollMs?: number } = {}) {
     this.#fetch = fetch;
     this.#pollMs = pollMs;
+    // The next account must not inherit this one's jobs or loaders (FL-529).
+    eventManager.on({ AuthLogout: () => this.reset() });
   }
 
   /** The tile state for one asset, or undefined when there is nothing to show. */

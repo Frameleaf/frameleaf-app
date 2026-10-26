@@ -18,7 +18,7 @@ describe(describeAdminEvent.name, () => {
   it("uses the template's wording", () => {
     expect(describe_(AdminAuditAction.AccountCreated)).toBe('Account created');
     expect(describe_(AdminAuditAction.PinReset)).toBe('PIN reset');
-    expect(describe_(AdminAuditAction.PinSet)).toBe('Locked folder PIN updated');
+    expect(describe_(AdminAuditAction.PinSet)).toBe('Locked PIN updated');
     expect(describe_(AdminAuditAction.PreferencesUpdated, 'download,tags')).toBe('Account preferences updated');
     expect(describe_(AdminAuditAction.AccountRestored)).toBe('Account restored · sign-in required');
     expect(describe_(AdminAuditAction.LibraryCreated)).toBe('External library created');
@@ -50,6 +50,10 @@ describe(describeAdminEvent.name, () => {
       'Password reset · change required at next sign-in',
     );
     expect(describe_(AdminAuditAction.PasswordReset)).toBe('Password reset');
+    // FL-538
+    expect(describe_(AdminAuditAction.PasswordReset, 'link')).toBe('Emailed a link to choose a password');
+    expect(describe_(AdminAuditAction.AccountUpdated, 'uploads-paused')).toBe('Paused new uploads');
+    expect(describe_(AdminAuditAction.AccountUpdated, 'uploads-resumed')).toBe('Let new uploads continue');
     expect(describe_(AdminAuditAction.QuotaChanged, '1024')).toBe('Storage quota set to 1024 B');
     expect(describe_(AdminAuditAction.QuotaChanged)).toBe('Storage quota set to unlimited');
     expect(describe_(AdminAuditAction.StorageLabelChanged, 'grace')).toBe('Storage label set to grace');

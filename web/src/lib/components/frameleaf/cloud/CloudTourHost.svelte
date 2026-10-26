@@ -52,10 +52,9 @@
     try {
       const result = await getCloudTour();
       if (result) {
+        // FL-544: the tour is no longer offered by itself; the Get Frameleaf Cloud sheet walks the
+        // next steps from whichever gate the person is at. ?tour=cloud still opens it.
         tour = result;
-        if (result.offer && !open) {
-          open = { step: 0 };
-        }
       }
     } catch {
       // an older server, or no answer: the tour simply is not offered

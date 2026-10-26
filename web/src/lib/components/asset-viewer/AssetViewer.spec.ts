@@ -1111,6 +1111,51 @@ describe('AssetViewer', () => {
 
       expect(onNavigateToAsset).not.toHaveBeenCalled();
     });
+
+    it('leaves arrow keys to a focused slider, select or number field', async () => {
+      const { current, nextAsset } = buildAssets();
+      const onNavigateToAsset = vi.fn().mockResolvedValue(undefined);
+
+      renderWithTooltips(AssetViewer, {
+        cursor: { current, nextAsset },
+        showNavigation: true,
+        onNavigateToAsset,
+      });
+
+      for (const html of ['<input type="range" />', '<select></select>', '<input type="number" />']) {
+        const host = document.createElement('div');
+        host.innerHTML = html;
+        document.body.append(host);
+        for (const key of ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown']) {
+          expect(await fireEvent.keyDown(host.firstElementChild!, { key })).toBe(true);
+        }
+        host.remove();
+      }
+      await Promise.resolve();
+
+      expect(onNavigateToAsset).not.toHaveBeenCalled();
+    });
+
+    it('leaves arrow keys to an open dialog', async () => {
+      const { current, nextAsset } = buildAssets();
+      const onNavigateToAsset = vi.fn().mockResolvedValue(undefined);
+
+      renderWithTooltips(AssetViewer, {
+        cursor: { current, nextAsset },
+        showNavigation: true,
+        onNavigateToAsset,
+      });
+
+      const dialog = document.createElement('div');
+      dialog.setAttribute('role', 'dialog');
+      dialog.setAttribute('aria-modal', 'true');
+      document.body.append(dialog);
+      await fireEvent.keyDown(document, { key: 'ArrowRight' });
+      dialog.remove();
+      await Promise.resolve();
+
+      expect(onNavigateToAsset).not.toHaveBeenCalled();
+    });
   });
 
   it('puts the Live badge on a Live Photo (V-16)', () => {

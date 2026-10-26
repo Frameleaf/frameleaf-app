@@ -7,19 +7,24 @@ import {
 } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
+import type { SvelteURL } from 'svelte/reactivity';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { goto } from '$app/navigation';
+import { page } from '$app/state';
 import { memoryManager } from '$lib/managers/memory-manager.svelte';
 import en from '../../../../../i18n/en.json';
 import MemoryPlayerPanel from './MemoryPlayerPanel.svelte';
 
 vi.mock('$app/navigation', () => ({ afterNavigate: vi.fn(), goto: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('$app/state', () => ({
-  page: {
-    params: { id: 'memory-1' },
-    url: new URL('http://localhost/memories/memory-1?assetId=asset-2'),
-  },
-}));
+vi.mock('$app/state', async () => {
+  const { SvelteURL } = await import('svelte/reactivity');
+  return {
+    page: {
+      params: { id: 'memory-1' },
+      url: new SvelteURL('http://localhost/memories/memory-1?assetId=asset-2'),
+    },
+  };
+});
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: {
     authenticated: false,
@@ -156,6 +161,25 @@ describe('MemoryPlayerPanel (FL-62)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Make a movie in Studio' }));
 
     expect(goto).toHaveBeenCalledWith(expect.stringMatching(/^\/studio\?.*asset-1.*asset-2.*asset-3/));
+  });
+
+  it('keeps the export it found while the same memory moves on to another item', async () => {
+    render(MemoryPlayerPanel);
+    await vi.waitFor(() => expect(getMemoryExports).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const reads = vi.mocked(getMemoryExports).mock.calls.length;
+
+    // The next slide is another item of the same memory, so its export is unchanged.
+    const url = page.url as unknown as SvelteURL;
+    try {
+      url.searchParams.set('assetId', 'asset-3');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(memoryManager.current?.asset.id).toBe('asset-3');
+
+      expect(getMemoryExports).toHaveBeenCalledTimes(reads);
+    } finally {
+      url.searchParams.set('assetId', 'asset-2');
+    }
   });
 
   it('stops following an export once the player is gone, even with a read on its way', async () => {

@@ -41,6 +41,7 @@ import {
   jobViewSchema,
 } from 'src/utils/frameleaf-cloud.js';
 import { stripsVideoMetadata } from 'src/utils/media-privacy.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
@@ -608,10 +609,18 @@ describe(CloudMlJobService.name, () => {
     });
 
     it('refuses to send a job the AI Wallet cannot hold, without offering a lighter model', async () => {
-      mocks.frameleafCloudMl.getWallet.mockResolvedValue(wallet(1));
+      mocks.frameleafCloudMl.getWallet.mockResolvedValue({
+        ...wallet(1),
+        topUpUrl: 'https://frameleaf.cloud/wallet/top-up',
+      });
 
       const estimate = await sut.estimate(owner, preview(), now);
-      expect(estimate.refusal).toMatchObject({ code: 'insufficient-credits' });
+      // FL-544: the refusal carries the one link that fixes it, so a gate can show one button
+      expect(estimate.refusal).toEqual({
+        code: 'insufficient-credits',
+        message: expect.stringContaining('Add AI credit first.'),
+        topUpUrl: 'https://frameleaf.cloud/wallet/top-up',
+      });
       expect(estimate.model.sku).toBe(FAITHFUL);
     });
 
@@ -1704,7 +1713,7 @@ describe(CloudMlJobService.name, () => {
         rendering();
         mocks.crypto.hashFileDigests.mockClear();
         mocks.crypto.hashFileDigests.mockImplementation((file) =>
-          Promise.try(() => {
+          tryPromise(() => {
             const path = file.toString();
             const cached = path.includes('/out-');
             const first = path.endsWith('out-v1-s0.mp4');

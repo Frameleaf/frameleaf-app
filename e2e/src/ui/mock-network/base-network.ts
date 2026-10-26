@@ -163,7 +163,7 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
         serverName: '',
         trashDays: 30,
         userDeleteDelay: 7,
-        oauthButtonText: 'Login with OAuth',
+        oauthButtonText: 'Sign in with your provider',
         isInitialized: true,
         isOnboarded: true,
         externalDomain: '',
@@ -171,6 +171,7 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
         mapDarkStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/dark.json',
         mapLightStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/light.json',
         maintenanceMode: false,
+        placesRestoring: false,
         frameleaf: {
           via: null,
           cloudConfigured: false,

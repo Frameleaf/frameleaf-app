@@ -1,4 +1,4 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { DateTime } from 'luxon';
 import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
@@ -12,6 +12,7 @@ import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -28,6 +29,7 @@ const setup = (db?: Kysely<DB>) => {
     database: db || defaultDatabase,
     real: [
       IntegrityRepository,
+      LibraryRepository,
       AssetRepository,
       ConfigRepository,
       SystemMetadataRepository,
@@ -116,6 +118,40 @@ describe(IntegrityService.name, () => {
         contentType: 'application/octet-stream',
         cacheControl: 'private_without_cache',
       });
+    });
+  });
+
+  describe('getIntegrityOverview (FL-520)', () => {
+    it('counts a photo both checkers report once, and RAW originals among the missing', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(StorageRepository).stat.mockResolvedValue({} as never);
+      const {
+        result: { id: ownerId },
+      } = await ctx.newUser();
+      const { asset: both } = await ctx.newAsset({ ownerId, originalFileName: 'IMG_1.CR2' });
+      const { asset: healthOnly } = await ctx.newAsset({ ownerId, originalFileName: 'IMG_2.JPG' });
+      const { asset: damaged } = await ctx.newAsset({ ownerId, originalFileName: 'IMG_3.JPG' });
+      await ctx.get(IntegrityRepository).create([
+        { type: IntegrityReport.MissingFile, path: '/a', assetId: both.id },
+        { type: IntegrityReport.ChecksumFail, path: '/c', assetId: damaged.id },
+        { type: IntegrityReport.UntrackedFile, path: '/stray' },
+      ]);
+      const health = (assetId: string, category: string, status: string) =>
+        sql`INSERT INTO public.asset_health ("assetId", category, status, severity, "originalPath", "originalFileName", evidence, resolution, "checkedAt")
+          VALUES (${assetId}, ${category}, ${status}, 'warning', '/x', 'x', '{}', '{}', now())`.execute(
+          defaultDatabase,
+        );
+      await health(both.id, 'missing', 'missing');
+      await health(healthOnly.id, 'missing', 'candidate');
+      await health(damaged.id, 'corrupt', 'corrupt_confirmed');
+
+      await expect(sut.getIntegrityOverview()).resolves.toEqual(
+        expect.objectContaining({ missing: 2, damaged: 1, stray: 1, rawToMatch: 1, unreachable: [] }),
+      );
+      await expect(sut.getFindingAssetIds({ kind: 'missing' })).resolves.toEqual({
+        assetIds: [both.id, healthOnly.id].toSorted(),
+      });
+      await sql`DELETE FROM public.asset_health`.execute(defaultDatabase);
     });
   });
 

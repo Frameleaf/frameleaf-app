@@ -90,6 +90,19 @@ export class UserAdminController {
     return this.service.update(auth, id, dto);
   }
 
+  @Post(':id/password-link')
+  @Authenticated({ permission: Permission.AdminUserUpdate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Email a link to choose a password',
+    description:
+      'Email the person a single-use link (valid 7 days) to choose their own password. The administrator never sees it. Needs email to be set up and a public address.',
+    history: new HistoryBuilder().added('v3.2.1'),
+  })
+  sendUserPasswordLinkAdmin(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.sendPasswordLink(auth, id);
+  }
+
   @Delete(':id')
   @Authenticated({ permission: Permission.AdminUserDelete, admin: true })
   @Endpoint({

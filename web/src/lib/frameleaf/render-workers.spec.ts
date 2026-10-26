@@ -240,6 +240,14 @@ describe('parseLimitForm', () => {
       outputGB: '',
     });
     expect(limitFormFrom(null)).toEqual({ concurrency: '', wallClockMinutes: '', outputGB: '' });
+    // FL-529: an edit sends back exactly what is stored, however it was entered.
+    const stored = { maxConcurrentOperations: 1, maxWallClockMs: '123456', maxOutputBytes: '1250000000' };
+    const tiny = { maxConcurrentOperations: 1, maxWallClockMs: null, maxOutputBytes: '40000000' };
+    for (const limit of [stored, tiny]) {
+      const parsed = parseLimitForm(limitFormFrom(limit), { minConcurrency: 1 });
+      expect(parsed).toEqual({ ok: true, value: limit });
+    }
+    expect(limitFormFrom(stored).outputGB).toBe('1.25');
   });
 });
 
@@ -328,6 +336,25 @@ describe('parseWorkerForm', () => {
       concurrency: '1',
       wallClockMinutes: '10',
       outputGB: '10',
+    });
+
+    // FL-529: renaming a worker sends its stored ceilings back unchanged.
+    const precise = {
+      ...existing,
+      conformanceMaxAgeMs: 1_234_567,
+      gpuMemoryBytes: String(Math.round(7.95 * 1024 ** 3)),
+      maxOutputBytes: '1250000000',
+    };
+    const form = workerFormFrom(precise);
+    expect(form.gpuMemoryGiB).toBe('7.95');
+    const parsed = parseWorkerForm({ ...form, name: 'Renamed' });
+    expect(parsed).toMatchObject({
+      ok: true,
+      value: {
+        conformanceMaxAgeMs: precise.conformanceMaxAgeMs,
+        gpuMemoryBytes: precise.gpuMemoryBytes,
+        maxOutputBytes: precise.maxOutputBytes,
+      },
     });
   });
 });

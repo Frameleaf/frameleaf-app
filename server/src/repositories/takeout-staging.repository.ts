@@ -10,6 +10,7 @@ import type { TakeoutSource } from 'src/repositories/takeout.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { getDiskUsage } from 'src/utils/disk-usage.js';
+import { tryPromise } from 'src/utils/promise.js';
 import {
   TakeoutZipEntry,
   TakeoutZipSource,
@@ -373,7 +374,7 @@ export class TakeoutStagingRepository {
       return compose(raw, createInflateRaw());
     };
     // Deferred like an async function, so a synchronous failure to open still arrives as a rejection.
-    const openEntry = () => Promise.try(openEntryNow);
+    const openEntry = () => tryPromise(openEntryNow);
     return this.writeStaged(openEntry, entry.uncompressedSize, destination, signal, entry.crc32);
   }
 

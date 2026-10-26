@@ -56,14 +56,15 @@ test.describe('Registration', () => {
     await page.goto('/admin/user-management');
     await page.waitForURL('**/user-settings?area=users&section=accounts');
     await expect(page.getByRole('heading', { name: 'Users', level: 1 })).toBeVisible();
-    await page.getByRole('button', { name: 'Create account', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Create account' });
-    await dialog.getByLabel('Email').fill('user@example.com');
-    await dialog.getByLabel('Initial password').fill('password');
-    await dialog.getByLabel('Confirm password').fill('password');
-    await dialog.getByLabel('Name').fill('Immich User');
-    await dialog.getByRole('button', { name: 'Create account' }).click();
-    await expect(dialog).toHaveCount(0);
+    // FL-516: Add a person is a page; Frameleaf makes up a temporary password and shows it once.
+    await page.getByRole('button', { name: 'Add a person', exact: true }).click();
+    await page.getByLabel('Name', { exact: true }).fill('Immich User');
+    await page.getByLabel('Email', { exact: true }).fill('user@example.com');
+    await page.getByRole('button', { name: 'Add person', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Immich User is added' })).toBeVisible();
+    const shown = await page.locator('p.password code').innerText();
+    const password = shown.trim();
+    expect(password.length).toBeGreaterThan(7);
 
     // logout
     await context.clearCookies();
@@ -71,7 +72,7 @@ test.describe('Registration', () => {
     // login
     await page.goto('/auth/login?autoLaunch=0');
     await page.getByLabel('Email', { exact: true }).fill('user@example.com');
-    await page.getByLabel('Password', { exact: true }).fill('password');
+    await page.getByLabel('Password', { exact: true }).fill(password);
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
     // change password (FL-80 prototype screen)

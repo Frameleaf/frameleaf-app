@@ -252,4 +252,29 @@ describe('CloudBackupRestoreSection (FL-164)', () => {
     expect(screen.queryByText('Moose.jpg')).toBeNull();
     expect(screen.getByText('Elk.jpg')).toBeInTheDocument();
   });
+
+  it('restores the photos behind Library care’s missing files when opened for them (FL-520)', async () => {
+    sdkMock.getIntegrityFindingAssets.mockResolvedValue({ assetIds: ['a1', 'a2'] });
+    render(CloudBackupRestoreSection, {
+      props: {
+        status: status(),
+        formatWhen: (value: string | null | undefined) => value ?? '—',
+        onStatus: vi.fn(),
+        findings: 'missing',
+      },
+    });
+
+    expect(await screen.findByText('2 missing files to restore')).toBeInTheDocument();
+    expect(sdkMock.getIntegrityFindingAssets).toHaveBeenCalledWith({ kind: 'missing' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Restore these 2 files' }));
+    await waitFor(() =>
+      expect(sdkMock.restoreCloudBackup).toHaveBeenCalledWith({
+        cloudBackupRestoreDto: {
+          manifestKey: MANIFEST_KEY,
+          scope: CloudBackupRestoreScope.Files,
+          assetIds: ['a1', 'a2'],
+        },
+      }),
+    );
+  });
 });

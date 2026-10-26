@@ -10,6 +10,7 @@ import { Asset } from 'src/database.js';
 import { OnEvent } from 'src/decorators.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import {
+  FileTrashEmptyResponseDto,
   FileTrashItemResponseDto,
   FileTrashListQueryDto,
   FileTrashResponseDto,
@@ -30,10 +31,14 @@ import { getLockedOwnerId } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 /**
- * Library Care file trash (universal storage, spec §3.5). Originals reach it through the
- * reference-counted delete (`deleteUnreferencedPath` with `trash`) and leave only through an
- * administrator: restored into their last owner's library, or deleted permanently.
+ * Library Care → Unused files (universal storage, spec §3.5; "file trash" until FL-416). Originals reach it
+ * through the reference-counted delete (`deleteUnreferencedPath` with `trash`) and leave only through the
+ * server owner: restored into their last owner's library, or deleted permanently. FL-416: the server owner
+ * (the first administrator, `utils/server-owner`) is the only one who may list, restore or empty it.
  */
+/** Files read per page while Unused files is emptied. */
+const EMPTY_BATCH = 200;
+
 @Injectable()
 export class PhysicalFileTrashService extends BaseService {
   @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
@@ -60,6 +65,7 @@ export class PhysicalFileTrashService extends BaseService {
   }
 
   async list(auth: AuthDto, { page, size }: FileTrashListQueryDto): Promise<FileTrashResponseDto> {
+    await this.requireServerOwner(auth);
     const { items, total, totalBytes } = await this.physicalFileTrashRepository.list({
       skip: (page - 1) * size,
       take: size,
@@ -81,7 +87,7 @@ export class PhysicalFileTrashService extends BaseService {
     entry: PhysicalFileTrashEntry | undefined,
   ): asserts entry is PhysicalFileTrashEntry {
     if (!entry || (entry.wasLocked !== false && getLockedOwnerId(auth) !== entry.lastOwnerId)) {
-      throw new NotFoundException('File not found in the file trash');
+      throw new NotFoundException('File not found in Unused files');
     }
   }
 
@@ -91,6 +97,7 @@ export class PhysicalFileTrashService extends BaseService {
    * same content (the file then goes back to the trash).
    */
   async restore(auth: AuthDto, id: string): Promise<FileTrashRestoreResponseDto> {
+    await this.requireServerOwner(auth);
     const entry = await this.physicalFileTrashRepository.getById(id);
     this.requireVisible(auth, entry);
     if (!entry.lastOwnerId) {
@@ -174,7 +181,7 @@ export class PhysicalFileTrashService extends BaseService {
         },
       );
       if (!restored || !asset) {
-        throw new NotFoundException('File not found in the file trash');
+        throw new NotFoundException('File not found in Unused files');
       }
     } catch (error) {
       if (isAssetChecksumConstraint(error)) {
@@ -204,15 +211,52 @@ export class PhysicalFileTrashService extends BaseService {
 
   /** Deletes a trashed original from disk for good. The only way an original leaves disk. */
   async purge(auth: AuthDto, id: string): Promise<void> {
+    await this.requireServerOwner(auth);
     this.requireVisible(auth, await this.physicalFileTrashRepository.getById(id));
     const entry = await this.physicalFileTrashRepository.purge(id, (path, current) => {
       this.requireVisible(auth, current);
       return this.storageRepository.unlink(path);
     });
     if (!entry) {
-      throw new NotFoundException('File not found in the file trash');
+      throw new NotFoundException('File not found in Unused files');
     }
     this.logger.log(`Permanently deleted ${entry.originalFileName} (${entry.sizeInBytes} bytes) from the file trash`);
+  }
+
+  /**
+   * FL-416: "Empty Unused files". Deletes every file the owner can see in it from the drive for good, newest
+   * first, and answers how many went and the space that came back. A file that cannot be deleted stays and
+   * is passed over, so one stuck file never stops the rest.
+   */
+  async empty(auth: AuthDto): Promise<FileTrashEmptyResponseDto> {
+    await this.requireServerOwner(auth);
+    const lockedOwnerId = getLockedOwnerId(auth);
+    let files = 0;
+    let bytes = 0;
+    let kept = 0;
+    for (;;) {
+      const { items } = await this.physicalFileTrashRepository.list({ skip: kept, take: EMPTY_BATCH, lockedOwnerId });
+      if (items.length === 0) {
+        break;
+      }
+      for (const item of items) {
+        try {
+          const entry = await this.physicalFileTrashRepository.purge(item.id, (path, current) => {
+            this.requireVisible(auth, current);
+            return this.storageRepository.unlink(path);
+          });
+          if (entry) {
+            files++;
+            bytes += Number(entry.sizeInBytes);
+          }
+        } catch (error) {
+          kept++;
+          this.logger.warn(`Unused files: ${item.originalFileName} was kept, it could not be deleted: ${error}`);
+        }
+      }
+    }
+    this.logger.log(`Emptied Unused files: ${files} files, ${bytes} bytes deleted permanently`);
+    return { files, bytes, kept };
   }
 
   private move(from: string, to: string) {

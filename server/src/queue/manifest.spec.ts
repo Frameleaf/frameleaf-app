@@ -1,12 +1,14 @@
 import { DummyDriver, Kysely, PostgresAdapter, PostgresIntrospector, PostgresQueryCompiler } from 'kysely';
+import type { DB } from 'src/schema/index.js';
 import { queueExecution } from 'src/queue/context.js';
 import { shareSelections } from 'src/queue/manifest.js';
+import { tryPromise } from 'src/utils/promise.js';
 
 describe('selection sharing cancellation', () => {
-  let db: Kysely<any>;
+  let db: Kysely<DB>;
 
   beforeEach(() => {
-    db = new Kysely<any>({
+    db = new Kysely<DB>({
       dialect: {
         createAdapter: () => new PostgresAdapter(),
         createDriver: () => new DummyDriver(),
@@ -24,7 +26,7 @@ describe('selection sharing cancellation', () => {
       let catalogueVisits = 0;
       await db.transaction().execute(async (tx) => {
         vi.spyOn(tx.getExecutor(), 'executeQuery').mockImplementation((query) =>
-          Promise.try(() => {
+          tryPromise(() => {
             if (query.sql.startsWith('select name from job_queue') && ++catalogueVisits > 1)
               throw new Error('unexpected second sharing page');
             if (query.sql.startsWith('with candidates as materialized')) {
