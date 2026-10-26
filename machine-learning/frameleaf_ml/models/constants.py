@@ -315,3 +315,46 @@ def get_transcribe_model_file(model_name: str) -> TranscribeModelFile | None:
 
 def default_transcribe_model(gpu: bool) -> str:
     return next(name for name, model in _TRANSCRIBE_MODELS.items() if model.gpu == gpu)
+
+
+class MusicModelFile(NamedTuple):
+    """Where the music model lives on the model source: ONNX files under `audio/` in `frameleaf/<repo>`.
+
+    `files` pins every file by SHA-256, so a mirror that serves other bytes is rejected.
+    """
+
+    repo: str
+    files: tuple[tuple[str, str], ...]
+    source: str
+
+
+# The name the server asks for when it wants new music for a Studio movie (FL-561).
+MUSIC_MODEL_ALIAS = "frameleaf-music"
+
+# Make a movie (FL-561, owner decision 2026-10-26): MusicGen small (CC-BY-NC-4.0; personal use on the
+# user's own server, a home-network worker or a Frameleaf Cloud container, FL-451) as the 8-bit ONNX
+# export the Studio engine already admits (studio/rights-approval.json, model:Xenova/musicgen-small at
+# 6a8096dabfff72909ef5eae41461408e29ae20fd). The Frameleaf model mirror serves each file unchanged
+# under frameleaf/musicgen-small/audio/.
+_MUSIC_MODELS: dict[str, MusicModelFile] = {
+    "musicgen-small": MusicModelFile(
+        "musicgen-small",
+        (
+            ("audio/tokenizer.json", "a45ba2af379e1d559dbbdf176bb6a338945019534a20e15e07d22bbd0a7544b3"),
+            ("audio/text_encoder.onnx", "336afda84d24205409f20e71da691e5c21585e32aa86e3e38d73543ac6d481fc"),
+            ("audio/decoder_model_merged.onnx", "9dade5431ef5f3690cde7449d8e881b2d596d1ee5c6472752787d7d470d67091"),
+            ("audio/encodec_decode.onnx", "847918300a85c9a8f93333f482c5740e07c4e2599faed839bbec73fd0d588073"),
+        ),
+        "Xenova/musicgen-small@6a8096dabfff72909ef5eae41461408e29ae20fd",
+    ),
+}
+
+
+def resolve_music_model(model_name: str) -> str:
+    """The concrete music model a request names; the alias is MusicGen small."""
+    name = clean_name(model_name)
+    return "musicgen-small" if name == MUSIC_MODEL_ALIAS else name
+
+
+def get_music_model_file(model_name: str) -> MusicModelFile | None:
+    return _MUSIC_MODELS.get(resolve_music_model(model_name))

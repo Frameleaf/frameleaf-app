@@ -42,6 +42,8 @@
   import LibraryTimeline from '$lib/components/frameleaf/LibraryTimeline.svelte';
   import LibraryWorkInspector from '$lib/components/frameleaf/LibraryWorkInspector.svelte';
   import ResultsToolbar from '$lib/components/frameleaf/ResultsToolbar.svelte';
+  import MakeMovieSheet from '$lib/components/frameleaf/MakeMovieSheet.svelte';
+  import type { MakeMovieSource } from '$lib/frameleaf/studio/make-movie';
   import SelectionBar from '$lib/components/frameleaf/SelectionBar.svelte';
   import ShortcutsHelp from '$lib/components/frameleaf/ShortcutsHelp.svelte';
   import ShowMore from '$lib/components/frameleaf/ShowMore.svelte';
@@ -124,6 +126,7 @@
     mdiFilterOffOutline,
     mdiFolderOutline,
     mdiImageMultipleOutline,
+    mdiMovieOpenPlayOutline,
     mdiOpenInNew,
     mdiPencilOutline,
     mdiTrayArrowUp,
@@ -1158,6 +1161,30 @@
     void goto(Route.studio({ assetIds: studioIds.slice(0, maxStudioHandoffAssets) }));
   };
 
+  /** Make a movie (FL-561) from the selection: what Studio may receive, as many as a movie takes. */
+  let movieOpen = $state(false);
+  const movieIds = $derived(studioIds.slice(0, 2000));
+  /** The selection as it was when the sheet opened, so another version uses the same items. */
+  let movieSource = $state<MakeMovieSource>({
+    kind: 'selection',
+    assetIds: [],
+    name: '',
+    photoCount: 0,
+    videoCount: 0,
+  });
+  const makeMovie = () => {
+    const ids = [...movieIds];
+    movieSource = {
+      kind: 'selection',
+      assetIds: ids,
+      name: $t('frameleaf_movie_source_items', { values: { count: ids.length } }),
+      photoCount: ids.filter((id) => !findAsset(id)?.isVideo).length,
+      videoCount: ids.filter((id) => findAsset(id)?.isVideo).length,
+      previewIds: ids.slice(0, 3),
+    };
+    movieOpen = true;
+  };
+
   const leadingActions = $derived<SelectionBarLeadingAction[]>([
     {
       id: 'compare',
@@ -1183,6 +1210,13 @@
           },
         ]
       : []),
+    {
+      id: 'movie',
+      label: $t('frameleaf_movie_make'),
+      icon: mdiMovieOpenPlayOutline,
+      disabled: movieIds.length === 0,
+      onClick: makeMovie,
+    },
     {
       id: 'studio',
       label: $t('frameleaf_selection_open_in_studio'),
@@ -1875,6 +1909,9 @@
         onDismissOperation={(requestId) => bulk.dismiss(requestId)}
         leading={selectionMode || publicView ? [] : leadingActions}
       />
+      {#if !selectionMode && !publicView}
+        <MakeMovieSheet bind:open={movieOpen} source={movieSource} />
+      {/if}
     {/if}
   {/if}
   {#if showStatusBar && !firstRun}

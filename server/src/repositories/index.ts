@@ -111,6 +111,7 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
 import { StudioImportFileRepository } from 'src/repositories/studio-import-file.repository.js';
 import { StudioImportPublicationRepository } from 'src/repositories/studio-import-publication.repository.js';
+import { StudioMovieRepository } from 'src/repositories/studio-movie.repository.js';
 import { StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StudioReverseConformRepository } from 'src/repositories/studio-reverse-conform.repository.js';
@@ -238,6 +239,7 @@ export const repositories = [
   StudioImportPublicationRepository,
   StudioImportFileRepository,
   StudioReverseConformRepository,
+  StudioMovieRepository,
   StudioTranscriptionRepository,
   StudioExportRepository,
   DerivativePrivacyRepository,

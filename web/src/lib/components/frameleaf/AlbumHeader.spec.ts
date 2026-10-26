@@ -157,6 +157,19 @@ describe('AlbumHeader', () => {
     expect(screen.getByRole('button', { name: /^Comments/ })).toBeInTheDocument();
   });
 
+  it('offers Make a movie beside Slideshow, opening the sheet for this album (FL-561)', async () => {
+    sdkMock.getMlCapabilities.mockResolvedValue({ workloads: [], studio: { generationWorker: true } } as never);
+    renderHeader(albumAs(AlbumUserRole.Viewer));
+    await fireEvent.click(screen.getByRole('button', { name: 'Make a movie' }));
+    expect(await screen.findByRole('dialog', { name: 'Make a movie' })).toBeInTheDocument();
+    expect(screen.getByText(/3 items · Frameleaf picks the best moments/)).toBeInTheDocument();
+  });
+
+  it('cannot make a movie of an empty album', () => {
+    renderHeader(albumAs(AlbumUserRole.Owner, { assetCount: 0 }));
+    expect(screen.getByRole('button', { name: 'Make a movie' })).toBeDisabled();
+  });
+
   it('shows no separator above Leave when a viewer has nothing else in the menu', async () => {
     renderHeader(albumAs(AlbumUserRole.Viewer));
     const menu = await openMore();

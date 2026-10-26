@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import gc
 import importlib.util
 import os
@@ -27,6 +28,7 @@ from starlette.types import ASGIApp
 from frameleaf_ml import allocator
 from frameleaf_ml.models import get_model_deps
 from frameleaf_ml.models.base import InferenceModel, ModelUnavailableError
+from frameleaf_ml.models.musicgen import MusicGenModel
 from frameleaf_ml.models.transcribe import AudioFormatError, TranscribeModel, read_wav
 from frameleaf_ml.models.transforms import decode_pil
 from frameleaf_ml.sessions.ort import flush_denormals
@@ -500,6 +502,67 @@ async def transcribe(
                 items.close()
             except ValueError:
                 # Still decoding in the thread pool after a disconnect; it is never advanced again.
+                pass
+            active_requests -= 1
+
+    return StreamingResponse(body(), media_type="application/x-ndjson")
+
+
+# Audio bytes per `audio` line of a music answer, before base64.
+MUSIC_CHUNK_BYTES = 512 * 1024
+
+
+@app.post("/music")
+async def music(entries: InferenceEntries = Depends(get_entries)) -> StreamingResponse:
+    """Make a movie (FL-561): new music from a prompt with MusicGen small.
+
+    The request names one entry, `{"music": {"audio": {"modelName": "frameleaf-music", "options": {"prompt",
+    "duration", "seed"?}}}}`. Problems found before any work starts are HTTP errors (422 bad options, 503
+    no model). Otherwise the answer is newline-delimited JSON: `progress` lines (`done` of `total` decoder
+    steps), then `info` (sample rate, seconds), the 16-bit mono WAV as base64 `audio` lines in order, then
+    `done` (or `error`). Closing the connection stops the work at the next decoder step.
+    """
+    without_deps, with_deps = entries
+    if with_deps or len(without_deps) != 1 or without_deps[0]["task"] != ModelTask.MUSIC:
+        raise HTTPException(400, "A music request names exactly one music entry")
+    entry = without_deps[0]
+    options = dict(entry["options"])
+    model = await model_cache.get(entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl)
+    model = await load(model)
+    assert isinstance(model, MusicGenModel)
+    items = model.stream(**options)
+
+    async def body() -> AsyncGenerator[bytes, None]:
+        global active_requests, last_called
+        # Counted here, as for /transcribe: the stream outlives the handler.
+        active_requests += 1
+        try:
+            while True:
+                last_called = time.time()
+                try:
+                    item = await run(next, items, None)
+                except Exception as error:
+                    log.error(f"Music generation failed: {error}")
+                    yield orjson.dumps({"type": "error", "message": "Music generation failed"}) + b"\n"
+                    return
+                if item is None:
+                    break
+                if item["type"] != "audio":
+                    yield orjson.dumps(item) + b"\n"
+                    continue
+                wav: bytes = item["wav"]
+                yield (
+                    orjson.dumps({"type": "info", "sampleRate": item["sampleRate"], "seconds": item["seconds"]}) + b"\n"
+                )
+                for start in range(0, len(wav), MUSIC_CHUNK_BYTES):
+                    chunk = base64.b64encode(wav[start : start + MUSIC_CHUNK_BYTES]).decode("ascii")
+                    yield orjson.dumps({"type": "audio", "data": chunk}) + b"\n"
+            yield orjson.dumps({"type": "done"}) + b"\n"
+        finally:
+            try:
+                items.close()
+            except ValueError:
+                # Still writing in the thread pool after a disconnect; it is never advanced again.
                 pass
             active_requests -= 1
 

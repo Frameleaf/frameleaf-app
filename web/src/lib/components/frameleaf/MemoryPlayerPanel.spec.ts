@@ -41,6 +41,7 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   memoriesStatistics: vi.fn().mockResolvedValue({ total: 0 }),
   getMemoryExports: vi.fn().mockResolvedValue([]),
   getMemoryExport: vi.fn(),
+  getMlCapabilities: vi.fn().mockResolvedValue({ workloads: [], studio: { generationWorker: true } }),
   getAssetInfo: vi.fn().mockResolvedValue({
     id: 'asset-2',
     exifInfo: { city: 'Lisbon' },
@@ -155,12 +156,14 @@ describe('MemoryPlayerPanel (FL-62)', () => {
     });
   });
 
-  it('opens Studio with the memory items (MPY-10)', async () => {
+  it('opens the Make a movie sheet for the memory (FL-561)', async () => {
     render(MemoryPlayerPanel);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Make a movie in Studio' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Make a movie' }));
 
-    expect(goto).toHaveBeenCalledWith(expect.stringMatching(/^\/studio\?.*asset-1.*asset-2.*asset-3/));
+    expect(await screen.findByRole('dialog', { name: 'Make a movie' })).toBeInTheDocument();
+    expect(screen.getByText(/3 items · Frameleaf picks the best moments/)).toBeInTheDocument();
+    expect(goto).not.toHaveBeenCalledWith(expect.stringMatching(/^\/studio/));
   });
 
   it('keeps the export it found while the same memory moves on to another item', async () => {

@@ -98,6 +98,7 @@ import { StudioBundleController } from 'src/controllers/studio-bundle.controller
 import { StudioCatalogController } from 'src/controllers/studio-catalog.controller.js';
 import { StudioExportController } from 'src/controllers/studio-export.controller.js';
 import { StudioMediaController } from 'src/controllers/studio-media.controller.js';
+import { StudioMovieController } from 'src/controllers/studio-movie.controller.js';
 import { StudioPreviewStreamController } from 'src/controllers/studio-preview-stream.controller.js';
 import { StudioPreviewController } from 'src/controllers/studio-preview.controller.js';
 import { StudioProjectImportController } from 'src/controllers/studio-project-import.controller.js';
@@ -223,6 +224,7 @@ export const controllers = [
   StackController,
   StorageMigrationAdminController,
   StudioMediaController,
+  StudioMovieController,
   StudioBundleController,
   StudioExportController,
   StudioPreviewController,

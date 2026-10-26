@@ -9186,6 +9186,8 @@ export type StudioRenderEvidenceDto = {
     sessions: number;
 };
 export type StudioCapabilitiesDto = {
+    /** This server or a home-network worker can make music for a movie right now (FL-561) */
+    generationWorker?: boolean;
     /** False until the Studio render worker admission (FL-95, FL-104) reports one */
     gpuWorker: boolean;
     /** A qualified local session can stream Studio previews */
@@ -14870,6 +14872,78 @@ export type StudioFontFamilyDto = {
 export type StudioFontCatalogDto = {
     /** The title font families bundled with this server */
     families: StudioFontFamilyDto[];
+};
+export type StudioMovieCreateDto = {
+    /** Make the movie from this album */
+    albumId?: string;
+    /** Make the movie from these photos and videos */
+    assetIds?: string[];
+    /** 30, 60 or 180 seconds; a song shorter than this sets the length */
+    lengthSeconds: 30 | 60 | 180;
+    /** Make the movie from this memory */
+    memoryId?: string;
+    /** For `generated` music */
+    mood?: StudioMovieMood;
+    music: StudioMovieMusicKind;
+    /** Try another version: the earlier job. Its project gets the new cut as a new revision, so the current one stays in its history. */
+    previousId?: string;
+    /** For `song`: an audio file, or a video whose soundtrack is used */
+    songAssetId?: string;
+    /** What the movie is made from, as the person sees it (the album or memory name) */
+    sourceName?: string;
+    /** The title at the start; defaults to the source name */
+    title?: string;
+};
+export type StudioMovieQueuedDto = {
+    /** The job id; it also shows in Activity (`/media-operations/{id}`) */
+    id: string;
+    status: MediaOperationStatus;
+};
+export type StudioMovieSongDto = {
+    durationSeconds: number;
+    id: string;
+    kind: StudioMovieSongKind;
+    name: string;
+};
+export type StudioMovieShot = {
+    assetId: string;
+    end: number;
+    /** Seconds into the movie */
+    start: number;
+};
+export type StudioMovieResultDto = {
+    /** Bar starts, in seconds */
+    bars: number[];
+    /** Every beat, in seconds */
+    beats: number[];
+    bpm: number;
+    /** Which of the first four beats starts a bar */
+    downbeat: number;
+    lengthSeconds: number;
+    mood: (StudioMovieMood) | null;
+    music: StudioMovieMusicKind;
+    /** The music, kept with the project */
+    musicImportId: string;
+    /** The song name, or empty for music made for the movie */
+    musicName: string;
+    musicSeconds: number;
+    /** The Studio project the movie is saved in */
+    projectId: string;
+    /** The project revision this version is */
+    revision: number;
+    shots: StudioMovieShot[];
+    sourceName: string;
+    title: string;
+    version: number;
+};
+export type StudioMovieDto = {
+    error: string | null;
+    id: string;
+    progress: number;
+    /** Present once the job has completed */
+    result: (StudioMovieResultDto) | null;
+    status: MediaOperationStatus;
+    step: StudioMovieStep;
 };
 export type StudioPreviewStreamOpenDto = {
     /** Studio project to play */
@@ -29989,6 +30063,49 @@ export function getStudioFontFile({ sha256 }: {
     }));
 }
 /**
+ * Make a movie
+ */
+export function createStudioMovie({ studioMovieCreateDto }: {
+    studioMovieCreateDto: StudioMovieCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioMovieQueuedDto;
+    }>("/studio/movies", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioMovieCreateDto
+    })));
+}
+/**
+ * List songs for a movie
+ */
+export function getStudioMovieSongs({ query }: {
+    query?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioMovieSongDto[];
+    }>(`/studio/movies/songs${QS.query(QS.explode({
+        query
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get a movie
+ */
+export function getStudioMovie({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioMovieDto;
+    }>(`/studio/movies/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
  * Open a Studio preview stream
  */
 export function openStudioPreviewStream({ studioPreviewStreamOpenDto }: {
@@ -33428,6 +33545,7 @@ export enum MediaOperationKind {
     StudioPreview = "studio_preview",
     StudioReverseConform = "studio_reverse_conform",
     StudioTranscription = "studio_transcription",
+    StudioMovie = "studio_movie",
     StudioPreviewStream = "studio_preview_stream",
     Restoration = "restoration",
     RestorationPreview = "restoration_preview",
@@ -35899,6 +36017,27 @@ export enum StudioFontFormat {
 export enum StudioFontStyle {
     Normal = "normal",
     Italic = "italic"
+}
+export enum StudioMovieMood {
+    Calm = "calm",
+    Warm = "warm",
+    Upbeat = "upbeat",
+    Big = "big"
+}
+export enum StudioMovieMusicKind {
+    Generated = "generated",
+    Song = "song"
+}
+export enum StudioMovieSongKind {
+    Audio = "audio",
+    Video = "video"
+}
+export enum StudioMovieStep {
+    Moments = "moments",
+    Music = "music",
+    Cuts = "cuts",
+    Title = "title",
+    Done = "done"
 }
 export enum StudioPreviewQuality {
     Draft = "draft",

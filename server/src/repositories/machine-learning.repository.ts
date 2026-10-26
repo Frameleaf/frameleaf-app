@@ -470,6 +470,33 @@ export type TranscriptInfo = Extract<TranscriptStreamItem, { type: 'info' }>;
 const TRANSCRIPT_LINE_BYTES = 256 * 1024;
 const TRANSCRIPT_TOTAL_BYTES = 64 * 1024 * 1024;
 
+/** The music model Make a movie asks for (FL-561, owner decision 2026-10-26: MusicGen small). */
+export const MUSIC_MODEL_NAME = 'frameleaf-music';
+
+/** The worker cannot make music: no `/music` route (an older worker) or the model is unavailable. */
+export class MusicUnavailableError extends Error {}
+
+/** One line of a worker's `/music` stream (machine-learning/frameleaf_ml/main.py). */
+export const musicStreamItemSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('progress'),
+    done: z.int().min(0).max(1e7),
+    total: z.int().min(1).max(1e7),
+  }),
+  z.object({
+    type: z.literal('info'),
+    sampleRate: z.int().min(8000).max(192_000),
+    seconds: z.number().min(0).max(600),
+  }),
+  z.object({ type: z.literal('audio'), data: z.string().max(1024 * 1024) }),
+  z.object({ type: z.literal('done') }),
+  z.object({ type: z.literal('error'), message: z.string().max(512) }),
+]);
+
+/** A music line above this is not music; the whole answer is bounded too (three minutes of WAV, base64). */
+const MUSIC_LINE_BYTES = 1024 * 1024;
+const MUSIC_TOTAL_BYTES = 64 * 1024 * 1024;
+
 /** The inpainting model the Clean Up Remove fill asks for: LaMa big-lama on the ML worker (owner decision 2026-10-08). */
 export const INPAINT_MODEL_NAME = 'frameleaf-inpaint';
 
@@ -782,6 +809,124 @@ export class MachineLearningRepository implements RestorationInference {
     }
     record('success');
     return { info, segments };
+  }
+
+  /**
+   * Make a movie (FL-561): new music from `prompt` on the selected worker, written to `wavPath` as the
+   * 16-bit mono WAV the worker sends. Only the prompt leaves this server. Progress is the worker's
+   * decoder steps; aborting `signal` closes the connection, which stops the worker.
+   */
+  async generateMusic(
+    selection: MlSelection,
+    options: { prompt: string; durationSeconds: number; seed: number },
+    wavPath: string,
+    signal: AbortSignal,
+    onProgress: (done: number, total: number) => void,
+  ): Promise<{ seconds: number }> {
+    if (selection.endpoint.cloud) {
+      throw new CloudJobsUnavailableError(selection.workload);
+    }
+    const started = Date.now();
+    let bytesReceived = 0;
+    const record = (outcome: MlUsage['outcome']) =>
+      selection.record({ bytesSent: 0, bytesReceived, durationMs: Date.now() - started, outcome });
+    const form = new FormData();
+    form.append(
+      'entries',
+      JSON.stringify({
+        music: {
+          audio: {
+            modelName: MUSIC_MODEL_NAME,
+            options: { prompt: options.prompt, duration: options.durationSeconds, seed: options.seed },
+          },
+        },
+      }),
+    );
+    const file = await open(wavPath, 'w');
+    let seconds: number | undefined;
+    let finished = false;
+    try {
+      await this.authorize(selection.endpoint);
+      const response = await fetch(new URL('music', selection.endpoint.url), {
+        method: 'POST',
+        headers: this.authHeaders(selection.endpoint),
+        body: form,
+        redirect: 'error',
+        signal,
+      });
+      if (!response.ok) {
+        await response.body?.cancel();
+        // no such route (404), an older worker that does not know the task (422), no model (503)
+        if ([404, 422, 501, 503].includes(response.status)) {
+          throw new MusicUnavailableError(`The worker cannot make music (${response.status})`);
+        }
+        throw new Error(`The music worker answered ${response.status}`);
+      }
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('The music worker sent no answer');
+      }
+      let pending = Buffer.alloc(0);
+      const handle = async (line: Buffer) => {
+        if (line.length > MUSIC_LINE_BYTES * 2) throw new Error('A music line is too long');
+        if (line.length === 0) {
+          return;
+        }
+        const item = musicStreamItemSchema.parse(JSON.parse(line.toString('utf8')));
+        switch (item.type) {
+          case 'progress': {
+            onProgress(item.done, item.total);
+            break;
+          }
+          case 'info': {
+            seconds = item.seconds;
+            break;
+          }
+          case 'audio': {
+            if (seconds === undefined) throw new Error('The music worker sent audio before its info');
+            await file.write(Buffer.from(item.data, 'base64'));
+            break;
+          }
+          case 'error': {
+            throw new Error(`The music worker failed: ${item.message}`);
+          }
+          default: {
+            finished = true;
+          }
+        }
+      };
+      try {
+        while (!finished) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          bytesReceived += value.byteLength;
+          if (bytesReceived > MUSIC_TOTAL_BYTES) throw new Error('The music is too large');
+          pending = Buffer.concat([pending, value]);
+          let newline = pending.indexOf(10);
+          while (newline !== -1 && !finished) {
+            await handle(pending.subarray(0, newline));
+            pending = pending.subarray(newline + 1);
+            newline = pending.indexOf(10);
+          }
+          if (pending.length > MUSIC_LINE_BYTES * 2) throw new Error('A music line is too long');
+        }
+      } finally {
+        await reader.cancel().catch(() => {});
+      }
+      if (!finished || seconds === undefined) {
+        throw new Error('The music worker stopped before it finished');
+      }
+    } catch (error) {
+      if (!(error instanceof MusicUnavailableError)) {
+        this.probeCache.delete(selection.endpoint.url);
+      }
+      record('failure');
+      throw error;
+    } finally {
+      await file.close();
+    }
+    record('success');
+    return { seconds };
   }
 
   /** FL-159: register the Frameleaf Cloud check that `probe` delegates to for the cloud destination. */
