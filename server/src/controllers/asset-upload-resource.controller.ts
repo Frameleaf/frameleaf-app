@@ -166,7 +166,8 @@ export class AssetUploadResourceController {
     this.headers(res);
     const outcome = await this.service.create(auth, this.requestHeaders(req), req, (row) => {
       this.headers(res, row);
-      const location = `${req.originalUrl.split('?', 1)[0]}/${row.id}`;
+      // Server-built, never derived from the request URL, so Location cannot point off-origin.
+      const location = `/api/assets/uploads/${row.id}`;
       res.setHeader('Location', location);
       writeInformation(res, 104, {
         Location: location,

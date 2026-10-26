@@ -1297,6 +1297,10 @@ describe(LibraryService.name, () => {
 
       expect(mockClose).toHaveBeenCalledTimes(2);
     });
+
+    it('never calls an inherited method for a library id that names one', async () => {
+      await expect(sut['stopWatcher']('hasOwnProperty')).resolves.toBeUndefined();
+    });
   });
 
   describe('handleDeleteLibrary', () => {

@@ -940,14 +940,16 @@ export class SearchService extends BaseService {
     }
 
     const match = query.match(
-      /\b(?:with|of)\s+([A-Za-z][\w'-]*(?:\s+(?:and\s+)?[A-Za-z][\w'-]*)*?)(?=\s+(?:in|near|around|at|last|this|from|during|before|after|since)\b|$)/,
+      // one word per step (a joining "and" is itself a word), so the pattern cannot backtrack exponentially
+      /\b(?:with|of)\s+([A-Za-z][\w'-]*(?:\s+[A-Za-z][\w'-]*)*?)(?=\s+(?:in|near|around|at|last|this|from|during|before|after|since)\b|$)/,
     );
     if (!match?.[1]) {
       return { personIds: [], petIds: [] };
     }
 
     const names = match[1]
-      .split(/\s+(?:and|&)\s+|,\s*/)
+      // the query's whitespace is already collapsed to single spaces
+      .split(/\s(?:and|&)\s|,\s*/)
       .map((name) => name.trim())
       .filter(Boolean);
     const privacy = getHiddenContentQueryOptions(auth);
